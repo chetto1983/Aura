@@ -26,9 +26,10 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 - Typed-display protocol (GAP-1): `aura.display` CUSTOM event + Go normalizer + display router (web_result / document / code / table / chart / system_event / swarm_report / graph_*)
 - Neo4j Graph Explorer (WebGL canvas, path strip, node inspector, read-only Cypher guard)
 - Read-only governance boards (MCP server list/status, skills active/pending/archived/audit, scheduler board)
+- Governance write — MCP configuration (recipe/custom install, env edit, enable/disable/remove with trust + risk policy) + skills install/approval lifecycle (install → risk-tiered approval queue → activate, restore/archive, audit) over the existing backend (ux-spec Frame 08)
 - Web onboarding / setup wizard
 
-**Deferred to a follow-up milestone:** governance write surfaces (MCP install/remove, skill approve/delete via HTTP) and the `ui_control` operator-OS shell (dock windows, command palette) — highest abuse surface, needs hardened auth.
+**Deferred to a follow-up milestone:** the `ui_control` operator-OS shell (dock windows, command palette, AI-driven UI events — highest abuse surface, valuable only once typed displays + multiple tool windows exist) and scheduler write surfaces via HTTP.
 
 ## Requirements
 
@@ -77,6 +78,7 @@ v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; 
 - [ ] **DISPLAY-\***: Typed-display protocol (GAP-1) + display router
 - [ ] **GRAPH-\***: Neo4j Graph Explorer (read-only)
 - [ ] **GOV-\***: Read-only governance boards (MCP / skills / scheduler)
+- [ ] **MCPW-\* / SKW-\***: Governance write — MCP configuration + skills install/approval lifecycle
 - [ ] **ONBOARD-\***: Web onboarding / setup wizard
 
 ### Out of Scope

@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v0.0.0 Substrate** — Phases 0–21 (shipped 2026-06-15) — full details in [`milestones/v0.0.0-ROADMAP.md`](milestones/v0.0.0-ROADMAP.md)
-- 📋 **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–28 (planning)
+- 📋 **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–29 (planning)
 
 ## Phases
 
@@ -41,7 +41,7 @@
 
 ### 📋 v1.0.0 Aura Deep Search Web Cockpit (Planning)
 
-Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md`. The operator directive (2026-06-15) is to **stand up the industrial frontend foundation FIRST** — research-locked toolchain, linter/formatter CI gate, design-token dark-operator theme, brand, and the embedded build/test pipeline — before any cockpit feature code. Build order: harden the agent perimeter first (Phase 22), then the research-first frontend industrial foundation (Phase 23), then the serve/auth/health web host (Phase 24), then the Core-Value chat+approval loop (Phase 25), then the GAP-1 typed-display spine + router (Phase 26), then the self-contained graph explorer (Phase 27), then read-only governance + web onboarding (Phase 28). Governance write surfaces (GOVW) and the `ui_control` operator-OS shell (SHELL) are deferred to a follow-up milestone.
+Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md`. The operator directive (2026-06-15) is to **stand up the industrial frontend foundation FIRST** — research-locked toolchain, linter/formatter CI gate, design-token dark-operator theme, brand, and the embedded build/test pipeline — before any cockpit feature code. Build order: harden the agent perimeter first (Phase 22), then the research-first frontend industrial foundation (Phase 23), then the serve/auth/health web host (Phase 24), then the Core-Value chat+approval loop (Phase 25), then the GAP-1 typed-display spine + router (Phase 26), then the self-contained graph explorer (Phase 27), then read-only governance + web onboarding (Phase 28), and finally the governance WRITE surfaces — MCP configuration + skills install/lifecycle (Phase 29), the highest-risk surfaces landing last after auth + the approval center + the read-only boards are proven. The `ui_control` operator-OS shell (SHELL) and scheduler write surfaces (GOVW-03) are deferred to a follow-up milestone.
 
 - [ ] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit to Gate-3 so the web exposure lands on a hardened base (HARDEN-01..12)
 - [ ] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06)
@@ -50,6 +50,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
 - [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
+- [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03)
 
 ## Phase Details
 
@@ -141,6 +142,19 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Plans**: TBD
 **UI hint**: yes
 
+### Phase 29: Governance Write — MCP Configuration + Skills Install
+**Goal**: The operator can configure MCP servers (recipe / custom-stdio install, env editing with redaction, enable/disable/remove) and govern the skills lifecycle (install from a source field or catalog → risk-tiered approval queue → activate, restore/archive, immutable audit) from the cockpit — the web WRITE surface over the EXISTING backend (the MCP manager control plane from Phase 16 + the scoring-gated skill install/create/delete + `ask_user` approval + append-only audit from Phase 11), not new core capability. Per the ux-spec Frame 08 Non-Goals, this surface never shows raw saved MCP secrets, never silently mounts destructive MCP tools when an allowlist exists, never lets a model tool call self-activate a skill, never lets pending skills run or inject prompt content, and never presents `--ignore-scripts` install as safe — install remains RISKY supply-chain input.
+**Depends on**: Phase 24 (GAP-2 web auth — write surfaces require it), Phase 25 (the approval center — the skill/MCP approval queue reuses the HITL `Interrupt`/`Resume[]` resume protocol), Phase 28 (the governance READ boards — these write surfaces extend them). LAST phase: the highest-risk write surfaces land only after auth + the approval center + the read-only boards are proven.
+**Requirements**: MCPW-01, MCPW-02, MCPW-03, SKW-01, SKW-02, SKW-03
+**Success Criteria** (what must be TRUE):
+  1. Operator installs an MCP server from a recipe (or adds a custom stdio server) from the cockpit, sees the equivalent CLI command + the managed-config destination (`~/.aura/mcp/servers.json` / the `AURA_MCP_SERVERS_JSON` override source) previewed before save, and after trust approval + mount-time risk policy the server appears mounted with its tool count (MCPW-01, MCPW-03)
+  2. An MCP env value displays as a redacted chip after save and is never returned raw; required / optional / missing / placeholder states are visually distinct and a still-placeholder required recipe var raises a warning (MCPW-02)
+  3. Operator disables a server (reversible) and removes a server (confirmation + an audit row); a destructive/denied MCP tool is shown explicitly and is never silently mounted when an allowlist exists, and fail-soft mount warnings surface (MCPW-02, MCPW-03)
+  4. Operator installs a skill from a source field or a catalog item; the install pipeline surfaces source, content hash/preview, risk tier, the validation checklist (`--ignore-scripts`, sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) and destination — and a RISKY/DESTRUCTIVE action enters the approval queue with a resume token, is NOT runnable or prompt-injectable while pending, and activates only on the approval resume (no model-facing approve) (SKW-01, SKW-02)
+  5. Operator restores / archives skills across separate active / pending / archived / audit tabs (each row showing capability scope, last used, use count, TTL/archive state), and the skills audit ledger shows the install as an append-only row (SKW-02, SKW-03)
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
@@ -153,3 +167,4 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
+| 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |

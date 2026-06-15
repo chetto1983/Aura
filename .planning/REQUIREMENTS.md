@@ -86,15 +86,29 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 - [ ] **ONBD-01**: A new operator can complete a web onboarding / setup wizard (beyond the `:9081` loopback setup) that links identity and seeds the `Agent.md` profile
 - [ ] **ONBD-02**: The wizard drives the existing onboarding LoopAgent / `Agent.md` flow with confirm/edit/skip and without duplicate LLM turns
 
+### MCP Configuration — write/governance (MCPW) — Phase 29 (ux-spec Frame 08)
+
+Operator-directed addition (2026-06-15). Backend write capability already exists (MCP manager, Phase 16); this adds the web config surface over it, gated by GAP-2 auth (Phase 24).
+
+- [ ] **MCPW-01**: Operator can install an MCP server from a recipe or add a custom stdio server via the cockpit, with the equivalent CLI command + managed-config destination (`~/.aura/mcp/servers.json`, or the `AURA_MCP_SERVERS_JSON` override source) shown before save
+- [ ] **MCPW-02**: Operator can edit MCP env values (redacted chips after save, never raw; required/optional/missing/placeholder states distinct), enable/disable a server (reversible), and remove a server (confirmation + audit row)
+- [ ] **MCPW-03**: MCP config mutations pass trust approval + mount-time risk policy before tools enter the registry; denied/destructive tools are explicit, never silently mounted; fail-soft mount warnings are surfaced
+
+### Skills Install & Lifecycle — write/governance (SKW) — Phase 29 (ux-spec Frame 08)
+
+Operator-directed addition (2026-06-15). Backend write capability already exists (scoring-gated skill install/create/delete + `ask_user` approval + append-only audit, Phase 11); this adds the web install/approval surface, gated by GAP-2 auth + the approval center (Phase 25).
+
+- [ ] **SKW-01**: Operator can install a skill from a source field or a catalog item via the cockpit; the install pipeline surfaces source, content hash/preview, risk tier, and the validation checklist (`--ignore-scripts`, sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) + destination before activation
+- [ ] **SKW-02**: RISKY/DESTRUCTIVE skill actions (install/create/update/delete) enter an approval queue with source, content preview, risk tier, and resume token; pending skills cannot run or be prompt-injected; activation is the approval resume (no model-facing approve)
+- [ ] **SKW-03**: Operator can restore / archive skills and view the immutable audit ledger; active/pending/archived/audit tabs are separate; actions show capability scope, last used, use count, and TTL/archive state
+
 ## v2 Requirements
 
 Deferred to a follow-up milestone (acknowledged, not in this roadmap).
 
-### Governance write surfaces (GOVW) — Slice H
+### Governance write — scheduler (GOVW)
 
-- **GOVW-01**: MCP install / remove via HTTP with confirmation + audit
-- **GOVW-02**: Skill install / approve / delete via HTTP through the approval queue
-- **GOVW-03**: Scheduler task create / cancel / approve via HTTP
+- **GOVW-03**: Scheduler task create / cancel / approve / run-now via HTTP — *MCP config (MCPW) and skills install (SKW) were pulled into v1.0.0 per operator directive; only scheduler-write remains deferred.*
 
 ### Operator-OS shell (SHELL) — Slice I
 
@@ -109,7 +123,7 @@ Deferred to a follow-up milestone (acknowledged, not in this roadmap).
 
 | Feature | Reason |
 |---------|--------|
-| Governance write surfaces (MCP/skill/scheduler mutations via HTTP) | Higher-risk; needs GAP-2 hardened + a settled auth model — v2 (GOVW) |
+| Scheduler write surfaces via HTTP (create/cancel/approve) | Lower urgency; deferred to v2 (GOVW-03). MCP config (MCPW) + skills install (SKW) are now in v1.0.0 (Phase 29). |
 | `ui_control` + operator-OS shell | Highest abuse surface; only valuable once typed displays + multiple tool windows exist — v2 (SHELL) |
 | Multimodal user input on `/agent/run` | Endpoint rejects it today (`server.go:33`); Telegram remains the multimodal channel |
 | Multi-tenant auth / RBAC / OAuth | Minimal single-operator session cookie only this milestone; real multi-tenancy is a future milestone |
@@ -124,7 +138,7 @@ Deferred to a follow-up milestone (acknowledged, not in this roadmap).
 
 ## Traceability
 
-Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0 = Phases 22–28). Phase 23 (Frontend Infrastructure & Industrial Foundation) was inserted per the operator directive 2026-06-15 to establish the industrial frontend foundation before any feature code; the former Phases 23–27 shifted to 24–28.
+Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0 = Phases 22–29). Phase 23 (Frontend Infrastructure & Industrial Foundation) was inserted per the operator directive 2026-06-15 to establish the industrial frontend foundation before any feature code; the former Phases 23–27 shifted to 24–28.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -172,10 +186,16 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | GOV-03 | Phase 28 | Pending |
 | ONBD-01 | Phase 28 | Pending |
 | ONBD-02 | Phase 28 | Pending |
+| MCPW-01 | Phase 29 | Pending |
+| MCPW-02 | Phase 29 | Pending |
+| MCPW-03 | Phase 29 | Pending |
+| SKW-01 | Phase 29 | Pending |
+| SKW-02 | Phase 29 | Pending |
+| SKW-03 | Phase 29 | Pending |
 
 **Coverage:**
-- v1 requirements: 44 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD)
-- Mapped to phases: 44 ✓
+- v1 requirements: 50 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD + 3 MCPW + 3 SKW)
+- Mapped to phases: 50 (one-to-one, Phases 22–29)
 - Unmapped: 0 ✓
 
 **Phase distribution:**
@@ -186,7 +206,8 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 - Phase 26 (Typed-Display Protocol + Router): DISP-01..05, SWARM-01 (6)
 - Phase 27 (Neo4j Graph Explorer): GRAPH-01..04 (4)
 - Phase 28 (Governance Boards + Web Onboarding): GOV-01..03, ONBD-01..02 (5)
+- Phase 29 (Governance Write — MCP Configuration + Skills Install): MCPW-01..03, SKW-01..03 (6)
 
 ---
 *Requirements defined: 2026-06-15*
-*Last updated: 2026-06-15 — roadmap revised; Frontend Foundation (FND-01..06) added as research-first Phase 23 per operator directive; all 44 v1 requirements mapped to Phases 22–28 (0 unmapped). NOTE: the category breakdown 12+6+4+4+3+5+4+1+3+2 sums to 44; the earlier headline counts (33, 39) were arithmetic slips — the per-category counts and the one-to-one body↔table mapping are authoritative.*
+*Last updated: 2026-06-15 — roadmap revised; MCP Configuration (MCPW-01..03) + Skills Install & Lifecycle (SKW-01..03) pulled into v1.0.0 per operator directive and mapped to a new LAST Phase 29 (Governance Write — MCP Configuration + Skills Install); all 50 v1 requirements mapped to Phases 22–29 (0 unmapped, 0 duplicates). Category breakdown 12+6+4+4+3+5+4+1+3+2+3+3 = 50; the one-to-one body↔table mapping is authoritative. Earlier headline counts (33, 39, 44) were superseded as scope grew.*

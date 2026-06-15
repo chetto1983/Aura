@@ -7,7 +7,7 @@ stopped_at: Phase 22 context gathered
 last_updated: "2026-06-15T13:52:36.381Z"
 last_activity: 2026-06-15 — v1.0.0 roadmap revised (Phases 22–28; Frontend Foundation FND-01..06 inserted as research-first Phase 23; 39 requirements mapped, 0 unmapped)
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
