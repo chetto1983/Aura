@@ -63,17 +63,6 @@ func MountManagedServer(ctx context.Context, reg *tools.Registry, name string, s
 	return srv.Close, names, nil
 }
 
-func openManagedServer(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, error) {
-	if isStreamableHTTPManagedServer(server) {
-		return mcp.OpenServer(ctx, name, server)
-	}
-	cfg, err := managedStdioConfig(name, server)
-	if err != nil {
-		return nil, err
-	}
-	return mcp.Open(ctx, name, cfg)
-}
-
 func isStreamableHTTPManagedServer(server mcp.ManagedServer) bool {
 	return strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != ""
 }

@@ -71,9 +71,9 @@ func managedDefs() []mcp.ToolDef {
 	}
 }
 
-// TestMountManagedServer_HTTPSuccess drives MountManagedServer and
-// openManagedServer through the real streamable-HTTP transport. Every advertised
-// tool mounts and the closer shuts the HTTP session down cleanly.
+// TestMountManagedServer_HTTPSuccess drives MountManagedServer through the real
+// streamable-HTTP transport. Every advertised tool mounts and the closer shuts the
+// HTTP session down cleanly.
 func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	httpSrv := httpMCPServer(t, managedDefs())
 	reg := tools.NewRegistry()
@@ -105,7 +105,7 @@ func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_OpenFailure covers openManagedServer's error return for
+// TestMountManagedServer_OpenFailure covers MountManagedServer's error return for
 // the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail before
 // any process spawns.
 func TestMountManagedServer_OpenFailure(t *testing.T) {
@@ -156,49 +156,51 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 	}
 }
 
-// TestOpenManagedServer_StdioBranchFailure covers openManagedServer's stdio
-// branch directly: with a non-blocked trust class RuntimeLaunchConfig succeeds,
-// then mcp.Open fails on the missing binary.
-func TestOpenManagedServer_StdioBranchFailure(t *testing.T) {
+// TestMountManagedServer_HTTPBranchInfersFromBareURL covers the HTTP branch via a
+// bare URL (no explicit Type): MountManagedServer must infer streamable-HTTP and
+// mount every advertised tool, exercising the same branch the deleted dead
+// openManagedServer helper used to (AG-028 — the helper was unreachable production
+// code; the live MountManagedServer inlines the identical branch).
+func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
+	httpSrv := httpMCPServer(t, managedDefs())
+	reg := tools.NewRegistry()
+	server := mcp.ManagedServer{URL: httpSrv.URL} // bare URL, no Type → inferred HTTP
+
+	closer, names, err := MountManagedServer(context.Background(), reg, "docs", server)
+	if err != nil {
+		t.Fatalf("MountManagedServer (bare url): %v", err)
+	}
+	if closer == nil {
+		t.Fatal("success must return a non-nil closer")
+	}
+	defer func() {
+		if cerr := closer(); cerr != nil {
+			t.Errorf("closer: %v", cerr)
+		}
+	}()
+	if len(names) != 2 {
+		t.Fatalf("all advertised tools should mount over an inferred-HTTP bare URL, got %v", names)
+	}
+}
+
+// TestMountManagedServer_StdioBranchFailure covers MountManagedServer's stdio
+// branch: a non-blocked trust class makes RuntimeLaunchConfig succeed, then mcp.Open
+// fails on the missing binary (the stdio branch the deleted openManagedServer helper
+// duplicated — AG-028).
+func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
+	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{
 		Command: "aura-nonexistent-mcp-binary-xyz",
 		Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
 	}
-	_, err := openManagedServer(context.Background(), "stdio", server)
+	closer, names, err := MountManagedServer(context.Background(), reg, "stdio", server)
 	if err == nil {
 		t.Fatal("want spawn error from mcp.Open on a missing binary")
 	}
-}
-
-// TestOpenManagedServer_HTTPBranch covers openManagedServer's HTTP branch via Type
-// and via a bare URL, confirming both routes reach OpenServer and list tools.
-func TestOpenManagedServer_HTTPBranch(t *testing.T) {
-	httpSrv := httpMCPServer(t, managedDefs())
-	cases := []struct {
-		name   string
-		server mcp.ManagedServer
-	}{
-		{"explicit type", mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}},
-		{"bare url infers http", mcp.ManagedServer{URL: httpSrv.URL}},
+	if closer != nil {
+		t.Fatal("on stdio open failure closer must be nil")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			transport, err := openManagedServer(context.Background(), "docs", tc.server)
-			if err != nil {
-				t.Fatalf("openManagedServer: %v", err)
-			}
-			defer func() {
-				if cerr := transport.Close(); cerr != nil {
-					t.Errorf("close: %v", cerr)
-				}
-			}()
-			defs, err := transport.ListTools(context.Background())
-			if err != nil {
-				t.Fatalf("ListTools: %v", err)
-			}
-			if len(defs) != 2 {
-				t.Fatalf("want 2 tools from the fixture, got %d", len(defs))
-			}
-		})
+	if names != nil {
+		t.Fatalf("on stdio open failure names must be nil, got %v", names)
 	}
 }

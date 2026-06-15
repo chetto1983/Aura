@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 	"pgregory.net/rapid"
 )
@@ -380,5 +383,55 @@ func TestEvent_SetAuthorIfEmpty(t *testing.T) {
 	ev.SetAuthorIfEmpty("override")
 	if ev.Author != "LlmAgent" {
 		t.Fatalf("SetAuthorIfEmpty must not overwrite, got %q", ev.Author)
+	}
+}
+
+// TestToolInvocation_ForensicShapeIsRawRedactionRoutedToStore is the AG-034
+// confirmation (D-09): the runtime ToolInvocation is the intentional forensic
+// shape — it carries the tool Arguments + ResultPreview AS-OBSERVED, NOT redacted
+// in internal/agent. Redaction + the durable byte cap belong to the persistence
+// boundary (internal/toolinvocations.RedactForLedger at the store's toParams seam),
+// so the route-out covers every emitter and keeps internal/agent free of a DB
+// concern. This test pins both halves: (a) the agent stamps the raw value, and
+// (b) the routed store redactor actually scrubs a secret + caps the footprint.
+func TestToolInvocation_ForensicShapeIsRawRedactionRoutedToStore(t *testing.T) {
+	a := newBareAgent(t, tools.NewRegistry())
+	var span [8]byte
+	now := time.Now().UTC()
+	const rawArgs = `{"command":"curl -H \"Authorization: Bearer sk-or-supersecrettoken1234\" https://x"}`
+	run := toolRunResult{
+		ToolCallID: "call-x",
+		ToolName:   "shell_exec",
+		Arguments:  rawArgs,
+		StartedAt:  now,
+		EndedAt:    now.Add(time.Millisecond),
+	}
+	run.Result = tools.ToolResult{Preview: "ran", Bytes: 3}
+	ev := a.toolResultEvent(internalPauseIC(t), span, nil, run)
+
+	// (a) The agent forwards the RAW arguments on the forensic ToolInvocation — it
+	// must NOT pre-redact in internal/agent (the forensic record is raw-as-observed).
+	ti := ev.Actions.ToolInvocation
+	if ti == nil {
+		t.Fatal("toolResultEvent must stamp a ToolInvocation")
+	}
+	if ti.Arguments != rawArgs {
+		t.Fatalf("agent must forward raw arguments unchanged (forensic shape), got %q", ti.Arguments)
+	}
+	if ti.ArgsBytes != len(rawArgs) {
+		t.Fatalf("ArgsBytes = %d, want %d (the observed byte length)", ti.ArgsBytes, len(rawArgs))
+	}
+
+	// (b) The ROUTED redaction owner (the persistence boundary) scrubs the secret
+	// + caps. This is where AG-034 is mitigated, not in internal/agent.
+	redacted := toolinvocations.RedactForLedger(ti.Arguments, toolinvocations.ArgsRawCapBytes)
+	if strings.Contains(redacted, "sk-or-supersecrettoken1234") {
+		t.Fatalf("store redactor must scrub the bearer/openrouter key before the durable column, got %q", redacted)
+	}
+	if !strings.Contains(redacted, "[REDACTED]") {
+		t.Fatalf("store redactor must mark the secret [REDACTED], got %q", redacted)
+	}
+	if n := len(toolinvocations.RedactForLedger(strings.Repeat("a", toolinvocations.ArgsRawCapBytes+4096), toolinvocations.ArgsRawCapBytes)); n > toolinvocations.ArgsRawCapBytes+len("…[capped]") {
+		t.Fatalf("store redactor must cap the durable footprint, got %d bytes", n)
 	}
 }
