@@ -1,9 +1,9 @@
-:443 {
+localhost:443 {
 	tls internal
 
 	@authed `header({'X-Aura-Token': '{$AURA_ACCESS_TOKEN}'}) || query({'token': '{$AURA_ACCESS_TOKEN}'})`
 	@agui path /agent/* /threads/* /healthz /readyz /debug/vars /metrics
-	@setup path /setup/*
+	@setup path /setup /setup/*
 
 	handle @authed {
 		handle @agui {

@@ -89,6 +89,18 @@ func TestSetupTokenGate(t *testing.T) {
 	}
 }
 
+func TestSetupRootRedirectsToStatus(t *testing.T) {
+	srv, _ := newTestServer(t, "secret-token")
+	rec := httptest.NewRecorder()
+	srv.Mux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/setup/?token=secret-token&next=https://evil.example/", nil))
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("GET /setup/: got %d, want %d", rec.Code, http.StatusTemporaryRedirect)
+	}
+	if got, want := rec.Header().Get("Location"), "/setup/status?token=secret-token"; got != want {
+		t.Fatalf("Location = %q, want %q", got, want)
+	}
+}
+
 // TestSetupTokenGateWrongToken proves a non-matching token 401s (the gate is an
 // equality check, not a presence check) on every route.
 func TestSetupTokenGateWrongToken(t *testing.T) {

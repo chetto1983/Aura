@@ -36,6 +36,8 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN cd /app/whatsapp-mcp-server \
     && uv sync --frozen --no-dev \
+    && uv pip install --python .venv/bin/python fastmcp==2.14.7 \
+    && python -c "from pathlib import Path; p = Path('/app/whatsapp-mcp-server/main.py'); text = p.read_text(); p.write_text(text.replace('from mcp.server.fastmcp import FastMCP', 'from fastmcp import FastMCP'))" \
     && chmod +x /usr/local/bin/entrypoint.sh
 
 ENV WHATSAPP_BRIDGE_PORT=8081

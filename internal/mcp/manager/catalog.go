@@ -17,6 +17,9 @@ import (
 // else (e.g. "8091@evil.example" via the URL userinfo trick) would retarget the
 // loopback-by-construction recipe off-host, so garbage falls back to 8091 (WR-01).
 func memoryRecipeURL() string {
+	if os.Getenv("AURA_IN_CONTAINER") == "1" {
+		return "http://aura-agent-memory-mcp:8080/mcp/"
+	}
 	port := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8091"
@@ -28,6 +31,9 @@ func memoryRecipeURL() string {
 // sibling. The sibling publishes port 8092 by default; garbage falls back to
 // loopback 8092 so userinfo-style values cannot retarget the recipe off-host.
 func whatsappRecipeURL() string {
+	if os.Getenv("AURA_IN_CONTAINER") == "1" {
+		return "http://whatsapp:8080/mcp/"
+	}
 	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8092"

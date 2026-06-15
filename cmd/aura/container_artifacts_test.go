@@ -17,6 +17,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	gvisor := readProjectFile(t, root, "compose.gvisor.yaml")
 	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
 	whatsappDockerfile := readProjectFile(t, root, "docker/whatsapp/Dockerfile")
+	whatsappEntrypoint := readProjectFile(t, root, "docker/whatsapp/entrypoint.sh")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
 	if _, err := os.Stat(filepath.Join(root, "docker/whatsapp/whatsapp-mcp-src.tar.gz")); err != nil {
 		t.Fatalf("docker/whatsapp/whatsapp-mcp-src.tar.gz missing: %v", err)
@@ -40,11 +41,38 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura:",
 		"dockerfile: docker/aura/Dockerfile",
 		"OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}",
+		"AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}",
+		"AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:exacto}",
+		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
+		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-false}",
+		"AURA_COMPLETION_GATE: ${AURA_COMPLETION_GATE:-true}",
+		"AURA_LLM_REASONING_LEARNING: ${AURA_LLM_REASONING_LEARNING:-false}",
+		"SEARXNG_URL: http://searxng:8080/search",
+		"AURA_WEB_FETCH_MAX_BODY_BYTES: ${AURA_WEB_FETCH_MAX_BODY_BYTES:-5000000}",
+		"AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}",
+		"AURA_MCP_SERVERS_JSON: ${AURA_MCP_SERVERS_JSON:-}",
+		"AURA_SCHEDULER_TZ: ${AURA_SCHEDULER_TZ:-Europe/Rome}",
+		"AURA_SCHEDULER_NOTIFY_DEFAULT: ${AURA_SCHEDULER_NOTIFY_DEFAULT:-stdout}",
+		"AURA_SKILL_BODY_CAP_BYTES: ${AURA_SKILL_BODY_CAP_BYTES:-32768}",
+		"AURA_AGUI_CORS_PERMISSIVE: ${AURA_AGUI_CORS_PERMISSIVE:-false}",
+		"TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}",
+		"AURA_TELEGRAM_STATUS_THROTTLE_MS: ${AURA_TELEGRAM_STATUS_THROTTLE_MS:-1500}",
+		"AURA_TELEGRAM_CONTENT_THROTTLE_MS: ${AURA_TELEGRAM_CONTENT_THROTTLE_MS:-500}",
+		"AURA_TELEGRAM_CHAT_RATE_LIMIT_MS: ${AURA_TELEGRAM_CHAT_RATE_LIMIT_MS:-1000}",
+		"AURA_REASONING_FIFO_RUNES: ${AURA_REASONING_FIFO_RUNES:-4096}",
+		"AURA_VISION_CLOUD: ${AURA_VISION_CLOUD:-false}",
+		"MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1",
+		"STT_BASE_URL: http://aura-stt:9000/v1",
+		"TTS_BASE_URL: http://aura-tts:8880/v1",
+		"DOCUMENTS_BASE_URL: http://markitdown:8080",
+		"AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}",
 		"AURA_AGUI_BIND: 0.0.0.0:9080",
 		"AURA_SETUP_BIND: 0.0.0.0:9081",
+		"AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",
 		"aura-migrate:",
 		"service_completed_successfully",
-		"command: \"aura db migrate && aura neo4j migrate\"",
+		"entrypoint: [\"sh\", \"-lc\", \"aura db migrate && aura neo4j migrate\"]",
+		"command: []",
 		"AURA_CONFIG_DIR: /var/lib/aura",
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
@@ -79,10 +107,12 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
+		"localhost:443 {",
 		"tls internal",
 		"@authed",
 		"X-Aura-Token",
 		"query({'token': '{$AURA_ACCESS_TOKEN}'})",
+		"@setup path /setup /setup/*",
 		"reverse_proxy aura:9080",
 		"reverse_proxy aura:9081",
 		"respond 401",
@@ -113,11 +143,16 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"FROM python:3.11-slim",
 		"whatsapp-mcp-src.tar.gz",
 		"CGO_ENABLED=1 go build",
+		"fastmcp==2.14.7",
+		"from fastmcp import FastMCP",
 		"WHATSAPP_BRIDGE_PORT=8081",
 	} {
 		if !strings.Contains(whatsappDockerfile, want) {
 			t.Fatalf("docker/whatsapp/Dockerfile missing %q:\n%s", want, whatsappDockerfile)
 		}
+	}
+	if !strings.Contains(whatsappEntrypoint, "exec .venv/bin/python main.py") {
+		t.Fatalf("docker/whatsapp/entrypoint.sh must run the built venv directly so uv does not resync the lock:\n%s", whatsappEntrypoint)
 	}
 	for _, want := range []string{".git", ".worktrees", "output", ".env"} {
 		if !strings.Contains(dockerignore, want) {
@@ -228,6 +263,75 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	if strings.Index(readme, "## Quick Start") > strings.Index(readme, "## Development") {
 		t.Fatalf("README.md should lead with the end-user quick start before development")
 	}
+}
+
+func TestDotEnvTemplateHygiene(t *testing.T) {
+	root := repoRootForTest(t)
+	envExample := readProjectFile(t, root, ".env.example")
+	gitignore := readProjectFile(t, root, ".gitignore")
+
+	for _, want := range []string{"/.env", "/.env.*", "!/.env.example"} {
+		if !strings.Contains(gitignore, want) {
+			t.Fatalf(".gitignore missing %q:\n%s", want, gitignore)
+		}
+	}
+	for _, want := range []string{
+		"AURA_IMAGE=",
+		"AURA_ACCESS_TOKEN=",
+		"AURA_AGENT_MEMORY_MCP_PORT=",
+		"OPENROUTER_API_KEY=",
+		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=",
+		"AURA_MODEL_CONTEXT_WINDOW=",
+		"AURA_COMPLETION_GATE=",
+		"AURA_LLM_REASONING_LEARNING=",
+		"SEARXNG_URL=",
+		"TELEGRAM_BOT_TOKEN=",
+		"AURA_TELEGRAM_STATUS_THROTTLE_MS=",
+		"AURA_VISION_CLOUD=",
+		"MULTIMODAL_BASE_URL=",
+		"STT_BASE_URL=",
+		"TTS_BASE_URL=",
+		"DOCUMENTS_BASE_URL=",
+		"AURA_MCP_CONFIG=",
+		"AURA_SKILLS_DIR=",
+		"AURA_AGUI_CORS_PERMISSIVE=",
+		"AURA_PROFILE_DIR=",
+		"AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL=",
+	} {
+		if !hasActiveEnvAssignment(envExample, strings.TrimSuffix(want, "=")) {
+			t.Fatalf(".env.example missing active assignment for %q", want)
+		}
+	}
+
+	seen := map[string]bool{}
+	for _, line := range strings.Split(envExample, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, _, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Fatalf(".env.example active line is not KEY=value: %q", line)
+		}
+		if strings.Contains(line, " #") {
+			t.Fatalf(".env.example active assignment has an inline comment; keep comments on their own line: %q", line)
+		}
+		if seen[key] {
+			t.Fatalf(".env.example has duplicate active assignment for %q", key)
+		}
+		seen[key] = true
+	}
+}
+
+func hasActiveEnvAssignment(contents, key string) bool {
+	prefix := key + "="
+	for _, line := range strings.Split(contents, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func repoRootForTest(t *testing.T) string {

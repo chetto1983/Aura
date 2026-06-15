@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -127,11 +128,22 @@ func NewServer(deps Deps) *Server {
 // on every /setup/* route, not a subset).
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /setup", s.requireSetupToken(http.HandlerFunc(s.handleRoot)))
+	mux.Handle("GET /setup/{$}", s.requireSetupToken(http.HandlerFunc(s.handleRoot)))
 	mux.Handle("POST /setup/token", s.requireSetupToken(http.HandlerFunc(s.handleToken)))
 	mux.Handle("POST /setup/onboard-link", s.requireSetupToken(http.HandlerFunc(s.handleOnboardLink)))
 	mux.Handle("GET /setup/status", s.requireSetupToken(http.HandlerFunc(s.handleStatus)))
 	mux.Handle("GET /setup/events", s.requireSetupToken(http.HandlerFunc(s.handleEvents)))
 	return mux
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	target := "/setup/status"
+	if token := r.URL.Query().Get("token"); token != "" {
+		target += "?token=" + url.QueryEscape(token)
+	}
+	w.Header().Set("Location", target)
+	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 // HTTPServer builds the *http.Server the daemon runs (loopback bind + a

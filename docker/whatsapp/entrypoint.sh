@@ -26,7 +26,7 @@ bridge_pid="$!"
 
 (
   cd /app/whatsapp-mcp-server
-  exec uv run python main.py
+  exec .venv/bin/python main.py
 ) &
 mcp_pid="$!"
 

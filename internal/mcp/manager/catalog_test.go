@@ -71,6 +71,28 @@ func TestCatalogMemoryURLHonorsPortEnv(t *testing.T) {
 	}
 }
 
+func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
+	t.Setenv("AURA_IN_CONTAINER", "1")
+	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "9191")
+	t.Setenv("AURA_WHATSAPP_MCP_PORT", "9192")
+
+	memory, ok := LookupCatalog("memory")
+	if !ok {
+		t.Fatal("memory recipe missing from BuiltInCatalog")
+	}
+	if memory.Server.URL != "http://aura-agent-memory-mcp:8080/mcp/" {
+		t.Fatalf("memory Server.URL = %q, want compose DNS URL", memory.Server.URL)
+	}
+
+	whatsapp, ok := LookupCatalog("whatsapp")
+	if !ok {
+		t.Fatal("whatsapp recipe missing from BuiltInCatalog")
+	}
+	if whatsapp.Server.URL != "http://whatsapp:8080/mcp/" {
+		t.Fatalf("whatsapp Server.URL = %q, want compose DNS URL", whatsapp.Server.URL)
+	}
+}
+
 // TestCatalogMemoryURLRejectsNonPortEnv proves WR-01: a non-port value (userinfo
 // trick, negative, overflow, junk) falls back to 8091 instead of being
 // interpolated into the loopback URL.
