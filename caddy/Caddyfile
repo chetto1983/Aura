@@ -1,3 +1,11 @@
+# `:443` + on-demand internal-CA TLS so a LAN client reaches the wizard by any
+# IP/hostname (a `localhost:443` site only served the localhost SNI). On-demand
+# has no rate limit (Caddy removed `rate_limit`; only `ask`/`permission` remain),
+# but the abuse surface is low and accepted for this appliance: Caddy is the sole
+# LAN-published port, all data ports are loopback-only, content is token-gated,
+# and the issuer is a local internal CA (no external ACME). An attacker must
+# already be on the LAN; worst case is local internal-cert churn. Revisit with an
+# `ask` endpoint if Aura is ever exposed beyond a trusted LAN.
 :443 {
 	tls internal {
 		on_demand

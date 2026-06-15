@@ -17,11 +17,16 @@ RUN apt-get update \
         curl \
         git \
         gnupg \
-        nodejs \
-        npm \
         python3 \
         python3-pip \
         python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 24 LTS (Debian bookworm ships Node 18, too old for recipe deps — mail-mcp
+# declares engines node >=23, html-to-text@10 needs >=20.19). NodeSource nodejs
+# bundles npm/npx.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 RUN install -d /usr/share/postgresql-common/pgdg \
