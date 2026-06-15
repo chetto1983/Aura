@@ -37,6 +37,8 @@ If you read only one document, read [`executive-summary.md`](executive-summary.m
 | [`risk-register.md`](risk-register.md) | All risks: severity/probability/impact/status | Risk tracking |
 | [`target-architecture.md`](target-architecture.md) | Proposed industrial-grade design (L1–L6 layers) | Long-horizon design |
 | [`proposed-patches.md`](proposed-patches.md) | Patch-style recommendations (PP-1..PP-10, not applied) | Implementing fixes |
+| [`22-finding-ledger.md`](22-finding-ledger.md) | **Phase-22 close-out:** every AG-001..064 with a constrained disposition (`fixed+test` / `accepted+rationale` / `confirmed+routed`), evidence, and commit | Verifying nothing was dropped |
+| [`22-LIVE-SIGNOFF-2026-06-15.md`](22-LIVE-SIGNOFF-2026-06-15.md) | **Phase-22 close-out:** automated CI/coverage/mutation evidence + the operator live-stack sign-off runbook | Gate-3 close evidence |
 | [`audit-index.json`](audit-index.json) | Machine-readable summary | Tooling/dashboards |
 
 **Severity scale.** P0 = critical production blocker / data loss / security breach / unsafe execution / system-wide failure. P1 = serious reliability/correctness/security to fix before production. P2 = important maintainability/observability/architecture. P3 = improvement / cleanup / future hardening.

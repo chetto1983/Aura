@@ -91,6 +91,28 @@
     "new_this_cycle_not_in_prior": ["AG-001 (panic isolation)", "AG-005 (MCP reconnect concurrency detail)", "AG-006 (=0 timeout hang)", "AG-008 (reasoning-router latency cliff)", "AG-010 (DSN secret leak)"],
     "preserved_dated_docs": ["reconciliation-2026-06-13.md", "re-audit-2026-06-12.md", "deep-correctness-audit-2026-06-10.md", "e2e-closure-2026-06-11.md", "T-01-test-apex.md", "M-03-context-window-research.md", "*-validation-*.md"]
   },
+  "phase_22_closeout": {
+    "closed": "2026-06-15",
+    "ledger": "22-finding-ledger.md",
+    "live_signoff": "22-LIVE-SIGNOFF-2026-06-15.md",
+    "canonical_finding_count": 64,
+    "count_reconciliation": "The source index recorded total_findings=63; bug-report.md uses a contiguous AG-001..AG-064 numbering = 64 distinct IDs. AG-033/044/051/056 are folded sub-findings of AG-013/011/011/013 but carry their own ID. The ledger uses the canonical 64-ID set.",
+    "disposition_vocabulary": ["fixed+test", "accepted+rationale", "confirmed+routed"],
+    "disposition_counts": {"fixed+test": 52, "confirmed+routed": 3, "accepted+rationale": 9},
+    "confirmed_routed": {
+      "AG-007": "capability_grants dispatch gate routed to Slice 1.7 (multi-tenant); the reconnect Mutating/required-arg drift-warn slice fixed in scope (22-03)",
+      "AG-034": "ledger redaction + byte cap routed to internal/toolinvocations.RedactForLedger (store toParams); already implemented + tested (22-05 confirm)",
+      "AG-041": "Budget.WithDeadline wired at the composition root cmd/aura/agent.go:99; confirmed + CLI-covered (22-03)"
+    },
+    "accepted_rationale": ["AG-021", "AG-042", "AG-048", "AG-049", "AG-053", "AG-055", "AG-059", "AG-060", "AG-063"],
+    "needs_confirmation_resolved": {
+      "AG-028": "fixed+test — deadcode confirmed openManagedServer unreachable; removed, branches re-covered via MountManagedServer",
+      "AG-034": "confirmed+routed — redaction is purely in the DB store layer (D-09)",
+      "AG-041": "confirmed+routed — WithDeadline already wired at cmd/aura",
+      "AG-043": "fixed+test — goleak break-at-every-index found no leak"
+    },
+    "requirements_closed": ["HARDEN-01", "HARDEN-02", "HARDEN-03", "HARDEN-04", "HARDEN-05", "HARDEN-06", "HARDEN-07", "HARDEN-08", "HARDEN-09", "HARDEN-10", "HARDEN-11", "HARDEN-12"]
+  },
   "report_files": [
     "README.md",
     "executive-summary.md",
@@ -104,6 +126,8 @@
     "risk-register.md",
     "target-architecture.md",
     "proposed-patches.md",
+    "22-finding-ledger.md",
+    "22-LIVE-SIGNOFF-2026-06-15.md",
     "audit-index.json"
   ]
 }
