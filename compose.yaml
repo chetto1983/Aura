@@ -56,7 +56,7 @@ services:
       AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-localhost:4317}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
-      AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:exacto}
+      AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
       AURA_LLM_TEMPERATURE: ${AURA_LLM_TEMPERATURE:-0.7}
       AURA_LLM_MAX_TOKENS: ${AURA_LLM_MAX_TOKENS:-4096}
       AURA_LLM_ADAPTIVE_REASONING: ${AURA_LLM_ADAPTIVE_REASONING:-true}
@@ -292,7 +292,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       NAM_BACKEND: bolt
-      NAM_LLM: openai/${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:exacto}
+      NAM_LLM: openai/${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
       # Keep Compose parseable for CI jobs that start unrelated services
       # (postgres, searxng, sidecars) without an OpenRouter secret. The memory
       # MCP itself can still be pointed at a real key through OPENROUTER_API_KEY.
