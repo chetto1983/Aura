@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -42,7 +43,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"dockerfile: docker/aura/Dockerfile",
 		"OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}",
 		"AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}",
-		"AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:exacto}",
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
 		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-false}",
 		"AURA_COMPLETION_GATE: ${AURA_COMPLETION_GATE:-true}",
@@ -91,6 +91,12 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		if !strings.Contains(compose, want) {
 			t.Fatalf("compose.yaml missing %q", want)
 		}
+	}
+	// AURA_LLM_MODEL stays fully .env-configurable: assert the env-override pattern
+	// with a non-empty built-in fallback, never a specific model tag. The operator
+	// switches models via AURA_LLM_MODEL / .env without touching this contract.
+	if !regexp.MustCompile(`AURA_LLM_MODEL: \$\{AURA_LLM_MODEL:-[^}]+\}`).MatchString(compose) {
+		t.Fatalf("compose.yaml missing env-overridable AURA_LLM_MODEL default pattern (AURA_LLM_MODEL: ${AURA_LLM_MODEL:-...})")
 	}
 	if strings.Count(compose, "0.0.0.0:${AURA_HTTPS_PORT:-443}:443") != 1 {
 		t.Fatalf("compose.yaml should publish only caddy on non-loopback 443")
