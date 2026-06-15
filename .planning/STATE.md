@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: Roadmap revised — awaiting Phase 22 spec/plan
+status: executing
 stopped_at: Phase 22 context gathered
-last_updated: "2026-06-15T13:52:36.381Z"
-last_activity: 2026-06-15 — v1.0.0 roadmap revised (Phases 22–28; Frontend Foundation FND-01..06 inserted as research-first Phase 23; 39 requirements mapped, 0 unmapped)
+last_updated: "2026-06-15T14:08:33.657Z"
+last_activity: 2026-06-15 -- Phase 22 planning complete
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 0
+  total_plans: 5
   completed_plans: 0
   percent: 0
 ---
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 22 — Agent Perimeter Hardening (not started)
-Plan: —
-Status: Roadmap revised — awaiting Phase 22 spec/plan
-Last activity: 2026-06-15 — v1.0.0 roadmap revised (Phases 22–28; Frontend Foundation FND-01..06 inserted as research-first Phase 23; 39 requirements mapped, 0 unmapped)
+Phase: 22 -- Agent Perimeter Hardening (planned)
+Plan: 5 plans in waves 1-5
+Status: Ready to execute
+Last activity: 2026-06-15 -- Phase 22 planning complete
 
-### Next — Plan Phase 22
+### Next -- Execute Phase 22
 
 The v1.0.0 roadmap is revised per the operator directive (2026-06-15): the industrial frontend foundation is set up FIRST (research-locked toolchain, linter/formatter CI gate, design-token theme, brand, embedded build/test pipeline) before any cockpit feature code. Seven phases derived from the 39 milestone requirements:
 
@@ -44,7 +44,7 @@ The v1.0.0 roadmap is revised per the operator directive (2026-06-15): the indus
 
 Phases 23–28 are UI phases (`ui_phase: true` — design contract gate applies). Phase 23 is research-first (its industrial-infra RESEARCH.md runs at plan time before any scaffolding code). Governance writes (GOVW) + `ui_control` shell (SHELL) are deferred to a follow-up milestone.
 
-Remaining action: `/gsd-plan-phase 22` (the spec already exists from `/gsd-spec-phase 22`).
+Remaining action: `/gsd-execute-phase 22`.
 
 ## Performance Metrics
 

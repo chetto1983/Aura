@@ -64,7 +64,12 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   3. Credentials do not leak: `IsSecretEnvKey("AURA_DB_URL")` is true, a `shell_exec` child cannot read the composed DSN, hook child env carries no secret-named vars, and the reasoning trace does not write verbatim history by default
   4. Production is observable — each terminal turn outcome increments a labeled Prometheus counter, an LLM-latency histogram is scrapeable, and an injected entropy failure does not panic the daemon
   5. A finding-coverage ledger maps every `AG-###` to fixed+test / accepted+rationale / confirmed+routed; `make coverage` ≥85% owned-surface, full CI + `cache_invariant_audit.sh` green, mutation spot-check ≥70% on the touched critical files
-**Plans**: TBD
+**Plans**:
+  - `22-01-PLAN.md` (Wave 1) -- Crash firewall + dedup race hardening (HARDEN-01, HARDEN-02, HARDEN-09, HARDEN-12)
+  - `22-02-PLAN.md` (Wave 2) -- Secret boundary + observability minimum (HARDEN-01, HARDEN-04, HARDEN-05, HARDEN-12)
+  - `22-03-PLAN.md` (Wave 3) -- MCP resilience + reasoning-router bounds + active budget/wallclock (HARDEN-03, HARDEN-06, HARDEN-09, HARDEN-12)
+  - `22-04-PLAN.md` (Wave 4) -- Hooks + provenance + tools/workflow hardening (HARDEN-07, HARDEN-08, HARDEN-09, HARDEN-10, HARDEN-12)
+  - `22-05-PLAN.md` (Wave 5) -- Skill reconcile + AG ledger + CI/mutation/live sign-off (HARDEN-01..12)
 
 ### Phase 23: Frontend Infrastructure & Industrial Foundation
 **Goal**: The industrial frontend foundation exists and is documented BEFORE any cockpit feature code — a research-locked decision record fixes the toolchain/theme/build choices, then the foundation is scaffolded: a Vite 8 + React 19 + TypeScript package whose `//go:embed all:dist` output is baked into the single binary and renders a branded, dark-operator-themed placeholder shell from `aura serve`, behind a blocking zero-warning lint/format/type-check CI gate, with the Node-24 multi-stage Docker build producing the embedded asset (no Node in the runtime image). (Operator directive 2026-06-15: foundation first.)
