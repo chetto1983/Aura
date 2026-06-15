@@ -58,6 +58,11 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+    flags:
+      # GitHub Actions layer cache so the ~45-60min cold image build is reused
+      # across releases (the runner env is exposed by ghaction-github-runtime).
+      - "--cache-from=type=gha"
+      - "--cache-to=type=gha,mode=max"
     extra_files:
       - go.mod
       - go.sum
