@@ -27,6 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 07.1: Agent-Loop Forced Finalization** (INSERTED) - loop must always return a final answer; forced-finalization on budget/dedup trip + dedup recovery + fan-out budget block (completed 2026-06-03)
 - [x] **Phase 8: Sandbox via sandbox-agent (local container)** - REPLACES bespoke Slice 2a/2b (D-15 pivot). Single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on loopback (`127.0.0.1:2468`); operator starts it with `make sandbox-up` (no boot provision). Code-sandbox-mcp cut superseded. CAP-01+CAP-02. (completed 2026-06-03)
 - [x] **Phase 08.1: Tool Search hardening — Anthropic defer_loading parity** (INSERTED) - upgrade `tool_search` to defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard — matters as tool count grows (Phase 11 skills/7e snippets + future stdio MCP mounts via the retained `mcptools` seam) toward the 30-50 selection-accuracy threshold (completed 2026-06-03)
+- [x] **Phase 08.2: Semantic tool_search + unified semindex** (INSERTED) - semantic ranking over `internal/semindex`, reasoning-classifier reuse, and tool-selection active-learning loop (completed 2026-06-05)
 - [x] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance (completed 2026-06-04)
 - [x] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat (completed 2026-06-04)
 - [x] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger (completed 2026-06-06)
@@ -41,7 +42,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 18: Slice 7e executable snippet reuse** - steady-state artifact runs under 40s: snippet store/param/run-by-path collapses the 29-30-roundtrip re-authoring loop to ~5 calls (completed 2026-06-08)
 - [x] **Phase 19: Audit Bug Resolution + E2E Live Test** - resolve the HIGH/MEDIUM correctness findings from the 2026-06-10 deep audit (shell never-answer cluster, SSE/HITL error-swallowing, scheduler dropped-notification contract, microcompact wire-invalidity, LLM stream-error + MCP reconnect gaps) and validate the fixes end-to-end on the live stack (completed 2026-06-10)
-- [ ] **Phase 21: Plugins — Hooks (Slice EXT-1)** - in-process `HookManager` on `LlmAgent` (5 fixed loop insertion points, first-non-nil-wins, in-process Go + trust-gated out-of-process command-program authoring, governance-composing) — first slice of the EXT-01 unified extension capability (PRD amendment #63); SPEC.md locked 2026-06-14
+- [x] **Phase 20: Scheduler Hardening Full Implementation** - scheduled-task notifications route back to the channel that scheduled them via identity-keyed `channels.Deliverer`, covering immediate reminders and deferred/failed sweeps (completed 2026-06-11)
+- [x] **Phase 21: Plugins — Hooks (Slice EXT-1)** - in-process `HookManager` on `LlmAgent` (5 fixed loop insertion points, first-non-nil-wins, in-process Go + trust-gated out-of-process command-program authoring, governance-composing) — first slice of the EXT-01 unified extension capability (PRD amendment #63); implemented and verified 2026-06-15
 
 ## Phase Details
 
@@ -725,4 +727,8 @@ Plans:
   4. An out-of-process command-program hook applies allow/deny/rewrite from stdin-JSON; a hash-mismatched or timed-out command hook is refused (not executed).
   5. budget + dedup + `ask_user` gates still fire with hooks present; `goleak` + `-race` clean; owned-surface coverage ≥85%; mutation ≥70% on the hook-dispatch file.
 
-**Status:** SPEC.md written 2026-06-14 (ambiguity 0.11, 6 requirements). Next: `/gsd-discuss-phase 21`.
+**Plan:**
+
+- [x] 21-01-PLAN.md — `HookManager` + five LlmAgent insertion points + in-process and trust-gated command-program hooks + governance/audit/cache validation (completed 2026-06-15)
+
+**Status:** Complete for EXT-1 on 2026-06-15. EXT-2 manifest/installer and EXT-3 self-install remain future milestone scope.

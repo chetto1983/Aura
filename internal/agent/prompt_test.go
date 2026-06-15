@@ -35,7 +35,7 @@ func TestPrompt_ProfileUsageRules(t *testing.T) {
 }
 
 // TestPrompt_MemoryDoctrine asserts the Phase-15 memory doctrine: D-01
-// agent-decides writes (deliberate, no ceremony), D-03 pull-on-demand recall
+// agent-decides writes (proactive, no confirmation), D-03 pull-on-demand recall
 // (search before answering/asking), D-09 fail-soft posture — mechanism-level
 // only, no volatile memory_* tool names (D-07 keeps them behind tool_search).
 func TestPrompt_MemoryDoctrine(t *testing.T) {
@@ -43,7 +43,7 @@ func TestPrompt_MemoryDoctrine(t *testing.T) {
 		"persistent long-term memory",
 		"pull-on-demand",
 		"search memory BEFORE answering",
-		"without ceremony",
+		"without being asked",
 		"reasoning trace",
 		"fail-soft",
 	} {

@@ -1,5 +1,5 @@
 ---
-status: passed
+status: complete
 phase: 09-swarm-minimal
 source: [09-VERIFICATION.md]
 started: 2026-06-04T12:00:00Z

@@ -1,5 +1,5 @@
 ---
-status: passed
+status: complete
 phase: 04-hitl-identity-conversations
 source: [04-VERIFICATION.md]
 started: 2026-05-31T00:00:00Z

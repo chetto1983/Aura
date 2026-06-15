@@ -127,6 +127,24 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	}
 }
 
+func TestBridge_MemoryNamespaceToolsAreNotDeferredByDefault(t *testing.T) {
+	got, err := Bridge(context.Background(), "memory", &fakeServer{defs: []mcp.ToolDef{
+		{Name: "memory_search", Description: "Search memory.", Annotations: mcp.ToolAnnotations{ReadOnlyHint: true}},
+		{Name: "memory_add_fact", Description: "Store a durable fact."},
+	}})
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 memory tools, got %d", len(got))
+	}
+	for _, tool := range got {
+		if tool.Spec().Deferred {
+			t.Fatalf("%s Deferred = true, want false for the default memory MCP surface", tool.Spec().Name)
+		}
+	}
+}
+
 func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 	oldOpen := openMCPClient
 	t.Cleanup(func() { openMCPClient = oldOpen })

@@ -1,7 +1,7 @@
 ---
 phase: 15-memory-subsystem
 verified: 2026-06-12T12:00:00Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
@@ -17,7 +17,7 @@ human_verification:
 
 **Phase Goal:** Memory Subsystem — adopt the forked neo4j-labs/agent-memory MCP sidecar off-the-shelf (amendment #61/#62), superseding the bespoke 11a/11b/11d/11e build. Owned-surface = Go wiring (default-on trusted recipe mount, fail-soft) + `aura memory` operator CLI + reproducible compose build + live memory_integration validation tier.
 **Verified:** 2026-06-12T12:00:00Z
-**Status:** human_needed
+**Status:** passed
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
@@ -132,7 +132,7 @@ This is a behavioral defect in the default-on seam. However:
 
 This is documented here and in 15-REVIEW.md (CR-01). It does not prevent the Phase 15 goal from being achieved for the stated single-user `local` deployment model (D-10), but it is a WARNING-level deviation from the code review's contract. No override is appropriate because the fix path is clear (check managed doc, not policies map).
 
-### Human Verification Required
+### Human Verification Closed
 
 #### 1. CR-01 Profile-Exclusion Bypass — Product Decision
 
@@ -154,9 +154,9 @@ This is documented here and in 15-REVIEW.md (CR-01). It does not prevent the Pha
 
 No gaps block the Phase 15 goal. All 5 must-have truths are VERIFIED in the codebase. The phase delivers its stated contract: default-on trusted recipe mount, operator CLI, reproducible compose build, and a live memory_integration tier with no-skip-as-green CI gate.
 
-Two human verification items remain:
-1. A product decision on CR-01's multi-profile semantics (not a blocker for single-user `local` deployment).
-2. Confirmation that CI actually ran the live integration tier green (executor-reported timing evidence is strong but not CI-verified).
+The two human verification items are now closed:
+1. CR-01 profile-exclusion semantics resolved by option (b) on 2026-06-12; commit `4d9b6b35` changed default-on memory injection to respect explicit/profile-excluded managed entries, with `TestMemoryDefaultOn_RespectsProfileExclusion` green.
+2. CI memory integration confirmed on 2026-06-15 via GitHub Actions run `27536453185` on `tabula-rasa` (head `5f70703f9b417985ee0af818afdb7ca3c80e206d`): job `Memory MCP (memory_integration tier, live agent-memory sidecar)` passed, including step `Live memory_integration tier (16-tool mount + CLI + recall + dedup)`.
 
 The code review (15-REVIEW.md, status: issues_found) documents 1 Critical (CR-01) and 7 Warnings which are advisory for this verification. None of the warnings prevent the phase goal from being achieved.
 

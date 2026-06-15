@@ -2,8 +2,8 @@
 
 // Live memory-MCP mount tier (port of spike 032). Proves Aura's bridge mounts the
 // full agent-memory tool surface against the running, rebuilt sidecar: the mounted
-// count equals the live tools/list count, every mounted spec is Deferred, and every
-// registered name is namespaced memory__*. NO DenyRisk filter is applied — Pitfall 2:
+// count equals the live tools/list count, every mounted spec is non-deferred, and
+// every registered name is namespaced memory__*. NO DenyRisk filter is applied — Pitfall 2:
 // the full surface is D-06, spike-035's mounted=13 blocked=3 was an exploration.
 //
 // No-skip-as-green (CLAUDE.md): when AURA_AGENT_MEMORY_MCP_URL is unset under $CI the
@@ -65,8 +65,8 @@ func liveMemoryServer(endpoint string) mcp.ManagedServer {
 
 // TestMemoryLiveMount mounts the running agent-memory sidecar through Aura's managed
 // bridge and asserts: mounted count == live tools/list count, every mounted tool is
-// Deferred, and every registered name is memory__*. NO DenyRisk filter (full 16-tool
-// surface, D-06/D-07).
+// non-deferred by default, and every registered name is memory__*. NO DenyRisk
+// filter (full 16-tool surface, D-06/D-07).
 func TestMemoryLiveMount(t *testing.T) {
 	endpoint := memoryEndpointOrGate(t)
 	reapIdleHTTPConns(t)
@@ -110,8 +110,8 @@ func TestMemoryLiveMount(t *testing.T) {
 		if !ok {
 			t.Fatalf("mounted tool %q missing from registry", name)
 		}
-		if !tl.Spec().Deferred {
-			t.Errorf("mounted tool %q is not Deferred (D-07 — the default manifest must not carry the full schema)", name)
+		if tl.Spec().Deferred {
+			t.Errorf("mounted tool %q is Deferred; memory MCP tools must be in the default manifest", name)
 		}
 	}
 

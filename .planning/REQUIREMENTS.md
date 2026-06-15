@@ -43,23 +43,23 @@
 
 ### Extension (Slice EXT — amendment #63)
 
-- [ ] **EXT-01**: Aura Plugins — unified in-process extension model. ONE `aura.plugin.json` manifest composing primitives Aura already has (MCP servers + skills + hooks) + an `aura plugins {add,list,inspect,enable,disable,remove}` installer fanning out to existing machinery; serves three audiences (agent self-extend, CLI install, native Go seams). Delivered in 3 sequenced slices: **EXT-1** in-process `HookManager` (5 `LlmAgent.Run` insertion points, first-non-nil-wins, in-process Go + trust-gated out-of-process command programs, governance-composing) → **EXT-2** manifest + installer + migration 0016 `plugins_audit` → **EXT-3** self-install loop wiring the (today unwired) `capability_grants`. NO OpenClaw Node sidecar, NO dynamic native-code ABI; providers/channels deferred. Supersedes the "plugin hosting = v2" framing of MCP-V2-01. [amendment #63 — design `docs/superpowers/specs/2026-06-14-aura-plugins-unified-extension-design.md`, research `docs/research/2026-06-14-aura-plugin-architecture-research.md`]
+- [x] **EXT-01 / EXT-1**: Aura Plugins hooks slice — in-process `HookManager` on `LlmAgent` (5 fixed insertion points, first-non-nil-wins, in-process Go + trust-gated out-of-process command programs, governance-composing). Completed in Phase 21 on 2026-06-15. Follow-on **EXT-2** manifest + installer + migration 0016 `plugins_audit`, and **EXT-3** self-install loop wiring `capability_grants`, remain future milestone scope. NO OpenClaw Node sidecar, NO dynamic native-code ABI; providers/channels deferred. Supersedes the "plugin hosting = v2" framing of MCP-V2-01. [amendment #63 — design `docs/superpowers/specs/2026-06-14-aura-plugins-unified-extension-design.md`, research `docs/research/2026-06-14-aura-plugin-architecture-research.md`; Phase 21 verification `21-VERIFICATION.md`]
 
 ### Transport + UX (Slice 8–11)
 
 - [x] **UX-01**: AG-UI gateway con SSE event protocol transport, thin wrapper over in-process emitter. `internal/agent` MUST NOT import `internal/agui` (boundary enforced via static analysis). [Slice 8]
-- [ ] **UX-02**: Channels framework `internal/channels/<name>/` + Telegram come canale utente primario (`gopkg.in/telebot.v4` SHA-pinned) con MarkdownV2 custom ~80 LOC escaper (NON dependency telegramify) + `/cancel`, `/cost`, `/search` commands. [Slice 9b + amendments #4, #5, #8]
-- [ ] **UX-03**: Setup wizard `http://127.0.0.1:9081/setup` con one-time token `AURA_SETUP_TOKEN` printato su stdout primo boot, QR per Telegram bot token paste. [Slice 9a + amendment #10]
-- [ ] **UX-04**: Multimodal Gemma 4 sidecar (E4B Q4 baseline) per voice (STT) + image input via `ghcr.io/ggml-org/llama.cpp:server`. Markitdown sidecar per document → markdown conversion. [Slice 9c]
-- [ ] **UX-05**: User onboarding + `Agent.md` profile per identity (filesystem `~/.aura/agents/<id>/Agent.md`, NON Neo4j). Iniettato come `messages[1]` (NON `messages[0]` per preservare KV cache). [Slice 10]
-- [ ] **UX-06**: ~~Memory ingestion documents → chunks → embeddings via Document → Chunk → Entity pipeline~~ **RE-SCOPED (PRD amendment #62, D-12): DEFERRED to a future phase** — the adopted `neo4j-labs/agent-memory` package is conversation/entity memory, NOT a chunked doc-RAG engine; the file/URL → markitdown → chunk → embed → entity pipeline is net-new owned surface out of Phase 15. [superseded by #61; deferred per #62]
-- [ ] **UX-07**: ~~Entity resolution + knowledge graph community detection via GDS Leiden. UNIQUE constraint + chaos test~~ **RE-SCOPED (PRD amendment #62, D-12):** entity resolution is owned by the adopted package (POLE+O taxonomy + provenance-safe-dedup, spike 034); Leiden community detection stays deferred (amendment #27, unchanged). [superseded by #61; re-scoped per #62]
+- [x] **UX-02**: Channels framework `internal/channels/<name>/` + Telegram come canale utente primario (`gopkg.in/telebot.v4` SHA-pinned) con MarkdownV2 custom ~80 LOC escaper (NON dependency telegramify) + `/cancel`, `/cost`, `/search` commands. [Slice 9b + amendments #4, #5, #8; Phase 13 complete]
+- [x] **UX-03**: Setup wizard `http://127.0.0.1:9081/setup` con one-time token `AURA_SETUP_TOKEN` printato su stdout primo boot, QR per Telegram bot token paste. [Slice 9a + amendment #10; Phase 13 complete]
+- [x] **UX-04**: Multimodal sidecars for voice (STT), image/photo OCR, document conversion, and TTS-out as implemented by Phase 13's CPU-sidecar stack and cloud vision switch. [Slice 9c; Phase 13 complete]
+- [x] **UX-05**: User onboarding + `Agent.md` profile per identity (filesystem `~/.aura/agents/<id>/Agent.md`, NON Neo4j). Iniettato come `messages[1]` (NON `messages[0]` per preservare KV cache). [Slice 10; Phase 14 complete]
+- [x] **UX-06**: ~~Memory ingestion documents → chunks → embeddings via Document → Chunk → Entity pipeline~~ **RE-SCOPED (PRD amendment #62, D-12): DEFERRED to a future phase** — the adopted `neo4j-labs/agent-memory` package is conversation/entity memory, NOT a chunked doc-RAG engine; the file/URL → markitdown → chunk → embed → entity pipeline is net-new owned surface out of Phase 15. [superseded by #61; deferred per #62]
+- [x] **UX-07**: ~~Entity resolution + knowledge graph community detection via GDS Leiden. UNIQUE constraint + chaos test~~ **RE-SCOPED (PRD amendment #62, D-12):** entity resolution is owned by the adopted package (POLE+O taxonomy + provenance-safe-dedup, spike 034); Leiden community detection stays deferred (amendment #27, unchanged). [superseded by #61; re-scoped per #62]
 - [x] **UX-08**: ~~GraphRAG hybrid retrieval recall@5 ≥ 0.8 / p95 ≤ 30ms hard gate~~ **RE-SCOPED (PRD amendment #62, D-12):** hybrid-retrieval recall@5/p95 become **ADVISORY snapshots** measured against the *package's* retrieval and appended to `docs/aura-quality-snapshot.md` (the amendment #20 snapshot-update gate still applies; no Aura-owned WRRF/p95 pass-fail gate). [superseded by #61; re-scoped per #62]
 - [x] **UX-09**: ~~Agent journal cross-conversation insights with cached `messages[2]` injection~~ **RE-SCOPED (PRD amendment #62, D-12):** agent-written reasoning/insight memories recalled **on demand** via the package's reasoning-trace tools (`memory_start_trace`/`record_step`/`complete_trace`/`get_observations`); **no cached `messages[2]` injection** (D-04, KV invariant holds trivially) and **no background journal cron**. [superseded by #61; re-scoped per #62]
 
 ### Operations (Slice 14)
 
-- [ ] **OPS-01**: End-user packaging & distribution. Single fat Aura container image (`docker/aura/Dockerfile`: Go binary + python/`uvx` + node/`npx` + pinned `mcp-neo4j-cypher==0.6.0`) so the host needs only Docker — MCP subprocesses spawn inside the image, `internal/knowledge/client.go` unchanged. `compose.yaml` gains an `aura` service + one-shot `aura-migrate` + persistent `aura-home` volume. `scripts/install.sh` self-host door (Docker check + secret-gen `openssl rand` chmod-600 idempotent + `OPENROUTER_API_KEY` opt-in + compose up + wizard URL); appliance door = same compose+image pre-seeded. Relaxes the D-22 empty-key fail-fast (`aura serve` boots keyless, agent call fail-closes `llm_not_configured`) so the Phase 13 setup wizard can collect the key later. Image published to `ghcr.io` pinned per release tag; goreleaser host binary retained for dev. [Slice 14 — amendment #47]
+- [x] **OPS-01**: End-user packaging & distribution. Single fat Aura container image (`docker/aura/Dockerfile`: Go binary + python/`uvx` + node/`npx` + pinned `mcp-neo4j-cypher==0.6.0`) so the host needs only Docker — MCP subprocesses spawn inside the image, `internal/knowledge/client.go` unchanged. `compose.yaml` gains an `aura` service + one-shot `aura-migrate` + persistent `aura-home` volume. `scripts/install.sh` self-host door (Docker check + secret-gen `openssl rand` chmod-600 idempotent + `OPENROUTER_API_KEY` opt-in + compose up + wizard URL); appliance door = same compose+image pre-seeded. Relaxes the D-22 empty-key fail-fast (`aura serve` boots keyless, agent call fail-closes `llm_not_configured`) so the Phase 13 setup wizard can collect the key later. Image published to `ghcr.io` pinned per release tag; goreleaser host binary retained for dev. [Slice 14 — amendment #47; Phase 17 complete]
 
 ## v2 Requirements
 
@@ -129,24 +129,24 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-08.1 | Phase 18 — Slice 7e snippet reuse steady-state | Complete (host-primary posture #55/D-01 + ungated save D-02 + restore/archive + ledger-gated steady state: 5 dispatches/11.057s live PASS; coverage 86.1%) |
 | CAP-09 / MCP-V2-01 | Phase 16 — MCP Sidecar Manager + Third-Party Trust | Complete |
 | UX-01 | Phase 12 — AG-UI Gateway | Complete |
-| UX-02 | Phase 13 — Channels + Telegram + Multimodal | Pending |
-| UX-03 | Phase 13 — Channels + Telegram + Multimodal | Pending |
-| UX-04 | Phase 13 — Channels + Telegram + Multimodal | Pending |
-| UX-05 | Phase 14 — Onboarding + Agent.md | Pending |
-| UX-06 | Phase 15 — Memory Subsystem | Pending |
-| UX-07 | Phase 15 — Memory Subsystem | Pending |
+| UX-02 | Phase 13 — Channels + Telegram + Multimodal | Complete |
+| UX-03 | Phase 13 — Channels + Telegram + Multimodal | Complete |
+| UX-04 | Phase 13 — Channels + Telegram + Multimodal | Complete |
+| UX-05 | Phase 14 — Onboarding + Agent.md | Complete |
+| UX-06 | Phase 15 — Memory Subsystem | Deferred by amendment #62 |
+| UX-07 | Phase 15 — Memory Subsystem | Deferred/re-scoped by amendment #62 |
 | UX-08 | Phase 15 — Memory Subsystem | Complete |
 | UX-09 | Phase 15 — Memory Subsystem | Complete |
-| OPS-01 | Phase 17 — Packaging & Distribution | Pending |
-| EXT-01 | Phase 21 — Plugins — Hooks (Slice EXT-1) | Pending (SPEC.md locked 2026-06-14; EXT-2/EXT-3 phases TBD) |
+| OPS-01 | Phase 17 — Packaging & Distribution | Complete |
+| EXT-01 / EXT-1 | Phase 21 — Plugins — Hooks (Slice EXT-1) | Complete for EXT-1; EXT-2/EXT-3 future milestone scope |
 
 **Coverage:**
 
 - v1 requirements: 30 total (1 PRD + 3 INFRA + 5 CORE + 10 CAP + 9 UX + 1 OPS + 1 EXT)
-- Mapped to phases: 30 (EXT-01 → Phase 21, amendment #63)
+- Mapped to phases: 30 (EXT-01 / EXT-1 → Phase 21, amendment #63)
 - Unmapped: 0 ✓
-- Phases used: 20 (P0 through P21; EXT-01 spans P21–P23, only P21 created)
+- Phases used: 21 (P0 through P21 plus inserted decimal phases; EXT-2/EXT-3 not in this milestone)
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-06-06 after Phase 18 CAP-08.1 snippet reuse steady-state registration + CAP-08 reconciliation (amendment #55, D-01/D-04)*
+*Last updated: 2026-06-15 after Phase 21 EXT-1 hooks closeout + traceability sync*

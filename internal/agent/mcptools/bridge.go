@@ -51,7 +51,7 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	spec.Summary = summary
 	spec.Description = description
 	spec.Parameters = params
-	spec.Deferred = true
+	spec.Deferred = defaultDeferredForNamespace(namespaceFromSpecName(spec.Name))
 	spec.Mutating = !d.Annotations.ReadOnlyHint
 	b.spec.Store(spec)
 }
@@ -101,9 +101,12 @@ func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tool
 // model-facing name as <namespace>__<tool> so a mounted server can never silently
 // shadow a built-in. The wire name used by CallTool stays raw.
 //
-// Bridged tools are Deferred: a real multi-tool MCP server would otherwise flood
-// every per-turn manifest. tool_search indexes the deferred tool's name,
-// description, and argument-field names, so deferred MCP tools stay discoverable.
+// Bridged tools are Deferred by default: a real multi-tool MCP server would
+// otherwise flood every per-turn manifest. tool_search indexes the deferred
+// tool's name, description, and argument-field names, so deferred MCP tools stay
+// discoverable. The built-in memory MCP is the exception: memory recall/write
+// tools need default visibility because proactive memory behavior depends on the
+// model seeing the memory surface without a separate discovery step.
 func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
@@ -133,9 +136,20 @@ func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 		Summary:     summary,
 		Description: description,
 		Parameters:  params,
-		Deferred:    true,
+		Deferred:    defaultDeferredForNamespace(namespace),
 		Mutating:    !d.Annotations.ReadOnlyHint,
 	}
+}
+
+func defaultDeferredForNamespace(namespace string) bool {
+	return namespace != "memory"
+}
+
+func namespaceFromSpecName(name string) string {
+	if before, _, ok := strings.Cut(name, "__"); ok {
+		return before
+	}
+	return ""
 }
 
 func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {

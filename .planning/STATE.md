@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 17-08-PLAN.md
-last_updated: "2026-06-14T14:09:44.330Z"
-last_activity: 2026-06-14 -- Phase 17 marked complete
+stopped_at: Completed Phase 21 EXT-1 hooks closeout
+last_updated: "2026-06-15T00:00:00.000Z"
+last_activity: 2026-06-15 -- Phase 21 implemented; pending close blockers cleared
 progress:
-  total_phases: 23
-  completed_phases: 21
-  total_plans: 143
-  completed_plans: 141
-  percent: 91
+  total_phases: 24
+  completed_phases: 24
+  total_plans: 144
+  completed_plans: 144
+  percent: 100
 ---
 
 # Project State
@@ -21,28 +21,28 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 17 — packaging-distribution
+**Current focus:** Milestone v0.0.0 closeout
 
 ## Current Position
 
-Phase: 17 — COMPLETE
-Plan: 8 of 8
-Status: Phase 17 complete
-Last activity: 2026-06-14 -- Phase 17 marked complete
+Phase: 21 — COMPLETE
+Plan: 1 of 1
+Status: All milestone phases complete
+Last activity: 2026-06-15 -- Phase 21 EXT-1 hooks implemented and traceability synced
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
-### Next — Phase 17 (Packaging)
+### Next — Milestone Closeout
 
-Phase 15 (memory subsystem) is complete: PRD amendment #62 re-scope (15-01), default-on managed memory recipe (15-02), `aura memory` CLI (15-03), reproducible `:local` sidecar build (15-04), and the live `memory_integration` tier + D-04 cache confirm + UX-08 advisory snapshot (15-05). All five plans shipped; the rebuilt `aura-agent-memory-mcp:local` image is proven live.
+All v0.0.0 milestone phases are complete and summarized. Phase 21 shipped EXT-1 hooks (`HookManager`, five LlmAgent insertion points, in-process hooks, trust-gated command hooks) and the stale roadmap/requirements summary gaps have been synced.
 
-Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to validate the memory subsystem, then `/gsd-complete-milestone` / `/gsd-spec-phase 17`.
+Remaining action: rerun closeout audits, then archive the milestone with `/gsd-complete-milestone`.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 83
+- Total plans completed: 144
 - Average duration: —
 - Total execution time: 0.0 hours
 

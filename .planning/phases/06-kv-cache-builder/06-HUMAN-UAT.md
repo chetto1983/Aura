@@ -1,5 +1,5 @@
 ---
-status: resolved
+status: complete
 phase: 06-kv-cache-builder
 source: [06-VERIFICATION.md]
 started: 2026-06-02T09:48:55Z
