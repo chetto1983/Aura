@@ -5,7 +5,10 @@
 // another (audit finding B-09).
 package secret
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // secretEnvMarkers is the canonical, case-insensitive substring set marking an
 // env key as sensitive. It is the safer SUPERSET of every pre-unification
@@ -27,7 +30,37 @@ var secretEnvMarkers = []string{
 	"credential",
 	"private",
 	"cert",
+	"dsn",
+	"conn",
+	"pwd",
+	"cookie",
+	"session",
+	"jwt",
+	"url",
+	"uri",
 }
+
+var alwaysSecretEnvMarkers = []string{
+	"key",
+	"token",
+	"secret",
+	"pass",
+	"auth",
+	"bearer",
+	"credential",
+	"private",
+	"cert",
+	"dsn",
+	"conn",
+	"pwd",
+	"cookie",
+	"session",
+	"jwt",
+}
+
+var credentialURLKeyMarkers = []string{"url", "uri"}
+
+var credentialURLPattern = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^:/?#\s@]+:[^@/?#\s]+@`)
 
 // IsSecretEnvKey reports whether an environment variable name looks sensitive
 // (case-insensitive substring match against secretEnvMarkers). It is a
@@ -41,4 +74,39 @@ func IsSecretEnvKey(name string) bool {
 		}
 	}
 	return false
+}
+
+// IsSecretEnvVar reports whether a key/value pair should be withheld from a
+// child process. It keeps IsSecretEnvKey's broad compatibility behavior while
+// avoiding over-redaction of harmless URL config such as PUBLIC_URL. Credential-
+// bearing URL values are always secret, even when the key name is innocuous.
+func IsSecretEnvVar(name, value string) bool {
+	lower := strings.ToLower(name)
+	for _, marker := range alwaysSecretEnvMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	if ContainsCredentialURL(value) {
+		return true
+	}
+	for _, marker := range credentialURLKeyMarkers {
+		if strings.Contains(lower, marker) {
+			return dbURLKey(lower) && strings.TrimSpace(value) != ""
+		}
+	}
+	return false
+}
+
+// ContainsCredentialURL reports whether s contains a URL/DSN authority with an
+// explicit user:password component, for example postgres://user:pass@host/db.
+func ContainsCredentialURL(s string) bool {
+	return credentialURLPattern.MatchString(s)
+}
+
+func dbURLKey(lower string) bool {
+	return strings.Contains(lower, "db_url") ||
+		strings.Contains(lower, "database_url") ||
+		strings.Contains(lower, "postgres_url") ||
+		strings.Contains(lower, "neo4j_url")
 }

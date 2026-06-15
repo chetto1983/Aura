@@ -2,6 +2,7 @@ package tools
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -29,4 +30,59 @@ func TestMergeEnvCap(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMergeEnv_DropsCredentialDSNButKeepsPublicURL(t *testing.T) {
+	t.Setenv("AURA_DB_URL", "postgres://user:pass@localhost:5432/aura")
+	t.Setenv("PUBLIC_URL", "https://example.com/app")
+	t.Setenv("AURA_PUBLIC_FLAG", "visible")
+
+	env := mergeEnv(nil)
+	if envHasKey(env, "AURA_DB_URL") {
+		t.Fatalf("mergeEnv leaked AURA_DB_URL: %v", env)
+	}
+	if got, ok := envValue(env, "PUBLIC_URL"); !ok || got != "https://example.com/app" {
+		t.Fatalf("mergeEnv PUBLIC_URL = %q, %v; want preserved public URL", got, ok)
+	}
+	if got, ok := envValue(env, "AURA_PUBLIC_FLAG"); !ok || got != "visible" {
+		t.Fatalf("mergeEnv AURA_PUBLIC_FLAG = %q, %v; want visible", got, ok)
+	}
+}
+
+func TestMergeEnv_DropsCredentialDSNFromExplicitEnv(t *testing.T) {
+	env := mergeEnv(map[string]string{
+		"AURA_DB_URL": "postgres://user:pass@localhost:5432/aura",
+		"PUBLIC_URL":  "https://example.com/app",
+	})
+	if envHasKey(env, "AURA_DB_URL") {
+		t.Fatalf("mergeEnv leaked explicit AURA_DB_URL: %v", env)
+	}
+	if got, ok := envValue(env, "PUBLIC_URL"); !ok || got != "https://example.com/app" {
+		t.Fatalf("mergeEnv explicit PUBLIC_URL = %q, %v; want preserved", got, ok)
+	}
+}
+
+func TestRedactModelPreview_RedactsDSNCredentials(t *testing.T) {
+	got := redactModelPreview("db=postgres://user:pass@localhost:5432/aura")
+	if strings.Contains(got, "pass@") {
+		t.Fatalf("redactModelPreview leaked DSN password: %q", got)
+	}
+	if !strings.Contains(got, "postgres://user:***@localhost:5432/aura") {
+		t.Fatalf("redactModelPreview = %q, want credential masked with host/path preserved", got)
+	}
+}
+
+func envHasKey(env []string, key string) bool {
+	_, ok := envValue(env, key)
+	return ok
+}
+
+func envValue(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			return strings.TrimPrefix(kv, prefix), true
+		}
+	}
+	return "", false
 }

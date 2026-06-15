@@ -426,7 +426,7 @@ func mergeEnv(extra map[string]string) []string {
 	env := make([]string, 0, mergeEnvCap(len(parent), len(extra)))
 	for _, kv := range parent {
 		k, _, ok := strings.Cut(kv, "=")
-		if !ok || secret.IsSecretEnvKey(k) {
+		if !ok || secret.IsSecretEnvVar(k, strings.TrimPrefix(kv, k+"=")) {
 			continue
 		}
 		env = append(env, kv)
@@ -436,6 +436,9 @@ func mergeEnv(extra map[string]string) []string {
 		"PYTHONUTF8=1",
 	)
 	for k, v := range extra {
+		if secret.IsSecretEnvVar(k, v) {
+			continue
+		}
 		env = append(env, k+"="+v)
 	}
 	return env

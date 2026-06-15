@@ -159,7 +159,7 @@ func TestShellExecPassesEnv(t *testing.T) {
 	}
 }
 
-func TestMergeEnvFiltersParentSecretsButKeepsExplicitEnv(t *testing.T) {
+func TestMergeEnvFiltersParentAndExplicitSecrets(t *testing.T) {
 	t.Setenv("AURA_PARENT_TOKEN", "parent-secret")
 	env := mergeEnv(map[string]string{
 		"AURA_CHILD_TOKEN": "child-secret",
@@ -169,8 +169,8 @@ func TestMergeEnvFiltersParentSecretsButKeepsExplicitEnv(t *testing.T) {
 	if strings.Contains(joined, "parent-secret") {
 		t.Fatalf("secret-shaped parent env leaked into child env: %q", joined)
 	}
-	if !strings.Contains(joined, "AURA_CHILD_TOKEN=child-secret") {
-		t.Fatalf("explicit per-call env must be preserved even for secret-shaped keys: %q", joined)
+	if strings.Contains(joined, "AURA_CHILD_TOKEN=child-secret") {
+		t.Fatalf("secret-shaped explicit env leaked into child env: %q", joined)
 	}
 	if !strings.Contains(joined, "AURA_VISIBLE=visible") {
 		t.Fatalf("explicit visible env missing: %q", joined)

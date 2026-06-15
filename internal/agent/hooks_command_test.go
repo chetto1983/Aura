@@ -111,6 +111,21 @@ func TestCommandHook_TimeoutIsError(t *testing.T) {
 	}
 }
 
+func TestCommandHook_ChildEnvDropsSecretsByDefault(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-command-hook-secret")
+	t.Setenv("AURA_DB_URL", "postgres://user:pass@localhost:5432/aura")
+	t.Setenv("PUBLIC_URL", "https://example.com/app")
+
+	h := newTestCommandHookWithEnv(t, "env_probe", 2*time.Second, trustedHookHash(t), []string{
+		"EXPLICIT_PUBLIC=visible",
+		"AURA_DB_URL=postgres://explicit:secret@localhost:5432/aura",
+	})
+
+	if err := h.OnTurnStart(context.Background(), agent.HookTurn{AgentName: "aura"}); err != nil {
+		t.Fatalf("OnTurnStart: %v", err)
+	}
+}
+
 func TestCommandHookHelperProcess(t *testing.T) {
 	if os.Getenv("AURA_HOOK_HELPER") != "1" {
 		return
@@ -154,6 +169,18 @@ func TestCommandHookHelperProcess(t *testing.T) {
 	case "sleep":
 		time.Sleep(3 * time.Second)
 		writeHookDecision(agent.CommandHookDecision{Decision: "allow"})
+	case "env_probe":
+		for _, key := range []string{"OPENROUTER_API_KEY", "AURA_DB_URL"} {
+			if os.Getenv(key) != "" {
+				fmt.Fprintf(os.Stderr, "secret env %s leaked\n", key)
+				os.Exit(3)
+			}
+		}
+		if os.Getenv("EXPLICIT_PUBLIC") != "visible" {
+			fmt.Fprintln(os.Stderr, "explicit public env missing")
+			os.Exit(3)
+		}
+		writeHookDecision(agent.CommandHookDecision{Decision: "allow"})
 	default:
 		fmt.Fprintf(os.Stderr, "unknown hook helper mode %q\n", mode)
 		os.Exit(2)
@@ -163,15 +190,22 @@ func TestCommandHookHelperProcess(t *testing.T) {
 
 func newTestCommandHook(t *testing.T, mode string, timeout time.Duration, hash string) *agent.CommandHook {
 	t.Helper()
+	return newTestCommandHookWithEnv(t, mode, timeout, hash, nil)
+}
+
+func newTestCommandHookWithEnv(t *testing.T, mode string, timeout time.Duration, hash string, extraEnv []string) *agent.CommandHook {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
 	}
+	env := []string{"AURA_HOOK_HELPER=1", "AURA_HOOK_MODE=" + mode}
+	env = append(env, extraEnv...)
 	h, err := agent.NewCommandHook(agent.CommandHookConfig{
 		Name:           "test-command-hook",
 		Command:        exe,
 		Args:           []string{"-test.run=TestCommandHookHelperProcess"},
-		Env:            []string{"AURA_HOOK_HELPER=1", "AURA_HOOK_MODE=" + mode},
+		Env:            env,
 		ExpectedSHA256: hash,
 		Timeout:        timeout,
 	})

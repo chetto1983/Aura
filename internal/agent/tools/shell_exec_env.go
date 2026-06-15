@@ -139,7 +139,10 @@ var shellSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(password|api[_-]?key|token|secret)\s*[:=]\s*("?)[^"\s&]+`),
 }
 
+var shellCredentialURLPattern = regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+.-]*://[^:/?#\s@]+:)[^@/?#\s]+(@)`)
+
 func redactModelPreview(s string) string {
+	s = shellCredentialURLPattern.ReplaceAllString(s, "${1}***${2}")
 	for _, re := range shellSecretPatterns {
 		s = re.ReplaceAllString(s, shellRedacted)
 	}

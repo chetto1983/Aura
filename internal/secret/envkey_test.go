@@ -28,6 +28,10 @@ func TestIsSecretEnvKey(t *testing.T) {
 		{name: "cert", key: "TLS_CERT", want: true},
 		{name: "lowercase input", key: "private_key", want: true},
 		{name: "mixed case input", key: "Api_Key", want: true},
+		{name: "db url", key: "AURA_DB_URL", want: true},
+		{name: "dsn", key: "SENTRY_DSN", want: true},
+		{name: "jwt", key: "JWT_SIGNING_KEY", want: true},
+		{name: "cookie", key: "SESSION_COOKIE", want: true},
 
 		// clear non-secrets — must NOT be over-redacted (normal config).
 		{name: "PATH", key: "PATH", want: false},
@@ -43,6 +47,47 @@ func TestIsSecretEnvKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsSecretEnvKey(tt.key); got != tt.want {
 				t.Fatalf("IsSecretEnvKey(%q) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSecretEnvVar_DSNValueAndNonCredentialURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+		want  bool
+	}{
+		{
+			name:  "credential db url",
+			key:   "AURA_DB_URL",
+			value: "postgres://user:pass@localhost:5432/aura",
+			want:  true,
+		},
+		{
+			name:  "credential url under harmless key",
+			key:   "PUBLIC_ENDPOINT",
+			value: "https://user:pass@example.com/api",
+			want:  true,
+		},
+		{
+			name:  "public url without credentials",
+			key:   "PUBLIC_URL",
+			value: "https://example.com/app",
+			want:  false,
+		},
+		{
+			name:  "path remains public",
+			key:   "PATH",
+			value: "/usr/bin",
+			want:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsSecretEnvVar(tt.key, tt.value); got != tt.want {
+				t.Fatalf("IsSecretEnvVar(%q, %q) = %v, want %v", tt.key, tt.value, got, tt.want)
 			}
 		})
 	}

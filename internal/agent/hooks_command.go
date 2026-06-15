@@ -16,6 +16,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 const defaultCommandHookTimeout = 2 * time.Second
@@ -180,7 +181,7 @@ func (h *CommandHook) run(ctx context.Context, event CommandHookEvent) (*Command
 	hookCtx, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()
 	cmd := exec.CommandContext(hookCtx, h.command, h.args...) //nolint:gosec // resolved command is hash-verified immediately before execution.
-	cmd.Env = append(os.Environ(), h.env...)
+	cmd.Env = commandHookEnv(h.env)
 	cmd.Stdin = bytes.NewReader(payload)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -200,6 +201,34 @@ func (h *CommandHook) run(ctx context.Context, event CommandHookEvent) (*Command
 		return nil, fmt.Errorf("command hook %q invalid stdout: %w", h.name, parseErr)
 	}
 	return decision, nil
+}
+
+func commandHookEnv(explicit []string) []string {
+	env := make([]string, 0, len(explicit)+4)
+	for _, kv := range os.Environ() {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || !allowedCommandHookParentEnv(k) || secret.IsSecretEnvVar(k, v) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for _, kv := range explicit {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || strings.TrimSpace(k) == "" || secret.IsSecretEnvVar(k, v) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
+}
+
+func allowedCommandHookParentEnv(key string) bool {
+	switch strings.ToUpper(key) {
+	case "PATH", "SYSTEMROOT", "WINDIR":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *CommandHook) verifyTrust() error {

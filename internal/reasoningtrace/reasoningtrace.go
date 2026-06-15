@@ -1,11 +1,14 @@
 package reasoningtrace
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +25,12 @@ const maxBytesEnv = "AURA_REASONING_TRACE_MAX_BYTES"
 // .1 backup, so an always-on trace cannot grow the run dir without bound (M-06).
 const defaultMaxTraceBytes int64 = 8 << 20 // 8 MiB
 
+// defaultMaxFieldBytes caps individual trace fields before env-secret redaction.
+// AURA_REASONING_TRACE=full is an explicit operator debug mode that may persist
+// plaintext prompts/history to disk; it still applies this cap to avoid runaway
+// JSONL rows.
+const defaultMaxFieldBytes = 4096
+
 var mu sync.Mutex
 
 // Enabled reports whether reasoning tracing is enabled for the current process.
@@ -32,6 +41,13 @@ func Enabled() bool {
 	default:
 		return false
 	}
+}
+
+// FullEnabled reports whether the operator requested verbatim trace payloads.
+// This mode is intentionally loud because prompt/history fields can contain PII,
+// credentials typed by the user, and profile data.
+func FullEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(Env)), "full")
 }
 
 // Path returns the operator-selected JSONL trace path, or a temp-file default.
@@ -67,7 +83,7 @@ func Record(stage string, fields map[string]any) {
 	row["pid"] = os.Getpid()
 	row["stage"] = stage
 	for k, v := range fields {
-		row[k] = redactValue(v)
+		row[k] = redactValueForKey(k, v)
 	}
 	line, err := json.Marshal(row)
 	if err != nil {
@@ -128,7 +144,7 @@ func RuneLen(s string) int {
 func redactValue(v any) any {
 	switch x := v.(type) {
 	case string:
-		return redactString(x)
+		return redactString(capTraceString(x))
 	case []any:
 		out := make([]any, len(x))
 		for i := range x {
@@ -144,6 +160,60 @@ func redactValue(v any) any {
 	default:
 		return v
 	}
+}
+
+func redactValueForKey(key string, v any) any {
+	if !FullEnabled() && defaultPrivateField(key) {
+		return traceValueSummary(v)
+	}
+	return redactValue(v)
+}
+
+func defaultPrivateField(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "history", "messages", "user", "prompt", "input":
+		return true
+	default:
+		return false
+	}
+}
+
+func traceValueSummary(v any) map[string]any {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		raw = []byte(fmt.Sprintf("%T", v))
+	}
+	sum := sha256.Sum256(raw)
+	out := map[string]any{
+		"redacted": true,
+		"type":     fmt.Sprintf("%T", v),
+		"bytes":    len(raw),
+		"sha256":   fmt.Sprintf("%x", sum[:]),
+	}
+	rv := reflect.ValueOf(v)
+	if rv.IsValid() {
+		switch rv.Kind() {
+		case reflect.Array, reflect.Chan, reflect.Map, reflect.Slice, reflect.String:
+			out["count"] = rv.Len()
+		}
+	}
+	return out
+}
+
+func capTraceString(s string) string {
+	if len(s) <= defaultMaxFieldBytes {
+		return s
+	}
+	const marker = "\n[trace field truncated]"
+	limit := defaultMaxFieldBytes - len(marker)
+	if limit <= 0 {
+		limit = defaultMaxFieldBytes
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + marker
 }
 
 func redactString(s string) string {
