@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: Roadmap created — awaiting Phase 22 spec/plan
+status: Roadmap revised — awaiting Phase 22 spec/plan
 stopped_at: Phase 22 context gathered
 last_updated: "2026-06-15T13:52:36.381Z"
-last_activity: 2026-06-15 — v1.0.0 roadmap created (Phases 22–27, 33 requirements mapped, 0 unmapped)
+last_activity: 2026-06-15 — v1.0.0 roadmap revised (Phases 22–28; Frontend Foundation FND-01..06 inserted as research-first Phase 23; 39 requirements mapped, 0 unmapped)
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,27 +21,28 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Milestone v1.0.0 — Aura Deep Search Web Cockpit (roadmap created; Phases 22–27)
+**Current focus:** Milestone v1.0.0 — Aura Deep Search Web Cockpit (roadmap revised; Phases 22–28; frontend industrial foundation set up first as Phase 23)
 
 ## Current Position
 
 Phase: 22 — Agent Perimeter Hardening (not started)
 Plan: —
-Status: Roadmap created — awaiting Phase 22 spec/plan
-Last activity: 2026-06-15 — v1.0.0 roadmap created (Phases 22–27, 33 requirements mapped, 0 unmapped)
+Status: Roadmap revised — awaiting Phase 22 spec/plan
+Last activity: 2026-06-15 — v1.0.0 roadmap revised (Phases 22–28; Frontend Foundation FND-01..06 inserted as research-first Phase 23; 39 requirements mapped, 0 unmapped)
 
 ### Next — Plan Phase 22
 
-The v1.0.0 roadmap is in place. Six phases derived from the 33 milestone requirements, build order per `research/ARCHITECTURE.md` §7 (A→B→C→D→E→F):
+The v1.0.0 roadmap is revised per the operator directive (2026-06-15): the industrial frontend foundation is set up FIRST (research-locked toolchain, linter/formatter CI gate, design-token theme, brand, embedded build/test pipeline) before any cockpit feature code. Seven phases derived from the 39 milestone requirements:
 
 - **Phase 22 — Agent Perimeter Hardening** (HARDEN-01..12) — pre-existing spec at `.planning/phases/22-bug-fix/22-SPEC.md`; gates web exposure. FIRST.
-- **Phase 23 — Web Foundation — Serve + Embed + Auth** (WEB-01..04) — single-binary embedded SPA + GAP-2 auth boundary; gates every UI surface.
-- **Phase 24 — Chat + Approval Center** (CHAT-01..04, APRV-01..03) — Core-Value chat loop + cross-thread HITL queue.
-- **Phase 25 — Typed-Display Protocol + Router** (DISP-01..05, SWARM-01) — GAP-1 `aura.display` spine + display router.
-- **Phase 26 — Neo4j Graph Explorer** (GRAPH-01..04) — graph normalizer + read-only Cypher guard + WebGL canvas.
-- **Phase 27 — Governance Boards + Web Onboarding** (GOV-01..03, ONBD-01..02) — read-only boards + web setup wizard.
+- **Phase 23 — Frontend Infrastructure & Industrial Foundation** (FND-01..06) — RESEARCH-FIRST: locked decision record (FND-01) + Vite/React/TS `//go:embed` scaffold + linter/formatter/type-check CI gate + dark-operator design-token theme + brand from `public/Logo.png` + Node-24 build/test pipeline. Foundation before features.
+- **Phase 24 — Web Foundation — Serve + Auth + Health** (WEB-01..04) — real single-binary SPA host over the Phase-23 embed pipeline + SPA-fallback route exclusion + GAP-2 auth boundary + non-loopback boot guard + health shell; gates every feature UI surface.
+- **Phase 25 — Chat + Approval Center** (CHAT-01..04, APRV-01..03) — Core-Value chat loop + cross-thread HITL queue.
+- **Phase 26 — Typed-Display Protocol + Router** (DISP-01..05, SWARM-01) — GAP-1 `aura.display` spine + display router.
+- **Phase 27 — Neo4j Graph Explorer** (GRAPH-01..04) — graph normalizer + read-only Cypher guard + WebGL canvas.
+- **Phase 28 — Governance Boards + Web Onboarding** (GOV-01..03, ONBD-01..02) — read-only boards + web setup wizard.
 
-Phases 23–27 are UI phases (`ui_phase: true` — design contract gate applies). Governance writes (GOVW) + `ui_control` shell (SHELL) are deferred to a follow-up milestone.
+Phases 23–28 are UI phases (`ui_phase: true` — design contract gate applies). Phase 23 is research-first (its industrial-infra RESEARCH.md runs at plan time before any scaffolding code). Governance writes (GOVW) + `ui_control` shell (SHELL) are deferred to a follow-up milestone.
 
 Remaining action: `/gsd-plan-phase 22` (the spec already exists from `/gsd-spec-phase 22`).
 
@@ -158,6 +159,7 @@ Remaining action: `/gsd-plan-phase 22` (the spec already exists from `/gsd-spec-
 
 ### Roadmap Evolution
 
+- v1.0.0 roadmap REVISED (2026-06-15): operator directive — set up the frontend industrial foundation FIRST (linter, theme/color tokens, package/build, logo, deep-research-industrial-infra pass) BEFORE any feature coding. A new requirement category Frontend Foundation (FND-01..06) was added to REQUIREMENTS.md and mapped to a NEW research-first Phase 23 (Frontend Infrastructure & Industrial Foundation). Phase 22 (Agent Perimeter Hardening) is unchanged. The former feature phases shifted +1: Web Foundation 23->24 (now the real SPA host AFTER the embed pipeline exists, with SPA-fallback exclusion + GAP-2 auth + boot guard + health shell), Chat+Approval 24->25, Typed-Display 25->26, Graph Explorer 26->27, Governance+Onboarding 27->28. Roadmap is now 7 phases (22-28); all 39 v1 requirements mapped (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD), 0 unmapped, 0 duplicates. v0.0.0 history block + Milestones v0.0.0 line + Phase 5 superseded note preserved verbatim. Next = /gsd-plan-phase 22.
 - v1.0.0 roadmap created (2026-06-15): the Aura Deep Search Web Cockpit milestone (33 requirements) was decomposed into 6 phases (22-27) at coarse granularity, build order per research/ARCHITECTURE.md sec.7 (A->B->C->D->E->F). Phase 22 (Agent Perimeter Hardening, HARDEN-01..12) is the pre-existing bug-fix spec and gates web exposure. Phase 23 (Web Foundation, WEB-01..04) is the serve/embed/GAP-2-auth foundation that gates every UI surface. Phase 24 (Chat + Approval Center, CHAT/APRV, 7 reqs) is the Core-Value loop over mostly-existing backend. Phase 25 (Typed-Display Protocol + Router, DISP-01..05 + SWARM-01, 6 reqs) is the GAP-1 spine. Phase 26 (Neo4j Graph Explorer, GRAPH-01..04). Phase 27 (Governance Boards + Web Onboarding, GOV + ONBD, 5 reqs). All 33 mapped, 0 orphaned. GOVW write surfaces + ui_control SHELL shell deferred to v2 (out of scope this milestone). Next = /gsd-plan-phase 22.
 
 - Phase 07.1 inserted after Phase 7: Forced-finalization loop fix: LlmAgent must always return a final answer (budget/dedup trip currently emits empty); surfaced by Phase 7 meteo E2E. See docs/research/agent-loop-forced-finalization.md (URGENT)

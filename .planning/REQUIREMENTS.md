@@ -174,8 +174,8 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | ONBD-02 | Phase 28 | Pending |
 
 **Coverage:**
-- v1 requirements: 39 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD)
-- Mapped to phases: 39 ✓
+- v1 requirements: 44 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD)
+- Mapped to phases: 44 ✓
 - Unmapped: 0 ✓
 
 **Phase distribution:**
@@ -189,4 +189,4 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 
 ---
 *Requirements defined: 2026-06-15*
-*Last updated: 2026-06-15 — roadmap revised; Frontend Foundation (FND-01..06) added as research-first Phase 23 per operator directive; all 39 v1 requirements mapped to Phases 22–28 (0 unmapped)*
+*Last updated: 2026-06-15 — roadmap revised; Frontend Foundation (FND-01..06) added as research-first Phase 23 per operator directive; all 44 v1 requirements mapped to Phases 22–28 (0 unmapped). NOTE: the category breakdown 12+6+4+4+3+5+4+1+3+2 sums to 44; the earlier headline counts (33, 39) were arithmetic slips — the per-category counts and the one-to-one body↔table mapping are authoritative.*
