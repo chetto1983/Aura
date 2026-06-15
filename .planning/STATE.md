@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 22 plan 22-03 completed; ready for 22-04
-last_updated: "2026-06-15T15:22:00.000Z"
-last_activity: 2026-06-15 -- Phase 22 plan 22-03 completed; ready for 22-04
+stopped_at: Phase 22 context gathered
+last_updated: "2026-06-15T18:37:25.945Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 4
+  percent: 0
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 22 (bug-fix) — EXECUTING
-Plan: 3 of 5
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-15 -- Phase 22 plan 22-02 completed; ready for 22-03
+Last activity: 2026-06-15
 
 ### Next -- Execute Phase 22
 
@@ -156,11 +156,13 @@ Remaining action: `/gsd-execute-phase 22`.
 | Phase 17 P08 | ~60min | 3 tasks | 8 files |
 | Phase 22 P22-01 | 14min | 2 tasks | 13 files |
 | Phase 22 P22-02 | 18min | 2 tasks | 21 files |
+| Phase 22 P22-04 | ~95min | 4 tasks | 32 files |
 
 ## Accumulated Context
 
 ### Phase 22 Execution
 
+- 22-04 closed (2026-06-15): broad P2/P3 operational hardening wave. Hooks (AG-003/004/030/054/058): per-hook FailPolicy (FailOpen contains a fault, FailClosed aborts; recover-wrapped in-process hooks), absolute hook paths, exit-zero rewrite gate, bounded+audited rewrites. Provenance (AG-052): default-untrusted for unknown + swarm-child output (explicit `trustedToolNames` allowlist); dedup now hashes the RAW preview (the per-call nonce would defeat the veto) and control-plane signals/event projection stay unwrapped. Tools (AG-014..020/045/046/050): `AURA_FS_MAX_READ_BYTES`=10 MiB stat-then-reject + paging hint, atomic fs_edit (temp+rename), `BackgroundShells` SessionEvictor + poll-prune, every `agent_job` gated to pending_approval, cwd validation + `filepath.Clean` approval digest, `send_file` `RequireWorkspace` fail-closed flag, tool_search description-hash re-embed on reconnect, unified `**` grep/glob, sidecar absolute-runDir assertion. Workflow (AG-031/037/038/043/059..064): cycle-safe `findInTree` (visited BFS), runtime `aura_agent_prefix_drift_total` metric, atomic `Budget.TryReserve/Release` synthesis reservation, parallel break-at-every-index goleak stress, `chain_aborted_at` marker, documented swarm-context concurrent-read contract, bounded `executeBatch` worker pool. AG-059/060 accepted-documented (cooperative leaf/escalate semantics). Verification: `go test`/`-race` on internal/agent/..., tools, workflow, swarm — all green. Commits `d4280d2f`, `f99c3ae3`, `75987d50`, `92d469b7`; summary `.planning/phases/22-bug-fix/22-04-SUMMARY.md`. Pre-existing unrelated failure (cmd/aura container-artifact compose drift) logged to deferred-items.md.
 - 22-02 closed (2026-06-15): shell and hook subprocess env now filters inherited and explicit secret-shaped values through `secret.IsSecretEnvVar`; DSN credentials are redacted in shell previews; default reasoning trace stores hash/count/byte summaries for prompt/history fields unless `AURA_REASONING_TRACE=full` is explicitly selected. Observability minimum added: `aura_agent_turn_total`, LLM duration/error, tool error, hook, token/cost, panic, span export failure, and span entropy fallback metrics plus structured slog at turn/LLM/tool/hook/panic/tracing boundaries. Verification: `go test ./internal/secret ./internal/reasoningtrace -count=1`; focused shell/hook/metric tests; `go test ./internal/agent/... -count=1`. Commits `408d841d`, `d94919a4`; summary `.planning/phases/22-bug-fix/22-02-SUMMARY.md`.
 - 22-01 closed (2026-06-15): AG-001 panic firewall converts executeBatch, LlmAgent.Run, workflow child, swarm child, and shell_bg reaper panics into model-visible per-call/per-child failures while incrementing bounded panic metric sites via `internal/agent/panicobs`. AG-002/AG-039/AG-040 dedup ring now has private mutex protection, stale result pruning on eviction, and period-3+ cycle detection. Verification: focused race tests plus `go test -race ./internal/agent/... ./internal/swarm/... -count=1`. Commits `62a81cde`, `86cb7a22`; summary `.planning/phases/22-bug-fix/22-01-SUMMARY.md`.
 
@@ -299,9 +301,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-15T13:52:36.373Z
+Last session: 2026-06-15T18:37:25.934Z
 Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-bug-fix/22-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 

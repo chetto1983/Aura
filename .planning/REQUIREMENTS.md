@@ -18,10 +18,10 @@ Remediation of the 2026-06-15 `internal/agent` production-readiness audit (`docs
 - [x] **HARDEN-04**: Credentials (DSN-shaped env, secrets) do not leak to shell children, hook subprocesses, or the reasoning trace by default (AG-010/009/003)
 - [x] **HARDEN-05**: Production is observable — turn-outcome / LLM-latency / error / token / hook metrics + agent `slog`; telemetry cannot crash the daemon (AG-012/013/033)
 - [x] **HARDEN-06**: An embed-sidecar outage adds no per-turn latency cliff (reasoning-router fallback policy, AG-008)
-- [ ] **HARDEN-07**: A hook fault is contained, not turn-fatal (fail-soft hook policy, AG-004)
-- [ ] **HARDEN-08**: Unknown-tool and swarm-child output is default-untrusted and cannot launder prompt injection (AG-052)
+- [x] **HARDEN-07**: A hook fault is contained, not turn-fatal (fail-soft hook policy, AG-004)
+- [x] **HARDEN-08**: Unknown-tool and swarm-child output is default-untrusted and cannot launder prompt injection (AG-052)
 - [x] **HARDEN-09**: Loop / budget / workflow correctness — bounded and validated (AG-035..043)
-- [ ] **HARDEN-10**: Tool execution is memory-safe, evictable, and consistent — fs size cap, cycle guard, dedup growth bound, etc. (AG-014..046)
+- [x] **HARDEN-10**: Tool execution is memory-safe, evictable, and consistent — fs size cap, cycle guard, dedup growth bound, etc. (AG-014..046)
 - [ ] **HARDEN-11**: Skill self-extension docs match behavior; dead code removed (AG-011/044/051)
 - [x] **HARDEN-12**: Every in-scope finding closed to Gate-3 with its named regression test; ≥85% owned-surface coverage holds; nothing silently dropped
 
@@ -148,10 +148,10 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | HARDEN-04 | Phase 22 | Complete |
 | HARDEN-05 | Phase 22 | Complete |
 | HARDEN-06 | Phase 22 | Complete |
-| HARDEN-07 | Phase 22 | Pending |
-| HARDEN-08 | Phase 22 | Pending |
+| HARDEN-07 | Phase 22 | Complete |
+| HARDEN-08 | Phase 22 | Complete |
 | HARDEN-09 | Phase 22 | Complete |
-| HARDEN-10 | Phase 22 | Pending |
+| HARDEN-10 | Phase 22 | Complete |
 | HARDEN-11 | Phase 22 | Pending |
 | HARDEN-12 | Phase 22 | Complete |
 | FND-01 | Phase 23 | Pending |
