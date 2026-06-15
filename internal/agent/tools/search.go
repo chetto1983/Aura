@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -10,6 +12,14 @@ import (
 
 	"github.com/chetto1983/aura/internal/semindex"
 )
+
+// searchDocumentHash is the per-tool content fingerprint the bank keys on so an
+// MCP reconnect that re-advertises a tool with a CHANGED description is detected
+// and re-embedded (AG-020), rather than silently keeping the stale vector.
+func searchDocumentHash(s Spec) string {
+	sum := sha256.Sum256([]byte(searchDocument(s)))
+	return hex.EncodeToString(sum[:8])
+}
 
 // ToolSearch is the built-in hook tool that lets the LLM fetch full specs of
 // deferred tools. The pattern mirrors Claude Code's ToolSearch behavior: the
@@ -40,9 +50,12 @@ type ToolSearch struct {
 	mu     sync.Mutex
 	ranker *semindex.Ranker // embedding bank over the deferred searchDocument texts
 	bm25   *bm25Index       // kept for the guarded tiebreak (search_fusion.go)
-	// banked is the set of tool Names currently embedded in the ranker, so the
-	// MCP-mount refresh (InvalidateIndex) can detect and embed ONLY the delta (D-03).
-	banked map[string]struct{}
+	// banked maps each embedded tool Name to its searchDocument hash, so the
+	// MCP-mount refresh (InvalidateIndex) can embed ONLY new tools (D-03) AND detect
+	// when an EXISTING tool's description changed on reconnect (AG-020): a changed
+	// hash triggers a full ranker rebuild so the stale vector is replaced. New tools
+	// stay an incremental append; only an actual description change pays a rebuild.
+	banked map[string]string
 	specs  []Spec // bm25-aligned deferred specs (sorted by Name)
 
 	// learned is the stage-2 per-tool centroid boost (D-07, search_learn.go), folded
@@ -62,21 +75,16 @@ const defaultMaxResults = 5
 func (ts *ToolSearch) InvalidateIndex() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	// The embedding bank is append-only and survives invalidation: the next search
-	// embeds only the newly-advertised tools and appends them. Only the BM25 index
-	// (cheap to rebuild) and the bm25-aligned spec slice are dropped.
+	// The embedding bank survives invalidation: the next search embeds only the
+	// newly-advertised tools and appends them. Only the BM25 index (cheap to rebuild)
+	// and the bm25-aligned spec slice are dropped.
 	//
-	// KNOWN LIMITATION (WR-01): the bank is keyed by tool Name and is APPEND-ONLY, so a
-	// reconnect that changes an EXISTING tool's description (same Name, new searchDocument)
-	// does NOT refresh that tool's embedding — its semantic vector stays computed against
-	// the stale description until the process restarts. The BM25 tiebreak rebuilds over the
-	// current specs and masks this in lexical tests, but the primary embedding signal is
-	// stale. This is an intentional constraint: append-only insertion order is load-bearing
-	// (D-03 incremental re-embed + the byte-stable manifest's insertion-index tie-break,
-	// shared with the semindex.Ranker core). A by-doc-hash re-embed would need replace/remove
-	// on the shared append-only ranker (risking that invariant) or a full-corpus rebuild
-	// (defeating D-03), so it is deferred rather than bolted on here. New tools (new Name)
-	// embed correctly; only changed-description-on-reconnect is affected.
+	// WR-01 FIX (AG-020): the bank now keys each tool Name to its searchDocument
+	// HASH. ensureBank compares the live hash against the banked hash on the next
+	// search; a tool whose description CHANGED on reconnect (same Name, new doc)
+	// triggers a one-time full ranker rebuild so its stale vector is replaced. New
+	// tools (new Name) still embed incrementally (D-03); only an actual
+	// description-change pays the rebuild, which is reconnect-rare.
 	ts.bm25 = nil
 	ts.specs = nil
 }
@@ -357,13 +365,28 @@ func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.R
 	}
 	if ts.ranker == nil {
 		ts.ranker = semindex.NewRanker(ts.Embed)
-		ts.banked = make(map[string]struct{})
+		ts.banked = make(map[string]string)
+	}
+
+	// AG-020: detect an EXISTING tool whose description (searchDocument) changed
+	// since it was banked — an MCP reconnect can re-advertise the same Name with a
+	// new description. Because the shared semindex.Ranker is append-only (no replace),
+	// a changed hash forces a full rebuild of the bank so the stale vector is dropped.
+	// This pays a full re-embed only on an actual description change (rare, reconnect
+	// only); the common new-tool path stays the incremental append below.
+	changed := false
+	for _, s := range specs {
+		if h, ok := ts.banked[s.Name]; ok && h != searchDocumentHash(s) {
+			changed = true
+			break
+		}
+	}
+	if changed {
+		ts.ranker = semindex.NewRanker(ts.Embed)
+		ts.banked = make(map[string]string)
 	}
 
 	// Embed ONLY the delta — tools not yet in the bank by Name (D-03 incremental append).
-	// WR-01 known limitation: this diffs on Name only, so a tool whose DESCRIPTION changed
-	// on an MCP reconnect (same Name) is NOT re-embedded — its vector stays stale. See the
-	// InvalidateIndex doc for why the append-only-by-Name constraint is intentional.
 	var newSpecs []Spec
 	for _, s := range specs {
 		if _, ok := ts.banked[s.Name]; !ok {
@@ -387,7 +410,7 @@ func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.R
 		}
 		ts.ranker.AddVecs(items...)
 		for _, s := range newSpecs {
-			ts.banked[s.Name] = struct{}{}
+			ts.banked[s.Name] = searchDocumentHash(s)
 		}
 	}
 

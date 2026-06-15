@@ -203,6 +203,14 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	if scoring.GateRecommended(tier) {
 		status = "pending_approval"
 	}
+	// AG-016: an agent_job runs a fresh FULL-tool agent turn at fire time, so a
+	// benign-looking goal can still drive arbitrary later action. Gate EVERY
+	// agent_job to pending_approval rather than trusting the rm/drop/delete keyword
+	// score — the keyword check is necessary but not sufficient for a code-capable
+	// scheduled run. reminders/backups keep their tier-based gating.
+	if a.Kind == "agent_job" {
+		status = "pending_approval"
+	}
 
 	// Capture the scheduling conversation id off the tool-call ctx (==a.sessionID,
 	// set at llm_agent.go:470). The two-value form is bare-ctx-safe: a CLI/unit-test

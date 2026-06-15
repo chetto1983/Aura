@@ -209,6 +209,40 @@ func (b *BackgroundShells) pruneFinishedLocked() {
 	}
 }
 
+// Evict reclaims finished background shells (SessionEvictor, AG-015). Background
+// shells are process-scoped (not session-keyed), so any FINISHED shell is
+// reclaimable regardless of the evicted session — a long-lived daemon must not
+// accumulate finished-but-unpolled buffers (≤1 MiB each) until the next start.
+// Running shells are left untouched. The sessionID arg satisfies the interface;
+// pruning is by completion, not session.
+func (b *BackgroundShells) Evict(string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.pruneFinishedLocked()
+}
+
+// pruneFinishedExcept removes every FINISHED shell except keep (the one being
+// polled, kept for a possible final re-poll). Running shells are left in place.
+// Idempotent and concurrency-safe.
+func (b *BackgroundShells) pruneFinishedExcept(keep string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for id, sh := range b.shells {
+		if id == keep {
+			continue
+		}
+		sh.mu.Lock()
+		done := sh.done
+		sh.mu.Unlock()
+		if done {
+			delete(b.shells, id)
+		}
+	}
+}
+
 func (b *BackgroundShells) runningCountLocked() int {
 	n := 0
 	for _, sh := range b.shells {
@@ -337,6 +371,17 @@ func (p *ShellPoll) Spec() Spec {
 	}
 }
 
+// Evict forwards a conversation-end signal to the shared background-shell
+// registry, reclaiming finished shells (SessionEvictor, AG-015). ShellPoll is a
+// registry tool, so the Runner's evict loop reaches the process-scoped registry
+// through it; the prune is by completion, not by session.
+func (p *ShellPoll) Evict(sessionID string) {
+	if p == nil || p.Shells == nil {
+		return
+	}
+	p.Shells.Evict(sessionID)
+}
+
 func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	if p.Shells == nil {
 		return ToolResult{}, fmt.Errorf("shell_poll: background shells are not available in this context")
@@ -361,6 +406,10 @@ func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		filter = re
 	}
 	chunk, status := sh.snapshot(filter)
+	// AG-015: reclaim OTHER finished shells on this poll (not the one being polled —
+	// the model may re-poll it for a final read), so a long-lived daemon does not
+	// accumulate finished-but-unpolled buffers until the next start.
+	p.Shells.pruneFinishedExcept(a.ShellID)
 	body := chunk
 	if strings.TrimSpace(body) == "" {
 		body = "[no new output]"

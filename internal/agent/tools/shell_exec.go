@@ -117,6 +117,15 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	// for destructive matching, approval digesting, and execution.
 	commandForGate := strings.ReplaceAll(a.Command, "\r\n", "\n")
 	workdir := s.workdir(ctx, a.Cwd)
+	// AG-018: validate an explicitly model-supplied cwd up front so a bad directory
+	// is a clean, self-correctable error rather than an opaque shell exec failure.
+	if explicit := strings.TrimSpace(a.Cwd); explicit != "" {
+		if info, statErr := os.Stat(explicit); statErr != nil {
+			return ToolResult{}, fmt.Errorf("shell_exec: cwd %q is not accessible: %w", explicit, statErr)
+		} else if !info.IsDir() {
+			return ToolResult{}, fmt.Errorf("shell_exec: cwd %q is not a directory", explicit)
+		}
+	}
 	approvalRequired, err := s.requireShellApproval(ctx, commandForGate, workdir)
 	if err != nil {
 		return ToolResult{}, err

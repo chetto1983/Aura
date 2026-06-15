@@ -59,6 +59,9 @@ func (t *FSEdit) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	if err := deniedSkillsWrite(t.SkillsDir, path, "fs_edit"); err != nil {
 		return ToolResult{}, err
 	}
+	if err := statSizeWithinCap(path, "fs_edit", false); err != nil {
+		return ToolResult{}, err
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("fs_edit: %w", err)
@@ -76,7 +79,10 @@ func (t *FSEdit) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	} else {
 		content = strings.Replace(content, a.OldString, a.NewString, 1)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	// Atomic temp-file + rename (AG-045): the edit replaces the file in one
+	// rename so a crash mid-write never leaves a truncated file; concurrent edits
+	// remain last-writer-wins (the read→edit→write window is not locked).
+	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
 		return ToolResult{}, fmt.Errorf("fs_edit: %w", err)
 	}
 	return NewResult(ctx, fmt.Sprintf("replaced %d occurrence(s) in %s", count, path))

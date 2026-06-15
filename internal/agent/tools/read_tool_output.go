@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 // defaultReadLimit is the byte window read_tool_output returns when limit is
@@ -68,6 +69,12 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	tc, ok := toolCallCtx(ctx)
 	if !ok {
 		return ToolResult{}, fmt.Errorf("read_tool_output: missing tool-call context")
+	}
+	// Assert the sidecar runDir invariant (AG-050): WithToolCallContext must carry
+	// an absolute run root. A relative runDir would resolve the sidecar against the
+	// process cwd, escaping the intended run root — reject it rather than trust it.
+	if !filepath.IsAbs(tc.runDir) {
+		return ToolResult{}, fmt.Errorf("read_tool_output: sidecar runDir %q is not absolute", tc.runDir)
 	}
 	// Reuse the result.go id-validation + path layout (T-03-07): the public
 	// argument is named tool_call_id for compatibility, but new footers pass an

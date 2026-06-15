@@ -30,7 +30,7 @@ func (t *FSGrep) Spec() Spec {
   "properties": {
     "pattern": {"type": "string", "description": "Go/RE2 regular expression to search for in file contents."},
     "path": {"type": "string", "description": "Optional file or directory to search. Defaults to the workspace root."},
-    "glob": {"type": "string", "description": "Optional filename glob filter, e.g. '*.go'."},
+    "glob": {"type": "string", "description": "Optional glob filter. A plain glob ('*.go') matches the filename; a path glob with ** ('**/*.go') matches the path and crosses directories, like fs_glob."},
     "max_results": {"type": "integer", "minimum": 1, "description": "Optional cap on matching lines returned (default 200)."}
   },
   "required": ["pattern"]
@@ -80,7 +80,11 @@ func (t *FSGrep) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 			return nil
 		}
 		if a.Glob != "" {
-			if ok, _ := filepath.Match(a.Glob, d.Name()); !ok {
+			rel, relErr := filepath.Rel(root, p)
+			if relErr != nil {
+				rel = p
+			}
+			if !globMatch(a.Glob, rel, d.Name()) {
 				return nil
 			}
 		}

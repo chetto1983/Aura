@@ -24,8 +24,14 @@ import (
 // changes), so it never arms the completion-gate critic.
 type SendFile struct {
 	// WorkspaceRoot, when set, fences delivery to files whose real path stays
-	// inside this workspace. Empty preserves legacy unrestricted delivery.
+	// inside this workspace. Empty preserves legacy unrestricted delivery in a CLI
+	// context (the operator drives the agent directly).
 	WorkspaceRoot string
+	// RequireWorkspace makes the fence fail CLOSED when WorkspaceRoot is empty
+	// (AG-019): in a non-CLI context (a channel-driven agent) an unset workspace
+	// must NOT silently grant unrestricted host-file delivery. The composition root
+	// sets it true for non-CLI runners; CLI keeps it false (legacy behavior).
+	RequireWorkspace bool
 }
 
 // maxSendFileBytes is the upload ceiling enforced before a descriptor is emitted
@@ -80,6 +86,10 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 		return errorResult("file_unreadable", "no path was provided; pass the absolute path of the file to deliver"), nil
 	}
 
+	if strings.TrimSpace(s.WorkspaceRoot) == "" && s.RequireWorkspace {
+		return errorResult("workspace_not_configured",
+			"file delivery is disabled: no workspace is configured in this context, so host-file delivery is fenced off (AG-019). Ask the operator to configure a workspace root or deliver via an approved path."), nil
+	}
 	resolved, ok, ferr := s.checkWorkspace(path)
 	if ferr != nil {
 		return errorResult("file_unreadable", fmt.Sprintf("cannot resolve %q: %v", path, ferr)), nil
@@ -119,6 +129,11 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 func (s *SendFile) checkWorkspace(path string) (string, bool, error) {
 	root := strings.TrimSpace(s.WorkspaceRoot)
 	if root == "" {
+		if s.RequireWorkspace {
+			// Fail closed (AG-019): a non-CLI context without a configured workspace
+			// must not deliver arbitrary host files.
+			return path, false, nil
+		}
 		return path, true, nil
 	}
 	rootAbs, err := filepath.Abs(root)

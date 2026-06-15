@@ -108,6 +108,70 @@ func sliceLines(content string, offset, limit int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
+// atomicWriteFile writes data to a temp file in the same directory then renames it
+// over path, so a reader never observes a partially-written file and a crash
+// mid-write leaves the original intact (AG-045). The temp name carries the
+// .aura-tmp marker so a leftover (only on a rename failure) is identifiable.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if dir == "" {
+		dir = "."
+	}
+	f, err := os.CreateTemp(dir, ".aura-tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	cleanup := func() { _ = os.Remove(tmp) }
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		cleanup()
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		_ = f.Close()
+		cleanup()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
+}
+
+// globMatch reports whether a glob matches a file given its relative path and
+// basename. A glob containing "**" or "/" is matched against the **-aware
+// relative path (fs_glob semantics); a plain glob is matched against the
+// basename (the fs_grep filename-filter intent). This unifies the two tools'
+// glob behavior so a model reusing "**/*.go" on grep gets matches (AG-046).
+func globMatch(glob, relPath, base string) bool {
+	if glob == "" {
+		return true
+	}
+	if strings.Contains(glob, "**") || strings.Contains(glob, "/") {
+		re, err := globToRegexp(glob)
+		if err != nil {
+			return false
+		}
+		return re.MatchString(filepath.ToSlash(relPath))
+	}
+	if ok, _ := filepath.Match(glob, base); ok {
+		return true
+	}
+	// A single-segment glob like "*.go" should also match against the basename via
+	// the **-aware compiler so "*.go" and "**/*.go" behave consistently.
+	re, err := globToRegexp(glob)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(base)
+}
+
 // globToRegexp compiles a glob (supporting **, *, ?) into an anchored regexp over
 // forward-slash paths. ** crosses directory separators; * and ? do not.
 func globToRegexp(glob string) (*regexp.Regexp, error) {
@@ -147,6 +211,47 @@ func skipWalkDir(name string) bool {
 		return true
 	}
 	return false
+}
+
+// fs size cap (AG-014 / D-05): fs_read/fs_write/fs_edit stat-then-reject a file
+// over AURA_FS_MAX_READ_BYTES so a multi-GB file cannot OOM the process or wedge
+// a turn on the shared mini-PC. The default (10 MiB) is ample for code/config;
+// the read error suggests offset/limit paging into the same file. Tunable for an
+// operator who deliberately handles a larger file.
+const (
+	envFSMaxReadBytes     = "AURA_FS_MAX_READ_BYTES"
+	defaultFSMaxReadBytes = 10 << 20 // 10 MiB
+)
+
+func fsMaxReadBytes() int64 {
+	if v := strings.TrimSpace(os.Getenv(envFSMaxReadBytes)); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultFSMaxReadBytes
+}
+
+// statSizeWithinCap returns the file size and an over-cap error. withPagingHint
+// adds the offset/limit suggestion (fs_read only — write/edit have no paging).
+func statSizeWithinCap(path, tool string, withPagingHint bool) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("%s: %w", tool, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%s: %s is a directory", tool, path)
+	}
+	cap := fsMaxReadBytes()
+	if info.Size() <= cap {
+		return nil
+	}
+	if withPagingHint {
+		return fmt.Errorf("%s: %s is %d bytes, over the %d-byte cap (%s); read a window with offset+limit instead of the whole file",
+			tool, path, info.Size(), cap, envFSMaxReadBytes)
+	}
+	return fmt.Errorf("%s: %s content is %d bytes, over the %d-byte cap (%s)",
+		tool, path, info.Size(), cap, envFSMaxReadBytes)
 }
 
 // looksBinary reports whether the first chunk of b contains a NUL byte (the cheap

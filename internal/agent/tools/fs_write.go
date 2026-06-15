@@ -46,6 +46,9 @@ func (t *FSWrite) Execute(ctx context.Context, raw json.RawMessage) (ToolResult,
 	if strings.TrimSpace(a.Path) == "" {
 		return ToolResult{}, fmt.Errorf("fs_write: path is required")
 	}
+	if cap := fsMaxReadBytes(); int64(len(a.Content)) > cap {
+		return ToolResult{}, fmt.Errorf("fs_write: content is %d bytes, over the %d-byte cap (%s)", len(a.Content), cap, envFSMaxReadBytes)
+	}
 	path := resolveFSPath(t.WorkspaceRoot, a.Path)
 	if err := deniedSkillsWrite(t.SkillsDir, path, "fs_write"); err != nil {
 		return ToolResult{}, err

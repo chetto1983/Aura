@@ -44,7 +44,11 @@ func (t *FSRead) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	if strings.TrimSpace(a.Path) == "" {
 		return ToolResult{}, fmt.Errorf("fs_read: path is required")
 	}
-	b, err := os.ReadFile(resolveFSPath(t.WorkspaceRoot, a.Path))
+	path := resolveFSPath(t.WorkspaceRoot, a.Path)
+	if err := statSizeWithinCap(path, "fs_read", true); err != nil {
+		return ToolResult{}, err
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("fs_read: %w", err)
 	}

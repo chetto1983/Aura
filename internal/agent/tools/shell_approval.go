@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -32,7 +33,13 @@ func NewShellApprovals() *ShellApprovals {
 	}
 }
 
+// ShellApprovalDigest normalizes cwd with filepath.Clean before hashing (AG-018)
+// so cosmetic variants (/tmp vs /tmp/) yield one digest and an approved command
+// is not re-prompted on retry. An empty cwd stays empty (Clean would yield ".").
 func ShellApprovalDigest(command, cwd string) string {
+	if strings.TrimSpace(cwd) != "" {
+		cwd = filepath.Clean(cwd)
+	}
 	sum := sha256.Sum256([]byte(cwd + "\x00" + command))
 	return hex.EncodeToString(sum[:])
 }
