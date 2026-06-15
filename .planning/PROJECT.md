@@ -14,6 +14,22 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 
 **Next: v1.0.0 — Aura Deep Search Web Cockpit** (definito via `/gsd-new-milestone`): operator cockpit web embedded (Vite + React + assistant-ui) sopra l'AG-UI/SSE gateway, secondo `docs/design/aura-deep-search-figma/ux-spec.md`.
 
+## Current Milestone: v1.0.0 — Aura Deep Search Web Cockpit
+
+**Goal:** Build the embedded "Aura Deep Search" operator cockpit (Vite + React + `@assistant-ui/react-ag-ui`) served from `aura serve` over the existing AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md` — preserving the single-binary deploy invariant — and harden the agent perimeter first so the web exposure lands on a production-ready base.
+
+**Target features:**
+- Agent perimeter production-readiness hardening (Phase 22 — `internal/agent` audit remediation: panic firewall, `shell_exec` secret-leak, MCP reconnect resilience, hook fail-soft, observability)
+- Embedded operator cockpit SPA served from `aura serve` via `//go:embed` (single binary, one port)
+- Minimal web-auth boundary (GAP-2): reverse-proxy default + in-binary signed session cookie (activates `capability_grants`) + fail-fast non-loopback guard
+- Chat lane (assistant-ui over `POST /agent/run` SSE) + conversation list/search/rename/archive + approval center (HITL) + runtime health + cost/cache footer
+- Typed-display protocol (GAP-1): `aura.display` CUSTOM event + Go normalizer + display router (web_result / document / code / table / chart / system_event / swarm_report / graph_*)
+- Neo4j Graph Explorer (WebGL canvas, path strip, node inspector, read-only Cypher guard)
+- Read-only governance boards (MCP server list/status, skills active/pending/archived/audit, scheduler board)
+- Web onboarding / setup wizard
+
+**Deferred to a follow-up milestone:** governance write surfaces (MCP install/remove, skill approve/delete via HTTP) and the `ui_control` operator-OS shell (dock windows, command palette) — highest abuse surface, needs hardened auth.
+
 ## Requirements
 
 ### Validated
@@ -53,9 +69,15 @@ Tutti i requisiti del substrate v0.0.0 sono shipped + audit-passed (vedi `.plann
 
 ### Active
 
-<!-- Next milestone scope (v1.0.0 — Aura Deep Search Web Cockpit) is populated by /gsd-new-milestone. -->
+v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; mapped to phases by the roadmapper):
 
-(Defined per milestone — pending `/gsd-new-milestone` v1.0.0)
+- [ ] **HARDEN-\***: Agent perimeter production-readiness remediation (Phase 22 bug-fix; `internal/agent` audit)
+- [ ] **WEB-\***: Embedded cockpit SPA host (`aura serve` + `//go:embed`) + minimal web-auth boundary (GAP-2)
+- [ ] **CHAT-\***: assistant-ui chat lane over AG-UI/SSE + conversations + approval center + runtime health + cost/cache
+- [ ] **DISPLAY-\***: Typed-display protocol (GAP-1) + display router
+- [ ] **GRAPH-\***: Neo4j Graph Explorer (read-only)
+- [ ] **GOV-\***: Read-only governance boards (MCP / skills / scheduler)
+- [ ] **ONBOARD-\***: Web onboarding / setup wizard
 
 ### Out of Scope
 
