@@ -690,6 +690,16 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run lint && npm run format:check && npm run typecheck
 
+      - name: No-skip-as-green backstop (filter must not have misfired)
+        # WR-05: when the filter says web==false, cross-check the event diff and FAIL
+        # if a web path actually changed (filter misfire would merge gates skipped).
+        # Fail-open on an uncomputable range; never red-falses the pipeline.
+        if: steps.changes.outputs.web != 'true'
+        run: |
+          bash scripts/web_filter_backstop.sh \
+            "${{ github.event.pull_request.base.sha || github.event.before }}" \
+            "${{ github.event.pull_request.head.sha || github.sha }}"
+
   web-test:
     name: Web unit tests (Vitest + coverage)
     runs-on: ubuntu-latest
@@ -717,6 +727,15 @@ jobs:
       - name: Vitest (FND-06)
         if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run test
+
+      - name: No-skip-as-green backstop (filter must not have misfired)
+        # WR-05: see web-lint — fails if the filter said web==false but a web path
+        # actually changed in the event range. Fail-open on an uncomputable range.
+        if: steps.changes.outputs.web != 'true'
+        run: |
+          bash scripts/web_filter_backstop.sh \
+            "${{ github.event.pull_request.base.sha || github.event.before }}" \
+            "${{ github.event.pull_request.head.sha || github.sha }}"
 
   web-dist-freshness:
     name: Web dist freshness (committed internal/webui/dist == fresh build, D-05)
@@ -749,6 +768,15 @@ jobs:
         # path, not web/dist. First Linux-Node-24 run is the byte-canonical proof.
         if: steps.changes.outputs.web == 'true'
         run: bash scripts/web_dist_freshness.sh
+
+      - name: No-skip-as-green backstop (filter must not have misfired)
+        # WR-05: see web-lint. This job already checks out with fetch-depth: 0, so the
+        # range cross-check is fully reliable here. Fails if web==false but web changed.
+        if: steps.changes.outputs.web != 'true'
+        run: |
+          bash scripts/web_filter_backstop.sh \
+            "${{ github.event.pull_request.base.sha || github.event.before }}" \
+            "${{ github.event.pull_request.head.sha || github.sha }}"
 
   web-e2e:
     name: Web E2E (Playwright boots aura serve over docker-compose Postgres)
