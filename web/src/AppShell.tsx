@@ -1,3 +1,5 @@
+import { RuntimeHealthPanel } from './health/RuntimeHealthPanel';
+
 const MODES = ['Chat', 'Tree', 'Graph', 'Displays', 'Settings'] as const;
 
 export function AppShell() {
@@ -39,8 +41,10 @@ export function AppShell() {
 
         <aside
           aria-label="Display workspace"
-          className="min-h-0 border-l border-border bg-surface"
-        />
+          className="min-h-0 overflow-y-auto border-l border-border bg-surface"
+        >
+          <RuntimeHealthPanel />
+        </aside>
       </main>
     </div>
   );
