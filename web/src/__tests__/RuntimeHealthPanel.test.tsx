@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RuntimeHealthPanel } from '../health/RuntimeHealthPanel';
+import i18n from '../i18n/i18n';
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -39,6 +40,7 @@ function stubHealth(
 describe('RuntimeHealthPanel', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    void i18n.changeLanguage('en');
   });
 
   it('shows the loading caption before the first poll resolves', () => {
@@ -51,7 +53,7 @@ describe('RuntimeHealthPanel', () => {
       vi.fn(() => pending),
     );
     renderPanel();
-    expect(screen.getByText('Checking runtime…')).toBeTruthy();
+    expect(screen.getByText('Checking runtime...')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Runtime', level: 2 })).toBeTruthy();
   });
 
@@ -110,5 +112,24 @@ describe('RuntimeHealthPanel', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Degraded').length).toBeGreaterThan(0);
     });
+  });
+
+  it('renders the runtime health panel in Italian', async () => {
+    await i18n.changeLanguage('it');
+    stubHealth(
+      { status: 200, body: { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' } },
+      { status: 200, body: { ready: true, deps: { postgres: 'ok', neo4j: 'ok' } } },
+    );
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Stato runtime', level: 2 })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Vitalità')).toBeTruthy();
+    });
+    expect(screen.getAllByText('Pronto').length).toBeGreaterThan(0);
+    expect(screen.getByText('Indirizzo bind')).toBeTruthy();
   });
 });

@@ -1,16 +1,20 @@
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { LOGIN_COPY } from './loginCopy';
+import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 
 type SubmitState = 'idle' | 'submitting';
+type LoginErrorKey = 'login.errors.wrongPassphrase' | 'login.errors.network';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { t } = useTranslation();
   const sessionExpired = searchParams.get('expired') === '1';
 
   const [state, setState] = useState<SubmitState>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoginErrorKey | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const fieldRef = useRef<HTMLInputElement>(null);
 
   async function submit(form: HTMLFormElement) {
@@ -37,9 +41,9 @@ export function LoginPage() {
       }
       // The server returns a GENERIC 401 with no oracle (it cannot tell us whether the
       // secret is unset vs. wrong) — surface the wrong-passphrase copy for that case.
-      setError(LOGIN_COPY.errorWrongPassphrase);
+      setError('login.errors.wrongPassphrase');
     } catch {
-      setError(LOGIN_COPY.errorNetwork);
+      setError('login.errors.network');
     } finally {
       setState('idle');
       // Move focus back to the field on a failed submit (WCAG 3.3.1).
@@ -52,20 +56,23 @@ export function LoginPage() {
   return (
     <main className="grid min-h-dvh place-items-center bg-bg px-8 text-text">
       <div className="w-full max-w-sm rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+        <div className="flex justify-end pb-2">
+          <LanguageSwitcher />
+        </div>
         <div className="flex flex-col items-center gap-2 pb-4">
           <img src="/logo.png" alt="Aura" width={32} height={32} className="rounded-sm" />
-          <h1 className="text-xl font-medium text-text">{LOGIN_COPY.title}</h1>
-          <p className="text-sm text-text-muted">{LOGIN_COPY.subtitle}</p>
+          <h1 className="text-xl font-medium text-text">{t('login.title')}</h1>
+          <p className="text-sm text-text-muted">{t('login.subtitle')}</p>
         </div>
 
         {sessionExpired ? (
           <p role="status" className="mb-3 text-sm text-warning">
-            {LOGIN_COPY.sessionExpired}
+            {t('login.sessionExpired')}
           </p>
         ) : null}
 
         <form
-          aria-label={LOGIN_COPY.cta}
+          aria-label={t('login.cta')}
           onSubmit={(event) => {
             event.preventDefault();
             void submit(event.currentTarget);
@@ -75,29 +82,74 @@ export function LoginPage() {
         >
           <div className="flex flex-col gap-1">
             <label htmlFor="passphrase" className="text-sm text-text">
-              {LOGIN_COPY.fieldLabel}
+              {t('login.fieldLabel')}
             </label>
-            <input
-              ref={fieldRef}
-              id="passphrase"
-              name="passphrase"
-              type="password"
-              autoComplete="current-password"
-              // Omit aria-invalid on a pristine/valid field rather than emitting
-              // aria-invalid="false": `cond || undefined` makes React drop the attribute.
-              // Valid aria-invalid tokens are only true|false|grammar|spelling (axe aria-valid-attr-value).
-              aria-invalid={error !== null || undefined}
-              aria-describedby="passphrase-hint"
-              className="min-h-[var(--row-h)] rounded-[var(--radius-md)] border border-border bg-surface-2 px-3 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            />
+            <div className="relative">
+              <input
+                ref={fieldRef}
+                id="passphrase"
+                name="passphrase"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                // Omit aria-invalid on a pristine/valid field rather than emitting
+                // aria-invalid="false": `cond || undefined` makes React drop the attribute.
+                // Valid aria-invalid tokens are only true|false|grammar|spelling (axe aria-valid-attr-value).
+                aria-invalid={error !== null || undefined}
+                aria-describedby="passphrase-hint"
+                className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 pl-3 pr-11 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPassword((v) => !v);
+                }}
+                aria-pressed={showPassword}
+                aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                className="absolute inset-y-0 right-0 flex min-h-[var(--row-h)] min-w-11 items-center justify-center rounded-r-[var(--radius-md)] px-3 text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                {showPassword ? (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                    <path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                    <line x1="2" y1="2" x2="22" y2="22" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
             <p id="passphrase-hint" className="text-[0.6875rem] text-text-faint">
-              {LOGIN_COPY.fieldHint}
+              {t('login.fieldHint')}
             </p>
           </div>
 
           {error !== null ? (
             <p role="alert" className="text-sm text-danger">
-              {error}
+              {t(error)}
             </p>
           ) : null}
 
@@ -106,7 +158,7 @@ export function LoginPage() {
             disabled={submitting}
             className="min-h-[44px] rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-70"
           >
-            {submitting ? LOGIN_COPY.ctaInFlight : LOGIN_COPY.cta}
+            {submitting ? t('login.ctaInFlight') : t('login.cta')}
           </button>
         </form>
       </div>

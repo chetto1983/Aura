@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import i18n from './i18n/i18n';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -27,8 +28,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           className="grid h-dvh place-items-center bg-bg px-6 text-center text-text"
         >
           <div className="max-w-md">
-            <p className="text-sm font-medium text-text">Aura could not render this view.</p>
-            <p className="mt-2 text-xs text-text-muted">Reload to try again.</p>
+            <p className="text-sm font-medium text-text">{i18n.t('errorBoundary.title')}</p>
+            <p className="mt-2 text-xs text-text-muted">{i18n.t('errorBoundary.action')}</p>
           </div>
         </div>
       );

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from '../AppShell';
+import i18n from '../i18n/i18n';
 
 // The marketing-hero copy this operator console must NOT ship (ux-spec §350 / SC4).
 const MARKETING_HERO_BLOCKLIST = [
@@ -34,13 +35,24 @@ describe('AppShell', () => {
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
+    await i18n.changeLanguage('en');
   });
 
   it('renders the Aura brand mark', () => {
     renderShell();
     expect(screen.getByRole('img', { name: /aura/i })).toBeTruthy();
+  });
+
+  it('switches the cockpit shell to Italian', () => {
+    renderShell();
+    fireEvent.click(screen.getByRole('button', { name: 'Italiano' }));
+
+    expect(screen.getByRole('navigation', { name: 'Principale' })).toBeTruthy();
+    expect(screen.getByText('Albero')).toBeTruthy();
+    expect(screen.getByText('Indagini')).toBeTruthy();
+    expect(screen.getByLabelText('Area display')).toBeTruthy();
   });
 
   it('ships no marketing-hero copy in the primary viewport', () => {

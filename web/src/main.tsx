@@ -8,6 +8,7 @@ import { LoginPage } from './routes/LoginPage';
 import { NotFoundView } from './routes/NotFoundView';
 import { queryClient } from './queryClient';
 import { applyTheme } from './theme/applyTheme';
+import './i18n/i18n';
 import './styles/index.css';
 
 // D-08: theme + density are already on <html> from the index.html pre-paint script;
