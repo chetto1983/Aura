@@ -1,10 +1,11 @@
 ---
 phase: 24
 slug: web-foundation-serve-auth-health
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-06-16
+reviewed_at: 2026-06-16
 ---
 
 # Phase 24 — UI Design Contract
