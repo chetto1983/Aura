@@ -15,6 +15,17 @@
 	@agui path /agent/* /threads/* /healthz /readyz /debug/vars /metrics
 	@setup path /setup /setup/*
 
+	# Google OAuth redirect callback: after consent Google sends the operator's browser
+	# here with ?code&state and NO Aura token, so it is exempt from @authed and proxies
+	# straight to the PIM calendar sidecar, which exchanges the code and renders a result
+	# page. The cockpit polls /admin/accounts/{id}/status for the linked state. The OAuth
+	# state binds the exchange, so an unauthenticated callback path is the standard,
+	# low-risk shape. Set AURA_PIM_EXTERNAL_BASE_URL so the sidecar builds this exact
+	# https://<host>/admin/auth/google/callback redirect URI (register it in the Google client).
+	handle /admin/auth/google/callback {
+		reverse_proxy aura-pim-mcp:8080
+	}
+
 	handle @authed {
 		handle @agui {
 			reverse_proxy aura:9080

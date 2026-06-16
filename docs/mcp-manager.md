@@ -200,6 +200,34 @@ Managed policy supports:
 Aura denies `destructive` and `unknown` risk by default in managed policy decisions.
 Blocked tools never enter the agent registry.
 
+## Connecting calendar/email accounts (OAuth)
+
+The `calendar` recipe is the PIM sidecar (forked calendar-mcp). It manages OAuth accounts
+through its token-gated `/admin` REST API, which Aura's cockpit drives via the backend
+proxy at `/api/integrations/calendar/*` — the admin token is injected server-side, so the
+browser never holds it. Validate the whole flow locally with **`aura mcp console`** (a
+DB-free page that mounts the real proxy; open the printed `http://127.0.0.1:9099/`).
+
+**Microsoft / Outlook (device code)** — no redirect, works everywhere:
+
+- `POST /admin/auth/{accountId}/start` returns a user code + the `microsoft.com/devicelogin` URL.
+- The operator enters the code there; the cockpit polls `/admin/auth/{accountId}/status`.
+
+**Google (web redirect)** — needs a deterministic, registered redirect URI:
+
+1. Set `AURA_PIM_EXTERNAL_BASE_URL` to the Caddy-fronted host the operator's browser uses
+   (e.g. `https://aura.local`). The sidecar then builds the redirect URI
+   `<base>/admin/auth/google/callback` deterministically (regardless of the
+   cockpit→proxy→sidecar path). Same-host operators may instead use
+   `http://localhost:8093` (Google allows `localhost` over http).
+2. In the Google Cloud Console OAuth client (**Web application** type), add that exact URI as
+   an **Authorized redirect URI**: `https://<host>/admin/auth/google/callback`.
+3. Caddy already routes `/admin/auth/google/callback` to the sidecar **token-exempt** (Google's
+   redirect carries `?code&state`, not an Aura token).
+4. Connect: `GET /admin/auth/{accountId}/google/start` returns `{authUrl, redirectUri}`; the
+   cockpit opens `authUrl`; after consent Google redirects to the callback, the sidecar
+   exchanges the code and renders a result page; the cockpit polls account status.
+
 ## Live Checks
 
 Automated tests use fake stdio servers and `httptest`; they do not run Docker, npx,

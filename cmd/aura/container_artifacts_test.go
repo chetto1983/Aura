@@ -122,6 +122,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"@setup path /setup /setup/*",
 		"reverse_proxy aura:9080",
 		"reverse_proxy aura:9081",
+		// Google OAuth redirect callback routed to the PIM sidecar, token-exempt.
+		"handle /admin/auth/google/callback {",
+		"reverse_proxy aura-pim-mcp:8080",
 		"respond 401",
 	} {
 		if !strings.Contains(caddyfile, want) {

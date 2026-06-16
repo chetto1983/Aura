@@ -511,6 +511,12 @@ services:
     restart: unless-stopped
     environment:
       CALENDAR_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:-changeme-aura-pim-local}
+      # The external base the sidecar uses to build the Google OAuth redirect URI
+      # (<base>/admin/auth/google/callback). Set it to the Caddy-fronted host
+      # (e.g. https://aura.local) so the URI is deterministic regardless of the
+      # cockpit→proxy→sidecar X-Forwarded path; register that exact URI in the Google
+      # client. Empty = derive from request headers (works only for direct/loopback).
+      CalendarMcp__ExternalBaseUrl: ${AURA_PIM_EXTERNAL_BASE_URL:-}
     ports:
       - "127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8080"
     volumes:
