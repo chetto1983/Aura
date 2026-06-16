@@ -462,7 +462,7 @@ func TestRequireCapability(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
 		req = withPrincipal(req, testLocalID)
 		rec := httptest.NewRecorder()
-		requireCapability(next, deps, "agent.run").ServeHTTP(rec, req)
+		RequireCapability(next, deps, "agent.run").ServeHTTP(rec, req)
 		if !*hit || rec.Code != http.StatusOK {
 			t.Fatalf("authorized capability: hit=%v code=%d, want hit=true code=200", *hit, rec.Code)
 		}
@@ -473,7 +473,7 @@ func TestRequireCapability(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
 		req = withPrincipal(req, testLocalID)
 		rec := httptest.NewRecorder()
-		requireCapability(next, deps, "governance.write").ServeHTTP(rec, req) // not granted
+		RequireCapability(next, deps, "governance.write").ServeHTTP(rec, req) // not granted
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", rec.Code)
 		}
@@ -486,7 +486,7 @@ func TestRequireCapability(t *testing.T) {
 		next, hit := nextRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil) // no principal on ctx
 		rec := httptest.NewRecorder()
-		requireCapability(next, deps, "agent.run").ServeHTTP(rec, req)
+		RequireCapability(next, deps, "agent.run").ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", rec.Code)
 		}
@@ -502,7 +502,7 @@ func TestRequireCapability(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
 		req = withPrincipal(req, testLocalID)
 		rec := httptest.NewRecorder()
-		requireCapability(next, errDeps, "agent.run").ServeHTTP(rec, req)
+		RequireCapability(next, errDeps, "agent.run").ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403 on store error", rec.Code)
 		}

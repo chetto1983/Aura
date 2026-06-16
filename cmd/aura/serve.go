@@ -251,7 +251,15 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// routes authoritative and falls everything else through to the static shell
 	// (FND-02). A webui embed failure is fatal at boot — a committed dist makes it
 	// unreachable, but a half-wired host must not start.
-	serveHandler, err := newServeHandler(aguiServer.Mux())
+	//
+	// WEB-03: the parent mux is wrapped in the in-binary web-auth boundary. buildAuthDeps
+	// derives the HMAC signing key from AURA_WEB_AUTH_SECRET, binds the session to the
+	// seeded `local` identity, and sets SecretConfigured from the non-empty secret. When
+	// no secret is configured (loopback dev) RequireAuth is a no-op pass-through, so the
+	// daemon serves unauthenticated exactly as before; GuardWebBind (below) guarantees an
+	// unconfigured secret is only reachable on a loopback bind.
+	auth := buildAuthDeps(ctx, chat)
+	serveHandler, err := newServeHandler(aguiServer.Mux(), auth)
 	if err != nil {
 		chat.close()
 		return nil, fmt.Errorf("build serve handler: %w", err)

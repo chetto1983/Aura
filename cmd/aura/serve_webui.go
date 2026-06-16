@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/webui"
 )
 
@@ -71,6 +72,12 @@ func fallbackExcludedPrefixes() []string {
 	}
 }
 
+// agentRunCapability is the capability_grants name the mutating POST /agent/run route
+// is gated on (D-04 / WEB-03). The seeded `local` identity holds the `*` wildcard so it
+// passes regardless of the exact name; the name only becomes load-bearing when real
+// grants arrive in Phase 28. It invents no governance write routes — those land later.
+const agentRunCapability = "agent.run"
+
 // newServeHandler builds the parent http.Handler for the daemon's single loopback
 // server: the AG-UI route prefixes delegate to aguiHandler (the agui Server.Mux), the
 // integrations proxy subtree mounts ahead of "/", and the catch-all "/" serves the
@@ -78,20 +85,44 @@ func fallbackExcludedPrefixes() []string {
 // A webui.Handler failure (an embed sub error, which a committed dist makes
 // unreachable) is returned so bootServe fails the daemon boot cleanly rather than
 // mounting a half-wired host.
-func newServeHandler(aguiHandler http.Handler) (http.Handler, error) {
+//
+// WEB-03 (D-03/D-04): the whole returned subtree is wrapped in agui.RequireAuth so the
+// origin is private when a secret is configured — the public-path exceptions (the login
+// route + its assets + GET /healthz) are handled INSIDE the middleware, not by leaving
+// routes unwrapped. POST /login + POST /logout register as public credential endpoints.
+// The only mutating route, POST /agent/run, is additionally interposed with
+// agui.RequireCapability ahead of the AG-UI prefix loop (Go 1.22 method-pattern
+// precedence makes "POST /agent/run" win over the bare "/agent/run") so the capability
+// gate fires AFTER RequireAuth has bound the principal. When no secret is configured
+// (loopback dev) RequireAuth is a no-op pass-through and the daemon serves exactly as
+// before (the Plan-01 boot guard confines an unconfigured secret to loopback).
+func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps) (http.Handler, error) {
 	static, err := webui.Handler(fallbackExcludedPrefixes())
 	if err != nil {
 		return nil, fmt.Errorf("webui handler: %w", err)
 	}
 	mux := http.NewServeMux()
+	// The mutating route is interposed with the capability gate FIRST: "POST /agent/run"
+	// is a more specific pattern than the bare "/agent/run" the prefix loop registers, so
+	// Go 1.22 longest-pattern precedence routes the POST through RequireCapability →
+	// aguiHandler while other methods/paths under /agent/run fall to the prefix entry.
+	mux.Handle("POST /agent/run", agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	for _, prefix := range aguiRoutePrefixes {
 		mux.Handle(prefix, aguiHandler)
 	}
+	// Public credential endpoints (NOT behind the gate — RequireAuth's public-path set
+	// lets the login route + assets through, and these POST handlers issue/clear the
+	// cookie). They mount on the parent mux so they sit beside the AG-UI routes.
+	mux.HandleFunc("POST /login", auth.LoginHandler())
+	mux.HandleFunc("POST /logout", auth.LogoutHandler())
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the
 	// fallback exclusion set, so registering it would collide with this subtree.
 	mux.Handle(integrationsRoutePrefix, newIntegrationsProxy())
 	mux.Handle("/", static)
-	return mux, nil
+	// Wrap the WHOLE parent mux in the WEB-03 whole-origin gate (D-03). The public-path
+	// exceptions are handled inside RequireAuth; a no-op pass-through when no secret is
+	// configured keeps loopback dev unauthenticated.
+	return agui.RequireAuth(mux, auth), nil
 }

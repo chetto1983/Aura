@@ -218,14 +218,14 @@ func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
 }
 
-// requireCapability wraps a mutating-route handler with the capability_grants check
+// RequireCapability wraps a mutating-route handler with the capability_grants check
 // (D-04): it reads the principal RequireAuth stashed, asks the identity store
 // HasCapability(principal, capability), and 403s on a missing principal, a store error,
 // or a denied capability. This is the seam that exercises the dormant capability_grants
 // scaffolding on the ONLY mutating route (POST /agent/run); the seeded `local` identity
 // passes via its `*` wildcard. It invents NO governance write routes — those land in
-// Phase 28.
-func requireCapability(next http.Handler, deps AuthDeps, capability string) http.Handler {
+// Phase 28. Exported so the composition root (cmd/aura) interposes it on the parent mux.
+func RequireCapability(next http.Handler, deps AuthDeps, capability string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identityID := principalFrom(r.Context())
 		if identityID == "" {
