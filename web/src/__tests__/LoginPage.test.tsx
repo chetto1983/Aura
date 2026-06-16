@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18n from '../i18n/i18n';
 import { LoginPage } from '../routes/LoginPage';
 
@@ -79,6 +79,24 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(field.getAttribute('aria-invalid')).toBe('true');
     });
+  });
+
+  it('navigates to the cockpit on a successful login', async () => {
+    // A 2xx from /login means the server set the cookie and redirected; the SPA navigates to "/".
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))),
+    );
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<div>cockpit home</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
+    expect(await screen.findByText('cockpit home')).toBeTruthy();
   });
 
   it('shows the session-expired notice when redirected with ?expired=1', () => {

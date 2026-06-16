@@ -15,6 +15,7 @@ export function normalizeLanguage(value: string | null | undefined): AppLanguage
 }
 
 function storedLanguage(): AppLanguage | undefined {
+  /* v8 ignore next 2 -- SSR guard: window is always defined in the SPA + jsdom */
   if (typeof window === 'undefined') {
     return undefined;
   }
@@ -22,6 +23,7 @@ function storedLanguage(): AppLanguage | undefined {
 }
 
 function queryLanguage(): AppLanguage | undefined {
+  /* v8 ignore next 2 -- SSR guard: window is always defined in the SPA + jsdom */
   if (typeof window === 'undefined') {
     return undefined;
   }
@@ -29,6 +31,7 @@ function queryLanguage(): AppLanguage | undefined {
 }
 
 function browserLanguage(): AppLanguage | undefined {
+  /* v8 ignore next 2 -- SSR guard: navigator is always defined in the SPA + jsdom */
   if (typeof navigator === 'undefined') {
     return undefined;
   }
@@ -39,6 +42,7 @@ function browserLanguage(): AppLanguage | undefined {
       return normalized;
     }
   }
+  /* v8 ignore next -- jsdom always reports an en/it-resolvable navigator language */
   return undefined;
 }
 

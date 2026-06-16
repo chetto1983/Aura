@@ -114,6 +114,38 @@ describe('RuntimeHealthPanel', () => {
     });
   });
 
+  it('marks readiness + deps Unavailable when only /readyz is unreachable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (urlOf(input).includes('/readyz')) {
+          return Promise.reject(new Error('readyz down'));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }),
+    );
+    renderPanel();
+    // Liveness is Live (/healthz ok) but readiness + postgres + neo4j read Unavailable.
+    await waitFor(() => {
+      expect(screen.getByText('Live')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('renders the unreachable alert when both probes error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('connection refused'))),
+    );
+    renderPanel();
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toContain("Can't read runtime status");
+    });
+  });
+
   it('renders the runtime health panel in Italian', async () => {
     await i18n.changeLanguage('it');
     stubHealth(
