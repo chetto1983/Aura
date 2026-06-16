@@ -1,12 +1,12 @@
 ---
 phase: 22
 slug: bug-fix
-status: automated_passed_manual_pending
+status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-06-15
-updated: 2026-06-15
-evidence_head: 036575b5
+updated: 2026-06-16
+evidence_head: 28c1f7c7
 mutation_score: "budget_dedup 85.5% · bridge_reconnect 73.4% · llm_agent_parallel 73.7% (all ≥70%)"
 coverage: "89.4% owned-surface (≥85%)"
 ---
@@ -19,9 +19,10 @@ coverage: "89.4% owned-surface (≥85%)"
 > The full automated/live evidence is in
 > [`docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`](../../../docs/audit/22-LIVE-SIGNOFF-2026-06-15.md).
 >
-> This file splits the gate into **(A) AUTOMATED EVIDENCE — done** and **(B) PENDING
-> OPERATOR SIGN-OFF** (the destructive coverage gate, the WSL quality bar, and the
-> full live-stack pass). No fabricated pass is recorded for anything not run.
+> This file splits the gate into **(A) AUTOMATED EVIDENCE — done** and **(B) OPERATOR
+> SIGN-OFF — done** (the destructive coverage gate B1, the WSL quality bar B2, and the
+> full live-stack pass B3, all signed off — B3 on 2026-06-16). No fabricated pass is
+> recorded for anything not run.
 
 ---
 
@@ -57,11 +58,13 @@ in the wave SUMMARYs (22-01..22-04). 22-05 added `TestSkillSchemaIsHonestNotDish
 
 ---
 
-## Part B — QUALITY BAR (B1/B2 executed 2026-06-15 on the live stack) + LIVE SIGN-OFF (B3 pending)
+## Part B — QUALITY BAR (B1/B2 executed 2026-06-15 on the live stack) + LIVE SIGN-OFF (B3 signed-off 2026-06-16)
 
 > B1/B2 were run by the orchestrator against the live Docker stack (all services
 > healthy) on the operator's go-ahead — B1 reset the shared Postgres by design.
-> Only **B3 (full live-stack sign-off)** remains operator-coordinated.
+> **B3 (full live-stack sign-off) was driven 2026-06-16** at HEAD `85b5e1ae` (9/9
+> acceptance rows, each a ground-truth assertion not `r.Reply`) — see the live-signoff
+> Part B3 table. Gate-3 is CLOSED.
 > Exact commands + acceptance live in
 > [`docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`](../../../docs/audit/22-LIVE-SIGNOFF-2026-06-15.md)
 > Parts B1–B3.
@@ -72,7 +75,7 @@ in the wave SUMMARYs (22-01..22-04). 22-05 added `TestSkillSchemaIsHonestNotDish
 | B2a | Lint | `golangci-lint run ./...` | 0 issues | ✅ **0 issues** (whole module) |
 | B2b | Vuln | `govulncheck ./...` | 0 actionable CVEs | ✅ **no vulnerabilities** |
 | B2c | Mutation ≥70% killed | `go-mutesting` on `llm_agent_parallel.go`, `budget_dedup.go`, `mcptools/bridge_reconnect.go` | ≥70% killed each, or documented near-equivalent-survivor autopsy | ✅ **budget_dedup 85.5% · bridge_reconnect 73.4% · llm_agent_parallel 73.7%** |
-| B3 | Full live stack | `aura serve` + acceptance matrix | per the live-signoff B3 table (metrics scrape, CDP Telegram, GLM-OCR fs-cap, MCP reconnect, reasoning fallback, skill self-extension, DSN boundary, ledger redaction) | ⏳ `pending` (operator) |
+| B3 | Full live stack | `aura serve` + acceptance matrix | per the live-signoff B3 table (metrics scrape, CDP Telegram, GLM-OCR fs-cap, MCP reconnect, reasoning fallback, skill self-extension, DSN boundary, ledger redaction) | ✅ **signed-off 2026-06-16** (HEAD `85b5e1ae`, 9/9 rows) |
 
 ### B2c mutation autopsy (post-hardening)
 
@@ -130,6 +133,69 @@ AG-034 (→`internal/toolinvocations`), AG-041 (→`cmd/aura`).
 - **Automated floor:** ✅ green (build/vet/test/race/cache) — whole module, zero failures.
 - **Quality bar (B1/B2):** ✅ coverage 89.4% · lint 0 · vuln clean · mutation ≥70% on all
   three critical files (autopsy above).
-- **Live sign-off (B3):** ⏳ `pending` — operator-coordinated full live-stack pass (TODO 2026-06-16).
+- **Live sign-off (B3):** ✅ signed-off 2026-06-16 (HEAD `85b5e1ae`, 9/9 acceptance rows,
+  each a ground-truth assertion — live-signoff Part B3). **Gate-3 CLOSED.**
 - **Audit residue:** ✅ zero — 64/64 AG-### disposed in the ledger; HARDEN-01..12 all
   mapped.
+
+---
+
+## Validation Audit 2026-06-16
+
+`/gsd-validate-phase 22` re-audit at HEAD `28c1f7c7` (clean tree). The predicted Part-A
+PASSes were **re-executed live**, not trusted — and the named regression tests were
+proven to actually run (not silently skip).
+
+| Metric | Count |
+|--------|-------|
+| Requirements (HARDEN-01..12) | 12 |
+| COVERED (real runnable green test) | 12 |
+| PARTIAL | 0 |
+| MISSING | 0 |
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated (manual-only) | 0 |
+
+**Live re-execution (HEAD `28c1f7c7`, `go 1.26.4 windows/amd64`):**
+
+| Gate | Command | Result |
+|------|---------|--------|
+| A1 | `go build ./...` | ✅ exit 0 |
+| A2 | `go vet ./...` | ✅ exit 0 |
+| A3 | `go test ./internal/agent/... ./internal/swarm/... ./internal/secret/... ./internal/reasoningtrace/... ./cmd/aura/...` (untagged) | ✅ all `ok`, exit 0 — incl. `cmd/aura` (the compose-drift `TestProductionContainerArtifactsMatchFatImageContract` is green after de-hardcode `e2b0d82a`) |
+| A4 | `BASH_ENV=~/.aura-toolchain.sh go test -race ./internal/agent/... ./internal/swarm/...` | ✅ race-clean, all 7 packages `ok`, exit 0 |
+| A5 | `bash scripts/cache_invariant_audit.sh` | ✅ 22 identical messages[0]/messages[1]/skill-manifest hashes, exit 0 |
+
+**Execution proof (`-run … -v`):** `TestExecuteBatch_PanickingToolSurfacesModelVisibleError`
+(+ `/inline_single_call`, `/parallel_batch_call`), `TestExecuteBatch_PanicRecordsObservabilityMetrics`,
+`TestBudget_BeforeAfterToolResult_Concurrent`, `TestToolInvocation_ForensicShapeIsRawRedactionRoutedToStore`,
+`TestUntrustedSource_UnknownToolDefaultsUntrusted`, `TestRunnerAdapterDrivesEngine`,
+`TestSwarmPanicIsolation`, `TestConfiguredMCPCallTimeout` (6 subtests),
+`TestBridge_BadTimeoutEnvFailsBeforeListTools`, `TestBridgedTool_Execute_NoDeadlineWhenTimeoutMinusOne`,
+`TestMountManagedServer_StdioBranchFailure` — all printed `RUN` + `PASS`, none skipped.
+
+**Stale-cited-name correction (no coverage impact — behaviors are COVERED):** the
+`22-VERIFICATION.md` HARDEN-08 row and the live-signoff row 1b cite `TestTrustDefault`
+and `TestSwarmRunnerAdapter`. Those exact names do **not** exist — `go test -run
+'TestTrustDefault$'` / `-run 'TestSwarmRunnerAdapter$'` both print `[no tests to run]`
+(silent false-green trap). The real, green tests are:
+
+- HARDEN-08 default-untrusted → `internal/agent/trust_default_test.go`
+  `TestUntrustedSource_UnknownToolDefaultsUntrusted` / `_SafeBuiltinsStayTrusted` /
+  `_ContentToolsStayUntrusted` / `_ExplicitProvenanceWins`.
+- HARDEN-08 swarm-child untrusted provenance → `internal/swarm/runner_adapter_test.go`
+  `TestRunnerAdapterDrivesEngine` (asserts `res.Provenance.Trust == tools.TrustUntrusted`,
+  line 64).
+
+The cited names were corrected in `22-VERIFICATION.md` + the live-signoff doc by this audit.
+
+**Not re-run by this audit (deliberate, already signed off):** B1 `make coverage` is a
+**destructive shared-PG wipe** — re-running it would have corrupted concurrent work and
+duplicated the 2026-06-15 evidence (owned-surface **89.4%**, commit `595fc6a1`); B2 lint/vuln
+need the WSL `~/go/bin` toolchain (done 2026-06-15). These are Gate-3 quality bars, not
+Nyquist test-coverage gaps, and were signed off in `22-VERIFICATION.md` (`status: passed`).
+
+**Verdict:** Phase 22 is **NYQUIST-COMPLIANT** — every requirement has automated
+verification that was observed to run green. Doc staleness (B3 still marked `pending` in
+this file + `22-UAT.md`, two stale cited test names) was the only audit finding; corrected
+here.
