@@ -39,7 +39,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 ### Web Foundation (WEB) — Slice A (gates everything)
 
 - [ ] **WEB-01**: Operator can open the cockpit served by `aura serve` from the single binary (SPA embedded via `//go:embed`), with API / `/agent` / health routes excluded from the SPA catch-all so API 404s stay real errors
-- [ ] **WEB-02**: `aura serve` refuses to bind a non-loopback address unless web auth is configured (fail-fast boot guard)
+- [x] **WEB-02**: `aura serve` refuses to bind a non-loopback address unless web auth is configured (fail-fast boot guard)
 - [ ] **WEB-03**: Mutating routes require authentication when exposed beyond loopback — reverse-proxy boundary supported with zero Go change, plus an in-binary signed session cookie (HttpOnly + Secure + SameSite=Strict) bound to an identity row (activates dormant `capability_grants`)
 - [ ] **WEB-04**: App shell renders with theme/density applied before boot (no flash) and a read-only runtime health/readyz panel aggregating `/healthz` + `/readyz` + status
 
@@ -161,7 +161,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | FND-05 | Phase 23 | Complete |
 | FND-06 | Phase 23 | Complete |
 | WEB-01 | Phase 24 | Pending |
-| WEB-02 | Phase 24 | Pending |
+| WEB-02 | Phase 24 | Complete |
 | WEB-03 | Phase 24 | Pending |
 | WEB-04 | Phase 24 | Pending |
 | CHAT-01 | Phase 25 | Pending |

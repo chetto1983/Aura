@@ -4,14 +4,14 @@ milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
 stopped_at: Phase 24 UI-SPEC approved
-last_updated: "2026-06-16T14:45:52.191Z"
-last_activity: 2026-06-16 -- Phase 24 planning complete
+last_updated: "2026-06-16T15:03:24.871Z"
+last_activity: 2026-06-16
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 12
-  completed_plans: 8
-  percent: 25
+  completed_plans: 9
+  percent: 75
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 24 — web-foundation (serve + auth + health) — next (Phase 23 frontend industrial foundation complete 2026-06-16)
+**Current focus:** Phase 24 — web-foundation-serve-auth-health
 
 ## Current Position
 
-Phase: 24
-Plan: Not started
+Phase: 24 (web-foundation-serve-auth-health) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-06-16 -- Phase 24 planning complete
+Last activity: 2026-06-16 -- Completed 24-01 (WEB-02 GuardWebBind boot guard + AURA_WEB_AUTH_SECRET/AURA_WEB_TRUST_PROXY knobs)
 
 ### Next -- Execute Phase 22
 
@@ -162,6 +162,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 23 P23-01 | 21min | 3 tasks (1 checkpoint + 2 auto) | 18 files |
 | Phase 23 P23-02 | 14min | 3 tasks | 36 files |
 | Phase 23 P23-03 | 8min | 3 tasks | 8 files |
+| Phase 24 P01 | ~25min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -282,6 +283,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 23-02: Vite build.outDir = ../internal/webui/dist (Go embed package-relative, 23-01 Dev #1); PWA/brand icons pre-generated from public/Logo.png with no build-time sharp dep (D-08 lean)
 - [Phase 23]: 23-03: aura serve mounts internal/webui.Handler() additively at / via newServeHandler parent ServeMux (AG-UI prefixes keep Go 1.22 longest-pattern precedence, no SPA-fallback — Phase 24/WEB-01)
 - [Phase 23]: 23-03: freshness gate + Dockerfile webbuild COPY target adapted from plan web/dist to internal/webui/dist (vite outDir, package-relative go:embed); web-e2e provisions docker-compose Postgres + dummy OPENROUTER_API_KEY (A-SERVE-NOSTACK: db.Open unconditional in bootServe)
+- [Phase ?]: Phase 24 WEB-02: GuardWebBind fail-fast non-loopback guard (D-05); bind widened on AURA_AGUI_BIND, no alias (D-06).
 
 ### Pending Todos
 
@@ -315,9 +317,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T14:06:30.315Z
+Last session: 2026-06-16T15:02:58.825Z
 Stopped at: Phase 24 UI-SPEC approved
-Resume file: .planning/phases/24-web-foundation-serve-auth-health/24-UI-SPEC.md
+Resume file: None
 
 ## Operator Next Steps
 
