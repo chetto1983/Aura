@@ -668,8 +668,12 @@ jobs:
     # t.Fatals under $CI when it is unset (a skipped tier fails the gate — CLAUDE.md).
     env:
       CI: "true"  # arms the no-skip-as-green t.Fatal in the tier
-      # The sidecar publishes on 127.0.0.1:8093 (compose maps it to the container's
-      # 8080); the trailing "/" is calendar-mcp's MCP-over-HTTP path (spike 064).
+      # The job runs the sidecar via `docker run` (NOT `docker compose`): compose would
+      # interpolate the WHOLE compose.yaml and fail on the unrelated `aura` service's
+      # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:sidecar
+      # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
+      # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
     steps:
       - name: Checkout
@@ -687,8 +691,14 @@ jobs:
         run: go vet -tags calendar_integration ./internal/mcp/
 
       - name: Start the Aura PIM sidecar (published GHCR image)
-        # aura-pim-mcp has no compose deps; pull_policy: missing pulls the public image.
-        run: docker compose up -d aura-pim-mcp
+        # Standalone `docker run` — the public image carries its own HEALTHCHECK
+        # (curl /health), so the wait step reads .State.Health.Status. Zero accounts is
+        # fine: tools/list + list_accounts answer without OAuth.
+        run: |
+          docker run -d --name aura-pim-mcp \
+            -p 127.0.0.1:8093:8080 \
+            -e CALENDAR_MCP_ADMIN_TOKEN=ci-not-a-secret \
+            "$AURA_PIM_MCP_IMAGE"
 
       - name: Wait for the PIM sidecar healthy
         run: |
@@ -711,7 +721,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker rm -f aura-pim-mcp || true
 
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
   # Four path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
