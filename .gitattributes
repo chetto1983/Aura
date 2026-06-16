@@ -20,7 +20,10 @@ internal/webui/dist/**  text eol=lf
 internal/db/sqlc/**     linguist-generated=true
 go.sum                  linguist-generated=true
 
-# Binary assets: never touch EOL, never diff as text.
+# Binary assets: never touch EOL, never diff as text. Listed AFTER the broad
+# `web/** text eol=lf` / `internal/webui/dist/** text eol=lf` globs so these
+# extension rules override them — a future font/wasm/modern-image the Vite/Workbox
+# build emits must NOT be LF-normalized (corrupts bytes + forges a stale-dist diff).
 *.png   binary
 *.jpg   binary
 *.jpeg  binary
@@ -30,3 +33,11 @@ go.sum                  linguist-generated=true
 *.dump  binary
 *.gz    binary
 *.zip   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.webp  binary
+*.avif  binary
+*.wasm  binary
