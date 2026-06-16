@@ -12,7 +12,7 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 
 **v0.0.0 Substrate — SHIPPED 2026-06-15** (24 phases, 144 plans, 233 tasks; audit PASSED). Il substrate agentico è feature-complete e live-proven sullo stack reale: persistence (PG+Neo4j), agent loop + workflow agents, LLM client, HITL, conversazioni, KV cache, sandbox, swarm, web tools, scheduler, skills, AG-UI gateway, Telegram multimodale, onboarding/Agent.md, memory (agent-memory MCP), MCP manager, hooks. Owned-surface coverage 90.3% (ogni package owned ≥85%), CI verde. Dettaglio storico in `.planning/MILESTONES.md` + `.planning/milestones/v0.0.0-*`.
 
-**Next: v1.0.0 — Aura Deep Search Web Cockpit** (definito via `/gsd-new-milestone`): operator cockpit web embedded (Vite + React + assistant-ui) sopra l'AG-UI/SSE gateway, secondo `docs/design/aura-deep-search-figma/ux-spec.md`.
+**Next: v1.0.0 — Aura Deep Search Web Cockpit** (definito via `/gsd-new-milestone`): operator cockpit web embedded (Vite + React + assistant-ui) sopra l'AG-UI/SSE gateway, secondo `docs/design/aura-deep-search-figma/ux-spec.md`. **Progress:** Phase 22 (agent perimeter hardening) + Phase 23 (frontend infrastructure & industrial foundation — Vite/React/TS `//go:embed` scaffold, dark-operator token theme, zero-warning web CI gate, Node-24 Docker build) complete; FND-01..06 validated (2 items pending first-CI live proof). Next: Phase 24 — web foundation (serve + auth + health).
 
 ## Current Milestone: v1.0.0 — Aura Deep Search Web Cockpit
 
@@ -157,4 +157,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-15 — v0.0.0 Substrate milestone SHIPPED (24 phases, 144 plans, 233 tasks; audit PASSED, owned-surface coverage 90.3%). All substrate requirements moved to Validated. TTS-out removed from Out of Scope (Kokoro shipped in Phase 13). Next: v1.0.0 Aura Deep Search Web Cockpit, scoped via /gsd-new-milestone.*
+*Last updated: 2026-06-16 — v1.0.0 in progress: Phase 22 (agent perimeter hardening) + Phase 23 (frontend infrastructure & industrial foundation) complete; FND-01..06 validated (web-dist-freshness byte-proof + live Playwright E2E pending first CI run). Next: Phase 24 — web foundation (serve + auth + health). Prior: v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; audit PASSED, owned-surface coverage 90.3%).*

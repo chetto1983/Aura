@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 23 — frontend-infrastructure-industrial-foundation
+**Current focus:** Phase 24 — web-foundation (serve + auth + health) — next (Phase 23 frontend industrial foundation complete 2026-06-16)
 
 ## Current Position
 
