@@ -181,6 +181,31 @@ func firstDistJSAsset(t *testing.T) string {
 	return ""
 }
 
+// TestIsPublicAsset pins the D-03 web-auth public-asset predicate: a real hashed
+// /assets/* bundle is public (the login page needs it pre-session), the SPA shell
+// (index.html / "/") is NOT (it stays gated), and an unknown client route is NOT (it
+// would fall back to the shell). A single shared bundle means the asset set is public.
+func TestIsPublicAsset(t *testing.T) {
+	asset := firstDistJSAsset(t)
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/assets/" + asset, true},    // real hashed bundle — public
+		{"assets/" + asset, true},     // leading slash is optional
+		{"/", false},                  // SPA shell root — gated
+		{"/index.html", false},        // the shell itself is not an asset
+		{"index.html", false},         // (same, no leading slash)
+		{"/threads/x", false},         // an API/client route is not a real asset
+		{"/does-not-exist.js", false}, // missing file — falls back to the shell, gated
+	}
+	for _, tc := range cases {
+		if got := IsPublicAsset(tc.path); got != tc.want {
+			t.Errorf("IsPublicAsset(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
 // TestSub asserts the embedded tree is rooted at dist/ so index.html resolves
 // from the FS root (the reason Handler serves it at "/").
 func TestSub(t *testing.T) {

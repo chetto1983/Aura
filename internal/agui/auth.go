@@ -69,6 +69,12 @@ type AuthDeps struct {
 	// LoginPath is the public login page route an unauthenticated browser GET is
 	// redirected to (default "/login").
 	LoginPath string
+	// PublicAsset reports whether a path is a real embedded static asset the login page
+	// needs before a session exists (the shared SPA bundle/styles, the PWA service
+	// worker/manifest, icons). It is wired from webui.IsPublicAsset at the composition
+	// root (cmd/aura/serve_webui.go); a nil predicate means no static asset is public
+	// (the gate still serves the login route + GET /healthz).
+	PublicAsset func(path string) bool
 }
 
 // ttl resolves the effective absolute session lifetime, defaulting a zero/negative
@@ -133,30 +139,18 @@ func (d AuthDeps) LogoutHandler() http.HandlerFunc {
 // KiB is generous headroom while defanging a hostile body before ParseForm decodes it.
 const maxLoginBodyBytes = 64 << 10
 
-// publicLoginAssetPrefixes are the static-asset paths the login PAGE needs before a
-// session exists (its bundle + styles). They are reachable WITHOUT a cookie (D-03)
-// so the login form can render. Everything else — the SPA shell, /readyz, /metrics,
-// /debug/vars — is gated. The login page itself is the LoginPath route; these are the
-// assets it pulls in. Kept narrow on purpose: the broad SPA `/assets/` tree is NOT
-// public (it is only served to an authenticated shell).
-var publicLoginAssetPrefixes = []string{
-	"/login-assets/", // the login page's own bundle/styles (served pre-auth)
-}
-
 // isPublicPath reports whether a request path is reachable WITHOUT a session (D-03):
-// the login page route, its own static assets, and GET /healthz (liveness must stay
-// reachable for proxies/orchestrators — Pitfall 4; /readyz is NOT public). The method
-// is checked by the caller for /healthz (only GET is public); this is a path predicate.
+// the login page route and its static assets (the shared SPA bundle/styles + PWA +
+// icons, via the PublicAsset predicate wired from webui). GET /healthz is handled
+// separately in RequireAuth (only GET is public). The SPA shell at "/", /readyz,
+// /metrics and /debug/vars stay gated. The static bundle is the SAME code for everyone,
+// so gating it would only break the login render without protecting anything — the
+// session protects the API + rendering an authenticated shell, not the static assets.
 func (d AuthDeps) isPublicPath(p string) bool {
 	if p == d.loginPath() {
 		return true
 	}
-	for _, prefix := range publicLoginAssetPrefixes {
-		if strings.HasPrefix(p, prefix) {
-			return true
-		}
-	}
-	return false
+	return d.PublicAsset != nil && d.PublicAsset(p)
 }
 
 // RequireAuth gates the WHOLE origin (D-03) except the public paths. When auth is not
@@ -226,6 +220,9 @@ func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 // passes via its `*` wildcard. It invents NO governance write routes — those land in
 // Phase 28. Exported so the composition root (cmd/aura) interposes it on the parent mux.
 func RequireCapability(next http.Handler, deps AuthDeps, capability string) http.Handler {
+	if !deps.SecretConfigured {
+		return next // loopback dev - auth disabled, pass-through with RequireAuth
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identityID := principalFrom(r.Context())
 		if identityID == "" {

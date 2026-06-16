@@ -121,6 +121,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps) (http.Handler
 	// fallback exclusion set, so registering it would collide with this subtree.
 	mux.Handle(integrationsRoutePrefix, newIntegrationsProxy())
 	mux.Handle("/", static)
+	// The login page's static assets (the shared SPA bundle/styles, PWA, icons) must be
+	// reachable before a session exists so the login form can render (D-03). webui owns
+	// the embedded-asset truth, so wire its predicate into the gate rather than letting
+	// the auth layer guess asset paths.
+	auth.PublicAsset = webui.IsPublicAsset
 	// Wrap the WHOLE parent mux in the WEB-03 whole-origin gate (D-03). The public-path
 	// exceptions are handled inside RequireAuth; a no-op pass-through when no secret is
 	// configured keeps loopback dev unauthenticated.

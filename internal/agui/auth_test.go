@@ -62,6 +62,12 @@ func testDeps(secret string) AuthDeps {
 			capabilities: map[string]bool{testLocalID + "|agent.run": true},
 		},
 		LoginPath: "/login",
+		// Fake the webui.IsPublicAsset predicate: the production wiring serves the shared
+		// SPA bundle/styles + PWA + icons (under /assets/ and a few root files) pre-auth.
+		PublicAsset: func(p string) bool {
+			return strings.HasPrefix(p, "/assets/") ||
+				p == "/registerSW.js" || p == "/manifest.webmanifest" || p == "/favicon.svg"
+		},
 	}
 }
 
@@ -395,7 +401,9 @@ func TestRequireAuth(t *testing.T) {
 		}{
 			{"GET /healthz public", http.MethodGet, "/healthz", false, true},
 			{"login page public", http.MethodGet, "/login", true, true},
-			{"login asset public", http.MethodGet, "/login-assets/app.js", false, true},
+			{"SPA bundle asset public", http.MethodGet, "/assets/index-abc123.js", false, true},
+			{"PWA service worker public", http.MethodGet, "/registerSW.js", false, true},
+			{"webmanifest public", http.MethodGet, "/manifest.webmanifest", false, true},
 			{"SPA shell gated", http.MethodGet, "/", true, false},
 			{"/readyz gated", http.MethodGet, "/readyz", false, false},
 			{"/metrics gated", http.MethodGet, "/metrics", false, false},
@@ -456,6 +464,16 @@ func TestRequireAuth(t *testing.T) {
 func TestRequireCapability(t *testing.T) {
 	t.Parallel()
 	deps := testDeps("operator-secret")
+
+	t.Run("unconfigured secret -> pass-through", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
+		rec := httptest.NewRecorder()
+		RequireCapability(next, AuthDeps{}, "agent.run").ServeHTTP(rec, req)
+		if !*hit || rec.Code != http.StatusOK {
+			t.Fatalf("open loopback capability gate: hit=%v code=%d, want hit=true code=200", *hit, rec.Code)
+		}
+	})
 
 	t.Run("local principal with agent.run -> next (wildcard)", func(t *testing.T) {
 		next, hit := nextRecorder()

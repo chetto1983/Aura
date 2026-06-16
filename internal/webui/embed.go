@@ -91,3 +91,23 @@ func statMissing(sub fs.FS, p string) bool {
 	info, err := fs.Stat(sub, p)
 	return err != nil || info.IsDir()
 }
+
+// IsPublicAsset reports whether p resolves to a real embedded static asset — a hashed
+// /assets/* bundle, the vite-plugin-pwa service worker + manifest, or an icon — rather
+// than the SPA shell (index.html) or an unknown client route. The web-auth boundary
+// (internal/agui RequireAuth) serves these WITHOUT a session so the login page can load
+// its bundle + styles before a cookie exists (D-03 "the login page + its static
+// assets"). A single shared Vite bundle means the login page and the cockpit pull the
+// SAME /assets/* files, so the whole static-asset set is public; the rendered shell at
+// "/" still requires the session, so index.html is deliberately NOT an asset here.
+func IsPublicAsset(p string) bool {
+	sub, err := Sub()
+	if err != nil {
+		return false
+	}
+	p = strings.TrimPrefix(p, "/")
+	if p == "" || p == indexHTML {
+		return false
+	}
+	return !statMissing(sub, p)
+}
