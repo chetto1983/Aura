@@ -109,7 +109,13 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   3. A mutating route is rejected without authentication when exposed beyond loopback — supported via a reverse-proxy boundary with zero Go change, and via an in-binary signed session cookie (HttpOnly + Secure + SameSite=Strict) bound to an identity row
   4. The app shell renders with theme/density applied before boot (no flash) and shows a read-only runtime health panel aggregating `/healthz` + `/readyz` + status
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+  - `24-01-PLAN.md` (Wave 1) — WEB-02 fail-fast non-loopback boot guard: `AURA_WEB_AUTH_SECRET`/`AURA_WEB_TRUST_PROXY` knobs + widened `AURA_AGUI_BIND` + `config.GuardWebBind` wired in `bootServe` (WEB-02)
+  - `24-02-PLAN.md` (Wave 1) — WEB-01 real SPA host: `internal/webui` SPA-fallback (client-route → index.html, excluded API/`/agent`/health/`/api/` prefix → real 404) + single-source exclusion list, no `/api/` mux collision (WEB-01)
+  - `24-03-PLAN.md` (Wave 2) — WEB-03 GAP-2 auth boundary: stdlib `internal/agui/auth.go`+`auth_cookie.go` (constant-time secret, HMAC-signed HttpOnly+Secure+SameSite=Strict cookie, `RequireAuth` whole-origin gate, `capability_grants` on `POST /agent/run`) wired into the mux + `bootServe` (WEB-03)
+  - `24-04-PLAN.md` (Wave 3) — WEB-04 runtime health shell + login page + router/404 on the locked Phase-23 tokens + committed `dist` rebuild + live `serve_smoke` proof (WEB-04, WEB-01)
+
 **UI hint**: yes
 
 ### Phase 25: Chat + Approval Center
@@ -197,7 +203,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 | 0–21 (substrate) | v0.0.0 | 144/144 | ✅ Shipped | 2026-06-15 |
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 3/3 | Complete    | 2026-06-16 |
-| 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 0/? | Not started | - |
+| 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 0/4 | Planned | - |
 | 25. Chat + Approval Center | v1.0.0 | 0/? | Not started | - |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
