@@ -10,7 +10,9 @@
 
 **Spec:** [docs/superpowers/specs/2026-06-16-calendar-pim-mcp-fork-design.md](../specs/2026-06-16-calendar-pim-mcp-fork-design.md)
 
-**Gating note:** Phase 0 is an architecture-deciding validation gate. Do NOT begin Phase 2+ until Phase 0 returns a verdict, because a RED gate changes the agent-mount transport (HTTP → stdio fallback). Phases 0–1 below are fully detailed; Phases 2–5 are an outline to be expanded into their own plan after Phase 0.
+**Gating note:** Phase 0 is an architecture-deciding validation gate. Phases 0–1 below are fully detailed; Phases 2–5 are an outline to be expanded into their own plan after Phase 0.
+
+**✅ GATE RESULT (2026-06-16): GREEN.** Ran via the **Linux HTTP sidecar container** (corrected from the original Windows-binary wording — Aura is multi-host). `.NET MCP-over-HTTP ↔ Aura's Go streamable-HTTP client` interops fully: initialize + ping + `tools/list=29` + real `tools/call` (`list_accounts`) + clean tool-error propagation + `mcptools` mount (29 `calendar__*`, all Deferred). **Decision: the agent mounts over streamable-HTTP — no stdio fallback.** Evidence: `.planning/spikes/064-calendar-mcp-http-mount/`.
 
 **Environment prerequisites (already in place from the 2026-06-16 spike session):**
 - WSL Ubuntu: .NET 10.0.301 SDK at `~/.dotnet` (needs `export PATH="$HOME/.dotnet:$PATH"; export DOTNET_ROOT=$HOME/.dotnet`), upstream clone at `~/calendar-mcp`, libicu78 installed.
@@ -28,23 +30,20 @@
 - Create: `.planning/spikes/064-calendar-mcp-http-mount/README.md`
 - Reference: `internal/agent/mcptools/mount.go`, `internal/mcp/managed_config.go`, `.planning/spikes/032-agent-memory-mcp-live-mount/main.go`
 
-- [ ] **Step 1: Publish the upstream HttpServer for Windows (self-contained)**
+- [x] **Step 1: Build the Linux HTTP sidecar image (upstream Dockerfile)** — DONE 2026-06-16
 
-Run (WSL):
-```bash
-wsl -e bash -lc 'export PATH="$HOME/.dotnet:$PATH"; export DOTNET_ROOT=$HOME/.dotnet; cd ~/calendar-mcp && dotnet publish src/CalendarMcp.HttpServer -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o /mnt/d/tmp/calendar-mcp-win/http'
-```
-Expected: `CalendarMcp.HttpServer.exe` in `D:\tmp\calendar-mcp-win\http\`.
-
-- [ ] **Step 2: Run the HttpServer with the already-connected accounts**
-
-Run (PowerShell, background):
+Aura is multi-host (Linux appliance), so the gate target is the Docker sidecar, NOT a Windows binary. Run (PowerShell — docker from PowerShell, not Git-Bash):
 ```powershell
-$env:CALENDAR_MCP_ADMIN_TOKEN = "aura-dev-admin-token"
-$env:ASPNETCORE_URLS = "http://127.0.0.1:8093"
-& "D:\tmp\calendar-mcp-win\http\CalendarMcp.HttpServer.exe"
+docker build -t aura-pim-mcp:gate -f D:\tmp\calendar-mcp\Dockerfile D:\tmp\calendar-mcp
 ```
-Expected (in output): `Calendar MCP HTTP Server listening on http://127.0.0.1:8093` and a line `MCP endpoint:  /`.
+Expected: image `aura-pim-mcp:gate` built (`sdk:10.0` → `aspnet:10.0`).
+
+- [x] **Step 2: Run the sidecar container** — DONE 2026-06-16
+
+```powershell
+docker run -d --rm --name aura-pim-gate -p 127.0.0.1:8093:8080 -e CALENDAR_MCP_ADMIN_TOKEN=aura-dev-admin-token aura-pim-mcp:gate
+```
+Container internal port is **8080** (Dockerfile `ASPNETCORE_URLS=http://+:8080`), mapped to host `127.0.0.1:8093`. Empty config (zero accounts) is fine for the interop gate. Expected logs: `listening on http://[::]:8080`, `MCP endpoint:  /`.
 
 - [ ] **Step 3: Confirm the MCP endpoint path + health (curl)**
 
