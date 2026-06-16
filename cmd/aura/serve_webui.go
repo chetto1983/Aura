@@ -53,6 +53,9 @@ func newServeHandler(aguiHandler http.Handler) (http.Handler, error) {
 	for _, prefix := range aguiRoutePrefixes {
 		mux.Handle(prefix, aguiHandler)
 	}
+	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
+	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
+	mux.Handle(integrationsRoutePrefix, newIntegrationsProxy())
 	mux.Handle("/", static)
 	return mux, nil
 }

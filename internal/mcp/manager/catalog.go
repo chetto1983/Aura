@@ -41,21 +41,27 @@ func whatsappRecipeURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
 }
 
-// calendarRecipeURL composes the loopback streamable-HTTP URL for the Aura PIM
-// sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp): unified mail + calendar
-// + contacts over MCP-over-HTTP at the server root "/". The sidecar publishes host
-// port 8093 by default (compose maps it to the container's 8080); garbage falls
-// back to loopback 8093 so userinfo-style values cannot retarget the recipe
-// off-host (WR-01).
-func calendarRecipeURL() string {
+// PIMSidecarBaseURL returns the scheme://host:port (no trailing slash) of the Aura
+// PIM sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp): compose-DNS
+// aura-pim-mcp:8080 in-container, else loopback 127.0.0.1:<AURA_PIM_MCP_PORT|8093>
+// (compose maps host 8093 → the container's 8080). WR-01: a non-port env value
+// (userinfo trick, overflow, junk) falls back to 8093 so it cannot retarget the
+// loopback-by-construction URL off-host. The MCP recipe and the admin proxy share
+// this base (the MCP endpoint is the root "/", the admin REST API is "/admin").
+func PIMSidecarBaseURL() string {
 	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://aura-pim-mcp:8080/"
+		return "http://aura-pim-mcp:8080"
 	}
 	port := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8093"
 	}
-	return fmt.Sprintf("http://127.0.0.1:%s/", port)
+	return fmt.Sprintf("http://127.0.0.1:%s", port)
+}
+
+// calendarRecipeURL is the sidecar's MCP-over-HTTP endpoint — the server root "/".
+func calendarRecipeURL() string {
+	return PIMSidecarBaseURL() + "/"
 }
 
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
