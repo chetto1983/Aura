@@ -40,19 +40,30 @@ ${densityBlocks}
 `;
 writeFileSync(resolve(here, '../src/styles/theme.css'), css);
 
-const snippet = `<!-- GENERATED from tokens/tokens.json — keep localStorage keys in sync with src/theme/applyTheme.ts -->
-<script>
-  (function () {
-    try {
-      var r = document.documentElement;
-      r.setAttribute('data-theme', localStorage.getItem('${THEME_KEY}') || '${defaultTheme}');
-      r.setAttribute('data-density', localStorage.getItem('${DENSITY_KEY}') || '${defaultDensity}');
-    } catch (e) {
-      document.documentElement.setAttribute('data-theme', '${defaultTheme}');
-      document.documentElement.setAttribute('data-density', '${defaultDensity}');
-    }
-  })();
-</script>`;
-writeFileSync(resolve(here, '../src/styles/head-snippet.generated.html'), snippet + '\n');
+// The theme-before-paint script lives INLINE+SYNCHRONOUS in index.html (no-flash
+// contract — it must run before first paint, so it cannot be a generated source
+// file that gets bundled/deferred). tokens.json is the single source of the
+// keys/defaults; assert the hand-maintained inline script still matches so a
+// $meta change cannot silently leave index.html stale (drift gate, replaces the
+// former unconsumed head-snippet.generated.html). Build fails on divergence.
+const indexHtml = readFileSync(resolve(here, '../index.html'), 'utf8');
+const required = [
+  `localStorage.getItem('${THEME_KEY}') || '${defaultTheme}'`,
+  `localStorage.getItem('${DENSITY_KEY}') || '${defaultDensity}'`,
+  `setAttribute('data-theme', '${defaultTheme}')`,
+  `setAttribute('data-density', '${defaultDensity}')`,
+];
+const missing = required.filter((needle) => !indexHtml.includes(needle));
+if (missing.length > 0) {
+  process.stderr.write(
+    'generate-theme: index.html inline theme script is out of sync with tokens.json $meta.\n' +
+      'Missing the following literals (update index.html to match the tokens):\n' +
+      missing.map((m) => `  - ${m}`).join('\n') +
+      '\n',
+  );
+  process.exit(1);
+}
 
-process.stdout.write('generate-theme: wrote src/styles/theme.css + head-snippet.generated.html\n');
+process.stdout.write(
+  'generate-theme: wrote src/styles/theme.css; index.html inline theme script matches tokens.json $meta\n',
+);

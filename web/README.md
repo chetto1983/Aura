@@ -28,17 +28,18 @@ bytes stay byte-stable for the `web-dist-freshness` CI gate (23-03).
 `tokens/tokens.json` is the single hand-authored source for the dark-operator palette
 and the `compact|operator|review` density tiers (default `operator`). `tokens/generate-theme.mjs`
 (a tiny ~50-LOC generator, NOT Style Dictionary) emits `src/styles/theme.css` (the
-Tailwind 4 `@theme` block + per-`data-density` override blocks) and the inline head
-snippet. Theme + density are applied to `<html>` before first paint by the inline
-synchronous script in `index.html`, keyed on `aura.theme` / `aura.density` localStorage
-(shared with `src/theme/applyTheme.ts`). Regenerate after editing tokens:
+Tailwind 4 `@theme` block + per-`data-density` override blocks). The theme-before-paint
+script is INLINE+SYNCHRONOUS in `index.html` (it must run before first paint, so it is
+hand-maintained there rather than bundled), keyed on `aura.theme` / `aura.density`
+localStorage (shared with `src/theme/applyTheme.ts`). The generator asserts that the
+inline script's keys/defaults still match `tokens.json $meta` and fails the build on
+drift, so the single source stays authoritative. Regenerate after editing tokens:
 
 ```bash
 node tokens/generate-theme.mjs
 ```
 
-`src/styles/theme.css` and `src/styles/head-snippet.generated.html` are GENERATED —
-do not hand-edit.
+`src/styles/theme.css` is GENERATED — do not hand-edit.
 
 ## Brand & PWA icons
 
