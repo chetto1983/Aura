@@ -99,6 +99,48 @@ describe('LoginPage', () => {
     expect(await screen.findByText('cockpit home')).toBeTruthy();
   });
 
+  it('POSTs the passphrase to /login same-origin as form-encoded', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('unauthorized', { status: 401 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderLogin();
+    fireEvent.change(screen.getByLabelText('Operator passphrase'), { target: { value: 'hunter2' } });
+    submitForm(container);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const [url, opts] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/login');
+    expect(opts.method).toBe('POST');
+    expect(opts.credentials).toBe('same-origin');
+    expect(opts.headers).toMatchObject({ 'Content-Type': 'application/x-www-form-urlencoded' });
+    expect(opts.body).toBeInstanceOf(URLSearchParams);
+    expect((opts.body as URLSearchParams).get('passphrase')).toBe('hunter2');
+  });
+
+  it('shows the in-flight CTA and disables submit while the request is pending', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)), // never resolves → stays submitting
+    );
+    const { container } = renderLogin();
+    submitForm(container);
+    const inFlight = await screen.findByRole('button', { name: 'Signing in...' });
+    expect((inFlight as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('returns focus to the passphrase field after a failed submit (WCAG 3.3.1)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('no', { status: 401 }))),
+    );
+    const { container } = renderLogin();
+    const field = screen.getByLabelText('Operator passphrase');
+    submitForm(container);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field);
+    });
+  });
+
   it('shows the session-expired notice when redirected with ?expired=1', () => {
     renderLogin(['/login?expired=1']);
     expect(screen.getByText('Your session expired. Sign in again to continue.')).toBeTruthy();

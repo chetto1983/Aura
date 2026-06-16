@@ -24,6 +24,17 @@ describe('applyTheme', () => {
     expect(getDensity()).toBe('operator');
   });
 
+  it('uses the namespaced aura.* storage keys', () => {
+    expect(THEME_STORAGE_KEY).toBe('aura.theme');
+    expect(DENSITY_STORAGE_KEY).toBe('aura.density');
+  });
+
+  it('setDensity writes under the density key only (not the theme key)', () => {
+    setDensity('review');
+    expect(localStorage.getItem(DENSITY_STORAGE_KEY)).toBe('review');
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
   it('reads a valid stored density and ignores an invalid one', () => {
     localStorage.setItem(DENSITY_STORAGE_KEY, 'review');
     expect(getDensity()).toBe('review');

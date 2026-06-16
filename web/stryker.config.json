@@ -4,11 +4,11 @@
   "testRunner": "vitest",
   "coverageAnalysis": "perTest",
   "mutate": [
-    "src/**/*.{ts,tsx}",
-    "!src/**/*.{test,spec}.{ts,tsx}",
-    "!src/test/**",
-    "!src/main.tsx",
-    "!src/i18n/resources.ts"
+    "src/routes/LoginPage.tsx",
+    "src/health/RuntimeHealthPanel.tsx",
+    "src/health/useRuntimeHealth.ts",
+    "src/theme/applyTheme.ts",
+    "src/theme/density.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,

@@ -15,6 +15,10 @@ export default tseslint.config(
       'playwright-report/**',
       'test-results/**',
       'src/styles/theme.css',
+      // Local-only byproducts: a stale install dir + Stryker's sandbox/report output.
+      'node_modules.broken/**',
+      '.stryker-tmp/**',
+      'reports/**',
     ],
   },
   js.configs.recommended,
