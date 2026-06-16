@@ -39,7 +39,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}",
 		"AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}",
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
-		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-false}",
+		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}",
 		"AURA_COMPLETION_GATE: ${AURA_COMPLETION_GATE:-true}",
 		"AURA_LLM_REASONING_LEARNING: ${AURA_LLM_REASONING_LEARNING:-false}",
 		"SEARXNG_URL: http://searxng:8080/search",
@@ -278,6 +278,17 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"AURA_MODEL_CONTEXT_WINDOW=",
 		"AURA_COMPLETION_GATE=",
 		"AURA_LLM_REASONING_LEARNING=",
+		"AURA_AGENT_JOB_MAX_DURATION_SEC=",
+		"AURA_SWARM_MAX_GOALS=",
+		"AURA_SWARM_CHILD_TIMEOUT_SEC=",
+		"AURA_SWARM_MAX_CONCURRENT=",
+		"AURA_SWARM_MAX_DEPTH=",
+		"AURA_LOOP_MAX_PARALLEL_TOOLS=",
+		"AURA_FS_MAX_READ_BYTES=",
+		"AURA_FS_WALK_NODE_CAP=",
+		"AURA_FS_WALK_TIMEOUT_MS=",
+		"AURA_SHELL_MAX_TIMEOUT_MS=",
+		"AURA_SHELL_OUTPUT_BUF_CAP=",
 		"SEARXNG_URL=",
 		"TELEGRAM_BOT_TOKEN=",
 		"AURA_TELEGRAM_STATUS_THROTTLE_MS=",
@@ -294,6 +305,16 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 	} {
 		if !hasActiveEnvAssignment(envExample, strings.TrimSuffix(want, "=")) {
 			t.Fatalf(".env.example missing active assignment for %q", want)
+		}
+	}
+	for _, want := range []string{
+		"AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro",
+		"AURA_SHOW_REASONING=true",
+		"AURA_LLM_REASONING_LEARNING=false",
+		"AURA_WHATSAPP_BRIDGE_PORT=8094",
+	} {
+		if !hasActiveEnvLine(envExample, want) {
+			t.Fatalf(".env.example missing coherent default line %q", want)
 		}
 	}
 
@@ -322,6 +343,16 @@ func hasActiveEnvAssignment(contents, key string) bool {
 	for _, line := range strings.Split(contents, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasActiveEnvLine(contents, want string) bool {
+	for _, line := range strings.Split(contents, "\n") {
+		line = strings.TrimSpace(line)
+		if line == want {
 			return true
 		}
 	}

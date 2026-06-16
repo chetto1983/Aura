@@ -11,13 +11,13 @@ type Price struct {
 }
 
 // defaultPrices returns the seeded fallback price table (D-23). Seeded from the
-// OpenRouter model page for deepseek/deepseek-v4-flash:exacto at commit time
+// OpenRouter model page for deepseek/deepseek-v4-flash:nitro at commit time
 // (2026-05-30): standard list price $0.0983/1M input, $0.1966/1M output
 // (RESEARCH Assumptions A1). ~/.aura/llm.json `prices` overrides entry-by-entry.
 // A fresh map is returned per call so a caller's overlay never mutates the seed.
 func defaultPrices() map[string]Price {
 	return map[string]Price{
-		"deepseek/deepseek-v4-flash:exacto": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
+		"deepseek/deepseek-v4-flash:nitro": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
 	}
 }
 

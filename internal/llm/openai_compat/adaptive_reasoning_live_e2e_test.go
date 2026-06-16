@@ -52,7 +52,7 @@ import (
 
 // liveModel is the production default; an operator can repoint it with AURA_LLM_MODEL
 // to validate the same contracts against a different OpenRouter reasoning model.
-const liveModel = "deepseek/deepseek-v4-flash:exacto"
+const liveModel = "deepseek/deepseek-v4-flash:nitro"
 
 // hardReasoningPrompt reliably triggers heavy reasoning (~4k-8k reasoning tokens in
 // the 2026-06-11 probe) so the C2 no-starvation assertion is meaningful rather than

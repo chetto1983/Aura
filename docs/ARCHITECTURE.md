@@ -160,7 +160,7 @@ and a curated recipe catalog (calculator, calendar, mail, whatsapp, memory).
 - **`llm` + `llm/openai_compat`** — the provider-neutral streaming contract and a
   hand-rolled OpenAI-compatible SSE client (no SDK: byte-level framing, tool-call delta
   accumulation, idle watchdog, ctx-cancel teardown, bounded error capture). Default model
-  is `deepseek/deepseek-v4-flash:exacto` over OpenRouter; cost is read from the provider
+  is `deepseek/deepseek-v4-flash:nitro` over OpenRouter; cost is read from the provider
   when present and falls back to a price table (never a fabricated `$0`).
 - **`semindex`** — Aura's single reusable embedding-index core: a lock-free cosine/
   centroid/margin math layer plus two wrappers, `Classifier` (centroid argmax + top-2

@@ -406,8 +406,8 @@ Defines the wire-agnostic `Client` interface the agent loop targets (streaming `
 - `type ReasoningEffort` + consts `XHigh/High/Medium/Low/Minimal/None`; `type ReasoningConfig` + `Empty()`.
 
 **models.go** — `var modelCapabilityTable`, `normalizeModelID` (strips OpenRouter `:`-suffix), `SupportsVision(model)` (true only for minimax-m3; conservatively false for unknown — gates the photo client cloud branch), `SupportsAudio(model)` (false; audio is sidecar-routed).
-**config.go** — `type Config` (resolved LLM config; `ShowReasoning` master switch for live CoT; `ReasoningLearning` switch for the self-improvement loop, default OFF); `Load()` (locked 4-tier precedence: built-in < `.env` < `~/.aura/llm.json` < `AURA_LLM_*`; fail-fast on malformed numeric env; `ErrMissingAPIKey` on empty key), `LoadAllowEmptyKey()`. Default model `deepseek/deepseek-v4-flash:exacto`, context window 1M, completion gate on.
-**prices.go** — `type Price`, `defaultPrices()` (deepseek-v4-flash:exacto $0.0983 in / $0.1966 out), `CostUSDValue`/`CostUSD` (D-18 precedence: provider cost → table → `(n/a,false)`; never a fabricated "$0").
+**config.go** — `type Config` (resolved LLM config; `ShowReasoning` master switch for live CoT; `ReasoningLearning` switch for the self-improvement loop, default OFF); `Load()` (locked 4-tier precedence: built-in < `.env` < `~/.aura/llm.json` < `AURA_LLM_*`; fail-fast on malformed numeric env; `ErrMissingAPIKey` on empty key), `LoadAllowEmptyKey()`. Default model `deepseek/deepseek-v4-flash:nitro`, context window 1M, completion gate on.
+**prices.go** — `type Price`, `defaultPrices()` (deepseek-v4-flash:nitro $0.0983 in / $0.1966 out), `CostUSDValue`/`CostUSD` (D-18 precedence: provider cost → table → `(n/a,false)`; never a fabricated "$0").
 **breaker.go** — `type Breaker` (consecutive-retryable-failure tracker + cooldown), `NewDefaultBreaker` (threshold 3 / 30s), `Allow()`/`Success()`/`Failure(err)`; `var ErrBreakerOpen`.
 
 ### `internal/llm/openai_compat` — handrolled OpenAI-compatible SSE streaming client

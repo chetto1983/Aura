@@ -288,15 +288,19 @@ func (d *Dispatch) taskTier(task Task) scoring.RiskTier {
 }
 
 const (
-	pendingNotificationAttemptBound = 3
-	pendingNotificationSweepLimit   = 50
+	defaultPendingNotificationAttemptBound = 3
+	pendingNotificationSweepLimit          = 50
 )
+
+func pendingNotificationAttemptBound() int {
+	return envInt("AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS", defaultPendingNotificationAttemptBound)
+}
 
 func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 	if d.deps.NotificationStore == nil || d.deps.Notifier == nil {
 		return nil
 	}
-	rows, err := d.deps.NotificationStore.SweepDueNotifications(ctx, pendingNotificationAttemptBound, pendingNotificationSweepLimit)
+	rows, err := d.deps.NotificationStore.SweepDueNotifications(ctx, pendingNotificationAttemptBound(), pendingNotificationSweepLimit)
 	if err != nil {
 		return err
 	}

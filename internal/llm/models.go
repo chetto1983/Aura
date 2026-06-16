@@ -25,7 +25,7 @@ var modelCapabilityTable = map[string]modelCapabilities{
 }
 
 // normalizeModelID strips an OpenRouter routing suffix (the part after the first
-// ':', e.g. ':exacto' / ':flash' / ':thinking') and surrounding whitespace so a
+// ':', e.g. ':nitro' / ':flash' / ':thinking') and surrounding whitespace so a
 // suffixed id resolves to the same base capability entry. The match is on the
 // full base id, never a substring, so a misleading suffix or prefix cannot
 // promote an unknown model.

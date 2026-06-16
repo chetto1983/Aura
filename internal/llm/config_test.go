@@ -58,8 +58,8 @@ func TestConfigLoadOrder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if cfg.Model != "deepseek/deepseek-v4-flash:exacto" {
-			t.Errorf("Model = %q, want deepseek/deepseek-v4-flash:exacto", cfg.Model)
+		if cfg.Model != "deepseek/deepseek-v4-flash:nitro" {
+			t.Errorf("Model = %q, want deepseek/deepseek-v4-flash:nitro", cfg.Model)
 		}
 		if cfg.BaseURL != "https://openrouter.ai/api/v1" {
 			t.Errorf("BaseURL = %q, want https://openrouter.ai/api/v1", cfg.BaseURL)
@@ -172,7 +172,7 @@ func TestLoadAllowEmptyKeyAllowsEmptyAPIKey(t *testing.T) {
 	if cfg.APIKey != "" {
 		t.Fatalf("APIKey = %q, want empty", cfg.APIKey)
 	}
-	if cfg.Model != "deepseek/deepseek-v4-flash:exacto" {
+	if cfg.Model != "deepseek/deepseek-v4-flash:nitro" {
 		t.Fatalf("Model = %q, want default model", cfg.Model)
 	}
 
@@ -317,7 +317,7 @@ func TestConfigFileOverlayAllFields(t *testing.T) {
 	if p := cfg.Prices["file/model"]; p.InputPer1M != 1.5 || p.OutputPer1M != 2.5 {
 		t.Errorf("price overlay = %+v, want 1.5/2.5", p)
 	}
-	if _, ok := cfg.Prices["deepseek/deepseek-v4-flash:exacto"]; !ok {
+	if _, ok := cfg.Prices["deepseek/deepseek-v4-flash:nitro"]; !ok {
 		t.Error("seeded price entry dropped by the entry-by-entry overlay")
 	}
 }

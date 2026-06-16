@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash:exacto"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash:nitro"
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_PRIMARY_MODEL = "xiaomi/mimo-v2.5"
 PRIMARY_TOOL = {

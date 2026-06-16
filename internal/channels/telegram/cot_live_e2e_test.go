@@ -53,7 +53,7 @@ func TestCoTLiveE2E_ReasoningReachesStatusPane(t *testing.T) {
 	}
 	model := os.Getenv("AURA_LLM_MODEL")
 	if model == "" {
-		model = "deepseek/deepseek-v4-flash:exacto"
+		model = "deepseek/deepseek-v4-flash:nitro"
 	}
 	cfg := llm.Config{
 		Provider:          "openrouter",

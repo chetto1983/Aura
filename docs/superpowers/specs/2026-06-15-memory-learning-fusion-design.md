@@ -16,7 +16,7 @@ Aura has two parallel "learning" subsystems that are secretly the same machine, 
 
 ### Two confirmed bugs (root-caused this session)
 
-1. **Aura never stores memory about its work *proactively*.** Writes are 100% model-self-initiated against a Deferred tool with no inbound trigger; no production code path ever calls a store tool. The model writes **only when explicitly commanded** ("remember this") — never proactively while doing the user's actual work. **Model strength is not the cause:** the configured model is **DeepSeek-V4 Flash** (`deepseek/deepseek-v4-flash:exacto`, [compose.yaml:59](../../../compose.yaml#L59)), a strong model, and it still never self-initiates a write. (System prompt `<memory>` write guidance at `internal/agent/prompt.go:64` is a contributing but secondary cause.)
+1. **Aura never stores memory about its work *proactively*.** Writes are 100% model-self-initiated against a Deferred tool with no inbound trigger; no production code path ever calls a store tool. The model writes **only when explicitly commanded** ("remember this") — never proactively while doing the user's actual work. **Model strength is not the cause:** the configured model is **DeepSeek-V4 Flash** (`deepseek/deepseek-v4-flash:nitro`, [compose.yaml:64](../../../compose.yaml#L64)), a strong model, and it still never self-initiates a write. (System prompt `<memory>` write guidance at `internal/agent/prompt.go:64` is a contributing but secondary cause.)
 2. **Recall is pull-only.** The model must decide to call `memory_search`; it rarely does unless the user's phrasing explicitly triggers it (measured: 4 read calls in 209 turns).
 
 ### Empirical validation (live retest, 2026-06-15)

@@ -2,7 +2,7 @@
 // client implementing llm.Client. There is deliberately no SDK (SPEC §2): the
 // SSE framing, tool-call delta accumulation, and ctx-cancel teardown need
 // byte-level control an SDK hides. The wire shape is the OpenAI chat-completions
-// streaming envelope as served by OpenRouter (deepseek/deepseek-v4-flash:exacto).
+// streaming envelope as served by OpenRouter (deepseek/deepseek-v4-flash:nitro).
 package openai_compat
 
 import (

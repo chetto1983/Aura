@@ -13,11 +13,10 @@ import (
 
 // Built-in defaults (D-22). The const block is the single source for the
 // load-order base tier; later tiers (.env, ~/.aura/llm.json, AURA_LLM_*)
-// override these. The model id uses the `:exacto` routing variant (OpenRouter
-// curated tool-calling quality).
+// override these. The model id uses the `:nitro` routing variant.
 const (
 	defaultProvider          = "openrouter"
-	defaultModel             = "deepseek/deepseek-v4-flash:exacto"
+	defaultModel             = "deepseek/deepseek-v4-flash:nitro"
 	defaultBaseURL           = "https://openrouter.ai/api/v1"
 	defaultTemperature       = 0.7
 	defaultMaxTokens         = 4096

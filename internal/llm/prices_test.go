@@ -10,7 +10,7 @@ import (
 func TestCost(t *testing.T) {
 	// A representative price table (mirrors the seeded entry shape).
 	prices := map[string]llm.Price{
-		"deepseek/deepseek-v4-flash:exacto": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
+		"deepseek/deepseek-v4-flash:nitro": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
 	}
 
 	t.Run("provider_cost_present_returns_exact_usd", func(t *testing.T) {
@@ -26,7 +26,7 @@ func TestCost(t *testing.T) {
 
 	t.Run("provider_cost_absent_known_model_uses_table", func(t *testing.T) {
 		// 1,000,000 input @ 0.0983 + 1,000,000 output @ 0.1966 = 0.2949
-		got, ok := llm.CostUSD(prices, "deepseek/deepseek-v4-flash:exacto", 1_000_000, 1_000_000, nil)
+		got, ok := llm.CostUSD(prices, "deepseek/deepseek-v4-flash:nitro", 1_000_000, 1_000_000, nil)
 		if !ok {
 			t.Fatal("ok = false, want true for a known model")
 		}
@@ -55,7 +55,7 @@ func TestCost(t *testing.T) {
 // unknown model returns ok=false so the caller stores an honest absence (not a fake $0).
 func TestCostUSDValue(t *testing.T) {
 	prices := map[string]llm.Price{
-		"deepseek/deepseek-v4-flash:exacto": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
+		"deepseek/deepseek-v4-flash:nitro": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
 	}
 
 	t.Run("provider_cost_present_wins", func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestCostUSDValue(t *testing.T) {
 	})
 
 	t.Run("provider_cost_absent_known_model_uses_table", func(t *testing.T) {
-		got, ok := llm.CostUSDValue(prices, "deepseek/deepseek-v4-flash:exacto", 1_000_000, 1_000_000, nil)
+		got, ok := llm.CostUSDValue(prices, "deepseek/deepseek-v4-flash:nitro", 1_000_000, 1_000_000, nil)
 		if !ok {
 			t.Fatal("ok = false, want true for a known model")
 		}

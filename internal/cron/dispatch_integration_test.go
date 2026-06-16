@@ -225,7 +225,8 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 		t.Fatalf("after failed send status=%q attempts=%d, want failed/0", status, attempts)
 	}
 
-	for i := 0; i < pendingNotificationAttemptBound; i++ {
+	attemptBound := pendingNotificationAttemptBound()
+	for i := 0; i < attemptBound; i++ {
 		if err := d.sweepNotifications(ctx); err != nil {
 			t.Fatalf("sweepNotifications #%d: %v", i+1, err)
 		}
@@ -233,15 +234,15 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT status, attempts FROM aura.pending_notifications WHERE id = $1`, notificationID).Scan(&status, &attempts); err != nil {
 		t.Fatalf("read bounded notification: %v", err)
 	}
-	if status != "failed" || attempts != pendingNotificationAttemptBound {
-		t.Fatalf("after bounded retries status=%q attempts=%d, want failed/%d", status, attempts, pendingNotificationAttemptBound)
+	if status != "failed" || attempts != attemptBound {
+		t.Fatalf("after bounded retries status=%q attempts=%d, want failed/%d", status, attempts, attemptBound)
 	}
 
 	if err := d.sweepNotifications(ctx); err != nil {
 		t.Fatalf("sweepNotifications past bound: %v", err)
 	}
-	if len(notif.texts) != 1+pendingNotificationAttemptBound {
-		t.Fatalf("notification retried past bound: calls=%d want %d", len(notif.texts), 1+pendingNotificationAttemptBound)
+	if len(notif.texts) != 1+attemptBound {
+		t.Fatalf("notification retried past bound: calls=%d want %d", len(notif.texts), 1+attemptBound)
 	}
 }
 
@@ -289,7 +290,7 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 		t.Fatalf("InsertPendingNotification returned identity_id %q, want %q", inserted.IdentityID, wantIdentity)
 	}
 
-	rows, err := s.SweepDueNotifications(ctx, pendingNotificationAttemptBound, pendingNotificationSweepLimit)
+	rows, err := s.SweepDueNotifications(ctx, pendingNotificationAttemptBound(), pendingNotificationSweepLimit)
 	if err != nil {
 		t.Fatalf("SweepDueNotifications: %v", err)
 	}

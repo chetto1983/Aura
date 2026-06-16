@@ -286,8 +286,8 @@ func TestDispatchSweepNotificationsMarksDeliveredAndFailed(t *testing.T) {
 	if err := d.sweepNotifications(context.Background()); err != nil {
 		t.Fatalf("sweepNotifications: %v", err)
 	}
-	if store.sweepAttemptBound != pendingNotificationAttemptBound || store.sweepLimit != pendingNotificationSweepLimit {
-		t.Fatalf("sweep bounds = (%d,%d), want (%d,%d)", store.sweepAttemptBound, store.sweepLimit, pendingNotificationAttemptBound, pendingNotificationSweepLimit)
+	if store.sweepAttemptBound != defaultPendingNotificationAttemptBound || store.sweepLimit != pendingNotificationSweepLimit {
+		t.Fatalf("sweep bounds = (%d,%d), want (%d,%d)", store.sweepAttemptBound, store.sweepLimit, defaultPendingNotificationAttemptBound, pendingNotificationSweepLimit)
 	}
 	if len(notif.texts) != 2 || notif.texts[0] != "delivered" || notif.texts[1] != "retry later" {
 		t.Fatalf("sweep must attempt each notification, got %v", notif.texts)
@@ -297,6 +297,19 @@ func TestDispatchSweepNotificationsMarksDeliveredAndFailed(t *testing.T) {
 	}
 	if len(store.failed) != 1 || store.failed[0].id != "n2" || store.failed[0].err != "still down" {
 		t.Fatalf("failed sweep delivery must mark failed with error, got %+v", store.failed)
+	}
+}
+
+func TestDispatchSweepNotificationsUsesRetryAttemptEnv(t *testing.T) {
+	t.Setenv("AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS", "5")
+	store := &fakeNotificationStore{}
+	d := NewDispatch(nil, DispatchDeps{Store: store, Notifier: &captureNotifier{}})
+
+	if err := d.sweepNotifications(context.Background()); err != nil {
+		t.Fatalf("sweepNotifications: %v", err)
+	}
+	if store.sweepAttemptBound != 5 {
+		t.Fatalf("sweep attempt bound = %d, want env override 5", store.sweepAttemptBound)
 	}
 }
 

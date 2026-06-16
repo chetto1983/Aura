@@ -243,7 +243,7 @@ func TestLoad_LLMAndOtelComposed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.LLM.Model != "deepseek/deepseek-v4-flash:exacto" {
+	if cfg.LLM.Model != "deepseek/deepseek-v4-flash:nitro" {
 		t.Errorf("LLM.Model: want default, got %q", cfg.LLM.Model)
 	}
 	if cfg.LLM.BaseURL != "https://openrouter.ai/api/v1" {
