@@ -1,100 +1,69 @@
-# Architecture Review — `internal/agent`
+# Architecture Review
 
-**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
+## Current Architecture
 
-## 1. Current architecture
+The agent package is centered on `LlmAgent`, an iterator-style loop that builds a model request from in-memory history, streams model output, dispatches tool calls, appends tool results, and terminates on `text_response` or a fallback finalization path.
 
-`internal/agent` is the agent runtime: an open `Agent` interface, the `LlmAgent` reasoning loop, a tool registry + tool implementations, an MCP bridge, workflow composites (loop/sequential/parallel), a shared budget tree, a prompt builder with KV-cache discipline, a reasoning-tier classifier, a hooks extension surface, and OTel/expvar observability.
+Key components:
 
-```
-                         ┌──────────────────────────────────────────────┐
-   Runner (out of pkg) → │            LlmAgent.Run (iter.Seq2)            │
-   sessionID, ctx,       │  [llm_agent.go]                                │
-   history, budget       │                                                │
-                         │  loop:                                         │
-                         │   1 budget gate  ── trip ─▶ maybeRecover /     │
-                         │     (ConsumeStep)            finalize()        │
-                         │   2 build req (PromptBuilder, cache-stable)    │
-                         │   3 hooks.BeforeModel                          │
-                         │   4 stream (streamWithOpenRetry + Breaker)     │
-                         │   5 consume → text|calls|finish|usage          │
-                         │   6 classifyToolTruncation                     │
-                         │   7 pauseCalls (ask_user → AwaitingInput)      │
-                         │   8 dispatch(calls) ─────────────┐             │
-                         └──────────────────────────────────┼────────────┘
-                                                            │
-              ┌─────────────────────────────────────────────┘
-              ▼
-     dispatch [llm_agent_dispatch.go]
-       • partition terminal (text_response) vs runnable
-       • serial: hooks.BeforeTool + dedup gate (BeforeToolCall)
-       • executeBatch (concurrent runTool, sem-bounded) ──▶ tools.Registry.Get → tool.Execute
-       • serial: history append + AfterToolResult + result Event
-       • terminal: runTerminal → finalEvent
+- `internal/agent/agent.go`: common `Agent` interface and `InvocationContext`.
+- `internal/agent/llm_agent.go`: main LLM loop, timeout wrapping, stream handling, tool dispatch handoff, terminal response handling.
+- `internal/agent/llm_agent_dispatch.go`: partitions terminal and non-terminal tool calls and executes runnable calls.
+- `internal/agent/budget.go` and `budget_dedup.go`: step budgets, wallclock deadlines, per-branch budgets, deduplication.
+- `internal/agent/tools`: native tool implementations for shell, filesystem, web, tasks, skills, and result sidecars.
+- `internal/agent/mcptools`: MCP tool bridge, schema caps, reconnecting transport, call timeouts.
+- `internal/runner`: production conversation runner that persists events and rehydrates history.
+- `internal/conversations`: durable turn store, sidecar spills, context compaction, and repair of invalid tool-call pairs.
 
-     Cross-cutting:
-       Budget tree [budget.go, budget_dedup.go]  — shared *atomic.Int32 + per-branch dedup ring
-       PromptBuilder [prompt/]                    — byte-stable messages[0] + tail-injected hints + cache_control
-       MCP bridge [mcptools/]                     — namespaced bridged tools, reconnect-on-transport-error
-       Trust [trust.go]                           — nonce-fenced <tool_output trust="untrusted"> envelope
-       Tracing/metrics [tracing.go, metrics.go]   — OTel spans + expvar/Prometheus counters
-       Hooks [hooks.go, hooks_command.go]         — in-process + trust-gated out-of-process command hooks
-       Workflow [workflow/]                       — Loop/Sequential/Parallel composites over Agent
-       Swarm [swarm_context.go + internal/swarm]  — swarm_spawn fan-out via ctx-carried seam
-```
+## Agent Loop Design Analysis
 
-### Main components and responsibilities
+The main loop in `internal/agent/llm_agent.go` consumes one budget step per iteration at line 251, derives an LLM call timeout from `TotalTimeoutSec` at line 263, builds a request from `a.history`, opens and drains the LLM stream, and dispatches tool calls at line 452. Tool execution uses a bounded worker pool in `internal/agent/llm_agent_parallel.go` lines 30-64.
 
-| Component | File(s) | Responsibility |
-|---|---|---|
-| `Agent` interface | `agent.go` | Open contract: `Name/Description/Run/SubAgents/FindAgent`; `BudgetOwner` opt-in. `InvocationContext` is single-Run-scoped, copy-on-`With*`. |
-| `LlmAgent` | `llm_agent.go` (+ `_dispatch/_finalize/_completion/_pause/_consume/_retry/_stream_retry/_parallel/_truncation/_reasoning/_args/_events`) | The budget-gated tool-dispatch loop. |
-| Budget | `budget.go`, `budget_dedup.go` | Shared `*atomic.Int32` step counter + wallclock gate + per-branch dedup ring (period-1/2 loop guard). |
-| Tools | `tools/*` | `shell_exec`, `fs_*`, `web_*`, `task`, `skill_*`, `send_file`, `swarm_spawn`, `ask_user`, `todo`, `read_tool_output`, `search` (semantic tool discovery), `text_response`. Registry + deferred-tool manifest. |
-| MCP bridge | `mcptools/*` | Mount external MCP servers as namespaced bridged tools; reconnect-on-transport-error; description capping. |
-| Prompt | `prompt/*`, `prompt.go` | Byte-stable system prompt; cache_control injection; reasoning-tier classifier + LLM router fallback. |
-| Trust | `trust.go` | Wrap untrusted tool output (web/fs/shell) in a crypto-nonce envelope; HTML-escape + NFKC. |
-| Hooks | `hooks.go`, `hooks_command.go` | `BeforeModel/BeforeTool/AfterTool/OnTurn*` extension points; in-process + SHA-gated command hooks. |
-| Workflow | `workflow/*` | `LoopAgent`, `SequentialAgent`, `ParallelAgent` composites; budget-aware, escalate-aware. |
-| Observability | `tracing.go`, `metrics.go`, `event.go` | OTel spans (turn/llm/tool), expvar+Prometheus counters, the `Event` wire model. |
+Good properties:
 
-## 2. Agent-loop design analysis
+- Step and wallclock budgets exist.
+- LLM stream open retry is conservative and classifies transient errors.
+- Tool results are appended in provider-compatible assistant/tool order.
+- Deduplication occurs before execution.
+- Panics inside the loop and tool worker are recovered and recorded.
+- Production `Runner` constructs fresh agents from persisted history on each turn.
 
-The loop (`llm_agent.go:189–441`) is the strongest part of the system. Properties verified by reading:
+Weaknesses:
 
-- **Deterministic control flow, bounded recovery.** Every `continue` is gated by a per-run counter: `recoveryAttempts ≤ 1` (budget/dedup/empty-response nudge), `completionAttempts ≤ 1` (completion-critic veto), `truncatedToolTurns ≤ 2` (truncated-tool-call nudge), `streamRetryUsed` one-shot. There is **no unbounded `continue`** — the "203-turn thrash" failure mode is provably closed.
-- **Non-empty terminal contract.** Termination is always an explicit `Event`, never the `iter.Seq2` error slot (which carries only real infra failures). Forced finalization (`llm_agent_finalize.go`) issues one tool-free synthesis turn, retries once, then falls back to a deterministic Italian stub digesting gathered tool results — so the user *always* gets prose.
-- **Budget gate before every call.** `ConsumeStep` (decrement-check-restore) is TOCTOU-safe across concurrent branches; recovery rides *outside* the gate via `skipBudgetGate` (ceiling = `max_steps + 2`, asserted by `TestFinalizeOutsideBudget`).
-- **Side-effect-aware completion critic** (`llm_agent_completion.go`): on a *mutating* turn, a cheap critic grades the deliverable by **observed tool results**, vetoing once if "a script written but never executed" — a genuinely good guard against false "done." Fails *open* (critic outage never wedges a turn).
-- **Cache-stable assembly** (`prompt/builder.go`): volatile hints (budget, workspace, current time) are tail-injected to a *copy* of history; `messages[0]` is a package constant, never templated. Date-sensitive turns stay deterministic without poisoning the cached prefix.
-- **Parallel tool dispatch** (`llm_agent_dispatch.go`, `llm_agent_parallel.go`): runnable calls execute concurrently (sem-bounded) but shared-state mutations (history append, dedup ring, result Events) stay serial in original call order, preserving the wire contract and cache stability.
-- **HITL pause** (`llm_agent_pause.go`): name-gated to `ask_user` only; emitted as an `Actions.AwaitingInput` Event; persistence/resume is the Runner's job. Clean separation.
+- `Run` assumes a non-nil budget and a context already bounded by `Budget.WithDeadline`.
+- Per-tool node timeout defaults to disabled.
+- `text_response` is treated as terminal only after sibling runnable tools have executed.
+- Side-effect idempotency is not a first-class contract.
+- Tool policy is mostly encoded per-tool, not enforced by a central capability profile.
 
-### Loop weaknesses (where it bites)
+## Tooling And Action Execution
 
-- **Concurrency safety is convention, not enforcement.** The dedup ring is mutated lock-free under a documented "serial caller" invariant that spans three files, directly adjacent to the concurrent `executeBatch` (AG-002). Goroutines have no panic recovery (AG-001).
-- **Soft wall-time.** The budget wallclock is a *step-boundary* gate; `Budget.WithDeadline` exists but is not wired into the run ctx, so total wall-time can overshoot by one per-call timeout per step (AG-041).
-- **No checkpointing.** All run state is in-memory (D-26). Pause/resume is durable, but a crash mid-run loses everything (AG-042).
-- **Latency cliff on classifier miss.** The reasoning-tier router falls back to a synchronous LLM round-trip (≤8s) per turn when the embedding sidecar degrades (AG-008).
+Native shell and filesystem tools are intentionally powerful. `cmd/aura/main.go` registers `ShellExec` with the process working directory and registers filesystem tools with no `WorkspaceRoot` at lines 150-163. Comments in `internal/agent/tools/shell_exec.go` lines 20-23 and `internal/agent/tools/fs.go` lines 14-18 state that the tools have full access with no sandbox/path fence; in the known container deployment, that means the Aura container namespace and mounted resources.
 
-## 3. Architecture weaknesses (system level)
+The code has useful mitigations: destructive-shell approval patterns, secret redaction in shell output, skills-directory write fencing, SSRF controls for web fetches, and untrusted output envelopes. Because Aura runs in a container, the immediate blast radius is the container namespace and its mounts, assuming the container is not privileged and does not mount host-sensitive resources. These mitigations plus containerization are still not sufficient production permission boundaries by themselves.
 
-1. **No panic firewall.** A long-lived multi-channel daemon executing arbitrary tools has no goroutine-level isolation; one panic = process death (AG-001).
-2. **MCP integration lacks resilience primitives.** No backoff, no circuit breaker, lock-during-IO reconnect, ctx-coupled recovery, `=0`-disables-timeout (AG-005/AG-006).
-3. **Trust is binary at the server boundary, not per-call.** Mutating MCP tools and self-authored skills run with no capability-grant gate (AG-007/AG-011), even though the PRD defines `capability_grants` (Slice 1.7).
-4. **Observability is span-and-counter, not log-and-metric.** No structured logs; no latency/error/cost/outcome metrics; tracing fails silently (AG-012/AG-013).
-5. **Secret boundary is name-heuristic.** `IsSecretEnvKey` is a substring denylist that misses DSN-shaped vars (AG-010); command hooks inherit the full env (AG-003).
-6. **Extension surfaces (hooks, skills) are powerful but unsafe-by-default.** TOCTOU, no fail-soft, unvalidated rewrites, ungated activation.
+## Memory And Context Management
 
-## 4. Suggested target architecture (summary)
+`LlmAgent.history` is in-memory only (`internal/agent/llm_agent.go` lines 36-52). Production durability is owned by `Runner`, which loads managed history and creates a fresh `LlmAgent` per turn (`internal/runner/runner.go` lines 351-363 and 549-585). Conversation history uses a context ladder that evicts old tool output to `read_tool_output` pointers.
 
-Keep the loop core intact — it is verified correct. Add **thin, independently-shippable layers** around it:
+The design is reasonable, but memory recall/write behavior is mostly prompt-directed (`internal/agent/prompt.go` lines 61-67). It is not a deterministic runtime middleware that guarantees recall before relevant turns or write after durable preference extraction.
 
-- A **panic firewall**: a `safeGo` helper wrapping every spawned goroutine with recover→error; a Runner-level per-turn recover backstop.
-- An **MCP resilience layer**: single-flight reconnect off-lock, `WithoutCancel` + dedicated timeout, exponential backoff + per-server circuit breaker, boot-validated timeouts.
-- A **capability gate**: consult `capability_grants` for `Mutating && Untrusted` tool dispatch (MCP + skill activation); default-untrusted provenance for unknown tools and `swarm_spawn` reports.
-- A **unified observability surface**: `slog` at turn/llm/tool boundaries + a complete Prometheus metric set + never-panic telemetry + a daemon tracer-boot log.
-- A **durability boundary**: incremental checkpoint of history+counters keyed by sessionID for crash-resume; an active wallclock deadline ctx.
-- A **secret boundary**: DSN-aware `IsSecretEnvKey`; minimal-env command hooks; value-scan redaction.
+## Comparison With Reference Code
 
-See `target-architecture.md` for the detailed design, interfaces, and failure-handling model.
+The sampled ADK reference under `D:\tmp\adk-go-study` models human confirmation as part of tool context. `agent/context.go` lines 151-189 exposes `ToolConfirmation` and `RequestConfirmation`; `agent/callback_context.go` lines 192-208 records confirmation requests and stops summarization until the user responds.
+
+The sampled Codex reference under `D:\tmp\codex` models sandbox policy and execution policy separately. `codex-rs/windows-sandbox-rs/src/resolved_permissions.rs` includes filesystem and network sandbox policy resolution, and `codex-rs/execpolicy/examples/example.codexpolicy` shows command policy rules with `forbidden` and `prompt` decisions.
+
+These references support a target design where Aura treats permissions as runtime configuration, not scattered tool-specific checks.
+
+## Suggested Target Architecture
+
+Move toward:
+
+- An `ExecutionPolicy` service that evaluates every tool call before dispatch.
+- A `CapabilityProfile` per identity/channel/session: local trusted, remote read-only, workspace-write, full-runtime break-glass.
+- A container-aware sandbox executor for shell and filesystem operations with workspace roots, read-only roots, writable roots, and network policy.
+- A durable `ToolTransaction` abstraction with idempotency key, start record, result record, and recovery semantics.
+- A deterministic memory middleware that performs recall and write classification outside model discretion.
+- Terminal exclusivity in the dispatcher.
+- First-class health/readiness checks for model, database, MCP, embedder, scheduler, and sidecar directories.

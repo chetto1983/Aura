@@ -1,197 +1,204 @@
-# Proposed Patches — `internal/agent`
+# Proposed Patch Recommendations
 
-**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
-Patch-style recommendations for the major findings. **None are applied** — this is design guidance. Snippets are illustrative pseudocode anchored to real symbols; adapt to exact signatures when implementing. Each patch lists: affected file · affected function · reason · before/after behavior · implementation approach · tests required · rollback.
+These are code-level recommendations only. No production source code was modified during this audit.
 
----
+## Patch 1: Central execution policy before tool dispatch
 
-## PP-1 — Panic firewall in spawned goroutines (AG-001, P0)
+- Affected file: `internal/agent/llm_agent.go`, `internal/agent/llm_agent_dispatch.go`, new `internal/agent/policy`
+- Affected function/class: `LlmAgent.dispatch`, `LlmAgent.runTool`
+- Reason for change: Shell, filesystem, MCP, skill, and task actions need one enforceable authorization point.
+- Before behavior: Tool execution depends on per-tool checks and registry exposure.
+- After behavior: Every tool call is evaluated as allow, prompt, or deny before execution.
+- Suggested implementation approach:
+  - Add `ExecutionPolicy` to `LlmAgentConfig` or `InvocationContext`.
+  - Resolve `tools.Spec` before execution.
+  - Call `policy.Evaluate(ctx, call, spec, subject)`.
+  - Convert deny into a model-visible tool error.
+  - Convert prompt into durable `ask_user`/approval pause.
+  - Include policy decision in tool invocation events and spans.
+- Tests required before merging:
+  - Deny shell in remote profile, even though execution is containerized.
+  - Allow read-only safe tools.
+  - Prompt mutating tools in workspace profile.
+  - Verify denied tools do not execute.
+- Rollback considerations:
+  - Feature-flag the policy with a default permissive local profile.
+  - Keep existing tool-level checks during rollout.
 
-- **Affected file(s):** `internal/agent/llm_agent_parallel.go`, `internal/agent/workflow/parallel.go`, `internal/swarm/swarm.go`, `internal/agent/tools/shell_bg.go`
-- **Affected function(s):** `executeBatch`, `runSub`, `runWave`, `bgShell.start` reaper
-- **Reason:** A panic in any spawned goroutine crashes the whole process; `recover()` in the parent goroutine cannot catch it. For `aura serve` this is daemon-wide.
-- **Before:** `go func(k int){ …; results[k]=a.runTool(...) }(k)` — a panicking tool kills the process.
-- **After:** the panic becomes a per-call `toolRunResult{Err:"panic: …"}` the model sees; the daemon survives.
-- **Approach:**
-  ```go
-  // executeBatch goroutine body:
-  go func(k int) {
-      sem <- struct{}{}
-      defer func() { <-sem }()
-      defer wg.Done()
-      defer func() {
-          if r := recover(); r != nil {
-              recordPanic("executeBatch", calls[k].Function.Name)
-              results[k] = toolRunResult{
-                  ToolCallID: calls[k].ID, ToolName: calls[k].Function.Name,
-                  Err: fmt.Sprintf("panic: %v", r),
-                  Preview: "error: tool panicked",
-                  EndedAt: time.Now().UTC(),
-              }
-          }
-      }()
-      results[k] = a.runTool(ctx, budget, calls[k], startedAt)
-  }(k)
-  ```
-  Mirror in `runSub` (forward a `{status:failed}` child report once) and `runWave`. Add a Runner-level `defer recover()` around the per-turn `Run` consumption as a backstop. **Do not** rely on this for AG-002 (concurrent-map-write is a fatal, not a panic).
-- **Tests required:** `-race`+`goleak` table test with a panicking fake tool through `executeBatch`, `parallel.Run`, `swarm.runWave`; assert process survives + error surfaces.
-- **Rollback:** purely additive defers; revert the commit. No behavior change on the happy path.
+## Patch 2: Gate model-authored skill create/update by default
 
-## PP-2 — Mutex on the dedup ring (AG-002, P1)
+- Affected file: `internal/skills/writer.go`, `internal/skilladapters/skilladapters.go`, `internal/agent/tools/skill_write.go`
+- Affected function/class: `modelMutationBypassesGate`, `Writer.WriteMutation`, `SkillTool.writeAction`
+- Reason for change: Model-authored active skills are persistent self-extension and should not auto-activate in production.
+- Before behavior: Actor `model` with `always=false` bypasses gate for create/update and reaches `Activate(... ApprovalAuto ...)`.
+- After behavior: Model create/update returns `pending_approval` unless explicit local sandbox profile allows auto-activation.
+- Suggested implementation approach:
+  - Add `SkillWritePolicy` or profile field to the writer adapter.
+  - Change `modelMutationBypassesGate` to require `AllowModelSkillAutoActivate`.
+  - Default config to false.
+  - Update schema text in `skillParamsSchemaHonest`.
+- Tests required before merging:
+  - Model create/update returns pending by default.
+  - Local sandbox override returns active.
+  - Always-on and delete remain gated.
+  - Pending skill is not visible to loader until approved.
+- Rollback considerations:
+  - Preserve a local-only env/config escape hatch during migration.
+  - Log every auto-activation with profile and request ID.
 
-- **Affected file:** `internal/agent/budget_dedup.go`
-- **Affected function:** `dedupRing.BeforeToolCall`, `AfterToolResult`, `push`, `countConsecutive`, `isPingPong`
-- **Reason:** `entries`/`results` are mutated lock-free under a cross-file "serial caller" convention adjacent to concurrent `executeBatch`; a future change → fatal concurrent map write.
-- **Before:** no lock; safe only by convention.
-- **After:** all ring mutations guarded; safe regardless of caller.
-- **Approach:** add `mu sync.Mutex` to `dedupRing`; `Lock`/`defer Unlock` at the top of each exported method. Keep `Budget.Child`'s per-branch ring fork.
-- **Tests required:** `-race` concurrent `Before/AfterToolResult` hammer + multi-tool `dispatch` with `>1` parallel tools.
-- **Rollback:** remove the mutex; revert. No API change.
+## Patch 3: Make `FSWrite` atomic
 
-## PP-3 — MCP reconnect resilience (AG-005/AG-006, P1)
+- Affected file: `internal/agent/tools/fs_write.go`
+- Affected function/class: `FSWrite.Execute`
+- Reason for change: Direct overwrite can corrupt files on crash.
+- Before behavior: `os.WriteFile(path, content, 0o644)`.
+- After behavior: Write temp file in same directory, rename atomically, and preserve existing mode when possible.
+- Suggested implementation approach:
+  - Stat existing file; use its mode if present.
+  - Call `atomicWriteFile(path, []byte(a.Content), mode)`.
+  - Consider fsync in `atomicWriteFile` for stronger durability.
+- Tests required before merging:
+  - Existing content remains if temp write fails.
+  - Existing mode preserved.
+  - Create-new-file still works.
+  - SkillsDir write denial still applies.
+- Rollback considerations:
+  - Atomic rename behavior on Windows should be tested first.
+  - If replace semantics fail on a platform, fall back behind build-specific helper.
 
-- **Affected file:** `internal/agent/mcptools/bridge_reconnect.go`, `bridge.go`, `timeout.go`
-- **Affected function:** `reconnectAfterTransport`, `reconnectLocked`, `Execute`, `configuredMCPCallTimeout`
-- **Reason:** lock held across spawn+handshake+list; reconnect bound to the failed call's ctx; no backoff/breaker; `=0` disables the timeout.
-- **Before:** one transport blip freezes the server; a crash-loop re-spawns every call; `=0` → unbounded hang.
-- **After:** reconnect is single-flight off-lock with its own deadline; backoff + breaker bound a flapping server; `=0` means default.
-- **Approach:**
-  ```go
-  // reconnect outside s.mu:
-  defs, err, _ := s.reconnectGroup.Do("reconnect", func() (any, error) {
-      rctx, cancel := context.WithTimeout(context.WithoutCancel(parent), reconnectTimeout)
-      defer cancel()
-      if s.breaker.Open() { return nil, ErrTransport }
-      c, defs, err := openMCPClient(rctx, s.cfg)         // spawn+handshake+list, no s.mu held
-      if err != nil { s.breaker.Failure(); backoffSleep(); return nil, err }
-      s.mu.Lock(); s.client = c; s.mu.Unlock()           // publish under lock only
-      s.breaker.Success(); return defs, nil
-  })
-  // timeout.go: sec==0 -> return defaultMCPCallTimeout; sec<0 -> infinite (explicit)
-  ```
-  Resolve+validate the timeout once at mount, store on the server.
-- **Tests required:** concurrent-call-during-slow-reconnect (no head-of-line stall); crash-loop server (breaker opens after N); hung server with `=0` bounded by default; goleak.
-- **Rollback:** feature-flag the new reconnect path; revert to the in-lock reconnect if regressions appear.
+## Patch 4: Add background shell ownership and TTL
 
-## PP-4 — Command-hook sandbox + fail-soft (AG-003/AG-004, P1)
+- Affected file: `internal/agent/tools/shell_bg.go`, `internal/agent/tools/shell_exec.go`, `internal/agent/tools/shell_poll.go`, `internal/agent/tools/shell_kill.go`
+- Affected function/class: `BackgroundShells.Start`, `ShellPoll.Execute`, `ShellKill.Execute`
+- Reason for change: Background jobs are detached from request context and process-scoped.
+- Before behavior: Jobs use `context.Background`, have no TTL, and are addressable by `shell_id`.
+- After behavior: Jobs carry owner session/identity, expire automatically, and enforce poll/kill authorization.
+- Suggested implementation approach:
+  - Add `OwnerSessionID`, `OwnerIdentityID`, `StartedAt`, `ExpiresAt` to `ShellJob`.
+  - Derive owner from `toolCallCtx`.
+  - Add default max runtime env/config with fail-fast parsing.
+  - Reject poll/kill when owner does not match.
+  - Add sweeper goroutine or check expiry on poll/start.
+- Tests required before merging:
+  - Expired shell is killed.
+  - Cross-session poll and kill denied.
+  - Process shutdown still kills all jobs.
+  - Running job cap still works.
+- Rollback considerations:
+  - Existing shell IDs can be treated as legacy ownerless only for local profile.
+  - Add migration note for UI clients holding shell IDs.
 
-- **Affected file:** `internal/agent/hooks_command.go`, `hooks.go`
-- **Affected function:** `run`, `verifyTrust`, `BeforeModel`, `HookManager.*`
-- **Reason:** TOCTOU between hash and exec; full `os.Environ()` (secrets) to the child; unvalidated wholesale request rewrite; any hook error aborts the turn.
-- **Before:** `cmd.Env = append(os.Environ(), h.env...)`; hash-then-exec; `*req = *decision.Request`; error → turn dies.
-- **After:** minimal env; exec the held fd; validated/bounded rewrites with an audit record; non-security hook failures degrade (fail-open) instead of aborting.
-- **Approach:**
-  ```go
-  // minimal env:
-  cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, h.env...)
-  // close TOCTOU: open once, hash the fd, exec /proc/self/fd/N (or require root-owned path)
-  // validate rewrite:
-  if decision.Request != nil {
-      if err := validateHookRequest(decision.Request); err != nil { return nil, err }
-      reasoningtrace.Record("hook_rewrite", map[string]any{"hook": h.name, "kind": "request"})
-      *req = *decision.Request
-  }
-  // HookManager: per-hook FailPolicy; on err under fail_open -> log+metric+allow
-  ```
-- **Tests required:** child env has no secret-named vars; oversized/invalid rewrite rejected; failing hook completes under fail_open, aborts under fail_closed; rewrite emits an audit record.
-- **Rollback:** the env-allowlist and fail-policy are config-gated; default the policy to today's behavior behind a flag if needed, then flip.
+## Patch 5: Enforce budget deadlines inside `LlmAgent.Run`
 
-## PP-5 — Secret boundary: DSN-aware redaction (AG-010, P1)
+- Affected file: `internal/agent/llm_agent.go`, `internal/agent/budget.go`
+- Affected function/class: `LlmAgent.Run`, `LlmAgent.runTool`
+- Reason for change: Direct package consumers can pass an unbounded context or nil budget.
+- Before behavior: Production caller usually derives deadline, but `Run` assumes it.
+- After behavior: `Run` validates context/budget and ensures context deadline no later than budget deadline.
+- Suggested implementation approach:
+  - Add `validateInvocationContext`.
+  - If `ic.Ctx == nil`, use `context.Background`.
+  - If `ic.Budget == nil`, yield controlled error and return.
+  - If context has no deadline or later deadline, derive `Budget.WithDeadline(ic.Ctx)`.
+  - Add default per-node timeout policy for external tools.
+- Tests required before merging:
+  - Nil budget yields error, no panic.
+  - Blocking fake tool canceled by budget deadline.
+  - Existing runner path still works.
+- Rollback considerations:
+  - Add this as a backwards-compatible safety net; should not affect callers already using `WithDeadline`.
 
-- **Affected file:** `internal/secret/envkey.go`, `internal/agent/tools/shell_exec_env.go`
-- **Affected function:** `IsSecretEnvKey`, `secretEnvMarkers`, output redactor
-- **Reason:** `AURA_DB_URL=postgres://u:PASS@h` passes the substring denylist and reaches shell children.
-- **Before:** denylist = `key,token,secret,pass,auth,bearer,credential,private,cert`.
-- **After:** DSN-shaped keys are recognized; DSN credentials in output are masked.
-- **Approach:**
-  ```go
-  secretEnvMarkers = append(secretEnvMarkers, "url", "dsn", "uri", "conn", "pwd", "cookie", "session", "jwt")
-  // plus a value-scan: if value matches `^[a-z][a-z0-9+.-]*://[^:/?#]+:[^@/?#]+@`, treat as secret
-  // output redactor: add pattern ://([^:@/]+):([^@/]+)@  -> ://$1:***@
-  ```
-  Beware false-positives: `url`/`uri` are broad — pair the name marker with the value-scan so only credential-bearing values are stripped/redacted.
-- **Tests required:** `IsSecretEnvKey("AURA_DB_URL")==true`; a shell child cannot read the DSN; redactor masks `postgres://u:p@h`; a non-credential `*_URL` is not over-redacted.
-- **Rollback:** revert the marker list; the value-scan is independent and can be toggled.
+## Patch 6: Reject mixed `text_response` plus mutating tool calls
 
-## PP-6 — Observability minimum (AG-012/AG-013/AG-033, P1)
+- Affected file: `internal/agent/llm_agent_dispatch.go`
+- Affected function/class: `LlmAgent.dispatch`
+- Reason for change: A terminal response should not share a batch with side effects.
+- Before behavior: Runnable tools execute before terminal `text_response`.
+- After behavior: Mixed terminal plus mutating/unknown calls are rejected with model feedback.
+- Suggested implementation approach:
+  - During partition, inspect sibling specs.
+  - If `terminalIdx >= 0 && len(runnable) > 0`, reject when any sibling is mutating or unknown.
+  - Append model feedback asking for either tool calls or final response, not both.
+  - Optionally allow safe read-only siblings only if explicitly desired.
+- Tests required before merging:
+  - `text_response` plus `fs_write` does not execute `fs_write`.
+  - `text_response` alone still finalizes.
+  - Multiple non-terminal calls still execute normally.
+- Rollback considerations:
+  - Feature-flag strict terminal mode for provider compatibility during rollout.
 
-- **Affected file:** `internal/agent/metrics.go`, `tracing.go`, `llm_agent.go` (+ dispatch/finalize emit points)
-- **Affected function:** new metric registrations; `mintSpanID`; turn/tool emit points
-- **Reason:** no latency/error/cost/outcome metrics; no slog; telemetry can panic.
-- **Before:** ~5 counters; span-only latency; `mintSpanID` panics on entropy failure.
-- **After:** full metric set + slog + never-panic telemetry.
-- **Approach:**
-  ```go
-  // metrics.go (non-default registry):
-  turnTotal = factory.NewCounterVec("aura_agent_turn_total", []string{"outcome"})
-  llmDur    = factory.NewHistogram("aura_agent_llm_call_duration_seconds", buckets)
-  llmErr    = factory.NewCounterVec("aura_agent_llm_errors_total", []string{"kind"})
-  toolErr   = factory.NewCounterVec("aura_agent_tool_errors_total", []string{"tool"})
-  // emit: at each terminal turnReason -> turnTotal.WithLabelValues(turnReason).Inc()
-  // tracing.go mintSpanID:
-  if _, err := rand.Read(id[:]); err != nil { recordSpanIDFailure(); return [8]byte{} }
-  // slog at turn start / terminal / tool error keyed by request_id, thread_id
-  ```
-- **Tests required:** each terminal `turnReason` increments its counter; a tool error increments `tool_errors_total`; injecting an entropy failure does not panic.
-- **Rollback:** metrics/logs are additive; revert. The `mintSpanID` change is strictly safer.
+## Patch 7: Add MCP local mutability policy
 
-## PP-7 — Capability gate on mutating tools (AG-007/AG-011, P1)
+- Affected file: `internal/agent/mcptools/bridge.go`, new MCP policy config
+- Affected function/class: `BridgeTool.Spec`, `RefreshSpec`
+- Reason for change: Server-provided `ReadOnlyHint` is not a reliable security boundary.
+- Before behavior: `Mutating = !ReadOnlyHint`.
+- After behavior: Local policy decides mutability; server hint is advisory.
+- Suggested implementation approach:
+  - Add per-server/per-tool policy: `mutating`, `read_only`, `requires_approval`, `disabled`.
+  - Default external unknown tools to mutating.
+  - Record conflicts between server hint and local policy.
+- Tests required before merging:
+  - Local mutating override wins over `ReadOnlyHint=true`.
+  - Disabled MCP tool is not registered.
+  - Conflict emits metric/log.
+- Rollback considerations:
+  - Start in warn-only mode, then enforce after manifests are created.
 
-- **Affected file:** `internal/agent/llm_agent_dispatch.go`, `internal/agent/tools/skill_write.go`, `tools/skill.go`
-- **Affected function:** `dispatch` (pre-exec), `writeAction`
-- **Reason:** mutating MCP tools and self-authored skills run with no per-call authorization.
-- **Before:** `Mutating` only sets `sideEffected`; skill auto-activates.
-- **After:** `Mutating && Untrusted` consults `capability_grants`; skill activation gated or honestly documented + alerted; dead schema removed.
-- **Approach:**
-  ```go
-  // dispatch, before executeBatch, for each runnable call:
-  if spec.Mutating && provenance == TrustUntrusted {
-      switch grants.Authorize(ic.Ctx, call, spec) {
-      case Deny:    vetoResults[i] = denied(call); continue
-      case Confirm: return askUserConfirm(call)   // route through ask_user
-      case Allow:   // proceed
-      }
-  }
-  // skill_write.go: delete skillParamsSchema; if ungated-by-policy, emit operator alert + audit
-  ```
-- **Tests required:** mutating MCP tool without a grant refused/confirmed; self-authored skill stays pending or alerts; exactly one skill schema referenced.
-- **Rollback:** the gate defaults to `Allow` when no grants are configured (today's behavior) — safe to ship dark, then tighten.
+## Patch 8: Add durable tool ledger outbox
 
-## PP-8 — Default-untrusted provenance for unknown tools & swarm reports (AG-052, P1 in deployment)
+- Affected file: `internal/runner/runner_persist.go`, `internal/toolinvocations`
+- Affected function/class: `persistToolInvocationLedger`
+- Reason for change: Best-effort ledger insert can lose forensic records.
+- Before behavior: Insert failure logs warning and continues.
+- After behavior: Insert failure writes to durable outbox or marks turn as observability-degraded.
+- Suggested implementation approach:
+  - Add `tool_invocation_outbox` table or local append-only file.
+  - On ledger insert failure, enqueue event with retry metadata.
+  - Background worker drains outbox.
+  - Export metrics for queued, failed, drained.
+- Tests required before merging:
+  - Inject insert failure and verify outbox row.
+  - Restore DB and verify drain.
+  - Health endpoint reports degraded while queue is non-empty beyond threshold.
+- Rollback considerations:
+  - Keep warning-only path behind config if outbox migration is unavailable.
 
-- **Affected file:** `internal/agent/trust.go`, `internal/swarm/runner_adapter.go`
-- **Affected function:** `untrustedSource`, swarm report projection
-- **Reason:** unknown-tool output and `swarm_spawn` child reports (which embed children's web/fs output) are treated as trusted and not enveloped → indirect prompt-injection laundering.
-- **Before:** hardcoded `untrustedToolNames` set; default = trusted.
-- **After:** default = untrusted unless explicitly marked trusted; swarm reports carry untrusted provenance.
-- **Approach:** invert the default in `untrustedSource` (unknown → true), keep an explicit `trustedToolNames` allowlist for built-ins that are genuinely safe; stamp `Provenance.Trust = TrustUntrusted` on swarm child reports so the parent wraps them.
-- **Tests required:** a swarm child's malicious web content is enveloped in the parent prompt; a built-in safe tool stays trusted.
-- **Rollback:** revert the default; the allowlist remains a no-op.
+## Patch 9: Harden reasoning trace for production
 
-## PP-9 — Config validation + active wallclock (AG-036/AG-006/AG-027/AG-041, P2)
+- Affected file: `internal/reasoningtrace/reasoningtrace.go`, config boot code
+- Affected function/class: `Enabled`, `FullEnabled`, `Record`
+- Reason for change: Full trace can persist sensitive prompt/history data.
+- Before behavior: `AURA_REASONING_TRACE=full` writes capped plaintext private fields.
+- After behavior: Production mode rejects full trace unless break-glass is enabled, and trace destination has retention controls.
+- Suggested implementation approach:
+  - Add `AURA_ENV=production` guard.
+  - Require `AURA_REASONING_TRACE_ALLOW_FULL=1` for full mode in production.
+  - Emit loud startup warning and metric.
+  - Add optional encrypted trace writer.
+- Tests required before merging:
+  - Production full mode rejected without break-glass.
+  - Default mode redacts private fields.
+  - Env secret redaction still applies.
+- Rollback considerations:
+  - Operators can temporarily use break-glass with documented retention process.
 
-- **Affected file:** `internal/agent/budget.go`, `internal/agent/mcptools/timeout.go`, composition root
-- **Affected function:** `NewBudget`, `configuredMCPCallTimeout`, run-ctx setup
-- **Reason:** `max_steps=0` silently disables the runtime; MCP timeout parsed per-call (malformed = loop-fatal); wallclock is a soft step-boundary gate.
-- **Before:** no positivity check; hot-path env parse; `WithDeadline` unwired.
-- **After:** fail-loud at boot on bad config; timeout resolved once; wallclock an active ctx deadline.
-- **Approach:** `if maxSteps < 1 || wallclockSec < 1 { return errMalformed }` in `NewBudget`; resolve MCP timeout at mount; `ic.Ctx = Budget.WithDeadline(parent)` at the run root.
-- **Tests required:** `NewBudget(0)`/negative errors; a malformed MCP timeout fails at boot not mid-run; total wall-time is bounded.
-- **Rollback:** the validations are independent; revert individually.
+## Patch 10: Add atomic/encrypted sidecar writer
 
-## PP-10 — fs size cap (AG-014, P2)
-
-- **Affected file:** `internal/agent/tools/fs_read.go`, `fs_write.go`, `fs_edit.go`
-- **Affected function:** `FSRead.Execute`, `FSWrite.Execute`, `FSEdit.Execute`
-- **Reason:** no size ceiling → OOM/turn-wedge on a multi-GB file.
-- **Before:** `os.ReadFile` whole file; `fs_read` also `string(b)` = 2× memory.
-- **After:** files over `AURA_FS_MAX_READ_BYTES` are rejected with a clear error (or auto-paged via offset/limit).
-- **Approach:** `os.Stat` then reject over cap, or `io.LimitReader` with a hard limit; `fs_read` suggests `offset`/`limit` paging in the error.
-- **Tests required:** a file over the cap returns a clean error, not an OOM; under-cap reads unaffected.
-- **Rollback:** raise the cap to `MaxInt` to disable; revert.
-
----
-
-## Patch sequencing
-
-PP-1 → PP-2 (crash firewall) → PP-3 (MCP) → PP-5 → PP-6 (secret + visibility) → PP-4 → PP-7 → PP-8 (gating) → PP-9 → PP-10 (hardening). PP-1 and PP-2 are the smallest and remove the two crash-class defects — land them first, each behind its own atomic commit with the named regression test.
+- Affected file: `internal/conversations/store_helpers.go`, `internal/agent/tools/result.go`
+- Affected function/class: `writeTurnSidecar`, `writeSidecar`
+- Reason for change: Sidecars can contain sensitive data and direct writes are not crash-hardened.
+- Before behavior: Plaintext `os.WriteFile` to local run directory.
+- After behavior: Atomic write helper with optional encryption and retention metadata.
+- Suggested implementation approach:
+  - Create `internal/sidecar.Store`.
+  - Implement `Write(ctx, key, bytes, options)` with atomic local backend.
+  - Add encryption interface for production.
+  - Store sidecar metadata for sweeper.
+- Tests required before merging:
+  - Atomic failure test.
+  - Permission test.
+  - Encryption round-trip test.
+  - Retention sweeper test.
+- Rollback considerations:
+  - Keep legacy local writer behind config until migration is complete.

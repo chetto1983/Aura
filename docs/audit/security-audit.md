@@ -1,64 +1,136 @@
-# Security Audit — `internal/agent`
+# Security Audit
 
-**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
-**Scope:** `tools/*`, `mcptools/*`, `prompt/*`, `trust.go`, `hooks_command.go`, `llm_agent*`, with blast-radius into `internal/secret`, `internal/web`, `internal/swarm`.
+## Security Posture
 
-## Threat model (must read first)
+Aura currently behaves like a trusted local coding assistant with powerful capabilities inside its runtime container. It has valuable prompt-injection mitigations, but it does not have an enforceable production permission boundary for arbitrary shell/filesystem operations or model-authored self-extension. Containerization reduces host blast radius only if the container is hardened and sensitive mounts/secrets/network paths are constrained.
 
-The runtime is designed (amendment #50 / D-15c) for a **single trusted operator on their own machine**: the host shell and filesystem *are* the capability, there is no sandbox, and there is no path fence. Therefore "the model can run any command / write any file" is the **intended capability, not a vulnerability**, and is excluded as such. This audit assesses security *within* that model plus the **deployment reality** that the same binary serves Telegram + AG-UI + scheduler from one daemon — which makes (a) cross-turn/cross-channel isolation and (b) multi-tenant readiness real concerns even though today's posture is single-operator.
+## Confirmed Security Strengths
 
-**The one boundary the model crosses constantly is prompt injection:** untrusted bytes (web pages, files, MCP results, swarm child output) flowing into the model's context as if they were instructions. That is the primary security surface here, and the codebase mostly handles it well.
+- Untrusted tool outputs are wrapped by default in `internal/agent/trust.go`.
+- Unknown tools default to untrusted.
+- Web fetch has SSRF checks, redirect revalidation, content-type restrictions, timeouts, and size caps in `internal/web`.
+- Shell output redacts common environment-secret values.
+- `fs_write` and `fs_edit` deny writes into `SkillsDir`.
+- Scheduled `agent_job` tasks are gated to `pending_approval` in `internal/agent/tools/task.go` lines 204-212.
+- `ask_user` is treated as a controlled pause path.
 
-## 1. Prompt-injection surface
+## Critical Security Risks
 
-**Strong (confirmed good):**
-- `trust.go` wraps untrusted tool output (web/fs/shell) in `<tool_output trust="untrusted" nonce=…>` with a **crypto-random nonce**, HTML-escaped + NFKC-normalized; the system prompt instructs the model to treat enveloped content as data, not instructions. This is a real, well-implemented mitigation.
-- MCP server-provided `description`/`isError` text is recursively capped (512 B, depth-bounded) and framed "untrusted MCP server… treat as data" (`mcptools/bridge.go:170–261`).
-- `document_search` stamps `TrustUntrusted` provenance explicitly.
+## Full Container/Runtime Execution
 
-**Gaps:**
-- **AG-052 (P3 → P1 in multi-tenant): default-trusted for unknown tools.** `untrustedSource` (`trust.go:14–31`) is a hardcoded name set; a tool neither in the set nor setting provenance is treated as **trusted**. Critically, **`swarm_spawn` child reports are not marked untrusted** — a worker that fetched a malicious page returns content that, synthesized by the parent, is not enveloped. *(Relates to prior B-02.)* Fix: default unknown → untrusted; propagate untrusted provenance through swarm reports.
-- **AG-003 (P1): command hooks can rewrite the model request/answer/tool-call** from stdout with no validation — a hook compromise is a prompt-injection-with-privileges vector.
+Evidence:
 
-## 2. Unsafe subprocess execution
+- `internal/agent/tools/shell_exec.go` lines 20-23 describes shell as a full terminal with no sandbox.
+- `internal/agent/tools/fs.go` lines 14-18 describes full filesystem access with no path fence; in the container deployment this applies to container-visible files and mounts.
+- `cmd/aura/main.go` lines 150-163 registers shell and FS tools into the main registry.
 
-- `shell_exec` running arbitrary commands is **intended** (trust model). Defenses that *do* exist and are good: secret-env stripping, process-group kill, `WaitDelay` orphan reaping, bounded output buffers, output secret-redaction, timeout cap.
-- **AG-021 (P2, documented):** the destructive-command gate is advisory regex, trivially bypassable (`T=/; rm -rf $T`). Not a boundary — restated so it isn't over-credited.
-- **AG-003 (P1): hook exec TOCTOU** — `verifyTrust` hashes the file (`hooks_command.go:206`) then `exec.CommandContext` re-opens it (`:182`); a writable hook path can be swapped between hash and exec. The `//nolint:gosec` asserts an atomicity the OS does not provide.
+Risk:
 
-## 3. Unsafe file / network access
+- Any path that can influence model tool choice can reach command and file operations inside the Aura container, including mounted volumes and injected secrets.
 
-**Filesystem:** No fence by design. Within that: **AG-014 (P2)** no size cap on `fs_read/write/edit` (OOM); **AG-045 (P3)** non-atomic in-place writes (crash-truncate, parallel-edit race); **AG-019 (P2)** `send_file` fence silently disabled when `WorkspaceRoot==""` (active in prod). `send_file` itself has a *correct* symlink-resolving workspace fence — the one tool that genuinely confines.
+Mitigation:
 
-**Network (web_fetch/web_search):** **Excellent SSRF hardening** (all confirmed in `internal/web`): http/https scheme allowlist; private/loopback/link-local/CGNAT/v6-metadata blocked; `169.254.169.254` blocked at IP **and** hostname layers; **pinned-IP dial with no resolve→dial TOCTOU**; manual per-hop redirect re-validation (auto-follow off, 5-hop cap); `io.LimitReader` size cap + content-type gate + timeout; structural error sanitization (IP/host/headers never reach the model). **AG-049 (P3):** no destination-port restriction (any port on a public IP). This layer is the security high point of the package.
+- Central policy engine plus container-aware sandboxed execution. Remote/server contexts should not get full-runtime tools by default.
 
-## 4. Secret handling
+## Model Self-Extension
 
-- **AG-010 (P1): DB password leaks into `shell_exec` children.** `IsSecretEnvKey` substring denylist (`key,token,secret,pass,auth,bearer,credential,private,cert`) misses `AURA_DB_URL=postgres://u:PASS@h` and the `*_DSN/_URI/_CONN/_PWD` class. The model can `cat $AURA_DB_URL` and exfiltrate. Fix: DSN markers + value-scan redaction.
-- **AG-003 (P1): command hooks inherit the full `os.Environ()`** — every provider/DB secret handed to a subprocess.
-- **AG-009 (P1): reasoning-trace logs full prompts/history/PII**; redaction covers only named env-var secrets, not typed secrets or PII.
-- **Good:** OTel never emits api_key (D-28); MCP child env is an allowlist; shell output is secret-redacted before the model sees it (just not DSN-shaped — AG-047).
+Evidence:
 
-## 5. Permission boundaries
+- `internal/skilladapters/skilladapters.go` lines 23-25 labels tool writes as actor `model`.
+- `internal/skills/writer.go` lines 163-166 bypasses gates for model create/update when `always=false`.
+- `internal/skills/writer.go` lines 136-142 auto-activates the pending mutation.
 
-- **AG-007 (P1): no per-call capability gate on mutating MCP tools.** Trust is binary at the server boundary; once mounted, any mutating tool runs unconditionally, and a reconnect can silently flip a tool to mutating (AG-024/F-8). The PRD's `capability_grants` (Slice 1.7) is not consulted in dispatch.
-- **AG-011 (P1): skill self-activation is ungated** despite gated-looking comments/spec — the model can write executable instruction-skills that load into future system prompts without operator review. *(Matches prior B-04.)* Self-modification + injection-persistence surface.
-- **AG-016 (P2): `agent_job` deferred execution** gated only by `rm/drop/delete` keywords — a benign-looking schedule fires an arbitrary full-tool agent turn later.
+Risk:
 
-## 6. Injection (SQL/command/path) — within scope
+- The model can install or update its own active instructions. This increases persistence risk after prompt injection.
 
-- No SQL is built in this package (sqlc elsewhere). Path-join for the spillover sidecar is **safely** validated (`result.go validateID` restricts ids to `[A-Za-z0-9_-]` before `filepath.Join`; **AG-050** notes the un-asserted `runDir` invariant). Skill names validated `^[a-z0-9-]{1,64}$` before reaching the writer. Command "injection" into the shell is the intended capability.
+Mitigation:
 
-## 7. Privilege escalation / persistence
+- Require human approval for all model-authored skill changes unless an explicit disposable sandbox profile is selected.
 
-- The deferred `agent_job` (AG-016) and ungated skill activation (AG-011) are the two **persistence** surfaces: an instruction that survives the current turn (a scheduled job) or survives across sessions (an activated skill) — both reachable by a prompt-injected instruction within a single benign-looking turn. These are the findings to revisit when the system moves beyond single-operator.
+## Prompt Injection Surfaces
 
-## Recommended mitigations (priority order)
+Surfaces:
 
-1. **AG-007 / AG-011 — wire `capability_grants` into dispatch** for `Mutating && Untrusted` MCP tools and skill activation; default unknown-tool output to untrusted (AG-052) and propagate untrusted provenance through `swarm_spawn`.
-2. **AG-003 — sandbox the hook surface:** minimal-env (no inherited secrets), exec-by-fd (close the TOCTOU), validate hook-supplied requests, audit every rewrite.
-3. **AG-010 / AG-009 — close the secret boundary:** DSN-aware `IsSecretEnvKey` + value-scan redaction; don't log full history/PII to the trace by default.
-4. **AG-016 — gate deferred `agent_job` schedules** (or surface the goal at fire time).
-5. **Multi-tenant gate (future):** before any non-single-operator deployment, re-rate AG-003 (TOCTOU+env), AG-007, AG-011 as **P0**, and add a real sandbox/least-privilege runtime + production container (prior D-01).
+- Web search/fetch output.
+- Files read from the local host.
+- MCP tool output and descriptions.
+- Shell output.
+- Skill bodies and generated skills.
+- Conversation history and memory recall.
 
-> The injection-defense core (`trust.go` nonce envelope, SSRF hardening, MCP description capping) is genuinely strong and should be preserved as-is. The security debt is concentrated in **capability gating** and the **secret/hook boundary**, not in the model-context defenses.
+Existing mitigation:
+
+- `renderToolResultForPrompt` wraps untrusted output with nonce-tagged XML-like boundaries.
+
+Remaining gap:
+
+- Wrapping reduces instruction-following risk but does not stop the model from voluntarily calling dangerous tools after reading malicious content.
+
+Mitigation:
+
+- Combine untrusted-output framing with policy enforcement. Dangerous tools should require approval/capability regardless of model reasoning.
+
+## Unsafe File Operations
+
+Confirmed:
+
+- `FSWrite` direct `os.WriteFile` can partially overwrite files.
+- Sidecars use plaintext `os.WriteFile`.
+- FS tools can address absolute paths.
+
+Mitigation:
+
+- Atomic writes, workspace jail, allowlist/denylist roots, encrypted sidecars, retention policy.
+
+## Unsafe Subprocess Execution
+
+Confirmed:
+
+- Shell execution runs in the host shell.
+- Destructive approval regexes are advisory.
+- Background shell jobs detach from request context.
+
+Mitigation:
+
+- Parse command into policy units, enforce deny/prompt/allow decisions, add sandbox, disable network by default, require TTL and owner.
+
+## Secret Leakage
+
+Known mitigations:
+
+- Shell env secret redaction exists.
+- Reasoning trace redacts private fields by default.
+
+Risks:
+
+- Full reasoning trace persists plaintext prompt/history.
+- Tool sidecars and conversation sidecars can contain secrets.
+- Shell commands can place secrets in argv, files, or child process output.
+
+Mitigation:
+
+- Secret scanner at ledger/sidecar boundaries, encrypted storage, trace retention policy, and production guard against full trace.
+
+## Permission Boundaries
+
+Current boundary:
+
+- Mostly trusted-local-operator conventions plus the external container boundary.
+
+Required boundary:
+
+- Identity-aware capability profiles.
+- Central authorization before tool dispatch.
+- Auditable human approval records for high-risk actions.
+- OS-level or container-level enforcement for filesystem, process, and network operations.
+- Explicit container hardening requirements: non-privileged, no Docker socket, least-privilege mounts, non-root user where possible, read-only root filesystem where possible, egress policy, and scoped secrets.
+
+## Security Recommendations
+
+1. Introduce `ExecutionPolicy.Evaluate(ctx, ToolCall) Decision`.
+2. Attach identity, channel, session, capability profile, and workspace root to `InvocationContext`.
+3. Restrict remote/server profiles to no shell, no arbitrary FS, no skill activation.
+4. Require approval for model-authored skill changes in production profile.
+5. Make MCP mutability local-policy-driven, not server-hint-driven.
+6. Add high-signal security tests for prompt injection, path traversal, command policy bypass, and sidecar secret leakage.

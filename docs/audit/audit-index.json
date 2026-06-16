@@ -1,133 +1,75 @@
 {
-  "audit_date": "2026-06-15",
-  "audit_cycle": "fresh-independent-2026-06-15 (4 parallel deep-readers + manual core-loop read; corroborates and extends the 2026-06-10..06-13 cycles)",
-  "audited_path": "d:\\Aura\\internal\\agent",
-  "head_commit": "136325dc",
-  "branch": "master",
+  "audit_date": "2026-06-16",
+  "audited_path": "D:\\Aura\\internal\\agent",
   "reference_paths": [
-    "d:\\Aura\\internal\\secret",
-    "d:\\Aura\\internal\\web",
-    "d:\\Aura\\internal\\swarm",
-    "d:\\Aura\\internal\\reasoningtrace",
-    "d:\\Aura\\internal\\db",
-    "d:\\tmp (supporting context only; not assumed production)"
+    "D:\\tmp\\adk-go-study",
+    "D:\\tmp\\codex"
   ],
-  "threat_model": "Single trusted operator, full host access, no sandbox / no path fence by design (amendment #50 / D-15c). Findings graded within that model AND the multi-channel serve-daemon deployment reality.",
-  "production_readiness_score": 6.5,
-  "score_basis": {
-    "loop_core_isolated": 8.5,
-    "operational_perimeter": 4.8,
-    "blended": 6.5,
-    "rationale": "Verified-correct reasoning loop (bounded recovery, non-empty terminal contract, cache discipline, SSRF hardening, nonce trust envelope, ~19.4k test LOC) held down by perimeter gaps: panic isolation, MCP resilience, hook safety, observability, secret hygiene, crash-resume."
-  },
-  "total_findings": 63,
+  "production_readiness_score": 5.5,
+  "total_findings": 20,
   "findings_by_severity": {
-    "P0": 1,
-    "P1": 12,
-    "P2": 26,
-    "P3": 24
+    "P0": 0,
+    "P1": 6,
+    "P2": 9,
+    "P3": 5
   },
-  "p0_findings": [
+  "top_10_risks": [
     {
-      "id": "AG-001",
-      "title": "Unrecovered panics in spawned goroutines crash the entire daemon",
-      "files": ["internal/agent/llm_agent_parallel.go:43-50", "internal/agent/workflow/parallel.go:95-100,137", "internal/agent/tools/shell_bg.go:174-178", "internal/swarm/swarm.go"],
-      "evidence": "Repo-wide grep: only recover() in production internal/ is db/tx.go:28. No panic recovery in any agent/swarm goroutine.",
-      "impact": "One panicking tool/child terminates aura serve for all channels/users (system-wide failure)."
+      "id": "R-001",
+      "title": "Full container/runtime shell and filesystem access",
+      "severity": "P1"
+    },
+    {
+      "id": "R-002",
+      "title": "Model-authored skill auto-activation",
+      "severity": "P1"
+    },
+    {
+      "id": "R-004",
+      "title": "Detached background shells",
+      "severity": "P1"
+    },
+    {
+      "id": "R-006",
+      "title": "Mixed terminal and mutating calls",
+      "severity": "P1"
+    },
+    {
+      "id": "R-012",
+      "title": "Crash after side effect before result",
+      "severity": "P2"
+    },
+    {
+      "id": "R-008",
+      "title": "MCP mutability trust",
+      "severity": "P2"
+    },
+    {
+      "id": "R-010",
+      "title": "Full reasoning trace leaks sensitive data",
+      "severity": "P2"
+    },
+    {
+      "id": "R-009",
+      "title": "Best-effort tool ledger",
+      "severity": "P2"
+    },
+    {
+      "id": "R-011",
+      "title": "Plaintext direct sidecar writes",
+      "severity": "P2"
+    },
+    {
+      "id": "R-014",
+      "title": "Shell approval patterns incomplete",
+      "severity": "P2"
     }
   ],
-  "p1_findings": [
-    {"id": "AG-002", "title": "dedupRing concurrent-map-write fatal (latent)", "file": "internal/agent/budget_dedup.go:122,170"},
-    {"id": "AG-003", "title": "Hook exec TOCTOU + full os.Environ() secrets + unvalidated request rewrite", "file": "internal/agent/hooks_command.go:182,183,114,206"},
-    {"id": "AG-004", "title": "Failing/slow hook aborts the whole turn (no fail-soft)", "file": "internal/agent/hooks_command.go:97-170; llm_agent.go:429"},
-    {"id": "AG-005", "title": "MCP reconnect: lock-during-IO, ctx-coupled, no backoff/breaker", "file": "internal/agent/mcptools/bridge_reconnect.go:97-155"},
-    {"id": "AG-006", "title": "AURA_MCP_CALL_TIMEOUT_SEC=0 disables per-call timeout -> hang + held mutex", "file": "internal/agent/mcptools/timeout.go:24-26; bridge.go:76"},
-    {"id": "AG-007", "title": "No capability gate on mutating MCP tools; reconnect flips Mutating", "file": "internal/agent/llm_agent_dispatch.go:100; mcptools/bridge_reconnect.go:117-128"},
-    {"id": "AG-008", "title": "Reasoning-router LLM fallback adds <=8s extra round-trip/turn on sidecar degrade", "file": "internal/agent/llm_agent_reasoning.go:50-90"},
-    {"id": "AG-009", "title": "Full prompts/history/PII logged to reasoning trace; redaction name-only", "file": "internal/reasoningtrace/*; llm_agent.go:290"},
-    {"id": "AG-010", "title": "DB password leaks into shell_exec children via DSN-shaped env vars", "file": "internal/agent/tools/shell_exec.go:424; internal/secret/envkey.go:20"},
-    {"id": "AG-011", "title": "Skill self-activation ungated despite gated-looking spec (prior B-04)", "file": "internal/agent/tools/skill_write.go:164-174; skill.go:99-112"},
-    {"id": "AG-012", "title": "No latency/error/cost/outcome metrics -> no SLOs (prior O-02)", "file": "internal/agent/metrics.go:11-68"},
-    {"id": "AG-013", "title": "No structured logs; tracing silent-drop + mintSpanID panic (prior O-01)", "file": "internal/agent/tracing.go:41-74,96-102"}
-  ],
-  "top_10_risks": [
-    "AG-001 — daemon-wide crash from one panicking tool (P0)",
-    "AG-005 — MCP reconnect livelock / head-of-line freeze (P1)",
-    "AG-003 — hook TOCTOU + secret-env exposure (P1)",
-    "AG-007 — no capability gate on mutating MCP tools (P1)",
-    "AG-010 — DB password leaks to shell children (P1)",
-    "AG-011 — ungated skill self-activation / injection persistence (P1)",
-    "AG-052 — swarm/unknown-tool output not enveloped -> indirect injection (P1 in deployment)",
-    "AG-006 — =0 MCP timeout unbounded hang (P1)",
-    "AG-012/AG-013 — production blindness, no SLO/alerting (P1)",
-    "AG-002 — latent dedup concurrent-map-write fatal (P1)"
-  ],
   "recommended_next_actions": [
-    "Add recover() to every spawned goroutine (executeBatch, parallel.runSub, swarm.runWave, shell_bg) + Runner backstop — translate panics to per-call/per-child errors (AG-001).",
-    "Add a sync.Mutex to dedupRing to remove the latent concurrent-map-write fatal recover() cannot catch (AG-002).",
-    "Harden MCP reconnect: single-flight off-lock, context.WithoutCancel + dedicated timeout, exponential backoff + circuit breaker; treat AURA_MCP_CALL_TIMEOUT_SEC=0 as default and validate at boot (AG-005/AG-006).",
-    "Close the secret boundary: DSN markers in IsSecretEnvKey; stop inheriting os.Environ() into command hooks (AG-010/AG-003).",
-    "Add observability minimum: slog at turn/LLM/tool boundaries + Prometheus turn_total{outcome}/llm_call_duration/*_errors_total/token counters; never panic in mintSpanID (AG-012/AG-013)."
-  ],
-  "strengths_no_action": [
-    "SSRF hardening in internal/web (pinned-IP dial, scheme allowlist, metadata-IP block, per-hop redirect re-validation, size cap)",
-    "trust.go crypto-nonce untrusted-output envelope (prompt-injection mitigation)",
-    "KV-cache stable-prefix discipline (byte-stable messages[0], tail-injected volatile hints)",
-    "Shared-atomic budget defeating the max_steps^depth swarm fan-out bomb",
-    "Non-empty terminal contract (text_response -> forced synthesis -> deterministic Italian stub)",
-    "Bounded recovery/completion/truncation counters (no unbounded continue; 203-turn thrash closed)",
-    "Test investment: 105 test files / ~19.4k test LOC, goleak-guarded TestMain, property + fuzz tests"
-  ],
-  "continuity": {
-    "prior_cycles": ["2026-06-10", "2026-06-11", "2026-06-12 (re-audit-2)", "2026-06-13 (reconciliation)"],
-    "prior_id_scheme": "B-##/O-##/D-##/M-##/R-##",
-    "this_cycle_id_scheme": "AG-### (deep-reader sub-IDs LP-/F-/CMD-/CACHE-/REAS-/TRC-/MET-/EVT-/OBS-/WF-/DD-/BG-/SC-/TO-/ST-/AUR- retained for traceability)",
-    "cross_references": {
-      "AG-011": "prior B-04 (self-extension gate open)",
-      "AG-012": "prior O-02 (no metrics)",
-      "AG-013": "prior O-01 (no structured logs / tracer-in-daemon)",
-      "AG-052": "prior B-02 (swarm reports unwrapped)"
-    },
-    "new_this_cycle_not_in_prior": ["AG-001 (panic isolation)", "AG-005 (MCP reconnect concurrency detail)", "AG-006 (=0 timeout hang)", "AG-008 (reasoning-router latency cliff)", "AG-010 (DSN secret leak)"],
-    "preserved_dated_docs": ["reconciliation-2026-06-13.md", "re-audit-2026-06-12.md", "deep-correctness-audit-2026-06-10.md", "e2e-closure-2026-06-11.md", "T-01-test-apex.md", "M-03-context-window-research.md", "*-validation-*.md"]
-  },
-  "phase_22_closeout": {
-    "closed": "2026-06-15",
-    "ledger": "22-finding-ledger.md",
-    "live_signoff": "22-LIVE-SIGNOFF-2026-06-15.md",
-    "canonical_finding_count": 64,
-    "count_reconciliation": "The source index recorded total_findings=63; bug-report.md uses a contiguous AG-001..AG-064 numbering = 64 distinct IDs. AG-033/044/051/056 are folded sub-findings of AG-013/011/011/013 but carry their own ID. The ledger uses the canonical 64-ID set.",
-    "disposition_vocabulary": ["fixed+test", "accepted+rationale", "confirmed+routed"],
-    "disposition_counts": {"fixed+test": 52, "confirmed+routed": 3, "accepted+rationale": 9},
-    "confirmed_routed": {
-      "AG-007": "capability_grants dispatch gate routed to Slice 1.7 (multi-tenant); the reconnect Mutating/required-arg drift-warn slice fixed in scope (22-03)",
-      "AG-034": "ledger redaction + byte cap routed to internal/toolinvocations.RedactForLedger (store toParams); already implemented + tested (22-05 confirm)",
-      "AG-041": "Budget.WithDeadline wired at the composition root cmd/aura/agent.go:99; confirmed + CLI-covered (22-03)"
-    },
-    "accepted_rationale": ["AG-021", "AG-042", "AG-048", "AG-049", "AG-053", "AG-055", "AG-059", "AG-060", "AG-063"],
-    "needs_confirmation_resolved": {
-      "AG-028": "fixed+test — deadcode confirmed openManagedServer unreachable; removed, branches re-covered via MountManagedServer",
-      "AG-034": "confirmed+routed — redaction is purely in the DB store layer (D-09)",
-      "AG-041": "confirmed+routed — WithDeadline already wired at cmd/aura",
-      "AG-043": "fixed+test — goleak break-at-every-index found no leak"
-    },
-    "requirements_closed": ["HARDEN-01", "HARDEN-02", "HARDEN-03", "HARDEN-04", "HARDEN-05", "HARDEN-06", "HARDEN-07", "HARDEN-08", "HARDEN-09", "HARDEN-10", "HARDEN-11", "HARDEN-12"]
-  },
-  "report_files": [
-    "README.md",
-    "executive-summary.md",
-    "architecture-review.md",
-    "bug-report.md",
-    "infrastructure-audit.md",
-    "security-audit.md",
-    "testing-strategy.md",
-    "industrialization-roadmap.md",
-    "action-plan.md",
-    "risk-register.md",
-    "target-architecture.md",
-    "proposed-patches.md",
-    "22-finding-ledger.md",
-    "22-LIVE-SIGNOFF-2026-06-15.md",
-    "audit-index.json"
+    "Add execution capability profiles and deny full-runtime tools in production remote contexts.",
+    "Disable model-authored skill auto-activation outside explicit local sandbox mode.",
+    "Make FSWrite atomic and add crash-safety tests.",
+    "Add background shell TTL, ownership, and authorization.",
+    "Reject mixed text_response plus mutating tool-call batches."
   ]
 }
