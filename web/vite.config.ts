@@ -1,15 +1,17 @@
 import { defineConfig } from 'vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
-import { babel } from '@rolldown/plugin-babel';
+import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Plugin order is load-bearing: babel(reactCompilerPreset) MUST precede react(),
-// else only Oxc's JSX transform runs and the React Compiler silently no-ops
-// (RESEARCH Correction #2 / Pitfall 1).
+// Plugin order is load-bearing: the React Compiler babel pass MUST precede
+// react(), else only Oxc's JSX transform runs and the Compiler silently no-ops
+// (RESEARCH Correction #2 / Pitfall 1). @rolldown/plugin-babel exports the plugin
+// as default and takes { presets } (RESEARCH's named `babel`/`babelConfig` shape
+// predates the shipped 0.2.3 API).
 export default defineConfig({
   plugins: [
-    babel({ include: /\.[jt]sx?$/, babelConfig: reactCompilerPreset() }),
+    babel({ include: /\.[jt]sx?$/, presets: [reactCompilerPreset()] }),
     react(),
     tailwindcss(),
     VitePWA({

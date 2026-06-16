@@ -1,14 +1,29 @@
 <!doctype html>
-<html lang="en" data-theme="dark" data-density="operator">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0B0E14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Aura</title>
-  </head>
+    <script>
+      (function () {
+        try {
+          var r = document.documentElement;
+          r.setAttribute('data-theme', localStorage.getItem('aura.theme') || 'dark');
+          r.setAttribute('data-density', localStorage.getItem('aura.density') || 'operator');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          document.documentElement.setAttribute('data-density', 'operator');
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Dn0seWPz.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BP_8rAME.css">
+  <link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
   <body>
     <noscript>Aura requires JavaScript.</noscript>
-    <div id="root" data-brand="aura">Aura</div>
-    <!-- Phase-23 placeholder. The real Vite build (23-02) overwrites this file. -->
+    <div id="root"></div>
   </body>
 </html>
