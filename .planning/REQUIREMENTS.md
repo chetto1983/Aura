@@ -34,7 +34,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 - [x] **FND-03**: Frontend linter + formatter + type-check (ESLint/Biome + Prettier + `tsc --noEmit`) wired into CI as a blocking, zero-warning gate — parity with the Go `golangci-lint` discipline
 - [x] **FND-04**: Design-token theme system — `tokens.json` → Tailwind 4 `@theme` mapping the dark operator-cockpit palette (elysia-informed board) + density modes, applied before app boot (no flash)
 - [x] **FND-05**: Brand integration — `public/Logo.png` in the app-shell header + favicon + PWA/theme-color metadata, per the ux-spec Copy Contract (no marketing hero text)
-- [ ] **FND-06**: Frontend test harness (Vitest + component/E2E runner) + the Node 24 multi-stage Docker build stage producing the embedded asset with no Node in the runtime image
+- [x] **FND-06**: Frontend test harness (Vitest + component/E2E runner) + the Node 24 multi-stage Docker build stage producing the embedded asset with no Node in the runtime image
 
 ### Web Foundation (WEB) — Slice A (gates everything)
 
@@ -159,7 +159,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | FND-03 | Phase 23 | Complete |
 | FND-04 | Phase 23 | Complete |
 | FND-05 | Phase 23 | Complete |
-| FND-06 | Phase 23 | Pending |
+| FND-06 | Phase 23 | Complete |
 | WEB-01 | Phase 24 | Pending |
 | WEB-02 | Phase 24 | Pending |
 | WEB-03 | Phase 24 | Pending |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: executing
+status: verifying
 stopped_at: "Completed 23-02-PLAN.md (frontend scaffold: theme + branded shell + React-Compiler PWA build)"
-last_updated: "2026-06-16T10:51:23.339Z"
+last_updated: "2026-06-16T11:07:19.806Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 7
-  percent: 13
+  completed_plans: 8
+  percent: 25
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 Phase: 23 (frontend-infrastructure-industrial-foundation) — EXECUTING
 Plan: 3 of 3 (23-01 complete)
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-16
 
 ### Next -- Execute Phase 22
@@ -160,6 +160,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 22 P22-05 | ~15min | 4 tasks | 12 files |
 | Phase 23 P23-01 | 21min | 3 tasks (1 checkpoint + 2 auto) | 18 files |
 | Phase 23 P23-02 | 14min | 3 tasks | 36 files |
+| Phase 23 P23-03 | 8min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -278,6 +279,8 @@ Recent decisions affecting current work:
 - [Phase 17]: Neo4j backup uses direct Bolt export
 - [Phase ?]: 23-02: @rolldown/plugin-babel exports default (babel({presets:[reactCompilerPreset()]})) — RESEARCH named-babel/babelConfig shape predates the shipped 0.2.3 API; verified via useMemoCache in the bundle
 - [Phase ?]: 23-02: Vite build.outDir = ../internal/webui/dist (Go embed package-relative, 23-01 Dev #1); PWA/brand icons pre-generated from public/Logo.png with no build-time sharp dep (D-08 lean)
+- [Phase 23]: 23-03: aura serve mounts internal/webui.Handler() additively at / via newServeHandler parent ServeMux (AG-UI prefixes keep Go 1.22 longest-pattern precedence, no SPA-fallback — Phase 24/WEB-01)
+- [Phase 23]: 23-03: freshness gate + Dockerfile webbuild COPY target adapted from plan web/dist to internal/webui/dist (vite outDir, package-relative go:embed); web-e2e provisions docker-compose Postgres + dummy OPENROUTER_API_KEY (A-SERVE-NOSTACK: db.Open unconditional in bootServe)
 
 ### Pending Todos
 
@@ -311,7 +314,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T10:51:23.330Z
+Last session: 2026-06-16T11:07:19.797Z
 Stopped at: Completed 23-02-PLAN.md (frontend scaffold: theme + branded shell + React-Compiler PWA build)
 Resume file: None
 
