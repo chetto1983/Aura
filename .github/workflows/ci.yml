@@ -654,3 +654,180 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down
+
+  # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
+  # Four path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
+  # single unified workflow (D-17 — no separate web.yml). A `dorny/paths-filter`
+  # guard early-exits each job green when no web file changed, so Go-only PRs do
+  # not pay the npm install cost. The filter watches web/** + this workflow file.
+
+  web-lint:
+    name: Web lint (eslint --max-warnings=0 + prettier + tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect web changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Set up Node
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Lint + format-check + typecheck (D-03 zero-warning gate)
+        # `lint` carries --max-warnings=0 (package.json), the golangci-lint parity bar.
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npm ci && npm run lint && npm run format:check && npm run typecheck
+
+  web-test:
+    name: Web unit tests (Vitest + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect web changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Set up Node
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Vitest (FND-06)
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npm ci && npm run test
+
+  web-dist-freshness:
+    name: Web dist freshness (committed internal/webui/dist == fresh build, D-05)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect web changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Set up Node
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Rebuild + diff committed embed dist (D-05 stale guard)
+        # Build writes to ../internal/webui/dist (vite outDir); the script diffs that
+        # path, not web/dist. First Linux-Node-24 run is the byte-canonical proof.
+        if: steps.changes.outputs.web == 'true'
+        run: bash scripts/web_dist_freshness.sh
+
+  web-e2e:
+    name: Web E2E (Playwright boots aura serve over docker-compose Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Resolves A-SERVE-NOSTACK: `aura serve` hard-requires a Postgres pool (bootServe
+    # → bootServeChatEnv → db.Open is unconditional). So the E2E provisions the stack
+    # exactly like the AG-UI live smoke (integration-test job): a dummy non-empty
+    # OPENROUTER_API_KEY lets config.LoadServe boot (the placeholder shell needs no
+    # real key); the agent loop is never exercised — only the static "/" render is.
+    # CI=true arms the no-skip-as-green guards in the surrounding scripts.
+    env:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      CI: "true"
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      NEO4J_PASSWORD: ci-test-password
+      OPENROUTER_API_KEY: ci-degraded-no-network
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect web changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Set up Go
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Start Postgres (docker compose)
+        if: steps.changes.outputs.web == 'true'
+        run: make db-up
+
+      - name: aura db migrate
+        if: steps.changes.outputs.web == 'true'
+        run: go run ./cmd/aura db migrate
+
+      - name: Build web dist (fresh embed source)
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npm ci && npm run build
+
+      - name: Build aura binary (embeds the fresh dist)
+        if: steps.changes.outputs.web == 'true'
+        run: go build -o aura ./cmd/aura
+
+      - name: Install Playwright Chromium
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npx playwright install --with-deps chromium
+
+      - name: Playwright E2E (webServer boots ../aura serve, SC2)
+        # Playwright's webServer does not inherit runner env (#19780); playwright.config.ts
+        # forwards the DB/serve vars from process.env into the webServer process, and this
+        # job exports them above. The shell.spec asserts theme-before-paint + brand + no
+        # hero text against the served embedded shell.
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npm run test:e2e
+
+      - name: Tear down
+        if: always()
+        run: docker compose down

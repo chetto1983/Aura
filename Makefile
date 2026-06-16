@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet deadcode vuln coverage quality quality-full test test-race file-size web-freshness db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -25,6 +25,7 @@ help:
 	@echo "make test          — go test ./... (unit tier, no build tags)"
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
+	@echo "make web-freshness — rebuild web/ + assert committed internal/webui/dist is fresh (D-05)"
 	@echo "make db-up         — docker compose up -d postgres (waits healthy)"
 	@echo "make db-migrate    — aura db migrate (role aura_migrate)"
 	@echo "make db-status     — aura db status"
@@ -88,6 +89,12 @@ test-race:
 
 file-size:
 	bash scripts/check-file-size.sh
+
+# Rebuild web/ on the local Node toolchain and assert the committed embed source
+# (internal/webui/dist) equals a fresh build (D-05 tamper-evidence). The byte-canonical
+# proof is the CI web-dist-freshness job on Linux Node 24; this is the local mirror.
+web-freshness:
+	bash scripts/web_dist_freshness.sh
 
 db-up:
 	docker compose up -d postgres
