@@ -8,4 +8,4 @@
 ## Recipe sources (not vendored)
 
 - `recipe:calculator` → `chetto1983/calculator-mcp-server` @ `46a1e66709bc387e8c223f15ec25fb5ae3a1af08` (own fork, pinned; uvx warm-cached at build).
-- `recipe:whatsapp` → vendored separately under `docker/whatsapp/` (see its PROVENANCE.md).
+- `recipe:whatsapp` → forked `chetto1983/whatsapp-mcp` @ `aura/cockpit-connect` (whatsmeow bridge + FastMCP HTTP front + cockpit management REST), a separate compose service published to GHCR (`ghcr.io/chetto1983/whatsapp-mcp:sidecar`). No longer vendored into this image; the old `docker/whatsapp/` local build was retired with the GHCR fork.

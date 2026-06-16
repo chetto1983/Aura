@@ -17,12 +17,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	compose := readProjectFile(t, root, "compose.yaml")
 	gvisor := readProjectFile(t, root, "compose.gvisor.yaml")
 	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
-	whatsappDockerfile := readProjectFile(t, root, "docker/whatsapp/Dockerfile")
-	whatsappEntrypoint := readProjectFile(t, root, "docker/whatsapp/entrypoint.sh")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
-	if _, err := os.Stat(filepath.Join(root, "docker/whatsapp/whatsapp-mcp-src.tar.gz")); err != nil {
-		t.Fatalf("docker/whatsapp/whatsapp-mcp-src.tar.gz missing: %v", err)
-	}
 
 	for _, want := range []string{
 		"FROM golang:",
@@ -77,7 +72,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
 		"whatsapp:",
+		"ghcr.io/chetto1983/whatsapp-mcp:sidecar",
 		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
+		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
 		"aura-whatsapp-session:/app/whatsapp-bridge/store",
 		"caddy:",
 		"0.0.0.0:${AURA_HTTPS_PORT:-443}:443",
@@ -147,22 +144,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		if strings.Contains(gvisor, retired) {
 			t.Fatalf("compose.gvisor.yaml should not contain %q:\n%s", retired, gvisor)
 		}
-	}
-	for _, want := range []string{
-		"FROM golang:bookworm AS bridge-build",
-		"FROM python:3.11-slim",
-		"whatsapp-mcp-src.tar.gz",
-		"CGO_ENABLED=1 go build",
-		"fastmcp==2.14.7",
-		"from fastmcp import FastMCP",
-		"WHATSAPP_BRIDGE_PORT=8081",
-	} {
-		if !strings.Contains(whatsappDockerfile, want) {
-			t.Fatalf("docker/whatsapp/Dockerfile missing %q:\n%s", want, whatsappDockerfile)
-		}
-	}
-	if !strings.Contains(whatsappEntrypoint, "exec .venv/bin/python main.py") {
-		t.Fatalf("docker/whatsapp/entrypoint.sh must run the built venv directly so uv does not resync the lock:\n%s", whatsappEntrypoint)
 	}
 	for _, want := range []string{".git", ".worktrees", "output", ".env"} {
 		if !strings.Contains(dockerignore, want) {
