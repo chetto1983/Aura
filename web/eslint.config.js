@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import importX from 'eslint-plugin-import-x';
 import prettier from 'eslint-config-prettier';
+import globals from 'globals';
 
 export default tseslint.config(
   {
@@ -65,8 +66,14 @@ export default tseslint.config(
       'vitest.config.ts',
       'playwright.config.ts',
     ],
-    languageOptions: { parserOptions: { projectService: false } },
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    files: ['**/*.config.{ts,js,mjs}', 'tokens/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { projectService: false },
+    },
   },
   prettier,
 );

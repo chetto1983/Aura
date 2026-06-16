@@ -1,0 +1,25 @@
+/* GENERATED from tokens/tokens.json by generate-theme.mjs — do not hand-edit */
+@theme {
+  --color-bg: #0B0E14;
+  --color-surface: #121620;
+  --color-surface-2: #1A1F2B;
+  --color-border: #2A3140;
+  --color-text: #E6E9EF;
+  --color-text-muted: #9AA4B2;
+  --color-text-faint: #5B6675;
+  --color-accent: #5BA8FF;
+  --color-accent-dim: #2E5C8A;
+  --color-success: #3FB37F;
+  --color-warning: #E0A23C;
+  --color-danger: #E5484D;
+  --color-info: #5BA8FF;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+}
+:root[data-density="compact"] { --space-unit: 3px; --row-h: 28px; --font-base: 12px; }
+:root[data-density="operator"] { --space-unit: 4px; --row-h: 32px; --font-base: 13px; }
+:root[data-density="review"] { --space-unit: 6px; --row-h: 40px; --font-base: 15px; }
+:root[data-density="operator"] { color-scheme: dark; }
