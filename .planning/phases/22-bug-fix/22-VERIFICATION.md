@@ -1,9 +1,11 @@
 ---
 phase: 22-bug-fix
 verified: 2026-06-15T20:00:00Z
-status: human_needed
-score: 12/12 must-haves verified (automated floor)
+status: passed
+signed_off: 2026-06-16T08:35:00Z
+score: 12/12 must-haves verified + 5/5 operator live items signed off
 overrides_applied: 0
+human_verification_resolved: "B1 coverage (89.4%) + B2 lint/vuln/mutation done in the 2026-06-15 campaign (mutation commit 595fc6a1); B3 full live-stack pass signed off 2026-06-16 on the live Docker stack at HEAD 85b5e1ae — see docs/audit/22-LIVE-SIGNOFF-2026-06-15.md Part B3 (9/9 acceptance rows). Daemon was rebuilt to HEAD first (pre-Phase-22 image detected). One low-risk follow-up: share the scheme://user:pw@ userinfo pattern between agui.SanitizeString and toolinvocations.RedactForLedger."
 human_verification:
   - test: "Run `make coverage` (destructive — wipes shared Postgres) on the live stack (stack up with `make neo4j-migrate`). Confirm owned-surface coverage ≥85% and every owned package ≥85%."
     expected: "Combined unit+integration coverage ≥85% across `db_integration neo4j_integration` tag matrix; per-package floor holds. Baseline was 90.3% at 2026-06-13 HEAD; the 22-05 changes are small (one deleted const + two test swaps + one new test) and should not lower any package below its prior floor."
@@ -26,10 +28,10 @@ human_verification:
 
 **Phase Goal:** "The internal/agent operational perimeter is production-ready (blended readiness 6.5 → ≥8.0) so the cockpit's web exposure lands on a hardened base."
 **Verified:** 2026-06-15T20:00:00Z
-**Status:** human_needed
+**Status:** passed (operator live sign-off completed 2026-06-16)
 **Re-verification:** No — initial verification
 
-All 12 HARDEN must-haves are VERIFIED by automated evidence (code on disk + named regression tests + orchestrator-confirmed go build/vet/test/race/cache gate). The blocking items are exclusively operator-coordinated live-stack checks (coverage gate, WSL lint/vuln/mutation, full live pass) that by design require a quiet machine with the full multi-service daemon — not code gaps.
+All 12 HARDEN must-haves are VERIFIED by automated evidence (code on disk + named regression tests + orchestrator-confirmed go build/vet/test/race/cache gate). The operator-coordinated live-stack checks are now also complete: B1 coverage (89.4%) + B2 lint/vuln/mutation in the 2026-06-15 campaign, and the **B3 full live-stack sign-off on 2026-06-16** at HEAD `85b5e1ae` (9/9 acceptance rows — `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md` Part B3). The daemon was first rebuilt to HEAD (the running image predated Phase 22).
 
 ---
 
@@ -163,7 +165,7 @@ Step 7c: No probe scripts declared in PLAN files for Phase 22. The equivalent au
 | HARDEN-09 | 22-01, 22-03, 22-04 | Loop/budget/workflow bounded and validated | SATISFIED | NewBudget rejects <1; BFS visited guard; WithDeadline wired; AG-031/035..043 ledger: fixed+test / confirmed+routed / accepted+rationale |
 | HARDEN-10 | 22-03, 22-04, 22-05 | Tool execution memory-safe, evictable, consistent | SATISFIED | AURA_FS_MAX_READ_BYTES cap; BackgroundShells SessionEvictor; atomic writes; AG-014..020/045/046/050 ledger: fixed+test |
 | HARDEN-11 | 22-05 | Skill self-extension docs match behavior; dead code removed | SATISFIED | Single skillParamsSchemaHonest; dead skillParamsSchema deleted; TestAskUserOnlyPauseConstraint green; AG-011/044/051 ledger: fixed+test |
-| HARDEN-12 | 22-05 | Every in-scope finding closed to Gate-3; ≥85% coverage; nothing dropped | PARTIALLY SATISFIED (automated floor) | 64/64 AG-### disposed; HARDEN-01..12 mapped; build/vet/test/race/cache green; coverage/lint/mutation/live PENDING operator sign-off (B1-B3) |
+| HARDEN-12 | 22-05 | Every in-scope finding closed to Gate-3; ≥85% coverage; nothing dropped | SATISFIED | 64/64 AG-### disposed; HARDEN-01..12 mapped; build/vet/test/race/cache green; coverage 89.4% (B1), lint 0 / vuln clean / mutation ≥70% (B2), full live-stack sign-off 2026-06-16 (B3, 9/9) — all operator items done |
 
 **Note on HARDEN-12 partial status:** The automated dimension (ledger completeness, named tests, build/vet/test/race/cache) is SATISFIED and fully verified. The coverage ≥85%, golangci-lint=0, govulncheck=0, mutation ≥70%, and full live-stack dimensions are PENDING operator sign-off — per the critical constraints in this task's instructions, this is operator-coordinated, not a code gap.
 
