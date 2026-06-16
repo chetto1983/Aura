@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage quality quality-full test test-race file-size web-freshness db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet deadcode vuln coverage quality quality-full test test-race file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -26,6 +26,10 @@ help:
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
 	@echo "make web-freshness — rebuild web/ + assert committed internal/webui/dist is fresh (D-05)"
+	@echo "make web-lint      — frontend static gate: eslint --max-warnings=0 + tsc + prettier --check"
+	@echo "make web-test      — vitest run --coverage (>=85% thresholds enforced in vitest.config.ts)"
+	@echo "make web-mutation  — Stryker mutation run (break=70: fails below 70% killed)"
+	@echo "make web-quality   — full frontend gate: web-lint + web-test + web-mutation"
 	@echo "make db-up         — docker compose up -d postgres (waits healthy)"
 	@echo "make db-migrate    — aura db migrate (role aura_migrate)"
 	@echo "make db-status     — aura db status"
@@ -95,6 +99,23 @@ file-size:
 # proof is the CI web-dist-freshness job on Linux Node 24; this is the local mirror.
 web-freshness:
 	bash scripts/web_dist_freshness.sh
+
+# ↓↓ Frontend (web/) industrial gates — mirror the CI web-* jobs. Assume
+# web/node_modules is present (run `npm ci` in web/ first). ↓↓
+web-lint:
+	cd web && npm run lint && npm run typecheck && npm run format:check
+
+web-test:
+	cd web && npm run test
+
+web-mutation:
+	cd web && npm run mutation
+
+# Full frontend gate: static checks + unit/coverage + mutation. Mirrors the CI
+# web-lint + web-test + web-mutation jobs (the heavy tiers stay out of the git
+# pre-push hook, which runs only the fast web-lint trio via lefthook).
+web-quality: web-lint web-test web-mutation
+	@echo "ok: web-quality passed (lint typecheck format test coverage mutation)"
 
 db-up:
 	docker compose up -d postgres

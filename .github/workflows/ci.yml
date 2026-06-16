@@ -793,10 +793,13 @@ jobs:
         run: docker rm -f aura-pim-mcp aura-whatsapp || true
 
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
-  # Four path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
+  # Five path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
   # single unified workflow (D-17 — no separate web.yml). A `dorny/paths-filter`
   # guard early-exits each job green when no web file changed, so Go-only PRs do
   # not pay the npm install cost. The filter watches web/** + this workflow file.
+  # The industrial set mirrors the Go gates: web-lint (eslint/tsc/prettier),
+  # web-test (vitest + ≥85% coverage), web-mutation (Stryker ≥70% killed),
+  # web-dist-freshness (embed tamper-evidence), web-e2e (Playwright).
 
   web-lint:
     name: Web lint (eslint --max-warnings=0 + prettier + tsc)
@@ -864,6 +867,49 @@ jobs:
       - name: Vitest (FND-06)
         if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run test
+
+      - name: No-skip-as-green backstop (filter must not have misfired)
+        # WR-05: see web-lint — fails if the filter said web==false but a web path
+        # actually changed in the event range. Fail-open on an uncomputable range.
+        if: steps.changes.outputs.web != 'true'
+        run: |
+          bash scripts/web_filter_backstop.sh \
+            "${{ github.event.pull_request.base.sha || github.event.before }}" \
+            "${{ github.event.pull_request.head.sha || github.sha }}"
+
+  web-mutation:
+    name: Web mutation testing (Stryker >= 70% killed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # FND-06 industrial gate, frontend parity with the Go mutation spot-check floor.
+    # Stryker mutates the critical web files (stryker.config.json `mutate` list);
+    # `break: 70` makes the run exit non-zero below 70% killed, so a weakened test
+    # suite reds the build instead of merging silently. Path-filtered + backstopped
+    # exactly like the other web jobs (a Go-only PR pays no npm cost).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect web changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Set up Node
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Stryker mutation run (break=70)
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npm ci && npm run mutation
 
       - name: No-skip-as-green backstop (filter must not have misfired)
         # WR-05: see web-lint — fails if the filter said web==false but a web path
