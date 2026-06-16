@@ -13,8 +13,9 @@
 // fallback for unknown client routes and no API-404 exclusion is added here — a
 // missing asset under "/" simply 404s from http.FileServerFS, which is correct for
 // a static placeholder. The real SPA-fallback + route-exclusion is deliberately
-// Phase 24 (WEB-01). internal/webui stays leaf-level (it imports neither agent nor
-// agui), so scripts/agui_boundary_check.sh stays green.
+// Phase 24 (WEB-01). internal/webui stays leaf-level (it imports no other internal/*
+// package), an invariant scripts/agui_boundary_check.sh enforces via a dependency-
+// closure assertion on the webui package.
 package main
 
 import (

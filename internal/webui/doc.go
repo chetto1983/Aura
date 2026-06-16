@@ -11,6 +11,8 @@
 //
 // Do NOT add fallback or routing logic to this package. It is intentionally a
 // leaf: it imports only the standard library (embed, io/fs, net/http) and never
-// internal/agent or internal/agui, so scripts/agui_boundary_check.sh stays green
-// and the transport boundary (D-17) is preserved.
+// another internal/* package (agent, agui, ...). scripts/agui_boundary_check.sh
+// enforces this with a dependency-closure assertion (the webui closure must
+// contain no internal/* package but itself), so the leaf invariant and the
+// transport boundary (D-17) cannot silently regress.
 package webui
