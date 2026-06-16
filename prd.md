@@ -5135,6 +5135,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SKILL_TTL_SWEEP_INTERVAL_HR` | (removed) | cap | 7e | **REMOVED (amendment #48, D-16)**: the sweep is a cron `skill_ttl_sweep` TaskKind seeded daily, NOT a goroutine with an interval env. |
 | `AURA_AGUI_CORS_PERMISSIVE` | `0` | operative | 8 | Dev mode CORS `*`. |
 | `AURA_AGUI_PATH_RUN` | `/agent/run` | operative | 8 | AG-UI endpoint path. |
+| `AURA_WEB_AUTH_SECRET` | `` (empty) | secret | WEB (Phase 24) | Operator login passphrase for the in-binary cockpit auth AND the source of the HMAC cookie-signing key (derived as `sha256(secret)`; Plan 24-03 implements the derivation — NO separate signing-key var, D-01). Empty = loopback-only dev boot. Setting it lets `GuardWebBind` boot a non-loopback `AURA_AGUI_BIND` (WEB-02/D-05). |
+| `AURA_WEB_TRUST_PROXY` | `false` | operative | WEB (Phase 24) | Operator asserts a reverse proxy terminates auth in front of Aura (Go stays hands-off). `true` unlocks a non-loopback `AURA_AGUI_BIND` without the in-binary login (`GuardWebBind`, WEB-02/D-05). |
 | `AURA_CHANNEL_<NAME>_ENABLED` | `1` (true) | operative | 9a | Per-channel enable (es. `AURA_CHANNEL_TELEGRAM_ENABLED`). |
 | `AURA_SETUP_BIND` | `127.0.0.1:9081` | operative | 9a | Setup wizard bind. |
 | `AURA_SETUP_TOKEN` | (auto-generated UUIDv4 if unset) | secret | 9a | One-time setup wizard auth token (amendment #10). Printed to stdout on first `aura serve` boot; invalidated after first successful Telegram onboarding. Required when `AURA_SETUP_BIND=0.0.0.0:9081` (remote setup). |
