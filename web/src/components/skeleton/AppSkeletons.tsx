@@ -109,11 +109,7 @@ export function RuntimeHealthPanelSkeleton({
             <SkeletonText className="w-24" size="sm" widths={index < 4 ? '4.75rem' : '5.5rem'} />
             <div className="flex items-center gap-2">
               <SkeletonBlock height={8} radius="sm" width={8} />
-              <SkeletonText
-                className="w-20"
-                size="sm"
-                widths={index < 2 ? '3.75rem' : '4.5rem'}
-              />
+              <SkeletonText className="w-20" size="sm" widths={index < 2 ? '3.75rem' : '4.5rem'} />
             </div>
           </div>
         ))}
@@ -149,7 +145,10 @@ export function AppShellSkeleton({ label = 'Loading cockpit...' }: AnnouncedSkel
 
 export function LoginPageSkeleton({ label = 'Loading sign-in...' }: AnnouncedSkeletonProps) {
   return (
-    <SkeletonPage className="grid min-h-dvh place-items-center bg-bg px-4 py-6 text-text" label={label}>
+    <SkeletonPage
+      className="grid min-h-dvh place-items-center bg-bg px-4 py-6 text-text"
+      label={label}
+    >
       <div className="w-full max-w-sm rounded-[var(--radius-lg)] border border-border bg-surface p-4">
         <div className="flex justify-end pb-2">
           <LanguageSwitcherSkeleton />
@@ -167,7 +166,10 @@ export function LoginPageSkeleton({ label = 'Loading sign-in...' }: AnnouncedSke
 
 export function NotFoundViewSkeleton({ label = 'Loading page...' }: AnnouncedSkeletonProps) {
   return (
-    <SkeletonPage className="grid h-dvh place-items-center bg-bg px-6 text-center text-text" label={label}>
+    <SkeletonPage
+      className="grid h-dvh place-items-center bg-bg px-6 text-center text-text"
+      label={label}
+    >
       <SkeletonCard className="w-full max-w-md">
         <SkeletonText className="mx-auto w-48" size="xl" widths="10rem" />
         <SkeletonText className="mx-auto w-72" lines={2} widths={['16rem', '9rem']} />

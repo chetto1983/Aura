@@ -50,11 +50,15 @@ describe('skeleton primitives', () => {
       </div>,
     );
 
-    expect(screen.getByTestId('card').querySelectorAll('.skeleton-block').length).toBeGreaterThan(1);
+    expect(screen.getByTestId('card').querySelectorAll('.skeleton-block').length).toBeGreaterThan(
+      1,
+    );
     expect(screen.getByTestId('table').querySelectorAll('.skeleton-card')).toHaveLength(3);
     expect(screen.getByTestId('scroll-table').innerHTML).toContain('min-w-[38rem]');
     expect(screen.getByTestId('chart').querySelector('.skeleton-chart-plot')).toBeTruthy();
-    expect(screen.getByTestId('form').querySelectorAll('.skeleton-block').length).toBeGreaterThan(2);
+    expect(screen.getByTestId('form').querySelectorAll('.skeleton-block').length).toBeGreaterThan(
+      2,
+    );
   });
 
   it('uses a single optional live region at the page wrapper', () => {

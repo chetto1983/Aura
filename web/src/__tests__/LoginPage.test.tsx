@@ -103,7 +103,9 @@ describe('LoginPage', () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response('unauthorized', { status: 401 })));
     vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
-    fireEvent.change(screen.getByLabelText('Operator passphrase'), { target: { value: 'hunter2' } });
+    fireEvent.change(screen.getByLabelText('Operator passphrase'), {
+      target: { value: 'hunter2' },
+    });
     submitForm(container);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();

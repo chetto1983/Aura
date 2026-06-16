@@ -1,1 +1,19 @@
-if(!self.define){let e,s={};const i=(i,n)=>(i=new URL(i+".js",n).href,s[i]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=i,e.onload=s,document.head.appendChild(e)}else e=i,importScripts(i),s()}).then(()=>{let e=s[i];if(!e)throw new Error(`Module ${i} didn’t register its module`);return e}));self.define=(n,r)=>{const l=e||("document"in self?document.currentScript.src:"")||location.href;if(s[l])return;let o={};const t=e=>i(e,l),u={module:{uri:l},exports:o,require:t};s[l]=Promise.all(n.map(e=>u[e]||t(e))).then(e=>(r(...e),o))}}define(["./workbox-9c191d2f"],function(e){"use strict";self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"registerSW.js",revision:"1872c500de691dce40960bb85481de07"},{url:"index.html",revision:"cf1a8816ae637c814d254a1e3a31070a"},{url:"assets/useTranslation-CstvfOLC.js",revision:null},{url:"assets/NotFoundView-B1hIkKnJ.js",revision:null},{url:"assets/LoginPage-fCWK7KHJ.js",revision:null},{url:"assets/LanguageSwitcher-B6qbfw7u.js",revision:null},{url:"assets/index-DAM1aZ3O.css",revision:null},{url:"assets/index-Cp4idgjk.js",revision:null},{url:"assets/AppShell-HMbT6Bho.js",revision:null},{url:"apple-touch-icon.png",revision:"f676984ef9efd9c370318057906eac25"},{url:"favicon.svg",revision:"b21e3cc00bbbb00749ed97b34e85a7a3"},{url:"pwa-192.png",revision:"c05a5eaa5158663e82cbf20f2abf0829"},{url:"pwa-512.png",revision:"77828cff0e0dc7ab56fa953b24b8df59"},{url:"pwa-maskable-512.png",revision:"3bc89871146aed97146609f85fe0bab0"},{url:"manifest.webmanifest",revision:"881f7bd8cea8f98335948218edfe9245"}],{}),e.cleanupOutdatedCaches(),e.registerRoute(new e.NavigationRoute(e.createHandlerBoundToURL("index.html")))});
+const CACHE_NAME="aura-precache-19dd24c1c79a4971";
+const PRECACHE=[{"url":"/apple-touch-icon.png","revision":"1b368f466faf5113"},{"url":"/assets/AppShell-HMbT6Bho.js","revision":"282cf6042b505784"},{"url":"/assets/index-Cp4idgjk.js","revision":"f68fb111ba835ea2"},{"url":"/assets/index-DAM1aZ3O.css","revision":"2d69cdfe64db2e10"},{"url":"/assets/LanguageSwitcher-B6qbfw7u.js","revision":"c2b56b448012897e"},{"url":"/assets/LoginPage-fCWK7KHJ.js","revision":"76e052d26d8e9125"},{"url":"/assets/NotFoundView-B1hIkKnJ.js","revision":"7bff6a127a8619d2"},{"url":"/assets/useTranslation-CstvfOLC.js","revision":"58cc1774c51f0e85"},{"url":"/favicon.svg","revision":"b4e1473c65c90bf8"},{"url":"/index.html","revision":"app-shell"},{"url":"/logo.png","revision":"10a648d242ed05ba"},{"url":"/manifest.webmanifest","revision":"56e207c40260c0da"},{"url":"/pwa-192.png","revision":"8fad95a5f7364b80"},{"url":"/pwa-512.png","revision":"f70794c5678d3cd1"},{"url":"/pwa-maskable-512.png","revision":"f5d9b3da931806c1"},{"url":"/registerSW.js","revision":"4e5d4d2e5890e9d2"}];
+self.addEventListener('install',(event)=>{
+  event.waitUntil(caches.open(CACHE_NAME).then((cache)=>Promise.all(PRECACHE.map((entry)=>cache.add(entry.url).catch(()=>undefined)))).then(()=>self.skipWaiting()));
+});
+self.addEventListener('activate',(event)=>{
+  event.waitUntil(caches.keys().then((keys)=>Promise.all(keys.filter((key)=>key.startsWith('aura-precache-')&&key!==CACHE_NAME).map((key)=>caches.delete(key)))).then(()=>self.clients.claim()));
+});
+self.addEventListener('fetch',(event)=>{
+  const request=event.request;
+  if(request.method!=='GET') return;
+  const url=new URL(request.url);
+  if(url.origin!==self.location.origin) return;
+  if(request.mode==='navigate'){
+    event.respondWith(fetch(request).catch(()=>caches.match('/index.html')));
+    return;
+  }
+  event.respondWith(caches.match(request).then((cached)=>cached||fetch(request)));
+});

@@ -9,8 +9,8 @@ import (
 
 // distFS holds the committed Vite build output that the single-binary host serves.
 // The `all:` prefix is load-bearing: a bare `//go:embed dist` silently drops files
-// whose names begin with `.` or `_` — and vite-plugin-pwa/Workbox emit such dotfiles
-// (the service worker + precache manifest). `all:dist` guarantees nothing is dropped.
+// whose names begin with `.` or `_`. The local PWA build plugin emits service-worker
+// support files alongside the Vite bundle; `all:dist` guarantees nothing is dropped.
 //
 //go:embed all:dist
 var distFS embed.FS
@@ -93,7 +93,7 @@ func statMissing(sub fs.FS, p string) bool {
 }
 
 // IsPublicAsset reports whether p resolves to a real embedded static asset — a hashed
-// /assets/* bundle, the vite-plugin-pwa service worker + manifest, or an icon — rather
+// /assets/* bundle, the PWA service worker + manifest, or an icon — rather
 // than the SPA shell (index.html) or an unknown client route. The web-auth boundary
 // (internal/agui RequireAuth) serves these WITHOUT a session so the login page can load
 // its bundle + styles before a cookie exists (D-03 "the login page + its static

@@ -133,13 +133,7 @@ function avatarSize(size: SkeletonAvatarSize): number {
 export function SkeletonAvatar({ className, size = 'md', testId }: SkeletonAvatarProps) {
   const px = avatarSize(size);
   return (
-    <SkeletonBlock
-      className={className}
-      height={px}
-      radius="full"
-      testId={testId}
-      width={px}
-    />
+    <SkeletonBlock className={className} height={px} radius="full" testId={testId} width={px} />
   );
 }
 
