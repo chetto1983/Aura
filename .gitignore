@@ -67,3 +67,4 @@ docs/*-live-soak-*.log
 skills-lock.json
 nul
 output/*
+internal/runner/conversations/*
