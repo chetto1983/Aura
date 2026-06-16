@@ -43,10 +43,10 @@ func mcpConsole(args []string, out io.Writer) error {
 			i++
 		}
 	}
-	fmt.Fprintf(out, "MCP validation console → http://%s/\n", addr)
-	fmt.Fprintf(out, "  calendar proxy → %s/admin\n", mcpmanager.PIMSidecarBaseURL())
-	fmt.Fprintf(out, "  whatsapp proxy → %s/api\n", mcpmanager.WhatsAppBridgeBaseURL())
-	fmt.Fprintln(out, "  (bring both sidecars up first; Ctrl+C to stop)")
+	_, _ = fmt.Fprintf(out, "MCP validation console → http://%s/\n", addr)
+	_, _ = fmt.Fprintf(out, "  calendar proxy → %s/admin\n", mcpmanager.PIMSidecarBaseURL())
+	_, _ = fmt.Fprintf(out, "  whatsapp proxy → %s/api\n", mcpmanager.WhatsAppBridgeBaseURL())
+	_, _ = fmt.Fprintln(out, "  (bring both sidecars up first; Ctrl+C to stop)")
 	srv := &http.Server{Addr: addr, Handler: newConsoleHandler(), ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }

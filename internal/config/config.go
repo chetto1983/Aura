@@ -102,15 +102,22 @@ type Config struct {
 	// replaces it wholesale.
 	SkillInjectionBlocklist []string // AURA_SKILL_INJECTION_BLOCKLIST — prompt-injection literal blocklist (D-27/D-34)
 
-	// Phase 12 (Slice 8) AG-UI gateway knobs. AGUIBind is hardcoded loopback this
-	// phase (auth deferred; the loopback bind IS the compensating control, Pitfall 6
-	// / amendment #35 — no --bind flag, no non-loopback escape). AGUICORSPermissive
-	// gates the `Access-Control-Allow-Origin: *` header (default restrictive, dev-only).
-	// AGUIBufferCap caps the per-connection SSE pump channel (drop-on-full, never
-	// blocks the Loop). All non-fatal envDefault fallbacks.
-	AGUIBind           string // AURA_AGUI_BIND — loopback-only HTTP bind (Pitfall 6)
+	// Phase 12 (Slice 8) AG-UI gateway knobs. AGUIBind is the cockpit HTTP bind: it
+	// defaults to loopback but may be ANY address — WEB-02/D-06 lifted the historical
+	// hardcoded-loopback restriction (amendment #35) and replaced it with the boot-time
+	// GuardWebBind policy (loopback always boots; a non-loopback bind requires a web-auth
+	// credential). AGUICORSPermissive gates the `Access-Control-Allow-Origin: *` header
+	// (default restrictive, dev-only). AGUIBufferCap caps the per-connection SSE pump
+	// channel (drop-on-full, never blocks the Loop). All non-fatal envDefault fallbacks.
+	AGUIBind           string // AURA_AGUI_BIND — cockpit HTTP bind (any address; non-loopback gated by GuardWebBind)
 	AGUICORSPermissive bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
 	AGUIBufferCap      int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
+
+	// Phase 24 (WEB-02/WEB-03) web-auth knobs. Neither is boot-fatal on its own —
+	// GuardWebBind decides at boot whether a non-loopback AGUIBind may start. A loopback
+	// bind boots with both unset (dev parity, exactly as before).
+	WebAuthSecret string // AURA_WEB_AUTH_SECRET — operator login passphrase + HMAC cookie-key source; empty default, NOT boot-fatal (GuardWebBind decides)
+	WebTrustProxy bool   // AURA_WEB_TRUST_PROXY — operator vouches a reverse proxy terminates auth (D-05)
 
 	// ServeShutdownGraceSec bounds the in-flight turn drain on a SIGTERM/SIGINT
 	// (audit O-06 / AP-17): on the signal the daemon stops accepting new work, then
@@ -209,6 +216,34 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// GuardWebBind is the WEB-02 fail-fast boot policy for the cockpit listener (D-05).
+// A loopback bind always boots with no credential, exactly as before; a non-loopback
+// bind boots ONLY when EITHER AURA_WEB_AUTH_SECRET is set (the in-binary login is
+// active) OR trustProxy is true (the operator vouches a reverse proxy terminates auth).
+// A non-loopback bind with neither credential returns an actionable error so the daemon
+// refuses to silently expose an unauthenticated surface. It is a pure function — total
+// (no panic path) and table-test-friendly — mirroring Validate's "config: …" posture.
+//
+// Wildcards (0.0.0.0, ::, [::]) are NOT special-cased: net.ParseIP(...).IsLoopback()
+// returns false for them, so they fall through to the gated branch, which is correct.
+func GuardWebBind(bind, webAuthSecret string, trustProxy bool) error {
+	host, _, err := net.SplitHostPort(bind)
+	if err != nil {
+		host = bind // tolerate a bare host with no port
+	}
+	ip := net.ParseIP(host)
+	isLoopback := host == "localhost" || (ip != nil && ip.IsLoopback())
+	if isLoopback {
+		return nil // loopback always bootable, exactly as before (D-05)
+	}
+	if strings.TrimSpace(webAuthSecret) != "" || trustProxy {
+		return nil // unlocked by either credential (D-05)
+	}
+	return fmt.Errorf("config: AURA_AGUI_BIND=%q is non-loopback but web auth is not configured; "+
+		"set AURA_WEB_AUTH_SECRET (in-binary login) or AURA_WEB_TRUST_PROXY=true (a reverse proxy "+
+		"terminates auth), or bind a loopback address", bind)
+}
+
 // LoadDB loads the non-LLM configuration only. DB-admin commands
 // (aura db migrate/ping/status/reset) must NOT require an LLM API key — migration
 // is a pure DB operation, and Load's fail-fast empty-key (D-22) would otherwise
@@ -304,11 +339,18 @@ func loadBase() *Config {
 
 		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),
 
-		// Phase 12 AG-UI gateway. Loopback default is the compensating control for the
-		// auth-deferred posture (no --bind flag this phase, amendment #35).
+		// Phase 12 AG-UI gateway. The loopback default still boots with no web-auth
+		// config; WEB-02/D-06 lifted the hardcoded-loopback restriction so AURA_AGUI_BIND
+		// may now be any address, with GuardWebBind enforcing the non-loopback credential
+		// policy at boot (D-05).
 		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
 		AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 		AGUIBufferCap:      envIntDefault("AURA_AGUI_BUFFER_CAP", 64),
+
+		// Phase 24 web-auth knobs (WEB-02/WEB-03). Both have non-fatal defaults; the
+		// secret is read raw (empty default — GuardWebBind decides if it is required).
+		WebAuthSecret: os.Getenv("AURA_WEB_AUTH_SECRET"),
+		WebTrustProxy: envBoolDefault("AURA_WEB_TRUST_PROXY", false),
 
 		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
 
