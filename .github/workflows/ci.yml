@@ -853,6 +853,12 @@ jobs:
         # forwards the DB/serve vars from process.env into the webServer process, and this
         # job exports them above. The shell.spec asserts theme-before-paint + brand + no
         # hero text against the served embedded shell.
+        #
+        # The job does NOT export AURA_AGUI_BIND: the daemon defaults to 127.0.0.1:9080
+        # (config.go AGUIBind default), and playwright.config.ts's SERVE_ORIGIN tracks
+        # that same default (single source). The webServer gates on .../healthz, so a
+        # boot failure fails this step via the webServer readiness timeout rather than a
+        # green run — see the WR-06 note in playwright.config.ts.
         if: steps.changes.outputs.web == 'true'
         run: cd web && npm run test:e2e
 

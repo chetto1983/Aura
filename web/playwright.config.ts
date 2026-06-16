@@ -29,17 +29,29 @@ for (const key of SERVE_ENV_KEYS) {
   }
 }
 
+// SERVE_ORIGIN is the loopback origin `aura serve` listens on. It is the AG-UI
+// gateway default (config.go: AGUIBind = envDefault("AURA_AGUI_BIND",
+// "127.0.0.1:9080"), asserted in internal/config/config_test.go). The web-e2e job
+// does NOT export AURA_AGUI_BIND, so this MUST track that default — single source
+// for both baseURL and the webServer readiness URL so the coupling is visible. If
+// the AGUIBind default ever moves, update this constant (or export AURA_AGUI_BIND
+// in the job env and read it here).
+const SERVE_ORIGIN = 'http://127.0.0.1:9080';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
-  use: { baseURL: 'http://127.0.0.1:9080', trace: 'on-first-retry' },
+  use: { baseURL: SERVE_ORIGIN, trace: 'on-first-retry' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: '../aura serve --only=cli',
-    url: 'http://127.0.0.1:9080/healthz',
+    // /healthz (not /readyz) is the readiness gate: PG-only liveness, no Neo4j —
+    // the e2e stack provisions Postgres only. A boot failure surfaces here as the
+    // webServer never reaching ready within `timeout`.
+    url: `${SERVE_ORIGIN}/healthz`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
     env: serveEnv,
