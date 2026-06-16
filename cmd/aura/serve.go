@@ -233,11 +233,21 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 			return nil
 		},
 		HealthDetails: func() map[string]any {
+			// WEB-04/D-07: the read-only health panel reads bind + build from this
+			// EXISTING /healthz body — no new backend endpoint. Both are non-secret
+			// (a bind address and a build version, not a DSN/credential).
+			buildVersion, _, _ := buildInfo()
+			details := map[string]any{
+				"bind_address":  chat.cfg.AGUIBind,
+				"build_version": buildVersion,
+			}
 			last := scheduler.LastTick()
 			if last.IsZero() {
-				return map[string]any{"scheduler_last_tick": ""}
+				details["scheduler_last_tick"] = ""
+			} else {
+				details["scheduler_last_tick"] = last.Format(time.RFC3339)
 			}
-			return map[string]any{"scheduler_last_tick": last.Format(time.RFC3339)}
+			return details
 		},
 		// /readyz reflects the daemon's REQUIRED backends (O-05/AP-14): Postgres
 		// (the open pool) and Neo4j (a native-driver connectivity dial — the daemon
