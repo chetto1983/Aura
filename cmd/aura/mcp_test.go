@@ -48,13 +48,15 @@ func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
 func TestMCPRecipesListsBuiltins(t *testing.T) {
 	withTempMCPConfig(t)
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)
+	t.Setenv("AURA_PIM_MCP_PORT", "")          // literal-8093 calendar assertion below (WR-06)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), []string{"recipes"}, &out); err != nil {
 		t.Fatalf("mcp recipes: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"calculator", "mail", "whatsapp", "calendar", "memory", "trusted_recipe"} {
+	// mail retired — the calendar PIM sidecar subsumes it.
+	for _, want := range []string{"calculator", "whatsapp", "calendar", "memory", "trusted_recipe"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("recipes output missing %q:\n%s", want, got)
 		}
@@ -70,8 +72,8 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 		t.Fatalf("mcp recipes --json: %v", err)
 	}
 	got = out.String()
-	if !strings.Contains(got, `"name":"calendar"`) || !strings.Contains(got, `"AURA_CALENDAR_MODE=fixture"`) {
-		t.Fatalf("recipes json missing calendar fixture metadata:\n%s", got)
+	if !strings.Contains(got, `"name":"calendar"`) || !strings.Contains(got, `"http://127.0.0.1:8093/"`) {
+		t.Fatalf("recipes json missing calendar streamable-http recipe:\n%s", got)
 	}
 	if !strings.Contains(got, `"name":"memory"`) || !strings.Contains(got, `"http://127.0.0.1:8091/mcp/"`) {
 		t.Fatalf("recipes json missing memory streamable-http recipe:\n%s", got)
@@ -237,41 +239,35 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	}
 }
 
-func TestMCPDoctorAllRedactsAndChecksRecipes(t *testing.T) {
+func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 	path := withTempMCPConfig(t)
+	// The calendar PIM sidecar is an HTTP recipe: the doctor reports the endpoint
+	// (writeRuntimeCheck) plus the admin-managed-accounts note (writeRecipeChecks),
+	// and never spawns a process or probes auth env.
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"mail": {
-			Command: "npx",
-			Env:     []string{"SMTP_USER=me@example.com", "SMTP_PASS=super-secret"},
-			Source:  "recipe:mail",
-			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-		},
 		"calendar": {
-			Command: "calendar-fixture",
-			Env:     []string{"AURA_CALENDAR_MODE=fixture"},
-			Source:  "recipe:calendar",
-			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    "http://127.0.0.1:8093/",
+			Source: "recipe:calendar",
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
-	origLookPath := mcpLookPath
-	t.Cleanup(func() { mcpLookPath = origLookPath })
-	mcpLookPath = func(command string) (string, error) { return "/fake/" + command, nil }
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), []string{"doctor", "--all"}, &out); err != nil {
 		t.Fatalf("mcp doctor --all: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"mail: runtime ok", "mail env SMTP_PASS=<redacted>", "calendar fixture: ready"} {
+	for _, want := range []string{
+		"calendar: http endpoint configured",
+		"calendar pim sidecar: accounts managed via admin API at http://127.0.0.1:8093/",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("doctor --all missing %q:\n%s", want, got)
 		}
-	}
-	if strings.Contains(got, "super-secret") {
-		t.Fatalf("doctor leaked secret:\n%s", got)
 	}
 }
 

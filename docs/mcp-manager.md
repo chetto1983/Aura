@@ -37,7 +37,6 @@ Install a recipe:
 ```bash
 aura mcp install calculator
 aura mcp install calendar
-aura mcp install mail
 aura mcp install whatsapp
 ```
 
@@ -46,9 +45,8 @@ Built-in recipes are marked as `trusted_recipe` and include policy metadata.
 | Recipe | Purpose | Notes |
 |---|---|---|
 | calculator | Local arithmetic MCP over stdio | Good smoke test. |
-| Calendar | Fixture-first Calendar recipe | Defaults to deterministic fixture mode. |
-| mail | SMTP/IMAP MCP | Requires private operator credentials for live use. |
-| WhatsApp | WhatsApp bridge in WSL | Requires a paired account and bridge process. |
+| Calendar | PIM sidecar (forked calendar-mcp) — mail + calendar + contacts over streamable-HTTP | OAuth accounts connected via the sidecar's token-gated admin API (cockpit-driven); subsumes the retired standalone mail recipe. |
+| WhatsApp | WhatsApp bridge | Requires a paired account and bridge process. |
 
 ## Profiles
 
@@ -172,7 +170,7 @@ does not write MCP log tails to git.
 tool is mounted or blocked:
 
 ```bash
-aura mcp tools mail
+aura mcp tools calendar
 ```
 
 Risk labels include:
@@ -212,8 +210,7 @@ Operator-only live checks:
 | Check | Command | Expected |
 |---|---|---|
 | WhatsApp bridge | `aura mcp doctor whatsapp` | REST bridge reachable; connected-state reported when endpoint exists. |
-| Mail auth | `aura mcp doctor mail` | Required env present; secrets redacted. |
-| Calendar fixture | `aura mcp doctor calendar` | `fixture: ready` in fixture mode. |
+| Calendar PIM sidecar | `aura mcp doctor calendar` | `http endpoint configured` + `pim sidecar: accounts managed via admin API at <url>`. |
 | Docker runtime | `aura mcp status` plus a local Docker smoke | Docker metadata visible; actual launch depends on local daemon. |
 
 Do not commit credentials, phone numbers, access tokens, or live doctor output that

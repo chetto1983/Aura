@@ -243,11 +243,12 @@ wsl -e bash -lc 'cd ~/aura-pim-mcp && git add -A && git commit -m "aura: thin fo
 - Build a runtime Docker image from the fork's `Dockerfile` (already targets `aspnet:10.0`; adjust `CALENDAR_MCP_CONFIG` data dir + non-root). Pin the image.
 - Add `aura-pim-mcp` service to `compose.yaml`: `127.0.0.1:8093`, named data volume (tokens + appsettings persist across rebuilds), `CALENDAR_MCP_ADMIN_TOKEN` from Aura secrets, healthcheck on `/health`. (Covers spec §6 compose.)
 
-### Phase 3 — Aura Go integration
-- Update `recipe:calendar` in `internal/mcp/manager/catalog.go` from the `aura-calendar-mcp-fixture` stdio placeholder → the streamable-HTTP sidecar (or stdio per Phase 0 verdict). (Spec §6 catalog.)
-- Wire the agent mount with `Deferred:true` + DenyRisk=write (mechanism confirmed in Phase 0 Step 4).
-- Update `internal/mcp/calendar_integration_test.go` to drive the live sidecar (HTTP variant of `AURA_MCP_CALENDAR_SERVER_JSON`); ensure no skip-as-green under `$CI`.
-- Add Aura Go backend admin-proxy endpoints forwarding to the sidecar `/admin/*` with the token. (Spec §4, §6.)
+### Phase 3 — Aura Go integration ✅ (2026-06-16, admin-proxy deferred to Phase 4)
+- [x] Repointed `recipe:calendar` in `internal/mcp/manager/catalog.go` from the `aura-calendar-mcp-fixture` stdio placeholder → the streamable-HTTP `aura-pim-mcp` sidecar via `calendarRecipeURL()` (loopback 8093 / compose-DNS `aura-pim-mcp:8080` under `AURA_IN_CONTAINER`, WR-01 port-validation). Install-on-demand, NOT default-on. (Spec §6 catalog.)
+- [x] Agent mount is automatic through the existing `MountManagedServer` path: tools mount `Deferred` (all non-`memory` namespaces) + `calendar__*`-namespaced; write tools carry `Mutating:true` (from the server's `ReadOnlyHint`) into Aura's execution-time permission layer. **Correction:** there is no `DenyRisk` mount-time filter in the codebase (the memory tier proves "NO DenyRisk filter") — the write-deny posture is the fork's server-side tool trim (no destructive tools) + the `Mutating` flag, not a per-recipe mount filter.
+- [x] Rewrote `internal/mcp/calendar_integration_test.go` to drive the live sidecar over streamable-HTTP (`OpenServer` + `ManagedServer`) with the `AURA_PIM_MCP_URL`/`_PORT` knob + no-skip-as-green `$CI` gate; asserts the trimmed 14-tool surface (dropped tools absent) + clean `list_accounts`. Added a `calendar-integration-test` CI job that boots the published GHCR sidecar (zero accounts) and runs the tier (`.github/workflows/ci.yml`).
+- [ ] Aura Go backend admin-proxy endpoints (`/admin/*` forward + token) — **moved to Phase 4** (same surface as the cockpit connect UI). (Spec §4, §6.)
+- [x] **Mail cutover (Phase 5 catalog/doctor/image bits, folded in per user request):** removed the `recipe:mail` catalog entry + the `recipe:mail`/`writeMailChecks` doctor branch (`cmd/aura/mcp_status.go`); dropped the vendored `mail-mcp` from the image (`docker/aura/Dockerfile`, `.goreleaser.yaml`, `docker/aura/PROVENANCE.md`, `mail-mcp-src.tar.gz` git-rm). Node-24 stays (JS skill snippets + `npx skills`). The cron email self-send route survives via `calendar__send_email` (the resolver matches the bare suffix).
 
 ### Phase 4 — Cockpit connect UI (coordinate with the v1.0.0 frontend work)
 - "Integrations" surface: per-provider OAuth config form (installer), "Connect Google" (web redirect) + "Connect Microsoft" (device-code card), account list/status/remove — all calling the Aura backend admin proxy. (Spec §4, §6.)

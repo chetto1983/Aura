@@ -8,13 +8,15 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
+func TestCatalogIncludesTrustedRecipesAndCalendarHTTPRecipe(t *testing.T) {
+	t.Setenv("AURA_PIM_MCP_PORT", "") // literal-8093 assertion below; a sourced .env must not skew it (WR-06)
 	catalog := BuiltInCatalog()
 	names := make([]string, 0, len(catalog))
 	for _, entry := range catalog {
 		names = append(names, entry.Name)
 	}
-	wantNames := []string{"calculator", "calendar", "mail", "memory", "whatsapp"}
+	// The standalone mail recipe was retired — the calendar PIM sidecar subsumes it.
+	wantNames := []string{"calculator", "calendar", "memory", "whatsapp"}
 	if !reflect.DeepEqual(names, wantNames) {
 		t.Fatalf("catalog names = %#v, want %#v", names, wantNames)
 	}
@@ -23,14 +25,44 @@ func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
 	if !ok {
 		t.Fatal("calendar recipe missing")
 	}
+	if calendar.TrustClass != mcp.TrustTrustedRecipe {
+		t.Fatalf("calendar TrustClass = %q, want %q", calendar.TrustClass, mcp.TrustTrustedRecipe)
+	}
 	if calendar.Server.Trust.Class != mcp.TrustTrustedRecipe {
 		t.Fatalf("calendar trust = %q, want %q", calendar.Server.Trust.Class, mcp.TrustTrustedRecipe)
 	}
-	if calendar.Server.Runtime.Kind != "local" {
-		t.Fatalf("calendar runtime = %q, want local", calendar.Server.Runtime.Kind)
+	if calendar.Runtime != "local" {
+		t.Fatalf("calendar runtime = %q, want local", calendar.Runtime)
 	}
-	if !containsString(calendar.RequiredEnv, "AURA_CALENDAR_MODE=fixture") {
-		t.Fatalf("calendar required env missing fixture mode: %#v", calendar.RequiredEnv)
+	if calendar.Server.Type != mcp.ServerTypeStreamableHTTP {
+		t.Fatalf("calendar Server.Type = %q, want %q", calendar.Server.Type, mcp.ServerTypeStreamableHTTP)
+	}
+	if calendar.Server.URL != "http://127.0.0.1:8093/" {
+		t.Fatalf("calendar Server.URL = %q, want loopback root / URL", calendar.Server.URL)
+	}
+	if calendar.Server.Command != "" {
+		t.Fatalf("calendar Server.Command = %q, want empty (HTTP recipe has no launch command)", calendar.Server.Command)
+	}
+	if calendar.Server.Source != "recipe:calendar" {
+		t.Fatalf("calendar Source = %q, want recipe:calendar", calendar.Server.Source)
+	}
+}
+
+func TestCatalogCalendarURLHonorsPortEnv(t *testing.T) {
+	t.Setenv("AURA_PIM_MCP_PORT", "9193")
+	if got := calendarRecipeURL(); got != "http://127.0.0.1:9193/" {
+		t.Fatalf("calendarRecipeURL() = %q, want configured loopback port", got)
+	}
+}
+
+func TestCatalogCalendarURLRejectsNonPortEnv(t *testing.T) {
+	for _, bad := range []string{"8093@evil.example", "0", "65536", "-1", "junk", "80 93"} {
+		t.Run(bad, func(t *testing.T) {
+			t.Setenv("AURA_PIM_MCP_PORT", bad)
+			if got := calendarRecipeURL(); got != "http://127.0.0.1:8093/" {
+				t.Fatalf("port %q produced URL %q, want fallback 8093 loopback", bad, got)
+			}
+		})
 	}
 }
 
@@ -75,6 +107,7 @@ func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "9191")
 	t.Setenv("AURA_WHATSAPP_MCP_PORT", "9192")
+	t.Setenv("AURA_PIM_MCP_PORT", "9193")
 
 	memory, ok := LookupCatalog("memory")
 	if !ok {
@@ -90,6 +123,14 @@ func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
 	}
 	if whatsapp.Server.URL != "http://whatsapp:8080/mcp/" {
 		t.Fatalf("whatsapp Server.URL = %q, want compose DNS URL", whatsapp.Server.URL)
+	}
+
+	calendar, ok := LookupCatalog("calendar")
+	if !ok {
+		t.Fatal("calendar recipe missing from BuiltInCatalog")
+	}
+	if calendar.Server.URL != "http://aura-pim-mcp:8080/" {
+		t.Fatalf("calendar Server.URL = %q, want compose DNS URL", calendar.Server.URL)
 	}
 }
 

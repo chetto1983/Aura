@@ -655,6 +655,64 @@ jobs:
         if: always()
         run: docker compose down
 
+  calendar-integration-test:
+    name: Calendar PIM MCP (calendar_integration tier, live aura-pim-mcp sidecar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # guards against a hung image pull
+    # Phase 3 (aura-pim-mcp fork). Brings up the published PIM sidecar (forked
+    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp) with ZERO connected accounts and
+    # runs the calendar_integration tier against the LIVE container: streamable-HTTP
+    # initialize + the trimmed 14-tool surface (destructive tools dropped) + a clean
+    # list_accounts. No OAuth/secrets needed — the empty-config container speaks MCP.
+    # NO-SKIP-AS-GREEN: AURA_PIM_MCP_URL is exported so the tier RUNS; the test
+    # t.Fatals under $CI when it is unset (a skipped tier fails the gate — CLAUDE.md).
+    env:
+      CI: "true"  # arms the no-skip-as-green t.Fatal in the tier
+      # The sidecar publishes on 127.0.0.1:8093 (compose maps it to the container's
+      # 8080); the trailing "/" is calendar-mcp's MCP-over-HTTP path (spike 064).
+      AURA_PIM_MCP_URL: http://127.0.0.1:8093/
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile the calendar_integration tier (always — no-skip-as-green floor)
+        # The tier ALWAYS compiles in CI (the cheap, always-green floor proving the
+        # tagged file never rots), even before the sidecar is up.
+        run: go vet -tags calendar_integration ./internal/mcp/
+
+      - name: Start the Aura PIM sidecar (published GHCR image)
+        # aura-pim-mcp has no compose deps; pull_policy: missing pulls the public image.
+        run: docker compose up -d aura-pim-mcp
+
+      - name: Wait for the PIM sidecar healthy
+        run: |
+          ok=""
+          for i in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' aura-pim-mcp 2>/dev/null || echo starting)"
+            echo "aura-pim-mcp health: $status"
+            [ "$status" = "healthy" ] && ok=1 && break
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "aura-pim-mcp did not become healthy" >&2
+            docker logs aura-pim-mcp --tail 80 || true
+            exit 1
+          fi
+
+      - name: Live calendar_integration tier (trimmed surface + list_accounts)
+        # -race matches every other live tier (db/web/knowledge/telegram/memory).
+        run: go test -race -tags calendar_integration -count=1 ./internal/mcp/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
   # Four path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
   # single unified workflow (D-17 — no separate web.yml). A `dorny/paths-filter`

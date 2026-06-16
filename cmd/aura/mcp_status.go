@@ -105,47 +105,19 @@ func writeRuntimeCheck(out io.Writer, name string, server mcp.ManagedServer) err
 
 func writeRecipeChecks(ctx context.Context, out io.Writer, name string, server mcp.ManagedServer) error {
 	switch {
-	case strings.HasPrefix(server.Source, "recipe:mail"):
-		return writeMailChecks(out, name, server)
 	case strings.HasPrefix(server.Source, "recipe:calendar"):
-		if envValue(server.Env, "AURA_CALENDAR_MODE") == "fixture" {
-			return writef(out, "%s fixture: ready\n", name)
+		// The PIM sidecar (forked calendar-mcp) manages its own OAuth accounts via
+		// the token-gated admin REST API the cockpit drives; Aura sets no auth env
+		// here, so the doctor reports the endpoint rather than probing env.
+		endpoint := strings.TrimSpace(server.URL)
+		if endpoint == "" {
+			endpoint = "(no endpoint)"
 		}
-		return writef(out, "%s live auth: not configured\n", name)
+		return writef(out, "%s pim sidecar: accounts managed via admin API at %s\n", name, endpoint)
 	case strings.HasPrefix(server.Source, "recipe:whatsapp"):
 		status := probeWhatsAppBridge(ctx, mcp.ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env})
 		return writef(out, "%s bridge: %s\n", name, mcpmanager.RedactSecrets(status))
 	default:
 		return nil
 	}
-}
-
-func writeMailChecks(out io.Writer, name string, server mcp.ManagedServer) error {
-	for _, key := range []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
-		value := envValue(server.Env, key)
-		if value == "" {
-			if err := writef(out, "%s env %s=missing\n", name, key); err != nil {
-				return err
-			}
-			continue
-		}
-		rendered := key + "=" + value
-		if key == "SMTP_PASS" {
-			rendered = mcpmanager.RedactSecrets(rendered)
-		}
-		if err := writef(out, "%s env %s\n", name, rendered); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func envValue(env []string, key string) string {
-	for _, entry := range env {
-		gotKey, value, ok := strings.Cut(entry, "=")
-		if ok && gotKey == key {
-			return value
-		}
-	}
-	return ""
 }

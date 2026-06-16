@@ -41,6 +41,23 @@ func whatsappRecipeURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
 }
 
+// calendarRecipeURL composes the loopback streamable-HTTP URL for the Aura PIM
+// sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp): unified mail + calendar
+// + contacts over MCP-over-HTTP at the server root "/". The sidecar publishes host
+// port 8093 by default (compose maps it to the container's 8080); garbage falls
+// back to loopback 8093 so userinfo-style values cannot retarget the recipe
+// off-host (WR-01).
+func calendarRecipeURL() string {
+	if os.Getenv("AURA_IN_CONTAINER") == "1" {
+		return "http://aura-pim-mcp:8080/"
+	}
+	port := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_PORT"))
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		port = "8093"
+	}
+	return fmt.Sprintf("http://127.0.0.1:%s/", port)
+}
+
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
 // LLM-facing metadata (summary, trust class, runtime) with the concrete
 // mcp.ManagedServer launch spec used to install it.
@@ -55,7 +72,9 @@ type CatalogEntry struct {
 }
 
 // BuiltInCatalog returns the curated set of shipped MCP server recipes
-// (calculator, calendar, mail, memory, whatsapp), sorted by name.
+// (calculator, calendar, memory, whatsapp), sorted by name. The standalone mail
+// recipe was retired once the calendar recipe became the unified PIM sidecar
+// (forked calendar-mcp) — its send/search email tools subsume mail-mcp.
 func BuiltInCatalog() []CatalogEntry {
 	entries := []CatalogEntry{
 		{
@@ -83,50 +102,25 @@ func BuiltInCatalog() []CatalogEntry {
 			},
 		},
 		{
+			// Aura PIM sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp):
+			// unified mail + calendar + contacts over MCP-over-HTTP. The agent mounts
+			// the surface Deferred + calendar__*-namespaced through the existing
+			// MountManagedServer; write tools carry Mutating:true (from the server's
+			// ReadOnlyHint) into Aura's execution-time permission layer, and the fork
+			// already drops the destructive tools server-side (defense in depth).
+			// Trusted recipe, install-on-demand (NOT default-on like memory):
+			// per-deployment OAuth connect is driven by the cockpit via the sidecar's
+			// token-gated admin REST API, so Aura boot never depends on this service.
 			Name:       "calendar",
-			Summary:    "Calendar MCP fixture recipe (local deterministic mode by default)",
+			Summary:    "Aura PIM sidecar (forked calendar-mcp): mail+calendar+contacts over streamable-HTTP",
 			Source:     "recipe:calendar",
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",
-			RequiredEnv: []string{
-				"AURA_CALENDAR_MODE=fixture",
-				"AURA_CALENDAR_FIXTURE=basic",
-			},
 			Server: mcp.ManagedServer{
-				Command: "aura-calendar-mcp-fixture",
-				Env: []string{
-					"AURA_CALENDAR_MODE=fixture",
-					"AURA_CALENDAR_FIXTURE=basic",
-				},
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    calendarRecipeURL(),
 				Source: "recipe:calendar",
 				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime: mcp.ManagedRuntime{
-					Kind: "local",
-				},
-			},
-		},
-		{
-			Name:        "mail",
-			Summary:     "mail-mcp vendored bin over stdio (SMTP/IMAP env config)",
-			Source:      "recipe:mail",
-			TrustClass:  mcp.TrustTrustedRecipe,
-			Runtime:     "local",
-			RequiredEnv: []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"},
-			Server: mcp.ManagedServer{
-				// Vendored + globally installed in docker/aura/Dockerfile so it
-				// runs fully offline with no GitHub dependency (Phase 17 AC7).
-				// See docker/aura/PROVENANCE.md.
-				Command: "mail-mcp",
-				Env: []string{
-					"SMTP_HOST=smtp.gmail.com",
-					"SMTP_PORT=465",
-					"SMTP_USER=you@example.com",
-					"SMTP_PASS=CHANGE_ME_app_password",
-					"SMTP_FROM=you@example.com",
-				},
-				Source:  "recipe:mail",
-				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime: mcp.ManagedRuntime{Kind: "local"},
 			},
 		},
 		{
