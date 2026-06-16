@@ -2,9 +2,13 @@
 # NOTE: dist/ is INTENTIONALLY NOT ignored — the committed Vite build is the
 # //go:embed source for the single-binary host (D-05). Do not add dist/ here.
 node_modules/
+node_modules.broken/
 coverage/
 playwright-report/
 test-results/
+# Stryker mutation-testing byproducts (the temp sandbox + HTML/JSON report).
+.stryker-tmp/
+reports/
 
 # tsc -b incremental build artifacts (local only).
 *.tsbuildinfo
