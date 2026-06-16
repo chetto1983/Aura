@@ -8,6 +8,10 @@
 /aura
 /bin/
 /dist/
+web/node_modules/*
+# web/dist/ is the committed //go:embed source (D-05) — keep it tracked even if a
+# broader dist/ ignore is ever added (defensive negation, Pitfall 8).
+!web/dist/
 
 # IDE + editor
 .idea/

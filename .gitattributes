@@ -9,6 +9,11 @@
 *.cypher text eol=lf
 Makefile text eol=lf
 
+# Frontend: pin LF for every web/ source + the committed dist bytes so the
+# cross-host (WSL/Windows/CI) //go:embed freshness gate stays byte-stable
+# (a CRLF round-trip would forge a stale-dist diff).
+web/**  text eol=lf
+
 # Generated code — exclude from language stats and collapse in diffs/reviews.
 internal/db/sqlc/**     linguist-generated=true
 go.sum                  linguist-generated=true
