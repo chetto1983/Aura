@@ -196,7 +196,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 | ----- | --------- | ----- | ------ | --------- |
 | 0–21 (substrate) | v0.0.0 | 144/144 | ✅ Shipped | 2026-06-15 |
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
-| 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 1/3 | In Progress|  |
+| 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 2/3 | In Progress|  |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 0/? | Not started | - |
 | 25. Chat + Approval Center | v1.0.0 | 0/? | Not started | - |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |

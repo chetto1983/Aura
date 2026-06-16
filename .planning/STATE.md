@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Completed 23-01-PLAN.md (Wave-0 frontend foundation)
-last_updated: "2026-06-16T10:24:20Z"
-last_activity: 2026-06-16 -- Completed Phase 23 Plan 01 (web toolchain + gate configs + internal/webui embed host + RED stubs)
+stopped_at: "Completed 23-02-PLAN.md (frontend scaffold: theme + branded shell + React-Compiler PWA build)"
+last_updated: "2026-06-16T10:51:23.339Z"
+last_activity: 2026-06-16
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
-  percent: 15
+  completed_plans: 7
+  percent: 13
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 23 (frontend-infrastructure-industrial-foundation) — EXECUTING
-Plan: 2 of 3 (23-01 complete)
-Status: Executing Phase 23 — Wave-0 foundation landed; next is 23-02 (scaffold)
-Last activity: 2026-06-16 -- Completed Phase 23 Plan 01
+Plan: 3 of 3 (23-01 complete)
+Status: Ready to execute
+Last activity: 2026-06-16
 
 ### Next -- Execute Phase 22
 
@@ -159,6 +159,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 22 P22-04 | ~95min | 4 tasks | 32 files |
 | Phase 22 P22-05 | ~15min | 4 tasks | 12 files |
 | Phase 23 P23-01 | 21min | 3 tasks (1 checkpoint + 2 auto) | 18 files |
+| Phase 23 P23-02 | 14min | 3 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -275,6 +276,8 @@ Recent decisions affecting current work:
 - [Phase 17]: Backups use socketless network dumps
 - [Phase 17]: Restore docs are operator-first
 - [Phase 17]: Neo4j backup uses direct Bolt export
+- [Phase ?]: 23-02: @rolldown/plugin-babel exports default (babel({presets:[reactCompilerPreset()]})) — RESEARCH named-babel/babelConfig shape predates the shipped 0.2.3 API; verified via useMemoCache in the bundle
+- [Phase ?]: 23-02: Vite build.outDir = ../internal/webui/dist (Go embed package-relative, 23-01 Dev #1); PWA/brand icons pre-generated from public/Logo.png with no build-time sharp dep (D-08 lean)
 
 ### Pending Todos
 
@@ -308,9 +311,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T09:07:27.648Z
-Stopped at: Phase 23 context gathered
-Resume file: .planning/phases/23-frontend-infrastructure-industrial-foundation/23-CONTEXT.md
+Last session: 2026-06-16T10:51:23.330Z
+Stopped at: Completed 23-02-PLAN.md (frontend scaffold: theme + branded shell + React-Compiler PWA build)
+Resume file: None
 
 ## Operator Next Steps
 
