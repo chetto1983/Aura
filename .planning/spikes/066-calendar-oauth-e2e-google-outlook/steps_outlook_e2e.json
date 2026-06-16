@@ -1,0 +1,6 @@
+[
+  {"op": "call", "tool": "create_event", "args": {"subject": "AURA-E2E-20260616 Aura outlook test event", "start": "2026-06-17T16:00:00", "end": "2026-06-17T16:30:00", "accountId": "outlook-personal", "timeZone": "Europe/Rome", "location": "Caraglio", "body": "Created by Aura calendar-mcp E2E spike (Outlook)"}},
+  {"op": "call", "tool": "get_calendar_events", "args": {"timeZone": "Europe/Rome", "accountId": "outlook-personal", "startDate": "2026-06-17", "endDate": "2026-06-18"}},
+  {"op": "call", "tool": "send_email", "args": {"to": ["chetto983@hotmail.it"], "subject": "AURA-E2E-20260616 Aura outlook email", "body": "Aura calendar-mcp consolidation email E2E (Outlook). tag AURA-E2E-20260616", "bodyFormat": "text", "accountId": "outlook-personal"}},
+  {"op": "call", "tool": "search_emails", "args": {"query": "AURA-E2E-20260616", "accountId": "outlook-personal"}}
+]
