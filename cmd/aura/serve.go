@@ -30,6 +30,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/channels"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
@@ -217,8 +218,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
-	// (Assumption A3). The bind is hardcoded loopback via the config default — the
-	// compensating control for the auth-deferred posture this phase (amendment #35).
+	// (Assumption A3). The bind may now be non-loopback (WEB-02/D-06 lifted the
+	// hardcoded-loopback restriction); config.GuardWebBind (called below before httpSrv
+	// is built) refuses a non-loopback AURA_AGUI_BIND unless AURA_WEB_AUTH_SECRET or
+	// AURA_WEB_TRUST_PROXY is set, so the auth boundary — not a hardcoded bind — is the
+	// compensating control.
 	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
 		CORSPermissive: chat.cfg.AGUICORSPermissive,
 		BufferCap:      chat.cfg.AGUIBufferCap,
@@ -251,6 +255,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err != nil {
 		chat.close()
 		return nil, fmt.Errorf("build serve handler: %w", err)
+	}
+	// WEB-02 fail-fast: refuse to start a non-loopback bind that has no web-auth
+	// credential. The returned error flows to runServe, which prints "aura serve: <err>"
+	// and exits exitInfra (no second exit path). Loopback boots unchanged.
+	if err := config.GuardWebBind(chat.cfg.AGUIBind, chat.cfg.WebAuthSecret, chat.cfg.WebTrustProxy); err != nil {
+		chat.close()
+		return nil, err
 	}
 	httpSrv := &http.Server{
 		Addr:              chat.cfg.AGUIBind,
