@@ -9,12 +9,27 @@ import (
 	"testing"
 )
 
-// TestHandler pins SC2 for the Phase-23 static host: //go:embed all:dist ->
-// Handler() serves the placeholder index.html at "/" (200, text/html, with the
-// theme-before-paint + brand markers), and a missing path 404s. Stdlib testing +
-// httptest only — the agui/webui HTTP surface does not use testify.
+// excludedPrefixes mirrors the segment-level exclusion set the caller
+// (cmd/aura/serve_webui.go) derives and passes in: the AG-UI route segments,
+// the health endpoints, and the forward-compat /api/ carve-out (which also
+// subsumes /api/integrations/). Kept here only so the unit tests can exercise
+// the 404-vs-fallback split without importing cmd/aura.
+var excludedPrefixes = []string{
+	"/healthz",
+	"/readyz",
+	"/debug/vars",
+	"/metrics",
+	"/agent/",
+	"/threads/",
+	"/api/",
+}
+
+// TestHandler pins SC2 for the embedded host: //go:embed all:dist -> Handler()
+// serves index.html at "/" (200, text/html, with the theme-before-paint + brand
+// markers), and a real embedded asset resolves. Stdlib testing + httptest only —
+// the agui/webui HTTP surface does not use testify.
 func TestHandler(t *testing.T) {
-	h, err := Handler()
+	h, err := Handler(excludedPrefixes)
 	if err != nil {
 		t.Fatalf("Handler(): %v", err)
 	}
@@ -45,15 +60,96 @@ func TestHandler(t *testing.T) {
 			t.Fatalf("index.html missing brand: %s", body)
 		}
 	})
+}
 
-	t.Run("GET /no-such-asset -> 404", func(t *testing.T) {
-		resp, err := http.Get(srv.URL + "/no-such-asset.js")
+// indexMarker is a substring unique to the SPA shell (index.html). A real API 404
+// MUST NOT contain it, or the shell is leaking HTML to an API client (WEB-01/SC1).
+const indexMarker = `<div id="root"`
+
+// TestSPAFallback pins WEB-01 / SC1: the catch-all serves the SPA shell for unknown
+// client routes (deep links resolve to index.html) but returns a real 404 for any
+// excluded API/agent/health prefix — the shell is never leaked to an API client.
+func TestSPAFallback(t *testing.T) {
+	h, err := Handler(excludedPrefixes)
+	if err != nil {
+		t.Fatalf("Handler(): %v", err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	get := func(t *testing.T, path string) (*http.Response, string) {
+		t.Helper()
+		resp, err := http.Get(srv.URL + path)
 		if err != nil {
-			t.Fatalf("GET missing: %v", err)
+			t.Fatalf("GET %s: %v", path, err)
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		raw, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return resp, string(raw)
+	}
+
+	t.Run("unknown client route -> index.html (200)", func(t *testing.T) {
+		for _, route := range []string{"/investigations/42", "/some/client/route", "/login"} {
+			resp, body := get(t, route)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s: status = %d, want 200 (deep link -> SPA shell)", route, resp.StatusCode)
+			}
+			if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+				t.Fatalf("%s: Content-Type = %q, want text/html", route, ct)
+			}
+			if !strings.Contains(body, indexMarker) {
+				t.Fatalf("%s: did not serve the SPA shell (no %q): %s", route, indexMarker, body)
+			}
+			// theme-before-paint must survive the fallback path too.
+			if !strings.Contains(body, "data-theme") {
+				t.Fatalf("%s: SPA shell missing data-theme marker", route)
+			}
+		}
+	})
+
+	t.Run("excluded prefix -> real 404 (never the SPA shell)", func(t *testing.T) {
+		for _, route := range []string{
+			"/api/nope",
+			"/agent/typo",
+			"/threads/bogus",
+			"/healthz-typo-but-prefix",
+			"/readyz",
+			"/metrics",
+			"/debug/vars",
+			"/api/integrations/x",
+		} {
+			resp, body := get(t, route)
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("%s: status = %d, want 404 (excluded prefix is a real API error)", route, resp.StatusCode)
+			}
+			if strings.Contains(body, indexMarker) {
+				t.Fatalf("%s: 404 body leaked the SPA shell (%q): %s", route, indexMarker, body)
+			}
+		}
+	})
+
+	t.Run("real embedded asset -> 200 served as-is", func(t *testing.T) {
+		resp, body := get(t, "/assets/index-BzSO0jdN.js")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("asset: status = %d, want 200", resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "javascript") {
+			t.Fatalf("asset Content-Type = %q, want javascript", ct)
+		}
+		if strings.Contains(body, indexMarker) {
+			t.Fatalf("asset request fell back to index.html instead of serving the JS bundle")
+		}
+	})
+
+	t.Run("missing asset under a client path -> index.html (200)", func(t *testing.T) {
+		resp, body := get(t, "/assets/does-not-exist.js")
+		// A bogus path that is NOT an excluded prefix is treated as a client route:
+		// it falls back to the SPA shell (React Router resolves / 404s in-app).
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("missing asset: status = %d, want 200 (client-route fallback)", resp.StatusCode)
+		}
+		if !strings.Contains(body, indexMarker) {
+			t.Fatalf("missing asset did not fall back to the SPA shell: %s", body)
 		}
 	})
 }
