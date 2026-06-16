@@ -129,12 +129,16 @@ func TestSPAFallback(t *testing.T) {
 	})
 
 	t.Run("real embedded asset -> 200 served as-is", func(t *testing.T) {
-		resp, body := get(t, "/assets/index-BzSO0jdN.js")
+		// Discover the hashed JS bundle from the embedded FS rather than pinning a
+		// content-hash filename — Vite re-hashes every rebuild, so a literal name
+		// goes stale on each `npm run build` (it did when 24-04 rebuilt dist).
+		asset := firstDistJSAsset(t)
+		resp, body := get(t, "/assets/"+asset)
 		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("asset: status = %d, want 200", resp.StatusCode)
+			t.Fatalf("asset %s: status = %d, want 200", asset, resp.StatusCode)
 		}
 		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "javascript") {
-			t.Fatalf("asset Content-Type = %q, want javascript", ct)
+			t.Fatalf("asset %s Content-Type = %q, want javascript", asset, ct)
 		}
 		if strings.Contains(body, indexMarker) {
 			t.Fatalf("asset request fell back to index.html instead of serving the JS bundle")
@@ -152,6 +156,29 @@ func TestSPAFallback(t *testing.T) {
 			t.Fatalf("missing asset did not fall back to the SPA shell: %s", body)
 		}
 	})
+}
+
+// firstDistJSAsset returns the name of a hashed JS bundle under dist/assets in the
+// embedded tree (e.g. "index-CNlksIPz.js"). The content hash changes every Vite
+// rebuild, so the asset-serving test discovers the real name instead of pinning a
+// literal that goes stale on each `npm run build`.
+func firstDistJSAsset(t *testing.T) string {
+	t.Helper()
+	sub, err := Sub()
+	if err != nil {
+		t.Fatalf("Sub(): %v", err)
+	}
+	entries, err := fs.ReadDir(sub, "assets")
+	if err != nil {
+		t.Fatalf("read embedded dist/assets: %v", err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
+			return e.Name()
+		}
+	}
+	t.Fatalf("no .js bundle found under embedded dist/assets")
+	return ""
 }
 
 // TestSub asserts the embedded tree is rooted at dist/ so index.html resolves
