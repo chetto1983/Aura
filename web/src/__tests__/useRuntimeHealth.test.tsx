@@ -62,6 +62,7 @@ describe('useRuntimeHealth', () => {
     expect(result.current.healthzError).toBe(false);
     expect(result.current.readyzError).toBe(false);
     expect(result.current.isPending).toBe(false);
+    expect(result.current.isRefetching).toBe(false);
     expect(result.current.lastChecked).toBeGreaterThan(0);
   });
 

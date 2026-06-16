@@ -41,6 +41,11 @@ export const resources = {
           settings: 'Settings',
         },
       },
+      skeleton: {
+        shell: 'Loading cockpit...',
+        login: 'Loading sign-in...',
+        page: 'Loading page...',
+      },
       health: {
         title: 'Runtime',
         loading: 'Checking runtime...',
@@ -122,6 +127,11 @@ export const resources = {
           displays: 'Display',
           settings: 'Impostazioni',
         },
+      },
+      skeleton: {
+        shell: 'Caricamento cockpit...',
+        login: 'Caricamento accesso...',
+        page: 'Caricamento pagina...',
       },
       health: {
         title: 'Stato runtime',

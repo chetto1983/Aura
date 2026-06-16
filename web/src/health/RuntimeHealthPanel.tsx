@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { RuntimeHealthPanelSkeleton } from '../components/skeleton';
 import { useRuntimeHealth, type HealthzBody, type ReadyzBody } from './useRuntimeHealth';
 
 type Tone = 'success' | 'warning' | 'danger';
@@ -126,7 +127,8 @@ function formatLastChecked(epochMs: number, t: TFunction): string {
 
 export function RuntimeHealthPanel() {
   const { t } = useTranslation();
-  const { healthz, readyz, healthzError, readyzError, isPending, lastChecked } = useRuntimeHealth();
+  const { healthz, readyz, healthzError, readyzError, isPending, isRefetching, lastChecked } =
+    useRuntimeHealth();
 
   const allUnreachable =
     healthzError && readyzError && healthz === undefined && readyz === undefined;
@@ -142,30 +144,37 @@ export function RuntimeHealthPanel() {
   ];
 
   return (
-    <section aria-labelledby="runtime-health-title" className="flex flex-col gap-2 p-4">
+    <section
+      aria-busy={isPending || isRefetching}
+      aria-labelledby="runtime-health-title"
+      className="flex flex-col gap-2 p-4"
+    >
+      {isRefetching ? <div aria-hidden="true" className="skeleton-refetch-bar" /> : null}
       <h2 id="runtime-health-title" className="text-base font-medium text-text">
         {t('health.title')}
       </h2>
 
       {isPending ? (
-        <p className="text-sm text-text-muted">{t('health.loading')}</p>
+        <RuntimeHealthPanelSkeleton label={t('health.loading')} showTitle={false} />
       ) : allUnreachable ? (
         <p role="alert" className="text-sm text-danger">
           {t('health.unreachable')}
         </p>
       ) : (
-        <div className="flex flex-col">
-          {rows.map((row) => (
-            <StatusRow key={row.label} {...row} />
-          ))}
-          <StatusRow
-            label={t('health.labels.bindAddress')}
-            status={bind ?? '-'}
-            tone="success"
-            mono
-          />
-          <StatusRow label={t('health.labels.build')} status={build ?? '-'} tone="success" mono />
-        </div>
+        <>
+          <div className="flex flex-col">
+            {rows.map((row) => (
+              <StatusRow key={row.label} {...row} />
+            ))}
+            <StatusRow
+              label={t('health.labels.bindAddress')}
+              status={bind ?? '-'}
+              tone="success"
+              mono
+            />
+            <StatusRow label={t('health.labels.build')} status={build ?? '-'} tone="success" mono />
+          </div>
+        </>
       )}
 
       <p className="text-[0.6875rem] text-text-faint">

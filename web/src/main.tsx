@@ -1,15 +1,22 @@
-import { StrictMode } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { AppShell } from './AppShell';
+import { RouteSkeletonFallback } from './components/skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
-import { LoginPage } from './routes/LoginPage';
-import { NotFoundView } from './routes/NotFoundView';
 import { queryClient } from './queryClient';
 import { applyTheme } from './theme/applyTheme';
 import './i18n/i18n';
 import './styles/index.css';
+
+const AppShell = lazy(() => import('./AppShell').then((mod) => ({ default: mod.AppShell })));
+const LoginPage = lazy(() =>
+  import('./routes/LoginPage').then((mod) => ({ default: mod.LoginPage })),
+);
+const NotFoundView = lazy(() =>
+  import('./routes/NotFoundView').then((mod) => ({ default: mod.NotFoundView })),
+);
 
 // D-08: theme + density are already on <html> from the index.html pre-paint script;
 // applyTheme() re-asserts them from localStorage BEFORE React mounts so there is no
@@ -29,11 +36,13 @@ createRoot(container).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<AppShell />} />
-            <Route path="*" element={<NotFoundView />} />
-          </Routes>
+          <Suspense fallback={<RouteSkeletonFallback />}>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/" element={<AppShell />} />
+              <Route path="*" element={<NotFoundView />} />
+            </Routes>
+          </Suspense>
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

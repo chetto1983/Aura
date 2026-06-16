@@ -72,6 +72,7 @@ export function LoginPage() {
         ) : null}
 
         <form
+          aria-busy={submitting}
           aria-label={t('login.cta')}
           onSubmit={(event) => {
             event.preventDefault();

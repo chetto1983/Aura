@@ -8,15 +8,18 @@ export function AppShell() {
   const { t } = useTranslation();
 
   return (
-    <div className="grid h-dvh grid-rows-[auto_1fr] bg-bg text-text">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2">
+    <div className="grid h-dvh overflow-hidden bg-bg text-text [grid-template-rows:auto_1fr]">
+      <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2 sm:px-4">
         <img src="/logo.png" alt="Aura" width={24} height={24} className="rounded-sm" />
         <span className="font-sans text-sm font-medium tracking-wide text-text">Aura</span>
-        <nav aria-label={t('shell.primaryNav')} className="ml-6 flex gap-1 text-text-muted">
+        <nav
+          aria-label={t('shell.primaryNav')}
+          className="order-last flex w-full flex-wrap gap-1 text-text-muted sm:order-none sm:ml-6 sm:w-auto"
+        >
           {MODES.map((mode) => (
             <span
               key={mode}
-              className="rounded-md px-2 py-1 text-xs aria-[current]:text-text aria-[current]:bg-surface-2"
+              className="rounded-md px-2 py-1 text-xs aria-[current]:bg-surface-2 aria-[current]:text-text"
               aria-current={mode === 'chat' ? 'page' : undefined}
             >
               {t(`shell.modes.${mode}`)}
@@ -26,10 +29,10 @@ export function AppShell() {
         <LanguageSwitcher className="ml-auto" />
       </header>
 
-      <main className="grid min-h-0 grid-cols-[14rem_1fr_18rem]">
+      <main className="grid min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] lg:grid-cols-[14rem_minmax(0,1fr)_18rem] lg:grid-rows-1">
         <aside
           aria-label={t('shell.navigation')}
-          className="flex flex-col gap-3 border-r border-border bg-surface px-3 py-3"
+          className="grid gap-2 border-b border-border bg-surface px-3 py-3 sm:grid-cols-3 lg:flex lg:flex-col lg:gap-3 lg:border-b-0 lg:border-r"
         >
           <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-faint">
             {t('shell.sections.investigations')}
@@ -46,7 +49,7 @@ export function AppShell() {
 
         <aside
           aria-label={t('shell.displayWorkspace')}
-          className="min-h-0 overflow-y-auto border-l border-border bg-surface"
+          className="min-h-0 overflow-y-auto border-t border-border bg-surface lg:border-l lg:border-t-0"
         >
           <RuntimeHealthPanel />
         </aside>

@@ -49,6 +49,7 @@ export interface UseRuntimeHealthResult {
   healthzError: boolean;
   readyzError: boolean;
   isPending: boolean;
+  isRefetching: boolean;
   /** epoch ms of the most recent successful update across both probes (0 if none). */
   lastChecked: number;
 }
@@ -73,6 +74,8 @@ export function useRuntimeHealth(): UseRuntimeHealthResult {
     healthzError: healthz.isError,
     readyzError: readyz.isError,
     isPending: healthz.isPending || readyz.isPending,
+    isRefetching:
+      (healthz.isFetching || readyz.isFetching) && !(healthz.isPending || readyz.isPending),
     lastChecked: Math.max(healthz.dataUpdatedAt, readyz.dataUpdatedAt),
   };
 }

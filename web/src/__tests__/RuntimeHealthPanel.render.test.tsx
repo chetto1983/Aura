@@ -22,6 +22,7 @@ const base: UseRuntimeHealthResult = {
   healthzError: false,
   readyzError: false,
   isPending: false,
+  isRefetching: false,
   lastChecked: 0,
 };
 
@@ -54,7 +55,17 @@ describe('RuntimeHealthPanel rendering', () => {
     set({ isPending: true });
     render(<RuntimeHealthPanel />);
     expect(screen.getByText('Checking runtime...')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('Checking runtime...');
     expect(screen.queryByText('Liveness')).toBeNull();
+  });
+
+  it('keeps loaded rows stable during a background refetch', () => {
+    set({ isRefetching: true });
+    const { container } = render(<RuntimeHealthPanel />);
+    const region = screen.getByRole('region', { name: 'Runtime' });
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByText('Liveness')).toBeTruthy();
+    expect(container.querySelector('.skeleton-refetch-bar')).toBeTruthy();
   });
 
   it('shows a role=alert when every probe is unreachable', () => {

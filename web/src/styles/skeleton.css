@@ -1,0 +1,126 @@
+:root {
+  --skeleton-base: color-mix(in srgb, var(--color-surface-2) 78%, var(--color-text) 8%);
+  --skeleton-raised: color-mix(in srgb, var(--color-surface-2) 68%, var(--color-text) 12%);
+  --skeleton-highlight: color-mix(in srgb, var(--color-surface-2) 58%, var(--color-text) 18%);
+  --skeleton-border: color-mix(in srgb, var(--color-border) 76%, var(--color-text) 10%);
+  --skeleton-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border) 55%, transparent);
+  --skeleton-duration: 2200ms;
+}
+
+@keyframes aura-skeleton-wave {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -140% 0;
+  }
+}
+
+.skeleton-block {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--skeleton-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--skeleton-base);
+  background-image: linear-gradient(
+    90deg,
+    var(--skeleton-base) 0%,
+    var(--skeleton-raised) 42%,
+    var(--skeleton-highlight) 50%,
+    var(--skeleton-raised) 58%,
+    var(--skeleton-base) 100%
+  );
+  background-size: 260% 100%;
+  box-shadow: var(--skeleton-shadow);
+  animation: aura-skeleton-wave var(--skeleton-duration) ease-in-out infinite;
+}
+
+.skeleton-block[data-rounded='none'] {
+  border-radius: 0;
+}
+
+.skeleton-block[data-rounded='sm'] {
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-block[data-rounded='md'] {
+  border-radius: var(--radius-md);
+}
+
+.skeleton-block[data-rounded='lg'] {
+  border-radius: var(--radius-lg);
+}
+
+.skeleton-block[data-rounded='full'] {
+  border-radius: 999px;
+}
+
+.skeleton-card {
+  border: 1px solid var(--skeleton-border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-surface) 96%, var(--color-text) 3%),
+      color-mix(in srgb, var(--color-surface) 88%, var(--color-bg) 12%)
+    ),
+    var(--color-surface);
+}
+
+.skeleton-chart-plot {
+  background-image:
+    linear-gradient(var(--skeleton-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--skeleton-border) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      var(--skeleton-base) 0%,
+      var(--skeleton-raised) 42%,
+      var(--skeleton-highlight) 50%,
+      var(--skeleton-raised) 58%,
+      var(--skeleton-base) 100%
+    );
+  background-size:
+    100% 25%,
+    20% 100%,
+    260% 100%;
+}
+
+.skeleton-refetch-bar {
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--skeleton-base);
+}
+
+.skeleton-refetch-bar::before {
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--color-accent) 64%, var(--skeleton-highlight));
+  content: '';
+  animation: aura-skeleton-wave 1800ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block,
+  .skeleton-refetch-bar::before {
+    animation: none;
+  }
+
+  .skeleton-block {
+    background-image: none;
+  }
+
+  .skeleton-chart-plot {
+    background-image:
+      linear-gradient(var(--skeleton-border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--skeleton-border) 1px, transparent 1px);
+  }
+
+  .skeleton-refetch-bar::before {
+    width: 100%;
+    opacity: 0.55;
+  }
+}
