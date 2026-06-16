@@ -49,6 +49,7 @@ linters:
       - "internal/sandbox"        # pre-rewrite skeleton — Slice 2 owns rewrite
       - "internal/llm/client.go"  # pre-rewrite skeleton — Slice 1 owns rewrite
       - "third_party"             # vendored / generated trees
+      - "web/node_modules"        # local frontend dependencies can contain Go examples
       - ".planning"               # spike harnesses / planning artifacts, not production code
     rules:
       - path: _test\.go
@@ -69,4 +70,5 @@ formatters:
       - "internal/sandbox"
       - "internal/llm/client.go"
       - "third_party"
+      - "web/node_modules"
       - ".planning"
