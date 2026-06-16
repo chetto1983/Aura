@@ -4,14 +4,14 @@ milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
 stopped_at: Phase 24 UI-SPEC approved
-last_updated: "2026-06-16T15:03:24.871Z"
+last_updated: "2026-06-16T15:15:35.526Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 12
-  completed_plans: 9
-  percent: 75
+  completed_plans: 10
+  percent: 25
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 24 (web-foundation-serve-auth-health) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
-Last activity: 2026-06-16 -- Completed 24-01 (WEB-02 GuardWebBind boot guard + AURA_WEB_AUTH_SECRET/AURA_WEB_TRUST_PROXY knobs)
+Last activity: 2026-06-16
 
 ### Next -- Execute Phase 22
 
@@ -163,6 +163,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 23 P23-02 | 14min | 3 tasks | 36 files |
 | Phase 23 P23-03 | 8min | 3 tasks | 8 files |
 | Phase 24 P01 | ~25min | 3 tasks | 4 files |
+| Phase 24 P02 | ~30min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -284,6 +285,9 @@ Recent decisions affecting current work:
 - [Phase 23]: 23-03: aura serve mounts internal/webui.Handler() additively at / via newServeHandler parent ServeMux (AG-UI prefixes keep Go 1.22 longest-pattern precedence, no SPA-fallback — Phase 24/WEB-01)
 - [Phase 23]: 23-03: freshness gate + Dockerfile webbuild COPY target adapted from plan web/dist to internal/webui/dist (vite outDir, package-relative go:embed); web-e2e provisions docker-compose Postgres + dummy OPENROUTER_API_KEY (A-SERVE-NOSTACK: db.Open unconditional in bootServe)
 - [Phase ?]: Phase 24 WEB-02: GuardWebBind fail-fast non-loopback guard (D-05); bind widened on AURA_AGUI_BIND, no alias (D-06).
+- [Phase ?]: 24-02: SPA-fallback exclusion set single-sourced in fallbackExcludedPrefixes() passed into webui.Handler (anti-drift T-24-08)
+- [Phase ?]: 24-02: /api/ is a fallback EXCLUSION prefix only, never a mux registration (would shadow /api/integrations/, T-24-07)
+- [Phase ?]: 24-02: SPA shell served via http.ServeFileFS to avoid the http.FileServerFS index.html->./ redirect loop
 
 ### Pending Todos
 
@@ -317,7 +321,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T15:02:58.825Z
+Last session: 2026-06-16T15:15:14.925Z
 Stopped at: Phase 24 UI-SPEC approved
 Resume file: None
 
