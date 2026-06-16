@@ -45,7 +45,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 - [x] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit so the web exposure lands on a hardened base (HARDEN-01..12) — all 5 plans executed + automated-green 2026-06-15 (AG-001..064 ledgered, none dropped); Gate-3 close awaits the operator Part-B live sign-off (coverage ≥85% / WSL quality / live stack — `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`)
 - [x] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06) (completed 2026-06-16)
-- [ ] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
+- [x] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04) (completed 2026-06-16)
 - [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue (CHAT-01..04, APRV-01..03)
 - [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
@@ -203,7 +203,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 | 0–21 (substrate) | v0.0.0 | 144/144 | ✅ Shipped | 2026-06-15 |
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 3/3 | Complete    | 2026-06-16 |
-| 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 3/4 | In Progress|  |
+| 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete   | 2026-06-16 |
 | 25. Chat + Approval Center | v1.0.0 | 0/? | Not started | - |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
