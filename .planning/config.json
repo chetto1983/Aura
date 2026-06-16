@@ -76,7 +76,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-assumptions-analyzer": [
       ".claude/skills/golang-testing",
@@ -89,7 +98,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-codebase-mapper": [
       ".claude/skills/golang-testing",
@@ -102,7 +120,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-debugger": [
       ".claude/skills/golang-testing",
@@ -115,7 +142,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-doc-writer": [
       ".claude/skills/golang-testing",
@@ -128,7 +164,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-executor": [
       ".claude/skills/golang-testing",
@@ -141,7 +186,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-integration-checker": [
       ".claude/skills/golang-testing",
@@ -154,7 +208,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-nyquist-auditor": [
       ".claude/skills/golang-testing",
@@ -167,7 +230,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-phase-researcher": [
       ".claude/skills/golang-testing",
@@ -180,7 +252,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-plan-checker": [
       ".claude/skills/golang-testing",
@@ -193,7 +274,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-planner": [
       ".claude/skills/golang-testing",
@@ -206,7 +296,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-project-researcher": [
       ".claude/skills/golang-testing",
@@ -219,7 +318,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-research-synthesizer": [
       ".claude/skills/golang-testing",
@@ -232,7 +340,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-roadmapper": [
       ".claude/skills/golang-testing",
@@ -245,7 +362,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-security-auditor": [
       ".claude/skills/golang-testing",
@@ -258,7 +384,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-ui-auditor": [
       ".claude/skills/golang-testing",
@@ -271,7 +406,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-ui-checker": [
       ".claude/skills/golang-testing",
@@ -284,7 +428,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-ui-researcher": [
       ".claude/skills/golang-testing",
@@ -297,7 +450,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ],
     "gsd-verifier": [
       ".claude/skills/golang-testing",
@@ -310,7 +472,16 @@
       ".claude/skills/golang-structs-interfaces",
       ".claude/skills/neo4j-cypher-skill",
       ".claude/skills/neo4j-mcp-skill",
-      ".claude/skills/neo4j-driver-go-skill"
+      ".claude/skills/neo4j-driver-go-skill",
+      ".claude/skills/assistant-ui",
+      ".claude/skills/streaming",
+      ".claude/skills/runtime",
+      ".claude/skills/primitives",
+      ".claude/skills/tools",
+      ".claude/skills/vercel-react-best-practices",
+      ".claude/skills/vite",
+      ".claude/skills/frontend-design",
+      ".claude/skills/accessibility"
     ]
   },
   "features": {},
