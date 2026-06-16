@@ -64,6 +64,23 @@ func calendarRecipeURL() string {
 	return PIMSidecarBaseURL() + "/"
 }
 
+// WhatsAppBridgeBaseURL returns the scheme://host:port (no path) of the WhatsApp
+// whatsmeow bridge's management REST API (/api/{status,qr,logout}): compose-DNS
+// aura-whatsapp:8081 in-container, else loopback 127.0.0.1:<AURA_WHATSAPP_BRIDGE_PORT|8094>
+// (compose maps host 8094 → the container's 8081). WR-01: a non-port env value falls
+// back to 8094. The cockpit drives device linking through Aura's proxy onto this base
+// (distinct from whatsappRecipeURL, which is the agent's MCP-over-HTTP endpoint).
+func WhatsAppBridgeBaseURL() string {
+	if os.Getenv("AURA_IN_CONTAINER") == "1" {
+		return "http://aura-whatsapp:8081"
+	}
+	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_BRIDGE_PORT"))
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		port = "8094"
+	}
+	return fmt.Sprintf("http://127.0.0.1:%s", port)
+}
+
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
 // LLM-facing metadata (summary, trust class, runtime) with the concrete
 // mcp.ManagedServer launch spec used to install it.

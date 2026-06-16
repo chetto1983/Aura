@@ -339,24 +339,27 @@ services:
       retries: 12
       start_period: 30s
 
-  # Optional WhatsApp MCP sibling. Aura's catalog points at the loopback host
-  # publish, and Aura boot never depends on this service being healthy.
+  # WhatsApp MCP sibling — forked whatsmeow bridge + FastMCP HTTP front
+  # (chetto1983/whatsapp-mcp @ aura/cockpit-connect): the agent mounts the MCP over
+  # streamable-HTTP (8080, catalog recipe:whatsapp), and Aura's cockpit drives device
+  # linking via the bridge management REST (/api/{status,qr,logout} on 8081). CI-built
+  # + published to GHCR (public) by the fork's aura-publish-image workflow. Aura boot
+  # never depends on this service being healthy.
   whatsapp:
-    build:
-      context: ./docker/whatsapp
-    image: ${AURA_WHATSAPP_MCP_IMAGE:-aura-whatsapp-mcp:local}
-    pull_policy: never
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sidecar}
+    pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-missing}
     container_name: aura-whatsapp
     restart: unless-stopped
     environment:
-      WHATSAPP_BRIDGE_PORT: ${AURA_WHATSAPP_BRIDGE_PORT:-8081}
-      WHATSAPP_API_BASE_URL: http://127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8081}/api
+      WHATSAPP_BRIDGE_PORT: "8081"
+      WHATSAPP_API_BASE_URL: http://127.0.0.1:8081/api
     ports:
-      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080"
+      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080"     # MCP-over-HTTP for the agent
+      - "127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081"  # bridge mgmt REST for the cockpit connect proxy
     volumes:
       - aura-whatsapp-session:/app/whatsapp-bridge/store
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 8080), 5); s.close()\""]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/api/status || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

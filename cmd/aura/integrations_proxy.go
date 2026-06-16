@@ -9,12 +9,11 @@
 // AG-UI gateway (amendment #35) — it inherits that posture and is gated together with
 // the rest of the mux when serve auth lands (Phase 24).
 //
-// Registry-driven so a second integration is a one-entry add. Today only `calendar`
-// (the PIM sidecar's token-gated /admin REST API: accounts CRUD + device-code auth)
-// is wired. `whatsapp` is intentionally absent: the whatsmeow bridge pairs via a
-// terminal QR (qrterminal) and exposes no REST QR/status/logout management endpoint
-// to proxy — its leg needs a bridge-side management endpoint added first (a fork
-// patch to docker/whatsapp), at which point it slots into builtinIntegrations().
+// Registry-driven (builtinIntegrations): two legs are wired.
+//   - calendar: the PIM sidecar's token-gated /admin REST API (accounts CRUD +
+//     device-code auth), token injected server-side.
+//   - whatsapp: the forked whatsmeow bridge's management REST (/api/{status,qr,logout})
+//     the cockpit drives to link a device — loopback + unauthenticated, no token.
 package main
 
 import (
@@ -53,8 +52,7 @@ func pimAdminToken() string {
 	return pimAdminTokenDefault
 }
 
-// builtinIntegrations is the proxy's dispatch registry (see the file header for why
-// whatsapp is not yet present).
+// builtinIntegrations is the proxy's dispatch registry.
 func builtinIntegrations() map[string]integrationTarget {
 	return map[string]integrationTarget{
 		"calendar": {
@@ -63,6 +61,13 @@ func builtinIntegrations() map[string]integrationTarget {
 			injectAuth: func(h http.Header) {
 				h.Set("X-Admin-Token", pimAdminToken())
 			},
+		},
+		"whatsapp": {
+			// The whatsmeow bridge management REST is loopback + unauthenticated, so
+			// no token is injected. /api/integrations/whatsapp/status -> bridge /api/status.
+			baseURL:    mcpmanager.WhatsAppBridgeBaseURL,
+			apiPrefix:  "/api",
+			injectAuth: nil,
 		},
 	}
 }

@@ -123,6 +123,35 @@ func TestIntegrationsProxyPreservesMethodBodyQueryAndDefaultToken(t *testing.T) 
 	}
 }
 
+func TestIntegrationsProxyForwardsWhatsAppNoToken(t *testing.T) {
+	reapProxyIdleConns(t)
+	var got capturedReq
+	bridge := startFakeSidecar(t, &got)
+	u, err := url.Parse(bridge.URL)
+	if err != nil {
+		t.Fatalf("parse fake bridge URL: %v", err)
+	}
+	t.Setenv("AURA_IN_CONTAINER", "")
+	t.Setenv("AURA_WHATSAPP_BRIDGE_PORT", u.Port())
+
+	ts := httptest.NewServer(newIntegrationsProxy())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/integrations/whatsapp/status")
+	if err != nil {
+		t.Fatalf("GET via proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if got.method != http.MethodGet || got.path != "/api/status" {
+		t.Fatalf("bridge saw %s %q, want GET /api/status", got.method, got.path)
+	}
+	if got.adminToken != "" {
+		t.Fatalf("whatsapp leg injected a token (%q); the bridge REST is unauthenticated", got.adminToken)
+	}
+}
+
 func TestIntegrationsProxyUnknownIntegrationIs404(t *testing.T) {
 	var got capturedReq
 	sidecar := startFakeSidecar(t, &got)
@@ -131,8 +160,7 @@ func TestIntegrationsProxyUnknownIntegrationIs404(t *testing.T) {
 	ts := httptest.NewServer(newIntegrationsProxy())
 	t.Cleanup(ts.Close)
 
-	// whatsapp is deliberately not yet wired (no bridge management REST).
-	resp, err := http.Get(ts.URL + "/api/integrations/whatsapp/qr")
+	resp, err := http.Get(ts.URL + "/api/integrations/bogus/x")
 	if err != nil {
 		t.Fatalf("GET unknown integration: %v", err)
 	}
