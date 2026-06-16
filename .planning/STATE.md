@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 24 UI-SPEC approved
-last_updated: "2026-06-16T15:15:35.526Z"
-last_activity: 2026-06-16
+stopped_at: Phase 24 Plan 03 complete (WEB-03 web-auth boundary)
+last_updated: "2026-06-16T16:34:54.206Z"
+last_activity: 2026-06-16 -- Phase 24 Plan 03 (WEB-03 web-auth boundary) complete
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 12
   percent: 25
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 24 (web-foundation-serve-auth-health) — EXECUTING
-Plan: 3 of 4
-Status: Ready to execute
-Last activity: 2026-06-16
+Plan: 4 of 4 (Plans 01/02/03 complete; 24-04 React login page + health panel next)
+Status: Ready to execute 24-04
+Last activity: 2026-06-16 -- Phase 24 Plan 03 (WEB-03 web-auth boundary) complete
 
 ### Next -- Execute Phase 22
 
@@ -164,8 +164,13 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 23 P23-03 | 8min | 3 tasks | 8 files |
 | Phase 24 P01 | ~25min | 3 tasks | 4 files |
 | Phase 24 P02 | ~30min | 2 tasks | 5 files |
+| Phase 24 P03 | 13min | 3 tasks | 8 files |
 
 ## Accumulated Context
+
+### Phase 24 Execution
+
+- 24-03 closed (2026-06-16): WEB-03 in-binary web-auth boundary — stdlib-only signed-session-cookie auth (NO gorilla). `internal/agui/auth_cookie.go` (validateSecret fail-closed + signSession/verifySession HMAC-SHA256 + set/clearSessionCookie `__Host-aura_session` HttpOnly+Secure+SameSite=Strict + deriveSigningKey=sha256(secret), 12h absolute TTL) + `auth.go` (AuthDeps, narrow consumer-side `identityChecker` + own `agui.Identity` projection, POST /login generic-401-no-oracle + POST /logout, `RequireAuth` whole-origin gate with public paths = login route + `/login-assets/` + GET /healthz [/readyz, /metrics, /debug/vars, SPA shell GATED], cookie-only read never a client header, no-op pass-through when SecretConfigured==false, `RequireCapability` exported). Wired in `cmd/aura`: `newServeHandler(aguiHandler, agui.AuthDeps)` wraps the mux + registers POST /login+/logout + interposes RequireCapability on POST /agent/run (Go 1.22 method-pattern precedence); `serve_auth.go` `buildAuthDeps`+`identityCheckerAdapter`; `bootServe` threads it (loopback dev unauthenticated, GuardWebBind preserved). **Key bug auto-fixed (Rule 1):** verifySession must reject NON-CANONICAL base64 (re-encode+compare) — `RawURLEncoding` tolerates non-zero trailing bits so a single-byte flip of the final base64 char decodes identically and the re-MAC still matches (a tamper bypass the rapid property caught). **Key blocking auto-fix (Rule 3):** `*identity.Store` does NOT satisfy `agui.identityChecker` (agui declares its own `agui.Identity` return type) — a return-type-projection adapter bridges it in cmd/aura AND the agui db_integration test; `requireCapability` exported→`RequireCapability` for the cross-package interpose. db_integration `TestAgentRunCapability` ran LIVE on the stack (wildcard grant→200, ungranted→403, 2/2 PASS). Coverage 89.5% untagged+tagged; race+goleak+boundary-check green; CSRF=SameSite-only accepted (T-24-19, Phase 28/29 re-eval trigger). Commits `24abbc2a` (cookie crypto+login/logout), `b21d94d3` (RequireAuth+capability gate), `cf5a8649` (mux+bootServe wiring+db_integration). Summary `.planning/phases/24-web-foundation-serve-auth-health/24-03-SUMMARY.md`. Next = 24-04 (React login page + runtime health panel).
 
 ### Phase 23 Execution
 
