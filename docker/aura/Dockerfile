@@ -1,3 +1,18 @@
+# webbuild stage (D-06): build the operator SPA with Node 24 in a discardable stage
+# so NO Node is added to the runtime image for the SPA's sake. The build is fed into
+# the go build stage below as a fresh, reproducible dist — the web-dist-freshness CI
+# job proves the committed bytes equal this build, tying D-05 <-> D-06.
+#
+# Output path note: web/vite.config.ts sets build.outDir = ../internal/webui/dist (Go
+# //go:embed is package-relative — 23-01/23-02). At WORKDIR /web, `..` is /, so
+# `npm run build` writes to /internal/webui/dist (NOT /web/dist, which is never created).
+FROM node:24-bookworm-slim AS webbuild
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM golang:1.26.4-alpine AS build
 
 WORKDIR /src
@@ -7,6 +22,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Overwrite the committed embed source (internal/webui/dist) with the fresh webbuild
+# output so the image's baked-in SPA is a reproducible build, not the committed bytes.
+COPY --from=webbuild /internal/webui/dist ./internal/webui/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/aura ./cmd/aura
 
 FROM debian:bookworm-slim
@@ -25,6 +43,12 @@ RUN apt-get update \
 # Node 24 LTS (Debian bookworm ships Node 18, too old for recipe deps — mail-mcp
 # declares engines node >=23, html-to-text@10 needs >=20.19). NodeSource nodejs
 # bundles npm/npx.
+#
+# D-06 note: this runtime Node-24 is ORTHOGONAL to the SPA. It exists ONLY for the
+# recipe MCP servers (mail-mcp, calculator) that run as subprocesses at runtime. The
+# operator SPA is built in the `webbuild` stage above and baked into the Go binary
+# before runtime — no Node touches the SPA at runtime. Do not read this as a D-06
+# "no Node for the SPA" violation.
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
