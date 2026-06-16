@@ -15,12 +15,6 @@ export default tseslint.config(
       'playwright-report/**',
       'test-results/**',
       'src/styles/theme.css',
-      // Wave-0 RED stubs: these import the not-yet-built AppShell / served shell,
-      // so type-aware lint degrades to `any` and fires false positives. They are
-      // RED at the vitest/playwright layer by design. Remove these two ignores
-      // once 23-02 creates src/AppShell.tsx and 23-03 wires the served shell.
-      'src/__tests__/AppShell.test.tsx',
-      'e2e/shell.spec.ts',
     ],
   },
   js.configs.recommended,
@@ -34,6 +28,7 @@ export default tseslint.config(
     // default-import-of-an-eslint-plugin pattern. Keep the import-order value.
     rules: {
       'import-x/no-unresolved': 'off',
+      'import-x/named': 'off',
       'import-x/namespace': 'off',
       'import-x/no-named-as-default': 'off',
       'import-x/no-named-as-default-member': 'off',
@@ -74,6 +69,13 @@ export default tseslint.config(
       globals: { ...globals.node },
       parserOptions: { projectService: false },
     },
+  },
+  {
+    // Tests keep defensive runtime guards (e.g. `node.textContent ?? ''`) even
+    // where the resolved DOM types say the value is non-null — the guard hardens
+    // the test across jsdom/browser type drift without weakening any assertion.
+    files: ['src/**/*.{test,spec}.{ts,tsx}', 'e2e/**/*.{ts,tsx}'],
+    rules: { '@typescript-eslint/no-unnecessary-condition': 'off' },
   },
   prettier,
 );

@@ -19,9 +19,5 @@
     "noEmit": true
   },
   "references": [{ "path": "./tsconfig.node.json" }],
-  "include": ["src", "e2e"],
-  // Wave-0 RED stub: AppShell.test.tsx imports the not-yet-built ../AppShell
-  // (23-02). It is RED at vitest by design; drop this exclude once AppShell.tsx
-  // exists so the test rejoins the typecheck gate.
-  "exclude": ["src/__tests__/AppShell.test.tsx"]
+  "include": ["src", "e2e"]
 }
