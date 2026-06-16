@@ -242,9 +242,19 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
+	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
+	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
+	// routes authoritative and falls everything else through to the static shell
+	// (FND-02). A webui embed failure is fatal at boot — a committed dist makes it
+	// unreachable, but a half-wired host must not start.
+	serveHandler, err := newServeHandler(aguiServer.Mux())
+	if err != nil {
+		chat.close()
+		return nil, fmt.Errorf("build serve handler: %w", err)
+	}
 	httpSrv := &http.Server{
 		Addr:              chat.cfg.AGUIBind,
-		Handler:           aguiServer.Mux(),
+		Handler:           serveHandler,
 		ReadHeaderTimeout: aguiReadHeaderTimeout,
 	}
 
