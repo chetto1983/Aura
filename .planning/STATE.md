@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 24 Plan 03 complete (WEB-03 web-auth boundary)
-last_updated: "2026-06-16T16:34:54.206Z"
-last_activity: 2026-06-16 -- Phase 24 Plan 03 (WEB-03 web-auth boundary) complete
+stopped_at: Phase 24 UI-SPEC approved
+last_updated: "2026-06-16T19:57:11.224Z"
+last_activity: 2026-06-16
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 12
   completed_plans: 12
-  percent: 25
+  percent: 38
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 24 (web-foundation-serve-auth-health) â€” EXECUTING
-Plan: 4 of 4 (Plans 01/02/03 complete; 24-04 React login page + health panel next)
+Phase: 25
+Plan: Not started
 Status: Ready to execute 24-04
-Last activity: 2026-06-16 -- Phase 24 Plan 03 (WEB-03 web-auth boundary) complete
+Last activity: 2026-06-16
 
 ### Next -- Execute Phase 22
 
@@ -50,7 +50,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` â‰
 
 **Velocity:**
 
-- Total plans completed: 147
+- Total plans completed: 151
 - Average duration: â€”
 - Total execution time: 0.0 hours
 
@@ -74,6 +74,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` â‰
 | 20 | 4 | - | - |
 | 08.2 | 5 | - | - |
 | 23 | 3 | - | - |
+| 24 | 4 | - | - |
 
 **Recent Trend:**
 
