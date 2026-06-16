@@ -19,7 +19,7 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name>|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>}"
+const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name>|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>}"
 
 const defaultWhatsAppBridgeURL = "http://127.0.0.1:8080"
 
@@ -56,6 +56,8 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 		return mcpDoctor(ctx, args[1:], out)
 	case "tools":
 		return mcpTools(ctx, args[1:], out)
+	case "console":
+		return mcpConsole(args[1:], out)
 	case "enable":
 		return mcpSetEnabled(args[1:], true, out)
 	case "disable":

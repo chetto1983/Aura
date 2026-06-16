@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aura · MCP Integrations Validation Console</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background:#0b0b0c; color:#e6e6e6; margin:0; line-height:1.45; }
+  header { padding:1rem 1.25rem; border-bottom:1px solid #232327; display:flex; align-items:baseline; gap:.75rem; flex-wrap:wrap; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .sub { color:#8a8a90; font-size:.8rem; }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:1rem; padding:1rem 1.25rem; max-width:1200px; }
+  @media (max-width: 860px){ main { grid-template-columns:1fr; } }
+  section { border:1px solid #232327; border-radius:10px; padding:1rem; background:#111113; }
+  section h2 { font-size:.95rem; margin:0 0 .75rem; display:flex; align-items:center; gap:.5rem; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:.4rem 0; }
+  button { background:#1f1f23; color:#e6e6e6; border:1px solid #34343a; border-radius:7px; padding:.4rem .7rem; cursor:pointer; font-size:.82rem; }
+  button:hover { background:#2a2a30; }
+  button.primary { background:#1d4ed8; border-color:#2563eb; }
+  input, select, textarea { background:#0e0e10; color:#e6e6e6; border:1px solid #34343a; border-radius:7px; padding:.35rem .5rem; font-size:.82rem; font-family:inherit; }
+  textarea { width:100%; min-height:4.5rem; font-family:ui-monospace, monospace; }
+  label { font-size:.78rem; color:#a8a8b0; display:block; margin:.35rem 0 .15rem; }
+  .pill { font-size:.72rem; padding:.1rem .5rem; border-radius:999px; border:1px solid #34343a; }
+  .ok { color:#22c55e; border-color:#14532d; } .bad { color:#f87171; border-color:#7f1d1d; } .warn { color:#fbbf24; border-color:#78350f; }
+  pre { background:#0e0e10; border:1px solid #232327; border-radius:7px; padding:.6rem; overflow:auto; font-size:.76rem; max-height:18rem; margin:.5rem 0 0; white-space:pre-wrap; word-break:break-word; }
+  #log { grid-column:1 / -1; }
+  #qrbox { margin:.6rem 0; text-align:center; }
+  #qrbox img, #qrbox canvas { background:#fff; padding:8px; border-radius:8px; }
+  a { color:#7dd3fc; }
+  .muted { color:#8a8a90; font-size:.78rem; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Aura · MCP Integrations Validation</h1>
+  <span class="sub">drives both forked sidecars through the real Aura proxy (<code>/api/integrations/*</code>, admin token injected server-side)</span>
+  <span style="flex:1"></span>
+  <button class="primary" onclick="runProbes()">▶ Run read-only probes</button>
+  <span id="probeSummary" class="pill">not run</span>
+</header>
+
+<main>
+  <!-- ───────────────── CALENDAR ───────────────── -->
+  <section>
+    <h2>📅 Calendar PIM <span id="calHealth" class="pill">?</span></h2>
+
+    <div class="row">
+      <button onclick="cal.list()">List accounts</button>
+      <span class="muted">GET /admin/accounts</span>
+    </div>
+    <pre id="calAccounts">—</pre>
+
+    <h2 style="margin-top:1rem">Add / configure account</h2>
+    <div class="grid2">
+      <div><label>id</label><input id="caId" placeholder="google-personal" style="width:100%"></div>
+      <div><label>provider</label>
+        <select id="caProvider" style="width:100%" onchange="cal.tplConfig()">
+          <option value="google">google</option>
+          <option value="microsoft">microsoft</option>
+        </select>
+      </div>
+    </div>
+    <label>displayName</label><input id="caName" placeholder="My Google" style="width:100%">
+    <label>providerConfig (JSON)</label>
+    <textarea id="caConfig">{"clientId":"","clientSecret":""}</textarea>
+    <div class="row">
+      <button onclick="cal.add()">Create account</button>
+      <span class="muted">POST /admin/accounts</span>
+    </div>
+
+    <h2 style="margin-top:1rem">Connect a configured account</h2>
+    <div class="row">
+      <input id="caConnId" placeholder="account id" style="flex:1">
+    </div>
+    <div class="row">
+      <button onclick="cal.google()">Connect Google (redirect)</button>
+      <button onclick="cal.device()">Connect via device code (Outlook)</button>
+      <button onclick="cal.status()">Account status</button>
+      <button onclick="cal.remove()">Remove</button>
+    </div>
+    <pre id="calOut">—</pre>
+  </section>
+
+  <!-- ───────────────── WHATSAPP ───────────────── -->
+  <section>
+    <h2>💬 WhatsApp bridge <span id="waHealth" class="pill">?</span></h2>
+
+    <div class="row">
+      <button onclick="wa.status()">Status</button>
+      <button onclick="wa.qr()">Get QR + auto-poll</button>
+      <button onclick="wa.logout()">Logout</button>
+      <span id="waState" class="pill">?</span>
+    </div>
+
+    <div id="qrbox"></div>
+    <p class="muted" id="qrHint"></p>
+    <pre id="waOut">—</pre>
+  </section>
+
+  <!-- ───────────────── LOG ───────────────── -->
+  <section id="log">
+    <h2>📜 Request log <button style="margin-left:auto" onclick="document.getElementById('logBody').textContent=''">clear</button></h2>
+    <pre id="logBody"></pre>
+  </section>
+</main>
+
+<script>
+const B = "/api/integrations";
+function log(line){ const el=document.getElementById('logBody'); el.textContent += line+"\n"; el.scrollTop=el.scrollHeight; }
+function setPill(id, text, cls){ const el=document.getElementById(id); el.textContent=text; el.className="pill "+(cls||""); }
+
+async function call(method, path, body){
+  const opts = { method, headers:{} };
+  if (body !== undefined){ opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+  const t0 = performance.now();
+  let res, text;
+  try { res = await fetch(B+path, opts); text = await res.text(); }
+  catch(e){ log(`✗ ${method} ${path} — network error: ${e}`); throw e; }
+  const ms = Math.round(performance.now()-t0);
+  log(`${res.ok?'✓':'✗'} ${method} ${path} → ${res.status} (${ms}ms)`);
+  let json; try { json = text ? JSON.parse(text) : null; } catch { json = text; }
+  return { status: res.status, ok: res.ok, body: json, raw: text };
+}
+function show(id, v){ document.getElementById(id).textContent = typeof v==='string'? v : JSON.stringify(v,null,2); }
+
+// ── Calendar ──
+const cal = {
+  async list(){ const r=await call('GET','/calendar/accounts'); show('calAccounts', r.body ?? r.raw); setPill('calHealth', r.ok?'reachable':'HTTP '+r.status, r.ok?'ok':'bad'); return r; },
+  tplConfig(){ const p=document.getElementById('caProvider').value;
+    document.getElementById('caConfig').value = p==='google'
+      ? '{"clientId":"","clientSecret":""}'
+      : '{"clientId":"","tenantId":"consumers"}'; },
+  async add(){
+    let cfg; try { cfg=JSON.parse(document.getElementById('caConfig').value); } catch(e){ show('calOut','providerConfig is not valid JSON: '+e); return; }
+    const body={ id:document.getElementById('caId').value.trim(), displayName:document.getElementById('caName').value.trim(),
+      provider:document.getElementById('caProvider').value, domains:[], enabled:true, priority:0, providerConfig:cfg };
+    const r=await call('POST','/calendar/accounts', body); show('calOut', r.body ?? r.raw);
+    if(r.ok){ document.getElementById('caConnId').value=body.id; cal.list(); } },
+  cid(){ return encodeURIComponent(document.getElementById('caConnId').value.trim()); },
+  async google(){ const r=await call('GET',`/calendar/auth/${cal.cid()}/google/start`);
+    if(r.ok && r.body && r.body.authUrl){ show('calOut','authUrl (opening in a new tab):\n'+r.body.authUrl+'\n\nredirectUri (must be registered in the Google client):\n'+r.body.redirectUri); window.open(r.body.authUrl,'_blank'); }
+    else show('calOut', r.body ?? r.raw); },
+  async device(){ const r=await call('POST',`/calendar/auth/${cal.cid()}/start`); show('calOut', r.body ?? r.raw);
+    if(r.ok){ const c=r.body||{}; const code=c.userCode||c.user_code; const uri=c.verificationUri||c.verification_uri||c.verificationUrl;
+      if(code) show('calOut', `Go to ${uri||'(see message)'} and enter code: ${code}\n\n`+JSON.stringify(c,null,2)); } },
+  async status(){ const r=await call('GET',`/calendar/accounts/${cal.cid()}/status`); show('calOut', r.body ?? r.raw); },
+  async remove(){ if(!confirm('Remove account '+document.getElementById('caConnId').value+'?'))return;
+    const r=await call('DELETE',`/calendar/accounts/${cal.cid()}`); show('calOut', r.ok?'removed (204)':(r.body ?? r.raw)); cal.list(); },
+};
+
+// ── WhatsApp ──
+let waPoll=null;
+const wa = {
+  async status(){ const r=await call('GET','/whatsapp/status'); show('waOut', r.body ?? r.raw);
+    const st=r.body && r.body.state; setPill('waState', st||('HTTP '+r.status), st==='connected'?'ok':(st==='waiting_qr'?'warn':'bad'));
+    setPill('waHealth', r.ok?'reachable':'HTTP '+r.status, r.ok?'ok':'bad'); return r; },
+  async qr(){
+    const r=await call('GET','/whatsapp/qr');
+    const box=document.getElementById('qrbox'); const hint=document.getElementById('qrHint'); box.innerHTML='';
+    if(r.status===409){ show('waOut','already paired — nothing to scan'); hint.textContent=''; wa.status(); return; }
+    if(!r.ok || !r.body || !r.body.code){ show('waOut', r.body ?? r.raw); hint.textContent='QR not ready yet — click again in a moment.'; return; }
+    show('waOut','QR code received — scan it with WhatsApp (Settings → Linked devices).');
+    renderQR(box, r.body.code, hint);
+    // auto-poll status until paired
+    if(waPoll) clearInterval(waPoll);
+    waPoll=setInterval(async()=>{ const s=await wa.status(); if(s.body && s.body.state==='connected'){ clearInterval(waPoll); box.innerHTML='<div class="pill ok" style="font-size:1rem;padding:.5rem 1rem">✓ Linked!</div>'; hint.textContent=''; } }, 4000);
+  },
+  async logout(){ if(!confirm('Log the WhatsApp device out?'))return; const r=await call('POST','/whatsapp/logout'); show('waOut', r.body ?? r.raw); wa.status(); },
+};
+function renderQR(box, code, hint){
+  if(window.QRCode){ try { new QRCode(box,{text:code,width:240,height:240,correctLevel:QRCode.CorrectLevel.L}); hint.textContent=''; return; } catch(e){} }
+  // offline / lib unavailable: show the raw payload + the terminal-QR fallback.
+  hint.innerHTML='QR renderer unavailable offline. The bridge also prints a scannable QR in its logs: <code>docker logs aura-whatsapp</code>. Raw payload below.';
+  const pre=document.createElement('pre'); pre.textContent=code; box.appendChild(pre);
+}
+
+// ── read-only probe suite ──
+async function runProbes(){
+  setPill('probeSummary','running…','warn');
+  const checks=[];
+  const a=await cal.list(); checks.push(['calendar /admin/accounts', a.ok]);
+  const s=await wa.status(); checks.push(['whatsapp /api/status', s.ok]);
+  const q=await call('GET','/whatsapp/qr'); checks.push(['whatsapp /api/qr', q.ok||q.status===409||q.status===503]);
+  const pass=checks.filter(c=>c[1]).length;
+  log('── probe summary ──'); checks.forEach(c=>log(`${c[1]?'PASS':'FAIL'}  ${c[0]}`));
+  setPill('probeSummary', `${pass}/${checks.length} pass`, pass===checks.length?'ok':'bad');
+}
+</script>
+<!-- Client-side QR rendering (the linking code never leaves the browser). Falls back to
+     the terminal QR + raw payload if this lib cannot load (offline). -->
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" onerror="console.warn('QR lib offline; using fallback')"></script>
+</body>
+</html>
