@@ -82,7 +82,10 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   3. `npm run lint` + `npm run format --check` + `tsc --noEmit` pass with zero warnings and run as a blocking CI gate — parity with the Go `golangci-lint` discipline (FND-03)
   4. `public/Logo.png` renders in the app-shell header with a matching favicon + PWA/theme-color metadata, and no marketing hero text appears in the primary viewport (per the ux-spec Copy Contract) (FND-05)
   5. The Node-24 multi-stage Docker build produces the embedded `dist` with no Node in the runtime image, and the Vitest + component/E2E harness runs green in CI (FND-06)
-**Plans**: TBD
+**Plans**: 3 plans
+  - `23-01-PLAN.md` (Wave 1) — FND-01 decision-record sign-off + supply-chain gate + zero-warning gate configs + Wave-0 RED test stubs + `internal/webui` embed package (FND-01, FND-02, FND-03)
+  - `23-02-PLAN.md` (Wave 2) — design-token dark-operator theme + branded placeholder shell + React-Compiler Vite config + PWA + committed reproducible `web/dist` (FND-02, FND-04, FND-05)
+  - `23-03-PLAN.md` (Wave 3) — additive `webui.Handler()` mount into `aura serve` + 4 path-filtered web CI jobs + Node-24 `webbuild` Docker stage + dist-freshness gate (FND-02, FND-03, FND-06)
 **UI hint**: yes
 
 ### Phase 24: Web Foundation — Serve + Auth + Health
@@ -166,7 +169,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 | ----- | --------- | ----- | ------ | --------- |
 | 0–21 (substrate) | v0.0.0 | 144/144 | ✅ Shipped | 2026-06-15 |
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
-| 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 0/? | Not started | - |
+| 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 0/3 | Planned | - |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 0/? | Not started | - |
 | 25. Chat + Approval Center | v1.0.0 | 0/? | Not started | - |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
