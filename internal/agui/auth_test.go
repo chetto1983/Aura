@@ -282,3 +282,232 @@ func TestLogout(t *testing.T) {
 		t.Errorf("logout cookie MaxAge = %d, want < 0 (delete)", c.MaxAge)
 	}
 }
+
+// nextRecorder is a sentinel `next` handler that records whether it was reached and
+// answers 200. RequireAuth/requireCapability only call it when the gate passes.
+func nextRecorder() (http.Handler, *bool) {
+	hit := false
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		w.WriteHeader(http.StatusOK)
+	})
+	return h, &hit
+}
+
+// validCookieReq builds a GET request to path carrying a valid session cookie for the
+// local identity. acceptHTML toggles the browser-navigation Accept header.
+func validCookieReq(deps AuthDeps, path string, acceptHTML bool) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if acceptHTML {
+		req.Header.Set("Accept", "text/html")
+	}
+	value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	return req
+}
+
+func TestRequireAuth(t *testing.T) {
+	t.Parallel()
+	deps := testDeps("operator-secret")
+
+	t.Run("valid cookie reaches next + binds principal", func(t *testing.T) {
+		var gotPrincipal string
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPrincipal = principalFrom(r.Context())
+			w.WriteHeader(http.StatusOK)
+		})
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, validCookieReq(deps, "/", false))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if gotPrincipal != testLocalID {
+			t.Fatalf("principal = %q, want %q", gotPrincipal, testLocalID)
+		}
+	})
+
+	t.Run("no cookie on a browser GET -> 302 to login", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept", "text/html")
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, req)
+		if rec.Code != http.StatusFound {
+			t.Fatalf("status = %d, want 302", rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "/login" {
+			t.Fatalf("Location = %q, want /login", loc)
+		}
+		if *hit {
+			t.Fatal("next was reached without a session")
+		}
+	})
+
+	t.Run("no cookie on an API request -> 401", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/threads/x/messages", nil) // no Accept html
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", rec.Code)
+		}
+		if *hit {
+			t.Fatal("next was reached without a session")
+		}
+	})
+
+	t.Run("tampered cookie -> reject", func(t *testing.T) {
+		next, hit := nextRecorder()
+		value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value + "x"})
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 on tampered cookie", rec.Code)
+		}
+		if *hit {
+			t.Fatal("next reached with a tampered cookie")
+		}
+	})
+
+	t.Run("deleted bound identity -> reject", func(t *testing.T) {
+		gone := testDeps("operator-secret")
+		gone.Identities = &fakeIdentities{getErr: errFakeNotFound} // GetIdentityByID always not-found
+		next, hit := nextRecorder()
+		rec := httptest.NewRecorder()
+		RequireAuth(next, gone).ServeHTTP(rec, validCookieReq(gone, "/threads/x", false))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 when bound identity is gone", rec.Code)
+		}
+		if *hit {
+			t.Fatal("next reached with a deleted bound identity")
+		}
+	})
+
+	t.Run("D-03 public-path table", func(t *testing.T) {
+		cases := []struct {
+			name       string
+			method     string
+			path       string
+			acceptHTML bool
+			public     bool // true => reachable WITHOUT a cookie
+		}{
+			{"GET /healthz public", http.MethodGet, "/healthz", false, true},
+			{"login page public", http.MethodGet, "/login", true, true},
+			{"login asset public", http.MethodGet, "/login-assets/app.js", false, true},
+			{"SPA shell gated", http.MethodGet, "/", true, false},
+			{"/readyz gated", http.MethodGet, "/readyz", false, false},
+			{"/metrics gated", http.MethodGet, "/metrics", false, false},
+			{"/debug/vars gated", http.MethodGet, "/debug/vars", false, false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				next, hit := nextRecorder()
+				req := httptest.NewRequest(tc.method, tc.path, nil)
+				if tc.acceptHTML {
+					req.Header.Set("Accept", "text/html")
+				}
+				rec := httptest.NewRecorder()
+				RequireAuth(next, deps).ServeHTTP(rec, req)
+				if tc.public {
+					if !*hit || rec.Code != http.StatusOK {
+						t.Fatalf("public path %q: hit=%v code=%d, want hit=true code=200", tc.path, *hit, rec.Code)
+					}
+				} else {
+					if *hit {
+						t.Fatalf("gated path %q reached next without a cookie", tc.path)
+					}
+					if rec.Code == http.StatusOK {
+						t.Fatalf("gated path %q returned 200 without a cookie", tc.path)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("unconfigured secret -> pass-through no-op", func(t *testing.T) {
+		open := testDeps("") // SecretConfigured=false
+		next, hit := nextRecorder()
+		// Even a normally-gated path with NO cookie reaches next when auth is disabled.
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		rec := httptest.NewRecorder()
+		RequireAuth(next, open).ServeHTTP(rec, req)
+		if !*hit || rec.Code != http.StatusOK {
+			t.Fatalf("loopback pass-through: hit=%v code=%d, want hit=true code=200", *hit, rec.Code)
+		}
+	})
+
+	t.Run("RequireAuth reads no client auth header", func(t *testing.T) {
+		next, hit := nextRecorder()
+		// Forge every classic client-supplied auth/identity header; none must grant access.
+		req := httptest.NewRequest(http.MethodGet, "/threads/x", nil)
+		req.Header.Set("Authorization", "Bearer forged")
+		req.Header.Set("X-Forwarded-User", testLocalID)
+		req.Header.Set("X-Identity-Id", testLocalID)
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, req)
+		if *hit || rec.Code == http.StatusOK {
+			t.Fatal("a forged client auth header granted access — RequireAuth must read only the cookie")
+		}
+	})
+}
+
+func TestRequireCapability(t *testing.T) {
+	t.Parallel()
+	deps := testDeps("operator-secret")
+
+	t.Run("local principal with agent.run -> next (wildcard)", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
+		req = withPrincipal(req, testLocalID)
+		rec := httptest.NewRecorder()
+		requireCapability(next, deps, "agent.run").ServeHTTP(rec, req)
+		if !*hit || rec.Code != http.StatusOK {
+			t.Fatalf("authorized capability: hit=%v code=%d, want hit=true code=200", *hit, rec.Code)
+		}
+	})
+
+	t.Run("forbidden capability -> 403", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
+		req = withPrincipal(req, testLocalID)
+		rec := httptest.NewRecorder()
+		requireCapability(next, deps, "governance.write").ServeHTTP(rec, req) // not granted
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", rec.Code)
+		}
+		if *hit {
+			t.Fatal("next reached without the capability")
+		}
+	})
+
+	t.Run("no principal -> 403", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil) // no principal on ctx
+		rec := httptest.NewRecorder()
+		requireCapability(next, deps, "agent.run").ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", rec.Code)
+		}
+		if *hit {
+			t.Fatal("next reached with no principal")
+		}
+	})
+
+	t.Run("store error -> 403", func(t *testing.T) {
+		errDeps := testDeps("operator-secret")
+		errDeps.Identities = &fakeIdentities{hasErr: errFakeNotFound}
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/agent/run", nil)
+		req = withPrincipal(req, testLocalID)
+		rec := httptest.NewRecorder()
+		requireCapability(next, errDeps, "agent.run").ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403 on store error", rec.Code)
+		}
+		if *hit {
+			t.Fatal("next reached despite a store error")
+		}
+	})
+}

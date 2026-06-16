@@ -133,6 +133,114 @@ func (d AuthDeps) LogoutHandler() http.HandlerFunc {
 // KiB is generous headroom while defanging a hostile body before ParseForm decodes it.
 const maxLoginBodyBytes = 64 << 10
 
+// publicLoginAssetPrefixes are the static-asset paths the login PAGE needs before a
+// session exists (its bundle + styles). They are reachable WITHOUT a cookie (D-03)
+// so the login form can render. Everything else — the SPA shell, /readyz, /metrics,
+// /debug/vars — is gated. The login page itself is the LoginPath route; these are the
+// assets it pulls in. Kept narrow on purpose: the broad SPA `/assets/` tree is NOT
+// public (it is only served to an authenticated shell).
+var publicLoginAssetPrefixes = []string{
+	"/login-assets/", // the login page's own bundle/styles (served pre-auth)
+}
+
+// isPublicPath reports whether a request path is reachable WITHOUT a session (D-03):
+// the login page route, its own static assets, and GET /healthz (liveness must stay
+// reachable for proxies/orchestrators — Pitfall 4; /readyz is NOT public). The method
+// is checked by the caller for /healthz (only GET is public); this is a path predicate.
+func (d AuthDeps) isPublicPath(p string) bool {
+	if p == d.loginPath() {
+		return true
+	}
+	for _, prefix := range publicLoginAssetPrefixes {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// RequireAuth gates the WHOLE origin (D-03) except the public paths. When auth is not
+// configured (SecretConfigured==false, loopback dev) it returns `next` unchanged — a
+// no-op pass-through (mirrors server.go withCORS), safe because the Plan-01 boot guard
+// only permits an unconfigured secret on a loopback bind. When active it:
+//  1. lets isPublicPath requests + GET /healthz through (login + assets + liveness);
+//  2. reads ONLY r.Cookie(sessionCookieName) — never a client auth/identity header
+//     (T-24-13, golang-security client-header anti-pattern);
+//  3. redirects a browser GET to the login page (302) / 401s an API request on a
+//     missing or invalid cookie;
+//  4. verifySession (HMAC + absolute TTL);
+//  5. confirms the bound identity still exists (a deleted identity invalidates the
+//     session);
+//  6. stashes the principal on the request context and calls next.
+func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
+	if !deps.SecretConfigured {
+		return next // loopback dev — auth disabled, pass-through (boot guard confines this to loopback)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GET /healthz stays public for proxy/orchestrator liveness (D-03, Pitfall 4);
+		// /readyz, /metrics, /debug/vars are gated.
+		if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if deps.isPublicPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		c, err := r.Cookie(sessionCookieName)
+		if err != nil {
+			deps.redirectToLogin(w, r)
+			return
+		}
+		identityID, ok := verifySession(deps.SigningKey, c.Value, deps.ttl(), time.Now())
+		if !ok {
+			deps.redirectToLogin(w, r)
+			return
+		}
+		// The bound identity must still exist — a deleted identity invalidates the
+		// session even with a valid MAC (D-02 principal binding).
+		if _, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil {
+			deps.redirectToLogin(w, r)
+			return
+		}
+		next.ServeHTTP(w, withPrincipal(r, identityID))
+	})
+}
+
+// redirectToLogin sends a browser navigation (Accept: text/html GET) to the login page
+// with 302, but answers an API/XHR request with a plain 401 — so a fetch() gets a clean
+// status code instead of an HTML login page it cannot use.
+func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	if wantsHTML(r) {
+		http.Redirect(w, r, d.loginPath(), http.StatusFound)
+		return
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+}
+
+// requireCapability wraps a mutating-route handler with the capability_grants check
+// (D-04): it reads the principal RequireAuth stashed, asks the identity store
+// HasCapability(principal, capability), and 403s on a missing principal, a store error,
+// or a denied capability. This is the seam that exercises the dormant capability_grants
+// scaffolding on the ONLY mutating route (POST /agent/run); the seeded `local` identity
+// passes via its `*` wildcard. It invents NO governance write routes — those land in
+// Phase 28.
+func requireCapability(next http.Handler, deps AuthDeps, capability string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identityID := principalFrom(r.Context())
+		if identityID == "" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		ok, err := deps.Identities.HasCapability(r.Context(), identityID, capability)
+		if err != nil || !ok {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // principalKey is the unexported context key the authenticated identity id is stashed
 // under by RequireAuth and read by requireCapability. A private type prevents key
 // collision with any other package's context values.
