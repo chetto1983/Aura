@@ -497,13 +497,13 @@ services:
 
   # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ aura/pim-sidecar):
   # unified mail+calendar+contacts over MCP-over-HTTP (/) + a token-gated admin REST API
-  # (/admin) the cockpit drives for per-deployment OAuth connect. Not vendored: built from the
-  # fork repo and tagged aura-pim-mcp:local for dev; appliances set AURA_PIM_MCP_IMAGE to the
-  # published ghcr image (+ AURA_PIM_MCP_PULL_POLICY=missing). Aura's catalog points at the
-  # loopback publish; Aura boot never depends on this service being healthy.
+  # (/admin) the cockpit drives for per-deployment OAuth connect. Not vendored: the image is
+  # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow. Pin via
+  # AURA_PIM_MCP_IMAGE (e.g. the immutable :<sha> tag) for reproducible appliance builds.
+  # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-aura-pim-mcp:local}
-    pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-never}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:sidecar}
+    pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
     environment:
