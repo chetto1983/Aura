@@ -83,7 +83,10 @@ export function LoginPage() {
               name="passphrase"
               type="password"
               autoComplete="current-password"
-              aria-invalid={error !== null}
+              // Omit aria-invalid on a pristine/valid field rather than emitting
+              // aria-invalid="false": `cond || undefined` makes React drop the attribute.
+              // Valid aria-invalid tokens are only true|false|grammar|spelling (axe aria-valid-attr-value).
+              aria-invalid={error !== null || undefined}
               aria-describedby="passphrase-hint"
               className="min-h-[var(--row-h)] rounded-[var(--radius-md)] border border-border bg-surface-2 px-3 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />

@@ -28,6 +28,8 @@ describe('LoginPage', () => {
     expect(field).toBeTruthy();
     expect(field.getAttribute('type')).toBe('password');
     expect(field.getAttribute('autocomplete')).toBe('current-password');
+    // A pristine field must NOT emit aria-invalid (omit-when-valid, not aria-invalid="false").
+    expect(field.getAttribute('aria-invalid')).toBe(null);
     // The CTA keeps the name "Sign in" (frontend-design: an action keeps its name).
     expect(screen.getByRole('button', { name: LOGIN_COPY.cta })).toBeTruthy();
   });
