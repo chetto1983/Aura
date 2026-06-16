@@ -9,9 +9,11 @@
 /bin/
 /dist/
 web/node_modules/*
-# web/dist/ is the committed //go:embed source (D-05) — keep it tracked even if a
-# broader dist/ ignore is ever added (defensive negation, Pitfall 8).
-!web/dist/
+# internal/webui/dist/ is the committed //go:embed source (D-05) — Go embed is
+# package-relative (no ../web/dist), so the build output is co-located with
+# embed.go. Keep it tracked even if a broader dist/ ignore is ever added
+# (defensive negation, Pitfall 8).
+!internal/webui/dist/
 
 # IDE + editor
 .idea/

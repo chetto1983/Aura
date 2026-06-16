@@ -9,10 +9,12 @@
 *.cypher text eol=lf
 Makefile text eol=lf
 
-# Frontend: pin LF for every web/ source + the committed dist bytes so the
-# cross-host (WSL/Windows/CI) //go:embed freshness gate stays byte-stable
-# (a CRLF round-trip would forge a stale-dist diff).
-web/**  text eol=lf
+# Frontend: pin LF for every web/ source and the committed embed dist bytes
+# (internal/webui/dist, the //go:embed source) so the cross-host
+# (WSL/Windows/CI) freshness gate stays byte-stable — a CRLF round-trip would
+# forge a stale-dist diff. text-only globs; *.png stays binary via the rule below.
+web/**                  text eol=lf
+internal/webui/dist/**  text eol=lf
 
 # Generated code — exclude from language stats and collapse in diffs/reviews.
 internal/db/sqlc/**     linguist-generated=true
