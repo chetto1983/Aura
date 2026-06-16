@@ -2,9 +2,15 @@ import { DEFAULT_DENSITY, isDensity, type Density } from './density';
 
 export const THEME_STORAGE_KEY = 'aura.theme';
 export const DENSITY_STORAGE_KEY = 'aura.density';
-export const DEFAULT_THEME = 'dark';
+export const THEMES = ['dark'] as const;
 
-export type Theme = 'dark';
+export type Theme = (typeof THEMES)[number];
+
+export const DEFAULT_THEME: Theme = 'dark';
+
+function isTheme(value: string | null): value is Theme {
+  return value !== null && (THEMES as readonly string[]).includes(value);
+}
 
 function read(key: string): string | null {
   try {
@@ -20,7 +26,8 @@ export function getDensity(): Density {
 }
 
 export function getTheme(): Theme {
-  return DEFAULT_THEME;
+  const stored = read(THEME_STORAGE_KEY);
+  return isTheme(stored) ? stored : DEFAULT_THEME;
 }
 
 export function applyTheme(): void {
