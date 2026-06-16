@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: completed
-stopped_at: Phase 23 context gathered
-last_updated: "2026-06-16T09:53:01.910Z"
-last_activity: 2026-06-16 -- Phase 23 planning complete
+status: executing
+stopped_at: Completed 23-01-PLAN.md (Wave-0 frontend foundation)
+last_updated: "2026-06-16T10:24:20Z"
+last_activity: 2026-06-16 -- Completed Phase 23 Plan 01 (web toolchain + gate configs + internal/webui embed host + RED stubs)
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 13
+  total_plans: 8
+  completed_plans: 6
+  percent: 15
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 22 — bug-fix
+**Current focus:** Phase 23 — frontend-infrastructure-industrial-foundation
 
 ## Current Position
 
-Phase: 22 (bug-fix) — AUTOMATED-GREEN (operator live sign-off pending)
-Plan: 5 of 5 (all plans executed)
-Status: 22-05 complete — Phase 22 awaits operator Part-B sign-off (coverage / WSL quality / live stack)
-Last activity: 2026-06-16 -- Phase 23 planning complete
+Phase: 23 (frontend-infrastructure-industrial-foundation) — EXECUTING
+Plan: 2 of 3 (23-01 complete)
+Status: Executing Phase 23 — Wave-0 foundation landed; next is 23-02 (scaffold)
+Last activity: 2026-06-16 -- Completed Phase 23 Plan 01
 
 ### Next -- Execute Phase 22
 
@@ -158,8 +158,13 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 22 P22-02 | 18min | 2 tasks | 21 files |
 | Phase 22 P22-04 | ~95min | 4 tasks | 32 files |
 | Phase 22 P22-05 | ~15min | 4 tasks | 12 files |
+| Phase 23 P23-01 | 21min | 3 tasks (1 checkpoint + 2 auto) | 18 files |
 
 ## Accumulated Context
+
+### Phase 23 Execution
+
+- 23-01 closed (2026-06-16): Wave-0 frontend foundation — configs + RED tests first, no scaffold (that is 23-02), no serve/CI/Docker (23-03). Created `web/` single npm package, installed the FND-01-vetted React 19 / Vite 8 / TS 6 / Tailwind 4 toolchain (566 pkgs) from a committed, cross-platform-complete `package-lock.json` (Linux native-binding optional-deps present: `@rollup/rollup-linux-x64-gnu`, `@rolldown/binding-linux-x64-gnu`, `@tailwindcss/oxide-linux-x64-gnu`, `lightningcss-linux-x64-gnu` — generated on Windows Node v22; first Linux `npm ci` in 23-03 is the true cross-platform proof). Gate configs run GREEN: `eslint.config.js` flat config (tseslint strict+stylistic typeChecked → react-hooks recommended-latest → jsx-a11y → react-refresh, `eslint-config-prettier` LAST, `--max-warnings=0`), strict `tsconfig` (noUncheckedIndexedAccess + exactOptionalPropertyTypes + verbatimModuleSyntax) split into root + `tsconfig.node.json` (composite, node types) project refs, prettier, vitest (jsdom), playwright (Chromium-only, boots `../aura serve --only=cli` loopback, `/healthz` gate, explicit `env` block). `internal/webui` leaf package: `//go:embed all:dist` + `Sub()` + `Handler()` over `http.FileServerFS`, stdlib httptest (no testify) green (200 text/html + 404); `agui_boundary_check.sh` + `check-file-size.sh` green; imports only stdlib (never agent/agui). The two frontend stubs land RED by design (`AppShell.test.tsx` can't resolve `../AppShell`; `shell.spec.ts` asserts theme-before-paint + brand + no-marketing-hero vs the not-yet-served shell), excluded from the strict lint/typecheck gate so the gate stays green while tests stay RED at the runner. **Key deviation:** Go `//go:embed` is package-relative (no `../web/dist`), so the committed embed source is co-located at `internal/webui/dist/index.html` (NOT `web/dist`); `.gitignore`/`.gitattributes` track + LF-pin it. **23-02 must set Vite `outDir` to `../internal/webui/dist`** and remove the two Wave-0 lint/typecheck excludes once `AppShell.tsx` + the served shell exist. Other deviations (Rule 3): npm `overrides` to relax jsx-a11y's stale eslint≤9 peer to eslint 10; `@types/react@19.2.17`/`@types/react-dom@19.2.3` (DT-real, `^19.2.7` of react-dom types doesn't exist) + `@types/node`; import-x resolution rules off (tsc owns resolution), import-order kept. Commits `6a11dad6` (configs+lockfile), `89e5cbb6` (embed+stubs); summary `.planning/phases/23-frontend-infrastructure-industrial-foundation/23-01-SUMMARY.md`.
 
 ### Phase 22 Execution
 

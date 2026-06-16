@@ -29,9 +29,9 @@ Remediation of the 2026-06-15 `internal/agent` production-readiness audit (`docs
 
 Industrial frontend foundation established and documented BEFORE cockpit feature coding (operator directive 2026-06-15). Research-first: a deep industrial-infra pass locks the toolchain/theme/build choices, then the foundation is scaffolded.
 
-- [ ] **FND-01**: Deep industrial-infra research pass produces a documented, locked foundation decision record (linter ruleset, formatter, design-token architecture, package/repo layout, build + release pipeline, frontend test harness) — `RESEARCH.md` / `docs/` — before feature code begins
-- [ ] **FND-02**: Vite 8 + React 19 + TypeScript package scaffold with a `//go:embed all:dist` pipeline producing a binary-embeddable `dist/` consumed by `aura serve` (a branded placeholder shell renders from the single binary)
-- [ ] **FND-03**: Frontend linter + formatter + type-check (ESLint/Biome + Prettier + `tsc --noEmit`) wired into CI as a blocking, zero-warning gate — parity with the Go `golangci-lint` discipline
+- [x] **FND-01**: Deep industrial-infra research pass produces a documented, locked foundation decision record (linter ruleset, formatter, design-token architecture, package/repo layout, build + release pipeline, frontend test harness) — `RESEARCH.md` / `docs/` — before feature code begins
+- [x] **FND-02**: Vite 8 + React 19 + TypeScript package scaffold with a `//go:embed all:dist` pipeline producing a binary-embeddable `dist/` consumed by `aura serve` (a branded placeholder shell renders from the single binary)
+- [x] **FND-03**: Frontend linter + formatter + type-check (ESLint/Biome + Prettier + `tsc --noEmit`) wired into CI as a blocking, zero-warning gate — parity with the Go `golangci-lint` discipline
 - [ ] **FND-04**: Design-token theme system — `tokens.json` → Tailwind 4 `@theme` mapping the dark operator-cockpit palette (elysia-informed board) + density modes, applied before app boot (no flash)
 - [ ] **FND-05**: Brand integration — `public/Logo.png` in the app-shell header + favicon + PWA/theme-color metadata, per the ux-spec Copy Contract (no marketing hero text)
 - [ ] **FND-06**: Frontend test harness (Vitest + component/E2E runner) + the Node 24 multi-stage Docker build stage producing the embedded asset with no Node in the runtime image
@@ -154,9 +154,9 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | HARDEN-10 | Phase 22 | Complete |
 | HARDEN-11 | Phase 22 | Complete |
 | HARDEN-12 | Phase 22 | Complete |
-| FND-01 | Phase 23 | Pending |
-| FND-02 | Phase 23 | Pending |
-| FND-03 | Phase 23 | Pending |
+| FND-01 | Phase 23 | Complete |
+| FND-02 | Phase 23 | Complete |
+| FND-03 | Phase 23 | Complete |
 | FND-04 | Phase 23 | Pending |
 | FND-05 | Phase 23 | Pending |
 | FND-06 | Phase 23 | Pending |
@@ -194,11 +194,13 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | SKW-03 | Phase 29 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 50 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD + 3 MCPW + 3 SKW)
 - Mapped to phases: 50 (one-to-one, Phases 22–29)
 - Unmapped: 0 ✓
 
 **Phase distribution:**
+
 - Phase 22 (Agent Perimeter Hardening): HARDEN-01..12 (12)
 - Phase 23 (Frontend Infrastructure & Industrial Foundation): FND-01..06 (6)
 - Phase 24 (Web Foundation — Serve + Auth + Health): WEB-01..04 (4)
