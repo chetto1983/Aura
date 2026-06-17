@@ -102,6 +102,41 @@ export const resources = {
           },
         },
       },
+      approval: {
+        badge: {
+          aria_one: '{{count}} approval waiting',
+          aria_other: '{{count}} approvals waiting',
+          cleared: 'No approvals waiting.',
+        },
+        list: {
+          label: 'Pending approvals',
+          open: 'Open',
+          empty: 'Nothing waiting on you.',
+          untitled: 'Untitled',
+        },
+        kind: {
+          clarification: 'Clarification',
+          choice: 'Choice',
+          approval: 'Approval',
+        },
+        card: {
+          freeText: 'Your answer',
+          freeTextPlaceholder: 'Type your answer',
+          answer: 'Answer',
+          decline: 'Decline',
+          cancel: 'Cancel run',
+          declined: 'The agent will continue, informed you declined.',
+          answered: 'Answered — run resumed.',
+          cancelled: 'Run cancelled.',
+          confirmCancel: 'Stop this run?',
+          confirmCancelYes: 'Stop run',
+          confirmCancelNo: 'Keep running',
+          error: "Couldn't resume this run. It may have already been answered or cancelled.",
+        },
+        terminal: {
+          expired: 'Expired — auto-resolved.',
+        },
+      },
       footer: {
         tokens: 'Tokens',
         cache: 'Cache',
@@ -261,6 +296,41 @@ export const resources = {
             heading: 'Nessun risultato',
             body: 'Nessuna conversazione contiene "{{query}}". Prova un altro termine.',
           },
+        },
+      },
+      approval: {
+        badge: {
+          aria_one: '{{count}} approvazione in attesa',
+          aria_other: '{{count}} approvazioni in attesa',
+          cleared: 'Nessuna approvazione in attesa.',
+        },
+        list: {
+          label: 'Approvazioni in attesa',
+          open: 'Apri',
+          empty: 'Niente che richieda la tua attenzione.',
+          untitled: 'Senza titolo',
+        },
+        kind: {
+          clarification: 'Chiarimento',
+          choice: 'Scelta',
+          approval: 'Approvazione',
+        },
+        card: {
+          freeText: 'La tua risposta',
+          freeTextPlaceholder: 'Scrivi la tua risposta',
+          answer: 'Rispondi',
+          decline: 'Rifiuta',
+          cancel: 'Annulla esecuzione',
+          declined: "L'agente continuerà, informato del tuo rifiuto.",
+          answered: 'Risposto — esecuzione ripresa.',
+          cancelled: 'Esecuzione annullata.',
+          confirmCancel: 'Fermare questa esecuzione?',
+          confirmCancelYes: 'Ferma esecuzione',
+          confirmCancelNo: 'Continua',
+          error: "Impossibile riprendere questa esecuzione. Potrebbe essere già stata gestita o annullata.",
+        },
+        terminal: {
+          expired: 'Scaduta — risolta automaticamente.',
         },
       },
       footer: {
