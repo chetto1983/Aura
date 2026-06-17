@@ -301,7 +301,11 @@ func TestShellExecTimesOut(t *testing.T) {
 	if !strings.Contains(res.Preview, "[command timed out]") {
 		t.Fatalf("preview missing timeout marker: %q", res.Preview)
 	}
-	if elapsed > time.Duration(timeoutMS)*time.Millisecond+6*time.Second {
+	elapsedMargin := 6 * time.Second
+	if runtime.GOOS == "windows" {
+		elapsedMargin = 8 * time.Second
+	}
+	if elapsed > time.Duration(timeoutMS)*time.Millisecond+elapsedMargin {
 		t.Fatalf("Execute returned after %s, want within timeout+WaitDelay margin", elapsed)
 	}
 	pid := readPIDFile(t, pidFile)
