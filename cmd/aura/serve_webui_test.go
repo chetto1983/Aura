@@ -37,7 +37,7 @@ func TestServeWebui(t *testing.T) {
 	// exactly as the daemon serves when AURA_WEB_AUTH_SECRET is unset. The auth-active
 	// gating is covered by internal/agui auth_test.go (RequireAuth) and the wiring is
 	// pinned below by TestServeWebuiAuthWiring.
-	handler, err := newServeHandler(aguiHandler, agui.AuthDeps{})
+	handler, err := newServeHandler(aguiHandler, agui.AuthDeps{}, nil)
 	if err != nil {
 		t.Fatalf("newServeHandler: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		_, _ = io.WriteString(w, `{"agui":true}`)
 	})
 
-	handler, err := newServeHandler(aguiHandler, auth)
+	handler, err := newServeHandler(aguiHandler, auth, nil)
 	if err != nil {
 		t.Fatalf("newServeHandler: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		_, _ = io.WriteString(w, `{"agui":true}`)
 	})
 
-	handler, err := newServeHandler(aguiHandler, auth)
+	handler, err := newServeHandler(aguiHandler, auth, nil)
 	if err != nil {
 		t.Fatalf("newServeHandler: %v", err)
 	}

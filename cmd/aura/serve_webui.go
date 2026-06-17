@@ -34,8 +34,16 @@ import (
 	"net/http"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/webauth"
 	"github.com/chetto1983/aura/internal/webui"
 )
+
+// authBasePath is the route prefix the embedded Authula provider serves its
+// credential flows under (its BasePath, spec §4 / config.WithBasePath). Mounted as a
+// subtree on the parent mux and marked public in RequireAuth (login/TOTP happen before
+// a session exists). Kept here as the single source so the mount, the public-path
+// marking, and the fallback exclusion cannot drift.
+const authBasePath = "/auth"
 
 // aguiRoutePrefixes are the route patterns the AG-UI gateway owns. Registered on
 // the parent mux ahead of the "/" catch-all, Go 1.22 ServeMux precedence keeps them
@@ -68,7 +76,8 @@ func fallbackExcludedPrefixes() []string {
 		"/agent/",   // whole AG-UI agent namespace (mux registers the exact /agent/run)
 		"/threads/", // AG-UI threads subtree
 		integrationsRoutePrefix,
-		"/api/", // forward-compat carve-out; exclusion-only, never a mux registration
+		"/api/",            // forward-compat carve-out; exclusion-only, never a mux registration
+		authBasePath + "/", // Authula credential subtree — a backend route, never the SPA shell
 	}
 }
 
@@ -134,12 +143,21 @@ const approvalsResolveRoute = "POST /api/approvals/{token}/resolve"
 // gate fires AFTER RequireAuth has bound the principal. When no secret is configured
 // (loopback dev) RequireAuth is a no-op pass-through and the daemon serves exactly as
 // before (the Plan-01 boot guard confines an unconfigured secret to loopback).
-func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps) (http.Handler, error) {
+func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvider *webauth.Provider) (http.Handler, error) {
 	static, err := webui.Handler(fallbackExcludedPrefixes())
 	if err != nil {
 		return nil, fmt.Errorf("webui handler: %w", err)
 	}
 	mux := http.NewServeMux()
+	// The embedded Authula provider (Option A2) serves all credential flows under
+	// /auth/* (login, totp/verify, logout, csrf token issuance). Registered as a
+	// subtree ahead of "/", it wins Go 1.22 longest-pattern precedence over the embed
+	// catch-all; RequireAuth marks the prefix public (AuthBasePath below) so the routes
+	// are reachable before a session exists. Mounted only when the flag selected Authula.
+	if authulaProvider != nil {
+		mux.Handle(authBasePath+"/", authulaProvider.Handler())
+		auth.AuthBasePath = authBasePath
+	}
 	// The mutating route is interposed with the capability gate FIRST: "POST /agent/run"
 	// is a more specific pattern than the bare "/agent/run" the prefix loop registers, so
 	// Go 1.22 longest-pattern precedence routes the POST through RequireCapability →

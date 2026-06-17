@@ -69,12 +69,26 @@ type AuthDeps struct {
 	// LoginPath is the public login page route an unauthenticated browser GET is
 	// redirected to (default "/login").
 	LoginPath string
+	// AuthBasePath, when non-empty, is the credential-flow route prefix served by the
+	// embedded Authula provider (its BasePath, "/auth"). Every path under it is public
+	// (reachable WITHOUT a session) because login / TOTP-verify happen before a session
+	// exists; Authula's own per-route metadata + CSRF middleware gate those routes. Empty
+	// (the passphrase path) means no such prefix is public.
+	AuthBasePath string
 	// PublicAsset reports whether a path is a real embedded static asset the login page
 	// needs before a session exists (the shared SPA bundle/styles, the PWA service
 	// worker/manifest, icons). It is wired from webui.IsPublicAsset at the composition
 	// root (cmd/aura/serve_webui.go); a nil predicate means no static asset is public
 	// (the gate still serves the login route + GET /healthz).
 	PublicAsset func(path string) bool
+	// SessionValidator, when non-nil, REPLACES the HMAC cookie-validation core inside
+	// RequireAuth (the Option-A2 seam, AURA_WEB_AUTH_PROVIDER=authula): given a request
+	// it returns the bound Aura identity UUID + ok. When nil (the default,
+	// AURA_WEB_AUTH_PROVIDER=passphrase) RequireAuth keeps the stdlib HMAC verifySession
+	// path verbatim. Either way the result feeds the SAME existence re-check +
+	// withPrincipal + RequireCapability contract — only the issuer/validator of the
+	// cookie changes, never the principalKey{} downstream.
+	SessionValidator func(r *http.Request) (identityID string, ok bool)
 }
 
 // ttl resolves the effective absolute session lifetime, defaulting a zero/negative
@@ -150,6 +164,11 @@ func (d AuthDeps) isPublicPath(p string) bool {
 	if p == d.loginPath() {
 		return true
 	}
+	// The Authula credential-flow subtree (login / totp / logout) must be reachable
+	// before a session exists; Authula's own metadata + CSRF middleware gate it.
+	if d.AuthBasePath != "" && (p == d.AuthBasePath || strings.HasPrefix(p, d.AuthBasePath+"/")) {
+		return true
+	}
 	return d.PublicAsset != nil && d.PublicAsset(p)
 }
 
@@ -181,24 +200,38 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		c, err := r.Cookie(sessionCookieName)
-		if err != nil {
-			deps.redirectToLogin(w, r)
-			return
-		}
-		identityID, ok := verifySession(deps.SigningKey, c.Value, deps.ttl(), time.Now())
+		identityID, ok := deps.validateSession(r)
 		if !ok {
 			deps.redirectToLogin(w, r)
 			return
 		}
 		// The bound identity must still exist — a deleted identity invalidates the
-		// session even with a valid MAC (D-02 principal binding).
+		// session even with a valid MAC / Authula token (D-02 principal binding). This
+		// re-check is provider-agnostic: it runs for BOTH the passphrase and Authula
+		// paths so a deleted operator identity always 401s the next request (AC-11).
 		if _, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil {
 			deps.redirectToLogin(w, r)
 			return
 		}
 		next.ServeHTTP(w, withPrincipal(r, identityID))
 	})
+}
+
+// validateSession is the provider dispatch for the cookie-validation core (D-03,
+// Option-A2 seam). When SessionValidator is wired (AURA_WEB_AUTH_PROVIDER=authula) it
+// delegates to it (Authula session lookup → mapped Aura identity UUID); otherwise it
+// reads the __Host-aura_session cookie and runs the stdlib HMAC verifySession
+// (passphrase). Both return the bound Aura identity UUID + ok; RequireAuth applies the
+// identical existence re-check + withPrincipal afterwards.
+func (d AuthDeps) validateSession(r *http.Request) (identityID string, ok bool) {
+	if d.SessionValidator != nil {
+		return d.SessionValidator(r)
+	}
+	c, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return "", false
+	}
+	return verifySession(d.SigningKey, c.Value, d.ttl(), time.Now())
 }
 
 // redirectToLogin sends a browser navigation (Accept: text/html GET) to the login page

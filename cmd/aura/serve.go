@@ -37,6 +37,7 @@ import (
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/chetto1983/aura/internal/webauth"
 )
 
 // aguiShutdownTimeout bounds the HTTP-layer drain of in-flight SSE streams inside
@@ -71,6 +72,24 @@ type serveEnv struct {
 	// running daemon sidecars accumulate between reboots, so it re-runs the boot
 	// ScanOrphans on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. runServe Start/Stops it.
 	sweeper *conversations.Sweeper
+
+	// authulaProvider is the embedded Authula web-auth framework, non-nil only when
+	// AURA_WEB_AUTH_PROVIDER=authula (Option A2). close() releases its plugins + core
+	// systems (the expiry-cleanup workers) so shutdown is goleak-clean; nil otherwise.
+	authulaProvider *webauth.Provider
+}
+
+// close reverse-releases the daemon-owned resources the embedded chatEnv does not:
+// the Authula provider's cleanup workers (when wired), THEN the shared chatEnv close
+// (pool + MCP closers). It is the single teardown the deferred env.close() in runServe
+// drives.
+func (e *serveEnv) close() {
+	if e.authulaProvider != nil {
+		if err := e.authulaProvider.Close(); err != nil {
+			slog.Warn("aura serve: authula provider close", "err", err)
+		}
+	}
+	e.chatEnv.close()
 }
 
 // runServe is the `aura serve` entry point: boot, start the tick loop, block on a
@@ -274,9 +293,14 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// no secret is configured (loopback dev) RequireAuth is a no-op pass-through, so the
 	// daemon serves unauthenticated exactly as before; GuardWebBind (below) guarantees an
 	// unconfigured secret is only reachable on a loopback bind.
-	auth := buildAuthDeps(ctx, chat)
-	serveHandler, err := newServeHandler(aguiServer.Mux(), auth)
+	auth, authulaProvider, err := buildAuthDeps(ctx, chat)
 	if err != nil {
+		chat.close()
+		return nil, fmt.Errorf("build auth deps: %w", err)
+	}
+	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider)
+	if err != nil {
+		_ = authulaProvider.Close()
 		chat.close()
 		return nil, fmt.Errorf("build serve handler: %w", err)
 	}
@@ -306,13 +330,14 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
 	// cron.ChannelDeliverer; runServe StartAll/StopAll them (Phase 13, UX-02/03).
 	return &serveEnv{
-		chatEnv:   chat,
-		store:     store,
-		scheduler: scheduler,
-		httpSrv:   httpSrv,
-		channels:  reg,
-		setupSrv:  setupSrv,
-		sweeper:   sweeper,
+		chatEnv:         chat,
+		store:           store,
+		scheduler:       scheduler,
+		httpSrv:         httpSrv,
+		channels:        reg,
+		setupSrv:        setupSrv,
+		sweeper:         sweeper,
+		authulaProvider: authulaProvider,
 	}, nil
 }
 

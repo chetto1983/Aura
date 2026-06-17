@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -118,6 +117,17 @@ type Config struct {
 	// bind boots with both unset (dev parity, exactly as before).
 	WebAuthSecret string // AURA_WEB_AUTH_SECRET — operator login passphrase + HMAC cookie-key source; empty default, NOT boot-fatal (GuardWebBind decides)
 	WebTrustProxy bool   // AURA_WEB_TRUST_PROXY — operator vouches a reverse proxy terminates auth (D-05)
+
+	// Authula web-auth provider knobs (docs/cockpit-overhaul/05-authula-auth-SPEC.md).
+	// WebAuthProvider is the migration feature flag: "passphrase" (default — the existing
+	// stdlib HMAC login is untouched) or "authula" (the embedded Authula framework
+	// validates the session cookie). The flag is read once at boot; flipping it back to
+	// passphrase is the M2 rollback safety net (env + one restart). The other three are
+	// inert while the flag is passphrase.
+	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER ∈ {passphrase, authula} (default passphrase)
+	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
+	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
+	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — Aura identity name the Authula operator user binds to (default "local")
 
 	// ServeShutdownGraceSec bounds the in-flight turn drain on a SIGTERM/SIGINT
 	// (audit O-06 / AP-17): on the signal the daemon stops accepting new work, then
@@ -352,6 +362,12 @@ func loadBase() *Config {
 		WebAuthSecret: os.Getenv("AURA_WEB_AUTH_SECRET"),
 		WebTrustProxy: envBoolDefault("AURA_WEB_TRUST_PROXY", false),
 
+		// Authula provider (default passphrase = byte-identical legacy behavior).
+		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "passphrase"),
+		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
+		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
+		AuthulaOperatorIdentity: envDefault("AURA_AUTHULA_OPERATOR_IDENTITY", "local"),
+
 		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
 
 		// Phase 13 channels + setup + multimodal. Setup bind defaults to :9081 —
@@ -479,66 +495,6 @@ func validateMCPServers(in map[string]mcp.ServerConfig) (map[string]mcp.ServerCo
 		out[name] = cfg
 	}
 	return out, nil
-}
-
-// envDefault returns the value of `key` from the environment, falling back to
-// `fallback` when the variable is unset or empty.
-func envDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-// envIntDefault returns the integer value of `key`, falling back to `fallback`
-// when the variable is unset, empty, or fails to parse as an int. Parsing
-// failures are silently absorbed — the fallback is preferable to a fatal boot
-// error on a misformatted ad-hoc env tweak.
-func envIntDefault(key string, fallback int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
-// envBoolDefault returns the boolean value of `key`, falling back to `fallback`
-// when the variable is unset, empty, or fails to parse. Like envIntDefault, a
-// malformed value is silently absorbed to the fallback rather than booting fatal
-// — a typo in an opt-in toggle should not block startup.
-func envBoolDefault(key string, fallback bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		return fallback
-	}
-	return b
-}
-
-// envSliceDefault returns the comma-separated value of `key` split into a
-// trimmed, empty-dropped slice, falling back to `fallback` when the variable is
-// unset or empty. A set-but-all-empty value (e.g. ",,") yields an empty slice —
-// an operator can deliberately clear the blocklist that way.
-func envSliceDefault(key string, fallback []string) []string {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	parts := strings.Split(v, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // defaultSkillInjectionBlocklist is the prd.md §Slice 7 builtin prompt-injection
