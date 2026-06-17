@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../AppShell';
 import i18n from '../i18n/i18n';
 
@@ -75,5 +75,204 @@ describe('AppShell', () => {
     for (const pattern of MARKETING_HERO_BLOCKLIST) {
       expect(text).not.toMatch(pattern);
     }
+  });
+
+  it('mounts the runtime footer cluster (Tokens · Cache · Cost · Context)', () => {
+    renderShell();
+    expect(screen.getByText('Tokens')).toBeTruthy();
+    expect(screen.getByText('Cache')).toBeTruthy();
+    expect(screen.getByText('Cost')).toBeTruthy();
+    // The Context label appears in both the footer caption and the gauge label.
+    expect(screen.getAllByText('Context').length).toBeGreaterThan(0);
+  });
+});
+
+// A richer fetch double: a populated list + a single-conversation aggregate +
+// empty rot-events, so selecting a row exercises the activeThreadId → chat lane +
+// footer wiring (the 25-03 stub resolution).
+function shellWithConversations() {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes('/rot-events')) {
+      return Promise.resolve(new Response('[]', { status: 200 }));
+    }
+    if (/\/api\/conversations\/[^/?]+$/.test(url)) {
+      // GET /api/conversations/{id} aggregate seed.
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            ID: 'c-1',
+            Title: 'Pinned run',
+            TitleSet: true,
+            IdentityID: 'op',
+            Status: 'active',
+            Model: 'm',
+            TotalInputTokens: 10,
+            TotalOutputTokens: 5,
+            TotalCachedTokens: 2,
+            TotalCostUSD: 0.02,
+            CreatedAt: '2026-06-17T00:00:00Z',
+          }),
+          { status: 200 },
+        ),
+      );
+    }
+    if (url.includes('/api/conversations')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([
+            {
+              ID: 'c-1',
+              Title: 'Pinned run',
+              TitleSet: true,
+              IdentityID: 'op',
+              Status: 'active',
+              Model: 'm',
+              TotalInputTokens: 0,
+              TotalOutputTokens: 0,
+              TotalCachedTokens: 0,
+              TotalCostUSD: 0,
+              CreatedAt: '2026-06-17T00:00:00Z',
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+    }
+    return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
+  });
+}
+
+describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function renderAt(initialPath: string) {
+    vi.stubGlobal('fetch', shellWithConversations());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Mount through the real routes so useParams resolves the /c/:id deep link.
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Routes>
+            <Route path="/" element={<AppShell />} />
+            <Route path="/c/:id" element={<AppShell />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('selecting a conversation marks it active (binds the chat lane threadId)', async () => {
+    renderAt('/');
+    const row = await screen.findByRole('button', { name: 'Pinned run' });
+    expect(row.getAttribute('aria-current')).toBeNull();
+    fireEvent.click(row);
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Pinned run' }).getAttribute('aria-current'),
+      ).toBe('true');
+    });
+  });
+
+  it('seeds the active thread from a /c/:id deep link', async () => {
+    renderAt('/c/c-1');
+    const row = await screen.findByRole('button', { name: 'Pinned run' });
+    // The route param seeded the active selection (aria-current) without a click.
+    await waitFor(() => {
+      expect(row.getAttribute('aria-current')).toBe('true');
+    });
+  });
+
+  it('opening a search hit navigates + binds the active thread (route change after mount)', async () => {
+    // The search route returns one hit for c-1; clicking it navigates to /c/c-1,
+    // which the route-change branch folds into the active selection.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('/api/conversations/search')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                { ConversationID: 'c-1', Seq: 2, Content: 'meteo report', Similarity: 0.9 },
+              ]),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes('/rot-events')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        if (/\/api\/conversations\/[^/?]+$/.test(url)) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ID: 'c-1',
+                Title: 'Pinned run',
+                TitleSet: true,
+                IdentityID: 'op',
+                Status: 'active',
+                Model: 'm',
+                TotalInputTokens: 0,
+                TotalOutputTokens: 0,
+                TotalCachedTokens: 0,
+                TotalCostUSD: 0,
+                CreatedAt: '2026-06-17T00:00:00Z',
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  ID: 'c-1',
+                  Title: 'Pinned run',
+                  TitleSet: true,
+                  IdentityID: 'op',
+                  Status: 'active',
+                  Model: 'm',
+                  TotalInputTokens: 0,
+                  TotalOutputTokens: 0,
+                  TotalCachedTokens: 0,
+                  TotalCostUSD: 0,
+                  CreatedAt: '2026-06-17T00:00:00Z',
+                },
+              ]),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
+        );
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<AppShell />} />
+            <Route path="/c/:id" element={<AppShell />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByPlaceholderText('Search conversations'), {
+      target: { value: 'meteo' },
+    });
+    const hit = await screen.findByRole('button', { name: /Pinned run/ });
+    fireEvent.click(hit);
+    await waitFor(() => {
+      // After navigation the sidebar row for c-1 is marked active.
+      const rows = screen.getAllByRole('button', { name: 'Pinned run' });
+      expect(rows.some((r) => r.getAttribute('aria-current') === 'true')).toBe(true);
+    });
   });
 });

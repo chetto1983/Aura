@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { ExternalStoreChat } from './chat/ExternalStoreChat';
+import { RuntimeFooter } from './chat/RuntimeFooter';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
 import { SearchPanel } from './conversations/SearchPanel';
 import { RuntimeHealthPanel } from './health/RuntimeHealthPanel';
 import { LanguageSwitcher } from './i18n/LanguageSwitcher';
+import type { TurnUsage } from './chat/sseAdapter';
 
 const MODES = ['chat', 'tree', 'graph', 'displays', 'settings'] as const;
 
@@ -15,19 +17,28 @@ export function AppShell() {
   // (CHAT-02 — 25-04 resolves the 25-03 stub). The sidebar selects it; a /c/:id
   // deep link (search → open at match) seeds it from the route param.
   const { id: routeId } = useParams<{ id: string }>();
-  const [selectedId, setSelectedId] = useState('');
-  // Track the last route param so a navigation (deep link) wins over the prior
-  // in-component selection WITHOUT a state-syncing effect (React "adjust state
-  // during render" — the only re-render is this same pass, no cascade).
+  // Seed the initial selection from the route param (a /c/:id deep link) so the
+  // first paint already binds the active thread.
+  const [selectedId, setSelectedId] = useState(routeId ?? '');
+  // Track the last route param so a LATER navigation (deep link) wins over the
+  // prior in-component selection WITHOUT a state-syncing effect (React "adjust
+  // state during render" — the only re-render is this same pass, no cascade).
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
+  // The latest per-turn usage off the chat lane's onUsage seam (25-03) feeds the
+  // runtime footer (D-10/D-12).
+  const [usage, setUsage] = useState<TurnUsage | undefined>(undefined);
   if ((routeId ?? '') !== lastRouteId) {
     setLastRouteId(routeId ?? '');
     setSelectedId(routeId ?? '');
+    // A thread switch resets the per-turn footer so it reflects the open thread,
+    // not the prior turn's usage.
+    setUsage(undefined);
   }
   const activeThreadId = selectedId;
 
   function selectThread(id: string) {
     setSelectedId(id);
+    setUsage(undefined);
   }
 
   return (
@@ -66,11 +77,11 @@ export function AppShell() {
           </div>
         </aside>
 
-        {/* The Core-Value chat lane (CHAT-01). The sidebar binds activeThreadId
-            (25-04); the runtime footer (Task 2) consumes onUsage; the branch
-            picker (25-07) mounts onto the same lane. */}
+        {/* The Core-Value chat lane (CHAT-01). The sidebar binds activeThreadId;
+            onUsage feeds the runtime footer (D-10/D-12); the branch picker (25-07)
+            mounts onto the same lane. */}
         <section aria-label={t('shell.chatRegion')} className="min-h-0 bg-bg">
-          <ExternalStoreChat threadId={activeThreadId} />
+          <ExternalStoreChat threadId={activeThreadId} onUsage={setUsage} />
         </section>
 
         <aside
@@ -80,6 +91,9 @@ export function AppShell() {
           <RuntimeHealthPanel />
         </aside>
       </main>
+
+      {/* Runtime instrument footer (CHAT-04 / D-10/D-11/D-12) spanning the bottom. */}
+      <RuntimeFooter usage={usage} conversationId={activeThreadId} />
     </div>
   );
 }

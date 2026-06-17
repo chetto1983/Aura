@@ -86,8 +86,23 @@ async function mutate(url: string, method: 'POST' | 'DELETE', body?: unknown): P
 }
 
 export const CONVERSATIONS_KEY = 'conversations';
+export const CONVERSATION_KEY = 'conversation';
 export const CONVERSATION_SEARCH_KEY = 'conversation-search';
 export const CONVERSATION_ROT_EVENTS_KEY = 'conversation-rot-events';
+
+/**
+ * GET /api/conversations/{id} — the single row incl. session-cumulative token/cost
+ * aggregates (D-10 footer reload seed). Disabled (no fetch) for an empty id.
+ */
+export function useConversation(conversationId: string) {
+  return useQuery({
+    queryKey: [CONVERSATION_KEY, conversationId],
+    queryFn: () =>
+      getJSON<Conversation>(`/api/conversations/${encodeURIComponent(conversationId)}`),
+    enabled: conversationId.length > 0,
+    retry: false,
+  });
+}
 
 /** GET /api/conversations(?archived=true) — recent-first list (the store orders it). */
 export function useConversations(includeArchived: boolean) {
