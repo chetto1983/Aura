@@ -63,6 +63,18 @@ type threadTryLocker interface {
 	TryLockThread(threadID string) (func(), bool)
 }
 
+// ApprovalStore is the narrow cross-thread HITL-read surface the approval center
+// consumes (APRV-01 / D-04; *askuser.Store satisfies it implicitly). ListPendingAll
+// aggregates every still-pending pause across ALL conversations in total order
+// (priority DESC, created_at ASC, token ASC). Declared consumer-side so the server
+// depends only on the one method the approvals read calls — the three-action resolve
+// goes through the Runner (SubmitAnswers), not this store. A Server with no
+// ApprovalStore wired answers the approvals routes 503 (the read is optional wiring;
+// the daemon composition root sets it via SetApprovalStore).
+type ApprovalStore interface {
+	ListPendingAll(ctx context.Context, limit int) ([]askuser.Pending, error)
+}
+
 // Server is the minimal AG-UI HTTP gateway (Slice 8b): POST /agent/run streams a
 // translated agent turn as SSE, GET /threads/{id}/messages returns the persisted
 // history as a MESSAGES_SNAPSHOT JSON body. It is the thinnest glue over EXISTING
@@ -70,18 +82,26 @@ type threadTryLocker interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run   Runner
-	conv  ConversationStore
-	idgen IDGenerator
-	cfg   ServerConfig
+	run       Runner
+	conv      ConversationStore
+	approvals ApprovalStore
+	idgen     IDGenerator
+	cfg       ServerConfig
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
 // IDGenerator is the default uuid-v4 minter; tests inject a deterministic one via
-// the exported field for stable frame ids.
+// the exported field for stable frame ids. The cross-thread approval read store is
+// wired separately via SetApprovalStore (optional, kept off the constructor so the
+// existing NewServer callers/tests stay unchanged — D-A2-02 narrow seams).
 func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 	return &Server{run: run, conv: conv, idgen: NewIDGenerator(), cfg: cfg}
 }
+
+// SetApprovalStore wires the cross-thread HITL read store (APRV-01). It is set by the
+// daemon composition root after NewServer; until set, the approvals read route answers
+// 503 (the resolve route only needs the Runner and works regardless).
+func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
 // — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
@@ -99,6 +119,10 @@ func (s *Server) Mux() http.Handler {
 	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
 	// colocated with their handlers so the agui Server.Mux answers them.
 	s.registerConversationRoutes(mux)
+	// APRV-01/02/03 approval-center routes (Phase 25 plan 25-02). Colocated with their
+	// handlers; the parent-mux mount behind RequireAuth (+ RequireCapability on the
+	// mutating resolve) lives in cmd/aura/serve_webui.go.
+	s.registerApprovalRoutes(mux)
 	return s.withCORS(mux)
 }
 
