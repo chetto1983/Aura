@@ -78,6 +78,18 @@ func fallbackExcludedPrefixes() []string {
 // grants arrive in Phase 28. It invents no governance write routes — those land later.
 const agentRunCapability = "agent.run"
 
+// conversationsRoutePrefix is the CHAT-02 conversation-management subtree (Phase 25),
+// registered on the parent mux as a SPECIFIC subtree delegating to the AG-UI handler.
+// It MUST stay a sibling of "/api/integrations/" under the "/api/" exclusion carve-out
+// — never a bare "/api/", which would shadow the integrations proxy (T-24-07 / T-25-05).
+const conversationsRoutePrefix = "/api/conversations/"
+
+// conversationsListRoute is the exact (no trailing slash) list endpoint. Go 1.22
+// ServeMux 301-redirects "/api/conversations" into the "/api/conversations/" subtree
+// unless the exact path is also registered, so registering it explicitly keeps the
+// list GET reachable without a redirect hop.
+const conversationsListRoute = "/api/conversations"
+
 // newServeHandler builds the parent http.Handler for the daemon's single loopback
 // server: the AG-UI route prefixes delegate to aguiHandler (the agui Server.Mux), the
 // integrations proxy subtree mounts ahead of "/", and the catch-all "/" serves the
@@ -115,6 +127,19 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps) (http.Handler
 	// cookie). They mount on the parent mux so they sit beside the AG-UI routes.
 	mux.HandleFunc("POST /login", auth.LoginHandler())
 	mux.HandleFunc("POST /logout", auth.LogoutHandler())
+	// The CHAT-02 conversation-management subtree (Phase 25) delegates to the AG-UI
+	// handler, which carries the /api/conversations/ routes on its own Server.Mux. It
+	// is registered as the SPECIFIC subtree — NEVER a bare "/api/", which would shadow
+	// "/api/integrations/" below (T-24-07 / T-25-05). Go 1.22 longest-pattern precedence
+	// keeps both "/api/conversations/" and "/api/integrations/" authoritative side by
+	// side over the "/" embed catch-all, and the "/api/" fallback exclusion already
+	// returns this as a backend route (no fallback change needed). RequireAuth wraps the
+	// whole mux below, so the new reads inherit the whole-origin gate for free.
+	// Both the trailing-slash subtree (the {id} routes + /search) AND the exact
+	// "/api/conversations" (the list GET, no trailing slash) are registered so the list
+	// endpoint is not 301-redirected into the subtree and lost.
+	mux.Handle(conversationsRoutePrefix, aguiHandler)
+	mux.Handle(conversationsListRoute, aguiHandler)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the

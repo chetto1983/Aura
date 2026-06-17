@@ -147,8 +147,31 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	// CHAT-02 (Phase 25): the new /api/conversations/ subtree reaches the AG-UI handler
+	// — both the exact list GET (no trailing slash) and a {id} subtree path — proving the
+	// specific mount (NOT a bare /api/) dispatches to aguiHandler over the "/" catch-all.
+	t.Run("GET /api/conversations* -> AG-UI handler (CHAT-02 mount)", func(t *testing.T) {
+		for _, route := range []string{"/api/conversations", "/api/conversations/abc"} {
+			aguiHits = nil
+			resp, err := http.Get(srv.URL + route)
+			if err != nil {
+				t.Fatalf("GET %s: %v", route, err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("%s did not route to the AG-UI handler: hits=%v body=%s", route, aguiHits, raw)
+			}
+			if strings.Contains(string(raw), indexMarker) {
+				t.Fatalf("%s leaked the SPA shell instead of reaching the AG-UI handler", route)
+			}
+		}
+	})
+
 	// Precedence unbroken: /api/integrations/ still reaches the integrations proxy
 	// (its own 404 body, NOT the SPA fallback and NOT the /api/ carve-out swallowing it).
+	// Asserted AFTER the /api/conversations/ mount above to prove the new subtree did
+	// NOT shadow the integrations proxy (T-25-05).
 	t.Run("GET /api/integrations/<unknown> -> integrations proxy (precedence)", func(t *testing.T) {
 		aguiHits = nil
 		resp, err := http.Get(srv.URL + "/api/integrations/does-not-exist")
@@ -259,6 +282,32 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 		if rec.Code != http.StatusOK || len(aguiHits) != 1 {
 			t.Fatalf("/healthz code=%d hits=%v, want 200 + AG-UI reached", rec.Code, aguiHits)
+		}
+	})
+
+	// CHAT-02 (Phase 25): /api/conversations inherits the whole-origin gate — a request
+	// with no cookie is 401'd before reaching the AG-UI handler (no second auth check on
+	// the new subtree; RequireAuth wrapping the whole mux is the sole gate).
+	t.Run("no cookie /api/conversations -> 401 (RequireAuth inherited)", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/conversations", nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("/api/conversations status = %d, want 401 (gate inherited)", rec.Code)
+		}
+		if len(aguiHits) != 0 {
+			t.Fatalf("unauthenticated /api/conversations leaked to the AG-UI handler: %v", aguiHits)
+		}
+	})
+
+	t.Run("valid cookie /api/conversations reaches the AG-UI handler", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
+		req.AddCookie(sessionCookie)
+		handler.ServeHTTP(rec, req)
+		if len(aguiHits) != 1 || aguiHits[0] != "/api/conversations" {
+			t.Fatalf("valid-session /api/conversations did not reach the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
 		}
 	})
 
