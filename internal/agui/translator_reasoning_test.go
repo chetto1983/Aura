@@ -1,6 +1,8 @@
 package agui
 
 import (
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,6 +168,39 @@ func TestTranslatorReasoningPassthroughWhenEnabled(t *testing.T) {
 	}
 	if got != "valuto le brocche da 12 e 7" {
 		t.Fatalf("reasoning delta = %q, want the real CoT text", got)
+	}
+}
+
+// TestHandleRunCockpitStreamsReasoning proves the D-01 call-site flip: the cockpit
+// SSE path (handleRun) now streams the REAL reasoning delta, not the redacted marker.
+// This asserts the flip at the handler (server.go), distinct from the translator-unit
+// TestTranslatorReasoningPassthroughWhenEnabled which proves Translate(…, true) in
+// isolation. A scripted reasoning turn flows through POST /agent/run and the SSE body
+// must carry the live CoT text, never the "[reasoning redacted]" marker.
+func TestHandleRunCockpitStreamsReasoning(t *testing.T) {
+	const tid = "11111111-1111-1111-1111-111111111111"
+	const cot = "valuto le brocche da 12 e 7"
+	run := &scriptedRunner{events: []*agent.Event{
+		{Author: "aura", LLMResponse: &agent.LLMResponse{Reasoning: cot}},
+		{Author: "aura", LLMResponse: &agent.LLMResponse{Content: "Otto litri.", FinishReason: "stop"}},
+	}}
+	srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{tid: true}})
+
+	resp := postRun(t, srv, runPayload(tid))
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read SSE body: %v", err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, "REASONING_MESSAGE_CONTENT") {
+		t.Fatalf("cockpit SSE missing the REASONING lifecycle: %s", body)
+	}
+	if strings.Contains(body, redactedReasoningDelta) {
+		t.Fatalf("cockpit SSE still redacted the reasoning delta (D-01 flip not wired at handleRun): %s", body)
+	}
+	if !strings.Contains(body, cot) {
+		t.Fatalf("cockpit SSE did not stream the real CoT text %q: %s", cot, body)
 	}
 }
 

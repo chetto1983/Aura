@@ -213,9 +213,17 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	// on the error responses above too, not only this 200 stream.
 
 	turn := s.run.Turn(ctx, in.ThreadID, userMsg)
-	// The HTTP/SSE gateway keeps reasoning redacted (conservative web default); live
-	// CoT surfacing is currently a Telegram-only opt-in (agui_subscriber.go).
-	s.streamSSE(ctx, w, Translate(in.ThreadID, runID, s.idgen, turn, false))
+	// D-01: the cockpit SSE stream surfaces live REASONING_* delta text (showReasoning
+	// =true). This is a deliberate operator override of the conservative redacted web
+	// default, justified by the whole-origin-private single-operator cockpit (Phase 24
+	// D-03): the ONLY viewer is the authenticated operator. This is the live cockpit
+	// STREAM, distinct from trace persistence — the reasoning trace still does NOT
+	// persist verbatim by default (HARDEN-05 is unchanged). The flip is cockpit-scoped:
+	// Telegram has its OWN agui.Translate(…, t.deps.ShowReasoning) call site (a per-
+	// channel config-driven flag, agui_subscriber.go) and the programmatic pump uses
+	// Subscribe/NewFanout (client.go) — neither flows through handleRun, so neither
+	// posture is affected by this true.
+	s.streamSSE(ctx, w, Translate(in.ThreadID, runID, s.idgen, turn, true))
 }
 
 // handleMessages resolves the thread (404) and returns the persisted history as a

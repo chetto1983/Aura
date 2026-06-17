@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -19,6 +20,58 @@ import (
 // it to the artifact consumer → sendDocument.
 func artifactAgentEvent(desc map[string]any) *agent.Event {
 	return &agent.Event{Actions: agent.Actions{ArtifactDelta: desc}}
+}
+
+// reasoningAgentEvent builds an *agent.Event carrying a reasoning delta — the shape
+// the live LlmAgent emits for chain-of-thought (LLMResponse.Reasoning). The
+// translator maps it to the AG-UI REASONING_* lifecycle, gated on the showReasoning
+// flag handleTurn threads from t.deps.ShowReasoning.
+func reasoningAgentEvent(text string) *agent.Event {
+	return &agent.Event{LLMResponse: &agent.LLMResponse{Reasoning: text}}
+}
+
+// TestHandleTurnReasoningPostureFollowsConfig proves the D-01 cockpit flip leaves the
+// Telegram posture config-driven (NOT a forced true): handleTurn threads
+// t.deps.ShowReasoning into BOTH agui.Translate and the status pane, so the real CoT
+// surfaces only when ShowReasoning is on and is redacted/absent when it is off. This
+// is the golden assertion the Phase-25 plan requires alongside the source check that
+// agui_subscriber.go passes the config value, never a blanket true.
+func TestHandleTurnReasoningPostureFollowsConfig(t *testing.T) {
+	const cot = "valuto le brocche da dodici e sette"
+	stream := []*agent.Event{
+		reasoningAgentEvent(cot),
+		textEvent("Otto litri."),
+	}
+
+	render := func(show bool) string {
+		bot := newFakeBot()
+		tg := NewChannel(Deps{
+			Turn:              syntheticTurn(stream),
+			Offline:           true,
+			ShowReasoning:     show,
+			StatusThrottleMS:  1,
+			ContentThrottleMS: 1,
+			ChatRateLimitMS:   1,
+		})
+		userMsg := "quanti litri"
+		tg.handleTurn(context.Background(), bot, 808, &userMsg, false)
+		var all strings.Builder
+		for _, c := range bot.recorded() {
+			all.WriteString(c.text)
+			all.WriteString("\n")
+		}
+		return all.String()
+	}
+
+	withReasoning := render(true)
+	if !strings.Contains(withReasoning, "valuto le brocche") {
+		t.Errorf("ShowReasoning=true did not surface the real CoT in the status pane:\n%s", withReasoning)
+	}
+
+	withoutReasoning := render(false)
+	if strings.Contains(withoutReasoning, "valuto le brocche") {
+		t.Errorf("ShowReasoning=false leaked the real CoT (posture is NOT a forced true):\n%s", withoutReasoning)
+	}
 }
 
 // TestHandleTurnSubscribesThreeBeforeRun proves handleTurn registers ALL THREE
