@@ -43,6 +43,40 @@ func (q *Queries) CountTurns(ctx context.Context, conversationID pgtype.UUID) (i
 	return turn_count, err
 }
 
+const getTurnPointers = `-- name: GetTurnPointers :one
+SELECT seq, branch_id, parent_seq, role
+FROM aura.conversation_turns
+WHERE conversation_id = $1 AND seq = $2
+`
+
+type GetTurnPointersParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	Seq            int32       `json:"seq"`
+}
+
+type GetTurnPointersRow struct {
+	Seq       int32       `json:"seq"`
+	BranchID  pgtype.UUID `json:"branch_id"`
+	ParentSeq pgtype.Int4 `json:"parent_seq"`
+	Role      string      `json:"role"`
+}
+
+// D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the
+// diverging turn's parent_seq (the new sibling chains off the SAME parent so it replaces
+// the diverging turn rather than appending after it). Returns pgx.ErrNoRows when the seq
+// is absent (mapped to a clean 404 at the boundary).
+func (q *Queries) GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error) {
+	row := q.db.QueryRow(ctx, getTurnPointers, arg.ConversationID, arg.Seq)
+	var i GetTurnPointersRow
+	err := row.Scan(
+		&i.Seq,
+		&i.BranchID,
+		&i.ParentSeq,
+		&i.Role,
+	)
+	return i, err
+}
+
 const insertConversationTurn = `-- name: InsertConversationTurn :exec
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
@@ -77,6 +111,50 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		arg.CachedTokens,
 	)
 	return err
+}
+
+const listBranchLeaves = `-- name: ListBranchLeaves :many
+SELECT leaf.seq, leaf.branch_id, leaf.parent_seq
+FROM aura.conversation_turns leaf
+WHERE leaf.conversation_id = $1
+  AND NOT EXISTS (
+      SELECT 1
+      FROM aura.conversation_turns child
+      WHERE child.conversation_id = leaf.conversation_id
+        AND child.parent_seq = leaf.seq
+  )
+ORDER BY leaf.branch_id ASC, leaf.seq ASC
+`
+
+type ListBranchLeavesRow struct {
+	Seq       int32       `json:"seq"`
+	BranchID  pgtype.UUID `json:"branch_id"`
+	ParentSeq pgtype.Int4 `json:"parent_seq"`
+}
+
+// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
+// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
+// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
+// leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
+// (all-zero) branch sorts first and the order is stable across calls.
+func (q *Queries) ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error) {
+	rows, err := q.db.Query(ctx, listBranchLeaves, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBranchLeavesRow{}
+	for rows.Next() {
+		var i ListBranchLeavesRow
+		if err := rows.Scan(&i.Seq, &i.BranchID, &i.ParentSeq); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTurnsByBranchPath = `-- name: ListTurnsByBranchPath :many

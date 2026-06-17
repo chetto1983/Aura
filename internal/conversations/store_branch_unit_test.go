@@ -206,6 +206,62 @@ func TestSetBranchPointers_FakeDBError(t *testing.T) {
 	}
 }
 
+// TestListBranches_FakeProjection projects the leaf rows onto []Branch (seq + branch +
+// parent), exercising the valid/invalid pgtype branches.
+func TestListBranches_FakeProjection(t *testing.T) {
+	t.Parallel()
+	_, conv := mustUUID(t)
+	bid := uuid.Must(uuid.NewV7())
+	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
+		// canonical leaf: all-zero branch, root parent (NULL).
+		{int32(3), pgtype.UUID{Bytes: CanonicalBranchID, Valid: true}, pgtype.Int4{}},
+		// forked sibling: fresh branch, parent seq 1.
+		{int32(4), pgtype.UUID{Bytes: bid, Valid: true}, pgtype.Int4{Int32: 1, Valid: true}},
+	}}}
+	s := fakeStore(t, fake)
+	branches, err := s.ListBranches(context.Background(), uuid.UUID(conv.Bytes).String())
+	if err != nil {
+		t.Fatalf("ListBranches: %v", err)
+	}
+	if len(branches) != 2 {
+		t.Fatalf("want 2 branches, got %d", len(branches))
+	}
+	if branches[0].LeafSeq != 3 || branches[0].BranchID != CanonicalBranchID || branches[0].ParentSeq != 0 {
+		t.Errorf("canonical branch projection wrong: %+v", branches[0])
+	}
+	if branches[1].LeafSeq != 4 || branches[1].BranchID != bid || branches[1].ParentSeq != 1 {
+		t.Errorf("forked branch projection wrong: %+v", branches[1])
+	}
+}
+
+// TestListBranches_FakeBadID rejects a malformed id before the query.
+func TestListBranches_FakeBadID(t *testing.T) {
+	t.Parallel()
+	s := fakeStore(t, &fakeDBTX{})
+	if _, err := s.ListBranches(context.Background(), "bad"); err == nil {
+		t.Fatal("ListBranches with bad id: want error, got nil")
+	}
+}
+
+// TestListBranches_FakeQueryError wraps a failing Query.
+func TestListBranches_FakeQueryError(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("leaves query failed")
+	s := fakeStore(t, &fakeDBTX{queryErr: boom})
+	if _, err := s.ListBranches(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
+		t.Errorf("ListBranches query error must propagate: %v", err)
+	}
+}
+
+// TestForkBranch_FakeBadID rejects a malformed id at the boundary (before any tx).
+func TestForkBranch_FakeBadID(t *testing.T) {
+	t.Parallel()
+	s := fakeStore(t, &fakeDBTX{})
+	if _, _, err := s.ForkBranch(context.Background(), "bad", 2, llm.RoleUser, "x"); err == nil {
+		t.Fatal("ForkBranch with bad id: want error, got nil")
+	}
+}
+
 // TestBranchPathRowAsSeqRow asserts the field-identical adapter copies all 11 columns.
 func TestBranchPathRowAsSeqRow(t *testing.T) {
 	t.Parallel()

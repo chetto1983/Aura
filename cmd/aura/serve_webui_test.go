@@ -168,6 +168,35 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	// D-09 / CHAT-05 (Phase 25 plan 25-07): the branch routes reach the AG-UI handler over
+	// the existing /api/conversations/ subtree — the read GET /branches AND the two
+	// mutating re-runs (POST /edit, POST /branches/{seq}/select). No bare /api/ is added;
+	// with no secret RequireCapability is a pass-through, so the mutating POSTs flow to the
+	// handler here (the gate-active path is TestServeWebuiAuthWiring).
+	t.Run("branch routes -> AG-UI handler (D-09 mount, no new bare /api/)", func(t *testing.T) {
+		const cid = "/api/conversations/22222222-2222-2222-2222-222222222222"
+		aguiHits = nil
+		resp, err := http.Get(srv.URL + cid + "/branches")
+		if err != nil {
+			t.Fatalf("GET branches: %v", err)
+		}
+		_ = resp.Body.Close()
+		if len(aguiHits) != 1 || aguiHits[0] != cid+"/branches" {
+			t.Fatalf("GET branches did not route to the AG-UI handler: hits=%v", aguiHits)
+		}
+		for _, route := range []string{cid + "/edit", cid + "/branches/3/select"} {
+			aguiHits = nil
+			presp, err := http.Post(srv.URL+route, "application/json", strings.NewReader(`{"diverge_seq":2}`))
+			if err != nil {
+				t.Fatalf("POST %s: %v", route, err)
+			}
+			_ = presp.Body.Close()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("POST %s did not route through to the AG-UI handler: hits=%v", route, aguiHits)
+			}
+		}
+	})
+
 	// APRV-01/02 (Phase 25): the approval-center routes reach the AG-UI handler — the
 	// exact read GET /api/approvals AND the POST /api/approvals/{token}/resolve — proving
 	// the specific mounts dispatch to aguiHandler over the "/" catch-all (NOT a bare

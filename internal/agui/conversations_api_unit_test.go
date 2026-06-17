@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/google/uuid"
 )
 
 // errConvStore is a ConversationStore double whose every method returns a configurable
@@ -47,6 +48,18 @@ func (e *errConvStore) Delete(context.Context, string) error { return e.err }
 func (e *errConvStore) ListContextRotEvents(context.Context, string) ([]conversations.RotEvent, error) {
 	return nil, e.err
 }
+
+// D-09 branch surface — the error fake returns its injected err so the handler
+// error-redaction paths (500 via sanitizeErr) are unit-coverable.
+func (e *errConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
+	return nil, e.err
+}
+
+func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
+	return 0, uuid.UUID{}, e.err
+}
+
+func (e *errConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, e.err }
 
 func convAPIServer(t *testing.T, store ConversationStore) *httptest.Server {
 	t.Helper()
@@ -101,6 +114,59 @@ func TestConversationsAPI_StoreError500(t *testing.T) {
 		if strings.Contains(body, "s3cr3t") {
 			t.Errorf("%s %s: error body leaked the DSN password (not sanitized): %s", c.method, c.path, body)
 		}
+	}
+}
+
+// TestBranchAPI_StoreError500AndRedaction proves the D-09 branch handlers map a generic
+// store failure to a 500 with a sanitized body (no DSN leak): GET /branches (ListBranches),
+// POST /edit (ForkBranch), and POST /branches/{seq}/select (rerunBranch's Get fails).
+func TestBranchAPI_StoreError500AndRedaction(t *testing.T) {
+	leak := errors.New("dial postgres://aura_app:s3cr3t@db:5432/aura failed")
+	srv := convAPIServer(t, &errConvStore{err: leak})
+
+	cases := []struct{ method, path, body string }{
+		{http.MethodGet, "/api/conversations/" + goodID + "/branches", ""},
+		{http.MethodPost, "/api/conversations/" + goodID + "/edit", `{"diverge_seq":2,"content":"x"}`},
+		{http.MethodPost, "/api/conversations/" + goodID + "/branches/3/select", ""},
+	}
+	for _, c := range cases {
+		code, body := req(t, srv, c.method, c.path, c.body)
+		if code != http.StatusInternalServerError {
+			t.Errorf("%s %s: status = %d, want 500: %s", c.method, c.path, code, body)
+		}
+		if strings.Contains(body, "s3cr3t") {
+			t.Errorf("%s %s: branch error body leaked the DSN password: %s", c.method, c.path, body)
+		}
+	}
+}
+
+// TestBranchAPI_MalformedAndBadInput proves the parse guards: a non-UUID conv id → 404,
+// a non-numeric branch seq → 404, and an empty/zero diverge_seq → 400 — all before any
+// store round-trip (T-25-26).
+func TestBranchAPI_MalformedAndBadInput(t *testing.T) {
+	srv := convAPIServer(t, &errConvStore{err: errors.New("must-not-be-called")})
+
+	if code, _ := req(t, srv, http.MethodGet, "/api/conversations/not-a-uuid/branches", ""); code != http.StatusNotFound {
+		t.Errorf("non-UUID id /branches status = %d, want 404", code)
+	}
+	if code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/branches/not-a-seq/select", ""); code != http.StatusNotFound {
+		t.Errorf("non-numeric branch seq status = %d, want 404", code)
+	}
+	if code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/edit", `{"diverge_seq":0}`); code != http.StatusBadRequest {
+		t.Errorf("zero diverge_seq status = %d, want 400", code)
+	}
+	if code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/edit", `not json`); code != http.StatusBadRequest {
+		t.Errorf("malformed edit body status = %d, want 400", code)
+	}
+}
+
+// TestBranchAPI_ForkTurnNotFound404 proves ForkBranch's ErrTurnNotFound maps to 404 (not
+// 500) — a clean "turn not found" when editing a non-existent seq.
+func TestBranchAPI_ForkTurnNotFound404(t *testing.T) {
+	srv := convAPIServer(t, &errConvStore{err: conversations.ErrTurnNotFound})
+	code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/edit", `{"diverge_seq":99,"content":"x"}`)
+	if code != http.StatusNotFound {
+		t.Errorf("fork unknown turn status = %d, want 404", code)
 	}
 }
 

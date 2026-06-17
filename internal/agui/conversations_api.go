@@ -50,6 +50,9 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/conversations/{id}/archive", s.handleArchiveConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/unarchive", s.handleArchiveConversation)
 	mux.HandleFunc("DELETE /api/conversations/{id}", s.handleDeleteConversation)
+	// D-09 / CHAT-05 branch tree routes (plan 25-07) — list/edit/select, rides the same
+	// /api/conversations/{id}/ subtree (conversations_branch_api.go).
+	s.registerConversationBranchRoutes(mux)
 }
 
 // writeJSON encodes v as the JSON body of a 200 response. A late encode failure (the

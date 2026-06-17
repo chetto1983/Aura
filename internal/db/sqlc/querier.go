@@ -53,6 +53,11 @@ type Querier interface {
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
 	GetTelegramAccountByTelegramID(ctx context.Context, telegramUserID int64) (AuraTelegramAccounts, error)
 	GetTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
+	// D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the
+	// diverging turn's parent_seq (the new sibling chains off the SAME parent so it replaces
+	// the diverging turn rather than appending after it). Returns pgx.ErrNoRows when the seq
+	// is absent (mapped to a clean 404 at the boundary).
+	GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
@@ -80,6 +85,12 @@ type Querier interface {
 	// tiny; no new index is warranted — RESEARCH A4).
 	ListAllPendingPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
+	// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
+	// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
+	// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
+	// leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
+	// (all-zero) branch sorts first and the order is stable across calls.
+	ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)

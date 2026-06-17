@@ -182,6 +182,14 @@ func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, cfg conv
 	return out, nil
 }
 
+// LoadManagedHistoryForBranch satisfies the D-09 path-aware loader on the cache fake.
+// This in-memory fake has no branch topology, so it returns the same managed history
+// as the linear loader regardless of leafSeq (the path-walk fidelity is the
+// conversations integration test's concern).
+func (m *memConvStore) LoadManagedHistoryForBranch(ctx context.Context, id string, _ int, cfg conversations.ContextConfig) ([]llm.Message, error) {
+	return m.LoadManagedHistory(ctx, id, cfg)
+}
+
 // messagesLocked rebuilds the loop messages from the persisted turns (the same
 // shape conversations.Store.LoadHistory yields). Caller holds the lock.
 func (m *memConvStore) messagesLocked(id string) ([]llm.Message, error) {

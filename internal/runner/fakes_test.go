@@ -59,6 +59,9 @@ type fakeConvStore struct {
 	createEr  error // injectable Create error (EnsureConversation classification test)
 	createRow bool  // when true, store the row even though Create returns createEr (a lost concurrent-create race the re-Get reconciles)
 	lastCfg   conversations.ContextConfig
+	// lastBranchLeaf records the leaf passed to LoadManagedHistoryForBranch so the
+	// TurnBranch re-run-from-branch path is assertable (D-09).
+	lastBranchLeaf int
 }
 
 func newFakeConvStore() *fakeConvStore {
@@ -234,6 +237,21 @@ func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg con
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lastCfg = cfg
+	if f.manErr != nil {
+		return nil, f.manErr
+	}
+	return f.messagesLocked(id), nil
+}
+
+// LoadManagedHistoryForBranch records the selected leaf so the branch-aware re-run path
+// (TurnBranch) is assertable, then returns the same in-memory history as the linear
+// loader (the fake has no branch topology — the path-walk fidelity is the conversations
+// integration test's job; here we only prove TurnBranch routes through this method).
+func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastCfg = cfg
+	f.lastBranchLeaf = leafSeq
 	if f.manErr != nil {
 		return nil, f.manErr
 	}

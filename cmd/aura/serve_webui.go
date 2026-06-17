@@ -90,6 +90,18 @@ const conversationsRoutePrefix = "/api/conversations/"
 // list GET reachable without a redirect hop.
 const conversationsListRoute = "/api/conversations"
 
+// branchEditRoute / branchSelectRoute are the D-09 / CHAT-05 MUTATING branch re-run
+// endpoints (plan 25-07). Re-running a (possibly background) thread is privileged
+// (T-25-25 / V4), so both are interposed with RequireCapability exactly like POST
+// /agent/run — the method+path-specific pattern wins Go 1.22 longest-pattern precedence
+// over the bare "/api/conversations/" subtree (which carries the read GET /branches under
+// RequireAuth only). The fork+re-run (edit) and the branch-select re-run both fire AFTER
+// RequireAuth has bound the principal.
+const (
+	branchEditRoute   = "POST /api/conversations/{id}/edit"
+	branchSelectRoute = "POST /api/conversations/{id}/branches/{branchSeq}/select"
+)
+
 // approvalsListRoute is the exact (no trailing slash) cross-thread pending read
 // (APRV-01), registered as a SPECIFIC parent-mux path delegating to the AG-UI handler
 // — a sibling of "/api/conversations/" + "/api/integrations/" under the "/api/"
@@ -154,6 +166,12 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps) (http.Handler
 	// endpoint is not 301-redirected into the subtree and lost.
 	mux.Handle(conversationsRoutePrefix, aguiHandler)
 	mux.Handle(conversationsListRoute, aguiHandler)
+	// The D-09 mutating branch re-runs (edit / branch-select) are capability-gated like
+	// POST /agent/run. Their method+path-specific patterns win longest-pattern precedence
+	// over the "/api/conversations/" subtree above, so the gate fires on the re-run while
+	// the read GET /branches stays under RequireAuth only.
+	mux.Handle(branchEditRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(branchSelectRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	// The Phase-25 approval center (APRV-01/02/03) mounts beside the conversation
 	// subtree. The mutating resolve is capability-gated exactly like POST /agent/run —
 	// resuming/declining/cancelling another thread's run is privileged (V4/T-25-07) —

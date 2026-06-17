@@ -43,6 +43,10 @@ type ConversationStore interface {
 	AppendAssistantTurnWithCacheMetric(ctx context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
 	LoadManagedHistory(ctx context.Context, conversationID string, cfg conversations.ContextConfig) ([]llm.Message, error)
+	// LoadManagedHistoryForBranch is the D-09 / CHAT-05 path-aware variant: it walks the
+	// SELECTED branch leaf->root and feeds that into the same ladder. TurnBranch uses it
+	// for the re-run-from-a-point; *conversations.Store satisfies it (plan 25-06).
+	LoadManagedHistoryForBranch(ctx context.Context, conversationID string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 	Delete(ctx context.Context, conversationID string) error
 }

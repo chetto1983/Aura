@@ -72,10 +72,11 @@ func (f *fakeConvStore) ListContextRotEvents(context.Context, string) ([]convers
 // whose SubmitAnswers records the resume map it was given. turnErr injects a turn-level
 // error (drives the RUN_ERROR path) for the redaction test.
 type scriptedRunner struct {
-	events     []*agent.Event
-	turnErr    error
-	gotAnswers map[string]runner.ResponseInput
-	answersErr error
+	events        []*agent.Event
+	turnErr       error
+	gotAnswers    map[string]runner.ResponseInput
+	answersErr    error
+	gotBranchLeaf int // the leaf TurnBranch was called with (D-09 re-run assertion)
 }
 
 func (s *scriptedRunner) Turn(_ context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {

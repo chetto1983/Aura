@@ -21,7 +21,6 @@ import (
 	"github.com/chetto1983/aura/internal/reasoninglearn"
 	"github.com/chetto1983/aura/internal/toolselectlearn"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // defaultTitleTimeout bounds the best-effort auto-title LLM call (D-A5-01); it
@@ -294,65 +293,6 @@ type ResponseInput struct {
 	Content string
 }
 
-// NewConversation creates a new active conversation owned by the seeded `local`
-// identity and returns its id. The composition root / `aura chat new` calls it.
-func (r *Runner) NewConversation(ctx context.Context) (string, error) {
-	id, err := uuid.NewV7()
-	if err != nil {
-		return "", fmt.Errorf("mint conversation id: %w", err)
-	}
-	return r.NewConversationWithID(ctx, id.String())
-}
-
-// NewConversationWithID creates a conversation with a caller-supplied id (the REPL
-// mints the id so it can key the sidecar dir before the row exists).
-func (r *Runner) NewConversationWithID(ctx context.Context, conversationID string) (string, error) {
-	owner, err := r.identity.GetIdentityByName(ctx, localIdentityName)
-	if err != nil {
-		return "", fmt.Errorf("new conversation: resolve %q identity: %w", localIdentityName, err)
-	}
-	if _, err := r.Conv.Create(ctx, conversations.CreateParams{
-		ID:         conversationID,
-		IdentityID: owner.ID,
-		Model:      r.cfg.Model,
-	}); err != nil {
-		return "", fmt.Errorf("new conversation: %w", err)
-	}
-	return conversationID, nil
-}
-
-// EnsureConversation lazily creates the conversation row when it is absent and is
-// a no-op when it already exists. Channels that key a stable conversation id off
-// an external identifier (e.g. a Telegram chat id via a deterministic UUIDv5)
-// have no explicit "new conversation" step like the REPL, so the first inbound
-// message must create the row before Turn appends to it (appendUserTurn's
-// AppendTurn FK-references the conversation). A Get short-circuits the common
-// path; a concurrent first-message race that loses the Create is reconciled by a
-// re-Get rather than surfaced as an error.
-func (r *Runner) EnsureConversation(ctx context.Context, convID string) error {
-	if _, err := r.Conv.Get(ctx, convID); err == nil {
-		return nil
-	}
-	if _, err := r.NewConversationWithID(ctx, convID); err != nil {
-		// Only a 23505 unique_violation is the benign lost-create race (a concurrent
-		// first-message creator won); classify by SQLSTATE, never by the row's mere
-		// presence — that would mask a real create failure (FK/constraint/connection)
-		// as "already exists" (M-08).
-		if isUniqueViolation(err) {
-			return nil // a concurrent creator won the race — the row now exists
-		}
-		return err
-	}
-	return nil
-}
-
-// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +
-// pgErr.Code — never string-matching the message (mirrors identity/cron/telegram).
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
-}
-
 // Turn drives ONE LLM round over the conversation and is the sole loop-driver
 // (D-A1-06). userMsg!=nil starts a round with a fresh user message; userMsg=nil is
 // "continue after resume" — the resolved answers are already RoleTool turns in the
@@ -366,14 +306,32 @@ func isUniqueViolation(err error) bool {
 // yield-after-false guard is honored (never yield again once the consumer returns
 // false).
 func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
+	return r.runTurn(ctx, convID, userMsg, 0)
+}
+
+// TurnBranch is the D-09 / CHAT-05 re-run-from-a-point primitive: it drives a fresh
+// agent round over the SELECTED branch path (leafSeq) instead of the full linear
+// history, with no fresh user message (continue-after-resume semantics, userMsg=nil) —
+// the new branch's turns were already persisted by ForkBranch. The messages[0] head is
+// byte-identical to the linear case (LoadManagedHistoryForBranch preserves the protected
+// head; only body turns differ per branch — the CAP-04 cache invariant). leafSeq <= 0
+// falls back to the canonical branch leaf (the same history Turn would load).
+func (r *Runner) TurnBranch(ctx context.Context, convID string, leafSeq int) iter.Seq2[*agent.Event, error] {
+	return r.runTurn(ctx, convID, nil, leafSeq)
+}
+
+// runTurn dispatches a turn under the per-conversation lock (or directly when the lock
+// is already held). branchLeaf > 0 selects the path-aware branch history loader; 0 is
+// the linear full-history default Turn uses.
+func (r *Runner) runTurn(ctx context.Context, convID string, userMsg *string, branchLeaf int) iter.Seq2[*agent.Event, error] {
 	if threadLockHeld(ctx) {
-		return r.turnLocked(ctx, convID, userMsg)
+		return r.turnLocked(ctx, convID, userMsg, branchLeaf)
 	}
 	return func(yield func(*agent.Event, error) bool) {
 		mu := r.lockForThread(convID)
 		mu.Lock()
 		defer mu.Unlock()
-		for ev, err := range r.turnLocked(WithThreadLockHeld(ctx), convID, userMsg) {
+		for ev, err := range r.turnLocked(WithThreadLockHeld(ctx), convID, userMsg, branchLeaf) {
 			if !yield(ev, err) {
 				return
 			}
@@ -397,7 +355,7 @@ func (r *Runner) lockForThread(convID string) *sync.Mutex {
 	return actual.(*sync.Mutex)
 }
 
-func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
+func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string, branchLeaf int) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
 		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
 		if userMsg != nil {
@@ -429,7 +387,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string)
 			yield(nil, err)
 			return
 		}
-		history, err := r.Conv.LoadManagedHistory(ctx, convID, cfg)
+		history, err := r.loadTurnHistory(ctx, convID, cfg, branchLeaf)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -511,6 +469,19 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 	return r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
 	})
+}
+
+// loadTurnHistory rehydrates the turn history the agent runs over: the full linear
+// history (branchLeaf <= 0, the default Turn path, byte-identical to the pre-D-09 case)
+// or the selected branch path (branchLeaf > 0, the D-09 re-run). Both feed the SAME
+// L1/L2/L2.5 ladder, so the protected messages[0] head is identical either way — only
+// body turns differ per branch (the CAP-04 cache invariant). It does NOT re-implement
+// the walk; it calls the store's path-aware loader (plan 25-06).
+func (r *Runner) loadTurnHistory(ctx context.Context, convID string, cfg conversations.ContextConfig, branchLeaf int) ([]llm.Message, error) {
+	if branchLeaf > 0 {
+		return r.Conv.LoadManagedHistoryForBranch(ctx, convID, branchLeaf, cfg)
+	}
+	return r.Conv.LoadManagedHistory(ctx, convID, cfg)
 }
 
 // contextConfig builds the L1/L2/L2.5 ladder inputs from the Runner's llm.Config +

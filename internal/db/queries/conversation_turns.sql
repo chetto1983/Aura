@@ -81,3 +81,29 @@ ORDER BY path.seq ASC;
 UPDATE aura.conversation_turns
 SET branch_id = $3, parent_seq = $4
 WHERE conversation_id = $1 AND seq = $2;
+
+-- name: GetTurnPointers :one
+-- D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the
+-- diverging turn's parent_seq (the new sibling chains off the SAME parent so it replaces
+-- the diverging turn rather than appending after it). Returns pgx.ErrNoRows when the seq
+-- is absent (mapped to a clean 404 at the boundary).
+SELECT seq, branch_id, parent_seq, role
+FROM aura.conversation_turns
+WHERE conversation_id = $1 AND seq = $2;
+
+-- name: ListBranchLeaves :many
+-- D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
+-- any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
+-- BranchPicker navigates among these sibling leaves; a re-run continues over the selected
+-- leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
+-- (all-zero) branch sorts first and the order is stable across calls.
+SELECT leaf.seq, leaf.branch_id, leaf.parent_seq
+FROM aura.conversation_turns leaf
+WHERE leaf.conversation_id = $1
+  AND NOT EXISTS (
+      SELECT 1
+      FROM aura.conversation_turns child
+      WHERE child.conversation_id = leaf.conversation_id
+        AND child.parent_seq = leaf.seq
+  )
+ORDER BY leaf.branch_id ASC, leaf.seq ASC;

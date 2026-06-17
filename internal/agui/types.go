@@ -36,6 +36,15 @@ type ConversationStore interface {
 	SetTitleIfNull(ctx context.Context, conversationID, title string) error
 	Delete(ctx context.Context, conversationID string) error
 	ListContextRotEvents(ctx context.Context, conversationID string) ([]conversations.RotEvent, error)
+	// D-09 / CHAT-05 branch surface (plan 25-07). ListBranches enumerates the navigable
+	// branch leaves; ForkBranch writes a new sibling branch (edit-a-user-turn /
+	// regenerate) chained off the diverging turn's parent and returns the new leaf seq.
+	// CanonicalBranchLeaf is the default selection (the conversation's canonical tip).
+	// All three are on the concrete *conversations.Store; declared here so agui depends
+	// only on the methods it calls.
+	ListBranches(ctx context.Context, conversationID string) ([]conversations.Branch, error)
+	ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, uuid.UUID, error)
+	CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error)
 }
 
 // ErrEmptyThreadID and ErrNoMessages are the Aura-semantic validation sentinels

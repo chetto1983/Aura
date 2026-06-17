@@ -152,6 +152,14 @@ func (f *cmdConvFake) LoadManagedHistory(_ context.Context, id string, _ convers
 	return f.messages(id), nil
 }
 
+// LoadManagedHistoryForBranch satisfies the D-09 path-aware loader; the cmd fake has no
+// branch topology, so it returns the same history as the linear loader.
+func (f *cmdConvFake) LoadManagedHistoryForBranch(_ context.Context, id string, _ int, _ conversations.ContextConfig) ([]llm.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.messages(id), nil
+}
+
 func (f *cmdConvFake) SearchConversationTurns(_ context.Context, _ string, _ int) ([]conversations.SearchResult, error) {
 	return nil, nil
 }

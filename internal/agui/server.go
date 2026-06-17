@@ -57,6 +57,10 @@ type ServerConfig struct {
 type Runner interface {
 	Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error]
 	SubmitAnswers(ctx context.Context, answers map[string]runner.ResponseInput) (int, error)
+	// TurnBranch is the D-09 / CHAT-05 re-run-from-a-point: it drives a fresh agent
+	// round over the SELECTED branch path (leafSeq) with no fresh user message — the
+	// branch's turns were already persisted by ForkBranch. *runner.Runner satisfies it.
+	TurnBranch(ctx context.Context, convID string, leafSeq int) iter.Seq2[*agent.Event, error]
 }
 
 type threadTryLocker interface {

@@ -1,0 +1,75 @@
+package runner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// runner_conversation.go holds the conversation-lifecycle helpers split out of runner.go
+// (deep-refactor-on-touch / ≤600 LOC, CLAUDE.md): minting + lazily ensuring the
+// conversation row the turn loop appends to. No behavior change from the prior in-file
+// definitions.
+
+// NewConversation creates a new active conversation owned by the seeded `local`
+// identity and returns its id. The composition root / `aura chat new` calls it.
+func (r *Runner) NewConversation(ctx context.Context) (string, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", fmt.Errorf("mint conversation id: %w", err)
+	}
+	return r.NewConversationWithID(ctx, id.String())
+}
+
+// NewConversationWithID creates a conversation with a caller-supplied id (the REPL
+// mints the id so it can key the sidecar dir before the row exists).
+func (r *Runner) NewConversationWithID(ctx context.Context, conversationID string) (string, error) {
+	owner, err := r.identity.GetIdentityByName(ctx, localIdentityName)
+	if err != nil {
+		return "", fmt.Errorf("new conversation: resolve %q identity: %w", localIdentityName, err)
+	}
+	if _, err := r.Conv.Create(ctx, conversations.CreateParams{
+		ID:         conversationID,
+		IdentityID: owner.ID,
+		Model:      r.cfg.Model,
+	}); err != nil {
+		return "", fmt.Errorf("new conversation: %w", err)
+	}
+	return conversationID, nil
+}
+
+// EnsureConversation lazily creates the conversation row when it is absent and is
+// a no-op when it already exists. Channels that key a stable conversation id off
+// an external identifier (e.g. a Telegram chat id via a deterministic UUIDv5)
+// have no explicit "new conversation" step like the REPL, so the first inbound
+// message must create the row before Turn appends to it (appendUserTurn's
+// AppendTurn FK-references the conversation). A Get short-circuits the common
+// path; a concurrent first-message race that loses the Create is reconciled by a
+// re-Get rather than surfaced as an error.
+func (r *Runner) EnsureConversation(ctx context.Context, convID string) error {
+	if _, err := r.Conv.Get(ctx, convID); err == nil {
+		return nil
+	}
+	if _, err := r.NewConversationWithID(ctx, convID); err != nil {
+		// Only a 23505 unique_violation is the benign lost-create race (a concurrent
+		// first-message creator won); classify by SQLSTATE, never by the row's mere
+		// presence — that would mask a real create failure (FK/constraint/connection)
+		// as "already exists" (M-08).
+		if isUniqueViolation(err) {
+			return nil // a concurrent creator won the race — the row now exists
+		}
+		return err
+	}
+	return nil
+}
+
+// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +
+// pgErr.Code — never string-matching the message (mirrors identity/cron/telegram).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
