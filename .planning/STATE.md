@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: executing
-stopped_at: Completed 25-07-PLAN.md (branch trees + phase-proving E2E — FINAL plan of Phase 25)
-last_updated: "2026-06-17T16:44:57.287Z"
-last_activity: 2026-06-17 -- Phase 25 plan 07 complete (CHAT-05 branch trees + E2E)
+status: verifying
+stopped_at: Completed 25-03-PLAN.md (chat lane)
+last_updated: "2026-06-17T17:45:11.611Z"
+last_activity: 2026-06-17
 progress:
   total_phases: 8
   completed_phases: 4
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 25 (chat-approval-center) — ALL PLANS COMPLETE (7 of 7)
-Plan: 7 of 7 (25-07 was the FINAL plan)
+Phase: 26 of 7 (typed display protocol + router)
+Plan: Not started
 Status: Phase 25 implementation complete — ready for /gsd-verify-work
-Last activity: 2026-06-17 -- 25-07 complete (CHAT-05 branch trees + phase-proving Playwright E2E)
+Last activity: 2026-06-17
 
 ### Next -- Execute Phase 22
 
@@ -50,7 +50,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 
 **Velocity:**
 
-- Total plans completed: 151
+- Total plans completed: 158
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -75,6 +75,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | 08.2 | 5 | - | - |
 | 23 | 3 | - | - |
 | 24 | 4 | - | - |
+| 25 | 7 | - | - |
 
 **Recent Trend:**
 
