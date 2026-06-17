@@ -22,6 +22,10 @@ import (
 
 const defaultCommandHookTimeout = 2 * time.Second
 
+// EnvCommandHooks carries an optional JSON array of command-hook configs. It is
+// intentionally default-off: unset/blank means no command hooks are registered.
+const EnvCommandHooks = "AURA_AGENT_COMMAND_HOOKS"
+
 // Rewrite bounds (AG-003): a hook may rewrite live request/tool state, but the
 // replacement must stay within these caps so a buggy or compromised hook cannot
 // inject an unbounded prompt/tool set.
@@ -39,6 +43,18 @@ type CommandHookConfig struct {
 	Env            []string
 	ExpectedSHA256 string
 	Timeout        time.Duration
+}
+
+// CommandHookEnvConfig is the operator-facing JSON shape accepted by
+// EnvCommandHooks. TimeoutMS avoids time.Duration's nanosecond JSON footgun.
+type CommandHookEnvConfig struct {
+	Name           string   `json:"name"`
+	Command        string   `json:"command"`
+	Args           []string `json:"args"`
+	Env            []string `json:"env"`
+	ExpectedSHA256 string   `json:"expected_sha256"`
+	TimeoutMS      int      `json:"timeout_ms"`
+	FailPolicy     string   `json:"fail_policy"`
 }
 
 // CommandHookEvent is the JSON envelope sent to a command hook on stdin.
@@ -102,6 +118,57 @@ func NewCommandHook(cfg CommandHookConfig) (*CommandHook, error) {
 		expectedSHA256: expected,
 		timeout:        timeout,
 	}, nil
+}
+
+// CommandHookManagerFromEnv builds the optional out-of-process hook manager from
+// EnvCommandHooks. A nil lookup uses os.LookupEnv; tests pass a narrow lookup.
+func CommandHookManagerFromEnv(lookup func(string) (string, bool)) (*HookManager, error) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	raw, ok := lookup(EnvCommandHooks)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var cfgs []CommandHookEnvConfig
+	if err := json.Unmarshal([]byte(raw), &cfgs); err != nil {
+		return nil, fmt.Errorf("%s: invalid JSON: %w", EnvCommandHooks, err)
+	}
+	if len(cfgs) == 0 {
+		return nil, nil
+	}
+	m := NewHookManager()
+	for i, cfg := range cfgs {
+		policy, err := commandHookFailPolicy(cfg.FailPolicy)
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d]: %w", EnvCommandHooks, i, err)
+		}
+		timeout := time.Duration(cfg.TimeoutMS) * time.Millisecond
+		h, err := NewCommandHook(CommandHookConfig{
+			Name:           cfg.Name,
+			Command:        cfg.Command,
+			Args:           cfg.Args,
+			Env:            cfg.Env,
+			ExpectedSHA256: cfg.ExpectedSHA256,
+			Timeout:        timeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d]: %w", EnvCommandHooks, i, err)
+		}
+		m.RegisterWithPolicy(h, policy)
+	}
+	return m, nil
+}
+
+func commandHookFailPolicy(raw string) (FailPolicy, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "fail_open":
+		return FailOpen, nil
+	case "fail_closed":
+		return FailClosed, nil
+	default:
+		return FailClosed, fmt.Errorf("unknown command hook fail_policy %q", raw)
+	}
 }
 
 // OnTurnStart sends a turn_start event to the command hook.

@@ -101,6 +101,9 @@ type Deps struct {
 	// is set; nil => no learning. The composition root passes the same Neo4j store
 	// as ExampleStore.
 	ReasoningSaver reasoninglearn.Saver
+	// HookManager is the optional agent extension surface. nil keeps the agent's
+	// hook calls as no-ops; production may inject command hooks here.
+	HookManager *agent.HookManager
 	// ToolSelectSaver persists oracle-confirmed (query -> tool) examples for the
 	// tool-selection active-learning loop (D-06/D-07) to :ToolSelectionExample. nil =>
 	// the loop is off (the tool_search ranker runs without the learned stage-2 boost).
@@ -150,6 +153,7 @@ type Runner struct {
 	resumeHook   ResumeHook
 
 	contextBlock      ContextBlockProvider
+	hookManager       *agent.HookManager          // optional per-turn LlmAgent hooks
 	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
 	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
 	learner           *reasoninglearn.Learner     // async reasoning self-improvement worker; nil unless ReasoningLearning is on
@@ -207,6 +211,7 @@ func New(d Deps) *Runner {
 		stopTimeout:     stopTimeout,
 		resumeHook:      d.ResumeHook,
 		contextBlock:    d.ContextBlock,
+		hookManager:     d.HookManager,
 		alwaysBlock:     d.AlwaysBlock,
 		classifier:      classifier,
 		breaker:         d.Breaker,
@@ -565,16 +570,17 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 	boundedCtx, cancel := bud.WithDeadline(ctx)
 	seed := stripLeadingSystem(history)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:     r.client,
-		LLM:        r.cfg,
-		Registry:   r.registry,
-		PreviewCap: r.previewCap,
-		RunDir:     r.runDir,
-		SessionID:  convID, // session_id == conversation_id (D-26)
-		Workspace:  r.workspace,
-		UserTurns:  seed,
-		Classifier: r.classifier, // shared, anchors built once
-		Breaker:    r.breaker,    // shared process-lifetime breaker (B-05)
+		Client:      r.client,
+		LLM:         r.cfg,
+		Registry:    r.registry,
+		PreviewCap:  r.previewCap,
+		RunDir:      r.runDir,
+		SessionID:   convID, // session_id == conversation_id (D-26)
+		Workspace:   r.workspace,
+		UserTurns:   seed,
+		Classifier:  r.classifier, // shared, anchors built once
+		Breaker:     r.breaker,    // shared process-lifetime breaker (B-05)
+		HookManager: r.hookManager,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,
@@ -584,14 +590,4 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		Budget:    bud,
 	}
 	return la, ic, cancel, nil
-}
-
-// stripLeadingSystem drops a persisted leading system turn so the agent's own
-// byte-stable system message is the sole messages[0] (KV-cache discipline,
-// Pitfall 1). A history without a leading system turn is returned unchanged.
-func stripLeadingSystem(history []llm.Message) []llm.Message {
-	if len(history) > 0 && history[0].Role == llm.RoleSystem {
-		return history[1:]
-	}
-	return history
 }

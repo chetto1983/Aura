@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
@@ -227,6 +228,11 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		}
 	}
 
+	hookManager, err := agent.CommandHookManagerFromEnv(os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("command hooks: %w", err)
+	}
+
 	client := newLLMClient(cfg.LLM)
 	deps := runner.Deps{
 		Conv:            convStore,
@@ -243,6 +249,7 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		ContextBlock:    profileContextProvider(cfg),
 		AlwaysBlock:     alwaysBlockProvider(cfg),
 		ResumeHook:      chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals)),
+		HookManager:     hookManager,
 		// Local embedding-based reasoning-tier classifier (granite sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.

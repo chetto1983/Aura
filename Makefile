@@ -11,6 +11,7 @@
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
 GOBIN := $(shell go env GOPATH)/bin
+GO_PACKAGES := $(shell bash scripts/go_packages.sh)
 
 help:
 	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
@@ -59,16 +60,16 @@ sqlc:
 	sqlc generate
 
 vet:
-	go vet ./...
+	go vet $(GO_PACKAGES)
 
 lint:
-	$(GOBIN)/golangci-lint run ./...
+	$(GOBIN)/golangci-lint run $(GO_PACKAGES)
 
 deadcode:
-	$(GOBIN)/deadcode -test ./...
+	$(GOBIN)/deadcode -test $(GO_PACKAGES)
 
 vuln:
-	$(GOBIN)/govulncheck ./...
+	$(GOBIN)/govulncheck $(GO_PACKAGES)
 
 # Owned-surface coverage floor (CLAUDE.md >=85%). Integration tiers need the
 # container stack + composed DSNs; bring them up with `make neo4j-migrate` first
@@ -78,7 +79,7 @@ coverage:
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
 quality: vet file-size lint deadcode test-race vuln
-	go build ./...
+	go build $(GO_PACKAGES)
 	@echo "ok: quality gate passed (vet build file-size lint deadcode test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
@@ -86,10 +87,10 @@ quality-full: quality coverage
 	@echo "ok: quality-full passed (quality + coverage >=85%)"
 
 test:
-	go test ./... -count=1
+	go test -count=1 $(GO_PACKAGES)
 
 test-race:
-	go test -race -count=1 ./...
+	go test -race -count=1 $(GO_PACKAGES)
 
 file-size:
 	bash scripts/check-file-size.sh

@@ -26,9 +26,11 @@ pre-push:
   parallel: true
   commands:
     lint:
-      run: golangci-lint run ./...
+      run: bash -c 'golangci-lint run $(bash scripts/go_packages.sh)'
     build:
-      run: go build ./...
+      run: bash -c 'go build $(bash scripts/go_packages.sh)'
+    deadcode:
+      run: bash -c 'deadcode -test $(bash scripts/go_packages.sh)'
     # Frontend static gate — mirrors the CI web-lint job (eslint --max-warnings=0
     # + tsc + prettier --check). Gated on web/** so a Go-only push skips it; the
     # script self-guards on a missing web/node_modules. Heavy frontend gates

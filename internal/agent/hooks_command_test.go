@@ -126,6 +126,46 @@ func TestCommandHook_ChildEnvDropsSecretsByDefault(t *testing.T) {
 	}
 }
 
+func TestCommandHookManagerFromEnv_BuildsRunnableHook(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	raw := `[{
+		"name":"env-command-hook",
+		"command":` + quoteJSON(exe) + `,
+		"args":["-test.run=TestCommandHookHelperProcess"],
+		"env":["AURA_HOOK_HELPER=1","AURA_HOOK_MODE=rewrite_model"],
+		"expected_sha256":` + quoteJSON(trustedHookHash(t)) + `,
+		"timeout_ms":2000
+	}]`
+
+	m, err := agent.CommandHookManagerFromEnv(func(key string) (string, bool) {
+		if key == agent.EnvCommandHooks {
+			return raw, true
+		}
+		return "", false
+	})
+	if err != nil {
+		t.Fatalf("CommandHookManagerFromEnv: %v", err)
+	}
+	if m == nil {
+		t.Fatal("CommandHookManagerFromEnv returned nil manager for configured hooks")
+	}
+
+	req := &llm.Request{Messages: []llm.Message{{Role: llm.RoleUser, Content: "before"}}}
+	res, err := m.BeforeModel(context.Background(), req)
+	if err != nil {
+		t.Fatalf("BeforeModel through env hook: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("rewrite_model should mutate the request in place, got result %+v", res)
+	}
+	if got := req.Model; got != "hook-model" {
+		t.Fatalf("request model = %q, want env command hook rewrite", got)
+	}
+}
+
 func TestCommandHookHelperProcess(t *testing.T) {
 	if os.Getenv("AURA_HOOK_HELPER") != "1" {
 		return
@@ -242,6 +282,14 @@ func trustedHookHash(t *testing.T) string {
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+func quoteJSON(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 func writeHookDecision(decision agent.CommandHookDecision) {

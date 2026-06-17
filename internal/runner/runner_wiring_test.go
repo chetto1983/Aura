@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -149,6 +150,59 @@ func TestWireToolSearchEmbedder(t *testing.T) {
 			t.Fatal("an unreachable embedder must still be wired (recovers later)")
 		}
 	})
+}
+
+type turnStartProbeHook struct {
+	starts int
+}
+
+func (h *turnStartProbeHook) OnTurnStart(context.Context, agent.HookTurn) error {
+	h.starts++
+	return nil
+}
+
+func (*turnStartProbeHook) BeforeModel(context.Context, *llm.Request) (*agent.ModelHookResult, error) {
+	return nil, nil
+}
+
+func (*turnStartProbeHook) BeforeTool(context.Context, llm.ToolCall) (*agent.ToolHookResult, error) {
+	return nil, nil
+}
+
+func (*turnStartProbeHook) AfterTool(context.Context, llm.ToolCall, tools.ToolResult) (*agent.ToolResultHookResult, error) {
+	return nil, nil
+}
+
+func (*turnStartProbeHook) OnTurnEnd(context.Context, agent.HookTurn) error {
+	return nil
+}
+
+func TestRunnerThreadsHookManagerIntoPerTurnAgent(t *testing.T) {
+	hook := &turnStartProbeHook{}
+	reg := tools.NewRegistry()
+	reg.Register(tools.TextResponse{})
+	r := New(Deps{
+		Conv:            newFakeConvStore(),
+		Pause:           newFakePauseStore(),
+		Identity:        newFakeIdentityStore(),
+		CacheMetrics:    newFakeCacheMetricStore(),
+		ToolInvocations: newFakeToolInvocationStore(),
+		Client:          agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "ok"))),
+		Registry:        reg,
+		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		HookManager:     agent.NewHookManager(hook),
+		TitleTimeout:    time.Second,
+		StopTimeout:     time.Second,
+	})
+	convID := newConvID(t)
+	mustCreate(t, r, convID)
+
+	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err != nil {
+		t.Fatalf("turn with hook manager: %v", err)
+	}
+	if hook.starts != 1 {
+		t.Fatalf("hook OnTurnStart calls = %d, want 1", hook.starts)
+	}
 }
 
 // --- contextConfig + renderContextBlock error paths ---
