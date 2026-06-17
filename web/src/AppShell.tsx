@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { ExternalStoreChat } from './chat/ExternalStoreChat';
 import { RuntimeHealthPanel } from './health/RuntimeHealthPanel';
 import { LanguageSwitcher } from './i18n/LanguageSwitcher';
 
@@ -6,6 +7,10 @@ const MODES = ['chat', 'tree', 'graph', 'displays', 'settings'] as const;
 
 export function AppShell() {
   const { t } = useTranslation();
+  // The active conversation id. The conversation sidebar (plan 25-02 frontend)
+  // will own selection/creation and set this; the chat lane reads it to POST
+  // /agent/run against the right thread. Empty until the sidebar lands.
+  const activeThreadId = '';
 
   return (
     <div className="grid h-dvh overflow-hidden bg-bg text-text [grid-template-rows:auto_1fr]">
@@ -45,7 +50,13 @@ export function AppShell() {
           </p>
         </aside>
 
-        <section aria-label={t('shell.chatRegion')} className="min-h-0 bg-bg" />
+        {/* The Core-Value chat lane (CHAT-01). The conversation/threadId binding
+            arrives with the conversation sidebar (plan 25-02 frontend) — until
+            then the lane mounts against the current thread seam; the runtime
+            footer (25-04) and branch picker (25-07) mount onto the same lane. */}
+        <section aria-label={t('shell.chatRegion')} className="min-h-0 bg-bg">
+          <ExternalStoreChat threadId={activeThreadId} />
+        </section>
 
         <aside
           aria-label={t('shell.displayWorkspace')}

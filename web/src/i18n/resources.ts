@@ -41,6 +41,38 @@ export const resources = {
           settings: 'Settings',
         },
       },
+      chat: {
+        composer: {
+          placeholder: 'Ask Aura',
+          send: 'Send',
+          sendAria: 'Send message',
+          stop: 'Stop',
+          stopAria: 'Stop the current response',
+        },
+        running: 'Running...',
+        empty: {
+          thread: {
+            heading: 'Ask Aura',
+            body: 'Type a prompt below to start this run.',
+          },
+        },
+        error: {
+          stream: 'The response stopped unexpectedly. Retry the last message or check the runtime status.',
+        },
+        reasoning: {
+          show: 'Show reasoning',
+          hide: 'Hide reasoning',
+        },
+        tool: {
+          showRaw: 'Show raw result',
+          hideRaw: 'Hide raw result',
+          status: {
+            running: 'Running',
+            done: 'Done',
+            error: 'Error',
+          },
+        },
+      },
       skeleton: {
         shell: 'Loading cockpit...',
         login: 'Loading sign-in...',
@@ -126,6 +158,39 @@ export const resources = {
           graph: 'Grafo',
           displays: 'Display',
           settings: 'Impostazioni',
+        },
+      },
+      chat: {
+        composer: {
+          placeholder: 'Chiedi ad Aura',
+          send: 'Invia',
+          sendAria: 'Invia messaggio',
+          stop: 'Ferma',
+          stopAria: 'Ferma la risposta in corso',
+        },
+        running: 'In esecuzione...',
+        empty: {
+          thread: {
+            heading: 'Chiedi ad Aura',
+            body: 'Scrivi un prompt qui sotto per avviare questa esecuzione.',
+          },
+        },
+        error: {
+          stream:
+            "La risposta si è interrotta inaspettatamente. Riprova l'ultimo messaggio o controlla lo stato del runtime.",
+        },
+        reasoning: {
+          show: 'Mostra ragionamento',
+          hide: 'Nascondi ragionamento',
+        },
+        tool: {
+          showRaw: 'Mostra risultato grezzo',
+          hideRaw: 'Nascondi risultato grezzo',
+          status: {
+            running: 'In corso',
+            done: 'Completato',
+            error: 'Errore',
+          },
         },
       },
       skeleton: {

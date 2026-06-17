@@ -419,11 +419,18 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
   const state = newAssistantTurn(id);
   opts.onUpdate(toThreadMessage(state), state.usage);
 
+  // The backend handler decodes an AG-UI RunAgentInput (threadId + messages[]);
+  // it drives the turn off the LAST user message (server.go lastUserMessage) and
+  // resolves threadId to an EXISTING conversation (404 otherwise). The body shape
+  // mirrors the gateway test's runPayload exactly (internal/agui/server_test.go).
   const res = await fetch('/agent/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     credentials: 'same-origin',
-    body: JSON.stringify({ threadId: opts.threadId, message: opts.userText }),
+    body: JSON.stringify({
+      threadId: opts.threadId,
+      messages: [{ id: id, role: 'user', content: opts.userText }],
+    }),
     signal: opts.signal,
   });
 

@@ -331,7 +331,12 @@ describe('sseAdapter — streamRun (POST /agent/run + AbortController)', () => {
     expect(url).toBe('/agent/run');
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('same-origin');
-    expect(JSON.parse(init.body as string)).toEqual({ threadId: 'thread-1', message: 'ciao' });
+    // The AG-UI RunAgentInput wire shape: threadId + messages[] (the gateway
+    // drives the turn off the last user message — internal/agui/server.go).
+    expect(JSON.parse(init.body as string)).toEqual({
+      threadId: 'thread-1',
+      messages: [{ id: 'fixed-id', role: 'user', content: 'ciao' }],
+    });
     expect(init.signal).toBe(ctrl.signal);
 
     // Final message: a single text part with the streamed answer; usage parsed.
