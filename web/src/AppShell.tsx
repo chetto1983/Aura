@@ -47,18 +47,15 @@ export function AppShell() {
     setUsage(undefined);
   }
 
-  // Continue-after-resume (D-05): after a successful accept/decline the run is
-  // re-driven with a no-Resume POST /agent/run so the stream continues over the
-  // rehydrated history (the resolve adapter already injected the answer turn). The
-  // server drives off the persisted history when no new user message is sent.
+  // Continue-after-resume (D-05): after a successful accept/decline, bump the resume nonce
+  // so the chat lane re-drives the run (a no-message POST /agent/run) AND folds the resumed
+  // stream into its message list in-thread — the server continues over the rehydrated
+  // history (the resolve adapter already injected the answer turn). The chat lane owns the
+  // fold so the resumed turn renders (the prior discard-fetch never showed it).
+  const [resumeNonce, setResumeNonce] = useState(0);
   function redriveRun(conversationId: string) {
     if (conversationId.length === 0) return;
-    void fetch('/agent/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ threadId: conversationId, messages: [] }),
-    }).catch(() => undefined);
+    setResumeNonce((n) => n + 1);
   }
 
   return (
@@ -127,7 +124,11 @@ export function AppShell() {
             render in-thread for the active conversation's pending interrupts. */}
         <section aria-label={t('shell.chatRegion')} className="flex min-h-0 flex-col bg-bg">
           <div className="min-h-0 flex-1">
-            <ExternalStoreChat threadId={activeThreadId} onUsage={setUsage} />
+            <ExternalStoreChat
+              threadId={activeThreadId}
+              onUsage={setUsage}
+              resumeNonce={resumeNonce}
+            />
           </div>
           <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
         </section>

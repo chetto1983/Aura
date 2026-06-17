@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActionBarPrimitive,
@@ -46,9 +46,16 @@ export interface ExternalStoreChatProps {
   readonly threadId: string;
   /** 25-04 seam: receives the latest per-turn usage off the SSE STATE_DELTA. */
   readonly onUsage?: (usage: TurnUsage | undefined) => void;
+  /**
+   * Continue-after-resume nonce (D-05): each increment re-drives the run with a
+   * no-message POST /agent/run and FOLDS the resumed stream into the chat lane (so the
+   * resumed turn renders here, not in a discarded fetch). AppShell bumps it after an
+   * inline approval resolves. The initial value is ignored (only changes re-drive).
+   */
+  readonly resumeNonce?: number;
 }
 
-export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps) {
+export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -136,6 +143,51 @@ export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps)
     },
     [onUsage],
   );
+
+  // Continue-after-resume (D-05): when resumeNonce changes (AppShell bumps it after an
+  // inline approval resolves), re-drive the run with a no-message POST /agent/run and FOLD
+  // the resumed stream into THIS lane's message list, so the resumed turn renders in-thread
+  // (not in a discarded fetch). The initial mount (nonce unchanged) is skipped.
+  const lastResumeNonce = useRef(resumeNonce);
+  useEffect(() => {
+    if (resumeNonce === lastResumeNonce.current) return;
+    lastResumeNonce.current = resumeNonce;
+    if (threadId.length === 0) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    // The resumed turn is folded onto a fresh assistant slot appended after whatever the
+    // lane currently shows. Each streamed frame replaces that one slot (never N copies):
+    // the first onUpdate appends, the rest replace the last element while running.
+    const drive = async () => {
+      setIsRunning(true);
+      let appended = false;
+      try {
+        await streamPost({
+          url: '/agent/run',
+          body: { threadId, messages: [] },
+          signal: controller.signal,
+          onUpdate: (assistant, usage) => {
+            onUsage?.(usage);
+            setMessages((prev) => {
+              if (!appended) {
+                appended = true;
+                return [...prev, assistant];
+              }
+              const next = prev.slice();
+              next[next.length - 1] = assistant;
+              return next;
+            });
+          },
+        });
+      } catch {
+        // Aborted / network error — the partial resumed turn is left as rendered.
+      } finally {
+        setIsRunning(false);
+        abortRef.current = null;
+      }
+    };
+    void drive();
+  }, [resumeNonce, threadId, onUsage]);
 
   // divergeSeq maps a frontend message INDEX to the backend turn seq it diverges from. The
   // persisted history is seq=1 (system), then user/assistant turns from seq=2; the visible

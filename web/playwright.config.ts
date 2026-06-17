@@ -35,8 +35,11 @@ for (const key of SERVE_ENV_KEYS) {
 // does NOT export AURA_AGUI_BIND, so this MUST track that default — single source
 // for both baseURL and the webServer readiness URL so the coupling is visible. If
 // the AGUIBind default ever moves, update this constant (or export AURA_AGUI_BIND
-// in the job env and read it here).
-const SERVE_ORIGIN = 'http://127.0.0.1:9080';
+// in the job env and read it here). AURA_E2E_ORIGIN overrides it for a local run
+// against an already-running serve on a non-default port (it also suppresses the
+// managed webServer below so the existing instance is reused as-is).
+const SERVE_ORIGIN = process.env.AURA_E2E_ORIGIN ?? 'http://127.0.0.1:9080';
+const USE_EXTERNAL_SERVE = process.env.AURA_E2E_ORIGIN !== undefined;
 
 export default defineConfig({
   testDir: './e2e',
@@ -44,16 +47,25 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
-  use: { baseURL: SERVE_ORIGIN, trace: 'on-first-retry' },
+  // serviceWorkers: 'block' — the embedded cockpit registers a PWA service worker
+  // (internal/webui/dist/sw.js); leaving it active makes the SW intercept fetches so
+  // page.route() never sees them (the golden-replay E2E mocks /agent/run + /api/* at the
+  // page-network layer). Blocking the SW keeps every request on the routable path; it does
+  // not change the app under test (the SW is an offline-cache optimisation, not behaviour).
+  use: { baseURL: SERVE_ORIGIN, trace: 'on-first-retry', serviceWorkers: 'block' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: '../aura serve --only=cli',
-    // /healthz (not /readyz) is the readiness gate: PG-only liveness, no Neo4j —
-    // the e2e stack provisions Postgres only. A boot failure surfaces here as the
-    // webServer never reaching ready within `timeout`.
-    url: `${SERVE_ORIGIN}/healthz`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-    env: serveEnv,
-  },
+  // When AURA_E2E_ORIGIN points at an already-running serve, do NOT manage a webServer
+  // (the external instance is reused verbatim). Otherwise launch `aura serve` and gate on
+  // /healthz (PG-only liveness; the e2e stack provisions Postgres only).
+  ...(USE_EXTERNAL_SERVE
+    ? {}
+    : {
+        webServer: {
+          command: '../aura serve --only=cli',
+          url: `${SERVE_ORIGIN}/healthz`,
+          reuseExistingServer: !process.env.CI,
+          timeout: 60_000,
+          env: serveEnv,
+        },
+      }),
 });
