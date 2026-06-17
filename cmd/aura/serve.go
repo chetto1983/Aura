@@ -256,6 +256,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
+	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
+	// GET /api/approvals poll answers 503 and the whole approval center is dead in
+	// production — SetApprovalStore was only ever called in tests, so the live daemon
+	// shipped with s.approvals == nil. chat.pause is the same askuser.Store the Runner
+	// resumes through, so the badge/list read the identical pending set.
+	aguiServer.SetApprovalStore(chat.pause)
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell
