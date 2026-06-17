@@ -168,10 +168,44 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	// APRV-01/02 (Phase 25): the approval-center routes reach the AG-UI handler — the
+	// exact read GET /api/approvals AND the POST /api/approvals/{token}/resolve — proving
+	// the specific mounts dispatch to aguiHandler over the "/" catch-all (NOT a bare
+	// /api/). With no secret configured RequireCapability is a pass-through, so the resolve
+	// POST flows straight to the handler here; the gate-active path is TestServeWebuiAuthWiring.
+	t.Run("/api/approvals + resolve -> AG-UI handler (APRV mount)", func(t *testing.T) {
+		aguiHits = nil
+		resp, err := http.Get(srv.URL + "/api/approvals")
+		if err != nil {
+			t.Fatalf("GET /api/approvals: %v", err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if len(aguiHits) != 1 || aguiHits[0] != "/api/approvals" {
+			t.Fatalf("GET /api/approvals did not route to the AG-UI handler: hits=%v body=%s", aguiHits, raw)
+		}
+		if strings.Contains(string(raw), indexMarker) {
+			t.Fatalf("/api/approvals leaked the SPA shell instead of reaching the AG-UI handler")
+		}
+
+		aguiHits = nil
+		const token = "11111111-1111-1111-1111-111111111111"
+		wantPath := "/api/approvals/" + token + "/resolve"
+		presp, err := http.Post(srv.URL+wantPath, "application/json", strings.NewReader(`{"action":"accept"}`))
+		if err != nil {
+			t.Fatalf("POST resolve: %v", err)
+		}
+		praw, _ := io.ReadAll(presp.Body)
+		_ = presp.Body.Close()
+		if len(aguiHits) != 1 || aguiHits[0] != wantPath {
+			t.Fatalf("POST resolve did not route through to the AG-UI handler: hits=%v body=%s", aguiHits, praw)
+		}
+	})
+
 	// Precedence unbroken: /api/integrations/ still reaches the integrations proxy
 	// (its own 404 body, NOT the SPA fallback and NOT the /api/ carve-out swallowing it).
-	// Asserted AFTER the /api/conversations/ mount above to prove the new subtree did
-	// NOT shadow the integrations proxy (T-25-05).
+	// Asserted AFTER the /api/conversations/ AND /api/approvals mounts above to prove
+	// neither new route shadows the integrations proxy (T-25-05).
 	t.Run("GET /api/integrations/<unknown> -> integrations proxy (precedence)", func(t *testing.T) {
 		aguiHits = nil
 		resp, err := http.Get(srv.URL + "/api/integrations/does-not-exist")
@@ -332,4 +366,109 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 			t.Fatalf("POST /agent/run did not flow through RequireCapability to the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
 		}
 	})
+
+	// APRV (Phase 25): the read inherits the whole-origin gate (no second auth check on
+	// the new route) — a no-cookie GET /api/approvals is 401'd before the AG-UI handler.
+	t.Run("no cookie /api/approvals -> 401 (RequireAuth inherited)", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/approvals", nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("/api/approvals status = %d, want 401 (gate inherited)", rec.Code)
+		}
+		if len(aguiHits) != 0 {
+			t.Fatalf("unauthenticated /api/approvals leaked to the AG-UI handler: %v", aguiHits)
+		}
+	})
+
+	// APRV-02: the mutating resolve flows through RequireCapability to the AG-UI handler
+	// with a valid, capable cookie (the wired local identity holds agent.run).
+	t.Run("POST /api/approvals/{token}/resolve with a valid capable cookie passes the gate", func(t *testing.T) {
+		aguiHits = nil
+		const token = "11111111-1111-1111-1111-111111111111"
+		wantPath := "/api/approvals/" + token + "/resolve"
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, wantPath, strings.NewReader(`{"action":"accept"}`))
+		req.AddCookie(sessionCookie)
+		handler.ServeHTTP(rec, req)
+		if len(aguiHits) != 1 || aguiHits[0] != wantPath {
+			t.Fatalf("POST resolve did not flow through RequireCapability to the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
+		}
+	})
+}
+
+// uncapableIdentities resolves the local identity (so RequireAuth binds a principal) but
+// denies every capability — the negative half of the capability gate.
+type uncapableIdentities struct{ id string }
+
+func (u uncapableIdentities) GetIdentityByID(_ context.Context, id string) (agui.Identity, error) {
+	if id != u.id {
+		return agui.Identity{}, errWiringNotFound
+	}
+	return agui.Identity{ID: id, Name: "local", Kind: "user"}, nil
+}
+
+func (u uncapableIdentities) HasCapability(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+
+// TestServeWebuiApprovalsCapabilityGate pins the negative half of T-25-07: with a
+// configured secret and a principal that holds NO capability, the mutating resolve
+// (and POST /agent/run) are 403'd by RequireCapability and never reach the AG-UI handler,
+// even with a valid session cookie. This proves the resolve route is genuinely gated on
+// the capability, not merely on authentication.
+func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
+	const localID = "00000000-0000-0000-0000-000000000001"
+	const secret = "operator-secret"
+	key := sha256.Sum256([]byte(secret))
+	auth := agui.AuthDeps{
+		Secret:           secret,
+		SigningKey:       key[:],
+		SecretConfigured: true,
+		LocalIdentityID:  localID,
+		Identities:       uncapableIdentities{id: localID},
+		LoginPath:        "/login",
+	}
+
+	var aguiHits []string
+	aguiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		aguiHits = append(aguiHits, r.URL.Path)
+		_, _ = io.WriteString(w, `{"agui":true}`)
+	})
+
+	handler, err := newServeHandler(aguiHandler, auth)
+	if err != nil {
+		t.Fatalf("newServeHandler: %v", err)
+	}
+
+	loginRec := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("passphrase="+secret))
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /login = %d, want 303", loginRec.Code)
+	}
+	var sessionCookie *http.Cookie
+	for _, c := range loginRec.Result().Cookies() {
+		if strings.HasPrefix(c.Name, "__Host-") {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("POST /login did not mint a session cookie")
+	}
+
+	for _, route := range []string{"/api/approvals/11111111-1111-1111-1111-111111111111/resolve", "/agent/run"} {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{"action":"accept"}`))
+		req.AddCookie(sessionCookie)
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("POST %s with an uncapable principal = %d, want 403", route, rec.Code)
+		}
+		if len(aguiHits) != 0 {
+			t.Fatalf("POST %s reached the AG-UI handler despite a denied capability: %v", route, aguiHits)
+		}
+	}
 }

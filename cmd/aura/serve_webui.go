@@ -90,6 +90,20 @@ const conversationsRoutePrefix = "/api/conversations/"
 // list GET reachable without a redirect hop.
 const conversationsListRoute = "/api/conversations"
 
+// approvalsListRoute is the exact (no trailing slash) cross-thread pending read
+// (APRV-01), registered as a SPECIFIC parent-mux path delegating to the AG-UI handler
+// — a sibling of "/api/conversations/" + "/api/integrations/" under the "/api/"
+// exclusion carve-out, NEVER a bare "/api/" (which would shadow the integrations proxy,
+// T-25-05). It inherits RequireAuth from the whole-mux wrap below.
+const approvalsListRoute = "/api/approvals"
+
+// approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
+// Resuming or cancelling another thread's (possibly background) run is privileged
+// (Security V4 / T-25-07), so it is interposed with RequireCapability exactly like
+// "POST /agent/run": the method+path-specific pattern wins Go 1.22 longest-pattern
+// precedence and the gate fires AFTER RequireAuth has bound the principal.
+const approvalsResolveRoute = "POST /api/approvals/{token}/resolve"
+
 // newServeHandler builds the parent http.Handler for the daemon's single loopback
 // server: the AG-UI route prefixes delegate to aguiHandler (the agui Server.Mux), the
 // integrations proxy subtree mounts ahead of "/", and the catch-all "/" serves the
@@ -140,6 +154,14 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps) (http.Handler
 	// endpoint is not 301-redirected into the subtree and lost.
 	mux.Handle(conversationsRoutePrefix, aguiHandler)
 	mux.Handle(conversationsListRoute, aguiHandler)
+	// The Phase-25 approval center (APRV-01/02/03) mounts beside the conversation
+	// subtree. The mutating resolve is capability-gated exactly like POST /agent/run —
+	// resuming/declining/cancelling another thread's run is privileged (V4/T-25-07) —
+	// while the read inherits RequireAuth from the whole-mux wrap. Both delegate to the
+	// AG-UI handler, which carries the routes on its Server.Mux (registerApprovalRoutes).
+	// Method+path precedence keeps the resolve gate authoritative over the read path.
+	mux.Handle(approvalsResolveRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(approvalsListRoute, aguiHandler)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the
