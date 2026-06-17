@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/chetto1983/aura/internal/conversations"
@@ -124,9 +125,9 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 // handleSelectBranch re-runs the conversation over an EXISTING selected branch leaf (the
 // {branchSeq} path param — the leaf seq ListBranches reported). It drives the path loader
 // (LoadManagedHistoryForBranch) so the head is byte-identical; the body diverges per
-// branch. An unknown branch leaf yields an empty path → the re-run produces a normal turn
-// over whatever the walk returns (an unknown seq is a 404 at the parse boundary only when
-// non-numeric; a numeric-but-absent seq walks to empty, which the agent handles).
+// branch. The leaf MUST be one ListBranches reports for this conversation (WR-01): a
+// numeric-but-absent leaf is a clean 404 with NO re-run — a privileged mutating route must
+// not drive a re-run over an empty walk for an arbitrary client integer.
 func (s *Server) handleSelectBranch(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
@@ -134,6 +135,15 @@ func (s *Server) handleSelectBranch(w http.ResponseWriter, r *http.Request) {
 	}
 	leaf, ok := parseBranchSeq(w, r)
 	if !ok {
+		return
+	}
+	branches, err := s.conv.ListBranches(r.Context(), id)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if !slices.ContainsFunc(branches, func(b conversations.Branch) bool { return b.LeafSeq == leaf }) {
+		http.Error(w, "branch not found", http.StatusNotFound)
 		return
 	}
 	s.rerunBranch(w, r, id, leaf)

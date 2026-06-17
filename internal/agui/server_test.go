@@ -25,9 +25,10 @@ import (
 // projects the seeded turns, and any other id maps to ErrConversationNotFound (the 404
 // chokepoint). loadErr injects a LoadHistory failure for the error-body test.
 type fakeConvStore struct {
-	known   map[string]bool
-	history map[string][]llm.Message
-	loadErr error
+	known    map[string]bool
+	history  map[string][]llm.Message
+	loadErr  error
+	branches []conversations.Branch // ListBranches result (WR-01 membership tests)
 }
 
 func (f *fakeConvStore) Get(_ context.Context, id string) (conversations.Conversation, error) {

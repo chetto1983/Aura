@@ -14,9 +14,10 @@ import (
 // ConversationStore + Runner interfaces on the existing unit fakes; the route→store
 // mapping is asserted live in conversations_branch_api_test.go against the real store.
 
-// ListBranches/ForkBranch/CanonicalBranchLeaf are unit no-ops on the in-memory conv fake.
+// ListBranches returns the fake's configured branch set (nil by default); ForkBranch and
+// CanonicalBranchLeaf are unit no-ops on the in-memory conv fake.
 func (f *fakeConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
-	return nil, nil
+	return f.branches, nil
 }
 
 func (f *fakeConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {

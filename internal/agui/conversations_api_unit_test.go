@@ -170,6 +170,38 @@ func TestBranchAPI_ForkTurnNotFound404(t *testing.T) {
 	}
 }
 
+// TestBranchSelect_ValidatesLeafMembership (WR-01): POST /branches/{seq}/select re-runs
+// ONLY a leaf ListBranches reports for this conversation. A numeric-but-absent leaf is a
+// clean 404 with NO re-run — a privileged mutating route must not drive a re-run over an
+// empty walk for an arbitrary client integer.
+func TestBranchSelect_ValidatesLeafMembership(t *testing.T) {
+	branches := []conversations.Branch{{LeafSeq: 5}}
+
+	t.Run("known leaf re-runs", func(t *testing.T) {
+		run := &scriptedRunner{events: textTurn("ok")}
+		srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{goodID: true}, branches: branches})
+		code, body := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/branches/5/select", "")
+		if code != http.StatusOK {
+			t.Fatalf("select known leaf status = %d, want 200: %s", code, body)
+		}
+		if run.gotBranchLeaf != 5 {
+			t.Errorf("TurnBranch leaf = %d, want 5 (the selected leaf)", run.gotBranchLeaf)
+		}
+	})
+
+	t.Run("absent leaf is 404 with no re-run", func(t *testing.T) {
+		run := &scriptedRunner{events: textTurn("ok")}
+		srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{goodID: true}, branches: branches})
+		code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/branches/999/select", "")
+		if code != http.StatusNotFound {
+			t.Fatalf("select absent leaf status = %d, want 404", code)
+		}
+		if run.gotBranchLeaf != 0 {
+			t.Errorf("an absent-leaf 404 still drove a re-run (leaf=%d); want no re-run", run.gotBranchLeaf)
+		}
+	})
+}
+
 // TestConversationsAPI_NotFoundProjection proves a store ErrConversationNotFound maps
 // to 404 (not 500) on every {id} route that does a store round-trip.
 func TestConversationsAPI_NotFoundProjection(t *testing.T) {
