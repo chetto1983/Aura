@@ -4,13 +4,13 @@ milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
 stopped_at: Phase 25 UI-SPEC approved
-last_updated: "2026-06-17T07:27:56.768Z"
-last_activity: 2026-06-17 -- Phase 25 planning complete
+last_updated: "2026-06-17T07:58:59.533Z"
+last_activity: 2026-06-17
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 19
-  completed_plans: 12
+  completed_plans: 13
   percent: 38
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 24 — web-foundation-serve-auth-health
+**Current focus:** Phase 25 — chat-approval-center
 
 ## Current Position
 
-Phase: 25
-Plan: Not started
+Phase: 25 (chat-approval-center) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-06-17 -- Phase 25 planning complete
+Last activity: 2026-06-17
 
 ### Next -- Execute Phase 22
 
@@ -166,6 +166,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 24 P01 | ~25min | 3 tasks | 4 files |
 | Phase 24 P02 | ~30min | 2 tasks | 5 files |
 | Phase 24 P03 | 13min | 3 tasks | 8 files |
+| Phase 25 P01 | ~55min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -294,6 +295,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 24-02: SPA-fallback exclusion set single-sourced in fallbackExcludedPrefixes() passed into webui.Handler (anti-drift T-24-08)
 - [Phase ?]: 24-02: /api/ is a fallback EXCLUSION prefix only, never a mux registration (would shadow /api/integrations/, T-24-07)
 - [Phase ?]: 24-02: SPA shell served via http.ServeFileFS to avoid the http.FileServerFS index.html->./ redirect loop
+- [Phase ?]: Phase 25-01: cockpit SSE flipped to showReasoning=true (D-01), cockpit-scoped; Telegram posture unchanged
 
 ### Pending Todos
 
@@ -327,9 +329,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-17T06:26:00.980Z
+Last session: 2026-06-17T07:58:50.992Z
 Stopped at: Phase 25 UI-SPEC approved
-Resume file: .planning/phases/25-chat-approval-center/25-UI-SPEC.md
+Resume file: None
 
 ## Operator Next Steps
 
