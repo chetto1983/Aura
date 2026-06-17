@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: executing
-stopped_at: Completed 25-04-PLAN.md (conversation mgmt UI + runtime footer)
-last_updated: "2026-06-17T11:29:57.375Z"
+status: verifying
+stopped_at: Completed 25-05-PLAN.md (cross-thread approval UI)
+last_updated: "2026-06-17T11:50:34.648Z"
 last_activity: 2026-06-17
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 38
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 25 (chat-approval-center) — EXECUTING
-Plan: 25-04 complete (5 of 7 SUMMARYs) — 25-05 / 25-07 remaining
-Status: Executing — 25-04 (CHAT-02 conversation mgmt UI: sidebar/rename/archive-first delete/FTS search + CHAT-04 runtime footer: Tokens·Cache·Cost·Context gauge) shipped; activeThreadId bound from sidebar selection (25-03 stub resolved). Backend (25-01/02) + chat lane (25-03) + branch backend (25-06) prior. Frontend waves 25-05 (approval UI) + 25-07 (branch UI + re-run) remain.
-Last activity: 2026-06-17 -- 25-04 conversation management UI + runtime instrument footer executed
+Plan: 25-05 complete (6 of 7 SUMMARYs) — 25-07 remaining (branch picker + re-run)
+Status: Executing — 25-05 (APRV-01/02/03 cross-thread approval UI: polled pending-approval badge + lightweight list with Open-jump, inline in-thread Answer/Decline/Cancel card over /api/approvals/{token}/resolve, explicit terminal states for stale/auto-terminated interrupts) shipped. Backend (25-01/02) + chat lane (25-03) + conversation mgmt + footer (25-04) + branch backend (25-06) prior. Only 25-07 (branch UI + re-run) remains.
+Last activity: 2026-06-17 -- 25-05 cross-thread approval badge/list + inline HITL card executed
 
 ### Next -- Execute Phase 22
 
@@ -170,6 +170,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 25 P25-03 | ~95min | 3 tasks | 18 files |
 | Phase 25 P25-06 | ~75min | 3 tasks | 16 files |
 | Phase 25 P25-04 | ~70min | 2 tasks | 17 files |
+| Phase 25 P25-05 | ~40min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -338,7 +339,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-17T11:29:12.627Z
+Last session: 2026-06-17T11:50:24.878Z
 Stopped at: Completed 25-03-PLAN.md (chat lane)
 Resume file: None
 

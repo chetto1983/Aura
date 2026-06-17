@@ -53,9 +53,9 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 
 ### Approval Center (APRV) — Slice C
 
-- [ ] **APRV-01**: Operator can see a cross-thread list of pending `ask_user` / HITL interrupts with question, options, priority, and source
-- [ ] **APRV-02**: Operator can accept / decline / cancel a pending interrupt and resume the run over the existing `Interrupt`/`Resume[]` protocol
-- [ ] **APRV-03**: Stale / auto-terminated approvals render their terminal state (no silent loss)
+- [x] **APRV-01**: Operator can see a cross-thread list of pending `ask_user` / HITL interrupts with question, options, priority, and source
+- [x] **APRV-02**: Operator can accept / decline / cancel a pending interrupt and resume the run over the existing `Interrupt`/`Resume[]` protocol
+- [x] **APRV-03**: Stale / auto-terminated approvals render their terminal state (no silent loss)
 
 ### Typed Display (DISP) — Slices D + E (GAP-1)
 
@@ -170,9 +170,9 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | CHAT-03 | Phase 25 | Complete |
 | CHAT-04 | Phase 25 | Complete |
 | CHAT-05 | Phase 25 | Complete |
-| APRV-01 | Phase 25 | Pending |
-| APRV-02 | Phase 25 | Pending |
-| APRV-03 | Phase 25 | Pending |
+| APRV-01 | Phase 25 | Complete |
+| APRV-02 | Phase 25 | Complete |
+| APRV-03 | Phase 25 | Complete |
 | DISP-01 | Phase 26 | Pending |
 | DISP-02 | Phase 26 | Pending |
 | DISP-03 | Phase 26 | Pending |
