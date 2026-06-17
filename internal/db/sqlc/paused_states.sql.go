@@ -105,6 +105,58 @@ func (q *Queries) InsertPausedState(ctx context.Context, arg InsertPausedStatePa
 	return err
 }
 
+const listAllPendingPausedStates = `-- name: ListAllPendingPausedStates :many
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer
+FROM aura.paused_states
+WHERE resumed_at IS NULL
+ORDER BY priority DESC, created_at ASC, token ASC
+LIMIT $1
+`
+
+// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
+// ListPendingPausedStates with NO conversation_id filter, so the approval center
+// can aggregate every still-pending pause across ALL conversations. KEEPS the
+// mandatory total-order tiebreaker (priority DESC, created_at ASC, token ASC) —
+// `token ASC` is non-negotiable because tx-batched rows share created_at = now()
+// (RESEARCH Pitfall 4 / askuser/store.go:158-160), so without it the order would
+// be non-deterministic. LIMIT $1 caps the scan (a single operator's pending set is
+// tiny; no new index is warranted — RESEARCH A4).
+func (q *Queries) ListAllPendingPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error) {
+	rows, err := q.db.Query(ctx, listAllPendingPausedStates, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraPausedStates{}
+	for rows.Next() {
+		var i AuraPausedStates
+		if err := rows.Scan(
+			&i.Token,
+			&i.ConversationID,
+			&i.Kind,
+			&i.Question,
+			&i.Options,
+			&i.Priority,
+			&i.ResumeContext,
+			&i.ToolCallID,
+			&i.ProxiedFromChildID,
+			&i.ProxiedToolCallID,
+			&i.CreatedAt,
+			&i.ResumedAt,
+			&i.ResumedAnswer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingPausedStates = `-- name: ListPendingPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,

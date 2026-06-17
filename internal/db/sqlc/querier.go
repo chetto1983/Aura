@@ -64,6 +64,15 @@ type Querier interface {
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) error
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
+	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
+	// ListPendingPausedStates with NO conversation_id filter, so the approval center
+	// can aggregate every still-pending pause across ALL conversations. KEEPS the
+	// mandatory total-order tiebreaker (priority DESC, created_at ASC, token ASC) —
+	// `token ASC` is non-negotiable because tx-batched rows share created_at = now()
+	// (RESEARCH Pitfall 4 / askuser/store.go:158-160), so without it the order would
+	// be non-deterministic. LIMIT $1 caps the scan (a single operator's pending set is
+	// tiny; no new index is warranted — RESEARCH A4).
+	ListAllPendingPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)

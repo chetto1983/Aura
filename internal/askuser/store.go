@@ -65,15 +65,20 @@ func New(pool *pgxpool.Pool) *Store {
 
 // Pending is the domain projection of a pending aura.paused_states row — plain Go
 // types at the package boundary instead of the sqlc pgtype wrappers.
+// ProxiedFromChildID is the flat swarm-worker id ("w1".."wN", D-05/D-15) the pause
+// proxies for, or "" for a direct (non-proxied) call — it is the APRV-01 "source
+// thread" the cross-thread approval list shows so the operator knows which (possibly
+// background) thread raised the interrupt.
 type Pending struct {
-	Token          string
-	ConversationID string
-	Kind           string
-	Question       string
-	Options        json.RawMessage
-	Priority       int
-	ToolCallID     string
-	ResumeContext  json.RawMessage
+	Token              string
+	ConversationID     string
+	Kind               string
+	Question           string
+	Options            json.RawMessage
+	Priority           int
+	ToolCallID         string
+	ResumeContext      json.RawMessage
+	ProxiedFromChildID string
 }
 
 // ResumeAnswer is the AM-02 resolution payload persisted as resumed_answer jsonb.
@@ -166,6 +171,30 @@ func (s *Store) ListPending(ctx context.Context, conversationID string) ([]Pendi
 	rows, err := s.q.ListPendingPausedStates(ctx, convID)
 	if err != nil {
 		return nil, fmt.Errorf("list pending for %s: %w", conversationID, err)
+	}
+	out := make([]Pending, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, fromRow(r))
+	}
+	return out, nil
+}
+
+// ListPendingAll returns the still-pending pauses ACROSS ALL conversations
+// (resumed_at IS NULL) in the same total FIFO order as ListPending — priority DESC,
+// created_at ASC, token ASC — capped at limit (APRV-01 / D-04, the approval center's
+// cross-thread read). The token tiebreaker is mandatory for the same reason as
+// ListPending: tx-batched rows share created_at = now() (RESEARCH Pitfall 4), so
+// without it the cross-thread order would be non-deterministic. limit<=0 falls back
+// to 100 (mirroring ListRecent's <=0 guard). It reuses the SAME fromRow projector, so
+// each Pending carries Question/Options/Priority/Kind/ConversationID and the source
+// thread (ProxiedFromChildID) the operator needs to jump to the originating thread.
+func (s *Store) ListPendingAll(ctx context.Context, limit int) ([]Pending, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.q.ListAllPendingPausedStates(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list pending (all conversations): %w", err)
 	}
 	out := make([]Pending, 0, len(rows))
 	for _, r := range rows {
@@ -323,17 +352,23 @@ func (s *Store) CleanupResumedOlderThan(ctx context.Context, cutoff pgtype.Times
 	return nil
 }
 
-// fromRow projects a generated row onto the domain Pending type.
+// fromRow projects a generated row onto the domain Pending type. A NULL
+// proxied_from_child_id (a direct, non-proxied call) projects to the empty string.
 func fromRow(r sqlc.AuraPausedStates) Pending {
+	var proxiedChild string
+	if r.ProxiedFromChildID.Valid {
+		proxiedChild = r.ProxiedFromChildID.String
+	}
 	return Pending{
-		Token:          uuid.UUID(r.Token.Bytes).String(),
-		ConversationID: uuid.UUID(r.ConversationID.Bytes).String(),
-		Kind:           r.Kind,
-		Question:       r.Question,
-		Options:        r.Options,
-		Priority:       int(r.Priority),
-		ToolCallID:     r.ToolCallID,
-		ResumeContext:  append(json.RawMessage(nil), r.ResumeContext...),
+		Token:              uuid.UUID(r.Token.Bytes).String(),
+		ConversationID:     uuid.UUID(r.ConversationID.Bytes).String(),
+		Kind:               r.Kind,
+		Question:           r.Question,
+		Options:            r.Options,
+		Priority:           int(r.Priority),
+		ToolCallID:         r.ToolCallID,
+		ResumeContext:      append(json.RawMessage(nil), r.ResumeContext...),
+		ProxiedFromChildID: proxiedChild,
 	}
 }
 
