@@ -18,9 +18,8 @@ const NotFoundView = lazy(() =>
   import('./routes/NotFoundView').then((mod) => ({ default: mod.NotFoundView })),
 );
 
-// D-08: theme + density are already on <html> from the index.html pre-paint script;
-// applyTheme() re-asserts them from localStorage BEFORE React mounts so there is no
-// light-mode flash. Do NOT move this after createRoot, and do NOT edit index.html.
+// D-08: theme + density are already on <html> from the index.html pre-paint script.
+// Re-assert them from localStorage BEFORE React mounts so there is no theme flash.
 applyTheme();
 
 const container = document.getElementById('root');

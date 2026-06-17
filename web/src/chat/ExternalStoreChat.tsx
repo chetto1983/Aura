@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -11,9 +12,10 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown';
+import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
 import { BranchPicker } from './BranchPicker';
 import { Composer } from './Composer';
+import { MarkdownText } from './MarkdownText';
 import { ReasoningDrawer } from './ReasoningDrawer';
 import { ToolActivityCard } from './ToolActivityCard';
 import { streamPost, streamRun, type TurnUsage } from './sseAdapter';
@@ -41,9 +43,20 @@ function userMessage(text: string): ThreadMessageLike {
   return { id: crypto.randomUUID(), role: 'user', content: [{ type: 'text', text }] };
 }
 
+function assistantErrorMessage(text: string): ThreadMessageLike {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+    status: { type: 'incomplete', reason: 'error' },
+  };
+}
+
 export interface ExternalStoreChatProps {
   /** Conversation/thread id the run is POSTed against. */
   readonly threadId: string;
+  /** Create/select a conversation before the first send when no thread is active. */
+  readonly onEnsureThread?: (initialPrompt: string) => Promise<string>;
   /** 25-04 seam: receives the latest per-turn usage off the SSE STATE_DELTA. */
   readonly onUsage?: (usage: TurnUsage | undefined) => void;
   /**
@@ -55,11 +68,26 @@ export interface ExternalStoreChatProps {
   readonly resumeNonce?: number;
 }
 
-export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: ExternalStoreChatProps) {
+export function ExternalStoreChat({
+  threadId,
+  onEnsureThread,
+  onUsage,
+  resumeNonce = 0,
+}: ExternalStoreChatProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  const invalidateRuntimeReads = useCallback(
+    (id = threadId) => {
+      if (id.length === 0) return;
+      void queryClient.invalidateQueries({ queryKey: [CONVERSATION_KEY, id] });
+      void queryClient.invalidateQueries({ queryKey: [CONVERSATION_ROT_EVENTS_KEY, id] });
+    },
+    [queryClient, threadId],
+  );
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
@@ -74,11 +102,29 @@ export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: Extern
       });
       setIsRunning(true);
 
-      const controller = new AbortController();
-      abortRef.current = controller;
+      let runThreadId = threadId;
       try {
+        if (runThreadId.length === 0 && onEnsureThread !== undefined) {
+          runThreadId = await onEnsureThread(text);
+        }
+        if (runThreadId.length === 0) {
+          setMessages((prev) => {
+            const next = prev.slice();
+            const assistant = assistantErrorMessage(t('chat.error.createConversation'));
+            if (assistantIndex >= 0 && assistantIndex < next.length) {
+              next[assistantIndex] = assistant;
+            } else {
+              next.push(assistant);
+            }
+            return next;
+          });
+          return;
+        }
+
+        const controller = new AbortController();
+        abortRef.current = controller;
         await streamRun({
-          threadId,
+          threadId: runThreadId,
           userText: text,
           signal: controller.signal,
           onUpdate: (assistant, usage) => {
@@ -94,16 +140,29 @@ export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: Extern
             });
           },
         });
-      } catch {
+      } catch (err) {
         // An aborted fetch (Stop) throws AbortError; the partial assistant
         // message already rendered is left as-is (incomplete). Other network
         // failures surface through the reducer's error part where reachable.
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          setMessages((prev) => {
+            const next = prev.slice();
+            const assistant = assistantErrorMessage(t('chat.error.stream'));
+            if (assistantIndex >= 0 && assistantIndex < next.length) {
+              next[assistantIndex] = assistant;
+            } else {
+              next.push(assistant);
+            }
+            return next;
+          });
+        }
       } finally {
         setIsRunning(false);
         abortRef.current = null;
+        invalidateRuntimeReads(runThreadId);
       }
     },
-    [threadId, onUsage],
+    [threadId, onEnsureThread, onUsage, invalidateRuntimeReads, t],
   );
 
   const onCancel = useCallback(async () => {
@@ -139,9 +198,10 @@ export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: Extern
       } finally {
         setIsRunning(false);
         abortRef.current = null;
+        invalidateRuntimeReads();
       }
     },
-    [onUsage],
+    [onUsage, invalidateRuntimeReads],
   );
 
   // Continue-after-resume (D-05): when resumeNonce changes (AppShell bumps it after an
@@ -184,10 +244,11 @@ export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: Extern
       } finally {
         setIsRunning(false);
         abortRef.current = null;
+        invalidateRuntimeReads();
       }
     };
     void drive();
-  }, [resumeNonce, threadId, onUsage]);
+  }, [resumeNonce, threadId, onUsage, invalidateRuntimeReads]);
 
   // divergeSeq maps a frontend message INDEX to the backend turn seq it diverges from. The
   // persisted history is seq=1 (system), then user/assistant turns from seq=2; the visible
@@ -259,8 +320,10 @@ export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: Extern
         <ThreadPrimitive.Viewport className="flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4">
           <AuiIf condition={(s) => s.thread.isEmpty}>
             <div className="grid h-full place-items-center py-8 text-center">
-              <div className="flex flex-col items-center gap-2">
-                <h2 className="text-xl font-medium text-text">{t('chat.empty.thread.heading')}</h2>
+              <div className="flex flex-col items-center gap-3 px-6">
+                <h2 className="font-display text-4xl font-medium text-text sm:text-5xl">
+                  {t('chat.empty.thread.heading')}
+                </h2>
                 <p className="max-w-sm text-sm text-text-muted">{t('chat.empty.thread.body')}</p>
               </div>
             </div>
@@ -302,7 +365,7 @@ function UserMessage() {
             >
               {t('chat.edit.cancel')}
             </ComposerPrimitive.Cancel>
-            <ComposerPrimitive.Send className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.6875rem] font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+            <ComposerPrimitive.Send className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.6875rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
               {t('chat.edit.save')}
             </ComposerPrimitive.Send>
           </div>
@@ -311,12 +374,12 @@ function UserMessage() {
 
       {/* Normal view: the rendered user turn + the action bar. */}
       <AuiIf condition={({ composer }) => !composer.isEditing}>
-        <div className="rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
+        <div className="rounded-3xl bg-surface-2 px-5 py-3">
           <MessagePrimitive.Parts
             components={{
               Text: () => (
                 <div className="whitespace-pre-wrap text-sm leading-relaxed text-text">
-                  <MarkdownTextPrimitive />
+                  <MarkdownText />
                 </div>
               ),
             }}
@@ -352,7 +415,7 @@ function AssistantMessage() {
           // Assistant prose → sanitized markdown.
           Text: () => (
             <div className="text-sm leading-relaxed text-text">
-              <MarkdownTextPrimitive />
+              <MarkdownText />
             </div>
           ),
           // CoT → collapsible drawer (D-01). The drawer reads the reasoning text

@@ -4,6 +4,7 @@ import {
   DENSITY_STORAGE_KEY,
   getDensity,
   getTheme,
+  setTheme,
   setDensity,
   THEME_STORAGE_KEY,
 } from '../theme/applyTheme';
@@ -42,22 +43,31 @@ describe('applyTheme', () => {
     expect(getDensity()).toBe('operator');
   });
 
-  it('ignores an invalid stored theme (only dark is valid this phase)', () => {
-    localStorage.setItem(THEME_STORAGE_KEY, 'light');
+  it('ignores an invalid stored theme', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'solarized');
     expect(getTheme()).toBe('dark');
   });
 
-  it('honours a valid stored theme', () => {
+  it('honours valid stored light and dark themes', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    expect(getTheme()).toBe('light');
     localStorage.setItem(THEME_STORAGE_KEY, 'dark');
     expect(getTheme()).toBe('dark');
   });
 
   it('applyTheme writes data-theme + data-density on <html>', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'light');
     localStorage.setItem(DENSITY_STORAGE_KEY, 'compact');
     applyTheme();
     const root = document.documentElement;
-    expect(root.getAttribute('data-theme')).toBe('dark');
+    expect(root.getAttribute('data-theme')).toBe('light');
     expect(root.getAttribute('data-density')).toBe('compact');
+  });
+
+  it('setTheme persists to storage and reflects on <html>', () => {
+    setTheme('light');
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   it('setDensity persists to storage and reflects on <html>', () => {
@@ -79,5 +89,7 @@ describe('applyTheme', () => {
     // setDensity swallows the throw but still sets the in-DOM attribute.
     setDensity('compact');
     expect(document.documentElement.getAttribute('data-density')).toBe('compact');
+    setTheme('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 });

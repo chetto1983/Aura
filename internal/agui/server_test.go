@@ -26,6 +26,7 @@ import (
 // chokepoint). loadErr injects a LoadHistory failure for the error-body test.
 type fakeConvStore struct {
 	known    map[string]bool
+	titles   map[string]string
 	history  map[string][]llm.Message
 	loadErr  error
 	branches []conversations.Branch // ListBranches result (WR-01 membership tests)
@@ -33,7 +34,12 @@ type fakeConvStore struct {
 
 func (f *fakeConvStore) Get(_ context.Context, id string) (conversations.Conversation, error) {
 	if f.known[id] {
-		return conversations.Conversation{ID: id}, nil
+		title := ""
+		titleSet := false
+		if f.titles != nil {
+			title, titleSet = f.titles[id]
+		}
+		return conversations.Conversation{ID: id, Title: title, TitleSet: titleSet}, nil
 	}
 	return conversations.Conversation{}, conversations.ErrConversationNotFound
 }
@@ -61,7 +67,15 @@ func (f *fakeConvStore) UpdateStatus(context.Context, string, string) error { re
 
 func (f *fakeConvStore) Rename(context.Context, string, string) error { return nil }
 
-func (f *fakeConvStore) SetTitleIfNull(context.Context, string, string) error { return nil }
+func (f *fakeConvStore) SetTitleIfNull(_ context.Context, id, title string) error {
+	if f.titles == nil {
+		f.titles = map[string]string{}
+	}
+	if _, exists := f.titles[id]; !exists {
+		f.titles[id] = title
+	}
+	return nil
+}
 
 func (f *fakeConvStore) Delete(context.Context, string) error { return nil }
 
@@ -73,13 +87,16 @@ func (f *fakeConvStore) ListContextRotEvents(context.Context, string) ([]convers
 // whose SubmitAnswers records the resume map it was given. turnErr injects a turn-level
 // error (drives the RUN_ERROR path) for the redaction test.
 type scriptedRunner struct {
-	events         []*agent.Event
-	turnErr        error
-	gotAnswers     map[string]runner.ResponseInput
-	answersErr     error
-	gotBranchLeaf  int     // the leaf TurnBranch was called with (D-09 re-run assertion)
-	turnCalled     bool    // Turn was invoked (continue-after-resume reached the runner)
-	gotTurnUserMsg *string // the userMsg Turn was called with (nil = continue-after-resume)
+	events               []*agent.Event
+	turnErr              error
+	gotAnswers           map[string]runner.ResponseInput
+	answersErr           error
+	gotBranchLeaf        int     // the leaf TurnBranch was called with (D-09 re-run assertion)
+	turnCalled           bool    // Turn was invoked (continue-after-resume reached the runner)
+	gotTurnUserMsg       *string // the userMsg Turn was called with (nil = continue-after-resume)
+	newConversationID    string
+	newConversationErr   error
+	newConversationCalls int
 }
 
 func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
@@ -103,6 +120,17 @@ func (s *scriptedRunner) SubmitAnswers(_ context.Context, answers map[string]run
 		return 0, s.answersErr
 	}
 	return 0, nil
+}
+
+func (s *scriptedRunner) NewConversation(context.Context) (string, error) {
+	s.newConversationCalls++
+	if s.newConversationErr != nil {
+		return "", s.newConversationErr
+	}
+	if s.newConversationID != "" {
+		return s.newConversationID, nil
+	}
+	return goodID, nil
 }
 
 // textTurn is the canonical happy-path turn: one streamed assistant chunk + a final
@@ -158,6 +186,12 @@ func newTestServerCfg(t *testing.T, run Runner, conv ConversationStore, cfg Serv
 	srv := httptest.NewServer(s.Mux())
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func TestIsLifecycleFrameIncludesStateDelta(t *testing.T) {
+	if !isLifecycleFrame(events.EventTypeStateDelta) {
+		t.Fatal("STATE_DELTA must be lifecycle so usage frames survive overflow handling")
+	}
 }
 
 func TestServerHealthz(t *testing.T) {

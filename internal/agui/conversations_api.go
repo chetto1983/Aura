@@ -3,6 +3,7 @@ package agui
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 // defaultSearchLimit is the FTS hit cap applied when ?limit= is absent or unparseable
 // (the store further normalizes a non-positive value).
 const defaultSearchLimit = 20
+
+const createTitleMaxRunes = 80
 
 // parseLimit reads the ?limit= query value, falling back to defaultSearchLimit when
 // it is absent, non-numeric, or non-positive. The store clamps the upper bound.
@@ -43,6 +46,7 @@ func parseLimit(raw string) int {
 // verb 404s cleanly. List + search are the two non-{id} GETs; the rest carry an {id}.
 func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/conversations", s.handleListConversations)
+	mux.HandleFunc("POST /api/conversations", s.handleCreateConversation)
 	mux.HandleFunc("GET /api/conversations/search", s.handleSearchConversations)
 	mux.HandleFunc("GET /api/conversations/{id}", s.handleGetConversation)
 	mux.HandleFunc("GET /api/conversations/{id}/rot-events", s.handleConversationRotEvents)
@@ -58,7 +62,12 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 // writeJSON encodes v as the JSON body of a 200 response. A late encode failure (the
 // client went away mid-write) is a WARN, not a surfaced error — the header is sent.
 func writeJSON(w http.ResponseWriter, v any) {
+	writeJSONStatus(w, http.StatusOK, v)
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("agui: encode conversations response", "err", err)
 	}
@@ -84,6 +93,57 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		return
 	}
 	http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+}
+
+type createConversationBody struct {
+	Title string `json:"title"`
+}
+
+func normalizeCreateTitle(raw string) string {
+	title := strings.Join(strings.Fields(raw), " ")
+	title = strings.Trim(title, "\"'` \t\r\n")
+	title = strings.TrimRight(title, ".?!,:;")
+	if title == "" {
+		return ""
+	}
+	runes := []rune(title)
+	if len(runes) > createTitleMaxRunes {
+		title = strings.TrimSpace(string(runes[:createTitleMaxRunes]))
+	}
+	return title
+}
+
+// handleCreateConversation creates a new active conversation through the runner's
+// existing lifecycle helper, then returns the store projection the frontend already
+// consumes for lists, footer aggregates, and active-thread state.
+func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
+	if s.run == nil || s.conv == nil {
+		http.Error(w, "conversation creator unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
+	var body createConversationBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	id, err := s.run.NewConversation(r.Context())
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+		return
+	}
+	if title := normalizeCreateTitle(body.Title); title != "" {
+		if err := s.conv.SetTitleIfNull(r.Context(), id, title); err != nil {
+			http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+			return
+		}
+	}
+	conv, err := s.conv.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, conv)
 }
 
 // handleListConversations returns Store.List(ctx, includeArchived). ?archived=true

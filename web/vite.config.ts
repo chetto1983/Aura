@@ -11,8 +11,8 @@ const pwaManifest = {
   short_name: 'Aura',
   start_url: '/',
   display: 'standalone',
-  background_color: '#0B0E14',
-  theme_color: '#0B0E14',
+  background_color: '#131314',
+  theme_color: '#131314',
   lang: 'en',
   scope: '/',
   icons: [

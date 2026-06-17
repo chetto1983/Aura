@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { useConversationRotEvents } from '../conversations/useConversations';
 import {
+  CONTEXT_CRITICAL_PERCENT,
+  CONTEXT_NEAR_FULL_PERCENT,
   contextPercent,
   formatTokens,
-  isContextNearFull,
+  gaugeTier,
   totalPairsDropped,
 } from './footerMetrics';
 
@@ -35,8 +37,10 @@ export function ContextBudgetGauge({
   const { t } = useTranslation();
   const { data: rotEvents } = useConversationRotEvents(conversationId);
   const percent = contextPercent(usedTokens, windowTokens);
-  const nearFull = isContextNearFull(percent);
+  const tier = gaugeTier(percent);
   const dropped = totalPairsDropped(rotEvents ?? []);
+  const fillClass =
+    tier === 'critical' ? 'bg-danger' : tier === 'near' ? 'bg-warning' : 'bg-accent';
 
   return (
     <div className="flex min-w-[10rem] flex-col gap-1">
@@ -60,13 +64,14 @@ export function ContextBudgetGauge({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        aria-label={t('footer.contextLabel')}
+        aria-label={t('footer.contextLabel', {
+          near: CONTEXT_NEAR_FULL_PERCENT,
+          critical: CONTEXT_CRITICAL_PERCENT,
+        })}
         className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2"
       >
         <div
-          className={`h-full rounded-full transition-[width] motion-reduce:transition-none ${
-            nearFull ? 'bg-warning' : 'bg-accent'
-          }`}
+          className={`h-full rounded-full transition-[width] motion-reduce:transition-none ${fillClass}`}
           style={{ width: `${String(percent)}%` }}
         />
       </div>

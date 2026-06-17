@@ -7,6 +7,7 @@ import {
   DEFAULT_CONTEXT_WINDOW,
   formatCost,
   formatTokens,
+  isNoSpendTurn,
   seedSession,
 } from './footerMetrics';
 import type { TurnUsage } from './sseAdapter';
@@ -43,6 +44,8 @@ export function RuntimeFooter({ usage, conversationId, windowTokens }: RuntimeFo
   const turn = usage ?? null;
 
   const none = t('footer.none');
+  const noSpend = isNoSpendTurn(turn ?? undefined);
+  const noSpendLabel = t('footer.noSpend');
 
   // Per-turn cache % (/0-guarded) and cost (undefined cost_usd → em-dash).
   const turnCachePct = turn ? cacheHitPercent(turn.cacheHitTokens, turn.promptTokens) : undefined;
@@ -54,24 +57,33 @@ export function RuntimeFooter({ usage, conversationId, windowTokens }: RuntimeFo
 
   return (
     <footer
-      aria-label={t('footer.contextLabel')}
-      className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border bg-surface px-3 py-2 sm:px-4"
+      aria-label={t('footer.runtimeLabel')}
+      className="flex flex-wrap items-center gap-x-6 gap-y-2 bg-surface px-3 py-2 sm:px-4"
     >
+      <span aria-live="polite" className="sr-only">
+        {noSpend ? noSpendLabel : ''}
+      </span>
       <Metric
         label={t('footer.tokens')}
-        value={formatTokens(turn ? turn.promptTokens + turn.completionTokens : 0)}
+        value={
+          noSpend
+            ? noSpendLabel
+            : turn
+              ? formatTokens(turn.promptTokens + turn.completionTokens)
+              : none
+        }
         session={formatTokens(session.promptTokens + session.completionTokens)}
         sessionLabel={t('footer.session')}
       />
       <Metric
         label={t('footer.cache')}
-        value={turnCachePct === undefined ? none : `${String(turnCachePct)}%`}
+        value={noSpend || turnCachePct === undefined ? none : `${String(turnCachePct)}%`}
         session={sessionCachePct === undefined ? none : `${String(sessionCachePct)}%`}
         sessionLabel={t('footer.session')}
       />
       <Metric
         label={t('footer.cost')}
-        value={turnCost ?? none}
+        value={noSpend ? none : (turnCost ?? none)}
         session={sessionCost ?? none}
         sessionLabel={t('footer.session')}
       />

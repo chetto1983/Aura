@@ -6,6 +6,11 @@ export const resources = {
         english: 'English',
         italian: 'Italiano',
       },
+      theme: {
+        switcherLabel: 'Theme',
+        light: 'Light theme',
+        dark: 'Dark theme',
+      },
       login: {
         title: 'Aura',
         subtitle: 'Sign in to continue',
@@ -25,9 +30,14 @@ export const resources = {
       },
       shell: {
         primaryNav: 'Primary',
+        mobileModes: 'Modes',
         navigation: 'Navigation',
         displayWorkspace: 'Display workspace',
         chatRegion: 'Chat',
+        workspace: 'Operator cockpit',
+        openNavigation: 'Open navigation',
+        openRuntime: 'Open runtime status',
+        closePanel: 'Close panel',
         modes: {
           chat: 'Chat',
           tree: 'Tree',
@@ -37,6 +47,9 @@ export const resources = {
         },
       },
       chat: {
+        scrollToBottom: 'Scroll to bottom',
+        streaming: 'Streaming',
+        loading: 'Loading',
         composer: {
           placeholder: 'Ask Aura',
           send: 'Send',
@@ -50,10 +63,18 @@ export const resources = {
             heading: 'Ask Aura',
             body: 'Type a prompt below to start this run.',
           },
+          suggestionsLabel: 'Suggestions',
         },
         error: {
           stream:
             'The response stopped unexpectedly. Retry the last message or check the runtime status.',
+          createConversation:
+            "Couldn't start a new conversation. Check the runtime status and try again.",
+          retry: 'Retry',
+        },
+        markdown: {
+          copyCode: 'Copy code',
+          codeCopied: 'Code copied',
         },
         reasoning: {
           show: 'Show reasoning',
@@ -96,6 +117,12 @@ export const resources = {
         empty: {
           heading: 'Start a run',
           body: 'Ask Aura a question to begin. Your conversations show up here.',
+        },
+        recency: {
+          today: 'Today',
+          yesterday: 'Yesterday',
+          last7: 'Last 7 days',
+          older: 'Older',
         },
         actions: {
           rename: 'Rename',
@@ -155,6 +182,7 @@ export const resources = {
         },
       },
       footer: {
+        runtimeLabel: 'Runtime telemetry',
         tokens: 'Tokens',
         cache: 'Cache',
         cost: 'Cost',
@@ -162,8 +190,9 @@ export const resources = {
         perTurn: 'This turn',
         session: 'Session',
         none: '—',
+        noSpend: 'Local reply - no model spend',
         gaugeValue: '{{used}} / {{window}} · {{percent}}%',
-        contextLabel: 'Context budget',
+        contextLabel: 'Context budget - near at {{near}}%, critical at {{critical}}%',
         compacted: 'Compacted {{count}} older turns',
       },
       skeleton: {
@@ -217,6 +246,11 @@ export const resources = {
         english: 'English',
         italian: 'Italiano',
       },
+      theme: {
+        switcherLabel: 'Tema',
+        light: 'Tema chiaro',
+        dark: 'Tema scuro',
+      },
       login: {
         title: 'Aura',
         subtitle: 'Accedi per continuare',
@@ -237,9 +271,14 @@ export const resources = {
       },
       shell: {
         primaryNav: 'Principale',
+        mobileModes: 'Modalità',
         navigation: 'Navigazione',
         displayWorkspace: 'Area display',
         chatRegion: 'Area chat',
+        workspace: 'Cockpit operatore',
+        openNavigation: 'Apri navigazione',
+        openRuntime: 'Apri stato runtime',
+        closePanel: 'Chiudi pannello',
         modes: {
           chat: 'Chat',
           tree: 'Albero',
@@ -249,6 +288,9 @@ export const resources = {
         },
       },
       chat: {
+        scrollToBottom: 'Vai in fondo',
+        streaming: 'Streaming',
+        loading: 'Caricamento',
         composer: {
           placeholder: 'Chiedi ad Aura',
           send: 'Invia',
@@ -262,10 +304,18 @@ export const resources = {
             heading: 'Chiedi ad Aura',
             body: 'Scrivi un prompt qui sotto per avviare questa esecuzione.',
           },
+          suggestionsLabel: 'Suggerimenti',
         },
         error: {
           stream:
             "La risposta si è interrotta inaspettatamente. Riprova l'ultimo messaggio o controlla lo stato del runtime.",
+          createConversation:
+            'Impossibile avviare una nuova conversazione. Controlla lo stato runtime e riprova.',
+          retry: 'Riprova',
+        },
+        markdown: {
+          copyCode: 'Copia codice',
+          codeCopied: 'Codice copiato',
         },
         reasoning: {
           show: 'Mostra ragionamento',
@@ -308,6 +358,12 @@ export const resources = {
         empty: {
           heading: 'Avvia una esecuzione',
           body: 'Fai una domanda ad Aura per iniziare. Le tue conversazioni appariranno qui.',
+        },
+        recency: {
+          today: 'Oggi',
+          yesterday: 'Ieri',
+          last7: 'Ultimi 7 giorni',
+          older: 'Meno recenti',
         },
         actions: {
           rename: 'Rinomina',
@@ -368,6 +424,7 @@ export const resources = {
         },
       },
       footer: {
+        runtimeLabel: 'Telemetria runtime',
         tokens: 'Token',
         cache: 'Cache',
         cost: 'Costo',
@@ -375,8 +432,9 @@ export const resources = {
         perTurn: 'Questo turno',
         session: 'Sessione',
         none: '—',
+        noSpend: 'Risposta locale - nessun costo modello',
         gaugeValue: '{{used}} / {{window}} · {{percent}}%',
-        contextLabel: 'Budget di contesto',
+        contextLabel: 'Budget di contesto - attenzione a {{near}}%, critico a {{critical}}%',
         compacted: 'Compattati {{count}} turni più vecchi',
       },
       skeleton: {

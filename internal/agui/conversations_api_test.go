@@ -240,6 +240,48 @@ func TestConversationsAPI_Delete(t *testing.T) {
 	}
 }
 
+// TestConversationsAPI_DeleteWithAuditedPause proves real HITL/skill threads can be
+// hard-deleted: paused_states cascade away, while skill_audit keeps its historical
+// paused_state_token and must not force DELETE /api/conversations/{id} to 500.
+func TestConversationsAPI_DeleteWithAuditedPause(t *testing.T) {
+	pool := migratedPool(t)
+	store := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})
+	id := seedConversation(t, store, pool, []conversations.AppendTurnParams{
+		{Seq: 1, Role: llm.RoleUser, Content: "x"},
+	})
+	ctx := context.Background()
+	token := uuid.Must(uuid.NewV7()).String()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO aura.paused_states (token, conversation_id, kind, question, priority, tool_call_id)
+		 VALUES ($1, $2, 'approval', 'approve skill?', 0, 'tc')`, token, id); err != nil {
+		t.Fatalf("seed pause: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO aura.skill_audit (
+			actor_id, skill_name, action, content_hash, approval_source,
+			paused_state_token, gate_recommended, gate_taken
+		) VALUES (
+			'user', 'api-delete-cascade-regression', 'activate', 'sha256:test',
+			'ask_user', $1, true, true
+		)`, token); err != nil {
+		t.Fatalf("seed skill audit: %v", err)
+	}
+
+	srv := newConvAPIServer(t, store)
+	code, body := doReq(t, srv, http.MethodDelete, "/api/conversations/"+id, "")
+	if code != http.StatusNoContent {
+		t.Fatalf("delete audited pause status = %d, want 204: %s", code, body)
+	}
+	var auditCount int
+	if err := pool.QueryRow(ctx,
+		"SELECT count(*) FROM aura.skill_audit WHERE paused_state_token=$1", token).Scan(&auditCount); err != nil {
+		t.Fatalf("count audit: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("skill_audit must retain the historical token, got %d rows", auditCount)
+	}
+}
+
 // TestConversationsAPI_RotEvents asserts GET /api/conversations/{id}/rot-events
 // returns the microcompact ladder rows (pairs_dropped) via the thin
 // ListContextRotEvents wrapper (D-11). A fresh conversation has no events (empty

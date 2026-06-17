@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ExternalStoreChat } from '../ExternalStoreChat';
@@ -34,6 +36,11 @@ function sendPrompt(text: string): void {
   fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 }
 
+function renderChat(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
 interface FetchCall {
   readonly url: string;
   readonly init: RequestInit | undefined;
@@ -62,7 +69,7 @@ describe('BranchPicker + edit/reload (CHAT-05 / D-09)', () => {
       'fetch',
       vi.fn(() => Promise.resolve(sseResponse(turnFrames('m1', 'hello')))),
     );
-    render(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('hi');
     await waitFor(() => {
       expect(screen.getByText('hello')).toBeTruthy();
@@ -83,7 +90,7 @@ describe('BranchPicker + edit/reload (CHAT-05 / D-09)', () => {
   it('Reload regenerates an assistant turn via onReload -> POST /edit (assistant branch)', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(sseResponse(turnFrames('m1', 'first answer'))));
     vi.stubGlobal('fetch', fetchMock);
-    render(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('weather?');
     await waitFor(() => {
       expect(screen.getByText('first answer')).toBeTruthy();
@@ -107,7 +114,7 @@ describe('BranchPicker + edit/reload (CHAT-05 / D-09)', () => {
   it('Edit a user turn enters edit mode and on submit forks a branch via onEdit -> POST /edit', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(sseResponse(turnFrames('m1', 'answer one'))));
     vi.stubGlobal('fetch', fetchMock);
-    render(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('first question');
     await waitFor(() => {
       expect(screen.getByText('answer one')).toBeTruthy();

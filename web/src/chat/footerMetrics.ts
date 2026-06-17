@@ -17,10 +17,14 @@ export interface SessionTotals {
 
 /** The reload seed off GET /api/conversations/{id} aggregates (Go field names). */
 export interface ConversationAggregate {
-  readonly TotalInputTokens: number;
-  readonly TotalOutputTokens: number;
-  readonly TotalCachedTokens: number;
-  readonly TotalCostUSD: number;
+  readonly TotalInputTokens?: number;
+  readonly TotalOutputTokens?: number;
+  readonly TotalCachedTokens?: number;
+  readonly TotalCostUSD?: number;
+  readonly total_input_tokens?: number;
+  readonly total_output_tokens?: number;
+  readonly total_cached_tokens?: number;
+  readonly total_cost_usd?: number;
 }
 
 export const EMPTY_SESSION: SessionTotals = {
@@ -38,12 +42,16 @@ export const EMPTY_SESSION: SessionTotals = {
  */
 export function seedSession(agg: ConversationAggregate | undefined): SessionTotals {
   if (!agg) return EMPTY_SESSION;
+  const promptTokens = aggregateNumber(agg, 'TotalInputTokens', 'total_input_tokens');
+  const completionTokens = aggregateNumber(agg, 'TotalOutputTokens', 'total_output_tokens');
+  const cacheHitTokens = aggregateNumber(agg, 'TotalCachedTokens', 'total_cached_tokens');
+  const costUsd = aggregateNumber(agg, 'TotalCostUSD', 'total_cost_usd');
   return {
-    promptTokens: agg.TotalInputTokens,
-    completionTokens: agg.TotalOutputTokens,
-    cacheHitTokens: agg.TotalCachedTokens,
-    costUsd: agg.TotalCostUSD,
-    hasCost: agg.TotalCostUSD > 0,
+    promptTokens,
+    completionTokens,
+    cacheHitTokens,
+    costUsd,
+    hasCost: costUsd > 0,
   };
 }
 
@@ -54,14 +62,25 @@ export function seedSession(agg: ConversationAggregate | undefined): SessionTota
  * or the seed contributes a cost.
  */
 export function addTurn(base: SessionTotals, turn: TurnUsage): SessionTotals {
-  const turnCost = turn.costUsd ?? 0;
+  const turnCost = finiteNumber(turn.costUsd, 0);
   return {
-    promptTokens: base.promptTokens + turn.promptTokens,
-    completionTokens: base.completionTokens + turn.completionTokens,
-    cacheHitTokens: base.cacheHitTokens + turn.cacheHitTokens,
-    costUsd: base.costUsd + turnCost,
+    promptTokens: finiteNumber(base.promptTokens, 0) + finiteNumber(turn.promptTokens, 0),
+    completionTokens:
+      finiteNumber(base.completionTokens, 0) + finiteNumber(turn.completionTokens, 0),
+    cacheHitTokens: finiteNumber(base.cacheHitTokens, 0) + finiteNumber(turn.cacheHitTokens, 0),
+    costUsd: finiteNumber(base.costUsd, 0) + turnCost,
     hasCost: base.hasCost || turn.costUsd !== undefined,
   };
+}
+
+/** A local/fast-path turn carries no model spend and should not be shown as "0". */
+export function isNoSpendTurn(turn: TurnUsage | undefined): boolean {
+  return (
+    turn?.promptTokens === 0 &&
+    turn.completionTokens === 0 &&
+    turn.cacheHitTokens === 0 &&
+    turn.costUsd === undefined
+  );
 }
 
 /**
@@ -69,18 +88,21 @@ export function addTurn(base: SessionTotals, turn: TurnUsage): SessionTotals {
  * returns undefined so the caller can render "—" instead of NaN%.
  */
 export function cacheHitPercent(cacheHitTokens: number, promptTokens: number): number | undefined {
-  if (promptTokens <= 0) return undefined;
+  if (!Number.isFinite(cacheHitTokens) || !Number.isFinite(promptTokens) || promptTokens <= 0) {
+    return undefined;
+  }
   return Math.round((cacheHitTokens / promptTokens) * 100);
 }
 
 /** Compact token count: 42_000 → "42k", 1_500_000 → "1.5M", < 1000 verbatim. */
 export function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) {
-    const k = n / 1000;
+  const value = Number.isFinite(n) && n > 0 ? n : 0;
+  if (value < 1000) return String(Math.round(value));
+  if (value < 1_000_000) {
+    const k = value / 1000;
     return `${k >= 100 ? String(Math.round(k)) : trim1(k)}k`;
   }
-  return `${trim1(n / 1_000_000)}M`;
+  return `${trim1(value / 1_000_000)}M`;
 }
 
 function trim1(n: number): string {
@@ -100,24 +122,45 @@ export function formatCost(costUsd: number, hasCost: boolean): string | undefine
 
 /** Fill percent (0..100, clamped) of used tokens vs the model window, /0-guarded. */
 export function contextPercent(used: number, window: number): number {
-  if (window <= 0) return 0;
+  if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return 0;
   const pct = Math.round((used / window) * 100);
   return Math.min(100, Math.max(0, pct));
 }
 
 /** ≥85% of the window is the near-full threshold → warning fill (UI-SPEC §Color). */
-export const CONTEXT_NEAR_FULL_PERCENT = 85;
+export type GaugeTier = 'normal' | 'near' | 'critical';
+
+export const CONTEXT_NEAR_FULL_PERCENT = 70;
+export const CONTEXT_CRITICAL_PERCENT = 90;
+
+export function gaugeTier(percent: number): GaugeTier {
+  if (percent >= CONTEXT_CRITICAL_PERCENT) return 'critical';
+  if (percent >= CONTEXT_NEAR_FULL_PERCENT) return 'near';
+  return 'normal';
+}
 
 export function isContextNearFull(percent: number): boolean {
-  return percent >= CONTEXT_NEAR_FULL_PERCENT;
+  return gaugeTier(percent) !== 'normal';
 }
 
 /** Total pairs dropped by the microcompact ladder (sum of pairs_dropped events). */
 export function totalPairsDropped(events: readonly { readonly PairsDropped: number }[]): number {
-  return events.reduce((sum, e) => sum + e.PairsDropped, 0);
+  return events.reduce((sum, e) => sum + finiteNumber(e.PairsDropped, 0), 0);
 }
 
 // The DeepSeek-V4 default context window (matches internal/llm defaultContextWindow
 // = 1_000_000). The window is runtime config, not on the conversation wire shape,
 // so the footer carries the default; a future plan can thread the live window in.
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000;
+
+function aggregateNumber(
+  agg: ConversationAggregate,
+  pascalKey: keyof ConversationAggregate,
+  snakeKey: keyof ConversationAggregate,
+): number {
+  return finiteNumber(agg[pascalKey], finiteNumber(agg[snakeKey], 0));
+}
+
+function finiteNumber(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) ? value : fallback;
+}

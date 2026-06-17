@@ -41,32 +41,25 @@ func eventSource(threadID, runID string, n int) iter.Seq2[events.Event, error] {
 	}
 }
 
-func boundaryOverflowSource(afterStartYield chan<- struct{}, continueAfterStart <-chan struct{}) iter.Seq2[events.Event, error] {
+func boundaryOverflowSource(afterEndYield chan<- struct{}, continueAfterEnd <-chan struct{}) iter.Seq2[events.Event, error] {
 	return func(yield func(events.Event, error) bool) {
 		if !yield(events.NewRunStartedEvent("thread-1", "run-1"), nil) {
 			return
 		}
+		const msgID = "msg-1"
+		if !yield(events.NewTextMessageStartEvent(msgID, events.WithRole("assistant")), nil) {
+			return
+		}
 		for i := 0; i < fanoutBuffer; i++ {
-			ev := events.NewStateDeltaEvent([]events.JSONPatchOperation{{
-				Op:    "replace",
-				Path:  "/tick",
-				Value: i,
-			}})
-			if !yield(ev, nil) {
+			if !yield(events.NewTextMessageContentEvent(msgID, "x"), nil) {
 				return
 			}
 		}
-		if !yield(events.NewTextMessageStartEvent("msg-1", events.WithRole("assistant")), nil) {
+		if !yield(events.NewTextMessageEndEvent(msgID), nil) {
 			return
 		}
-		close(afterStartYield)
-		<-continueAfterStart
-		if !yield(events.NewTextMessageContentEvent("msg-1", "x"), nil) {
-			return
-		}
-		if !yield(events.NewTextMessageEndEvent("msg-1"), nil) {
-			return
-		}
+		close(afterEndYield)
+		<-continueAfterEnd
 		yield(events.NewRunFinishedEventWithOptions("thread-1", "run-1", events.WithSuccessOutcome()), nil)
 	}
 }
@@ -197,13 +190,14 @@ func TestFanoutDistributesToAllSubscribers(t *testing.T) {
 }
 
 // TestFanoutSlowSubscriberDropped rewrites the old false-green length check (D-04):
-// the slow subscriber overflows on a repeatable STATE_DELTA, then a boundary START is
-// attempted while the buffer is full. The surviving sub-sequence must still satisfy the
-// public AG-UI conformance checker; a START frame may never be among the dropped frames.
+// the slow subscriber overflows on repeatable TEXT_MESSAGE_CONTENT deltas, then a
+// lifecycle END is attempted while the buffer is full. The surviving sub-sequence must
+// still satisfy the public AG-UI conformance checker; lifecycle frames may never be
+// among the dropped frames.
 func TestFanoutSlowSubscriberDropped(t *testing.T) {
-	afterStartYield := make(chan struct{})
-	continueAfterStart := make(chan struct{})
-	f := NewFanout(boundaryOverflowSource(afterStartYield, continueAfterStart))
+	afterEndYield := make(chan struct{})
+	continueAfterEnd := make(chan struct{})
+	f := NewFanout(boundaryOverflowSource(afterEndYield, continueAfterEnd))
 	slow := f.Subscribe()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -216,21 +210,21 @@ func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	}
 
 	select {
-	case <-afterStartYield:
+	case <-afterEndYield:
 		startDrain()
 	case <-time.After(100 * time.Millisecond):
-		// Fixed behavior blocks on the non-droppable TEXT_MESSAGE_START until the
-		// slow subscriber drains enough capacity for the boundary frame.
+		// Fixed behavior blocks on the non-droppable TEXT_MESSAGE_END until the
+		// slow subscriber drains enough capacity for the lifecycle frame.
 		startDrain()
 		select {
-		case <-afterStartYield:
+		case <-afterEndYield:
 		case <-time.After(time.Second):
-			t.Fatalf("TEXT_MESSAGE_START did not unblock after draining the slow subscriber")
+			t.Fatalf("TEXT_MESSAGE_END did not unblock after draining the slow subscriber")
 		}
 	}
-	close(continueAfterStart)
+	close(continueAfterEnd)
 
-	const fullStream = 1 + fanoutBuffer + 4 // RUN_STARTED + deltas + message start/content/end + RUN_FINISHED
+	const fullStream = 1 + 1 + fanoutBuffer + 1 + 1 // RUN_STARTED + message start + deltas + message end + RUN_FINISHED
 	var read []events.Event
 	select {
 	case read = <-got:
@@ -246,6 +240,9 @@ func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	// frame are NEVER among the dropped frames, even when intermediate deltas overflow.
 	if !containsEventType(read, events.EventTypeTextMessageStart) {
 		t.Fatalf("TEXT_MESSAGE_START was dropped; survivors=%v", typesOf(read))
+	}
+	if !containsEventType(read, events.EventTypeTextMessageEnd) {
+		t.Fatalf("TEXT_MESSAGE_END was dropped; survivors=%v", typesOf(read))
 	}
 	if first := string(read[0].Type()); first != "RUN_STARTED" {
 		t.Fatalf("slow subscriber first = %s, want RUN_STARTED (lifecycle prologue must survive)", first)

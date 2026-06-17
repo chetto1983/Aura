@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toolStatus, type ToolStatus } from './toolStatus';
 
@@ -18,6 +18,18 @@ const DOT_CLASS: Record<ToolStatus, string> = {
   error: 'bg-danger',
 };
 
+const RULE_CLASS: Record<ToolStatus, string> = {
+  running: 'border-l-warning',
+  done: 'border-l-success',
+  error: 'border-l-danger',
+};
+
+const PILL_CLASS: Record<ToolStatus, string> = {
+  running: 'border-warning/50 text-warning',
+  done: 'border-success/50 text-success',
+  error: 'border-danger/50 text-danger',
+};
+
 export interface ToolActivityCardProps {
   readonly toolName: string;
   /** Raw streamed argument text (partial JSON during streaming). */
@@ -29,7 +41,6 @@ export interface ToolActivityCardProps {
 
 export function ToolActivityCard({ toolName, argsText, result, isError }: ToolActivityCardProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
   const bodyId = useId();
   const status = toolStatus({
     ...(result !== undefined ? { result } : {}),
@@ -39,9 +50,18 @@ export function ToolActivityCard({ toolName, argsText, result, isError }: ToolAc
   // operator sees what was requested. Always rendered as plain text/mono.
   const raw = result ?? argsText ?? '';
   const hasRaw = raw.length > 0;
+  const userToggled = useRef(false);
+  const [expanded, setExpanded] = useState(status === 'running' && hasRaw);
+
+  useEffect(() => {
+    if (userToggled.current) return;
+    setExpanded(status === 'running' && hasRaw);
+  }, [status, hasRaw]);
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-border bg-surface-2">
+    <div
+      className={`rounded-[var(--radius-md)] border border-l-2 border-border bg-surface-2 ${RULE_CLASS[status]}`}
+    >
       <div className="flex min-h-[var(--row-h)] items-center justify-between gap-2 px-3 py-1">
         <span className="flex items-center gap-2">
           <span
@@ -49,7 +69,9 @@ export function ToolActivityCard({ toolName, argsText, result, isError }: ToolAc
             className={`inline-block h-2 w-2 shrink-0 rounded-sm ${DOT_CLASS[status]}`}
           />
           <span className="font-mono text-xs text-text">{toolName}</span>
-          <span className="text-[0.6875rem] text-text-faint">
+          <span
+            className={`rounded-[var(--radius-pill)] border px-2 py-0.5 text-[0.6875rem] ${PILL_CLASS[status]}`}
+          >
             {t(`chat.tool.status.${status}`)}
           </span>
         </span>
@@ -57,6 +79,7 @@ export function ToolActivityCard({ toolName, argsText, result, isError }: ToolAc
           <button
             type="button"
             onClick={() => {
+              userToggled.current = true;
               setExpanded((v) => !v);
             }}
             aria-expanded={expanded}

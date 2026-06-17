@@ -30,20 +30,31 @@ export function LanguageSwitcherSkeleton() {
   );
 }
 
+export function ThemeSwitcherSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex shrink-0 rounded-[var(--radius-md)] border border-border bg-surface-2 p-0.5"
+    >
+      <SkeletonButton className="mx-0.5" size="sm" width="2rem" />
+      <SkeletonButton className="mx-0.5" size="sm" width="2rem" />
+    </div>
+  );
+}
+
 function ShellHeaderSkeleton() {
   return (
-    <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2 sm:px-4">
-      <SkeletonAvatar size={24} />
+    <header className="grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-surface px-2 py-2 sm:px-3">
+      <SkeletonButton className="lg:hidden" size="md" width="2.5rem" />
+      <SkeletonAvatar size={40} />
       <SkeletonText className="w-14" size="sm" widths="3.25rem" />
-      <nav
-        aria-hidden="true"
-        className="order-last flex w-full flex-wrap gap-1 text-text-muted sm:order-none sm:ml-6 sm:w-auto"
-      >
+      <nav aria-hidden="true" className="hidden items-center gap-1 text-text-muted md:flex">
         {['3rem', '2.75rem', '3.25rem', '4rem', '3.5rem'].map((width) => (
           <SkeletonBlock key={width} height={28} radius="md" width={width} />
         ))}
       </nav>
-      <div className="ml-auto">
+      <div className="ml-auto hidden items-center gap-2 sm:flex">
+        <ThemeSwitcherSkeleton />
         <LanguageSwitcherSkeleton />
       </div>
     </header>
@@ -52,7 +63,7 @@ function ShellHeaderSkeleton() {
 
 function ShellNavigationSkeleton() {
   return (
-    <aside className="grid gap-2 border-b border-border bg-surface px-3 py-3 sm:grid-cols-3 lg:flex lg:flex-col lg:gap-3 lg:border-b-0 lg:border-r">
+    <aside className="hidden min-h-0 flex-col gap-3 border-r border-border bg-surface px-3 py-3 lg:flex">
       <SkeletonText size="xs" widths="7rem" />
       <SkeletonText size="xs" widths="8rem" />
       <SkeletonText size="xs" widths="6.5rem" />
@@ -121,24 +132,43 @@ export function RuntimeHealthPanelSkeleton({
 
 function RuntimeWorkspaceSkeleton() {
   return (
-    <aside className="min-h-0 overflow-y-auto border-t border-border bg-surface p-4 lg:border-l lg:border-t-0">
+    <aside className="hidden min-h-0 overflow-y-auto border-l border-border bg-surface p-4 lg:block">
       <RuntimeHealthPanelSkeleton announce={false} />
     </aside>
+  );
+}
+
+function BottomDockSkeleton() {
+  return (
+    <div className="grid border-t border-border bg-surface">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2 sm:px-4">
+        <SkeletonText size="xs" widths="3rem" />
+        <SkeletonText size="xs" widths="4rem" />
+        <SkeletonText size="xs" widths="3.25rem" />
+        <SkeletonBlock className="min-w-[10rem]" height={6} radius="full" />
+      </div>
+      <div className="grid grid-cols-5 border-t border-border md:hidden">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <SkeletonBlock key={index} height={44} radius="sm" />
+        ))}
+      </div>
+    </div>
   );
 }
 
 export function AppShellSkeleton({ label = 'Loading cockpit...' }: AnnouncedSkeletonProps) {
   return (
     <SkeletonPage
-      className="grid h-dvh overflow-hidden bg-bg text-text [grid-template-rows:auto_1fr]"
+      className="grid h-[100svh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
       label={label}
     >
       <ShellHeaderSkeleton />
-      <main className="grid min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] lg:grid-cols-[14rem_minmax(0,1fr)_18rem] lg:grid-rows-1">
+      <main className="grid min-h-0 grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)_19rem]">
         <ShellNavigationSkeleton />
         <ChatWorkspaceSkeleton />
         <RuntimeWorkspaceSkeleton />
       </main>
+      <BottomDockSkeleton />
     </SkeletonPage>
   );
 }
@@ -150,11 +180,12 @@ export function LoginPageSkeleton({ label = 'Loading sign-in...' }: AnnouncedSke
       label={label}
     >
       <div className="w-full max-w-sm rounded-[var(--radius-lg)] border border-border bg-surface p-4">
-        <div className="flex justify-end pb-2">
+        <div className="flex items-center justify-between gap-2 pb-5">
+          <ThemeSwitcherSkeleton />
           <LanguageSwitcherSkeleton />
         </div>
-        <div className="flex flex-col items-center gap-2 pb-4">
-          <SkeletonAvatar size="md" />
+        <div className="flex flex-col items-center gap-3 pb-6">
+          <SkeletonAvatar size={96} />
           <SkeletonText className="w-20" size="xl" widths="4rem" />
           <SkeletonText className="w-36" size="sm" widths="7rem" />
         </div>

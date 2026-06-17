@@ -2,7 +2,7 @@ import { DEFAULT_DENSITY, isDensity, type Density } from './density';
 
 export const THEME_STORAGE_KEY = 'aura.theme';
 export const DENSITY_STORAGE_KEY = 'aura.density';
-export const THEMES = ['dark'] as const;
+export const THEMES = ['light', 'dark'] as const;
 
 export type Theme = (typeof THEMES)[number];
 
@@ -43,4 +43,13 @@ export function setDensity(density: Density): void {
     /* storage unavailable: fall back to the in-DOM attribute only */
   }
   document.documentElement.setAttribute('data-density', density);
+}
+
+export function setTheme(theme: Theme): void {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    /* storage unavailable: fall back to the in-DOM attribute only */
+  }
+  document.documentElement.setAttribute('data-theme', theme);
 }

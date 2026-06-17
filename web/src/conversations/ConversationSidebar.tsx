@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ariaInvalid } from '../a11y/aria';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import {
   displayTitle,
@@ -41,6 +42,7 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
   const remove = useDeleteConversation();
 
   const conversations = data ?? [];
+  const groups = groupByRecency(conversations);
 
   function confirmDelete() {
     const target = pendingDelete;
@@ -80,26 +82,35 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
           <p className="mt-1 text-[0.8125rem] text-text-muted">{t('conversations.empty.body')}</p>
         </div>
       ) : (
-        <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-          {conversations.map((conv) => (
-            <ConversationRow
-              key={conv.ID}
-              conv={conv}
-              selected={conv.ID === activeId}
-              onSelect={onSelect}
-              onRename={(title) => {
-                rename.mutate({ id: conv.ID, title });
-              }}
-              onArchive={() => {
-                archive.mutate(conv.ID);
-              }}
-              onUnarchive={() => {
-                unarchive.mutate(conv.ID);
-              }}
-              onRequestDelete={() => {
-                setPendingDelete(conv);
-              }}
-            />
+        <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+          {groups.map((group) => (
+            <li key={group.key} className="flex flex-col gap-1">
+              <h3 className="px-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-faint">
+                {t(`conversations.recency.${group.key}`)}
+              </h3>
+              <ul className="flex flex-col gap-1">
+                {group.items.map((conv) => (
+                  <ConversationRow
+                    key={conv.ID}
+                    conv={conv}
+                    selected={conv.ID === activeId}
+                    onSelect={onSelect}
+                    onRename={(title) => {
+                      rename.mutate({ id: conv.ID, title });
+                    }}
+                    onArchive={() => {
+                      archive.mutate(conv.ID);
+                    }}
+                    onUnarchive={() => {
+                      unarchive.mutate(conv.ID);
+                    }}
+                    onRequestDelete={() => {
+                      setPendingDelete(conv);
+                    }}
+                  />
+                ))}
+              </ul>
+            </li>
           ))}
         </ul>
       )}
@@ -168,8 +179,11 @@ function ConversationRow({
   return (
     <li
       className={`group rounded-[var(--radius-md)] border px-2 py-1.5 ${
-        selected ? 'border-l-2 border-l-accent border-border bg-surface-2' : 'border-transparent'
+        selected
+          ? 'border-l-2 border-l-accent border-border bg-surface-2'
+          : 'border-transparent hover:border-border hover:bg-surface-2/60'
       }`}
+      data-animate="surface"
     >
       {editing ? (
         <input
@@ -189,8 +203,7 @@ function ConversationRow({
             }
           }}
           aria-label={t('conversations.renameLabel')}
-          // Omit aria-invalid when valid so React drops the attribute (axe).
-          aria-invalid={invalid || undefined}
+          aria-invalid={ariaInvalid(invalid)}
           className="min-h-[var(--row-h)] w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
       ) : (
@@ -213,7 +226,7 @@ function ConversationRow({
       )}
 
       {!editing ? (
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.6875rem] text-text-muted opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.6875rem] text-text-muted opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
           <RowAction label={t('conversations.actions.rename')} onClick={startEditing} />
           {archived ? (
             <RowAction label={t('conversations.actions.unarchive')} onClick={onUnarchive} />
@@ -225,6 +238,40 @@ function ConversationRow({
       ) : null}
     </li>
   );
+}
+
+type RecencyKey = 'today' | 'yesterday' | 'last7' | 'older';
+
+interface RecencyGroup {
+  readonly key: RecencyKey;
+  readonly items: Conversation[];
+}
+
+function groupByRecency(conversations: readonly Conversation[]): RecencyGroup[] {
+  const groups: Record<RecencyKey, Conversation[]> = {
+    today: [],
+    yesterday: [],
+    last7: [],
+    older: [],
+  };
+  const now = new Date();
+  const today = startOfDay(now).getTime();
+  for (const conv of conversations) {
+    const created = new Date(conv.CreatedAt);
+    const day = Number.isNaN(created.getTime()) ? 0 : startOfDay(created).getTime();
+    const ageDays = Math.floor((today - day) / 86_400_000);
+    if (ageDays <= 0) groups.today.push(conv);
+    else if (ageDays === 1) groups.yesterday.push(conv);
+    else if (ageDays <= 7) groups.last7.push(conv);
+    else groups.older.push(conv);
+  }
+  return (Object.keys(groups) as RecencyKey[])
+    .map((key) => ({ key, items: groups[key] }))
+    .filter((group) => group.items.length > 0);
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function RowAction({

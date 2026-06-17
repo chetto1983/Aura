@@ -87,6 +87,19 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(screen.getByRole('button', { name: 'Answer' })).toBeTruthy();
   });
 
+  it('omits aria-invalid while valid and emits the explicit true token on a failed empty answer', async () => {
+    vi.stubGlobal('fetch', stubResolve(calls, true));
+    renderCard({ approval: approval({ token: 't-1', conversation_id: 'c-1' }) });
+    const field = screen.getByPlaceholderText('Type your answer');
+    expect(field.getAttribute('aria-invalid')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+
+    await waitFor(() => {
+      expect(field.getAttribute('aria-invalid')).toBe('true');
+    });
+  });
+
   it('Answer (option) resolves {action:"accept", content} → answered terminal chip', async () => {
     const onResolved = vi.fn();
     renderCard({

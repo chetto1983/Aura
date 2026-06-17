@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ExternalStoreChat } from '../ExternalStoreChat';
@@ -27,6 +29,11 @@ function sendPrompt(text: string): void {
   fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 }
 
+function renderChat(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
 describe('ExternalStoreChat (CHAT-01)', () => {
   beforeEach(() => {
     localStorage.removeItem('aura.chat.reasoning.shown');
@@ -37,7 +44,7 @@ describe('ExternalStoreChat (CHAT-01)', () => {
   });
 
   it('renders the empty-thread state before any turn', () => {
-    render(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
     expect(screen.getByText('Type a prompt below to start this run.')).toBeTruthy();
     expect(screen.getByPlaceholderText('Ask Aura')).toBeTruthy();
   });
@@ -76,7 +83,7 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const usageSpy = vi.fn();
-    render(<ExternalStoreChat threadId="conv-1" onUsage={usageSpy} />);
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={usageSpy} />);
     sendPrompt('weather?');
 
     // The assistant text renders (markdown).
@@ -105,6 +112,41 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     expect(lastUsage?.promptTokens).toBe(120);
   });
 
+  it('creates a thread id before the first send when no conversation is active', async () => {
+    const runBodies: unknown[] = [];
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.body !== undefined) {
+        if (typeof init.body !== 'string') throw new Error('expected JSON request body');
+        runBodies.push(JSON.parse(init.body) as unknown);
+      }
+      return Promise.resolve(
+        sseResponse([
+          { type: 'RUN_STARTED', threadId: 'conv-created', runId: 'run-1' },
+          { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
+          { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'Ciao.' },
+          { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
+          {
+            type: 'RUN_FINISHED',
+            threadId: 'conv-created',
+            runId: 'run-1',
+            outcome: { type: 'success' },
+          },
+        ]),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ensureThread = vi.fn(() => Promise.resolve('conv-created'));
+
+    renderChat(<ExternalStoreChat threadId="" onEnsureThread={ensureThread} />);
+    sendPrompt('ciao');
+
+    await waitFor(() => {
+      expect(screen.getByText('Ciao.')).toBeTruthy();
+    });
+    expect(ensureThread).toHaveBeenCalledWith('ciao');
+    expect(runBodies[0]).toMatchObject({ threadId: 'conv-created' });
+  });
+
   it('shows the Stop control while running and cancelling aborts the fetch', async () => {
     // A fetch that rejects with AbortError once the signal fires (never resolves
     // otherwise), so the turn stays "running" until cancelled.
@@ -117,7 +159,7 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('long task');
 
     // Stop replaces Send while the turn is in flight.
@@ -147,7 +189,7 @@ describe('ExternalStoreChat (CHAT-01)', () => {
         ),
       ),
     );
-    render(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('boom');
     // The reducer routes RUN_ERROR into an error text part rendered as markdown.
     await waitFor(() => {

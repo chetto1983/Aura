@@ -83,7 +83,7 @@ export function DeleteConfirmDialog({
           type="button"
           onClick={onConfirm}
           aria-describedby={bodyId}
-          className="min-h-[44px] rounded-[var(--radius-md)] bg-danger px-3 text-sm font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="min-h-[44px] rounded-[var(--radius-md)] bg-danger px-3 text-sm font-medium text-white outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {t('conversations.delete.confirm')}
         </button>

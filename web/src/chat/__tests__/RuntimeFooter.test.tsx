@@ -10,7 +10,9 @@ import {
   contextPercent,
   formatCost,
   formatTokens,
+  gaugeTier,
   isContextNearFull,
+  isNoSpendTurn,
   seedSession,
   totalPairsDropped,
   type ConversationAggregate,
@@ -104,8 +106,11 @@ describe('footerMetrics (pure)', () => {
   });
 
   it('isContextNearFull flips at the ≥85% threshold', () => {
-    expect(isContextNearFull(84)).toBe(false);
-    expect(isContextNearFull(85)).toBe(true);
+    expect(isContextNearFull(69)).toBe(false);
+    expect(isContextNearFull(70)).toBe(true);
+    expect(gaugeTier(69)).toBe('normal');
+    expect(gaugeTier(70)).toBe('near');
+    expect(gaugeTier(90)).toBe('critical');
   });
 
   it('seedSession + addTurn accumulate without double-count', () => {
@@ -131,6 +136,20 @@ describe('footerMetrics (pure)', () => {
     expect(seed.hasCost).toBe(false);
   });
 
+  it('seedSession accepts snake_case aggregate fields without producing NaN', () => {
+    const seed = seedSession({
+      total_input_tokens: 3200,
+      total_output_tokens: 740,
+      total_cached_tokens: 160,
+      total_cost_usd: 0.0214,
+    });
+    expect(seed.promptTokens).toBe(3200);
+    expect(seed.completionTokens).toBe(740);
+    expect(seed.cacheHitTokens).toBe(160);
+    expect(seed.costUsd).toBe(0.0214);
+    expect(seed.hasCost).toBe(true);
+  });
+
   it('addTurn latches hasCost only when a cost is present', () => {
     const seed = seedSession(undefined);
     const noCost = addTurn(seed, {
@@ -139,6 +158,23 @@ describe('footerMetrics (pure)', () => {
       cacheHitTokens: 0,
     });
     expect(noCost.hasCost).toBe(false);
+  });
+
+  it('detects local no-spend turns without fabricating usage', () => {
+    expect(
+      isNoSpendTurn({
+        promptTokens: 0,
+        completionTokens: 0,
+        cacheHitTokens: 0,
+      }),
+    ).toBe(true);
+    expect(
+      isNoSpendTurn({
+        promptTokens: 1,
+        completionTokens: 0,
+        cacheHitTokens: 0,
+      }),
+    ).toBe(false);
   });
 
   it('totalPairsDropped sums the compaction events', () => {
@@ -198,6 +234,27 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     expect(container.textContent).not.toMatch(/NaN/);
   });
 
+  it('renders snake_case aggregate seeds without NaN fallback text', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        agg: {
+          total_input_tokens: 3200,
+          total_output_tokens: 740,
+          total_cached_tokens: 160,
+          total_cost_usd: 0.0214,
+        },
+      }),
+    );
+    const { container } = renderFooter({ conversationId: 'c-1' });
+    await waitFor(() => {
+      expect(container.textContent).not.toMatch(/NaN/);
+      expect(screen.getByText(/Session 3\.9k/)).toBeTruthy();
+      expect(screen.getByText(/Session 5%/)).toBeTruthy();
+      expect(screen.getByText(/Session \$0\.0214/)).toBeTruthy();
+    });
+  });
+
   it('seeds the session-cumulative from the conversation aggregate then adds the live delta', async () => {
     const usage: TurnUsage = {
       promptTokens: 200,
@@ -225,7 +282,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     const bar = container.querySelector('[role="progressbar"]');
     expect(bar?.getAttribute('aria-valuenow')).toBe('90');
     // The fill is the warning tone at ≥85%.
-    expect(container.querySelector('.bg-warning')).not.toBeNull();
+    expect(container.querySelector('.bg-danger')).not.toBeNull();
     expect(container.querySelector('.bg-accent')).toBeNull();
   });
 
@@ -239,6 +296,28 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     const { container } = renderFooter({ usage, windowTokens: 100 });
     expect(container.querySelector('.bg-accent')).not.toBeNull();
     expect(container.querySelector('.bg-warning')).toBeNull();
+  });
+
+  it('uses the warning fill from 70% up to critical', () => {
+    const usage: TurnUsage = {
+      promptTokens: 75,
+      completionTokens: 0,
+      cacheHitTokens: 0,
+      costUsd: 0.001,
+    };
+    const { container } = renderFooter({ usage, windowTokens: 100 });
+    expect(container.querySelector('.bg-warning')).not.toBeNull();
+    expect(container.querySelector('.bg-danger')).toBeNull();
+  });
+
+  it('renders the no-spend label for local zero-usage replies', () => {
+    const usage: TurnUsage = {
+      promptTokens: 0,
+      completionTokens: 0,
+      cacheHitTokens: 0,
+    };
+    renderFooter({ usage });
+    expect(screen.getAllByText('Local reply - no model spend').length).toBeGreaterThan(0);
   });
 
   it('renders the microcompact marker from rot-events (pairs_dropped)', async () => {

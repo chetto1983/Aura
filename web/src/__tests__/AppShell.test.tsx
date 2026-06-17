@@ -29,6 +29,21 @@ function renderShell() {
   );
 }
 
+function sseBody(frames: readonly Record<string, unknown>[]): string {
+  return frames.map((f) => `event: ${String(f.type)}\ndata: ${JSON.stringify(f)}\n\n`).join('');
+}
+
+function sseResponse(frames: readonly Record<string, unknown>[]): Response {
+  const enc = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(enc.encode(sseBody(frames)));
+      controller.close();
+    },
+  });
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
+
 describe('AppShell', () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -60,7 +75,7 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Italiano' }));
 
     expect(screen.getByRole('navigation', { name: 'Principale' })).toBeTruthy();
-    expect(screen.getByText('Albero')).toBeTruthy();
+    expect(screen.getAllByText('Albero').length).toBeGreaterThan(0);
     // The left aside now hosts the conversation manager (replaced the placeholder
     // section labels); its heading is localised.
     expect(screen.getByText('Conversazioni')).toBeTruthy();
@@ -181,6 +196,88 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
     await waitFor(() => {
       expect(row.getAttribute('aria-current')).toBe('true');
     });
+  });
+
+  it('creates and selects a conversation before sending from an empty shell', async () => {
+    const created = {
+      ID: '22222222-2222-2222-2222-222222222222',
+      Title: '',
+      TitleSet: false,
+      IdentityID: 'op',
+      Status: 'active',
+      Model: 'm',
+      TotalInputTokens: 0,
+      TotalOutputTokens: 0,
+      TotalCachedTokens: 0,
+      TotalCostUSD: 0,
+      CreatedAt: '2026-06-17T00:00:00Z',
+    };
+    const calls: string[] = [];
+    let runBody: { threadId?: string } | undefined;
+    let createBody: { title?: string } | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const method = init?.method ?? 'GET';
+        calls.push(`${method} ${url}`);
+        if (url === '/api/conversations' && method === 'POST') {
+          if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
+          createBody = JSON.parse(init.body) as { title?: string };
+          return Promise.resolve(new Response(JSON.stringify(created), { status: 201 }));
+        }
+        if (url === '/agent/run') {
+          if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
+          runBody = JSON.parse(init.body) as { threadId?: string };
+          return Promise.resolve(
+            sseResponse([
+              { type: 'RUN_STARTED', threadId: created.ID, runId: 'run-1' },
+              { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
+              { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'Ciao.' },
+              { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
+              {
+                type: 'RUN_FINISHED',
+                threadId: created.ID,
+                runId: 'run-1',
+                outcome: { type: 'success' },
+              },
+            ]),
+          );
+        }
+        if (url.includes('/rot-events')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        if (/\/api\/conversations\/[^/?]+$/.test(url)) {
+          return Promise.resolve(new Response(JSON.stringify(created), { status: 200 }));
+        }
+        if (url.includes('/api/approvals') || url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<AppShell />} />
+            <Route path="/c/:id" element={<AppShell />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Ask Aura'), { target: { value: 'ciao' } });
+    fireEvent.keyDown(screen.getByPlaceholderText('Ask Aura'), { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Ciao.')).toBeTruthy();
+    });
+    expect(runBody?.threadId).toBe(created.ID);
+    expect(createBody?.title).toBe('ciao');
+    expect(calls.indexOf('POST /api/conversations')).toBeLessThan(calls.indexOf('POST /agent/run'));
   });
 
   it('renders the cross-thread approval badge + list and Open binds the thread (APRV-01/D-04)', async () => {

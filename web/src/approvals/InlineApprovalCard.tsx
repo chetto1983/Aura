@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ariaInvalid } from '../a11y/aria';
 import { isTerminal, parseOptions } from './approvalState';
 import { useResolveApproval, type Approval, type ResolveAction } from './useApprovals';
 
@@ -134,8 +135,7 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
             }}
             placeholder={t('approval.card.freeTextPlaceholder')}
             rows={2}
-            // Omit aria-invalid when valid so React drops the attribute (axe).
-            aria-invalid={(failed && freeText.trim().length === 0) || undefined}
+            aria-invalid={ariaInvalid(failed && freeText.trim().length === 0)}
             className="w-full resize-y rounded-[var(--radius-md)] border border-border bg-surface px-2 py-1.5 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           />
         </div>
@@ -149,7 +149,7 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
             onClick={() => {
               submit('accept', freeText);
             }}
-            className="min-h-9 rounded-[var(--radius-md)] bg-accent px-3 text-[0.8125rem] font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+            className="min-h-9 rounded-[var(--radius-md)] bg-accent px-3 text-[0.8125rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
           >
             {t('approval.card.answer')}
           </button>

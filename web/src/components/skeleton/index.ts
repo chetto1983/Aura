@@ -16,4 +16,5 @@ export {
   NotFoundViewSkeleton,
   RouteSkeletonFallback,
   RuntimeHealthPanelSkeleton,
+  ThemeSwitcherSkeleton,
 } from './AppSkeletons';

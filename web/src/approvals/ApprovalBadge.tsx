@@ -48,7 +48,7 @@ export function ApprovalBadge({ onToggle, expanded }: ApprovalBadgeProps) {
           onClick={onToggle}
           aria-expanded={expanded}
           aria-label={t('approval.badge.aria', { count })}
-          className="inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-full bg-accent px-2.5 text-[0.6875rem] font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-full bg-accent px-2.5 text-[0.6875rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <svg
             width="14"

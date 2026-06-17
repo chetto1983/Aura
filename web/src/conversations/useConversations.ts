@@ -69,6 +69,40 @@ async function getJSON<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+export function autoTitleFromPrompt(prompt: string): string {
+  const compact = prompt
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/["'`]+/g, '');
+  const stripped = compact.replace(/[.?!,:;]+$/u, '').trim();
+  if (stripped.length <= 80) return stripped;
+  const head = stripped.slice(0, 80).trimEnd();
+  const lastSpace = head.lastIndexOf(' ');
+  return `${(lastSpace >= 32 ? head.slice(0, lastSpace) : head).trimEnd()}...`;
+}
+
+export async function createConversation(initialPrompt?: string): Promise<Conversation> {
+  const title =
+    initialPrompt === undefined || initialPrompt.trim().length === 0
+      ? ''
+      : autoTitleFromPrompt(initialPrompt);
+  const res = await fetch('/api/conversations', {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+    ...(title.length > 0
+      ? {
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        }
+      : {}),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${String(res.status)}`);
+  }
+  return (await res.json()) as Conversation;
+}
+
 // A 204 No Content POST/DELETE: no body to parse, a non-2xx is a thrown error the
 // mutation surfaces (React Query sets isError; the UI shows the failure copy).
 async function mutate(url: string, method: 'POST' | 'DELETE', body?: unknown): Promise<void> {
@@ -132,6 +166,16 @@ export function useConversationSearch(query: string) {
 }
 
 /** GET /api/conversations/{id}/rot-events — microcompact markers for the gauge (D-11). */
+export function useCreateConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createConversation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [CONVERSATIONS_KEY] });
+    },
+  });
+}
+
 export function useConversationRotEvents(conversationId: string) {
   return useQuery({
     queryKey: [CONVERSATION_ROT_EVENTS_KEY, conversationId],

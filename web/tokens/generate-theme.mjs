@@ -10,14 +10,32 @@ const DENSITY_KEY = 'aura.density';
 const defaultTheme = tokens.$meta.defaultTheme;
 const defaultDensity = tokens.$meta.defaultDensity;
 
-const themeVars = Object.entries(tokens.color[defaultTheme])
-  .map(([k, v]) => `  --color-${k}: ${v};`)
-  .join('\n');
-const radiusVars = Object.entries(tokens.radius)
-  .map(([k, v]) => `  --radius-${k}: ${v};`)
-  .join('\n');
-const fontVars = Object.entries(tokens.font)
-  .map(([k, v]) => `  --font-${k}: ${v};`)
+function varsFrom(group, prefix) {
+  return Object.entries(group)
+    .filter(([k]) => !k.startsWith('_'))
+    .map(([k, v]) => `  --${prefix}-${k}: ${v};`)
+    .join('\n');
+}
+
+function colorVars(theme) {
+  return Object.entries(theme)
+    .filter(([k]) => !k.startsWith('_'))
+    .map(([k, v]) => `  --color-${k}: ${v};`)
+    .join('\n');
+}
+
+const themeVars = colorVars(tokens.color[defaultTheme]);
+const radiusVars = varsFrom(tokens.radius, 'radius');
+const fontVars = varsFrom(tokens.font, 'font');
+const shadowVars = varsFrom(tokens.shadow ?? {}, 'shadow');
+const motionVars = varsFrom(tokens.motion ?? {}, 'motion');
+const themeBlocks = Object.entries(tokens.color)
+  .map(
+    ([theme, values]) => `:root[data-theme="${theme}"] {
+  color-scheme: ${theme};
+${colorVars(values)}
+}`,
+  )
   .join('\n');
 
 const densityBlocks = Object.entries(tokens.density)
@@ -34,9 +52,12 @@ const css = `/* GENERATED from tokens/tokens.json by generate-theme.mjs — do n
 ${themeVars}
 ${radiusVars}
 ${fontVars}
+${shadowVars}
+${motionVars}
 }
+${themeBlocks}
 ${densityBlocks}
-:root[data-density="${defaultDensity}"] { color-scheme: ${defaultTheme}; }
+:root:not([data-theme]) { color-scheme: ${defaultTheme}; }
 `;
 writeFileSync(resolve(here, '../src/styles/theme.css'), css);
 

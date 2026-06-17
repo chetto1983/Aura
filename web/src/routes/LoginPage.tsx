@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ariaInvalid } from '../a11y/aria';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
+import { ThemeSwitcher } from '../theme/ThemeSwitcher';
 
 type SubmitState = 'idle' | 'submitting';
 type LoginErrorKey = 'login.errors.wrongPassphrase' | 'login.errors.network';
@@ -54,14 +56,21 @@ export function LoginPage() {
   const submitting = state === 'submitting';
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-bg px-8 text-text">
-      <div className="w-full max-w-sm rounded-[var(--radius-lg)] border border-border bg-surface p-4">
-        <div className="flex justify-end pb-2">
+    <main className="grid min-h-dvh place-items-center bg-bg px-6 py-8 text-text">
+      <div className="w-full max-w-md rounded-[var(--radius-xl)] border border-border bg-surface p-5 shadow-[var(--shadow-popover)] sm:p-6">
+        <div className="flex items-center justify-between gap-2 pb-5">
+          <ThemeSwitcher />
           <LanguageSwitcher />
         </div>
-        <div className="flex flex-col items-center gap-2 pb-4">
-          <img src="/logo.png" alt="Aura" width={32} height={32} className="rounded-sm" />
-          <h1 className="text-xl font-medium text-text">{t('login.title')}</h1>
+        <div className="flex flex-col items-center gap-3 pb-6">
+          <img
+            src="/logo.png"
+            alt="Aura"
+            width={112}
+            height={112}
+            className="h-24 w-24 rounded-[var(--radius-xl)] object-cover shadow-[0_18px_70px_rgb(26_115_232_/_0.24)] sm:h-28 sm:w-28"
+          />
+          <h1 className="font-display text-3xl font-medium text-text">{t('login.title')}</h1>
           <p className="text-sm text-text-muted">{t('login.subtitle')}</p>
         </div>
 
@@ -92,10 +101,7 @@ export function LoginPage() {
                 name="passphrase"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
-                // Omit aria-invalid on a pristine/valid field rather than emitting
-                // aria-invalid="false": `cond || undefined` makes React drop the attribute.
-                // Valid aria-invalid tokens are only true|false|grammar|spelling (axe aria-valid-attr-value).
-                aria-invalid={error !== null || undefined}
+                aria-invalid={ariaInvalid(error !== null)}
                 aria-describedby="passphrase-hint"
                 className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 pl-3 pr-11 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               />
@@ -157,7 +163,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="min-h-[44px] rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-70"
+            className="min-h-[44px] rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-70"
           >
             {submitting ? t('login.ctaInFlight') : t('login.cta')}
           </button>

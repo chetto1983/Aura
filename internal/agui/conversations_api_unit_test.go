@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -20,6 +21,10 @@ import (
 // the db_integration suite; THIS covers the error projections). A nil err makes a
 // method a happy no-op.
 type errConvStore struct{ err error }
+
+func (e *errConvStore) Create(context.Context, conversations.CreateParams) (conversations.Conversation, error) {
+	return conversations.Conversation{}, e.err
+}
 
 func (e *errConvStore) Get(context.Context, string) (conversations.Conversation, error) {
 	return conversations.Conversation{}, e.err
@@ -88,6 +93,43 @@ func req(t *testing.T, srv *httptest.Server, method, path, body string) (int, st
 }
 
 const goodID = "11111111-1111-1111-1111-111111111111"
+
+func TestConversationsAPI_CreateUsesRunnerConversationLifecycle(t *testing.T) {
+	run := &scriptedRunner{newConversationID: goodID}
+	conv := &fakeConvStore{known: map[string]bool{goodID: true}}
+	s := NewServer(run, conv, ServerConfig{})
+	srv := httptest.NewServer(s.Mux())
+	t.Cleanup(srv.Close)
+
+	code, body := req(t, srv, http.MethodPost, "/api/conversations", `{"title":"  Deploy rollback plan?  "}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201: %s", code, body)
+	}
+	if run.newConversationCalls != 1 {
+		t.Fatalf("NewConversation calls = %d, want 1", run.newConversationCalls)
+	}
+	var got conversations.Conversation
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode created conversation: %v (%s)", err, body)
+	}
+	if got.ID != goodID {
+		t.Fatalf("created conversation ID = %q, want %q", got.ID, goodID)
+	}
+	if !got.TitleSet || got.Title != "Deploy rollback plan" {
+		t.Fatalf("created conversation title = set:%v %q, want normalized title", got.TitleSet, got.Title)
+	}
+}
+
+func TestNormalizeCreateTitle(t *testing.T) {
+	got := normalizeCreateTitle("  `First line\nsecond line?!`  ")
+	if got != "First line second line" {
+		t.Fatalf("normalizeCreateTitle = %q, want compact punctuation-free title", got)
+	}
+	long := normalizeCreateTitle(strings.Repeat("a", createTitleMaxRunes+10))
+	if len([]rune(long)) != createTitleMaxRunes {
+		t.Fatalf("long title runes = %d, want %d", len([]rune(long)), createTitleMaxRunes)
+	}
+}
 
 // TestConversationsAPI_StoreError500 proves every route maps a generic store failure
 // to a 500 (not a 404 and not a panic), and the body is redacted by sanitizeErr — a

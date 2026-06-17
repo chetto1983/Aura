@@ -2,16 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0B0E14" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FDFCFC" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#131314" />
+    <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Aura</title>
     <script>
       (function () {
         try {
           var r = document.documentElement;
-          r.setAttribute('data-theme', localStorage.getItem('aura.theme') || 'dark');
+          var theme = localStorage.getItem('aura.theme') || 'dark';
+          if (theme !== 'light' && theme !== 'dark') theme = 'dark';
+          r.setAttribute('data-theme', theme);
           r.setAttribute('data-density', localStorage.getItem('aura.density') || 'operator');
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'dark');
