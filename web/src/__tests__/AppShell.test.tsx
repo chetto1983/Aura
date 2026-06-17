@@ -185,6 +185,100 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
     });
   });
 
+  it('renders the cross-thread approval badge + list and Open binds the thread (APRV-01/D-04)', async () => {
+    // The approvals poll returns one pending interrupt in a background thread.
+    const runCalls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('/api/approvals') && (init?.method ?? 'GET') === 'POST') {
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        if (url === '/agent/run') {
+          runCalls.push(url);
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
+        if (url.includes('/api/approvals')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  token: 't-1',
+                  conversation_id: 'c-1',
+                  kind: 'clarification',
+                  question: 'Which city?',
+                  priority: 0,
+                },
+              ]),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes('/rot-events')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        if (/\/api\/conversations\/[^/?]+$/.test(url)) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ID: 'c-1',
+                Title: 'Bg run',
+                TitleSet: true,
+                IdentityID: 'op',
+                Status: 'active',
+                Model: 'm',
+                TotalInputTokens: 0,
+                TotalOutputTokens: 0,
+                TotalCachedTokens: 0,
+                TotalCostUSD: 0,
+                CreatedAt: '2026-06-17T00:00:00Z',
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(
+          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
+        );
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<AppShell />} />
+            <Route path="/c/:id" element={<AppShell />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    // The badge shows the cross-thread count and opens the list.
+    const badge = await screen.findByRole('button', { name: '1 approval waiting' });
+    fireEvent.click(badge);
+    // The list row renders; Open jumps to /c/c-1 and binds the active thread.
+    const open = await screen.findByRole('button', { name: 'Open' });
+    fireEvent.click(open);
+    // After Open, the inline card for c-1 surfaces in the chat lane (verbatim question).
+    await waitFor(() => {
+      expect(screen.getAllByText('Which city?').length).toBeGreaterThan(0);
+    });
+    // Answering the inline card re-drives the run (continue-after-resume): the
+    // AppShell redriveRun callback POSTs /agent/run for the resumed thread (D-05).
+    fireEvent.change(screen.getByPlaceholderText('Type your answer'), {
+      target: { value: 'Rome' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+    await waitFor(() => {
+      expect(runCalls).toContain('/agent/run');
+    });
+  });
+
   it('opening a search hit navigates + binds the active thread (route change after mount)', async () => {
     // The search route returns one hit for c-1; clicking it navigates to /c/c-1,
     // which the route-change branch folds into the active selection.

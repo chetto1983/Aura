@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import { ApprovalBadge } from './approvals/ApprovalBadge';
+import { ApprovalList } from './approvals/ApprovalList';
+import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
 import { ExternalStoreChat } from './chat/ExternalStoreChat';
 import { RuntimeFooter } from './chat/RuntimeFooter';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
@@ -27,6 +30,9 @@ export function AppShell() {
   // The latest per-turn usage off the chat lane's onUsage seam (25-03) feeds the
   // runtime footer (D-10/D-12).
   const [usage, setUsage] = useState<TurnUsage | undefined>(undefined);
+  // The cross-thread approval list popover (APRV-01 / D-04) — toggled by the header
+  // badge; Open jumps to the pending thread's inline card.
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
   if ((routeId ?? '') !== lastRouteId) {
     setLastRouteId(routeId ?? '');
     setSelectedId(routeId ?? '');
@@ -39,6 +45,20 @@ export function AppShell() {
   function selectThread(id: string) {
     setSelectedId(id);
     setUsage(undefined);
+  }
+
+  // Continue-after-resume (D-05): after a successful accept/decline the run is
+  // re-driven with a no-Resume POST /agent/run so the stream continues over the
+  // rehydrated history (the resolve adapter already injected the answer turn). The
+  // server drives off the persisted history when no new user message is sent.
+  function redriveRun(conversationId: string) {
+    if (conversationId.length === 0) return;
+    void fetch('/agent/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ threadId: conversationId, messages: [] }),
+    }).catch(() => undefined);
   }
 
   return (
@@ -60,7 +80,27 @@ export function AppShell() {
             </span>
           ))}
         </nav>
-        <LanguageSwitcher className="ml-auto" />
+        {/* Cross-thread pending-approval badge + popover (APRV-01 / D-04). The badge
+            is the one accent-pill in the header; the list opens beneath it. */}
+        <div className="relative ml-auto">
+          <ApprovalBadge
+            expanded={approvalsOpen}
+            onToggle={() => {
+              setApprovalsOpen((v) => !v);
+            }}
+          />
+          {approvalsOpen ? (
+            <div className="absolute right-0 top-full z-20 mt-1">
+              <ApprovalList
+                onOpen={(id) => {
+                  selectThread(id);
+                  setApprovalsOpen(false);
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+        <LanguageSwitcher />
       </header>
 
       <main className="grid min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] lg:grid-cols-[14rem_minmax(0,1fr)_18rem] lg:grid-rows-1">
@@ -79,9 +119,19 @@ export function AppShell() {
 
         {/* The Core-Value chat lane (CHAT-01). The sidebar binds activeThreadId;
             onUsage feeds the runtime footer (D-10/D-12); the branch picker (25-07)
-            mounts onto the same lane. */}
-        <section aria-label={t('shell.chatRegion')} className="min-h-0 bg-bg">
-          <ExternalStoreChat threadId={activeThreadId} onUsage={setUsage} />
+            mounts onto the same lane. The inline approval cards (APRV-02 / D-03)
+            render in-thread for the active conversation's pending interrupts. */}
+        <section
+          aria-label={t('shell.chatRegion')}
+          className="flex min-h-0 flex-col bg-bg"
+        >
+          <div className="min-h-0 flex-1">
+            <ExternalStoreChat threadId={activeThreadId} onUsage={setUsage} />
+          </div>
+          <ThreadApprovalCards
+            conversationId={activeThreadId}
+            onResolved={redriveRun}
+          />
         </section>
 
         <aside
