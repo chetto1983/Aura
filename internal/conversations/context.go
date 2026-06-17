@@ -176,12 +176,45 @@ func (s *Store) ListContextRotEvents(ctx context.Context, conversationID string)
 
 // LoadManagedHistory loads the raw turns and applies the L1/L2/L2.5 ladder, the
 // entry point the Runner calls (D-A2-06: the ladder is applied in/around
-// LoadHistory). It uses the Store as the rot emitter.
+// LoadHistory). It uses the Store as the rot emitter. It loads the FULL seq-ordered
+// history (loadTurns / ListTurnsBySeq), so a non-branched conversation stays
+// byte-identical to the pre-0017 linear case (D-09 foundation: the branch path walk is
+// the explicit-leaf LoadManagedHistoryForBranch; this default path is unchanged).
 func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, cfg ContextConfig) ([]llm.Message, error) {
 	turns, err := s.loadTurns(ctx, conversationID)
 	if err != nil {
 		return nil, err
 	}
+	return s.managedFromTurns(ctx, conversationID, turns, cfg)
+}
+
+// LoadManagedHistoryForBranch is the path-aware variant (D-09 / CHAT-05): it walks the
+// SELECTED branch path (leaf -> root via parent_seq, returned root -> leaf) and feeds
+// that deterministic turn list into the SAME L1/L2/L2.5 ladder. A leafSeq <= 0 selects
+// the conversation's canonical branch leaf, so the default selection reconstructs the
+// linear history (the 0017 backfill chains the canonical branch parent_seq = seq-1).
+// The protected head (system seq=1 + the always-block) is rebuilt by the ladder
+// exactly as in the linear case — only the body turns differ per branch (Pitfall 3),
+// so messages[0] stays byte-identical across branches (the CAP-04 cache invariant).
+func (s *Store) LoadManagedHistoryForBranch(ctx context.Context, conversationID string, leafSeq int, cfg ContextConfig) ([]llm.Message, error) {
+	if leafSeq <= 0 {
+		leaf, err := s.CanonicalBranchLeaf(ctx, conversationID)
+		if err != nil {
+			return nil, err
+		}
+		leafSeq = leaf
+	}
+	turns, err := s.loadBranchTurns(ctx, conversationID, leafSeq)
+	if err != nil {
+		return nil, err
+	}
+	return s.managedFromTurns(ctx, conversationID, turns, cfg)
+}
+
+// managedFromTurns applies the deterministic L1/L2/L2.5 ladder to an already-loaded
+// turn list — the shared tail of both the linear (LoadManagedHistory) and path-aware
+// (LoadManagedHistoryForBranch) entry points. It uses the Store as the rot emitter.
+func (s *Store) managedFromTurns(ctx context.Context, conversationID string, turns []Turn, cfg ContextConfig) ([]llm.Message, error) {
 	enc, err := encoder()
 	if err != nil {
 		return nil, fmt.Errorf("load managed history %s: tiktoken encoder: %w", conversationID, err)
