@@ -45,8 +45,9 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 - [x] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit so the web exposure lands on a hardened base (HARDEN-01..12) — all 5 plans executed + automated-green 2026-06-15 (AG-001..064 ledgered, none dropped); Gate-3 close awaits the operator Part-B live sign-off (coverage ≥85% / WSL quality / live stack — `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`)
 - [x] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06) (completed 2026-06-16)
-- [x] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04) (completed 2026-06-16)
-- [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue (CHAT-01..04, APRV-01..03)
+- [x] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
+ (completed 2026-06-16)
+- [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue + conversation branch trees (CHAT-01..05, APRV-01..03)
 - [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
 - [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
@@ -122,7 +123,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Goal**: The operator can run the Core-Value agent loop end-to-end from the cockpit — send a prompt, watch the streamed answer, manage conversations, see cost/cache, and resolve HITL interrupts from a cross-thread queue — over the existing AG-UI/SSE transport and `conversations.Store` / `askuser.Store`.
 **Depends on**: Phase 24 (serve + auth boundary)
-**Requirements**: CHAT-01, CHAT-02, CHAT-03, CHAT-04, APRV-01, APRV-02, APRV-03
+**Requirements**: CHAT-01, CHAT-02, CHAT-03, CHAT-04, CHAT-05, APRV-01, APRV-02, APRV-03
 **Success Criteria** (what must be TRUE):
 
   1. Operator types a prompt and watches the assistant response stream token-by-token over `POST /agent/run` (SSE) in an assistant-ui chat lane
@@ -130,8 +131,17 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   3. Operator sees per-turn cost and cache-hit metrics in a footer
   4. Operator sees a cross-thread list of pending `ask_user` / HITL interrupts (question, options, priority, source) and can accept / decline / cancel one to resume the run over the existing `Interrupt` / `Resume[]` protocol
   5. A stale or auto-terminated approval renders its terminal state with no silent loss
+  6. Operator can edit/regenerate a message producing a navigable branch tree (D-09 / CHAT-05) over path-aware history, with the `messages[0]` KV-cache invariant preserved (cache-invariant gate green)
 
-**Plans**: TBD
+**Plans**: 7 plans
+Plans:
+- [ ] 25-01-PLAN.md — Conversation REST adapter + reasoning-on flip + /api/conversations mount (CHAT-02/03)
+- [ ] 25-02-PLAN.md — Cross-thread pending read + approvals resolve adapter w/ decline bridge (APRV-01/02/03)
+- [ ] 25-03-PLAN.md — assistant-ui chat lane: SSE reducer, runtime, reasoning drawer, raw tool card (CHAT-01/03)
+- [ ] 25-04-PLAN.md — Conversation sidebar/search/delete-confirm + runtime instrument footer + context gauge (CHAT-02/04)
+- [ ] 25-05-PLAN.md — Approval badge/list + inline approval card verbs + terminal states (APRV-01/02/03)
+- [ ] 25-06-PLAN.md — D-09 foundation: CHAT-05 amendment + migration 0017 + path-aware history + cache-invariant audit (CHAT-05)
+- [ ] 25-07-PLAN.md — D-09 completion: branch list/select + re-run + branch picker UI + Playwright E2E (CHAT-05/01)
 **UI hint**: yes
 
 ### Phase 26: Typed-Display Protocol + Router
