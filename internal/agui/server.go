@@ -95,6 +95,10 @@ func (s *Server) Mux() http.Handler {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
+	// CHAT-02 conversation-management subtree (Phase 25). The parent-mux mount
+	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
+	// colocated with their handlers so the agui Server.Mux answers them.
+	s.registerConversationRoutes(mux)
 	return s.withCORS(mux)
 }
 

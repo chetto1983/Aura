@@ -21,11 +21,21 @@ import (
 // (D-A2-02, "accept interfaces, return structs"). *conversations.Store satisfies
 // it implicitly. Get resolves a threadId → conversation (404 chokepoint);
 // LoadHistory rehydrates the byte-identical turn history for the GET messages
-// projection. Declared consumer-side so agui depends only on the two methods it
-// calls, not the whole Store.
+// projection. The CHAT-02 conversation-management surface (Phase 25) widens this
+// with List/SearchConversationTurns/UpdateStatus/Rename/Delete/SetTitleIfNull and a
+// read-only ListContextRotEvents (the D-11 microcompact ladder gauge marker) — all
+// already on the concrete *conversations.Store, declared here consumer-side so agui
+// depends only on the methods it calls, never the whole Store.
 type ConversationStore interface {
 	Get(ctx context.Context, conversationID string) (conversations.Conversation, error)
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
+	List(ctx context.Context, includeArchived bool) ([]conversations.Conversation, error)
+	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
+	UpdateStatus(ctx context.Context, conversationID, status string) error
+	Rename(ctx context.Context, conversationID, title string) error
+	SetTitleIfNull(ctx context.Context, conversationID, title string) error
+	Delete(ctx context.Context, conversationID string) error
+	ListContextRotEvents(ctx context.Context, conversationID string) ([]conversations.RotEvent, error)
 }
 
 // ErrEmptyThreadID and ErrNoMessages are the Aura-semantic validation sentinels

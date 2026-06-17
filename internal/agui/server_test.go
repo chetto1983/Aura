@@ -44,6 +44,30 @@ func (f *fakeConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message
 	return f.history[id], nil
 }
 
+// The CHAT-02 surface widened ConversationStore; the in-memory fake satisfies the
+// new methods with no-op/zero returns so the unit suite (which only exercises Get +
+// LoadHistory through /agent/run and /threads) keeps compiling. The route→method
+// mapping is asserted live in conversations_api_test.go against the real store.
+func (f *fakeConvStore) List(context.Context, bool) ([]conversations.Conversation, error) {
+	return nil, nil
+}
+
+func (f *fakeConvStore) SearchConversationTurns(context.Context, string, int) ([]conversations.SearchResult, error) {
+	return nil, nil
+}
+
+func (f *fakeConvStore) UpdateStatus(context.Context, string, string) error { return nil }
+
+func (f *fakeConvStore) Rename(context.Context, string, string) error { return nil }
+
+func (f *fakeConvStore) SetTitleIfNull(context.Context, string, string) error { return nil }
+
+func (f *fakeConvStore) Delete(context.Context, string) error { return nil }
+
+func (f *fakeConvStore) ListContextRotEvents(context.Context, string) ([]conversations.RotEvent, error) {
+	return nil, nil
+}
+
 // scriptedRunner is a fake Runner whose Turn replays a fixed *agent.Event slice and
 // whose SubmitAnswers records the resume map it was given. turnErr injects a turn-level
 // error (drives the RUN_ERROR path) for the redaction test.
