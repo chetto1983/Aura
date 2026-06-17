@@ -47,26 +47,23 @@ type ConversationStore interface {
 	CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error)
 }
 
-// ErrEmptyThreadID and ErrNoMessages are the Aura-semantic validation sentinels
-// ValidateRunInput returns. They are distinct from the SDK's parse errors: the
-// SDK's RunAgentInput.UnmarshalJSON owns camel/snake JSON shape, while these
-// guard Aura's run preconditions (a thread to resolve, a message to drive a turn).
-var (
-	ErrEmptyThreadID = errors.New("agui: threadId must not be empty")
-	ErrNoMessages    = errors.New("agui: messages must not be empty")
-)
+// ErrEmptyThreadID is the Aura-semantic validation sentinel ValidateRunInput returns.
+// It is distinct from the SDK's parse errors: the SDK's RunAgentInput.UnmarshalJSON
+// owns camel/snake JSON shape, while this guards Aura's one hard run precondition — a
+// thread to resolve.
+var ErrEmptyThreadID = errors.New("agui: threadId must not be empty")
 
 // ValidateRunInput checks the Aura-semantic preconditions for a run: a non-empty
-// threadId (resolved to a conversation downstream by conversations.Get, which
-// owns the UUID-shape check) and at least one message to drive the turn. It does
-// NOT re-implement JSON parsing (the SDK's UnmarshalJSON does) nor re-validate
-// the UUID shape (conversations.Get's parseUUID does).
+// threadId (resolved to a conversation downstream by conversations.Get, which owns the
+// UUID-shape check). It deliberately does NOT require a message: an empty Messages list
+// is the continue-after-resume signal (D-05 / CR-01) — handleRun resolves userMsg=nil
+// (lastUserMessage) and drives Runner.Turn(…, nil) over the rehydrated history (the
+// resolved ask_user answer is already a RoleTool turn the cockpit re-drive POSTs against
+// after an inline approval resolves). It does NOT re-implement JSON parsing (the SDK's
+// UnmarshalJSON does) nor re-validate the UUID shape (conversations.Get's parseUUID does).
 func ValidateRunInput(in types.RunAgentInput) error {
 	if in.ThreadID == "" {
 		return ErrEmptyThreadID
-	}
-	if len(in.Messages) == 0 {
-		return ErrNoMessages
 	}
 	return nil
 }
