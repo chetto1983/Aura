@@ -49,7 +49,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 - [x] **CHAT-02**: Operator can browse, FTS-search, rename, archive, and delete conversations (thin HTTP adapters over `conversations.Store`)
 - [x] **CHAT-03**: Operator can view a reasoning drawer (chain-of-thought) and a live tool-activity stream, governed by an explicit `showReasoning` policy
 - [ ] **CHAT-04**: Operator sees per-turn cost and cache-hit metrics in a footer
-- [ ] **CHAT-05**: Operator can branch/version messages (edit a user turn or regenerate an assistant turn produces a navigable branch tree) over a path-aware conversation history, preserving the `messages[0]` KV-cache invariant — a deliberate operator-chosen scope addition (D-09, CONTEXT.md)
+- [x] **CHAT-05**: Operator can branch/version messages (edit a user turn or regenerate an assistant turn produces a navigable branch tree) over a path-aware conversation history, preserving the `messages[0]` KV-cache invariant — a deliberate operator-chosen scope addition (D-09, CONTEXT.md)
 
 ### Approval Center (APRV) — Slice C
 
@@ -169,7 +169,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | CHAT-02 | Phase 25 | Complete |
 | CHAT-03 | Phase 25 | Complete |
 | CHAT-04 | Phase 25 | Pending |
-| CHAT-05 | Phase 25 | Pending |
+| CHAT-05 | Phase 25 | Complete |
 | APRV-01 | Phase 25 | Pending |
 | APRV-02 | Phase 25 | Pending |
 | APRV-03 | Phase 25 | Pending |
