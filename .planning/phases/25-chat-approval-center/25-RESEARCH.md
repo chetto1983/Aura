@@ -430,18 +430,18 @@ The gauge reads tokens-in-context vs window. Two sources, both server-owned:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Decline-over-HTTP bridge (D-05)** — Option A (new `/api/approvals/{token}/resolve` calling `Runner.SubmitAnswers` with full three actions) vs Option B (payload convention on AG-UI `resolved`).
+1. **Decline-over-HTTP bridge (D-05)** — **RESOLVED: Option A, implemented in plan 25-02 Task 2** (new `/api/approvals/{token}/resolve` calling `Runner.SubmitAnswers` with full three actions) vs Option B (payload convention on AG-UI `resolved`).
    - What we know: The Runner supports decline internally (`runner_resume.go:153`); the AG-UI `Resume[]` path does not (`ResumeStatus` is two-state).
    - What's unclear: Whether the planner wants ALL resume verbs to flow through one new adapter (cleaner, one resume path) or keep accept/cancel on `/agent/run` Resume[] and only decline on the new adapter.
    - Recommendation: **Option A, all three verbs through `/api/approvals/{token}/resolve`** for a single, testable resume surface; re-drive the run with a no-Resume `/agent/run` (continue-after-resume). Keeps the AG-UI Resume[] path untouched and the three-action model intact.
 
-2. **Footer session-cumulative on reload (D-10)** — the per-turn footer reads the live SSE; the *session cumulative* on a fresh page load needs the persisted total.
+2. **Footer session-cumulative on reload (D-10)** — **RESOLVED: session-cumulative seeds from the GET /api/conversations/{id} aggregates, implemented in plan 25-04 Task 2** — the per-turn footer reads the live SSE; the *session cumulative* on a fresh page load needs the persisted total.
    - What we know: `aura.conversations` already aggregates `total_input_tokens`/`total_output_tokens`/`total_cached_tokens`/`total_cost_usd` per thread (`0005_conversations.up.sql:16-19`), exposed on the `Conversation` projection (`store.go:104-107`).
    - Recommendation: The `/api/conversations/{id}` GET returns those aggregates → the footer seeds session-cumulative from them, then adds live SSE deltas. No new table or query — the data is already on the conversation row.
 
-3. **D-09 edit/regenerate persistence semantics** — when the operator edits a user turn or regenerates an assistant turn, does the old branch stay queryable (full tree) or is it a soft-overwrite?
+3. **D-09 edit/regenerate persistence semantics** — **RESOLVED: full-tree persistence (D-09), implemented in plan 25-07 Task 1** (over the plan 25-06 path-aware backend) — when the operator edits a user turn or regenerates an assistant turn, does the old branch stay queryable (full tree) or is it a soft-overwrite?
    - What we know: assistant-ui's branch model keeps all branches (architecture ref §Branching Model); the operator chose "FULL branch trees" (D-09).
    - Recommendation: Persist every branch (full tree). The migration's parent/branch pointers must support N siblings under one parent. The `LoadManagedHistory` walk takes a *selected leaf* and reconstructs the root→leaf path. This is the highest-design-effort item — flag as its own plan/wave.
 

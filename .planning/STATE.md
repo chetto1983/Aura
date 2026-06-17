@@ -4,12 +4,12 @@ milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
 stopped_at: Phase 25 UI-SPEC approved
-last_updated: "2026-06-17T06:26:00.994Z"
-last_activity: 2026-06-16
+last_updated: "2026-06-17T07:27:56.768Z"
+last_activity: 2026-06-17 -- Phase 25 planning complete
 progress:
   total_phases: 8
   completed_phases: 3
-  total_plans: 12
+  total_plans: 19
   completed_plans: 12
   percent: 38
 ---
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 Phase: 25
 Plan: Not started
-Status: Ready to execute 24-04
-Last activity: 2026-06-16
+Status: Ready to execute
+Last activity: 2026-06-17 -- Phase 25 planning complete
 
 ### Next -- Execute Phase 22
 

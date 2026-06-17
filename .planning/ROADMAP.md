@@ -47,6 +47,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06) (completed 2026-06-16)
 - [x] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
  (completed 2026-06-16)
+
 - [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue + conversation branch trees (CHAT-01..05, APRV-01..03)
 - [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
@@ -135,13 +136,34 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Plans**: 7 plans
 Plans:
+**Wave 1**
+
 - [ ] 25-01-PLAN.md — Conversation REST adapter + reasoning-on flip + /api/conversations mount (CHAT-02/03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 25-02-PLAN.md — Cross-thread pending read + approvals resolve adapter w/ decline bridge (APRV-01/02/03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 25-03-PLAN.md — assistant-ui chat lane: SSE reducer, runtime, reasoning drawer, raw tool card (CHAT-01/03)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 25-04-PLAN.md — Conversation sidebar/search/delete-confirm + runtime instrument footer + context gauge (CHAT-02/04)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 25-05-PLAN.md — Approval badge/list + inline approval card verbs + terminal states (APRV-01/02/03)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 25-06-PLAN.md — D-09 foundation: CHAT-05 amendment + migration 0017 + path-aware history + cache-invariant audit (CHAT-05)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 25-07-PLAN.md — D-09 completion: branch list/select + re-run + branch picker UI + Playwright E2E (CHAT-05/01)
+
 **UI hint**: yes
 
 ### Phase 26: Typed-Display Protocol + Router
