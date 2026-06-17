@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActionBarPrimitive,
   AssistantRuntimeProvider,
   AuiIf,
+  ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
   useExternalStoreRuntime,
@@ -10,10 +12,11 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown';
+import { BranchPicker } from './BranchPicker';
 import { Composer } from './Composer';
 import { ReasoningDrawer } from './ReasoningDrawer';
 import { ToolActivityCard } from './ToolActivityCard';
-import { streamRun, type TurnUsage } from './sseAdapter';
+import { streamPost, streamRun, type TurnUsage } from './sseAdapter';
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
 // list + isRunning + per-turn usage in React state and feeds them to
@@ -102,16 +105,85 @@ export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps)
     return Promise.resolve();
   }, []);
 
-  // Branch/edit/regenerate are the 25-07 sub-slice (needs the path-aware
-  // backend), so onEdit/onReload are deliberately NOT provided — the runtime
-  // gates those capabilities off when the handlers are absent. Cancel is enabled
-  // by providing onCancel (the Stop affordance). 25-07 wires the rest onto this
-  // same runtime once the backend exists.
+  // foldReRun streams a backend branch re-run (edit / regenerate) onto the supplied base
+  // message list, folding the AG-UI reply onto ONE freshly-id'd assistant message appended
+  // after the base. The base already reflects the forked turn (the edited user message, or
+  // the truncation before a regenerate), so the external-store runtime keeps the PRIOR
+  // version as a SIBLING branch automatically — the BranchPicker lights up without a
+  // hand-rolled state machine (RESEARCH "Don't Hand-Roll"). It does NOT re-implement the
+  // walk — the server drives LoadManagedHistoryForBranch over the forked path (Task-1).
+  const foldReRun = useCallback(
+    async (url: string, body: unknown, base: ThreadMessageLike[]) => {
+      setIsRunning(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      try {
+        await streamPost({
+          url,
+          body,
+          signal: controller.signal,
+          onUpdate: (assistant, usage) => {
+            onUsage?.(usage);
+            setMessages([...base, assistant]);
+          },
+        });
+      } catch {
+        // Aborted (Stop) or network failure — the partial/last message is left as-is.
+      } finally {
+        setIsRunning(false);
+        abortRef.current = null;
+      }
+    },
+    [onUsage],
+  );
+
+  // divergeSeq maps a frontend message INDEX to the backend turn seq it diverges from. The
+  // persisted history is seq=1 (system), then user/assistant turns from seq=2; the visible
+  // list (user+assistant only, no system) at index i is backend seq i+2. This is the
+  // edit/regenerate divergence point the server forks a sibling branch off of.
+  const divergeSeqAt = useCallback((index: number): number => (index < 0 ? 0 : index + 2), []);
+
+  // onEdit (D-09): edit a USER turn → slice to the parent, append the edited user turn (a
+  // fresh id), then POST /edit (fork a sibling branch off the diverging turn's parent +
+  // re-run). The runtime tracks the prior user turn + its answer as a sibling branch.
+  const onEdit = useCallback(
+    async (message: AppendMessage) => {
+      const text = appendMessageText(message);
+      const parentIndex = messages.findIndex((m) => m.id === message.parentId);
+      const seq = divergeSeqAt(parentIndex);
+      // The edited user turn replaces the old one (a fresh id); everything after the parent
+      // is dropped from THIS branch (the runtime keeps it as the sibling).
+      const base: ThreadMessageLike[] = [...messages.slice(0, parentIndex), userMessage(text)];
+      await foldReRun(`/api/conversations/${threadId}/edit`, { diverge_seq: seq, role: 'user', content: text }, base);
+    },
+    [threadId, messages, divergeSeqAt, foldReRun],
+  );
+
+  // onReload (D-09): regenerate an ASSISTANT turn → slice to the parent user turn, then
+  // POST /edit (role assistant, no content) so the agent produces a fresh assistant turn on
+  // a new sibling branch. parentId is the user turn the assistant answered.
+  const onReload = useCallback(
+    async (parentId: string | null) => {
+      const parentIndex = messages.findIndex((m) => m.id === parentId);
+      const seq = divergeSeqAt(parentIndex) + 1; // the assistant turn after its user parent
+      const base: ThreadMessageLike[] = messages.slice(0, parentIndex + 1);
+      await foldReRun(`/api/conversations/${threadId}/edit`, { diverge_seq: seq, role: 'assistant', content: '' }, base);
+    },
+    [threadId, messages, divergeSeqAt, foldReRun],
+  );
+
+  // 25-07: edit/regenerate + branch nav now ride this same runtime over the path-aware
+  // backend (plan 25-06). onEdit forks a user-turn branch; onReload forks an assistant
+  // branch; the runtime models the tree from setMessages so BranchPickerPrimitive
+  // (BranchPicker.tsx) navigates siblings. Copy/Edit/Reload are the ONLY action-bar verbs
+  // (UI-SPEC — the feedback rating group is Phase 26).
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages,
     isRunning,
     convertMessage: (m) => m,
     onNew,
+    onEdit,
+    onReload,
     onCancel,
   });
 
@@ -147,22 +219,68 @@ export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps)
 }
 
 function UserMessage() {
+  const { t } = useTranslation();
   return (
-    <MessagePrimitive.Root className="ml-auto max-w-[80%] rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
-      <MessagePrimitive.Parts
-        components={{
-          Text: () => (
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-text">
-              <MarkdownTextPrimitive />
-            </div>
-          ),
-        }}
-      />
+    <MessagePrimitive.Root className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
+      {/* Edit mode: a message-scoped composer whose Send fires onEdit (fork + re-run). */}
+      <AuiIf condition={({ composer }) => composer.isEditing}>
+        <ComposerPrimitive.Root className="flex w-full flex-col gap-2 rounded-[var(--radius-md)] border border-accent/40 bg-surface-2 px-3 py-2">
+          <ComposerPrimitive.Input
+            aria-label={t('chat.edit.label')}
+            className="w-full resize-none bg-transparent text-sm text-text outline-none"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <ComposerPrimitive.Cancel
+              aria-label={t('chat.edit.cancel')}
+              className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {t('chat.edit.cancel')}
+            </ComposerPrimitive.Cancel>
+            <ComposerPrimitive.Send
+              className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.6875rem] font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {t('chat.edit.save')}
+            </ComposerPrimitive.Send>
+          </div>
+        </ComposerPrimitive.Root>
+      </AuiIf>
+
+      {/* Normal view: the rendered user turn + the action bar. */}
+      <AuiIf condition={({ composer }) => !composer.isEditing}>
+        <div className="rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
+          <MessagePrimitive.Parts
+            components={{
+              Text: () => (
+                <div className="whitespace-pre-wrap text-sm leading-relaxed text-text">
+                  <MarkdownTextPrimitive />
+                </div>
+              ),
+            }}
+          />
+        </div>
+        {/* Edit a user turn → onEdit forks a branch + re-runs. Copy is the minimum verb. */}
+        <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
+          <ActionBarPrimitive.Edit
+            aria-label={t('chat.action.edit')}
+            className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            {t('chat.action.edit')}
+          </ActionBarPrimitive.Edit>
+          <ActionBarPrimitive.Copy
+            aria-label={t('chat.action.copy')}
+            className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            {t('chat.action.copy')}
+          </ActionBarPrimitive.Copy>
+          <BranchPicker />
+        </ActionBarPrimitive.Root>
+      </AuiIf>
     </MessagePrimitive.Root>
   );
 }
 
 function AssistantMessage() {
+  const { t } = useTranslation();
   return (
     <MessagePrimitive.Root className="max-w-[90%] space-y-2">
       <MessagePrimitive.Parts
@@ -195,6 +313,23 @@ function AssistantMessage() {
               is the runtime-level fallback for a hard message error. */}
         </p>
       </MessagePrimitive.Error>
+      {/* Assistant action bar: Copy + Reload (regenerate) ONLY — the feedback rating
+          group is Phase 26 (UI-SPEC). Reload forks an assistant-turn branch. */}
+      <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
+        <ActionBarPrimitive.Copy
+          aria-label={t('chat.action.copy')}
+          className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          {t('chat.action.copy')}
+        </ActionBarPrimitive.Copy>
+        <ActionBarPrimitive.Reload
+          aria-label={t('chat.action.reload')}
+          className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          {t('chat.action.reload')}
+        </ActionBarPrimitive.Reload>
+        <BranchPicker />
+      </ActionBarPrimitive.Root>
     </MessagePrimitive.Root>
   );
 }

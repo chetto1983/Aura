@@ -413,6 +413,49 @@ export interface StreamRunOptions {
   readonly newId?: () => string;
 }
 
+export interface StreamPostOptions {
+  /** The endpoint to POST (e.g. /api/conversations/{id}/edit or .../select). */
+  readonly url: string;
+  /** The JSON request body (undefined → empty body, e.g. a branch-select re-run). */
+  readonly body?: unknown;
+  readonly signal: AbortSignal;
+  readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
+  readonly newId?: () => string;
+}
+
+/**
+ * POST an arbitrary SSE re-run endpoint (the D-09 branch edit / select / regenerate
+ * routes) and fold the AG-UI reply onto one assistant message, exactly like streamRun.
+ * The branch routes stream the same translated turn shape as /agent/run, so the same
+ * reducer drives both — the only difference is the URL + body. Returns the turn usage.
+ */
+export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | undefined> {
+  const id = (opts.newId ?? (() => crypto.randomUUID()))();
+  const state = newAssistantTurn(id);
+  opts.onUpdate(toThreadMessage(state), state.usage);
+
+  const res = await fetch(opts.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    credentials: 'same-origin',
+    ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+    signal: opts.signal,
+  });
+
+  if (!res.ok || res.body === null) {
+    state.error = `HTTP ${String(res.status)}`;
+    state.status = { type: 'incomplete', reason: 'error' };
+    opts.onUpdate(toThreadMessage(state), state.usage);
+    return state.usage;
+  }
+
+  for await (const frame of readSSEFrames(res.body)) {
+    reduceFrame(state, frame);
+    opts.onUpdate(toThreadMessage(state), state.usage);
+  }
+  return state.usage;
+}
+
 /**
  * POST /agent/run and stream the reply, folding each AG-UI frame onto one
  * assistant message and invoking onUpdate. Uses fetch + ReadableStream (NOT

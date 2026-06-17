@@ -68,6 +68,22 @@ export const resources = {
             error: 'Error',
           },
         },
+        branch: {
+          label: 'Branch {{current}} of {{count}}',
+          previous: 'Previous branch',
+          next: 'Next branch',
+        },
+        action: {
+          copy: 'Copy',
+          copied: 'Copied',
+          edit: 'Edit',
+          reload: 'Regenerate',
+        },
+        edit: {
+          save: 'Save and re-run',
+          cancel: 'Cancel edit',
+          label: 'Edit message',
+        },
       },
       conversations: {
         heading: 'Conversations',
@@ -263,6 +279,22 @@ export const resources = {
             done: 'Completato',
             error: 'Errore',
           },
+        },
+        branch: {
+          label: 'Ramo {{current}} di {{count}}',
+          previous: 'Ramo precedente',
+          next: 'Ramo successivo',
+        },
+        action: {
+          copy: 'Copia',
+          copied: 'Copiato',
+          edit: 'Modifica',
+          reload: 'Rigenera',
+        },
+        edit: {
+          save: 'Salva e riesegui',
+          cancel: 'Annulla modifica',
+          label: 'Modifica messaggio',
         },
       },
       conversations: {
