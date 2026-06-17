@@ -45,6 +45,9 @@ SELECTOR_MODEL=$($GSD_SDK query resolve-model gsd-framework-selector 2>/dev/null
 RESEARCHER_MODEL=$($GSD_SDK query resolve-model gsd-ai-researcher 2>/dev/null | jq -r '.model' 2>/dev/null || true)
 DOMAIN_MODEL=$($GSD_SDK query resolve-model gsd-domain-researcher 2>/dev/null | jq -r '.model' 2>/dev/null || true)
 PLANNER_MODEL=$($GSD_SDK query resolve-model gsd-eval-planner 2>/dev/null | jq -r '.model' 2>/dev/null || true)
+# Curated agent skills injected into the researcher spawn prompts (Steps 7-8)
+AGENT_SKILLS_AI_RESEARCHER=$($GSD_SDK query agent-skills gsd-ai-researcher)
+AGENT_SKILLS_DOMAIN_RESEARCHER=$($GSD_SDK query agent-skills gsd-domain-researcher)
 ```
 
 Check config:
@@ -174,6 +177,8 @@ Before editing, verify the section you are about to write is still a template pl
 {context_path if exists}
 </files_to_read>
 
+${AGENT_SKILLS_AI_RESEARCHER}
+
 <input>
 framework: {primary_framework}
 system_type: {system_type}
@@ -209,6 +214,8 @@ Before editing, verify the section you are about to write is still a template pl
 {context_path if exists}
 {requirements_path if exists}
 </files_to_read>
+
+${AGENT_SKILLS_DOMAIN_RESEARCHER}
 
 <input>
 system_type: {system_type}

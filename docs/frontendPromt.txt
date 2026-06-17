@@ -1,0 +1,77 @@
+Act as a principal frontend designer-engineer. Your task is to deeply audit the app and implement a complete enterprise-grade responsive skeleton-loading system across every page, route, layout, and component.
+
+Load and follow these skills if available:
+frontend-design
+ux-antipatterns
+mobile-design
+
+Before designing, perform deep online research using authoritative sources: NN/g, Material Design, Apple HIG, IBM Carbon, WCAG/W3C, MDN, web.dev, and modern enterprise design systems. Use the research to guide skeleton UX, responsive behavior, mobile layout, accessibility, loading states, and anti-pattern avoidance.
+
+Implement skeletons that exactly mirror final layouts, prevent layout shift, support progressive loading, work from 320px to ultra-wide screens, respect reduced motion, preserve accessibility semantics, and look professional, industrial, technical, and production-grade.
+
+Do not create generic grey boxes. Create a reusable design-system-level skeleton architecture with tokens, primitives, responsive variants, component-level skeletons, and page-level loading states.
+
+Required components:
+- SkeletonBlock
+- SkeletonText
+- SkeletonAvatar
+- SkeletonButton
+- SkeletonCard
+- SkeletonTable
+- SkeletonChart
+- SkeletonForm
+- SkeletonPage
+- all custom component skeletons required by the app
+
+Required states:
+- initial page load
+- section load
+- table/list load
+- chart load
+- form load
+- refetching
+- pagination
+- lazy panel load
+- empty after loading
+- error after loading
+- reduced-motion loading
+
+Responsive rules:
+- mobile-first
+- no horizontal scroll except true two-dimensional content
+- stable dimensions between skeleton and final content
+- exact spacing, grid, row height, card height, and hierarchy preservation
+- breakpoint-aware navigation, cards, tables, dashboards, forms, and charts
+- comfortable mobile tap targets
+- no hover-only functionality
+
+Accessibility rules:
+- WCAG 2.2 aligned
+- aria-busy/role=status/aria-live only where useful
+- no noisy screen reader announcements
+- keyboard-safe
+- focus-safe
+- prefers-reduced-motion support
+- no flashing shimmer
+- adequate contrast
+
+Industrial visual style:
+- neutral surfaces
+- precise spacing
+- subtle borders
+- restrained radius
+- calm motion
+- enterprise density
+- polished dashboard/product feel
+- no decorative gimmicks
+
+After implementation, provide:
+1. files changed
+2. skeleton components created
+3. responsive behavior summary
+4. accessibility summary
+5. QA checklist
+6. assumptions
+7. remaining risks, if any
+
+Proceed autonomously. Make reasonable assumptions. Do not ask questions unless blocked by missing access or impossible ambiguity.
