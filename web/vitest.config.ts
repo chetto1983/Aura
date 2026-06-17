@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // The chat SSE-reducer test imports the REAL captured AG-UI golden frames from
+  // internal/agui/testdata/ (the same fixture the Go SSE tests use). That file is
+  // a sibling of web/, so the dev-server fs guard must allow reading one level up.
+  server: { fs: { allow: ['..'] } },
   test: {
     environment: 'jsdom',
     globals: true,
