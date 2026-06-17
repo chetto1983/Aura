@@ -154,7 +154,11 @@ export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps)
       // The edited user turn replaces the old one (a fresh id); everything after the parent
       // is dropped from THIS branch (the runtime keeps it as the sibling).
       const base: ThreadMessageLike[] = [...messages.slice(0, parentIndex), userMessage(text)];
-      await foldReRun(`/api/conversations/${threadId}/edit`, { diverge_seq: seq, role: 'user', content: text }, base);
+      await foldReRun(
+        `/api/conversations/${threadId}/edit`,
+        { diverge_seq: seq, role: 'user', content: text },
+        base,
+      );
     },
     [threadId, messages, divergeSeqAt, foldReRun],
   );
@@ -167,7 +171,11 @@ export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps)
       const parentIndex = messages.findIndex((m) => m.id === parentId);
       const seq = divergeSeqAt(parentIndex) + 1; // the assistant turn after its user parent
       const base: ThreadMessageLike[] = messages.slice(0, parentIndex + 1);
-      await foldReRun(`/api/conversations/${threadId}/edit`, { diverge_seq: seq, role: 'assistant', content: '' }, base);
+      await foldReRun(
+        `/api/conversations/${threadId}/edit`,
+        { diverge_seq: seq, role: 'assistant', content: '' },
+        base,
+      );
     },
     [threadId, messages, divergeSeqAt, foldReRun],
   );
@@ -236,9 +244,7 @@ function UserMessage() {
             >
               {t('chat.edit.cancel')}
             </ComposerPrimitive.Cancel>
-            <ComposerPrimitive.Send
-              className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.6875rem] font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
+            <ComposerPrimitive.Send className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.6875rem] font-medium text-[#0B0E14] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
               {t('chat.edit.save')}
             </ComposerPrimitive.Send>
           </div>

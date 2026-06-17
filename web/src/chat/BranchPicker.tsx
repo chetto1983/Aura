@@ -30,10 +30,7 @@ export function BranchPicker() {
 
         {/* The active-branch readout: accent-tinted (reserved item 6), announced politely
             so a screen reader hears the branch change without moving focus. */}
-        <span
-          aria-live="polite"
-          className="px-1 font-mono tabular-nums text-accent"
-        >
+        <span aria-live="polite" className="px-1 font-mono tabular-nums text-accent">
           <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
         </span>
 

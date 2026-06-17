@@ -58,7 +58,10 @@ describe('BranchPicker + edit/reload (CHAT-05 / D-09)', () => {
   });
 
   it('ships ONLY Copy/Edit/Reload action verbs — no feedback rating group (Phase 26 boundary)', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(sseResponse(turnFrames('m1', 'hello')))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(sseResponse(turnFrames('m1', 'hello')))),
+    );
     render(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('hi');
     await waitFor(() => {
@@ -116,7 +119,9 @@ describe('BranchPicker + edit/reload (CHAT-05 / D-09)', () => {
     fireEvent.change(editor, { target: { value: 'edited question' } });
 
     // Submit the edit (Save and re-run) → onEdit fires → POST /edit with role:user.
-    fetchMock.mockImplementation(() => Promise.resolve(sseResponse(turnFrames('m2', 'answer two'))));
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(sseResponse(turnFrames('m2', 'answer two'))),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Save and re-run' }));
 
     await waitFor(() => {
