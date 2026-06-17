@@ -35,3 +35,49 @@ FROM aura.conversation_turns
 WHERE content % $1
 ORDER BY similarity(content, $1) DESC
 LIMIT $2;
+
+-- name: CanonicalBranchLeafSeq :one
+-- D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
+-- all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
+-- conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
+-- the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
+-- 0 when the conversation has no turns.
+SELECT COALESCE(MAX(seq), 0)::int AS leaf_seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND branch_id = '00000000-0000-0000-0000-000000000000';
+
+-- name: ListTurnsByBranchPath :many
+-- D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,
+-- follow parent_seq up to the root, then return the turns in root->leaf (seq ASC) order
+-- so the head (system seq=1 + the always-block) is byte-identical to the linear case —
+-- only the body turns differ per branch (Pitfall 3 rule 1). The column list MIRRORS
+-- ListTurnsBySeq exactly so turnFromRow rehydrates it unchanged. A leaf seq of 0 (or one
+-- not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
+WITH RECURSIVE path AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens, ct.output_tokens,
+           ct.cached_tokens, ct.branch_id, ct.parent_seq
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = $1 AND ct.seq = $2
+    UNION ALL
+    SELECT t.conversation_id, t.seq, t.role, t.content, t.content_sidecar_path,
+           t.tool_call_id, t.tool_calls, t.created_at, t.input_tokens, t.output_tokens,
+           t.cached_tokens, t.branch_id, t.parent_seq
+    FROM aura.conversation_turns t
+    JOIN path p
+      ON t.conversation_id = p.conversation_id
+     AND t.seq = p.parent_seq
+)
+SELECT path.conversation_id, path.seq, path.role, path.content, path.content_sidecar_path,
+       path.tool_call_id, path.tool_calls, path.created_at, path.input_tokens,
+       path.output_tokens, path.cached_tokens
+FROM path
+ORDER BY path.seq ASC;
+
+-- name: SetTurnBranchPointers :exec
+-- D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
+-- uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
+UPDATE aura.conversation_turns
+SET branch_id = $3, parent_seq = $4
+WHERE conversation_id = $1 AND seq = $2;

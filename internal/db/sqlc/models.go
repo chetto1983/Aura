@@ -64,6 +64,10 @@ type AuraConversationTurns struct {
 	InputTokens        int32              `json:"input_tokens"`
 	OutputTokens       int32              `json:"output_tokens"`
 	CachedTokens       int32              `json:"cached_tokens"`
+	// D-09 branch tree (CHAT-05): the branch a turn belongs to. All-zero UUID = the per-conversation canonical branch (pre-0017 backfill).
+	BranchID pgtype.UUID `json:"branch_id"`
+	// D-09 branch tree (CHAT-05): seq of the parent turn within the conversation; NULL at the root (seq=1). Canonical backfill: seq-1.
+	ParentSeq pgtype.Int4 `json:"parent_seq"`
 }
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.

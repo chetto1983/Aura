@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const canonicalBranchLeafSeq = `-- name: CanonicalBranchLeafSeq :one
+SELECT COALESCE(MAX(seq), 0)::int AS leaf_seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND branch_id = '00000000-0000-0000-0000-000000000000'
+`
+
+// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
+// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
+// conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
+// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
+// 0 when the conversation has no turns.
+func (q *Queries) CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, canonicalBranchLeafSeq, conversationID)
+	var leaf_seq int32
+	err := row.Scan(&leaf_seq)
+	return leaf_seq, err
+}
+
 const countTurns = `-- name: CountTurns :one
 SELECT count(*) AS turn_count
 FROM aura.conversation_turns
@@ -60,6 +79,86 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 	return err
 }
 
+const listTurnsByBranchPath = `-- name: ListTurnsByBranchPath :many
+WITH RECURSIVE path AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens, ct.output_tokens,
+           ct.cached_tokens, ct.branch_id, ct.parent_seq
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = $1 AND ct.seq = $2
+    UNION ALL
+    SELECT t.conversation_id, t.seq, t.role, t.content, t.content_sidecar_path,
+           t.tool_call_id, t.tool_calls, t.created_at, t.input_tokens, t.output_tokens,
+           t.cached_tokens, t.branch_id, t.parent_seq
+    FROM aura.conversation_turns t
+    JOIN path p
+      ON t.conversation_id = p.conversation_id
+     AND t.seq = p.parent_seq
+)
+SELECT path.conversation_id, path.seq, path.role, path.content, path.content_sidecar_path,
+       path.tool_call_id, path.tool_calls, path.created_at, path.input_tokens,
+       path.output_tokens, path.cached_tokens
+FROM path
+ORDER BY path.seq ASC
+`
+
+type ListTurnsByBranchPathParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	Seq            int32       `json:"seq"`
+}
+
+type ListTurnsByBranchPathRow struct {
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	Seq                int32              `json:"seq"`
+	Role               string             `json:"role"`
+	Content            pgtype.Text        `json:"content"`
+	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID         pgtype.Text        `json:"tool_call_id"`
+	ToolCalls          []byte             `json:"tool_calls"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	InputTokens        int32              `json:"input_tokens"`
+	OutputTokens       int32              `json:"output_tokens"`
+	CachedTokens       int32              `json:"cached_tokens"`
+}
+
+// D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,
+// follow parent_seq up to the root, then return the turns in root->leaf (seq ASC) order
+// so the head (system seq=1 + the always-block) is byte-identical to the linear case —
+// only the body turns differ per branch (Pitfall 3 rule 1). The column list MIRRORS
+// ListTurnsBySeq exactly so turnFromRow rehydrates it unchanged. A leaf seq of 0 (or one
+// not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
+func (q *Queries) ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error) {
+	rows, err := q.db.Query(ctx, listTurnsByBranchPath, arg.ConversationID, arg.Seq)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTurnsByBranchPathRow{}
+	for rows.Next() {
+		var i ListTurnsByBranchPathRow
+		if err := rows.Scan(
+			&i.ConversationID,
+			&i.Seq,
+			&i.Role,
+			&i.Content,
+			&i.ContentSidecarPath,
+			&i.ToolCallID,
+			&i.ToolCalls,
+			&i.CreatedAt,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTurnsBySeq = `-- name: ListTurnsBySeq :many
 SELECT conversation_id, seq, role, content, content_sidecar_path,
        tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
@@ -68,15 +167,29 @@ WHERE conversation_id = $1
 ORDER BY seq ASC
 `
 
-func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error) {
+type ListTurnsBySeqRow struct {
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	Seq                int32              `json:"seq"`
+	Role               string             `json:"role"`
+	Content            pgtype.Text        `json:"content"`
+	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID         pgtype.Text        `json:"tool_call_id"`
+	ToolCalls          []byte             `json:"tool_calls"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	InputTokens        int32              `json:"input_tokens"`
+	OutputTokens       int32              `json:"output_tokens"`
+	CachedTokens       int32              `json:"cached_tokens"`
+}
+
+func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error) {
 	rows, err := q.db.Query(ctx, listTurnsBySeq, conversationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuraConversationTurns{}
+	items := []ListTurnsBySeqRow{}
 	for rows.Next() {
-		var i AuraConversationTurns
+		var i ListTurnsBySeqRow
 		if err := rows.Scan(
 			&i.ConversationID,
 			&i.Seq,
@@ -172,4 +285,29 @@ func (q *Queries) SearchConversationTurns(ctx context.Context, arg SearchConvers
 		return nil, err
 	}
 	return items, nil
+}
+
+const setTurnBranchPointers = `-- name: SetTurnBranchPointers :exec
+UPDATE aura.conversation_turns
+SET branch_id = $3, parent_seq = $4
+WHERE conversation_id = $1 AND seq = $2
+`
+
+type SetTurnBranchPointersParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	Seq            int32       `json:"seq"`
+	BranchID       pgtype.UUID `json:"branch_id"`
+	ParentSeq      pgtype.Int4 `json:"parent_seq"`
+}
+
+// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
+// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
+func (q *Queries) SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error {
+	_, err := q.db.Exec(ctx, setTurnBranchPointers,
+		arg.ConversationID,
+		arg.Seq,
+		arg.BranchID,
+		arg.ParentSeq,
+	)
+	return err
 }

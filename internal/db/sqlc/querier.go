@@ -14,6 +14,12 @@ type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	CancelTask(ctx context.Context, id pgtype.UUID) error
+	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
+	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
+	// conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
+	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
+	// 0 when the conversation has no turns.
+	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	// ConsumeTelegramSetupPending atomically marks an unconsumed, unexpired token as
@@ -86,7 +92,14 @@ type Querier interface {
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
-	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
+	// D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,
+	// follow parent_seq up to the root, then return the turns in root->leaf (seq ASC) order
+	// so the head (system seq=1 + the always-block) is byte-identical to the linear case —
+	// only the body turns differ per branch (Pitfall 3 rule 1). The column list MIRRORS
+	// ListTurnsBySeq exactly so turnFromRow rehydrates it unchanged. A leaf seq of 0 (or one
+	// not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
+	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
+	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
@@ -101,6 +114,9 @@ type Querier interface {
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
+	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
+	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error

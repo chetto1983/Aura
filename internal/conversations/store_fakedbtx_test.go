@@ -344,7 +344,7 @@ func TestCountTurns_Fake(t *testing.T) {
 }
 
 // turnRowValues returns the 11 positional Scan values ListTurnsBySeq expects,
-// matching AuraConversationTurns field order.
+// matching the ListTurnsBySeqRow field order.
 func turnRowValues(conv pgtype.UUID, seq int32, role, content, sidecar, toolCallID string, toolCalls []byte) []any {
 	created := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	return []any{

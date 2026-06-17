@@ -56,8 +56,11 @@ func (c Conversation) DisplayTitle() string {
 
 // turnFromRow projects a generated turn row onto the domain Turn. content +
 // content_sidecar_path are pgtype.Text (nullable); the empty string stands in for
-// NULL (loadTurns rehydrates a non-empty sidecar path from disk).
-func turnFromRow(r sqlc.AuraConversationTurns) Turn {
+// NULL (loadTurns rehydrates a non-empty sidecar path from disk). It takes the
+// ListTurnsBySeq row (a query-specific struct since 0017 added branch_id/parent_seq
+// to the table model that this SELECT omits); turnFromBranchPathRow (store_branch.go)
+// adapts the field-identical branch-path row onto the same projection.
+func turnFromRow(r sqlc.ListTurnsBySeqRow) Turn {
 	return Turn{
 		Seq:                int(r.Seq),
 		Role:               r.Role,
