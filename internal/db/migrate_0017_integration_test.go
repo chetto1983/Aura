@@ -8,8 +8,8 @@
 // Run via: go test -tags db_integration ./internal/db -run TestMigrate0017 -count=1
 //
 // Asserts (25-06 Task 2 behavior):
-//   - migrate up to HEAD then MigrateSteps(-1) down then MigrateSteps(+1) re-up is clean
-//     (no CREATE INDEX CONCURRENTLY in a tx block) and leaves zero pending after
+//   - migrate up to HEAD then step down to pre-0017, MigrateSteps(+1) re-up is clean
+//     (no CREATE INDEX CONCURRENTLY in a tx block), then latest HEAD can re-apply
 //   - existing conversation_turns rows are defaulted into ONE canonical linear branch
 //     (branch_id = all-zero sentinel, parent_seq = previous seq; root seq=1 has NULL)
 //   - the down DROPs the columns (re-up restores them) — the pointers are a pure overlay
@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
@@ -78,6 +79,11 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("full Migrate up on fresh db: %v", err)
 	}
+	headVersion := currentMigrationVersion(t, ctx, freshAdmin)
+	if headVersion < 17 {
+		t.Fatalf("full Migrate up reached version %d, want at least 17", headVersion)
+	}
+	stepsToBefore0017 := headVersion - 16
 
 	// Seed a conversation + three linear turns on the app pool (post-0017 the inserts
 	// rely on the column DEFAULTs leaving branch_id/parent_seq populated by 0017's
@@ -104,8 +110,8 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 	// dropped them), then re-apply 0017 and run the canonical backfill assertion against
 	// the migration's UPDATE — by emulating a pre-0017 deployment: the rows exist before
 	// 0017's columns/backfill run.
-	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("MigrateSteps(-1) down 0017: %v", err)
+	if err := MigrateSteps(ctx, migrateURL, -stepsToBefore0017); err != nil {
+		t.Fatalf("MigrateSteps(%d) down to pre-0017: %v", -stepsToBefore0017, err)
 	}
 	// The columns must be gone after the down.
 	var hasBranchCol bool
@@ -139,13 +145,17 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 		t.Fatalf("MigrateSteps(+1) re-up 0017: %v", err)
 	}
 
-	// A final Migrate must apply zero (the schema is reversible / fully re-materialized).
+	// Re-apply any newer migrations, then a second Migrate must be a no-op. This keeps
+	// the 0017 drill stable as HEAD advances beyond 0017.
+	if _, err := Migrate(ctx, migrateURL); err != nil {
+		t.Fatalf("post-round-trip Migrate to HEAD: %v", err)
+	}
 	n, err := Migrate(ctx, migrateURL)
 	if err != nil {
-		t.Fatalf("post-round-trip Migrate: %v", err)
+		t.Fatalf("post-round-trip no-op Migrate: %v", err)
 	}
 	if n != 0 {
-		t.Errorf("post-round-trip Migrate: want 0 pending (0017 reversible), got %d", n)
+		t.Errorf("post-round-trip no-op Migrate: want 0 pending (0017 reversible), got %d", n)
 	}
 
 	// Canonical default backfill: every existing turn lands on the all-zero canonical
@@ -200,4 +210,13 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 	if seen != 3 {
 		t.Errorf("backfilled turns: want 3, got %d", seen)
 	}
+}
+
+func currentMigrationVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool) int {
+	t.Helper()
+	var version int
+	if err := db.QueryRow(ctx, "SELECT version FROM schema_migrations").Scan(&version); err != nil {
+		t.Fatalf("read schema_migrations version: %v", err)
+	}
+	return version
 }
