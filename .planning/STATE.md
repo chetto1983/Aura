@@ -10,8 +10,8 @@ progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 19
-  completed_plans: 13
-  percent: 38
+  completed_plans: 14
+  percent: 42
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 25 (chat-approval-center) — EXECUTING
-Plan: 2 of 7
-Status: Ready to execute
+Plan: 3 of 7
+Status: Executing — Wave 1 done (25-01); Wave 2 in progress (25-02 complete; 25-06 + 25-03 next)
 Last activity: 2026-06-17
 
 ### Next -- Execute Phase 22
