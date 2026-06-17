@@ -134,13 +134,33 @@ db-reset:
 	@[ "$$AURA_RESET_YES" = "1" ] || { echo "refusing — set AURA_RESET_YES=1 to confirm destructive reset"; exit 1; }
 	go run ./cmd/aura db reset --yes
 
+define wait_compose_healthy
+	@echo "Waiting for $(1) healthy..."
+	@deadline=$$(($$(date +%s) + $${AURA_COMPOSE_HEALTH_TIMEOUT_SEC:-900})); \
+	while true; do \
+		container=$$(docker compose ps -q "$(1)" 2>/dev/null || true); \
+		if [ -n "$$container" ]; then \
+			status=$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$$container" 2>/dev/null || echo starting); \
+		else \
+			status=starting; \
+		fi; \
+		echo "$(1) health: $$status"; \
+		[ "$$status" = "healthy" ] && break; \
+		if [ $$(date +%s) -ge $$deadline ]; then \
+			echo "$(1) did not become healthy" >&2; \
+			docker compose ps "$(1)" || true; \
+			docker compose logs --tail=120 "$(1)" || true; \
+			exit 1; \
+		fi; \
+		sleep 5; \
+	done
+endef
+
 # ↓↓ Slice 0.7 — Neo4j + embed sidecar + Italian smoke ↓↓
 neo4j-up:
 	docker compose up -d neo4j aura-llama-embed
-	@echo "Waiting for neo4j healthy..."
-	@until docker compose ps --format json neo4j | grep -q '"Health":"healthy"'; do sleep 1; done
-	@echo "Waiting for aura-llama-embed healthy..."
-	@until docker compose ps --format json aura-llama-embed | grep -q '"Health":"healthy"'; do sleep 1; done
+	$(call wait_compose_healthy,neo4j)
+	$(call wait_compose_healthy,aura-llama-embed)
 	@echo "ok"
 
 neo4j-migrate: db-migrate neo4j-up

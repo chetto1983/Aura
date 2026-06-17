@@ -394,7 +394,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-97m-q8-${{ runner.os }}-v1
+          key: llama-cpp-granite-97m-q8-hf-${{ runner.os }}-v2
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v4
@@ -404,7 +404,7 @@ jobs:
 
       - name: Prepare cached Docker bind dirs
         run: |
-          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR" "$AURA_SKILL_EXPORT_DIR"
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_CI_NEO4J_PLUGINS_DIR" "$AURA_SKILL_EXPORT_DIR"
           chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
 
       - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
@@ -542,6 +542,7 @@ jobs:
   memory-integration-test:
     name: Memory MCP (memory_integration tier, live agent-memory sidecar)
     runs-on: ubuntu-latest
+    needs: knowledge-integration-test
     timeout-minutes: 30  # guards against a hung image build / model warm-up
     # Phase 15 (Slice 11, memory subsystem). Brings up the agent-memory MCP sidecar
     # (built reproducibly from docker/agent-memory by plan 15-04) + its Neo4j graph +
@@ -595,7 +596,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-97m-q8-${{ runner.os }}-v1
+          key: llama-cpp-granite-97m-q8-hf-${{ runner.os }}-v2
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v4
@@ -605,7 +606,7 @@ jobs:
 
       - name: Prepare cached Docker bind dirs
         run: |
-          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_CI_NEO4J_PLUGINS_DIR"
           chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
 
       - name: Set up Docker Buildx
