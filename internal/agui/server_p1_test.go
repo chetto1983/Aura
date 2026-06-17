@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/conversations"
 )
 
 type guardedScriptedRunner struct {
@@ -57,7 +59,9 @@ func TestBranchSelect_BusyThread409(t *testing.T) {
 	const tid = "13131313-1313-1313-1313-131313131313"
 	srv := newTestServer(t,
 		&guardedScriptedRunner{busy: true},
-		&fakeConvStore{known: map[string]bool{tid: true}})
+		// Seq 3 must be a known branch leaf (WR-01 membership gate) so the request
+		// reaches the lock check rather than 404ing on the leaf.
+		&fakeConvStore{known: map[string]bool{tid: true}, branches: []conversations.Branch{{LeafSeq: 3}}})
 
 	resp, err := http.Post(srv.URL+"/api/conversations/"+tid+"/branches/3/select", "", nil)
 	if err != nil {
@@ -76,7 +80,8 @@ func TestBranchSelect_LockAcquiredAndReRuns(t *testing.T) {
 	const tid = "14141414-1414-1414-1414-141414141414"
 	run := &guardedScriptedRunner{}
 	run.events = textTurn("branch reply")
-	srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{tid: true}})
+	// Seq 5 must be a known branch leaf (WR-01 membership gate) for the happy lock path.
+	srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{tid: true}, branches: []conversations.Branch{{LeafSeq: 5}}})
 
 	resp, err := http.Post(srv.URL+"/api/conversations/"+tid+"/branches/5/select", "", nil)
 	if err != nil {
