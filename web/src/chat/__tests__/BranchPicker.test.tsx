@@ -116,7 +116,7 @@ describe('BranchPicker + edit/reload (CHAT-05 / D-09)', () => {
     // Enter edit mode on the user turn → the message-scoped edit composer appears.
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     const editor = await screen.findByRole('textbox', { name: 'Edit message' });
-    fireEvent.change(editor, { target: { value: 'edited question' } });
+    fireEvent.input(editor, { target: { value: 'edited question' } });
 
     // Submit the edit (Save and re-run) → onEdit fires → POST /edit with role:user.
     fetchMock.mockImplementation(() =>

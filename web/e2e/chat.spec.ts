@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { gotoAuthenticated } from './auth';
 
 // chat.spec.ts is the phase-proving E2E (CHAT-01 / D-03 / APRV-02 / CHAT-04): it drives
 // the Core-Value loop end-to-end against the REAL served SPA + the REAL sseAdapter/runtime
@@ -218,7 +219,7 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
     let tokenChunkAssertions = 0;
 
     // Open the chat lane bound to a real thread id (/c/:id).
-    await page.goto(`/c/${CONV_ID}`);
+    await gotoAuthenticated(page, `/c/${CONV_ID}`);
 
     // 1) Type a prompt + send (CHAT-01).
     const composer = page.getByPlaceholder('Ask Aura');

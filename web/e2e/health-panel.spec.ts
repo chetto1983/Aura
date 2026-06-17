@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoAuthenticated } from './auth';
 
 // WEB-04: the embedded operator shell renders a read-only runtime health panel that
 // polls the existing GET /healthz + GET /readyz (no new backend endpoint, D-07) and
@@ -8,7 +9,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('runtime health panel', () => {
   test('applies dark theme + operator density before paint', async ({ page }) => {
-    await page.goto('/');
+    await gotoAuthenticated(page, '/');
     const html = page.locator('html');
     // theme-before-paint (D-08): attributes are present on the first response HTML,
     // set synchronously by the index.html pre-paint script — no flash.
@@ -19,7 +20,7 @@ test.describe('runtime health panel', () => {
   test('renders the Runtime panel with dot+label status rows over /healthz + /readyz', async ({
     page,
   }) => {
-    await page.goto('/');
+    await gotoAuthenticated(page, '/');
 
     const panel = page.getByRole('region', { name: /runtime/i });
     await expect(panel.getByRole('heading', { name: 'Runtime' })).toBeVisible();

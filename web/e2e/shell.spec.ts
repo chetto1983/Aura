@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoAuthenticated } from './auth';
 
 // RED until 23-03 wires `aura serve` to mount internal/webui at "/" over the real
 // Vite build. Today the served bytes are the placeholder (or serve has no web mount
@@ -17,7 +18,7 @@ const MARKETING_HERO_BLOCKLIST = [
 
 test.describe('embedded operator shell', () => {
   test('applies dark theme + operator density before paint', async ({ page }) => {
-    await page.goto('/');
+    await gotoAuthenticated(page, '/');
     const html = page.locator('html');
     // theme-before-paint contract (SC2): the attributes are present on the first
     // response HTML, set synchronously, so there is no flash of unstyled theme.
@@ -26,7 +27,7 @@ test.describe('embedded operator shell', () => {
   });
 
   test('shows the Aura brand and no marketing-hero copy', async ({ page }) => {
-    await page.goto('/');
+    await gotoAuthenticated(page, '/');
     await expect(page.getByRole('img', { name: /aura/i })).toBeVisible();
     const body = (await page.locator('body').innerText()).toLowerCase();
     for (const phrase of MARKETING_HERO_BLOCKLIST) {
