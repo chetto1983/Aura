@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: verifying
-stopped_at: Completed 25-05-PLAN.md (cross-thread approval UI)
-last_updated: "2026-06-17T11:50:34.648Z"
-last_activity: 2026-06-17
+status: executing
+stopped_at: Completed 25-07-PLAN.md (branch trees + phase-proving E2E — FINAL plan of Phase 25)
+last_updated: "2026-06-17T16:44:57.287Z"
+last_activity: 2026-06-17 -- Phase 25 plan 07 complete (CHAT-05 branch trees + E2E)
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 19
-  completed_plans: 18
-  percent: 38
+  completed_plans: 19
+  percent: 50
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 25 (chat-approval-center) — EXECUTING
-Plan: 25-05 complete (6 of 7 SUMMARYs) — 25-07 remaining (branch picker + re-run)
-Status: Executing — 25-05 (APRV-01/02/03 cross-thread approval UI: polled pending-approval badge + lightweight list with Open-jump, inline in-thread Answer/Decline/Cancel card over /api/approvals/{token}/resolve, explicit terminal states for stale/auto-terminated interrupts) shipped. Backend (25-01/02) + chat lane (25-03) + conversation mgmt + footer (25-04) + branch backend (25-06) prior. Only 25-07 (branch UI + re-run) remains.
-Last activity: 2026-06-17 -- 25-05 cross-thread approval badge/list + inline HITL card executed
+Phase: 25 (chat-approval-center) — ALL PLANS COMPLETE (7 of 7)
+Plan: 7 of 7 (25-07 was the FINAL plan)
+Status: Phase 25 implementation complete — ready for /gsd-verify-work
+Last activity: 2026-06-17 -- 25-07 complete (CHAT-05 branch trees + phase-proving Playwright E2E)
 
 ### Next -- Execute Phase 22
 
@@ -171,8 +171,13 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 25 P25-06 | ~75min | 3 tasks | 16 files |
 | Phase 25 P25-04 | ~70min | 2 tasks | 17 files |
 | Phase 25 P25-05 | ~40min | 2 tasks | 13 files |
+| Phase 25 P25-07 | ~150min | 3 tasks | 45 files |
 
 ## Accumulated Context
+
+### Phase 25 Execution
+
+- **25-07 closed (2026-06-17, FINAL plan of Phase 25): CHAT-05 conversation branch trees + the phase-proving Playwright E2E.** Backend: `internal/conversations/store_branch.go` gained `ListBranches` (the navigable leaf set — turns no other turn chains off) + `ForkBranch` (an ATOMIC seq-allocate + insert + SetTurnBranchPointers in ONE tx, chaining a fresh `branch_id` off the diverging turn's `parent_seq` — a sibling, so the old branch stays queryable; RESEARCH OQ3 full tree) + `ErrTurnNotFound`; new sqlc `GetTurnPointers`/`ListBranchLeaves`. `Runner.TurnBranch` is the re-run-from-a-point — `Turn(…,userMsg=nil)` dispatched over `LoadManagedHistoryForBranch(selectedLeaf)` via a `branchLeaf int` threaded through `turnLocked` (0 = linear default, byte-identical head); the 25-06 path loader is CALLED, never re-walked. `runner.go` was split (conversation lifecycle → `runner_conversation.go`) to stay ≤600 LOC. agui: `conversations_branch_api.go` carries `GET /branches` + `POST /edit` + `POST /branches/{seq}/select` on the EXISTING `/api/conversations/` subtree (NO new bare `/api/`); uuid-guarded 404s + sanitizeErr redaction; the two mutating re-runs are `RequireCapability`-gated like `POST /agent/run` (`serve_webui.go`). **[BLOCKING] `cache_invariant_audit.sh` exits 0** after the branch-switch wiring (T-25-24). Frontend: `BranchPicker.tsx` (`BranchPickerPrimitive` bound to the external-store nav, accent active-indicator, aria-live) + `ExternalStoreChat.tsx` `onEdit`/`onReload` (slice-to-parent + fresh-id so the runtime tracks siblings — blind appends broke the tree with a duplicate-id error) + an in-thread edit composer + the ActionBar **Copy/Edit/Reload ONLY** (feedback rating = Phase 26). **Key Rule-1 bug (E2E-caught):** continue-after-resume now FOLDS the resumed `/agent/run` stream into the chat lane in-thread via a `resumeNonce` prop — AppShell's prior discard-fetch POSTed the re-run but never rendered the resumed turn. The phase-proving `web/e2e/chat.spec.ts` drives prompt→stream→inline approval resolve→resume→footer, fed by the REAL golden frames through the REAL in-browser sseAdapter; it HARD-FAILS (throw) under CI when neither a live stack nor `golden-events.json` is available (verified — no skip-as-green) and asserts a counted streamed-token ≥1. `serviceWorkers:'block'` in playwright.config (the PWA SW otherwise hid fetches from `page.route`) + `tsconfig types:["node"]` for the e2e specs. Coverage: conversations 86.6%, agui 92.1%, web chat dir 97.95% (177 web tests). Commits `32daecb2` (backend), `514934ab` (frontend), `a600022e` (E2E + resume-fold). Summary `.planning/phases/25-chat-approval-center/25-07-SUMMARY.md`. **Phase 25 is implementation-complete (7/7 plans) — ready for /gsd-verify-work.**
 
 ### Phase 24 Execution
 
@@ -339,7 +344,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-17T11:50:24.878Z
+Last session: 2026-06-17T16:44:57.274Z
 Stopped at: Completed 25-03-PLAN.md (chat lane)
 Resume file: None
 

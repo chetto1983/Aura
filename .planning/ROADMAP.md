@@ -48,7 +48,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
  (completed 2026-06-16)
 
-- [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue + conversation branch trees (CHAT-01..05, APRV-01..03)
+- [x] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue + conversation branch trees (CHAT-01..05, APRV-01..03) (completed 2026-06-17)
 - [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
 - [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
@@ -162,7 +162,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 25-07-PLAN.md — D-09 completion: branch list/select + re-run + branch picker UI + Playwright E2E (CHAT-05/01)
+- [x] 25-07-PLAN.md — D-09 completion: branch list/select + re-run + branch picker UI + Playwright E2E (CHAT-05/01)
 
 **UI hint**: yes
 
@@ -236,7 +236,7 @@ Plans:
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 3/3 | Complete    | 2026-06-16 |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete    | 2026-06-16 |
-| 25. Chat + Approval Center | v1.0.0 | 6/7 | In Progress|  |
+| 25. Chat + Approval Center | v1.0.0 | 7/7 | Complete   | 2026-06-17 |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
