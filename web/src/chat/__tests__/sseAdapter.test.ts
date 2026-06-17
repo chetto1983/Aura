@@ -350,10 +350,12 @@ describe('sseAdapter — streamRun (POST /agent/run + AbortController)', () => {
     expect(usage).toMatchObject({ promptTokens: 100, costUsd: 0.0042 });
   });
 
-  it('a non-OK response yields an incomplete error message (no throw)', async () => {
+  it('a non-OK response surfaces the sanitized backend body as the error (WR-03)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => Promise.resolve(new Response('nope', { status: 502 }))),
+      vi.fn(() =>
+        Promise.resolve(new Response('thread already has an in-flight run', { status: 409 })),
+      ),
     );
     const updates: ThreadMessageLike[] = [];
     await streamRun({
@@ -365,5 +367,30 @@ describe('sseAdapter — streamRun (POST /agent/run + AbortController)', () => {
     });
     const last = updates.at(-1);
     expect(last?.status).toEqual({ type: 'incomplete', reason: 'error' });
+    const texts = last
+      ? messageParts(last).flatMap((p) => (p.type === 'text' ? [p.text] : []))
+      : [];
+    // The operator sees the backend's reason (409 conflict), not a bare "HTTP 409".
+    expect(texts).toContain('thread already has an in-flight run');
+  });
+
+  it('a non-OK response with an empty body falls back to HTTP <status> (WR-03)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 502 }))),
+    );
+    const updates: ThreadMessageLike[] = [];
+    await streamRun({
+      threadId: 't',
+      userText: 'x',
+      signal: new AbortController().signal,
+      newId: () => 'id',
+      onUpdate: (m) => updates.push(m),
+    });
+    const last = updates.at(-1);
+    const texts = last
+      ? messageParts(last).flatMap((p) => (p.type === 'text' ? [p.text] : []))
+      : [];
+    expect(texts).toContain('HTTP 502');
   });
 });

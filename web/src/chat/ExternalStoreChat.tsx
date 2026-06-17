@@ -221,6 +221,12 @@ export function ExternalStoreChat({ threadId, onUsage, resumeNonce = 0 }: Extern
   const onReload = useCallback(
     async (parentId: string | null) => {
       const parentIndex = messages.findIndex((m) => m.id === parentId);
+      // WR-02: an assistant turn's parent (the user turn it answered) is ALWAYS in the
+      // visible list, so a not-found parent here is a stale/unknown id — never the legitimate
+      // first-turn case (unlike onEdit, whose parent can be the invisible system/root). An
+      // unknown parent would fork at seq 1 (the system turn) and replace the whole visible
+      // thread (base = slice(0,0)) — a silent destructive re-run. Bail before it.
+      if (parentIndex < 0) return;
       const seq = divergeSeqAt(parentIndex) + 1; // the assistant turn after its user parent
       const base: ThreadMessageLike[] = messages.slice(0, parentIndex + 1);
       await foldReRun(

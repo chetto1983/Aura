@@ -443,7 +443,7 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
   });
 
   if (!res.ok || res.body === null) {
-    state.error = `HTTP ${String(res.status)}`;
+    state.error = await errorDetail(res);
     state.status = { type: 'incomplete', reason: 'error' };
     opts.onUpdate(toThreadMessage(state), state.usage);
     return state.usage;
@@ -454,6 +454,21 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
     opts.onUpdate(toThreadMessage(state), state.usage);
   }
   return state.usage;
+}
+
+/**
+ * Surface a non-OK response as a human-readable error (WR-03). The backend sends
+ * meaningful, ALREADY-sanitized text bodies (e.g. "thread already has an in-flight run"
+ * on 409, "diverge_seq must be a positive turn seq" on 400, sanitizeErr-redacted 500s);
+ * collapsing every failure to a bare "HTTP <status>" hides the cause from the operator —
+ * the only viewer. Read the body and prefer it; fall back to the status when it is empty
+ * or unreadable.
+ */
+async function errorDetail(res: Response): Promise<string> {
+  const status = `HTTP ${String(res.status)}`;
+  if (res.body === null) return status;
+  const detail = (await res.text().catch(() => '')).trim();
+  return detail.length > 0 ? detail : status;
 }
 
 /**
@@ -483,7 +498,7 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
   });
 
   if (!res.ok || res.body === null) {
-    state.error = `HTTP ${String(res.status)}`;
+    state.error = await errorDetail(res);
     state.status = { type: 'incomplete', reason: 'error' };
     opts.onUpdate(toThreadMessage(state), state.usage);
     return state.usage;
