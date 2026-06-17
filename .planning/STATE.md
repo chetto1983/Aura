@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Completed 25-03-PLAN.md (chat lane)
-last_updated: "2026-06-17T10:50:55.728Z"
-last_activity: 2026-06-17 -- 25-06 D-09 branch backend foundation executed
+stopped_at: Completed 25-04-PLAN.md (conversation mgmt UI + runtime footer)
+last_updated: "2026-06-17T11:29:57.375Z"
+last_activity: 2026-06-17
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
   percent: 38
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 25 (chat-approval-center) — EXECUTING
-Plan: 25-06 complete (4 of 7 SUMMARYs) — 25-04 / 25-05 / 25-07 remaining
-Status: Executing — Wave 6 (25-06) done: D-09 conversation branch-tree BACKEND foundation shipped (CHAT-05 PRD-first amendment + migration 0017 additive branch pointers + path-aware LoadManagedHistoryForBranch + cache-invariant audit green). Backend wiring (25-01/02) + chat lane (25-03) prior. Frontend waves 25-04 (footer/sidebar) + 25-05 (approval UI) + 25-07 (branch UI + re-run, builds on 25-06) remain.
-Last activity: 2026-06-17 -- 25-06 D-09 branch backend foundation executed
+Plan: 25-04 complete (5 of 7 SUMMARYs) — 25-05 / 25-07 remaining
+Status: Executing — 25-04 (CHAT-02 conversation mgmt UI: sidebar/rename/archive-first delete/FTS search + CHAT-04 runtime footer: Tokens·Cache·Cost·Context gauge) shipped; activeThreadId bound from sidebar selection (25-03 stub resolved). Backend (25-01/02) + chat lane (25-03) + branch backend (25-06) prior. Frontend waves 25-05 (approval UI) + 25-07 (branch UI + re-run) remain.
+Last activity: 2026-06-17 -- 25-04 conversation management UI + runtime instrument footer executed
 
 ### Next -- Execute Phase 22
 
@@ -169,6 +169,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 25 P01 | ~55min | 3 tasks | 11 files |
 | Phase 25 P25-03 | ~95min | 3 tasks | 18 files |
 | Phase 25 P25-06 | ~75min | 3 tasks | 16 files |
+| Phase 25 P25-04 | ~70min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -301,6 +302,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 25-03: cockpit chat lane on assistant-ui useExternalStoreRuntime + a POST-SSE fetch/ReadableStream reducer (sseAdapter) mapping AG-UI frames to ThreadMessageLike; AbortController is the Stop affordance (CHAT-01)
 - [Phase ?]: 25-03: tool output renders as React-escaped raw text only (no dangerouslySetInnerHTML, no per-type display routing — Phase 26); reasoning drawer persists show/hide (D-01)
 - [Phase ?]: 25-06: D-09 branch topology = branch_id (all-zero canonical sentinel) + parent_seq pointers (N siblings); migration 0017 default-backfills existing rows into one canonical branch so non-branched LoadHistory stays byte-identical; LoadManagedHistory unchanged, path walk is LoadManagedHistoryForBranch; cache_invariant_audit.sh green.
+- [Phase 25]: 25-04: SearchResult carries no title on the wire — SearchPanel enriches each hit title from the cached conversations list (no backend join)
+- [Phase 25]: 25-04: footer session-cumulative = persisted GET /api/conversations/{id} aggregate seed + the single live in-flight turn (no double-count, self-corrects on reload)
+- [Phase 25]: 25-04: context window not on the conversation wire — footer uses DEFAULT_CONTEXT_WINDOW=1_000_000 (matches internal/llm) with a windowTokens override
 
 ### Pending Todos
 
@@ -334,7 +338,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-17T10:49:56.906Z
+Last session: 2026-06-17T11:29:12.627Z
 Stopped at: Completed 25-03-PLAN.md (chat lane)
 Resume file: None
 

@@ -150,7 +150,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 25-04-PLAN.md — Conversation sidebar/search/delete-confirm + runtime instrument footer + context gauge (CHAT-02/04)
+- [x] 25-04-PLAN.md — Conversation sidebar/search/delete-confirm + runtime instrument footer + context gauge (CHAT-02/04)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -236,7 +236,7 @@ Plans:
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 3/3 | Complete    | 2026-06-16 |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete    | 2026-06-16 |
-| 25. Chat + Approval Center | v1.0.0 | 4/7 | In Progress|  |
+| 25. Chat + Approval Center | v1.0.0 | 5/7 | In Progress|  |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
