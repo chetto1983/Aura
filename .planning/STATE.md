@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 25 UI-SPEC approved
-last_updated: "2026-06-17T07:58:59.533Z"
-last_activity: 2026-06-17
+stopped_at: Completed 25-03-PLAN.md (chat lane)
+last_updated: "2026-06-17T10:26:33.551Z"
+last_activity: 2026-06-17 -- 25-03 chat lane (assistant-ui) executed
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 19
-  completed_plans: 14
-  percent: 42
+  completed_plans: 15
+  percent: 38
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 25 (chat-approval-center) — EXECUTING
-Plan: 3 of 7
-Status: Executing — Wave 1 done (25-01); Wave 2 in progress (25-02 complete; 25-06 + 25-03 next)
-Last activity: 2026-06-17
+Plan: 25-03 complete (3 of 7 SUMMARYs) — 25-04 / 25-06 / 25-07 remaining
+Status: Executing — Wave 1 (25-01) + Wave 2 (25-02) + Wave 3 (25-03) done; chat lane streaming, Stop, reasoning drawer, raw tool card shipped (CHAT-01/CHAT-03 frontend)
+Last activity: 2026-06-17 -- 25-03 chat lane (assistant-ui) executed
 
 ### Next -- Execute Phase 22
 
@@ -167,6 +167,7 @@ Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` �
 | Phase 24 P02 | ~30min | 2 tasks | 5 files |
 | Phase 24 P03 | 13min | 3 tasks | 8 files |
 | Phase 25 P01 | ~55min | 3 tasks | 11 files |
+| Phase 25 P25-03 | ~95min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -296,6 +297,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 24-02: /api/ is a fallback EXCLUSION prefix only, never a mux registration (would shadow /api/integrations/, T-24-07)
 - [Phase ?]: 24-02: SPA shell served via http.ServeFileFS to avoid the http.FileServerFS index.html->./ redirect loop
 - [Phase ?]: Phase 25-01: cockpit SSE flipped to showReasoning=true (D-01), cockpit-scoped; Telegram posture unchanged
+- [Phase ?]: 25-03: cockpit chat lane on assistant-ui useExternalStoreRuntime + a POST-SSE fetch/ReadableStream reducer (sseAdapter) mapping AG-UI frames to ThreadMessageLike; AbortController is the Stop affordance (CHAT-01)
+- [Phase ?]: 25-03: tool output renders as React-escaped raw text only (no dangerouslySetInnerHTML, no per-type display routing — Phase 26); reasoning drawer persists show/hide (D-01)
 
 ### Pending Todos
 
@@ -329,8 +332,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-17T07:58:50.992Z
-Stopped at: Phase 25 UI-SPEC approved
+Last session: 2026-06-17T10:26:33.544Z
+Stopped at: Completed 25-03-PLAN.md (chat lane)
 Resume file: None
 
 ## Operator Next Steps

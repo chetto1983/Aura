@@ -45,7 +45,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 
 ### Chat (CHAT) — Slice B
 
-- [ ] **CHAT-01**: Operator can send a prompt and watch the streamed assistant response over `POST /agent/run` (SSE) in an assistant-ui chat lane
+- [x] **CHAT-01**: Operator can send a prompt and watch the streamed assistant response over `POST /agent/run` (SSE) in an assistant-ui chat lane
 - [x] **CHAT-02**: Operator can browse, FTS-search, rename, archive, and delete conversations (thin HTTP adapters over `conversations.Store`)
 - [x] **CHAT-03**: Operator can view a reasoning drawer (chain-of-thought) and a live tool-activity stream, governed by an explicit `showReasoning` policy
 - [ ] **CHAT-04**: Operator sees per-turn cost and cache-hit metrics in a footer
@@ -164,7 +164,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | WEB-02 | Phase 24 | Complete |
 | WEB-03 | Phase 24 | Complete |
 | WEB-04 | Phase 24 | Complete |
-| CHAT-01 | Phase 25 | Pending |
+| CHAT-01 | Phase 25 | Complete |
 | CHAT-02 | Phase 25 | Complete |
 | CHAT-03 | Phase 25 | Complete |
 | CHAT-04 | Phase 25 | Pending |

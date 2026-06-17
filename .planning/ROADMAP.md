@@ -146,7 +146,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 25-03-PLAN.md — assistant-ui chat lane: SSE reducer, runtime, reasoning drawer, raw tool card (CHAT-01/03)
+- [x] 25-03-PLAN.md — assistant-ui chat lane: SSE reducer, runtime, reasoning drawer, raw tool card (CHAT-01/03)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -236,7 +236,7 @@ Plans:
 | 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 3/3 | Complete    | 2026-06-16 |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete    | 2026-06-16 |
-| 25. Chat + Approval Center | v1.0.0 | 2/7 | In Progress|  |
+| 25. Chat + Approval Center | v1.0.0 | 3/7 | In Progress|  |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
