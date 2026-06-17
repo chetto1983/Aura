@@ -207,7 +207,9 @@ async function installGoldenRoutes(page: Page, g: GoldenFrames) {
 }
 
 test.describe('cockpit chat — core-value loop (E2E)', () => {
-  test('prompt -> stream -> inline approval resolve -> resume, footer updates', async ({ page }) => {
+  test('prompt -> stream -> inline approval resolve -> resume, footer updates', async ({
+    page,
+  }) => {
     const g = golden;
     if (g === null) throw new Error('golden fixture not loaded'); // beforeAll guards this
     await installGoldenRoutes(page, g);
