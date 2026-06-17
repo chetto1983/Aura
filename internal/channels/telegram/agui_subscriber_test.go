@@ -11,6 +11,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/askuser"
 )
 
@@ -31,11 +32,19 @@ func reasoningAgentEvent(text string) *agent.Event {
 }
 
 // TestHandleTurnReasoningPostureFollowsConfig proves the D-01 cockpit flip leaves the
-// Telegram posture config-driven (NOT a forced true): handleTurn threads
-// t.deps.ShowReasoning into BOTH agui.Translate and the status pane, so the real CoT
-// surfaces only when ShowReasoning is on and is redacted/absent when it is off. This
-// is the golden assertion the Phase-25 plan requires alongside the source check that
-// agui_subscriber.go passes the config value, never a blanket true.
+// Telegram reasoning posture config-driven (NOT a forced true): the SAME showReasoning
+// flag handleTurn threads into BOTH agui.Translate and newStatusPane decides whether the
+// live CoT surfaces. With it on, the real chain-of-thought appears in the 💭 pane; with
+// it off, only the redacted lifecycle label, never the raw CoT.
+//
+// It drives the real Translate→Fanout→statusPane path directly with throttle=0 — the
+// deterministic mechanism cot_live_e2e_test uses — rather than through handleTurn with a
+// 1ms throttle. Synthetic events fire sub-millisecond, so a 1ms throttle coalesces the
+// single live-CoT frame away (and RunFinished then resets the FIFO to "completato"),
+// which made the original handleTurn-driven assertion timing-dependent (it was committed
+// red — green only under incidental scheduler jitter). throttle=0 emits every frame, so
+// the live-CoT frame is observed deterministically while still exercising the real
+// translator gating + status-pane rendering the same showReasoning flag wires.
 func TestHandleTurnReasoningPostureFollowsConfig(t *testing.T) {
 	const cot = "valuto le brocche da dodici e sette"
 	stream := []*agent.Event{
@@ -43,33 +52,32 @@ func TestHandleTurnReasoningPostureFollowsConfig(t *testing.T) {
 		textEvent("Otto litri."),
 	}
 
+	// render mirrors handleTurn's posture threading: the show flag feeds BOTH the
+	// translator (REASONING_* gating) and the status pane (the 💭 live window).
 	render := func(show bool) string {
+		ctx := context.Background()
+		seq := syntheticTurn(stream)(ctx, "thread-posture", nil)
+		translated := agui.Translate("thread-posture", "run-posture", agui.NewIDGenerator(), seq, show)
+		fo := agui.NewFanout(translated)
+		statusCh := fo.Subscribe()
+		fo.Run(ctx)
+
 		bot := newFakeBot()
-		tg := NewChannel(Deps{
-			Turn:              syntheticTurn(stream),
-			Offline:           true,
-			ShowReasoning:     show,
-			StatusThrottleMS:  1,
-			ContentThrottleMS: 1,
-			ChatRateLimitMS:   1,
-		})
-		userMsg := "quanti litri"
-		tg.handleTurn(context.Background(), bot, 808, &userMsg, false)
+		pane := newStatusPane(bot, tele.ChatID(808), 0, show, 4096) // throttle 0 → every live frame emits
+		pane.consume(ctx, statusCh)
+
 		var all strings.Builder
 		for _, c := range bot.recorded() {
 			all.WriteString(c.text)
 			all.WriteString("\n")
 		}
-		return all.String()
+		return collapseWhitespace(all.String())
 	}
 
-	withReasoning := render(true)
-	if !strings.Contains(withReasoning, "valuto le brocche") {
+	if withReasoning := render(true); !strings.Contains(withReasoning, "valuto le brocche") {
 		t.Errorf("ShowReasoning=true did not surface the real CoT in the status pane:\n%s", withReasoning)
 	}
-
-	withoutReasoning := render(false)
-	if strings.Contains(withoutReasoning, "valuto le brocche") {
+	if withoutReasoning := render(false); strings.Contains(withoutReasoning, "valuto le brocche") {
 		t.Errorf("ShowReasoning=false leaked the real CoT (posture is NOT a forced true):\n%s", withoutReasoning)
 	}
 }
