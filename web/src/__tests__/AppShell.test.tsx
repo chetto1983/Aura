@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { AppShell } from '../AppShell';
 import i18n from '../i18n/i18n';
 
@@ -14,13 +15,16 @@ const MARKETING_HERO_BLOCKLIST = [
   /the future of/i,
 ];
 
-// AppShell now mounts the RuntimeHealthPanel, which polls /healthz + /readyz via
-// React Query — so the shell needs a QueryClient and a stubbed fetch in tests.
+// AppShell now mounts the RuntimeHealthPanel (polls /healthz + /readyz) AND the
+// conversation sidebar/search (GET /api/conversations) + the runtime footer, so the
+// shell needs a QueryClient, a Router (useParams/useNavigate), and a stubbed fetch.
 function renderShell() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <AppShell />
+      <MemoryRouter>
+        <AppShell />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -29,9 +33,17 @@ describe('AppShell', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 })),
-      ),
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        // The conversation list / rot-events read as a JSON array; health as an object.
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(
+          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
+        );
+      }),
     );
   });
 
@@ -51,7 +63,9 @@ describe('AppShell', () => {
 
     expect(screen.getByRole('navigation', { name: 'Principale' })).toBeTruthy();
     expect(screen.getByText('Albero')).toBeTruthy();
-    expect(screen.getByText('Indagini')).toBeTruthy();
+    // The left aside now hosts the conversation manager (replaced the placeholder
+    // section labels); its heading is localised.
+    expect(screen.getByText('Conversazioni')).toBeTruthy();
     expect(screen.getByLabelText('Area display')).toBeTruthy();
   });
 

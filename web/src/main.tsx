@@ -40,6 +40,9 @@ createRoot(container).render(
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<AppShell />} />
+              {/* Deep link to a conversation at a search match (D-08); AppShell
+                  reads :id into the active thread. */}
+              <Route path="/c/:id" element={<AppShell />} />
               <Route path="*" element={<NotFoundView />} />
             </Routes>
           </Suspense>

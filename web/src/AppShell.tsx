@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router-dom';
 import { ExternalStoreChat } from './chat/ExternalStoreChat';
+import { ConversationSidebar } from './conversations/ConversationSidebar';
+import { SearchPanel } from './conversations/SearchPanel';
 import { RuntimeHealthPanel } from './health/RuntimeHealthPanel';
 import { LanguageSwitcher } from './i18n/LanguageSwitcher';
 
@@ -7,13 +11,27 @@ const MODES = ['chat', 'tree', 'graph', 'displays', 'settings'] as const;
 
 export function AppShell() {
   const { t } = useTranslation();
-  // The active conversation id. The conversation sidebar (plan 25-02 frontend)
-  // will own selection/creation and set this; the chat lane reads it to POST
-  // /agent/run against the right thread. Empty until the sidebar lands.
-  const activeThreadId = '';
+  // The active conversation id drives which thread the chat lane POSTs against
+  // (CHAT-02 — 25-04 resolves the 25-03 stub). The sidebar selects it; a /c/:id
+  // deep link (search → open at match) seeds it from the route param.
+  const { id: routeId } = useParams<{ id: string }>();
+  const [selectedId, setSelectedId] = useState('');
+  // Track the last route param so a navigation (deep link) wins over the prior
+  // in-component selection WITHOUT a state-syncing effect (React "adjust state
+  // during render" — the only re-render is this same pass, no cascade).
+  const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
+  if ((routeId ?? '') !== lastRouteId) {
+    setLastRouteId(routeId ?? '');
+    setSelectedId(routeId ?? '');
+  }
+  const activeThreadId = selectedId;
+
+  function selectThread(id: string) {
+    setSelectedId(id);
+  }
 
   return (
-    <div className="grid h-dvh overflow-hidden bg-bg text-text [grid-template-rows:auto_1fr]">
+    <div className="grid h-dvh overflow-hidden bg-bg text-text [grid-template-rows:auto_1fr_auto]">
       <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2 sm:px-4">
         <img src="/logo.png" alt="Aura" width={24} height={24} className="rounded-sm" />
         <span className="font-sans text-sm font-medium tracking-wide text-text">Aura</span>
@@ -35,25 +53,22 @@ export function AppShell() {
       </header>
 
       <main className="grid min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] lg:grid-cols-[14rem_minmax(0,1fr)_18rem] lg:grid-rows-1">
+        {/* Conversation manager (CHAT-02) — search panel + recent-first sidebar
+            list, replacing the placeholder section labels. Selection drives the
+            chat lane's threadId. */}
         <aside
           aria-label={t('shell.navigation')}
-          className="grid gap-2 border-b border-border bg-surface px-3 py-3 sm:grid-cols-3 lg:flex lg:flex-col lg:gap-3 lg:border-b-0 lg:border-r"
+          className="flex min-h-0 flex-col gap-2 border-b border-border bg-surface px-3 py-3 lg:border-b-0 lg:border-r"
         >
-          <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-faint">
-            {t('shell.sections.investigations')}
-          </p>
-          <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-faint">
-            {t('shell.sections.searxngSocket')}
-          </p>
-          <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-faint">
-            {t('shell.sections.neo4jMcp')}
-          </p>
+          <SearchPanel onOpen={(id) => { selectThread(id); }} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ConversationSidebar activeId={activeThreadId} onSelect={selectThread} />
+          </div>
         </aside>
 
-        {/* The Core-Value chat lane (CHAT-01). The conversation/threadId binding
-            arrives with the conversation sidebar (plan 25-02 frontend) — until
-            then the lane mounts against the current thread seam; the runtime
-            footer (25-04) and branch picker (25-07) mount onto the same lane. */}
+        {/* The Core-Value chat lane (CHAT-01). The sidebar binds activeThreadId
+            (25-04); the runtime footer (Task 2) consumes onUsage; the branch
+            picker (25-07) mounts onto the same lane. */}
         <section aria-label={t('shell.chatRegion')} className="min-h-0 bg-bg">
           <ExternalStoreChat threadId={activeThreadId} />
         </section>
