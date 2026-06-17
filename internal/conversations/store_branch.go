@@ -76,19 +76,7 @@ func (s *Store) loadBranchTurns(ctx context.Context, conversationID string, leaf
 // differs). Keeping ONE projection preserves the byte-identity guarantee across the
 // linear and path-walk loaders.
 func branchPathRowAsSeqRow(r sqlc.ListTurnsByBranchPathRow) sqlc.ListTurnsBySeqRow {
-	return sqlc.ListTurnsBySeqRow{
-		ConversationID:     r.ConversationID,
-		Seq:                r.Seq,
-		Role:               r.Role,
-		Content:            r.Content,
-		ContentSidecarPath: r.ContentSidecarPath,
-		ToolCallID:         r.ToolCallID,
-		ToolCalls:          r.ToolCalls,
-		CreatedAt:          r.CreatedAt,
-		InputTokens:        r.InputTokens,
-		OutputTokens:       r.OutputTokens,
-		CachedTokens:       r.CachedTokens,
-	}
+	return sqlc.ListTurnsBySeqRow(r)
 }
 
 // LoadBranchHistory reconstructs the loop history for the SELECTED branch path, the

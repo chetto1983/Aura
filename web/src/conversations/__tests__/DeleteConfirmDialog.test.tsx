@@ -20,7 +20,12 @@ describe('DeleteConfirmDialog (T-25-14)', () => {
 
   it('renders the title interpolated into the body and the confirm/cancel verbs', () => {
     render(
-      <DeleteConfirmDialog open title="My run" onConfirm={() => undefined} onCancel={() => undefined} />,
+      <DeleteConfirmDialog
+        open
+        title="My run"
+        onConfirm={() => undefined}
+        onCancel={() => undefined}
+      />,
     );
     expect(screen.getByText('Delete conversation?')).toBeTruthy();
     expect(screen.getByText(/permanently deletes "My run"/)).toBeTruthy();

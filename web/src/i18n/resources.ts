@@ -52,7 +52,8 @@ export const resources = {
           },
         },
         error: {
-          stream: 'The response stopped unexpectedly. Retry the last message or check the runtime status.',
+          stream:
+            'The response stopped unexpectedly. Retry the last message or check the runtime status.',
         },
         reasoning: {
           show: 'Show reasoning',
@@ -327,7 +328,8 @@ export const resources = {
           confirmCancel: 'Fermare questa esecuzione?',
           confirmCancelYes: 'Ferma esecuzione',
           confirmCancelNo: 'Continua',
-          error: "Impossibile riprendere questa esecuzione. Potrebbe essere già stata gestita o annullata.",
+          error:
+            'Impossibile riprendere questa esecuzione. Potrebbe essere già stata gestita o annullata.',
         },
         terminal: {
           expired: 'Scaduta — risolta automaticamente.',

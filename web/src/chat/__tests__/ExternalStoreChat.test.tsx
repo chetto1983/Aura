@@ -64,7 +64,12 @@ describe('ExternalStoreChat (CHAT-01)', () => {
               { op: 'replace', path: '/cost_usd', value: 0.001 },
             ],
           },
-          { type: 'RUN_FINISHED', threadId: 'conv-1', runId: 'run-1', outcome: { type: 'success' } },
+          {
+            type: 'RUN_FINISHED',
+            threadId: 'conv-1',
+            runId: 'run-1',
+            outcome: { type: 'success' },
+          },
         ]),
       ),
     );

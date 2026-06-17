@@ -111,7 +111,11 @@ export function AppShell() {
           aria-label={t('shell.navigation')}
           className="flex min-h-0 flex-col gap-2 border-b border-border bg-surface px-3 py-3 lg:border-b-0 lg:border-r"
         >
-          <SearchPanel onOpen={(id) => { selectThread(id); }} />
+          <SearchPanel
+            onOpen={(id) => {
+              selectThread(id);
+            }}
+          />
           <div className="min-h-0 flex-1 overflow-hidden">
             <ConversationSidebar activeId={activeThreadId} onSelect={selectThread} />
           </div>
@@ -121,17 +125,11 @@ export function AppShell() {
             onUsage feeds the runtime footer (D-10/D-12); the branch picker (25-07)
             mounts onto the same lane. The inline approval cards (APRV-02 / D-03)
             render in-thread for the active conversation's pending interrupts. */}
-        <section
-          aria-label={t('shell.chatRegion')}
-          className="flex min-h-0 flex-col bg-bg"
-        >
+        <section aria-label={t('shell.chatRegion')} className="flex min-h-0 flex-col bg-bg">
           <div className="min-h-0 flex-1">
             <ExternalStoreChat threadId={activeThreadId} onUsage={setUsage} />
           </div>
-          <ThreadApprovalCards
-            conversationId={activeThreadId}
-            onResolved={redriveRun}
-          />
+          <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
         </section>
 
         <aside

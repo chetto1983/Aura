@@ -183,7 +183,9 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     await screen.findByText('Latest run');
     fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Archive' }));
     await waitFor(() => {
-      expect(log.some((c) => c.method === 'POST' && c.url.endsWith('/c-recent/archive'))).toBe(true);
+      expect(log.some((c) => c.method === 'POST' && c.url.endsWith('/c-recent/archive'))).toBe(
+        true,
+      );
     });
   });
 
@@ -194,7 +196,9 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     await screen.findByText('Archived run');
     fireEvent.click(screen.getByRole('button', { name: 'Unarchive' }));
     await waitFor(() => {
-      expect(log.some((c) => c.method === 'POST' && c.url.endsWith('/c-arch/unarchive'))).toBe(true);
+      expect(log.some((c) => c.method === 'POST' && c.url.endsWith('/c-arch/unarchive'))).toBe(
+        true,
+      );
     });
   });
 
@@ -203,7 +207,9 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     await screen.findByText('Latest run');
 
     // "Delete permanently" opens the dialog — but does NOT fire DELETE.
-    fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Delete permanently' }));
+    fireEvent.click(
+      within(rowFor('Latest run')).getByRole('button', { name: 'Delete permanently' }),
+    );
     const dialog = await screen.findByRole('dialog');
     expect(screen.getByText('Delete conversation?')).toBeTruthy();
     expect(log.some((c) => c.method === 'DELETE')).toBe(false);
@@ -223,7 +229,9 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   it('confirming the dialog fires DELETE /api/conversations/{id}', async () => {
     renderSidebar();
     await screen.findByText('Latest run');
-    fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Delete permanently' }));
+    fireEvent.click(
+      within(rowFor('Latest run')).getByRole('button', { name: 'Delete permanently' }),
+    );
     const dialog = await screen.findByRole('dialog');
     // The confirm button inside the dialog (also labelled "Delete permanently").
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete permanently' }));

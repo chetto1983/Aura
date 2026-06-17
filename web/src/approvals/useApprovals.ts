@@ -73,7 +73,9 @@ async function postResolve(vars: ResolveVars): Promise<void> {
   // accept carries the operator content; decline/cancel send NO content — the
   // server owns the declined/auto-resolve text (T-25-17 footgun guard at the wire).
   const body =
-    vars.action === 'accept' ? { action: vars.action, content: vars.content ?? '' } : { action: vars.action };
+    vars.action === 'accept'
+      ? { action: vars.action, content: vars.content ?? '' }
+      : { action: vars.action };
   const res = await fetch(`/api/approvals/${encodeURIComponent(vars.token)}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

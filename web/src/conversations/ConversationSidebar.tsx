@@ -220,11 +220,7 @@ function ConversationRow({
           ) : (
             <RowAction label={t('conversations.actions.archive')} onClick={onArchive} />
           )}
-          <RowAction
-            label={t('conversations.actions.delete')}
-            onClick={onRequestDelete}
-            danger
-          />
+          <RowAction label={t('conversations.actions.delete')} onClick={onRequestDelete} danger />
         </div>
       ) : null}
     </li>

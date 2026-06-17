@@ -31,10 +31,7 @@ function urlOf(input: RequestInfo | URL): string {
 }
 
 // Stub GET /api/conversations/{id} (aggregate seed) + /rot-events (compaction).
-function stubFetch(opts?: {
-  agg?: ConversationAggregate;
-  rotEvents?: { PairsDropped: number }[];
-}) {
+function stubFetch(opts?: { agg?: ConversationAggregate; rotEvents?: { PairsDropped: number }[] }) {
   return vi.fn((input: RequestInfo | URL) => {
     const url = urlOf(input);
     if (url.includes('/rot-events')) {

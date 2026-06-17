@@ -129,9 +129,7 @@ export function ExternalStoreChat({ threadId, onUsage }: ExternalStoreChatProps)
           </AuiIf>
 
           <ThreadPrimitive.Messages>
-            {({ message }) =>
-              message.role === 'user' ? <UserMessage /> : <AssistantMessage />
-            }
+            {({ message }) => (message.role === 'user' ? <UserMessage /> : <AssistantMessage />)}
           </ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
 

@@ -37,7 +37,9 @@ function stubResolve(calls: ResolveCall[], fail = false) {
 }
 
 function client() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
 }
 
 function renderCard(props: {
@@ -132,7 +134,10 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
   });
 
   it('Cancel run while idle resolves {action:"cancel"} immediately', async () => {
-    renderCard({ approval: approval({ token: 't-1', conversation_id: 'c-1' }), isStreaming: false });
+    renderCard({
+      approval: approval({ token: 't-1', conversation_id: 'c-1' }),
+      isStreaming: false,
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
     await waitFor(() => {
       expect(screen.getByText('Run cancelled.')).toBeTruthy();

@@ -85,9 +85,7 @@ export function formatTokens(n: number): string {
 
 function trim1(n: number): string {
   // One decimal, dropping a trailing ".0" (42.0k → 42k).
-  return n
-    .toFixed(1)
-    .replace(/\.0$/, '');
+  return n.toFixed(1).replace(/\.0$/, '');
 }
 
 /**

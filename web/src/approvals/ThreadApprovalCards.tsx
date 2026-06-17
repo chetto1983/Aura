@@ -20,7 +20,11 @@ export interface ThreadApprovalCardsProps {
   readonly onResolved?: (conversationId: string) => void;
 }
 
-export function ThreadApprovalCards({ conversationId, isStreaming, onResolved }: ThreadApprovalCardsProps) {
+export function ThreadApprovalCards({
+  conversationId,
+  isStreaming,
+  onResolved,
+}: ThreadApprovalCardsProps) {
   const { data } = useApprovals();
   if (conversationId.length === 0) return null;
   const forThread = (data ?? []).filter((a) => a.conversation_id === conversationId);

@@ -113,7 +113,13 @@ describe('useConversations queries', () => {
       Promise.resolve(
         new Response(
           JSON.stringify([
-            { TS: '2026-06-17T00:00:00Z', Action: 'hard_drop_pairs', PairsDropped: 2, TokensBefore: 100, TokensAfter: 60 },
+            {
+              TS: '2026-06-17T00:00:00Z',
+              Action: 'hard_drop_pairs',
+              PairsDropped: 2,
+              TokensBefore: 100,
+              TokensAfter: 60,
+            },
           ]),
           { status: 200 },
         ),

@@ -262,13 +262,18 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       return state;
     case 'TOOL_CALL_ARGS': {
       const part = state.tools.get(frame.toolCallId);
-      if (part) state.tools.set(frame.toolCallId, { ...part, argsText: part.argsText + frame.delta });
+      if (part)
+        state.tools.set(frame.toolCallId, { ...part, argsText: part.argsText + frame.delta });
       return state;
     }
     case 'TOOL_CALL_RESULT': {
       // A tool result may arrive for a call we never saw START for (snapshot
       // rehydration); create the part on demand so the raw blob is never lost.
-      const part = ensureTool(state, frame.toolCallId, state.tools.get(frame.toolCallId)?.toolName ?? '');
+      const part = ensureTool(
+        state,
+        frame.toolCallId,
+        state.tools.get(frame.toolCallId)?.toolName ?? '',
+      );
       state.tools.set(frame.toolCallId, { ...part, result: frame.content });
       return state;
     }

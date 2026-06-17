@@ -56,10 +56,14 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
     resolve.mutate(
       // accept carries the operator content; decline/cancel never do (the hook
       // strips it, but be explicit at the call site too — deny != accept).
-      action === 'accept' ? { token: approval.token, action, content: content ?? '' } : { token: approval.token, action },
+      action === 'accept'
+        ? { token: approval.token, action, content: content ?? '' }
+        : { token: approval.token, action },
       {
         onSuccess: () => {
-          setState(action === 'accept' ? 'answered' : action === 'decline' ? 'declined' : 'cancelled');
+          setState(
+            action === 'accept' ? 'answered' : action === 'decline' ? 'declined' : 'cancelled',
+          );
           // accept/decline keep the run alive → re-drive it. cancel aborts it.
           if (action !== 'cancel') onResolved?.(approval.conversation_id);
         },
@@ -165,7 +169,9 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
 
         {confirmingCancel ? (
           <span className="flex items-center gap-2">
-            <span className="text-[0.8125rem] text-warning">{t('approval.card.confirmCancel')}</span>
+            <span className="text-[0.8125rem] text-warning">
+              {t('approval.card.confirmCancel')}
+            </span>
             <button
               type="button"
               disabled={busy}
@@ -212,7 +218,13 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   );
 }
 
-function CardShell({ question, children }: { readonly question: string; readonly children: React.ReactNode }) {
+function CardShell({
+  question,
+  children,
+}: {
+  readonly question: string;
+  readonly children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-accent/40 bg-surface-2 px-4 py-3">
       {/* The backend ask_user question, VERBATIM (no client-side rewrite). */}
@@ -238,7 +250,10 @@ const CHIP_DOT: Record<ChipTone, string> = {
 function TerminalChip({ tone, label }: { readonly tone: ChipTone; readonly label: string }) {
   return (
     <span className={`flex items-center gap-1.5 text-[0.8125rem] ${CHIP_TEXT[tone]}`}>
-      <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-sm ${CHIP_DOT[tone]}`} />
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 shrink-0 rounded-sm ${CHIP_DOT[tone]}`}
+      />
       {label}
     </span>
   );

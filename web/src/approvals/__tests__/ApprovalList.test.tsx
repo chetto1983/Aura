@@ -26,7 +26,12 @@ function approval(over: Partial<Approval> & Pick<Approval, 'token' | 'conversati
 
 const PENDING: Approval[] = [
   approval({ token: 't-1', conversation_id: 'c-1', question: 'Which city?' }),
-  approval({ token: 't-2', conversation_id: 'c-2', question: 'Approve the deploy?', kind: 'approval' }),
+  approval({
+    token: 't-2',
+    conversation_id: 'c-2',
+    question: 'Approve the deploy?',
+    kind: 'approval',
+  }),
 ];
 
 const EXPIRED: Approval = approval({

@@ -40,9 +40,7 @@ describe('AppShell', () => {
         if (url.includes('/api/conversations')) {
           return Promise.resolve(new Response('[]', { status: 200 }));
         }
-        return Promise.resolve(
-          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
-        );
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
       }),
     );
   });
@@ -170,9 +168,9 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
     expect(row.getAttribute('aria-current')).toBeNull();
     fireEvent.click(row);
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'Pinned run' }).getAttribute('aria-current'),
-      ).toBe('true');
+      expect(screen.getByRole('button', { name: 'Pinned run' }).getAttribute('aria-current')).toBe(
+        'true',
+      );
     });
   });
 
@@ -242,9 +240,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
         if (url.includes('/api/conversations')) {
           return Promise.resolve(new Response('[]', { status: 200 }));
         }
-        return Promise.resolve(
-          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
-        );
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
       }),
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -342,9 +338,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
             ),
           );
         }
-        return Promise.resolve(
-          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
-        );
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
       }),
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

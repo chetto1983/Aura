@@ -49,7 +49,9 @@ export function ToolActivityCard({ toolName, argsText, result, isError }: ToolAc
             className={`inline-block h-2 w-2 shrink-0 rounded-sm ${DOT_CLASS[status]}`}
           />
           <span className="font-mono text-xs text-text">{toolName}</span>
-          <span className="text-[0.6875rem] text-text-faint">{t(`chat.tool.status.${status}`)}</span>
+          <span className="text-[0.6875rem] text-text-faint">
+            {t(`chat.tool.status.${status}`)}
+          </span>
         </span>
         {hasRaw ? (
           <button

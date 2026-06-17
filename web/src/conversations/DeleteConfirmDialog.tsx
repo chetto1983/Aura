@@ -21,7 +21,12 @@ export interface DeleteConfirmDialogProps {
   readonly onCancel: () => void;
 }
 
-export function DeleteConfirmDialog({ open, title, onConfirm, onCancel }: DeleteConfirmDialogProps) {
+export function DeleteConfirmDialog({
+  open,
+  title,
+  onConfirm,
+  onCancel,
+}: DeleteConfirmDialogProps) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);

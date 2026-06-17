@@ -183,12 +183,12 @@ describe('sseAdapter — usageFromStateDelta', () => {
 
   it('cacheHitRatio guards /0 (promptTokens=0 → 0, not NaN)', () => {
     expect(cacheHitRatio({ promptTokens: 0, completionTokens: 0, cacheHitTokens: 5 })).toBe(0);
-    expect(Number.isNaN(cacheHitRatio({ promptTokens: 0, completionTokens: 0, cacheHitTokens: 5 }))).toBe(
-      false,
-    );
-    expect(cacheHitRatio({ promptTokens: 100, completionTokens: 0, cacheHitTokens: 80 })).toBeCloseTo(
-      0.8,
-    );
+    expect(
+      Number.isNaN(cacheHitRatio({ promptTokens: 0, completionTokens: 0, cacheHitTokens: 5 })),
+    ).toBe(false);
+    expect(
+      cacheHitRatio({ promptTokens: 100, completionTokens: 0, cacheHitTokens: 80 }),
+    ).toBeCloseTo(0.8);
   });
 });
 
@@ -252,7 +252,9 @@ describe('sseAdapter — reducer edge branches', () => {
   });
 
   it('a non-string tool_call_id value is not treated as a marker', () => {
-    expect(toolCallIdFromDelta([{ op: 'replace', path: '/tool_call_id', value: 42 }])).toBeUndefined();
+    expect(
+      toolCallIdFromDelta([{ op: 'replace', path: '/tool_call_id', value: 42 }]),
+    ).toBeUndefined();
   });
 
   it('TOOL_CALL_ARGS for an unknown call id is a no-op (no phantom part)', () => {
@@ -278,9 +280,7 @@ describe('sseAdapter — reducer edge branches', () => {
 
 function sseResponse(frames: readonly AguiFrame[]): Response {
   const enc = new TextEncoder();
-  const wire = frames
-    .map((f) => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`)
-    .join('');
+  const wire = frames.map((f) => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join('');
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(enc.encode(wire));

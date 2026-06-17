@@ -23,7 +23,10 @@ function stubFetch(rows: Approval[], calls: ResolveCall[]) {
     if (url.includes('/api/approvals') && (init?.method ?? 'GET') === 'GET') {
       return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }));
     }
-    calls.push({ url, body: init?.body !== undefined ? JSON.parse(init.body as string) : undefined });
+    calls.push({
+      url,
+      body: init?.body !== undefined ? JSON.parse(init.body as string) : undefined,
+    });
     return Promise.resolve(new Response(null, { status: 204 }));
   });
 }
@@ -59,7 +62,7 @@ describe('ThreadApprovalCards (D-03 inline mount)', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('renders only the active thread\'s pending interrupts (filters cross-thread)', async () => {
+  it("renders only the active thread's pending interrupts (filters cross-thread)", async () => {
     vi.stubGlobal(
       'fetch',
       stubFetch(
@@ -79,10 +82,7 @@ describe('ThreadApprovalCards (D-03 inline mount)', () => {
   });
 
   it('renders nothing when the active thread has no pending interrupt', async () => {
-    vi.stubGlobal(
-      'fetch',
-      stubFetch([approval({ token: 't-2', conversation_id: 'c-2' })], calls),
-    );
+    vi.stubGlobal('fetch', stubFetch([approval({ token: 't-2', conversation_id: 'c-2' })], calls));
     const { container } = renderCards({ conversationId: 'c-1' });
     // Let the poll settle; c-1 has nothing pending → no card.
     await waitFor(() => {
@@ -93,7 +93,10 @@ describe('ThreadApprovalCards (D-03 inline mount)', () => {
   it('answering an inline card re-drives the run via onResolved (continue-after-resume)', async () => {
     vi.stubGlobal(
       'fetch',
-      stubFetch([approval({ token: 't-1', conversation_id: 'c-1', options: ['Yes', 'No'] })], calls),
+      stubFetch(
+        [approval({ token: 't-1', conversation_id: 'c-1', options: ['Yes', 'No'] })],
+        calls,
+      ),
     );
     const onResolved = vi.fn();
     renderCards({ conversationId: 'c-1', onResolved });
