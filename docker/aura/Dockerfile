@@ -11,6 +11,10 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+# The web TypeScript build includes src/__tests__; sseAdapter tests import the
+# captured AG-UI fixture from the repo root. Copy only that fixture into the path
+# the relative import resolves to inside this stage.
+COPY internal/agui/testdata/golden-events.json /internal/agui/testdata/golden-events.json
 RUN npm run build
 
 FROM golang:1.26.4-alpine AS build
