@@ -49,6 +49,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 - [x] **CHAT-02**: Operator can browse, FTS-search, rename, archive, and delete conversations (thin HTTP adapters over `conversations.Store`)
 - [x] **CHAT-03**: Operator can view a reasoning drawer (chain-of-thought) and a live tool-activity stream, governed by an explicit `showReasoning` policy
 - [ ] **CHAT-04**: Operator sees per-turn cost and cache-hit metrics in a footer
+- [ ] **CHAT-05**: Operator can branch/version messages (edit a user turn or regenerate an assistant turn produces a navigable branch tree) over a path-aware conversation history, preserving the `messages[0]` KV-cache invariant — a deliberate operator-chosen scope addition (D-09, CONTEXT.md)
 
 ### Approval Center (APRV) — Slice C
 
@@ -168,6 +169,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | CHAT-02 | Phase 25 | Complete |
 | CHAT-03 | Phase 25 | Complete |
 | CHAT-04 | Phase 25 | Pending |
+| CHAT-05 | Phase 25 | Pending |
 | APRV-01 | Phase 25 | Pending |
 | APRV-02 | Phase 25 | Pending |
 | APRV-03 | Phase 25 | Pending |
@@ -195,8 +197,8 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 
 **Coverage:**
 
-- v1 requirements: 50 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD + 3 MCPW + 3 SKW)
-- Mapped to phases: 50 (one-to-one, Phases 22–29)
+- v1 requirements: 51 total (12 HARDEN + 6 FND + 4 WEB + 5 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD + 3 MCPW + 3 SKW)
+- Mapped to phases: 51 (one-to-one, Phases 22–29)
 - Unmapped: 0 ✓
 
 **Phase distribution:**
@@ -204,7 +206,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 - Phase 22 (Agent Perimeter Hardening): HARDEN-01..12 (12)
 - Phase 23 (Frontend Infrastructure & Industrial Foundation): FND-01..06 (6)
 - Phase 24 (Web Foundation — Serve + Auth + Health): WEB-01..04 (4)
-- Phase 25 (Chat + Approval Center): CHAT-01..04, APRV-01..03 (7)
+- Phase 25 (Chat + Approval Center): CHAT-01..05, APRV-01..03 (8)
 - Phase 26 (Typed-Display Protocol + Router): DISP-01..05, SWARM-01 (6)
 - Phase 27 (Neo4j Graph Explorer): GRAPH-01..04 (4)
 - Phase 28 (Governance Boards + Web Onboarding): GOV-01..03, ONBD-01..02 (5)
@@ -212,4 +214,4 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 
 ---
 *Requirements defined: 2026-06-15*
-*Last updated: 2026-06-15 — roadmap revised; MCP Configuration (MCPW-01..03) + Skills Install & Lifecycle (SKW-01..03) pulled into v1.0.0 per operator directive and mapped to a new LAST Phase 29 (Governance Write — MCP Configuration + Skills Install); all 50 v1 requirements mapped to Phases 22–29 (0 unmapped, 0 duplicates). Category breakdown 12+6+4+4+3+5+4+1+3+2+3+3 = 50; the one-to-one body↔table mapping is authoritative. Earlier headline counts (33, 39, 44) were superseded as scope grew.*
+*Last updated: 2026-06-17 — CHAT-05 (conversation branch trees, D-09) added as a deliberate operator-chosen scope addition recorded BEFORE the D-09 branch backend (PRD-first, plan 25-06); v1 total 50 → 51, CHAT category 4 → 5, Phase 25 roll-up 7 → 8. Prior note (2026-06-15): roadmap revised; MCP Configuration (MCPW-01..03) + Skills Install & Lifecycle (SKW-01..03) pulled into v1.0.0 per operator directive and mapped to a new LAST Phase 29 (Governance Write — MCP Configuration + Skills Install); all v1 requirements mapped to Phases 22–29 (0 unmapped, 0 duplicates). Category breakdown 12+6+4+5+3+5+4+1+3+2+3+3 = 51; the one-to-one body↔table mapping is authoritative. Earlier headline counts (33, 39, 44, 50) were superseded as scope grew.*

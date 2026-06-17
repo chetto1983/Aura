@@ -132,7 +132,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   3. Operator sees per-turn cost and cache-hit metrics in a footer
   4. Operator sees a cross-thread list of pending `ask_user` / HITL interrupts (question, options, priority, source) and can accept / decline / cancel one to resume the run over the existing `Interrupt` / `Resume[]` protocol
   5. A stale or auto-terminated approval renders its terminal state with no silent loss
-  6. Operator can edit/regenerate a message producing a navigable branch tree (D-09 / CHAT-05) over path-aware history, with the `messages[0]` KV-cache invariant preserved (cache-invariant gate green)
+  6. Operator can edit/regenerate a message producing a navigable branch tree (D-09 / CHAT-05 — a deliberate operator-chosen scope addition beyond CHAT-01, recorded PRD-first) over path-aware history, with the `messages[0]` KV-cache invariant preserved (cache-invariant gate green)
 
 **Plans**: 7 plans
 Plans:
