@@ -144,12 +144,23 @@ func TestListPendingAll_TotalOrderViaTokenTiebreaker(t *testing.T) {
 
 // TestListPendingAll_LimitDefault asserts limit<=0 falls back to 100 (mirroring
 // ListRecent's <=0 guard) rather than binding a 0/negative LIMIT.
+//
+// The probe is seeded with a deliberately HIGH priority so it sorts within the top-100
+// of the GLOBAL cross-thread read (ORDER BY priority DESC, created_at ASC, token ASC)
+// even when the shared coverage-gate Postgres is flooded by other packages' parallel
+// db_integration pending rows. A priority-0 probe sorted behind every other pending row
+// and got buried past the 100-row default, which reddened the coverage gate (the main
+// CI db_integration tier runs -p 1 against an isolated table and did not surface it).
+// 100 is the constraint max (CHECK priority BETWEEN 0 AND 100, migration 0003) and the
+// highest priority any seed in the suite uses is 90, so this probe is deterministically
+// rank #1 (priority DESC) and always inside the default 100-row window.
 func TestListPendingAll_LimitDefault(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	ctx := context.Background()
 	conv := newConversation(t, pool)
-	tok := insertPause(t, s, conv, "approval", "q", 0)
+	const topPriority = 100
+	tok := insertPause(t, s, conv, "approval", "q", topPriority)
 
 	for _, limit := range []int{0, -5} {
 		pending, err := s.ListPendingAll(ctx, limit)
