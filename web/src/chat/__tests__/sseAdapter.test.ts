@@ -515,6 +515,27 @@ describe('sseAdapter — streamRun (POST /agent/run + AbortController)', () => {
     expect(usage).toMatchObject({ promptTokens: 100, costUsd: 0.0042 });
   });
 
+  it('includes attachment ids in the /agent/run aura extension body', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(sseResponse([frame('RUN_STARTED'), frame('RUN_FINISHED(success)')])),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await streamRun({
+      threadId: 'thread-1',
+      userText: 'summarize these',
+      attachmentIds: ['asset-1', 'asset-2'],
+      signal: new AbortController().signal,
+      newId: () => 'fixed-id',
+      onUpdate: () => undefined,
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      aura: { attachment_ids: ['asset-1', 'asset-2'] },
+    });
+  });
+
   it('a non-OK response surfaces the sanitized backend body as the error (WR-03)', async () => {
     vi.stubGlobal(
       'fetch',

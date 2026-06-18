@@ -17,6 +17,9 @@ import {
 import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
 import { BranchPicker } from './BranchPicker';
 import { Composer } from './Composer';
+import { AttachmentCard } from './attachments/AttachmentCard';
+import { useAttachmentUploads } from './attachments/useAttachmentUploads';
+import type { Asset } from './attachments/types';
 import { DisplayRouter } from './displays/DisplayRouter';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
 import { MarkdownText } from './MarkdownText';
@@ -43,8 +46,13 @@ function appendMessageText(message: AppendMessage): string {
     .join('');
 }
 
-function userMessage(text: string): ThreadMessageLike {
-  return { id: crypto.randomUUID(), role: 'user', content: [{ type: 'text', text }] };
+function userMessage(text: string, attachments: readonly Asset[] = []): ThreadMessageLike {
+  return {
+    id: crypto.randomUUID(),
+    role: 'user',
+    content: [{ type: 'text', text }],
+    ...(attachments.length > 0 ? { metadata: { custom: { attachments } } } : {}),
+  };
 }
 
 function assistantErrorMessage(text: string): ThreadMessageLike {
@@ -86,6 +94,7 @@ export function ExternalStoreChat({
   const historyAbortRef = useRef<AbortController | null>(null);
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
+  const uploads = useAttachmentUploads(threadId);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -98,11 +107,16 @@ export function ExternalStoreChat({
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
+      if (uploads.hasBlockingUploads) return;
       historyRequestRef.current += 1;
       historyAbortRef.current?.abort();
       historyAbortRef.current = null;
       const text = appendMessageText(message);
-      const user = userMessage(text);
+      const readyAttachmentIds = uploads.readyAssetIds;
+      const readyAttachments = uploads.items.flatMap((item) =>
+        item.status === 'ready' && item.asset !== undefined ? [item.asset] : [],
+      );
+      const user = userMessage(text, readyAttachments);
       // Snapshot the assistant message index after appending the user turn so the
       // streaming folder can replace exactly that slot in place.
       let assistantIndex = -1;
@@ -137,6 +151,7 @@ export function ExternalStoreChat({
         await streamRun({
           threadId: runThreadId,
           userText: text,
+          attachmentIds: readyAttachmentIds,
           signal: controller.signal,
           onUpdate: (assistant, usage) => {
             onUsage?.(usage);
@@ -151,6 +166,7 @@ export function ExternalStoreChat({
             });
           },
         });
+        if (readyAttachmentIds.length > 0) uploads.clearReady();
       } catch (err) {
         // An aborted fetch (Stop) throws AbortError; the partial assistant
         // message already rendered is left as-is (incomplete). Other network
@@ -174,7 +190,7 @@ export function ExternalStoreChat({
         invalidateRuntimeReads(runThreadId);
       }
     },
-    [threadId, onEnsureThread, onUsage, invalidateRuntimeReads, t],
+    [threadId, onEnsureThread, onUsage, invalidateRuntimeReads, t, uploads],
   );
 
   const onCancel = useCallback(async () => {
@@ -422,7 +438,7 @@ export function ExternalStoreChat({
           </p>
         ) : null}
 
-        <Composer />
+        <Composer uploads={uploads} />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
@@ -430,6 +446,9 @@ export function ExternalStoreChat({
 
 function UserMessage() {
   const { t } = useTranslation();
+  const message = useAuiState((s) => s.message) as ThreadMessageLike;
+  const metadata = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
+  const attachments = metadata?.attachments ?? [];
   return (
     <MessagePrimitive.Root className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
       {/* Edit mode: a message-scoped composer whose Send fires onEdit (fork + re-run). */}
@@ -466,6 +485,13 @@ function UserMessage() {
             }}
           />
         </div>
+        {attachments.length > 0 ? (
+          <div className="flex flex-col items-end gap-2">
+            {attachments.map((asset) => (
+              <AttachmentCard key={asset.id} asset={asset} />
+            ))}
+          </div>
+        ) : null}
         {/* Edit a user turn → onEdit forks a branch + re-runs. Copy is the minimum verb. */}
         <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
           <ActionBarPrimitive.Edit

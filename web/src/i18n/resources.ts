@@ -73,6 +73,17 @@ export const resources = {
           stop: 'Stop',
           stopAria: 'Stop the current response',
         },
+        attachments: {
+          add: 'Add files',
+          remove: 'Remove {{name}}',
+          uploading: 'Uploading {{progress}}%',
+          processing: 'Processing',
+          ready: 'Ready',
+          failed: 'Failed',
+          refused: 'Refused',
+          mic: 'Record audio',
+          micStop: 'Stop recording',
+        },
         running: 'Running...',
         empty: {
           thread: {
@@ -353,6 +364,17 @@ export const resources = {
           sendAria: 'Invia messaggio',
           stop: 'Ferma',
           stopAria: 'Ferma la risposta in corso',
+        },
+        attachments: {
+          add: 'Aggiungi file',
+          remove: 'Rimuovi {{name}}',
+          uploading: 'Caricamento {{progress}}%',
+          processing: 'Elaborazione',
+          ready: 'Pronto',
+          failed: 'Errore',
+          refused: 'Rifiutato',
+          mic: 'Registra audio',
+          micStop: 'Ferma registrazione',
         },
         running: 'In esecuzione...',
         empty: {
