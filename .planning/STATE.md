@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: verifying
+status: executing
 stopped_at: Edge/webhint page sweep green
-last_updated: "2026-06-18T09:33:44.658Z"
-last_activity: 2026-06-18 -- Phase 26 planning complete
+last_updated: "2026-06-18T10:07:56.646Z"
+last_activity: 2026-06-18
 progress:
   total_phases: 8
   completed_phases: 4
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 25
+  completed_plans: 20
   percent: 50
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 25 — chat-approval-center
+**Current focus:** Phase 26 — typed-display-protocol-router
 
 ## Current Position
 
-Phase: 25 of 8 — **CLOSED** (Chat + Approval Center). Next: Phase 26 (Typed-Display Protocol + Router) — not started.
-Plan: Not started (Phase 26)
-Status: Phase 25 closed — 8/8 must-haves verified (`25-VERIFICATION.md`), 4 code-review findings fixed; the 6 live-stack UAT items are carried into the cockpit-overhaul live cutover (see below). Phases 22–25 all complete.
-Last activity: 2026-06-18 -- Phase 26 planning complete
+Phase: 26 (typed-display-protocol-router) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-06-18
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -172,6 +172,7 @@ Commit the cockpit-overhaul working-tree layer + run the live cutover (incl. the
 | Phase 25 P25-04 | ~70min | 2 tasks | 17 files |
 | Phase 25 P25-05 | ~40min | 2 tasks | 13 files |
 | Phase 25 P25-07 | ~150min | 3 tasks | 45 files |
+| Phase 26 P01 | 31min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -318,6 +319,7 @@ Recent decisions affecting current work:
 - [Phase 25]: 25-04: SearchResult carries no title on the wire — SearchPanel enriches each hit title from the cached conversations list (no backend join)
 - [Phase 25]: 25-04: footer session-cumulative = persisted GET /api/conversations/{id} aggregate seed + the single live in-flight turn (no double-count, self-corrects on reload)
 - [Phase 25]: 25-04: context window not on the conversation wire — footer uses DEFAULT_CONTEXT_WINDOW=1_000_000 (matches internal/llm) with a windowTokens override
+- [Phase ?]: [Phase 26 26-01]: display.ChildReport mirrors swarm.ChildReport (not an import) to avoid an agent->display->swarm->agent cycle; aura.display CUSTOM event mirrors aura.artifact additively; Normalize returns false for unrecognized tools (D-FALLBACK)
 
 ### Pending Todos
 
@@ -351,9 +353,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-18T09:31:44.350Z
+Last session: 2026-06-18T10:07:34.161Z
 Stopped at: Edge/webhint page sweep green
-Resume file: .planning/STATE.md
+Resume file: None
 
 ## Operator Next Steps
 
