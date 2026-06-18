@@ -68,8 +68,8 @@ func TestStoreLifecycleUpdatesScopeMutationsToIdentity(t *testing.T) {
 			if !strings.Contains(query, "and deleted_at is null") {
 				t.Errorf("%s SQL missing deleted guard: %s", method, query)
 			}
-			if !hasUUIDArg(db.args, unitIdentityID) {
-				t.Errorf("%s args missing identity UUID %s: %#v", method, unitIdentityID, db.args)
+			if !uuidArgEquals(db.args, 1, unitIdentityID) {
+				t.Errorf("%s arg $2 = %#v, want identity UUID %s; args: %#v", method, argAt(db.args, 1), unitIdentityID, db.args)
 			}
 		})
 	}
@@ -165,16 +165,21 @@ func compactSQL(query string) string {
 	return strings.ToLower(strings.Join(strings.Fields(query), " "))
 }
 
-func hasUUIDArg(args []any, want string) bool {
-	wantUUID := uuid.MustParse(want)
-	for _, arg := range args {
-		value, ok := arg.(pgtype.UUID)
-		if !ok || !value.Valid {
-			continue
-		}
-		if uuid.UUID(value.Bytes) == wantUUID {
-			return true
-		}
+func argAt(args []any, index int) any {
+	if index < 0 || index >= len(args) {
+		return nil
 	}
-	return false
+	return args[index]
+}
+
+func uuidArgEquals(args []any, index int, want string) bool {
+	if index < 0 || index >= len(args) {
+		return false
+	}
+	wantUUID := uuid.MustParse(want)
+	value, ok := args[index].(pgtype.UUID)
+	if !ok || !value.Valid {
+		return false
+	}
+	return uuid.UUID(value.Bytes) == wantUUID
 }
