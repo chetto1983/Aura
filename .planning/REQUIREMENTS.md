@@ -60,7 +60,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 ### Typed Display (DISP) — Slices D + E (GAP-1)
 
 - [x] **DISP-01**: Backend emits a namespaced `aura.display` CUSTOM event carrying a typed `DisplayPayload`, produced by a Go normalizer (`internal/agent/display/`) from structured tool results — additive `Actions.Display` slot, `messages[0]` cache invariant preserved
-- [ ] **DISP-02**: The cockpit renders typed displays via a `switch(payload.type)` router: `web_result`, `document`, `code`, `local_artifact`, `table`, `chart`
+- [x] **DISP-02**: The cockpit renders typed displays via a `switch(payload.type)` router: `web_result`, `document`, `code`, `local_artifact`, `table`, `chart`
 - [ ] **DISP-03**: Operator can inspect a display's raw-data / source view, paginate result groups, and see citation bubbles on completed answers
 - [x] **DISP-04**: Web-safety backend error classes render as typed `system_event` cards showing only safe reasons (no SSRF internals) — `internal/web/errors.go` enum
 - [x] **DISP-05**: Operator can use a Source Explorer with Table / Metadata / Configuration views
@@ -174,7 +174,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | APRV-02 | Phase 25 | Complete |
 | APRV-03 | Phase 25 | Complete |
 | DISP-01 | Phase 26 | Complete |
-| DISP-02 | Phase 26 | Pending |
+| DISP-02 | Phase 26 | Complete |
 | DISP-03 | Phase 26 | Pending |
 | DISP-04 | Phase 26 | Complete |
 | DISP-05 | Phase 26 | Complete |

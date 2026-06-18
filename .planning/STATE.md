@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Edge/webhint page sweep green
-last_updated: "2026-06-18T10:07:56.646Z"
+stopped_at: Completed 26-02-PLAN.md
+last_updated: "2026-06-18T13:37:37.318Z"
 last_activity: 2026-06-18
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 25
-  completed_plans: 20
+  completed_plans: 21
   percent: 50
 ---
 
@@ -173,6 +173,7 @@ Commit the cockpit-overhaul working-tree layer + run the live cutover (incl. the
 | Phase 25 P25-05 | ~40min | 2 tasks | 13 files |
 | Phase 25 P25-07 | ~150min | 3 tasks | 45 files |
 | Phase 26 P01 | 31min | 3 tasks | 21 files |
+| Phase 26 P26-02 | ~70min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -320,6 +321,8 @@ Recent decisions affecting current work:
 - [Phase 25]: 25-04: footer session-cumulative = persisted GET /api/conversations/{id} aggregate seed + the single live in-flight turn (no double-count, self-corrects on reload)
 - [Phase 25]: 25-04: context window not on the conversation wire — footer uses DEFAULT_CONTEXT_WINDOW=1_000_000 (matches internal/llm) with a windowTokens override
 - [Phase ?]: [Phase 26 26-01]: display.ChildReport mirrors swarm.ChildReport (not an import) to avoid an agent->display->swarm->agent cycle; aura.display CUSTOM event mirrors aura.artifact additively; Normalize returns false for unrecognized tools (D-FALLBACK)
+- [Phase 26]: 26-02: DisplayRouter default returns the raw ToolActivityCard, never null (D-FALLBACK/HARDEN-08) — overrides elysia's default:return null; rich render only for trusted-normalizer payloads
+- [Phase 26]: 26-02: cockpit micro-labels use text-[0.75rem] (12px), not the UI-SPEC's 11px — the committed readability tokens use a 15.5px operator base + an enforced readabilityTokens gate (>=11px effective)
 
 ### Pending Todos
 
@@ -353,8 +356,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-18T10:07:34.161Z
-Stopped at: Edge/webhint page sweep green
+Last session: 2026-06-18T13:37:27.157Z
+Stopped at: Completed 26-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
