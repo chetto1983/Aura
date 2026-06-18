@@ -4,8 +4,9 @@
   "testRunner": "vitest",
   "coverageAnalysis": "perTest",
   "mutate": [
-    "src/chat/displays/rehypeCitations.ts",
-    "src/chat/displays/shiki.ts"
+    "src/chat/displays/**/*.{ts,tsx}",
+    "!src/chat/displays/**/__tests__/**",
+    "!src/chat/displays/types.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,
