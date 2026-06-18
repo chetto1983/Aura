@@ -2,63 +2,47 @@ import {
   MarkdownTextPrimitive,
   type MarkdownTextPrimitiveProps,
 } from '@assistant-ui/react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
-import remarkGfm from 'remark-gfm';
-import { markdownSanitizeSchema } from './markdownSanitize';
+import type { PluggableList } from 'unified';
+import {
+  baseMarkdownComponents,
+  buildRehypePlugins,
+  remarkPlugins,
+} from './markdownConfig';
 
-export function MarkdownText(
-  props: Omit<MarkdownTextPrimitiveProps, 'remarkPlugins' | 'rehypePlugins'>,
-) {
+// MarkdownText: the streaming chat host (the assistant-ui MarkdownTextPrimitive
+// bound to the current message part). It renders through the shared markdownConfig
+// pipeline (HARDEN-08 chokepoint) so the chat lane and the standalone DocumentDisplay
+// render identically. The citation document path injects rehypeCitations via
+// `extraRehypePlugins` + the citation `span` renderer via `extraComponents` — an
+// internal MERGE, not a forked component (T-26-17): buildRehypePlugins keeps
+// rehype-sanitize LAST so an extra plugin can never bypass sanitization.
+
+export type ExtraMarkdownComponents = NonNullable<MarkdownTextPrimitiveProps['components']>;
+
+export interface MarkdownTextProps
+  extends Omit<MarkdownTextPrimitiveProps, 'remarkPlugins' | 'rehypePlugins' | 'components'> {
+  /** Extra rehype plugins (e.g. rehypeCitations) merged BEFORE the sanitize pass. */
+  readonly extraRehypePlugins?: PluggableList;
+  /** Extra component renderers merged over the defaults (e.g. the citation span). */
+  readonly extraComponents?: ExtraMarkdownComponents;
+}
+
+export function MarkdownText({
+  extraRehypePlugins,
+  extraComponents,
+  ...props
+}: MarkdownTextProps) {
+  const components = (
+    extraComponents !== undefined
+      ? { ...baseMarkdownComponents, ...extraComponents }
+      : baseMarkdownComponents
+  ) as ExtraMarkdownComponents;
+
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[[rehypeSanitize, markdownSanitizeSchema]]}
-      components={{
-        a: ({ href, children, ...linkProps }) => (
-          <a
-            {...linkProps}
-            href={href}
-            rel="noreferrer"
-            target="_blank"
-            className="text-accent-text underline decoration-accent-muted underline-offset-2 hover:text-accent"
-          >
-            {children}
-          </a>
-        ),
-        table: ({ children }) => (
-          <div className="my-3 overflow-x-auto rounded-[var(--radius-md)] border border-border">
-            <table className="min-w-full border-collapse text-left text-sm">{children}</table>
-          </div>
-        ),
-        th: ({ children, align }) => (
-          <th
-            align={align}
-            className="border-b border-border bg-surface-2 px-3 py-2 text-[0.75rem] font-medium uppercase text-text-faint"
-          >
-            {children}
-          </th>
-        ),
-        td: ({ children, align }) => (
-          <td align={align} className="border-b border-border px-3 py-2 text-text-muted">
-            {children}
-          </td>
-        ),
-        pre: ({ children }) => (
-          <pre className="my-3 overflow-x-auto rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text-muted">
-            {children}
-          </pre>
-        ),
-        code: ({ children, className }) => (
-          <code
-            className={
-              className ??
-              'rounded-[var(--radius-sm)] bg-surface-2 px-1 py-0.5 font-mono text-[0.8125rem] text-accent-text'
-            }
-          >
-            {children}
-          </code>
-        ),
-      }}
+      remarkPlugins={remarkPlugins}
+      rehypePlugins={buildRehypePlugins(extraRehypePlugins)}
+      components={components}
       {...props}
     />
   );

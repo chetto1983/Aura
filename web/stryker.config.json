@@ -4,10 +4,8 @@
   "testRunner": "vitest",
   "coverageAnalysis": "perTest",
   "mutate": [
-    "src/health/RuntimeHealthPanel.tsx",
-    "src/health/useRuntimeHealth.ts",
-    "src/theme/applyTheme.ts",
-    "src/theme/density.ts"
+    "src/chat/displays/rehypeCitations.ts",
+    "src/chat/displays/shiki.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,
