@@ -16,7 +16,9 @@ const webDisplay: DisplayPayload = {
   web_results: [
     { title: 'Meteo Roma', url: 'https://example.com/meteo', snippet: 'sunny 25C', ref_id: 's1' },
   ],
-  sources: [{ ref_id: 's1', index: 1, type: 'web_result', url: 'https://example.com/meteo', cited: true }],
+  sources: [
+    { ref_id: 's1', index: 1, type: 'web_result', url: 'https://example.com/meteo', cited: true },
+  ],
 };
 
 describe('snapshotToMessages — D-06 replay projection', () => {
@@ -31,7 +33,11 @@ describe('snapshotToMessages — D-06 replay projection', () => {
           role: 'assistant',
           content: '',
           toolCalls: [
-            { id: 'call-1', type: 'function', function: { name: 'web_search', arguments: '{"q":"meteo"}' } },
+            {
+              id: 'call-1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"q":"meteo"}' },
+            },
           ],
         },
         { id: 'msg-4', role: 'tool', toolCallId: 'call-1', content: 'sunny 25C' },
@@ -100,7 +106,9 @@ describe('snapshotToMessages — D-06 replay projection', () => {
           id: 'msg-2',
           role: 'assistant',
           content: '',
-          toolCalls: [{ id: 'call-9', type: 'function', function: { name: 'noop_tool', arguments: '{}' } }],
+          toolCalls: [
+            { id: 'call-9', type: 'function', function: { name: 'noop_tool', arguments: '{}' } },
+          ],
         },
       ],
     });

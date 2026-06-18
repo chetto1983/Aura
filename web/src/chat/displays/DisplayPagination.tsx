@@ -67,10 +67,7 @@ export function DisplayPagination({
           polite live region so the new window is announced on navigation. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <label
-            htmlFor={selectId}
-            className="text-[0.75rem] font-medium text-text-muted"
-          >
+          <label htmlFor={selectId} className="text-[0.75rem] font-medium text-text-muted">
             {t('display.pagination.perPage')}
           </label>
           <select
@@ -89,10 +86,7 @@ export function DisplayPagination({
           </select>
         </div>
 
-        <span
-          aria-live="polite"
-          className="text-[0.75rem] tabular-nums text-text-faint"
-        >
+        <span aria-live="polite" className="text-[0.75rem] tabular-nums text-text-faint">
           {t('display.pagination.count', { from, to, total })}
         </span>
 
@@ -120,9 +114,7 @@ export function DisplayPagination({
               </svg>
             </button>
             {/* The active page number is the ONLY accented element (Color rule). */}
-            <span className="text-[0.75rem] tabular-nums text-accent-text">
-              {current + 1}
-            </span>
+            <span className="text-[0.75rem] tabular-nums text-accent-text">{current + 1}</span>
             <button
               type="button"
               onClick={goNext}

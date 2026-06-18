@@ -28,7 +28,13 @@ export interface DisplayRouterProps {
   readonly isError?: boolean;
 }
 
-export function DisplayRouter({ payload, toolName, argsText, result, isError }: DisplayRouterProps) {
+export function DisplayRouter({
+  payload,
+  toolName,
+  argsText,
+  result,
+  isError,
+}: DisplayRouterProps) {
   switch (payload.type) {
     // Per-type cases (web_result, document, code, local_artifact, table, chart,
     // system_event, swarm_report) land in 26-04/26-05. Each returns its typed

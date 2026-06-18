@@ -189,7 +189,12 @@ describe('ExternalStoreChat (CHAT-01)', () => {
           { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
           { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'It is sunny.' },
           { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
-          { type: 'RUN_FINISHED', threadId: 'conv-1', runId: 'run-1', outcome: { type: 'success' } },
+          {
+            type: 'RUN_FINISHED',
+            threadId: 'conv-1',
+            runId: 'run-1',
+            outcome: { type: 'success' },
+          },
         ]),
       );
     });
