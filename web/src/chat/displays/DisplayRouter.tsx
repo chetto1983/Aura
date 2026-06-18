@@ -3,6 +3,8 @@ import type { DisplayPayload } from './types';
 import { TableDisplay } from './TableDisplay';
 import { ChartDisplay } from './ChartDisplay';
 import { SystemEventCard } from './SystemEventCard';
+import { SwarmReportTable } from './SwarmReportTable';
+import { LocalArtifactDisplay } from './LocalArtifactDisplay';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point from
 // ExternalStoreChat's tools.Fallback. It upgrades a tool turn to a typed display
@@ -48,6 +50,10 @@ export function DisplayRouter({
       return <ChartDisplay payload={payload} />;
     case 'system_event':
       return <SystemEventCard payload={payload} />;
+    case 'swarm_report':
+      return <SwarmReportTable payload={payload} />;
+    case 'local_artifact':
+      return <LocalArtifactDisplay payload={payload} />;
     default:
       // D-FALLBACK: the escaped raw card, never null (HARDEN-08).
       return (
