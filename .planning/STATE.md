@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: verifying
-stopped_at: Completed 26-04-PLAN.md
+stopped_at: Phase 26 complete — verified (conditional pass), 4 live UAT items pending
 last_updated: "2026-06-18T21:12:17.173Z"
 last_activity: 2026-06-18
 progress:
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 26 (typed-display-protocol-router) — EXECUTING
-Plan: 26-03 of 6 complete (Wave-2 backend); 26-04 frontend (same wave) runs next
-Status: Phase complete — ready for verification
+Phase: 26 (typed-display-protocol-router) — VERIFIED (conditional pass)
+Plan: 6 of 6 complete (26-01..26-06). All automated gates green: go build/vet/-race, vitest 502/502, coverage 94.4% stmts / 86.4% branch (≥85 floor), contrast 15/15 AA, Stryker displays 71.7% (≥70), shiki code-split chunk in committed dist, replay e2e passed live (26-06).
+Status: CONDITIONAL PASS — 4 live UX sign-offs pending (see 26-VERIFICATION.md): citation hovercard fidelity + click-through, Source Explorer read-only posture acceptance, swarm-report no-mailbox live assertion, D-06 Playwright replay against a provisioned stack.
 Last activity: 2026-06-18
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
@@ -43,7 +43,7 @@ A large frontend + auth layer is **uncommitted** in the working tree. The Phase-
 
 ### Next
 
-Commit the cockpit-overhaul working-tree layer + run the live cutover (incl. the carried Phase-25 UAT + the Authula cutover smoke), then `/gsd-plan-phase 26` (Typed-Display Protocol + Router). Phase 22 Gate-3 is **CLOSED** (commit `28c1f7c7`, 2026-06-16) — the earlier "awaits Part-B sign-off" note is superseded.
+Phase 26 executed + verified (conditional pass, 2026-06-18). Next: `/gsd-verify-work 26` to clear the 4 live UX sign-offs (26-VERIFICATION.md → a 26-HUMAN-UAT), then `/gsd-code-review 26`. Remaining milestone-v1.0.0 phases after 26: 27 (graph), 28 (gov-read + onboarding), 29 (MCP + skills).
 
 ## Performance Metrics
 
