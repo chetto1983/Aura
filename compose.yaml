@@ -105,6 +105,22 @@ services:
       AURA_SKILL_INJECTION_BLOCKLIST: ${AURA_SKILL_INJECTION_BLOCKLIST:-}
       AURA_AGUI_CORS_PERMISSIVE: ${AURA_AGUI_CORS_PERMISSIVE:-false}
       AURA_AGUI_BUFFER_CAP: ${AURA_AGUI_BUFFER_CAP:-64}
+      AURA_OBJECTSTORE_BACKEND: garage
+      AURA_OBJECTSTORE_ENDPOINT: http://garage:3900
+      AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-}
+      AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}
+      AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}
+      AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:-garage}
+      AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:-garage-secret}
+      AURA_OBJECTSTORE_PATH_STYLE: ${AURA_OBJECTSTORE_PATH_STYLE:-true}
+      AURA_ASSET_MAX_DOCUMENT_BYTES: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
+      AURA_ASSET_MAX_IMAGE_BYTES: ${AURA_ASSET_MAX_IMAGE_BYTES:-26214400}
+      AURA_ASSET_MAX_AUDIO_BYTES: ${AURA_ASSET_MAX_AUDIO_BYTES:-104857600}
+      AURA_ASSET_PRESIGN_TTL_SEC: ${AURA_ASSET_PRESIGN_TTL_SEC:-600}
+      AURA_ASSET_PROCESSING_CONCURRENCY: ${AURA_ASSET_PROCESSING_CONCURRENCY:-2}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-}
+      TELEGRAM_FILE_BASE_URL: ${TELEGRAM_FILE_BASE_URL:-}
+      AURA_TELEGRAM_LOCAL_BOT_API: ${AURA_TELEGRAM_LOCAL_BOT_API:-false}
       AURA_SERVE_SHUTDOWN_GRACE_SEC: ${AURA_SERVE_SHUTDOWN_GRACE_SEC:-25}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       AURA_TELEGRAM_STATUS_THROTTLE_MS: ${AURA_TELEGRAM_STATUS_THROTTLE_MS:-1500}
@@ -209,6 +225,20 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # Industrial asset object storage foundation. Garage bucket/access bootstrap is
+  # intentionally left to the later asset service/deploy task; for local dev before
+  # bootstrap, set AURA_OBJECTSTORE_BACKEND=filesystem-dev.
+  garage:
+    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}
+    container_name: aura-garage
+    restart: unless-stopped
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-aura-dev-garage-rpc-secret}
+    ports:
+      - "127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900"
+    volumes:
+      - garage-data:/var/lib/garage
 
   # ↓↓ Slice 0.7 — Neo4j Community + APOC + GDS ↓↓
   neo4j:
@@ -547,6 +577,7 @@ volumes:
   caddy-data:
   aura-ocr-vl:
   aura-pim-data:
+  garage-data:
 
 networks:
   # Local SearXNG bridge: host-loopback published; default Docker NAT egress

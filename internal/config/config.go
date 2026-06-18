@@ -112,6 +112,26 @@ type Config struct {
 	AGUICORSPermissive bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
 	AGUIBufferCap      int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
 
+	// Industrial asset object-store foundation. The backend is selected by the
+	// later asset service; config is intentionally non-fatal so DB/migration paths
+	// do not depend on Garage being reachable.
+	ObjectStoreBackend        string // AURA_OBJECTSTORE_BACKEND — garage|filesystem-dev|fake
+	ObjectStoreEndpoint       string // AURA_OBJECTSTORE_ENDPOINT — S3-compatible internal endpoint
+	ObjectStorePublicEndpoint string // AURA_OBJECTSTORE_PUBLIC_ENDPOINT — optional presign URL host rewrite
+	ObjectStoreRegion         string // AURA_OBJECTSTORE_REGION — Garage/S3 region
+	ObjectStoreBucket         string // AURA_OBJECTSTORE_BUCKET — asset bucket
+	ObjectStoreAccessKey      string // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
+	ObjectStoreSecretKey      string // AURA_OBJECTSTORE_SECRET_KEY — S3 secret key
+	ObjectStorePathStyle      bool   // AURA_OBJECTSTORE_PATH_STYLE — Garage requires path-style by default
+	AssetMaxDocumentBytes     int    // AURA_ASSET_MAX_DOCUMENT_BYTES — document upload ceiling
+	AssetMaxImageBytes        int    // AURA_ASSET_MAX_IMAGE_BYTES — image upload ceiling
+	AssetMaxAudioBytes        int    // AURA_ASSET_MAX_AUDIO_BYTES — audio upload ceiling
+	AssetPresignTTLSec        int    // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
+	AssetProcessingConcurrent int    // AURA_ASSET_PROCESSING_CONCURRENCY — future asset worker width
+	TelegramAPIBaseURL        string // TELEGRAM_API_BASE_URL — optional local Bot API base
+	TelegramFileBaseURL       string // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
+	TelegramLocalBotAPI       bool   // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
+
 	// Phase 24 (WEB-02/WEB-03) web-auth knobs. Neither is boot-fatal on its own —
 	// GuardWebBind decides at boot whether a non-loopback AGUIBind may start. A loopback
 	// bind boots with both unset (dev parity, exactly as before).
@@ -356,6 +376,23 @@ func loadBase() *Config {
 		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
 		AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 		AGUIBufferCap:      envIntDefault("AURA_AGUI_BUFFER_CAP", 64),
+
+		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
+		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),
+		ObjectStorePublicEndpoint: os.Getenv("AURA_OBJECTSTORE_PUBLIC_ENDPOINT"),
+		ObjectStoreRegion:         envDefault("AURA_OBJECTSTORE_REGION", "garage"),
+		ObjectStoreBucket:         envDefault("AURA_OBJECTSTORE_BUCKET", "aura-assets"),
+		ObjectStoreAccessKey:      os.Getenv("AURA_OBJECTSTORE_ACCESS_KEY"),
+		ObjectStoreSecretKey:      os.Getenv("AURA_OBJECTSTORE_SECRET_KEY"),
+		ObjectStorePathStyle:      envBoolDefault("AURA_OBJECTSTORE_PATH_STYLE", true),
+		AssetMaxDocumentBytes:     envIntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
+		AssetMaxImageBytes:        envIntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
+		AssetMaxAudioBytes:        envIntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
+		AssetPresignTTLSec:        envIntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
+		AssetProcessingConcurrent: envIntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
+		TelegramAPIBaseURL:        os.Getenv("TELEGRAM_API_BASE_URL"),
+		TelegramFileBaseURL:       os.Getenv("TELEGRAM_FILE_BASE_URL"),
+		TelegramLocalBotAPI:       envBoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
 		// Phase 24 web-auth knobs (WEB-02/WEB-03). Both have non-fatal defaults; the
 		// secret is read raw (empty default — GuardWebBind decides if it is required).
