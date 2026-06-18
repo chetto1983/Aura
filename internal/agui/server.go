@@ -90,6 +90,7 @@ type Server struct {
 	run       Runner
 	conv      ConversationStore
 	approvals ApprovalStore
+	images    ImageFetcher
 	idgen     IDGenerator
 	cfg       ServerConfig
 }
@@ -108,6 +109,12 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
+// SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
+// delegates to. Set by the daemon composition root after NewServer (the *web.Client
+// already wired for web_search/web_fetch); until set, the route answers 503. Kept off
+// the constructor so existing NewServer callers/tests stay unchanged (D-A2-02).
+func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
+
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
 // — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
 // the handler is wrapped in withCORS so a browser cross-origin POST works end to end:
@@ -120,6 +127,10 @@ func (s *Server) Mux() http.Handler {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
+	// DISP-05/D-09 image-proxy: a same-origin SSRF-safe relay for web_result
+	// thumbnails/favicons. Mounted under /api/ so it inherits the parent-mux
+	// RequireAuth whole-origin gate (cmd/aura/serve_webui.go); never an open relay.
+	mux.HandleFunc("GET /api/image-proxy", s.handleImageProxy)
 	// CHAT-02 conversation-management subtree (Phase 25). The parent-mux mount
 	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
 	// colocated with their handlers so the agui Server.Mux answers them.

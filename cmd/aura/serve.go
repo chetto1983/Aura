@@ -37,6 +37,7 @@ import (
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -281,6 +282,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// shipped with s.approvals == nil. chat.pause is the same askuser.Store the Runner
 	// resumes through, so the badge/list read the identical pending set.
 	aguiServer.SetApprovalStore(chat.pause)
+	// Wire the DISP-05/D-09 image-proxy fetcher: a fresh web.Client reusing the SAME
+	// SSRF-hardened transport web_search/web_fetch use (hostname blocklist → DNS-pin →
+	// classify → image content-type allowlist + size cap). Without this the
+	// GET /api/image-proxy route answers 503 and the cockpit's web_result thumbnails/
+	// favicons never load. It mounts behind the RequireAuth whole-origin gate (the
+	// parent mux below), so it is never an open relay.
+	aguiServer.SetImageProxy(web.NewClient(chat.cfg))
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell

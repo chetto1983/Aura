@@ -129,6 +129,14 @@ const (
 // T-25-05). It inherits RequireAuth from the whole-mux wrap below.
 const approvalsListRoute = "/api/approvals"
 
+// imageProxyRoute is the DISP-05/D-09 SSRF-safe image relay (web_result thumbnails/
+// favicons). It is a sibling of "/api/conversations/" + "/api/approvals" under the
+// "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the
+// integrations proxy, T-24-07 / T-25-05). It delegates to the AG-UI handler (the route
+// lives on Server.Mux) and is a read GET, so it inherits RequireAuth from the whole-mux
+// wrap with no capability gate.
+const imageProxyRoute = "GET /api/image-proxy"
+
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
 // Resuming or cancelling another thread's (possibly background) run is privileged
 // (Security V4 / T-25-07), so it is interposed with RequireCapability exactly like
@@ -215,6 +223,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// Method+path precedence keeps the resolve gate authoritative over the read path.
 	mux.Handle(approvalsResolveRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(approvalsListRoute, aguiHandler)
+	// The DISP-05/D-09 image-proxy delegates to the AG-UI handler (route on Server.Mux).
+	// A read GET, it inherits RequireAuth from the whole-mux wrap below (never an open
+	// relay) — no capability gate. Method+path-specific so it wins longest-pattern
+	// precedence over the "/" embed catch-all.
+	mux.Handle(imageProxyRoute, aguiHandler)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the
