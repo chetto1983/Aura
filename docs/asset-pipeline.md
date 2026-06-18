@@ -36,9 +36,10 @@ Object storage:
 | `AURA_OBJECTSTORE_PUBLIC_ENDPOINT` | Optional host rewrite for browser-visible presigned URLs | empty |
 | `AURA_OBJECTSTORE_REGION` | S3 signing region | `garage` |
 | `AURA_OBJECTSTORE_BUCKET` | Bucket for original asset objects | `aura-assets` |
-| `AURA_OBJECTSTORE_ACCESS_KEY` | S3 access key | empty locally, `garage` in `.env.example` |
-| `AURA_OBJECTSTORE_SECRET_KEY` | S3 secret key | empty locally, `garage-secret` in `.env.example` |
+| `AURA_OBJECTSTORE_ACCESS_KEY` | S3 access key | `GK000000000000000000000000` in `.env.example` |
+| `AURA_OBJECTSTORE_SECRET_KEY` | S3 secret key | 32-byte hex dev value in `.env.example` |
 | `AURA_OBJECTSTORE_PATH_STYLE` | Use path-style S3 URLs, required by Garage defaults | `true` |
+| `GARAGE_RPC_SECRET` | 32-byte hex RPC secret used by the Garage node | deterministic dev value in `.env.example` |
 
 Asset limits:
 
@@ -74,14 +75,16 @@ Start the local stack pieces that the asset pipeline needs:
 
 ```powershell
 docker compose up -d postgres neo4j garage markitdown aura-ocr-vl aura-stt
+bash scripts/garage_bootstrap.sh
 go run ./cmd/aura db migrate
 go run ./cmd/aura neo4j migrate
 ```
 
-The Compose service starts Garage, but it does not create the bucket or access
-key for you. Before using the `garage` backend, bootstrap Garage with the bucket
-from `AURA_OBJECTSTORE_BUCKET` and credentials from
-`AURA_OBJECTSTORE_ACCESS_KEY` / `AURA_OBJECTSTORE_SECRET_KEY`.
+The Compose service starts Garage with `docker/garage/garage.toml`.
+`scripts/garage_bootstrap.sh` assigns the single local node, creates the bucket
+from `AURA_OBJECTSTORE_BUCKET`, imports the credentials from
+`AURA_OBJECTSTORE_ACCESS_KEY` / `AURA_OBJECTSTORE_SECRET_KEY`, and grants the key
+read/write/owner access to the bucket.
 
 For a quick local backend check before Garage is bootstrapped, use:
 
