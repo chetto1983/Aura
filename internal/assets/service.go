@@ -24,6 +24,8 @@ type StoreBackend interface {
 	MarkAccepted(context.Context, string, string, int64, string, string) (Asset, error)
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
 	SetResult(context.Context, string, string, Result) (Asset, error)
+	Promote(context.Context, string, string) (Asset, error)
+	Delete(context.Context, string, string) (Asset, error)
 }
 
 var _ StoreBackend = (*Store)(nil)
@@ -123,6 +125,53 @@ func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Ass
 		return Asset{}, err
 	}
 	asset, err = s.Store.MarkAccepted(ctx, asset.ID, identityID, attrs.SizeBytes, hash, sniffed)
+	if err != nil {
+		return Asset{}, err
+	}
+	go s.process(context.WithoutCancel(ctx), asset)
+	return asset, nil
+}
+
+func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {
+	if s.Store == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	return s.Store.GetForIdentity(ctx, id, identityID)
+}
+
+func (s *Service) ListForThread(ctx context.Context, identityID, threadID string) ([]Asset, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("asset service is not configured")
+	}
+	return s.Store.ListForThread(ctx, identityID, threadID)
+}
+
+func (s *Service) Promote(ctx context.Context, identityID, assetID string) (Asset, error) {
+	if s.Store == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	return s.Store.Promote(ctx, assetID, identityID)
+}
+
+func (s *Service) Delete(ctx context.Context, identityID, assetID string) (Asset, error) {
+	if s.Store == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	asset, err := s.Store.Delete(ctx, assetID, identityID)
+	if err != nil {
+		return Asset{}, err
+	}
+	if s.Objects != nil && asset.ObjectBucket != "" && asset.ObjectKey != "" {
+		_ = s.Objects.Delete(context.WithoutCancel(ctx), objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
+	}
+	return asset, nil
+}
+
+func (s *Service) Retry(ctx context.Context, identityID, assetID string) (Asset, error) {
+	if s.Store == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	asset, err := s.Store.SetStatus(ctx, assetID, identityID, StatusAccepted, "", "")
 	if err != nil {
 		return Asset{}, err
 	}

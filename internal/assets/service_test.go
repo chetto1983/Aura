@@ -275,6 +275,18 @@ func (s *fakeAssetStore) SetResult(_ context.Context, id, identityID string, res
 	})
 }
 
+func (s *fakeAssetStore) Promote(_ context.Context, id, identityID string) (Asset, error) {
+	return s.update(id, identityID, func(asset *Asset) {
+		asset.Scope = ScopeLibrary
+	})
+}
+
+func (s *fakeAssetStore) Delete(_ context.Context, id, identityID string) (Asset, error) {
+	return s.update(id, identityID, func(asset *Asset) {
+		asset.Status = StatusDeleted
+	})
+}
+
 func (s *fakeAssetStore) update(id, identityID string, apply func(*Asset)) (Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

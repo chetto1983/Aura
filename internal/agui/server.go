@@ -17,6 +17,7 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
@@ -90,6 +91,7 @@ type Server struct {
 	run       Runner
 	conv      ConversationStore
 	approvals ApprovalStore
+	assets    AssetService
 	idgen     IDGenerator
 	cfg       ServerConfig
 }
@@ -107,6 +109,8 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // daemon composition root after NewServer; until set, the approvals read route answers
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
+
+func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
 // — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
@@ -128,6 +132,7 @@ func (s *Server) Mux() http.Handler {
 	// handlers; the parent-mux mount behind RequireAuth (+ RequireCapability on the
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
+	s.registerAssetRoutes(mux)
 	return s.withCORS(mux)
 }
 
@@ -169,7 +174,7 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("Access-Control-Allow-Origin", "*")
 		if r.Method == http.MethodOptions {
-			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", "Content-Type")
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -183,11 +188,12 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 // AG-UI events as SSE. The body is size-capped (T-12-12); a malformed/empty payload is a 400.
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	var in types.RunAgentInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	req, err := decodeRunAgentRequest(json.NewDecoder(r.Body))
+	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	in := req.RunAgentInput
 	if err := ValidateRunInput(in); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -213,6 +219,37 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if len(req.Aura.AttachmentIDs) > 0 {
+		if s.assets == nil {
+			http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		identityID, ok := principalIdentityID(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		items := make([]assets.Asset, 0, len(req.Aura.AttachmentIDs))
+		for _, id := range req.Aura.AttachmentIDs {
+			asset, err := s.assets.GetForIdentity(ctx, id, identityID)
+			if err != nil {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			}
+			if asset.ThreadID != "" && asset.ThreadID != in.ThreadID {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			}
+			items = append(items, asset)
+		}
+		if userMsg == nil {
+			empty := assets.BuildAttachmentBlock(items)
+			userMsg = &empty
+		} else {
+			combined := assets.WithAttachmentBlock(*userMsg, items)
+			userMsg = &combined
+		}
 	}
 
 	var unlock func()

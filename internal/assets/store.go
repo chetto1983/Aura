@@ -192,6 +192,46 @@ func (s *Store) SetResult(ctx context.Context, id, identityID string, result Res
 	return assetFromSQL(row)
 }
 
+// Promote moves an asset into the operator library scope.
+func (s *Store) Promote(ctx context.Context, id, identityID string) (Asset, error) {
+	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return Asset{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return Asset{}, err
+	}
+	row, err := s.q.PromoteAssetToLibrary(ctx, sqlc.PromoteAssetToLibraryParams{
+		ID:         pgID,
+		IdentityID: pgIdentityID,
+	})
+	if err != nil {
+		return Asset{}, err
+	}
+	return assetFromSQL(row)
+}
+
+// Delete soft-deletes an asset.
+func (s *Store) Delete(ctx context.Context, id, identityID string) (Asset, error) {
+	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return Asset{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return Asset{}, err
+	}
+	row, err := s.q.SoftDeleteAsset(ctx, sqlc.SoftDeleteAssetParams{
+		ID:         pgID,
+		IdentityID: pgIdentityID,
+	})
+	if err != nil {
+		return Asset{}, err
+	}
+	return assetFromSQL(row)
+}
+
 func assetFromSQL(row sqlc.AuraAssets) (Asset, error) {
 	metadata, err := metadataFromJSON(row.Metadata)
 	if err != nil {

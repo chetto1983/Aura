@@ -213,6 +213,57 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	t.Run("/api/assets + mutations -> AG-UI handler (asset mount)", func(t *testing.T) {
+		for _, route := range []string{"/api/assets", "/api/assets/asset-1"} {
+			aguiHits = nil
+			resp, err := http.Get(srv.URL + route)
+			if err != nil {
+				t.Fatalf("GET %s: %v", route, err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("GET %s did not route to the AG-UI handler: hits=%v body=%s", route, aguiHits, raw)
+			}
+			if strings.Contains(string(raw), indexMarker) {
+				t.Fatalf("%s leaked the SPA shell instead of reaching the AG-UI handler", route)
+			}
+		}
+
+		for _, route := range []string{
+			"/api/assets/presign",
+			"/api/assets/asset-1/finalize",
+			"/api/assets/asset-1/promote",
+			"/api/assets/asset-1/retry",
+		} {
+			aguiHits = nil
+			presp, err := http.Post(srv.URL+route, "application/json", strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatalf("POST %s: %v", route, err)
+			}
+			praw, _ := io.ReadAll(presp.Body)
+			_ = presp.Body.Close()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("POST %s did not route to the AG-UI handler: hits=%v body=%s", route, aguiHits, praw)
+			}
+		}
+
+		aguiHits = nil
+		req, err := http.NewRequest(http.MethodDelete, srv.URL+"/api/assets/asset-1", nil)
+		if err != nil {
+			t.Fatalf("new DELETE: %v", err)
+		}
+		dresp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("DELETE asset: %v", err)
+		}
+		draw, _ := io.ReadAll(dresp.Body)
+		_ = dresp.Body.Close()
+		if len(aguiHits) != 1 || aguiHits[0] != "/api/assets/asset-1" {
+			t.Fatalf("DELETE asset did not route to the AG-UI handler: hits=%v body=%s", aguiHits, draw)
+		}
+	})
+
 	t.Run("GET /api/integrations/<unknown> -> integrations proxy (precedence)", func(t *testing.T) {
 		aguiHits = nil
 		resp, err := http.Get(srv.URL + "/api/integrations/does-not-exist")
