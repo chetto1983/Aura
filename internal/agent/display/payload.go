@@ -7,14 +7,22 @@ package display
 type Kind string
 
 const (
-	KindWebResult     Kind = "web_result"
-	KindDocument      Kind = "document"
-	KindCode          Kind = "code"
+	// KindWebResult identifies a normalized web search result list payload.
+	KindWebResult Kind = "web_result"
+	// KindDocument identifies a fetched or extracted markdown document payload.
+	KindDocument Kind = "document"
+	// KindCode identifies a shell, sandbox, or code-like text payload.
+	KindCode Kind = "code"
+	// KindLocalArtifact identifies a local file artifact payload.
 	KindLocalArtifact Kind = "local_artifact"
-	KindTable         Kind = "table"
-	KindChart         Kind = "chart"
-	KindSystemEvent   Kind = "system_event"
-	KindSwarmReport   Kind = "swarm_report"
+	// KindTable identifies a structured table payload.
+	KindTable Kind = "table"
+	// KindChart identifies a chart-ready numeric payload.
+	KindChart Kind = "chart"
+	// KindSystemEvent identifies a sanitized system status or error payload.
+	KindSystemEvent Kind = "system_event"
+	// KindSwarmReport identifies a swarm child-report payload.
+	KindSwarmReport Kind = "swarm_report"
 )
 
 // Payload is the flat tagged union a normalizer emits (R1). It is a struct, not an
