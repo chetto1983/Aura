@@ -32,25 +32,51 @@ const reports: readonly DisplayChildReport[] = [
 ];
 
 describe('SwarmReportTable (SWARM-01 / D-08)', () => {
+  it('renders the four column headers (# / Worker / Status / Summary)', () => {
+    render(<SwarmReportTable payload={payload(reports)} />);
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(headers).toEqual(['#', 'Worker', 'Status', 'Summary']);
+  });
+
   it('renders one row per ChildReport with goal index, worker id, status, summary', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
     expect(screen.getByText('w1')).toBeTruthy();
     expect(screen.getByText('w2')).toBeTruthy();
     expect(screen.getByText('w3')).toBeTruthy();
     expect(screen.getByText('Found three sources.')).toBeTruthy();
+    // The goal index renders in the first cell of each row.
+    expect(screen.getByText('0')).toBeTruthy();
+    expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
     // Status labels come from the enum.
     expect(screen.getByText('OK')).toBeTruthy();
     expect(screen.getByText('Failed')).toBeTruthy();
     expect(screen.getByText('Needs input')).toBeTruthy();
   });
 
-  it('expands a row in place to show summary + error', () => {
+  it('shows the summary text in the expand region for an OK child, in the muted tone', () => {
+    render(<SwarmReportTable payload={payload(reports)} />);
+    // Before expand: the summary value renders once (collapsed cell).
+    expect(screen.getAllByText('Found three sources.')).toHaveLength(1);
+    fireEvent.click(screen.getByText('w1'));
+    // After expand: it renders twice (collapsed cell + the Summary field value).
+    const both = screen.getAllByText('Found three sources.');
+    expect(both).toHaveLength(2);
+    // The expand-field value uses the muted tone (Field default tone, not danger).
+    const fieldValue = both.find((el) => el.tagName.toLowerCase() === 'dd');
+    expect(fieldValue?.className).toContain('text-text-muted');
+  });
+
+  it('expands a row in place to show summary + error in the danger tone', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
     // The failed worker's error is only shown once its row is expanded.
     expect(screen.queryByText('connect tcp 10.0.0.1:443: blocked')).toBeNull();
     fireEvent.click(screen.getByText('w2'));
-    expect(screen.getByText('connect tcp 10.0.0.1:443: blocked')).toBeTruthy();
+    const errorValue = screen.getByText('connect tcp 10.0.0.1:443: blocked');
+    expect(errorValue).toBeTruthy();
     expect(screen.getByText('Error')).toBeTruthy();
+    // The error field value carries the danger tone (Field tone="danger").
+    expect(errorValue.className).toContain('text-danger');
   });
 
   it('shows question + options for a needs_user_input child on expand', () => {
@@ -103,6 +129,41 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     expect(screen.queryByText(/inbox/i)).toBeNull();
     expect(screen.queryByText(/message.*agent/i)).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('does not render the Error/Question/Options fields when they are empty/absent', () => {
+    render(
+      <SwarmReportTable
+        payload={payload([
+          { goal_index: 0, child_id: 'w1', status: 'ok', summary: 'done', error: '' },
+        ])}
+      />,
+    );
+    fireEvent.click(screen.getByText('w1'));
+    // The expand region carries the Summary field but no Error/Question/Options for
+    // an OK child with an empty error (the column header "Summary" is a separate <th>).
+    expect(screen.getByRole('definition')).toBeTruthy();
+    expect(screen.queryByText('Error')).toBeNull();
+    expect(screen.queryByText('Question')).toBeNull();
+    expect(screen.queryByText('Options')).toBeNull();
+  });
+
+  it('falls to "No summary reported." when a child has no summary', () => {
+    render(
+      <SwarmReportTable
+        payload={payload([{ goal_index: 0, child_id: 'w1', status: 'ok' }])}
+      />,
+    );
+    // The collapsed row shows the placeholder; expanding shows it in the Summary field.
+    expect(screen.getAllByText('No summary reported.').length).toBeGreaterThan(0);
+  });
+
+  it('the row toggle exposes aria-expanded reflecting open state', () => {
+    render(<SwarmReportTable payload={payload(reports)} />);
+    const toggle = screen.getByText('w1').closest('button') as HTMLElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('shows the empty state when there are no workers', () => {

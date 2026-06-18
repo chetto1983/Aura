@@ -3,6 +3,7 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { DisplayChildReport } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
+import { hasField, hasOptions, statusDotClass, statusLabelKey } from './swarmRow';
 
 // SwarmReportTable (SWARM-01 / D-08): a summary table over the swarm []ChildReport
 // payload — one row per worker (# goal-index / Worker child-id / Status dot+label /
@@ -11,25 +12,8 @@ import { DisplayCardShell } from './DisplayCardShell';
 // failed / needs_user_input), never the free-form Error text, and is conveyed by
 // dot + icon + text (color is never the only signal). There is deliberately NO
 // inter-agent chat / mailbox affordance (D-08); the full per-child .jsonl transcript
-// drill-down is a deferred follow-up.
-
-type SwarmStatus = 'ok' | 'failed' | 'needs_user_input';
-
-const DOT_CLASS: Record<SwarmStatus, string> = {
-  ok: 'bg-success',
-  failed: 'bg-danger',
-  needs_user_input: 'bg-warning',
-};
-
-const STATUS_KEY: Record<SwarmStatus, string> = {
-  ok: 'swarm.status.ok',
-  failed: 'swarm.status.failed',
-  needs_user_input: 'swarm.status.needs_user_input',
-};
-
-function isSwarmStatus(value: string): value is SwarmStatus {
-  return value === 'ok' || value === 'failed' || value === 'needs_user_input';
-}
+// drill-down is a deferred follow-up. The status/field-presence logic lives in
+// swarmRow.ts (unit/mutation-tested); this file is rendering only.
 
 export interface SwarmReportTableProps {
   readonly payload: { readonly swarm?: readonly DisplayChildReport[] };
@@ -103,10 +87,8 @@ interface SwarmRowProps {
 }
 
 function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
-  const status: SwarmStatus = isSwarmStatus(report.status) ? report.status : 'failed';
-  const statusLabel = isSwarmStatus(report.status)
-    ? t(STATUS_KEY[status])
-    : t('swarm.status.unknown');
+  const dotClass = statusDotClass(report.status);
+  const statusLabel = t(statusLabelKey(report.status));
 
   return (
     <>
@@ -126,7 +108,7 @@ function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
             <span className="flex items-center gap-2">
               <span
                 aria-hidden="true"
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${DOT_CLASS[status]}`}
+                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${dotClass}`}
               />
               <span className="text-[0.75rem] font-medium text-text">{statusLabel}</span>
             </span>
@@ -141,13 +123,13 @@ function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
           <td colSpan={4} className="border-b border-border bg-surface px-3 py-2">
             <dl className="flex flex-col gap-2 text-sm">
               <Field label={t('swarm.summaryLabel')} value={report.summary ?? t('swarm.noSummary')} />
-              {report.error !== undefined && report.error !== '' ? (
+              {hasField(report.error) ? (
                 <Field label={t('swarm.errorLabel')} value={report.error} tone="danger" />
               ) : null}
-              {report.question !== undefined && report.question !== '' ? (
+              {hasField(report.question) ? (
                 <Field label={t('swarm.questionLabel')} value={report.question} />
               ) : null}
-              {report.options !== undefined && report.options.length > 0 ? (
+              {hasOptions(report.options) ? (
                 <div className="flex flex-col gap-1">
                   <dt className="text-[0.75rem] font-medium uppercase text-text-faint">
                     {t('swarm.optionsLabel')}
