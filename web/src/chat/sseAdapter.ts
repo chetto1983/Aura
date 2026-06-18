@@ -1,4 +1,5 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
+import { isDisplayPayload, type DisplayPayload } from './displays/types';
 
 // sseAdapter maps Aura's AG-UI/SSE event stream (POST /agent/run) onto
 // assistant-ui's ThreadMessageLike model. It is a PURE reducer + a thin
@@ -180,6 +181,9 @@ interface ToolPart {
   readonly toolName: string;
   readonly argsText: string;
   readonly result?: string;
+  /** Typed display attached by the CUSTOM/aura.display frame (live) or the
+   *  re-derived snapshot tool turn (replay), keyed by toolCallId. */
+  readonly display?: DisplayPayload;
 }
 interface TextPart {
   readonly type: 'text';
@@ -203,6 +207,9 @@ interface SnapshotToolFunction {
 interface SnapshotToolCall {
   readonly id?: unknown;
   readonly function?: SnapshotToolFunction;
+  /** Re-derived typed display (D-06): the backend re-runs the display normalizer
+   *  per tool turn at snapshot projection time and attaches it here. */
+  readonly display?: unknown;
 }
 
 interface SnapshotMessage {
@@ -417,6 +424,9 @@ function toolCallsFromSnapshot(value: unknown): ToolPart[] {
         typeof call.function?.arguments === 'string'
           ? call.function.arguments
           : textFromSnapshotContent(call.function?.arguments),
+      // D-06: a re-derived display payload (when present) rides the tool part so
+      // the DisplayRouter renders identically on replay. Tolerated when absent.
+      ...(isDisplayPayload(call.display) ? { display: call.display } : {}),
     });
   }
   return parts;
