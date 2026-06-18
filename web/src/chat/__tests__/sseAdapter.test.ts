@@ -294,6 +294,57 @@ describe('sseAdapter — reducer edge branches', () => {
   });
 });
 
+describe('sseAdapter — CUSTOM/aura.display frame (DISP-02)', () => {
+  it('attaches the typed payload to the matching tool part by toolCallId', () => {
+    // The display frame's value.tool_call_id is "call-1", the same id the
+    // TOOL_CALL_START/RESULT golden frames carry — the payload upgrades that part.
+    const state = fold([
+      frame('TOOL_CALL_START'), // web_search, call-1
+      frame('TOOL_CALL_ARGS'),
+      frame('TOOL_CALL_END'),
+      frame('TOOL_CALL_RESULT'), // call-1, raw preview
+      frame('CUSTOM_DISPLAY'), // aura.display for call-1
+    ]);
+    const part = state.tools.get('call-1');
+    if (part === undefined) throw new Error('expected the call-1 tool part');
+    // The raw result is preserved AND the typed display is attached.
+    expect(part.result).toBe('result preview + footer');
+    expect(part.display).toBeDefined();
+    expect(part.display?.type).toBe('web_result');
+    expect(part.display?.tool_call_id).toBe('call-1');
+    expect(part.display?.web_results?.[0]).toMatchObject({ title: 'Forecast' });
+    // Exactly one tool part — the display merged onto it, never a phantom part.
+    expect(state.tools.size).toBe(1);
+  });
+
+  it('creates the tool part on demand when the display arrives before any START', () => {
+    // Tolerant like TOOL_CALL_RESULT: a display can land for a call we never saw a
+    // START for (snapshot/ordering), and the payload is not lost.
+    const state = fold([frame('CUSTOM_DISPLAY')]);
+    const part = state.tools.get('call-1');
+    if (part === undefined) throw new Error('expected an ensured call-1 tool part');
+    expect(part.display?.type).toBe('web_result');
+    expect(state.toolOrder).toEqual(['call-1']);
+  });
+
+  it('an unrecognized CUSTOM name (aura.artifact) is a no-op — no corruption', () => {
+    const state = fold([
+      frame('TEXT_MESSAGE_START'),
+      frame('TEXT_MESSAGE_CONTENT'), // "Ciao"
+      frame('CUSTOM'), // aura.artifact — NOT modelled
+    ]);
+    // No tool part created, the prose is untouched.
+    expect(state.tools.size).toBe(0);
+    expect(state.text).toBe('Ciao');
+  });
+
+  it('an aura.display frame with a non-DisplayPayload value is a no-op', () => {
+    const state = newAssistantTurn('a1');
+    reduceFrame(state, { type: 'CUSTOM', name: 'aura.display', value: { no: 'tool_call_id' } });
+    expect(state.tools.size).toBe(0);
+  });
+});
+
 describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

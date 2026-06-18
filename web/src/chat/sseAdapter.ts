@@ -95,12 +95,19 @@ interface RunErrorFrame {
   readonly type: 'RUN_ERROR';
   readonly message: string;
 }
+interface CustomFrame {
+  readonly type: 'CUSTOM';
+  readonly name: string;
+  readonly value: unknown;
+}
 
 /**
- * The reducer-relevant subset of AG-UI frames. Frames the chat lane ignores
- * (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT, CUSTOM/aura.artifact,
- * REASONING_MESSAGE_START/END) are not modelled — `reduceFrame` is a no-op for
- * any type it does not recognise, so unknown frames never corrupt the message.
+ * The reducer-relevant subset of AG-UI frames. The CUSTOM/aura.display frame
+ * (Phase 26) attaches a typed DisplayPayload to a tool part by toolCallId; any
+ * OTHER CUSTOM name (e.g. aura.artifact) and the frames the chat lane ignores
+ * (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT, REASONING_MESSAGE_START/END) are
+ * not modelled — `reduceFrame` returns the state unchanged for any type/name it
+ * does not recognise, so unknown frames never corrupt the message.
  */
 export type AguiFrame =
   | RunStartedFrame
@@ -116,7 +123,8 @@ export type AguiFrame =
   | ToolCallResultFrame
   | StateDeltaFrame
   | RunFinishedFrame
-  | RunErrorFrame;
+  | RunErrorFrame
+  | CustomFrame;
 
 // ---------------------------------------------------------------------------
 // Usage — read off the final STATE_DELTA (cost/cache footer, D-10).
@@ -332,6 +340,18 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       state.error = frame.message;
       state.status = { type: 'incomplete', reason: 'error' };
       return state;
+    case 'CUSTOM': {
+      // Phase 26: aura.display carries a typed DisplayPayload to attach to the
+      // tool part by tool_call_id. Like TOOL_CALL_RESULT, ensureTool tolerates a
+      // payload arriving before/without the call's START. Any other CUSTOM name
+      // (e.g. aura.artifact) is left unchanged — additive safety, no corruption.
+      if (frame.name === 'aura.display' && isDisplayPayload(frame.value)) {
+        const id = frame.value.tool_call_id;
+        const part = ensureTool(state, id, state.tools.get(id)?.toolName ?? '');
+        state.tools.set(id, { ...part, display: frame.value });
+      }
+      return state;
+    }
     case 'RUN_STARTED':
     case 'REASONING_START':
     case 'REASONING_END':
