@@ -91,6 +91,60 @@ export const displayEn = {
     cited: 'Cited',
     consulted: 'Consulted',
   },
+  source: {
+    // The answer-level "Sources (N)" affordance (D-13) + the read-only Source
+    // Explorer sheet (D-03): Table / Metadata / Configuration views over the same
+    // registry the citations resolve against.
+    sources: 'Sources ({{count}})',
+    sourcesAria: 'View {{count}} sources',
+    title: 'Sources',
+    closeAria: 'Close sources',
+    searchPlaceholder: 'Search sources',
+    sortBy: 'Sort by {{column}}',
+    untitled: 'Untitled source',
+    rowCount_one: '{{count}} source',
+    rowCount_other: '{{count}} sources',
+    openRowAria: 'Show details for source {{n}}',
+    tab: {
+      table: 'Table',
+      metadata: 'Metadata',
+      configuration: 'Configuration',
+    },
+    column: {
+      index: '#',
+      type: 'Type',
+      title: 'Title',
+      source: 'Source',
+      status: 'Status',
+    },
+    status: {
+      cited: 'Cited',
+      consulted: 'Consulted',
+    },
+    warningBanner: 'Some sources are incomplete or were not fully processed.',
+    readOnlyNotice: 'These views are read-only.',
+    metadata: {
+      heading: 'Source metadata',
+      selectPrompt: 'Select a source in the Table view to inspect its metadata.',
+      refId: 'Reference',
+      type: 'Type',
+      url: 'URL',
+      confidence: 'Confidence',
+      snippet: 'Snippet',
+      none: 'Not available',
+    },
+    configuration: {
+      heading: 'Retrieval configuration',
+      total: 'Sources consulted',
+      cited: 'Sources cited',
+      consulted: 'Sources consulted only',
+      readOnly: 'Configuration is read-only this release.',
+    },
+    empty: {
+      heading: 'No sources',
+      body: "This answer didn't consult any external sources.",
+    },
+  },
   systemEvent: {
     severity: {
       error: 'Error',
@@ -219,6 +273,57 @@ export const displayIt = {
     openSourceAria: 'Apri fonte {{n}}',
     cited: 'Citata',
     consulted: 'Consultata',
+  },
+  source: {
+    sources: 'Fonti ({{count}})',
+    sourcesAria: 'Mostra {{count}} fonti',
+    title: 'Fonti',
+    closeAria: 'Chiudi fonti',
+    searchPlaceholder: 'Cerca fonti',
+    sortBy: 'Ordina per {{column}}',
+    untitled: 'Fonte senza titolo',
+    rowCount_one: '{{count}} fonte',
+    rowCount_other: '{{count}} fonti',
+    openRowAria: 'Mostra i dettagli della fonte {{n}}',
+    tab: {
+      table: 'Tabella',
+      metadata: 'Metadati',
+      configuration: 'Configurazione',
+    },
+    column: {
+      index: '#',
+      type: 'Tipo',
+      title: 'Titolo',
+      source: 'Fonte',
+      status: 'Stato',
+    },
+    status: {
+      cited: 'Citata',
+      consulted: 'Consultata',
+    },
+    warningBanner: 'Alcune fonti sono incomplete o non sono state elaborate del tutto.',
+    readOnlyNotice: 'Queste viste sono di sola lettura.',
+    metadata: {
+      heading: 'Metadati della fonte',
+      selectPrompt: 'Seleziona una fonte nella vista Tabella per ispezionarne i metadati.',
+      refId: 'Riferimento',
+      type: 'Tipo',
+      url: 'URL',
+      confidence: 'Affidabilità',
+      snippet: 'Estratto',
+      none: 'Non disponibile',
+    },
+    configuration: {
+      heading: 'Configurazione del recupero',
+      total: 'Fonti consultate',
+      cited: 'Fonti citate',
+      consulted: 'Fonti solo consultate',
+      readOnly: 'La configurazione è di sola lettura in questa versione.',
+    },
+    empty: {
+      heading: 'Nessuna fonte',
+      body: 'Questa risposta non ha consultato fonti esterne.',
+    },
   },
   systemEvent: {
     severity: {
