@@ -18,6 +18,8 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 				Objects: objectStore,
 				Ingest:  newRuntimeDocumentIngestor(cfg, pool),
 			},
+			Image: assets.NewImageProcessor(objectStore, visionConfigFrom(cfg)),
+			Audio: assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg)),
 		},
 		Limits: assets.Limits{
 			MaxDocumentBytes: int64(cfg.AssetMaxDocumentBytes),
@@ -26,5 +28,27 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 		},
 		Bucket:     cfg.ObjectStoreBucket,
 		PresignTTL: time.Duration(cfg.AssetPresignTTLSec) * time.Second,
+	}
+}
+
+func visionConfigFrom(cfg *config.Config) assets.VisionConfig {
+	return assets.VisionConfig{
+		VisionCloud:       cfg.VisionCloud,
+		Model:             cfg.LLM.Model,
+		MultimodalBaseURL: cfg.MultimodalBaseURL,
+		MultimodalModel:   cfg.MultimodalModel,
+		FallbackModel:     cfg.MultimodalFallbackModel,
+		OpenRouterBaseURL: cfg.LLM.BaseURL,
+		OpenRouterAPIKey:  cfg.LLM.APIKey,
+		TimeoutSec:        cfg.MultimodalTimeoutSec,
+	}
+}
+
+func sttConfigFrom(cfg *config.Config) assets.STTConfig {
+	return assets.STTConfig{
+		BaseURL:    cfg.STTBaseURL,
+		Model:      cfg.STTModel,
+		Language:   cfg.STTLanguage,
+		TimeoutSec: cfg.MultimodalTimeoutSec,
 	}
 }

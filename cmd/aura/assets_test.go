@@ -11,6 +11,7 @@ import (
 
 	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
+	llmpkg "github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
@@ -71,13 +72,25 @@ func TestBuildObjectStoreBackends(t *testing.T) {
 
 func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	cfg := &config.Config{
-		ObjectStoreBucket:     "aura-assets",
-		AssetMaxDocumentBytes: 123,
-		AssetMaxImageBytes:    456,
-		AssetMaxAudioBytes:    789,
-		AssetPresignTTLSec:    42,
-		MultimodalTimeoutSec:  7,
-		DocumentsBaseURL:      "http://documents.test",
+		ObjectStoreBucket:       "aura-assets",
+		AssetMaxDocumentBytes:   123,
+		AssetMaxImageBytes:      456,
+		AssetMaxAudioBytes:      789,
+		AssetPresignTTLSec:      42,
+		MultimodalTimeoutSec:    7,
+		DocumentsBaseURL:        "http://documents.test",
+		VisionCloud:             true,
+		MultimodalBaseURL:       "http://vision-local.test/v1",
+		MultimodalModel:         "glm-ocr",
+		MultimodalFallbackModel: "minimax/minimax-m3",
+		STTBaseURL:              "http://stt.test/v1",
+		STTModel:                "large-v3-turbo",
+		STTLanguage:             "it",
+		LLM: llmpkg.Config{
+			Model:   "deepseek/deepseek-v4-flash",
+			BaseURL: "http://openrouter.test/api/v1",
+			APIKey:  "test-key",
+		},
 	}
 	objects := objectstore.NewFake()
 
@@ -98,5 +111,34 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	}
 	if _, ok := doc.Ingest.(*runtimeDocumentIngestor); !ok {
 		t.Fatalf("document processor ingestor = %T, want *runtimeDocumentIngestor", doc.Ingest)
+	}
+	img, ok := svc.Processors.Image.(*assetspkg.ImageProcessor)
+	if !ok {
+		t.Fatalf("image processor = %T, want *assets.ImageProcessor", svc.Processors.Image)
+	}
+	if img.Objects != objects {
+		t.Fatalf("image processor object store = %T, want shared fake store", img.Objects)
+	}
+	if !img.Config.VisionCloud || img.Config.Model != "deepseek/deepseek-v4-flash" ||
+		img.Config.MultimodalBaseURL != "http://vision-local.test/v1" ||
+		img.Config.MultimodalModel != "glm-ocr" ||
+		img.Config.FallbackModel != "minimax/minimax-m3" ||
+		img.Config.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
+		img.Config.OpenRouterAPIKey != "test-key" ||
+		img.Config.TimeoutSec != 7 {
+		t.Fatalf("image processor config = %+v, want projected vision config", img.Config)
+	}
+	audio, ok := svc.Processors.Audio.(*assetspkg.AudioProcessor)
+	if !ok {
+		t.Fatalf("audio processor = %T, want *assets.AudioProcessor", svc.Processors.Audio)
+	}
+	if audio.Objects != objects {
+		t.Fatalf("audio processor object store = %T, want shared fake store", audio.Objects)
+	}
+	if audio.Config.BaseURL != "http://stt.test/v1" ||
+		audio.Config.Model != "large-v3-turbo" ||
+		audio.Config.Language != "it" ||
+		audio.Config.TimeoutSec != 7 {
+		t.Fatalf("audio processor config = %+v, want projected STT config", audio.Config)
 	}
 }
