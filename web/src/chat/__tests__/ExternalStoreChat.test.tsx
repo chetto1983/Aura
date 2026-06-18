@@ -23,6 +23,17 @@ function sseResponse(frames: readonly Record<string, unknown>[]): Response {
   return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
+function messagesSnapshotResponse(messages: readonly Record<string, unknown>[]): Response {
+  return new Response(JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function isHistoryURL(url: unknown): boolean {
+  return typeof url === 'string' && url.startsWith('/threads/');
+}
+
 function sendPrompt(text: string): void {
   const input = screen.getByPlaceholderText('Ask Aura');
   fireEvent.change(input, { target: { value: text } });
@@ -53,14 +64,42 @@ describe('ExternalStoreChat (CHAT-01)', () => {
   });
 
   it('renders the empty-thread state before any turn', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(messagesSnapshotResponse([]))),
+    );
     renderChat(<ExternalStoreChat threadId="conv-1" />);
     expect(screen.getByText('Type a prompt below to start this run.')).toBeTruthy();
     expect(screen.getByPlaceholderText('Ask Aura')).toBeTruthy();
   });
 
-  it('streams an assistant answer with reasoning drawer + tool card over /agent/run', async () => {
+  it('rehydrates persisted messages when an existing conversation opens', async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(
+        messagesSnapshotResponse([
+          { id: 'msg-2', role: 'user', content: 'persisted prompt' },
+          { id: 'msg-3', role: 'assistant', content: 'persisted answer' },
+        ]),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/threads/conv-1/messages',
+        expect.objectContaining({ method: 'GET', credentials: 'same-origin' }),
+      );
+    });
+    expect(await screen.findByText('persisted prompt')).toBeTruthy();
+    expect(screen.getByText('persisted answer')).toBeTruthy();
+  });
+
+  it('streams an assistant answer with reasoning drawer + tool card over /agent/run', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
+      return Promise.resolve(
         sseResponse([
           { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
           { type: 'REASONING_START', messageId: 'rsn-1' },
@@ -87,29 +126,34 @@ describe('ExternalStoreChat (CHAT-01)', () => {
             outcome: { type: 'success' },
           },
         ]),
-      ),
-    );
+      );
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const usageSpy = vi.fn();
-    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={usageSpy} />);
+    const { container } = renderChat(<ExternalStoreChat threadId="conv-1" onUsage={usageSpy} />);
     sendPrompt('weather?');
 
     // The assistant text renders (markdown).
     await waitFor(() => {
       expect(screen.getByText('It is sunny.')).toBeTruthy();
     });
+    const proseBlocks = Array.from(container.querySelectorAll('.text-base.leading-relaxed'));
+    expect(proseBlocks.some((el) => el.textContent?.includes('weather?'))).toBe(true);
+    expect(proseBlocks.some((el) => el.textContent?.includes('It is sunny.'))).toBe(true);
 
     // POST went to /agent/run with the AG-UI body.
-    const call = fetchMock.mock.calls[0];
-    expect(call).toBeDefined();
-    expect((call as unknown as [string])[0]).toBe('/agent/run');
+    expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(true);
 
     // Reasoning drawer rendered the CoT (shown by default).
     expect(screen.getByText('let me think')).toBeTruthy();
 
     // Tool card shows the tool name + done status; expanding reveals the raw blob.
     expect(screen.getByText('web_search')).toBeTruthy();
+    expect(
+      screen.getByText('web_search').compareDocumentPosition(screen.getByText('It is sunny.')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
     expect(screen.getByText('sunny 25C')).toBeTruthy();
 
@@ -159,7 +203,8 @@ describe('ExternalStoreChat (CHAT-01)', () => {
   it('shows the Stop control while running and cancelling aborts the fetch', async () => {
     // A fetch that rejects with AbortError once the signal fires (never resolves
     // otherwise), so the turn stays "running" until cancelled.
-    const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
       return new Promise<Response>((_resolve, reject) => {
         init.signal?.addEventListener('abort', () => {
           reject(new DOMException('aborted', 'AbortError'));
@@ -182,7 +227,11 @@ describe('ExternalStoreChat (CHAT-01)', () => {
       expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
     });
     // The fetch carried an AbortSignal that was triggered.
-    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    const runCall = fetchMock.mock.calls.find((call) => call[0] === '/agent/run') as
+      | [string, RequestInit]
+      | undefined;
+    if (runCall === undefined) throw new Error('expected /agent/run fetch call');
+    const init = runCall[1];
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -191,24 +240,26 @@ describe('ExternalStoreChat (CHAT-01)', () => {
   it('invalidates the conversation query key when a turn completes', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
+      vi.fn((url: string) =>
         Promise.resolve(
-          sseResponse([
-            { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
-            { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
-            { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'Done.' },
-            { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
-            {
-              type: 'STATE_DELTA',
-              delta: [{ op: 'replace', path: '/prompt_tokens', value: 42 }],
-            },
-            {
-              type: 'RUN_FINISHED',
-              threadId: 'conv-1',
-              runId: 'run-1',
-              outcome: { type: 'success' },
-            },
-          ]),
+          isHistoryURL(url)
+            ? messagesSnapshotResponse([])
+            : sseResponse([
+                { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
+                { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
+                { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'Done.' },
+                { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
+                {
+                  type: 'STATE_DELTA',
+                  delta: [{ op: 'replace', path: '/prompt_tokens', value: 42 }],
+                },
+                {
+                  type: 'RUN_FINISHED',
+                  threadId: 'conv-1',
+                  runId: 'run-1',
+                  outcome: { type: 'success' },
+                },
+              ]),
         ),
       ),
     );
@@ -237,12 +288,14 @@ describe('ExternalStoreChat (CHAT-01)', () => {
   it('surfaces an incomplete turn when the stream errors', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
+      vi.fn((url: string) =>
         Promise.resolve(
-          sseResponse([
-            { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
-            { type: 'RUN_ERROR', message: 'upstream 5xx' },
-          ]),
+          isHistoryURL(url)
+            ? messagesSnapshotResponse([])
+            : sseResponse([
+                { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
+                { type: 'RUN_ERROR', message: 'upstream 5xx' },
+              ]),
         ),
       ),
     );

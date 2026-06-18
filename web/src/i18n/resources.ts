@@ -86,6 +86,8 @@ export const resources = {
             'The response stopped unexpectedly. Retry the last message or check the runtime status.',
           createConversation:
             "Couldn't start a new conversation. Check the runtime status and try again.",
+          loadHistory:
+            "Couldn't load this conversation's saved messages. Refresh the conversation and try again.",
           retry: 'Retry',
         },
         markdown: {
@@ -343,6 +345,8 @@ export const resources = {
             "La risposta si è interrotta inaspettatamente. Riprova l'ultimo messaggio o controlla lo stato del runtime.",
           createConversation:
             'Impossibile avviare una nuova conversazione. Controlla lo stato runtime e riprova.',
+          loadHistory:
+            'Impossibile caricare i messaggi salvati di questa conversazione. Aggiorna la conversazione e riprova.',
           retry: 'Riprova',
         },
         markdown: {

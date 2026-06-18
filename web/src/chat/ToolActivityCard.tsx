@@ -104,7 +104,7 @@ function ToolActivityRow({ toolName, argsText, result, isError, elapsed }: ToolA
           />
           <span className="font-mono text-xs text-text">{toolName}</span>
           <span
-            className={`rounded-[var(--radius-pill)] border px-2 py-0.5 text-[0.6875rem] ${PILL_CLASS[status]}`}
+            className={`rounded-[var(--radius-pill)] border px-2 py-0.5 text-[0.75rem] ${PILL_CLASS[status]}`}
           >
             {t(`chat.tool.status.${status}`)}
           </span>
@@ -112,7 +112,7 @@ function ToolActivityRow({ toolName, argsText, result, isError, elapsed }: ToolA
             <span
               aria-hidden="true"
               data-testid="tool-elapsed"
-              className="font-mono text-[0.6875rem] tabular-nums text-text-faint"
+              className="font-mono text-[0.75rem] tabular-nums text-text-faint"
             >
               {elapsed}
             </span>

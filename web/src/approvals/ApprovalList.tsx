@@ -81,7 +81,7 @@ function ApprovalRow({ row, title, onOpen }: ApprovalRowProps) {
         {terminal ? (
           // D-06: explicit terminal state, never silently dropped. Icon + text +
           // warning tone (never colour alone).
-          <span className="flex items-center gap-1.5 text-[0.6875rem] text-warning">
+          <span className="flex items-center gap-1.5 text-[0.75rem] text-warning">
             <span
               aria-hidden="true"
               className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning"
@@ -89,7 +89,7 @@ function ApprovalRow({ row, title, onOpen }: ApprovalRowProps) {
             {t('approval.terminal.expired')}
           </span>
         ) : (
-          <span className="text-[0.6875rem] text-text-faint">
+          <span className="text-[0.75rem] text-text-faint">
             {t(`approval.kind.${row.kind}`, row.kind)}
           </span>
         )}

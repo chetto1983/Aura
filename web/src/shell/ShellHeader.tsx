@@ -53,7 +53,7 @@ export function ShellHeader({
         />
         <div className="min-w-0">
           <p className="font-display text-lg leading-none text-text">Aura</p>
-          <p className="hidden truncate text-[0.6875rem] uppercase tracking-[0.18em] text-text-faint sm:block">
+          <p className="hidden truncate text-[0.75rem] uppercase tracking-[0.18em] text-text-faint sm:block">
             {t('shell.workspace')}
           </p>
         </div>

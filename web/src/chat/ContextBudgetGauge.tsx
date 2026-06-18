@@ -45,7 +45,7 @@ export function ContextBudgetGauge({
   return (
     <div className="flex min-w-[10rem] flex-col gap-1">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-text-faint">
+        <span className="text-[0.75rem] font-medium uppercase tracking-wider text-text-faint">
           {t('footer.context')}
         </span>
         <span className="font-mono text-xs text-text">
@@ -76,7 +76,7 @@ export function ContextBudgetGauge({
         />
       </div>
       {dropped > 0 ? (
-        <p className="font-mono text-[0.625rem] text-text-muted">
+        <p className="font-mono text-[0.75rem] text-text-muted">
           {t('footer.compacted', { count: dropped })}
         </p>
       ) : null}

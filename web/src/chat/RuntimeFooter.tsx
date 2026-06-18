@@ -209,12 +209,12 @@ interface MetricProps {
 function Metric({ label, value, session, sessionLabel }: MetricProps) {
   return (
     <div className="flex flex-col">
-      <span className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-faint">
+      <span className="text-[0.75rem] font-medium uppercase tracking-wider text-text-faint">
         {label}
       </span>
       <span className="flex items-baseline gap-2">
         <span className="font-mono text-sm text-text">{value}</span>
-        <span className="font-mono text-[0.6875rem] text-text-muted" title={sessionLabel}>
+        <span className="font-mono text-[0.75rem] text-text-muted" title={sessionLabel}>
           {sessionLabel} {session}
         </span>
       </span>

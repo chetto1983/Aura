@@ -378,7 +378,7 @@ export function LoginPage() {
                   }}
                 />
               </div>
-              <p id="passphrase-hint" className="text-[0.6875rem] text-text-muted">
+              <p id="passphrase-hint" className="text-[0.75rem] text-text-muted">
                 {t('login.fieldHint')}
               </p>
             </div>

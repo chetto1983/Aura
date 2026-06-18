@@ -177,7 +177,7 @@ export function RuntimeHealthPanel() {
         </>
       )}
 
-      <p className="text-[0.6875rem] text-text-faint">
+      <p className="text-[0.75rem] text-text-faint">
         {t('health.lastChecked', { time: formatLastChecked(lastChecked, t) })}
       </p>
     </section>

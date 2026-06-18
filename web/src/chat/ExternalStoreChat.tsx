@@ -18,7 +18,7 @@ import { Composer } from './Composer';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningDrawer } from './ReasoningDrawer';
 import { ToolActivityCard } from './ToolActivityCard';
-import { streamPost, streamRun, type TurnUsage } from './sseAdapter';
+import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './sseAdapter';
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
 // list + isRunning + per-turn usage in React state and feeds them to
@@ -79,6 +79,9 @@ export function ExternalStoreChat({
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const historyAbortRef = useRef<AbortController | null>(null);
+  const historyRequestRef = useRef(0);
+  const isRunningRef = useRef(false);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -91,6 +94,9 @@ export function ExternalStoreChat({
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
+      historyRequestRef.current += 1;
+      historyAbortRef.current?.abort();
+      historyAbortRef.current = null;
       const text = appendMessageText(message);
       const user = userMessage(text);
       // Snapshot the assistant message index after appending the user turn so the
@@ -100,6 +106,7 @@ export function ExternalStoreChat({
         assistantIndex = prev.length + 1;
         return [...prev, user];
       });
+      isRunningRef.current = true;
       setIsRunning(true);
 
       let runThreadId = threadId;
@@ -157,6 +164,7 @@ export function ExternalStoreChat({
           });
         }
       } finally {
+        isRunningRef.current = false;
         setIsRunning(false);
         abortRef.current = null;
         invalidateRuntimeReads(runThreadId);
@@ -167,9 +175,59 @@ export function ExternalStoreChat({
 
   const onCancel = useCallback(async () => {
     abortRef.current?.abort();
+    isRunningRef.current = false;
     setIsRunning(false);
     return Promise.resolve();
   }, []);
+
+  useEffect(() => {
+    historyRequestRef.current += 1;
+    const request = historyRequestRef.current;
+    const clearLoadedMessages = () => {
+      queueMicrotask(() => {
+        if (request !== historyRequestRef.current) return;
+        setMessages([]);
+        onUsage?.(undefined);
+      });
+    };
+    historyAbortRef.current?.abort();
+    if (threadId.length === 0) {
+      historyAbortRef.current = null;
+      clearLoadedMessages();
+      return;
+    }
+    if (isRunningRef.current) {
+      historyAbortRef.current = null;
+      return;
+    }
+
+    const controller = new AbortController();
+    historyAbortRef.current = controller;
+    clearLoadedMessages();
+
+    void fetchThreadMessages(threadId, controller.signal)
+      .then((loaded) => {
+        if (controller.signal.aborted || request !== historyRequestRef.current) return;
+        setMessages(loaded);
+      })
+      .catch((err: unknown) => {
+        if (
+          controller.signal.aborted ||
+          request !== historyRequestRef.current ||
+          (err instanceof DOMException && err.name === 'AbortError')
+        ) {
+          return;
+        }
+        setMessages([assistantErrorMessage(t('chat.error.loadHistory'))]);
+      })
+      .finally(() => {
+        if (request === historyRequestRef.current) historyAbortRef.current = null;
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [threadId, onUsage, t]);
 
   // foldReRun streams a backend branch re-run (edit / regenerate) onto the supplied base
   // message list, folding the AG-UI reply onto ONE freshly-id'd assistant message appended
@@ -180,6 +238,10 @@ export function ExternalStoreChat({
   // walk — the server drives LoadManagedHistoryForBranch over the forked path (Task-1).
   const foldReRun = useCallback(
     async (url: string, body: unknown, base: ThreadMessageLike[]) => {
+      historyRequestRef.current += 1;
+      historyAbortRef.current?.abort();
+      historyAbortRef.current = null;
+      isRunningRef.current = true;
       setIsRunning(true);
       const controller = new AbortController();
       abortRef.current = controller;
@@ -196,6 +258,7 @@ export function ExternalStoreChat({
       } catch {
         // Aborted (Stop) or network failure — the partial/last message is left as-is.
       } finally {
+        isRunningRef.current = false;
         setIsRunning(false);
         abortRef.current = null;
         invalidateRuntimeReads();
@@ -214,12 +277,16 @@ export function ExternalStoreChat({
     if (resumeNonce === lastResumeNonce.current) return;
     lastResumeNonce.current = resumeNonce;
     if (threadId.length === 0) return;
+    historyRequestRef.current += 1;
+    historyAbortRef.current?.abort();
+    historyAbortRef.current = null;
     const controller = new AbortController();
     abortRef.current = controller;
     // The resumed turn is folded onto a fresh assistant slot appended after whatever the
     // lane currently shows. Each streamed frame replaces that one slot (never N copies):
     // the first onUpdate appends, the rest replace the last element while running.
     const drive = async () => {
+      isRunningRef.current = true;
       setIsRunning(true);
       let appended = false;
       try {
@@ -243,6 +310,7 @@ export function ExternalStoreChat({
       } catch {
         // Aborted / network error — the partial resumed turn is left as rendered.
       } finally {
+        isRunningRef.current = false;
         setIsRunning(false);
         abortRef.current = null;
         invalidateRuntimeReads();
@@ -251,11 +319,18 @@ export function ExternalStoreChat({
     void drive();
   }, [resumeNonce, threadId, onUsage, invalidateRuntimeReads]);
 
-  // divergeSeq maps a frontend message INDEX to the backend turn seq it diverges from. The
-  // persisted history is seq=1 (system), then user/assistant turns from seq=2; the visible
-  // list (user+assistant only, no system) at index i is backend seq i+2. This is the
-  // edit/regenerate divergence point the server forks a sibling branch off of.
-  const divergeSeqAt = useCallback((index: number): number => (index < 0 ? 0 : index + 2), []);
+  // backendSeqAt maps a visible message to the backend turn seq it diverges from. Rehydrated
+  // snapshots carry metadata.custom.backendSeq from the GET /threads/{id}/messages ids
+  // (msg-1, msg-2, ...). Fresh in-memory turns fall back to the visible index + 1 because
+  // normal Aura conversations start at the first user turn (no persisted system row).
+  const backendSeqAt = useCallback(
+    (index: number): number => {
+      if (index < 0) return 0;
+      const seq = messages[index]?.metadata?.custom?.backendSeq;
+      return typeof seq === 'number' && Number.isFinite(seq) && seq > 0 ? seq : index + 1;
+    },
+    [messages],
+  );
 
   // onEdit (D-09): edit a USER turn → slice to the parent, append the edited user turn (a
   // fresh id), then POST /edit (fork a sibling branch off the diverging turn's parent +
@@ -263,18 +338,19 @@ export function ExternalStoreChat({
   const onEdit = useCallback(
     async (message: AppendMessage) => {
       const text = appendMessageText(message);
-      const parentIndex = messages.findIndex((m) => m.id === message.parentId);
-      const seq = divergeSeqAt(parentIndex);
-      // The edited user turn replaces the old one (a fresh id); everything after the parent
-      // is dropped from THIS branch (the runtime keeps it as the sibling).
-      const base: ThreadMessageLike[] = [...messages.slice(0, parentIndex), userMessage(text)];
+      const sourceId = message.sourceId ?? message.parentId;
+      const sourceIndex = messages.findIndex((m) => m.id === sourceId);
+      const seq = backendSeqAt(sourceIndex);
+      // The edited user turn replaces the old one (a fresh id); everything after the
+      // edited source is dropped from THIS branch (the runtime keeps it as the sibling).
+      const base: ThreadMessageLike[] = [...messages.slice(0, sourceIndex), userMessage(text)];
       await foldReRun(
         `/api/conversations/${threadId}/edit`,
         { diverge_seq: seq, role: 'user', content: text },
         base,
       );
     },
-    [threadId, messages, divergeSeqAt, foldReRun],
+    [threadId, messages, backendSeqAt, foldReRun],
   );
 
   // onReload (D-09): regenerate an ASSISTANT turn → slice to the parent user turn, then
@@ -289,7 +365,7 @@ export function ExternalStoreChat({
       // unknown parent would fork at seq 1 (the system turn) and replace the whole visible
       // thread (base = slice(0,0)) — a silent destructive re-run. Bail before it.
       if (parentIndex < 0) return;
-      const seq = divergeSeqAt(parentIndex) + 1; // the assistant turn after its user parent
+      const seq = backendSeqAt(parentIndex) + 1; // the assistant turn after its user parent
       const base: ThreadMessageLike[] = messages.slice(0, parentIndex + 1);
       await foldReRun(
         `/api/conversations/${threadId}/edit`,
@@ -297,7 +373,7 @@ export function ExternalStoreChat({
         base,
       );
     },
-    [threadId, messages, divergeSeqAt, foldReRun],
+    [threadId, messages, backendSeqAt, foldReRun],
   );
 
   // 25-07: edit/regenerate + branch nav now ride this same runtime over the path-aware
@@ -337,7 +413,7 @@ export function ExternalStoreChat({
 
         {/* Running-status row: role="status" announces the active turn politely. */}
         {isRunning ? (
-          <p role="status" className="px-3 py-1 text-[0.6875rem] text-text-muted sm:px-4">
+          <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
             {t('chat.running')}
           </p>
         ) : null}
@@ -362,11 +438,11 @@ function UserMessage() {
           <div className="flex items-center justify-end gap-2">
             <ComposerPrimitive.Cancel
               aria-label={t('chat.edit.cancel')}
-              className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               {t('chat.edit.cancel')}
             </ComposerPrimitive.Cancel>
-            <ComposerPrimitive.Send className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.6875rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+            <ComposerPrimitive.Send className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.75rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
               {t('chat.edit.save')}
             </ComposerPrimitive.Send>
           </div>
@@ -379,7 +455,7 @@ function UserMessage() {
           <MessagePrimitive.Parts
             components={{
               Text: () => (
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-text">
+                <div className="whitespace-pre-wrap text-base leading-relaxed text-text">
                   <MarkdownText />
                 </div>
               ),
@@ -390,13 +466,13 @@ function UserMessage() {
         <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
           <ActionBarPrimitive.Edit
             aria-label={t('chat.action.edit')}
-            className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             {t('chat.action.edit')}
           </ActionBarPrimitive.Edit>
           <ActionBarPrimitive.Copy
             aria-label={t('chat.action.copy')}
-            className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             {t('chat.action.copy')}
           </ActionBarPrimitive.Copy>
@@ -415,7 +491,7 @@ function AssistantMessage() {
         components={{
           // Assistant prose → sanitized markdown.
           Text: () => (
-            <div className="text-sm leading-relaxed text-text">
+            <div className="text-base leading-relaxed text-text">
               <MarkdownText />
             </div>
           ),
@@ -446,13 +522,13 @@ function AssistantMessage() {
       <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
         <ActionBarPrimitive.Copy
           aria-label={t('chat.action.copy')}
-          className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {t('chat.action.copy')}
         </ActionBarPrimitive.Copy>
         <ActionBarPrimitive.Reload
           aria-label={t('chat.action.reload')}
-          className="text-[0.6875rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {t('chat.action.reload')}
         </ActionBarPrimitive.Reload>

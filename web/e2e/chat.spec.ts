@@ -138,10 +138,18 @@ function sseResponse(route: Route, body: string) {
   });
 }
 
+function messagesSnapshotBody(messages: readonly Record<string, unknown>[]): string {
+  return JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages });
+}
+
 // installGoldenRoutes wires the deterministic golden replay over the served SPA: the
 // conversation list/get + approvals poll + the two /agent/run turns (initial-with-interrupt,
 // then resume) + the resolve POST. The SSE bodies feed the REAL in-browser sseAdapter.
-async function installGoldenRoutes(page: Page, g: GoldenFrames) {
+async function installGoldenRoutes(
+  page: Page,
+  g: GoldenFrames,
+  initialHistory: readonly Record<string, unknown>[] = [],
+) {
   let pending = false; // flips true after the first turn (the ask_user interrupt is live)
   let resolved = false;
 
@@ -163,6 +171,14 @@ async function installGoldenRoutes(page: Page, g: GoldenFrames) {
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
+
+  await page.route('**/threads/*/messages', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: messagesSnapshotBody(initialHistory),
+    }),
+  );
 
   await page.route('**/api/conversations/*/rot-events', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
@@ -208,6 +224,20 @@ async function installGoldenRoutes(page: Page, g: GoldenFrames) {
 }
 
 test.describe('cockpit chat — core-value loop (E2E)', () => {
+  test('opening an existing conversation renders persisted history', async ({ page }) => {
+    const g = golden;
+    if (g === null) throw new Error('golden fixture not loaded');
+    await installGoldenRoutes(page, g, [
+      { id: 'msg-1', role: 'user', content: 'Persisted prompt from DB' },
+      { id: 'msg-2', role: 'assistant', content: 'Persisted answer from DB' },
+    ]);
+
+    await gotoAuthenticated(page, `/c/${CONV_ID}`);
+
+    await expect(page.getByText('Persisted prompt from DB')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Persisted answer from DB')).toBeVisible();
+  });
+
   test('prompt -> stream -> inline approval resolve -> resume, footer updates', async ({
     page,
   }) => {

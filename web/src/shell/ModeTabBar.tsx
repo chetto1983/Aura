@@ -22,7 +22,7 @@ export function ModeTabBar({
           onClick={() => {
             onSelect(mode);
           }}
-          className="min-h-11 px-1 text-[0.6875rem] font-medium text-text-muted outline-none aria-[current=page]:bg-surface-3 aria-[current=page]:text-accent-text focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent"
+          className="min-h-11 px-1 text-[0.75rem] font-medium text-text-muted outline-none aria-[current=page]:bg-surface-3 aria-[current=page]:text-accent-text focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent"
         >
           {t(`shell.modes.${mode}`)}
         </button>

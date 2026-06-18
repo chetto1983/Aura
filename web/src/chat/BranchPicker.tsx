@@ -18,7 +18,7 @@ export function BranchPicker() {
   return (
     <AuiIf condition={({ message }) => message.branchCount > 1}>
       <BranchPickerPrimitive.Root
-        className="flex items-center gap-1 text-[0.6875rem] text-text-muted"
+        className="flex items-center gap-1 text-[0.75rem] text-text-muted"
         hideWhenSingleBranch
       >
         <BranchPickerPrimitive.Previous

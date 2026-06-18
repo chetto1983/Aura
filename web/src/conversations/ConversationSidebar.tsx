@@ -54,10 +54,10 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-faint">
+        <h2 className="text-[0.75rem] font-medium uppercase tracking-wider text-text-faint">
           {t('conversations.heading')}
         </h2>
-        <label className="flex cursor-pointer items-center gap-1.5 text-[0.6875rem] text-text-muted">
+        <label className="flex cursor-pointer items-center gap-1.5 text-[0.75rem] text-text-muted">
           <input
             type="checkbox"
             checked={includeArchived}
@@ -85,7 +85,7 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
         <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
           {groups.map((group) => (
             <li key={group.key} className="flex flex-col gap-1">
-              <h3 className="px-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-faint">
+              <h3 className="px-2 text-[0.75rem] font-medium uppercase tracking-wider text-text-faint">
                 {t(`conversations.recency.${group.key}`)}
               </h3>
               <ul className="flex flex-col gap-1">
@@ -217,7 +217,7 @@ function ConversationRow({
           className="flex w-full items-center gap-2 truncate text-left text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {archived ? (
-            <span className="shrink-0 text-[0.625rem] uppercase tracking-wide text-text-faint">
+            <span className="shrink-0 text-[0.75rem] uppercase tracking-wide text-text-faint">
               {t('conversations.archivedTag')}
             </span>
           ) : null}
@@ -226,7 +226,7 @@ function ConversationRow({
       )}
 
       {!editing ? (
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.6875rem] text-text-muted opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.75rem] text-text-muted opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
           <RowAction label={t('conversations.actions.rename')} onClick={startEditing} />
           {archived ? (
             <RowAction label={t('conversations.actions.unarchive')} onClick={onUnarchive} />

@@ -10,12 +10,14 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import goldenEvents from '../../../../internal/agui/testdata/golden-events.json';
 import {
   cacheHitRatio,
+  fetchThreadMessages,
   isUsageDelta,
   messageParts,
   newAssistantTurn,
   parseSSEBlock,
   readSSEFrames,
   reduceFrame,
+  snapshotToThreadMessages,
   streamRun,
   toThreadMessage,
   toolCallIdFromDelta,
@@ -115,6 +117,20 @@ describe('sseAdapter — golden-frame reducer', () => {
     });
     // The raw result is NEVER folded into the assistant prose.
     expect(state.text).toBe('');
+  });
+
+  it('orders completed tool parts before assistant prose', () => {
+    const state = fold([
+      frame('TOOL_CALL_START'),
+      frame('TOOL_CALL_ARGS'),
+      frame('TOOL_CALL_END'),
+      frame('TOOL_CALL_RESULT'),
+      frame('TEXT_MESSAGE_START'),
+      frame('TEXT_MESSAGE_CONTENT'),
+      frame('TEXT_MESSAGE_END'),
+    ]);
+
+    expect(messageParts(toThreadMessage(state)).map((p) => p.type)).toEqual(['tool-call', 'text']);
   });
 
   it('Pitfall 2: a STATE_DELTA carrying tool_call_id → tool part, NEVER a text delta', () => {
@@ -275,6 +291,88 @@ describe('sseAdapter — reducer edge branches', () => {
     const msg = toThreadMessage(newAssistantTurn('a1'));
     expect(msg.content).toEqual([{ type: 'text', text: '' }]);
     expect(msg.role).toBe('assistant');
+  });
+});
+
+describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('projects visible user/assistant history and merges tool result rows', () => {
+    const messages = snapshotToThreadMessages({
+      type: 'MESSAGES_SNAPSHOT',
+      messages: [
+        { id: 'msg-1', role: 'system', content: 'hidden system prompt' },
+        { id: 'msg-2', role: 'user', content: 'persisted prompt' },
+        {
+          id: 'msg-3',
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"q":"meteo"}' },
+            },
+          ],
+        },
+        { id: 'msg-4', role: 'tool', toolCallId: 'call-1', content: 'sunny 25C' },
+        { id: 'msg-5', role: 'assistant', content: 'It is sunny.' },
+      ],
+    });
+
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
+    expect(messages[0]).toMatchObject({
+      id: 'msg-2',
+      role: 'user',
+      content: [{ type: 'text', text: 'persisted prompt' }],
+      metadata: { custom: { backendSeq: 2 } },
+    });
+
+    const toolAssistant = messages[1];
+    if (toolAssistant === undefined) throw new Error('expected assistant tool message');
+    const toolParts = messageParts(toolAssistant).filter((part) => part.type === 'tool-call');
+    expect(toolParts).toHaveLength(1);
+    expect(toolParts[0]).toMatchObject({
+      toolCallId: 'call-1',
+      toolName: 'web_search',
+      argsText: '{"q":"meteo"}',
+      result: 'sunny 25C',
+    });
+
+    const finalAssistant = messages[2];
+    if (finalAssistant === undefined) throw new Error('expected final assistant message');
+    expect(messageParts(finalAssistant)).toEqual([{ type: 'text', text: 'It is sunny.' }]);
+  });
+
+  it('fetchThreadMessages GETs the snapshot endpoint with same-origin credentials', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            type: 'MESSAGES_SNAPSHOT',
+            messages: [{ id: 'msg-1', role: 'user', content: 'ciao' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const signal = new AbortController().signal;
+
+    const messages = await fetchThreadMessages('thread/with slash', signal);
+
+    const call = fetchMock.mock.calls[0] as [string, RequestInit] | undefined;
+    if (call === undefined) throw new Error('expected fetch call');
+    expect(call[0]).toBe('/threads/thread%2Fwith%20slash/messages');
+    expect(call[1]).toMatchObject({
+      method: 'GET',
+      credentials: 'same-origin',
+      signal,
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ role: 'user' });
   });
 });
 

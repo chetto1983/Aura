@@ -124,7 +124,7 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          <label htmlFor={freeTextId} className="text-[0.6875rem] text-text-muted">
+          <label htmlFor={freeTextId} className="text-[0.75rem] text-text-muted">
             {t('approval.card.freeText')}
           </label>
           <textarea
