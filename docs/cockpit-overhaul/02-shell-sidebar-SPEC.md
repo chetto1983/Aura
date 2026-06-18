@@ -1,7 +1,7 @@
 ---
 doc: cockpit-overhaul/02
 title: Responsive App Shell + Sidebar + Navigation — Industrial SPEC
-status: draft
+status: largely implemented (see Implementation Ledger 2026-06-18) — shell rebuild + drawers + mode nav shipped; 06 touch/intent additions present but simplified; recency-grouping minimal; PWA is framework-default not §5b
 created: 2026-06-17
 owner: cockpit-overhaul milestone (v1.0.0 Deep Search Web Cockpit)
 mobile_verdict: "shit" (390px live) — chat lane crushed to ~0 height; composer buried behind Runtime panel; sidebar "ugly"
@@ -30,6 +30,153 @@ constraints: mobile-first (390px FIRST) · ≤600 LOC/file · vitest+Stryker ≥
 > `--font-display|sans|mono`, `--shadow-1…4`, `--motion-dur-*`/`--motion-ease-*`, density
 > `--space-unit`/`--row-h`. **No new colors, no new fonts.** Theme = "Editorial graphite
 > (premium-calm)" as defined by 03.
+
+---
+
+## Implementation Ledger (2026-06-18)
+
+This section reconciles the forward-looking SPEC against the **actually shipped code** under
+`D:/Aura/web/src/` (read 2026-06-18). It does **not** weaken any acceptance criterion in §10 —
+it records which targets moved from plan to code, which are partial, and which were deviated or
+not built. Every claim cites a file:line read directly.
+
+**Implementing commit:** `fc77e4cb feat(cockpit): overhaul shell and chat lifecycle`
+(davide marchetto, 2026-06-17). The root-cause grid rebuild (§0/§2) landed; the 06-adopt
+touch/intent layers (§3.1b/§3.1c) landed in a **simplified** form; the sidebar redesign (§4)
+landed in a **minimal** form (recency only); the PWA (§5b) was **not** authored — the tree
+already carries a framework-default service worker that predates this spec.
+
+### Per-file-target status (against §9 file-targets table)
+
+| Spec-proposed file | Status | Evidence |
+|---|---|---|
+| `web/index.html` (viewport meta) | **IMPLEMENTED** | `web/index.html:5-8` — exact `viewport-fit=cover, interactive-widget=resizes-content`. |
+| `web/src/AppShell.tsx` (rewrite, `100svh` 3-track grid, portaled drawers, provider hoist) | **IMPLEMENTED (deviated)** | `AppShell.tsx:88-91` `grid h-[100svh] min-h-0 … [grid-template-rows:auto_minmax(0,1fr)_auto]`; `:111` desktop `lg:grid-cols-[15rem_minmax(0,1fr)_19rem]`; `:146-165` two portaled `Drawer`s. **Deviation:** the composer/runtime provider is NOT hoisted here — `ExternalStoreChat` (`:124`) still owns its own provider+composer (see "Dock + provider hoist" below). |
+| `web/src/shell/ShellHeader.tsx` (new) | **IMPLEMENTED** | `ShellHeader.tsx:30` one-row 4-col grid header; hamburger `:31-40` (`lg:hidden`), status chip `:58`, approval badge `:60`, theme/lang `:67-68`. |
+| `web/src/shell/BottomDock.tsx` (new) | **IMPLEMENTED (minimal)** | `BottomDock.tsx:14-19` — grid track, safe-area + `keyboard-inset-height` padding `:15`, hosts `{children}` (RuntimeFooter) + `ModeTabBar`. **No** compact-vs-full footer split (§2.4); it renders whatever child it's given. |
+| `web/src/shell/Drawer.tsx` (new, native `<dialog>`, `onClose(intent)`) | **IMPLEMENTED (deviated)** | `Drawer.tsx:60-92` portaled overlay. **Deviation:** built as a `div role="dialog" aria-modal` with a **hand-rolled JS focus trap** (`:27-50`) + backdrop button (`:62-67`), **NOT** the spec-mandated native `<dialog showModal()>`. `onClose` takes **no `intent` argument** (`:10`), so the explicit-vs-swipe distinction (§3.1c) is not threaded. `side` is `'left'\|'right'` only — **no `'bottom'` sheet** variant (`:9`). |
+| `web/src/shell/useScrollLock.ts` (new, ref-counted) | **IMPLEMENTED (deviated)** | `useScrollLock.ts:3-12` locks `document.body` overflow. **Deviation:** NOT ref-counted (spec §3.1) and locks `body`, not `<html>`; two simultaneous drawers would each save/restore independently. |
+| `web/src/shell/useEdgeSwipe.ts` (new) | **DONE** | shipped simplified in `fc77e4cb`; rewritten to the full §3.1b contract 2026-06-18 (non-passive capture, 10px `\|dx\|>\|dy\|` lock, `preventDefault` claim, 40px abort, exclude list, 50%/fling, swipe-close). See "Edge-swipe" verdict. |
+| `web/src/shell/useSurfaceIntent.ts` (new, intent-restore reducer) | **DEVIATED (repurposed)** | `useSurfaceIntent.ts:15-28` — this file exists but implements **mode persistence** (localStorage `aura.shell.surface`), **NOT** the §3.1c one-heavy-overlay restore state machine. The intent-restore reducer was not built. |
+| `web/src/shell/ModeSwitcher.tsx` (new, header segmented) | **IMPLEMENTED (deviated)** | `ModeSwitcher.tsx:13-31` real `<button>`s, `aria-current="page"` on active. **Deviation:** future modes (`tree`/`graph`/`displays`/`settings`) are **fully enabled and selectable**, not `aria-disabled` "coming soon" (§3.3). Header switcher shows at `md:` not `sm:`. |
+| `web/src/shell/ModeTabBar.tsx` (new, mobile thumb bar) | **IMPLEMENTED** | `ModeTabBar.tsx:13-31` — 5-col grid, `min-h-11` (44px), `aria-current`, `md:hidden`. Same future-mode-enabled deviation as ModeSwitcher. |
+| `web/src/shell/RuntimeStatusChip.tsx` (new, worst-tone pill → sheet) | **IMPLEMENTED (minimal)** | `RuntimeStatusChip.tsx:4-23` — pill, `lg:hidden`, opens runtime drawer, tone via `useRuntimeHealth`. **Two-state** (ready/degraded), not the three-state Live/Degraded/Down of §3.2. |
+| `web/src/conversations/ConversationSidebar.tsx` (rewrite) | **IMPLEMENTED (minimal)** | `ConversationSidebar.tsx:84-116` recency-grouped list; states `:73-83`. Far short of §4 (see "Sidebar redesign"). |
+| `web/src/conversations/ConversationRow.tsx` (new extract) | **NOT BUILT (inlined)** | Row lives **inline** as `ConversationRow` in `ConversationSidebar.tsx:140-241`; never extracted to its own file. |
+| `web/src/conversations/RowActionMenu.tsx` (new `⋯` menu) | **NOT BUILT** | No overflow menu; actions are an always/hover-rendered inline `RowAction` row (`ConversationSidebar.tsx:228-237`, `:277-297`). |
+| `web/src/conversations/recency.ts` (new pure helper) | **NOT BUILT (inlined)** | `groupByRecency()` is inline (`ConversationSidebar.tsx:250-271`); never a standalone, table-tested helper. |
+| `web/src/components/skeleton/AppSkeletons.tsx` (edit) | **IMPLEMENTED (partial)** | `AppSkeletons.tsx:159-174` `AppShellSkeleton` rebuilt to the new `100svh` 3-track grid + `BottomDockSkeleton` `:141-157`. **No** `ConversationListSkeleton` (§4.5) — the sidebar still loads with a plain `<p>` (see below). |
+| `web/src/i18n/resources.ts` (edit, §8 keys) | **IMPLEMENTED (different key set)** | en `resources.ts:32-46,121-125`; it `:273-287,362-366`. Added `shell.{navigation,displayWorkspace,chatRegion,workspace,openNavigation,openRuntime,closePanel,primaryNav,mobileModes,modes.*}` + `conversations.recency.{today,yesterday,last7,older}`. The §8-named keys (`untitledRun`, `emptyArchived`, `retry`, `actions.more`, `menuLabel`, `runtimeChip.*`) were **not** added (features they back weren't built). |
+| `web/src/styles/index.css` (`--z-drawer*`, `--chat-lane-min`, `--window-floor`) | **NOT BUILT** | No `380`/`700`/`--z-drawer`/`--chat-lane-min`/`--window-floor` anywhere in `web/src` (grep, 0 hits). Drawer uses a literal `z-50` (`Drawer.tsx:61`); the lane floor is a literal `min-h-[min(45svh,100%)]` (`AppShell.tsx:121`), not the 380px width floor. |
+| `web/src/chat/Composer.tsx` (drop self `border-t`) | **NOT APPLICABLE** | Composer was not relocated into the dock (no provider hoist), so its border was not touched. |
+| `web/public/manifest.json` (PWA §5b) | **NOT BUILT (framework default instead)** | No `web/public/manifest.json`. A manifest is **generated** by a pre-existing custom `auraPwaPlugin` in `web/vite.config.ts:9-23,71-75` → `internal/webui/dist/manifest.webmanifest`. Not the §5b authored asset. |
+| `web/public/sw.js` (PWA §5b) | **NOT BUILT (framework default instead)** | No `web/public/sw.js`. The SW is generated by `auraPwaPlugin` (`vite.config.ts:97-118`) → `internal/webui/dist/sw.js`. This commit only **rebuilt** it (hash-only diff). It does **not** implement the §5b strategy table (see "PWA" verdict). |
+
+### Headline-feature verdicts
+
+- **§1.1b 380px chat-lane floor / 700px window floor — NOT IMPLEMENTED.** No `--chat-lane-min`,
+  `--window-floor`, `380`, or `700` token/value exists in `web/src` (grep: 0 hits). The lane
+  is protected only by a viewport-**height** floor `min-h-[min(45svh,100%)]` (`AppShell.tsx:121`)
+  and the desktop column track `minmax(0,1fr)` — there is **no** explicit 380px **width** floor
+  and no derived-breakpoint guard. **AC-MOBILE-5 is unverified/unmet** as specified.
+
+- **§2 grid mechanics — IMPLEMENTED.** `100svh` outer grid, three tracks
+  (`auto / minmax(0,1fr) / auto`), `min-h-0`, `overflow-hidden`, portaled drawers, single in-flow
+  chat lane below `lg`, static 3-col grid at `lg` (`AppShell.tsx:88-140`). The headline
+  track-collapse bug (§0) is structurally fixed. The side widths are the spec's `15rem`/`19rem`.
+
+- **§3.1b Edge-swipe — was PARTIAL in `fc77e4cb`; HARDENED to the full contract 2026-06-18
+  (TDD pass, working tree).** The original `useEdgeSwipe.ts` was a coarse pointer start/end check
+  missing every named requirement. It was rewritten (now ~200 LOC) to the §3.1b contract: it
+  returns a `ref` callback that attaches **non-passive, capture-phase** `touchstart/move/end/cancel`
+  listeners to the shell root; **10px arm + `|dx|>|dy|` horizontal-lock decided once**;
+  **`preventDefault()` claim** once locked (beats the browser back-swipe/overscroll); **40px
+  vertical-abort**; the full **scroll-owner exclude list** (`pre, code, table, input, textarea,
+  [contenteditable], [role="dialog"], [data-drawer], [data-no-swipe]`); **50%-or-fling commit**;
+  swipe-to-**close** from an open panel; and full listener cleanup on unmount (no leak). The
+  public hook signature + its `AppShell` call site are unchanged (new options are optional).
+  **AC-NAV-4 now met**; backed by a new `web/src/shell/__tests__/useEdgeSwipe.test.ts` (21 cases).
+
+- **§3.1c Intent-aware restore — NOT IMPLEMENTED.** There is no one-heavy-overlay-at-a-time
+  reducer, no `sidebarWasOpenBeforeOverlay`, no explicit-vs-swipe distinction. `AppShell.tsx`
+  drives `navigationOpen`/`runtimeOpen` as **two independent booleans** (`:28-29`) that can both
+  be open and neither auto-dismisses/restores the other. The `useSurfaceIntent.ts` file (which
+  the spec named for this reducer) instead persists the **mode** choice. **AC-NAV-5 is unmet.**
+
+- **Dock + provider hoist — DEVIATED.** The composer was **not** lifted into `BottomDock`. The
+  dock (`AppShell.tsx:142-144`) carries only the `RuntimeFooter` + `ModeTabBar`; the composer
+  stays inside `ExternalStoreChat` in the chat lane (`:124-129`), and the
+  `AssistantRuntimeProvider` is **not** hoisted to wrap lane+dock (it remains internal to
+  `ExternalStoreChat`). The §2.3/§2.4/§6 "lift the composer to a viewport-pinned dock under one
+  hoisted provider" wiring move was not done — the composer is still pinned to the chat lane, but
+  the lane no longer collapses (the §0 root cause is fixed by the grid, not by relocating the
+  composer). This is the largest structural deviation from the spec's intent.
+
+- **Mode navigation — IMPLEMENTED (the original defect is fixed), with a honesty deviation.**
+  The 5 inert `<span>`s (§0 defect 5) are gone: `ModeSwitcher` (`ModeSwitcher.tsx:18-29`) and
+  `ModeTabBar` (`ModeTabBar.tsx:18-29`) render real `<button>`s with `aria-current="page"`,
+  wired to `onModeSelect` (`AppShell.tsx:93-95,142`). **Deviation vs §3.3/AC-NAV-3:** the
+  not-yet-built modes are **fully selectable**, not `aria-disabled`/"coming soon" — selecting
+  `tree`/`graph`/`displays`/`settings` only persists the choice (no live region resolves yet).
+  `modes.ts` (`modes.ts:1`) lists all 5; nothing marks four of them unavailable.
+
+- **svh/dvh + keyboard inset — IMPLEMENTED.** Outer shell `h-[100svh]` (`AppShell.tsx:89`);
+  `index.html:7` `interactive-widget=resizes-content`; dock
+  `padding-bottom:calc(max(env(safe-area-inset-bottom),0px)+env(keyboard-inset-height,0px))`
+  (`BottomDock.tsx:15`). Matches §2.4/§6 keyboard reconciliation.
+
+- **§4 Sidebar redesign — MINIMAL.** Recency grouping exists (`Today/Yesterday/Last 7/Older` —
+  `ConversationSidebar.tsx:243-271`) but uses **4 buckets, not the §4.1 five** (no
+  `Previous 30 days`, no separate `Archived` group). **Not built:** sticky-blur group headers
+  (headers are plain, `:88-90`), the `⋯` overflow menu (actions are inline `RowAction`s,
+  `:228-237`), the container-query secondary meta line (time/tok/cost), the `min-h-[2.75rem]`
+  touch row, the non-bare `Untitled · {{time}}` label (still bare `conversations.untitled`,
+  `:155`), the `New run` CTA in the empty state (`:79-83`), the archived-empty distinct state,
+  the error **Retry** button (error is a bare `role="alert"` `<p>`, `:75-78`), and the
+  `ConversationListSkeleton` (loading is a plain `<p>`, `:73-74`). Touch-visibility of actions is
+  only partially addressed (`opacity-100 md:opacity-0 md:group-hover:opacity-100`, `:229`).
+
+- **§5b PWA — framework-default present, §5b layer NOT authored.** A service worker + manifest
+  are emitted by the pre-existing `auraPwaPlugin` (`vite.config.ts:47-121`). The generated SW
+  (`internal/webui/dist/sw.js`) **does** bypass non-GET requests (`if(request.method!=='GET')
+  return;`) — so the POST-based `/agent/run` SSE stream is safe by side-effect — and skips
+  cross-origin. **But it does not implement the §5b strategy table:** GET `/api/*` is **not**
+  exempted (a GET API call would be served cache-first → stale), JS/CSS is cache-first (not
+  network-first), the SPA root is navigate-fallback-to-cache (not stale-while-revalidate with
+  deep-link fall-through), and precache uses `cache.add(...).catch()` (not the §5b per-item
+  `cache.put`). **AC-PWA-1 is unmet** as specified, though the load-bearing SSE-never-break
+  property holds incidentally because the stream is a POST.
+
+### What remains pending (to satisfy the spec as written)
+
+1. The **380px width floor** (§1.1b) + `--chat-lane-min`/`--window-floor` tokens + AC-MOBILE-5 guard.
+2. A spec-grade **`useEdgeSwipe`** (non-passive capture, 10px `|dx|>|dy|` lock, `preventDefault`
+   claim, 40px abort, exclude list, fling commit) + swipe-to-close (AC-NAV-4).
+3. The **intent-restore reducer** (one heavy overlay, explicit-vs-swipe, `onClose(intent)` threaded
+   through `Drawer`) (AC-NAV-5).
+4. **Provider hoist + composer relocation** into `BottomDock` under one `AssistantRuntimeProvider`
+   (§2.3/§2.4/§6) — currently not done.
+5. **Native `<dialog showModal()>`** for `Drawer` (replace the hand-rolled trap) + a `'bottom'`
+   sheet variant for the runtime panel on mobile (§3.1/§5).
+6. **`aria-disabled` "coming soon"** on the four future modes (AC-NAV-3 honesty clause).
+7. Sidebar §4: 5-bucket + `Archived` group, sticky-blur headers, `⋯` `RowActionMenu`, container-query
+   meta line, `Untitled · {{time}}`, `New run` empty CTA, error Retry, `ConversationListSkeleton`.
+8. **Three-state** runtime chip (Live/Degraded/Down) + the §8 i18n keys for the above features.
+9. The §5b SW strategy (or an explicit de-scope behind `AURA_WEBUI_PWA`).
+10. The §11 test matrix: Playwright `mobile` project + gesture/intent E2E + Stryker targets — the
+    shipped `web/src/shell/__tests__/shell.test.tsx` covers Drawer/edge-swipe/surface/modes at the
+    unit level only.
+
+### Factual drift corrected inline
+
+- The brief's note that "the commit shows `internal/webui/dist/sw.js` + `manifest.webmanifest`
+  changed" is true but **does not mean the §5b PWA layer was built** — those are
+  `auraPwaPlugin`-generated dist artifacts that predate this spec; the commit's diff to them is a
+  hash-only rebuild byproduct (annotated at §5b).
+- The brief's file list says "`AppShell is at web/src/AppShell.tsx`" (not `web/src/shell/`) —
+  **confirmed** (`web/src/AppShell.tsx`).
+- `useSurfaceIntent.ts` exists but is **not** the intent-restore hook the spec named it for — it
+  persists the mode choice. Annotated at §3.1c below.
 
 ---
 
@@ -130,6 +277,12 @@ which **reserving the side regions would crush the chat lane below its usable mi
 adopt odysseus's empirically-validated thresholds verbatim (`static/js/sidebar-layout.js:223-224`,
 `MIN_CHAT_WIDTH = 380`, `AUTO_COLLAPSE_WIDTH = 700`) and make them a **hard invariant** of the
 layout, not just a media-query side effect:
+
+> **Impl note (2026-06-18):** NOT IMPLEMENTED. Neither `--chat-lane-min` nor `--window-floor`
+> nor the literals `380`/`700` exist anywhere in `web/src` (grep: 0 hits). The lane is protected
+> only by a viewport-**height** floor `min-h-[min(45svh,100%)]` (`AppShell.tsx:121`) and the
+> desktop track `minmax(0,1fr)` — there is no 380px **width** floor and no derived-breakpoint
+> guard. AC-MOBILE-5 is unverified/unmet. See the Implementation Ledger.
 
 - **`--chat-lane-min: 380px`** — the chat lane (region b) **must never render narrower than
   380px**. Below 380px a chat lane is unusable (the operator's "shit on 390px" verdict is the
@@ -276,6 +429,13 @@ keeps owning the runtime + message store; the `ComposerPrimitive.Root` is render
 whole shell main+dock, not just the lane) so Send/Stop still bind the runtime. This is
 a wiring move, not a logic change — see §5 file targets.
 
+> **Impl note (2026-06-18):** NOT DONE. The composer was **not** relocated — it stays
+> inside `ExternalStoreChat` in the chat lane (`AppShell.tsx:124-129`), and the
+> `AssistantRuntimeProvider` is **not** hoisted (it remains internal to `ExternalStoreChat`).
+> `BottomDock` carries only `RuntimeFooter` + `ModeTabBar` (`AppShell.tsx:142-144`). The §0
+> root cause is fixed by the grid rebuild alone, not by moving the composer. See the
+> Implementation Ledger "Dock + provider hoist" verdict.
+
 ### 2.4 Bottom dock — the composer's permanent home
 
 ```tsx
@@ -351,6 +511,13 @@ runtime sheet/drawer**. It is the shipped a11y contract applied to an off-canvas
 `Esc`-to-close + top-layer + backdrop **for free**; do NOT re-implement a JS focus trap
 or `aria-modal`. We style `<dialog>` as an edge-anchored panel and animate it.
 
+> **Impl note (2026-06-18):** DEVIATED. `Drawer.tsx` was built as a portaled
+> `div role="dialog" aria-modal="true"` with a **hand-rolled JS focus trap + Esc handler**
+> (`Drawer.tsx:27-50`) and a backdrop `<button>` (`:62-67`), the exact thing this section says
+> NOT to do. It is functional (focus-trap test passes, `shell.test.tsx:50-74`) but is not the
+> native-`<dialog>` contract; `onClose` carries **no `intent` arg** and there is **no `'bottom'`
+> sheet** variant. See the Implementation Ledger.
+
 ```tsx
 interface DrawerProps {
   open: boolean;
@@ -392,6 +559,13 @@ keyboard-grade-only drawer feels like under a thumb. Odysseus's swipe handlers
 *discipline* — not the code — is what makes a swipe gesture coexist with native back-navigation and
 vertical scroll. We add a single reusable `useEdgeSwipe` hook (`web/src/shell/useEdgeSwipe.ts`)
 driving the same `Drawer` open/close state.
+
+> **Impl note (2026-06-18):** DONE — this contract is now met. `useEdgeSwipe.ts` was rewritten
+> (~200 LOC) to a `ref`-callback attaching **non-passive, capture-phase** touch listeners with the
+> 10px arm, `|dx|>|dy|` horizontal-lock, **`preventDefault()` claim**, 40px vertical-abort,
+> 50%-or-fling commit, swipe-to-**close**, the full scroll-owner **exclude list**, and unmount
+> cleanup. The public signature + `AppShell` call site are unchanged. AC-NAV-4 met; covered by
+> `web/src/shell/__tests__/useEdgeSwipe.test.ts`. See the Implementation Ledger.
 
 **Event model (the contract):** one **non-passive** `touchstart`/`touchmove`/`touchend` listener
 (must be non-passive so `preventDefault()` is allowed) attached at the **document/shell level in the
@@ -442,6 +616,13 @@ so it runs regardless; only the *snap-to-rest* tween is `motion-safe:` (instant 
 This is the multi-pane-on-a-phone crux odysseus formalizes (`sidebar-layout.js:381-475`) and the
 discipline §0/§5 already gesture at but never specify. Distinct from **focus**-restore (§3.1, which
 returns DOM focus to the trigger on close); **intent**-restore is about which *surface* is visible.
+
+> **Impl note (2026-06-18):** NOT IMPLEMENTED. `AppShell.tsx` drives `navigationOpen` and
+> `runtimeOpen` as two **independent** booleans (`AppShell.tsx:28-29`); opening one neither
+> dismisses nor restores the other, and there is no `sidebarWasOpenBeforeOverlay` flag or
+> explicit-vs-swipe distinction. The `useSurfaceIntent.ts` file named here was instead built to
+> **persist the mode choice** to localStorage (`useSurfaceIntent.ts:15-28`), not the
+> one-heavy-overlay reducer. AC-NAV-5 is unmet. See the Implementation Ledger.
 
 Rule, mobile/tablet only (at `lg` every region is a permanent column, so this is a no-op):
 
@@ -495,6 +676,13 @@ switcher leaves the header on mobile (→ bottom tab bar), freeing the space.
 ### 3.3 Mode switcher — `ModeSwitcher` (segmented) + `ModeTabBar` (mobile)
 
 Replace the 5 inert `<span>`s with **real controls**.
+
+> **Impl note (2026-06-18):** PARTIAL. The inert `<span>`s are gone — `ModeSwitcher.tsx:18-29`
+> and `ModeTabBar.tsx:18-29` render real `<button>`s with `aria-current="page"` (the §0 defect 5
+> is fixed). **But** the four not-yet-built modes (`tree`/`graph`/`displays`/`settings`) are
+> **fully enabled and selectable**, not `aria-disabled` "coming soon" as required below — selecting
+> them only persists the choice via `useSurfaceIntent`. The header switcher also shows at `md:`,
+> not `sm:`. AC-NAV-3's disabled-future-modes clause is unmet. See the Implementation Ledger.
 
 - **Roving-tabindex segmented control**, `role="tablist"` semantics are wrong here (no
   tabpanels yet — only `chat` is live); instead use a `<nav>` of **`<button>`s** (or
@@ -650,6 +838,16 @@ The **runtime footer** (`Tokens·Cache·Cost·Context`) is a *different* surface
 > planner knows the shape and the **one critical constraint** even if v1.0.0 ships without it. If
 > de-scoped, it lands behind a single `AURA_WEBUI_PWA` build flag in a later phase; nothing in
 > §§1–5 depends on it.
+
+> **Impl note (2026-06-18):** This §5b layer was **not authored**, but a **framework-default**
+> PWA already exists and predates this spec: a custom `auraPwaPlugin` in `web/vite.config.ts:47-121`
+> generates `internal/webui/dist/{manifest.webmanifest,sw.js}` at build time (there is no
+> `web/public/manifest.json` or `web/public/sw.js` source). The generated SW bypasses non-GET
+> (`vite.config.ts:107`) — so the POST `/agent/run` SSE is safe by side-effect — but does **not**
+> implement the strategy table below: GET `/api/*` is not exempted, JS/CSS is cache-first not
+> network-first, the root is navigate-fallback not SWR-with-deep-link-fall-through, and precache
+> uses `cache.add().catch()` not per-item `cache.put`. Commit `fc77e4cb` only rebuilt these dist
+> files (hash-only diff). AC-PWA-1 is unmet as written. See the Implementation Ledger.
 
 Odysseus's PWA is the reference (`manifest.json` 15 lines, `sw.js` ~145 LOC, O6).
 

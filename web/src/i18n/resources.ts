@@ -20,6 +20,8 @@ export const resources = {
         ctaInFlight: 'Signing in...',
         errors: {
           wrongPassphrase: "That passphrase didn't match. Check it and try again.",
+          wrongCredentials: "That email or password didn't match. Check it and try again.",
+          wrongCode: "That verification code didn't match. Check it and try again.",
           notConfigured:
             "Sign-in isn't available - this Aura instance has no operator passphrase configured.",
           network: "Couldn't reach Aura. Check the server is running and try again.",
@@ -27,6 +29,19 @@ export const resources = {
         sessionExpired: 'Your session expired. Sign in again to continue.',
         showPassword: 'Show passphrase',
         hidePassword: 'Hide passphrase',
+        authula: {
+          emailLabel: 'Operator email',
+          passwordLabel: 'Password',
+          totpLabel: 'Verification code',
+          backupCodeLabel: 'Backup code',
+          trustDevice: 'Trust this device for 30 days',
+          useBackupCode: 'Use backup code',
+          useTotpCode: 'Use verification code',
+          verifyCta: 'Verify',
+          verifyInFlight: 'Verifying...',
+          showPassword: 'Show password',
+          hidePassword: 'Hide password',
+        },
       },
       shell: {
         primaryNav: 'Primary',
@@ -38,6 +53,7 @@ export const resources = {
         openNavigation: 'Open navigation',
         openRuntime: 'Open runtime status',
         closePanel: 'Close panel',
+        logout: 'Sign out',
         modes: {
           chat: 'Chat',
           tree: 'Tree',
@@ -260,6 +276,8 @@ export const resources = {
         ctaInFlight: 'Accesso in corso...',
         errors: {
           wrongPassphrase: 'La frase segreta non corrisponde. Controllala e riprova.',
+          wrongCredentials: 'Email o password non corrispondono. Controllale e riprova.',
+          wrongCode: 'Il codice di verifica non corrisponde. Controllalo e riprova.',
           notConfigured:
             "L'accesso non è disponibile: questa istanza Aura non ha una frase segreta operatore configurata.",
           network:
@@ -268,6 +286,19 @@ export const resources = {
         sessionExpired: 'La sessione è scaduta. Accedi di nuovo per continuare.',
         showPassword: 'Mostra frase segreta',
         hidePassword: 'Nascondi frase segreta',
+        authula: {
+          emailLabel: 'Email operatore',
+          passwordLabel: 'Password',
+          totpLabel: 'Codice di verifica',
+          backupCodeLabel: 'Codice di backup',
+          trustDevice: 'Autorizza questo dispositivo per 30 giorni',
+          useBackupCode: 'Usa codice di backup',
+          useTotpCode: 'Usa codice di verifica',
+          verifyCta: 'Verifica',
+          verifyInFlight: 'Verifica in corso...',
+          showPassword: 'Mostra password',
+          hidePassword: 'Nascondi password',
+        },
       },
       shell: {
         primaryNav: 'Principale',
@@ -279,6 +310,7 @@ export const resources = {
         openNavigation: 'Apri navigazione',
         openRuntime: 'Apri stato runtime',
         closePanel: 'Chiudi pannello',
+        logout: 'Disconnetti',
         modes: {
           chat: 'Chat',
           tree: 'Albero',

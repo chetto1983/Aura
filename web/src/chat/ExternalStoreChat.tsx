@@ -207,8 +207,9 @@ export function ExternalStoreChat({
   // Continue-after-resume (D-05): when resumeNonce changes (AppShell bumps it after an
   // inline approval resolves), re-drive the run with a no-message POST /agent/run and FOLD
   // the resumed stream into THIS lane's message list, so the resumed turn renders in-thread
-  // (not in a discarded fetch). The initial mount (nonce unchanged) is skipped.
-  const lastResumeNonce = useRef(resumeNonce);
+  // (not in a discarded fetch). Initial mount only skips nonce=0; if the chat chunk loaded
+  // after an approval resolved, a non-zero nonce must still replay.
+  const lastResumeNonce = useRef(0);
   useEffect(() => {
     if (resumeNonce === lastResumeNonce.current) return;
     lastResumeNonce.current = resumeNonce;

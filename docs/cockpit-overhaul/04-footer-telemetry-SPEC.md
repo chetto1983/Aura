@@ -1,9 +1,53 @@
 # 04 — Runtime Telemetry Footer SPEC (cost / cache / token / context instrument)
 
-Status: DRAFT (root-cause verified against source, redesign concrete)
+Status: IMPLEMENTED (shipped 2026-06-17 in `fc77e4cb`; see Implementation Ledger below). All three breaks fixed, the 3-tier gauge and theme-purity contracts landed; the AC-5 invalidation moved to a different seam (deviation, noted) and lacks a dedicated unit test.
 Surface: `web/src/chat/RuntimeFooter.tsx` + `footerMetrics.ts` + `ContextBudgetGauge.tsx` + `AppShell.tsx` wiring + backend fast-path emission.
 Theme: Editorial graphite — consumes **03-design-system's semantic token names** (never raw hex). The instruments this footer touches: `--color-accent` (warm gold `#C8A86A`, gauge fill below the near-full tier), `--color-warning` (`#DDA94A`, gauge near-full tier), `--color-danger` (`#E66A63`, gauge critical tier), `--color-text` (`#ECE7DF`, metric values), `--color-text-muted` (`#B0A99E`, Session figures), `--color-text-faint` (`#8E877C`, Micro captions), `--color-surface` (`#1B1714`, footer bar), `--color-surface-3` (`#2E2823`, gauge track), `--color-border` (`#38322B`, top hairline), `--font-mono` (Commit Mono, tabular — every numeral). All values are 03's; this spec references the *names*, and re-skins for free when 03 lands.
 Reqs: CHAT-04 / D-10 (per-turn + session token/cost) / D-11 (cache-hit ratio + microcompact context gauge) / D-12 (context-budget gauge bound to `/rot-events`).
+
+---
+
+## Implementation Ledger (2026-06-18)
+
+This section reconciles the forward-looking spec above against the code actually on `master`. It does not weaken any acceptance criterion; it records what moved from plan to implementation, the file:line evidence, and one design deviation.
+
+**Implementing commit:** `fc77e4cb feat(cockpit): overhaul shell and chat lifecycle` (2026-06-17). The 3-tier gauge + theme-token base landed earlier in `f7237717 feat(25-04): runtime instrument footer + context-budget gauge` and was carried forward; `fc77e4cb` added the load-bearing backend one-liner and the conversation-query invalidation. `git show --stat fc77e4cb` touches `internal/agui/server.go` (+2), `web/src/chat/RuntimeFooter.tsx`, `footerMetrics.ts`, `ContextBudgetGauge.tsx`, `ExternalStoreChat.tsx`, `AppShell.tsx`, `web/src/conversations/useConversations.ts`.
+
+### Per-break verdict
+
+- **Break #1 (fast-path zero-usage → confusing `0/—/—`): FIXED at the presentation boundary, as designed.** The backend stays honest — `internal/runner/runner_fastpath.go:46-50` still stamps `{prompt_tokens:0, completion_tokens:0, cache_hit_tokens:0}` and no `cost_usd` (file unchanged by `fc77e4cb`; last touched `e4e595a5`). The fix is `isNoSpendTurn(turn)` (`web/src/chat/footerMetrics.ts:77-84`) consumed by `RuntimeFooter.tsx:47,64-89`: a no-spend turn renders the `footer.noSpend` placeholder ("Local reply - no model spend") for TOKENS and the em-dash for CACHE/COST, never a bare `0`. Tested: `web/src/chat/__tests__/RuntimeFooter.test.tsx:320` asserts the no-spend copy renders; `:212-234` assert no `NaN`/`$NaN`.
+- **Break #2 (STATE_DELTA droppable under backpressure): FIXED — the load-bearing one-line backend change.** `internal/agui/server.go:367-388` `isLifecycleFrame` now includes `events.EventTypeStateDelta` (added at `:382`; `git show fc77e4cb` shows the single `+ events.EventTypeStateDelta` line — `EventTypeStateSnapshot` was already present). The usage frame now takes the blocking-but-abortable send in `pumpSend` (`:342-361`) and is never dropped. Tested: `internal/agui/server_test.go:191 TestIsLifecycleFrameIncludesStateDelta` asserts `isLifecycleFrame(EventTypeStateDelta) == true` (AC-4).
+- **Break #3 (un-invalidated `useConversation` → stale Session totals): FIXED, but at a different seam than the spec designed (see deviation).** `web/src/chat/ExternalStoreChat.tsx:83-90` adds `invalidateRuntimeReads(id)` which invalidates both `[CONVERSATION_KEY, id]` and `[CONVERSATION_ROT_EVENTS_KEY, id]`; it fires in the `finally` of `onNew` (`:162`), `foldReRun` (`:201`), and the resume-drive effect (`:247`) — i.e. once per finished turn. The persisted Session seed therefore refreshes after each turn (AC-5 behaviour present).
+
+### Gauge verdict — 3-tier, IMPLEMENTED
+
+The shipped gauge is the **3-tier severity scale**, not the old 2-tier 85% flip. `footerMetrics.ts:131-144` defines `GaugeTier = 'normal' | 'near' | 'critical'` and a pure `gaugeTier(percent)` returning `critical ≥90`, `near ≥70`, else `normal`. `ContextBudgetGauge.tsx:40-43` maps the tier to `bg-danger` / `bg-warning` / `bg-accent` (03 semantic tokens). `role=progressbar` + `aria-valuemin/max/now` + a threshold-bearing `aria-label` (`:62-70`) keep colour decorative (WCAG 1.4.1). Boundary tests: `RuntimeFooter.test.tsx:111-113` (`gaugeTier(69)==='normal'`, `(70)==='near'`, `(90)==='critical'`).
+> **Impl note (2026-06-18):** two cosmetic drifts remain in `ContextBudgetGauge.tsx` against this spec's letter, both non-functional: (a) the constant kept the legacy name `CONTEXT_NEAR_FULL_PERCENT` (= 70) instead of the spec's `CONTEXT_NEAR_PERCENT`; the value is correct (`footerMetrics.ts:133`). (b) The gauge-track class is `bg-surface-2` (`ContextBudgetGauge.tsx:71`), not the spec's `bg-surface-3` — still a 03 token, no raw hex. The block comment at `ContextBudgetGauge.tsx:13-18` still says "switching to `warning` at ≥85%", which is now stale (actual thresholds 70/90); the code is correct, only the comment lags.
+
+### Theme verdict — CLEAN
+
+`grep -nE '#[0-9A-Fa-f]{3,6}'` over `web/src/chat/` returns **no matches** — zero raw colour hex in the footer surface (AC-11 grep gate passes). No reference to the dead Phase-23 blue palette (`#5BA8FF`/`#E0A23C`/`#5B6675`/`#9AA4B2`) anywhere in the chat dir. The footer/gauge use only 03 semantic utilities (`text-text`, `text-text-muted`, `text-text-faint`, `bg-surface`, `bg-surface-2`, `bg-accent`/`bg-warning`/`bg-danger`).
+
+### a11y / i18n / formatting verdicts
+
+- **ARIA-live settled-only: PARTIAL.** There is an `aria-live="polite"` region (`RuntimeFooter.tsx:63-65`), but it announces only the **no-spend label** (`{noSpend ? noSpendLabel : ''}`), not the settled TOKENS/CACHE/COST numeric cluster the spec's AC-6 describes (a `role="status" aria-live="polite" aria-atomic` wrapper around the three numeric instruments). The numeric instruments are not wrapped in a status region. The gauge keeps `role=progressbar` + reduced-motion (`ContextBudgetGauge.tsx:62-76`). So the a11y intent is partially met (polite, settled — the no-spend state) but the numeric-cluster live announcement is not implemented.
+- **i18n `footer.noSpend`: PRESENT in en+it** (`web/src/i18n/resources.ts:208` en "Local reply - no model spend", `:465` it "Risposta locale - nessun costo modello"). AC-8 met.
+- **Formatting contract (TOKENS/CACHE/COST): IMPLEMENTED.** `formatTokens` (k/M, `footerMetrics.ts:98-106`), `cacheHitPercent` (/0 → undefined → "—", `:90-95`), `formatCost` (<$1 → 4dp, ≥$1 → 2dp, undefined → "—", `:117-121`). Per-turn + Session columns rendered by the `Metric` component (`RuntimeFooter.tsx:109-123`).
+
+### Closed in the 2026-06-18 implementation pass (TDD; working tree, uncommitted)
+
+- **AC-5 unit test — DONE.** `web/src/chat/__tests__/ExternalStoreChat.test.tsx` now spies the provided `QueryClient.invalidateQueries` and asserts the `[CONVERSATION_KEY, id]` invalidation fires on turn completion (regression guard for the inline-seam behaviour; the seam itself was left as-is, no production change).
+- **AC-6 numeric-cluster `role=status` region — DONE.** `RuntimeFooter.tsx` now wraps the TOKENS/CACHE/COST cluster in a `role="status" aria-live="polite" aria-atomic="true"` region fed by `useSettledCluster`, which latches the last **settled** snapshot so a streaming turn never announces per-frame; the gauge was moved OUTSIDE the region so its live fill stays quiet. Test asserts both the region presence and settled-only announcement.
+- **AC-7 mobile disclosure — DONE.** `RuntimeFooter.tsx` adds an `sm:hidden` compact summary button (Session cost + context %) with `aria-expanded`/`aria-controls` that expands the full instrument trio (`hidden` → `sm:flex`); one text-row tall. Test asserts the control + toggle. (Minor a11y nicety deferred: an explicit `t('footer.toggleDetail')` aria-label — skipped only to avoid touching the parallel-session-hot `resources.ts`; the button is already named by its visible text + `aria-expanded`.)
+- Type role aligned: footer captions moved `0.625rem` → 03 Micro `0.6875rem`.
+
+### Still pending / not done
+
+- **`useInvalidateConversation` helper** (`useConversations.ts`, spec marked *optional*): not added — invalidation lives inline in `ExternalStoreChat` (the accepted seam).
+
+### Factual drift corrected against the spec body
+
+- The spec's §4 file-target table and the Root-Cause "precise fix #3" prescribe wiring invalidation via an `onTurnComplete` seam in `ExternalStoreChat` → `queryClient.invalidateQueries([CONVERSATION_KEY])` **in AppShell**. The shipped code instead invalidates **inside `ExternalStoreChat`** (`invalidateRuntimeReads`, `:83-90`); AppShell carries no `onTurnComplete` handler and no invalidation call. Same outcome, different owner. Inline `> **Impl note**` annotations record the now-false body claims at their sites.
 
 ---
 
@@ -72,6 +116,7 @@ The unit test never caught it because the fixture STATE_DELTA carries `prompt_to
 - **#1 (primary):** the fast-path has genuinely-zero token usage; rendering "0/—/—" is *arithmetically honest* but *operator-confusing*. Fix at the **presentation boundary**, not the data: when a turn carries usage but every token field is 0 AND no cost (a "no-spend turn" — fast-path, cache-only, or 0-usage provider), render the metrics as **`—` ("no spend")** rather than a bare `0`, and surface a one-line affordance (`footer.noSpend` → "Local reply — no model spend"). Do NOT fabricate non-zero numbers. Keep the Session seed authoritative for cumulative spend. (Backend stays as-is; the fast-path correctly reports zero.)
 - **#2:** add `events.EventTypeStateDelta` (`"STATE_DELTA"`, confirmed against the AG-UI SDK enum `pkg/core/events/events.go:24`) to `isLifecycleFrame` (`server.go:366`) so the usage frame is delivered via the blocking-but-abortable send, never dropped. It is low-volume (one per turn) so it does not threaten the no-block invariant in practice; the terminal usage frame is as load-bearing as RUN_FINISHED for the footer.
 - **#3:** invalidate `[CONVERSATION_KEY, threadId]` (and `[CONVERSATION_ROT_EVENTS_KEY, threadId]`) when a turn completes, so the persisted Session/gauge seed refreshes. Wire it on the `onUsage`/turn-finished seam in `ExternalStoreChat` (or via an `onTurnComplete` callback to AppShell), guarded so it fires once per finished turn, not per streamed frame.
+  > **Impl note (2026-06-18):** SHIPPED as the first variant (inside `ExternalStoreChat`), not the AppShell callback. `invalidateRuntimeReads` (`web/src/chat/ExternalStoreChat.tsx:83-90`) invalidates both keys in the `finally` of `onNew`/`foldReRun`/resume-drive (`:162,:201,:247`) — once per finished turn. AppShell has no `onTurnComplete` handler.
 
 ### The failing test that reproduces the primary bug
 
@@ -185,6 +230,8 @@ The footer is a *fixed bottom row* in the AppShell grid; on narrow screens the c
 | `web/src/chat/ExternalStoreChat.tsx` | add an `onTurnComplete` seam fired once at `finally`/RUN_FINISHED so AppShell can invalidate the conversation query (break #3). |
 | `web/src/AppShell.tsx` | on `onTurnComplete`, `queryClient.invalidateQueries([CONVERSATION_KEY, threadId])` + rot-events; keep the existing thread-switch `setUsage(undefined)` reset. |
 | `web/src/conversations/useConversations.ts` | (optional) export a `useInvalidateConversation(id)` helper to keep AppShell thin. |
+
+> **Impl note (2026-06-18):** Actual implementation differs from three rows above. (a) `ContextBudgetGauge.tsx` thresholds are correct (70/90, `gaugeTier` → `bg-danger`/`bg-warning`/`bg-accent`) but the constant kept its legacy name `CONTEXT_NEAR_FULL_PERCENT = 70` (`footerMetrics.ts:133`); the gauge track is `bg-surface-2`, not `bg-surface-3`. (b) There is no `onTurnComplete` seam: invalidation is done inline in `ExternalStoreChat.tsx` (`invalidateRuntimeReads`, `:83-90`), not delegated to AppShell. (c) `AppShell.tsx` carries no invalidation call and (d) no `useInvalidateConversation` helper was added.
 | `web/src/i18n/resources.ts` | add `footer.noSpend` to **both** `en` and `it` bundles; rebuild `internal/webui/dist` after. |
 
 ### Acceptance criteria
@@ -194,8 +241,11 @@ The footer is a *fixed bottom row* in the AppShell grid; on narrow screens the c
 3. **AC-3 (opening an existing conversation shows persisted totals):** mounting the footer with a non-empty `conversationId` and a stubbed `GET /api/conversations/{id}` returning `Total*` seeds the Session column from persistence with no live turn. (unit: RuntimeFooter — extends the existing "seeds from aggregate" case to the idle, `usage:undefined` path.)
 4. **AC-4 (no dropped usage frame):** the SSE pump never drops STATE_DELTA — `isLifecycleFrame(EventTypeStateData) == true`. (Go unit: `server_test.go`.)
 5. **AC-5 (Session refresh):** after a turn completes, `[CONVERSATION_KEY, id]` is invalidated exactly once. (unit: ExternalStoreChat with a spy queryClient.)
+   > **Impl note (2026-06-18): BEHAVIOUR SHIPPED, TEST MISSING.** Invalidation fires once per finished turn (`ExternalStoreChat.tsx:83-90,162,201,247`), but no test asserts it — `grep invalidat web/src/chat/__tests__/ExternalStoreChat.test.tsx` returns nothing. The regression guard this AC requires does not exist.
 6. **AC-6 (a11y):** the numeric cluster is a `role=status aria-live=polite aria-atomic` region; the gauge keeps `role=progressbar`+`aria-valuenow`; reduced-motion disables the fill transition. (unit + axe smoke.)
+   > **Impl note (2026-06-18): PARTIAL.** Gauge `role=progressbar`+`aria-valuenow`+reduced-motion are present (`ContextBudgetGauge.tsx:62-76`). But the only `aria-live="polite"` region announces the **no-spend label**, not the TOKENS/CACHE/COST numeric cluster (`RuntimeFooter.tsx:63-65`); the numeric instruments are not wrapped in a `role=status aria-atomic` region. This AC is not fully met.
 7. **AC-7 (mobile):** below `sm` the footer collapses to one line + disclosure and does not exceed one text-row height. (unit: media-query class assertion / Playwright viewport.)
+   > **Impl note (2026-06-18): NOT DONE.** `RuntimeFooter.tsx:58-95` is a single `flex flex-wrap` bar with no `<details>`/tap-to-expand disclosure and no `sm`-breakpoint collapse. `flex-wrap` reflows on narrow widths but the explicit one-line mobile contract is unimplemented.
 8. **AC-8 (i18n):** `footer.noSpend` present in en+it; no missing-key warning. (unit.)
 9. **AC-9 (coverage):** owned footer surface ≥85% statements/branches/functions/lines (vitest threshold already 85, must stay green); backend touched files keep the ≥85% floor.
 10. **AC-10 (3-tier gauge):** `gaugeTier(percent)` returns `normal`/`near`/`critical` at the `<70` / `[70,90)` / `≥90` boundaries (incl. the `69.9/70/89.9/90` edges), and the gauge applies `bg-accent`/`bg-warning`/`bg-danger` respectively — no raw hex, the fill class resolves through 03's tokens; the threshold figures appear in the gauge `aria-label` so severity is conveyed without colour. (unit: footerMetrics table test for the helper + RuntimeFooter render assertion for the class.)

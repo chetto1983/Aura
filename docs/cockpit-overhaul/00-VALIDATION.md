@@ -448,7 +448,8 @@ fixed and gated); completeness rose 9.0→9.5 (gauge incorporated). The verified
   `GetByToken(ctx, hashedToken string) (*models.Session, error)`; `plugins/session/hooks.go:73-86` does
   exactly hash→`GetByToken`→`ExpiresAt.Before(now)`. The spec's claim that there is no single
   "validate-raw-cookie" convenience and the seam must hash first is accurate. **No repository fallback
-  needed; §9 file targets unchanged.** Settled at spec time (only build-time OQ-1/OQ-2 remain).
+  needed; §9 file targets unchanged.** Settled at spec time; the later Implementation Progress section records
+  that OQ-1/OQ-2 are now resolved/measured by M0.
 - ✅ **TOTP-input a11y checklist present** — new **§4.2.1** is a full hard contract on `TwoFactorPage`:
   `type=text` + **`inputmode="numeric"`** + **`autocomplete="one-time-code"`** + `maxlength=8` + `pattern` +
   `aria-label` + autofocus + paste-handling + **≥16px** anti-zoom; error region
@@ -458,7 +459,8 @@ fixed and gated); completeness rose 9.0→9.5 (gauge incorporated). The verified
   06 agent's "zero-match" claim is FALSE (parallel-write race, settled below).**
 
 **New gate score (min-of-rubric): 9.5 → PASS.** (Self-claims 9.7; the gate min is 9.5 — STRIDE residuals
-and the two genuine build-time gates OQ-1/OQ-2 sit at 9.5, which is honest and clears the bar.) Completeness
+and, at spec-review time, the two genuine build-time gates OQ-1/OQ-2 sat at 9.5; the later Implementation
+Progress section records their M0 resolution/measurement.) Completeness
 rose 8.5→9.5 (stubs gone, central seam proven callable, TOTP a11y added).
 
 ### 06 — Candidates Eval
@@ -528,3 +530,88 @@ only REVISE**, and its sole defect is a **stale cross-reference** (it under-repo
 §4.2.1 + AC-17`, drop the false grep-claim) at leisure, and proceed to `/gsd-plan-phase` on the dispatch
 order 03 → 04 → 02 → 01 → 05. The parallel-authorship drift the round-1 review flagged is closed; the one
 residual is a reporting artifact of the same parallelism, not a design gap.
+
+## Implementation Progress (2026-06-17)
+
+The spec set has moved from plan-ready to implementation-in-progress on the Authula track:
+
+- `d3aee82d feat(authula): M0 dependency + migration 0019 isolated authula schema`
+  - Authula v1.11.0 dependency added.
+  - `0019_authula_schema` creates the isolated `authula` schema, grants runtime create/use, pre-creates `pgcrypto`, and adds `aura.identity_auth_links`.
+  - `TestMigrate0019_AuthulaSchemaAndLink` validates schema/grant/link/down-up behavior on a throwaway DB.
+- `e3541f15 feat(authula): M1/M2 embedded provider + A2 session-validate seam (flag-gated)`
+  - `internal/webauth` now constructs the embedded Authula provider, hardens the cookie/CSRF settings, maps Authula user IDs to Aura identities, and validates Authula session cookies through the A2 seam.
+  - `internal/agui.AuthDeps` now has `AuthBasePath` and `SessionValidator`, preserving the existing `principalKey{}` + `RequireCapability` contract.
+  - `AURA_WEB_AUTH_PROVIDER=passphrase` remains the default rollback path; `authula` is opt-in.
+
+Validation performed after these commits:
+
+- PASS: `CGO_ENABLED=0 go test ./internal/webauth ./internal/agui ./cmd/aura ./internal/config -count=1`
+- PASS: `go test -tags db_integration ./internal/db -run TestMigrate0019 -count=1`
+- PASS: `CGO_ENABLED=0 go build ./cmd/aura`
+
+Resolved 05 open questions:
+
+- OQ-1 toolchain is resolved: local toolchain is `go1.26.4 windows/amd64`.
+- OQ-2 binary size is measured: `origin/master` (`05ba0e1d`) builds to `45,118,464` bytes; current Authula tree builds to `76,047,360` bytes (`+30,928,896`, about 29.5 MiB).
+
+Known next gates:
+
+- Decide and implement the first-run operator enrollment path (`aura auth init` vs setup-page flow).
+- The SPA Authula login integration is now implemented and validated in unit/rendered smoke tests. Live cutover/rollback smoke is blocked until the Docker/Postgres runtime role credential mismatch is fixed and the Aura container is recreated from the current code.
+
+CI hardening added in this forward step:
+
+- `.github/workflows/ci.yml` runs the Authula focused no-CGO seam test.
+- The Windows unit lane pins `CGO_ENABLED=0`.
+- The db integration lane runs an explicit `TestMigrate0019` drill.
+
+Forward fixes added after the ledger update:
+
+- `/auth/*` pre-session reachability is now covered by `TestServeWebuiAuthulaSubtreePublic`.
+- `AURA_AUTHULA_OPERATOR_IDENTITY` is now honored by the Authula web-auth identity resolver; passphrase mode still uses `local`.
+
+---
+
+## Cross-Spec Implementation Reconciliation (2026-06-18)
+
+The set has moved past the Authula track: the cockpit UI overhaul commit `fc77e4cb feat(cockpit):
+overhaul shell and chat lifecycle` (2026-06-17) implemented large parts of specs **01–04**, and a
+further **uncommitted working-tree layer** (~1662 insertions across 25 files) implements the Authula
+SPA login. All six specs were re-read in full and reconciled against the live code; **each now carries
+its own `## Implementation Ledger (2026-06-18)`** with per-file-target verdicts and file:line evidence.
+This section is the umbrella synthesis. Evidence was read from `web/src/**`, `internal/agui/auth.go`,
+`cmd/aura/serve_*.go`, `web/tokens/tokens.json`, and `web/index.html`.
+
+| Spec | Spec gate | Implementation status (2026-06-18) | Headline reconciliation |
+|---|---|---|---|
+| **01 Chat Lane** | 9.5 PASS | **Partial + architectural deviation** | Canonical assistant-ui `Thread` split (`ChatLane`/`useAuraChatRuntime`/`messages/*`/`ThreadWelcome`/`ThreadScrollToBottom`) was **NOT built**; `ExternalStoreChat.tsx` was kept + enhanced in place. The markdown **sanitization** security upgrade shipped (`MarkdownText.tsx`+`markdownSanitize.ts`). Tool-card enrichment **partial** (status-tint + auto-expand-running yes; elapsed/subagent-rows/auto-collapse no). No scroll management, no streaming `●` cursor, no `.shine`, no provider-hoist/composer-in-dock. |
+| **02 Shell/Sidebar** | 9.5 PASS | **Largely implemented, 06 mobile adopts simplified** | The `100svh` 3-track grid (fixes the §0 collapse/burial bug) + real mode nav (the inert-`<span>` defect is gone) + portaled drawers shipped. But the **380px chat-lane floor was NOT built**, `useEdgeSwipe.ts` is a coarse pointer check missing the gesture contract, the **intent-restore reducer was NOT built** (`useSurfaceIntent.ts` repurposed to persist the mode), the drawer is hand-rolled (not native `<dialog>`), and PWA is framework-default (not the §5b authored layer). |
+| **03 Design System** | 9.5 PASS (anchor) | **Infrastructure landed; blue palette ACCEPTED (operator decision 2026-06-18)** | The `tokens.json`→`generate-theme.mjs` pipeline, all new token **names**, and the three font families (Fraunces/Hanken Grotesk/Commit Mono) shipped. The palette shipped as a **logo-matched blue theme** (`#1F3760` accent, `gemini-*` ramps) + a `light` key — and the operator **accepted it** ("color is ok like in repo, respect the logo"). The "Editorial-Graphite" warm-gold (`#C8A86A`) values in the spec are **superseded by decision**, not a defect. Remaining follow-ups are mechanical only: font byte-budget breach (~368 KB vs ≤220 KB; Commit Mono un-subset `.otf`) + WCAG contrast re-proof against the shipped blue. |
+| **04 Footer Telemetry** | 9.5 PASS | **Implemented** | All three breaks fixed — incl. the load-bearing one-line backend `isLifecycleFrame`+`EventTypeStateDelta` add (`internal/agui/server.go:382`). The **3-tier gauge** (70/90 → accent/warning/danger) shipped (`footerMetrics.ts` `gaugeTier`). Footer source is theme-clean (no dead blue hex). Gaps at the periphery: AC-5 invalidation moved to a different seam + no test; AC-6 live region partial; AC-7 mobile disclosure not built. |
+| **05 Authula Auth** | 9.5 PASS | **In progress — committed M0/M1/M2 + uncommitted SPA login** | `d3aee82d` (M0 migration 0019) + `e3541f15` (M1/M2 provider + A2 seam) are committed. The **full SPA login replacement is implemented but UNCOMMITTED**: `auth.go` `PublicRoute` seam, `/api/auth/config` bootstrap + CSRF minting, `LoginPage.tsx` email/password→TOTP→backup-code flow, unit + TOTP-generating e2e harness. Remaining: first-run operator enrollment UX + live cutover smoke. |
+| **06 Candidates Eval** | 9.5 PASS | **Research doc + build-status pass** | §5 adopts now carry a second build-status axis. Of the high-value folds: ~half shipped (markdown-sanitize, theme-color sync, 3-tier gauge, TOTP a11y, approval badge), a third partial (tool-card enrichment, swipe), and several folded-but-never-built (380px floor, intent-restore, `.shine`, PWA). "Folded into the spec text" overstated what is in the binary; the new axis makes that explicit. |
+
+**2026-06-18 Authula cutover update:** the SPA login replacement has now been validated by unit tests, Go seam tests, production build, and rendered Playwright smoke on desktop/mobile. Live Docker cutover is blocked, not passed: the active `aura:local` container still lacks `/api/auth/config` (`401` on `127.0.0.1:9080`), `/healthz` returns `503`, and logs show the runtime Postgres role failing authentication. Fix the Docker/Postgres role credential mismatch and recreate the Aura image before the real enrolled-operator cutover/rollback smoke.
+
+**Headline findings (operator-relevant):**
+
+1. **The design anchor's visual identity changed — and is now ACCEPTED.** Spec 03 — the PASS anchor
+   the whole set hangs on — specified *Editorial Graphite* (warm graphite + a single warm-gold accent).
+   The implementation shipped a **logo-matched blue** palette instead. **Operator decision 2026-06-18:
+   the repo color is correct and respects the logo** — so the blue palette (in `web/tokens/tokens.json`,
+   the source of truth) is the approved design and 03's warm-gold values are superseded by decision. The
+   pipeline + token names + fonts are faithful. No re-skin owed; the only remaining chromatic chore is a
+   WCAG contrast re-proof against the shipped blue (plus the font byte-budget trim).
+2. **Spec 01 took the lighter path.** The canonical assistant-ui Thread rebuild was not built; the
+   existing `ExternalStoreChat` was enhanced in place. The real security win (sanitized markdown over
+   untrusted LLM output) landed; the chat-feel upgrades (scroll anchoring, streaming cursor, shimmer)
+   did not. Decide whether the in-place shape is now the accepted contract or the rebuild is still owed.
+3. **A large frontend + auth layer is uncommitted.** ~25 modified/untracked files (`LoginPage.tsx`
+   +373, `serve_webui.go`, `auth.go`, e2e `auth.ts`, i18n, a rebuilt `internal/webui/dist`) sit in the
+   working tree — an in-flight implementation pass. **Commit it and re-run the CI gates green** before
+   treating any of these ledgers as on-disk history.
+
+> These ledgers record reality as of 2026-06-18; they do **not** weaken any acceptance criterion. The
+> specs remain the contract — where code diverged, the divergence is annotated, not the criterion
+> relaxed. Re-run each spec's ACs after the working tree is committed.

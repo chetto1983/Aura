@@ -1,7 +1,9 @@
 ---
 phase: 25-chat-approval-center
 verified: 2026-06-17T00:00:00Z
-status: human_needed
+status: closed-carried-forward
+closed: 2026-06-18
+closure_note: "Closed on 8/8 automated verification; the 6 live human-verification items are carried into the cockpit-overhaul live cutover (the overhaul reworked chat/footer/auth — see docs/cockpit-overhaul/). See 25-HUMAN-UAT.md."
 score: 8/8 must-haves verified
 overrides_applied: 0
 human_verification:

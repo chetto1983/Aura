@@ -34,9 +34,13 @@ services:
       AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
       # WEB-02 GuardWebBind: the 0.0.0.0:9080 cockpit bind boots only when a web-auth
       # secret is configured (in-binary login, Plan 24-03) or a reverse proxy is trusted.
-      # Pass both knobs through from .env; AURA_WEB_AUTH_SECRET activates RequireAuth.
+      # Pass the auth knobs through from .env; AURA_WEB_AUTH_SECRET activates passphrase auth.
       AURA_WEB_AUTH_SECRET: ${AURA_WEB_AUTH_SECRET:-}
       AURA_WEB_TRUST_PROXY: ${AURA_WEB_TRUST_PROXY:-false}
+      AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-passphrase}
+      AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}
+      AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:-}
+      AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-local}
       AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable

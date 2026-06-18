@@ -17,6 +17,34 @@ function submitForm(container: HTMLElement) {
   fireEvent.submit(form);
 }
 
+function authulaConfigResponse() {
+  return Promise.resolve(
+    new Response(
+      JSON.stringify({
+        provider: 'authula',
+        auth_base_path: '/auth',
+        csrf_cookie_name: '__Host-authula_csrf_token',
+        csrf_header_name: 'X-AUTHULA-CSRF-TOKEN',
+        csrf_token: 'csrf-token',
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-AUTHULA-CSRF-TOKEN': 'csrf-token',
+        },
+      },
+    ),
+  );
+}
+
+function requireRequestBody(opts: RequestInit): string {
+  if (typeof opts.body !== 'string') {
+    throw new TypeError('expected request body to be a JSON string');
+  }
+  return opts.body;
+}
+
 describe('LoginPage', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
@@ -33,6 +61,15 @@ describe('LoginPage', () => {
     expect(field.getAttribute('aria-invalid')).toBe(null);
     // The CTA keeps the name "Sign in" (frontend-design: an action keeps its name).
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+  });
+
+  it('renders a decorative animated particle-network background behind the form', () => {
+    const { container } = renderLogin();
+    const background = screen.getByTestId('login-animated-background');
+    expect(background.getAttribute('aria-hidden')).toBe('true');
+    expect(background.className).toContain('pointer-events-none');
+    expect(container.querySelectorAll('[data-login-particle]').length).toBeGreaterThan(6);
+    expect(container.querySelectorAll('[data-login-link]').length).toBeGreaterThan(4);
   });
 
   it('toggles passphrase visibility via the show/hide button', () => {
@@ -110,7 +147,13 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    const [url, opts] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const loginCall = calls.find(([url]) => url === '/login');
+    expect(loginCall).toBeTruthy();
+    if (!loginCall) {
+      throw new Error('missing /login fetch call');
+    }
+    const [url, opts] = loginCall;
     expect(url).toBe('/login');
     expect(opts.method).toBe('POST');
     expect(opts.credentials).toBe('same-origin');
@@ -159,5 +202,99 @@ describe('LoginPage', () => {
     expect(alert.textContent).toBe(
       "Couldn't reach Aura. Check the server is running and try again.",
     );
+  });
+
+  it('renders Authula email/password fields when the auth config selects Authula', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => authulaConfigResponse()),
+    );
+
+    renderLogin();
+
+    expect(await screen.findByLabelText('Operator email')).toBeTruthy();
+    expect(screen.getByLabelText('Password')).toBeTruthy();
+    expect(screen.queryByLabelText('Operator passphrase')).toBe(null);
+  });
+
+  it('POSTs Authula credentials as JSON with the CSRF token and advances to TOTP', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ totp_redirect: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderLogin();
+
+    fireEvent.change(await screen.findByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
+    submitForm(container);
+
+    const codeField = await screen.findByLabelText('Verification code');
+    expect((codeField as HTMLInputElement).value).toBe('');
+    const [url, opts] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(url).toBe('/auth/email-password/sign-in');
+    expect(opts.method).toBe('POST');
+    expect(opts.credentials).toBe('same-origin');
+    expect(opts.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      'X-AUTHULA-CSRF-TOKEN': 'csrf-token',
+    });
+    expect(JSON.parse(requireRequestBody(opts))).toEqual({
+      email: 'operator@example.com',
+      password: 'correct-horse',
+    });
+  });
+
+  it('POSTs the Authula TOTP code and navigates to the cockpit', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ totp_redirect: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ session: { id: 's1' } }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<div>cockpit home</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.change(await screen.findByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
+
+    fireEvent.change(await screen.findByLabelText('Verification code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
+
+    expect(await screen.findByText('cockpit home')).toBeTruthy();
+    const [url, opts] = fetchMock.mock.calls[2] as unknown as [string, RequestInit];
+    expect(url).toBe('/auth/totp/verify');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers).toMatchObject({ 'X-AUTHULA-CSRF-TOKEN': 'csrf-token' });
+    expect(JSON.parse(requireRequestBody(opts))).toEqual({ code: '123456', trust_device: false });
   });
 });

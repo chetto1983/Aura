@@ -61,6 +61,7 @@ export default tseslint.config(
     files: [
       '**/*.config.{ts,js,mjs}',
       'tokens/*.mjs',
+      'scripts/*.mjs',
       'vite.config.ts',
       'vitest.config.ts',
       'playwright.config.ts',
@@ -68,7 +69,7 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    files: ['**/*.config.{ts,js,mjs}', 'tokens/*.mjs'],
+    files: ['**/*.config.{ts,js,mjs}', 'tokens/*.mjs', 'scripts/*.mjs'],
     languageOptions: {
       globals: { ...globals.node },
       parserOptions: { projectService: false },

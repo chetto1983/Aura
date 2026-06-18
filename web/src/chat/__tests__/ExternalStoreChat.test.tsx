@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ExternalStoreChat } from '../ExternalStoreChat';
+import { CONVERSATION_KEY } from '../../conversations/useConversations';
 
 // Build a single SSE wire body from raw AG-UI frame objects (the same shapes the
 // Go translator emits). Used to stub /agent/run for the streaming-path tests.
@@ -32,6 +33,14 @@ function sendPrompt(text: string): void {
 function renderChat(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+// renderChatWithClient exposes the QueryClient so a test can spy on the React
+// Query cache invalidation that fires once a turn finishes (AC-5).
+function renderChatWithClient(ui: ReactElement): { client: QueryClient } {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return { client };
 }
 
 describe('ExternalStoreChat (CHAT-01)', () => {
@@ -175,6 +184,54 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     // The fetch carried an AbortSignal that was triggered.
     const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  // AC-5: once a turn completes (RUN_FINISHED → onNew finally), the conversation
+  // React-Query read is invalidated so the persisted Session totals refresh.
+  it('invalidates the conversation query key when a turn completes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          sseResponse([
+            { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
+            { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
+            { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'Done.' },
+            { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
+            {
+              type: 'STATE_DELTA',
+              delta: [{ op: 'replace', path: '/prompt_tokens', value: 42 }],
+            },
+            {
+              type: 'RUN_FINISHED',
+              threadId: 'conv-1',
+              runId: 'run-1',
+              outcome: { type: 'success' },
+            },
+          ]),
+        ),
+      ),
+    );
+
+    const { client } = renderChatWithClient(<ExternalStoreChat threadId="conv-1" />);
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    sendPrompt('any task');
+
+    await waitFor(() => {
+      expect(screen.getByText('Done.')).toBeTruthy();
+    });
+
+    // The conversation aggregate read for THIS thread is invalidated once the
+    // turn settles (the persisted Session seed refreshes).
+    await waitFor(() => {
+      const invalidatedConversation = invalidateSpy.mock.calls.some(
+        (call) =>
+          Array.isArray((call[0] as { queryKey?: unknown[] } | undefined)?.queryKey) &&
+          (call[0] as { queryKey: unknown[] }).queryKey[0] === CONVERSATION_KEY &&
+          (call[0] as { queryKey: unknown[] }).queryKey[1] === 'conv-1',
+      );
+      expect(invalidatedConversation).toBe(true);
+    });
   });
 
   it('surfaces an incomplete turn when the stream errors', async () => {

@@ -30,8 +30,13 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -44,6 +49,12 @@ import (
 // a session exists). Kept here as the single source so the mount, the public-path
 // marking, and the fallback exclusion cannot drift.
 const authBasePath = "/auth"
+
+// authConfigRoute is the tiny public bootstrap contract the SPA login page reads to
+// choose between the legacy passphrase form and the Authula email/password + TOTP flow.
+// It reveals no secret material; Authula mode also mints the double-submit CSRF token
+// the next unsafe /auth/* request must echo.
+const authConfigRoute = "/api/auth/config"
 
 // aguiRoutePrefixes are the route patterns the AG-UI gateway owns. Registered on
 // the parent mux ahead of the "/" catch-all, Go 1.22 ServeMux precedence keeps them
@@ -143,21 +154,27 @@ const approvalsResolveRoute = "POST /api/approvals/{token}/resolve"
 // gate fires AFTER RequireAuth has bound the principal. When no secret is configured
 // (loopback dev) RequireAuth is a no-op pass-through and the daemon serves exactly as
 // before (the Plan-01 boot guard confines an unconfigured secret to loopback).
-func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvider *webauth.Provider) (http.Handler, error) {
+type credentialProvider interface {
+	Handler() http.Handler
+}
+
+func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvider credentialProvider) (http.Handler, error) {
 	static, err := webui.Handler(fallbackExcludedPrefixes())
 	if err != nil {
 		return nil, fmt.Errorf("webui handler: %w", err)
 	}
 	mux := http.NewServeMux()
+	authulaEnabled := credentialProviderConfigured(authulaProvider)
 	// The embedded Authula provider (Option A2) serves all credential flows under
 	// /auth/* (login, totp/verify, logout, csrf token issuance). Registered as a
 	// subtree ahead of "/", it wins Go 1.22 longest-pattern precedence over the embed
 	// catch-all; RequireAuth marks the prefix public (AuthBasePath below) so the routes
 	// are reachable before a session exists. Mounted only when the flag selected Authula.
-	if authulaProvider != nil {
+	if authulaEnabled {
 		mux.Handle(authBasePath+"/", authulaProvider.Handler())
 		auth.AuthBasePath = authBasePath
 	}
+	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler(authulaEnabled))
 	// The mutating route is interposed with the capability gate FIRST: "POST /agent/run"
 	// is a more specific pattern than the bare "/agent/run" the prefix loop registers, so
 	// Go 1.22 longest-pattern precedence routes the POST through RequireCapability →
@@ -209,8 +226,80 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// the embedded-asset truth, so wire its predicate into the gate rather than letting
 	// the auth layer guess asset paths.
 	auth.PublicAsset = webui.IsPublicAsset
+	previousPublicRoute := auth.PublicRoute
+	auth.PublicRoute = func(r *http.Request) bool {
+		if r.Method == http.MethodGet && r.URL.Path == authConfigRoute {
+			return true
+		}
+		return previousPublicRoute != nil && previousPublicRoute(r)
+	}
 	// Wrap the WHOLE parent mux in the WEB-03 whole-origin gate (D-03). The public-path
 	// exceptions are handled inside RequireAuth; a no-op pass-through when no secret is
 	// configured keeps loopback dev unauthenticated.
 	return agui.RequireAuth(mux, auth), nil
+}
+
+func credentialProviderConfigured(provider credentialProvider) bool {
+	if provider == nil {
+		return false
+	}
+	value := reflect.ValueOf(provider)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return !value.IsNil()
+	default:
+		return true
+	}
+}
+
+type frontendAuthConfig struct {
+	Provider       string `json:"provider"`
+	AuthBasePath   string `json:"auth_base_path,omitempty"`
+	CSRFCookieName string `json:"csrf_cookie_name,omitempty"`
+	CSRFHeaderName string `json:"csrf_header_name,omitempty"`
+	CSRFToken      string `json:"csrf_token,omitempty"`
+}
+
+func newAuthConfigHandler(authulaEnabled bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+
+		cfg := frontendAuthConfig{Provider: "passphrase"}
+		if authulaEnabled {
+			token, err := newCSRFToken()
+			if err != nil {
+				http.Error(w, "csrf token", http.StatusInternalServerError)
+				return
+			}
+			cfg = frontendAuthConfig{
+				Provider:       "authula",
+				AuthBasePath:   authBasePath,
+				CSRFCookieName: webauth.CSRFCookieName,
+				CSRFHeaderName: webauth.CSRFHeaderName,
+				CSRFToken:      token,
+			}
+			w.Header().Set(webauth.CSRFHeaderName, token)
+			http.SetCookie(w, &http.Cookie{
+				Name:     webauth.CSRFCookieName,
+				Value:    token,
+				Path:     "/",
+				MaxAge:   int((24 * time.Hour).Seconds()),
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteStrictMode,
+			})
+		}
+		if err := json.NewEncoder(w).Encode(cfg); err != nil {
+			http.Error(w, "auth config", http.StatusInternalServerError)
+		}
+	}
+}
+
+func newCSRFToken() (string, error) {
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }

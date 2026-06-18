@@ -43,16 +43,24 @@
 
 Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md`. The operator directive (2026-06-15) is to **stand up the industrial frontend foundation FIRST** — research-locked toolchain, linter/formatter CI gate, design-token dark-operator theme, brand, and the embedded build/test pipeline — before any cockpit feature code. Build order: harden the agent perimeter first (Phase 22), then the research-first frontend industrial foundation (Phase 23), then the serve/auth/health web host (Phase 24), then the Core-Value chat+approval loop (Phase 25), then the GAP-1 typed-display spine + router (Phase 26), then the self-contained graph explorer (Phase 27), then read-only governance + web onboarding (Phase 28), and finally the governance WRITE surfaces — MCP configuration + skills install/lifecycle (Phase 29), the highest-risk surfaces landing last after auth + the approval center + the read-only boards are proven. The `ui_control` operator-OS shell (SHELL) and scheduler write surfaces (GOVW-03) are deferred to a follow-up milestone.
 
-- [x] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit so the web exposure lands on a hardened base (HARDEN-01..12) — all 5 plans executed + automated-green 2026-06-15 (AG-001..064 ledgered, none dropped); Gate-3 close awaits the operator Part-B live sign-off (coverage ≥85% / WSL quality / live stack — `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`)
+- [x] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit so the web exposure lands on a hardened base (HARDEN-01..12) — all 5 plans executed + automated-green 2026-06-15 (AG-001..064 ledgered, none dropped); **Gate-3 CLOSED 2026-06-16** (operator Part-B live sign-off: B1 + B2 + B3 9/9 live rows, commit `28c1f7c7` — `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`)
 - [x] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06) (completed 2026-06-16)
 - [x] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
- (completed 2026-06-16)
+ (completed 2026-06-16) — _the GAP-2 HMAC passphrase cookie is being superseded by embedded **Authula** (flag-gated, default still passphrase) in the post-25 cockpit overhaul — see `docs/cockpit-overhaul/05-authula-auth-SPEC.md`._
 
-- [x] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue + conversation branch trees (CHAT-01..05, APRV-01..03) (completed 2026-06-17)
+- [x] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue + conversation branch trees (CHAT-01..05, APRV-01..03) (completed 2026-06-17; 8/8 verified, 6 live UAT carried into the cockpit-overhaul live cutover) — _chat/footer/tool-cards enhanced in place by the post-25 cockpit overhaul — see `docs/cockpit-overhaul/{01,04}-*.md`._
 - [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
 - [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
 - [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03)
+
+> **Cockpit Overhaul (post-Phase-25, in progress — not a formal phase).** After Phase 25 closed, a
+> premium-bar overhaul reworked the Phase-23/24/25 surfaces in place: a logo-matched **blue** design
+> system (operator-accepted 2026-06-18, fonts + WCAG AA gate), a responsive shell (svh grid, drawers,
+> edge-swipe, intent-restore, 380px floor), chat/footer enrichment, and **Authula** embedded auth
+> (flag-gated, superseding the Phase-24 passphrase cookie). Specs + adversarial validation + per-spec
+> implementation ledgers: `docs/cockpit-overhaul/` (`00-VALIDATION.md` = umbrella). A large
+> frontend + auth layer is currently **uncommitted** in the working tree; commit + live cutover pending.
 
 ## Phase Details
 

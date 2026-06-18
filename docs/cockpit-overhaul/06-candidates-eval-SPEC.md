@@ -1,8 +1,8 @@
 # 06 — Candidate Reference-Project Evaluation SPEC
 
-> **Status:** COMPLETE — research trail; incorporation loop closed (see §5 dispositions).
+> **Status:** COMPLETE — research trail; incorporation loop closed (see §5 dispositions). **Implementation-status pass added 2026-06-18** — each §5 item now also carries a *build-status* tag (`→ SHIPPED` / `→ PARTIALLY SHIPPED` / `→ FOLDED but NOT YET BUILT` / `→ SHIPPED (uncommitted working tree)`), verified against the code at commit `fc77e4cb` (2026-06-17) + the uncommitted working-tree layer. See the new "Implementation Status of §5 Adopts" table below.
 > **Author:** Claude Code (repo survey + pattern extraction)
-> **Date:** 2026-06-17 (re-annotated 2026-06-17 to close the incorporation loop)
+> **Date:** 2026-06-17 (re-annotated 2026-06-17 to close the incorporation loop; implementation-status pass 2026-06-18)
 > **Phase:** Cockpit Overhaul (v1.0.0 Deep Search Web Cockpit) — sibling to specs 01–05
 >
 > **Incorporation status (the deliverable's whole point):** every §5 recommendation is now annotated
@@ -21,6 +21,51 @@
 > **Scope:** SPEC/research ONLY. No Aura code is modified by this document. It evaluates three
 > operator-flagged reference repos for *adoptable patterns* and tells sibling specs 01–05 exactly
 > what to revise. Evidence is cited as `path:line` from the local clones at `D:/tmp/{odysseus,elysia-frontend,openhuman}`.
+
+---
+
+## Implementation Status of §5 Adopts (2026-06-18)
+
+This table records a SECOND axis on top of §5's fold dispositions: of the items folded into the
+sibling specs, which were actually **built in code**. "Folded?" = the sibling SPEC TEXT incorporated
+the idea (§5's existing tags). "Built?" = real code exists. Evidence is `web/...` `file:line` read at
+HEAD (`fc77e4cb`) + the uncommitted working tree. Items 06 itself *deferred/skipped* are not "missing
+builds" — they were never meant to ship in this milestone.
+
+| Adopt | Target spec | Folded? | Built? | Evidence |
+|---|---|---|---|---|
+| E1 inline-citation rehype + CitationBubble | 01 §3.3 | Reconciled→DEFER Ph26 | **No (by design)** | not on the AG-UI wire; no `source` part — deferred to Phase 26 |
+| H1 tool-card enrichment (status-tint, auto-expand-running, elapsed, subagent rows) | 01 §3.5 | Yes | **Partial** | `ToolActivityCard.tsx:15-31` (tint maps), `:54-59` (auto-expand-running); NO elapsed/subagent (grep clean) |
+| E2 `.shine` streaming shimmer + Skeleton | 01 §3.2/§7 | Yes | **Skeleton only; `.shine` No** | grep `shine` in `web/src` → 0 matches |
+| Markdown sanitization (security upgrade) | 01 §3.3 | Yes | **Yes** | `MarkdownText.tsx:5-15` (rehype-sanitize + remark-gfm), `markdownSanitize.ts` schema |
+| E4 staggered empty-state reveal | 01 §7 | Deferred (no chips) | **N/A** | suggested-prompt chips not built (no backend starter prompts) |
+| H5 3-way approval vocabulary | 01 §3.6 | Deferred (>v1) | **No (by design)** | Answer/Decline/Cancel kept; 3-way is a protocol change |
+| H4 cross-thread approval badge idiom | 01 | Confirmed (no work) | **Yes (pre-existing)** | Phase-25 `ApprovalBadge`/`ApprovalList` (pulsing-dot + count) |
+| odysseus shimmer-until-loaded attachment | 01 | Skipped (out of scope) | **N/A** | attachments fenced out of 01 |
+| O1 380px chat-lane floor + 700px window floor | 02 §1.1b | Yes | **No** | grep `380`/`chat-lane-min`/`window-floor` in `web/src` → 0 matches |
+| O2 swipe gestures (horizontal-lock + preventDefault + exclude list) | 02 §3.1b | Yes | **Partial** | `useEdgeSwipe.ts` exists (coarse pointer up/down); missing preventDefault claim, `\|dx\|>\|dy\|` lock, scroll-owner exclude list |
+| O3 intent-aware restore | 02 §3.1c | Yes | **No (as specced)** | `useSurfaceIntent.ts` repurposed to persist the mode choice; no explicit-vs-swipe restore reducer |
+| O5 mobile-viewport hygiene kit (44px, safe-area, hover:none, anti-zoom) | 02 §2.4/§6/§7 | Yes | **Partial** | `index.html:7` viewport + 44px targets in components (`LoginPage.tsx:404`, `ToolActivityCard.tsx:88`); `hover:none`/`-webkit-overflow-scrolling` not centrally specced |
+| O6 PWA layer (manifest + SW) | 02 §5b | Yes (gated) | **No (default-only)** | framework-default service worker only; no §5b authored manifest/SW |
+| O8 `<meta name=theme-color>` sync | 03/02 | Deferred (consumer wired) | **Yes** | `web/index.html:9-10` (light/dark theme-color metas) |
+| Reduced-motion discipline | 03/01 | Already satisfied | **Yes** | `motion-reduce:` throughout (`ToolActivityCard.tsx:100`, `ContextBudgetGauge.tsx:74`) |
+| E6 relaxed line-height + thin scrollbars | 03/01 | Deferred | **unverified (out of pass scope)** | not spot-checked this pass |
+| H2 3-tier context gauge (70/90 → accent/warning/danger) | 04 §gauge + AC-10 | Yes | **Yes** | `footerMetrics.ts:131-140` `gaugeTier`; `ContextBudgetGauge.tsx:40-43` tier→fill |
+| O7 TOTP-input a11y checklist | 05 §4.2.1 + AC-17 | Yes | **Yes (uncommitted)** | `LoginPage.tsx:363-372` `inputMode=numeric` + `autocomplete=one-time-code`; `:396` `role=alert`; `:370` omit-when-valid `aria-invalid`; backup-code toggle `:382-391` — all in uncommitted working tree (committed `fc77e4cb` was passphrase-only) |
+
+**Theme note (operator-accepted, 2026-06-18):** O8 shipped, and the overall palette shipped as a
+logo-matched **blue** theme (`index.html:9-10` `#FDFCFC`/`#131314`; `LoginPage.tsx:266` blue logo shadow
+`rgb(26 115 232 …)`), **not** the Editorial-Graphite warm-gold the specs originally assumed. **The operator
+accepted the blue palette** ("color is ok like in repo, respect the logo"), so this is the approved design,
+not drift — 03/04's graphite values are superseded by decision. The token *names*
+(`bg`/`accent`/`warning`/`danger`) are theme-clean and the footer is value-clean (no dead blue hex); the
+*values* are the accepted blue. Elsewhere in this doc, read any "theme-drift / not graphite" phrasing as
+"the accepted blue palette, not the original graphite direction."
+
+**Headline:** of 06's HIGH-VALUE folded adopts, **fully shipped:** markdown-sanitization, O8 theme-color,
+H2 3-tier gauge, O7 TOTP a11y (uncommitted), H4 badge (pre-existing). **Partial:** H1 tool-card, O2 swipe,
+O5 viewport-kit. **Folded but NOT built:** O1 380px floor, O3 intent-aware restore (repurposed), O6 PWA,
+E2 `.shine`. The E1 citation pipeline and H5 3-way approval remain *deliberately deferred* (not gaps).
 
 ---
 
@@ -160,6 +205,10 @@ flag gates it; `:227, :258-261`). A `MutationObserver` on `body` class re-checks
 the empirical "a chat lane below this is unusable" threshold, and Aura's 02-shell `lg:` breakpoint logic
 should treat it as the chat-lane minimum.
 
+> **Impl note (2026-06-18):** folded into 02 §1.1b but **not yet built** — no `380` / `--chat-lane-min`
+> exists in `web/src` (grep clean). The shipped shell relies on raw breakpoints; the content-driven floor
+> is still a spec, not code.
+
 **(c) Touch gestures: swipe-to-open and swipe-to-close, with horizontal-lock disambiguation.**
 `_initChatSwipeToOpenSidebar()` (`sidebar-layout.js:489-567`) binds a **non-passive** `touchmove` on
 `document` (capture phase) that: ignores multi-touch and chip-drags; excludes areas owning their own
@@ -265,6 +314,12 @@ product (the operator explicitly wants the editorial direction locked, not user-
 multi-theme editor for v1.0.0.** The two *transferable* ideas: (i) the `<meta name="theme-color">`
 mobile-chrome sync (a 3-line PWA detail, §1.7); (ii) IF Aura ever ships a user theme editor post-v1.0.0,
 the *per-zone hover-highlight* + *Peek opacity* + *changed-only reset* interactions are the gold standard.
+
+> **Impl note (2026-06-18):** the O8 `<meta name="theme-color">` sync **did ship** (`web/index.html:9-10`),
+> but the cockpit's resolved palette shipped as a Gemini/Material **blue** theme (theme-color `#FDFCFC` /
+> `#131314`), **not** the "Editorial graphite (premium-calm)" this spec and its siblings assumed. Wherever
+> 06 says theme-color "matches the cockpit" / "graphite," read: the *mechanism* is built, the *graphite
+> values* are not what shipped.
 
 ### 1.7 PWA setup
 
@@ -651,6 +706,10 @@ confirmations + concrete details*; none reverse an existing decision.
    > images — both bugs fixed) as the **chosen Phase-26 reference** + the assistant-ui hovercard
    > primitive as the chrome. This resolves the citation-priority contradiction the validator flagged
    > (01-#3): the two specs no longer give a planner conflicting marching orders.
+   > **→ NOT YET BUILT (deferred to Phase 26, by design).** No citation pipeline exists in the cockpit:
+   > the AG-UI/SSE reducer emits no `source` part / source registry, so there are no backed `[n]` markers
+   > to chip. This is the documented disagreement, not a missing fold. Spot-checked: `MarkdownText.tsx`
+   > runs `remark-gfm + rehype-sanitize` only (no `rehypeCitations`).
 2. **Strengthen §3.5 raw tool-activity card (D-02) with openhuman's H1 details** (patterns only, GPL):
    status-tinted pill via Aura's `success/warning/danger` tokens (running→warning, ok→success,
    err→danger), **auto-expand the latest *running* tool entry** and collapse settled ones, show
@@ -664,6 +723,13 @@ confirmations + concrete details*; none reverse an existing decision.
    > and nested subagent/child rows for swarm fan-out (parent card with child status lines). The section
    > header was renamed to advertise "kept raw/XSS-safe AND enriched," so the previous "keep verbatim"
    > wording that silently dropped this adopt is gone. Cites `ToolTimelineBlock.tsx` as the reference.
+   > **→ PARTIALLY SHIPPED in fc77e4cb (`web/src/chat/ToolActivityCard.tsx`).** Built: the status-tinted
+   > pill + left-rule + dot mapped `running→warning` / `done→success` / `error→danger` via 03 tokens
+   > (`:15-31`), the XSS-safe raw `<pre>` (`:108-114`), and **auto-expand-while-running with settled
+   > entries collapsed** (`:54-59`, a `userToggled` ref gates manual override). NOT built: the
+   > `font-mono tabular-nums` **elapsed-time** readout, the **auto-collapse-on-settle**, and the **nested
+   > subagent/child rows** — grep for `elapsed`/`subagent`/`child`/`Date.now` in the card → 0 functional
+   > matches. So: tint + auto-expand-running YES; elapsed + child-rows + auto-collapse NO.
 3. **Add §3.2 streaming affordances (E2):** a CSS-only `.shine`-style shimmer on the "thinking…"/
    streaming-status text and a `<Skeleton>` shimmer before the first token — both gated by
    `motion-reduce:`. Keep the existing streaming caret; the shimmer is for the *status line*, not a
@@ -673,6 +739,9 @@ confirmations + concrete details*; none reverse an existing decision.
    > 01 §7's Streaming row adds the `.shine` shimmer on the `role="status"` running line **and** an
    > `AppSkeletons`-style `<Skeleton>` pre-first-token line (`role=status aria-busy`, graphite via 03
    > §7.2). All shimmer/pulse `motion-reduce:`-gated as specified.
+   > **→ PARTIALLY SHIPPED.** The Skeleton pre-first-token path exists in the cockpit; the `.shine`
+   > gradient-sweep utility does **NOT** — grep `shine` across `web/src` returns **0 matches**, so the
+   > streaming-status line ships without the shimmer flourish. Skeleton YES; `.shine` NO.
 4. **Add §7 empty-state staggered reveal (E4):** the empty/new-thread state's suggested-prompt buttons
    enter with a single orchestrated `staggerChildren` reveal (Motion), within Aura's existing motion
    budget; one page-load flourish, not scattered micro-interactions.
@@ -683,6 +752,9 @@ confirmations + concrete details*; none reverse an existing decision.
    > `staggerChildren` reveal over zero chips is nothing to build, so 01 correctly defers the stagger
    > until starter-prompt content exists rather than half-building it. Not a gap — a documented
    > dependency.
+   > **→ NOT BUILT (N/A — nothing to stagger).** Consistent with the defer: the suggested-prompt chips the
+   > stagger would animate are not built (no backend starter prompts), so there is no surface to apply the
+   > `staggerChildren` reveal to. Not a missing build.
 5. **Approval cards (D-03/05/06): adopt openhuman's 3-way decision vocabulary (H5, protocol only).**
    Where Aura today has Answer/Decline, evaluate adding **"Approve always for this tool (this session)"**
    alongside once-approve and decline, with redacted args shown and an audit entry — a cleaner HITL model
@@ -695,12 +767,17 @@ confirmations + concrete details*; none reverse an existing decision.
    > discipline. Recorded here as the *target shape* for a future approval-protocol milestone, exactly
    > as this item asked ("at minimum record the vocabulary"). The recommendation is consumed as a
    > deferred decision, not stranded.
+   > **→ NOT BUILT (by design, >v1.0.0).** The cockpit ships the binary Answer/Decline/Cancel vocabulary;
+   > the 3-way "Approve always for this tool" verb is a backend + AG-UI-protocol change that was never
+   > scoped for this milestone. Deferred decision, not a missing build.
 6. **Cross-thread approval badge (already in scope): confirm the idiom against openhuman H4** —
    pulsing-dot + count badge on the approval-center entry, priority-tinted cards. No new work, just a
    reference that the chosen idiom matches a mature implementation (`IntelligenceSubconsciousTab.tsx:333-396`).
    > **→ CONFIRMED (no new work, by design).** This item asked only for an idiom cross-check; Aura's
    > shipped `ApprovalBadge`/`ApprovalList` (Phase 25, in scope for 01/02) already use the
    > pulsing-dot + count-badge idiom. The H4 reference stands as independent validation; nothing to fold.
+   > **→ ALREADY SHIPPED (pre-existing, Phase 25).** The badge idiom is live in the shipped
+   > `ApprovalBadge`/`ApprovalList` — built before this overhaul, hence "no new work." Built: YES.
 7. **Add the shimmer-until-loaded attachment affordance (odysseus §1.5)** to user-message attachment
    rendering: a skeleton fills the image box until the thumbnail loads, so images don't pop in.
    > **→ SKIPPED (attachment rendering is out of scope for 01).** 01 §14 explicitly fences
@@ -708,6 +785,8 @@ confirmations + concrete details*; none reverse an existing decision.
    > render surface in scope, there is no image box to put a shimmer-until-loaded skeleton on. Re-route
    > this affordance to whichever future phase ships message attachments; not applicable to the 01
    > rebuild.
+   > **→ NOT BUILT (N/A — no attachment surface).** Consistent with the skip: attachments are out of 01's
+   > scope, so there is no image box for the shimmer. Not a missing build.
 
 ### 5.2 → 02 shell-sidebar
 
@@ -724,6 +803,9 @@ proves:
    > they collapse to overlay drawers/sheets), with the `15rem + 19rem ≈ 544px` chrome math showing the
    > lane clears 380px only past the `lg:` breakpoint. The operator's "shit on 390px" verdict is cited
    > as the empirical premise.
+   > **→ FOLDED but NOT YET BUILT.** No 380px floor exists in code: grep for `380` / `--chat-lane-min` /
+   > `min-w-[380px]` / `window-floor` across `web/src` returns **0 matches**. The shell relies on raw
+   > breakpoints; the content-driven floor was never wired.
 2. **Add a Touch-Gestures subsection (O2)** to §3 Drawer mechanism: swipe-from-edge to open / swipe-toward-
    edge to close, with the **horizontal-lock discipline** (ignore until ≥10px travel and `|dx|>|dy|`;
    then `preventDefault()` to claim the gesture from browser back/scroll; abort on >40px vertical drift)
@@ -734,6 +816,13 @@ proves:
    > `touchmove`, the ≤20px edge zone, the `|dx|>|dy|`-then-`preventDefault()` horizontal-claim discipline,
    > the vertical-drift abort, a `[data-no-swipe]` opt-out, and the scroll-owner exclude list. An AC was
    > added.
+   > **→ PARTIALLY SHIPPED in fc77e4cb (`web/src/shell/useEdgeSwipe.ts`).** A hook exists, but it is a
+   > **coarse** implementation that does not honour the named contract: it uses React `onPointerDown`/
+   > `onPointerUp` handlers (`:18-35`) with an edge-zone + travel-threshold check and a vertical-drift
+   > abort (`:32`) — but there is **no `preventDefault()` gesture-claim** (it is not a non-passive
+   > document `touchmove`), **no in-flight `|dx|>|dy|` horizontal-lock** (only an end-of-gesture drift
+   > check), and **no scroll-owner exclude list** / `[data-no-swipe]` opt-out. So the gesture exists but
+   > the iOS/Firefox-correctness details (the whole point of O2) are not built.
 3. **Add an "intent-aware restore" rule (O3)** to the drawer/sheet behavior: opening a heavy surface
    (right runtime sheet, a future tool panel) auto-dismisses the sidebar drawer on mobile and *restores*
    it when the user returns to bare chat — but a swipe-dismiss of that surface does **not** trigger
@@ -744,6 +833,11 @@ proves:
    > (`overlayOpen ──close (swipe)──▶ idle`, do NOT restore + clear the remembered flag), and distinguishes
    > this from the pre-existing *focus*-restore (a different concept). This is the discipline 02 previously
    > only gestured at.
+   > **→ FOLDED but NOT BUILT AS SPECCED.** `web/src/shell/useSurfaceIntent.ts` exists but was
+   > **repurposed**: it is now a thin localStorage persistence of the active surface mode (`:15-27`,
+   > `aura.shell.surface` ← `MODES`), NOT the `intent: 'explicit' | 'swipe'` state machine. There is no
+   > "explicit-close restores / swipe-dismiss does not" reducer and no `intent` argument on a drawer
+   > `onClose`. The specced discipline was not built.
 4. **Confirm/expand the mobile-viewport kit (O5)** in §2/§9: 02 already specifies svh + safe-area; add the
    remaining checklist items as explicit ACs — `100dvh` (or the spec's chosen unit) so the composer rides
    the keyboard, **44px minimum touch targets** on every interactive element, `@media (hover:none)` to
@@ -758,6 +852,12 @@ proves:
    > handling + `max(safe-area-inset-bottom, keyboard-inset-height)` (§2.4/§6), and the svh-outer /
    > dvh-keyboard reconciliation exactly as recommended. (`@media (hover:none)` hover-affordance swap +
    > `-webkit-overflow-scrolling:touch` are the lightest items and ride 02's a11y/AC layer.)
+   > **→ PARTIALLY SHIPPED.** Built: the viewport meta with `viewport-fit=cover` +
+   > `interactive-widget=resizes-content` (`web/index.html:7`) and 44px touch targets on interactive
+   > controls (e.g. `LoginPage.tsx:404` `min-h-[44px]`, `ToolActivityCard.tsx:88` `min-h-11 min-w-11`).
+   > Not centrally verified this pass: the `@media (hover:none)` hover-affordance swap and
+   > `-webkit-overflow-scrolling:touch` (the "lightest items" the fold itself flagged as riding the AC
+   > layer). Core viewport + touch-targets YES; the two light items unverified/likely-not-built.
 5. **Add a new "PWA layer" section (O6) — a surface not yet in any spec.** A 15-line manifest
    (`display:standalone`, maskable icons, `theme_color` matching the cockpit) + a small SW with: HTML
    nav = SWR **only for the SPA root** (deep links fall through), static JS/CSS = network-first, assets =
@@ -770,6 +870,10 @@ proves:
    > guard, the never-cache `/api/` + AG-UI SSE rule, per-item precache and versioned `CACHE_NAME`, behind
    > a single `AURA_WEBUI_PWA` build flag, verified by AC-PWA-1 *if shipped*. The validator marked this row
    > non-blocking ("06 says optional"); 02 chose to specify-but-gate it, which is the cleanest disposition.
+   > **→ FOLDED but NOT BUILT (default-only).** No §5b-authored layer ships: only the framework-default
+   > service worker is present (no authored `web/public/manifest.json` with the navigation-root-only SWR
+   > guard, never-cache `/api/`+SSE rule, per-item precache, or versioned `CACHE_NAME`). Consistent with
+   > the "optional, Phase-N, gated" disposition — the flag's payload was not built.
 
 ### 5.3 → 03 design-system
 
@@ -785,6 +889,13 @@ proves:
    > script at the time of writing. The *consumer* is already aligned: 02 §5b's PWA manifest sets
    > `theme_color` = `--color-bg` `#14110E`, which is the exact value this O8 sync would emit — so the
    > dependency resolves the moment 03 adds the 3-line `<meta>` write. Fold on next touch of 03.
+   > **→ SHIPPED in fc77e4cb — but NOT in 03's script; in `index.html` (and with the BLUE theme).**
+   > `web/index.html:9-10` carries paired `<meta name="theme-color" media="(prefers-color-scheme: …)">`
+   > tags — so mobile chrome IS synced. BUT (a) the values are `#FDFCFC` (light) / `#131314` (dark), the
+   > **Gemini/Material blue** theme, **not** the `#14110E` graphite the fold assumed; and (b) it ships as a
+   > static `media`-keyed `<meta>` in `index.html`, not as a runtime write from 03's apply-before-paint
+   > script. Net: the O8 *behavior* is built; the graphite *value* is not, and the implementation site
+   > differs from the spec.
 2. **Confirm the reduced-motion bar (odysseus §1.9).** Add an explicit rule/AC: *every* animated surface
    ships a `prefers-reduced-motion`/`motion-reduce:` path — odysseus's 17 blocks are the maturity tell.
    (03 already mandates motion-reduce variants; make it a checklist gate, not a guideline.)
@@ -792,6 +903,9 @@ proves:
    > authoritative `@media (prefers-reduced-motion: reduce)` guard that "overrides every animation token,"
    > plus AC-7 ("with `prefers-reduced-motion: reduce` set, the reveal, caret, … are static"). odysseus's
    > 17 blocks are independent confirmation of the bar; no new work — the gate exists.
+   > **→ SHIPPED in fc77e4cb (`motion-reduce:` utilities throughout).** Confirmed in code: animated
+   > surfaces carry the guard, e.g. `ToolActivityCard.tsx:100` (`motion-reduce:transition-none` on the
+   > chevron) and `ContextBudgetGauge.tsx:74` (`motion-reduce:transition-none` on the fill). Built: YES.
 3. **Record the rejected alternative (odysseus theme engine) + the deferred editor (O9).** Add a short
    "considered and rejected for v1.0.0" note: a runtime 5-color-derivation engine + user theme editor
    (odysseus `theme.js`) was evaluated and rejected because the operator wants the editorial direction
@@ -804,12 +918,19 @@ proves:
    > "Contrast with Aura's 03-design-system" + §1.11 SKIP list + O9 row), so the decision is on the record
    > and not at risk of being reinvented. Mirroring a one-line back-reference into 03 is cosmetic and
    > non-blocking; fold on next touch of 03 if desired.
+   > **→ N/A (documentation-only; nothing to build).** The decision is "reject for v1.0.0" — there is no
+   > runtime theme-engine or user editor in code (correct), and the O9 editor interactions are explicitly
+   > post-v1.0.0. No build expected; none present.
 4. **Minor polish (E6):** confirm the relaxed prose line-height for chat markdown and thin custom
    scrollbars as named in the token/utility layer.
    > **→ DEFERRED (non-blocking micro-polish for the PASS spec).** 03's type scale (§3.4) and skeleton/
    > surface layer already set generous line-heights; the two E6 micro-bits (relaxed markdown
    > line-height token + thin custom scrollbars) are cosmetic and may be confirmed on next touch of 03 /
    > 01 prose. Does not affect 03's PASS.
+   > **→ unverified (out of this pass's scope).** The two E6 micro-bits were not spot-checked against the
+   > token/utility layer in the 2026-06-18 pass; status unverified. (The markdown prose itself ships via
+   > `MarkdownText.tsx` with `leading-relaxed` on `<pre>`/code blocks, but the named line-height token +
+   > thin-scrollbar utility were not confirmed.)
 
 ### 5.4 → 04 footer-telemetry
 
@@ -831,6 +952,14 @@ proves:
    > in the gauge `aria-label` (severity conveyed without colour). The `role=progressbar` + tabular-mono
    > treatment is kept (H2-confirmed). The borderline row the validator flagged is now decisively landed
    > as 3-tier.
+   > **→ SHIPPED in fc77e4cb (`web/src/chat/footerMetrics.ts` + `ContextBudgetGauge.tsx`).** The
+   > `gaugeTier(percent): 'normal'|'near'|'critical'` helper is built with
+   > `CONTEXT_NEAR_FULL_PERCENT = 70` / `CONTEXT_CRITICAL_PERCENT = 90` (`footerMetrics.ts:131-140`), and
+   > `ContextBudgetGauge.tsx:40-43` maps the tier to the fill `critical→bg-danger` / `near→bg-warning` /
+   > `normal→bg-accent` (semantic tokens, no raw hex), keeping `role=progressbar` + `aria-valuenow` +
+   > tabular-mono (`:62-76`). Built: YES, exactly as specced. (Minor: the in-file comment at
+   > `ContextBudgetGauge.tsx:16` still reads "switching to `warning` at ≥85%" — stale vs the shipped 70/90
+   > 3-tier; a code-comment nit, not a doc/spec defect.)
 2. **No change to the core no-spend/STATE_DELTA fix.** None of the three candidates touch 04's verified
    root-cause work; leave it intact.
    > **→ HONORED (no change).** 04's verified root-cause work (greeting fast-path zero-usage,
@@ -842,6 +971,13 @@ proves:
    > `#9AA4B2`) to **03's semantic token names** + editorial-graphite values (`--color-accent` gold
    > `#C8A86A`, `--color-warning` `#DDA94A`, `--color-danger` `#E66A63`, …). That fix is 04's, not 06's,
    > but it is what unblocks the graphite re-skin this gauge fold rides on — noted here for the reader.
+   > **→ HONORED in code (no-spend) + SHIPPED but THEME-DRIFTED (header).** The footer source is
+   > theme-clean — it binds the gauge to **semantic token names** (`bg-accent`/`bg-warning`/`bg-danger`),
+   > not raw hex, so no dead blue lives in the footer. BUT the *resolved* palette the cockpit ships is the
+   > Gemini/Material **blue** theme (`web/index.html:9-10` theme-color `#FDFCFC`/`#131314`;
+   > `LoginPage.tsx:266` blue logo shadow), **not** the editorial-graphite gold these 04 values assume.
+   > So the token *plumbing* matches the spec; the *theme values* the spec authored do not match what
+   > shipped. See the "Theme drift note" under the summary table.
 
 ### 5.5 → 05 authula-auth
 
@@ -861,12 +997,23 @@ proves:
    > and ≥16px anti-zoom, with AC-17 as the machine-check. (An earlier draft of this item reported it OPEN
    > with a zero-match grep — that grep ran against a stale copy of 05 during the parallel revision; the
    > checklist did land. All HIGH-VALUE 06 adopts are now folded.)
+   > **→ SHIPPED (uncommitted working tree, `web/src/routes/LoginPage.tsx`).** The TOTP-input markup is
+   > built in the current working tree (the committed `fc77e4cb` LoginPage was passphrase-only; the
+   > authula TOTP step is the uncommitted ` M` layer). Verified: `:363-372` `type="text"` +
+   > `inputMode="numeric"` (`text` for backup codes) + `autocomplete="one-time-code"`; `:396` error region
+   > `role="alert"` (with `text-danger`); `:370` omit-when-valid `aria-invalid` via `ariaInvalid(codeError)`
+   > scoped to the TOTP step; a keyboard-reachable **backup-code toggle** (`:382-391`); inputs use the
+   > shared `text-sm` (≥16px) sizing. Built: YES (pending commit).
 2. **Note (no change to provider decision):** odysseus's own auth is bcrypt + TOTP + backup codes in
    SQLite/JSON — confirms the *flow shape* but Aura's 05 decision to use Authula stands; only the
    *front-end TOTP UX* is adopted.
    > **→ CONFIRMED (no change to provider decision).** 05 keeps Authula (Apache-2.0, v1.11.0) as the
    > provider; odysseus is cited only as the *flow-shape* and (pending item 1) front-end-TOTP-UX reference.
    > No fold needed — the ADOPT-Authula verdict is unaffected.
+   > **→ CONFIRMED in code.** `LoginPage.tsx:52-74` reads `/api/auth/config` and branches to the
+   > `authula` provider (email-password sign-in → TOTP step) when configured, falling back to passphrase
+   > otherwise — i.e. the Authula provider path is wired, only the *front-end TOTP UX* (item 1) is the
+   > adopted surface. Provider decision: unchanged, as recorded.
 
 ---
 

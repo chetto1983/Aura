@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../AppShell';
@@ -97,6 +97,160 @@ describe('AppShell', () => {
     expect(screen.getByText('Cost')).toBeTruthy();
     // The Context label appears in both the footer caption and the gauge label.
     expect(screen.getAllByText('Context').length).toBeGreaterThan(0);
+  });
+
+  it('posts logout from the shell header and returns to login', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push(`${init?.method ?? 'GET'} ${url}`);
+        if (url === '/logout') {
+          return Promise.resolve(new Response(null, { status: 200 }));
+        }
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<AppShell />} />
+            <Route path="/login" element={<div>login page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(calls).toContain('POST /logout');
+      expect(screen.getByText('login page')).toBeTruthy();
+    });
+  });
+
+  it('uses the Authula sign-out endpoint with its CSRF token when configured', async () => {
+    let signOut: RequestInit | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/auth/config') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                provider: 'authula',
+                auth_base_path: '/auth',
+                csrf_header_name: 'X-AUTHULA-CSRF-TOKEN',
+                csrf_token: 'csrf-token',
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        if (url === '/auth/sign-out') {
+          signOut = init;
+          return Promise.resolve(new Response('{"message":"signed out"}', { status: 200 }));
+        }
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<AppShell />} />
+            <Route path="/login" element={<div>login page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(signOut?.method).toBe('POST');
+      expect(signOut?.credentials).toBe('same-origin');
+      expect(signOut?.headers).toMatchObject({ 'X-AUTHULA-CSRF-TOKEN': 'csrf-token' });
+      expect(screen.getByText('login page')).toBeTruthy();
+    });
+  });
+});
+
+describe('AppShell §3.1c intent-aware restore + §1.1b chat-lane floor', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function openNav() {
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+  }
+  function openRuntime() {
+    fireEvent.click(screen.getByRole('button', { name: 'Open runtime status' }));
+  }
+  function navDrawer() {
+    return screen.queryByRole('dialog', { name: 'Navigation' });
+  }
+  function runtimeDrawer() {
+    return screen.queryByRole('dialog', { name: 'Display workspace' });
+  }
+
+  it('opening the runtime overlay while the nav drawer is open auto-closes the nav', () => {
+    renderShell();
+    openNav();
+    expect(navDrawer()).not.toBeNull();
+    openRuntime();
+    expect(runtimeDrawer()).not.toBeNull();
+    // One heavy surface at a time: the nav drawer yields.
+    expect(navDrawer()).toBeNull();
+  });
+
+  it('closing the runtime overlay explicitly restores the remembered nav drawer', () => {
+    renderShell();
+    openNav();
+    openRuntime();
+    expect(navDrawer()).toBeNull();
+    // Explicit close via the panel close button → restore the nav.
+    const runtime = runtimeDrawer();
+    if (!runtime) throw new Error('expected the runtime drawer to be open');
+    fireEvent.click(within(runtime).getByRole('button', { name: 'Close panel' }));
+    expect(runtimeDrawer()).toBeNull();
+    expect(navDrawer()).not.toBeNull();
+  });
+
+  it('the main grid uses the content-derived 3-column breakpoint (rails + --chat-lane-min)', () => {
+    const { container } = renderShell();
+    const main = container.querySelector('main');
+    if (!main) throw new Error('expected a <main> region');
+    // The 3-col grid is gated on the content-derived window-floor breakpoint, not a
+    // guessed prefix. The chat lane carries an explicit ≥380px floor in the grid track.
+    expect(main.className).toContain('lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]');
   });
 });
 
@@ -269,8 +423,9 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
       </QueryClientProvider>,
     );
 
-    fireEvent.change(screen.getByPlaceholderText('Ask Aura'), { target: { value: 'ciao' } });
-    fireEvent.keyDown(screen.getByPlaceholderText('Ask Aura'), { key: 'Enter', code: 'Enter' });
+    const composer = await screen.findByPlaceholderText('Ask Aura');
+    fireEvent.change(composer, { target: { value: 'ciao' } });
+    fireEvent.keyDown(composer, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
       expect(screen.getByText('Ciao.')).toBeTruthy();

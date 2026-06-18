@@ -73,6 +73,28 @@ describe('shell utilities', () => {
     expect(document.body.style.overflow).toBe('');
   });
 
+  it('Drawer passes the explicit intent on close button, Escape, and backdrop tap (§3.1c)', () => {
+    const onClose = vi.fn();
+    render(
+      <Drawer open title="Navigation" side="left" onClose={onClose}>
+        <button type="button">First</button>
+      </Drawer>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Navigation' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close panel' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // Two buttons share the label; the first is the full-bleed backdrop scrim.
+    const [scrim] = screen.getAllByRole('button', { name: 'Close panel' });
+    if (!scrim) throw new Error('expected a backdrop scrim button');
+    fireEvent.click(scrim);
+
+    expect(onClose).toHaveBeenCalledTimes(3);
+    for (const call of onClose.mock.calls) {
+      expect(call[0]).toBe('explicit');
+    }
+  });
+
   it('Drawer renders nothing when closed', () => {
     render(
       <Drawer open={false} title="Navigation" side="right" onClose={() => undefined}>
@@ -82,24 +104,33 @@ describe('shell utilities', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('useEdgeSwipe opens left and right drawers from touch edges only', () => {
+  it('useEdgeSwipe wires the ref to the rendered element and opens drawers from edge swipes', () => {
+    // Full §3.1b gesture matrix lives in useEdgeSwipe.test.ts; this asserts the
+    // {...handlers}→ref spread reaches a React-rendered host and the gesture fires.
     const onLeft = vi.fn();
     const onRight = vi.fn();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 });
     render(<EdgeProbe onLeft={onLeft} onRight={onRight} />);
     const probe = screen.getByTestId('edge-probe');
 
-    fireEvent.pointerDown(probe, { pointerType: 'touch', clientX: 2, clientY: 10 });
-    fireEvent.pointerUp(probe, { pointerType: 'touch', clientX: 90, clientY: 12 });
+    function touch(type: string, x: number, y: number): void {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const list = [{ clientX: x, clientY: y, target: probe }];
+      Object.defineProperty(event, 'touches', { value: list, configurable: true });
+      Object.defineProperty(event, 'changedTouches', { value: list, configurable: true });
+      Object.defineProperty(event, 'target', { value: probe, configurable: true });
+      probe.dispatchEvent(event);
+    }
+
+    touch('touchstart', 4, 100);
+    touch('touchmove', 220, 104); // >10px, horizontal, past 50%
+    touch('touchend', 220, 104);
     expect(onLeft).toHaveBeenCalledTimes(1);
 
-    fireEvent.pointerDown(probe, { pointerType: 'touch', clientX: 398, clientY: 10 });
-    fireEvent.pointerUp(probe, { pointerType: 'touch', clientX: 310, clientY: 12 });
+    touch('touchstart', 396, 100);
+    touch('touchmove', 150, 104); // right edge, right→left, past 50%
+    touch('touchend', 150, 104);
     expect(onRight).toHaveBeenCalledTimes(1);
-
-    fireEvent.pointerDown(probe, { pointerType: 'mouse', clientX: 2, clientY: 10 });
-    fireEvent.pointerUp(probe, { pointerType: 'mouse', clientX: 90, clientY: 12 });
-    expect(onLeft).toHaveBeenCalledTimes(1);
   });
 
   it('useSurfaceIntent restores valid stored surfaces and persists changes', () => {

@@ -1,7 +1,7 @@
 ---
 doc: 03-design-system-SPEC
 title: Aura Cockpit Design System — "Editorial Graphite" (premium-calm)
-status: spec
+status: implemented — token pipeline + font families landed; the shipped repo palette (logo-matched blue) is the ACCEPTED palette per operator decision 2026-06-18; the "Editorial Graphite" warm-gold values below are superseded-by-decision (see Implementation Ledger)
 created: 2026-06-17
 owner: design-system (consumed by chat-lane, shell/sidebar, footer-telemetry specs)
 supersedes: web/tokens/tokens.json "dark" palette + Inter/system-mono fonts (Phase 23 v1)
@@ -17,6 +17,225 @@ extends: web/tokens/tokens.json + web/tokens/generate-theme.mjs pipeline (DO NOT
 > `theme.css` `@theme` + density blocks + apply-before-paint inline script). No new
 > build step, no new framework, no fork. Every sibling spec (chat lane, shell/sidebar,
 > footer telemetry) consumes the **semantic token names** defined in §4.
+
+---
+
+## Implementation Ledger (2026-06-18)
+
+This section reconciles the spec below against the code that actually shipped. It does
+**not** weaken or remove any acceptance criterion; it records, file:line, what landed,
+what drifted, and what is still pending. The numbered design below remains the contract;
+where it makes a now-false factual claim it carries an inline `> **Impl note**` annotation.
+
+> **Operator decision (2026-06-18): the shipped repo palette is ACCEPTED — "color is ok like in
+> repo, respect the logo."** The cockpit's logo-matched **blue** palette (in `web/tokens/tokens.json`,
+> the source of truth) is the approved design. The "Editorial Graphite" warm-graphite + single-gold
+> direction authored below is therefore **superseded by decision**, not a defect to fix. Read the
+> token tables in this ledger as *"the §4.2 gold values are replaced by the accepted blue values"* —
+> the `DRIFT` verdicts document the difference for the record; they are **not** a remediation backlog.
+> The token *pipeline*, the new semantic token *names*, and the *font families* below all remain the
+> live contract (those shipped faithfully). Only the §4.x **hex values** are superseded — defer to
+> `web/tokens/tokens.json` for the real palette. (The `light` theme key the impl added is likewise
+> accepted.) The remaining real follow-ups are mechanical, not chromatic: the font byte-budget breach
+> (Commit Mono `.otf`) and the WCAG contrast re-proof against the shipped blue values.
+
+**Implementing commit:** `fc77e4cb feat(cockpit): overhaul shell and chat lifecycle`
+(2026-06-17). Touched the exact pipeline this SPEC named (`web/tokens/tokens.json`,
+`web/tokens/generate-theme.mjs`, `web/src/styles/{fonts,theme,atmosphere,motion,index}.css`,
+`web/index.html`, `web/src/theme/applyTheme.ts`) plus new fonts under `web/public/fonts/`.
+
+### Headline verdict
+
+**The pipeline and the font families landed; the palette shipped as a different (now ACCEPTED)
+direction.** The "extend, don't fork" mechanics are honored verbatim — `tokens.json` →
+`generate-theme.mjs` → `theme.css` `@theme` + density blocks, drift gate intact, three font
+tokens emitted. The shipped color values are a **logo-matched blue palette** (neutral-grey
+graphite + a *blue* accent) rather than this SPEC's warm-graphite + single-gold-accent
+direction; the `_primitive` maps in `tokens.json` are named `gemini-bg`/`gemini-blue`
+(`web/tokens/tokens.json:5-13, 37-46`), and a **second theme** (`light`) was added. **Per the
+operator decision above, this blue palette + the `light` key are the approved design** (they
+respect the logo). Net: the *infrastructure* this SPEC specified shipped faithfully and now
+hosts the accepted blue palette; the warm-gold "Editorial Graphite" hex values below are the
+superseded original direction, retained only as the authoring record.
+
+### Token fidelity — spec vs shipped (`web/tokens/tokens.json:36-67`, `web/src/styles/theme.css:63-85`)
+
+| Spec token (§4.2) | Spec hex | Shipped `color.dark` hex | Verdict |
+|---|---|---|---|
+| `bg` | `#14110E` warm graphite | `#131314` neutral near-black | **DRIFT** (warm→neutral) |
+| `surface` | `#1B1714` | `#1E1F20` | **DRIFT** |
+| `surface-2` | `#241F1A` | `#333537` | **DRIFT** |
+| `surface-3` | `#2E2823` | `#3C4043` | **DRIFT** (name present, value off) |
+| `border` | `#38322B` | `#3C4043` | **DRIFT** |
+| `border-strong` | `#4A4339` | `#5F6368` | **DRIFT** (name present, value off) |
+| `text` | `#ECE7DF` warm off-white | `#E3E3E3` neutral grey | **DRIFT** |
+| `text-muted` | `#B0A99E` | `#C4C7C5` | **DRIFT** |
+| `text-faint` | `#8E877C` | `#9AA0A6` | **DRIFT** |
+| `text-disabled` | `#6A6258` | `#6F7377` | **DRIFT** (name present) |
+| `accent` | `#C8A86A` warm gold | `#1F3760` **blue** | **DRIFT — accent hue inverted** |
+| `accent-text` | `#E7D5A8` gold | `#D3E3FD` blue | **DRIFT** |
+| `accent-muted` | `#7A6740` | `#1D4068` | **DRIFT** (name present) |
+| `accent-pressed` | `#8A7245` | `#2A4B7B` | **DRIFT** (name present) |
+| `on-accent` | `#14110E` | `#D3E3FD` | **DRIFT** (spec = bg-on-fill; shipped = light text) |
+| `success` | `#6FB58A` jade | `#81C995` | DRIFT (value), role MATCH |
+| `warning` | `#DDA94A` amber | `#FDD663` | DRIFT (value), role MATCH |
+| `danger` | `#E66A63` rust | `#F28B82` | DRIFT (value), role MATCH |
+| `info` | `#7FB0C8` slate | `#AECBFA` blue | DRIFT |
+| `ring` | `#C8A86A` (= gold accent) | `#8AB4F8` blue | **DRIFT** (name present, value off) |
+
+So: **every NEW semantic token name the SPEC introduced shipped** (`surface-3`,
+`border-strong`, `text-disabled`, `accent-text`, `accent-muted`, `accent-pressed`,
+`on-accent`, `ring`) — the *contract surface* sibling specs forward-reference is intact and
+emitted as `--color-*` (`web/src/styles/theme.css:6-22`). But **every hex value drifted**,
+and the defining accent hue is inverted (warm gold → cool blue). The amber `#DDA94A`, rust
+`#E66A63`, gold `#C8A86A`, `#ECE7DF` text, `#1B1714` surface named in the brief do **not**
+appear anywhere in the shipped tokens. The `_primitive` ramps the SPEC authored in OKLCH
+(graphite.50…950, gold.300…700, jade/amber/rust/slate) were **not** carried; the shipped
+`_primitive` is a small `gemini-*` hex set (`tokens.json:5-13, 37-46`).
+
+### Font wiring (`web/src/styles/fonts.css:1-23`, `web/tokens/tokens.json:75-79`)
+
+| Family | Spec role | Shipped | Verdict |
+|---|---|---|---|
+| **Fraunces** | display serif | `@font-face 'Fraunces'` → `fraunces-latin.woff2`, `font-weight: 300 900`, `font-display: swap` (`fonts.css:1-7`) | **IMPLEMENTED** (variable-weight range wider than spec's `380 600` clamp) |
+| **Hanken Grotesk** | body/UI sans | `@font-face 'Hanken Grotesk'` → `hanken-grotesk-latin.woff2`, `300 900`, swap (`fonts.css:9-15`) | **IMPLEMENTED** — confirms the spec's chosen sans |
+| **Commit Mono** | mono/data | `@font-face 'Commit Mono'` → `commit-mono-regular.otf` `format('opentype')`, weight 400, swap (`fonts.css:17-23`) | **PARTIAL/DEVIATED** — shipped as **`.otf`, not subset woff2**; no `commit-mono-medium` (500) face |
+
+- Token families match the spec's §3.3 intent: `--font-display: Fraunces, Georgia, serif`,
+  `--font-sans: "Hanken Grotesk", …`, `--font-mono: "Commit Mono", …`
+  (`web/src/styles/theme.css:28-30`). The Tailwind utilities `font-display`/`font-sans`/
+  `font-mono` are used across components (e.g. `RuntimeFooter.tsx`, `ShellHeader.tsx`,
+  `LoginPage.tsx`), so the re-skin seam works.
+- **No `Inter`/`Roboto`/`Arial` primary family anywhere in `web/src`** (verified — the only
+  matches are the substrings "interface"/"interrupt"/"interval"). AC-3's negative grep holds.
+- **DEVIATIONS vs §3.2/3.4:** (1) `font-display: swap` is present, but the spec's
+  **metric-override knobs** (`ascent-override: 92%`, `size-adjust: 100%`) are **absent** —
+  no CLS guard wired, so AC-9 ("no layout shift on swap") is **unverified**. (2) The spec's
+  `<link rel="preload">` for the two critical fonts is **absent** from `index.html`. (3)
+  Files are **not axis-clamped / not the named `*-opsz-wght.woff2` subsets**; the mono is a
+  full `.otf`.
+
+### Font size budget (§3.2 "≤220 KB woff2 total"; AC-2)
+
+Actual shipped bytes (`web/public/fonts/`, mirrored byte-for-byte in `internal/webui/dist/fonts/`):
+
+| File | Bytes | KB |
+|---|---|---|
+| `commit-mono-regular.otf` | 274,752 | ~268 |
+| `fraunces-latin.woff2` | 67,304 | ~66 |
+| `hanken-grotesk-latin.woff2` | 34,704 | ~34 |
+| **Total** | **376,760** | **~368 KB** |
+
+**Budget BREACHED.** ~368 KB vs the ≤220 KB woff2 gate. The woff2 pair alone (~100 KB) is
+in budget; the un-subsetted `.otf` mono blows it. AC-2's size clause is **not satisfied** as
+shipped, and there is **no CI bundle-size gate** asserting it.
+
+### Theme-color sync, atmosphere, motion, density
+
+- **`<meta name="theme-color">` sync (06 O8): PRESENT** — two media-scoped tags in
+  `web/index.html:9-10` (`light` → `#FDFCFC`, `dark` → `#131314`). They track the *shipped*
+  (Gemini) `bg` values, not the spec's `#14110E`. So the *mechanism* the sibling 06 spec
+  forward-references exists; the value follows the drifted palette.
+- **Forward-referenced tokens — ALL PRESENT** in the generated theme: `surface-3`,
+  `border-strong`, `on-accent`, `accent-text`, `accent-muted` (`theme.css:6-22`);
+  `--motion-*` (`theme.css:34-38`, shipped names `fast`/`base`/`slow`/`ease-out`/
+  `ease-in-out` — a **different, smaller naming scheme** than the spec's
+  `dur-instant…slower` + `ease-standard/enter/exit/expo`); `--shadow-*` (`theme.css:31-33`,
+  shipped names `drawer`/`popover`/`focus` — again renamed from the spec's `0…4`/
+  `accent-glow`). **Verdict:** a sibling reading the spec's exact `--shadow-2`/
+  `--motion-dur-fast` names would get an **undefined** var — siblings must use the shipped
+  names. Forward-reference contract = NAMES PRESENT for colors, RENAMED for shadow/motion.
+- **Atmosphere (§7): PARTIAL/DEVIATED.** `atmosphere.css` exists but is **not** the spec's
+  layered `--atmo` (corner glows + grain + vignette + `background-attachment: fixed`). It is
+  a single accent-tinted top gradient on `body` (`atmosphere.css:11-17`) plus base/scrollbar/
+  selection styling. **No grain layer, no `.app-atmosphere` class, no
+  `background-attachment: fixed`.** AC-6 (grain, fixed glow, login-heavier variant) **not met**.
+- **Motion (§8): PARTIAL.** `motion.css` carries the global `prefers-reduced-motion: reduce`
+  guard (`motion.css:15-24`) — **AC-7's reduced-motion half is met**. But the **orchestrated
+  staggered shell reveal** (header→sidebar→chat→footer with `--motion-ease-expo`) is **not
+  implemented** — no `.app-shell-reveal`, no `animation-delay` stagger. AC-7's first-paint
+  reveal is **not met**.
+- **Density (§5.1): IMPLEMENTED.** `compact`/`operator`/`review` switch via `data-density`,
+  operator default, scalars `4px / 34px / 13.5px` exactly as relaxed by the spec
+  (`tokens.json:69-73`, `theme.css:86-88`, `web/src/theme/density.ts`). AC-10 **met**.
+  (compact shipped `30px/12.5px` vs spec's `28px/12px` — minor.)
+- **Radius (§5.2): IMPLEMENTED** verbatim (`6/10/16/22/999`, `tokens.json:74`).
+- **Pipeline (AC-1): IMPLEMENTED.** `generate-theme.mjs` emits semantic-only colors (skips
+  `_`-prefixed primitives, `generate-theme.mjs:13-25`), adds `--shadow-*` + `--motion-*`
+  (`:30-31`), and the **drift gate is intact** (`:70-86`) — but it now asserts a
+  **two-theme** loop (`themeBlocks` over all `tokens.color` keys, `:32-39`), so both `light`
+  and `dark` blocks are generated (`theme.css:40-85`).
+
+### Single-theme decision (§1) — DEVIATED
+
+§1 locked exactly one theme key (`THEMES = ['dark']`). Shipped:
+`THEMES = ['light', 'dark']` with a `ThemeSwitcher.tsx` component
+(`web/src/theme/applyTheme.ts:5`, new `web/src/theme/ThemeSwitcher.tsx` from `fc77e4cb`).
+A light theme was added rather than deferred. The `data-theme`/`data-density` attribute
+mechanism and localStorage keys (`aura.theme`/`aura.density`) are otherwise unchanged.
+
+### WCAG proof (§10, AC-8) — RE-PROVEN against the shipped blue (2026-06-18)
+
+The §10 table was computed for the superseded Editorial-Graphite hex. AC-8 is now re-proven
+against the **actual** `tokens.json color.dark` values by a new gate **`web/scripts/contrast-check.mjs`**
+(`npm run contrast`; the script self-checks its luminance math against white/black = 21:1).
+Result: **15/15 required AA pairs pass** —
+
+| Pair | Ratio | AA min |
+|---|---|---|
+| text `#E3E3E3` on bg `#131314` | 14.47:1 | 4.5 |
+| text on surface `#1E1F20` | 12.86:1 | 4.5 |
+| text on surface-2 `#333537` | 9.60:1 | 4.5 |
+| text-muted `#C4C7C5` on bg | 10.90:1 | 4.5 |
+| text-faint `#9AA0A6` on bg | 7.03:1 | 4.5 |
+| on-accent `#D3E3FD` on accent `#1F3760` (button) | 9.12:1 | 4.5 |
+| accent-text `#D3E3FD` on bg (link) | 14.30:1 | 4.5 |
+| success/warning/danger on bg (status) | 9.48 / 13.24 / 7.77:1 | 3.0 |
+| danger on surface-2 (tool pill) | 5.16:1 | 3.0 |
+| ring `#8AB4F8` on bg (focus) | 8.81:1 | 3.0 |
+
+**One ADVISORY** (not a failure): `border-strong #5F6368` on `surface #1E1F20` = **2.73:1**, below the
+1.4.11 non-text 3:1. It is classed advisory because the panel-divider border is reinforced by a
+background step (surface vs bg) and interactive elements carry the passing focus ring — i.e. the
+border is decorative, not the sole indicator of a control. **Operator follow-up:** if `border-strong`
+ever becomes the sole boundary of a control, bump it one lightness step (e.g. `#5F6368` → ~`#6B7075`).
+
+### Hard-coded-hex / accent-scarcity (AC-4 / AC-5)
+
+Not exhaustively audited in this reconciliation; the token plumbing is clean (components use
+`--color-*` utilities) but the spec's accent-scarcity reserved list (§4.3) was written for a
+*gold* accent and the shipped accent is blue — the *discipline* (scarcity) is unverified
+here and the *value* differs.
+
+### What remains pending vs this SPEC
+
+1. ~~**Palette**~~ — **RESOLVED by operator decision (2026-06-18): the shipped blue is accepted**
+   ("color is ok like in repo, respect the logo"). No re-skin; the §4.x gold hex is superseded.
+2. ~~**Single-theme**~~ — the added `light` key is **accepted** with the palette decision.
+3. **Font budget + subsetting (AC-2)**: still pending. `pyftsubset`/`fonttools` 4.60 are installed,
+   BUT woff2 emission needs the `brotli` python module (absent: `ImportError: No module named brotli`),
+   and a lossless convert alone (~140 KB) would not meet the ≤220 KB total; subsetting Commit Mono (a
+   *code* font) risks dropping box-drawing/symbol glyphs used in tool output, which needs a visual check
+   in the running app. Recommended: `pip install brotli` then
+   `pyftsubset commit-mono-regular.otf --flavor=woff2 --layout-features='*' --unicodes='U+0000-00FF,U+2000-206F,U+2190-21FF,U+2500-257F,U+2022,U+2026'`, update `fonts.css` src → woff2, add the 500 face, then add the CI size gate. Deferred to keep an unverifiable glyph subset out of the binary.
+4. **CLS guard**: add `ascent-override`/`size-adjust` + `<link rel=preload>` (AC-9).
+5. **Atmosphere**: layered `--atmo` glow + grain + `.app-atmosphere` + fixed attachment + a
+   heavier login variant (AC-6).
+6. **Motion**: the staggered first-paint shell reveal with `--motion-ease-expo` (AC-7).
+7. ~~**Contrast gate**~~ — **DONE 2026-06-18**: `web/scripts/contrast-check.mjs` (`npm run contrast`)
+   recomputes AA against the shipped `tokens.json` values; 15/15 required pairs pass (1 advisory). See
+   the WCAG re-proof above. (Optional: wire `npm run contrast` into CI alongside `lint`/`test`.)
+8. **Shadow/motion token names**: reconcile sibling forward-references (`--shadow-2`,
+   `--motion-dur-fast`, …) against the shipped renamed set (`--shadow-popover`,
+   `--motion-fast`, …) — or rename one side.
+
+### Factual drift corrected in this doc
+
+- Frontmatter `status: spec` → `superseded-in-implementation` (pipeline + fonts landed;
+  palette did not). The numbered body is preserved unchanged except for inline `> **Impl
+  note (2026-06-18)**` annotations on now-false claims (§1, §3.2, §4.1).
+
+---
 
 ## 0. Direction & non-negotiables
 
@@ -63,6 +282,10 @@ the dark theme; renaming the key would churn `applyTheme.ts`, the inline script,
 gate, and localStorage for zero user benefit. The token *values* under `color.dark` change;
 the *key* does not. (A future light "review/print" theme can land later as a second key
 without disturbing this contract.)
+
+> **Impl note (2026-06-18):** DEVIATED. The shipped tree carries **two** theme keys —
+> `THEMES = ['light', 'dark']` (`web/src/theme/applyTheme.ts:5`) with a `ThemeSwitcher.tsx`
+> — so the "future light theme" already landed, against this single-`dark`-key decision.
 
 ---
 
@@ -136,6 +359,11 @@ to land each family ~30–90 KB). Build-time tooling: `glyphhanger` / `fonttools
 U+2032-2033, U+2212, U+2192, U+2713, U+2014-2015` (Latin + curly quotes + the arrows/checks
 the chat + tool cards render). **Build budget: total fonts ≤ 220 KB woff2** across all
 families; the CI bundle gate (Phase 23 freshness/size discipline) asserts it.
+
+> **Impl note (2026-06-18):** BUDGET BREACHED. Shipped fonts total **~368 KB**
+> (`commit-mono-regular.otf` 268 KB **un-subsetted `.otf`, not woff2** + Fraunces 66 KB +
+> Hanken 34 KB woff2). No `commit-mono-medium` (500) face, no axis-clamped `*-opsz-wght`
+> subsets, **no preload links** in `index.html`, and **no CI size gate** exists. See ledger.
 
 `@font-face` declarations go in a new partial `web/src/styles/fonts.css`, imported FIRST in
 `index.css` (before Tailwind, so `font-display` resolves before utilities apply):
@@ -244,6 +472,12 @@ perceptually-uniform lightness so the ramp steps look even — `https://evilmart
 never blue-black (the v1 mistake was hue ≈ 250 blue-black). Each stop lists the hex the
 generator ships (OKLCH is the design intent; we emit hex for byte-stable, gamut-safe output
 and zero runtime surprises — see §9 "OKLCH authoring, hex emission").
+
+> **Impl note (2026-06-18):** NOT IMPLEMENTED. None of the warm-graphite/gold OKLCH ramps
+> below shipped. `web/tokens/tokens.json` carries a small **`gemini-*` hex `_primitive`** set
+> and a **neutral-grey + blue** semantic palette instead (e.g. `bg #131314`, `accent #1F3760`
+> blue). The gold `#C8A86A` / amber `#DDA94A` / rust `#E66A63` / `#ECE7DF` text named here do
+> not appear in the shipped tokens. See the Token-fidelity table in the Implementation Ledger.
 
 ```jsonc
 "_primitive": {                          // documentation/derivation only — NOT emitted as utilities

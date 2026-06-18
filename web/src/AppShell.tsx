@@ -1,8 +1,7 @@
-import { useCallback, useState } from 'react';
+import { Suspense, lazy, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
-import { ExternalStoreChat } from './chat/ExternalStoreChat';
 import { RuntimeFooter } from './chat/RuntimeFooter';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
 import { SearchPanel } from './conversations/SearchPanel';
@@ -12,8 +11,92 @@ import { Drawer } from './shell/Drawer';
 import { ShellHeader } from './shell/ShellHeader';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
+import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import type { TurnUsage } from './chat/sseAdapter';
 import { useCreateConversation } from './conversations/useConversations';
+
+const ExternalStoreChat = lazy(() =>
+  import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
+);
+
+interface LogoutTarget {
+  path: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+const passphraseLogoutTarget: LogoutTarget = { path: '/logout' };
+const defaultAuthulaBasePath = '/auth';
+const defaultCSRFCookieName = '__Host-authula_csrf_token';
+const defaultCSRFHeaderName = 'X-AUTHULA-CSRF-TOKEN';
+
+async function readJSON(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (text.trim() === '') return {};
+  return JSON.parse(text) as unknown;
+}
+
+function stringField(source: unknown, key: string): string {
+  if (source === null || typeof source !== 'object') return '';
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function valueOrFallback(value: string, fallback: string): string {
+  return value === '' ? fallback : value;
+}
+
+function readCookie(name: string): string {
+  const prefix = `${name}=`;
+  return (
+    document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix))
+      ?.slice(prefix.length) ?? ''
+  );
+}
+
+async function loadLogoutTarget(): Promise<LogoutTarget> {
+  try {
+    const res = await fetch('/api/auth/config', {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return passphraseLogoutTarget;
+    const raw = await readJSON(res);
+    if (stringField(raw, 'provider') !== 'authula') return passphraseLogoutTarget;
+
+    const authBasePath = valueOrFallback(
+      stringField(raw, 'auth_base_path'),
+      defaultAuthulaBasePath,
+    );
+    const csrfCookieName = valueOrFallback(
+      stringField(raw, 'csrf_cookie_name'),
+      defaultCSRFCookieName,
+    );
+    const csrfHeaderName = valueOrFallback(
+      stringField(raw, 'csrf_header_name'),
+      defaultCSRFHeaderName,
+    );
+    const csrfToken = valueOrFallback(
+      stringField(raw, 'csrf_token'),
+      res.headers.get(csrfHeaderName) ?? readCookie(csrfCookieName),
+    );
+    if (csrfToken === '') return passphraseLogoutTarget;
+
+    return {
+      path: `${authBasePath}/sign-out`,
+      headers: {
+        'Content-Type': 'application/json',
+        [csrfHeaderName]: csrfToken,
+      },
+      body: '{}',
+    };
+  } catch {
+    return passphraseLogoutTarget;
+  }
+}
 
 export function AppShell() {
   const { t } = useTranslation();
@@ -25,9 +108,12 @@ export function AppShell() {
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
   const [usage, setUsage] = useState<TurnUsage | undefined>(undefined);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
-  const [navigationOpen, setNavigationOpen] = useState(false);
-  const [runtimeOpen, setRuntimeOpen] = useState(false);
+  // §3.1c: the mobile/tablet overlay surfaces (nav drawer + runtime sheet) are driven by
+  // the one-heavy-surface intent reducer, NOT two independent booleans. At `lg` the regions
+  // are permanent columns, so these only gate the portaled drawers.
+  const surfaces = useSurfaceRestore();
   const [resumeNonce, setResumeNonce] = useState(0);
+  const [logoutPending, setLogoutPending] = useState(false);
 
   if ((routeId ?? '') !== lastRouteId) {
     setLastRouteId(routeId ?? '');
@@ -40,7 +126,7 @@ export function AppShell() {
   function selectThread(id: string) {
     setSelectedId(id);
     setUsage(undefined);
-    setNavigationOpen(false);
+    surfaces.closeNav();
   }
 
   function redriveRun(conversationId: string) {
@@ -60,13 +146,39 @@ export function AppShell() {
     [activeThreadId, createConversation, navigate],
   );
 
+  const logout = useCallback(async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    try {
+      const target = await loadLogoutTarget();
+      const init: RequestInit = {
+        method: 'POST',
+        credentials: 'same-origin',
+      };
+      if (target.headers !== undefined) init.headers = target.headers;
+      if (target.body !== undefined) init.body = target.body;
+      const res = await fetch(target.path, init);
+      if (res.ok) {
+        void navigate('/login', { replace: true });
+        return;
+      }
+    } catch {
+      // Keep the operator in the cockpit if the server could not clear the session.
+    }
+    setLogoutPending(false);
+  }, [logoutPending, navigate]);
+
   const edgeSwipe = useEdgeSwipe({
-    onLeftEdge: () => {
-      setNavigationOpen(true);
+    onLeftEdge: surfaces.openNav,
+    onRightEdge: surfaces.openOverlay,
+    onLeftClose: surfaces.closeNav,
+    // Swipe-dismissing the runtime overlay is the "get this out of my way" intent — it must
+    // NOT restore the remembered nav (§3.1c), so the swipe path passes 'swipe'.
+    onRightClose: () => {
+      surfaces.closeOverlay('swipe');
     },
-    onRightEdge: () => {
-      setRuntimeOpen(true);
-    },
+    isLeftOpen: surfaces.navOpen,
+    isRightOpen: surfaces.overlayOpen,
   });
 
   const navigation = (
@@ -93,12 +205,8 @@ export function AppShell() {
         activeMode={surface}
         approvalsOpen={approvalsOpen}
         onModeSelect={setSurface}
-        onNavigationOpen={() => {
-          setNavigationOpen(true);
-        }}
-        onRuntimeOpen={() => {
-          setRuntimeOpen(true);
-        }}
+        onNavigationOpen={surfaces.openNav}
+        onRuntimeOpen={surfaces.openOverlay}
         onApprovalsToggle={() => {
           setApprovalsOpen((v) => !v);
         }}
@@ -106,9 +214,20 @@ export function AppShell() {
           selectThread(id);
           setApprovalsOpen(false);
         }}
+        logoutPending={logoutPending}
+        onLogout={() => {
+          void logout();
+        }}
       />
 
-      <main className="grid min-h-0 grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)_19rem]">
+      {/* §1.1b content-derived 3-column flip. The rails are 15rem + 19rem = 34rem (544px);
+          the elastic chat track has a HARD --chat-lane-min (380px) lower bound instead of the
+          old `minmax(0,1fr)` 0-floor, so the lane can never render < 380px once 3-col is active.
+          The flip stays at `lg` (1024px): 1024 − 544 rails = 480px chat ≥ 380px, with margin;
+          a narrower flip (e.g. md=768 → 768 − 544 = 224px) would crush the lane below the floor,
+          so it is correctly deferred to `lg`. Window-floor = rails (34rem) + --chat-lane-min
+          (380px) ≈ 924px < 1024px, so the `lg` flip honours the floor by construction. */}
+      <main className="grid min-h-0 grid-cols-1 lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]">
         <aside
           aria-label={t('shell.navigation')}
           className="hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
@@ -121,12 +240,23 @@ export function AppShell() {
           className="flex min-h-[min(45svh,100%)] flex-col bg-bg"
         >
           <div className="min-h-0 flex-1">
-            <ExternalStoreChat
-              threadId={activeThreadId}
-              onEnsureThread={ensureThread}
-              onUsage={setUsage}
-              resumeNonce={resumeNonce}
-            />
+            <Suspense
+              fallback={
+                <div
+                  role="status"
+                  className="grid h-full place-items-center text-sm text-text-muted"
+                >
+                  {t('chat.loading')}
+                </div>
+              }
+            >
+              <ExternalStoreChat
+                threadId={activeThreadId}
+                onEnsureThread={ensureThread}
+                onUsage={setUsage}
+                resumeNonce={resumeNonce}
+              />
+            </Suspense>
           </div>
           <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
         </section>
@@ -144,21 +274,21 @@ export function AppShell() {
       </BottomDock>
 
       <Drawer
-        open={navigationOpen}
+        open={surfaces.navOpen}
         side="left"
         title={t('shell.navigation')}
-        onClose={() => {
-          setNavigationOpen(false);
-        }}
+        onClose={surfaces.closeNav}
       >
         {navigation}
       </Drawer>
       <Drawer
-        open={runtimeOpen}
+        open={surfaces.overlayOpen}
         side="right"
         title={t('shell.displayWorkspace')}
-        onClose={() => {
-          setRuntimeOpen(false);
+        onClose={(intent) => {
+          // Drawer-originated closes (button / Esc / backdrop) are always 'explicit' → restore
+          // the remembered nav; the 'swipe' path comes from the edge-swipe handler above.
+          surfaces.closeOverlay(intent ?? 'explicit');
         }}
       >
         {runtime}

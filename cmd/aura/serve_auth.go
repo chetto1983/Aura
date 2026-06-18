@@ -23,11 +23,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/webauth"
 )
@@ -75,7 +77,7 @@ func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.
 		Secret:           secret,
 		SigningKey:       key[:],
 		SecretConfigured: secret != "",
-		LocalIdentityID:  resolveLocalIdentityID(ctx, chat.identity),
+		LocalIdentityID:  resolveWebAuthIdentityID(ctx, chat.identity, chat.cfg),
 		Identities:       identityCheckerAdapter{store: chat.identity},
 		LoginPath:        "/login",
 	}
@@ -136,6 +138,29 @@ func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID st
 		fmt.Println("aura serve: authula operator lookup deferred (operator not yet enrolled):", uerr)
 	}
 	return provider, webauth.NewValidator(provider, linker), nil
+}
+
+type identityNameResolver interface {
+	GetIdentityByName(ctx context.Context, name string) (identity.Identity, error)
+}
+
+// resolveWebAuthIdentityID returns the Aura identity id used by the active web-auth
+// provider. The passphrase provider intentionally stays pinned to the seeded `local`
+// identity; the Authula provider honors AURA_AUTHULA_OPERATOR_IDENTITY so operators can
+// bind the Authula user to a non-default Aura identity without touching code.
+func resolveWebAuthIdentityID(ctx context.Context, idStore identityNameResolver, cfg *config.Config) string {
+	name := localIdentityName
+	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.WebAuthProvider), "authula") {
+		if configured := strings.TrimSpace(cfg.AuthulaOperatorIdentity); configured != "" {
+			name = configured
+		}
+	}
+	id, err := idStore.GetIdentityByName(ctx, name)
+	if err != nil {
+		slog.Warn("aura serve: resolve web-auth identity", "name", name, "err", err)
+		return ""
+	}
+	return id.ID
 }
 
 // authulaTrustedOrigins derives the CSRF Fetch-Metadata trusted-origin list from the

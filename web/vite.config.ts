@@ -138,5 +138,13 @@ export default defineConfig({
     outDir: '../internal/webui/dist',
     emptyOutDir: true,
     sourcemap: false,
+    rolldownOptions: {
+      checks: {
+        // The React Compiler intentionally runs through @rolldown/plugin-babel.
+        // That makes plugin timing telemetry noisy in Docker/CI logs while not
+        // indicating a build failure. Keep real correctness warnings enabled.
+        pluginTimings: false,
+      },
+    },
   },
 });

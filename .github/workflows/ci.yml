@@ -82,9 +82,20 @@ jobs:
       - name: go test -race
         run: go test -race -count=1 ./...
 
+      - name: Authula seam focused test (no-CGO posture)
+        # Authula brings sqlite/mysql/testcontainer support transitively, but Aura's
+        # embedded provider uses Postgres only. This focused gate proves the flag-gated
+        # A2 seam builds/tests with the same no-CGO posture used by the Windows lane.
+        run: CGO_ENABLED=0 go test -count=1 ./internal/webauth ./internal/agui ./cmd/aura ./internal/config
+
   windows-unit:
     name: Windows unit (OS-specific kill + atomic-write paths, O-07)
     runs-on: windows-latest
+    env:
+      # Authula's dependency tree includes github.com/mattn/go-sqlite3 transitively.
+      # Aura does not use sqlite at runtime; keep the Windows lane on the pure-Go build
+      # posture to avoid hosted-runner CGO toolchain drift.
+      CGO_ENABLED: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -218,6 +229,12 @@ jobs:
         # ONE Postgres and each runs EnsureRoles+Migrate; parallel package binaries
         # deadlock on pg_advisory_lock once >2 integration packages exist.
         run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/...
+
+      - name: Authula 0019 migration drill
+        # Explicit no-skip Authula schema gate: internal/db/... above already runs it,
+        # but this targeted step leaves a crisp failure when the isolated authula schema,
+        # identity_auth_links mapping, grants, or down/up reversibility drift.
+        run: go test -tags db_integration -race -count=1 -run '^TestMigrate0019_' ./internal/db/
 
       - name: aura db migrate (smoke, idempotency)
         run: |

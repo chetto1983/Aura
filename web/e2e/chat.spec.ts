@@ -251,9 +251,11 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
 
     // 4) The runtime footer shows non-zero tokens/cost after the turn (CHAT-04).
     const footer = page.getByRole('contentinfo').or(page.locator('footer'));
-    await expect(footer.getByText('$', { exact: false }).first()).toBeVisible({ timeout: 15000 });
+    const detail = footer.locator('#footer-telemetry-detail');
+    await expect(detail).toBeVisible({ timeout: 15000 });
+    await expect(detail.getByText('$', { exact: false }).first()).toBeVisible();
     // Non-zero token figure: the per-turn prompt+completion (120+18 or 140+22) is rendered.
-    await expect(footer.getByText(/1[0-9]{2}/).first()).toBeVisible();
+    await expect(detail.getByText(/1[0-9]{2}/).first()).toBeVisible();
     tokenChunkAssertions += 1;
 
     // COUNTED-ASSERTION GUARD: at least one streamed-token assertion executed, so a 0-token

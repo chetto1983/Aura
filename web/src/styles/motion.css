@@ -10,6 +10,192 @@
       color var(--motion-fast) var(--motion-ease-out),
       transform var(--motion-fast) var(--motion-ease-out);
   }
+
+  .login-animated-field::before {
+    animation: login-grid-drift 24s linear infinite;
+  }
+
+  .login-animated-field::after {
+    animation: login-scan-line 13s ease-in-out infinite;
+  }
+
+  .login-network-layer {
+    animation: login-network-drift 18s ease-in-out infinite alternate;
+  }
+
+  [data-login-link] {
+    animation: login-link-breathe 7s ease-in-out infinite;
+  }
+
+  [data-login-particle] {
+    animation: login-node-pulse 5.5s ease-in-out infinite;
+  }
+
+  .login-signal-path {
+    animation: login-signal-run 8s linear infinite;
+  }
+}
+
+[data-login-background] {
+  background:
+    linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--color-accent) 30%, transparent) 0%,
+      transparent 42%
+    ),
+    linear-gradient(
+      242deg,
+      color-mix(in srgb, var(--color-info) 24%, transparent) 0%,
+      transparent 46%
+    ),
+    var(--color-bg);
+}
+
+.login-animated-field {
+  background:
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--color-bg) 78%, transparent) 100%
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-surface) 60%, transparent),
+      transparent 36%,
+      transparent 64%,
+      color-mix(in srgb, var(--color-surface) 48%, transparent)
+    );
+}
+
+.login-animated-field::before,
+.login-animated-field::after {
+  position: absolute;
+  inset: -14%;
+  content: '';
+}
+
+.login-animated-field::before {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-border) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-border) 55%, transparent) 1px,
+      transparent 1px
+    );
+  background-position: center;
+  background-size: 5rem 5rem;
+  mask-image: linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
+  opacity: 0.34;
+}
+
+.login-animated-field::after {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 38%,
+    color-mix(in srgb, var(--color-info) 26%, transparent) 48%,
+    transparent 59%,
+    transparent 100%
+  );
+  opacity: 0.42;
+  transform: translateX(-28%);
+}
+
+.login-particle-network {
+  color: var(--color-info);
+  filter: drop-shadow(0 16px 42px color-mix(in srgb, var(--color-info) 16%, transparent));
+  opacity: 0.9;
+}
+
+[data-login-link] {
+  stroke: color-mix(in srgb, var(--color-info) 42%, transparent);
+  stroke-linecap: round;
+  stroke-width: 0.18;
+  transform-box: fill-box;
+  vector-effect: non-scaling-stroke;
+}
+
+[data-login-particle] {
+  fill: color-mix(in srgb, var(--color-info) 88%, white 12%);
+  opacity: 0.78;
+}
+
+.login-signal-path {
+  fill: none;
+  opacity: 0.6;
+  stroke: color-mix(in srgb, var(--color-accent) 78%, var(--color-info) 22%);
+  stroke-dasharray: 3 18;
+  stroke-linecap: round;
+  stroke-width: 0.34;
+  vector-effect: non-scaling-stroke;
+}
+
+@keyframes login-grid-drift {
+  from {
+    transform: translate3d(-1.5rem, -1rem, 0);
+  }
+
+  to {
+    transform: translate3d(1.5rem, 1rem, 0);
+  }
+}
+
+@keyframes login-scan-line {
+  0%,
+  18% {
+    transform: translateX(-42%);
+    opacity: 0;
+  }
+
+  42%,
+  64% {
+    opacity: 0.42;
+  }
+
+  100% {
+    transform: translateX(42%);
+    opacity: 0;
+  }
+}
+
+@keyframes login-network-drift {
+  from {
+    transform: translate3d(-1.2%, -0.8%, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(1.1%, 0.9%, 0) scale(1.018);
+  }
+}
+
+@keyframes login-link-breathe {
+  0%,
+  100% {
+    opacity: 0.32;
+  }
+
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@keyframes login-node-pulse {
+  0%,
+  100% {
+    opacity: 0.52;
+    transform: scale(0.84);
+  }
+
+  50% {
+    opacity: 0.92;
+    transform: scale(1.16);
+  }
+}
+
+@keyframes login-signal-run {
+  to {
+    stroke-dashoffset: -84;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -81,6 +81,10 @@ type AuthDeps struct {
 	// root (cmd/aura/serve_webui.go); a nil predicate means no static asset is public
 	// (the gate still serves the login route + GET /healthz).
 	PublicAsset func(path string) bool
+	// PublicRoute reports whether a non-asset route is intentionally reachable before
+	// a session. The composition root uses this for tiny bootstrap contracts such as
+	// the auth-provider config; credential subtrees should still use AuthBasePath.
+	PublicRoute func(r *http.Request) bool
 	// SessionValidator, when non-nil, REPLACES the HMAC cookie-validation core inside
 	// RequireAuth (the Option-A2 seam, AURA_WEB_AUTH_PROVIDER=authula): given a request
 	// it returns the bound Aura identity UUID + ok. When nil (the default,
@@ -196,7 +200,7 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if deps.isPublicPath(r.URL.Path) {
+		if deps.isPublicPath(r.URL.Path) || (deps.PublicRoute != nil && deps.PublicRoute(r)) {
 			next.ServeHTTP(w, r)
 			return
 		}

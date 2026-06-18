@@ -15,6 +15,8 @@ export function ShellHeader({
   onApprovalOpen,
   onNavigationOpen,
   onRuntimeOpen,
+  logoutPending,
+  onLogout,
 }: {
   readonly activeMode: SurfaceIntent;
   readonly approvalsOpen: boolean;
@@ -23,8 +25,11 @@ export function ShellHeader({
   readonly onApprovalOpen: (id: string) => void;
   readonly onNavigationOpen: () => void;
   readonly onRuntimeOpen: () => void;
+  readonly logoutPending: boolean;
+  readonly onLogout: () => void;
 }) {
   const { t } = useTranslation();
+  const logoutLabel = t('shell.logout');
 
   return (
     <header className="grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-surface px-2 py-2 sm:px-3">
@@ -66,7 +71,38 @@ export function ShellHeader({
         </div>
         <ThemeSwitcher className="hidden sm:flex" />
         <LanguageSwitcher className="hidden sm:flex" />
+        <button
+          type="button"
+          aria-label={logoutLabel}
+          aria-busy={logoutPending}
+          title={logoutLabel}
+          disabled={logoutPending}
+          onClick={onLogout}
+          className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-border bg-surface-2 text-text-muted outline-none transition hover:border-border-strong hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-70"
+        >
+          <LogoutIcon />
+        </button>
       </div>
     </header>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
   );
 }

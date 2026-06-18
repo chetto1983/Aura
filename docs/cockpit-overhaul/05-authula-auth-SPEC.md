@@ -1,13 +1,72 @@
 # 05 — Authula Web-Auth Integration SPEC
 
-> **Status:** REVIEWED — cleared the ≥9.5 adversarial gate (2026-06-17 revision: sseAdapter path fixed, duplicate §4/§5 stubs removed, OQ-3 seam API resolved from the clone, TOTP-input a11y checklist added)
+> **Status:** IMPLEMENTATION IN PROGRESS — spec cleared the ≥9.5 adversarial gate; local implementation has advanced through M0 plus the flag-gated A2 seam (see Implementation Ledger below).
 > **Author:** Claude Code (research + spec synthesis)
 > **Date:** 2026-06-17
 > **Phase:** Cockpit Overhaul — Web-auth hardening
 > **Operator directive:** *"For authority we must use Authula — Aura is industrial, not a toy."*
-> **Scope:** SPEC ONLY. No code is modified by this document. `internal/agui/auth.go` is NOT touched.
+> **Scope:** Design record + implementation ledger. The original spec below remains the contract; the ledger records the local code that now implements parts of it.
 
 ---
+
+## Implementation Ledger (2026-06-17)
+
+This section updates the spec against the current local code. It does not weaken the original acceptance criteria; it marks which parts have moved from plan to implementation.
+
+**Local commits present on `master` (ahead of `origin/master`):**
+
+- `d3aee82d feat(authula): M0 dependency + migration 0019 isolated authula schema`
+  - Adds `github.com/Authula/authula@v1.11.0` and its generated dependency graph.
+  - Adds migration `0019_authula_schema` (not the older placeholder `0012`): creates `authula` schema, grants `CREATE, USAGE` to `aura_app`, pre-creates `pgcrypto`, and adds `aura.identity_auth_links`.
+  - Adds `internal/db/migrate_0019_integration_test.go` for schema grant, link uniqueness, down/up round-trip, and no-op final migrate.
+- `e3541f15 feat(authula): M1/M2 embedded provider + A2 session-validate seam (flag-gated)`
+  - Adds `internal/webauth/{authula.go,identity_link.go,session_validate.go}`.
+  - Adds `AuthDeps.AuthBasePath` and `AuthDeps.SessionValidator`; passphrase remains the default when `AURA_WEB_AUTH_PROVIDER=passphrase`.
+  - Mounts `/auth/*` as the public Authula credential subtree, while protected Aura routes still flow through `RequireAuth`, `principalKey{}`, `RequireCapability`, and `capability_grants`.
+  - Adds `AURA_WEB_AUTH_PROVIDER`, `AURA_AUTHULA_DATABASE_URL`, `AURA_AUTHULA_SECRET`, and `AURA_AUTHULA_OPERATOR_IDENTITY`.
+
+**Validation run locally:**
+
+- PASS: `CGO_ENABLED=0 go test ./internal/webauth ./internal/agui ./cmd/aura ./internal/config -count=1`
+- PASS: `go test -tags db_integration ./internal/db -run TestMigrate0019 -count=1`
+- PASS: `CGO_ENABLED=0 go build ./cmd/aura`
+- NOTE: a default Windows CGO-enabled test run currently fails inside `github.com/mattn/go-sqlite3` (`cgo: cannot parse gcc output ... as ELF, Mach-O, PE, XCOFF object`) with the local `w64devkit` toolchain. Authula pulls sqlite/mysql/testcontainer support transitively even though Aura uses Postgres. CI should either keep the intended `CGO_ENABLED=0` posture for this target or add an explicit Linux CGO build gate if sqlite-linked builds are required.
+
+**Resolved open questions:**
+
+- OQ-1 toolchain: resolved. Local toolchain is `go1.26.4 windows/amd64`; Authula's `go 1.26.4` requirement is satisfied.
+- OQ-2 binary size: measured with `CGO_ENABLED=0`. `origin/master` (`05ba0e1d`) builds to `45,118,464` bytes; current Authula-enabled tree builds to `76,047,360` bytes; delta is `+30,928,896` bytes (~29.5 MiB). This is visible but acceptable for the operator mini-PC profile unless the Docker image budget says otherwise.
+
+**CI hardening added in the same forward step:**
+
+- `.github/workflows/ci.yml` now has a focused no-CGO Authula seam test (`internal/webauth`, `internal/agui`, `cmd/aura`, `internal/config`).
+- The Windows unit lane now sets `CGO_ENABLED=0` explicitly to avoid hosted-runner sqlite CGO drift from Authula's transitive dependency tree.
+- The db integration lane now has an explicit `TestMigrate0019` drill in addition to the broader `internal/db/...` run.
+
+**Forward implementation fixes added after the ledger update (currently uncommitted — working tree):**
+
+- `cmd/aura/newServeHandler` now accepts the small credential-provider interface (`Handler() http.Handler`) instead of the concrete `*webauth.Provider`, so `/auth/*` can be regression-tested without a live Authula/Postgres stack (`serve_webui.go:159-176`). `credentialProviderConfigured` reflects over the interface so a typed-nil provider reads as disabled.
+- New `AuthDeps.PublicRoute func(*http.Request) bool` seam (`internal/agui/auth.go:84-87`); `RequireAuth` now passes through when `isPublicPath(...) || PublicRoute(r)` (`auth.go:203`). This is the generic pre-session bootstrap hook the config route rides on (credential subtrees still use `AuthBasePath`).
+- New public **SPA bootstrap route `GET /api/auth/config`** (`newAuthConfigHandler`, `serve_webui.go:233-302`): the login page reads it to choose the passphrase form vs the Authula email/password + TOTP flow. Passphrase mode returns `{"provider":"passphrase"}` with no cookie/header; Authula mode returns `{provider, auth_base_path, csrf_cookie_name, csrf_header_name, csrf_token}`, mints a 256-bit double-submit token, and sets the `__Host-authula_csrf_token` cookie (`Secure`, `HttpOnly:false`, `Path=/`, `SameSite=Strict`) + the `X-AUTHULA-CSRF-TOKEN` response header, all `Cache-Control: no-store`. The route is marked public by augmenting `auth.PublicRoute` (reachable pre-session) and reveals no secret material; the §4.7 CSRF double-submit contract is wired end-to-end on the bootstrap path.
+- **SPA login replacement — DONE (frontend + backend):** `web/src/routes/LoginPage.tsx` (+373/−81) now fetches `/api/auth/config`, and when `provider==="authula"` renders the full Authula flow — email/password sign-in → TOTP step (with `totp_redirect` branch) → backup-code fallback, a trust-device checkbox, password show/hide, and CSRF header plumbing (`authulaHeaders` echoes the issued token on each unsafe `/auth/*` POST: `/auth/email-password/sign-in`, `/auth/totp/verify`, `/auth/totp/verify-backup-code`). It falls back to the passphrase form when `provider==="passphrase"`. TOTP-input a11y (§4.2.1/AC-17) is substantially present: `inputMode="numeric"`, `autocomplete="one-time-code"`, `aria-invalid` omit-when-valid, `role="alert"` error region, autofocus. `web/src/i18n/resources.ts` (+30) adds the `login.authula.*` + `login.errors.wrongCredentials/wrongCode` keys (en+it).
+- **Tests:** `TestServeWebuiAuthulaSubtreePublic` (pre-session `/auth/*` reachable, `/authx` gated), `TestServeWebuiAuthConfigPublic` (passphrase/authula bodies, CSRF cookie attrs, no leak to AG-UI/credential handler), `resolveWebAuthIdentityID` unit tests (`serve_auth_test.go`), `LoginPage.test.tsx` (+114, the authula flow), and a TOTP-generating Playwright harness `web/e2e/auth.ts` (+154) — `authenticateViaAuthula` derives a live TOTP code (base32-decode + HOTP) from `AURA_E2E_AUTHULA_{EMAIL,PASSWORD,TOTP_SECRET}`, with `authConfig(page)` selecting the auth path.
+- `resolveWebAuthIdentityID` honors `AURA_AUTHULA_OPERATOR_IDENTITY` when `AURA_WEB_AUTH_PROVIDER=authula`; passphrase mode remains pinned to `local` (`serve_auth.go:143-165`).
+
+**Frontend integration + cutover validation (2026-06-18):**
+
+- Frontend integration is now wired through the production login page and the E2E helper: `/api/auth/config` chooses `passphrase` vs `authula`; Authula sign-in posts JSON to `/auth/email-password/sign-in`; TOTP posts JSON to `/auth/totp/verify`; backup code fallback posts to `/auth/totp/verify-backup-code`; each unsafe Authula request echoes the issued `X-AUTHULA-CSRF-TOKEN`.
+- Validation passed after the keyed TOTP-field regression fix: `npm run typecheck`, focused `LoginPage` vitest, full `npm test` (199 tests), `CGO_ENABLED=0 go test -count=1 ./internal/agui ./cmd/aura ./internal/webauth`, and `npm run build` for the embedded `internal/webui/dist` bundle.
+- Rendered frontend smoke was validated with Playwright at desktop `1365x768` and mobile `390x844`, mocking only same-origin auth/runtime endpoints. Assertions covered the Authula credential POST body/header, the TOTP POST body/header, empty TOTP input before fill, post-login shell reachability, and zero console warnings/errors. The Browser plugin was attempted first, but no in-app browser handle was available (`agent.browsers.list()` returned `[]`), so Playwright was the fallback.
+- Live cutover against the running Docker stack is blocked, not green: `http://127.0.0.1:9080/api/auth/config` still returns 401, which proves the active `aura:local` image is older than this route, and `http://127.0.0.1:9080/healthz` returns 503. Docker logs show scheduler database authentication failures for the runtime Postgres role (`password authentication failed for user "aura_app"`). Starting the current source against the same DSN reproduces the database auth failure. Cutover requires fixing the Docker/Postgres role credential mismatch and recreating the Aura container from the rebuilt code before running the real enrolled-operator E2E.
+- **Re-probe (2026-06-18, after a container recreate):** `GET /healthz` → **200** (the Postgres `aura_app` / 503 blocker is resolved; `aura` container Up ~19m healthy), but `GET /api/auth/config` → **still 401**. The recreated container is running a **stale image that predates the uncommitted `/api/auth/config` public route** — so the SPA login bootstrap would fail against the live stack and the cutover is **still not green**. Closing it requires building the `aura` image FROM the current working tree (commit → `docker compose build aura` → recreate), not just recreating from `aura:local`, then running the enrolled-operator E2E.
+
+> **Status of the above:** these changes are **in the working tree, not yet committed** — the modified `internal/agui/auth.go`, `cmd/aura/{serve_auth,serve_webui,serve_webui_test}.go`, `web/src/routes/LoginPage.tsx`, `web/src/i18n/resources.ts`, `web/src/__tests__/LoginPage.test.tsx`, `web/e2e/auth.ts`, `web/playwright.config.ts`, `.github/workflows/ci.yml`, a rebuilt `internal/webui/dist`, plus untracked `cmd/aura/serve_auth_test.go`. The `d3aee82d` / `e3541f15` commits cover only M0 + the M1/M2 provider/seam; this SPA-login layer is uncommitted (an in-flight implementation pass). Commit before treating this ledger as on-disk history.
+
+**Still pending before Authula is production-default:**
+
+- First-run operator enrollment UX (`aura auth init` or setup-page flow), including mandatory TOTP enrollment — this is the last functional gap (the login flow now assumes an enrolled operator + TOTP secret exists).
+- Live cutover smoke after the Docker/Postgres role mismatch is fixed and the Aura image is recreated from the current code: boot with `AURA_WEB_AUTH_PROVIDER=authula`, enroll an operator, then run the `web/e2e/auth.ts` Authula path with a real `AURA_E2E_AUTHULA_*` secret against `/auth/*`, `/api/auth/config`, protected SPA, `/agent/run`, `/api/conversations`, logout, expired-session redirect, and rollback to `passphrase`.
+- Commit the working-tree layer above and re-run the CI gates green.
 
 ## 0. TL;DR / Verdict
 
@@ -53,7 +112,7 @@ Composition-root sequence in `New()` (`auth.go:45-155`): init logger → init/ac
   })
   ```
   Defaults (`config/options.go:28-39`): `CookieName="authula.session_token"`, `HttpOnly=true`, **`Secure=false`**, `SameSite="lax"`, `ExpiresIn=7d`, `UpdateAge=24h`, `CookieMaxAge=24h`, `MaxSessionsPerUser=5`. `getSameSiteMode` (`plugin.go:152-163`) supports strict/lax/none.
-  > **Gap vs Aura today:** Aura's current cookie is `__Host-aura_session` with `Secure:true` + `SameSite=Strict` hard-coded (`auth_cookie.go:123-133`). Authula's cookie name is **not** `__Host-`-prefixed and Secure defaults off. The integration MUST set `Session.Secure=true`, `SameSite="strict"`, and — to keep the `__Host-` guarantee — set `CookieName="__Host-authula.session_token"` (the `__Host-` prefix is satisfied because Authula sets `Path:/` and no `Domain`).
+  > **Gap vs Aura today:** Aura's current cookie is `__Host-aura_session` with `Secure:true` + `SameSite=Strict` hard-coded (`auth_cookie.go:123-133`). Authula's cookie name is **not** `__Host-`-prefixed and Secure defaults off. The integration MUST set `Session.Secure=true`, `SameSite="strict"`, and — to keep the `__Host-` guarantee — set `CookieName="__Host-authula_session"` (the `__Host-` prefix is satisfied because Authula sets `Path:/` and no `Domain`).
 
 ### 1.4 Storage (Postgres / Redis / MySQL / SQLite)
 
@@ -327,7 +386,7 @@ The stack runs `aura-postgres`. Aura owns the `aura.*` schema (11 migrations, `g
 
 **Coexistence design (H1):**
 
-1. **Dedicated Postgres schema `authula`.** Create it in a new Aura migration `0012_authula_schema.up.sql` (`CREATE SCHEMA IF NOT EXISTS authula; GRANT ... TO aura_app, aura_migrate;`). Point Authula's DSN at it via `search_path`: `AUTHULA_DATABASE_URL=postgres://aura_app:…@aura-postgres/aura?search_path=authula`. bun honors `search_path`, so all Authula tables + its `auth_schema_migrations` ledger land in `authula.*`, fully disjoint from `aura.*` and `public`.
+1. **Dedicated Postgres schema `authula`.** Create it in Aura migration `0019_authula_schema.up.sql` (`CREATE SCHEMA IF NOT EXISTS authula; GRANT ... TO aura_app, aura_migrate;`). Point Authula's DSN at it via `search_path`: `AURA_AUTHULA_DATABASE_URL=postgres://aura_app:...@aura-postgres/aura?search_path=authula` (or leave empty so Aura derives it from `AURA_DB_URL`). bun honors `search_path`, so all Authula tables + its `auth_schema_migrations` ledger land in `authula.*`, fully disjoint from `aura.*` and `public`.
 2. **Separate connection / pool.** Pass Authula its own `bun.IDB` built on a small dedicated pool (do not reuse Aura's `pgxpool` — bun wants a `database/sql`/`bun` handle, and connection-level `search_path` differs). This keeps Authula's auto-migrations (`auth.go:70`) from touching Aura's pool. Modest pool (e.g. max 5) — auth is low-QPS.
 3. **Watermill = gochannel (in-memory).** Do NOT use the PG/SQLite watermill event-bus transports — they `InitializeSchema:true` and would auto-create their own tables. gochannel needs no DB.
 4. **Migration ownership stays separate.** Aura's `golang-migrate` manages `aura.*` + the `authula` schema *creation*; Authula's own migrator manages the contents of `authula.*`. Two ledgers (`aura.schema_migrations`-equivalent vs `authula.auth_schema_migrations`) never overlap. Document this dual-ownership in the migration-numbering source of truth.
@@ -343,9 +402,9 @@ Driven by a feature flag **`AURA_WEB_AUTH_PROVIDER ∈ {passphrase, authula}`** 
 
 ### 7.1 Phase M0 — coexistence scaffolding (flag default `passphrase`)
 - Add the dependency, build a spike binary, **measure binary-size delta + confirm `go 1.26.4` toolchain parity** (go/no-go for A2 vs §3.5 fallback).
-- Add migration `0012_authula_schema` (schema only). Add Authula config + dedicated pool wiring behind the flag (inert while flag=`passphrase`).
+- Add migration `0019_authula_schema` (schema + identity-link table only). Add Authula config + dedicated pool wiring behind the flag (inert while flag=`passphrase`).
 - No behavior change: passphrase auth still active. CI green, coverage floor held.
-- **Rollback:** revert the commit; `0012` drops the (empty) `authula` schema. Zero user impact.
+- **Rollback:** revert the commit; `0019` drops the `authula` schema and `aura.identity_auth_links`. Zero user impact while the flag is still `passphrase`.
 
 ### 7.2 Phase M1 — Authula shadow + operator enrollment (flag still `passphrase`)
 - Mount `auth.Handler()` under `/auth/*`; run Authula migrations into `authula.*`.
@@ -417,7 +476,7 @@ New / changed files (all ≤600 LOC per the no-god-class rule; split by concern)
 | File | Action | Concern |
 |---|---|---|
 | `go.mod` / `go.sum` | edit | add `authula v1.11.0` (M0) |
-| `internal/db/migrations/0012_authula_schema.up.sql` / `.down.sql` | new | `CREATE SCHEMA authula` + grants (M0) |
+| `internal/db/migrations/0019_authula_schema.up.sql` / `.down.sql` | new | `CREATE SCHEMA authula` + grants + `aura.identity_auth_links` (M0) |
 | `internal/webauth/authula.go` | new | construct `authula.New` with hardened config (cookie §4.6, CSRF §4.7, plugins: session+email-password+totp+csrf+rate-limit, gochannel bus), own bun pool on `search_path=authula` |
 | `internal/webauth/session_validate.go` | new | the A2 seam: validate Authula cookie → Authula user-id → Aura identity UUID; the `verifySession`-replacement injected into `RequireAuth` |
 | `internal/webauth/identity_link.go` | new | `identity_auth_links` upsert + resolve (operator user-id ⇄ `local` UUID) |
@@ -461,12 +520,12 @@ New / changed files (all ≤600 LOC per the no-god-class rule; split by concern)
 
 ## 11. Open Questions
 
-1. **OQ-1 (toolchain):** Is Aura's toolchain ≥`go 1.26.4`? If not, M0 must bump it or fall back (§3.5). *Resolve in M0 — go/no-go gate.*
-2. **OQ-2 (binary size):** Acceptable delta from Authula's transitive tree (watermill/sarama/nats/amqp present as indirect even if only gochannel imported)? Measure; if linker can't drop unused transports the delta may be large. *Resolve in M0.*
+1. **OQ-1 (toolchain): ✅ RESOLVED in M0.** Aura is building with `go1.26.4`; Authula's `go 1.26.4` requirement is satisfied.
+2. **OQ-2 (binary size): ✅ MEASURED in M0.** `CGO_ENABLED=0` size delta is `+30,928,896` bytes (`45,118,464` -> `76,047,360`). Accept for now, but keep Docker/image-budget visibility.
 3. **OQ-3 (session validate API): ✅ RESOLVED — read from the clone, no spike needed.** `auth.CoreServices()` (`auth.go:365`, returning `*services.CoreServices` — the import is aliased `coreservices "github.com/Authula/authula/services"`, `auth.go:17`) exposes the field **`CoreServices.SessionService`** of interface type `services.SessionService` (`services/core.go:64-71`, `:30-41`). That interface declares the exact methods the A2 seam needs:
    - **`GetByToken(ctx context.Context, hashedToken string) (*models.Session, error)`** — the validate-by-token primitive. There is **no** "validate raw cookie" convenience; the seam must hash the raw cookie itself first, exactly as Authula's own `session/hooks.go:73-86` does: `hashedToken := tokenService.Hash(rawCookieValue)` then `GetByToken(ctx, hashedToken)`, then check `session.ExpiresAt.Before(time.Now().UTC())` for expiry (Authula does the expiry check in the hook, NOT inside `GetByToken`). The hash primitive is **`CoreServices.TokenService.Hash(token string) string`** (`services/core.go:52-57`, SHA-256 hex per `internal/repositories/crypto_token_repository.go:39`).
    - **`Create(ctx, userID, hashedToken, ipAddress, userAgent, maxAge) (*models.Session, error)`** + **`Delete(ctx, ID string) error`** + **`DeleteAllByUserID(ctx, userID) error`** — back R-ROT rotation (§4.4) and "sign out everywhere" (§4.4) without reaching into repositories.
-   - **Seam impl (`internal/webauth/session_validate.go`):** `hashed := auth.CoreServices().TokenService.Hash(cookie.Value)` → `sess, err := auth.CoreServices().SessionService.GetByToken(ctx, hashed)` → on `err==nil && sess!=nil && sess.ExpiresAt.After(now)` map `sess.UserID` → Aura identity UUID → `withPrincipal`; else 302/401. This is a public-interface call path — the "replace only the cookie-validation core" strategy holds; **no repository-level fallback is required** and the §9 file targets are unchanged. *Settled at SPEC time; the only remaining M0 gates are OQ-1/OQ-2.*
+   - **Seam impl (`internal/webauth/session_validate.go`):** `hashed := auth.CoreServices().TokenService.Hash(cookie.Value)` → `sess, err := auth.CoreServices().SessionService.GetByToken(ctx, hashed)` → on `err==nil && sess!=nil && sess.ExpiresAt.After(now)` map `sess.UserID` → Aura identity UUID → `withPrincipal`; else 302/401. This is a public-interface call path — the "replace only the cookie-validation core" strategy holds; **no repository-level fallback is required** and the §9 file targets are unchanged. *Settled at SPEC time; OQ-1/OQ-2 are now resolved/measured in M0.*
 4. **OQ-4 (operator bootstrap):** First-run UX — does the existing setup wizard create the Authula operator + enroll TOTP, or is there a one-time CLI `aura auth init`? Single-operator means a chicken-and-egg on first login. *Design in discuss-phase.*
 5. **OQ-5 (CSRF + SSE fetch):** Confirm the SPA can read the non-HttpOnly CSRF cookie cross-route and that `EnableHeaderProtection`'s `TrustedOrigins` is set to the cockpit origin(s) incl. the bound host. *Resolve in plan-phase.*
 6. **OQ-6 (RBAC unused tables):** Authula creates `access_control_*` even if the plugin is enabled-but-unused. Disable the `access-control` plugin entirely (we keep authz in Aura) to avoid dead tables? *Recommend: disable it; confirm session plugin doesn't depend on it.*
@@ -495,10 +554,10 @@ New / changed files (all ≤600 LOC per the no-god-class rule; split by concern)
 | Phased migration + rollback | 10 | 4 phases, feature flag, per-phase rollback table, env-flip cutover safety net |
 | STRIDE threat model | 9.5 | Full STRIDE table + session/CSRF/bind-guard subsections cross-referenced to odysseus's threat model; −0.5: event-bus durability and proxy-trust residuals acknowledged rather than fully closed |
 | Best-practice citations (2026) | 9.5 | OWASP cookie baseline + Fetch-Metadata-as-CSRF (Dec 2025 cheat-sheet) + the `Sec-Fetch-Site` bypass footgun, cited inline; TOTP-input a11y/mobile contract (§4.2.1) adopted from odysseus `login.html` |
-| Acceptance + open questions | 9.5 | 17 machine-checkable AC (incl. AC-17 TOTP a11y) + 8 OQ, of which the central-seam OQ-3 is now SETTLED at SPEC time (only OQ-1/OQ-2 build-time gates remain) |
+| Acceptance + open questions | 9.5 | 17 machine-checkable AC (incl. AC-17 TOTP a11y) + 8 OQ; OQ-1/OQ-2 are resolved/measured in M0 and OQ-3 is SETTLED at SPEC time, leaving the production-default gates OQ-4..OQ-8 |
 | Document structure / no stubs | 10 | Duplicate empty `## 4.`/`## 5.` skeleton headers removed; the sole §0 repeat is an explicitly-labeled back-reference; no placeholder sections remain |
 
-**Why the gate is 9.5 (not 10):** two dimensions sit at 9.5 — the STRIDE table acknowledges (rather than fully closes) two residuals appropriate for a single-operator product (in-memory event-bus durability, the operator-acknowledged trust-proxy escape hatch), and two genuine build-time gates remain (OQ-1 toolchain `go 1.26.4` parity, OQ-2 binary-size delta) that **require running a build** and cannot honestly be settled in a document. The previously-blocking defects are all fixed: the `sseAdapter.ts` path is corrected and every `web/src` path verified; the duplicate empty §4/§5 stubs are removed; **OQ-3 (the load-bearing A2 seam API) is resolved from the clone** with exact symbols + signatures, not deferred; and the §4.2.1 TOTP-input a11y/mobile checklist + AC-17 close the login-surface accessibility gap. Min-of-dimensions = **9.5 → clears the gate.**
+**Why the gate is 9.5 (not 10):** two dimensions sit at 9.5 — the STRIDE table acknowledges (rather than fully closes) two residuals appropriate for a single-operator product (in-memory event-bus durability, the operator-acknowledged trust-proxy escape hatch), and Authula is not production-default until operator enrollment, SPA login replacement, and cutover/rollback smoke are complete. The previously-blocking defects are all fixed: the `sseAdapter.ts` path is corrected and every `web/src` path verified; the duplicate empty §4/§5 stubs are removed; **OQ-3 (the load-bearing A2 seam API) is resolved from the clone** with exact symbols + signatures, not deferred; OQ-1/OQ-2 are now resolved/measured by M0; and the §4.2.1 TOTP-input a11y/mobile checklist + AC-17 close the login-surface accessibility gap. Min-of-dimensions = **9.5 → clears the gate.**
 
 **Sources (online):**
 - OWASP / 2026 cookie security baseline — [ZeriFlow: Cookie Security Flags 2026](https://zeriflow.com/blog/cookie-security-flags-best-practices), [Acunetix: Cookie Security Flags](https://www.acunetix.com/blog/web-security-zone/cookie-security-flags/)

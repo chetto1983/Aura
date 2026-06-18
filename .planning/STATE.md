@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: verifying
-stopped_at: Completed 25-03-PLAN.md (chat lane)
-last_updated: "2026-06-17T17:45:11.611Z"
-last_activity: 2026-06-17
+status: phase-25-closed
+stopped_at: Phase 25 closed (8/8 verified); cockpit-overhaul reworking 23/24/25 surfaces (uncommitted)
+last_updated: "2026-06-18T00:00:00.000Z"
+last_activity: 2026-06-18
 progress:
   total_phases: 8
   completed_phases: 4
@@ -25,26 +25,25 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 26 of 7 (typed display protocol + router)
-Plan: Not started
-Status: Phase 25 implementation complete — ready for /gsd-verify-work
-Last activity: 2026-06-17
+Phase: 25 of 8 — **CLOSED** (Chat + Approval Center). Next: Phase 26 (Typed-Display Protocol + Router) — not started.
+Plan: Not started (Phase 26)
+Status: Phase 25 closed — 8/8 must-haves verified (`25-VERIFICATION.md`), 4 code-review findings fixed; the 6 live-stack UAT items are carried into the cockpit-overhaul live cutover (see below). Phases 22–25 all complete.
+Last activity: 2026-06-18
 
-### Next -- Execute Phase 22
+### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
-The v1.0.0 roadmap is revised per the operator directive (2026-06-15): the industrial frontend foundation is set up FIRST (research-locked toolchain, linter/formatter CI gate, design-token theme, brand, embedded build/test pipeline) before any cockpit feature code. Seven phases derived from the 39 milestone requirements:
+After Phase 25 closed, a premium-bar cockpit overhaul reworked the Phase-23/24/25 surfaces in place. The full spec set + adversarial validation + per-spec implementation ledgers live in `docs/cockpit-overhaul/` (`00-VALIDATION.md` is the umbrella). Status as of 2026-06-18:
 
-- **Phase 22 — Agent Perimeter Hardening** (HARDEN-01..12) — pre-existing spec at `.planning/phases/22-bug-fix/22-SPEC.md`; gates web exposure. FIRST.
-- **Phase 23 — Frontend Infrastructure & Industrial Foundation** (FND-01..06) — RESEARCH-FIRST: locked decision record (FND-01) + Vite/React/TS `//go:embed` scaffold + linter/formatter/type-check CI gate + dark-operator design-token theme + brand from `public/Logo.png` + Node-24 build/test pipeline. Foundation before features.
-- **Phase 24 — Web Foundation — Serve + Auth + Health** (WEB-01..04) — real single-binary SPA host over the Phase-23 embed pipeline + SPA-fallback route exclusion + GAP-2 auth boundary + non-loopback boot guard + health shell; gates every feature UI surface.
-- **Phase 25 — Chat + Approval Center** (CHAT-01..04, APRV-01..03) — Core-Value chat loop + cross-thread HITL queue.
-- **Phase 26 — Typed-Display Protocol + Router** (DISP-01..05, SWARM-01) — GAP-1 `aura.display` spine + display router.
-- **Phase 27 — Neo4j Graph Explorer** (GRAPH-01..04) — graph normalizer + read-only Cypher guard + WebGL canvas.
-- **Phase 28 — Governance Boards + Web Onboarding** (GOV-01..03, ONBD-01..02) — read-only boards + web setup wizard.
+- **Design (Phase 23 surface):** token pipeline + fonts (Fraunces/Hanken Grotesk/Commit Mono) shipped; the palette shipped as a **logo-matched BLUE** theme (operator-accepted 2026-06-18 — NOT the speced gold). WCAG AA re-proven (`web/scripts/contrast-check.mjs`, 15/15 required pairs). Spec 03.
+- **Shell (Phase 23/24 surface):** 100svh grid fix + real mode nav + drawers + edge-swipe (full §3.1b contract) + intent-restore reducer + 380px chat-lane floor. Specs 01/02.
+- **Auth (Phase 24 surface):** the Phase-24 HMAC passphrase cookie is being **superseded by Authula** (embedded, flag-gated `AURA_WEB_AUTH_PROVIDER=authula`, default still `passphrase`). M0/M1/M2 committed (`d3aee82d`/`e3541f15`); the SPA login (email/password→TOTP→backup-code + `/api/auth/config` + CSRF) is implemented but **uncommitted** in the working tree. Spec 05.
+- **Chat/footer (Phase 25 surface):** `ExternalStoreChat` enhanced in place (sanitized markdown, tool-card enrichment — elapsed/auto-collapse/subagent rows, 3-tier footer gauge, settled-only ARIA-live, mobile disclosure). Specs 01/04.
 
-Phases 23–28 are UI phases (`ui_phase: true` — design contract gate applies). Phase 23 is research-first (its industrial-infra RESEARCH.md runs at plan time before any scaffolding code). Governance writes (GOVW) + `ui_control` shell (SHELL) are deferred to a follow-up milestone.
+A large frontend + auth layer is **uncommitted** in the working tree. The Phase-25 live UAT (SSE feel, reasoning persistence, branch nav, HITL flow, footer live, live Playwright) is best re-run ONCE against the committed overhaul + Authula stack — folded into the overhaul live cutover, not re-run against the pre-overhaul surface.
 
-Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` ≥85%, WSL `golangci-lint`/`govulncheck`/`go-mutesting` ≥70% on the three critical files, and the full `aura serve` live-stack acceptance matrix — runbook in `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`), then flip Phase 22 to complete and proceed to `/gsd-plan-phase 23`.
+### Next
+
+Commit the cockpit-overhaul working-tree layer + run the live cutover (incl. the carried Phase-25 UAT + the Authula cutover smoke), then `/gsd-plan-phase 26` (Typed-Display Protocol + Router). Phase 22 Gate-3 is **CLOSED** (commit `28c1f7c7`, 2026-06-16) — the earlier "awaits Part-B sign-off" note is superseded.
 
 ## Performance Metrics
 

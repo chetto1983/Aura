@@ -10,6 +10,16 @@ planned_at: 2026-06-16
 
 # Phase 24 — Validation Strategy
 
+> **Superseded-in-part (2026-06-18) by the cockpit overhaul.** Phase 24 shipped the GAP-2 web-auth
+> boundary as an in-binary HMAC passphrase session cookie (`internal/agui/auth.go`+`auth_cookie.go`). The
+> post-Phase-25 cockpit overhaul **replaces the auth provider with embedded Authula** (email/password +
+> TOTP + backup codes + double-submit CSRF), flag-gated behind `AURA_WEB_AUTH_PROVIDER` (default still
+> `passphrase`, so this phase's boundary remains the live default until cutover). The `principalKey{}` +
+> `RequireCapability` + `capability_grants` contract is preserved. Current auth contract = this phase as
+> amended by `docs/cockpit-overhaul/05-authula-auth-SPEC.md`. The SPA host + boot guard + health shell are
+> unchanged. (Operator note: `AURA_WEB_AUTH_SECRET` is the passphrase-provider knob; Authula adds
+> `AURA_AUTHULA_*`.)
+
 > Per-phase validation contract for feedback sampling during execution.
 > Seeded from `24-RESEARCH.md` §"Validation Architecture"; the per-task map below
 > is now populated with the `24-NN` plan/task IDs from the four PLAN.md files.

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { RuntimeFooter } from '../RuntimeFooter';
@@ -61,6 +61,7 @@ function renderFooter(props: {
   usage?: TurnUsage;
   conversationId?: string;
   windowTokens?: number;
+  turnSettled?: boolean;
 }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -71,6 +72,7 @@ function renderFooter(props: {
       conversationId={props.conversationId ?? 'c-1'}
       {...(props.usage ? { usage: props.usage } : { usage: undefined })}
       {...(props.windowTokens !== undefined ? { windowTokens: props.windowTokens } : {})}
+      {...(props.turnSettled !== undefined ? { turnSettled: props.turnSettled } : {})}
     />,
     { wrapper: Wrapper },
   );
@@ -251,7 +253,9 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
       expect(container.textContent).not.toMatch(/NaN/);
       expect(screen.getByText(/Session 3\.9k/)).toBeTruthy();
       expect(screen.getByText(/Session 5%/)).toBeTruthy();
-      expect(screen.getByText(/Session \$0\.0214/)).toBeTruthy();
+      // AC-7: the Session cost figure renders in BOTH the mobile compact summary
+      // and the desktop full cluster, so it is intentionally duplicated.
+      expect(screen.getAllByText(/Session \$0\.0214/).length).toBeGreaterThan(0);
     });
   });
 
@@ -335,5 +339,86 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     await waitFor(() => {
       expect(screen.queryByText(/Compacted/)).toBeNull();
     });
+  });
+
+  // AC-6: the settled numeric cluster (TOKENS/CACHE/COST) sits in a single
+  // role=status aria-live=polite aria-atomic region that announces on SETTLE.
+  it('wraps the settled numeric cluster in a role=status aria-live=polite region', () => {
+    const usage: TurnUsage = {
+      promptTokens: 120,
+      completionTokens: 80,
+      cacheHitTokens: 60,
+      costUsd: 0.0012,
+    };
+    const { container } = renderFooter({ usage, turnSettled: true });
+    const status = container.querySelector('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(status?.getAttribute('aria-atomic')).toBe('true');
+    // The numeric instruments live inside the status region (announced together).
+    expect(status?.textContent).toMatch(/200/); // tokens 120+80
+    expect(status?.textContent).toMatch(/50%/); // cache 60/120
+    expect(status?.textContent).toMatch(/\$0\.0012/); // cost
+  });
+
+  // AC-6: while a turn is RUNNING (not settled) the live region must NOT announce
+  // the in-flight figures — it holds the prior settled numbers.
+  it('does not announce in-flight figures while a turn is running (settled-only)', () => {
+    const settled: TurnUsage = {
+      promptTokens: 100,
+      completionTokens: 50,
+      cacheHitTokens: 10,
+      costUsd: 0.0005,
+    };
+    const { container, rerender } = renderFooter({ usage: settled, turnSettled: true });
+    const statusBefore = container.querySelector('[role="status"]');
+    expect(statusBefore?.textContent).toMatch(/150/); // 100+50 settled
+
+    // A new turn streams: a different in-flight usage arrives but turnSettled=false.
+    const inflight: TurnUsage = {
+      promptTokens: 999,
+      completionTokens: 1,
+      cacheHitTokens: 0,
+      costUsd: 0.5,
+    };
+    rerender(<RuntimeFooter conversationId="c-1" usage={inflight} turnSettled={false} />);
+    const statusAfter = container.querySelector('[role="status"]');
+    // The live region still holds the PRIOR settled numbers, not the streaming ones.
+    expect(statusAfter?.textContent).not.toMatch(/1k/); // 999+1=1000 → "1k" must NOT leak
+    expect(statusAfter?.textContent).toMatch(/150/); // prior settled value retained
+  });
+
+  // AC-7: below sm the footer exposes a tap-to-expand disclosure with a compact
+  // summary; the full telemetry stays present for desktop.
+  it('renders a mobile disclosure control to expand the full telemetry', () => {
+    const usage: TurnUsage = {
+      promptTokens: 120,
+      completionTokens: 80,
+      cacheHitTokens: 60,
+      costUsd: 0.0012,
+    };
+    const { container } = renderFooter({ usage, turnSettled: true });
+    // A disclosure toggle carries aria-expanded and is hidden on desktop (sm:hidden).
+    const toggle = container.querySelector('[aria-expanded]');
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle?.className).toMatch(/sm:hidden/);
+    // The full instrument cluster is visible from sm up (the disclosure is mobile-only).
+    const full = container.querySelector('.hidden.sm\\:flex, .hidden.sm\\:grid');
+    expect(full).not.toBeNull();
+  });
+
+  it('expands the mobile disclosure on click (aria-expanded toggles true)', () => {
+    const usage: TurnUsage = {
+      promptTokens: 120,
+      completionTokens: 80,
+      cacheHitTokens: 60,
+      costUsd: 0.0012,
+    };
+    const { container } = renderFooter({ usage, turnSettled: true });
+    const toggle = container.querySelector('[aria-expanded]');
+    if (toggle === null) throw new Error('expected a mobile disclosure toggle');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 });

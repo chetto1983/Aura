@@ -1,7 +1,7 @@
 ---
 doc: cockpit-overhaul/01
 title: Chat Lane — assistant-ui canonical Thread rebuild (premium, mobile-aware) — Industrial SPEC
-status: draft
+status: partially implemented (see Implementation Ledger 2026-06-18) — lighter in-place enhancement of ExternalStoreChat.tsx; canonical Thread split NOT built
 created: 2026-06-17
 owner: cockpit-overhaul milestone (v1.0.0 Deep Search Web Cockpit)
 runtime: useExternalStoreRuntime over AG-UI/SSE (NOT AI SDK) — sseAdapter.ts is the backend contract, KEPT
@@ -35,9 +35,127 @@ constraints: assistant-ui 0.14.x · keep sseAdapter + runtime + continue-after-r
 
 ---
 
+## Implementation Ledger (2026-06-18)
+
+This section reconciles the forward-looking design above against the code actually on
+`master`. It does **not** weaken any acceptance criterion — the original §1–§14 contract
+remains the aspirational target; the ledger records what shipped, what did not, and the one
+headline architectural deviation. All claims cite a real `file:line` read from the tree.
+
+**Commit that implemented (the subset of) this spec:** `fc77e4cb feat(cockpit): overhaul
+shell and chat lifecycle` (2026-06-17). The chat-lane part of that commit touched
+`Composer.tsx` (+31/−), `ExternalStoreChat.tsx` (+93/−), `ToolActivityCard.tsx` (+31/−),
+`MarkdownText.tsx` (new, 65 LOC), `markdownSanitize.ts` (new, 32 LOC), `ContextBudgetGauge.tsx`,
+`RuntimeFooter.tsx`, `footerMetrics.ts`, `i18n/resources.ts` (+62), and the approval cards
+(`InlineApprovalCard.tsx` +6, `ThreadApprovalCards.tsx` via shell mount).
+
+### Headline deviation — canonical Thread split was NOT built
+
+The central architectural move this SPEC proposed — splitting the runtime out of
+`ExternalStoreChat.tsx` into a `useAuraChatRuntime` hook, hoisting the
+`AssistantRuntimeProvider` to the shell, and rebuilding the presentation as a canonical
+`Thread` tree (`ChatLane.tsx`, `messages/UserMessage.tsx`, `messages/AssistantMessage.tsx`,
+`messages/EditComposer.tsx`, `messages/MessageActionBar.tsx`, `ThreadWelcome.tsx`,
+`ThreadScrollToBottom.tsx`) — **did not happen.** Instead, `ExternalStoreChat.tsx` was
+**kept and enhanced in place**: it still owns the runtime *and* renders the JSX, still mounts
+its own `AssistantRuntimeProvider` (`ExternalStoreChat.tsx:318`), still renders its own
+`<Composer/>` inside `ThreadPrimitive.Root` (`:344`), and `UserMessage`/`AssistantMessage`
+remain **inline functions in the same file** (`:350`, `:409`) rather than extracted to
+`messages/*`. The directory `web/src/chat/messages/` does not exist. What landed is a
+**lighter, in-place enhancement** (markdown+sanitize security upgrade, a tool-card enrichment
+*subset*, a token re-skin) — not the canonical presentation rebuild.
+
+### Per-file-target status (against §1.4)
+
+| Spec-proposed file | Status | Evidence |
+|---|---|---|
+| `useAuraChatRuntime.ts` (new, extract) | **NOT BUILT** | absent; runtime logic still inline in `ExternalStoreChat.tsx:71-315` |
+| `ChatLane.tsx` (new, Thread tree) | **NOT BUILT** | absent; the Thread tree is inline `ExternalStoreChat.tsx:317-347` |
+| `ExternalStoreChat.tsx` (→ thin shim) | **DEVIATED** | NOT thinned — kept as the full lane (runtime + JSX, 463 LOC) and enhanced in place; still the shell's chat component (`AppShell.tsx:124`) |
+| `messages/UserMessage.tsx` (new) | **DEVIATED** | not extracted; inline `UserMessage()` `ExternalStoreChat.tsx:350-407` |
+| `messages/AssistantMessage.tsx` (new) | **DEVIATED** | not extracted; inline `AssistantMessage()` `ExternalStoreChat.tsx:409-462` |
+| `messages/EditComposer.tsx` (new) | **NOT BUILT** | absent; edit mode is still the inline `AuiIf composer.isEditing` branch `ExternalStoreChat.tsx:355-373` (the canonical "swap the whole message" pattern §3.1 was **not** adopted) |
+| `messages/MessageActionBar.tsx` (new) | **NOT BUILT** | absent; action bars are hand-rolled `opacity-0 hover:opacity-100` `ExternalStoreChat.tsx:389,445` — the `autohide="not-last"`/`hideWhenRunning` semantics §3.1/§3.2 were **not** adopted |
+| `ThreadWelcome.tsx` (new) | **NOT BUILT** | absent; empty state is the inline `AuiIf s.thread.isEmpty` block `ExternalStoreChat.tsx:321-330` (plain `font-display` heading, no `--motion-ease-expo` reveal, no suggestion chips) |
+| `ThreadScrollToBottom.tsx` (new) | **NOT BUILT** | absent; viewport is still a bare `overflow-y-auto` `ExternalStoreChat.tsx:320` — no `ThreadPrimitive.ScrollToBottom`, no `ViewportFooter`, no `turnAnchor`/`autoScroll` opt-in (§4 not implemented) |
+| `MarkdownText.tsx` (new) | **IMPLEMENTED** | `MarkdownText.tsx:1-65` — `MarkdownTextPrimitive` + `remarkGfm` + `rehypeSanitize` + styled table/pre/code/link |
+| `markdownSanitize.ts` (new) | **IMPLEMENTED (lighter schema)** | `markdownSanitize.ts:1-32` — `rehype-sanitize` allowlist; see drift note below |
+| `Composer.tsx` (edit + relocate) | **PARTIAL** | restyled + Send↔Stop kept (`Composer.tsx:12-41`); **NOT relocated** to `BottomDock` — still rendered inside the lane (`ExternalStoreChat.tsx:344`); the dock holds the mode selector + `RuntimeFooter` only (`AppShell.tsx:142-144`) |
+| `BranchPicker.tsx` (edit, restyle) | **IMPLEMENTED** | `BranchPicker.tsx:16-46` — chevron buttons + `font-mono tabular-nums text-accent` Number/Count + `AuiIf branchCount>1` + `hideWhenSingleBranch` |
+| `ReasoningDrawer.tsx` (token re-skin) | **IMPLEMENTED** | `ReasoningDrawer.tsx:30-65` — `border-border bg-surface-2`, `motion-reduce` chevron, persisted pref, `text.length===0→null` kept |
+| `ToolActivityCard.tsx` (re-skin + enrich) | **DONE** | re-skin + status-tint + auto-expand in `fc77e4cb`; elapsed/auto-collapse-once/subagent-rows completed 2026-06-18 — see §3.5 status below |
+| `approvals/InlineApprovalCard.tsx` (re-skin) | **PARTIAL** | `text-on-accent` used (`InlineApprovalCard.tsx:152`); but CardShell still `border-accent/40` (`:229`), **not** the §3.6 `border-l-2 border-l-accent` accent left-rule + `border-strong` |
+| `approvals/ThreadApprovalCards.tsx` (reposition) | **DEVIATED** | kept; but mounted by the shell as a **sibling of the lane** (`AppShell.tsx:131`), NOT inside `ChatLane`'s reading-measure column after the message group (§3.6); no accent column alignment |
+| `i18n/resources.ts` (new keys, en+it) | **IMPLEMENTED (with drift)** | `resources.ts:50,66,77,291,307,318` — `scrollToBottom`, `streaming`, `loading`, `markdown.copyCode/codeCopied`, `error.retry`, `empty.suggestionsLabel` added in en+it (several keys are unused given the un-built components) |
+| `web/package.json` (add deps) | **IMPLEMENTED** | `package.json:33-34` — `rehype-sanitize ^6.0.0` + `remark-gfm ^4.0.1` added |
+
+### What DID land (with evidence)
+
+- **Markdown + sanitization security upgrade (§3.3).** `MarkdownText.tsx:13-15` wires
+  `remarkPlugins={[remarkGfm]}` + `rehypePlugins={[[rehypeSanitize, markdownSanitizeSchema]]}`;
+  the schema (`markdownSanitize.ts:5-32`) is a `rehype-sanitize` allowlist over `defaultSchema`
+  (allow-not-deny model), restricting `href`/`cite` protocols to `http|https|mailto|tel`
+  (`:8-12`), re-adding gfm table tags (`:14-23`), and `strip: ['script','style']` (`:31`).
+  Links render with `rel="noreferrer" target="_blank"` (`MarkdownText.tsx:21-22`). This is the
+  one real security upgrade the SPEC framed, and it shipped.
+- **Tool-card enrichment (§3.5) — initial subset shipped in `fc77e4cb`; COMPLETED 2026-06-18
+  (TDD pass, working tree).** `fc77e4cb` shipped: status-tinted left-rule (`RULE_CLASS`) + status
+  pill (`PILL_CLASS`) keeping the dot — icon+text, never colour alone; and
+  **auto-expand-while-running** with a `userToggled` intent-guard. The 2026-06-18 pass then folded
+  in the three remaining §3.5 enrichments: **elapsed-time readout** (`useElapsed` hook,
+  leak-safe `setInterval` cleared on settle+unmount, `aria-hidden`, graceful-absent when no
+  timing), **auto-collapse-ONCE on the `running→done|error` settle edge** (one-shot via a
+  `prevStatus` ref, still `userToggled`-guarded — replaces the old re-seed-every-transition), and
+  **indented subagent child rows** (the body refactored into a reusable `ToolActivityRow` used by
+  parent + children, `ps-4 border-l border-border`, graceful-absent). The raw blob stays escaped
+  text in `<pre>` for parent AND children — D-02/XSS invariant intact (a child-level XSS test was
+  added). Backed by the extended `ToolActivityCard.test.tsx`.
+- **Composer restyle + Send↔Stop (§5, partial).** `Composer.tsx:24-38` keeps the
+  `ComposerPrimitive.Cancel`(Stop)↔`ComposerPrimitive.Send` swap on `s.thread.isRunning`,
+  `text-on-accent` on the accent CTA, IME-safe Enter handled by the primitive.
+- **i18n keys + deps** as tabled above.
+- **Footer / dock changes** (`RuntimeFooter.tsx`, `ContextBudgetGauge.tsx`, `footerMetrics.ts`,
+  `BottomDock.tsx`, `AppShell.tsx`) — these are **02-shell-sidebar-SPEC.md** surface, not this
+  spec's file targets; noted only because they share the commit.
+
+### What did NOT land (still pending if the canonical rebuild is intended)
+
+The entire §4 scroll-management contract (`ThreadPrimitive.Viewport turnAnchor/autoScroll`,
+`ViewportFooter`, `ScrollToBottom`), the §3.2 streaming `●` in-progress cursor, the §3.2/§7
+`.shine` streaming shimmer (**absent** — `grep shine web/src` returns nothing) + pre-first-token
+`<Skeleton>`, the canonical
+`EditComposer`/`MessageActionBar`/`ThreadWelcome` components, the provider hoist, and the
+composer→`BottomDock` relocation. The §3.6 approval-card repositioning into the reading column
+and its accent left-rule re-skin are also outstanding.
+
+**Accepted shape vs pending rebuild.** Per project memory (cockpit = premium bar; minimal
+in-place enhancement is the recurring pattern — "no atomic bombs"), the lighter in-place path
+may be the accepted v1 shape. If so, the un-built canonical-Thread targets above are
+**deliberately deferred**, not bugs. If the canonical rebuild is still intended, the §10
+migration plan (extract hook → hoist provider → build `ChatLane` + `messages/*` → swap shell)
+is the unchanged marching order. **Unverified:** which of the two is the operator's intent —
+no decision record was found in the tree.
+
+### Factual drift corrected inline
+
+- §0.1 states `ExternalStoreChat.tsx` is "400 LOC" and user text "is **NOT markdown**". The
+  shipped file is **463 LOC** and user text now **routes through `MarkdownText`**
+  (`ExternalStoreChat.tsx:378-386`) — a deviation from the spec's "a prompt is literal"
+  rationale (§3.1). Annotated at §0.1 and §3.1.
+- §3.2/§3.5 narrative (cursor, `.shine`, elapsed, child rows) describes affordances that were
+  not built; annotated in place rather than deleted (the design contract is retained).
+- i18n: spec'd `chat.streaming = "Generating response"`; shipped value is `"Streaming"`
+  (`resources.ts:51`) — minor copy drift, en+it both present.
+
+---
+
 ## 0. The current chat lane — what we have, what is spartan, what is load-bearing
 
 ### 0.1 What exists today (read from `web/src/chat/`)
+
+> **Impl note (2026-06-18):** `ExternalStoreChat.tsx` is now **463 LOC**, not 400, and was
+> kept-and-enhanced in place (it was never split into `useAuraChatRuntime` + `ChatLane`). See
+> the Implementation Ledger above for the per-file verdicts.
 
 `ExternalStoreChat.tsx` (400 LOC) already does the hard part correctly and must NOT be
 rewritten in its logic:
@@ -282,6 +400,14 @@ Verified against `D:/tmp/assistant-ui` (the clone) and `web/package.json`
 
 ### 3.1 User message (bubble, edit composer, action bar, branch picker)
 
+> **Impl note (2026-06-18):** As-built, `UserMessage` is an **inline function** in
+> `ExternalStoreChat.tsx:350-407`, not an extracted `messages/UserMessage.tsx`. The canonical
+> "swap the whole message for an `EditComposer`" pattern was **not** adopted — edit mode is the
+> inline `AuiIf composer.isEditing` branch (`:355-373`); there is no `EditComposer.tsx`. The
+> action bar is hand-rolled `opacity-0 hover:opacity-100` (`:389`), not
+> `ActionBarPrimitive autohide="not-last"`. And user text **is rendered through `MarkdownText`**
+> (`:378-386`), contradicting the "a prompt is literal / NOT markdown" rule below.
+
 Adopt the canonical `UserMessage` grid (`thread.tsx:349-373`) restyled to Editorial-Graphite.
 The bubble is **right-aligned, `surface-2`, `radius-lg` with an asymmetric tail** (the tail
 idea borrowed from Odysseus `style.css:1973` — `border-radius: var(--radius-lg) var(--radius-lg)
@@ -322,6 +448,13 @@ Framer Motion — design-system §5.4 motion tokens).
   `t('chat.edit.save')`). Send fires `onEdit` (fork + re-run). `aria-label={t('chat.edit.label')}`.
 
 ### 3.2 Assistant message (markdown, reasoning drawer, raw tool cards, error, streaming cursor)
+
+> **Impl note (2026-06-18):** As-built, `AssistantMessage` is an **inline function**
+> (`ExternalStoreChat.tsx:409-462`) with the markdown / reasoning-drawer / raw-tool-card part
+> router (`:413-436`) and a hand-rolled hover action bar (`:445`). **Not shipped:** the
+> streaming `●` in-progress cursor on the open text part, the `.shine` status-line shimmer, and
+> the pre-first-token `<Skeleton>` (no `shine`/cursor/skeleton in `web/src/chat`). The
+> running-status row is a plain static `role="status"` line (`:338-342`).
 
 Adopt the canonical `AssistantMessage` (`thread.tsx:226-299`): a transparent block on `bg`
 (NOT a bubble — assistant prose is full-measure editorial text, matching Claude/odysseus),
@@ -488,6 +621,15 @@ drawer sits above the prose — the canonical "chain-of-thought then answer" rea
 
 ### 3.5 Raw tool-activity card (D-02) — kept raw/XSS-safe AND enriched
 
+> **Impl note (2026-06-18):** A **subset** of this enrichment shipped in
+> `ToolActivityCard.tsx`: status-tinted left-rule + pill + dot (`:15-31,63,67-76`) and
+> **auto-expand-while-running** with a `userToggled` intent-guard (`:53-59,82`); the raw blob
+> stays escaped text in `<pre>` (`:108-114`). **Not shipped:** the **elapsed-time readout**, the
+> **indented subagent child rows**, and **auto-collapse-once-on-settle** (the card re-seeds
+> `expanded` from status on each transition `:56-59` rather than collapsing exactly once when a
+> running call settles). The base card stayed `bg-surface-2 border-border`, no flood-fill — as
+> specified.
+
 **Keep `ToolActivityCard.tsx` security model verbatim** — it is the locked D-02 raw view and
 is **security-load-bearing**: the raw blob renders as TEXT inside `<pre>` (React escapes
 children), never markdown, never `dangerouslySetInnerHTML`; the XSS guard is asserted in
@@ -553,6 +695,14 @@ raw blob is still escaped text; no markdown, no HTML. The `toolStatus.ts` mappin
 
 ### 3.6 Inline approval card placement in the Thread (D-03/D-05/D-06)
 
+> **Impl note (2026-06-18):** As-built, `ThreadApprovalCards` is mounted by the shell as a
+> **sibling of the lane** (`AppShell.tsx:131`), below `ExternalStoreChat` — not inside a
+> `ChatLane` reading-measure column after the message group as specified here. The
+> `InlineApprovalCard` CardShell re-skin is partial: `text-on-accent` is used
+> (`InlineApprovalCard.tsx:152`) but the shell is still `border-accent/40` (`:229`), **not** the
+> `border-l-2 border-l-accent` + `border-strong` accent left-rule below. Verbs/terminal states
+> are unchanged (locked, as required).
+
 `ThreadApprovalCards` must **stay** — it is the "perfectly like Claude Code" in-thread HITL.
 Placement decision:
 
@@ -587,6 +737,11 @@ Placement decision:
 
 ## 4. Scroll management
 
+> **Impl note (2026-06-18):** NOT implemented. The viewport is still a bare
+> `overflow-y-auto` (`ExternalStoreChat.tsx:320`) — no `turnAnchor`/`autoScroll` opt-in, no
+> `ViewportFooter`, no `ThreadPrimitive.ScrollToBottom`, no `ThreadScrollToBottom.tsx`. The
+> entire §4 contract remains pending.
+
 The current bare `overflow-y-auto` is replaced by the canonical viewport, which is the single
 biggest "feels like a real chat" upgrade.
 
@@ -616,6 +771,12 @@ biggest "feels like a real chat" upgrade.
 ---
 
 ## 5. Composer (multiline / send / stop / keyboard / mobile dock)
+
+> **Impl note (2026-06-18):** The composer was restyled + Send↔Stop kept (`Composer.tsx`), but
+> **not relocated** to `BottomDock` and **not** placed under a hoisted provider. It still renders
+> inside the lane's `ThreadPrimitive.Root` (`ExternalStoreChat.tsx:344`) and the
+> `AssistantRuntimeProvider` is still owned by `ExternalStoreChat` (`:318`). The shell's
+> `BottomDock` holds the mode selector + `RuntimeFooter` only (`AppShell.tsx:142-144`).
 
 The composer is **kept** (it already implements the locked behavior) and **relocated** to
 `BottomDock` (shell spec §2.4/§6) under the hoisted provider. Restyle to canonical shell +

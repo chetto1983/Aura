@@ -9,6 +9,14 @@ created: 2026-06-16
 
 # Phase 23 — Validation Strategy
 
+> **Superseded-in-part (2026-06-18) by the cockpit overhaul.** Phase 23 shipped the dark-operator
+> design-token theme + brand + embed/build foundation. The post-Phase-25 cockpit overhaul reworked the
+> theme + shell surfaces in place: the palette shipped as a **logo-matched blue** system (operator-accepted,
+> NOT the original gold direction), with new fonts (Fraunces/Hanken Grotesk/Commit Mono), a WCAG AA
+> contrast gate (`web/scripts/contrast-check.mjs`), a responsive svh shell + drawers + edge-swipe +
+> intent-restore + 380px chat-lane floor. This phase's design/shell contract is current only as amended by
+> `docs/cockpit-overhaul/{02,03}-*.md`. The token *pipeline* and embed/build foundation remain as built.
+
 > Per-phase validation contract for feedback sampling during execution.
 > Source: `23-RESEARCH.md` §Validation Architecture (SC1–SC5 → test map).
 

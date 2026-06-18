@@ -34,4 +34,14 @@ test.describe('embedded operator shell', () => {
       expect(body).not.toContain(phrase);
     }
   });
+
+  test('shows logout in the layout and returns to login', async ({ page }) => {
+    await gotoAuthenticated(page, '/');
+
+    const signOut = page.getByRole('button', { name: 'Sign out' });
+    await expect(signOut).toBeVisible();
+    await signOut.click();
+
+    await expect(page).toHaveURL(/\/login(?:[?#]|$)/);
+  });
 });
