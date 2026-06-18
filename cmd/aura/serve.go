@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
-	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -281,17 +280,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		chat.close()
 		return nil, fmt.Errorf("build object store: %w", err)
 	}
-	aguiServer.SetAssetService(&assets.Service{
-		Store:   assets.NewStore(chat.pool),
-		Objects: objectStore,
-		Limits: assets.Limits{
-			MaxDocumentBytes: int64(chat.cfg.AssetMaxDocumentBytes),
-			MaxImageBytes:    int64(chat.cfg.AssetMaxImageBytes),
-			MaxAudioBytes:    int64(chat.cfg.AssetMaxAudioBytes),
-		},
-		Bucket:     chat.cfg.ObjectStoreBucket,
-		PresignTTL: time.Duration(chat.cfg.AssetPresignTTLSec) * time.Second,
-	})
+	aguiServer.SetAssetService(buildAssetService(chat.cfg, chat.pool, objectStore))
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon

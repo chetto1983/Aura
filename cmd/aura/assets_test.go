@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
@@ -65,4 +67,36 @@ func TestBuildObjectStoreBackends(t *testing.T) {
 			t.Fatal("buildObjectStore(unknown) succeeded, want error")
 		}
 	})
+}
+
+func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
+	cfg := &config.Config{
+		ObjectStoreBucket:     "aura-assets",
+		AssetMaxDocumentBytes: 123,
+		AssetMaxImageBytes:    456,
+		AssetMaxAudioBytes:    789,
+		AssetPresignTTLSec:    42,
+		MultimodalTimeoutSec:  7,
+		DocumentsBaseURL:      "http://documents.test",
+	}
+	objects := objectstore.NewFake()
+
+	svc := buildAssetService(cfg, nil, objects)
+
+	if svc.Bucket != "aura-assets" || svc.PresignTTL != 42*time.Second {
+		t.Fatalf("asset service bucket/ttl = %q/%s, want aura-assets/42s", svc.Bucket, svc.PresignTTL)
+	}
+	if svc.Limits.MaxDocumentBytes != 123 || svc.Limits.MaxImageBytes != 456 || svc.Limits.MaxAudioBytes != 789 {
+		t.Fatalf("asset service limits = %+v, want configured limits", svc.Limits)
+	}
+	doc, ok := svc.Processors.Document.(*assetspkg.DocumentProcessor)
+	if !ok {
+		t.Fatalf("document processor = %T, want *assets.DocumentProcessor", svc.Processors.Document)
+	}
+	if doc.Objects != objects {
+		t.Fatalf("document processor object store = %T, want shared fake store", doc.Objects)
+	}
+	if _, ok := doc.Ingest.(*runtimeDocumentIngestor); !ok {
+		t.Fatalf("document processor ingestor = %T, want *runtimeDocumentIngestor", doc.Ingest)
+	}
 }
