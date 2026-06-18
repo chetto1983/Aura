@@ -397,6 +397,22 @@ describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
     expect(messageParts(finalAssistant)).toEqual([{ type: 'text', text: 'It is sunny.' }]);
   });
 
+  it('fetchThreadMessages throws the sanitized backend detail on a non-OK status (replay error path)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('conversation not found', { status: 404 }))),
+    );
+    await expect(fetchThreadMessages('missing-thread')).rejects.toThrow('conversation not found');
+  });
+
+  it('fetchThreadMessages falls back to HTTP <status> when the error body is empty', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 500 }))),
+    );
+    await expect(fetchThreadMessages('t')).rejects.toThrow('HTTP 500');
+  });
+
   it('fetchThreadMessages GETs the snapshot endpoint with same-origin credentials', async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(

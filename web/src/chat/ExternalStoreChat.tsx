@@ -8,13 +8,17 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAuiState,
   useExternalStoreRuntime,
   type AppendMessage,
   type ThreadMessageLike,
+  type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
 import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
 import { BranchPicker } from './BranchPicker';
 import { Composer } from './Composer';
+import { DisplayRouter } from './displays/DisplayRouter';
+import { isDisplayPayload, type DisplayPayload } from './displays/types';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningDrawer } from './ReasoningDrawer';
 import { ToolActivityCard } from './ToolActivityCard';
@@ -498,16 +502,11 @@ function AssistantMessage() {
           // CoT → collapsible drawer (D-01). The drawer reads the reasoning text
           // from the part via the reasoning render-fn arg.
           Reasoning: ({ text }) => <ReasoningDrawer text={text} />,
-          // Tool activity → raw card (D-02). NEVER typed rendering (Phase 26).
+          // Tool activity → typed display when a trusted backend normalizer
+          // produced an aura.display payload (Phase 26, DISP-02); otherwise the
+          // raw escaped card (D-02 / D-FALLBACK). The branch lives in ToolFallback.
           tools: {
-            Fallback: ({ toolName, argsText, result, isError }) => (
-              <ToolActivityCard
-                toolName={toolName}
-                argsText={argsText}
-                {...(typeof result === 'string' ? { result } : {})}
-                {...(isError !== undefined ? { isError } : {})}
-              />
-            ),
+            Fallback: ToolFallback,
           },
         }}
       />
@@ -537,3 +536,42 @@ function AssistantMessage() {
     </MessagePrimitive.Root>
   );
 }
+
+/**
+ * The tools.Fallback render: the single seam where a tool turn becomes a typed
+ * display. It reads the custom `display` payload off the stored message part
+ * (the sseAdapter attaches it by toolCallId, live or on replay) via
+ * useMessagePart — the external-store runtime passes our ThreadMessageLike part
+ * through unchanged (convertMessage: identity), so the field survives.
+ *
+ * D-15 progressive swap: while a tool runs, no payload exists yet → the raw
+ * running card stays; the typed display replaces it only once the aura.display
+ * payload arrives on completion. D-FALLBACK: no/unknown payload → the raw card.
+ */
+const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result, isError }) => {
+  const part = useAuiState((s) => s.part) as { display?: unknown };
+  const display: DisplayPayload | undefined = isDisplayPayload(part.display)
+    ? part.display
+    : undefined;
+  const resultText = typeof result === 'string' ? result : undefined;
+
+  if (display !== undefined) {
+    return (
+      <DisplayRouter
+        payload={display}
+        toolName={toolName}
+        argsText={argsText}
+        {...(resultText !== undefined ? { result: resultText } : {})}
+        {...(isError !== undefined ? { isError } : {})}
+      />
+    );
+  }
+  return (
+    <ToolActivityCard
+      toolName={toolName}
+      argsText={argsText}
+      {...(resultText !== undefined ? { result: resultText } : {})}
+      {...(isError !== undefined ? { isError } : {})}
+    />
+  );
+};

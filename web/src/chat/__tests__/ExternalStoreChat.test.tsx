@@ -165,6 +165,50 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     expect(lastUsage?.promptTokens).toBe(120);
   });
 
+  it('routes a tool turn carrying an aura.display payload through the DisplayRouter (DISP-02)', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
+      return Promise.resolve(
+        sseResponse([
+          { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
+          { type: 'TOOL_CALL_START', toolCallId: 'call-1', toolCallName: 'web_search' },
+          { type: 'TOOL_CALL_ARGS', toolCallId: 'call-1', delta: '{"q":"meteo"}' },
+          { type: 'TOOL_CALL_END', toolCallId: 'call-1' },
+          { type: 'TOOL_CALL_RESULT', toolCallId: 'call-1', content: '[1] Forecast' },
+          // The backend emits the typed display on completion (D-15 progressive swap).
+          {
+            type: 'CUSTOM',
+            name: 'aura.display',
+            value: {
+              type: 'web_result',
+              tool_call_id: 'call-1',
+              title: 'meteo',
+              web_results: [{ title: 'Forecast', url: 'https://example.com', snippet: 'sunny' }],
+            },
+          },
+          { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
+          { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-1', delta: 'It is sunny.' },
+          { type: 'TEXT_MESSAGE_END', messageId: 'msg-1' },
+          { type: 'RUN_FINISHED', threadId: 'conv-1', runId: 'run-1', outcome: { type: 'success' } },
+        ]),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    sendPrompt('weather?');
+
+    // The router is the Wave-1 shell (no per-type case yet) → it still renders the
+    // raw card for web_result, but via the DisplayRouter branch, not the plain
+    // Fallback. The tool turn + its escaped result remain visible (output never lost).
+    await waitFor(() => {
+      expect(screen.getByText('It is sunny.')).toBeTruthy();
+    });
+    expect(screen.getByText('web_search')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
+    expect(screen.getByText('[1] Forecast')).toBeTruthy();
+  });
+
   it('creates a thread id before the first send when no conversation is active', async () => {
     const runBodies: unknown[] = [];
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {

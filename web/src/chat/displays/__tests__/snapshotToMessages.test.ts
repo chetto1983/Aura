@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { messageParts } from '../../sseAdapter';
 import { snapshotToMessages } from '../snapshotToMessages';
-import type { DisplayPayload } from '../types';
+import { isDisplayPayload, type DisplayPayload } from '../types';
 
 // snapshotToMessages projects a persisted MESSAGES_SNAPSHOT (the GET
 // /threads/{id}/messages body) onto the visible chat model for replay (D-06).
@@ -84,7 +84,7 @@ describe('snapshotToMessages — D-06 replay projection', () => {
     const toolAssistant = messages[1];
     if (toolAssistant === undefined) throw new Error('expected the assistant tool turn');
     const toolPart = messageParts(toolAssistant).find((p) => p.type === 'tool-call');
-    if (toolPart === undefined || toolPart.type !== 'tool-call') {
+    if (toolPart?.type !== 'tool-call') {
       throw new Error('expected a tool-call part');
     }
     expect(toolPart.display).toEqual(webDisplay);
@@ -108,7 +108,7 @@ describe('snapshotToMessages — D-06 replay projection', () => {
     const toolAssistant = messages[1];
     if (toolAssistant === undefined) throw new Error('expected the assistant tool turn');
     const toolPart = messageParts(toolAssistant).find((p) => p.type === 'tool-call');
-    if (toolPart === undefined || toolPart.type !== 'tool-call') {
+    if (toolPart?.type !== 'tool-call') {
       throw new Error('expected a tool-call part');
     }
     expect(toolPart.display).toBeUndefined();
@@ -138,7 +138,7 @@ describe('snapshotToMessages — D-06 replay projection', () => {
     const toolAssistant = messages[1];
     if (toolAssistant === undefined) throw new Error('expected the assistant tool turn');
     const toolPart = messageParts(toolAssistant).find((p) => p.type === 'tool-call');
-    if (toolPart === undefined || toolPart.type !== 'tool-call') {
+    if (toolPart?.type !== 'tool-call') {
       throw new Error('expected a tool-call part');
     }
     expect(toolPart.display).toBeUndefined();
@@ -147,5 +147,40 @@ describe('snapshotToMessages — D-06 replay projection', () => {
   it('returns an empty list for a non-snapshot body', () => {
     expect(snapshotToMessages({ type: 'NOT_A_SNAPSHOT' })).toEqual([]);
     expect(snapshotToMessages(null)).toEqual([]);
+  });
+
+  it('synthesizes a standalone assistant tool card when a tool row has no preceding tool-call part', () => {
+    // A tool result row with no preceding assistant tool-call to merge into
+    // (ordering/partial snapshot) must still materialise — the raw blob is never
+    // lost on replay (D-06).
+    const messages = snapshotToMessages({
+      type: 'MESSAGES_SNAPSHOT',
+      messages: [
+        { id: 'msg-1', role: 'user', content: 'meteo' },
+        { id: 'msg-2', role: 'tool', toolCallId: 'orphan-call', content: 'sunny 25C' },
+      ],
+    });
+
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    const toolAssistant = messages[1];
+    if (toolAssistant === undefined) throw new Error('expected a synthesized assistant turn');
+    const toolPart = messageParts(toolAssistant).find((p) => p.type === 'tool-call');
+    if (toolPart?.type !== 'tool-call') throw new Error('expected a tool-call part');
+    expect(toolPart).toMatchObject({ toolCallId: 'orphan-call', result: 'sunny 25C' });
+  });
+});
+
+describe('isDisplayPayload', () => {
+  it('accepts a value with a string type + string tool_call_id', () => {
+    expect(isDisplayPayload(webDisplay)).toBe(true);
+  });
+
+  it('rejects null, primitives, and objects missing the discriminant keys', () => {
+    expect(isDisplayPayload(null)).toBe(false);
+    expect(isDisplayPayload('web_result')).toBe(false);
+    expect(isDisplayPayload(42)).toBe(false);
+    expect(isDisplayPayload({})).toBe(false);
+    expect(isDisplayPayload({ type: 'web_result' })).toBe(false); // no tool_call_id
+    expect(isDisplayPayload({ type: 1, tool_call_id: 'x' })).toBe(false); // non-string type
   });
 });
