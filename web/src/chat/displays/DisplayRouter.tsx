@@ -2,6 +2,7 @@ import { ToolActivityCard } from '../ToolActivityCard';
 import type { DisplayPayload } from './types';
 import { TableDisplay } from './TableDisplay';
 import { ChartDisplay } from './ChartDisplay';
+import { SystemEventCard } from './SystemEventCard';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point from
 // ExternalStoreChat's tools.Fallback. It upgrades a tool turn to a typed display
@@ -45,6 +46,8 @@ export function DisplayRouter({
       return <TableDisplay payload={payload} />;
     case 'chart':
       return <ChartDisplay payload={payload} />;
+    case 'system_event':
+      return <SystemEventCard payload={payload} />;
     default:
       // D-FALLBACK: the escaped raw card, never null (HARDEN-08).
       return (
