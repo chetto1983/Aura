@@ -293,7 +293,12 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(events.NewMessagesSnapshotEvent(projectMessages(hist))); err != nil {
+	// D-06: emit the display-aware MESSAGES_SNAPSHOT — each tool-result turn re-derives
+	// its DisplayPayload through the SAME normalizer the live stream uses, so a reopened
+	// thread renders typed displays identically to live. The envelope is byte-compatible
+	// with the SDK MESSAGES_SNAPSHOT plus the additive per-tool-call `display` key the
+	// cockpit replay reads.
+	if err := json.NewEncoder(w).Encode(projectDisplaySnapshot(hist)); err != nil {
 		slog.Warn("agui: encode messages snapshot", "err", err)
 	}
 }
@@ -473,7 +478,7 @@ func projectMessages(hist []llm.Message) []events.Message {
 	msgs := make([]events.Message, 0, len(hist))
 	for i, m := range hist {
 		msgs = append(msgs, events.Message{
-			ID:         fmt.Sprintf("msg-%d", i+1),
+			ID:         msgID(i),
 			Role:       types.Role(m.Role),
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
@@ -482,6 +487,10 @@ func projectMessages(hist []llm.Message) []events.Message {
 	}
 	return msgs
 }
+
+// msgID is the stable 1-based snapshot message id, shared by the plain projection and
+// the D-06 display-aware projection so both number messages identically.
+func msgID(i int) string { return fmt.Sprintf("msg-%d", i+1) }
 
 // projectToolCalls maps the persisted llm.ToolCall slice onto the SDK types.ToolCall
 // shape (id/type + nested function name/arguments). Returns nil for an empty input so
