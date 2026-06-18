@@ -103,8 +103,56 @@ func TestFakePresignPut(t *testing.T) {
 	if presigned.RequiredHeaders["Content-Type"] != "image/png" {
 		t.Fatalf("Content-Type header = %q, want image/png", presigned.RequiredHeaders["Content-Type"])
 	}
+	if presigned.RequiredHeaders["Content-Length"] != "42" {
+		t.Fatalf("Content-Length header = %q, want 42", presigned.RequiredHeaders["Content-Length"])
+	}
 	if time.Until(presigned.ExpiresAt) <= 0 || time.Until(presigned.ExpiresAt) > expiresIn {
 		t.Fatalf("ExpiresAt = %s, want within %s", presigned.ExpiresAt, expiresIn)
+	}
+}
+
+func TestFilesystemPresignPutRequiresUploadHeaders(t *testing.T) {
+	store := NewFilesystem(t.TempDir())
+	presigned, err := store.PresignPut(context.Background(), PresignPutRequest{
+		Ref:      ObjectRef{Bucket: "bucket", Key: "identity/id/asset/asset/original"},
+		MIMEType: "image/png",
+		Size:     42,
+	})
+	if err != nil {
+		t.Fatalf("PresignPut() error = %v", err)
+	}
+	if presigned.RequiredHeaders["Content-Type"] != "image/png" {
+		t.Fatalf("Content-Type header = %q, want image/png", presigned.RequiredHeaders["Content-Type"])
+	}
+	if presigned.RequiredHeaders["Content-Length"] != "42" {
+		t.Fatalf("Content-Length header = %q, want 42", presigned.RequiredHeaders["Content-Length"])
+	}
+}
+
+func TestS3PresignPutRequiresSignedUploadHeaders(t *testing.T) {
+	store, err := NewS3(context.Background(), S3Config{
+		Endpoint:  "http://127.0.0.1:3900",
+		Region:    "garage",
+		AccessKey: "test",
+		SecretKey: "test",
+		PathStyle: true,
+	})
+	if err != nil {
+		t.Fatalf("NewS3() error = %v", err)
+	}
+	presigned, err := store.PresignPut(context.Background(), PresignPutRequest{
+		Ref:      ObjectRef{Bucket: "bucket", Key: "identity/id/asset/asset/original"},
+		MIMEType: "image/png",
+		Size:     42,
+	})
+	if err != nil {
+		t.Fatalf("PresignPut() error = %v", err)
+	}
+	if presigned.RequiredHeaders["Content-Type"] != "image/png" {
+		t.Fatalf("Content-Type header = %q, want image/png", presigned.RequiredHeaders["Content-Type"])
+	}
+	if presigned.RequiredHeaders["Content-Length"] != "42" {
+		t.Fatalf("Content-Length header = %q, want 42", presigned.RequiredHeaders["Content-Length"])
 	}
 }
 
@@ -137,6 +185,7 @@ func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 	unsafeKeys := []string{
 		"../escape",
 		"identity/id/../escape",
+		"identity/id/asset/a..b/original",
 		`identity\id\asset`,
 		`C:\escape`,
 		"/absolute/escape",
@@ -148,6 +197,9 @@ func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 		}
 		if _, err := store.Head(ctx, ref); err == nil {
 			t.Fatalf("Head(%q) succeeded, want unsafe key error", key)
+		}
+		if _, err := store.PresignPut(ctx, PresignPutRequest{Ref: ref, MIMEType: "text/plain", Size: 1}); err == nil {
+			t.Fatalf("PresignPut(%q) succeeded, want unsafe key error", key)
 		}
 	}
 }

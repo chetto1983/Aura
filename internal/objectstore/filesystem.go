@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -44,7 +45,8 @@ func (s *FilesystemStore) PresignPut(ctx context.Context, req PresignPutRequest)
 		URL:    u.String(),
 		Method: "PUT",
 		RequiredHeaders: map[string]string{
-			"Content-Type": req.MIMEType,
+			"Content-Type":   req.MIMEType,
+			"Content-Length": strconv.FormatInt(req.Size, 10),
 		},
 		ExpiresAt: time.Now().Add(expiresIn),
 	}, nil
@@ -149,6 +151,9 @@ func (s *FilesystemStore) objectPath(ref ObjectRef) (string, error) {
 func validatePathPart(value string, allowSlash bool) error {
 	if value == "" {
 		return fmt.Errorf("empty")
+	}
+	if strings.Contains(value, "..") {
+		return fmt.Errorf("unsafe substring %q", "..")
 	}
 	if strings.Contains(value, `\`) {
 		return fmt.Errorf("backslash not allowed")

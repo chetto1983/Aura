@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -43,7 +44,8 @@ func (s *FakeStore) PresignPut(ctx context.Context, req PresignPutRequest) (Pres
 		URL:    u.String(),
 		Method: "PUT",
 		RequiredHeaders: map[string]string{
-			"Content-Type": req.MIMEType,
+			"Content-Type":   req.MIMEType,
+			"Content-Length": strconv.FormatInt(req.Size, 10),
 		},
 		ExpiresAt: time.Now().Add(expiresIn),
 	}, nil

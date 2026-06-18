@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,7 +88,8 @@ func (s *S3Store) PresignPut(ctx context.Context, req PresignPutRequest) (Presig
 		URL:    signedURL,
 		Method: "PUT",
 		RequiredHeaders: map[string]string{
-			"Content-Type": req.MIMEType,
+			"Content-Type":   req.MIMEType,
+			"Content-Length": strconv.FormatInt(req.Size, 10),
 		},
 		ExpiresAt: time.Now().Add(expiresIn),
 	}, nil
