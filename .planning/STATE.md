@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: phase-25-closed
-stopped_at: Phase 25 closed (8/8 verified); cockpit-overhaul reworking 23/24/25 surfaces (uncommitted)
-last_updated: "2026-06-18T00:00:00.000Z"
+status: verifying
+stopped_at: Phase 26 context gathered
+last_updated: "2026-06-18T07:42:48.552Z"
 last_activity: 2026-06-18
 progress:
   total_phases: 8
@@ -344,9 +344,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-17T16:44:57.274Z
-Stopped at: Completed 25-03-PLAN.md (chat lane)
-Resume file: None
+Last session: 2026-06-18T07:42:48.533Z
+Stopped at: Phase 26 context gathered
+Resume file: .planning/phases/26-typed-display-protocol-router/26-CONTEXT.md
 
 ## Operator Next Steps
 
