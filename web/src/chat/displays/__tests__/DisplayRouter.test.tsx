@@ -4,16 +4,9 @@ import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves 
 import { DisplayRouter } from '../DisplayRouter';
 import type { DisplayPayload } from '../types';
 
-// DisplayRouter is the Wave-1 SHELL: no per-type cases yet (26-04/26-05 add
-// them), so EVERY payload currently falls to the default → raw ToolActivityCard
-// (D-FALLBACK). These tests pin the security-critical default contract: never
-// null, never a rich/markdown render, always the escaped raw card.
-
-const webResult: DisplayPayload = {
-  type: 'web_result',
-  tool_call_id: 'call-1',
-  web_results: [{ title: 'Forecast', url: 'https://example.com', snippet: 'sunny' }],
-};
+// DisplayRouter routes a trusted-normalizer payload to its per-type card; the
+// SECURITY-critical contract is the `default:` — an unknown/foreign type must
+// degrade to the escaped raw ToolActivityCard (never null, never a rich render).
 
 // A payload with an unknown discriminant (e.g. a future/foreign type the cockpit
 // doesn't know) — still degrades to the raw card, never thrown away.
@@ -23,14 +16,16 @@ const unknownType = {
 } as unknown as DisplayPayload;
 
 describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
-  it('renders the raw ToolActivityCard (never null) for a known type with no case yet', () => {
-    const { container } = render(
-      <DisplayRouter payload={webResult} toolName="web_search" result="RAW BLOB" />,
-    );
-    // Output is present (not null): the raw card shows the tool name + done status.
-    expect(container.firstChild).not.toBeNull();
-    expect(screen.getByText('web_search')).toBeTruthy();
-    expect(screen.getByText('Done')).toBeTruthy();
+  it('routes a web_result payload to the rich WebResultDisplay (26-05 wired)', () => {
+    const webResult: DisplayPayload = {
+      type: 'web_result',
+      tool_call_id: 'call-1',
+      web_results: [{ title: 'Forecast', url: 'https://example.com', snippet: 'sunny' }],
+    };
+    render(<DisplayRouter payload={webResult} toolName="web_search" result="RAW BLOB" />);
+    // The rich card renders (the snippet + the typed label), NOT the raw blob.
+    expect(screen.getByText('sunny')).toBeTruthy();
+    expect(screen.getByText('Web results')).toBeTruthy();
   });
 
   it('renders the raw card for an unknown payload type (default case, never null)', () => {

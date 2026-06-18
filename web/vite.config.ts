@@ -193,6 +193,15 @@ export default defineConfig({
         // indicating a build failure. Keep real correctness warnings enabled.
         pluginTimings: false,
       },
+      output: {
+        // A2 / D-10: force Shiki (the lazy code highlighter — core, JS engine,
+        // grammars, themes) into its OWN named chunk so it stays OFF the embedded
+        // critical-path bundle. CodeDisplay only dynamic-import()s it on demand, so
+        // this chunk is fetched lazily the first time a `code` display renders.
+        codeSplitting: {
+          groups: [{ name: 'shiki', test: /[\\/]node_modules[\\/](shiki|@shikijs)[\\/]/ }],
+        },
+      },
     },
   },
 });
