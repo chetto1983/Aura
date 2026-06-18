@@ -187,7 +187,15 @@ Plans:
   4. The operator can use a Source Explorer with Table / Metadata / Configuration views
   5. A `swarm_spawn` child report renders as a typed `swarm_report` table over `ChildReport` with no inter-agent chat / mailbox theater
 
-**Plans**: TBD
+**Plans**: 6 plans (Waves 1–4)
+
+  - `26-01-PLAN.md` (Wave 1) — Backend protocol core: `internal/agent/display/` normalizer + DisplayPayload union + Actions.Display slot + aura.display CUSTOM branch + source registry (DISP-01, DISP-04, DISP-05, SWARM-01)
+  - `26-02-PLAN.md` (Wave 1) — Frontend D-06 prerequisite: history-rehydration fetch + snapshotToMessages + sseAdapter CUSTOM frame + DisplayRouter shell (default→raw card) + DisplayPagination (DISP-01, DISP-02)
+  - `26-03-PLAN.md` (Wave 2) — Backend source-list tail-inject (Budget.Sources, cache-invariant) + SSRF-safe image-proxy (FetchImage + /api/image-proxy) + D-06 re-derive at projectMessages (DISP-01, DISP-03, DISP-05)
+  - `26-04-PLAN.md` (Wave 2) — Frontend data/status displays: table, chart (zero-dep SVG), system_event (web-safety safe reasons), swarm_report, local_artifact (DISP-02, DISP-04, SWARM-01)
+  - `26-05-PLAN.md` (Wave 3) — Frontend evidence displays + citation pipeline: web_result (image-proxy thumbnails), document, code (lazy Shiki escaped spans), rehypeCitations inline splice + CitationBubble (Radix hovercard) + 2 pinned MIT deps (DISP-02, DISP-03)
+  - `26-06-PLAN.md` (Wave 4) — Frontend read-only Source Explorer (Table/Metadata/Configuration) + "Sources (N)" + citation click-through + Playwright replay e2e + Stryker scope + dist rebuild (DISP-03, DISP-05)
+
 **UI hint**: yes
 
 ### Phase 27: Neo4j Graph Explorer
@@ -245,7 +253,7 @@ Plans:
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 3/3 | Complete    | 2026-06-16 |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete    | 2026-06-16 |
 | 25. Chat + Approval Center | v1.0.0 | 7/7 | Complete    | 2026-06-17 |
-| 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
+| 26. Typed-Display Protocol + Router | v1.0.0 | 0/6 | Planned     | - |
 | 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
