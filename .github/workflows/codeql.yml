@@ -1,8 +1,15 @@
 name: CodeQL
 
 # Free on this PUBLIC repo (CodeQL code-scanning requires GitHub Advanced
-# Security only on private repos). Complements gosec + govulncheck with
-# interprocedural data-flow / taint analysis.
+# Security only on private repos). Complements gosec + govulncheck (Go backend)
+# and the eslint/jscpd/knip web gates (TS cockpit) with interprocedural
+# data-flow / taint analysis.
+#
+# Two languages are scanned via the matrix below:
+#   - go                    — the backend, built with autobuild.
+#   - javascript-typescript — the React/TS cockpit in web/src, build-mode none
+#                             (CodeQL extracts the sources directly, no build).
+# Scope for the frontend leg is set in .github/codeql/codeql-config.yml.
 
 on:
   push:
@@ -18,17 +25,26 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze (go)
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       security-events: write   # upload SARIF to the Security tab
       actions: read
       contents: read
+    strategy:
+      fail-fast: false   # one language failing must not cancel the other's scan
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Set up Go
+        if: matrix.language == 'go'
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -37,13 +53,15 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: go
-          queries: security-and-quality
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+      # build-mode: autobuild builds Go implicitly between init and analyze;
+      # build-mode: none needs no build step (the JS/TS sources are extracted
+      # as-is). Only the unused `manual` mode would require an explicit step.
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: "/language:go"
+          category: "/language:${{ matrix.language }}"

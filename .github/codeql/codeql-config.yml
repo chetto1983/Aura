@@ -1,0 +1,28 @@
+# Shared config for the CodeQL language matrix in ../workflows/codeql.yml.
+#
+# `paths` / `paths-ignore` only filter INTERPRETED languages — for the
+# javascript-typescript analysis they bound the scan to the actual cockpit
+# application source (web/src). They are IGNORED for the compiled Go analysis,
+# whose scope is set by the autobuild, so the Go scan stays full-repo.
+#
+# Scoping to web/src deliberately keeps three things out of the frontend
+# results: the committed minified //go:embed bundle (internal/webui/dist),
+# vendored node_modules (gitignored, but defensive), and the Node build/config
+# scripts (vite/playwright/stryker configs, tokens/*.mjs) — none of which are the
+# user-facing attack surface.
+name: "Aura CodeQL config"
+
+queries:
+  - uses: security-and-quality
+
+paths:
+  - web/src
+
+paths-ignore:
+  # Test + test-support code is never shipped — exclude it so findings land on
+  # the real cockpit surface, not fixtures (parity with the Go gates, which run
+  # dupl/deadcode over non-test code).
+  - web/src/**/__tests__/**
+  - web/src/test/**
+  - "web/src/**/*.test.ts"
+  - "web/src/**/*.test.tsx"
