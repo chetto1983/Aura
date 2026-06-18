@@ -39,7 +39,7 @@ type PresignedPut struct {
 
 type Store interface {
 	PresignPut(context.Context, PresignPutRequest) (PresignedPut, error)
-	Put(context.Context, ObjectRef, io.Reader, PutOptions) error
+	Put(context.Context, ObjectRef, io.Reader, PutOptions) (Attrs, error)
 	Head(context.Context, ObjectRef) (Attrs, error)
 	Get(context.Context, ObjectRef) (io.ReadCloser, Attrs, error)
 	Delete(context.Context, ObjectRef) error

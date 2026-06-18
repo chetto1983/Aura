@@ -52,35 +52,39 @@ func (s *FilesystemStore) PresignPut(ctx context.Context, req PresignPutRequest)
 	}, nil
 }
 
-func (s *FilesystemStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) error {
+func (s *FilesystemStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return Attrs{}, err
 	}
 	p, err := s.objectPath(ref)
 	if err != nil {
-		return err
+		return Attrs{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
+		return Attrs{}, err
 	}
 	f, err := os.Create(p)
 	if err != nil {
-		return err
+		return Attrs{}, err
 	}
 	h := newHashWriter(f)
 	size, copyErr := io.Copy(h, body)
 	closeErr := f.Close()
 	if copyErr != nil {
-		return copyErr
+		return Attrs{}, copyErr
 	}
 	if closeErr != nil {
-		return closeErr
+		return Attrs{}, closeErr
 	}
-	return writeMetadata(p, Attrs{
+	attrs := Attrs{
 		SizeBytes: size,
 		ETag:      h.ETag(),
 		MIMEType:  opts.MIMEType,
-	})
+	}
+	if err := writeMetadata(p, attrs); err != nil {
+		return Attrs{}, err
+	}
+	return attrs, nil
 }
 
 func (s *FilesystemStore) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {

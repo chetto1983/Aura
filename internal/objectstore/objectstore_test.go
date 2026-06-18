@@ -25,8 +25,12 @@ func TestFakeRoundTrip(t *testing.T) {
 	store := NewFake()
 	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("id", "asset")}
 	original := []byte("hello asset")
-	if err := store.Put(ctx, ref, strings.NewReader(string(original)), PutOptions{MIMEType: "text/plain", Size: int64(len(original))}); err != nil {
+	putAttrs, err := store.Put(ctx, ref, strings.NewReader(string(original)), PutOptions{MIMEType: "text/plain", Size: int64(len(original))})
+	if err != nil {
 		t.Fatalf("Put() error = %v", err)
+	}
+	if putAttrs.SizeBytes != int64(len("hello asset")) || putAttrs.MIMEType != "text/plain" || putAttrs.ETag == "" {
+		t.Fatalf("Put() attrs = %#v, want size/mime/etag", putAttrs)
 	}
 	original[0] = 'H'
 
@@ -161,8 +165,12 @@ func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 	store := NewFilesystem(t.TempDir())
 	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("id", "asset")}
 
-	if err := store.Put(ctx, ref, strings.NewReader("file asset"), PutOptions{MIMEType: "text/plain", Size: int64(len("file asset"))}); err != nil {
+	putAttrs, err := store.Put(ctx, ref, strings.NewReader("file asset"), PutOptions{MIMEType: "text/plain", Size: int64(len("file asset"))})
+	if err != nil {
 		t.Fatalf("Put() error = %v", err)
+	}
+	if putAttrs.SizeBytes != int64(len("file asset")) || putAttrs.MIMEType != "text/plain" || putAttrs.ETag == "" {
+		t.Fatalf("Put() attrs = %#v, want size/mime/etag", putAttrs)
 	}
 	body, attrs, err := store.Get(ctx, ref)
 	if err != nil {
@@ -192,7 +200,7 @@ func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 	}
 	for _, key := range unsafeKeys {
 		ref := ObjectRef{Bucket: "bucket", Key: key}
-		if err := store.Put(ctx, ref, strings.NewReader("x"), PutOptions{MIMEType: "text/plain", Size: 1}); err == nil {
+		if _, err := store.Put(ctx, ref, strings.NewReader("x"), PutOptions{MIMEType: "text/plain", Size: 1}); err == nil {
 			t.Fatalf("Put(%q) succeeded, want unsafe key error", key)
 		}
 		if _, err := store.Head(ctx, ref); err == nil {

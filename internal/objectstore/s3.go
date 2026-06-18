@@ -95,15 +95,22 @@ func (s *S3Store) PresignPut(ctx context.Context, req PresignPutRequest) (Presig
 	}, nil
 }
 
-func (s *S3Store) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) error {
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+func (s *S3Store) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
+	out, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(ref.Bucket),
 		Key:           aws.String(ref.Key),
 		Body:          body,
 		ContentType:   aws.String(opts.MIMEType),
 		ContentLength: aws.Int64(opts.Size),
 	})
-	return err
+	if err != nil {
+		return Attrs{}, err
+	}
+	return Attrs{
+		SizeBytes: opts.Size,
+		ETag:      strings.Trim(aws.ToString(out.ETag), `"`),
+		MIMEType:  opts.MIMEType,
+	}, nil
 }
 
 func (s *S3Store) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {

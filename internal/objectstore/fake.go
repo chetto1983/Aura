@@ -51,13 +51,13 @@ func (s *FakeStore) PresignPut(ctx context.Context, req PresignPutRequest) (Pres
 	}, nil
 }
 
-func (s *FakeStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) error {
+func (s *FakeStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return Attrs{}, err
 	}
 	data, err := io.ReadAll(body)
 	if err != nil {
-		return err
+		return Attrs{}, err
 	}
 	attrs := Attrs{
 		SizeBytes: int64(len(data)),
@@ -67,7 +67,7 @@ func (s *FakeStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.objects[ref] = fakeObject{data: bytes.Clone(data), attrs: attrs}
-	return nil
+	return attrs, nil
 }
 
 func (s *FakeStore) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {
