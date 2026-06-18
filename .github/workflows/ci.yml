@@ -850,6 +850,12 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run lint && npm run format:check && npm run typecheck
 
+      - name: Duplication (jscpd) + dead code (knip) — Go dupl/deadcode parity
+        # TS/TSX parity to the Go `dupl` (.golangci.yml) + `deadcode` gates. Deps from
+        # the npm ci above persist across steps; jscpd/knip self-fetch via pinned npx.
+        if: steps.changes.outputs.web == 'true'
+        run: cd web && npm run dup && npm run deadcode
+
       - name: No-skip-as-green backstop (filter must not have misfired)
         # WR-05: when the filter says web==false, cross-check the event diff and FAIL
         # if a web path actually changed (filter misfire would merge gates skipped).

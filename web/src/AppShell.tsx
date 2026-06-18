@@ -14,6 +14,7 @@ import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import type { TurnUsage } from './chat/sseAdapter';
 import { useCreateConversation } from './conversations/useConversations';
+import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
 
 const ExternalStoreChat = lazy(() =>
   import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
@@ -29,33 +30,6 @@ const passphraseLogoutTarget: LogoutTarget = { path: '/logout' };
 const defaultAuthulaBasePath = '/auth';
 const defaultCSRFCookieName = '__Host-authula_csrf_token';
 const defaultCSRFHeaderName = 'X-AUTHULA-CSRF-TOKEN';
-
-async function readJSON(res: Response): Promise<unknown> {
-  const text = await res.text();
-  if (text.trim() === '') return {};
-  return JSON.parse(text) as unknown;
-}
-
-function stringField(source: unknown, key: string): string {
-  if (source === null || typeof source !== 'object') return '';
-  const value = (source as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : '';
-}
-
-function valueOrFallback(value: string, fallback: string): string {
-  return value === '' ? fallback : value;
-}
-
-function readCookie(name: string): string {
-  const prefix = `${name}=`;
-  return (
-    document.cookie
-      .split(';')
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(prefix))
-      ?.slice(prefix.length) ?? ''
-  );
-}
 
 async function loadLogoutTarget(): Promise<LogoutTarget> {
   try {

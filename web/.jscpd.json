@@ -1,0 +1,7 @@
+{
+  "path": ["src"],
+  "minTokens": 100,
+  "threshold": 0,
+  "reporters": ["console"],
+  "ignore": ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**", "**/dist/**", "**/node_modules/**"]
+}

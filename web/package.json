@@ -16,6 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
+    "dup": "npx --yes jscpd@4",
+    "deadcode": "npx --yes knip@5 --exclude types,nsTypes,enumMembers,classMembers,duplicates",
     "test": "vitest run --coverage",
     "test:e2e": "playwright test",
     "mutation": "stryker run",
