@@ -1,8 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../AppShell';
+
+// This file mounts the FULL AppShell (QueryClient + SSE chat lane + multi-fetch
+// round-trips) and runs in parallel with the rest of the suite under coverage
+// instrumentation. The default 1000ms async-utility timeout raced the create →
+// /agent/run → SSE → render chain under that CPU pressure and flaked intermittently
+// (different rows on different runs). Widen the async-wait tolerance for this heavy
+// file only; the assertions and behaviour are unchanged.
+const ASYNC_TIMEOUT_MS = 10000;
 
 function sseBody(frames: readonly Record<string, unknown>[]): string {
   return frames.map((f) => `event: ${String(f.type)}\ndata: ${JSON.stringify(f)}\n\n`).join('');
@@ -76,6 +84,17 @@ function shellWithConversations() {
 }
 
 describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () => {
+  beforeAll(() => {
+    // Raise the global RTL async-wait timeout for this file's lifetime (default 1000ms).
+    // The per-test vitest timeout is widened via the explicit third arg on each it()
+    // below (a runtime vi.setConfig in beforeAll does NOT re-time an already-scheduled
+    // test, which left it racing the 5000ms default).
+    configure({ asyncUtilTimeout: ASYNC_TIMEOUT_MS });
+  });
+  afterAll(() => {
+    // Restore the default so the widened timeout never leaks into other files.
+    configure({ asyncUtilTimeout: 1000 });
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -106,16 +125,20 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
         'true',
       );
     });
-  });
+  }, ASYNC_TIMEOUT_MS);
 
-  it('seeds the active thread from a /c/:id deep link', async () => {
-    renderAt('/c/c-1');
-    const row = await screen.findByRole('button', { name: 'Pinned run' });
-    // The route param seeded the active selection (aria-current) without a click.
-    await waitFor(() => {
-      expect(row.getAttribute('aria-current')).toBe('true');
-    });
-  });
+  it(
+    'seeds the active thread from a /c/:id deep link',
+    async () => {
+      renderAt('/c/c-1');
+      const row = await screen.findByRole('button', { name: 'Pinned run' });
+      // The route param seeded the active selection (aria-current) without a click.
+      await waitFor(() => {
+        expect(row.getAttribute('aria-current')).toBe('true');
+      });
+    },
+    ASYNC_TIMEOUT_MS,
+  );
 
   it('creates and selects a conversation before sending from an empty shell', async () => {
     const created = {
@@ -198,7 +221,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
     expect(runBody?.threadId).toBe(created.ID);
     expect(createBody?.title).toBe('ciao');
     expect(calls.indexOf('POST /api/conversations')).toBeLessThan(calls.indexOf('POST /agent/run'));
-  });
+  }, ASYNC_TIMEOUT_MS);
 
   it('renders the cross-thread approval badge + list and Open binds the thread (APRV-01/D-04)', async () => {
     // The approvals poll returns one pending interrupt in a background thread.
@@ -290,7 +313,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
     await waitFor(() => {
       expect(runCalls).toContain('/agent/run');
     });
-  });
+  }, ASYNC_TIMEOUT_MS);
 
   it('opening a search hit navigates + binds the active thread (route change after mount)', async () => {
     // The search route returns one hit for c-1; clicking it navigates to /c/c-1,
@@ -379,5 +402,5 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
       const rows = screen.getAllByRole('button', { name: 'Pinned run' });
       expect(rows.some((r) => r.getAttribute('aria-current') === 'true')).toBe(true);
     });
-  });
+  }, ASYNC_TIMEOUT_MS);
 });
