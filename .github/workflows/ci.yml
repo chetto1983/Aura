@@ -15,6 +15,7 @@ permissions:
 # (caddy itself is never started in CI; this only satisfies interpolation).
 env:
   AURA_ACCESS_TOKEN: ci-not-a-secret
+  AURA_CI_NODE_VERSION: "24.x"
 
 # Cancel in-flight runs of the same ref when a new push lands (saves runner minutes
 # on rapid pushes; in-flight runs on other refs are untouched).
@@ -838,7 +839,7 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -877,7 +878,7 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -920,7 +921,7 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -959,7 +960,7 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -1024,7 +1025,7 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
