@@ -38,50 +38,58 @@ LIMIT $2;
 -- name: UpdateAssetUploaded :one
 UPDATE aura.assets
 SET status = 'uploaded',
-    size_bytes = $2,
-    object_etag = $3,
+    size_bytes = $3,
+    object_etag = $4,
     uploaded_at = now(),
     updated_at = now()
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: UpdateAssetAccepted :one
 UPDATE aura.assets
 SET status = 'accepted',
-    size_bytes = $2,
-    content_hash = $3,
-    mime_type = $4,
+    size_bytes = $3,
+    content_hash = $4,
+    mime_type = $5,
     accepted_at = now(),
     updated_at = now()
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: UpdateAssetStatus :one
 UPDATE aura.assets
-SET status = $2,
-    error_code = $3,
-    error_message = $4,
+SET status = $3,
+    error_code = $4,
+    error_message = $5,
     updated_at = now(),
-    processed_at = CASE WHEN $2 IN ('searchable', 'complete', 'failed', 'refused') THEN now() ELSE processed_at END,
-    searchable_at = CASE WHEN $2 = 'searchable' THEN now() ELSE searchable_at END,
-    completed_at = CASE WHEN $2 = 'complete' THEN now() ELSE completed_at END,
-    deleted_at = CASE WHEN $2 = 'deleted' THEN now() ELSE deleted_at END
+    processed_at = CASE WHEN $3 IN ('searchable', 'complete', 'failed', 'refused') THEN now() ELSE processed_at END,
+    searchable_at = CASE WHEN $3 = 'searchable' THEN now() ELSE searchable_at END,
+    completed_at = CASE WHEN $3 = 'complete' THEN now() ELSE completed_at END,
+    deleted_at = CASE WHEN $3 = 'deleted' THEN now() ELSE deleted_at END
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: UpdateAssetResult :one
 UPDATE aura.assets
-SET status = $2,
-    document_id = $3,
-    summary = $4,
-    metadata = $5,
+SET status = $3,
+    document_id = $4,
+    summary = $5,
+    metadata = $6,
     error_code = '',
     error_message = '',
     processed_at = now(),
-    searchable_at = CASE WHEN $2 = 'searchable' THEN now() ELSE searchable_at END,
-    completed_at = CASE WHEN $2 = 'complete' THEN now() ELSE completed_at END,
+    searchable_at = CASE WHEN $3 = 'searchable' THEN now() ELSE searchable_at END,
+    completed_at = CASE WHEN $3 = 'complete' THEN now() ELSE completed_at END,
     updated_at = now()
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: PromoteAssetToLibrary :one

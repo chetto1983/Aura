@@ -459,17 +459,20 @@ func (q *Queries) SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams
 const updateAssetAccepted = `-- name: UpdateAssetAccepted :one
 UPDATE aura.assets
 SET status = 'accepted',
-    size_bytes = $2,
-    content_hash = $3,
-    mime_type = $4,
+    size_bytes = $3,
+    content_hash = $4,
+    mime_type = $5,
     accepted_at = now(),
     updated_at = now()
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at
 `
 
 type UpdateAssetAcceptedParams struct {
 	ID          pgtype.UUID `json:"id"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
 	SizeBytes   int64       `json:"size_bytes"`
 	ContentHash string      `json:"content_hash"`
 	MimeType    string      `json:"mime_type"`
@@ -478,6 +481,7 @@ type UpdateAssetAcceptedParams struct {
 func (q *Queries) UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error) {
 	row := q.db.QueryRow(ctx, updateAssetAccepted,
 		arg.ID,
+		arg.IdentityID,
 		arg.SizeBytes,
 		arg.ContentHash,
 		arg.MimeType,
@@ -519,22 +523,25 @@ func (q *Queries) UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAccept
 
 const updateAssetResult = `-- name: UpdateAssetResult :one
 UPDATE aura.assets
-SET status = $2,
-    document_id = $3,
-    summary = $4,
-    metadata = $5,
+SET status = $3,
+    document_id = $4,
+    summary = $5,
+    metadata = $6,
     error_code = '',
     error_message = '',
     processed_at = now(),
-    searchable_at = CASE WHEN $2 = 'searchable' THEN now() ELSE searchable_at END,
-    completed_at = CASE WHEN $2 = 'complete' THEN now() ELSE completed_at END,
+    searchable_at = CASE WHEN $3 = 'searchable' THEN now() ELSE searchable_at END,
+    completed_at = CASE WHEN $3 = 'complete' THEN now() ELSE completed_at END,
     updated_at = now()
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at
 `
 
 type UpdateAssetResultParams struct {
 	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
 	Status     string      `json:"status"`
 	DocumentID string      `json:"document_id"`
 	Summary    string      `json:"summary"`
@@ -544,6 +551,7 @@ type UpdateAssetResultParams struct {
 func (q *Queries) UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error) {
 	row := q.db.QueryRow(ctx, updateAssetResult,
 		arg.ID,
+		arg.IdentityID,
 		arg.Status,
 		arg.DocumentID,
 		arg.Summary,
@@ -586,20 +594,23 @@ func (q *Queries) UpdateAssetResult(ctx context.Context, arg UpdateAssetResultPa
 
 const updateAssetStatus = `-- name: UpdateAssetStatus :one
 UPDATE aura.assets
-SET status = $2,
-    error_code = $3,
-    error_message = $4,
+SET status = $3,
+    error_code = $4,
+    error_message = $5,
     updated_at = now(),
-    processed_at = CASE WHEN $2 IN ('searchable', 'complete', 'failed', 'refused') THEN now() ELSE processed_at END,
-    searchable_at = CASE WHEN $2 = 'searchable' THEN now() ELSE searchable_at END,
-    completed_at = CASE WHEN $2 = 'complete' THEN now() ELSE completed_at END,
-    deleted_at = CASE WHEN $2 = 'deleted' THEN now() ELSE deleted_at END
+    processed_at = CASE WHEN $3 IN ('searchable', 'complete', 'failed', 'refused') THEN now() ELSE processed_at END,
+    searchable_at = CASE WHEN $3 = 'searchable' THEN now() ELSE searchable_at END,
+    completed_at = CASE WHEN $3 = 'complete' THEN now() ELSE completed_at END,
+    deleted_at = CASE WHEN $3 = 'deleted' THEN now() ELSE deleted_at END
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at
 `
 
 type UpdateAssetStatusParams struct {
 	ID           pgtype.UUID `json:"id"`
+	IdentityID   pgtype.UUID `json:"identity_id"`
 	Status       string      `json:"status"`
 	ErrorCode    string      `json:"error_code"`
 	ErrorMessage string      `json:"error_message"`
@@ -608,6 +619,7 @@ type UpdateAssetStatusParams struct {
 func (q *Queries) UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (AuraAssets, error) {
 	row := q.db.QueryRow(ctx, updateAssetStatus,
 		arg.ID,
+		arg.IdentityID,
 		arg.Status,
 		arg.ErrorCode,
 		arg.ErrorMessage,
@@ -650,22 +662,30 @@ func (q *Queries) UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusPa
 const updateAssetUploaded = `-- name: UpdateAssetUploaded :one
 UPDATE aura.assets
 SET status = 'uploaded',
-    size_bytes = $2,
-    object_etag = $3,
+    size_bytes = $3,
+    object_etag = $4,
     uploaded_at = now(),
     updated_at = now()
 WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
 RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at
 `
 
 type UpdateAssetUploadedParams struct {
 	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
 	SizeBytes  int64       `json:"size_bytes"`
 	ObjectEtag string      `json:"object_etag"`
 }
 
 func (q *Queries) UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUploadedParams) (AuraAssets, error) {
-	row := q.db.QueryRow(ctx, updateAssetUploaded, arg.ID, arg.SizeBytes, arg.ObjectEtag)
+	row := q.db.QueryRow(ctx, updateAssetUploaded,
+		arg.ID,
+		arg.IdentityID,
+		arg.SizeBytes,
+		arg.ObjectEtag,
+	)
 	var i AuraAssets
 	err := row.Scan(
 		&i.ID,

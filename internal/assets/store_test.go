@@ -4,16 +4,19 @@ package assets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const localIdentityID = "00000000-0000-0000-0000-000000000001"
+const otherIdentityID = "00000000-0000-0000-0000-000000000002"
 
 func assetEnvOrSkip(t *testing.T, key string) string {
 	t.Helper()
@@ -112,5 +115,79 @@ func TestPostgresAssetStoreRoundTrip(t *testing.T) {
 	}
 	if listed[0].Metadata["origin"] != "integration" || listed[0].Metadata["label"] != "manual" {
 		t.Fatalf("listed metadata round trip = %#v", listed[0].Metadata)
+	}
+
+	if _, err := store.MarkUploaded(ctx, created.ID, otherIdentityID, 64, "etag-wrong-identity"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MarkUploaded wrong identity error = %v, want pgx.ErrNoRows", err)
+	}
+	uploaded, err := store.MarkUploaded(ctx, created.ID, localIdentityID, 64, "etag-integration")
+	if err != nil {
+		t.Fatalf("MarkUploaded: %v", err)
+	}
+	if uploaded.Status != StatusUploaded || uploaded.SizeBytes != 64 || uploaded.ObjectETag != "etag-integration" || uploaded.UploadedAt.IsZero() {
+		t.Fatalf("uploaded asset = %#v", uploaded)
+	}
+
+	if _, err := store.MarkAccepted(ctx, uploaded.ID, otherIdentityID, 64, "hash-wrong-identity", "application/pdf"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MarkAccepted wrong identity error = %v, want pgx.ErrNoRows", err)
+	}
+	accepted, err := store.MarkAccepted(ctx, uploaded.ID, localIdentityID, 64, "hash-integration", "application/pdf")
+	if err != nil {
+		t.Fatalf("MarkAccepted: %v", err)
+	}
+	if accepted.Status != StatusAccepted || accepted.ContentHash != "hash-integration" || accepted.MIMEType != "application/pdf" || accepted.AcceptedAt.IsZero() {
+		t.Fatalf("accepted asset = %#v", accepted)
+	}
+
+	if _, err := store.SetStatus(ctx, accepted.ID, otherIdentityID, StatusProcessing, "", ""); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("SetStatus wrong identity error = %v, want pgx.ErrNoRows", err)
+	}
+	processing, err := store.SetStatus(ctx, accepted.ID, localIdentityID, StatusProcessing, "", "")
+	if err != nil {
+		t.Fatalf("SetStatus processing: %v", err)
+	}
+	if processing.Status != StatusProcessing {
+		t.Fatalf("processing asset = %#v", processing)
+	}
+
+	result := Result{
+		Status:     StatusSearchable,
+		DocumentID: "doc-integration",
+		Summary:    "integration summary",
+		Metadata:   map[string]any{"origin": "integration", "stage": "result"},
+	}
+	if _, err := store.SetResult(ctx, processing.ID, otherIdentityID, result); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("SetResult wrong identity error = %v, want pgx.ErrNoRows", err)
+	}
+	searchable, err := store.SetResult(ctx, processing.ID, localIdentityID, result)
+	if err != nil {
+		t.Fatalf("SetResult: %v", err)
+	}
+	if searchable.Status != StatusSearchable || searchable.DocumentID != "doc-integration" || searchable.SearchableAt.IsZero() {
+		t.Fatalf("searchable asset = %#v", searchable)
+	}
+	if searchable.Metadata["stage"] != "result" {
+		t.Fatalf("result metadata = %#v", searchable.Metadata)
+	}
+
+	deleted, err := store.SetStatus(ctx, searchable.ID, localIdentityID, StatusDeleted, "", "")
+	if err != nil {
+		t.Fatalf("SetStatus deleted: %v", err)
+	}
+	if deleted.Status != StatusDeleted || deleted.DeletedAt.IsZero() {
+		t.Fatalf("deleted asset = %#v", deleted)
+	}
+
+	if _, err := store.MarkUploaded(ctx, deleted.ID, localIdentityID, 65, "etag-deleted"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MarkUploaded deleted asset error = %v, want pgx.ErrNoRows", err)
+	}
+	if _, err := store.MarkAccepted(ctx, deleted.ID, localIdentityID, 65, "hash-deleted", "application/pdf"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MarkAccepted deleted asset error = %v, want pgx.ErrNoRows", err)
+	}
+	if _, err := store.SetStatus(ctx, deleted.ID, localIdentityID, StatusFailed, "deleted", "deleted"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("SetStatus deleted asset error = %v, want pgx.ErrNoRows", err)
+	}
+	if _, err := store.SetResult(ctx, deleted.ID, localIdentityID, result); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("SetResult deleted asset error = %v, want pgx.ErrNoRows", err)
 	}
 }

@@ -97,13 +97,18 @@ func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) 
 }
 
 // MarkUploaded records object storage upload completion.
-func (s *Store) MarkUploaded(ctx context.Context, id string, size int64, etag string) (Asset, error) {
+func (s *Store) MarkUploaded(ctx context.Context, id, identityID string, size int64, etag string) (Asset, error) {
 	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return Asset{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return Asset{}, err
 	}
 	row, err := s.q.UpdateAssetUploaded(ctx, sqlc.UpdateAssetUploadedParams{
 		ID:         pgID,
+		IdentityID: pgIdentityID,
 		SizeBytes:  size,
 		ObjectEtag: etag,
 	})
@@ -114,13 +119,18 @@ func (s *Store) MarkUploaded(ctx context.Context, id string, size int64, etag st
 }
 
 // MarkAccepted records validation of an uploaded asset.
-func (s *Store) MarkAccepted(ctx context.Context, id string, size int64, hash, mimeType string) (Asset, error) {
+func (s *Store) MarkAccepted(ctx context.Context, id, identityID string, size int64, hash, mimeType string) (Asset, error) {
 	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return Asset{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return Asset{}, err
 	}
 	row, err := s.q.UpdateAssetAccepted(ctx, sqlc.UpdateAssetAcceptedParams{
 		ID:          pgID,
+		IdentityID:  pgIdentityID,
 		SizeBytes:   size,
 		ContentHash: hash,
 		MimeType:    mimeType,
@@ -132,13 +142,18 @@ func (s *Store) MarkAccepted(ctx context.Context, id string, size int64, hash, m
 }
 
 // SetStatus records a lifecycle state transition and optional error fields.
-func (s *Store) SetStatus(ctx context.Context, id string, status Status, code, message string) (Asset, error) {
+func (s *Store) SetStatus(ctx context.Context, id, identityID string, status Status, code, message string) (Asset, error) {
 	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return Asset{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return Asset{}, err
 	}
 	row, err := s.q.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
 		ID:           pgID,
+		IdentityID:   pgIdentityID,
 		Status:       string(status),
 		ErrorCode:    code,
 		ErrorMessage: message,
@@ -150,8 +165,12 @@ func (s *Store) SetStatus(ctx context.Context, id string, status Status, code, m
 }
 
 // SetResult records processing output and clears prior error fields.
-func (s *Store) SetResult(ctx context.Context, id string, result Result) (Asset, error) {
+func (s *Store) SetResult(ctx context.Context, id, identityID string, result Result) (Asset, error) {
 	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return Asset{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -161,6 +180,7 @@ func (s *Store) SetResult(ctx context.Context, id string, result Result) (Asset,
 	}
 	row, err := s.q.UpdateAssetResult(ctx, sqlc.UpdateAssetResultParams{
 		ID:         pgID,
+		IdentityID: pgIdentityID,
 		Status:     string(result.Status),
 		DocumentID: result.DocumentID,
 		Summary:    result.Summary,
