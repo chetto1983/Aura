@@ -1,3 +1,5 @@
+import { displayEn, displayIt } from './resources.display';
+
 export const resources = {
   en: {
     translation: {
@@ -124,28 +126,7 @@ export const resources = {
           label: 'Edit message',
         },
       },
-      display: {
-        type: {
-          web_result: 'Web results',
-          document: 'Document',
-          code: 'Code',
-          local_artifact: 'Artifact',
-          table: 'Table',
-          chart: 'Chart',
-          system_event: 'System',
-          swarm_report: 'Workers',
-        },
-        expand: 'Expand',
-        expandAria: 'Open full view',
-        closeAria: 'Close full view',
-        pagination: {
-          count: '{{from}}–{{to}} of {{total}}',
-          previous: 'Previous page',
-          next: 'Next page',
-          perPage: 'Per page',
-          goToPage: 'Go to page {{page}}',
-        },
-      },
+      ...displayEn,
       conversations: {
         heading: 'Conversations',
         loading: 'Loading conversations...',
@@ -405,28 +386,7 @@ export const resources = {
           label: 'Modifica messaggio',
         },
       },
-      display: {
-        type: {
-          web_result: 'Risultati web',
-          document: 'Documento',
-          code: 'Codice',
-          local_artifact: 'Artefatto',
-          table: 'Tabella',
-          chart: 'Grafico',
-          system_event: 'Sistema',
-          swarm_report: 'Worker',
-        },
-        expand: 'Espandi',
-        expandAria: 'Apri vista completa',
-        closeAria: 'Chiudi vista completa',
-        pagination: {
-          count: '{{from}}–{{to}} di {{total}}',
-          previous: 'Pagina precedente',
-          next: 'Pagina successiva',
-          perPage: 'Per pagina',
-          goToPage: 'Vai alla pagina {{page}}',
-        },
-      },
+      ...displayIt,
       conversations: {
         heading: 'Conversazioni',
         loading: 'Caricamento conversazioni...',
