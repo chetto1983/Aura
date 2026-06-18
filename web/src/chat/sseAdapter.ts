@@ -1,5 +1,12 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { isDisplayPayload, type DisplayPayload } from './displays/types';
+import { isDisplayPayload } from './displays/types';
+import {
+  errorDetail,
+  type AguiFrame,
+  type ChatPart,
+  type JSONPatchOp,
+  type ToolPart,
+} from './sseAdapter_frames';
 
 // sseAdapter maps Aura's AG-UI/SSE event stream (POST /agent/run) onto
 // assistant-ui's ThreadMessageLike model. It is a PURE reducer + a thin
@@ -20,111 +27,12 @@ import { isDisplayPayload, type DisplayPayload } from './displays/types';
 // Trust the event TYPE, not the content: a STATE_DELTA carrying tool_call_id is a
 // tool-result marker, NEVER assistant prose (translator.go toolResultCallID). The
 // frame fixture (internal/agui/testdata/golden-events.json) drives the test.
-
-// ---------------------------------------------------------------------------
-// Wire types — the JSON shapes the AG-UI SSE writer emits (1:1 with the SDK
-// events the Go translator yields). Only the fields the reducer reads are typed.
-// ---------------------------------------------------------------------------
-
-/** One RFC-6902 JSONPatch op as carried in a STATE_DELTA `delta` array. */
-export interface JSONPatchOp {
-  readonly op: string;
-  readonly path: string;
-  readonly value: unknown;
-}
-
-interface RunStartedFrame {
-  readonly type: 'RUN_STARTED';
-  readonly threadId?: string;
-  readonly runId?: string;
-}
-interface TextMessageStartFrame {
-  readonly type: 'TEXT_MESSAGE_START';
-  readonly messageId: string;
-}
-interface TextMessageContentFrame {
-  readonly type: 'TEXT_MESSAGE_CONTENT';
-  readonly messageId: string;
-  readonly delta: string;
-}
-interface TextMessageEndFrame {
-  readonly type: 'TEXT_MESSAGE_END';
-  readonly messageId: string;
-}
-interface ReasoningStartFrame {
-  readonly type: 'REASONING_START';
-  readonly messageId: string;
-}
-interface ReasoningMessageContentFrame {
-  readonly type: 'REASONING_MESSAGE_CONTENT';
-  readonly messageId: string;
-  readonly delta: string;
-}
-interface ReasoningEndFrame {
-  readonly type: 'REASONING_END';
-  readonly messageId: string;
-}
-interface ToolCallStartFrame {
-  readonly type: 'TOOL_CALL_START';
-  readonly toolCallId: string;
-  readonly toolCallName: string;
-}
-interface ToolCallArgsFrame {
-  readonly type: 'TOOL_CALL_ARGS';
-  readonly toolCallId: string;
-  readonly delta: string;
-}
-interface ToolCallEndFrame {
-  readonly type: 'TOOL_CALL_END';
-  readonly toolCallId: string;
-}
-interface ToolCallResultFrame {
-  readonly type: 'TOOL_CALL_RESULT';
-  readonly toolCallId: string;
-  readonly content: string;
-}
-interface StateDeltaFrame {
-  readonly type: 'STATE_DELTA';
-  readonly delta: readonly JSONPatchOp[];
-}
-interface RunFinishedFrame {
-  readonly type: 'RUN_FINISHED';
-  readonly outcome?: { readonly type: string; readonly interrupts?: readonly unknown[] };
-}
-interface RunErrorFrame {
-  readonly type: 'RUN_ERROR';
-  readonly message: string;
-}
-interface CustomFrame {
-  readonly type: 'CUSTOM';
-  readonly name: string;
-  readonly value: unknown;
-}
-
-/**
- * The reducer-relevant subset of AG-UI frames. The CUSTOM/aura.display frame
- * (Phase 26) attaches a typed DisplayPayload to a tool part by toolCallId; any
- * OTHER CUSTOM name (e.g. aura.artifact) and the frames the chat lane ignores
- * (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT, REASONING_MESSAGE_START/END) are
- * not modelled — `reduceFrame` returns the state unchanged for any type/name it
- * does not recognise, so unknown frames never corrupt the message.
- */
-export type AguiFrame =
-  | RunStartedFrame
-  | TextMessageStartFrame
-  | TextMessageContentFrame
-  | TextMessageEndFrame
-  | ReasoningStartFrame
-  | ReasoningMessageContentFrame
-  | ReasoningEndFrame
-  | ToolCallStartFrame
-  | ToolCallArgsFrame
-  | ToolCallEndFrame
-  | ToolCallResultFrame
-  | StateDeltaFrame
-  | RunFinishedFrame
-  | RunErrorFrame
-  | CustomFrame;
+//
+// The wire-frame types, the part-union types, the snapshot shapes and the shared
+// errorDetail helper live in ./sseAdapter_frames (the leaf); persisted-history
+// rehydration lives in ./sseAdapter_snapshot. This module keeps the live reducer,
+// SSE parsing and the stream runners, then re-exports both siblings so the public
+// import surface (`./sseAdapter`) stays unchanged.
 
 // ---------------------------------------------------------------------------
 // Usage — read off the final STATE_DELTA (cost/cache footer, D-10).
@@ -183,55 +91,7 @@ export function cacheHitRatio(usage: TurnUsage): number {
 // The reducer — folds frames onto a single assistant ThreadMessageLike.
 // ---------------------------------------------------------------------------
 
-interface ToolPart {
-  readonly type: 'tool-call';
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly argsText: string;
-  readonly result?: string;
-  /** Typed display attached by the CUSTOM/aura.display frame (live) or the
-   *  re-derived snapshot tool turn (replay), keyed by toolCallId. */
-  readonly display?: DisplayPayload;
-}
-interface TextPart {
-  readonly type: 'text';
-  readonly text: string;
-}
-interface ReasoningPart {
-  readonly type: 'reasoning';
-  readonly text: string;
-}
-
-/** The assistant message-part union the reducer emits. */
-export type ChatPart = TextPart | ReasoningPart | ToolPart;
-
 type AssistantStatus = ThreadMessageLike['status'];
-
-interface SnapshotToolFunction {
-  readonly name?: unknown;
-  readonly arguments?: unknown;
-}
-
-interface SnapshotToolCall {
-  readonly id?: unknown;
-  readonly function?: SnapshotToolFunction;
-  /** Re-derived typed display (D-06): the backend re-runs the display normalizer
-   *  per tool turn at snapshot projection time and attaches it here. */
-  readonly display?: unknown;
-}
-
-interface SnapshotMessage {
-  readonly id?: unknown;
-  readonly role?: unknown;
-  readonly content?: unknown;
-  readonly toolCallId?: unknown;
-  readonly toolCalls?: unknown;
-}
-
-interface MessagesSnapshotFrame {
-  readonly type?: unknown;
-  readonly messages?: unknown;
-}
 
 /**
  * The accumulator for one assistant turn. Parts preserve arrival order; a
@@ -397,160 +257,6 @@ export function toThreadMessage(state: AssistantTurnState): ThreadMessageLike {
 }
 
 // ---------------------------------------------------------------------------
-// Persisted history snapshots — GET /threads/{id}/messages (one-shot JSON).
-// ---------------------------------------------------------------------------
-
-function textFromSnapshotContent(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return '';
-  }
-}
-
-function asSnapshotMessages(value: unknown): readonly SnapshotMessage[] {
-  if (typeof value !== 'object' || value === null) return [];
-  const snapshot = value as MessagesSnapshotFrame;
-  if (snapshot.type !== 'MESSAGES_SNAPSHOT' || !Array.isArray(snapshot.messages)) return [];
-  return snapshot.messages.filter(
-    (message): message is SnapshotMessage => typeof message === 'object' && message !== null,
-  );
-}
-
-function metadataFromSnapshotId(id: string | undefined): ThreadMessageLike['metadata'] | undefined {
-  const seq = /^msg-(\d+)$/.exec(id ?? '')?.[1];
-  if (seq === undefined) return undefined;
-  return { custom: { backendSeq: Number(seq) } };
-}
-
-function toolCallsFromSnapshot(value: unknown): ToolPart[] {
-  if (!Array.isArray(value)) return [];
-  const parts: ToolPart[] = [];
-  for (const raw of value) {
-    if (typeof raw !== 'object' || raw === null) continue;
-    const call = raw as SnapshotToolCall;
-    if (typeof call.id !== 'string' || call.id.length === 0) continue;
-    parts.push({
-      type: 'tool-call',
-      toolCallId: call.id,
-      toolName:
-        typeof call.function?.name === 'string' && call.function.name.length > 0
-          ? call.function.name
-          : '',
-      argsText:
-        typeof call.function?.arguments === 'string'
-          ? call.function.arguments
-          : textFromSnapshotContent(call.function?.arguments),
-      // D-06: a re-derived display payload (when present) rides the tool part so
-      // the DisplayRouter renders identically on replay. Tolerated when absent.
-      ...(isDisplayPayload(call.display) ? { display: call.display } : {}),
-    });
-  }
-  return parts;
-}
-
-function mergeToolResult(
-  messages: ThreadMessageLike[],
-  toolCallId: string,
-  result: string,
-): boolean {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const candidate = messages[i];
-    if (candidate?.role !== 'assistant') continue;
-    const parts = typeof candidate.content === 'string' ? [] : [...candidate.content];
-    const partIndex = parts.findIndex(
-      (part) => part.type === 'tool-call' && part.toolCallId === toolCallId,
-    );
-    if (partIndex < 0) continue;
-    const part = parts[partIndex];
-    if (part?.type !== 'tool-call') continue;
-    parts[partIndex] = { ...part, result };
-    messages[i] = { ...candidate, content: parts };
-    return true;
-  }
-  return false;
-}
-
-/**
- * Project a persisted MESSAGES_SNAPSHOT body onto the visible assistant-ui chat
- * model. System turns stay out of the UI (branch/edit seq math depends on that);
- * tool result rows merge into the preceding assistant tool-call card.
- */
-export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[] {
-  const messages: ThreadMessageLike[] = [];
-  for (const raw of asSnapshotMessages(snapshot)) {
-    const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
-    const metadata = metadataFromSnapshotId(id);
-    const role = typeof raw.role === 'string' ? raw.role : '';
-    const text = textFromSnapshotContent(raw.content);
-    if (role === 'system') continue;
-    if (role === 'tool') {
-      if (typeof raw.toolCallId === 'string' && raw.toolCallId.length > 0) {
-        if (!mergeToolResult(messages, raw.toolCallId, text)) {
-          messages.push({
-            ...(id !== undefined ? { id } : {}),
-            ...(metadata !== undefined ? { metadata } : {}),
-            role: 'assistant',
-            content: [
-              {
-                type: 'tool-call',
-                toolCallId: raw.toolCallId,
-                toolName: '',
-                argsText: '',
-                result: text,
-              },
-            ],
-            status: { type: 'complete', reason: 'stop' },
-          });
-        }
-      }
-      continue;
-    }
-    if (role === 'user') {
-      messages.push({
-        ...(id !== undefined ? { id } : {}),
-        ...(metadata !== undefined ? { metadata } : {}),
-        role: 'user',
-        content: [{ type: 'text', text }],
-      });
-      continue;
-    }
-    if (role === 'assistant') {
-      const content: ChatPart[] = toolCallsFromSnapshot(raw.toolCalls);
-      if (text.length > 0 || content.length === 0) content.push({ type: 'text', text });
-      messages.push({
-        ...(id !== undefined ? { id } : {}),
-        ...(metadata !== undefined ? { metadata } : {}),
-        role: 'assistant',
-        content,
-        status: { type: 'complete', reason: 'stop' },
-      });
-    }
-  }
-  return messages;
-}
-
-export async function fetchThreadMessages(
-  threadId: string,
-  signal?: AbortSignal,
-): Promise<ThreadMessageLike[]> {
-  const init: RequestInit = {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-  };
-  if (signal !== undefined) init.signal = signal;
-  const res = await fetch(`/threads/${encodeURIComponent(threadId)}/messages`, init);
-  if (!res.ok) {
-    throw new Error(await errorDetail(res));
-  }
-  return snapshotToThreadMessages(await res.json());
-}
-
-// ---------------------------------------------------------------------------
 // SSE frame parsing — split an SSE byte stream into AG-UI frames.
 // ---------------------------------------------------------------------------
 
@@ -663,21 +369,6 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
 }
 
 /**
- * Surface a non-OK response as a human-readable error (WR-03). The backend sends
- * meaningful, ALREADY-sanitized text bodies (e.g. "thread already has an in-flight run"
- * on 409, "diverge_seq must be a positive turn seq" on 400, sanitizeErr-redacted 500s);
- * collapsing every failure to a bare "HTTP <status>" hides the cause from the operator —
- * the only viewer. Read the body and prefer it; fall back to the status when it is empty
- * or unreadable.
- */
-async function errorDetail(res: Response): Promise<string> {
-  const status = `HTTP ${String(res.status)}`;
-  if (res.body === null) return status;
-  const detail = (await res.text().catch(() => '')).trim();
-  return detail.length > 0 ? detail : status;
-}
-
-/**
  * POST /agent/run and stream the reply, folding each AG-UI frame onto one
  * assistant message and invoking onUpdate. Uses fetch + ReadableStream (NOT
  * EventSource — it cannot POST a body); the caller's AbortSignal is the Stop
@@ -716,3 +407,12 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
   }
   return state.usage;
 }
+
+// ---------------------------------------------------------------------------
+// Barrel — keep the public `./sseAdapter` import surface unchanged. Everything
+// moved into the leaf (wire/part types) and the snapshot module is re-exported
+// here so consumers and tests import from this path exactly as before.
+// ---------------------------------------------------------------------------
+
+export type { AguiFrame, ChatPart, JSONPatchOp } from './sseAdapter_frames';
+export { fetchThreadMessages, snapshotToThreadMessages } from './sseAdapter_snapshot';
