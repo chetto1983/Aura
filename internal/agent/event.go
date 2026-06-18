@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
@@ -71,6 +72,12 @@ type Actions struct {
 	ArtifactDelta  map[string]any  `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
 	AwaitingInput  *AwaitingInput  `json:"awaiting_input,omitempty"` // HITL pause payload (Slice 1.5); nil unless ask_user fired
 	ToolInvocation *ToolInvocation `json:"tool_invocation,omitempty"`
+	// Display is the Phase-26 typed-display payload the display normalizer produced
+	// for a recognized tool result (HARDEN-08). It is an additive omitempty pointer
+	// mirroring AwaitingInput: a nil Display byte-omits the `display` key so the
+	// existing event wire is unchanged (decode(encode)==identity), and the AG-UI
+	// translator fans it out as an aura.display CUSTOM event when set.
+	Display *display.Payload `json:"display,omitempty"`
 	// DiscardStreamed is the mid-stream-retry repudiation signal (B-12). When a
 	// stream fails mid-way and the loop retries, the partial chunk Events the failed
 	// attempt already streamed are stale; the agent emits ONE Event carrying this
