@@ -16,6 +16,9 @@ export type AssetModality = 'document' | 'image' | 'audio' | 'unknown';
 
 export interface Asset {
   readonly id: string;
+  readonly source_kind?: 'web' | 'telegram' | 'cli';
+  readonly thread_id?: string;
+  readonly scope?: 'thread' | 'library';
   readonly status: AssetStatus;
   readonly modality: AssetModality;
   readonly file_name: string;
@@ -26,6 +29,8 @@ export interface Asset {
   readonly summary?: string;
   readonly error_code?: string;
   readonly error_message?: string;
+  readonly created_at?: string;
+  readonly updated_at?: string;
 }
 
 export interface PresignResponse {

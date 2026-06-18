@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { deleteAsset, finalizeAsset, getAsset, presignAsset, promoteAsset } from '../api';
+import {
+  deleteAsset,
+  finalizeAsset,
+  getAsset,
+  listThreadAssets,
+  presignAsset,
+  promoteAsset,
+  retryAsset,
+} from '../api';
 
 const asset = {
   id: 'asset-1',
@@ -83,13 +91,38 @@ describe('attachment API client', () => {
 
     await finalizeAsset('asset/1');
     await promoteAsset('asset/1');
+    await retryAsset('asset/1');
     await deleteAsset('asset/1');
 
     const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
     expect(calls.map((call) => call[0])).toEqual([
       '/api/assets/asset%2F1/finalize',
       '/api/assets/asset%2F1/promote',
+      '/api/assets/asset%2F1/retry',
       '/api/assets/asset%2F1',
     ]);
+  });
+
+  it('lists assets for a thread with encoded query params', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify([asset]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listThreadAssets('thread/1')).resolves.toEqual([asset]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/assets?thread_id=thread%2F1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      }),
+    );
   });
 });

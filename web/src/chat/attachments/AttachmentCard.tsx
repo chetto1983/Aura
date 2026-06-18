@@ -4,10 +4,11 @@ import type { Asset } from './types';
 interface AttachmentCardProps {
   readonly asset: Asset;
   readonly onRetry?: (id: string) => void;
+  readonly onPromote?: (id: string) => void;
   readonly onRemove?: (id: string) => void;
 }
 
-export function AttachmentCard({ asset, onRetry, onRemove }: AttachmentCardProps) {
+export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: AttachmentCardProps) {
   const { t } = useTranslation();
   const detail = asset.error_message ?? asset.summary ?? statusText(asset.status, t);
   return (
@@ -26,10 +27,21 @@ export function AttachmentCard({ asset, onRetry, onRemove }: AttachmentCardProps
               }}
               className="rounded-[var(--radius-sm)] px-2 py-1 text-xs text-text-muted outline-none hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              {t('chat.error.retry')}
+              {t('chat.attachments.retry')}
             </button>
           ) : null}
-          {onRemove !== undefined ? (
+          {onPromote !== undefined && isPromotable(asset) ? (
+            <button
+              type="button"
+              onClick={() => {
+                onPromote(asset.id);
+              }}
+              className="rounded-[var(--radius-sm)] px-2 py-1 text-xs text-text-muted outline-none hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {t('chat.attachments.promote')}
+            </button>
+          ) : null}
+          {onRemove !== undefined && asset.status !== 'deleted' && asset.status !== 'canceled' ? (
             <button
               type="button"
               aria-label={t('chat.attachments.remove', { name: asset.file_name })}
@@ -48,6 +60,11 @@ export function AttachmentCard({ asset, onRetry, onRemove }: AttachmentCardProps
       ) : null}
     </div>
   );
+}
+
+function isPromotable(asset: Asset): boolean {
+  if (asset.scope === 'library') return false;
+  return asset.status === 'searchable' || asset.status === 'complete';
 }
 
 function statusText(status: Asset['status'], t: ReturnType<typeof useTranslation>['t']): string {

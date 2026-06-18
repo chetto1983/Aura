@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useAttachmentUploads } from '../useAttachmentUploads';
+import { attachmentPollDelayMs, useAttachmentUploads } from '../useAttachmentUploads';
 
 const presignedAsset = {
   id: 'asset-1',
@@ -55,6 +55,7 @@ class FakeXHR {
 describe('useAttachmentUploads', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     FakeXHR.instances = [];
   });
 
@@ -157,5 +158,77 @@ describe('useAttachmentUploads', () => {
     });
     expect(result.current.items[0]?.error).toBe('finalize failed');
     expect(result.current.readyAssetIds).toEqual([]);
+  });
+
+  it('uses bounded default polling delays', () => {
+    expect(attachmentPollDelayMs(0)).toBe(500);
+    expect(attachmentPollDelayMs(4_999)).toBe(500);
+    expect(attachmentPollDelayMs(5_000)).toBe(1_500);
+    expect(attachmentPollDelayMs(59_999)).toBe(1_500);
+    expect(attachmentPollDelayMs(60_000)).toBe(5_000);
+  });
+
+  it('waits for the first default poll interval before re-reading an accepted asset', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            asset: presignedAsset,
+            upload: {
+              upload_url: 'https://assets.test/upload',
+              method: 'PUT',
+              required_headers: {},
+              expires_at: '2026-06-18T20:00:00Z',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(acceptedAsset), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(searchableAsset), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('XMLHttpRequest', FakeXHR);
+
+    const { result } = renderHook(() =>
+      useAttachmentUploads('thread-1', { makeLocalId: () => 'local-1' }),
+    );
+
+    act(() => {
+      result.current.addFiles([new File(['%PDF test'], 'manual.pdf', { type: 'application/pdf' })]);
+    });
+
+    await act(async () => {
+      vi.runAllTicks();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    expect(result.current.items[0]?.status).toBe('processing');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(499);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    await vi.waitFor(() => {
+      expect(result.current.items[0]?.status).toBe('ready');
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

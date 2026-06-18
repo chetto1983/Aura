@@ -17,6 +17,7 @@ import {
 import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
 import { BranchPicker } from './BranchPicker';
 import { Composer } from './Composer';
+import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import type { Asset } from './attachments/types';
@@ -55,6 +56,72 @@ function userMessage(text: string, attachments: readonly Asset[] = []): ThreadMe
   };
 }
 
+function messageAttachments(message: ThreadMessageLike): readonly Asset[] {
+  const metadata = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
+  return metadata?.attachments ?? [];
+}
+
+function withMessageAttachments(
+  message: ThreadMessageLike,
+  attachments: readonly Asset[],
+): ThreadMessageLike {
+  const custom = { ...(message.metadata?.custom ?? {}), attachments };
+  return { ...message, metadata: { ...message.metadata, custom } };
+}
+
+function attachAssetsToUserMessages(
+  messages: readonly ThreadMessageLike[],
+  assets: readonly Asset[],
+): ThreadMessageLike[] {
+  const visibleAssets = assets.filter(
+    (asset) => asset.status !== 'deleted' && asset.status !== 'canceled',
+  );
+  if (visibleAssets.length === 0) return [...messages];
+  const userIndexes = messages
+    .map((message, index) => (message.role === 'user' ? index : -1))
+    .filter((index) => index >= 0);
+  if (userIndexes.length === 0) return [...messages];
+  const groups = new Map<number, Asset[]>();
+  visibleAssets.forEach((asset, assetIndex) => {
+    const target = userIndexes[Math.min(assetIndex, userIndexes.length - 1)];
+    if (target === undefined) return;
+    groups.set(target, [...(groups.get(target) ?? []), asset]);
+  });
+  return messages.map((message, index) => {
+    const additions = groups.get(index);
+    if (additions === undefined) return message;
+    return withMessageAttachments(message, [...messageAttachments(message), ...additions]);
+  });
+}
+
+function replaceAssetInMessages(
+  messages: readonly ThreadMessageLike[],
+  asset: Asset,
+): ThreadMessageLike[] {
+  return messages.map((message) => {
+    const attachments = messageAttachments(message);
+    if (!attachments.some((item) => item.id === asset.id)) return message;
+    return withMessageAttachments(
+      message,
+      attachments.map((item) => (item.id === asset.id ? asset : item)),
+    );
+  });
+}
+
+function removeAssetFromMessages(
+  messages: readonly ThreadMessageLike[],
+  assetID: string,
+): ThreadMessageLike[] {
+  return messages.map((message) => {
+    const attachments = messageAttachments(message);
+    if (!attachments.some((item) => item.id === assetID)) return message;
+    return withMessageAttachments(
+      message,
+      attachments.filter((item) => item.id !== assetID),
+    );
+  });
+}
+
 function assistantErrorMessage(text: string): ThreadMessageLike {
   return {
     id: crypto.randomUUID(),
@@ -62,6 +129,10 @@ function assistantErrorMessage(text: string): ThreadMessageLike {
     content: [{ type: 'text', text }],
     status: { type: 'incomplete', reason: 'error' },
   };
+}
+
+function isAbortSignalAborted(signal: AbortSignal): boolean {
+  return signal.aborted;
 }
 
 export interface ExternalStoreChatProps {
@@ -226,13 +297,22 @@ export function ExternalStoreChat({
     clearLoadedMessages();
 
     void fetchThreadMessages(threadId, controller.signal)
-      .then((loaded) => {
-        if (controller.signal.aborted || request !== historyRequestRef.current) return;
-        setMessages(loaded);
+      .then(async (loaded) => {
+        if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
+          return;
+        let assets: Asset[] = [];
+        try {
+          assets = await listThreadAssets(threadId, controller.signal);
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+        }
+        if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
+          return;
+        setMessages(attachAssetsToUserMessages(loaded, assets));
       })
       .catch((err: unknown) => {
         if (
-          controller.signal.aborted ||
+          isAbortSignalAborted(controller.signal) ||
           request !== historyRequestRef.current ||
           (err instanceof DOMException && err.name === 'AbortError')
         ) {
@@ -248,6 +328,30 @@ export function ExternalStoreChat({
       controller.abort();
     };
   }, [threadId, onUsage, t]);
+
+  const handleAssetRetry = useCallback((assetID: string) => {
+    void retryAsset(assetID)
+      .then((asset) => {
+        setMessages((prev) => replaceAssetInMessages(prev, asset));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const handleAssetPromote = useCallback((assetID: string) => {
+    void promoteAsset(assetID)
+      .then((asset) => {
+        setMessages((prev) => replaceAssetInMessages(prev, asset));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const handleAssetRemove = useCallback((assetID: string) => {
+    void deleteAsset(assetID)
+      .then(() => {
+        setMessages((prev) => removeAssetFromMessages(prev, assetID));
+      })
+      .catch(() => undefined);
+  }, []);
 
   // foldReRun streams a backend branch re-run (edit / regenerate) onto the supplied base
   // message list, folding the AG-UI reply onto ONE freshly-id'd assistant message appended
@@ -427,7 +531,17 @@ export function ExternalStoreChat({
           </AuiIf>
 
           <ThreadPrimitive.Messages>
-            {({ message }) => (message.role === 'user' ? <UserMessage /> : <AssistantMessage />)}
+            {({ message }) =>
+              message.role === 'user' ? (
+                <UserMessage
+                  onAssetRetry={handleAssetRetry}
+                  onAssetPromote={handleAssetPromote}
+                  onAssetRemove={handleAssetRemove}
+                />
+              ) : (
+                <AssistantMessage />
+              )
+            }
           </ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
 
@@ -444,11 +558,16 @@ export function ExternalStoreChat({
   );
 }
 
-function UserMessage() {
+interface UserMessageProps {
+  readonly onAssetRetry: (assetID: string) => void;
+  readonly onAssetPromote: (assetID: string) => void;
+  readonly onAssetRemove: (assetID: string) => void;
+}
+
+function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: UserMessageProps) {
   const { t } = useTranslation();
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
-  const metadata = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
-  const attachments = metadata?.attachments ?? [];
+  const attachments = messageAttachments(message);
   return (
     <MessagePrimitive.Root className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
       {/* Edit mode: a message-scoped composer whose Send fires onEdit (fork + re-run). */}
@@ -488,7 +607,13 @@ function UserMessage() {
         {attachments.length > 0 ? (
           <div className="flex flex-col items-end gap-2">
             {attachments.map((asset) => (
-              <AttachmentCard key={asset.id} asset={asset} />
+              <AttachmentCard
+                key={asset.id}
+                asset={asset}
+                onRetry={onAssetRetry}
+                onPromote={onAssetPromote}
+                onRemove={onAssetRemove}
+              />
             ))}
           </div>
         ) : null}

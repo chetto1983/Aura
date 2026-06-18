@@ -25,7 +25,6 @@ export function useAttachmentUploads(
   const [items, setItems] = useState<UploadItem[]>([]);
   const itemsRef = useRef<UploadItem[]>([]);
   const { makeLocalId: configuredMakeLocalId, pollIntervalMs: configuredPollIntervalMs } = options;
-  const pollIntervalMs = configuredPollIntervalMs ?? 500;
   const makeLocalId = useCallback(
     () => configuredMakeLocalId?.() ?? crypto.randomUUID(),
     [configuredMakeLocalId],
@@ -51,13 +50,15 @@ export function useAttachmentUploads(
   const pollUntilReady = useCallback(
     async (asset: Asset): Promise<Asset> => {
       let current = asset;
+      const startedAt = Date.now();
       while (!isReadyAsset(current) && !terminalStatuses.has(current.status)) {
-        await delay(pollIntervalMs);
+        const elapsedMs = Date.now() - startedAt;
+        await delay(configuredPollIntervalMs ?? attachmentPollDelayMs(elapsedMs));
         current = await getAsset(current.id);
       }
       return current;
     },
-    [pollIntervalMs],
+    [configuredPollIntervalMs],
   );
 
   const runUpload = useCallback(
@@ -199,6 +200,12 @@ function isReadyAsset(asset: Asset): boolean {
     return asset.status === 'searchable' || asset.status === 'complete';
   if (asset.modality === 'image' || asset.modality === 'audio') return asset.status === 'complete';
   return asset.status === 'searchable' || asset.status === 'complete';
+}
+
+export function attachmentPollDelayMs(elapsedMs: number): number {
+  if (elapsedMs < 5_000) return 500;
+  if (elapsedMs < 60_000) return 1_500;
+  return 5_000;
 }
 
 function uploadStatusForAsset(asset: Asset): UploadItem['status'] {

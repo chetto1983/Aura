@@ -95,4 +95,57 @@ describe('ExternalStoreChat attachments', () => {
       expect(clearReady).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('loads thread assets during replay and renders them beside user messages', async () => {
+    const fetchMock = vi.fn((url: unknown) => {
+      if (url === '/threads/conv-1/messages') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: 'MESSAGES_SNAPSHOT',
+              messages: [
+                { id: 'msg-1', role: 'user', content: 'persisted prompt' },
+                { id: 'msg-2', role: 'assistant', content: 'persisted answer' },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        );
+      }
+      if (url === '/api/assets?thread_id=conv-1') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 'asset-replay',
+                status: 'searchable',
+                modality: 'document',
+                file_name: 'manual.pdf',
+                mime_type: 'application/pdf',
+                declared_size_bytes: 9,
+                size_bytes: 9,
+                document_id: 'doc-1',
+                summary: 'indexed on replay',
+              },
+            ]),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        );
+      }
+      return Promise.resolve(sseResponse());
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    expect(await screen.findByText('persisted prompt')).toBeTruthy();
+    expect(await screen.findByText('indexed on replay')).toBeTruthy();
+    expect(screen.getAllByText('manual.pdf').length).toBeGreaterThanOrEqual(1);
+  });
 });
