@@ -115,6 +115,13 @@ type AuraIdentities struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Maps an Authula user-id to a seeded aura.identities row (spec §5). Single-operator: the operator user pins to `local` (…0001). The A2 session-validate seam maps authula user-id -> this identity_id -> principalKey{}.
+type AuraIdentityAuthLinks struct {
+	IdentityID    pgtype.UUID        `json:"identity_id"`
+	AuthulaUserID string             `json:"authula_user_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 // Audit of applied Cypher migrations. Written by aura neo4j migrate; read by aura neo4j status.
 type AuraKnowledgeMigrations struct {
 	Version   int32              `json:"version"`

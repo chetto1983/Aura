@@ -128,14 +128,18 @@ describe('useEdgeSwipe — §3.1b gesture contract', () => {
   });
 
   it('does not commit a short horizontal drag below 50% (springs back)', () => {
+    vi.useFakeTimers();
     const onLeftEdge = vi.fn();
     const { unmount } = mountOn(host, { onLeftEdge, edgeSize: 20 });
 
+    vi.setSystemTime(0);
     host.dispatchEvent(touchEvent('touchstart', [{ x: 6, y: 100 }], host));
+    vi.setSystemTime(20); // a quick first sample is still only a short drag, not a fling
     host.dispatchEvent(touchEvent('touchmove', [{ x: 40, y: 102 }], host)); // locked, but small
     host.dispatchEvent(touchEvent('touchend', [{ x: 40, y: 102 }], host));
     expect(onLeftEdge).not.toHaveBeenCalled();
 
+    vi.useRealTimers();
     unmount();
   });
 

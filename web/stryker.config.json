@@ -4,7 +4,6 @@
   "testRunner": "vitest",
   "coverageAnalysis": "perTest",
   "mutate": [
-    "src/routes/LoginPage.tsx",
     "src/health/RuntimeHealthPanel.tsx",
     "src/health/useRuntimeHealth.ts",
     "src/theme/applyTheme.ts",

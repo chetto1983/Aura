@@ -40,6 +40,7 @@ interface Tracking {
   lastT: number;
   prevX: number;
   prevT: number;
+  moveCount: number;
 }
 
 function point(event: TouchEvent): { x: number; y: number } | null {
@@ -89,6 +90,7 @@ export function useEdgeSwipe(options: EdgeSwipeOptions): EdgeSwipeHandlers {
       lastT: now,
       prevX: p.x,
       prevT: now,
+      moveCount: 0,
     };
   }, []);
 
@@ -104,6 +106,7 @@ export function useEdgeSwipe(options: EdgeSwipeOptions): EdgeSwipeHandlers {
     g.prevT = g.lastT;
     g.lastX = p.x;
     g.lastT = now;
+    g.moveCount += 1;
 
     if (!g.locked) {
       if (Math.hypot(dx, dy) < ARM_TRAVEL) return; // wait for the arm threshold
@@ -131,7 +134,7 @@ export function useEdgeSwipe(options: EdgeSwipeOptions): EdgeSwipeHandlers {
       // Velocity is the speed over the last real move segment; a same-tick synthetic
       // move (segment time 0) is NOT a fling — only genuine motion-over-time commits early.
       const segDt = g.lastT - g.prevT;
-      const velocity = segDt > 0 ? (g.lastX - g.prevX) / segDt : 0;
+      const velocity = g.moveCount >= 2 && segDt > 0 ? (g.lastX - g.prevX) / segDt : 0;
       const half = panelWidth() / 2;
       const o = opts.current;
 
