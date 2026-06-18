@@ -3,6 +3,14 @@ import { useTranslation } from 'react-i18next';
 import type { DisplayTable } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { useCopyAction } from './useCopyAction';
+import {
+  filterAndSort,
+  isNumericCell,
+  nextSort,
+  toCSV,
+  toTSV,
+  type SortState,
+} from './tableData';
 
 // TableDisplay (DISP-03 / D-14): a client-side sortable, filterable, copyable,
 // CSV-exportable table over the trusted `{columns, rows}` payload, paginated in-card
@@ -15,42 +23,6 @@ import { useCopyAction } from './useCopyAction';
 // sort-column underline + the active page number only (Color rule).
 
 const PER_PAGE_OPTIONS = [3, 6, 9] as const;
-
-type SortDir = 'asc' | 'desc';
-
-interface SortState {
-  readonly col: number;
-  readonly dir: SortDir;
-}
-
-/** A cell that parses cleanly as a finite number sorts numerically; otherwise locale string. */
-function compareCells(a: string, b: string): number {
-  if (isNumericCell(a) && isNumericCell(b)) return Number(a) - Number(b);
-  return a.localeCompare(b);
-}
-
-/** A cell is mono/numeric-shaped when it is a finite number (id/numeric column). */
-function isNumericCell(value: string): boolean {
-  return value.trim() !== '' && !Number.isNaN(Number(value));
-}
-
-/** RFC-4180-ish CSV: wrap a field in quotes and double interior quotes when needed. */
-function csvField(value: string): string {
-  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function toCSV(columns: readonly string[], rows: readonly (readonly string[])[]): string {
-  const header = columns.map(csvField).join(',');
-  const body = rows.map((r) => r.map(csvField).join(',')).join('\r\n');
-  return body === '' ? header : `${header}\r\n${body}`;
-}
-
-function toTSV(columns: readonly string[], rows: readonly (readonly string[])[]): string {
-  const header = columns.join('\t');
-  const body = rows.map((r) => r.join('\t')).join('\n');
-  return body === '' ? header : `${header}\n${body}`;
-}
 
 export interface TableDisplayProps {
   readonly payload: { readonly table?: DisplayTable };
@@ -70,21 +42,14 @@ export function TableDisplay({ payload }: TableDisplayProps) {
   const columns = useMemo(() => payload.table?.columns ?? [], [payload.table]);
   const rows = useMemo(() => payload.table?.rows ?? [], [payload.table]);
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    const matched =
-      q === '' ? rows : rows.filter((r) => r.some((c) => c.toLowerCase().includes(q)));
-    if (sort === null) return matched;
-    const sorted = [...matched].sort((a, b) => compareCells(a[sort.col] ?? '', b[sort.col] ?? ''));
-    if (sort.dir === 'desc') sorted.reverse();
-    return sorted;
-  }, [rows, filter, sort]);
+  const filtered = useMemo(
+    () => filterAndSort(rows, filter, sort),
+    [rows, filter, sort],
+  );
 
   const toggleSort = (col: number) => {
     setPage(0);
-    setSort((prev) =>
-      prev?.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' },
-    );
+    setSort((prev) => nextSort(prev, col));
   };
 
   const label = t('display.type.table');

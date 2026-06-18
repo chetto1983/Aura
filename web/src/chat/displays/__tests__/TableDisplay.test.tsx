@@ -100,6 +100,44 @@ describe('TableDisplay (DISP-03 / D-14)', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
+  it('disables prev on the first page and next on the last page', () => {
+    render(<TableDisplay payload={fruits} />);
+    const prev = screen.getByRole('button', { name: 'Previous page' });
+    const next = screen.getByRole('button', { name: 'Next page' });
+    expect(prev.hasAttribute('disabled')).toBe(true);
+    expect(next.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(next); // → last page (4 rows / 3 per page = 2 pages)
+    expect(next.hasAttribute('disabled')).toBe(true);
+    expect(prev.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('the per-page select widens the window and resets to page 1', () => {
+    render(<TableDisplay payload={fruits} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' })); // go to page 2
+    fireEvent.change(screen.getByLabelText('Per page'), { target: { value: '6' } });
+    // All 4 rows now fit on page 1; the count shows the full window.
+    expect(screen.getByText('1–4 of 4')).toBeTruthy();
+    expect(screen.getByText('Date')).toBeTruthy();
+    expect(screen.getByText('Cherry')).toBeTruthy();
+    // The single-page window hides prev/next.
+    expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull();
+  });
+
+  it('reports the row count in the header meta', () => {
+    render(<TableDisplay payload={fruits} />);
+    expect(screen.getByText('4 rows')).toBeTruthy();
+  });
+
+  it('marks the active sort column header aria-sort and leaves others "none"', () => {
+    render(<TableDisplay payload={fruits} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by Name' }));
+    const headers = screen.getAllByRole('columnheader');
+    const nameHeader = headers.find((h) => within(h).queryByText('Name'));
+    const qtyHeader = headers.find((h) => within(h).queryByText('Qty'));
+    expect(nameHeader?.getAttribute('aria-sort')).toBe('ascending');
+    expect(qtyHeader?.getAttribute('aria-sort')).toBe('none');
+  });
+
   describe('clipboard / CSV', () => {
     let writeText: ReturnType<typeof vi.fn>;
 
