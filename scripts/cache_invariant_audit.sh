@@ -10,7 +10,10 @@
 #
 # Belt-and-suspenders (06-RESEARCH Pattern 4): the Go subcommand asserts the
 # invariant AND exits non-zero with `messages[0] mutated at request N` on drift; THIS
-# wrapper independently counts the 22 request hash lines and diffs them. Both must agree.
+# wrapper independently counts the EXPECTED_REQUESTS request hash lines and diffs them.
+# Both must agree. Phase 26 (D-05) extended the 20-turn replay with a web_search→cite
+# turn (turn-08) so the volatile numbered source list rides the tail-inject — the gate
+# proves it leaves messages[0] byte-identical.
 #
 # Phase 11 (D-06/D-07) extends the audit to THREE byte-stable streams over the same
 # 20-turn replay with a FIXED skill set loaded:
@@ -34,7 +37,7 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-readonly EXPECTED_REQUESTS=22
+readonly EXPECTED_REQUESTS=23
 
 # AURA_CACHE_AUDIT_BIN lets the SC#5 negative test substitute an executable that
 # emits a poisoned hash stream, without evaluating an environment-controlled shell

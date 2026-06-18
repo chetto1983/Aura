@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
@@ -83,6 +84,14 @@ type LlmAgent struct {
 	// embedder is wired). When present, adaptiveReasoningTier uses it instead of
 	// the per-turn LLM router round-trip; the LLM router remains the fallback.
 	classifier *prompt.ReasoningClassifier
+
+	// sources is the per-run URL-keyed source registry (D-05): web_search/web_fetch
+	// results accumulate into it across the turn so the model sees ONE numbered
+	// [n] Title — url list, threaded into prompt.Budget.Sources (the tail-inject copy
+	// path, NEVER messages[0]). It also feeds the typed-display Payload emitted on each
+	// web tool-result Event (DISP-01). A fresh LlmAgent per turn resets it, so the live
+	// and replay paths each build an independent registry — identical by construction.
+	sources *display.Registry
 }
 
 var _ Agent = (*LlmAgent)(nil)
@@ -115,72 +124,6 @@ type LlmAgentConfig struct {
 	Breaker *llm.Breaker
 	// HookManager is the optional Phase-21 extension surface. nil is a no-op.
 	HookManager *HookManager
-}
-
-// NewLlmAgent builds an LlmAgent. messages[0] is ALWAYS the byte-stable system
-// prompt (D-08/D-09) followed by the supplied user turns; the agent owns history
-// from here. Name/Description default when empty.
-func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
-	hist := make([]llm.Message, 0, len(cfg.UserTurns)+1)
-	hist = append(hist, llm.Message{Role: llm.RoleSystem, Content: systemMessage()})
-	hist = append(hist, cfg.UserTurns...)
-
-	name := cfg.Name
-	if name == "" {
-		name = "aura"
-	}
-	desc := cfg.Description
-	if desc == "" {
-		desc = "Aura's autonomous tool-dispatch agent"
-	}
-	return &LlmAgent{
-		name:        name,
-		description: desc,
-		client:      cfg.Client,
-		cfg:         cfg.LLM,
-		registry:    cfg.Registry,
-		previewCap:  cfg.PreviewCap,
-		runDir:      cfg.RunDir,
-		sessionID:   cfg.SessionID,
-		workspace:   cfg.Workspace,
-		builder:     prompt.NewPromptBuilder(),
-		hooks:       cfg.HookManager,
-		history:     hist,
-		breaker:     resolveBreaker(cfg),
-		classifier:  resolveClassifier(cfg),
-	}
-}
-
-// resolveBreaker returns the injected SHARED breaker (B-05: the Runner's
-// process-lifetime singleton) or a fresh per-agent breaker with the default policy
-// when none is wired (tests/standalone construction).
-func resolveBreaker(cfg LlmAgentConfig) *llm.Breaker {
-	if cfg.Breaker != nil {
-		return cfg.Breaker
-	}
-	return llm.NewDefaultBreaker()
-}
-
-// Name is the Event Author / FindAgent key.
-func (a *LlmAgent) Name() string { return a.name }
-
-// Description is the human/LLM-facing one-liner.
-func (a *LlmAgent) Description() string { return a.description }
-
-// OwnsBudget tells workflow parents that LlmAgent already consumes the shared
-// Budget at its own loop gates, so wrappers must not charge its emitted tool-call
-// events a second time.
-func (*LlmAgent) OwnsBudget() bool { return true }
-
-// SubAgents returns nil — LlmAgent is a leaf.
-func (a *LlmAgent) SubAgents() []Agent { return nil }
-
-// FindAgent returns self when name matches, else nil.
-func (a *LlmAgent) FindAgent(name string) Agent {
-	if a.name == name {
-		return a
-	}
-	return nil
 }
 
 // Run drives the budget-gated tool-dispatch loop (Req#9/#10). Termination paths:
@@ -279,6 +222,11 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				Workspace:   a.workspace,
 				CurrentTime: now.Format(time.RFC3339),
 				Today:       now.Format("2006-01-02"),
+				// D-05: the volatile numbered source list rides the tail-inject copy
+				// (RenderSourceList is "" until a web tool consulted a source this turn,
+				// so a non-web turn keeps the byte-identical default). messages[0] stays
+				// untouched — the static citation convention lives in the system prompt.
+				Sources: a.sources.RenderSourceList(),
 			}
 			if !adaptiveTierSet {
 				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
