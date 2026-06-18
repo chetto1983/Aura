@@ -38,7 +38,7 @@ export interface SourceExplorerSheetProps {
   readonly open: boolean;
   readonly sources: readonly DisplaySource[];
   /** The citation/Sources entry point may request a specific source be focused. */
-  readonly focusRefId?: string;
+  readonly focusRefId?: string | undefined;
   readonly onClose: () => void;
 }
 

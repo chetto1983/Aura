@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { DisplayRouter } from '../DisplayRouter';
@@ -66,5 +66,62 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
   it('renders a running raw card when no result has arrived (D-15 progressive swap)', () => {
     render(<DisplayRouter payload={unknownType} toolName="slow_tool" argsText="{}" />);
     expect(screen.getByText('Running')).toBeTruthy();
+  });
+
+  // Each per-type case routes to its typed card (the per-card behavior is covered in
+  // that card's own test; here we pin the ROUTING — the switch reaches each branch).
+  it.each([
+    [
+      { type: 'table', tool_call_id: 't', table: { columns: ['A'], rows: [['1']] } },
+      'Table',
+    ],
+    [
+      { type: 'chart', tool_call_id: 't', chart: { x_labels: ['a'], y_values: [1] } },
+      'Chart',
+    ],
+    [
+      { type: 'system_event', tool_call_id: 't', system: { class: 'web_error', reason: 'timeout', severity: 'warning' } },
+      'System',
+    ],
+    [
+      { type: 'swarm_report', tool_call_id: 't', swarm: [{ goal_index: 0, child_id: 'c', status: 'ok' }] },
+      'Workers',
+    ],
+    [
+      { type: 'local_artifact', tool_call_id: 't', artifact: { filename: 'f.txt', size_bytes: 10 } },
+      'Artifact',
+    ],
+    [
+      { type: 'document', tool_call_id: 't', document: { content_md: 'hello doc' } },
+      'Document',
+    ],
+    [
+      { type: 'code', tool_call_id: 't', code: { body: 'print(1)', lang: 'python' } },
+      'Code',
+    ],
+  ] as [DisplayPayload, string][])(
+    'routes the %s payload to its typed card label "%s"',
+    (payload, label) => {
+      render(<DisplayRouter payload={payload} toolName="tool" result="RAW" />);
+      // The typed label appears (some cards also echo it in an sr-only caption).
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    },
+  );
+
+  it('forwards onOpenSource to the document/web_result evidence cards (26-06)', () => {
+    const onOpenSource = vi.fn();
+    const doc: DisplayPayload = {
+      type: 'document',
+      tool_call_id: 'call-doc',
+      document: { content_md: 'A claim [1].' },
+      sources: [
+        { ref_id: 'src-1', index: 1, type: 'document', title: 'Cited', url: 'https://x.test', cited: true },
+      ],
+    };
+    render(<DisplayRouter payload={doc} toolName="web_fetch" onOpenSource={onOpenSource} />);
+    // The inline citation chip is rendered by DocumentDisplay; clicking it fires the
+    // forwarded callback (the DisplayRouter threaded onOpenSource through).
+    fireEvent.click(screen.getByRole('button', { name: /Source 1/ }));
+    expect(onOpenSource).toHaveBeenCalledWith('src-1');
   });
 });

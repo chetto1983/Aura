@@ -34,6 +34,9 @@ export interface DisplayRouterProps {
   readonly argsText?: string;
   readonly result?: string;
   readonly isError?: boolean;
+  /** Citation click-through (26-06): forwarded to the evidence cards' chips so a
+   *  click opens the shared read-only Source Explorer for that refId (D-04). */
+  readonly onOpenSource?: (refId: string) => void;
 }
 
 export function DisplayRouter({
@@ -42,6 +45,7 @@ export function DisplayRouter({
   argsText,
   result,
   isError,
+  onOpenSource,
 }: DisplayRouterProps) {
   switch (payload.type) {
     // Per-type cases. The "data / status" half (table, chart, system_event,
@@ -58,9 +62,9 @@ export function DisplayRouter({
     case 'local_artifact':
       return <LocalArtifactDisplay payload={payload} />;
     case 'document':
-      return <DocumentDisplay payload={payload} />;
+      return <DocumentDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />;
     case 'web_result':
-      return <WebResultDisplay payload={payload} />;
+      return <WebResultDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />;
     case 'code':
       return <CodeDisplay payload={payload} />;
     default:

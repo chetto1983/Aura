@@ -217,6 +217,44 @@ describe('SourceExplorerSheet (render, D-03 / DISP-05)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('traps Tab focus inside the dialog (wraps last→first and first→last)', () => {
+    render(<SourceExplorerSheet open sources={SOURCES} onClose={vi.fn()} />);
+    const dialog = screen.getByRole('dialog');
+    const focusables = within(dialog).getAllByRole('button');
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    expect(first).toBeTruthy();
+    expect(last).toBeTruthy();
+    // Forward wrap: Tab from the last focusable returns to the first.
+    last?.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+    // Backward wrap: Shift+Tab from the first focusable jumps to the last.
+    first?.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('a non-trap key (e.g. Tab in the middle) does not change activeElement', () => {
+    render(<SourceExplorerSheet open sources={SOURCES} onClose={vi.fn()} />);
+    const buttons = within(screen.getByRole('dialog')).getAllByRole('button');
+    const middle = buttons[1];
+    middle?.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    // Browser default Tab movement is not simulated by jsdom; the trap only acts at
+    // the boundaries, so a mid-list Tab leaves focus on the same element.
+    expect(document.activeElement).toBe(middle);
+  });
+
+  it('a descending sort renders the ↓ arrow indicator', () => {
+    render(<SourceExplorerSheet open sources={SOURCES} onClose={vi.fn()} />);
+    const titleHeader = screen.getByRole('button', { name: 'Sort by Title' });
+    fireEvent.click(titleHeader); // asc
+    expect(within(titleHeader).getByText('↑')).toBeTruthy();
+    fireEvent.click(titleHeader); // desc
+    expect(within(titleHeader).getByText('↓')).toBeTruthy();
+  });
+
   it('the close controls (backdrop + header button) both fire onClose', () => {
     const onClose = vi.fn();
     render(<SourceExplorerSheet open sources={SOURCES} onClose={onClose} />);
