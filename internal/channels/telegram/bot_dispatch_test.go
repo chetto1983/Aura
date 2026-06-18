@@ -33,6 +33,8 @@ type dispatchBot struct {
 	responses []string
 	responds  int
 	notifies  int
+	reads     int
+	closes    int
 }
 
 type editCall struct {
@@ -64,7 +66,19 @@ func (b *dispatchBot) EditReplyMarkup(_ tele.Editable, markup *tele.ReplyMarkup)
 }
 
 func (b *dispatchBot) File(_ *tele.File) (io.ReadCloser, error) {
-	return io.NopCloser(strings.NewReader(string(b.ogg))), nil
+	return &trackingReadCloser{
+		reader: strings.NewReader(string(b.ogg)),
+		onRead: func() {
+			b.mu.Lock()
+			b.reads++
+			b.mu.Unlock()
+		},
+		onClose: func() {
+			b.mu.Lock()
+			b.closes++
+			b.mu.Unlock()
+		},
+	}, nil
 }
 
 func (b *dispatchBot) React(_ tele.Recipient, _ tele.Editable, r tele.Reactions) error {
@@ -127,6 +141,32 @@ func (b *dispatchBot) responseTexts() []string {
 	out := make([]string, len(b.responses))
 	copy(out, b.responses)
 	return out
+}
+
+func (b *dispatchBot) readCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.reads
+}
+
+type trackingReadCloser struct {
+	reader  *strings.Reader
+	onRead  func()
+	onClose func()
+}
+
+func (r *trackingReadCloser) Read(p []byte) (int, error) {
+	if r.onRead != nil {
+		r.onRead()
+	}
+	return r.reader.Read(p)
+}
+
+func (r *trackingReadCloser) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return nil
 }
 
 // recordingTurn is a turnDriver that records every userMsg it was driven with so a

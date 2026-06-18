@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/documents"
 	tele "gopkg.in/telebot.v4"
 )
@@ -316,6 +317,9 @@ func (t *Telegram) onVoice(daemonCtx context.Context) tele.HandlerFunc {
 		}
 		stop := keepWorking(daemonCtx, c, tele.Typing) // STT + turn can take seconds
 		defer stop()
+		if t.deps.Assets != nil {
+			return t.ingestTelegramAsset(daemonCtx, c, msg, &msg.Voice.File, telegramVoiceFileName(msg.Voice), telegramVoiceMIME(msg.Voice), assets.ModalityAudio, msg.Voice.FileSize, transcribeFailMessage, true)
+		}
 		transcript, err := t.voice.Transcribe(daemonCtx, filer, tele.ChatID(chatID), msg.Voice)
 		if err != nil {
 			slog.Warn("telegram: voice transcription failed", "chat", chatID, "err", err)
@@ -348,6 +352,9 @@ func (t *Telegram) onPhoto(daemonCtx context.Context) tele.HandlerFunc {
 		}
 		stop := keepWorking(daemonCtx, c, tele.Typing) // OCR + turn can take seconds
 		defer stop()
+		if t.deps.Assets != nil {
+			return t.ingestTelegramAsset(daemonCtx, c, msg, &msg.Photo.File, "photo.jpg", photoMIME, assets.ModalityImage, msg.Photo.FileSize, describeFailMessage, false)
+		}
 		image, err := downloadFile(filer, &msg.Photo.File)
 		if err != nil {
 			slog.Warn("telegram: photo download failed", "chat", chatID, "err", err)
@@ -384,6 +391,9 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 		}
 		stop := keepWorking(daemonCtx, c, tele.Typing) // download + convert + turn
 		defer stop()
+		if t.deps.Assets != nil {
+			return t.ingestTelegramAsset(daemonCtx, c, msg, &msg.Document.File, msg.Document.FileName, msg.Document.MIME, assets.ModalityDocument, msg.Document.FileSize, convertFailMessage, false)
+		}
 		payload, err := downloadFile(filer, &msg.Document.File)
 		if err != nil {
 			slog.Warn("telegram: document download failed", "chat", chatID, "err", err)

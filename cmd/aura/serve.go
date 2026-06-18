@@ -215,6 +215,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	}
 
 	store := cron.New(chat.pool)
+	objectStore, err := buildObjectStore(ctx, chat.cfg)
+	if err != nil {
+		chat.close()
+		return nil, fmt.Errorf("build object store: %w", err)
+	}
+	chat.assets = buildAssetService(chat.cfg, chat.pool, objectStore)
 	// Build the channels Registry FIRST (Phase 20 boot reorder): buildDispatch wires
 	// the late-bound *channels.Registry pointer as the cron.ChannelDeliverer, so the
 	// Registry must exist before dispatch is assembled. bootChannelsAndSetup needs only
@@ -275,12 +281,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
-	objectStore, err := buildObjectStore(ctx, chat.cfg)
-	if err != nil {
-		chat.close()
-		return nil, fmt.Errorf("build object store: %w", err)
-	}
-	aguiServer.SetAssetService(buildAssetService(chat.cfg, chat.pool, objectStore))
+	aguiServer.SetAssetService(chat.assets)
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon

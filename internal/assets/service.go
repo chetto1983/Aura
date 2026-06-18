@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -179,25 +180,115 @@ func (s *Service) Retry(ctx context.Context, identityID, assetID string) (Asset,
 	return asset, nil
 }
 
+func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequest) (Asset, error) {
+	if s.Store == nil || s.Objects == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	if req.Reader == nil {
+		return Asset{}, fmt.Errorf("telegram asset reader is nil")
+	}
+	name := cleanFileName(req.FileName)
+	mimeType := normalizeMIME(req.MIMEType, name)
+	modality := req.Modality
+	if modality == "" || modality == ModalityUnknown {
+		modality = InferModality(name, mimeType)
+	}
+	if err := s.Limits.Validate(modality, name, req.SizeBytes); err != nil {
+		return Asset{}, err
+	}
+	assetID := newAssetID()
+	key := objectstore.AssetKey(req.IdentityID, assetID)
+	sourceRef, err := telegramSourceRef(req)
+	if err != nil {
+		return Asset{}, err
+	}
+	asset, err := s.Store.Create(ctx, CreateRequest{
+		IdentityID:        req.IdentityID,
+		SourceKind:        SourceTelegram,
+		SourceRef:         sourceRef,
+		Scope:             ScopeThread,
+		Modality:          modality,
+		FileName:          name,
+		MIMEType:          mimeType,
+		DeclaredSizeBytes: req.SizeBytes,
+		ObjectBucket:      s.Bucket,
+		ObjectKey:         key,
+		Metadata:          map[string]any{},
+	})
+	if err != nil {
+		return Asset{}, err
+	}
+	ref := objectstore.ObjectRef{Bucket: s.Bucket, Key: key}
+	attrs, err := s.Objects.Put(ctx, ref, req.Reader, objectstore.PutOptions{
+		MIMEType: mimeType,
+		Size:     req.SizeBytes,
+	})
+	if err != nil {
+		_, _ = s.Store.SetStatus(ctx, asset.ID, req.IdentityID, StatusFailed, "object_put_failed", err.Error())
+		return Asset{}, err
+	}
+	if err = s.Limits.Validate(modality, name, attrs.SizeBytes); err != nil {
+		updated, _ := s.Store.SetStatus(ctx, asset.ID, req.IdentityID, StatusRefused, "asset_refused", err.Error())
+		_ = s.Objects.Delete(context.WithoutCancel(ctx), ref)
+		return updated, err
+	}
+	asset, err = s.Store.MarkUploaded(ctx, asset.ID, req.IdentityID, attrs.SizeBytes, attrs.ETag)
+	if err != nil {
+		return Asset{}, err
+	}
+	hash, sniffed, err := s.hashAndSniff(ctx, ref, asset.FileName)
+	if err != nil {
+		return Asset{}, err
+	}
+	asset, err = s.Store.MarkAccepted(ctx, asset.ID, req.IdentityID, attrs.SizeBytes, hash, sniffed)
+	if err != nil {
+		return Asset{}, err
+	}
+	return s.processAsset(ctx, asset)
+}
+
 func (s *Service) process(ctx context.Context, asset Asset) {
+	_, _ = s.processAsset(ctx, asset)
+}
+
+func (s *Service) processAsset(ctx context.Context, asset Asset) (Asset, error) {
 	processor := s.Processors.For(asset.Modality)
 	if processor == nil {
-		_, _ = s.Store.SetStatus(ctx, asset.ID, asset.IdentityID, StatusComplete, "", "")
-		return
+		return s.Store.SetStatus(ctx, asset.ID, asset.IdentityID, StatusComplete, "", "")
 	}
 	processing, err := s.Store.SetStatus(ctx, asset.ID, asset.IdentityID, StatusProcessing, "", "")
 	if err != nil {
-		return
+		return Asset{}, err
 	}
 	result, err := processor.ProcessAsset(ctx, processing)
 	if err != nil {
-		_, _ = s.Store.SetStatus(ctx, processing.ID, processing.IdentityID, StatusFailed, "processor_failed", err.Error())
-		return
+		failed, setErr := s.Store.SetStatus(ctx, processing.ID, processing.IdentityID, StatusFailed, "processor_failed", err.Error())
+		if setErr != nil {
+			return Asset{}, setErr
+		}
+		return failed, err
 	}
 	if result.Status == "" {
 		result.Status = StatusComplete
 	}
-	_, _ = s.Store.SetResult(ctx, processing.ID, processing.IdentityID, result)
+	return s.Store.SetResult(ctx, processing.ID, processing.IdentityID, result)
+}
+
+func telegramSourceRef(req TelegramIngestRequest) (string, error) {
+	payload := struct {
+		ChatID    int64  `json:"chat_id"`
+		MessageID int    `json:"message_id"`
+		FileID    string `json:"file_id"`
+	}{
+		ChatID:    req.ChatID,
+		MessageID: req.MessageID,
+		FileID:    req.FileID,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func (s *Service) hashAndSniff(ctx context.Context, ref objectstore.ObjectRef, fileName string) (string, string, error) {

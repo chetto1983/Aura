@@ -157,6 +157,63 @@ func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
 	})
 }
 
+func TestServiceIngestTelegramFileStoresObjectAndReturnsProcessedAsset(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+	processor := &recordingProcessor{
+		called: make(chan Asset, 1),
+		result: Result{Status: StatusComplete, Summary: "ciao Aura", Metadata: map[string]any{"transcript": "ciao Aura"}},
+	}
+	svc.Processors.Audio = processor
+
+	asset, err := svc.IngestTelegramFile(context.Background(), TelegramIngestRequest{
+		IdentityID: serviceIdentityID,
+		ChatID:     42,
+		MessageID:  7,
+		FileID:     "voice-file",
+		FileName:   `voice\unsafe.ogg`,
+		MIMEType:   "audio/ogg",
+		Modality:   ModalityAudio,
+		SizeBytes:  13,
+		Reader:     strings.NewReader("OggS test"),
+	})
+	if err != nil {
+		t.Fatalf("IngestTelegramFile() error = %v", err)
+	}
+	if asset.Status != StatusComplete || asset.Summary != "ciao Aura" {
+		t.Fatalf("processed asset = %+v, want complete transcript summary", asset)
+	}
+	if asset.SourceKind != SourceTelegram || asset.FileName != "unsafe.ogg" || asset.Modality != ModalityAudio {
+		t.Fatalf("asset metadata = %+v, want Telegram audio asset with sanitized filename", asset)
+	}
+	if !strings.Contains(asset.SourceRef, `"chat_id":42`) || !strings.Contains(asset.SourceRef, `"message_id":7`) || !strings.Contains(asset.SourceRef, `"file_id":"voice-file"`) {
+		t.Fatalf("SourceRef = %q, want Telegram source JSON", asset.SourceRef)
+	}
+
+	select {
+	case processing := <-processor.called:
+		if processing.Status != StatusProcessing || processing.ID != asset.ID {
+			t.Fatalf("processor saw asset = %#v, want processing asset id %s", processing, asset.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("processor was not called")
+	}
+
+	attrs, err := svc.Objects.Head(context.Background(), objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
+	if err != nil {
+		t.Fatalf("stored object Head: %v", err)
+	}
+	if attrs.SizeBytes != int64(len("OggS test")) || attrs.MIMEType != "audio/ogg" {
+		t.Fatalf("stored attrs = %+v, want audio object bytes/mime", attrs)
+	}
+	if len(store.created) != 1 || store.created[0].SourceKind != SourceTelegram {
+		t.Fatalf("created requests = %#v, want one Telegram create", store.created)
+	}
+}
+
 type recordingProcessor struct {
 	called chan Asset
 	result Result

@@ -1,7 +1,10 @@
 // Package assets persists multimodal asset lifecycle state.
 package assets
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 // Status is the durable lifecycle state for a multimodal asset.
 type Status string
@@ -107,4 +110,18 @@ type Result struct {
 	DocumentID string
 	Summary    string
 	Metadata   map[string]any
+}
+
+// TelegramIngestRequest carries one Telegram media stream into the shared asset
+// pipeline.
+type TelegramIngestRequest struct {
+	IdentityID string
+	ChatID     int64
+	MessageID  int
+	FileID     string
+	FileName   string
+	MIMEType   string
+	Modality   Modality
+	SizeBytes  int64
+	Reader     io.Reader
 }
