@@ -9,6 +9,36 @@
       "caption": "results"
     }
   },
+  "CUSTOM_DISPLAY": {
+    "type": "CUSTOM",
+    "timestamp": 1780766525937,
+    "name": "aura.display",
+    "value": {
+      "type": "web_result",
+      "tool_call_id": "call-1",
+      "title": "meteo",
+      "web_results": [
+        {
+          "title": "Forecast",
+          "url": "https://weather.example.com/today",
+          "snippet": "sunny",
+          "domain": "weather.example.com",
+          "ref_id": "src-1"
+        }
+      ],
+      "sources": [
+        {
+          "ref_id": "src-1",
+          "index": 1,
+          "type": "web_result",
+          "title": "Forecast",
+          "url": "https://weather.example.com/today",
+          "snippet": "sunny",
+          "cited": false
+        }
+      ]
+    }
+  },
   "MESSAGES_SNAPSHOT": {
     "type": "MESSAGES_SNAPSHOT",
     "timestamp": 1780766525937,

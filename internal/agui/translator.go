@@ -18,6 +18,13 @@ import (
 // on the SAME canonical name rather than a duplicated magic string.
 const ArtifactEventName = "aura.artifact"
 
+// DisplayEventName is the stable AG-UI CUSTOM-event name the typed-display branch
+// emits (Phase 26, D-PROTO). It is the additive twin of ArtifactEventName: the
+// cockpit sseAdapter keys on this name to attach the DisplayPayload to the matching
+// tool part by tool_call_id. Namespaced so it never collides with another
+// application's custom events.
+const DisplayEventName = "aura.display"
+
 // redactedReasoningDelta is the placeholder the translator substitutes for a real
 // chain-of-thought delta when showReasoning is false (the default privacy posture).
 // A consumer that opts in (Telegram's AURA_TELEGRAM_SHOW_REASONING) receives the real
@@ -117,6 +124,22 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 					return
 				}
 				if !yield(events.NewCustomEvent(artifactEventName, events.WithValue(ev.Actions.ArtifactDelta)), nil) {
+					return
+				}
+				continue
+			}
+
+			// A typed-display payload (the display normalizer recognized a tool result,
+			// Phase 26) closes any open run and yields ONE dedicated aura.display CUSTOM
+			// event carrying the Payload — the additive twin of the artifact branch
+			// above (D-PROTO). Slotted beside it; a Display Event carries no StateDelta,
+			// so the order only documents precedence. Additive: a nil Display falls
+			// through, leaving the existing stream unchanged.
+			if ev.Actions.Display != nil {
+				if !closeRuns() {
+					return
+				}
+				if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
 					return
 				}
 				continue
