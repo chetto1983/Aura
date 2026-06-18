@@ -81,6 +81,9 @@ func spaFallback(sub fs.FS, apiPrefixes []string, fileSrv http.Handler) http.Han
 			http.ServeFileFS(w, r, sub, indexHTML)
 			return
 		}
+		if p == "manifest.webmanifest" {
+			w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+		}
 		fileSrv.ServeHTTP(w, r)
 	}
 }

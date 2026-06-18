@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: verifying
-stopped_at: Phase 26 context gathered
-last_updated: "2026-06-18T07:42:48.552Z"
-last_activity: 2026-06-18
+stopped_at: Edge/webhint page sweep green
+last_updated: "2026-06-18T09:33:44.658Z"
+last_activity: 2026-06-18 -- Phase 26 planning complete
 progress:
   total_phases: 8
   completed_phases: 4
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 Phase: 25 of 8 — **CLOSED** (Chat + Approval Center). Next: Phase 26 (Typed-Display Protocol + Router) — not started.
 Plan: Not started (Phase 26)
 Status: Phase 25 closed — 8/8 must-haves verified (`25-VERIFICATION.md`), 4 code-review findings fixed; the 6 live-stack UAT items are carried into the cockpit-overhaul live cutover (see below). Phases 22–25 all complete.
-Last activity: 2026-06-18
+Last activity: 2026-06-18 -- Phase 26 planning complete
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -174,6 +174,13 @@ Commit the cockpit-overhaul working-tree layer + run the live cutover (incl. the
 | Phase 25 P25-07 | ~150min | 3 tasks | 45 files |
 
 ## Accumulated Context
+
+### 2026-06-18 Edge/Web Lint Memory
+
+- Edge/webhint page sweep ran against the rebuilt embedded server on `127.0.0.1:19080` for `/login`, `/`, `/c/lint-smoke`, and `/not-found-lint-smoke`; every route scan exited 0 with 0 errors. Protected routes redirect to `/login` under the configured auth gate, so those scans intentionally validate the auth redirect plus public login surface.
+- Remaining webhint advisories are expected/non-blocking: `meta[name=theme-color]` support warnings for Firefox/Opera, no-http-redirect warnings for unauthenticated protected routes, and performance hints from the intentional animated login background keyframes.
+- Static gates green: `npm run build`, `npm run lint`, `npm run typecheck`, `npm run format:check`, `npm run contrast`, `go vet $(bash scripts/go_packages.sh)`, `golangci-lint run --timeout=5m $(bash scripts/go_packages.sh)`, `bash scripts/check-file-size.sh`, `go test -count=1 ./internal/webui ./cmd/aura`, `npm run test -- src/__tests__/LoginPage.test.tsx --coverage.enabled=false`, and `git diff --check`.
+- Current lint fix layer: Auth config and manifest responses carry explicit UTF-8 content types, login hint color uses the AA-safe muted token, LoginPage ARIA token validity is covered by unit tests, and Vite strips Tailwind's legacy `-webkit-text-size-adjust` normalization from emitted CSS so Edge/webhint reports no CSS compat error.
 
 ### Phase 25 Execution
 
@@ -344,9 +351,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-18T07:42:48.533Z
-Stopped at: Phase 26 context gathered
-Resume file: .planning/phases/26-typed-display-protocol-router/26-CONTEXT.md
+Last session: 2026-06-18T09:31:44.350Z
+Stopped at: Edge/webhint page sweep green
+Resume file: .planning/STATE.md
 
 ## Operator Next Steps
 

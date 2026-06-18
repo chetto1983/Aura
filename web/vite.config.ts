@@ -120,6 +120,53 @@ self.addEventListener('fetch',(event)=>{
   };
 }
 
+function auraCssCompatLintPlugin(): Plugin {
+  const legacyTextSizeAdjust = /-webkit-text-size-adjust:\s*100%;?/g;
+
+  return {
+    name: 'aura-css-compat-lint',
+    apply: 'build',
+    enforce: 'post',
+    generateBundle(_, bundle) {
+      for (const item of Object.values(bundle)) {
+        if (
+          item.type !== 'asset' ||
+          !item.fileName.endsWith('.css') ||
+          typeof item.source !== 'string'
+        ) {
+          continue;
+        }
+
+        // Tailwind preflight emits this legacy normalization, which webhint flags
+        // as a hard compat error in Edge Tools. The app does not rely on it.
+        const cleaned = item.source.replace(legacyTextSizeAdjust, '');
+        if (cleaned === item.source) {
+          continue;
+        }
+
+        const oldFileName = item.fileName;
+        const hash = revisionOf(cleaned).slice(0, 8);
+        const newFileName = oldFileName.match(/-[A-Za-z0-9_-]+\.css$/u)
+          ? oldFileName.replace(/-[A-Za-z0-9_-]+\.css$/u, `-${hash}.css`)
+          : oldFileName.replace(/\.css$/u, `-${hash}.css`);
+
+        item.source = cleaned;
+        item.fileName = newFileName;
+
+        for (const entry of Object.values(bundle)) {
+          if (entry.type === 'chunk') {
+            entry.code = entry.code.split(oldFileName).join(newFileName);
+            continue;
+          }
+          if (typeof entry.source === 'string') {
+            entry.source = entry.source.split(oldFileName).join(newFileName);
+          }
+        }
+      }
+    },
+  };
+}
+
 // Plugin order is load-bearing: the React Compiler babel pass MUST precede
 // react(), else only Oxc's JSX transform runs and the Compiler silently no-ops
 // (RESEARCH Correction #2 / Pitfall 1). @rolldown/plugin-babel exports the plugin
@@ -130,6 +177,7 @@ export default defineConfig({
     babel({ include: /\.[jt]sx?$/, presets: [reactCompilerPreset()] }),
     react(),
     tailwindcss(),
+    auraCssCompatLintPlugin(),
     auraPwaPlugin(),
   ],
   build: {

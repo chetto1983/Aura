@@ -109,6 +109,21 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /api/auth/config -> json with explicit utf-8 charset", func(t *testing.T) {
+		resp, err := http.Get(srv.URL + "/api/auth/config")
+		if err != nil {
+			t.Fatalf("GET /api/auth/config: %v", err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", resp.StatusCode, raw)
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
+			t.Fatalf("Content-Type = %q, want application/json; charset=utf-8", ct)
+		}
+	})
+
 	t.Run("GET /api/nope + /agent/typo -> real 404 (never the SPA shell)", func(t *testing.T) {
 		for _, route := range []string{"/api/nope", "/agent/typo"} {
 			aguiHits = nil

@@ -578,7 +578,7 @@ case 'CUSTOM': {
 | A6 | `unist-util-visit` resolves transitively (no direct add needed) | Standard Stack | LOW — it's a core unified dep; verify at install time. |
 | A7 | The static citation-convention sentence is safe in `messages[0]` (truly invariant) | Resolved R7 | LOW — only if the sentence never templates per-turn data. Keep it a fixed string. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`@assistant-ui/react` hovercard import surface**
    - What we know: assistant-ui exports no hovercard primitive; `@radix-ui/react-hover-card@1.1.17` and the `radix-ui` meta-package are installed.

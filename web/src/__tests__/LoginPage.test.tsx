@@ -45,6 +45,37 @@ function requireRequestBody(opts: RequestInit): string {
   return opts.body;
 }
 
+const LOGIN_ARIA_TOKEN_VALUES: Readonly<Record<string, readonly string[]>> = {
+  'aria-busy': ['true', 'false'],
+  'aria-hidden': ['true', 'false'],
+  'aria-invalid': ['true', 'false', 'grammar', 'spelling'],
+  'aria-pressed': ['true', 'false', 'mixed'],
+};
+
+function expectLoginAriaValuesToBeAxeValid(container: HTMLElement) {
+  const nodes = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      '[aria-busy], [aria-hidden], [aria-invalid], [aria-pressed], [aria-describedby]',
+    ),
+  );
+
+  for (const node of nodes) {
+    for (const [name, allowed] of Object.entries(LOGIN_ARIA_TOKEN_VALUES)) {
+      const value = node.getAttribute(name);
+      if (value !== null) {
+        expect(allowed, `${name}="${value}"`).toContain(value);
+      }
+    }
+
+    const describedBy = node.getAttribute('aria-describedby');
+    if (describedBy !== null) {
+      for (const id of describedBy.trim().split(/\s+/u)) {
+        expect(document.getElementById(id), `aria-describedby="${id}"`).not.toBeNull();
+      }
+    }
+  }
+}
+
 describe('LoginPage', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
@@ -52,7 +83,7 @@ describe('LoginPage', () => {
   });
 
   it('renders a labelled passphrase field with autocomplete=current-password', () => {
-    renderLogin();
+    const { container } = renderLogin();
     const field = screen.getByLabelText('Operator passphrase');
     expect(field).toBeTruthy();
     expect(field.getAttribute('type')).toBe('password');
@@ -61,6 +92,7 @@ describe('LoginPage', () => {
     expect(field.getAttribute('aria-invalid')).toBe(null);
     // The CTA keeps the name "Sign in" (frontend-design: an action keeps its name).
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+    expectLoginAriaValuesToBeAxeValid(container);
   });
 
   it('renders a decorative animated particle-network background behind the form', () => {
@@ -116,6 +148,7 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(field.getAttribute('aria-invalid')).toBe('true');
     });
+    expectLoginAriaValuesToBeAxeValid(container);
   });
 
   it('navigates to the cockpit on a successful login', async () => {
@@ -210,11 +243,12 @@ describe('LoginPage', () => {
       vi.fn(() => authulaConfigResponse()),
     );
 
-    renderLogin();
+    const { container } = renderLogin();
 
     expect(await screen.findByLabelText('Operator email')).toBeTruthy();
     expect(screen.getByLabelText('Password')).toBeTruthy();
     expect(screen.queryByLabelText('Operator passphrase')).toBe(null);
+    expectLoginAriaValuesToBeAxeValid(container);
   });
 
   it('POSTs Authula credentials as JSON with the CSRF token and advances to TOTP', async () => {
@@ -296,5 +330,56 @@ describe('LoginPage', () => {
     expect(opts.method).toBe('POST');
     expect(opts.headers).toMatchObject({ 'X-AUTHULA-CSRF-TOKEN': 'csrf-token' });
     expect(JSON.parse(requireRequestBody(opts))).toEqual({ code: '123456', trust_device: false });
+  });
+
+  it('marks Authula credential errors with axe-valid aria-invalid tokens', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderLogin();
+
+    const email = await screen.findByLabelText('Operator email');
+    const password = screen.getByLabelText('Password');
+    fireEvent.change(email, { target: { value: 'operator@example.com' } });
+    fireEvent.change(password, { target: { value: 'bad-pass' } });
+    submitForm(container);
+
+    await screen.findByRole('alert');
+    expect(email.getAttribute('aria-invalid')).toBe('true');
+    expect(password.getAttribute('aria-invalid')).toBe('true');
+    expectLoginAriaValuesToBeAxeValid(container);
+  });
+
+  it('marks Authula code errors with axe-valid aria-invalid tokens', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ totp_redirect: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderLogin();
+
+    fireEvent.change(await screen.findByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
+    submitForm(container);
+
+    const code = await screen.findByLabelText('Verification code');
+    fireEvent.change(code, { target: { value: '000000' } });
+    submitForm(container);
+
+    await screen.findByRole('alert');
+    expect(code.getAttribute('aria-invalid')).toBe('true');
+    expectLoginAriaValuesToBeAxeValid(container);
   });
 });

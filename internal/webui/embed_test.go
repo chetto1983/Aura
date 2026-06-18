@@ -145,6 +145,16 @@ func TestSPAFallback(t *testing.T) {
 		}
 	})
 
+	t.Run("web manifest carries explicit utf-8 content type", func(t *testing.T) {
+		resp, body := get(t, "/manifest.webmanifest")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("manifest status = %d, want 200: %s", resp.StatusCode, body)
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != "application/manifest+json; charset=utf-8" {
+			t.Fatalf("manifest Content-Type = %q, want application/manifest+json; charset=utf-8", ct)
+		}
+	})
+
 	t.Run("missing asset under a client path -> index.html (200)", func(t *testing.T) {
 		resp, body := get(t, "/assets/does-not-exist.js")
 		// A bogus path that is NOT an excluded prefix is treated as a client route:
