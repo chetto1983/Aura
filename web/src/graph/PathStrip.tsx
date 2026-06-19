@@ -26,6 +26,7 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const pathNodes = nodes.filter((n) => pinnedPath.has(n.id));
+  const captionById = new Map(nodes.map((n) => [n.id, nodeCaption(n)]));
 
   function focusItem(index: number) {
     const clamped = Math.max(0, Math.min(index, nodes.length - 1));
@@ -110,8 +111,19 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
         </h3>
         <div role="list" className="flex max-h-32 flex-col gap-1 overflow-y-auto text-[13px]">
           {edges.map((edge) => (
-            <div key={edge.id} role="listitem" className="text-text-muted">
-              {edge.source} —{edge.rel_type ?? ''}→ {edge.target}
+            <div
+              key={edge.id}
+              role="listitem"
+              className="flex flex-wrap items-center gap-1.5 rounded-md px-1 py-0.5"
+            >
+              <span className="text-text">{captionById.get(edge.source) ?? edge.source}</span>
+              <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[12px] font-medium text-accent-text">
+                {edge.rel_type ?? ''}
+              </span>
+              <span aria-hidden="true" className="text-text-muted">
+                →
+              </span>
+              <span className="text-text">{captionById.get(edge.target) ?? edge.target}</span>
             </div>
           ))}
         </div>

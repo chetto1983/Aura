@@ -52,7 +52,9 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
       graph.addNode(node.id, {
         x: cached?.x ?? Math.random() * 100,
         y: cached?.y ?? Math.random() * 100,
-        size: node.size,
+        // Scale the degree-derived radius up for legibility on the WebGL canvas (the pure
+        // degreeToSize keeps a small DOM-safe range; the renderer wants chunkier nodes).
+        size: Math.max(7, node.size * 1.8),
         color: node.color,
         label: node.caption,
       });
@@ -62,17 +64,23 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
       if (graph.hasEdge(edge.id)) continue;
       graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
         label: edge.label,
-        size: 1.5,
-        color: '#5F6368',
+        size: 1.4,
+        color: '#3f444c',
       });
     }
 
     if (needsLayout && nodes.length > 1) {
       forceAtlas2.assign(graph, {
-        iterations: reducedMotion ? 50 : 150,
+        iterations: reducedMotion ? 60 : 220,
         settings: {
           ...forceAtlas2.inferSettings(graph),
           barnesHutOptimize: nodes.length > 50,
+          // Spread nodes apart + respect node radius so labels and hubs don't pile into a
+          // tight central knot (the old default produced a cramped cluster).
+          scalingRatio: 14,
+          gravity: 1.4,
+          slowDown: 2,
+          adjustSizes: true,
         },
       });
       lastLayoutKey = dataKey;
@@ -194,7 +202,15 @@ export function SigmaCanvas({ nodes, edges, pinnedPath, sigmaKey, onNodeClick }:
   });
 
   return (
-    <div role="img" aria-label={canvasName} className="relative h-full w-full bg-bg">
+    <div
+      role="img"
+      aria-label={canvasName}
+      className="relative h-full w-full overflow-hidden"
+      style={{
+        background:
+          'radial-gradient(130% 120% at 50% -8%, color-mix(in oklab, var(--color-accent) 14%, var(--color-bg)) 0%, var(--color-bg) 58%)',
+      }}
+    >
       <CanvasErrorBoundary
         fallback={
           <div className="grid h-full place-items-center p-4 text-sm text-text-muted">
@@ -205,7 +221,21 @@ export function SigmaCanvas({ nodes, edges, pinnedPath, sigmaKey, onNodeClick }:
         <SigmaContainer
           key={sigmaKey}
           style={{ height: '100%', width: '100%', background: 'transparent' }}
-          settings={{ renderEdgeLabels: true, labelRenderedSizeThreshold: 6 }}
+          settings={{
+            // Edge labels off-by-default: relationship types live in the inspector + evidence
+            // list, so painting them on every edge only produced an overlapping tangle.
+            renderEdgeLabels: false,
+            labelColor: { color: '#E6E8EC' },
+            labelSize: 13,
+            labelWeight: '600',
+            labelFont: '"Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif',
+            // Only label nodes big enough to read; the density grid drops colliding labels.
+            labelRenderedSizeThreshold: 8,
+            labelDensity: 0.8,
+            labelGridCellSize: 64,
+            defaultEdgeColor: '#3a3f47',
+            zIndex: true,
+          }}
         >
           <GraphLoader nodes={nodes} edges={edges} reducedMotion={reducedMotion} />
           <EventHandler onNodeClick={onNodeClick} />

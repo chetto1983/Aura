@@ -60,7 +60,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
 
     // The empty seed result triggers the schema-overview empty-state (never a blank canvas).
     await waitFor(() => {
-      expect(screen.getByText('No graph for this conversation yet')).toBeTruthy();
+      expect(screen.getByText('No evidence graph yet')).toBeTruthy();
     });
     expect(postGraphQuery).toHaveBeenCalled();
     expect(fetchGraphSchema).toHaveBeenCalled();
@@ -135,7 +135,11 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
       expect(screen.getByTestId('sigma-mock')).toBeTruthy();
     });
     const calls = postGraphQuery.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Explore this conversation' }));
+    // The mobile-first layout renders the seed CTA twice (the mobile control bar + the
+    // desktop seed panel) — both drive the same onSeed path; click the first.
+    const [seedButton] = screen.getAllByRole('button', { name: 'Explore this conversation' });
+    if (seedButton === undefined) throw new Error('seed CTA not rendered');
+    fireEvent.click(seedButton);
     await waitFor(() => {
       expect(postGraphQuery.mock.calls.length).toBeGreaterThan(calls);
     });

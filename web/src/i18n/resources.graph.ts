@@ -13,8 +13,8 @@ export const graphEn = {
       expand: 'Expand neighbors',
     },
     empty: {
-      heading: 'No graph for this conversation yet',
-      body: "This thread hasn't built any evidence yet. Browse the knowledge graph's structure below, or pick a starting point to explore.",
+      heading: 'No evidence graph yet',
+      body: 'Nothing is linked to this thread yet. The evidence graph fills in as Aura ingests sources and works through conversations — entities, documents, and their connections will appear here.',
     },
     inspector: {
       emptyHeading: 'Select a node',
@@ -68,8 +68,8 @@ export const graphIt = {
       expand: 'Espandi vicini',
     },
     empty: {
-      heading: 'Ancora nessun grafo per questa conversazione',
-      body: 'Questo thread non ha ancora costruito evidenze. Sfoglia la struttura del grafo di conoscenza qui sotto, oppure scegli un punto di partenza da esplorare.',
+      heading: 'Ancora nessun grafo delle evidenze',
+      body: 'Niente è ancora collegato a questo thread. Il grafo delle evidenze si popola man mano che Aura acquisisce fonti e lavora sulle conversazioni — entità, documenti e le loro connessioni appariranno qui.',
     },
     inspector: {
       emptyHeading: 'Seleziona un nodo',

@@ -81,6 +81,10 @@ export function AppShell() {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { surface, setSurface } = useSurfaceIntent();
+  // The Graph Explorer is a focused workspace with its own three panes (seed | canvas |
+  // inspector), so the shell's right-hand runtime rail is redundant there — drop it on lg so the
+  // evidence canvas gets the width back instead of being squeezed into a narrow middle column.
+  const isGraph = surface === 'graph';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
@@ -205,7 +209,13 @@ export function AppShell() {
           a narrower flip (e.g. md=768 → 768 − 544 = 224px) would crush the lane below the floor,
           so it is correctly deferred to `lg`. Window-floor = rails (34rem) + --chat-lane-min
           (380px) ≈ 924px < 1024px, so the `lg` flip honours the floor by construction. */}
-      <main className="grid min-h-0 grid-cols-1 lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]">
+      <main
+        className={`grid min-h-0 grid-cols-1 ${
+          isGraph
+            ? 'lg:grid-cols-[15rem_minmax(0,1fr)]'
+            : 'lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]'
+        }`}
+      >
         <aside
           aria-label={t('shell.navigation')}
           className="hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
@@ -247,7 +257,9 @@ export function AppShell() {
 
         <aside
           aria-label={t('shell.displayWorkspace')}
-          className="hidden min-h-0 overflow-y-auto border-l border-border bg-surface lg:block"
+          className={`hidden min-h-0 overflow-y-auto border-l border-border bg-surface ${
+            isGraph ? '' : 'lg:block'
+          }`}
         >
           {runtime}
         </aside>

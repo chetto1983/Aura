@@ -76,6 +76,9 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   const [pinnedPath, setPinnedPath] = useState<ReadonlySet<string>>(new Set());
   // sigmaKey starts at 1 so the first mount + every inspector open/close remounts cleanly.
   const [sigmaKey, setSigmaKey] = useState(1);
+  // Mobile-only: the seed/filter pane is a bottom sheet (canvas stays dominant). On lg it is
+  // the permanent left column and this flag is inert.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const loadSchemaOverview = useCallback(async () => {
     try {
@@ -183,88 +186,150 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
     />
   );
 
-  return (
-    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] lg:grid-cols-[16rem_minmax(0,1fr)_20rem] lg:grid-rows-[1fr_auto]">
-      {/* On mobile the seed panel is a collapsed top strip (max-h); on lg it is the left column. */}
-      <aside className="max-h-48 min-h-0 overflow-y-auto border-b border-border lg:max-h-none lg:border-b-0 lg:border-r lg:row-span-2">
-        {seedPanel}
-      </aside>
+  const activeFilterCount = intent.labels.size + intent.relTypes.size;
 
-      <section aria-label={t('graph.title')} className="relative min-h-0 bg-bg">
-        {view.status === 'loading' ? (
+  const canvasPane =
+    view.status === 'loading' ? (
+      <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
+        {t('graph.loading')}
+      </div>
+    ) : view.status === 'error-auth' ? (
+      <div role="alert" className="grid h-full place-items-center p-8 text-center">
+        <p className="max-w-md text-[15.5px] text-danger">{t('graph.error.auth')}</p>
+      </div>
+    ) : view.status === 'error-query' || view.status === 'error-schema' ? (
+      <div role="alert" className="grid h-full place-items-center p-8 text-center">
+        <div className="flex max-w-md flex-col items-center gap-3">
+          <p className="text-[15.5px] text-danger">
+            {view.status === 'error-schema' ? t('graph.error.schema') : t('graph.error.query')}
+          </p>
+          <button
+            type="button"
+            onClick={retry}
+            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text transition-colors hover:border-border-strong"
+          >
+            {t('graph.error.retry')}
+          </button>
+        </div>
+      </div>
+    ) : view.status === 'empty' ? (
+      <div className="grid h-full place-items-center p-8 text-center">
+        <div className="flex max-w-sm flex-col items-center gap-3">
+          <span aria-hidden="true" className="text-4xl leading-none text-accent-text opacity-70">
+            ◍
+          </span>
+          <h2 className="font-display text-[22px] font-semibold text-text">
+            {t('graph.empty.heading')}
+          </h2>
+          <p className="text-[15.5px] leading-relaxed text-text-muted">{t('graph.empty.body')}</p>
+        </div>
+      </div>
+    ) : (
+      <Suspense
+        fallback={
           <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
             {t('graph.loading')}
           </div>
-        ) : view.status === 'error-auth' ? (
-          <div role="alert" className="grid h-full place-items-center p-8 text-center">
-            <p className="max-w-md text-[15.5px] text-danger">{t('graph.error.auth')}</p>
-          </div>
-        ) : view.status === 'error-query' || view.status === 'error-schema' ? (
-          <div role="alert" className="grid h-full place-items-center p-8 text-center">
-            <div className="flex max-w-md flex-col items-center gap-3">
-              <p className="text-[15.5px] text-danger">
-                {view.status === 'error-schema' ? t('graph.error.schema') : t('graph.error.query')}
-              </p>
-              <button
-                type="button"
-                onClick={retry}
-                className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text"
-              >
-                {t('graph.error.retry')}
-              </button>
-            </div>
-          </div>
-        ) : view.status === 'empty' ? (
-          <div className="grid h-full place-items-center p-8 text-center">
-            <div className="flex max-w-md flex-col items-center gap-3">
-              <h2 className="font-display text-[22px] font-semibold text-text">
-                {t('graph.empty.heading')}
-              </h2>
-              <p className="text-[15.5px] text-text-muted">{t('graph.empty.body')}</p>
-            </div>
-          </div>
-        ) : (
-          <Suspense
-            fallback={
-              <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
-                {t('graph.loading')}
-              </div>
-            }
+        }
+      >
+        <SigmaCanvas
+          nodes={clientGraph.nodes}
+          edges={clientGraph.edges}
+          pinnedPath={pinnedPath}
+          sigmaKey={sigmaKey}
+          onNodeClick={(id) => {
+            const node = view.result?.nodes.find((n) => n.id === id);
+            if (node !== undefined) selectNode(node);
+          }}
+        />
+        {view.capped ? (
+          <p
+            role="status"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-surface-2/90 px-3 py-1 text-[13px] text-text-muted shadow-lg backdrop-blur"
           >
-            <SigmaCanvas
-              nodes={clientGraph.nodes}
-              edges={clientGraph.edges}
-              pinnedPath={pinnedPath}
-              sigmaKey={sigmaKey}
-              onNodeClick={(id) => {
-                const node = view.result?.nodes.find((n) => n.id === id);
-                if (node !== undefined) selectNode(node);
-              }}
-            />
-            {view.capped ? (
-              <p
-                role="status"
-                className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-surface-2 px-3 py-1 text-[13px] text-text-muted"
-              >
-                {t('graph.cap.notice', { count: clientGraph.nodes.length })}
-              </p>
-            ) : null}
-          </Suspense>
-        )}
+            {t('graph.cap.notice', { count: clientGraph.nodes.length })}
+          </p>
+        ) : null}
+      </Suspense>
+    );
+
+  // Mobile-first layout (the lg: grid is the desktop 3-pane). On mobile the canvas is the
+  // DOMINANT element (flex-1, real min-height — never the old crushed sliver); seed/filter is a
+  // bottom sheet behind the toolbar, the evidence list is a capped scroll region below, and the
+  // inspector is a sheet that appears on selection. On lg it flips to seed | canvas | inspector
+  // with the evidence strip under the canvas.
+  return (
+    <div className="relative flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)_auto]">
+      {/* MOBILE control bar — keeps the canvas dominant; Seed + Filters live here, not in an
+          always-on top strip. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 lg:hidden">
+        <button
+          type="button"
+          onClick={onSeed}
+          disabled={threadId.length === 0}
+          className="min-h-[40px] flex-1 rounded-md bg-accent px-3 py-1.5 text-[14px] font-semibold text-on-accent transition-opacity disabled:opacity-40"
+        >
+          {t('graph.cta.seedConversation')}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setFiltersOpen(true);
+          }}
+          className="flex min-h-[40px] items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-[14px] font-semibold text-text transition-colors hover:border-border-strong"
+        >
+          {t('graph.filter.labels')}
+          {activeFilterCount > 0 ? (
+            <span className="rounded-full bg-accent px-1.5 text-[12px] font-bold text-on-accent">
+              {activeFilterCount}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {/* SEED / FILTER — desktop left column; mobile bottom sheet (filtersOpen). ONE instance. */}
+      <aside
+        aria-label={t('graph.filter.labels')}
+        className={`min-h-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex lg:flex-col lg:border-r lg:border-border ${
+          filtersOpen
+            ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[80svh] flex-col rounded-t-2xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
+            : 'hidden lg:flex'
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-3 lg:hidden">
+          <h2 className="font-display text-[17px] font-semibold text-text">
+            {t('graph.filter.labels')}
+          </h2>
+          <button
+            type="button"
+            onClick={() => {
+              setFiltersOpen(false);
+            }}
+            aria-label={t('display.closeAria')}
+            className="min-h-[40px] min-w-[40px] rounded-md text-text-muted hover:text-text"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{seedPanel}</div>
+      </aside>
+
+      {/* CANVAS — the dominant element. Mobile: flex-1 with a real min-height. Desktop: center cell. */}
+      <section
+        aria-label={t('graph.title')}
+        className="relative min-h-[46svh] flex-1 bg-bg lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:flex-none"
+      >
+        {canvasPane}
       </section>
 
-      {/* ONE NodeInspector instance (no duplicate DOM / strict-mode collision). On lg it is the
-          right column (always present, shows the empty state when nothing is selected). On mobile
-          (< lg) the column collapses; when a node is selected it becomes a focus-trapped bottom
-          sheet (fixed overlay) — UI-SPEC §Layout: the inspector becomes a sheet on mobile. When
-          nothing is selected on mobile the inspector is hidden (the path-strip node list is the
-          access path). */}
+      {/* INSPECTOR — desktop right column (empty state when nothing selected); mobile bottom sheet
+          on selection. ONE instance (no duplicate DOM / strict-mode collision). */}
       <aside
         aria-label={t('graph.inspector.emptyHeading')}
-        className={`min-h-0 overflow-y-auto border-border bg-surface lg:static lg:block lg:max-h-none lg:border-l ${
+        className={`min-h-0 lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:static lg:block lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
           selected !== undefined
-            ? 'fixed inset-x-0 bottom-0 z-30 max-h-[70svh] border-t shadow-2xl lg:inset-auto lg:z-auto lg:border-t-0 lg:shadow-none'
-            : 'hidden'
+            ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:border-t-0 lg:shadow-none'
+            : 'hidden lg:block'
         }`}
       >
         <NodeInspector
@@ -275,7 +340,9 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         />
       </aside>
 
-      <div className="min-h-0 lg:col-span-2">
+      {/* EVIDENCE — path strip + a11y parallel DOM. Mobile: a capped scroll region below the
+          canvas (canvas stays dominant). Desktop: the strip under the canvas (col 2). */}
+      <div className="max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-none lg:shrink lg:overflow-visible">
         <PathStrip
           nodes={view.result?.nodes ?? []}
           edges={view.result?.edges ?? []}
@@ -283,6 +350,26 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
           onSelectNode={selectNode}
         />
       </div>
+
+      {/* Mobile sheet backdrops (lg:hidden). Tap to dismiss. */}
+      {filtersOpen ? (
+        <button
+          type="button"
+          aria-label={t('display.closeAria')}
+          onClick={() => {
+            setFiltersOpen(false);
+          }}
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+        />
+      ) : null}
+      {selected !== undefined ? (
+        <button
+          type="button"
+          aria-label={t('display.closeAria')}
+          onClick={closeInspector}
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+        />
+      ) : null}
     </div>
   );
 }
