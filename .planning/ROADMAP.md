@@ -210,7 +210,13 @@ Plans:
   3. Operator selects a node and inspects its label / properties / degree / neighbors / citations; on mobile and keyboard, tap/focus opens the inspector (hover is never the only access path)
   4. Graph queries are read-only by default (read-only Cypher guard rejecting `CREATE/MERGE/SET/DELETE/DROP`) with a Cypher preview, and dense graphs default to filtered evidence paths rather than hairballs
 
-**Plans**: TBD
+**Plans**: 4 plans (Waves 1–3)
+
+  - `27-01-PLAN.md` (Wave 1) — Backend normalizer + contract: `internal/knowledge/graphview.go` (GraphReader read-only seam + flat `{nodes,edges,paths,schema,query}` structs) + structured-intent→parameterized read-Cypher compiler + `assertReadOnly` write-verb guard + row→contract normalizer (labels via `apoc.convert.toJson`) + cap-clamp + the Wave-0 live mcp-serialization/footprint probe (GRAPH-01, GRAPH-04)
+  - `27-02-PLAN.md` (Wave 2) — REST + wiring: `internal/agui/graph_api.go` thin handlers for `GET /api/graph/schema` + `POST /api/graph/query` (body-cap + intent validation + `sanitizeErr`) + `SetGraphView` setter + boot-time `knowledge.Client` in serve + the `/api/graph/*` siblings mounted RequireAuth-only under the carve-out (GRAPH-01, GRAPH-04)
+  - `27-03-PLAN.md` (Wave 2) — Frontend core + install: legitimacy-gated install of sigma/graphology/@react-sigma/forceatlas2 (MIT, lazy) + pure `graphIntent.ts` (intent reducer + filter predicates + schema-driven label-family color mapper) + `graphApi.ts` typed fetch + `types.ts` + Vitest (no WebGL) (GRAPH-02, GRAPH-04)
+  - `27-04-PLAN.md` (Wave 3) — Frontend workspace: Frame-06 three-pane `GraphExplorer` + `SigmaCanvas` (WebGL, ForceAtlas2 position-cache, resize-remount + ErrorBoundary) + `SeedFilterPanel` (read-only Cypher preview) + `NodeInspector` (pin-path/open-source/show-Cypher, no add-note) + `PathStrip` + a11y parallel DOM + lazy AppShell swap + en/it i18n + contrast-ramp + Stryker scope + Playwright graph/graph-a11y e2e + dist rebuild (GRAPH-02, GRAPH-03, GRAPH-04)
+
 **UI hint**: yes
 
 ### Phase 28: Governance Boards + Web Onboarding
