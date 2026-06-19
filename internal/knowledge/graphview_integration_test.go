@@ -21,9 +21,43 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
+
+func seedGraphViewLiveFixture(ctx context.Context, t *testing.T, mcp *Client) (session string, cleanup func()) {
+	t.Helper()
+
+	runID := fmt.Sprintf("graphview-live-%d", time.Now().UnixNano())
+	session = runID + "-session"
+	params := map[string]any{
+		"run":     runID,
+		"session": session,
+		"message": runID + "-message",
+		"entity":  runID + "-entity",
+		"doc":     runID + "-document",
+	}
+	const seed = `CREATE (c:Conversation {session_id:$session, test_run_id:$run})
+CREATE (m:Message {id:$message, test_run_id:$run})
+CREATE (e:Entity {id:$entity, name:'Graph Fixture Entity', canonical_name:'Graph Fixture Entity', type:'PERSON', test_run_id:$run})
+CREATE (d:Document {id:$doc, title:'Graph Fixture Source', url:'https://example.test/graph-fixture', test_run_id:$run})
+CREATE (c)-[:HAS_MESSAGE {test_run_id:$run}]->(m)
+CREATE (m)-[:MENTIONS {test_run_id:$run}]->(e)
+CREATE (e)-[:CITES {test_run_id:$run}]->(d)
+RETURN c.session_id AS session`
+	if _, err := mcp.Write(ctx, seed, params); err != nil {
+		t.Fatalf("seed graphview live fixture: %v", err)
+	}
+
+	return session, func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := mcp.Write(cleanupCtx, `MATCH (n {test_run_id:$run}) DETACH DELETE n`, map[string]any{"run": runID}); err != nil {
+			t.Logf("cleanup graphview live fixture %q: %v", runID, err)
+		}
+	}
+}
 
 // TestGraphViewLive_SerializationShape pins the Pattern-1 explicit-field projection
 // against the live mcp boundary (A1): id is a non-empty string, the labels column
@@ -34,6 +68,8 @@ func TestGraphViewLive_SerializationShape(t *testing.T) {
 	defer cancel()
 	mcp := openTestMCP(ctx, t)
 	defer mcp.Close()
+	_, cleanup := seedGraphViewLiveFixture(ctx, t, mcp)
+	defer cleanup()
 
 	// Any existing node. If the graph is empty this skips locally (and the schema
 	// probe below still asserts the live label set) — but on a seeded stack it pins
@@ -93,6 +129,8 @@ func TestGraphViewLive_Footprint(t *testing.T) {
 	defer cancel()
 	mcp := openTestMCP(ctx, t)
 	defer mcp.Close()
+	session, cleanup := seedGraphViewLiveFixture(ctx, t, mcp)
+	defer cleanup()
 	gv := NewGraphView(mcp)
 
 	// What does the live loop actually write? (A3 observation, recorded for the executor.)
@@ -105,7 +143,6 @@ func TestGraphViewLive_Footprint(t *testing.T) {
 	if len(convRows) > 0 {
 		// Run the real compileSeed path for one observed session; it must return
 		// cleanly (rows or a clean empty), proving the seed Cypher is valid live.
-		session, _ := convRows[0]["session"].(string)
 		res, err := gv.Query(ctx, GraphIntent{Op: OpSeed, Session: session})
 		if err != nil {
 			t.Fatalf("live seed Query(session=%q): %v", session, err)
@@ -139,6 +176,8 @@ func TestGraphViewLive_Schema(t *testing.T) {
 	defer cancel()
 	mcp := openTestMCP(ctx, t)
 	defer mcp.Close()
+	_, cleanup := seedGraphViewLiveFixture(ctx, t, mcp)
+	defer cleanup()
 	gv := NewGraphView(mcp)
 
 	sch, err := gv.Schema(ctx)
