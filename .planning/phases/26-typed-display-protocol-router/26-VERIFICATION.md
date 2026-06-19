@@ -1,7 +1,9 @@
 ---
 phase: 26-typed-display-protocol-router
 verified: 2026-06-18T23:25:00Z
-status: human_needed
+status: passed
+closed: 2026-06-19T06:40:00Z
+closure: "The 4 human_needed live items were cleared via a Playwright E2E matrix (desktop Chrome + Pixel 5 + iPhone 13; 51 tests, 4 consecutive green runs) instead of manual sign-off — citation hovercard+click-through (displays.spec), Source Explorer read-only posture (asserts no write controls), swarm no-mailbox (asserts no composer/textbox in card), and the D-06 Playwright replay (replayText===liveText, live). The mobile pass also surfaced + fixed a CRITICAL iOS/iPadOS-Safari render crash (CSS asset-hash desync, commit 26ce045a) that the original desktop-only verification could not catch."
 score: 6/6 must-haves verified
 overrides_applied: 0
 human_verification:

@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: verifying
-stopped_at: Phase 26 complete — verified (conditional pass), 4 live UAT items pending
-last_updated: "2026-06-18T21:12:17.173Z"
-last_activity: 2026-06-18
+status: ready_to_plan
+stopped_at: Phase 26 complete — validated on desktop + mobile (E2E), ready to plan Phase 27
+last_updated: "2026-06-19T06:40:05.250Z"
+last_activity: 2026-06-19
 progress:
   total_phases: 8
   completed_phases: 5
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 26 — typed-display-protocol-router
+**Current focus:** Phase 27 — neo4j-graph-explorer
 
 ## Current Position
 
-Phase: 26 (typed-display-protocol-router) — VERIFIED (conditional pass)
-Plan: 6 of 6 complete (26-01..26-06). All automated gates green: go build/vet/-race, vitest 502/502, coverage 94.4% stmts / 86.4% branch (≥85 floor), contrast 15/15 AA, Stryker displays 71.7% (≥70), shiki code-split chunk in committed dist, replay e2e passed live (26-06).
-Status: CONDITIONAL PASS — 4 live UX sign-offs pending (see 26-VERIFICATION.md): citation hovercard fidelity + click-through, Source Explorer read-only posture acceptance, swarm-report no-mailbox live assertion, D-06 Playwright replay against a provisioned stack.
-Last activity: 2026-06-18
+Phase: 27 (neo4j-graph-explorer) — Ready to plan
+Plan: Not started
+Status: Phase 26 CLOSED 2026-06-19. The 4 live UX sign-offs (citation hovercard + click-through, Source Explorer read-only posture, swarm-report no-mailbox, D-06 Playwright replay) were cleared via a Playwright E2E matrix on desktop Chrome + Pixel 5 + iPhone 13 — 51 tests, 4 consecutive green runs. A CRITICAL iOS/iPadOS-Safari render crash (CSS asset-hash desync → strict-MIME stylesheet reject → error boundary) was found and fixed (commit 26ce045a); regenerated dist. Pre-existing (non-26) frontend branch-coverage gate is at 82.85% < 85% from the multimodal-assets merge — recommend a separate coverage pass.
+Last activity: 2026-06-19
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -43,13 +43,13 @@ A large frontend + auth layer is **uncommitted** in the working tree. The Phase-
 
 ### Next
 
-Phase 26 executed + verified (conditional pass, 2026-06-18). Next: `/gsd-verify-work 26` to clear the 4 live UX sign-offs (26-VERIFICATION.md → a 26-HUMAN-UAT), then `/gsd-code-review 26`. Remaining milestone-v1.0.0 phases after 26: 27 (graph), 28 (gov-read + onboarding), 29 (MCP + skills).
+Phase 26 closed 2026-06-19 — executed, verified, and validated on desktop + mobile via the Playwright E2E matrix (51 tests × 3 device profiles, 4 green runs); the iOS-Safari render crash was found + fixed (26ce045a). Next: `/gsd-plan-phase 27` (neo4j-graph-explorer). Remaining milestone-v1.0.0 phases: 27 (graph), 28 (gov-read + onboarding), 29 (MCP + skills). Separate (non-26) follow-up: restore the frontend branch-coverage gate (82.85%→≥85%) regressed by the multimodal-assets merge.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 158
+- Total plans completed: 164
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -75,6 +75,7 @@ Phase 26 executed + verified (conditional pass, 2026-06-18). Next: `/gsd-verify-
 | 23 | 3 | - | - |
 | 24 | 4 | - | - |
 | 25 | 7 | - | - |
+| 26 | 6 | - | - |
 
 **Recent Trend:**
 
