@@ -21,11 +21,11 @@ func TestLoadDBAssetObjectStoreDefaultsAndOverrides(t *testing.T) {
 	if cfg.ObjectStoreBucket != "aura-assets" {
 		t.Errorf("ObjectStoreBucket default = %q, want aura-assets", cfg.ObjectStoreBucket)
 	}
-	if cfg.ObjectStoreAccessKey != "" {
-		t.Errorf("ObjectStoreAccessKey default = %q, want empty", cfg.ObjectStoreAccessKey)
+	if cfg.ObjectStoreAccessKey != defaultObjectStoreAccessKey {
+		t.Errorf("ObjectStoreAccessKey default = %q, want %q", cfg.ObjectStoreAccessKey, defaultObjectStoreAccessKey)
 	}
-	if cfg.ObjectStoreSecretKey != "" {
-		t.Errorf("ObjectStoreSecretKey default = %q, want empty", cfg.ObjectStoreSecretKey)
+	if cfg.ObjectStoreSecretKey != defaultObjectStoreSecretKey {
+		t.Errorf("ObjectStoreSecretKey default = %q, want %q", cfg.ObjectStoreSecretKey, defaultObjectStoreSecretKey)
 	}
 	if !cfg.ObjectStorePathStyle {
 		t.Error("ObjectStorePathStyle default = false, want true")

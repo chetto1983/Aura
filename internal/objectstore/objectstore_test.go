@@ -3,6 +3,7 @@ package objectstore
 import (
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -107,8 +108,8 @@ func TestFakePresignPut(t *testing.T) {
 	if presigned.RequiredHeaders["Content-Type"] != "image/png" {
 		t.Fatalf("Content-Type header = %q, want image/png", presigned.RequiredHeaders["Content-Type"])
 	}
-	if presigned.RequiredHeaders["Content-Length"] != "42" {
-		t.Fatalf("Content-Length header = %q, want 42", presigned.RequiredHeaders["Content-Length"])
+	if _, ok := presigned.RequiredHeaders["Content-Length"]; ok {
+		t.Fatalf("Content-Length header must not be application-settable: %#v", presigned.RequiredHeaders)
 	}
 	if time.Until(presigned.ExpiresAt) <= 0 || time.Until(presigned.ExpiresAt) > expiresIn {
 		t.Fatalf("ExpiresAt = %s, want within %s", presigned.ExpiresAt, expiresIn)
@@ -128,8 +129,8 @@ func TestFilesystemPresignPutRequiresUploadHeaders(t *testing.T) {
 	if presigned.RequiredHeaders["Content-Type"] != "image/png" {
 		t.Fatalf("Content-Type header = %q, want image/png", presigned.RequiredHeaders["Content-Type"])
 	}
-	if presigned.RequiredHeaders["Content-Length"] != "42" {
-		t.Fatalf("Content-Length header = %q, want 42", presigned.RequiredHeaders["Content-Length"])
+	if _, ok := presigned.RequiredHeaders["Content-Length"]; ok {
+		t.Fatalf("Content-Length header must not be application-settable: %#v", presigned.RequiredHeaders)
 	}
 }
 
@@ -155,8 +156,64 @@ func TestS3PresignPutRequiresSignedUploadHeaders(t *testing.T) {
 	if presigned.RequiredHeaders["Content-Type"] != "image/png" {
 		t.Fatalf("Content-Type header = %q, want image/png", presigned.RequiredHeaders["Content-Type"])
 	}
-	if presigned.RequiredHeaders["Content-Length"] != "42" {
-		t.Fatalf("Content-Length header = %q, want 42", presigned.RequiredHeaders["Content-Length"])
+	if _, ok := presigned.RequiredHeaders["Content-Length"]; ok {
+		t.Fatalf("Content-Length header must not be application-settable: %#v", presigned.RequiredHeaders)
+	}
+	if strings.Contains(strings.ToLower(presigned.URL), "content-length") {
+		t.Fatalf("presigned URL must not sign browser-forbidden Content-Length: %s", presigned.URL)
+	}
+}
+
+func TestS3PresignPutSignsPublicEndpointHost(t *testing.T) {
+	store, err := NewS3(context.Background(), S3Config{
+		Endpoint:       "http://garage:3900",
+		PublicEndpoint: "http://127.0.0.1:3900",
+		Region:         "garage",
+		AccessKey:      "test",
+		SecretKey:      "test",
+		PathStyle:      true,
+	})
+	if err != nil {
+		t.Fatalf("NewS3() error = %v", err)
+	}
+	if store.presignEndpoint != "http://127.0.0.1:3900" {
+		t.Fatalf("presignEndpoint = %q, want public endpoint", store.presignEndpoint)
+	}
+	presigned, err := store.PresignPut(context.Background(), PresignPutRequest{
+		Ref:      ObjectRef{Bucket: "bucket", Key: "identity/id/asset/asset/original"},
+		MIMEType: "image/png",
+		Size:     42,
+	})
+	if err != nil {
+		t.Fatalf("PresignPut() error = %v", err)
+	}
+	if !strings.HasPrefix(presigned.URL, "http://127.0.0.1:3900/") {
+		t.Fatalf("presigned URL = %s, want public endpoint host", presigned.URL)
+	}
+}
+
+func TestBrowserUploadCORSConfigurationAllowsPresignedBrowserPut(t *testing.T) {
+	cfg := browserUploadCORSConfiguration()
+	if cfg == nil || len(cfg.CORSRules) != 1 {
+		t.Fatalf("CORSRules = %#v, want exactly one rule", cfg)
+	}
+	rule := cfg.CORSRules[0]
+	for _, method := range []string{"PUT", "GET", "HEAD"} {
+		if !slices.Contains(rule.AllowedMethods, method) {
+			t.Fatalf("AllowedMethods = %#v, missing %s", rule.AllowedMethods, method)
+		}
+	}
+	if !slices.Contains(rule.AllowedOrigins, "*") {
+		t.Fatalf("AllowedOrigins = %#v, want wildcard presigned-url origin", rule.AllowedOrigins)
+	}
+	if !slices.Contains(rule.AllowedHeaders, "*") {
+		t.Fatalf("AllowedHeaders = %#v, want wildcard request headers", rule.AllowedHeaders)
+	}
+	if !slices.Contains(rule.ExposeHeaders, "ETag") {
+		t.Fatalf("ExposeHeaders = %#v, want ETag", rule.ExposeHeaders)
+	}
+	if rule.MaxAgeSeconds == nil || *rule.MaxAgeSeconds <= 0 {
+		t.Fatalf("MaxAgeSeconds = %#v, want positive preflight cache", rule.MaxAgeSeconds)
 	}
 }
 

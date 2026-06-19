@@ -12,6 +12,7 @@
 	}
 
 	@authed `header({'X-Aura-Token': '{$AURA_ACCESS_TOKEN}'}) || query({'token': '{$AURA_ACCESS_TOKEN}'})`
+	@assets path /aura-assets/*
 	@agui path /agent/* /threads/* /healthz /readyz /debug/vars /metrics
 	@setup path /setup /setup/*
 
@@ -24,6 +25,10 @@
 	# https://<host>/admin/auth/google/callback redirect URI (register it in the Google client).
 	handle /admin/auth/google/callback {
 		reverse_proxy aura-pim-mcp:8080
+	}
+
+	handle @assets {
+		reverse_proxy garage:3900
 	}
 
 	handle @authed {

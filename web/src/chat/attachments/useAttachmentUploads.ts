@@ -17,6 +17,28 @@ export interface AttachmentUploads {
 }
 
 const terminalStatuses = new Set<Asset['status']>(['failed', 'refused', 'deleted', 'canceled']);
+const browserForbiddenUploadHeaders = new Set([
+  'accept-charset',
+  'accept-encoding',
+  'access-control-request-headers',
+  'access-control-request-method',
+  'connection',
+  'content-length',
+  'cookie',
+  'cookie2',
+  'date',
+  'dnt',
+  'expect',
+  'host',
+  'keep-alive',
+  'origin',
+  'referer',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+  'via',
+]);
 
 export function useAttachmentUploads(
   threadId: string,
@@ -156,10 +178,10 @@ function putWithProgress(
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
     for (const [key, value] of Object.entries(headers)) {
+      if (isBrowserForbiddenUploadHeader(key)) continue;
       try {
         xhr.setRequestHeader(key, value);
       } catch (err) {
-        if (key.toLowerCase() === 'content-length') continue;
         reject(toError(err));
         return;
       }
@@ -176,6 +198,15 @@ function putWithProgress(
     };
     xhr.send(file);
   });
+}
+
+function isBrowserForbiddenUploadHeader(name: string): boolean {
+  const normalized = name.trim().toLowerCase();
+  return (
+    browserForbiddenUploadHeaders.has(normalized) ||
+    normalized.startsWith('proxy-') ||
+    normalized.startsWith('sec-')
+  );
 }
 
 function inferModality(file: File): AssetModality {

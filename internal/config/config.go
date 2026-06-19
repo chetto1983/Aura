@@ -33,6 +33,11 @@ const (
 	defaultOtelEndpoint = "localhost:4317"
 )
 
+const (
+	defaultObjectStoreAccessKey = "GK000000000000000000000000"
+	defaultObjectStoreSecretKey = "0000000000000000000000000000000000000000000000000000000000000000"
+)
+
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB             db.Config
@@ -382,8 +387,8 @@ func loadBase() *Config {
 		ObjectStorePublicEndpoint: os.Getenv("AURA_OBJECTSTORE_PUBLIC_ENDPOINT"),
 		ObjectStoreRegion:         envDefault("AURA_OBJECTSTORE_REGION", "garage"),
 		ObjectStoreBucket:         envDefault("AURA_OBJECTSTORE_BUCKET", "aura-assets"),
-		ObjectStoreAccessKey:      os.Getenv("AURA_OBJECTSTORE_ACCESS_KEY"),
-		ObjectStoreSecretKey:      os.Getenv("AURA_OBJECTSTORE_SECRET_KEY"),
+		ObjectStoreAccessKey:      envDefault("AURA_OBJECTSTORE_ACCESS_KEY", defaultObjectStoreAccessKey),
+		ObjectStoreSecretKey:      envDefault("AURA_OBJECTSTORE_SECRET_KEY", defaultObjectStoreSecretKey),
 		ObjectStorePathStyle:      envBoolDefault("AURA_OBJECTSTORE_PATH_STYLE", true),
 		AssetMaxDocumentBytes:     envIntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
 		AssetMaxImageBytes:        envIntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),

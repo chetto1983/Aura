@@ -59,7 +59,7 @@ describe('useAttachmentUploads', () => {
     FakeXHR.instances = [];
   });
 
-  it('presigns, uploads with required headers, finalizes, and polls until ready', async () => {
+  it('presigns, uploads with browser-safe headers, finalizes, and polls until ready', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -119,8 +119,8 @@ describe('useAttachmentUploads', () => {
     expect(xhr?.url).toBe('https://assets.test/upload');
     expect(xhr?.headers).toMatchObject({
       'Content-Type': 'application/pdf',
-      'Content-Length': '9',
     });
+    expect(xhr?.headers).not.toHaveProperty('Content-Length');
   });
 
   it('marks the item failed when finalize fails', async () => {

@@ -18,6 +18,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	gvisor := readProjectFile(t, root, "compose.gvisor.yaml")
 	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
+	garageBootstrap := readProjectFile(t, root, "scripts/garage_bootstrap.sh")
 
 	for _, want := range []string{
 		"FROM golang:",
@@ -52,6 +53,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_AGUI_CORS_PERMISSIVE: ${AURA_AGUI_CORS_PERMISSIVE:-false}",
 		"AURA_OBJECTSTORE_BACKEND: ${AURA_OBJECTSTORE_BACKEND:-garage}",
 		"AURA_OBJECTSTORE_ENDPOINT: ${AURA_OBJECTSTORE_ENDPOINT:-http://garage:3900}",
+		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}",
 		"AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}",
 		"AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}",
 		"AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:-GK000000000000000000000000}",
@@ -136,6 +138,8 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"@authed",
 		"X-Aura-Token",
 		"query({'token': '{$AURA_ACCESS_TOKEN}'})",
+		"@assets path /aura-assets/*",
+		"reverse_proxy garage:3900",
 		"@setup path /setup /setup/*",
 		"reverse_proxy aura:9080",
 		"reverse_proxy aura:9081",
@@ -170,6 +174,15 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 			t.Fatalf(".dockerignore missing %q:\n%s", want, dockerignore)
 		}
 	}
+	for _, want := range []string{
+		"garage bucket allow --read --write --owner",
+		"AURA_OBJECTSTORE_ENDPOINT=http://garage:3900",
+		"aura objectstore bootstrap",
+	} {
+		if !strings.Contains(garageBootstrap, want) {
+			t.Fatalf("scripts/garage_bootstrap.sh missing %q:\n%s", want, garageBootstrap)
+		}
+	}
 }
 
 func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
@@ -188,8 +201,16 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"https://get.docker.com",
 		"brew install --cask docker",
 		"openssl rand -hex 32",
+		"ensure_objectstore_env_secrets",
+		"ensure_objectstore_public_endpoint",
+		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT \"https://$(host_for_summary)\"",
+		"AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}",
+		"AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}",
+		"GARAGE_RPC_SECRET=${garage_rpc_secret}",
 		"chmod 600 .env",
 		"existing .env is missing",
+		"download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh",
+		"bash scripts/garage_bootstrap.sh",
 		"AURA_ACCESS_TOKEN",
 		"docker compose -f compose.yaml up -d",
 		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",
@@ -344,6 +365,7 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro",
 		"AURA_SHOW_REASONING=true",
 		"AURA_LLM_REASONING_LEARNING=false",
+		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=http://127.0.0.1:3900",
 		"AURA_WHATSAPP_BRIDGE_PORT=8094",
 	} {
 		if !hasActiveEnvLine(envExample, want) {

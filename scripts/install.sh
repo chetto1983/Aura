@@ -207,6 +207,47 @@ env_value() {
   awk -F= -v k="$key" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' .env
 }
 
+set_env_value() {
+  key="$1"
+  value="$2"
+  tmp="$(mktemp)"
+  awk -F= -v k="$key" -v v="$value" '
+    BEGIN { done = 0 }
+    $1 == k && done == 0 { print k "=" v; done = 1; next }
+    { print }
+    END { if (done == 0) print k "=" v }
+  ' .env > "$tmp"
+  cat "$tmp" > .env
+  rm -f "$tmp"
+}
+
+ensure_generated_env_secret() {
+  key="$1"
+  bytes="$2"
+  prefix="${3:-}"
+  if [ -n "$(env_value "$key")" ]; then
+    return
+  fi
+  command -v openssl >/dev/null 2>&1 || {
+    echo "FAIL: openssl is required to generate ${key}." >&2
+    exit 1
+  }
+  set_env_value "$key" "${prefix}$(openssl rand -hex "$bytes")"
+}
+
+ensure_objectstore_env_secrets() {
+  ensure_generated_env_secret AURA_OBJECTSTORE_ACCESS_KEY 12 GK
+  ensure_generated_env_secret AURA_OBJECTSTORE_SECRET_KEY 32
+  ensure_generated_env_secret GARAGE_RPC_SECRET 32
+}
+
+ensure_objectstore_public_endpoint() {
+  if [ -n "$(env_value AURA_OBJECTSTORE_PUBLIC_ENDPOINT)" ]; then
+    return
+  fi
+  set_env_value AURA_OBJECTSTORE_PUBLIC_ENDPOINT "https://$(host_for_summary)"
+}
+
 write_env_if_missing() {
   if [ -f .env ]; then
     for key in POSTGRES_PASSWORD NEO4J_PASSWORD AURA_ACCESS_TOKEN AURA_IMAGE; do
@@ -215,6 +256,7 @@ write_env_if_missing() {
         exit 1
       fi
     done
+    ensure_objectstore_env_secrets
     chmod 600 .env
     return
   fi
@@ -227,6 +269,9 @@ write_env_if_missing() {
   pg_pw="$(openssl rand -hex 32)"
   neo4j_pw="$(openssl rand -hex 32)"
   access_token="$(openssl rand -hex 32)"
+  objectstore_access_key="GK$(openssl rand -hex 12)"
+  objectstore_secret_key="$(openssl rand -hex 32)"
+  garage_rpc_secret="$(openssl rand -hex 32)"
   aura_image="${AURA_IMAGE:-$DEFAULT_IMAGE}"
   openrouter_key="${OPENROUTER_API_KEY:-}"
 
@@ -250,6 +295,10 @@ AURA_SETUP_PORT=9081
 AURA_WHATSAPP_MCP_PORT=8092
 AURA_AGENT_MEMORY_MCP_PORT=8091
 AURA_BACKUP_DIR=./backups
+
+AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
+AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}
+GARAGE_RPC_SECRET=${garage_rpc_secret}
 
 OPENROUTER_API_KEY=${openrouter_key}
 EOF
@@ -332,7 +381,7 @@ preflight_hw
 install_docker
 provision_gvisor
 
-as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups"
+as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts"
 if need_sudo; then
   as_root chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
 fi
@@ -342,13 +391,19 @@ download_file compose.yaml compose.yaml
 download_file compose.gvisor.yaml compose.gvisor.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
 download_file deploy/aura.service deploy/aura.service
+download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
+chmod +x scripts/garage_bootstrap.sh
 
 write_env_if_missing
+
+ensure_objectstore_public_endpoint
 
 aura_image="$(env_value AURA_IMAGE)"
 if [ "${aura_image}" != "aura:local" ]; then
   docker pull "$aura_image"
 fi
+
+bash scripts/garage_bootstrap.sh
 
 if [ "$GVISOR" -eq 1 ]; then
   docker compose -f compose.yaml -f compose.gvisor.yaml up -d

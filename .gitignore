@@ -75,3 +75,4 @@ nul
 output/*
 internal/runner/conversations/*
 web/node_modules.broken/*
+.tmp/*

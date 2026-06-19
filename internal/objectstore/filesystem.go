@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -46,8 +45,7 @@ func (s *FilesystemStore) PresignPut(ctx context.Context, req PresignPutRequest)
 		URL:    u.String(),
 		Method: "PUT",
 		RequiredHeaders: map[string]string{
-			"Content-Type":   req.MIMEType,
-			"Content-Length": strconv.FormatInt(req.Size, 10),
+			"Content-Type": req.MIMEType,
 		},
 		ExpiresAt: time.Now().Add(expiresIn),
 	}, nil

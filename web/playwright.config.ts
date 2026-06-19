@@ -73,6 +73,10 @@ export default defineConfig({
     // a green run leaves no artifacts but a regression is diagnosable (Phase 26 QA).
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Local appliance HTTPS uses Caddy's internal CA (and e2e may also presign uploads
+    // to that HTTPS objectstore route), so every browser context must tolerate local
+    // test certificates. Network/auth behavior is still exercised end to end.
+    ignoreHTTPSErrors: true,
     serviceWorkers: 'block',
   },
   // Desktop chromium + two realistic mobile device profiles (Pixel 5 = mobile Chrome,
@@ -89,7 +93,7 @@ export default defineConfig({
       ? [
           {
             name: 'mobile-safari',
-            use: { ...devices['iPhone 13'], baseURL: HTTPS_ORIGIN, ignoreHTTPSErrors: true },
+            use: { ...devices['iPhone 13'], baseURL: HTTPS_ORIGIN },
           },
         ]
       : []),

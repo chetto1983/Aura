@@ -4,7 +4,12 @@ if (set +H) 2>/dev/null; then
   set +H
 fi
 
-cd "$(git rev-parse --show-toplevel)"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  cd "$(git rev-parse --show-toplevel)"
+else
+  cd "$(dirname "$script_dir")"
+fi
 
 bucket="${AURA_OBJECTSTORE_BUCKET:-aura-assets}"
 access_key="${AURA_OBJECTSTORE_ACCESS_KEY:-GK000000000000000000000000}"
@@ -45,4 +50,13 @@ if ! garage key info "$access_key" >/dev/null 2>&1; then
 fi
 
 garage bucket allow --read --write --owner "$bucket" --key "$access_key" >/dev/null
+if [ "${AURA_GARAGE_BOOTSTRAP_BUILD:-0}" = "1" ]; then
+  compose run --rm --build --no-deps --entrypoint aura \
+    -e AURA_OBJECTSTORE_ENDPOINT=http://garage:3900 \
+    aura objectstore bootstrap >/dev/null
+else
+  compose run --rm --no-deps --entrypoint aura \
+    -e AURA_OBJECTSTORE_ENDPOINT=http://garage:3900 \
+    aura objectstore bootstrap >/dev/null
+fi
 garage bucket info "$bucket"

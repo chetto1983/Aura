@@ -3,9 +3,8 @@ package objectstore
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
 )
 
@@ -26,9 +26,12 @@ type S3Config struct {
 }
 
 type S3Store struct {
-	client         *s3.Client
-	presign        *s3.PresignClient
-	publicEndpoint string
+	client          *s3.Client
+	presign         *s3.PresignClient
+	publicEndpoint  string
+	presignEndpoint string
+	awsCfg          aws.Config
+	pathStyle       bool
 }
 
 func NewS3(ctx context.Context, cfg S3Config) (*S3Store, error) {
@@ -43,17 +46,22 @@ func NewS3(ctx context.Context, cfg S3Config) (*S3Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.UsePathStyle = cfg.PathStyle
-		o.EndpointResolverV2 = s3EndpointResolver{
-			endpoint: cfg.Endpoint,
-			next:     s3.NewDefaultEndpointResolverV2(),
-		}
-	})
+	client := newS3Client(awsCfg, cfg.Endpoint, cfg.PathStyle)
+	presignEndpoint := cfg.Endpoint
+	if cfg.PublicEndpoint != "" {
+		presignEndpoint = cfg.PublicEndpoint
+	}
+	presignClient := client
+	if presignEndpoint != cfg.Endpoint {
+		presignClient = newS3Client(awsCfg, presignEndpoint, cfg.PathStyle)
+	}
 	return &S3Store{
-		client:         client,
-		presign:        s3.NewPresignClient(client),
-		publicEndpoint: cfg.PublicEndpoint,
+		client:          client,
+		presign:         s3.NewPresignClient(presignClient),
+		publicEndpoint:  cfg.PublicEndpoint,
+		presignEndpoint: presignEndpoint,
+		awsCfg:          awsCfg,
+		pathStyle:       cfg.PathStyle,
 	}, nil
 }
 
@@ -62,38 +70,49 @@ func (s *S3Store) PresignPut(ctx context.Context, req PresignPutRequest) (Presig
 	if expiresIn <= 0 {
 		expiresIn = 10 * time.Minute
 	}
-	out, err := s.presign.PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(req.Ref.Bucket),
-		Key:           aws.String(req.Ref.Key),
-		ContentType:   aws.String(req.MIMEType),
-		ContentLength: aws.Int64(req.Size),
+	presigner := s.presign
+	if req.PublicBase != "" && req.PublicBase != s.presignEndpoint {
+		presigner = s3.NewPresignClient(newS3Client(s.awsCfg, req.PublicBase, s.pathStyle))
+	}
+	out, err := presigner.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(req.Ref.Bucket),
+		Key:         aws.String(req.Ref.Key),
+		ContentType: aws.String(req.MIMEType),
 	}, func(o *s3.PresignOptions) {
 		o.Expires = expiresIn
 	})
 	if err != nil {
 		return PresignedPut{}, err
 	}
-	signedURL := out.URL
-	publicBase := req.PublicBase
-	if publicBase == "" {
-		publicBase = s.publicEndpoint
-	}
-	if publicBase != "" {
-		var rewriteErr error
-		signedURL, rewriteErr = rewritePresignedHost(signedURL, publicBase)
-		if rewriteErr != nil {
-			return PresignedPut{}, rewriteErr
-		}
-	}
 	return PresignedPut{
-		URL:    signedURL,
+		URL:    out.URL,
 		Method: "PUT",
 		RequiredHeaders: map[string]string{
-			"Content-Type":   req.MIMEType,
-			"Content-Length": strconv.FormatInt(req.Size, 10),
+			"Content-Type": req.MIMEType,
 		},
 		ExpiresAt: time.Now().Add(expiresIn),
 	}, nil
+}
+
+func newS3Client(awsCfg aws.Config, endpoint string, pathStyle bool) *s3.Client {
+	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.UsePathStyle = pathStyle
+		o.EndpointResolverV2 = s3EndpointResolver{
+			endpoint: endpoint,
+			next:     s3.NewDefaultEndpointResolverV2(),
+		}
+	})
+}
+
+func (s *S3Store) ConfigureBrowserUploadCORS(ctx context.Context, bucket string) error {
+	if strings.TrimSpace(bucket) == "" {
+		return fmt.Errorf("objectstore s3 cors bucket is empty")
+	}
+	_, err := s.client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket:            aws.String(bucket),
+		CORSConfiguration: browserUploadCORSConfiguration(),
+	})
+	return err
 }
 
 func (s *S3Store) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
@@ -152,6 +171,20 @@ func (s *S3Store) Delete(ctx context.Context, ref ObjectRef) error {
 	return err
 }
 
+func browserUploadCORSConfiguration() *s3types.CORSConfiguration {
+	return &s3types.CORSConfiguration{
+		CORSRules: []s3types.CORSRule{
+			{
+				AllowedHeaders: []string{"*"},
+				AllowedMethods: []string{"PUT", "GET", "HEAD"},
+				AllowedOrigins: []string{"*"},
+				ExposeHeaders:  []string{"ETag"},
+				MaxAgeSeconds:  aws.Int32(3600),
+			},
+		},
+	}
+}
+
 type s3EndpointResolver struct {
 	endpoint string
 	next     s3.EndpointResolverV2
@@ -162,22 +195,4 @@ func (r s3EndpointResolver) ResolveEndpoint(ctx context.Context, params s3.Endpo
 		params.Endpoint = aws.String(r.endpoint)
 	}
 	return r.next.ResolveEndpoint(ctx, params)
-}
-
-func rewritePresignedHost(raw, publicBase string) (string, error) {
-	signed, err := url.Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	base, err := url.Parse(publicBase)
-	if err != nil {
-		return "", err
-	}
-	if base.Scheme != "" {
-		signed.Scheme = base.Scheme
-	}
-	if base.Host != "" {
-		signed.Host = base.Host
-	}
-	return signed.String(), nil
 }

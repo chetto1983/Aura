@@ -107,7 +107,7 @@ services:
       AURA_AGUI_BUFFER_CAP: ${AURA_AGUI_BUFFER_CAP:-64}
       AURA_OBJECTSTORE_BACKEND: ${AURA_OBJECTSTORE_BACKEND:-garage}
       AURA_OBJECTSTORE_ENDPOINT: ${AURA_OBJECTSTORE_ENDPOINT:-http://garage:3900}
-      AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-}
+      AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}
       AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}
       AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}
       AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:-GK000000000000000000000000}
@@ -226,9 +226,9 @@ services:
       retries: 10
       start_period: 10s
 
-  # Industrial asset object storage foundation. Garage bucket/access bootstrap is
-  # intentionally left to the later asset service/deploy task; for local dev before
-  # bootstrap, set AURA_OBJECTSTORE_BACKEND=filesystem-dev.
+  # Industrial asset object storage foundation. The installer runs
+  # scripts/garage_bootstrap.sh to create the local bucket/key/CORS before first use;
+  # source checkouts can run the same script or set AURA_OBJECTSTORE_BACKEND=filesystem-dev.
   garage:
     image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}
     container_name: aura-garage

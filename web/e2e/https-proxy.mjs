@@ -12,6 +12,7 @@
 // Not wired into CI: the mobile-safari project is only added when AURA_E2E_HTTPS_ORIGIN
 // is set (see playwright.config.ts). Env contract:
 //   PROXY_TLS_KEY / PROXY_TLS_CERT  — PEM paths
+//   PROXY_TLS_PFX                  — optional PFX path (Windows-friendly fallback)
 //   PROXY_TARGET_PORT (default 9091) — the http `aura serve` port
 //   PROXY_LISTEN_PORT (default 9443) — the https port the browser hits
 
@@ -25,10 +26,13 @@ const LISTEN_PORT = Number(process.env.PROXY_LISTEN_PORT ?? 9443);
 const targetHostHeader = `${TARGET_HOST}:${String(TARGET_PORT)}`;
 const targetOrigin = `http://${targetHostHeader}`;
 
-const tlsOptions = {
-  key: readFileSync(process.env.PROXY_TLS_KEY ?? ''),
-  cert: readFileSync(process.env.PROXY_TLS_CERT ?? ''),
-};
+const tlsOptions =
+  process.env.PROXY_TLS_PFX !== undefined
+    ? { pfx: readFileSync(process.env.PROXY_TLS_PFX), passphrase: process.env.PROXY_TLS_PFX_PASSPHRASE ?? '' }
+    : {
+        key: readFileSync(process.env.PROXY_TLS_KEY ?? ''),
+        cert: readFileSync(process.env.PROXY_TLS_CERT ?? ''),
+      };
 
 const server = https.createServer(tlsOptions, (req, res) => {
   // Rewrite Host/Origin/Referer to the target so any server-side same-origin check
