@@ -98,7 +98,9 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
                 }`}
               >
                 <span className="break-words">{nodeCaption(node)}</span>
-                <span className="ml-2 text-[13px] text-text-muted">{(node.labels ?? [])[0] ?? ''}</span>
+                <span className="ml-2 text-[13px] text-text-muted">
+                  {(node.labels ?? [])[0] ?? ''}
+                </span>
               </button>
             </div>
           ))}

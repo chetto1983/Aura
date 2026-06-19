@@ -33,7 +33,12 @@ function docNode(over: Partial<GraphNode> = {}): GraphNode {
 describe('NodeInspector (read-only action set + citations)', () => {
   it('inspector renders the read-only set and NO add-note / NO editable Cypher input', () => {
     render(
-      <NodeInspector node={docNode()} query="MATCH (d:Document) RETURN d" onPinPath={vi.fn()} onClose={vi.fn()} />,
+      <NodeInspector
+        node={docNode()}
+        query="MATCH (d:Document) RETURN d"
+        onPinPath={vi.fn()}
+        onClose={vi.fn()}
+      />,
     );
     expect(screen.getByRole('button', { name: 'Pin path' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Open source' })).toBeTruthy();
@@ -89,9 +94,7 @@ describe('NodeInspector (read-only action set + citations)', () => {
     );
     // The script string is present as escaped text, not executed/injected.
     expect(screen.getByText('<script>window.__x=1</script>')).toBeTruthy();
-    expect(
-      (window as unknown as Record<string, unknown>).__x,
-    ).toBeUndefined();
+    expect((window as unknown as Record<string, unknown>).__x).toBeUndefined();
   });
 
   it('inspector close button invokes onClose (focus-return to the opener)', () => {
@@ -132,12 +135,12 @@ describe('PathStrip (a11y parallel DOM + path mirror)', () => {
     { id: 'n1', caption: 'Alpha', labels: ['Entity'] },
     { id: 'n2', caption: 'Bravo', labels: ['Document'] },
   ];
-  const EDGES: readonly GraphEdge[] = [{ id: 'e1', source: 'n1', target: 'n2', rel_type: 'MENTIONS' }];
+  const EDGES: readonly GraphEdge[] = [
+    { id: 'e1', source: 'n1', target: 'n2', rel_type: 'MENTIONS' },
+  ];
 
   it('path strip exposes role="list" node + edge lists with the counts', () => {
-    render(
-      <PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />,
-    );
+    render(<PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />);
     const lists = screen.getAllByRole('list');
     expect(lists.length).toBeGreaterThanOrEqual(2); // node list + edge list
     expect(screen.getByText('Nodes (2) — use arrow keys, Enter to inspect')).toBeTruthy();
@@ -169,9 +172,7 @@ describe('PathStrip (a11y parallel DOM + path mirror)', () => {
   });
 
   it('path strip arrow keys roam the node list (keyboard traversal, D-03)', () => {
-    render(
-      <PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />,
-    );
+    render(<PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />);
     const alpha = screen.getByRole('button', { name: /Alpha/ });
     const bravo = screen.getByRole('button', { name: /Bravo/ });
     alpha.focus();
@@ -189,9 +190,7 @@ describe('PathStrip (a11y parallel DOM + path mirror)', () => {
   });
 
   it('path strip shows the empty path message when nothing is pinned', () => {
-    render(
-      <PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />,
-    );
+    render(<PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />);
     expect(screen.getByText('No path selected')).toBeTruthy();
   });
 });

@@ -232,9 +232,7 @@ describe('rowsToClientGraph (contract → graphology-ready)', () => {
     const n2 = out.nodes.find((n) => n.id === 'n2');
     expect(n2?.caption).toBe('n2'); // caption falls back to id
     expect(n2?.entityType).toBe('PERSON');
-    expect(out.edges).toEqual([
-      { id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' },
-    ]);
+    expect(out.edges).toEqual([{ id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' }]);
   });
 
   it('drops an edge that references a missing node id (no graphology crash)', () => {

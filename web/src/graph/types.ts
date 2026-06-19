@@ -12,7 +12,6 @@ export type GraphOp = 'seed' | 'expand' | 'schema_overview';
 
 export const OP_SEED: GraphOp = 'seed';
 export const OP_EXPAND: GraphOp = 'expand';
-export const OP_SCHEMA_OVERVIEW: GraphOp = 'schema_overview';
 
 /** GraphIntent mirrors knowledge.GraphIntent (graphview_intent.go): the structured
  * payload the cockpit POSTs to /api/graph/query. The client authors NO Cypher — it

@@ -196,8 +196,7 @@ export function applyFilters(result: GraphResult, filters: GraphFilters): Filter
   }
   const dimmedEdgeIds = new Set<string>();
   for (const edge of result.edges) {
-    const typeExcluded =
-      filters.relTypes.size > 0 && !filters.relTypes.has(edge.rel_type ?? '');
+    const typeExcluded = filters.relTypes.size > 0 && !filters.relTypes.has(edge.rel_type ?? '');
     const endpointDimmed = dimmedNodeIds.has(edge.source) || dimmedNodeIds.has(edge.target);
     if (typeExcluded || endpointDimmed) dimmedEdgeIds.add(edge.id);
   }

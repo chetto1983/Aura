@@ -342,7 +342,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
 
       {/* EVIDENCE — path strip + a11y parallel DOM. Mobile: a capped scroll region below the
           canvas (canvas stays dominant). Desktop: the strip under the canvas (col 2). */}
-      <div className="max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-none lg:shrink lg:overflow-visible">
+      <div className="max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-[32vh] lg:shrink lg:overflow-y-auto">
         <PathStrip
           nodes={view.result?.nodes ?? []}
           edges={view.result?.edges ?? []}

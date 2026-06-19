@@ -134,9 +134,7 @@ function HighlightManager({ pinnedPath }: HighlightProps) {
   const sigma = useSigma();
 
   useEffect(() => {
-    sigma.setSetting('nodeReducer', (nodeId, data) =>
-      pinnedNodeReducer(nodeId, data, pinnedPath),
-    );
+    sigma.setSetting('nodeReducer', (nodeId, data) => pinnedNodeReducer(nodeId, data, pinnedPath));
     sigma.setSetting('edgeReducer', (edgeId, data) => {
       const graph = sigma.getGraph();
       const source = graph.source(edgeId);
@@ -145,6 +143,31 @@ function HighlightManager({ pinnedPath }: HighlightProps) {
     });
     sigma.refresh();
   }, [sigma, pinnedPath]);
+
+  return null;
+}
+
+/**
+ * FitGraph reframes the camera to the loaded graph once layout has settled, so the evidence
+ * fills the canvas (centered, with a little breathing room) instead of floating in the upper
+ * band of a wide viewport — and re-frames cleanly after the inspector-driven remount. The rAF
+ * defers the fit until after GraphLoader's loadGraph + the first sigma paint.
+ */
+function FitGraph({ nodeCount }: { readonly nodeCount: number }) {
+  const sigma = useSigma();
+
+  useEffect(() => {
+    if (nodeCount === 0) return undefined;
+    const raf = window.requestAnimationFrame(() => {
+      // 0.5/0.5 is sigma's normalized graph centre; ratio < 1 tightens the frame so the graph
+      // fills the canvas. Kept conservative so edge labels are not clipped on a wide layout.
+      sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 0.82 });
+      sigma.refresh();
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [sigma, nodeCount]);
 
   return null;
 }
@@ -238,6 +261,7 @@ export function SigmaCanvas({ nodes, edges, pinnedPath, sigmaKey, onNodeClick }:
           }}
         >
           <GraphLoader nodes={nodes} edges={edges} reducedMotion={reducedMotion} />
+          <FitGraph nodeCount={nodes.length} />
           <EventHandler onNodeClick={onNodeClick} />
           <HighlightManager pinnedPath={pinnedPath} />
         </SigmaContainer>

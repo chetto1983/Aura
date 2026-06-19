@@ -12,15 +12,34 @@ const CONV_ID = '88888888-8888-8888-8888-888888888888';
 
 const POPULATED = {
   nodes: [
-    { id: 'n1', caption: 'Alpha Entity', labels: ['Entity'], entity_type: 'PERSON', degree: 2, props: { name: 'Alpha Entity' } },
-    { id: 'n2', caption: 'Beta Document', labels: ['Document'], degree: 1, props: { url: 'https://docs.example.test/b', title: 'Beta Document' }, ref_id: 'src-2', citations: ['Cited source X'] },
+    {
+      id: 'n1',
+      caption: 'Alpha Entity',
+      labels: ['Entity'],
+      entity_type: 'PERSON',
+      degree: 2,
+      props: { name: 'Alpha Entity' },
+    },
+    {
+      id: 'n2',
+      caption: 'Beta Document',
+      labels: ['Document'],
+      degree: 1,
+      props: { url: 'https://docs.example.test/b', title: 'Beta Document' },
+      ref_id: 'src-2',
+      citations: ['Cited source X'],
+    },
   ],
   edges: [{ id: 'e1', source: 'n1', target: 'n2', rel_type: 'MENTIONS' }],
   schema: { labels: ['Entity', 'Document'], rel_types: ['MENTIONS'], entity_types: ['PERSON'] },
   query: 'MATCH (e:Entity)-[r]-(n) RETURN e, r, n',
 };
 
-const SCHEMA = { labels: ['Entity', 'Document'], rel_types: ['MENTIONS'], entity_types: ['PERSON'] };
+const SCHEMA = {
+  labels: ['Entity', 'Document'],
+  rel_types: ['MENTIONS'],
+  entity_types: ['PERSON'],
+};
 
 async function installGraphRoutes(page: Page) {
   await page.route('**/api/conversations*', (route) => {
@@ -48,13 +67,21 @@ async function installGraphRoutes(page: Page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
   await page.route('**/threads/*/messages', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages: [] }) }),
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages: [] }),
+    }),
   );
   await page.route('**/api/graph/schema', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SCHEMA) }),
   );
   await page.route('**/api/graph/query', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(POPULATED) }),
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(POPULATED),
+    }),
   );
 }
 
@@ -66,7 +93,9 @@ async function openGraphSurface(page: Page) {
 }
 
 test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
-  test('opens the WebGL canvas with the a11y node/edge list and path strip', async ({ page }, testInfo) => {
+  test('opens the WebGL canvas with the a11y node/edge list and path strip', async ({
+    page,
+  }, testInfo) => {
     await openGraphSurface(page);
 
     // The canvas region renders with role="img" + an accessible name naming the counts.
@@ -87,9 +116,13 @@ test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
     });
   });
 
-  test('selecting a node from the list opens the read-only inspector with its citations', async ({ page }) => {
+  test('selecting a node from the list opens the read-only inspector with its citations', async ({
+    page,
+  }) => {
     await openGraphSurface(page);
-    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({
+      timeout: 15000,
+    });
 
     // Select the Document node from the node list (the non-hover access path).
     await page.getByRole('button', { name: /Beta Document/ }).click();
@@ -105,9 +138,13 @@ test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
     await expect(inspector.getByRole('button', { name: /add note/i })).toHaveCount(0);
   });
 
-  test('Show Cypher reveals the read-only query — never an editable input (D-04/D-09)', async ({ page }) => {
+  test('Show Cypher reveals the read-only query — never an editable input (D-04/D-09)', async ({
+    page,
+  }) => {
     await openGraphSurface(page);
-    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({
+      timeout: 15000,
+    });
 
     await page.getByRole('button', { name: /Beta Document/ }).click();
     const inspector = page.getByRole('complementary', { name: 'Select a node' });

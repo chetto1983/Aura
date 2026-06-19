@@ -113,10 +113,9 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     expect(sigmaShim.setSetting).toHaveBeenCalledWith('nodeReducer', expect.any(Function));
     expect(sigmaShim.setSetting).toHaveBeenCalledWith('edgeReducer', expect.any(Function));
     // Exercise the installed edge reducer (covers the getGraph/source/target path).
-    const edgeReducer = sigmaShim.setSetting.mock.calls.find((c) => c[0] === 'edgeReducer')?.[1] as (
-      id: string,
-      data: Record<string, unknown>,
-    ) => Record<string, unknown>;
+    const edgeReducer = sigmaShim.setSetting.mock.calls.find(
+      (c) => c[0] === 'edgeReducer',
+    )?.[1] as (id: string, data: Record<string, unknown>) => Record<string, unknown>;
     expect(edgeReducer('e1', { color: '#000' })).toBeTruthy();
   });
 });

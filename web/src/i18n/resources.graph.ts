@@ -18,7 +18,8 @@ export const graphEn = {
     },
     inspector: {
       emptyHeading: 'Select a node',
-      emptyBody: 'Pick a node on the canvas, or from the list, to see its details, connections, and sources.',
+      emptyBody:
+        'Pick a node on the canvas, or from the list, to see its details, connections, and sources.',
       pinPath: 'Pin path',
       openSource: 'Open source',
       showCypher: 'Show Cypher',
@@ -30,7 +31,8 @@ export const graphEn = {
       noCitations: 'No citations for this node.',
     },
     error: {
-      query: "Couldn't load the graph. The query failed or the graph service is unavailable. Retry, or check the runtime status.",
+      query:
+        "Couldn't load the graph. The query failed or the graph service is unavailable. Retry, or check the runtime status.",
       schema: "Couldn't load the graph structure. Retry.",
       auth: 'Your session has expired. Sign in again to view the graph.',
       retry: 'Retry',
@@ -73,7 +75,8 @@ export const graphIt = {
     },
     inspector: {
       emptyHeading: 'Seleziona un nodo',
-      emptyBody: 'Scegli un nodo sulla tela, o dalla lista, per vederne dettagli, connessioni e fonti.',
+      emptyBody:
+        'Scegli un nodo sulla tela, o dalla lista, per vederne dettagli, connessioni e fonti.',
       pinPath: 'Fissa percorso',
       openSource: 'Apri fonte',
       showCypher: 'Mostra Cypher',
@@ -85,7 +88,8 @@ export const graphIt = {
       noCitations: 'Nessuna citazione per questo nodo.',
     },
     error: {
-      query: 'Impossibile caricare il grafo. La query è fallita o il servizio del grafo non è disponibile. Riprova, o controlla lo stato del runtime.',
+      query:
+        'Impossibile caricare il grafo. La query è fallita o il servizio del grafo non è disponibile. Riprova, o controlla lo stato del runtime.',
       schema: 'Impossibile caricare la struttura del grafo. Riprova.',
       auth: 'La tua sessione è scaduta. Accedi di nuovo per visualizzare il grafo.',
       retry: 'Riprova',

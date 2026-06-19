@@ -74,7 +74,9 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     render(<GraphExplorer threadId="thread-123" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Your session has expired. Sign in again to view the graph.')).toBeTruthy();
+      expect(
+        screen.getByText('Your session has expired. Sign in again to view the graph.'),
+      ).toBeTruthy();
     });
     // The visible auth error is an alert, never a silent blank canvas.
     expect(screen.getByRole('alert')).toBeTruthy();
@@ -114,7 +116,10 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
 
   it('shows the cap notice when the seed result hits the node/edge caps', async () => {
     const big: GraphResult = {
-      nodes: Array.from({ length: 80 }, (_, i) => ({ id: `n${String(i)}`, caption: `N${String(i)}` })),
+      nodes: Array.from({ length: 80 }, (_, i) => ({
+        id: `n${String(i)}`,
+        caption: `N${String(i)}`,
+      })),
       edges: [],
       schema: SCHEMA,
       query: 'MATCH (n) RETURN n',
