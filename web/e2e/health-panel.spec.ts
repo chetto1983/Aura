@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
 // WEB-04: the embedded operator shell renders a read-only runtime health panel that
@@ -19,10 +19,21 @@ test.describe('runtime health panel', () => {
 
   test('renders the Runtime panel with dot+label status rows over /healthz + /readyz', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await gotoAuthenticated(page, '/');
 
-    const panel = page.getByRole('region', { name: /runtime/i });
+    // <lg viewports collapse the runtime panel into a right drawer reached from the
+    // header status chip; ≥lg it is a permanent column. Resolve the panel's scope per
+    // viewport so the SAME rows are asserted on desktop and mobile.
+    let scope: Locator = page.locator('body');
+    if (testInfo.project.name.startsWith('mobile')) {
+      await page.getByRole('button', { name: 'Open runtime status' }).click();
+      const sheet = page.getByRole('dialog', { name: 'Display workspace' });
+      await expect(sheet).toBeVisible();
+      scope = sheet;
+    }
+
+    const panel = scope.getByRole('region', { name: /runtime/i });
     await expect(panel.getByRole('heading', { name: 'Runtime' })).toBeVisible();
 
     // Static row labels prove the rows rendered (the non-pending, non-unreachable

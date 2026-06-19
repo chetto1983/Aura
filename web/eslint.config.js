@@ -19,6 +19,9 @@ export default tseslint.config(
       'node_modules.broken/**',
       '.stryker-tmp/**',
       'reports/**',
+      // Plain Node test-infra script (a local TLS terminator for the WebKit e2e
+      // project); not part of any TS project, so exclude it from typed linting.
+      'e2e/https-proxy.mjs',
     ],
   },
   js.configs.recommended,

@@ -46,6 +46,15 @@ for (const key of SERVE_ENV_KEYS) {
 const SERVE_ORIGIN = process.env.AURA_E2E_ORIGIN ?? 'http://127.0.0.1:9080';
 const USE_EXTERNAL_SERVE = process.env.AURA_E2E_ORIGIN !== undefined;
 
+// The cockpit session cookie is `__Host-aura_session; Secure`. WebKit (unlike Chromium,
+// which whitelists 127.0.0.1) refuses to store a Secure cookie over plain http, so the
+// mobile-safari (iPhone 13) profile can only authenticate against an HTTPS origin —
+// exactly how a real device reaches the cockpit (caddy :443). When AURA_E2E_HTTPS_ORIGIN
+// points at a local TLS terminator (web/e2e/https-proxy.mjs → the http serve), the
+// mobile-safari project is enabled against it; otherwise it is omitted (so CI, which has
+// no proxy, runs chromium + mobile-chrome only and stays green).
+const HTTPS_ORIGIN = process.env.AURA_E2E_HTTPS_ORIGIN;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -57,8 +66,34 @@ export default defineConfig({
   // page.route() never sees them (the golden-replay E2E mocks /agent/run + /api/* at the
   // page-network layer). Blocking the SW keeps every request on the routable path; it does
   // not change the app under test (the SW is an offline-cache optimisation, not behaviour).
-  use: { baseURL: SERVE_ORIGIN, trace: 'on-first-retry', serviceWorkers: 'block' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  use: {
+    baseURL: SERVE_ORIGIN,
+    trace: 'on-first-retry',
+    // Evidence capture: a screenshot + a video are retained ONLY when a test fails, so
+    // a green run leaves no artifacts but a regression is diagnosable (Phase 26 QA).
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    serviceWorkers: 'block',
+  },
+  // Desktop chromium + two realistic mobile device profiles (Pixel 5 = mobile Chrome,
+  // iPhone 13 = mobile WebKit). The Phase 26 typed-display surface (cards, citations,
+  // Source Explorer sheet, pagination) is validated on all three so the cockpit holds
+  // on a touch viewport, not just desktop.
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
+    // mobile-safari is enabled only when an HTTPS origin is provided (the __Host-/Secure
+    // cookie needs https for WebKit — see HTTPS_ORIGIN above). It overrides baseURL to the
+    // TLS proxy and ignores the self-signed cert.
+    ...(HTTPS_ORIGIN !== undefined
+      ? [
+          {
+            name: 'mobile-safari',
+            use: { ...devices['iPhone 13'], baseURL: HTTPS_ORIGIN, ignoreHTTPSErrors: true },
+          },
+        ]
+      : []),
+  ],
   // When AURA_E2E_ORIGIN points at an already-running serve, do NOT manage a webServer
   // (the external instance is reused verbatim). Otherwise launch `aura serve` and gate on
   // /healthz (PG-only liveness; the e2e stack provisions Postgres only).

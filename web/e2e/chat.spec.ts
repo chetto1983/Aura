@@ -240,7 +240,7 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
 
   test('prompt -> stream -> inline approval resolve -> resume, footer updates', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const g = golden;
     if (g === null) throw new Error('golden fixture not loaded'); // beforeAll guards this
     await installGoldenRoutes(page, g);
@@ -282,6 +282,11 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
     // 4) The runtime footer shows non-zero tokens/cost after the turn (CHAT-04).
     const footer = page.getByRole('contentinfo').or(page.locator('footer'));
     const detail = footer.locator('#footer-telemetry-detail');
+    // <sm viewports collapse the full instrument cluster behind a tap-to-expand
+    // disclosure (RuntimeFooter AC-7); expand it on mobile so the detail is visible.
+    if (testInfo.project.name.startsWith('mobile')) {
+      await footer.locator('button[aria-controls="footer-telemetry-detail"]').click();
+    }
     await expect(detail).toBeVisible({ timeout: 15000 });
     await expect(detail.getByText('$', { exact: false }).first()).toBeVisible();
     // Non-zero token figure: the per-turn prompt+completion (120+18 or 140+22) is rendered.
