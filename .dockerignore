@@ -7,3 +7,6 @@ output
 coverage.out
 tmp
 internal/runner/conversations
+**/.stryker-tmp
+web/test-results
+web/playwright-report
