@@ -76,3 +76,4 @@ output/*
 internal/runner/conversations/*
 web/node_modules.broken/*
 .tmp/*
+env.linux
