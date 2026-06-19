@@ -139,29 +139,17 @@ function auraCssCompatLintPlugin(): Plugin {
 
         // Tailwind preflight emits this legacy normalization, which webhint flags
         // as a hard compat error in Edge Tools. The app does not rely on it.
-        const cleaned = item.source.replace(legacyTextSizeAdjust, '');
-        if (cleaned === item.source) {
-          continue;
-        }
-
-        const oldFileName = item.fileName;
-        const hash = revisionOf(cleaned).slice(0, 8);
-        const newFileName = oldFileName.match(/-[A-Za-z0-9_-]+\.css$/u)
-          ? oldFileName.replace(/-[A-Za-z0-9_-]+\.css$/u, `-${hash}.css`)
-          : oldFileName.replace(/\.css$/u, `-${hash}.css`);
-
-        item.source = cleaned;
-        item.fileName = newFileName;
-
-        for (const entry of Object.values(bundle)) {
-          if (entry.type === 'chunk') {
-            entry.code = entry.code.split(oldFileName).join(newFileName);
-            continue;
-          }
-          if (typeof entry.source === 'string') {
-            entry.source = entry.source.split(oldFileName).join(newFileName);
-          }
-        }
+        //
+        // Strip it IN PLACE and KEEP the original hashed filename. An earlier version
+        // renamed the asset to a fresh post-strip hash and rewrote every reference, but
+        // under rolldown that rewrite missed the CSS reference inside lazy ROUTE CHUNKS
+        // (e.g. AppShell): the chunk kept pointing at the pre-strip hash while the file
+        // on disk carried the post-strip hash, so the stylesheet 404'd. Chromium
+        // tolerated the failed preload; WebKit/Safari (iOS) strict-MIME-rejected the
+        // text/plain 404 and crashed the SPA to its error boundary. Keeping the
+        // rolldown-emitted name leaves every reference resolvable; the vite content hash
+        // already rotates whenever the source CSS changes, so cache-busting is intact.
+        item.source = item.source.replace(legacyTextSizeAdjust, '');
       }
     },
   };
