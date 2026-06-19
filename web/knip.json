@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "ignoreExportsUsedInFile": true,
+  "ignore": ["e2e/https-proxy.mjs"],
   "ignoreDependencies": ["assistant-stream"]
 }

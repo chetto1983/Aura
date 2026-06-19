@@ -64,8 +64,12 @@ test.describe('multimodal browser uploads', () => {
         for (const [name, value] of Object.entries(headers)) {
           xhr.setRequestHeader(name, value);
         }
-        xhr.onload = () => resolve(xhr.status);
-        xhr.onerror = () => reject(new Error(`upload failed: ${presigned.upload.upload_url}`));
+        xhr.onload = () => {
+          resolve(xhr.status);
+        };
+        xhr.onerror = () => {
+          reject(new Error(`upload failed: ${presigned.upload.upload_url}`));
+        };
         xhr.send(body);
       });
       await fetch(`/api/assets/${encodeURIComponent(presigned.asset.id)}`, { method: 'DELETE' });
