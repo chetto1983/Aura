@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: planning
-stopped_at: Closed Phase 27 (27-04-PLAN.md) — operator directive
-last_updated: "2026-06-19"
+status: completed
+stopped_at: Phase 28 context gathered
+last_updated: "2026-06-19T20:01:04.359Z"
 last_activity: 2026-06-19
 progress:
   total_phases: 9
@@ -383,9 +383,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-19T10:42:15.153Z
-Stopped at: Completed 27-03-PLAN.md
-Resume file: None
+Last session: 2026-06-19T20:01:04.334Z
+Stopped at: Phase 28 context gathered
+Resume file: .planning/phases/28-governance-boards-web-onboarding/28-CONTEXT.md
 
 ## Operator Next Steps
 
