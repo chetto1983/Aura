@@ -501,19 +501,22 @@ The path strip (D-10) doubles as the primary accessible representation of a sele
 | A6 | `apoc.meta.schema()`/`apoc.meta.stats()` are available (APOC installed) for the schema endpoint. | Schema endpoint | LOW — APOC + GDS confirmed in compose.yaml. |
 | A7 | The graph endpoints can reach a `knowledge.Client` opened for the serve lifetime (or lazily per-request). The daemon holds no long-lived graph client today. | Component table, serve.go | MEDIUM — planner must decide: open one `knowledge.Client` at boot for `SetGraphView` (simplest; one extra subprocess) vs lazy-open per request (no idle subprocess, higher per-call latency from connect+handshake). Recommend boot-time open behind the existing reverse-close teardown, mirroring how chat.go conditionally opens one. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does Aura's live loop actually populate `:Conversation`/`:Message` nodes with `session_id == ThreadID`, or only `:Entity` nodes?**
    - What we know: agent-memory's schema supports it; `sessionID = Event.ThreadID`; the recall integration test seeds + recalls a tagged memory.
    - What's unclear: whether the production loop calls `memory_store_message` (creating `:Conversation`/`:Message`) or only entity extraction — this determines whether the seed path matches on `:Conversation` or must start from `:Entity` with a session/episode property.
    - Recommendation: Wave-0 probe a real thread's footprint (`MATCH (c:Conversation) RETURN c.session_id LIMIT 5` then the full seed path). If `:Conversation` is absent, fall back to a session-scoped `:Entity`/`:Episode` seed; the schema-overview default (D-08) guarantees a non-blank open either way.
+   - **RESOLVED** — the design never assumes `:Conversation` exists: it seeds the active-conversation footprint when present and **falls back to the schema overview (D-08)** when absent, so the default open is never blank regardless of which memory tools the loop calls. The empirical footprint is confirmed by the Wave-0 `neo4j_integration` probe in **27-01 Task 3 (`TestGraphViewLive`)**, which records the real `:Conversation`/`:Message`/`:Entity` footprint in a `t.Log` and asserts the schema-overview fallback for an empty seed. No code path requires `:Conversation` to be present.
 
 2. **Boot-time vs lazy `knowledge.Client` for the graph routes.**
    - What we know: the daemon holds no long-lived graph client; `chat.go` opens one conditionally.
    - Recommendation: open ONE at boot, register via `SetGraphView`, append `Close` to the existing `mcpClosers` reverse-close teardown. Lazy-open only if an idle-subprocess cost is a concern.
+   - **RESOLVED** — **boot-time open**, implemented in **27-02 Task 2** (`cmd/aura/serve.go`): one `knowledge.Client` opened for the serve lifetime, wired via `aguiServer.SetGraphView(knowledge.NewGraphView(gclient))`, with `gclient.Close` appended to the existing reverse-close teardown; a failed `knowledge.Open` logs a warning and leaves the routes at 503 rather than aborting serve boot.
 
 3. **Schema-cache TTL value + env var.**
    - Recommendation: 30–60 s in-process TTL, optional `AURA_GRAPH_SCHEMA_TTL_SEC` (default 60). Per-open call is also acceptable (the schema query is cheap). Claude's discretion per D-06.
+   - **RESOLVED** — **Claude's discretion per D-06**: a short in-process TTL (~30–60 s) keyed globally, or a per-open call (the schema query is cheap), with an optional `AURA_GRAPH_SCHEMA_TTL_SEC` env (default 60). Either is acceptable for this read-only milestone; the executor picks one at implementation time. No further operator input needed.
 
 ## Environment Availability
 
