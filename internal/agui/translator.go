@@ -93,6 +93,17 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !emitToolInvocation(yield, idgen, ti) {
 					return
 				}
+				// The tool-RESULT event (ToolInvocationEnd) also carries the additive CUSTOM
+				// payloads the Meta lift / display normalizer attached to the SAME event
+				// (Actions.ArtifactDelta / Actions.Display, llm_agent_events.go). Emit them
+				// right after the TOOL_CALL_END/RESULT, correlated by tool_call_id — this
+				// branch `continue`s, so the standalone artifact/display branches below are
+				// unreachable for a tool result and would otherwise drop them on the live
+				// SSE. A Start event carries neither, so this is a no-op there; the
+				// standalone branches remain the path for a payload on its own event.
+				if !emitToolResultCustom(yield, ev) {
+					return
+				}
 				continue
 			}
 
@@ -339,6 +350,26 @@ func emitToolInvocation(yield func(events.Event, error) bool, idgen IDGenerator,
 			return false
 		}
 		if !yield(events.NewToolCallResultEvent(idgen.NewToolResultID(ti.ToolCallID), ti.ToolCallID, ti.ResultPreview), nil) {
+			return false
+		}
+	}
+	return true
+}
+
+// emitToolResultCustom emits the additive CUSTOM events (artifact descriptor, typed
+// display) that ride a tool-result Event alongside its TOOL_CALL_RESULT. They share
+// the event with the tool_call_id marker + ToolInvocation, so the tool-lifecycle
+// branch must emit them inline — the standalone artifact/display branches are
+// unreachable for a tool result. A nil/empty payload is skipped, so a Start event or
+// a plain result is a no-op. Returns false only when the consumer stops the stream.
+func emitToolResultCustom(yield func(events.Event, error) bool, ev *agent.Event) bool {
+	if len(ev.Actions.ArtifactDelta) > 0 {
+		if !yield(events.NewCustomEvent(artifactEventName, events.WithValue(ev.Actions.ArtifactDelta)), nil) {
+			return false
+		}
+	}
+	if ev.Actions.Display != nil {
+		if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
 			return false
 		}
 	}

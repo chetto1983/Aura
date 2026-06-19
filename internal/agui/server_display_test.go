@@ -72,11 +72,14 @@ func TestProjectMessagesDisplay(t *testing.T) {
 // a tool with no normalizer (shell_exec) produces NO display on the snapshot — the
 // replay renders the raw card, identical to live.
 func TestProjectMessagesDisplayUnrecognizedNoDisplay(t *testing.T) {
+	// fs_read is not a display-recognized tool (the normalizer wires web_search/
+	// web_fetch/swarm_spawn/shell_exec/sandbox_exec), so its result re-derives no
+	// display — the D-FALLBACK raw card stands on replay exactly as live.
 	var call llm.ToolCall
 	call.ID = "c2"
 	call.Type = "function"
-	call.Function.Name = "shell_exec"
-	call.Function.Arguments = `{"cmd":"ls"}`
+	call.Function.Name = "fs_read"
+	call.Function.Arguments = `{"path":"x"}`
 	hist := []llm.Message{
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
 		{Role: llm.RoleTool, ToolCallID: "c2", Content: "file1\nfile2"},
