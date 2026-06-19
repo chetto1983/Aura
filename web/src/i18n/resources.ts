@@ -1,4 +1,5 @@
 import { displayEn, displayIt } from './resources.display';
+import { graphEn, graphIt } from './resources.graph';
 
 export const resources = {
   en: {
@@ -141,6 +142,7 @@ export const resources = {
         },
       },
       ...displayEn,
+      ...graphEn,
       conversations: {
         heading: 'Conversations',
         loading: 'Loading conversations...',
@@ -415,6 +417,7 @@ export const resources = {
         },
       },
       ...displayIt,
+      ...graphIt,
       conversations: {
         heading: 'Conversazioni',
         loading: 'Caricamento conversazioni...',
