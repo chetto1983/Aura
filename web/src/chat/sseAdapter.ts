@@ -336,24 +336,24 @@ export interface StreamPostOptions {
   readonly newId?: () => string;
 }
 
-/**
- * POST an arbitrary SSE re-run endpoint (the D-09 branch edit / select / regenerate
- * routes) and fold the AG-UI reply onto one assistant message, exactly like streamRun.
- * The branch routes stream the same translated turn shape as /agent/run, so the same
- * reducer drives both — the only difference is the URL + body. Returns the turn usage.
- */
-export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | undefined> {
+const SSE_REQUEST_HEADERS: HeadersInit = {
+  'Content-Type': 'application/json',
+  Accept: 'text/event-stream',
+};
+
+interface StreamSSEOptions {
+  readonly request: (assistantId: string) => readonly [string, RequestInit];
+  readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
+  readonly newId?: (() => string) | undefined;
+}
+
+async function streamSSE(opts: StreamSSEOptions): Promise<TurnUsage | undefined> {
   const id = (opts.newId ?? (() => crypto.randomUUID()))();
   const state = newAssistantTurn(id);
   opts.onUpdate(toThreadMessage(state), state.usage);
 
-  const res = await fetch(opts.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    credentials: 'same-origin',
-    ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
-    signal: opts.signal,
-  });
+  const [url, init] = opts.request(id);
+  const res = await fetch(url, init);
 
   if (!res.ok || res.body === null) {
     state.error = await errorDetail(res);
@@ -370,46 +370,56 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
 }
 
 /**
+ * POST an arbitrary SSE re-run endpoint (the D-09 branch edit / select / regenerate
+ * routes) and fold the AG-UI reply onto one assistant message, exactly like streamRun.
+ * The branch routes stream the same translated turn shape as /agent/run, so the same
+ * reducer drives both — the only difference is the URL + body. Returns the turn usage.
+ */
+export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | undefined> {
+  return streamSSE({
+    newId: opts.newId,
+    onUpdate: opts.onUpdate,
+    request: () => [
+      opts.url,
+      {
+        method: 'POST',
+        headers: SSE_REQUEST_HEADERS,
+        credentials: 'same-origin',
+        ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+        signal: opts.signal,
+      },
+    ],
+  });
+}
+
+/**
  * POST /agent/run and stream the reply, folding each AG-UI frame onto one
  * assistant message and invoking onUpdate. Uses fetch + ReadableStream (NOT
  * EventSource — it cannot POST a body); the caller's AbortSignal is the Stop
  * affordance (the server's streamSSE unwinds cleanly on ctx.Done).
  */
 export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | undefined> {
-  const id = (opts.newId ?? (() => crypto.randomUUID()))();
-  const state = newAssistantTurn(id);
-  opts.onUpdate(toThreadMessage(state), state.usage);
-
-  // The backend handler decodes an AG-UI RunAgentInput (threadId + messages[]);
-  // it drives the turn off the LAST user message (server.go lastUserMessage) and
-  // resolves threadId to an EXISTING conversation (404 otherwise). The body shape
-  // mirrors the gateway test's runPayload exactly (internal/agui/server_test.go).
-  const res = await fetch('/agent/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    credentials: 'same-origin',
-    body: JSON.stringify({
-      threadId: opts.threadId,
-      messages: [{ id: id, role: 'user', content: opts.userText }],
-      ...(opts.attachmentIds !== undefined && opts.attachmentIds.length > 0
-        ? { aura: { attachment_ids: opts.attachmentIds } }
-        : {}),
-    }),
-    signal: opts.signal,
+  return streamSSE({
+    newId: opts.newId,
+    onUpdate: opts.onUpdate,
+    request: (id) => [
+      '/agent/run',
+      {
+        method: 'POST',
+        headers: SSE_REQUEST_HEADERS,
+        credentials: 'same-origin',
+        // The backend decodes an AG-UI RunAgentInput and requires an existing thread.
+        body: JSON.stringify({
+          threadId: opts.threadId,
+          messages: [{ id: id, role: 'user', content: opts.userText }],
+          ...(opts.attachmentIds !== undefined && opts.attachmentIds.length > 0
+            ? { aura: { attachment_ids: opts.attachmentIds } }
+            : {}),
+        }),
+        signal: opts.signal,
+      },
+    ],
   });
-
-  if (!res.ok || res.body === null) {
-    state.error = await errorDetail(res);
-    state.status = { type: 'incomplete', reason: 'error' };
-    opts.onUpdate(toThreadMessage(state), state.usage);
-    return state.usage;
-  }
-
-  for await (const frame of readSSEFrames(res.body)) {
-    reduceFrame(state, frame);
-    opts.onUpdate(toThreadMessage(state), state.usage);
-  }
-  return state.usage;
 }
 
 // ---------------------------------------------------------------------------

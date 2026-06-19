@@ -1010,8 +1010,17 @@ jobs:
       CI: "true"
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_WEB_AUTH_SECRET: ci-not-a-secret
       NEO4J_PASSWORD: ci-test-password
       OPENROUTER_API_KEY: ci-degraded-no-network
+      AURA_OBJECTSTORE_BACKEND: garage
+      AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
+      AURA_OBJECTSTORE_PUBLIC_ENDPOINT: http://127.0.0.1:3900
+      AURA_OBJECTSTORE_REGION: garage
+      AURA_OBJECTSTORE_BUCKET: aura-assets
+      AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
+      AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      AURA_OBJECTSTORE_PATH_STYLE: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v6

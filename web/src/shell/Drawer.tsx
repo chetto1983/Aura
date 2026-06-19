@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { focusFirstDescendant, trapTabKey } from '../a11y/focusTrap';
 import { useScrollLock } from './useScrollLock';
 
 /**
@@ -27,10 +28,7 @@ export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
-    const focusable = panel?.querySelector<HTMLElement>(
-      'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
-    );
-    focusable?.focus();
+    focusFirstDescendant(panel);
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
@@ -38,23 +36,7 @@ export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
         onClose('explicit');
         return;
       }
-      if (event.key !== 'Tab' || !panel) return;
-      const nodes = Array.from(
-        panel.querySelectorAll<HTMLElement>(
-          'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((node) => !node.hasAttribute('disabled'));
-      if (nodes.length === 0) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, panel);
     }
 
     document.addEventListener('keydown', onKeyDown);
