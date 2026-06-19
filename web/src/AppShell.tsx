@@ -20,6 +20,10 @@ const ExternalStoreChat = lazy(() =>
   import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
 );
 
+// The Frame-06 Graph Explorer is a SEPARATE lazy chunk (Pitfall 7): the Sigma WebGL stack it
+// pulls in must never land in the main bundle — it loads only when surface==='graph'.
+const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
+
 interface LogoutTarget {
   path: string;
   headers?: Record<string, string>;
@@ -220,19 +224,25 @@ export function AppShell() {
                   role="status"
                   className="grid h-full place-items-center text-sm text-text-muted"
                 >
-                  {t('chat.loading')}
+                  {surface === 'graph' ? t('graph.loading') : t('chat.loading')}
                 </div>
               }
             >
-              <ExternalStoreChat
-                threadId={activeThreadId}
-                onEnsureThread={ensureThread}
-                onUsage={setUsage}
-                resumeNonce={resumeNonce}
-              />
+              {surface === 'graph' ? (
+                <GraphExplorer threadId={activeThreadId} />
+              ) : (
+                <ExternalStoreChat
+                  threadId={activeThreadId}
+                  onEnsureThread={ensureThread}
+                  onUsage={setUsage}
+                  resumeNonce={resumeNonce}
+                />
+              )}
             </Suspense>
           </div>
-          <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
+          {surface !== 'graph' ? (
+            <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
+          ) : null}
         </section>
 
         <aside
