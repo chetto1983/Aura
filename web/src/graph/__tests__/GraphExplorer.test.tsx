@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import type { GraphResult, GraphSchema } from '../types';
 
@@ -93,14 +93,103 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     expect(fetchGraphSchema).not.toHaveBeenCalled();
   });
 
-  it('renders the query/service error state on a non-401 rejection', async () => {
-    postGraphQuery.mockRejectedValue(new Error('HTTP 503'));
+  it('renders the query/service error state on a non-401 rejection, and retry re-fetches', async () => {
+    postGraphQuery.mockRejectedValueOnce(new Error('HTTP 503'));
 
     render(<GraphExplorer threadId="thread-123" />);
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
     });
-    expect(screen.getByText('Retry')).toBeTruthy();
+    const retry = screen.getByText('Retry');
+    expect(retry).toBeTruthy();
+
+    // Retry re-dispatches the intent — now it succeeds and the canvas mounts.
+    postGraphQuery.mockResolvedValueOnce(POPULATED_RESULT);
+    fireEvent.click(retry);
+    await waitFor(() => {
+      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+    });
+  });
+
+  it('shows the cap notice when the seed result hits the node/edge caps', async () => {
+    const big: GraphResult = {
+      nodes: Array.from({ length: 80 }, (_, i) => ({ id: `n${String(i)}`, caption: `N${String(i)}` })),
+      edges: [],
+      schema: SCHEMA,
+      query: 'MATCH (n) RETURN n',
+    };
+    postGraphQuery.mockResolvedValue(big);
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(screen.getByText(/Showing the top/)).toBeTruthy();
+    });
+  });
+
+  it('the seed CTA re-runs the intent (the SeedFilterPanel onSeed path)', async () => {
+    postGraphQuery.mockResolvedValue(POPULATED_RESULT);
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+    });
+    const calls = postGraphQuery.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Explore this conversation' }));
+    await waitFor(() => {
+      expect(postGraphQuery.mock.calls.length).toBeGreaterThan(calls);
+    });
+  });
+
+  it('toggling a filter label + selecting a node from the path strip opens the inspector', async () => {
+    postGraphQuery.mockResolvedValue(POPULATED_RESULT);
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+    });
+    // Filter toggle (the dispatch path).
+    fireEvent.click(screen.getByRole('button', { name: 'Entity' }));
+    // Select a node via the path-strip node list (the non-hover access path) → inspector opens.
+    fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
+    expect(screen.getByText('Connections')).toBeTruthy(); // inspector degree label
+  });
+
+  it('falls to the schema-error state when the empty-seed schema fetch also fails', async () => {
+    postGraphQuery.mockResolvedValue(EMPTY_RESULT);
+    fetchGraphSchema.mockRejectedValue(new Error('HTTP 500'));
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load the graph structure. Retry.")).toBeTruthy();
+    });
+  });
+
+  it('surfaces an auth error when the empty-seed schema fetch returns 401', async () => {
+    postGraphQuery.mockResolvedValue(EMPTY_RESULT);
+    fetchGraphSchema.mockRejectedValue(new Error('HTTP 401'));
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(
+        screen.getByText('Your session has expired. Sign in again to view the graph.'),
+      ).toBeTruthy();
+    });
+  });
+
+  it('pin path from the inspector highlights the node + its neighbors in the path strip', async () => {
+    postGraphQuery.mockResolvedValue(POPULATED_RESULT);
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+    });
+    // Open the inspector on Alpha, then pin its path.
+    fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin path' }));
+    // The path strip now mirrors Alpha + its neighbor Bravo (connected via e1).
+    const pathSection = screen.getByLabelText('Selected path');
+    expect(pathSection.textContent).toContain('Alpha');
+    expect(pathSection.textContent).toContain('Bravo');
   });
 });

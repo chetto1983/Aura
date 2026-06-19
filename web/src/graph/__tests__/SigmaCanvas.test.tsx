@@ -74,17 +74,49 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
 
   it('registers node events so a canvas click can open the inspector (non-hover path wiring)', () => {
     registerEvents.mockClear();
+    const onNodeClick = vi.fn();
     render(
       <SigmaCanvas
         nodes={NODES}
         edges={EDGES}
         pinnedPath={new Set(['n1', 'n2'])}
         sigmaKey={1}
-        onNodeClick={vi.fn()}
+        onNodeClick={onNodeClick}
       />,
     );
     expect(registerEvents).toHaveBeenCalled();
-    const handlers = registerEvents.mock.calls[0]?.[0] as { clickNode?: unknown };
+    const handlers = registerEvents.mock.calls[0]?.[0] as {
+      clickNode?: (p: { node: string }) => void;
+      enterNode?: () => void;
+      leaveNode?: () => void;
+    };
     expect(typeof handlers.clickNode).toBe('function');
+    // clickNode forwards the node id to the inspector opener; enter/leave toggle the cursor.
+    handlers.clickNode?.({ node: 'n1' });
+    expect(onNodeClick).toHaveBeenCalledWith('n1');
+    handlers.enterNode?.();
+    handlers.leaveNode?.();
+  });
+
+  it('installs the pinned-path reducers on the live sigma instance (HighlightManager)', () => {
+    sigmaShim.setSetting.mockClear();
+    render(
+      <SigmaCanvas
+        nodes={NODES}
+        edges={EDGES}
+        pinnedPath={new Set(['n1', 'n2'])}
+        sigmaKey={2}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    // HighlightManager set both the node + edge reducers and refreshed.
+    expect(sigmaShim.setSetting).toHaveBeenCalledWith('nodeReducer', expect.any(Function));
+    expect(sigmaShim.setSetting).toHaveBeenCalledWith('edgeReducer', expect.any(Function));
+    // Exercise the installed edge reducer (covers the getGraph/source/target path).
+    const edgeReducer = sigmaShim.setSetting.mock.calls.find((c) => c[0] === 'edgeReducer')?.[1] as (
+      id: string,
+      data: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    expect(edgeReducer('e1', { color: '#000' })).toBeTruthy();
   });
 });

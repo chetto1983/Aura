@@ -6,7 +6,10 @@
   "mutate": [
     "src/chat/displays/**/*.{ts,tsx}",
     "!src/chat/displays/**/__tests__/**",
-    "!src/chat/displays/types.ts"
+    "!src/chat/displays/types.ts",
+    "src/graph/**/*.{ts,tsx}",
+    "!src/graph/**/__tests__/**",
+    "!src/graph/types.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,

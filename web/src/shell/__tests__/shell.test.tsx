@@ -36,6 +36,14 @@ function SurfaceProbe() {
       >
         tree
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          setSurface('graph');
+        }}
+      >
+        graph
+      </button>
     </>
   );
 }
@@ -134,15 +142,27 @@ describe('shell utilities', () => {
   });
 
   it('useSurfaceIntent ignores stored future surfaces and only persists live surfaces', () => {
-    localStorage.setItem('aura.shell.surface', 'graph');
+    // 'displays' is still a future (non-live) surface — a stored future surface is ignored
+    // and clicking another future surface ('tree') does not switch. ('graph' is live as of
+    // Phase 27, covered by the live-switch case below.)
+    localStorage.setItem('aura.shell.surface', 'displays');
     render(<SurfaceProbe />);
     expect(screen.getByText('chat')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'tree' }));
     expect(screen.getByText('chat')).toBeTruthy();
+    expect(localStorage.getItem('aura.shell.surface')).toBe('displays');
+  });
+
+  it('useSurfaceIntent switches to + persists the live graph surface (Phase 27)', () => {
+    render(<SurfaceProbe />);
+    expect(screen.getByText('chat')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'graph' }));
+    // The surface <p> now reads 'graph' (the button shares the text, so query the paragraph).
+    expect(screen.getByText('graph', { selector: 'p' })).toBeTruthy();
     expect(localStorage.getItem('aura.shell.surface')).toBe('graph');
   });
 
-  it('mode controls expose future modes as disabled buttons that do not select', () => {
+  it('mode controls expose future modes as disabled buttons but the live graph mode selects', () => {
     const selected: SurfaceIntent[] = [];
     render(
       <>
@@ -164,16 +184,21 @@ describe('shell utilities', () => {
     const treeButtons = screen.getAllByRole('button', { name: 'Tree' });
     const graphButtons = screen.getAllByRole('button', { name: 'Graph' });
     const treeButton = treeButtons[0];
-    const graphButton = graphButtons[1];
+    const graphButton = graphButtons[0];
     if (!treeButton || !graphButton) throw new Error('Expected desktop and mobile mode controls');
     for (const button of screen.getAllByRole('button', { name: 'Chat' })) {
       expect(button.getAttribute('aria-current')).toBe('page');
     }
-    for (const button of [...treeButtons, ...graphButtons]) {
+    // 'tree' is still a future mode → disabled and not selectable.
+    for (const button of treeButtons) {
       expect(button.getAttribute('aria-disabled')).toBe('true');
+    }
+    // 'graph' is live (Phase 27) → enabled and selectable.
+    for (const button of graphButtons) {
+      expect(button.getAttribute('aria-disabled')).toBeNull();
     }
     fireEvent.click(treeButton);
     fireEvent.click(graphButton);
-    expect(selected).toEqual([]);
+    expect(selected).toEqual(['graph']);
   });
 });

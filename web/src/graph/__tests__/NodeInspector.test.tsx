@@ -100,6 +100,31 @@ describe('NodeInspector (read-only action set + citations)', () => {
     fireEvent.click(screen.getByRole('button', { name: /close/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('inspector pin-path action raises onPinPath with the node', () => {
+    const onPinPath = vi.fn();
+    const node = docNode();
+    render(<NodeInspector node={node} query="" onPinPath={onPinPath} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pin path' }));
+    expect(onPinPath).toHaveBeenCalledWith(node);
+  });
+
+  it('inspector hides open-source for a non-document node + shows the empty state for none', () => {
+    // A non-:Document/:Source/:Chunk node has no "open source" deep-link.
+    render(
+      <NodeInspector
+        node={docNode({ labels: ['Entity'] })}
+        query=""
+        onPinPath={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Open source' })).toBeNull();
+
+    // No node selected → the empty inspector state.
+    render(<NodeInspector node={undefined} query="" onPinPath={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText('Select a node')).toBeTruthy();
+  });
 });
 
 describe('PathStrip (a11y parallel DOM + path mirror)', () => {
@@ -142,6 +167,33 @@ describe('PathStrip (a11y parallel DOM + path mirror)', () => {
     expect(within(pathSection).getByText('Alpha')).toBeTruthy();
     expect(within(pathSection).getByText('Bravo')).toBeTruthy();
   });
+
+  it('path strip arrow keys roam the node list (keyboard traversal, D-03)', () => {
+    render(
+      <PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />,
+    );
+    const alpha = screen.getByRole('button', { name: /Alpha/ });
+    const bravo = screen.getByRole('button', { name: /Bravo/ });
+    alpha.focus();
+    fireEvent.keyDown(alpha, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(bravo);
+    fireEvent.keyDown(bravo, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(alpha);
+    // Space also selects (non-hover path).
+    const onSelectNode = vi.fn();
+    render(
+      <PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={onSelectNode} />,
+    );
+    fireEvent.keyDown(screen.getAllByRole('button', { name: /Alpha/ })[1] as Element, { key: ' ' });
+    expect(onSelectNode).toHaveBeenCalledWith(NODES[0]);
+  });
+
+  it('path strip shows the empty path message when nothing is pinned', () => {
+    render(
+      <PathStrip nodes={NODES} edges={EDGES} pinnedPath={new Set()} onSelectNode={vi.fn()} />,
+    );
+    expect(screen.getByText('No path selected')).toBeTruthy();
+  });
 });
 
 describe('sourcesForNode (pure cross-link projection)', () => {
@@ -150,5 +202,12 @@ describe('sourcesForNode (pure cross-link projection)', () => {
     expect(sources).toHaveLength(1);
     expect(sources[0]?.ref_id).toBe('src-9');
     expect(sources[0]?.url).toBe('https://example.test/a');
+  });
+
+  it('omits url when the node has none, and falls back to id when ref_id is absent', () => {
+    const sources = sourcesForNode({ id: 'bare-1', labels: ['Document'] });
+    expect(sources[0]?.ref_id).toBe('bare-1'); // ref_id falls back to id
+    expect(sources[0]?.url).toBeUndefined(); // no url prop → omitted
+    expect(sources[0]?.title).toBe('bare-1'); // caption falls back to refId
   });
 });

@@ -170,19 +170,24 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   const clientGraph =
     view.result !== undefined ? rowsToClientGraph(view.result) : { nodes: [], edges: [] };
 
+  const seedPanel = (
+    <SeedFilterPanel
+      schema={view.schema}
+      activeLabels={intent.labels}
+      activeRelTypes={intent.relTypes}
+      query={view.result?.query ?? ''}
+      canSeed={threadId.length > 0}
+      onSeed={onSeed}
+      onToggleLabel={onToggleLabel}
+      onToggleRelType={onToggleRelType}
+    />
+  );
+
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[1fr_auto] lg:grid-cols-[16rem_minmax(0,1fr)_20rem] lg:grid-rows-[1fr_auto]">
-      <aside className="hidden min-h-0 border-r border-border lg:block lg:row-span-2">
-        <SeedFilterPanel
-          schema={view.schema}
-          activeLabels={intent.labels}
-          activeRelTypes={intent.relTypes}
-          query={view.result?.query ?? ''}
-          canSeed={threadId.length > 0}
-          onSeed={onSeed}
-          onToggleLabel={onToggleLabel}
-          onToggleRelType={onToggleRelType}
-        />
+    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] lg:grid-cols-[16rem_minmax(0,1fr)_20rem] lg:grid-rows-[1fr_auto]">
+      {/* On mobile the seed panel is a collapsed top strip (max-h); on lg it is the left column. */}
+      <aside className="max-h-48 min-h-0 overflow-y-auto border-b border-border lg:max-h-none lg:border-b-0 lg:border-r lg:row-span-2">
+        {seedPanel}
       </aside>
 
       <section aria-label={t('graph.title')} className="relative min-h-0 bg-bg">
@@ -248,9 +253,19 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         )}
       </section>
 
+      {/* ONE NodeInspector instance (no duplicate DOM / strict-mode collision). On lg it is the
+          right column (always present, shows the empty state when nothing is selected). On mobile
+          (< lg) the column collapses; when a node is selected it becomes a focus-trapped bottom
+          sheet (fixed overlay) — UI-SPEC §Layout: the inspector becomes a sheet on mobile. When
+          nothing is selected on mobile the inspector is hidden (the path-strip node list is the
+          access path). */}
       <aside
         aria-label={t('graph.inspector.emptyHeading')}
-        className="hidden min-h-0 overflow-y-auto border-l border-border bg-surface lg:block"
+        className={`min-h-0 overflow-y-auto border-border bg-surface lg:static lg:block lg:max-h-none lg:border-l ${
+          selected !== undefined
+            ? 'fixed inset-x-0 bottom-0 z-30 max-h-[70svh] border-t shadow-2xl lg:inset-auto lg:z-auto lg:border-t-0 lg:shadow-none'
+            : 'hidden'
+        }`}
       >
         <NodeInspector
           node={selected}

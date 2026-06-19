@@ -70,6 +70,28 @@ const PAIRS = [
   ],
 ];
 
+// Phase-27 label-family ramp (web/src/graph/graphIntent.ts BRAND_RAMP). Each node-fill family
+// must read against the near-black canvas (--color-bg) at the ≥3:1 UI-graphics threshold, and
+// the legend/label TEXT version of each at ≥4.5:1 — color is never the only encoding (WCAG
+// 1.4.1 / D-03), but the fills + legend text must still clear the contrast gate. The ramp is
+// the single source the mapper + this check share, so there is no second per-label palette.
+const GRAPH_RAMP = [
+  ['graph ramp source/info', '#AECBFA'],
+  ['graph ramp agent/success', '#81C995'],
+  ['graph ramp claim/warning', '#FDD663'],
+  ['graph ramp conflict/danger', '#F28B82'],
+  ['graph ramp blue-step', '#A7C7E7'],
+  ['graph ramp topic/violet', '#B4A7D6'],
+  ['graph ramp entity/teal', '#7FC9C3'],
+  ['graph ramp violet-step', '#D7AEFB'],
+];
+for (const [name, hex] of GRAPH_RAMP) {
+  // Node fill vs canvas bg: ≥3:1 (UI graphics).
+  PAIRS.push([`${name} fill on bg`, hex, t('bg'), 3.0, 'ui', false]);
+  // Legend/label text vs surface panel: ≥4.5:1 (normal text).
+  PAIRS.push([`${name} text on surface`, hex, t('surface'), 4.5, 'text', false]);
+}
+
 let failures = 0;
 const rows = PAIRS.map(([name, fg, bg, min, kind, advisory]) => {
   const r = ratio(fg, bg);
