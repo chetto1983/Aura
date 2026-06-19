@@ -246,6 +246,75 @@ func TestGraphQueryErrorSanitized(t *testing.T) {
 	}
 }
 
+// TestGraphQueryValidationBranches exercises every server-side V5 reject (T-27-01/T-27-05):
+// over-long ids, over-long filter tokens, too many filter entries, and a too-large rel-type
+// token. Each is a clean 400 BEFORE the normalizer is reached.
+func TestGraphQueryValidationBranches(t *testing.T) {
+	longID := strings.Repeat("x", graphSeedIDMaxLen+1)
+	longTok := strings.Repeat("L", graphFilterMaxLen+1)
+	manyLabels := make([]string, graphFilterMaxEntries+1)
+	for i := range manyLabels {
+		manyLabels[i] = "Entity"
+	}
+	cases := []struct {
+		name   string
+		intent knowledge.GraphIntent
+	}{
+		{"seed_id too long", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: longID}},
+		{"session too long", knowledge.GraphIntent{Op: knowledge.OpSeed, Session: longID}},
+		{"too many label filters", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: "e1", Labels: manyLabels}},
+		{"label token too long", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: "e1", Labels: []string{longTok}}},
+		{"rel-type token too long", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: "e1", RelTypes: []string{longTok}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gv := fakeGraph()
+			body, _ := json.Marshal(tc.intent)
+			rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if gv.queryReached {
+				t.Fatalf("a rejected intent (%s) reached the normalizer", tc.name)
+			}
+		})
+	}
+}
+
+// TestGraphQueryLabelsOnlyFilter: a labels-only filter (no rel_types) is admitted (200);
+// it validates the labels against the live schema set while the empty rel-type list is the
+// trivial subset (no filter to check).
+func TestGraphQueryLabelsOnlyFilter(t *testing.T) {
+	gv := fakeGraph()
+	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Document"]}`)
+	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if !gv.queryReached {
+		t.Fatalf("a labels-only intent did not reach the normalizer")
+	}
+}
+
+// TestGraphQueryFilterSchemaError: when the filter-validation Schema read fails, the
+// handler surfaces a sanitized non-200 and never dispatches the Query (the unknown-filter
+// gate cannot be evaluated, so the request is refused, not silently passed).
+func TestGraphQueryFilterSchemaError(t *testing.T) {
+	gv := fakeGraph()
+	gv.schemaErr = errors.New("schema read failed at bolt://neo4j:topsecret@db:7687")
+	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Entity"]}`)
+	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want non-200 when the filter-schema read fails", rec.Code)
+	}
+	if gv.queryReached {
+		t.Fatalf("Query was dispatched despite a failed filter-schema read")
+	}
+	if strings.Contains(rec.Body.String(), "topsecret") {
+		t.Fatalf("filter-schema error leaked a credential: %s", rec.Body.String())
+	}
+}
+
 // validCookiePost builds a POST request to path carrying a valid session cookie for the
 // local identity (validCookieReq only builds GETs; the graph query route is a POST).
 func validCookiePost(deps AuthDeps, path string, body []byte) *http.Request {
