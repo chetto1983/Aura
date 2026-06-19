@@ -35,6 +35,7 @@ metrics:
   completed: 2026-06-16
   tasks: 3
   files: 4
+requirements-completed: [WEB-02]
 ---
 
 # Phase 24 Plan 01: Web Foundation — WEB-02 Boot Guard + Config Knobs Summary
