@@ -66,6 +66,63 @@ func TestNormalizeToolPreviewWebFetch(t *testing.T) {
 	}
 }
 
+// TestNormalizeToolPreviewSwarm (SWARM-01 / D-08): the swarm_spawn result preview
+// (compact []ChildReport JSON, swarm/report.go marshalReports) decodes straight into the
+// swarm_report Payload the cockpit SwarmReportTable renders, preserving every field.
+func TestNormalizeToolPreviewSwarm(t *testing.T) {
+	reports := []ChildReport{
+		{GoalIndex: 0, ChildID: "w1", Status: StatusOK, Summary: "did A"},
+		{GoalIndex: 1, ChildID: "w2", Status: StatusFailed, Error: "boom"},
+	}
+	preview, _ := json.Marshal(reports)
+	p, ok := NormalizeToolPreview("c3", "swarm_spawn", string(preview), NewRegistry())
+	if !ok || p.Type != KindSwarmReport || len(p.Swarm) != 2 {
+		t.Fatalf("swarm preview not re-derived: ok=%v p=%+v", ok, p)
+	}
+	if p.Swarm[0].ChildID != "w1" || p.Swarm[1].Error != "boom" {
+		t.Fatalf("swarm fields lost: %+v", p.Swarm)
+	}
+}
+
+// TestNormalizeToolPreviewParitySwarm (D-06 / Pitfall 4): re-deriving from the persisted
+// swarm preview yields the SAME Payload the typed normalizer produces from []ChildReport.
+func TestNormalizeToolPreviewParitySwarm(t *testing.T) {
+	reports := []ChildReport{{GoalIndex: 0, ChildID: "w1", Status: StatusOK, Summary: "s"}}
+	preview, _ := json.Marshal(reports)
+	live, okLive := NormalizeWithRegistry("c1", "swarm_spawn", reports, NewRegistry())
+	replay, okReplay := NormalizeToolPreview("c1", "swarm_spawn", string(preview), NewRegistry())
+	if !okLive || !okReplay {
+		t.Fatalf("recognized live=%v replay=%v", okLive, okReplay)
+	}
+	lb, _ := json.Marshal(live)
+	rb, _ := json.Marshal(replay)
+	if string(lb) != string(rb) {
+		t.Fatalf("swarm replay diverged:\n live=%s\nreplay=%s", lb, rb)
+	}
+}
+
+// TestNormalizeToolPreviewShell (DISP-02): a shell_exec output preview wraps into a code
+// Payload with the structured [aura_shell {…}] footer stripped from the body.
+func TestNormalizeToolPreviewShell(t *testing.T) {
+	preview := "hello world\n[aura_shell {\"exit_code\":0,\"cwd\":\"/tmp\",\"duration_ms\":3,\"timed_out\":false}]"
+	p, ok := NormalizeToolPreview("c4", "shell_exec", preview, NewRegistry())
+	if !ok || p.Type != KindCode || p.Code == nil {
+		t.Fatalf("shell preview not re-derived as code: ok=%v p=%+v", ok, p)
+	}
+	if p.Code.Body != "hello world" {
+		t.Fatalf("shell footer not stripped: %q", p.Code.Body)
+	}
+}
+
+// TestNormalizeToolPreviewShellNoFooter (DISP-02): a code preview with no structured
+// footer is wrapped verbatim — the strip degrades gracefully.
+func TestNormalizeToolPreviewShellNoFooter(t *testing.T) {
+	p, ok := NormalizeToolPreview("c5", "sandbox_exec", "plain output", NewRegistry())
+	if !ok || p.Type != KindCode || p.Code == nil || p.Code.Body != "plain output" {
+		t.Fatalf("code preview without footer not wrapped verbatim: ok=%v p=%+v", ok, p)
+	}
+}
+
 // TestNormalizeToolPreviewFallback (D-FALLBACK): an unknown tool, an empty preview, a
 // nil registry, and malformed/non-source JSON all return recognized=false so the raw
 // card stands on replay exactly as live.
@@ -75,7 +132,7 @@ func TestNormalizeToolPreviewFallback(t *testing.T) {
 		name, tool, preview string
 		reg                 *Registry
 	}{
-		{"unknown tool", "shell_exec", `{"results":[]}`, reg},
+		{"unknown tool", "fs_read", `{"results":[]}`, reg},
 		{"empty preview", "web_search", "", reg},
 		{"nil registry", "web_search", `{"results":[{"title":"A","url":"https://a.test"}]}`, nil},
 		{"malformed json", "web_search", "{not json", reg},
