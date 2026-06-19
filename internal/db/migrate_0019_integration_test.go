@@ -13,8 +13,8 @@
 //   - aura.identity_auth_links exists with the UNIQUE(authula_user_id) constraint and a
 //     FK to aura.identities (link upsert + cascade behavior)
 //   - aura.* is otherwise untouched (the seeded `local` identity still present)
-//   - down (MigrateSteps -1) drops the schema + table; re-up restores them; final
-//     Migrate applies zero (fully reversible)
+//   - stepping down through 0019 drops the schema + table; re-up restores them; final
+//     Migrate applies zero (fully reversible even as later migrations are added)
 
 package db
 
@@ -78,6 +78,11 @@ func TestMigrate0019_AuthulaSchemaAndLink(t *testing.T) {
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("full Migrate up on fresh db: %v", err)
 	}
+	headVersion := currentMigrationVersion(t, ctx, freshAdmin)
+	if headVersion < 19 {
+		t.Fatalf("full Migrate up reached version %d, want at least 19", headVersion)
+	}
+	stepsToBefore0019 := headVersion - 18
 
 	app, err := Open(ctx, &Config{URL: dsn("aura_app", freshDB)})
 	if err != nil {
@@ -140,9 +145,11 @@ func TestMigrate0019_AuthulaSchemaAndLink(t *testing.T) {
 		t.Errorf("linked identity = %q, want %q", gotID, seededIdentity)
 	}
 
-	// 3. Down drops the schema + table; re-up restores; final Migrate applies zero.
-	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("MigrateSteps(-1) down 0019: %v", err)
+	// 3. Down through 0019 drops the schema + table; re-up restores; final
+	// Migrate applies zero. The computed step count keeps this drill stable as HEAD
+	// advances beyond 0019.
+	if err := MigrateSteps(ctx, migrateURL, -stepsToBefore0019); err != nil {
+		t.Fatalf("MigrateSteps(%d) down to pre-0019: %v", -stepsToBefore0019, err)
 	}
 	var schemaStillThere bool
 	if err := app.QueryRow(ctx,
@@ -156,11 +163,14 @@ func TestMigrate0019_AuthulaSchemaAndLink(t *testing.T) {
 	if err := MigrateSteps(ctx, migrateURL, 1); err != nil {
 		t.Fatalf("MigrateSteps(+1) re-up 0019: %v", err)
 	}
+	if _, err := Migrate(ctx, migrateURL); err != nil {
+		t.Fatalf("post-round-trip Migrate to HEAD: %v", err)
+	}
 	n, err := Migrate(ctx, migrateURL)
 	if err != nil {
-		t.Fatalf("post-round-trip Migrate: %v", err)
+		t.Fatalf("post-round-trip no-op Migrate: %v", err)
 	}
 	if n != 0 {
-		t.Errorf("post-round-trip Migrate: want 0 pending (0019 reversible), got %d", n)
+		t.Errorf("post-round-trip no-op Migrate: want 0 pending (0019 reversible), got %d", n)
 	}
 }
