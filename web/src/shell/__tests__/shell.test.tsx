@@ -133,16 +133,16 @@ describe('shell utilities', () => {
     expect(onRight).toHaveBeenCalledTimes(1);
   });
 
-  it('useSurfaceIntent restores valid stored surfaces and persists changes', () => {
+  it('useSurfaceIntent ignores stored future surfaces and only persists live surfaces', () => {
     localStorage.setItem('aura.shell.surface', 'graph');
     render(<SurfaceProbe />);
-    expect(screen.getByText('graph')).toBeTruthy();
+    expect(screen.getByText('chat')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'tree' }));
-    expect(screen.getAllByText('tree').length).toBeGreaterThan(0);
-    expect(localStorage.getItem('aura.shell.surface')).toBe('tree');
+    expect(screen.getByText('chat')).toBeTruthy();
+    expect(localStorage.getItem('aura.shell.surface')).toBe('graph');
   });
 
-  it('mode controls expose desktop and mobile selection callbacks', () => {
+  it('mode controls expose future modes as disabled buttons that do not select', () => {
     const selected: SurfaceIntent[] = [];
     render(
       <>
@@ -166,8 +166,14 @@ describe('shell utilities', () => {
     const treeButton = treeButtons[0];
     const graphButton = graphButtons[1];
     if (!treeButton || !graphButton) throw new Error('Expected desktop and mobile mode controls');
+    for (const button of screen.getAllByRole('button', { name: 'Chat' })) {
+      expect(button.getAttribute('aria-current')).toBe('page');
+    }
+    for (const button of [...treeButtons, ...graphButtons]) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+    }
     fireEvent.click(treeButton);
     fireEvent.click(graphButton);
-    expect(selected).toEqual(['tree', 'graph']);
+    expect(selected).toEqual([]);
   });
 });

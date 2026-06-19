@@ -63,6 +63,7 @@ export const resources = {
           displays: 'Displays',
           settings: 'Settings',
         },
+        modeUnavailable: 'Coming soon',
       },
       chat: {
         scrollToBottom: 'Scroll to bottom',
@@ -336,6 +337,7 @@ export const resources = {
           displays: 'Display',
           settings: 'Impostazioni',
         },
+        modeUnavailable: 'In arrivo',
       },
       chat: {
         scrollToBottom: 'Vai in fondo',
