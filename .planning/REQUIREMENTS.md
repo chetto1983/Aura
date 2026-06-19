@@ -67,10 +67,10 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 
 ### Neo4j Graph Explorer (GRAPH) — Slice F
 
-- [ ] **GRAPH-01**: A Go graph-normalizer converts Neo4j MCP results to the `{nodes, edges, paths, schema, query}` contract (REST, not SSE)
+- [x] **GRAPH-01**: A Go graph-normalizer converts Neo4j MCP results to the `{nodes, edges, paths, schema, query}` contract (REST, not SSE)
 - [ ] **GRAPH-02**: Operator can open a Neo4j Graph Explorer (WebGL canvas) showing evidence paths with label-family color encoding + a readable path strip
-- [ ] **GRAPH-03**: Operator can select a node and inspect label/properties/degree/neighbors/citations; hover is never the only access path (tap/focus opens the inspector on mobile + keyboard)
-- [ ] **GRAPH-04**: Graph queries are read-only by default (read-only Cypher guard) with a Cypher preview; dense graphs default to filtered evidence paths, not hairballs
+- [x] **GRAPH-03**: Operator can select a node and inspect label/properties/degree/neighbors/citations; hover is never the only access path (tap/focus opens the inspector on mobile + keyboard)
+- [x] **GRAPH-04**: Graph queries are read-only by default (read-only Cypher guard) with a Cypher preview; dense graphs default to filtered evidence paths, not hairballs
 
 ### Swarm Report (SWARM) — Slice G
 
@@ -179,10 +179,10 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | DISP-04 | Phase 26 | Complete |
 | DISP-05 | Phase 26 | Complete |
 | SWARM-01 | Phase 26 | Complete |
-| GRAPH-01 | Phase 27 | Pending |
+| GRAPH-01 | Phase 27 | Complete |
 | GRAPH-02 | Phase 27 | Pending |
-| GRAPH-03 | Phase 27 | Pending |
-| GRAPH-04 | Phase 27 | Pending |
+| GRAPH-03 | Phase 27 | Complete |
+| GRAPH-04 | Phase 27 | Complete |
 | GOV-01 | Phase 28 | Pending |
 | GOV-02 | Phase 28 | Pending |
 | GOV-03 | Phase 28 | Pending |

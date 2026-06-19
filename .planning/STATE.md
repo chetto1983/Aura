@@ -2,19 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-current_phase: 27
-current_phase_name: neo4j-graph-explorer
-status: Phase 26 CLOSED 2026-06-19. The 4 live UX sign-offs (citation hovercard + click-through, Source Explorer read-only posture, swarm-report no-mailbox, D-06 Playwright replay) were cleared via a Playwright E2E matrix on desktop Chrome + Pixel 5 + iPhone 13 — 51 tests, 4 consecutive green runs. A CRITICAL iOS/iPadOS-Safari render crash (CSS asset-hash desync → strict-MIME stylesheet reject → error boundary) was found and fixed (commit 26ce045a); regenerated dist. Pre-existing (non-26) frontend branch-coverage gate is at 82.85% < 85% from the multimodal-assets merge — recommend a separate coverage pass.
-stopped_at: Phase 27 UI-SPEC approved
-last_updated: "2026-06-19T08:33:22.675Z"
+status: executing
+stopped_at: Completed 27-01-PLAN.md (graph normalizer)
+last_updated: "2026-06-19T09:13:10.338Z"
 last_activity: 2026-06-19
-last_activity_desc: Phase 27 planning complete
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 5
-  total_plans: 25
-  completed_plans: 25
-  percent: 63
+  total_plans: 29
+  completed_plans: 26
+  percent: 56
 ---
 
 # Project State
@@ -28,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 27 (neo4j-graph-explorer) — Ready to plan
-Plan: Not started
-Status: Phase 26 CLOSED 2026-06-19. The 4 live UX sign-offs (citation hovercard + click-through, Source Explorer read-only posture, swarm-report no-mailbox, D-06 Playwright replay) were cleared via a Playwright E2E matrix on desktop Chrome + Pixel 5 + iPhone 13 — 51 tests, 4 consecutive green runs. A CRITICAL iOS/iPadOS-Safari render crash (CSS asset-hash desync → strict-MIME stylesheet reject → error boundary) was found and fixed (commit 26ce045a); regenerated dist. Pre-existing (non-26) frontend branch-coverage gate is at 82.85% < 85% from the multimodal-assets merge — recommend a separate coverage pass.
-Last activity: 2026-06-19 — Phase 27 planning complete
+Phase: 27 (neo4j-graph-explorer) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-06-19
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -182,6 +179,7 @@ Phase 26 closed 2026-06-19 — executed, verified, and validated on desktop + mo
 | Phase 26 P26-04 | ~65min | 3 tasks | 21 files |
 | Phase 26 P26-05 | ~35min | 3 tasks | 22 files |
 | Phase 26 P26-06 | ~60min | 3 tasks | 17 files |
+| Phase 27 P27-01 | 18min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -213,6 +211,7 @@ Phase 26 closed 2026-06-19 — executed, verified, and validated on desktop + mo
 
 ### Roadmap Evolution
 
+- Phase 30 added (2026-06-19): Telegram Onboarding on Frontend with Link and QR Code. Operator request — surface Telegram account linking in the web cockpit (a deep-link to the bot + a scannable QR encoding the setup token) over the existing Telegram channel + `:9081` setup-wizard backend, so an operator can connect Telegram from the browser instead of the loopback wizard. Appended to the end of milestone v1.0.0 (Phases 22–30). Goal/requirements/plans TBD. Next = /gsd-plan-phase 30 (or /gsd-spec-phase 30 to scope WHAT it delivers first).
 - v1.0.0 roadmap REVISED (2026-06-15): operator directive — set up the frontend industrial foundation FIRST (linter, theme/color tokens, package/build, logo, deep-research-industrial-infra pass) BEFORE any feature coding. A new requirement category Frontend Foundation (FND-01..06) was added to REQUIREMENTS.md and mapped to a NEW research-first Phase 23 (Frontend Infrastructure & Industrial Foundation). Phase 22 (Agent Perimeter Hardening) is unchanged. The former feature phases shifted +1: Web Foundation 23->24 (now the real SPA host AFTER the embed pipeline exists, with SPA-fallback exclusion + GAP-2 auth + boot guard + health shell), Chat+Approval 24->25, Typed-Display 25->26, Graph Explorer 26->27, Governance+Onboarding 27->28. Roadmap is now 7 phases (22-28); all 39 v1 requirements mapped (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD), 0 unmapped, 0 duplicates. v0.0.0 history block + Milestones v0.0.0 line + Phase 5 superseded note preserved verbatim. Next = /gsd-plan-phase 22.
 - v1.0.0 roadmap created (2026-06-15): the Aura Deep Search Web Cockpit milestone (33 requirements) was decomposed into 6 phases (22-27) at coarse granularity, build order per research/ARCHITECTURE.md sec.7 (A->B->C->D->E->F). Phase 22 (Agent Perimeter Hardening, HARDEN-01..12) is the pre-existing bug-fix spec and gates web exposure. Phase 23 (Web Foundation, WEB-01..04) is the serve/embed/GAP-2-auth foundation that gates every UI surface. Phase 24 (Chat + Approval Center, CHAT/APRV, 7 reqs) is the Core-Value loop over mostly-existing backend. Phase 25 (Typed-Display Protocol + Router, DISP-01..05 + SWARM-01, 6 reqs) is the GAP-1 spine. Phase 26 (Neo4j Graph Explorer, GRAPH-01..04). Phase 27 (Governance Boards + Web Onboarding, GOV + ONBD, 5 reqs). All 33 mapped, 0 orphaned. GOVW write surfaces + ui_control SHELL shell deferred to v2 (out of scope this milestone). Next = /gsd-plan-phase 22.
 
@@ -337,6 +336,8 @@ Recent decisions affecting current work:
 - [Phase 26]: 26-03: D-06 projectDisplaySnapshot emits a display-aware MESSAGES_SNAPSHOT (local mirror structs since SDK types.ToolCall has no display field) w/ ONE shared per-thread registry -> stable cross-turn RefIDs; per-type preview audit: web_result+document re-derive losslessly from ResultPreview, no store-fallback
 - [Phase ?]: 26-04: DisplayRouter now renders 5 typed cards (table/chart/system_event/swarm_report/local_artifact); pure logic extracted to tableData.ts+swarmRow.ts for ≥70% Stryker; display.* i18n split into resources.display.ts (600-LOC cap)
 - [Phase ?]: 26-04: de-flaked AppShell.conversation (per-it 10s timeout + file asyncUtilTimeout) per operator directive — repo carries no flaky test
+- [Phase ?]: Phase 27 graph reads use explicit-field Cypher projection (elementId + apoc.convert.toJson(labels)); never RETURN n
+- [Phase ?]: Phase 27 live A3 probe: production Neo4j graph has 0 :Conversation nodes — graph-explorer default open IS the schema overview, not a conversation footprint
 
 ### Pending Todos
 
@@ -370,9 +371,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-19T07:34:15.751Z
-Stopped at: Phase 27 UI-SPEC approved
-Resume file: .planning/phases/27-neo4j-graph-explorer/27-UI-SPEC.md
+Last session: 2026-06-19T09:13:10.322Z
+Stopped at: Completed 27-01-PLAN.md (graph normalizer)
+Resume file: None
 
 ## Operator Next Steps
 

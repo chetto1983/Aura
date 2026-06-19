@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v0.0.0 Substrate** — Phases 0–21 (shipped 2026-06-15) — full details in [`milestones/v0.0.0-ROADMAP.md`](milestones/v0.0.0-ROADMAP.md)
-- 📋 **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–29 (planning)
+- 📋 **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–30 (planning)
 
 ## Phases
 
@@ -53,6 +53,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
 - [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
 - [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03)
+- [ ] **Phase 30: Telegram Onboarding on Frontend (Link + QR)** — Surface Telegram account linking in the web cockpit: a deep-link to the bot + a scannable QR encoding the setup token, over the existing Telegram channel + setup-wizard backend
 
 > **Cockpit Overhaul (post-Phase-25, in progress — not a formal phase).** After Phase 25 closed, a
 > premium-bar overhaul reworked the Phase-23/24/25 surfaces in place: a logo-matched **blue** design
@@ -250,6 +251,17 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
+### Phase 30: Telegram Onboarding on Frontend with Link and QR Code
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 29
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 30 to break down)
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
@@ -260,6 +272,7 @@ Plans:
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete    | 2026-06-16 |
 | 25. Chat + Approval Center | v1.0.0 | 7/7 | Complete    | 2026-06-17 |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 6/6 | Complete    | 2026-06-19 |
-| 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
+| 27. Neo4j Graph Explorer | v1.0.0 | 1/4 | In Progress|  |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
+| 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | 0/? | Not started | - |
