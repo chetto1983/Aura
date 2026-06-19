@@ -11,6 +11,8 @@ import {
   type IntentState,
 } from './graphIntent';
 import { SeedFilterPanel } from './SeedFilterPanel';
+import { NodeInspector } from './NodeInspector';
+import { PathStrip } from './PathStrip';
 import type { GraphNode, GraphResult, GraphSchema } from './types';
 
 // GraphExplorer is the lazy default export the AppShell mounts when surface==='graph' (its own
@@ -139,6 +141,32 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
     void runIntent({ ...intent, session: threadId });
   }, [intent, threadId, runIntent]);
 
+  // Selecting a node (canvas click OR node-list Enter/tap — the non-hover access path, D-03)
+  // opens the inspector and remounts sigma (Pitfall 1: inspector open/close bumps sigmaKey).
+  const selectNode = useCallback((node: GraphNode) => {
+    setSelected(node);
+    setSigmaKey((k) => k + 1);
+  }, []);
+
+  const closeInspector = useCallback(() => {
+    setSelected(undefined);
+    setSigmaKey((k) => k + 1);
+  }, []);
+
+  // Pin path = the node + its directly-connected neighbors (client-side highlight, D-10). The
+  // SigmaCanvas reducer accents this set and dims the rest; the path strip mirrors it.
+  const pinPath = useCallback(
+    (node: GraphNode) => {
+      const path = new Set<string>([node.id]);
+      for (const edge of view.result?.edges ?? []) {
+        if (edge.source === node.id) path.add(edge.target);
+        if (edge.target === node.id) path.add(edge.source);
+      }
+      setPinnedPath(path);
+    },
+    [view.result],
+  );
+
   const clientGraph =
     view.result !== undefined ? rowsToClientGraph(view.result) : { nodes: [], edges: [] };
 
@@ -205,10 +233,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
               sigmaKey={sigmaKey}
               onNodeClick={(id) => {
                 const node = view.result?.nodes.find((n) => n.id === id);
-                if (node !== undefined) {
-                  setSelected(node);
-                  setSigmaKey((k) => k + 1);
-                }
+                if (node !== undefined) selectNode(node);
               }}
             />
             {view.capped ? (
@@ -223,18 +248,25 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         )}
       </section>
 
-      {/* Right pane + below-canvas surface are slotted by Task 3 (NodeInspector + PathStrip). */}
       <aside
         aria-label={t('graph.inspector.emptyHeading')}
         className="hidden min-h-0 overflow-y-auto border-l border-border bg-surface lg:block"
-        data-testid="graph-inspector-slot"
       >
-        <div className="grid h-full place-items-center p-6 text-center text-[15.5px] text-text-muted">
-          {selected?.caption ?? t('graph.inspector.emptyBody')}
-        </div>
+        <NodeInspector
+          node={selected}
+          query={view.result?.query ?? ''}
+          onPinPath={pinPath}
+          onClose={closeInspector}
+        />
       </aside>
-      <div className="border-t border-border bg-surface lg:col-span-2" data-testid="graph-path-slot">
-        <p className="px-4 py-2 text-[13px] text-text-muted">{t('graph.path.empty')}</p>
+
+      <div className="min-h-0 lg:col-span-2">
+        <PathStrip
+          nodes={view.result?.nodes ?? []}
+          edges={view.result?.edges ?? []}
+          pinnedPath={pinnedPath}
+          onSelectNode={selectNode}
+        />
       </div>
     </div>
   );
