@@ -272,7 +272,7 @@ Plans:
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 4/4 | Complete    | 2026-06-16 |
 | 25. Chat + Approval Center | v1.0.0 | 7/7 | Complete    | 2026-06-17 |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 6/6 | Complete    | 2026-06-19 |
-| 27. Neo4j Graph Explorer | v1.0.0 | 2/4 | In Progress|  |
+| 27. Neo4j Graph Explorer | v1.0.0 | 3/4 | In Progress|  |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
 | 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | 0/? | Not started | - |
