@@ -137,6 +137,18 @@ const approvalsListRoute = "/api/approvals"
 // wrap with no capability gate.
 const imageProxyRoute = "GET /api/image-proxy"
 
+// graphSchemaRoute / graphQueryRoute are the Phase-27 GRAPH-01 read-only graph-explorer
+// routes (the schema overview + the structured-intent query). Like imageProxyRoute they
+// are SPECIFIC method+path siblings under the "/api/" exclusion carve-out — NEVER a bare
+// "/api/" (which would shadow the integrations proxy, T-27-03). Both delegate to the AG-UI
+// handler (the routes live on Server.Mux) and inherit RequireAuth from the whole-mux wrap
+// below with NO RequireCapability — this is the read-only milestone (no write/PATCH/DELETE
+// graph surface; the mutating add-note route is deferred to Phase 29).
+const (
+	graphSchemaRoute = "GET /api/graph/schema"
+	graphQueryRoute  = "POST /api/graph/query"
+)
+
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
 // Resuming or cancelling another thread's (possibly background) run is privileged
 // (Security V4 / T-25-07), so it is interposed with RequireCapability exactly like
@@ -246,6 +258,13 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// relay) — no capability gate. Method+path-specific so it wins longest-pattern
 	// precedence over the "/" embed catch-all.
 	mux.Handle(imageProxyRoute, aguiHandler)
+	// The Phase-27 GRAPH-01 graph-explorer routes delegate to the AG-UI handler (routes
+	// on Server.Mux). Read-only, so they inherit RequireAuth from the whole-mux wrap below
+	// with NO RequireCapability (contrast the mutating POST /agent/run + branch re-runs).
+	// Method+path-specific so they win longest-pattern precedence over the "/" embed
+	// catch-all; the "/api/" fallback exclusion already returns them as backend routes.
+	mux.Handle(graphSchemaRoute, aguiHandler)
+	mux.Handle(graphQueryRoute, aguiHandler)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the

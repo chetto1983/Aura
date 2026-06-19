@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/knowledge"
 )
@@ -243,4 +244,81 @@ func TestGraphQueryErrorSanitized(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "hunter2") {
 		t.Fatalf("query error leaked a credential: %s", rec.Body.String())
 	}
+}
+
+// validCookiePost builds a POST request to path carrying a valid session cookie for the
+// local identity (validCookieReq only builds GETs; the graph query route is a POST).
+func validCookiePost(deps AuthDeps, path string, body []byte) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	return req
+}
+
+// TestGraphRequireAuthGate (T-27-03): the two graph routes mount behind the same
+// RequireAuth whole-origin gate every /api/ route inherits (the wrap lives at the parent
+// mux, mirrored here with RequireAuth(s.Mux(), deps)). An unauthenticated request (no
+// session cookie) is rejected 401 on BOTH routes and never reaches the GraphView seam; a
+// valid session reaches the handler. The bare Server.Mux() (no wrap) proves the routes are
+// actually registered (not a 404).
+func TestGraphRequireAuthGate(t *testing.T) {
+	deps := testDeps("operator-secret")
+	gv := fakeGraph()
+	s := graphServer(gv)
+	gated := RequireAuth(s.Mux(), deps)
+
+	t.Run("unauthenticated schema GET rejected 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/graph/schema", nil)
+		rec := httptest.NewRecorder()
+		gated.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (no session)", rec.Code)
+		}
+		if gv.schemaReached {
+			t.Fatalf("the GraphView Schema was reached without a session")
+		}
+	})
+
+	t.Run("unauthenticated query POST rejected 401", func(t *testing.T) {
+		body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSchemaOverview})
+		req := httptest.NewRequest(http.MethodPost, "/api/graph/query", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		gated.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (no session)", rec.Code)
+		}
+		if gv.queryReached {
+			t.Fatalf("the GraphView Query was reached without a session")
+		}
+	})
+
+	t.Run("valid session reaches the schema handler", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		gated.ServeHTTP(rec, validCookieReq(deps, "/api/graph/schema", false))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 with a valid session", rec.Code)
+		}
+		if !gv.schemaReached {
+			t.Fatalf("a valid session did not reach the GraphView Schema")
+		}
+	})
+
+	t.Run("valid session reaches the query handler", func(t *testing.T) {
+		body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSchemaOverview})
+		rec := httptest.NewRecorder()
+		gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 with a valid session (body=%s)", rec.Code, rec.Body.String())
+		}
+		if !gv.queryReached {
+			t.Fatalf("a valid session did not reach the GraphView Query")
+		}
+	})
+
+	t.Run("route registered on bare Mux (not 404)", func(t *testing.T) {
+		rec := doGraph(t, graphServer(fakeGraph()), http.MethodGet, "/api/graph/schema", nil)
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("GET /api/graph/schema 404'd on the bare Mux — route not registered")
+		}
+	})
 }

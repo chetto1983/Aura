@@ -296,6 +296,20 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// favicons never load. It mounts behind the RequireAuth whole-origin gate (the
 	// parent mux below), so it is never an open relay.
 	aguiServer.SetImageProxy(web.NewClient(chat.cfg))
+	// Wire the Phase-27 GRAPH-01 read-only graph explorer. Per RESEARCH A7/Open-Q2 the
+	// serve daemon opens ONE boot-time knowledge.Client (the mcp-neo4j-cypher subprocess)
+	// for the gateway lifetime — distinct from the ReasoningLearning-gated client in
+	// chat.go, which is conditional. Best-effort: a missing binary or a down Neo4j leaves
+	// the two /api/graph/* routes at 503 (SetGraphView never called) and MUST NOT abort
+	// serve boot (a graph-explorer outage is not a daemon outage). On success the client's
+	// Close joins the SAME reverse-close teardown (chatEnv.mcpClosers) that drains the
+	// other MCP subprocesses at shutdown.
+	if gclient, gerr := knowledge.Open(ctx, &chat.cfg.Neo4j); gerr != nil {
+		slog.Warn("aura serve: graph explorer unavailable", "err", gerr)
+	} else {
+		chat.mcpClosers = append(chat.mcpClosers, gclient.Close)
+		aguiServer.SetGraphView(knowledge.NewGraphView(gclient))
+	}
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell
