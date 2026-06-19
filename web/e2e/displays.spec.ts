@@ -329,14 +329,19 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     const display = {
       type: 'code',
       tool_call_id: 'call-1',
-      code: { body: '<script>window.__xss_code = true;</script>\nconst x = 1;', lang: 'javascript' },
+      code: {
+        body: '<script>window.__xss_code = true;</script>\nconst x = 1;',
+        lang: 'javascript',
+      },
     };
     await openWith(page, 'Code follows.', display, 'shell_exec');
 
     await expect(page.getByText('Code').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('button', { name: 'Copy code' })).toBeVisible();
     // T-26-16: the <script> body is inert text, never executed.
-    const xss = await page.evaluate(() => (window as unknown as Record<string, unknown>).__xss_code);
+    const xss = await page.evaluate(
+      () => (window as unknown as Record<string, unknown>).__xss_code,
+    );
     expect(xss).toBeUndefined();
     // The code body is present as escaped text.
     await expect(page.getByText('const x = 1;')).toBeVisible();

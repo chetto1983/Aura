@@ -28,7 +28,10 @@ const targetOrigin = `http://${targetHostHeader}`;
 
 const tlsOptions =
   process.env.PROXY_TLS_PFX !== undefined
-    ? { pfx: readFileSync(process.env.PROXY_TLS_PFX), passphrase: process.env.PROXY_TLS_PFX_PASSPHRASE ?? '' }
+    ? {
+        pfx: readFileSync(process.env.PROXY_TLS_PFX),
+        passphrase: process.env.PROXY_TLS_PFX_PASSPHRASE ?? '',
+      }
     : {
         key: readFileSync(process.env.PROXY_TLS_KEY ?? ''),
         cert: readFileSync(process.env.PROXY_TLS_CERT ?? ''),
@@ -59,5 +62,7 @@ const server = https.createServer(tlsOptions, (req, res) => {
 });
 
 server.listen(LISTEN_PORT, TARGET_HOST, () => {
-  process.stdout.write(`https-proxy: listening on https://${TARGET_HOST}:${String(LISTEN_PORT)} -> ${targetOrigin}\n`);
+  process.stdout.write(
+    `https-proxy: listening on https://${TARGET_HOST}:${String(LISTEN_PORT)} -> ${targetOrigin}\n`,
+  );
 });
