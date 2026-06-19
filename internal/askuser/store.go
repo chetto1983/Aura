@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -189,10 +190,14 @@ func (s *Store) ListPending(ctx context.Context, conversationID string) ([]Pendi
 // each Pending carries Question/Options/Priority/Kind/ConversationID and the source
 // thread (ProxiedFromChildID) the operator needs to jump to the originating thread.
 func (s *Store) ListPendingAll(ctx context.Context, limit int) ([]Pending, error) {
-	if limit <= 0 {
-		limit = 100
+	// Convert inside the proven-safe branch so the int32 narrowing is guarded at the
+	// conversion site (CodeQL go/incorrect-integer-conversion); a non-positive or
+	// overflowing limit falls back to the 100 default (mirroring ListRecent).
+	var lim int32 = 100
+	if limit > 0 && limit <= math.MaxInt32 {
+		lim = int32(limit)
 	}
-	rows, err := s.q.ListAllPendingPausedStates(ctx, int32(limit))
+	rows, err := s.q.ListAllPendingPausedStates(ctx, lim)
 	if err != nil {
 		return nil, fmt.Errorf("list pending (all conversations): %w", err)
 	}

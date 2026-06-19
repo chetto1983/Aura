@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -65,9 +66,16 @@ func (s *Store) loadBranchTurns(ctx context.Context, conversationID string, leaf
 	if err != nil {
 		return nil, fmt.Errorf("load branch turns: %w", err)
 	}
+	// Narrow leafSeq inside the proven-safe branch so the int32 conversion is guarded
+	// at the call site (CodeQL go/incorrect-integer-conversion); a non-positive or
+	// overflowing leafSeq leaves seq at 0, which yields an empty path as documented.
+	var seq int32
+	if leafSeq > 0 && leafSeq <= math.MaxInt32 {
+		seq = int32(leafSeq)
+	}
 	rows, err := s.q.ListTurnsByBranchPath(ctx, sqlc.ListTurnsByBranchPathParams{
 		ConversationID: id,
-		Seq:            int32(leafSeq),
+		Seq:            seq,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load branch turns %s leaf %d: %w", conversationID, leafSeq, err)

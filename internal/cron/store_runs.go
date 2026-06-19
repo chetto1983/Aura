@@ -189,18 +189,23 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 // SweepDueNotifications selects a bounded batch of due/retryable notifications in
 // a real transaction so FOR UPDATE SKIP LOCKED has effect across concurrent ticks.
 func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit int) ([]PendingNotification, error) {
-	if attemptBound <= 0 || attemptBound > math.MaxInt32 {
-		attemptBound = 1
+	// Convert inside the proven-safe branch so each int32 narrowing is guarded at the
+	// conversion site (CodeQL go/incorrect-integer-conversion, mirroring DueTasks); a
+	// non-positive or overflowing bound floors to 1 rather than wrapping negative.
+	var attempts int32 = 1
+	if attemptBound > 0 && attemptBound <= math.MaxInt32 {
+		attempts = int32(attemptBound)
 	}
-	if limit <= 0 || limit > math.MaxInt32 {
-		limit = 1
+	var lim int32 = 1
+	if limit > 0 && limit <= math.MaxInt32 {
+		lim = int32(limit)
 	}
 	var rows []sqlc.AuraPendingNotifications
 	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		var err error
 		rows, err = q.SweepDueNotifications(ctx, sqlc.SweepDueNotificationsParams{
-			Attempts: int32(attemptBound),
-			Limit:    int32(limit),
+			Attempts: attempts,
+			Limit:    lim,
 		})
 		return err
 	})
