@@ -59,5 +59,5 @@ func (s *Server) handleImageProxy(w http.ResponseWriter, r *http.Request) {
 	// browser from sniffing them into an executable type.
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // G705: FetchImage already enforces image content-type, SSRF checks, and size caps.
 }

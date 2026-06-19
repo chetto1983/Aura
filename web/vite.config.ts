@@ -194,12 +194,40 @@ export default defineConfig({
         pluginTimings: false,
       },
       output: {
-        // A2 / D-10: force Shiki (the lazy code highlighter — core, JS engine,
-        // grammars, themes) into its OWN named chunk so it stays OFF the embedded
-        // critical-path bundle. CodeDisplay only dynamic-import()s it on demand, so
-        // this chunk is fetched lazily the first time a `code` display renders.
+        // Keep heavy chat/display dependencies off route chunks. Shiki stays lazy,
+        // but splits by concern so one highlighter path cannot breach Vite's 500 kB
+        // chunk-warning threshold.
         codeSplitting: {
-          groups: [{ name: 'shiki', test: /[\\/]node_modules[\\/](shiki|@shikijs)[\\/]/ }],
+          groups: [
+            {
+              name: 'assistant-ui',
+              test: /[\\/]node_modules[\\/](@assistant-ui|assistant-stream)[\\/]/,
+            },
+            {
+              name: 'markdown',
+              test: /[\\/]node_modules[\\/](@types[\\/]hast|hast|hast-util-|mdast-util-|micromark|react-markdown|rehype-|remark-|unified|unist-util-|vfile)[\\/]/,
+            },
+            {
+              name: 'shiki-core',
+              test: /[\\/]node_modules[\\/](shiki|@shikijs[\\/](core|engine-javascript|primitive|types|vscode-textmate))[\\/]/,
+            },
+            {
+              name: 'shiki-themes',
+              test: /[\\/]node_modules[\\/]@shikijs[\\/]themes[\\/]/,
+            },
+            {
+              name: 'shiki-lang-js',
+              test: /[\\/]node_modules[\\/]@shikijs[\\/]langs[\\/]dist[\\/](java|type)script\.mjs$/,
+            },
+            {
+              name: 'shiki-lang-web',
+              test: /[\\/]node_modules[\\/]@shikijs[\\/]langs[\\/]dist[\\/](css|html|json|markdown|yaml)\.mjs$/,
+            },
+            {
+              name: 'shiki-lang-tools',
+              test: /[\\/]node_modules[\\/]@shikijs[\\/]langs[\\/]dist[\\/](bash|go|python|shellscript|sql)\.mjs$/,
+            },
+          ],
         },
       },
     },

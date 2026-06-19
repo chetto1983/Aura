@@ -1,3 +1,4 @@
+//nolint:revive // Internal asset processors expose small cross-package wiring APIs.
 package assets
 
 import (
@@ -34,7 +35,7 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	audioBytes, err := io.ReadAll(rc)
 	if err != nil {
 		return Result{}, err
@@ -91,7 +92,7 @@ func (p *AudioProcessor) postTranscription(ctx context.Context, fileName string,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		return "", &sidecarStatusError{endpoint: "stt", statusCode: resp.StatusCode}
 	}

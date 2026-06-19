@@ -6,6 +6,7 @@ import (
 	"github.com/chetto1983/aura/internal/assets"
 )
 
+// AssetService is the narrow asset API surface consumed by AG-UI handlers.
 type AssetService interface {
 	Presign(context.Context, assets.PresignRequest) (assets.PresignResponse, error)
 	Finalize(context.Context, string, string) (assets.Asset, error)

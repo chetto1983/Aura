@@ -1,3 +1,4 @@
+//nolint:revive // Internal processor interfaces are exported for composition roots.
 package assets
 
 import "context"

@@ -111,6 +111,7 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
+// SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route

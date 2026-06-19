@@ -1,3 +1,4 @@
+//nolint:revive // Internal objectstore S3 types are exported for composition roots.
 package objectstore
 
 import (

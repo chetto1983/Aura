@@ -1,3 +1,4 @@
+//nolint:revive // Internal asset context helpers are exported for agent/agui wiring.
 package assets
 
 import (

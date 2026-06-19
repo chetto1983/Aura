@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// VisionConfig selects the image-analysis sidecar or cloud-compatible route.
 type VisionConfig struct {
 	VisionCloud       bool
 	Model             string
@@ -19,6 +20,7 @@ type VisionConfig struct {
 	TimeoutSec        int
 }
 
+// STTConfig configures the speech-to-text sidecar used for audio assets.
 type STTConfig struct {
 	BaseURL    string
 	Model      string

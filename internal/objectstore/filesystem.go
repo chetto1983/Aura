@@ -1,3 +1,4 @@
+//nolint:revive // Internal filesystem store types are exported for composition roots.
 package objectstore
 
 import (
@@ -60,10 +61,10 @@ func (s *FilesystemStore) Put(ctx context.Context, ref ObjectRef, body io.Reader
 	if err != nil {
 		return Attrs{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 		return Attrs{}, err
 	}
-	f, err := os.Create(p)
+	f, err := os.Create(p) //nolint:gosec // objectPath rejects traversal, absolute paths, and root escapes.
 	if err != nil {
 		return Attrs{}, err
 	}
@@ -110,7 +111,7 @@ func (s *FilesystemStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser
 	if err != nil {
 		return nil, Attrs{}, err
 	}
-	f, err := os.Open(p)
+	f, err := os.Open(p) //nolint:gosec // objectPath rejects traversal, absolute paths, and root escapes.
 	if err != nil {
 		return nil, Attrs{}, err
 	}
@@ -188,7 +189,7 @@ func readAttrs(p string) (Attrs, error) {
 	if !os.IsNotExist(err) {
 		return Attrs{}, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // p is produced by objectPath before readAttrs is called.
 	if err != nil {
 		return Attrs{}, err
 	}
@@ -200,7 +201,7 @@ func writeMetadata(p string, attrs Attrs) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(metadataPath(p), b, 0o644)
+	return os.WriteFile(metadataPath(p), b, 0o600)
 }
 
 func metadataPath(p string) string {

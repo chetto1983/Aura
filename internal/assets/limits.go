@@ -1,3 +1,4 @@
+//nolint:revive // Internal asset validation types are exported for service wiring.
 package assets
 
 import (

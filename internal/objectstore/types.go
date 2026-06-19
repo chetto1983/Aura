@@ -1,3 +1,4 @@
+//nolint:revive // Internal objectstore contracts are exported across Aura packages.
 package objectstore
 
 import (

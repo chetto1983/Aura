@@ -1,3 +1,4 @@
+//nolint:revive // Internal asset processors expose small cross-package wiring APIs.
 package assets
 
 import (
@@ -68,7 +69,7 @@ func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	imageBytes, err := io.ReadAll(rc)
 	if err != nil {
 		return Result{}, err
@@ -112,7 +113,7 @@ func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		return Result{}, &sidecarStatusError{endpoint: "vision", statusCode: resp.StatusCode}
 	}

@@ -1,3 +1,4 @@
+//nolint:revive // Internal objectstore fakes are exported for tests and wiring.
 package objectstore
 
 import (

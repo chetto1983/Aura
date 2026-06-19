@@ -1,3 +1,4 @@
+//nolint:revive // Internal asset processors expose small cross-package wiring APIs.
 package assets
 
 import (
@@ -29,7 +30,7 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 	if err != nil {
 		return Result{}, err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	path, cleanup, err := writeTempAsset(rc, asset.FileName)
 	if err != nil {
 		return Result{}, err

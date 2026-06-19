@@ -1,3 +1,4 @@
+//nolint:revive // Internal asset service API is exported for AG-UI and CLI wiring.
 package assets
 
 import (
@@ -296,7 +297,7 @@ func (s *Service) hashAndSniff(ctx context.Context, ref objectstore.ObjectRef, f
 	if err != nil {
 		return "", "", err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	h := sha256.New()
 	if _, err = io.Copy(h, rc); err != nil {
 		return "", "", err
