@@ -9,8 +9,6 @@ import (
 	"iter"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"strings"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
@@ -93,6 +91,7 @@ type Server struct {
 	approvals ApprovalStore
 	assets    AssetService
 	images    ImageFetcher
+	graph     GraphView
 	idgen     IDGenerator
 	cfg       ServerConfig
 }
@@ -120,6 +119,13 @@ func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 // the constructor so existing NewServer callers/tests stay unchanged (D-A2-02).
 func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
 
+// SetGraphView wires the read-only Phase-27 graph normalizer (GRAPH-01) the
+// /api/graph/schema + /api/graph/query routes delegate to. Set by the daemon composition
+// root after NewServer (boot-time knowledge.Client → knowledge.NewGraphView); until set,
+// both routes answer 503 (a missing graph client must not abort serve boot). Kept off the
+// constructor so existing NewServer callers/tests stay unchanged (D-A2-02 narrow seam).
+func (s *Server) SetGraphView(gv GraphView) { s.graph = gv }
+
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
 // — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
 // the handler is wrapped in withCORS so a browser cross-origin POST works end to end:
@@ -145,6 +151,11 @@ func (s *Server) Mux() http.Handler {
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
+	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
+	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind
+	// RequireAuth (no RequireCapability — read-only milestone) lives in
+	// cmd/aura/serve_webui.go.
+	s.registerGraphRoutes(mux)
 	return s.withCORS(mux)
 }
 
@@ -524,56 +535,6 @@ func projectToolCalls(calls []llm.ToolCall) []types.ToolCall {
 		})
 	}
 	return out
-}
-
-// secretPattern collapses a whole DB DSN (scheme + userinfo + host path) to a
-// scheme + "[redacted]" marker — the password AND the host path both leak operational
-// detail, so the entire connection string after the scheme is dropped (T-12-10 / V7).
-var secretPattern = regexp.MustCompile(`(?i)(postgres(?:ql)?|mysql|mongodb|redis|amqp)://[^\s"']*`)
-
-// urlUserinfoPattern matches `scheme://user:password@` for ANY URL scheme (an HTTP MCP
-// server, webhook, or proxy URL — not just the five DB DSNs above). Only the userinfo is
-// collapsed; the rest of the URL is left intact so the error stays diagnosable (WR-03).
-// The DSN pass runs first and already consumes its schemes, so this never double-matches
-// them.
-var urlUserinfoPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^\s@]+@`)
-
-// tokenPattern matches common credential tokens embedded in free-form error strings:
-// `Bearer <token>`, `api_key=<...>`, `api-key=<...>`, `apikey=<...>`, `token=<...>`. The
-// token body is collapsed, the prefix kept so the redaction is legible (WR-03).
-var tokenPattern = regexp.MustCompile(`(?i)(bearer\s+|api[_-]?key=|token=)\S+`)
-
-// sanitizeErr redacts credential-bearing substrings from an error string before it is
-// surfaced over the wire (RUN_ERROR / 4xx body). The agent path already structurally
-// redacts the OpenRouter key (D-28); this is the server-side belt-and-suspenders for the
-// tool/infra error strings the translator forwards (T-12-10).
-func sanitizeErr(err error) string {
-	if err == nil {
-		return ""
-	}
-	return SanitizeString(err.Error())
-}
-
-// SanitizeString strips credential-bearing substrings from an arbitrary string: whole DB
-// DSNs collapse to a scheme marker, generic URL userinfo collapses to `scheme://[redacted]@`,
-// and bearer/api-key/token shapes collapse to a `prefix[redacted]` marker (WR-03). The DSN
-// pass runs first so the generic userinfo pass never reaches the five DB schemes.
-func SanitizeString(msg string) string {
-	out := secretPattern.ReplaceAllStringFunc(msg, func(match string) string {
-		scheme := match
-		if idx := strings.Index(match, "://"); idx >= 0 {
-			scheme = match[:idx]
-		}
-		return scheme + "://[redacted]"
-	})
-	out = urlUserinfoPattern.ReplaceAllString(out, "${1}[redacted]@")
-	return tokenPattern.ReplaceAllStringFunc(out, func(match string) string {
-		prefix := match
-		if idx := strings.IndexAny(match, " =\t"); idx >= 0 {
-			prefix = match[:idx+1]
-		}
-		return prefix + "[redacted]"
-	})
 }
 
 // redactEvent is the server-side belt-and-suspenders for T-12-10: the pure translator

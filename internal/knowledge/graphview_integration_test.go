@@ -72,7 +72,7 @@ RETURN elementId(n) AS id, apoc.convert.toJson(labels(n)) AS labels_json, proper
 	t.Logf("serialization shape pinned (A1): id=%q labels=%v props-is-map=true", id, labels)
 
 	// Confirm the SAME shape flows through normalizeRows (the projected-field keys).
-	res := normalizeRows(opExpand, []map[string]any{{
+	res := normalizeRows(OpExpand, []map[string]any{{
 		"s_id": id, "s_labels": labelsJSON, "s_props": row["props"],
 	}})
 	if len(res.Nodes) != 1 || res.Nodes[0].ID != id {
@@ -106,7 +106,7 @@ func TestGraphViewLive_Footprint(t *testing.T) {
 		// Run the real compileSeed path for one observed session; it must return
 		// cleanly (rows or a clean empty), proving the seed Cypher is valid live.
 		session, _ := convRows[0]["session"].(string)
-		res, err := gv.Query(ctx, GraphIntent{Op: opSeed, Session: session})
+		res, err := gv.Query(ctx, GraphIntent{Op: OpSeed, Session: session})
 		if err != nil {
 			t.Fatalf("live seed Query(session=%q): %v", session, err)
 		}
@@ -118,7 +118,7 @@ func TestGraphViewLive_Footprint(t *testing.T) {
 
 	// Regardless: a non-existent thread MUST fall back to the schema overview, never
 	// a blank result (D-08). This is the load-bearing default-open guarantee.
-	res, err := gv.Query(ctx, GraphIntent{Op: opSeed, Session: "no-such-thread-xyz-27"})
+	res, err := gv.Query(ctx, GraphIntent{Op: OpSeed, Session: "no-such-thread-xyz-27"})
 	if err != nil {
 		t.Fatalf("empty-seed fallback Query: %v", err)
 	}

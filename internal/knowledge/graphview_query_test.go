@@ -95,7 +95,7 @@ func TestNormalizeRows(t *testing.T) {
 			"s_id": "e2", "s_labels": jsonLabels("Entity"), "s_caption": "Bob",
 		},
 	}
-	res := normalizeRows(opSeed, rows)
+	res := normalizeRows(OpSeed, rows)
 
 	// nodes: e1, m1, d1, e2 — de-duped
 	if len(res.Nodes) != 4 {
@@ -150,7 +150,7 @@ func TestNormalizeCitations(t *testing.T) {
 			"r_id": "r3", "r_type": "FROM", "r_src": "e3", "r_dst": "s1",
 		},
 	}
-	res := normalizeRows(opSeed, rows)
+	res := normalizeRows(OpSeed, rows)
 	byID := map[string]GraphNode{}
 	for _, n := range res.Nodes {
 		byID[n.ID] = n
@@ -209,7 +209,7 @@ func TestQueryDispatch(t *testing.T) {
 	t.Run("seed", func(t *testing.T) {
 		fr := &fakeReader{rows: seedRows}
 		gv := NewGraphView(fr)
-		res, err := gv.Query(context.Background(), GraphIntent{Op: opSeed, Session: "thr-1"})
+		res, err := gv.Query(context.Background(), GraphIntent{Op: OpSeed, Session: "thr-1"})
 		if err != nil {
 			t.Fatalf("Query seed: %v", err)
 		}
@@ -223,7 +223,7 @@ func TestQueryDispatch(t *testing.T) {
 	t.Run("expand", func(t *testing.T) {
 		fr := &fakeReader{rows: seedRows}
 		gv := NewGraphView(fr)
-		res, err := gv.Query(context.Background(), GraphIntent{Op: opExpand, SeedID: "e1"})
+		res, err := gv.Query(context.Background(), GraphIntent{Op: OpExpand, SeedID: "e1"})
 		if err != nil {
 			t.Fatalf("Query expand: %v", err)
 		}
@@ -252,7 +252,7 @@ func TestQuerySeedFallback(t *testing.T) {
 		}},
 	}}
 	gv := NewGraphView(fr)
-	res, err := gv.Query(context.Background(), GraphIntent{Op: opSeed, Session: "empty-thread"})
+	res, err := gv.Query(context.Background(), GraphIntent{Op: OpSeed, Session: "empty-thread"})
 	if err != nil {
 		t.Fatalf("Query seed fallback: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestSchema(t *testing.T) {
 // TestQueryReadError: a reader error surfaces from Query (not swallowed).
 func TestQueryReadError(t *testing.T) {
 	gv := NewGraphView(&fakeReader{err: errors.New("read failed")})
-	if _, err := gv.Query(context.Background(), GraphIntent{Op: opExpand, SeedID: "e1"}); err == nil {
+	if _, err := gv.Query(context.Background(), GraphIntent{Op: OpExpand, SeedID: "e1"}); err == nil {
 		t.Fatal("expected read error to surface")
 	}
 }
@@ -296,7 +296,7 @@ func TestQueryReadError(t *testing.T) {
 func TestQueryCapClamp(t *testing.T) {
 	fr := &fakeReader{rows: []map[string]any{{"s_id": "e1", "s_labels": jsonLabels("Entity")}}}
 	gv := NewGraphView(fr)
-	_, err := gv.Query(context.Background(), GraphIntent{Op: opExpand, SeedID: "e1", EdgeCap: 100000})
+	_, err := gv.Query(context.Background(), GraphIntent{Op: OpExpand, SeedID: "e1", EdgeCap: 100000})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestQuerySchemaOverviewOp(t *testing.T) {
 		"labels_json": jsonLabels("Entity", "Document"),
 	}}}
 	gv := NewGraphView(fr)
-	res, err := gv.Query(context.Background(), GraphIntent{Op: opSchemaOverview})
+	res, err := gv.Query(context.Background(), GraphIntent{Op: OpSchemaOverview})
 	if err != nil {
 		t.Fatalf("schema_overview Query: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestQuerySchemaOverviewOp(t *testing.T) {
 	}
 
 	gvErr := NewGraphView(&fakeReader{err: errors.New("boom")})
-	if _, err := gvErr.Query(context.Background(), GraphIntent{Op: opSchemaOverview}); err == nil {
+	if _, err := gvErr.Query(context.Background(), GraphIntent{Op: OpSchemaOverview}); err == nil {
 		t.Fatal("schema_overview read error must surface")
 	}
 }

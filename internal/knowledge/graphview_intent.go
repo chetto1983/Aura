@@ -8,11 +8,13 @@
 // bare `RETURN n` or a bare labels() list would lose data).
 package knowledge
 
-// Op enum (GraphIntent.Op).
+// Op enum (GraphIntent.Op). Exported so the REST layer (Phase 27 plan 02) can
+// enum-validate an inbound intent against the SAME constants the dispatcher switches on —
+// one source of truth for the wire op set, no drift between the validator and the compiler.
 const (
-	opSeed           = "seed"
-	opExpand         = "expand"
-	opSchemaOverview = "schema_overview"
+	OpSeed           = "seed"
+	OpExpand         = "expand"
+	OpSchemaOverview = "schema_overview"
 )
 
 // GraphIntent is the structured payload the cockpit submits (D-05). The compilers

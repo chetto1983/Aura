@@ -122,12 +122,12 @@ func (v *GraphView) Schema(ctx context.Context) (GraphSchema, error) {
 // back to the schema overview (D-07/D-08) so the default open is never blank.
 func (v *GraphView) Query(ctx context.Context, in GraphIntent) (GraphResult, error) {
 	switch in.Op {
-	case opSeed:
+	case OpSeed:
 		return v.runSeed(ctx, in)
-	case opExpand:
+	case OpExpand:
 		cypher, params := compileExpand(in)
-		return v.runCompiled(ctx, opExpand, cypher, params)
-	case opSchemaOverview:
+		return v.runCompiled(ctx, OpExpand, cypher, params)
+	case OpSchemaOverview:
 		return v.schemaResult(ctx)
 	default:
 		return GraphResult{}, fmt.Errorf("%w: %q", errBadOp, in.Op)
@@ -145,7 +145,7 @@ func (v *GraphView) runSeed(ctx context.Context, in GraphIntent) (GraphResult, e
 	if err != nil {
 		return GraphResult{}, err
 	}
-	res := normalizeRows(opSeed, rows)
+	res := normalizeRows(OpSeed, rows)
 	res.Query = cypher
 	if len(res.Nodes) == 0 {
 		return v.schemaResult(ctx)
