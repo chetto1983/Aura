@@ -429,7 +429,9 @@ function MetadataView({ source }: { readonly source: DisplaySource | undefined }
   if (source === undefined) {
     return (
       <div className="flex flex-col gap-1">
-        <h3 className="font-display text-lg leading-tight text-text">{t('source.metadata.heading')}</h3>
+        <h3 className="font-display text-lg leading-tight text-text">
+          {t('source.metadata.heading')}
+        </h3>
         <p className="text-sm text-text-muted">{t('source.metadata.selectPrompt')}</p>
       </div>
     );

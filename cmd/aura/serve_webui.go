@@ -144,6 +144,17 @@ const imageProxyRoute = "GET /api/image-proxy"
 // precedence and the gate fires AFTER RequireAuth has bound the principal.
 const approvalsResolveRoute = "POST /api/approvals/{token}/resolve"
 
+const assetsRoutePrefix = "/api/assets"
+const assetsSubtreeRoute = "/api/assets/"
+
+const (
+	assetsPresignRoute  = "POST /api/assets/presign"
+	assetsFinalizeRoute = "POST /api/assets/{id}/finalize"
+	assetsPromoteRoute  = "POST /api/assets/{id}/promote"
+	assetsRetryRoute    = "POST /api/assets/{id}/retry"
+	assetsDeleteRoute   = "DELETE /api/assets/{id}"
+)
+
 // newServeHandler builds the parent http.Handler for the daemon's single loopback
 // server: the AG-UI route prefixes delegate to aguiHandler (the agui Server.Mux), the
 // integrations proxy subtree mounts ahead of "/", and the catch-all "/" serves the
@@ -223,6 +234,13 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// Method+path precedence keeps the resolve gate authoritative over the read path.
 	mux.Handle(approvalsResolveRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(approvalsListRoute, aguiHandler)
+	mux.Handle(assetsPresignRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(assetsFinalizeRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(assetsPromoteRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(assetsRetryRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(assetsDeleteRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	mux.Handle(assetsRoutePrefix, aguiHandler)
+	mux.Handle(assetsSubtreeRoute, aguiHandler)
 	// The DISP-05/D-09 image-proxy delegates to the AG-UI handler (route on Server.Mux).
 	// A read GET, it inherits RequireAuth from the whole-mux wrap below (never an open
 	// relay) — no capability gate. Method+path-specific so it wins longest-pattern

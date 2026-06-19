@@ -44,7 +44,10 @@ function Thumbnail({ url, alt }: { readonly url: string; readonly alt: string })
 function RelevanceMeter({ score }: { readonly score: number }) {
   const pct = Math.max(0, Math.min(100, Math.round(score * 100)));
   return (
-    <span aria-hidden="true" className="inline-flex h-1 w-12 overflow-hidden rounded-sm bg-surface-3">
+    <span
+      aria-hidden="true"
+      className="inline-flex h-1 w-12 overflow-hidden rounded-sm bg-surface-3"
+    >
       <span className="h-full bg-info" style={{ width: `${String(pct)}%` }} />
     </span>
   );
@@ -89,7 +92,9 @@ function ResultRow({ item, source, onOpenSource }: ResultRowProps) {
         ) : null}
         <div className="flex flex-wrap items-center gap-2 text-[0.75rem] text-text-faint">
           {domain.length > 0 ? (
-            <span className="rounded-[var(--radius-pill)] bg-surface-2 px-1.5 py-0.5">{domain}</span>
+            <span className="rounded-[var(--radius-pill)] bg-surface-2 px-1.5 py-0.5">
+              {domain}
+            </span>
           ) : null}
           {item.score !== undefined ? (
             <span className="inline-flex items-center gap-1">

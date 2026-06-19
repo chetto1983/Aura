@@ -150,9 +150,7 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
 
   it('falls to "No summary reported." when a child has no summary', () => {
     render(
-      <SwarmReportTable
-        payload={payload([{ goal_index: 0, child_id: 'w1', status: 'ok' }])}
-      />,
+      <SwarmReportTable payload={payload([{ goal_index: 0, child_id: 'w1', status: 'ok' }])} />,
     );
     // The collapsed row shows the placeholder; expanding shows it in the Summary field.
     expect(screen.getAllByText('No summary reported.').length).toBeGreaterThan(0);

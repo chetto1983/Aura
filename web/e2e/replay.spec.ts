@@ -108,7 +108,11 @@ function replaySnapshot(g: GoldenFrames): string {
         role: 'assistant',
         content: 'Here is the forecast.',
         toolCalls: [
-          { id: 'call-1', function: { name: 'web_search', arguments: '{"query":"meteo"}' }, display },
+          {
+            id: 'call-1',
+            function: { name: 'web_search', arguments: '{"query":"meteo"}' },
+            display,
+          },
         ],
       },
     ],
@@ -163,7 +167,9 @@ test.describe('cockpit replay — typed-display rehydration (D-06 E2E)', () => {
     });
 
     // The live run streams the display-bearing turn.
-    await page.route('**/agent/run', (route) => sseResponse(route, sseFromFrames(displayTurnFrames(g))));
+    await page.route('**/agent/run', (route) =>
+      sseResponse(route, sseFromFrames(displayTurnFrames(g))),
+    );
 
     // 1) Open the thread and run a turn that emits a typed display.
     await gotoAuthenticated(page, `/c/${CONV_ID}`);

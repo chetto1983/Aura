@@ -1,0 +1,113 @@
+package objectstore
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net/url"
+	"strconv"
+	"sync"
+	"time"
+)
+
+type FakeStore struct {
+	mu      sync.RWMutex
+	objects map[ObjectRef]fakeObject
+}
+
+type fakeObject struct {
+	data  []byte
+	attrs Attrs
+}
+
+func NewFake() *FakeStore {
+	return &FakeStore{objects: make(map[ObjectRef]fakeObject)}
+}
+
+func (s *FakeStore) PresignPut(ctx context.Context, req PresignPutRequest) (PresignedPut, error) {
+	if err := ctx.Err(); err != nil {
+		return PresignedPut{}, err
+	}
+	expiresIn := req.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 10 * time.Minute
+	}
+	u := url.URL{
+		Scheme: "fake",
+		Host:   req.Ref.Bucket,
+		Path:   "/" + req.Ref.Key,
+	}
+	return PresignedPut{
+		URL:    u.String(),
+		Method: "PUT",
+		RequiredHeaders: map[string]string{
+			"Content-Type":   req.MIMEType,
+			"Content-Length": strconv.FormatInt(req.Size, 10),
+		},
+		ExpiresAt: time.Now().Add(expiresIn),
+	}, nil
+}
+
+func (s *FakeStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
+	if err := ctx.Err(); err != nil {
+		return Attrs{}, err
+	}
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return Attrs{}, err
+	}
+	attrs := Attrs{
+		SizeBytes: int64(len(data)),
+		ETag:      etag(data),
+		MIMEType:  opts.MIMEType,
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.objects[ref] = fakeObject{data: bytes.Clone(data), attrs: attrs}
+	return attrs, nil
+}
+
+func (s *FakeStore) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {
+	if err := ctx.Err(); err != nil {
+		return Attrs{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	obj, ok := s.objects[ref]
+	if !ok {
+		return Attrs{}, fmt.Errorf("objectstore fake: %s/%s not found", ref.Bucket, ref.Key)
+	}
+	return obj.attrs, nil
+}
+
+func (s *FakeStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attrs, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, Attrs{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	obj, ok := s.objects[ref]
+	if !ok {
+		return nil, Attrs{}, fmt.Errorf("objectstore fake: %s/%s not found", ref.Bucket, ref.Key)
+	}
+	data := bytes.Clone(obj.data)
+	return io.NopCloser(bytes.NewReader(data)), obj.attrs, nil
+}
+
+func (s *FakeStore) Delete(ctx context.Context, ref ObjectRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects, ref)
+	return nil
+}
+
+func etag(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}

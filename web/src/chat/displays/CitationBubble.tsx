@@ -62,9 +62,7 @@ export function CitationBubble({ number, source, onOpenSource }: CitationBubbleP
   const [open, setOpen] = useState(false);
   const title = source.title ?? t('citation.unknownTitle');
 
-  const chipColor = source.cited
-    ? 'bg-accent text-accent-text'
-    : 'bg-surface-3 text-text-muted';
+  const chipColor = source.cited ? 'bg-accent text-accent-text' : 'bg-surface-3 text-text-muted';
 
   return (
     <HoverCard openDelay={80} closeDelay={120} open={open} onOpenChange={setOpen}>

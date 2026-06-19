@@ -60,7 +60,12 @@ describe('SourcesButton (D-13)', () => {
 
 describe('aggregateAnswerSources (pure, D-13)', () => {
   function toolPart(payload: DisplayPayload) {
-    return { type: 'tool-call', toolCallId: payload.tool_call_id, toolName: 'web_search', display: payload };
+    return {
+      type: 'tool-call',
+      toolCallId: payload.tool_call_id,
+      toolName: 'web_search',
+      display: payload,
+    };
   }
 
   it('returns [] for non-array content', () => {
@@ -68,7 +73,7 @@ describe('aggregateAnswerSources (pure, D-13)', () => {
     expect(aggregateAnswerSources('text')).toEqual([]);
   });
 
-  it('aggregates + dedupes the registries across an answer\'s tool parts by ref_id', () => {
+  it("aggregates + dedupes the registries across an answer's tool parts by ref_id", () => {
     const content = [
       { type: 'text', text: 'answer' },
       toolPart({ type: 'web_result', tool_call_id: 'c1', sources: [ALPHA, BRAVO] }),

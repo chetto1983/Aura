@@ -122,7 +122,10 @@ function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
         <tr>
           <td colSpan={4} className="border-b border-border bg-surface px-3 py-2">
             <dl className="flex flex-col gap-2 text-sm">
-              <Field label={t('swarm.summaryLabel')} value={report.summary ?? t('swarm.noSummary')} />
+              <Field
+                label={t('swarm.summaryLabel')}
+                value={report.summary ?? t('swarm.noSummary')}
+              />
               {hasField(report.error) ? (
                 <Field label={t('swarm.errorLabel')} value={report.error} tone="danger" />
               ) : null}

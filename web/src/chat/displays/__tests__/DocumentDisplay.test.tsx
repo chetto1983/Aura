@@ -43,9 +43,7 @@ describe('DocumentDisplay (D-10 / D-04)', () => {
   it('STRIPS a <script> tag — sanitize chokepoint intact (T-26-17)', async () => {
     const malicious = 'Safe text.\n\n<script>window.__pwned=1</script>';
     const { container } = render(
-      <DocumentDisplay
-        payload={payload({ document: { content_md: malicious } })}
-      />,
+      <DocumentDisplay payload={payload({ document: { content_md: malicious } })} />,
     );
     await waitFor(() => {
       expect(screen.getByText('Safe text.')).toBeTruthy();
@@ -91,7 +89,9 @@ describe('DocumentDisplay (D-10 / D-04)', () => {
   it('an unknown `[n]` (no registry entry) renders no live chip (T-26-18)', async () => {
     const md = 'Unsupported [9] claim.';
     render(
-      <DocumentDisplay payload={payload({ document: { content_md: md }, sources: [source(1, 'a')] })} />,
+      <DocumentDisplay
+        payload={payload({ document: { content_md: md }, sources: [source(1, 'a')] })}
+      />,
     );
     await waitFor(() => {
       expect(screen.getByText(/Unsupported/)).toBeTruthy();

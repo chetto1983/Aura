@@ -27,6 +27,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -58,6 +59,7 @@ type chatEnv struct {
 	run         *runner.Runner
 	client      llm.Client
 	reg         *tools.Registry
+	assets      *assets.Service
 	toolHandles runtimeToolHandles
 	mcpClosers  []func() error
 }

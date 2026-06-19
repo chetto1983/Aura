@@ -5,8 +5,11 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   useAuiState,
+  type ThreadMessageLike,
   type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
+import { AttachmentCard } from './attachments/AttachmentCard';
+import type { Asset } from './attachments/types';
 import { BranchPicker } from './BranchPicker';
 import { DisplayRouter } from './displays/DisplayRouter';
 import { aggregateAnswerSources } from './displays/answerSources';
@@ -24,8 +27,21 @@ import { ToolActivityCard } from './ToolActivityCard';
 // typed-display + Source Explorer seams (ToolFallback → DisplayRouter, AnswerSources
 // → SourcesButton) live here.
 
-export function UserMessage() {
+interface UserMessageProps {
+  readonly onAssetRetry: (assetID: string) => void;
+  readonly onAssetPromote: (assetID: string) => void;
+  readonly onAssetRemove: (assetID: string) => void;
+}
+
+function messageAttachments(message: ThreadMessageLike): readonly Asset[] {
+  const metadata = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
+  return metadata?.attachments ?? [];
+}
+
+export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: UserMessageProps) {
   const { t } = useTranslation();
+  const message = useAuiState((s) => s.message) as ThreadMessageLike;
+  const attachments = messageAttachments(message);
   return (
     <MessagePrimitive.Root className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
       {/* Edit mode: a message-scoped composer whose Send fires onEdit (fork + re-run). */}
@@ -63,6 +79,19 @@ export function UserMessage() {
           />
         </div>
         {/* Edit a user turn → onEdit forks a branch + re-runs. Copy is the minimum verb. */}
+        {attachments.length > 0 ? (
+          <div className="flex flex-col items-end gap-2">
+            {attachments.map((asset) => (
+              <AttachmentCard
+                key={asset.id}
+                asset={asset}
+                onRetry={onAssetRetry}
+                onPromote={onAssetPromote}
+                onRemove={onAssetRemove}
+              />
+            ))}
+          </div>
+        ) : null}
         <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
           <ActionBarPrimitive.Edit
             aria-label={t('chat.action.edit')}

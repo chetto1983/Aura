@@ -60,13 +60,27 @@ const setupShutdownTimeout = 10 * time.Second
 func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name string) (enabled, ok bool)) (*channels.Registry, *http.Server) {
 	tgCfg := telegram.LoadConfig()
 
-	tg := telegram.NewChannel(telegram.Deps{
+	tg := telegram.NewChannel(buildTelegramDeps(chat, tgCfg))
+
+	reg := channels.NewRegistry()
+	reg.Register(tg)
+	if override != nil {
+		reg.SetEnabledOverride(override)
+	}
+
+	setupSrv := buildSetupServer(ctx, chat)
+	return reg, setupSrv
+}
+
+func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
+	return telegram.Deps{
 		Turn:               ensuringTurn(chat.run),
 		Token:              tgCfg.BotToken,
 		Store:              telegram.New(chat.pool),
 		Profile:            profile.NewStore(chat.cfg.ProfileDir),
 		Multimodal:         multimodalConfig(chat.cfg),
 		DocumentIngest:     newRuntimeDocumentIngestor(chat.cfg, chat.pool),
+		Assets:             chat.assets,
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),
 		Clear:              chat.conv,
@@ -79,16 +93,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		ShowReasoning:      chat.cfg.LLM.ShowReasoning,
 		ReasoningFIFORunes: tgCfg.ReasoningFIFORunes,
 		AnswerExtractor:    onboarding.NewLLMAnswerExtractor(chat.client, chat.cfg.LLM.Model),
-	})
-
-	reg := channels.NewRegistry()
-	reg.Register(tg)
-	if override != nil {
-		reg.SetEnabledOverride(override)
 	}
-
-	setupSrv := buildSetupServer(ctx, chat)
-	return reg, setupSrv
 }
 
 // multimodalConfig projects the central config.Config multimodal knobs onto the

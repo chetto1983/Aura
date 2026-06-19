@@ -224,8 +224,7 @@ export const displayIt = {
       emptyHeading: 'Nessuna riga',
       emptyBody: 'Questo risultato non ha dati tabellari.',
       noMatchHeading: 'Nessun risultato',
-      noMatchBody:
-        'Nessuna riga corrisponde a "{{query}}". Cancella il filtro per vederle tutte.',
+      noMatchBody: 'Nessuna riga corrisponde a "{{query}}". Cancella il filtro per vederle tutte.',
     },
     chart: {
       category: 'Categoria',

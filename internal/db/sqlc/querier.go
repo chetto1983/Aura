@@ -30,6 +30,7 @@ type Querier interface {
 	ConsumeTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
+	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
@@ -42,6 +43,8 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
+	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
@@ -60,6 +63,7 @@ type Querier interface {
 	GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
 	// makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
@@ -85,6 +89,8 @@ type Querier interface {
 	// tiny; no new index is warranted — RESEARCH A4).
 	ListAllPendingPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
+	ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLibraryParams) ([]AuraAssets, error)
+	ListAssetsForThread(ctx context.Context, arg ListAssetsForThreadParams) ([]AuraAssets, error)
 	// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
 	// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
 	// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
@@ -116,7 +122,9 @@ type Querier interface {
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
+	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
@@ -128,8 +136,13 @@ type Querier interface {
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
+	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
+	UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error)
+	UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error)
+	UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (AuraAssets, error)
+	UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUploadedParams) (AuraAssets, error)
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)

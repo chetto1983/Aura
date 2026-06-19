@@ -279,6 +279,54 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
+	t.Run("no cookie /api/assets -> 401 (RequireAuth inherited)", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/assets", nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("/api/assets status = %d, want 401 (gate inherited)", rec.Code)
+		}
+		if len(aguiHits) != 0 {
+			t.Fatalf("unauthenticated /api/assets leaked to the AG-UI handler: %v", aguiHits)
+		}
+	})
+
+	t.Run("valid cookie /api/assets reads reach the AG-UI handler", func(t *testing.T) {
+		for _, route := range []string{"/api/assets", "/api/assets/asset-1"} {
+			aguiHits = nil
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			req.AddCookie(sessionCookie)
+			handler.ServeHTTP(rec, req)
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("valid-session GET %s did not reach the AG-UI handler: hits=%v code=%d", route, aguiHits, rec.Code)
+			}
+		}
+	})
+
+	t.Run("asset mutations with a valid capable cookie pass the capability gate", func(t *testing.T) {
+		for _, tc := range []struct {
+			method string
+			path   string
+			body   string
+		}{
+			{http.MethodPost, "/api/assets/presign", `{}`},
+			{http.MethodPost, "/api/assets/asset-1/finalize", `{}`},
+			{http.MethodPost, "/api/assets/asset-1/promote", `{}`},
+			{http.MethodPost, "/api/assets/asset-1/retry", `{}`},
+			{http.MethodDelete, "/api/assets/asset-1", ``},
+		} {
+			aguiHits = nil
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.AddCookie(sessionCookie)
+			handler.ServeHTTP(rec, req)
+			if len(aguiHits) != 1 || aguiHits[0] != tc.path {
+				t.Fatalf("%s %s did not flow through RequireCapability to the AG-UI handler: hits=%v code=%d", tc.method, tc.path, aguiHits, rec.Code)
+			}
+		}
+	})
+
 	t.Run("valid cookie reaches the AG-UI handler", func(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
@@ -346,11 +394,11 @@ func (u uncapableIdentities) HasCapability(_ context.Context, _, _ string) (bool
 	return false, nil
 }
 
-// TestServeWebuiApprovalsCapabilityGate pins the negative half of T-25-07: with a
-// configured secret and a principal that holds NO capability, the mutating resolve
-// (and POST /agent/run) are 403'd by RequireCapability and never reach the AG-UI handler,
-// even with a valid session cookie. This proves the resolve route is genuinely gated on
-// the capability, not merely on authentication.
+// TestServeWebuiApprovalsCapabilityGate pins the negative half of T-25-07 and the
+// asset mutation gate: with a configured secret and a principal that holds NO
+// capability, mutating routes are 403'd by RequireCapability and never reach the
+// AG-UI handler, even with a valid session cookie. This proves those routes are
+// genuinely gated on the capability, not merely on authentication.
 func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
 	const secret = "operator-secret"
@@ -392,17 +440,29 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		t.Fatal("POST /login did not mint a session cookie")
 	}
 
-	for _, route := range []string{"/api/approvals/11111111-1111-1111-1111-111111111111/resolve", "/agent/run"} {
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/approvals/11111111-1111-1111-1111-111111111111/resolve", `{"action":"accept"}`},
+		{http.MethodPost, "/agent/run", `{}`},
+		{http.MethodPost, "/api/assets/presign", `{}`},
+		{http.MethodPost, "/api/assets/asset-1/finalize", `{}`},
+		{http.MethodPost, "/api/assets/asset-1/promote", `{}`},
+		{http.MethodPost, "/api/assets/asset-1/retry", `{}`},
+		{http.MethodDelete, "/api/assets/asset-1", ``},
+	} {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{"action":"accept"}`))
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		req.AddCookie(sessionCookie)
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
-			t.Fatalf("POST %s with an uncapable principal = %d, want 403", route, rec.Code)
+			t.Fatalf("%s %s with an uncapable principal = %d, want 403", tc.method, tc.path, rec.Code)
 		}
 		if len(aguiHits) != 0 {
-			t.Fatalf("POST %s reached the AG-UI handler despite a denied capability: %v", route, aguiHits)
+			t.Fatalf("%s %s reached the AG-UI handler despite a denied capability: %v", tc.method, tc.path, aguiHits)
 		}
 	}
 }

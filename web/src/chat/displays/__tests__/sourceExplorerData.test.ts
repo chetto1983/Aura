@@ -40,19 +40,40 @@ function s(over: Override): DisplaySource {
   };
 }
 
-const A = s({ ref_id: 'a', index: 3, title: 'Charlie', type: 'document', url: 'https://c.test', cited: false });
-const B = s({ ref_id: 'b', index: 1, title: 'Alpha', type: 'web_result', url: 'https://a.test', cited: true });
-const C = s({ ref_id: 'c', index: 2, title: 'Bravo', type: 'code', url: 'https://b.test', cited: false });
+const A = s({
+  ref_id: 'a',
+  index: 3,
+  title: 'Charlie',
+  type: 'document',
+  url: 'https://c.test',
+  cited: false,
+});
+const B = s({
+  ref_id: 'b',
+  index: 1,
+  title: 'Alpha',
+  type: 'web_result',
+  url: 'https://a.test',
+  cited: true,
+});
+const C = s({
+  ref_id: 'c',
+  index: 2,
+  title: 'Bravo',
+  type: 'code',
+  url: 'https://b.test',
+  cited: false,
+});
 const ALL: readonly DisplaySource[] = [A, B, C];
 
 describe('filterAndSortSources — every sort key', () => {
   it('sorts by index asc/desc', () => {
-    expect(filterAndSortSources(ALL, '', { key: 'index', dir: 'asc' }).map((x) => x.index)).toEqual([
-      1, 2, 3,
-    ]);
-    expect(filterAndSortSources(ALL, '', { key: 'index', dir: 'desc' }).map((x) => x.index)).toEqual(
-      [3, 2, 1],
+    expect(filterAndSortSources(ALL, '', { key: 'index', dir: 'asc' }).map((x) => x.index)).toEqual(
+      [1, 2, 3],
     );
+    expect(
+      filterAndSortSources(ALL, '', { key: 'index', dir: 'desc' }).map((x) => x.index),
+    ).toEqual([3, 2, 1]);
   });
 
   it('sorts by type', () => {
@@ -64,11 +85,9 @@ describe('filterAndSortSources — every sort key', () => {
   });
 
   it('sorts by title', () => {
-    expect(filterAndSortSources(ALL, '', { key: 'title', dir: 'asc' }).map((x) => x.title)).toEqual([
-      'Alpha',
-      'Bravo',
-      'Charlie',
-    ]);
+    expect(filterAndSortSources(ALL, '', { key: 'title', dir: 'asc' }).map((x) => x.title)).toEqual(
+      ['Alpha', 'Bravo', 'Charlie'],
+    );
   });
 
   it('sorts by source (url)', () => {
@@ -92,9 +111,9 @@ describe('filterAndSortSources — every sort key', () => {
   it('breaks ties by index when key values are equal', () => {
     const x = s({ ref_id: 'x', index: 2, title: 'Same', cited: false });
     const y = s({ ref_id: 'y', index: 1, title: 'Same', cited: false });
-    expect(filterAndSortSources([x, y], '', { key: 'title', dir: 'asc' }).map((r) => r.index)).toEqual(
-      [1, 2],
-    );
+    expect(
+      filterAndSortSources([x, y], '', { key: 'title', dir: 'asc' }).map((r) => r.index),
+    ).toEqual([1, 2]);
   });
 });
 
@@ -107,7 +126,13 @@ describe('filterAndSortSources — search predicate', () => {
   });
 
   it('ignores undefined string fields without throwing', () => {
-    const bare = s({ ref_id: 'bare', index: 5, title: undefined, snippet: undefined, type: undefined });
+    const bare = s({
+      ref_id: 'bare',
+      index: 5,
+      title: undefined,
+      snippet: undefined,
+      type: undefined,
+    });
     expect(filterAndSortSources([bare], 'nomatch', null)).toHaveLength(0);
     expect(filterAndSortSources([bare], 'bare', null)).toHaveLength(1); // ref_id matches
   });
@@ -116,9 +141,18 @@ describe('filterAndSortSources — search predicate', () => {
 describe('nextExplorerSort', () => {
   it('asc on a fresh column, toggles on the same column, asc on a new column', () => {
     expect(nextExplorerSort(null, 'index')).toEqual({ key: 'index', dir: 'asc' });
-    expect(nextExplorerSort({ key: 'index', dir: 'asc' }, 'index')).toEqual({ key: 'index', dir: 'desc' });
-    expect(nextExplorerSort({ key: 'index', dir: 'desc' }, 'index')).toEqual({ key: 'index', dir: 'asc' });
-    expect(nextExplorerSort({ key: 'index', dir: 'asc' }, 'title')).toEqual({ key: 'title', dir: 'asc' });
+    expect(nextExplorerSort({ key: 'index', dir: 'asc' }, 'index')).toEqual({
+      key: 'index',
+      dir: 'desc',
+    });
+    expect(nextExplorerSort({ key: 'index', dir: 'desc' }, 'index')).toEqual({
+      key: 'index',
+      dir: 'asc',
+    });
+    expect(nextExplorerSort({ key: 'index', dir: 'asc' }, 'title')).toEqual({
+      key: 'title',
+      dir: 'asc',
+    });
   });
 });
 

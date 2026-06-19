@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  hasField,
-  hasOptions,
-  isSwarmStatus,
-  statusDotClass,
-  statusLabelKey,
-} from '../swarmRow';
+import { hasField, hasOptions, isSwarmStatus, statusDotClass, statusLabelKey } from '../swarmRow';
 
 // Pure swarm-row helpers — exact-output assertions pinning the status mapping and
 // field-presence logic (mutation-resistant).

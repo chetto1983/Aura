@@ -8,10 +8,7 @@ import type { DisplayPayload } from '../types';
 // pagination (default 3/page), all client-side, with the omit-when-valid filter and
 // announced sort state.
 
-function payload(
-  columns: readonly string[],
-  rows: readonly (readonly string[])[],
-): DisplayPayload {
+function payload(columns: readonly string[], rows: readonly (readonly string[])[]): DisplayPayload {
   return { type: 'table', tool_call_id: 'call-1', table: { columns, rows } };
 }
 

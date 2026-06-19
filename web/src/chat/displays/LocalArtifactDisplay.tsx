@@ -29,8 +29,7 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
   const artifact = payload.artifact;
   const label = t('display.type.local_artifact');
   const filename = artifact?.filename ?? t('display.artifact.noName');
-  const size =
-    artifact?.size_bytes !== undefined ? formatSize(artifact.size_bytes, t) : undefined;
+  const size = artifact?.size_bytes !== undefined ? formatSize(artifact.size_bytes, t) : undefined;
 
   return (
     <DisplayCardShell label={label} meta={size}>

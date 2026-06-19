@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/channels"
+	"github.com/chetto1983/aura/internal/channels/telegram"
+	"github.com/chetto1983/aura/internal/config"
 )
 
 // fakeChannel is a channels.Channel double for the serve lifecycle tests. It
@@ -155,5 +158,19 @@ func TestServeFlagsDisableTelegram(t *testing.T) {
 				t.Fatalf("bare serve must install NO override, got one")
 			}
 		})
+	}
+}
+
+func TestBuildTelegramDepsUsesSharedAssetService(t *testing.T) {
+	assetSvc := &assets.Service{}
+	chat := &chatEnv{
+		cfg:    &config.Config{ProfileDir: t.TempDir()},
+		assets: assetSvc,
+	}
+
+	deps := buildTelegramDeps(chat, telegram.Config{})
+
+	if deps.Assets != assetSvc {
+		t.Fatalf("telegram deps assets = %T, want shared asset service", deps.Assets)
 	}
 }

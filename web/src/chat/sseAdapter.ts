@@ -319,6 +319,7 @@ export interface StreamRunOptions {
   readonly threadId: string;
   readonly userText: string;
   readonly signal: AbortSignal;
+  readonly attachmentIds?: readonly string[];
   /** Called after each frame folds into the turn (drives setMessages). */
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   /** Mints the assistant message id; defaults to crypto.randomUUID. */
@@ -390,6 +391,9 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
     body: JSON.stringify({
       threadId: opts.threadId,
       messages: [{ id: id, role: 'user', content: opts.userText }],
+      ...(opts.attachmentIds !== undefined && opts.attachmentIds.length > 0
+        ? { aura: { attachment_ids: opts.attachmentIds } }
+        : {}),
     }),
     signal: opts.signal,
   });

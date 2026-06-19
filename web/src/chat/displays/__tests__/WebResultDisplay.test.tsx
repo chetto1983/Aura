@@ -55,7 +55,9 @@ describe('WebResultDisplay (DISP-02 / D-09)', () => {
 
   it('NEVER emits a raw external <img src="http…"> to an arbitrary host (T-26-15)', () => {
     const { container } = render(
-      <WebResultDisplay payload={payload([item(), item({ thumbnail: 'https://evil.test/x.png' })])} />,
+      <WebResultDisplay
+        payload={payload([item(), item({ thumbnail: 'https://evil.test/x.png' })])}
+      />,
     );
     const imgs = [...container.querySelectorAll('img')];
     expect(imgs.length).toBeGreaterThan(0);
@@ -109,7 +111,11 @@ describe('WebResultDisplay (DISP-02 / D-09)', () => {
 
   it('paginates result groups at the default 3 per page', () => {
     const many = Array.from({ length: 5 }, (_, i) =>
-      item({ title: `Result ${String(i)}`, url: `https://e.test/${String(i)}`, ref_id: `r${String(i)}` }),
+      item({
+        title: `Result ${String(i)}`,
+        url: `https://e.test/${String(i)}`,
+        ref_id: `r${String(i)}`,
+      }),
     );
     render(<WebResultDisplay payload={payload(many)} />);
     // Page 1 shows 3; "1–3 of 5" count is present.

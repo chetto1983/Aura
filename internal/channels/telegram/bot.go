@@ -18,6 +18,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/llm"
@@ -42,6 +43,11 @@ type turnDriver func(ctx context.Context, convID string, userMsg *string) iter.S
 
 type documentIngestor interface {
 	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
+}
+
+type assetIngress interface {
+	IngestTelegramFile(ctx context.Context, req assets.TelegramIngestRequest) (assets.Asset, error)
+	GetForIdentity(ctx context.Context, assetID, identityID string) (assets.Asset, error)
 }
 
 // botSender is the narrow telebot surface the render consumers (status_pane.go /
@@ -91,6 +97,10 @@ type Deps struct {
 	// document ingestion pipeline. Nil preserves the legacy convert-to-markdown
 	// path used by existing deployments and tests.
 	DocumentIngest documentIngestor
+
+	// Assets routes Telegram media through the shared asset pipeline. Nil preserves
+	// the legacy direct sidecar paths for tests and transitional deployments.
+	Assets assetIngress
 
 	// Command backends drive the bot-intercept dispatch (commands.go). Search ==
 	// conversations.SearchConversationTurns (CLI parity); Cost == the cachemetrics

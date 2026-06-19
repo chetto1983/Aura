@@ -71,34 +71,34 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
   // Each per-type case routes to its typed card (the per-card behavior is covered in
   // that card's own test; here we pin the ROUTING — the switch reaches each branch).
   it.each([
+    [{ type: 'table', tool_call_id: 't', table: { columns: ['A'], rows: [['1']] } }, 'Table'],
+    [{ type: 'chart', tool_call_id: 't', chart: { x_labels: ['a'], y_values: [1] } }, 'Chart'],
     [
-      { type: 'table', tool_call_id: 't', table: { columns: ['A'], rows: [['1']] } },
-      'Table',
-    ],
-    [
-      { type: 'chart', tool_call_id: 't', chart: { x_labels: ['a'], y_values: [1] } },
-      'Chart',
-    ],
-    [
-      { type: 'system_event', tool_call_id: 't', system: { class: 'web_error', reason: 'timeout', severity: 'warning' } },
+      {
+        type: 'system_event',
+        tool_call_id: 't',
+        system: { class: 'web_error', reason: 'timeout', severity: 'warning' },
+      },
       'System',
     ],
     [
-      { type: 'swarm_report', tool_call_id: 't', swarm: [{ goal_index: 0, child_id: 'c', status: 'ok' }] },
+      {
+        type: 'swarm_report',
+        tool_call_id: 't',
+        swarm: [{ goal_index: 0, child_id: 'c', status: 'ok' }],
+      },
       'Workers',
     ],
     [
-      { type: 'local_artifact', tool_call_id: 't', artifact: { filename: 'f.txt', size_bytes: 10 } },
+      {
+        type: 'local_artifact',
+        tool_call_id: 't',
+        artifact: { filename: 'f.txt', size_bytes: 10 },
+      },
       'Artifact',
     ],
-    [
-      { type: 'document', tool_call_id: 't', document: { content_md: 'hello doc' } },
-      'Document',
-    ],
-    [
-      { type: 'code', tool_call_id: 't', code: { body: 'print(1)', lang: 'python' } },
-      'Code',
-    ],
+    [{ type: 'document', tool_call_id: 't', document: { content_md: 'hello doc' } }, 'Document'],
+    [{ type: 'code', tool_call_id: 't', code: { body: 'print(1)', lang: 'python' } }, 'Code'],
   ] as [DisplayPayload, string][])(
     'routes the %s payload to its typed card label "%s"',
     (payload, label) => {
@@ -115,7 +115,14 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
       tool_call_id: 'call-doc',
       document: { content_md: 'A claim [1].' },
       sources: [
-        { ref_id: 'src-1', index: 1, type: 'document', title: 'Cited', url: 'https://x.test', cited: true },
+        {
+          ref_id: 'src-1',
+          index: 1,
+          type: 'document',
+          title: 'Cited',
+          url: 'https://x.test',
+          cited: true,
+        },
       ],
     };
     render(<DisplayRouter payload={doc} toolName="web_fetch" onOpenSource={onOpenSource} />);

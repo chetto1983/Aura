@@ -1,11 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
-import {
-  baseMarkdownComponents,
-  buildRehypePlugins,
-  remarkPlugins,
-} from '../markdownConfig';
+import { baseMarkdownComponents, buildRehypePlugins, remarkPlugins } from '../markdownConfig';
 import type { DisplayDocument, DisplaySource } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { CitationBubble } from './CitationBubble';
@@ -60,7 +56,13 @@ export function DocumentDisplay({ payload, onOpenSource }: DocumentDisplayProps)
           const source = byRefId.get(refId);
           const number = Number(numberRaw);
           if (source !== undefined && Number.isFinite(number)) {
-            return <CitationBubble number={number} source={source} {...(onOpenSource ? { onOpenSource } : {})} />;
+            return (
+              <CitationBubble
+                number={number}
+                source={source}
+                {...(onOpenSource ? { onOpenSource } : {})}
+              />
+            );
           }
         }
         return <span {...spanProps}>{children}</span>;

@@ -32,7 +32,7 @@ function src(over: SourceOverride): DisplaySource {
     index: over.index,
     type: over.type ?? 'web_result',
     title: over.title ?? `Source ${String(over.index)}`,
-    url: 'url' in over ? over.url ?? '' : `https://example${String(over.index)}.com/a`,
+    url: 'url' in over ? (over.url ?? '') : `https://example${String(over.index)}.com/a`,
     snippet: over.snippet ?? 'snippet',
     cited: over.cited ?? false,
     ...(over.confidence !== undefined ? { confidence: over.confidence } : {}),
@@ -55,7 +55,9 @@ describe('filterAndSortSources (pure)', () => {
 
   it('filters by title/url/snippet/type/ref_id (case-insensitive)', () => {
     expect(filterAndSortSources(SOURCES, 'bravo', null).map((s) => s.ref_id)).toEqual(['src-2']);
-    expect(filterAndSortSources(SOURCES, 'ALPHA.TEST', null).map((s) => s.ref_id)).toEqual(['src-1']);
+    expect(filterAndSortSources(SOURCES, 'ALPHA.TEST', null).map((s) => s.ref_id)).toEqual([
+      'src-1',
+    ]);
     expect(filterAndSortSources(SOURCES, 'src-3', null).map((s) => s.ref_id)).toEqual(['src-3']);
   });
 
@@ -90,9 +92,9 @@ describe('sourceIncomplete / anyIncomplete (pure)', () => {
   it('flags a source missing a title or url as incomplete', () => {
     expect(sourceIncomplete(src({ ref_id: 'a', index: 1, title: '' }))).toBe(true);
     expect(sourceIncomplete(src({ ref_id: 'b', index: 2, url: undefined }))).toBe(true);
-    expect(sourceIncomplete(src({ ref_id: 'c', index: 3, title: 'Full', url: 'https://x.test' }))).toBe(
-      false,
-    );
+    expect(
+      sourceIncomplete(src({ ref_id: 'c', index: 3, title: 'Full', url: 'https://x.test' })),
+    ).toBe(false);
   });
 
   it('anyIncomplete is true when at least one source is incomplete', () => {
@@ -174,7 +176,14 @@ describe('SourceExplorerSheet (render, D-03 / DISP-05)', () => {
     render(<SourceExplorerSheet open sources={SOURCES} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
-    const forbidden = [/re-?analyze/i, /\bclear\b/i, /\bsave\b/i, /\bdelete\b/i, /\bedit\b/i, /\bapply\b/i];
+    const forbidden = [
+      /re-?analyze/i,
+      /\bclear\b/i,
+      /\bsave\b/i,
+      /\bdelete\b/i,
+      /\bedit\b/i,
+      /\bapply\b/i,
+    ];
     const buttons = screen.getAllByRole('button');
     for (const button of buttons) {
       const name = button.textContent ?? '';

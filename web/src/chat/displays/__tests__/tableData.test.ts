@@ -66,7 +66,15 @@ describe('csvField', () => {
 
 describe('toCSV', () => {
   it('joins the header and rows with CRLF', () => {
-    expect(toCSV(['A', 'B'], [['1', '2'], ['3', '4']])).toBe('A,B\r\n1,2\r\n3,4');
+    expect(
+      toCSV(
+        ['A', 'B'],
+        [
+          ['1', '2'],
+          ['3', '4'],
+        ],
+      ),
+    ).toBe('A,B\r\n1,2\r\n3,4');
   });
 
   it('emits just the header when there are no rows', () => {

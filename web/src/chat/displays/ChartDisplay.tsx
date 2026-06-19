@@ -58,7 +58,10 @@ export function ChartDisplay({ payload }: ChartDisplayProps) {
           const pct = max > 0 ? Math.round((Math.abs(p.value) / max) * 100) : 0;
           return (
             <div key={i} className="flex items-center gap-2">
-              <span className="w-24 shrink-0 truncate text-[0.75rem] text-text-muted" title={p.label}>
+              <span
+                className="w-24 shrink-0 truncate text-[0.75rem] text-text-muted"
+                title={p.label}
+              >
                 {p.label}
               </span>
               <span className="relative h-4 flex-1 overflow-hidden rounded-[var(--radius-sm)] bg-surface">

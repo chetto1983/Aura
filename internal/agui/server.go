@@ -17,6 +17,7 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
@@ -90,6 +91,7 @@ type Server struct {
 	run       Runner
 	conv      ConversationStore
 	approvals ApprovalStore
+	assets    AssetService
 	images    ImageFetcher
 	idgen     IDGenerator
 	cfg       ServerConfig
@@ -108,6 +110,8 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // daemon composition root after NewServer; until set, the approvals read route answers
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
+
+func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
 // delegates to. Set by the daemon composition root after NewServer (the *web.Client
@@ -139,6 +143,7 @@ func (s *Server) Mux() http.Handler {
 	// handlers; the parent-mux mount behind RequireAuth (+ RequireCapability on the
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
+	s.registerAssetRoutes(mux)
 	return s.withCORS(mux)
 }
 
@@ -164,41 +169,17 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// withCORS wraps the mux to make CORSPermissive functional rather than half-wired (WR-05).
-// When the knob is off it returns the mux unchanged (no headers, T-12-13 restrictive
-// default). When on it sets `Access-Control-Allow-Origin: *` on EVERY response — including
-// the 4xx/5xx error bodies the ServeMux/handlers emit — by setting the header before the
-// handler runs (Go accumulates response headers until WriteHeader), and short-circuits a
-// CORS preflight OPTIONS with 204 + the Allow-Origin/Methods/Headers triple. Without the
-// preflight an application/json cross-origin POST is rejected by the browser before it ever
-// reaches the handler.
-func (s *Server) withCORS(next http.Handler) http.Handler {
-	if !s.cfg.CORSPermissive {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", "*")
-		if r.Method == http.MethodOptions {
-			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			h.Set("Access-Control-Allow-Headers", "Content-Type")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 // handleRun parses RunAgentInput, resolves the thread (404), applies any protocol-native
 // resume entries, drives Runner.Turn over the last user message, and streams the translated
 // AG-UI events as SSE. The body is size-capped (T-12-12); a malformed/empty payload is a 400.
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	var in types.RunAgentInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	req, err := decodeRunAgentRequest(json.NewDecoder(r.Body))
+	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	in := req.RunAgentInput
 	if err := ValidateRunInput(in); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -224,6 +205,37 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if len(req.Aura.AttachmentIDs) > 0 {
+		if s.assets == nil {
+			http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		identityID, ok := principalIdentityID(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		items := make([]assets.Asset, 0, len(req.Aura.AttachmentIDs))
+		for _, id := range req.Aura.AttachmentIDs {
+			asset, err := s.assets.GetForIdentity(ctx, id, identityID)
+			if err != nil {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			}
+			if asset.ThreadID != "" && asset.ThreadID != in.ThreadID {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			}
+			items = append(items, asset)
+		}
+		if userMsg == nil {
+			empty := assets.BuildAttachmentBlock(items)
+			userMsg = &empty
+		} else {
+			combined := assets.WithAttachmentBlock(*userMsg, items)
+			userMsg = &combined
+		}
 	}
 
 	var unlock func()

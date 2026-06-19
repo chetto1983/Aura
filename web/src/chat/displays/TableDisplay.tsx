@@ -3,14 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { DisplayTable } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { useCopyAction } from './useCopyAction';
-import {
-  filterAndSort,
-  isNumericCell,
-  nextSort,
-  toCSV,
-  toTSV,
-  type SortState,
-} from './tableData';
+import { filterAndSort, isNumericCell, nextSort, toCSV, toTSV, type SortState } from './tableData';
 
 // TableDisplay (DISP-03 / D-14): a client-side sortable, filterable, copyable,
 // CSV-exportable table over the trusted `{columns, rows}` payload, paginated in-card
@@ -42,10 +35,7 @@ export function TableDisplay({ payload }: TableDisplayProps) {
   const columns = useMemo(() => payload.table?.columns ?? [], [payload.table]);
   const rows = useMemo(() => payload.table?.rows ?? [], [payload.table]);
 
-  const filtered = useMemo(
-    () => filterAndSort(rows, filter, sort),
-    [rows, filter, sort],
-  );
+  const filtered = useMemo(() => filterAndSort(rows, filter, sort), [rows, filter, sort]);
 
   const toggleSort = (col: number) => {
     setPage(0);
@@ -58,10 +48,7 @@ export function TableDisplay({ payload }: TableDisplayProps) {
   if (columns.length === 0 || rows.length === 0) {
     return (
       <DisplayCardShell label={label}>
-        <EmptyState
-          heading={t('display.table.emptyHeading')}
-          body={t('display.table.emptyBody')}
-        />
+        <EmptyState heading={t('display.table.emptyHeading')} body={t('display.table.emptyBody')} />
       </DisplayCardShell>
     );
   }
@@ -139,9 +126,7 @@ export function TableDisplay({ payload }: TableDisplayProps) {
                     return (
                       <th
                         key={ci}
-                        aria-sort={
-                          active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'
-                        }
+                        aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
                         className="border-b border-border bg-surface-2 p-0 text-left"
                       >
                         <button

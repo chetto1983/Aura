@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  __resetShikiForTest,
-  DARK_THEME,
-  LIGHT_THEME,
-  highlightCode,
-  resolveLang,
-} from '../shiki';
+import { __resetShikiForTest, DARK_THEME, LIGHT_THEME, highlightCode, resolveLang } from '../shiki';
 
 // shiki.ts pure-logic coverage: resolveLang maps raw lang tokens (incl. aliases,
 // case, whitespace) to a supported grammar key or null (→ plain text). The heavy

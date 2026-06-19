@@ -24,6 +24,48 @@ type AuraAgentJobRuns struct {
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
 }
 
+type AuraAssetEvents struct {
+	AssetID    pgtype.UUID        `json:"asset_id"`
+	Seq        int32              `json:"seq"`
+	FromStatus string             `json:"from_status"`
+	ToStatus   string             `json:"to_status"`
+	Reason     string             `json:"reason"`
+	Detail     []byte             `json:"detail"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraAssets struct {
+	ID                pgtype.UUID        `json:"id"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	SourceKind        string             `json:"source_kind"`
+	SourceRef         string             `json:"source_ref"`
+	ThreadID          string             `json:"thread_id"`
+	Scope             string             `json:"scope"`
+	Modality          string             `json:"modality"`
+	Status            string             `json:"status"`
+	FileName          string             `json:"file_name"`
+	MimeType          string             `json:"mime_type"`
+	DeclaredSizeBytes int64              `json:"declared_size_bytes"`
+	SizeBytes         int64              `json:"size_bytes"`
+	ContentHash       string             `json:"content_hash"`
+	ObjectBucket      string             `json:"object_bucket"`
+	ObjectKey         string             `json:"object_key"`
+	ObjectEtag        string             `json:"object_etag"`
+	DocumentID        string             `json:"document_id"`
+	Summary           string             `json:"summary"`
+	Metadata          []byte             `json:"metadata"`
+	ErrorCode         string             `json:"error_code"`
+	ErrorMessage      string             `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UploadedAt        pgtype.Timestamptz `json:"uploaded_at"`
+	AcceptedAt        pgtype.Timestamptz `json:"accepted_at"`
+	ProcessedAt       pgtype.Timestamptz `json:"processed_at"`
+	SearchableAt      pgtype.Timestamptz `json:"searchable_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Per-turn KV-cache metrics (Slice 4 / Phase 6, D-02). Append-only: one row per completed assistant turn from llm.Usage (token counts + cost only, no message content).
 type AuraCacheMetrics struct {
 	ConversationID pgtype.UUID        `json:"conversation_id"`

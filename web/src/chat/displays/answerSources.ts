@@ -17,9 +17,7 @@ interface MaybeDisplayPart {
 }
 
 /** Collect + dedupe the source registry across an assistant message's tool parts. */
-export function aggregateAnswerSources(
-  content: unknown,
-): DisplaySource[] {
+export function aggregateAnswerSources(content: unknown): DisplaySource[] {
   if (!Array.isArray(content)) return [];
   const byRefId = new Map<string, DisplaySource>();
   for (const part of content as readonly MaybeDisplayPart[]) {

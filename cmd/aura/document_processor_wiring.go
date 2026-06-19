@@ -1,0 +1,54 @@
+package main
+
+import (
+	"time"
+
+	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
+	return &assets.Service{
+		Store:   assets.NewStore(pool),
+		Objects: objectStore,
+		Processors: assets.ProcessorSet{
+			Document: &assets.DocumentProcessor{
+				Objects: objectStore,
+				Ingest:  newRuntimeDocumentIngestor(cfg, pool),
+			},
+			Image: assets.NewImageProcessor(objectStore, visionConfigFrom(cfg)),
+			Audio: assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg)),
+		},
+		Limits: assets.Limits{
+			MaxDocumentBytes: int64(cfg.AssetMaxDocumentBytes),
+			MaxImageBytes:    int64(cfg.AssetMaxImageBytes),
+			MaxAudioBytes:    int64(cfg.AssetMaxAudioBytes),
+		},
+		Bucket:     cfg.ObjectStoreBucket,
+		PresignTTL: time.Duration(cfg.AssetPresignTTLSec) * time.Second,
+	}
+}
+
+func visionConfigFrom(cfg *config.Config) assets.VisionConfig {
+	return assets.VisionConfig{
+		VisionCloud:       cfg.VisionCloud,
+		Model:             cfg.LLM.Model,
+		MultimodalBaseURL: cfg.MultimodalBaseURL,
+		MultimodalModel:   cfg.MultimodalModel,
+		FallbackModel:     cfg.MultimodalFallbackModel,
+		OpenRouterBaseURL: cfg.LLM.BaseURL,
+		OpenRouterAPIKey:  cfg.LLM.APIKey,
+		TimeoutSec:        cfg.MultimodalTimeoutSec,
+	}
+}
+
+func sttConfigFrom(cfg *config.Config) assets.STTConfig {
+	return assets.STTConfig{
+		BaseURL:    cfg.STTBaseURL,
+		Model:      cfg.STTModel,
+		Language:   cfg.STTLanguage,
+		TimeoutSec: cfg.MultimodalTimeoutSec,
+	}
+}

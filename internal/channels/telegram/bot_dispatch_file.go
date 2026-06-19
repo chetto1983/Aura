@@ -6,6 +6,10 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+func openTelegramFile(filer botFiler, file *tele.File) (io.ReadCloser, error) {
+	return filer.File(file)
+}
+
 // downloadFile pulls a media file's bytes off the Telegram file server via the
 // narrow botFiler seam (the same surface voice.go downloads through). The Bot-API
 // getFile endpoint caps a download at the 20MB file ceiling, so the read is bounded

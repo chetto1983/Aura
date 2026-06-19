@@ -1,6 +1,8 @@
 # Aura Document Ingestion
 
-Aura indexes large PDF, XLSX, and DOCX files through a two-lane pipeline:
+Aura indexes large PDF, XLSX, and DOCX files through a two-lane pipeline. Files
+can enter through the CLI, Telegram, or the shared asset pipeline used by the web
+cockpit:
 
 ```text
 file -> extractor sidecar /extract -> Postgres job state
@@ -91,8 +93,19 @@ go test -tags document_ingest_live ./internal/documents -run TestLiveDocumentIng
 ## Telegram
 
 When `DocumentIngest` is wired by `aura serve`, Telegram document uploads use the
-native ingestion pipeline and reply when the file is indexed. The legacy
-convert-to-markdown path remains available when the ingestor is not configured.
+shared asset pipeline and reply when the file is indexed. The asset service stores
+the original object, records lifecycle state in Postgres, and hands supported
+documents to this ingestion pipeline.
+
+## Web And Asset Uploads
+
+The web cockpit uploads documents through `/api/assets`. A document asset becomes
+usable for questions when its asset status reaches `searchable` or `complete`.
+`searchable` has the same meaning as in the direct ingestion path: fulltext
+retrieval is ready, while embeddings may still be catching up.
+
+See [Aura Asset Pipeline](asset-pipeline.md) for object-store setup, upload
+smoke testing, and asset troubleshooting.
 
 ## Agent Tool
 

@@ -65,10 +65,7 @@ describe('ChartDisplay (D-02)', () => {
   });
 
   it('imports NO charting library (zero-dep contract, D-02)', () => {
-    const source = readFileSync(
-      join(process.cwd(), 'src/chat/displays/ChartDisplay.tsx'),
-      'utf8',
-    );
+    const source = readFileSync(join(process.cwd(), 'src/chat/displays/ChartDisplay.tsx'), 'utf8');
     expect(source).not.toMatch(/from ['"]recharts['"]/);
     expect(source).not.toMatch(/from ['"]uplot['"]/);
     expect(source).not.toMatch(/from ['"]chart\.js['"]/);
