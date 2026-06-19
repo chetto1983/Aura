@@ -1,6 +1,7 @@
 {
-  "user": "What is the capital of France?",
+  "user": "Search the web for the capital of France and cite your source.",
   "responses": [
-    { "text": "The capital of France is Paris.", "finish": "stop" }
+    { "tool_calls": [ { "id": "c8a", "name": "web_search", "arguments": "{\"query\":\"capital of France\"}" } ] },
+    { "text": "The capital of France is Paris [1].", "finish": "stop" }
   ]
 }

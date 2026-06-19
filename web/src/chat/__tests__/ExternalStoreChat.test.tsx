@@ -203,15 +203,16 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     renderChat(<ExternalStoreChat threadId="conv-1" />);
     sendPrompt('weather?');
 
-    // The router is the Wave-1 shell (no per-type case yet) → it still renders the
-    // raw card for web_result, but via the DisplayRouter branch, not the plain
-    // Fallback. The tool turn + its escaped result remain visible (output never lost).
+    // 26-05 wired the web_result case: the aura.display payload now routes through
+    // the DisplayRouter to the rich WebResultDisplay (not the raw fallback). The
+    // typed card renders the result snippet + the "Web results" label alongside the
+    // assistant answer (the typed display upgrades the tool turn in place, D-15).
     await waitFor(() => {
       expect(screen.getByText('It is sunny.')).toBeTruthy();
     });
-    expect(screen.getByText('web_search')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
-    expect(screen.getByText('[1] Forecast')).toBeTruthy();
+    expect(screen.getByText('sunny')).toBeTruthy();
+    expect(screen.getByText('Web results')).toBeTruthy();
+    expect(screen.getByText('Forecast')).toBeTruthy();
   });
 
   it('creates a thread id before the first send when no conversation is active', async () => {

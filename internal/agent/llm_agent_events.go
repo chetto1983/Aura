@@ -141,6 +141,18 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	if art, ok := metaArtifact(run.Result.Meta); ok {
 		ev.Actions.ArtifactDelta = art
 	}
+	// A source-bearing web tool result is normalized to a typed display.Payload and
+	// its sources accumulate into the per-run registry (D-05/DISP-01). This is the
+	// live emit twin of the artifact branch above: the registry it feeds drives the
+	// next turn's prompt.Budget.Sources tail-inject, and the Payload rides
+	// Actions.Display → the aura.display CUSTOM event. An unrecognized tool / non-
+	// source result leaves Display nil (D-FALLBACK), so every existing event is
+	// unchanged. Only a success preview feeds it; an error result is left raw.
+	if run.Err == "" {
+		if p, ok := a.deriveDisplay(run.ToolCallID, run.ToolName, rawPreview); ok {
+			ev.Actions.Display = p
+		}
+	}
 	return ev
 }
 

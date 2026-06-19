@@ -16,6 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
+    "dup": "npx --yes jscpd@4",
+    "deadcode": "npx --yes knip@5 --exclude types,nsTypes,enumMembers,classMembers,duplicates",
     "test": "vitest run --coverage",
     "test:e2e": "playwright test",
     "mutation": "stryker run",
@@ -24,15 +26,18 @@
   "dependencies": {
     "@assistant-ui/react": "0.14.22",
     "@assistant-ui/react-markdown": "0.14.4",
+    "@radix-ui/react-hover-card": "1.1.17",
     "@tanstack/react-query": "^5.101.0",
     "assistant-stream": "0.3.23",
     "i18next": "^26.3.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-i18next": "^17.0.8",
+    "react-markdown": "10.1.0",
     "react-router-dom": "^7.18.0",
     "rehype-sanitize": "^6.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "shiki": "4.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

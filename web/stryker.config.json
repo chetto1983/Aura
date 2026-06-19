@@ -3,12 +3,7 @@
   "packageManager": "npm",
   "testRunner": "vitest",
   "coverageAnalysis": "perTest",
-  "mutate": [
-    "src/health/RuntimeHealthPanel.tsx",
-    "src/health/useRuntimeHealth.ts",
-    "src/theme/applyTheme.ts",
-    "src/theme/density.ts"
-  ],
+  "mutate": ["src/chat/displays/rehypeCitations.ts", "src/chat/displays/shiki.ts"],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,
   "reporters": ["clear-text", "progress"],

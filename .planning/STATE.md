@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: executing
-stopped_at: Completed 26-02-PLAN.md
-last_updated: "2026-06-18T13:37:37.318Z"
+status: verifying
+stopped_at: Completed 26-04-PLAN.md
+last_updated: "2026-06-18T20:03:32.363Z"
 last_activity: 2026-06-18
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 24
   percent: 50
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 26 (typed-display-protocol-router) — EXECUTING
-Plan: 2 of 6
-Status: Ready to execute
+Plan: 26-03 of 6 complete (Wave-2 backend); 26-04 frontend (same wave) runs next
+Status: Phase complete — ready for verification
 Last activity: 2026-06-18
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
@@ -174,6 +174,9 @@ Commit the cockpit-overhaul working-tree layer + run the live cutover (incl. the
 | Phase 25 P25-07 | ~150min | 3 tasks | 45 files |
 | Phase 26 P01 | 31min | 3 tasks | 21 files |
 | Phase 26 P26-02 | ~70min | 3 tasks | 12 files |
+| Phase 26 P26-03 | ~34min | 3 tasks | 23 files |
+| Phase 26 P26-04 | ~65min | 3 tasks | 21 files |
+| Phase 26 P26-05 | ~35min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -323,6 +326,12 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 26 26-01]: display.ChildReport mirrors swarm.ChildReport (not an import) to avoid an agent->display->swarm->agent cycle; aura.display CUSTOM event mirrors aura.artifact additively; Normalize returns false for unrecognized tools (D-FALLBACK)
 - [Phase 26]: 26-02: DisplayRouter default returns the raw ToolActivityCard, never null (D-FALLBACK/HARDEN-08) — overrides elysia's default:return null; rich render only for trusted-normalizer payloads
 - [Phase 26]: 26-02: cockpit micro-labels use text-[0.75rem] (12px), not the UI-SPEC's 11px — the committed readability tokens use a 15.5px operator base + an enforced readabilityTokens gate (>=11px effective)
+- [Phase 26]: 26-03: D-05 source list rides prompt.Budget.Sources (append-to-copy tail-inject, messages[0] byte-identical); static "Cite your sources … emit [n]" convention in messages[0]; cache_invariant_audit turn-08 = web_search->cite fixture w/ deterministic engine, EXPECTED_REQUESTS 22->23, gate green
+- [Phase 26]: 26-03: display.NormalizeToolPreview is the SINGLE decode+normalize seam shared by the live agent loop (deriveDisplay, also sets Actions.Display on the live tool-result Event) AND the replay projection (rederiveDisplays) — live/replay parity structural not asserted-after (Pitfall 4)
+- [Phase 26]: 26-03: D-09 web.Client.FetchImage reuses validateAndPin+hardenedTransport (never fresh http.Get) + image allowlist (svg excluded) + size cap + no-redirect-follow; GET /api/image-proxy behind RequireAuth (agui Server.Mux + parent-mux delegation + SetImageProxy boot)
+- [Phase 26]: 26-03: D-06 projectDisplaySnapshot emits a display-aware MESSAGES_SNAPSHOT (local mirror structs since SDK types.ToolCall has no display field) w/ ONE shared per-thread registry -> stable cross-turn RefIDs; per-type preview audit: web_result+document re-derive losslessly from ResultPreview, no store-fallback
+- [Phase ?]: 26-04: DisplayRouter now renders 5 typed cards (table/chart/system_event/swarm_report/local_artifact); pure logic extracted to tableData.ts+swarmRow.ts for ≥70% Stryker; display.* i18n split into resources.display.ts (600-LOC cap)
+- [Phase ?]: 26-04: de-flaked AppShell.conversation (per-it 10s timeout + file asyncUtilTimeout) per operator directive — repo carries no flaky test
 
 ### Pending Todos
 
@@ -356,8 +365,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-18T13:37:27.157Z
-Stopped at: Completed 26-02-PLAN.md
+Last session: 2026-06-18T20:03:27.471Z
+Stopped at: Completed 26-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

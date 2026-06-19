@@ -92,6 +92,7 @@ type Server struct {
 	conv      ConversationStore
 	approvals ApprovalStore
 	assets    AssetService
+	images    ImageFetcher
 	idgen     IDGenerator
 	cfg       ServerConfig
 }
@@ -112,6 +113,12 @@ func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 
+// SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
+// delegates to. Set by the daemon composition root after NewServer (the *web.Client
+// already wired for web_search/web_fetch); until set, the route answers 503. Kept off
+// the constructor so existing NewServer callers/tests stay unchanged (D-A2-02).
+func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
+
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
 // — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
 // the handler is wrapped in withCORS so a browser cross-origin POST works end to end:
@@ -124,6 +131,10 @@ func (s *Server) Mux() http.Handler {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
+	// DISP-05/D-09 image-proxy: a same-origin SSRF-safe relay for web_result
+	// thumbnails/favicons. Mounted under /api/ so it inherits the parent-mux
+	// RequireAuth whole-origin gate (cmd/aura/serve_webui.go); never an open relay.
+	mux.HandleFunc("GET /api/image-proxy", s.handleImageProxy)
 	// CHAT-02 conversation-management subtree (Phase 25). The parent-mux mount
 	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
 	// colocated with their handlers so the agui Server.Mux answers them.
@@ -156,31 +167,6 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		slog.Warn("agui: encode healthz response", "err", err)
 	}
-}
-
-// withCORS wraps the mux to make CORSPermissive functional rather than half-wired (WR-05).
-// When the knob is off it returns the mux unchanged (no headers, T-12-13 restrictive
-// default). When on it sets `Access-Control-Allow-Origin: *` on EVERY response — including
-// the 4xx/5xx error bodies the ServeMux/handlers emit — by setting the header before the
-// handler runs (Go accumulates response headers until WriteHeader), and short-circuits a
-// CORS preflight OPTIONS with 204 + the Allow-Origin/Methods/Headers triple. Without the
-// preflight an application/json cross-origin POST is rejected by the browser before it ever
-// reaches the handler.
-func (s *Server) withCORS(next http.Handler) http.Handler {
-	if !s.cfg.CORSPermissive {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", "*")
-		if r.Method == http.MethodOptions {
-			h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-			h.Set("Access-Control-Allow-Headers", "Content-Type")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // handleRun parses RunAgentInput, resolves the thread (404), applies any protocol-native
@@ -319,7 +305,12 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(events.NewMessagesSnapshotEvent(projectMessages(hist))); err != nil {
+	// D-06: emit the display-aware MESSAGES_SNAPSHOT — each tool-result turn re-derives
+	// its DisplayPayload through the SAME normalizer the live stream uses, so a reopened
+	// thread renders typed displays identically to live. The envelope is byte-compatible
+	// with the SDK MESSAGES_SNAPSHOT plus the additive per-tool-call `display` key the
+	// cockpit replay reads.
+	if err := json.NewEncoder(w).Encode(projectDisplaySnapshot(hist)); err != nil {
 		slog.Warn("agui: encode messages snapshot", "err", err)
 	}
 }
@@ -499,7 +490,7 @@ func projectMessages(hist []llm.Message) []events.Message {
 	msgs := make([]events.Message, 0, len(hist))
 	for i, m := range hist {
 		msgs = append(msgs, events.Message{
-			ID:         fmt.Sprintf("msg-%d", i+1),
+			ID:         msgID(i),
 			Role:       types.Role(m.Role),
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
@@ -508,6 +499,10 @@ func projectMessages(hist []llm.Message) []events.Message {
 	}
 	return msgs
 }
+
+// msgID is the stable 1-based snapshot message id, shared by the plain projection and
+// the D-06 display-aware projection so both number messages identically.
+func msgID(i int) string { return fmt.Sprintf("msg-%d", i+1) }
 
 // projectToolCalls maps the persisted llm.ToolCall slice onto the SDK types.ToolCall
 // shape (id/type + nested function name/arguments). Returns nil for an empty input so

@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ariaInvalid } from '../a11y/aria';
+import {
+  booleanField,
+  readCookie,
+  readJSON,
+  stringField,
+  valueOrFallback,
+} from '../auth/authConfig';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { ThemeSwitcher } from '../theme/ThemeSwitcher';
 
@@ -79,30 +86,8 @@ const loginLinks: readonly ParticleLink[] = [
   },
 ];
 
-function valueOrFallback(value: string, fallback: string): string {
-  return value === '' ? fallback : value;
-}
-
 function percent(value: number): string {
   return `${String(value)}%`;
-}
-
-async function readJSON(res: Response): Promise<unknown> {
-  const text = await res.text();
-  if (text.trim() === '') return {};
-  return JSON.parse(text) as unknown;
-}
-
-function stringField(source: unknown, key: string): string {
-  if (source === null || typeof source !== 'object') return '';
-  const value = (source as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : '';
-}
-
-function booleanField(source: unknown, key: string): boolean {
-  if (source === null || typeof source !== 'object') return false;
-  const value = (source as Record<string, unknown>)[key];
-  return value === true || value === 'true';
 }
 
 async function loadAuthConfig(): Promise<AuthConfig> {
@@ -139,17 +124,6 @@ async function loadAuthConfig(): Promise<AuthConfig> {
   } catch {
     return defaultAuthConfig;
   }
-}
-
-function readCookie(name: string): string {
-  const prefix = `${name}=`;
-  return (
-    document.cookie
-      .split(';')
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(prefix))
-      ?.slice(prefix.length) ?? ''
-  );
 }
 
 function authulaHeaders(config: AuthConfig): Record<string, string> {

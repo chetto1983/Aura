@@ -21,6 +21,13 @@ pre-commit:
       run: go vet ./...
     file-size:
       run: bash scripts/check-file-size.sh
+    # Frontend copy/paste detector (jscpd) — TS/TSX parity to the Go `dupl` linter.
+    # Gated on web .ts/.tsx so a Go-only commit skips it; the script self-guards on a
+    # missing web/node_modules. Config: web/.jscpd.json (fails on any non-test clone
+    # >=100 tokens, matching .golangci.yml dupl threshold 100).
+    dup:
+      glob: "web/**/*.{ts,tsx}"
+      run: bash scripts/check-dup.sh
 
 pre-push:
   parallel: true
@@ -31,6 +38,13 @@ pre-push:
       run: bash -c 'go build $(bash scripts/go_packages.sh)'
     deadcode:
       run: bash -c 'deadcode -test $(bash scripts/go_packages.sh)'
+    # Frontend dead-code detector (knip) — TS/TSX parity to the Go `deadcode` gate
+    # above. Gated on web/** so a Go-only push skips it; self-guards on a missing
+    # web/node_modules. Config: web/knip.json (unused files + unreachable value
+    # exports + unused deps; type-only findings excluded — Go has no type concept).
+    web-deadcode:
+      glob: "web/**"
+      run: bash scripts/check-deadcode-web.sh
     # Frontend static gate — mirrors the CI web-lint job (eslint --max-warnings=0
     # + tsc + prettier --check). Gated on web/** so a Go-only push skips it; the
     # script self-guards on a missing web/node_modules. Heavy frontend gates

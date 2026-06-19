@@ -24,28 +24,36 @@ func NewPromptBuilder() *PromptBuilder { return &PromptBuilder{} }
 // used/remaining tool-step counts (D-06, Req#6), the per-conversation Workspace
 // path (#52/D-41 — the model must KNOW where its workspace is to honor the
 // system prompt's deliverables convention; live run 7 saved a perfect .xlsx to
-// the Desktop because nothing ever told it the path), and current local time for
-// "today" requests. They ride the SAME trailing message, appended AFTER history,
-// so the cached prefix is never poisoned. The agent passes branchConsumed as
-// Used and Remaining() as Remaining; there is no Budget.MaxSteps() getter
-// (landmine #11). The zero value is the omit sentinel: Build emits no trailing
-// message, preserving the byte-identical default for callers that track none.
+// the Desktop because nothing ever told it the path), current local time for
+// "today" requests, and the numbered web-source list (D-05 — the volatile
+// `[n] Title — url` block the model copies its inline citation numbers from). They
+// ride the SAME trailing message, appended AFTER history, so the cached prefix is
+// never poisoned: the source list MUST travel here and never in messages[0] (the
+// static citation-convention sentence lives in the system prompt instead), or it
+// trips the AG-031 KV-drift guard. The agent passes branchConsumed as Used and
+// Remaining() as Remaining; there is no Budget.MaxSteps() getter (landmine #11).
+// The zero value is the omit sentinel: Build emits no trailing message, preserving
+// the byte-identical default for callers that track none.
 type Budget struct {
 	Used        int
 	Remaining   int
 	Workspace   string
 	CurrentTime string
 	Today       string
+	Sources     string
 }
 
 // present reports whether the trailing hint message should be emitted. The zero
-// value (counts 0, no workspace/time) is the backward-compatible omit case.
+// value (counts 0, no workspace/time/sources) is the backward-compatible omit case.
 func (b Budget) present() bool {
-	return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" || b.CurrentTime != "" || b.Today != ""
+	return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" || b.CurrentTime != "" || b.Today != "" || b.Sources != ""
 }
 
 // block renders the directional hint: the D-06 budget line (omitted when both
-// counts are zero), plus workspace/current-time lines when configured (#52/D-41).
+// counts are zero), workspace/current-time lines when configured (#52/D-41), and
+// the D-05 numbered source list when a turn consulted web sources. The source
+// block mirrors <current_time>: an XML-tagged volatile line that rides the tail-
+// inject copy, never messages[0].
 func (b Budget) block() string {
 	var lines []string
 	if b.Used != 0 || b.Remaining != 0 {
@@ -59,6 +67,9 @@ func (b Budget) block() string {
 	}
 	if b.Today != "" {
 		lines = append(lines, fmt.Sprintf("<today>%s</today>", b.Today))
+	}
+	if b.Sources != "" {
+		lines = append(lines, fmt.Sprintf("<sources>\n%s\n</sources>", b.Sources))
 	}
 	return strings.Join(lines, "\n")
 }

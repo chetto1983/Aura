@@ -30,6 +30,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/web"
 )
 
 const (
@@ -180,11 +181,15 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	}
 	defer cleanupSkills()
 
-	// buildRegistry already wires a default `skill` tool; the audit replaces it with
-	// its own deterministic one (fixed skill set → byte-stable Description across the
-	// 20 turns). Drop the default first so Register does not collide (B-14 fail-loud).
-	reg := tools.Without(buildRegistry(), skillManifestName)
-	reg.Register(newSkillTool(auditCfg, nil)) // non-deferred; manifest rides its Description (D-06)
+	// buildRegistry already wires a default `skill` tool AND a network-backed
+	// web_search tool; the audit replaces BOTH with deterministic stand-ins (a fixed
+	// skill set → byte-stable Description; a fake search engine → a stable source
+	// list with NO network). Dropping them first keeps Register fail-loud (B-14).
+	// The fake web_search drives the D-05 source-list tail-inject fixture (turn-08):
+	// the volatile numbered list must ride the tail copy and NEVER mutate messages[0].
+	reg := tools.Without(buildRegistry(), skillManifestName, "web_search")
+	reg.Register(newSkillTool(auditCfg, nil))                   // non-deferred; manifest rides its Description (D-06)
+	reg.Register(&tools.WebSearch{Engine: auditSearchEngine{}}) // deterministic, network-free
 
 	client := agenttest.NewFakeClient(scriptTurns(turns)...)
 	r := runner.New(runner.Deps{
@@ -336,6 +341,18 @@ func setupAuditSkills(runDir string) (*config.Config, func(), error) {
 		SkillManifestCapBytes: 8192,
 	}
 	return cfg, func() {}, nil
+}
+
+// auditSearchEngine is the deterministic, network-free web_search engine the cache
+// audit injects (replacing web.NewClient) so the D-05 source-list fixture (turn-08)
+// produces a STABLE numbered list — exercising the tail-inject path that must leave
+// messages[0] byte-identical, with no SearXNG dependency.
+type auditSearchEngine struct{}
+
+func (auditSearchEngine) Search(_ context.Context, _ web.SearchParams) ([]web.Result, error) {
+	return []web.Result{
+		{Title: "Paris — Wikipedia", URL: "https://en.wikipedia.org/wiki/Paris", Snippet: "Paris is the capital of France."},
+	}, nil
 }
 
 // drainTurn runs a Runner.Turn iterator to completion, returning the first error.

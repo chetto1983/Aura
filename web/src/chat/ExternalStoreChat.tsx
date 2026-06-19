@@ -2,30 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ActionBarPrimitive,
   AssistantRuntimeProvider,
   AuiIf,
-  ComposerPrimitive,
-  MessagePrimitive,
   ThreadPrimitive,
-  useAuiState,
   useExternalStoreRuntime,
   type AppendMessage,
   type ThreadMessageLike,
-  type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
 import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
-import { BranchPicker } from './BranchPicker';
 import { Composer } from './Composer';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
-import { AttachmentCard } from './attachments/AttachmentCard';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import type { Asset } from './attachments/types';
-import { DisplayRouter } from './displays/DisplayRouter';
-import { isDisplayPayload, type DisplayPayload } from './displays/types';
-import { MarkdownText } from './MarkdownText';
-import { ReasoningDrawer } from './ReasoningDrawer';
-import { ToolActivityCard } from './ToolActivityCard';
+import { SourceExplorerProvider } from './displays/SourceExplorerContext';
+import { AssistantMessage, UserMessage } from './ExternalStoreChat_messages';
 import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './sseAdapter';
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
@@ -517,212 +507,47 @@ export function ExternalStoreChat({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
-        <ThreadPrimitive.Viewport className="flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4">
-          <AuiIf condition={(s) => s.thread.isEmpty}>
-            <div className="grid h-full place-items-center py-8 text-center">
-              <div className="flex flex-col items-center gap-3 px-6">
-                <h2 className="font-display text-4xl font-medium text-text sm:text-5xl">
-                  {t('chat.empty.thread.heading')}
-                </h2>
-                <p className="max-w-sm text-sm text-text-muted">{t('chat.empty.thread.body')}</p>
+      {/* The shared read-only Source Explorer (D-13): one sheet, two entry points
+          (the "Sources (N)" button + the citation click-through), one registry. */}
+      <SourceExplorerProvider>
+        <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
+          <ThreadPrimitive.Viewport className="flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4">
+            <AuiIf condition={(s) => s.thread.isEmpty}>
+              <div className="grid h-full place-items-center py-8 text-center">
+                <div className="flex flex-col items-center gap-3 px-6">
+                  <h2 className="font-display text-4xl font-medium text-text sm:text-5xl">
+                    {t('chat.empty.thread.heading')}
+                  </h2>
+                  <p className="max-w-sm text-sm text-text-muted">{t('chat.empty.thread.body')}</p>
+                </div>
               </div>
-            </div>
-          </AuiIf>
+            </AuiIf>
 
-          <ThreadPrimitive.Messages>
-            {({ message }) =>
-              message.role === 'user' ? (
-                <UserMessage
-                  onAssetRetry={handleAssetRetry}
-                  onAssetPromote={handleAssetPromote}
-                  onAssetRemove={handleAssetRemove}
-                />
-              ) : (
-                <AssistantMessage />
-              )
-            }
-          </ThreadPrimitive.Messages>
-        </ThreadPrimitive.Viewport>
+            <ThreadPrimitive.Messages>
+              {({ message }) =>
+                message.role === 'user' ? (
+                  <UserMessage
+                    onAssetRetry={handleAssetRetry}
+                    onAssetPromote={handleAssetPromote}
+                    onAssetRemove={handleAssetRemove}
+                  />
+                ) : (
+                  <AssistantMessage />
+                )
+              }
+            </ThreadPrimitive.Messages>
+          </ThreadPrimitive.Viewport>
 
-        {/* Running-status row: role="status" announces the active turn politely. */}
-        {isRunning ? (
-          <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
-            {t('chat.running')}
-          </p>
-        ) : null}
+          {/* Running-status row: role="status" announces the active turn politely. */}
+          {isRunning ? (
+            <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
+              {t('chat.running')}
+            </p>
+          ) : null}
 
-        <Composer uploads={uploads} />
-      </ThreadPrimitive.Root>
+          <Composer uploads={uploads} />
+        </ThreadPrimitive.Root>
+      </SourceExplorerProvider>
     </AssistantRuntimeProvider>
   );
 }
-
-interface UserMessageProps {
-  readonly onAssetRetry: (assetID: string) => void;
-  readonly onAssetPromote: (assetID: string) => void;
-  readonly onAssetRemove: (assetID: string) => void;
-}
-
-function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: UserMessageProps) {
-  const { t } = useTranslation();
-  const message = useAuiState((s) => s.message) as ThreadMessageLike;
-  const attachments = messageAttachments(message);
-  return (
-    <MessagePrimitive.Root className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
-      {/* Edit mode: a message-scoped composer whose Send fires onEdit (fork + re-run). */}
-      <AuiIf condition={({ composer }) => composer.isEditing}>
-        <ComposerPrimitive.Root className="flex w-full flex-col gap-2 rounded-[var(--radius-md)] border border-accent/40 bg-surface-2 px-3 py-2">
-          <ComposerPrimitive.Input
-            aria-label={t('chat.edit.label')}
-            className="w-full resize-none bg-transparent text-sm text-text outline-none"
-          />
-          <div className="flex items-center justify-end gap-2">
-            <ComposerPrimitive.Cancel
-              aria-label={t('chat.edit.cancel')}
-              className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              {t('chat.edit.cancel')}
-            </ComposerPrimitive.Cancel>
-            <ComposerPrimitive.Send className="rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-[0.75rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-              {t('chat.edit.save')}
-            </ComposerPrimitive.Send>
-          </div>
-        </ComposerPrimitive.Root>
-      </AuiIf>
-
-      {/* Normal view: the rendered user turn + the action bar. */}
-      <AuiIf condition={({ composer }) => !composer.isEditing}>
-        <div className="rounded-3xl bg-surface-2 px-5 py-3">
-          <MessagePrimitive.Parts
-            components={{
-              Text: () => (
-                <div className="whitespace-pre-wrap text-base leading-relaxed text-text">
-                  <MarkdownText />
-                </div>
-              ),
-            }}
-          />
-        </div>
-        {attachments.length > 0 ? (
-          <div className="flex flex-col items-end gap-2">
-            {attachments.map((asset) => (
-              <AttachmentCard
-                key={asset.id}
-                asset={asset}
-                onRetry={onAssetRetry}
-                onPromote={onAssetPromote}
-                onRemove={onAssetRemove}
-              />
-            ))}
-          </div>
-        ) : null}
-        {/* Edit a user turn → onEdit forks a branch + re-runs. Copy is the minimum verb. */}
-        <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
-          <ActionBarPrimitive.Edit
-            aria-label={t('chat.action.edit')}
-            className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            {t('chat.action.edit')}
-          </ActionBarPrimitive.Edit>
-          <ActionBarPrimitive.Copy
-            aria-label={t('chat.action.copy')}
-            className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            {t('chat.action.copy')}
-          </ActionBarPrimitive.Copy>
-          <BranchPicker />
-        </ActionBarPrimitive.Root>
-      </AuiIf>
-    </MessagePrimitive.Root>
-  );
-}
-
-function AssistantMessage() {
-  const { t } = useTranslation();
-  return (
-    <MessagePrimitive.Root className="max-w-[90%] space-y-2">
-      <MessagePrimitive.Parts
-        components={{
-          // Assistant prose → sanitized markdown.
-          Text: () => (
-            <div className="text-base leading-relaxed text-text">
-              <MarkdownText />
-            </div>
-          ),
-          // CoT → collapsible drawer (D-01). The drawer reads the reasoning text
-          // from the part via the reasoning render-fn arg.
-          Reasoning: ({ text }) => <ReasoningDrawer text={text} />,
-          // Tool activity → typed display when a trusted backend normalizer
-          // produced an aura.display payload (Phase 26, DISP-02); otherwise the
-          // raw escaped card (D-02 / D-FALLBACK). The branch lives in ToolFallback.
-          tools: {
-            Fallback: ToolFallback,
-          },
-        }}
-      />
-      <MessagePrimitive.Error>
-        <p role="alert" className="text-sm text-danger">
-          {/* The reducer already routes RUN_ERROR into an error text part; this
-              is the runtime-level fallback for a hard message error. */}
-        </p>
-      </MessagePrimitive.Error>
-      {/* Assistant action bar: Copy + Reload (regenerate) ONLY — the feedback rating
-          group is Phase 26 (UI-SPEC). Reload forks an assistant-turn branch. */}
-      <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
-        <ActionBarPrimitive.Copy
-          aria-label={t('chat.action.copy')}
-          className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          {t('chat.action.copy')}
-        </ActionBarPrimitive.Copy>
-        <ActionBarPrimitive.Reload
-          aria-label={t('chat.action.reload')}
-          className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          {t('chat.action.reload')}
-        </ActionBarPrimitive.Reload>
-        <BranchPicker />
-      </ActionBarPrimitive.Root>
-    </MessagePrimitive.Root>
-  );
-}
-
-/**
- * The tools.Fallback render: the single seam where a tool turn becomes a typed
- * display. It reads the custom `display` payload off the stored message part
- * (the sseAdapter attaches it by toolCallId, live or on replay) via
- * useMessagePart — the external-store runtime passes our ThreadMessageLike part
- * through unchanged (convertMessage: identity), so the field survives.
- *
- * D-15 progressive swap: while a tool runs, no payload exists yet → the raw
- * running card stays; the typed display replaces it only once the aura.display
- * payload arrives on completion. D-FALLBACK: no/unknown payload → the raw card.
- */
-const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result, isError }) => {
-  const part = useAuiState((s) => s.part) as { display?: unknown };
-  const display: DisplayPayload | undefined = isDisplayPayload(part.display)
-    ? part.display
-    : undefined;
-  const resultText = typeof result === 'string' ? result : undefined;
-
-  if (display !== undefined) {
-    return (
-      <DisplayRouter
-        payload={display}
-        toolName={toolName}
-        argsText={argsText}
-        {...(resultText !== undefined ? { result: resultText } : {})}
-        {...(isError !== undefined ? { isError } : {})}
-      />
-    );
-  }
-  return (
-    <ToolActivityCard
-      toolName={toolName}
-      argsText={argsText}
-      {...(resultText !== undefined ? { result: resultText } : {})}
-      {...(isError !== undefined ? { isError } : {})}
-    />
-  );
-};
