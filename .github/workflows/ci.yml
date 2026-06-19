@@ -991,7 +991,7 @@ jobs:
             "${{ github.event.pull_request.head.sha || github.sha }}"
 
   web-e2e:
-    name: Web E2E (Playwright boots aura serve over docker-compose Postgres)
+    name: Web E2E (Playwright boots aura serve over docker-compose Postgres + Garage)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Resolves A-SERVE-NOSTACK: `aura serve` hard-requires a Postgres pool (bootServe
@@ -1056,6 +1056,51 @@ jobs:
       - name: Build aura binary (embeds the fresh dist)
         if: steps.changes.outputs.web == 'true'
         run: go build -o aura ./cmd/aura
+
+      - name: Start Garage objectstore (asset upload E2E)
+        if: steps.changes.outputs.web == 'true'
+        env:
+          AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
+          AURA_OBJECTSTORE_BUCKET: aura-assets
+          AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
+          AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+        run: |
+          docker compose up -d garage
+
+          garage() {
+            docker compose exec -T garage /garage "$@"
+          }
+
+          for i in $(seq 1 30); do
+            if garage status >/tmp/garage-status.txt 2>&1; then
+              cat /tmp/garage-status.txt
+              break
+            fi
+            cat /tmp/garage-status.txt || true
+            sleep 2
+          done
+
+          node_id="$(garage status | awk '/NO ROLE ASSIGNED|pending\.\.\./ { print $1; exit }')"
+          if [ -n "$node_id" ]; then
+            garage layout assign -z dc1 -c 1G "$node_id" >/dev/null
+            version="$(garage layout show | awk '/garage layout apply --version/ { print $NF; exit }')"
+            if [ -n "$version" ]; then
+              garage layout apply --version "$version" >/dev/null
+            fi
+          fi
+
+          if ! garage bucket info "$AURA_OBJECTSTORE_BUCKET" >/dev/null 2>&1; then
+            garage bucket create "$AURA_OBJECTSTORE_BUCKET" >/dev/null
+          fi
+          if ! garage key info "$AURA_OBJECTSTORE_ACCESS_KEY" >/dev/null 2>&1; then
+            garage key import --yes -n aura-assets-ci \
+              "$AURA_OBJECTSTORE_ACCESS_KEY" \
+              "$AURA_OBJECTSTORE_SECRET_KEY" >/dev/null
+          fi
+          garage bucket allow --read --write --owner \
+            "$AURA_OBJECTSTORE_BUCKET" \
+            --key "$AURA_OBJECTSTORE_ACCESS_KEY" >/dev/null
+          ./aura objectstore bootstrap
 
       - name: Install Playwright Chromium
         if: steps.changes.outputs.web == 'true'
