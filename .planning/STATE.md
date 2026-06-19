@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: ready_to_plan
-stopped_at: Phase 26 complete — validated on desktop + mobile (E2E), ready to plan Phase 27
-last_updated: "2026-06-19T06:40:05.250Z"
+status: Phase 26 CLOSED 2026-06-19. The 4 live UX sign-offs (citation hovercard + click-through, Source Explorer read-only posture, swarm-report no-mailbox, D-06 Playwright replay) were cleared via a Playwright E2E matrix on desktop Chrome + Pixel 5 + iPhone 13 — 51 tests, 4 consecutive green runs. A CRITICAL iOS/iPadOS-Safari render crash (CSS asset-hash desync → strict-MIME stylesheet reject → error boundary) was found and fixed (commit 26ce045a); regenerated dist. Pre-existing (non-26) frontend branch-coverage gate is at 82.85% < 85% from the multimodal-assets merge — recommend a separate coverage pass.
+stopped_at: Phase 27 context gathered
+last_updated: "2026-06-19T06:56:46.734Z"
 last_activity: 2026-06-19
 progress:
   total_phases: 8
@@ -367,9 +367,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-18T21:12:11.623Z
-Stopped at: Completed 26-04-PLAN.md
-Resume file: None
+Last session: 2026-06-19T06:56:46.717Z
+Stopped at: Phase 27 context gathered
+Resume file: .planning/phases/27-neo4j-graph-explorer/27-CONTEXT.md
 
 ## Operator Next Steps
 
