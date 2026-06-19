@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: verifying
-stopped_at: Completed 27-03-PLAN.md
-last_updated: "2026-06-19T10:42:29.957Z"
+status: planning
+stopped_at: Closed Phase 27 (27-04-PLAN.md) — operator directive
+last_updated: "2026-06-19"
 last_activity: 2026-06-19
 progress:
   total_phases: 9
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 27 — neo4j-graph-explorer
+**Current focus:** Phase 28 — gov-read + onboarding (Phase 27 closed)
 
 ## Current Position
 
-Phase: 27 (neo4j-graph-explorer) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 27 (neo4j-graph-explorer) — ✅ CLOSED (operator directive 2026-06-19)
+Plan: 4 of 4 complete
+Status: Phase 27 done — next: `/gsd-plan-phase 28`
 Last activity: 2026-06-19
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
@@ -43,7 +43,11 @@ A large frontend + auth layer is **uncommitted** in the working tree. The Phase-
 
 ### Next
 
-Phase 26 closed 2026-06-19 — executed, verified, and validated on desktop + mobile via the Playwright E2E matrix (51 tests × 3 device profiles, 4 green runs); the iOS-Safari render crash was found + fixed (26ce045a). Next: `/gsd-plan-phase 27` (neo4j-graph-explorer). Remaining milestone-v1.0.0 phases: 27 (graph), 28 (gov-read + onboarding), 29 (MCP + skills). Separate (non-26) follow-up: restore the frontend branch-coverage gate (82.85%→≥85%) regressed by the multimodal-assets merge.
+Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for now close phase 27 as done") — 4/4 plans executed + committed (task commits `57ff5ca0`, `8d21af9d`, `ecdf37af`, `adbfc587`; mobile polish `cb4d5521`), frontend automated gates green per `27-04-SUMMARY.md` (599/599 Vitest, 75.88% Stryker, 31/31 contrast, 12/12 live Playwright graph+a11y on chromium+mobile-chrome). ROADMAP `[x]` + `27-VALIDATION.md` flipped to closed. Next: `/gsd-plan-phase 28` (gov-read + onboarding). Remaining milestone-v1.0.0 phases: 28 (gov-read + onboarding), 29 (MCP + skills), 30 (Telegram onboarding link/QR).
+
+> **Uncommitted WIP (NOT part of the Phase 27 closure):** the working tree has post-commit graph edits (`web/src/graph/GraphExplorer.tsx`, `SigmaCanvas.tsx`, `PathStrip.tsx`, `graphIntent.ts`, `resources.graph.ts` + their tests, `e2e/graph*.spec.ts`), a `internal/webui/dist` rebuild, and an untracked `web/e2e/_uiux-shots.spec.ts`. These were not authored or verified in this closure and remain for review/commit/discard.
+
+> Separate prior follow-up: restore the frontend branch-coverage gate (82.85%→≥85%) regressed by the multimodal-assets merge.
 
 ## Performance Metrics
 
@@ -76,6 +80,7 @@ Phase 26 closed 2026-06-19 — executed, verified, and validated on desktop + mo
 | 24 | 4 | - | - |
 | 25 | 7 | - | - |
 | 26 | 6 | - | - |
+| 27 | 4 | - | - |
 
 **Recent Trend:**
 
