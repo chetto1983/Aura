@@ -20,6 +20,7 @@ package webauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -202,11 +203,24 @@ func (p *Provider) CoreServices() *authulaservices.CoreServices {
 	return p.auth.CoreServices()
 }
 
-// OperatorUserID returns the Authula user-id of the single enrolled operator (spec §5
-// single-operator simplification): it returns "" (no error) when no operator is yet
-// enrolled, the lone user's id when exactly one exists, and an error when more than one
-// user is present (ambiguous — multi-user is the post-v1.0.0 milestone, OQ-8). The
-// caller pins that id to the `local` identity via the link table.
+// ErrOperatorAmbiguous is returned by OperatorUserID when more than one Authula user
+// exists, so the FIRST-operator auto-pin can no longer single out "the" operator. It is
+// a SKIP signal, not a fatal: Phase 28 (prd.md amendment #64, D-07) intentionally enrolls
+// a 2nd web-loginable identity, and the live session-validate path resolves identity 1:N
+// via ResolveIdentityID over aura.identity_auth_links — never via OperatorUserID. The
+// caller treats this sentinel as "leave the existing local link as-is" (no de-pin).
+var ErrOperatorAmbiguous = errors.New("webauth: multiple operators enrolled — first-operator auto-pin skipped (multi-user resolves via identity_auth_links)")
+
+// OperatorUserID is an ENROLLMENT-TIME helper that auto-pins the FIRST operator to the
+// `local` identity (spec §5; relaxed by prd.md amendment #64 / D-07). It returns "" (no
+// error) when no operator is yet enrolled, the lone user's id when exactly one exists,
+// and ErrOperatorAmbiguous when more than one user is present.
+//
+// The >1-user case is non-fatal by design: it is NOT a request-path call (the live
+// validate path uses ResolveIdentityID over aura.identity_auth_links, UNIQUE on
+// authula_user_id, 1:N-ready), so a 2nd enrolled identity logs in and resolves with no
+// resolution-path change. The caller skips the auto-pin on ErrOperatorAmbiguous and
+// leaves the already-linked `local` identity untouched (no de-pin, no regression).
 func (p *Provider) OperatorUserID(ctx context.Context) (string, error) {
 	if p == nil || p.auth == nil {
 		return "", nil
@@ -225,7 +239,9 @@ func (p *Provider) OperatorUserID(ctx context.Context) (string, error) {
 	case 1:
 		return users[0].ID, nil
 	default:
-		return "", fmt.Errorf("webauth: %d users present — operator pin is ambiguous (multi-user is post-v1.0.0)", len(users))
+		// >1 user: the first-operator auto-pin is ambiguous. Signal SKIP (not fatal) —
+		// multi-user resolution rides on identity_auth_links via ResolveIdentityID.
+		return "", ErrOperatorAmbiguous
 	}
 }
 

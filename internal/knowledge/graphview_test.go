@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -76,6 +77,20 @@ func noLiteral(t *testing.T, cypher string, literals ...string) {
 	}
 }
 
+func withGraphIntentUserID(t *testing.T, in GraphIntent, userID string) GraphIntent {
+	t.Helper()
+	v := reflect.ValueOf(&in).Elem()
+	f := v.FieldByName("UserID")
+	if !f.IsValid() {
+		t.Fatalf("GraphIntent is missing UserID for single-database user scoping")
+	}
+	if f.Kind() != reflect.String {
+		t.Fatalf("GraphIntent.UserID must be a string, got %s", f.Kind())
+	}
+	f.SetString(userID)
+	return in
+}
+
 // TestCompileExpand: values ride the param map (never interpolated), edge cap is
 // clamped to the hard max, label/rel-type filters bind as data.
 func TestCompileExpand(t *testing.T) {
@@ -111,6 +126,66 @@ func TestCompileExpand(t *testing.T) {
 	assertExplicitProjection(t, cypher)
 }
 
+func TestCompileSeedScopesByUserID(t *testing.T) {
+	in := withGraphIntentUserID(t, GraphIntent{Op: OpSeed, Session: "thr-1"}, "identity-1")
+	cypher, params := compileSeed(in)
+
+	if params["user_id"] != "identity-1" {
+		t.Fatalf("params[user_id] = %v, want identity-1", params["user_id"])
+	}
+	noLiteral(t, cypher, "identity-1")
+	for _, frag := range []string{
+		"$user_id = ''",
+		"c.user_identifier = $user_id",
+		":User {identifier:$user_id}",
+		"[:HAS_CONVERSATION]->(c)",
+	} {
+		if !strings.Contains(cypher, frag) {
+			t.Fatalf("seed query missing user-scope fragment %q:\n%s", frag, cypher)
+		}
+	}
+}
+
+func TestCompileOverviewScopesByUserID(t *testing.T) {
+	in := withGraphIntentUserID(t, GraphIntent{Op: OpSchemaOverview}, "identity-1")
+	cypher, params := compileOverview(in)
+
+	if params["user_id"] != "identity-1" {
+		t.Fatalf("params[user_id] = %v, want identity-1", params["user_id"])
+	}
+	noLiteral(t, cypher, "identity-1")
+	for _, frag := range []string{
+		"$user_id = ''",
+		":User {identifier:$user_id}",
+		"[:HAS_CONVERSATION]->(:Conversation)",
+		"[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)",
+	} {
+		if !strings.Contains(cypher, frag) {
+			t.Fatalf("overview query missing user-scope fragment %q:\n%s", frag, cypher)
+		}
+	}
+}
+
+func TestCompileExpandScopesByUserID(t *testing.T) {
+	in := withGraphIntentUserID(t, GraphIntent{Op: OpExpand, SeedID: "node-1"}, "identity-1")
+	cypher, params := compileExpand(in)
+
+	if params["user_id"] != "identity-1" {
+		t.Fatalf("params[user_id] = %v, want identity-1", params["user_id"])
+	}
+	noLiteral(t, cypher, "identity-1")
+	for _, frag := range []string{
+		"$user_id = ''",
+		":User {identifier:$user_id}",
+		"[:HAS_CONVERSATION]->(:Conversation)",
+		"root = s OR (root)--(s)",
+	} {
+		if !strings.Contains(cypher, frag) {
+			t.Fatalf("expand query missing user-scope fragment %q:\n%s", frag, cypher)
+		}
+	}
+}
+
 // TestCompileSeed: session binds, node cap defaults, the footprint path matches.
 func TestCompileSeed(t *testing.T) {
 	cypher, params := compileSeed(GraphIntent{Op: "seed", Session: "thr-1"})
@@ -126,7 +201,7 @@ func TestCompileSeed(t *testing.T) {
 	// variable `(e:Entity)` because it is projected downstream, so assert on the
 	// label fragment `:Entity)` which matches the bound form.
 	for _, frag := range []string{
-		"(:Conversation {session_id:$session})",
+		"(c:Conversation {session_id:$session})",
 		"[:HAS_MESSAGE]",
 		"(:Message)",
 		"[:MENTIONS]",

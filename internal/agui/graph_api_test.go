@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -322,6 +323,37 @@ func validCookiePost(deps AuthDeps, path string, body []byte) *http.Request {
 	value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
 	return req
+}
+
+func graphIntentUserID(t *testing.T, in knowledge.GraphIntent) string {
+	t.Helper()
+	v := reflect.ValueOf(in)
+	f := v.FieldByName("UserID")
+	if !f.IsValid() {
+		t.Fatalf("GraphIntent is missing UserID for authenticated graph scoping")
+	}
+	if f.Kind() != reflect.String {
+		t.Fatalf("GraphIntent.UserID must be a string, got %s", f.Kind())
+	}
+	return f.String()
+}
+
+func TestGraphQueryInjectsAuthenticatedPrincipal(t *testing.T) {
+	deps := testDeps("operator-secret")
+	gv := fakeGraph()
+	s := graphServer(gv)
+	gated := RequireAuth(s.Mux(), deps)
+	body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSeed, Session: "thread-1"})
+
+	rec := httptest.NewRecorder()
+	gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 with a valid session (body=%s)", rec.Code, rec.Body.String())
+	}
+	if got := graphIntentUserID(t, gv.gotIntent); got != deps.LocalIdentityID {
+		t.Fatalf("GraphIntent.UserID = %q, want authenticated identity %q", got, deps.LocalIdentityID)
+	}
 }
 
 // TestGraphRequireAuthGate (T-27-03): the two graph routes mount behind the same

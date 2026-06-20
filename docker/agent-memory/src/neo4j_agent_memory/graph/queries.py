@@ -43,8 +43,24 @@ MATCH (c:Conversation {id: $id})
 RETURN c
 """
 
+GET_CONVERSATION_SCOPED = """
+MATCH (c:Conversation {id: $id})
+OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WHERE c.user_identifier = $user_identifier OR u IS NOT NULL
+RETURN c
+"""
+
 GET_CONVERSATION_BY_SESSION = """
 MATCH (c:Conversation {session_id: $session_id})
+RETURN c
+ORDER BY c.created_at DESC
+LIMIT 1
+"""
+
+GET_CONVERSATION_BY_SESSION_SCOPED = """
+MATCH (c:Conversation {session_id: $session_id})
+OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WHERE c.user_identifier = $user_identifier OR u IS NOT NULL
 RETURN c
 ORDER BY c.created_at DESC
 LIMIT 1
@@ -163,6 +179,19 @@ RETURN node AS m, score
 ORDER BY score DESC
 """
 
+SEARCH_MESSAGES_BY_EMBEDDING_SCOPED = """
+CALL db.index.vector.queryNodes('message_embedding_idx', $candidate_limit, $embedding)
+YIELD node, score
+MATCH (c:Conversation)-[:HAS_MESSAGE]->(node)
+OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WHERE score >= $threshold
+  AND ($session_id IS NULL OR c.session_id = $session_id)
+  AND (c.user_identifier = $user_identifier OR u IS NOT NULL)
+RETURN node AS m, score
+ORDER BY score DESC
+LIMIT $limit
+"""
+
 DELETE_MESSAGE = """
 MATCH (m:Message {id: $id})
 OPTIONAL MATCH (m)-[r:MENTIONS]->()
@@ -179,6 +208,39 @@ RETURN count(m) > 0 AS deleted
 LIST_SESSIONS = """
 MATCH (c:Conversation)
 WHERE $prefix IS NULL OR c.session_id STARTS WITH $prefix
+WITH c
+OPTIONAL MATCH (c)-[:HAS_MESSAGE]->(m:Message)
+WITH c,
+     count(m) AS message_count,
+     min(m.timestamp) AS first_msg_time,
+     max(m.timestamp) AS last_msg_time,
+     collect(m) AS messages
+WITH c, message_count, first_msg_time, last_msg_time,
+     head([msg IN messages WHERE msg.timestamp = first_msg_time | msg.content]) AS first_content,
+     head([msg IN messages WHERE msg.timestamp = last_msg_time | msg.content]) AS last_content
+WITH c.session_id AS session_id,
+     c.title AS title,
+     c.created_at AS created_at,
+     c.updated_at AS updated_at,
+     message_count,
+     substring(first_content, 0, 100) AS first_message_preview,
+     substring(last_content, 0, 100) AS last_message_preview
+ORDER BY
+    CASE WHEN $order_by = 'created_at' AND $order_dir = 'desc' THEN created_at END DESC,
+    CASE WHEN $order_by = 'created_at' AND $order_dir = 'asc' THEN created_at END ASC,
+    CASE WHEN $order_by = 'updated_at' AND $order_dir = 'desc' THEN updated_at END DESC,
+    CASE WHEN $order_by = 'updated_at' AND $order_dir = 'asc' THEN updated_at END ASC,
+    CASE WHEN $order_by = 'message_count' AND $order_dir = 'desc' THEN message_count END DESC,
+    CASE WHEN $order_by = 'message_count' AND $order_dir = 'asc' THEN message_count END ASC
+SKIP $offset LIMIT $limit
+RETURN session_id, title, created_at, updated_at, message_count, first_message_preview, last_message_preview
+"""
+
+LIST_SESSIONS_SCOPED = """
+MATCH (c:Conversation)
+OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WHERE ($prefix IS NULL OR c.session_id STARTS WITH $prefix)
+  AND (c.user_identifier = $user_identifier OR u IS NOT NULL)
 WITH c
 OPTIONAL MATCH (c)-[:HAS_MESSAGE]->(m:Message)
 WITH c,
@@ -252,12 +314,33 @@ RETURN e
 LIMIT 1
 """
 
+ENTITY_IN_USER_SCOPE = """
+MATCH (e:Entity {id: $entity_id})
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(e)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(e)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(e)
+RETURN count(DISTINCT m) + count(DISTINCT p) + count(DISTINCT rs) AS scope_count
+"""
+
 SEARCH_ENTITIES_BY_EMBEDDING = """
 CALL db.index.vector.queryNodes('entity_embedding_idx', $limit, $embedding)
 YIELD node, score
 WHERE score >= $threshold
 RETURN node AS e, score
 ORDER BY score DESC
+"""
+
+SEARCH_ENTITIES_BY_EMBEDDING_SCOPED = """
+CALL db.index.vector.queryNodes('entity_embedding_idx', $candidate_limit, $embedding)
+YIELD node, score
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(node)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(node)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(node)
+WHERE score >= $threshold
+  AND (m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
+RETURN node AS e, score
+ORDER BY score DESC
+LIMIT $limit
 """
 
 SEARCH_ENTITIES_BY_TYPE = """
@@ -311,8 +394,25 @@ RETURN node AS p, score
 ORDER BY score DESC
 """
 
+SEARCH_PREFERENCES_BY_EMBEDDING_SCOPED = """
+CALL db.index.vector.queryNodes('preference_embedding_idx', $candidate_limit, $embedding)
+YIELD node, score
+MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(node)
+WHERE score >= $threshold
+RETURN node AS p, score
+ORDER BY score DESC
+LIMIT $limit
+"""
+
 SEARCH_PREFERENCES_BY_CATEGORY = """
 MATCH (p:Preference {category: $category})
+RETURN p
+ORDER BY p.confidence DESC, p.created_at DESC
+LIMIT $limit
+"""
+
+SEARCH_PREFERENCES_BY_CATEGORY_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {category: $category})
 RETURN p
 ORDER BY p.confidence DESC, p.created_at DESC
 LIMIT $limit
@@ -589,6 +689,18 @@ YIELD node, score
 WHERE score >= $threshold AND ($success_only = false OR node.success = true)
 RETURN node AS rt, score
 ORDER BY score DESC
+"""
+
+SEARCH_TRACES_BY_EMBEDDING_SCOPED = """
+CALL db.index.vector.queryNodes('task_embedding_idx', $candidate_limit, $embedding)
+YIELD node, score
+OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_TRACE]->(node)
+WHERE score >= $threshold
+  AND ($success_only = false OR node.success = true)
+  AND (node.user_identifier = $user_identifier OR u IS NOT NULL)
+RETURN node AS rt, score
+ORDER BY score DESC
+LIMIT $limit
 """
 
 

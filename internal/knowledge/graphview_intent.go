@@ -27,13 +27,18 @@ type GraphIntent struct {
 	RelTypes []string `json:"rel_types,omitempty"` // include-rel filter (bound as data)
 	NodeCap  int      `json:"node_cap,omitempty"`  // default 75, hard max 300
 	EdgeCap  int      `json:"edge_cap,omitempty"`  // default 200, hard max 800
+	UserID   string   `json:"-"`                   // authenticated Aura identity; never client-supplied
 }
 
 // compileSeed emits the conversation-footprint read (D-07): the agent-memory
 // entities tied to the active session, plus their immediate neighbors. On zero
 // rows the caller falls back to the graph overview (D-08).
 func compileSeed(in GraphIntent) (cypher string, params map[string]any) {
-	cypher = `MATCH (:Conversation {session_id:$session})-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity)
+	cypher = `MATCH (c:Conversation {session_id:$session})
+WHERE $user_id = '' OR c.user_identifier = $user_id OR EXISTS {
+  MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(c)
+}
+MATCH (c)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity)
 WITH DISTINCT e LIMIT $node_cap
 OPTIONAL MATCH (e)-[r]-(n)
 WHERE ($rel_types = [] OR type(r) IN $rel_types)
@@ -60,6 +65,7 @@ RETURN
 		"rel_types": nonNil(in.RelTypes),
 		"node_cap":  clamp(in.NodeCap, defaultNodeCap, maxNodeCap),
 		"edge_cap":  clamp(in.EdgeCap, defaultEdgeCap, maxEdgeCap),
+		"user_id":   in.UserID,
 	}
 }
 
@@ -70,7 +76,11 @@ RETURN
 // edge when either endpoint carries one of the selected labels.
 func compileOverview(in GraphIntent) (cypher string, params map[string]any) {
 	cypher = `MATCH (s)-[r]->(n)
-WHERE ($rel_types = [] OR type(r) IN $rel_types)
+WHERE ($user_id = '' OR EXISTS {
+  MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)
+  WHERE root = s OR root = n
+})
+  AND ($rel_types = [] OR type(r) IN $rel_types)
   AND ($labels = [] OR any(l IN labels(s) WHERE l IN $labels) OR any(l IN labels(n) WHERE l IN $labels))
 WITH s, r, n LIMIT $edge_cap
 WITH collect({s:s, r:r, n:n}) AS rows
@@ -102,13 +112,19 @@ RETURN
 		"rel_types": nonNil(in.RelTypes),
 		"node_cap":  clamp(in.NodeCap, defaultNodeCap, maxNodeCap),
 		"edge_cap":  clamp(in.EdgeCap, defaultEdgeCap, maxEdgeCap),
+		"user_id":   in.UserID,
 	}
 }
 
 // compileExpand emits the click-to-expand-neighbors read (D-04): the seed node's
 // immediate neighbors, filtered by the bound label/rel-type sets, capped.
 func compileExpand(in GraphIntent) (cypher string, params map[string]any) {
-	cypher = `MATCH (s) WHERE elementId(s) = $seed
+	cypher = `MATCH (s)
+WHERE elementId(s) = $seed
+  AND ($user_id = '' OR EXISTS {
+    MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)
+    WHERE root = s OR (root)--(s)
+  })
 OPTIONAL MATCH (s)-[r]-(n)
 WHERE ($rel_types = [] OR type(r) IN $rel_types)
   AND ($labels = [] OR any(l IN labels(n) WHERE l IN $labels))
@@ -133,6 +149,7 @@ RETURN
 		"labels":    nonNil(in.Labels),
 		"rel_types": nonNil(in.RelTypes),
 		"edge_cap":  clamp(in.EdgeCap, defaultEdgeCap, maxEdgeCap),
+		"user_id":   in.UserID,
 	}
 }
 

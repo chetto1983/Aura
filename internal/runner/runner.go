@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoninglearn"
 	"github.com/chetto1983/aura/internal/toolselectlearn"
@@ -357,6 +358,13 @@ func (r *Runner) lockForThread(convID string) *sync.Mutex {
 
 func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string, branchLeaf int) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
+		scopedCtx, err := r.scopeContextToConversation(ctx, convID)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		ctx = scopedCtx
+
 		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
 		if userMsg != nil {
 			if err := r.appendUserTurn(ctx, convID, *userMsg); err != nil {
@@ -462,6 +470,20 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string,
 			r.maybeAutoTitle(ctx, convID, history)
 		}
 	}
+}
+
+func (r *Runner) scopeContextToConversation(ctx context.Context, convID string) (context.Context, error) {
+	conv, err := r.Conv.Get(ctx, convID)
+	if err != nil {
+		return nil, fmt.Errorf("scope conversation identity: %w", err)
+	}
+	if current := identityctx.IdentityID(ctx); current != "" {
+		if current != conv.IdentityID {
+			return nil, fmt.Errorf("conversation identity mismatch: context %s does not own conversation %s", current, convID)
+		}
+		return ctx, nil
+	}
+	return identityctx.WithIdentityID(ctx, conv.IdentityID), nil
 }
 
 // appendUserTurn persists the user message as the next turn.

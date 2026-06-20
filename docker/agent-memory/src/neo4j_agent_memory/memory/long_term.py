@@ -1086,6 +1086,14 @@ class LongTermMemory(BaseMemory[Entity]):
 
         return self._parse_entity(entity_data)
 
+    async def _entity_in_user_scope(self, entity_id: UUID | str, user_identifier: str) -> bool:
+        """Return True when an entity is connected to user-scoped memory."""
+        rows = await self._client.execute_read(
+            queries.ENTITY_IN_USER_SCOPE,
+            {"entity_id": str(entity_id), "user_identifier": user_identifier},
+        )
+        return bool(rows and rows[0].get("scope_count", 0) > 0)
+
     async def search(self, query: str, **kwargs: Any) -> list[Entity]:
         """Search for entities."""
         return await self.search_entities(query, **kwargs)
@@ -1097,6 +1105,7 @@ class LongTermMemory(BaseMemory[Entity]):
         entity_types: list[EntityType | str] | None = None,
         limit: int = 10,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> list[Entity]:
         """
         Search for entities by semantic similarity.
@@ -1130,6 +1139,10 @@ class LongTermMemory(BaseMemory[Entity]):
             exact_match
             and _normalized_text(query) in exact_names
             and (filter_types is None or exact_match.type in filter_types)
+            and (
+                user_identifier is None
+                or await self._entity_in_user_scope(exact_match.id, user_identifier)
+            )
         ):
             exact_match.metadata["similarity"] = 1.0
             entities.append(exact_match)
@@ -1140,13 +1153,19 @@ class LongTermMemory(BaseMemory[Entity]):
 
         query_embedding = await self._embedder.embed(query)
 
+        params = {
+            "embedding": query_embedding,
+            "limit": limit,
+            "threshold": threshold,
+        }
+        if user_identifier:
+            params["candidate_limit"] = max(limit * 5, limit)
+            params["user_identifier"] = user_identifier
         results = await self._client.execute_read(
-            queries.SEARCH_ENTITIES_BY_EMBEDDING,
-            {
-                "embedding": query_embedding,
-                "limit": limit,
-                "threshold": threshold,
-            },
+            queries.SEARCH_ENTITIES_BY_EMBEDDING_SCOPED
+            if user_identifier
+            else queries.SEARCH_ENTITIES_BY_EMBEDDING,
+            params,
         )
 
         for row in results:
@@ -1187,6 +1206,7 @@ class LongTermMemory(BaseMemory[Entity]):
         category: str | None = None,
         limit: int = 10,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> list[Preference]:
         """
         Search for preferences.
@@ -1203,22 +1223,33 @@ class LongTermMemory(BaseMemory[Entity]):
         if self._embedder is None:
             # Fall back to category-based search
             if category:
+                params = {"category": category, "limit": limit}
+                if user_identifier:
+                    params["user_identifier"] = user_identifier
                 results = await self._client.execute_read(
-                    queries.SEARCH_PREFERENCES_BY_CATEGORY,
-                    {"category": category, "limit": limit},
+                    queries.SEARCH_PREFERENCES_BY_CATEGORY_SCOPED
+                    if user_identifier
+                    else queries.SEARCH_PREFERENCES_BY_CATEGORY,
+                    params,
                 )
                 return [self._parse_preference(dict(r["p"])) for r in results]
             return []
 
         query_embedding = await self._embedder.embed(query)
 
+        params = {
+            "embedding": query_embedding,
+            "limit": limit,
+            "threshold": threshold,
+        }
+        if user_identifier:
+            params["candidate_limit"] = max(limit * 5, limit)
+            params["user_identifier"] = user_identifier
         results = await self._client.execute_read(
-            queries.SEARCH_PREFERENCES_BY_EMBEDDING,
-            {
-                "embedding": query_embedding,
-                "limit": limit,
-                "threshold": threshold,
-            },
+            queries.SEARCH_PREFERENCES_BY_EMBEDDING_SCOPED
+            if user_identifier
+            else queries.SEARCH_PREFERENCES_BY_EMBEDDING,
+            params,
         )
 
         preferences = []
@@ -1317,12 +1348,17 @@ class LongTermMemory(BaseMemory[Entity]):
         include_entities = kwargs.get("include_entities", True)
         include_preferences = kwargs.get("include_preferences", True)
         max_items = kwargs.get("max_items", 10)
+        user_identifier = kwargs.get("user_identifier")
 
         parts = []
 
         # Get relevant preferences
         if include_preferences:
-            preferences = await self.search_preferences(query, limit=max_items)
+            preferences = await self.search_preferences(
+                query,
+                limit=max_items,
+                user_identifier=user_identifier,
+            )
             if preferences:
                 parts.append("### User Preferences")
                 for pref in preferences:
@@ -1333,7 +1369,11 @@ class LongTermMemory(BaseMemory[Entity]):
 
         # Get relevant entities
         if include_entities:
-            entities = await self.search_entities(query, limit=max_items)
+            entities = await self.search_entities(
+                query,
+                limit=max_items,
+                user_identifier=user_identifier,
+            )
             if entities:
                 parts.append("\n### Relevant Entities")
                 for entity in entities:

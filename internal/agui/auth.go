@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // identityChecker is the narrow consumer-side seam the auth boundary needs from the
@@ -283,7 +285,9 @@ type principalKey struct{}
 // withPrincipal returns a request whose context carries the authenticated identity id
 // (set by RequireAuth after a successful cookie verify).
 func withPrincipal(r *http.Request, identityID string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), principalKey{}, identityID))
+	ctx := context.WithValue(r.Context(), principalKey{}, identityID)
+	ctx = identityctx.WithIdentityID(ctx, identityID)
+	return r.WithContext(ctx)
 }
 
 // principalFrom reads the authenticated identity id RequireAuth stashed on the context;
@@ -291,6 +295,10 @@ func withPrincipal(r *http.Request, identityID string) *http.Request {
 // capability gate treats "" as unauthorized).
 func principalFrom(ctx context.Context) string {
 	id, _ := ctx.Value(principalKey{}).(string)
+	if id != "" {
+		return id
+	}
+	id = identityctx.IdentityID(ctx)
 	return id
 }
 

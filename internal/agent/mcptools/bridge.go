@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -91,6 +92,8 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
 	}
+	args = b.withMemoryUserIdentifier(ctx, args)
+
 	callCtx := ctx
 	cancel := func() {}
 	if b.callTimeout > 0 {
@@ -103,6 +106,50 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 		return b.newUntrustedResult(ctx, capMCPErrorContent(err))
 	}
 	return b.newUntrustedResult(ctx, text)
+}
+
+func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[string]any) map[string]any {
+	if namespaceFromSpecName(b.Spec().Name) != "memory" || !memoryToolAcceptsUserIdentifier(b.name) {
+		return args
+	}
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" {
+		return args
+	}
+	if args == nil {
+		args = make(map[string]any, 1)
+	}
+	args["user_identifier"] = identityID
+	return args
+}
+
+func memoryToolAcceptsUserIdentifier(name string) bool {
+	switch name {
+	case "memory_search",
+		"memory_get_context",
+		"memory_store_message",
+		"memory_add_entity",
+		"memory_add_preference",
+		"memory_add_fact",
+		"memory_get_conversation",
+		"memory_list_sessions",
+		"memory_get_entity",
+		"memory_get_facts",
+		"memory_export_graph",
+		"memory_create_relationship",
+		"memory_start_trace",
+		"memory_record_step",
+		"memory_complete_trace",
+		"memory_get_observations",
+		"memory_set_entity_feedback",
+		"memory_get_entity_history",
+		"memory_get_entity_provenance",
+		"memory_get_reflections",
+		"graph_query":
+		return true
+	default:
+		return false
+	}
 }
 
 func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tools.ToolResult, error) {

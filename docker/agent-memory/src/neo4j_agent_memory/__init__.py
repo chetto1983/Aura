@@ -1010,6 +1010,7 @@ class MemoryClient:
         include_long_term: bool = True,
         include_reasoning: bool = True,
         max_items: int = 10,
+        user_identifier: str | None = None,
     ) -> str:
         """
         Get combined context from all memory types for an LLM prompt.
@@ -1035,6 +1036,7 @@ class MemoryClient:
                 query,
                 session_id=session_id,
                 max_messages=max_items,
+                user_identifier=user_identifier,
             )
             if short_term_context:
                 parts.append(f"## Conversation History\n{short_term_context}")
@@ -1043,6 +1045,7 @@ class MemoryClient:
             long_term_context = await self.long_term.get_context(
                 query,
                 max_items=max_items,
+                user_identifier=user_identifier,
             )
             if long_term_context:
                 parts.append(f"## Relevant Knowledge\n{long_term_context}")
@@ -1051,6 +1054,7 @@ class MemoryClient:
             reasoning_context = await self.reasoning.get_context(
                 query,
                 max_traces=max_items // 2,
+                user_identifier=user_identifier,
             )
             if reasoning_context:
                 parts.append(f"## Similar Past Tasks\n{reasoning_context}")
@@ -1103,6 +1107,7 @@ class MemoryClient:
         until: datetime | None = None,
         include_embeddings: bool = False,
         limit: int = 1000,
+        user_identifier: str | None = None,
     ) -> MemoryGraph:
         """
         Export memory graph for visualization.
@@ -1153,6 +1158,7 @@ class MemoryClient:
             "until": until.isoformat() if until else None,
             "include_embeddings": include_embeddings,
             "limit": limit,
+            "user_identifier": user_identifier,
         }
 
         # Fetch short-term memory graph
@@ -1161,7 +1167,9 @@ class MemoryClient:
                 results = await self._client.execute_read(
                     """
                     MATCH (c:Conversation)-[r:HAS_MESSAGE]->(m:Message)
+                    OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
                     WHERE ($session_id IS NULL OR c.session_id = $session_id)
+                      AND ($user_identifier IS NULL OR c.user_identifier = $user_identifier OR u IS NOT NULL)
                     WITH c, r, m
                     LIMIT $limit
                     RETURN c, r, m
@@ -1218,11 +1226,22 @@ class MemoryClient:
                 results = await self._client.execute_read(
                     """
                     MATCH (e:Entity)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(e)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(e)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(e)
+                    WHERE $user_identifier IS NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL
                     WITH e LIMIT $limit
-                    OPTIONAL MATCH (e)-[r:RELATED_TO]-(e2:Entity)
+                    OPTIONAL MATCH (e)-[r0:RELATED_TO]-(e20:Entity)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m2:Message)-[:MENTIONS]->(e20)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p2:Preference)-[:APPLIES_TO]->(e20)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs2:ReasoningStep)-[:TOUCHED]->(e20)
+                    WITH e, r0, e20, count(DISTINCT m2) + count(DISTINCT p2) + count(DISTINCT rs2) AS neighbor_scope_count
+                    WITH e,
+                         CASE WHEN $user_identifier IS NULL OR e20 IS NULL OR neighbor_scope_count > 0 THEN r0 ELSE null END AS r,
+                         CASE WHEN $user_identifier IS NULL OR e20 IS NULL OR neighbor_scope_count > 0 THEN e20 ELSE null END AS e2
                     RETURN e, r, e2
                     """,
-                    {"limit": limit},
+                    params,
                 )
                 for row in results:
                     entity = dict(row["e"])
@@ -1276,7 +1295,9 @@ class MemoryClient:
                 results = await self._client.execute_read(
                     """
                     MATCH (rt:ReasoningTrace)
+                    OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_TRACE]->(rt)
                     WHERE ($session_id IS NULL OR rt.session_id = $session_id)
+                      AND ($user_identifier IS NULL OR rt.user_identifier = $user_identifier OR u IS NOT NULL)
                     WITH rt LIMIT $limit
                     OPTIONAL MATCH (rt)-[r1:HAS_STEP]->(rs:ReasoningStep)
                     OPTIONAL MATCH (rs)-[r2:USES_TOOL]->(tc:ToolCall)
@@ -1362,6 +1383,7 @@ class MemoryClient:
                 "since": since.isoformat() if since else None,
                 "until": until.isoformat() if until else None,
                 "include_embeddings": include_embeddings,
+                "user_identifier": user_identifier,
                 "node_count": len(all_nodes),
                 "relationship_count": len(all_relationships),
             },

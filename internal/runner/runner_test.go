@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
@@ -45,6 +46,24 @@ func (p preExecPersistProbeTool) Execute(ctx context.Context, _ json.RawMessage)
 		return tools.NewResult(ctx, "assistant tool_calls missing before mutating execution")
 	}
 	return tools.NewResult(ctx, "assistant tool_calls persisted before mutating execution")
+}
+
+type identityScopeProbeTool struct {
+	got string
+}
+
+func (p *identityScopeProbeTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        "identity_scope_probe",
+		Summary:     "Probe identity scope.",
+		Description: "Probe identity scope.",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	}
+}
+
+func (p *identityScopeProbeTool) Execute(ctx context.Context, _ json.RawMessage) (tools.ToolResult, error) {
+	p.got = identityctx.IdentityID(ctx)
+	return tools.NewResult(ctx, p.got)
 }
 
 // newTestRunner builds a Runner over the in-memory fakes + a scripted FakeClient,
@@ -151,6 +170,53 @@ func TestTurn_SingleAskUser_PausesAndWritesOneRow(t *testing.T) {
 		t.Fatal("expected a pause Event with AwaitingInput")
 	} else if ai.Kind != "approval" {
 		t.Fatalf("want kind approval, got %q", ai.Kind)
+	}
+}
+
+func TestTurnScopesToolsToConversationIdentity(t *testing.T) {
+	probe := &identityScopeProbeTool{}
+	client := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "identity_scope_probe", `{}`)),
+	)
+	r, conv, _ := newTestRunner(t, client)
+	r.registry.Register(probe)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	c, err := conv.Get(ctx, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probe.got != c.IdentityID {
+		t.Fatalf("tool identity scope = %q, want conversation identity %q", probe.got, c.IdentityID)
+	}
+}
+
+func TestTurnRejectsMismatchedContextIdentity(t *testing.T) {
+	client := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(textResponseCall("call-1", "should not run")),
+	)
+	r, _, _ := newTestRunner(t, client)
+	convID := newConvID(t)
+	mustCreate(t, r, convID)
+
+	ctx := identityctx.WithIdentityID(
+		context.Background(),
+		"00000000-0000-0000-0000-000000000002",
+	)
+	_, err := drain(r.Turn(ctx, convID, userPtr("hi")))
+	if err == nil {
+		t.Fatal("turn with mismatched authenticated identity succeeded")
+	}
+	if !strings.Contains(err.Error(), "conversation identity mismatch") {
+		t.Fatalf("error = %v, want identity mismatch", err)
+	}
+	if client.CallCount() != 0 {
+		t.Fatalf("LLM ran despite identity mismatch: calls=%d", client.CallCount())
 	}
 }
 

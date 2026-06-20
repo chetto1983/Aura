@@ -193,7 +193,12 @@ class MemoryIntegration:
             self._preference_detector = PreferenceDetector()
         return self._preference_detector
 
-    async def _detect_and_store_preferences(self, content: str, session_id: str) -> None:
+    async def _detect_and_store_preferences(
+        self,
+        content: str,
+        session_id: str,
+        user_identifier: str | None = None,
+    ) -> None:
         """Detect preferences in message content and store them.
 
         Runs as a fire-and-forget background task. Errors are logged
@@ -210,6 +215,7 @@ class MemoryIntegration:
                     context=f"Auto-detected from session {session_id}: {pref.source_text[:200]}",
                     confidence=pref.confidence,
                     generate_embedding=True,
+                    user_identifier=user_identifier,
                 )
                 logger.debug(
                     f"Auto-detected preference: [{pref.category}] "
@@ -227,6 +233,7 @@ class MemoryIntegration:
         *,
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Store a message with automatic entity extraction.
 
@@ -248,11 +255,14 @@ class MemoryIntegration:
                 metadata=metadata,
                 extract_entities=self._auto_extract,
                 generate_embedding=True,
+                user_identifier=user_identifier,
             )
 
             # Fire-and-forget: background preference detection for user messages
             if self._auto_preferences and role == "user":
-                asyncio.create_task(self._detect_and_store_preferences(content, sid))
+                asyncio.create_task(
+                    self._detect_and_store_preferences(content, sid, user_identifier)
+                )
 
             # Notify observer (for context tracking and compression)
             if self._observer is not None:
@@ -284,6 +294,7 @@ class MemoryIntegration:
         include_short_term: bool = True,
         include_long_term: bool = True,
         include_reasoning: bool = True,
+        user_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Get assembled context from all memory types.
 
@@ -307,6 +318,7 @@ class MemoryIntegration:
                 include_long_term=include_long_term,
                 include_reasoning=include_reasoning,
                 max_items=max_items,
+                user_identifier=user_identifier,
             )
             return {
                 "session_id": sid,
@@ -325,6 +337,7 @@ class MemoryIntegration:
         session_id: str | None = None,
         limit: int = 10,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Search across memory types.
 
@@ -350,6 +363,7 @@ class MemoryIntegration:
                     session_id=session_id,
                     limit=limit,
                     threshold=threshold,
+                    user_identifier=user_identifier,
                 )
                 results["messages"] = [
                     {
@@ -366,6 +380,7 @@ class MemoryIntegration:
                 entities = await self.client.long_term.search_entities(
                     query=query,
                     limit=limit,
+                    user_identifier=user_identifier,
                 )
                 results["entities"] = [
                     {
@@ -383,6 +398,7 @@ class MemoryIntegration:
                 preferences = await self.client.long_term.search_preferences(
                     query=query,
                     limit=limit,
+                    user_identifier=user_identifier,
                 )
                 results["preferences"] = [
                     {
@@ -398,6 +414,7 @@ class MemoryIntegration:
                 traces = await self.client.reasoning.get_similar_traces(
                     task=query,
                     limit=limit,
+                    user_identifier=user_identifier,
                 )
                 results["traces"] = [
                     {
@@ -478,6 +495,7 @@ class MemoryIntegration:
         context: str | None = None,
         confidence: float = 1.0,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Record a user preference.
 
@@ -499,6 +517,7 @@ class MemoryIntegration:
                 confidence=confidence,
                 metadata=metadata,
                 generate_embedding=True,
+                user_identifier=user_identifier,
             )
             return {
                 "stored": True,

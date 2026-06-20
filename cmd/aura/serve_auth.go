@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -124,17 +125,28 @@ func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID st
 		return nil, nil, fmt.Errorf("authula provider: %w", err)
 	}
 	linker := webauth.NewIdentityLinker(chat.pool)
-	// Single-operator pin (spec §5 "single-operator simplification"): when exactly one
-	// Authula user exists, bind it to the configured Aura identity (default `local`) so
-	// the validate path resolves authula-user-id → identity UUID with no extra CLI.
-	// First-run enrollment (creating the Authula user + TOTP) happens out-of-band
-	// (spec OQ-4); until then OperatorUserID returns "" and the link is deferred — the
-	// daemon still boots and simply 401s the cockpit until the operator is enrolled.
-	if uid, uerr := provider.OperatorUserID(ctx); uerr == nil && uid != "" {
+	// FIRST-operator enrollment pin (spec §5; relaxed by prd.md amendment #64 / D-07):
+	// when exactly one Authula user exists, bind it to the configured Aura identity
+	// (default `local`) so the validate path resolves authula-user-id → identity UUID
+	// with no extra CLI. First-run enrollment (creating the Authula user + TOTP) happens
+	// out-of-band (spec OQ-4); until then OperatorUserID returns "" and the link is
+	// deferred — the daemon boots and simply 401s the cockpit until the operator is
+	// enrolled.
+	//
+	// Multi-user (Phase 28): once a 2nd web-loginable identity is provisioned via the
+	// onboarding wizard, OperatorUserID returns ErrOperatorAmbiguous — the auto-pin is
+	// SKIPPED (not fatal) and the already-linked `local` identity is left untouched. Each
+	// identity (the first operator + every provisioned one) carries its OWN
+	// aura.identity_auth_links row, and the live session-validate path resolves identity
+	// 1:N via ResolveIdentityID over that table — it never depends on OperatorUserID.
+	switch uid, uerr := provider.OperatorUserID(ctx); {
+	case uerr == nil && uid != "":
 		if lerr := linker.LinkOperator(ctx, localIdentityID, uid); lerr != nil {
 			fmt.Println("aura serve: authula operator link failed:", lerr)
 		}
-	} else if uerr != nil {
+	case errors.Is(uerr, webauth.ErrOperatorAmbiguous):
+		fmt.Println("aura serve: multiple operators enrolled — first-operator auto-pin skipped; multi-user resolves via identity_auth_links")
+	case uerr != nil:
 		fmt.Println("aura serve: authula operator lookup deferred (operator not yet enrolled):", uerr)
 	}
 	return provider, webauth.NewValidator(provider, linker), nil

@@ -55,6 +55,10 @@ func TestHelperProcess(t *testing.T) {
 		case "notifications/initialized":
 			// no response
 		case "tools/list":
+			if mode == "hang" {
+				time.Sleep(time.Hour)
+				continue
+			}
 			writeHelper(writer, map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
 				"tools": []map[string]any{{"name": "echo", "description": "echo", "inputSchema": map[string]any{"type": "object"}}}}})
 		case "tools/call":

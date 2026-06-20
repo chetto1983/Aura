@@ -1026,6 +1026,7 @@ class ReasoningMemory(BaseMemory[ReasoningStep]):
         limit: int = 5,
         success_only: bool = True,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> list[ReasoningTrace]:
         """
         Find similar past reasoning traces.
@@ -1044,14 +1045,20 @@ class ReasoningMemory(BaseMemory[ReasoningStep]):
 
         task_embedding = await self._embedder.embed(task)
 
+        params = {
+            "embedding": task_embedding,
+            "limit": limit,
+            "threshold": threshold,
+            "success_only": success_only,
+        }
+        if user_identifier:
+            params["candidate_limit"] = max(limit * 5, limit)
+            params["user_identifier"] = user_identifier
         results = await self._client.execute_read(
-            queries.SEARCH_TRACES_BY_EMBEDDING,
-            {
-                "embedding": task_embedding,
-                "limit": limit,
-                "threshold": threshold,
-                "success_only": success_only,
-            },
+            queries.SEARCH_TRACES_BY_EMBEDDING_SCOPED
+            if user_identifier
+            else queries.SEARCH_TRACES_BY_EMBEDDING,
+            params,
         )
 
         traces = []
@@ -1193,8 +1200,14 @@ class ReasoningMemory(BaseMemory[ReasoningStep]):
         """
         max_traces = kwargs.get("max_traces", 3)
         success_only = kwargs.get("include_successful_only", True)
+        user_identifier = kwargs.get("user_identifier")
 
-        traces = await self.get_similar_traces(query, limit=max_traces, success_only=success_only)
+        traces = await self.get_similar_traces(
+            query,
+            limit=max_traces,
+            success_only=success_only,
+            user_identifier=user_identifier,
+        )
 
         if not traces:
             return ""

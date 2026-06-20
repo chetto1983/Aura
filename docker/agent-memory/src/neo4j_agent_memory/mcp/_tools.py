@@ -72,6 +72,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         memory_types: list[str] | None = None,
         session_id: str | None = None,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> str:
         """Search across all memory types using hybrid vector + graph search.
 
@@ -93,6 +94,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             session_id=session_id,
             limit=limit,
             threshold=threshold,
+            user_identifier=user_identifier,
         )
         return json.dumps(result, default=str)
 
@@ -105,6 +107,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         include_short_term: bool = True,
         include_long_term: bool = True,
         include_reasoning: bool = True,
+        user_identifier: str | None = None,
     ) -> str:
         """Get assembled context from all memory types for the current session.
 
@@ -128,6 +131,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             include_short_term=include_short_term,
             include_long_term=include_long_term,
             include_reasoning=include_reasoning,
+            user_identifier=user_identifier,
         )
         return json.dumps(result, default=str)
 
@@ -138,6 +142,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         role: str = "user",
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Store a message in conversation memory.
 
@@ -157,6 +162,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             content=content,
             session_id=session_id,
             metadata=metadata,
+            user_identifier=user_identifier,
         )
         return json.dumps(result, default=str)
 
@@ -169,6 +175,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         description: str | None = None,
         aliases: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Create or update an entity in the knowledge graph.
 
@@ -186,6 +193,9 @@ def _register_core_tools(mcp: FastMCP) -> None:
             aliases: Alternative names for the entity.
             metadata: Additional metadata.
         """
+        if user_identifier is not None:
+            return _scoped_unsupported("memory_add_entity")
+
         integration = get_integration(ctx)
         result = await integration.add_entity(
             name=name,
@@ -205,6 +215,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         context: str | None = None,
         confidence: float = 1.0,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Record a user preference for personalization.
 
@@ -225,6 +236,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             context=context,
             confidence=confidence,
             metadata=metadata,
+            user_identifier=user_identifier,
         )
         return json.dumps(result, default=str)
 
@@ -238,6 +250,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         valid_from: str | None = None,
         valid_until: str | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Store a subject-predicate-object fact triple.
 
@@ -253,6 +266,9 @@ def _register_core_tools(mcp: FastMCP) -> None:
             valid_until: ISO date string for when this fact expires.
             metadata: Additional metadata (e.g., scope, stack_tags, temporality).
         """
+        if user_identifier is not None:
+            return _scoped_unsupported("memory_add_fact")
+
         integration = get_integration(ctx)
         result = await integration.add_fact(
             subject=subject,
@@ -278,6 +294,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         session_id: str,
         limit: int = 50,
         include_metadata: bool = True,
+        user_identifier: str | None = None,
     ) -> str:
         """Retrieve full conversation history for a session.
 
@@ -294,6 +311,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             conversation = await client.short_term.get_conversation(
                 session_id=session_id,
                 limit=limit,
+                user_identifier=user_identifier,
             )
 
             messages = []
@@ -326,6 +344,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         ctx: Context,
         limit: int = 20,
         offset: int = 0,
+        user_identifier: str | None = None,
     ) -> str:
         """List available conversation sessions with previews.
 
@@ -342,6 +361,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             sessions = await client.short_term.list_sessions(
                 limit=limit,
                 offset=offset,
+                user_identifier=user_identifier,
             )
 
             session_list = []
@@ -382,6 +402,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         entity_type: str | None = None,
         include_neighbors: bool = True,
         max_hops: int = 1,
+        user_identifier: str | None = None,
     ) -> str:
         """Get detailed entity information with graph relationships.
 
@@ -401,6 +422,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 query=name,
                 entity_types=[entity_type] if entity_type else None,
                 limit=1,
+                user_identifier=user_identifier,
             )
 
             if not entities:
@@ -422,7 +444,12 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             }
 
             if include_neighbors:
-                neighbors = await _get_entity_neighbors(client, str(entity.id), max_hops)
+                neighbors = await _get_entity_neighbors(
+                    client,
+                    str(entity.id),
+                    max_hops,
+                    user_identifier=user_identifier,
+                )
                 result["neighbors"] = neighbors
 
             return json.dumps(result, default=str)
@@ -438,6 +465,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         query: str | None = None,
         limit: int = 20,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> str:
         """Retrieve facts by exact subject or semantic query.
 
@@ -450,6 +478,9 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             limit: Maximum facts to return.
             threshold: Similarity threshold for semantic search.
         """
+        if user_identifier is not None:
+            return _scoped_unsupported("memory_get_facts")
+
         client = get_client(ctx)
         try:
             if subject:
@@ -490,6 +521,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         session_id: str | None = None,
         memory_types: list[str] | None = None,
         limit: int = 500,
+        user_identifier: str | None = None,
     ) -> str:
         """Export a subgraph as JSON for visualization or debugging.
 
@@ -510,6 +542,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 session_id=session_id,
                 limit=limit,
                 include_embeddings=False,
+                user_identifier=user_identifier,
             )
 
             return json.dumps(
@@ -535,6 +568,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         relationship_type: str,
         description: str | None = None,
         confidence: float = 1.0,
+        user_identifier: str | None = None,
     ) -> str:
         """Create a typed relationship between two entities.
 
@@ -549,6 +583,9 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             description: Optional description of the relationship.
             confidence: Confidence score 0.0-1.0 (default: 1.0).
         """
+        if user_identifier is not None:
+            return _scoped_unsupported("memory_create_relationship")
+
         client = get_client(ctx)
 
         try:
@@ -599,6 +636,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         session_id: str,
         task: str,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Begin recording a reasoning trace for a complex task.
 
@@ -618,6 +656,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 session_id=session_id,
                 task=task,
                 metadata=metadata or {},
+                user_identifier=user_identifier,
             )
             return json.dumps(
                 {
@@ -643,6 +682,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         tool_name: str | None = None,
         tool_args: dict[str, Any] | None = None,
         tool_result: str | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Record a reasoning step within a trace.
 
@@ -661,6 +701,11 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         client = get_client(ctx)
 
         try:
+            if user_identifier is not None and not await _trace_in_user_scope(
+                client, trace_id, user_identifier
+            ):
+                return json.dumps({"error": "trace is not in the authenticated user's scope"})
+
             step = await client.reasoning.add_step(
                 trace_id=trace_id,
                 thought=thought,
@@ -699,6 +744,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         trace_id: str,
         outcome: str | None = None,
         success: bool = True,
+        user_identifier: str | None = None,
     ) -> str:
         """Complete a reasoning trace with the final outcome.
 
@@ -713,6 +759,11 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         client = get_client(ctx)
 
         try:
+            if user_identifier is not None and not await _trace_in_user_scope(
+                client, trace_id, user_identifier
+            ):
+                return json.dumps({"error": "trace is not in the authenticated user's scope"})
+
             await client.reasoning.complete_trace(
                 trace_id=trace_id,
                 outcome=outcome,
@@ -736,6 +787,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
     async def memory_get_observations(
         ctx: Context,
         session_id: str,
+        user_identifier: str | None = None,
     ) -> str:
         """Get observations and extracted insights for a session.
 
@@ -750,6 +802,28 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             session_id: Session ID to get observations for.
         """
         try:
+            client = get_client(ctx)
+            if user_identifier is not None:
+                conversation = await client.short_term.get_conversation(
+                    session_id=session_id,
+                    limit=1,
+                    user_identifier=user_identifier,
+                )
+                if not conversation.messages:
+                    return json.dumps(
+                        {
+                            "session_id": session_id,
+                            "message_count": 0,
+                            "approximate_tokens": 0,
+                            "threshold_exceeded": False,
+                            "reflections": [],
+                            "observations": [],
+                            "entity_names": [],
+                            "topics": [],
+                        },
+                        default=str,
+                    )
+
             # Try to get observer from lifespan context
             observer = ctx.request_context.lifespan_context.get("observer")
             if observer is not None:
@@ -757,10 +831,10 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 return json.dumps(result, default=str)
 
             # Fallback: return basic stats if no observer available
-            client = get_client(ctx)
             conversation = await client.short_term.get_conversation(
                 session_id=session_id,
                 limit=100,
+                user_identifier=user_identifier,
             )
             return json.dumps(
                 {
@@ -785,6 +859,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         ctx: Context,
         query: str,
         parameters: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> str:
         """Execute a read-only Cypher query against the knowledge graph.
 
@@ -796,6 +871,14 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             query: Cypher query string (read-only).
             parameters: Query parameters as key-value pairs.
         """
+        if user_identifier is not None:
+            return json.dumps(
+                {
+                    "error": "graph_query is disabled for user-scoped sessions; "
+                    "use structured memory tools instead."
+                }
+            )
+
         if not _is_read_only_query(query):
             return json.dumps(
                 {
@@ -874,6 +957,7 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
         ctx: Context,
         entity_id: str,
         limit: int = 50,
+        user_identifier: str | None = None,
     ) -> str:
         """Get the conversation-and-mention history for an entity (NAMS Platinum).
 
@@ -886,6 +970,9 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
             entity_id: Entity UUID.
             limit: Maximum history entries to return (default: 50).
         """
+        if user_identifier is not None:
+            return _scoped_unsupported("memory_get_entity_history")
+
         client = get_client(ctx)
         try:
             history = await client.long_term.get_entity_history(  # type: ignore[attr-defined]
@@ -900,6 +987,7 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
     async def memory_get_entity_provenance(
         ctx: Context,
         entity_id: str,
+        user_identifier: str | None = None,
     ) -> str:
         """Get the provenance record for an entity (source messages + extractors).
 
@@ -909,6 +997,9 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
         Args:
             entity_id: Entity UUID.
         """
+        if user_identifier is not None:
+            return _scoped_unsupported("memory_get_entity_provenance")
+
         client = get_client(ctx)
         try:
             prov = await client.long_term.get_entity_provenance(entity_id)  # type: ignore[arg-type]
@@ -922,6 +1013,7 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
         ctx: Context,
         session_id: str,
         limit: int = 20,
+        user_identifier: str | None = None,
     ) -> str:
         """Get LLM-generated reflections for a session (NAMS Platinum).
 
@@ -936,6 +1028,14 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
         """
         client = get_client(ctx)
         try:
+            if user_identifier is not None:
+                conversation = await client.short_term.get_conversation(
+                    session_id=session_id,
+                    limit=1,
+                    user_identifier=user_identifier,
+                )
+                if not conversation.messages:
+                    return json.dumps({"session_id": session_id, "reflections": []})
             reflections = await client.short_term.get_reflections(  # type: ignore[attr-defined]
                 session_id, limit=limit
             )
@@ -948,10 +1048,38 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
 # ── Helpers ───────────────────────────────────────────────────────────
 
 
+def _scoped_unsupported(tool_name: str) -> str:
+    return json.dumps(
+        {
+            "error": f"{tool_name} is disabled for user-scoped sessions because "
+            "it cannot enforce per-user graph isolation. Use memory_store_message "
+            "or a scoped retrieval tool instead."
+        }
+    )
+
+
+async def _trace_in_user_scope(client: Any, trace_id: str, user_identifier: str) -> bool:
+    try:
+        records = await client.query.cypher(
+            """
+            MATCH (rt:ReasoningTrace {id: $trace_id})
+            OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_TRACE]->(rt)
+            RETURN (rt.user_identifier = $user_identifier OR u IS NOT NULL) AS ok
+            LIMIT 1
+            """,
+            {"trace_id": trace_id, "user_identifier": user_identifier},
+        )
+        return bool(records and records[0].get("ok"))
+    except Exception:
+        return False
+
+
 async def _get_entity_neighbors(
     client: Any,
     entity_id: str,
     max_hops: int = 1,
+    *,
+    user_identifier: str | None = None,
 ) -> list[dict[str, Any]]:
     """Get neighboring entities via graph traversal.
 
@@ -966,7 +1094,11 @@ async def _get_entity_neighbors(
     max_hops = min(max(max_hops, 1), 3)
     query = f"""
     MATCH (e:Entity {{id: $entity_id}})-[r*1..{max_hops}]-(neighbor:Entity)
+    OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(neighbor)
+    OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(neighbor)
+    OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(neighbor)
     WHERE neighbor.id <> $entity_id
+      AND ($user_identifier IS NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
     WITH DISTINCT neighbor, r
     RETURN neighbor.id AS id,
            neighbor.name AS name,
@@ -979,7 +1111,7 @@ async def _get_entity_neighbors(
         # v0.4: portable read-only Cypher accessor (works on bolt + NAMS).
         records = await client.query.cypher(
             query,
-            {"entity_id": entity_id},
+            {"entity_id": entity_id, "user_identifier": user_identifier},
         )
         return [
             {

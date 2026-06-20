@@ -107,6 +107,7 @@ func (s *Server) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return
 	}
+	intent.UserID = principalFrom(r.Context())
 	res, err := s.graph.Query(r.Context(), intent)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})

@@ -716,6 +716,7 @@ class ShortTermMemory(BaseMemory[Message]):
         conversation_id: UUID | str | None = None,
         limit: int | None = None,
         since: datetime | None = None,
+        user_identifier: str | None = None,
     ) -> Conversation:
         """
         Get conversation history for a session.
@@ -732,10 +733,23 @@ class ShortTermMemory(BaseMemory[Message]):
         # Get conversation
         if conversation_id:
             conv_id = str(conversation_id) if isinstance(conversation_id, UUID) else conversation_id
-            results = await self._client.execute_read(queries.GET_CONVERSATION, {"id": conv_id})
+            query = queries.GET_CONVERSATION_SCOPED if user_identifier else queries.GET_CONVERSATION
+            params = {"id": conv_id}
+            if user_identifier:
+                params["user_identifier"] = user_identifier
+            results = await self._client.execute_read(query, params)
         else:
+            query = (
+                queries.GET_CONVERSATION_BY_SESSION_SCOPED
+                if user_identifier
+                else queries.GET_CONVERSATION_BY_SESSION
+            )
+            params = {"session_id": session_id}
+            if user_identifier:
+                params["user_identifier"] = user_identifier
             results = await self._client.execute_read(
-                queries.GET_CONVERSATION_BY_SESSION, {"session_id": session_id}
+                query,
+                params,
             )
 
         if not results:
@@ -788,6 +802,7 @@ class ShortTermMemory(BaseMemory[Message]):
         limit: int = 10,
         threshold: float = 0.7,
         metadata_filters: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> list[Message]:
         """
         Semantic search across messages.
@@ -818,8 +833,36 @@ class ShortTermMemory(BaseMemory[Message]):
             metadata_filters or {}, metadata_prop="m.metadata"
         )
 
-        # Build the query with optional metadata filtering
-        if metadata_clause:
+        # Build the query with optional user and metadata filtering.
+        if user_identifier:
+            params = {
+                "embedding": query_embedding,
+                "candidate_limit": max(limit * 5, limit),
+                "limit": limit,
+                "threshold": threshold,
+                "session_id": session_id,
+                "user_identifier": user_identifier,
+                **metadata_params,
+            }
+            if metadata_clause:
+                cypher_query = f"""
+                CALL db.index.vector.queryNodes('message_embedding_idx', $candidate_limit, $embedding)
+                YIELD node, score
+                MATCH (c:Conversation)-[:HAS_MESSAGE]->(node)
+                OPTIONAL MATCH (u:User {{identifier: $user_identifier}})-[:HAS_CONVERSATION]->(c)
+                WITH node AS m, score, c, u
+                WHERE score >= $threshold
+                  AND ($session_id IS NULL OR c.session_id = $session_id)
+                  AND (c.user_identifier = $user_identifier OR u IS NOT NULL)
+                  AND m.metadata IS NOT NULL
+                  AND {metadata_clause}
+                RETURN m, score
+                ORDER BY score DESC
+                LIMIT $limit
+                """
+            else:
+                cypher_query = queries.SEARCH_MESSAGES_BY_EMBEDDING_SCOPED
+        elif metadata_clause:
             # Use a modified query that includes metadata filtering
             # Metadata is stored as JSON string - we use CONTAINS for filtering
             cypher_query = queries.build_metadata_search_query(metadata_clause)
@@ -872,12 +915,17 @@ class ShortTermMemory(BaseMemory[Message]):
         """
         session_id = kwargs.get("session_id")
         max_messages = kwargs.get("max_messages", 10)
+        user_identifier = kwargs.get("user_identifier")
 
         parts = []
 
         # Get recent conversation if session_id provided
         if session_id:
-            conv = await self.get_conversation(session_id, limit=max_messages)
+            conv = await self.get_conversation(
+                session_id,
+                limit=max_messages,
+                user_identifier=user_identifier,
+            )
             if conv.messages:
                 parts.append("### Recent Conversation")
                 for msg in conv.messages[-max_messages:]:
@@ -885,7 +933,11 @@ class ShortTermMemory(BaseMemory[Message]):
 
         # Search for relevant messages
         if self._embedder is not None:
-            relevant = await self.search_messages(query, limit=5)
+            relevant = await self.search_messages(
+                query,
+                limit=5,
+                user_identifier=user_identifier,
+            )
             if relevant:
                 parts.append("\n### Relevant Past Messages")
                 for msg in relevant:
@@ -931,6 +983,7 @@ class ShortTermMemory(BaseMemory[Message]):
         offset: int = 0,
         order_by: Literal["created_at", "updated_at", "message_count"] = "updated_at",
         order_dir: Literal["asc", "desc"] = "desc",
+        user_identifier: str | None = None,
     ) -> list[SessionInfo]:
         """
         List sessions with metadata.
@@ -946,15 +999,18 @@ class ShortTermMemory(BaseMemory[Message]):
         Returns:
             List of SessionInfo objects with session details
         """
+        params = {
+            "prefix": prefix,
+            "limit": limit,
+            "offset": offset,
+            "order_by": order_by,
+            "order_dir": order_dir,
+        }
+        if user_identifier:
+            params["user_identifier"] = user_identifier
         results = await self._client.execute_read(
-            queries.LIST_SESSIONS,
-            {
-                "prefix": prefix,
-                "limit": limit,
-                "offset": offset,
-                "order_by": order_by,
-                "order_dir": order_dir,
-            },
+            queries.LIST_SESSIONS_SCOPED if user_identifier else queries.LIST_SESSIONS,
+            params,
         )
 
         sessions = []
