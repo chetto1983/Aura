@@ -21,11 +21,12 @@
 //
 //	go test -tags db_integration ./internal/webauth -run TestAuthulaMultiUser -count=1 -p 1
 //
-// Requires AURA_DB_URL (aura.* pool, for identity_auth_links) and AURA_AUTHULA_SECRET;
-// the Authula schema DSN defaults to AURA_DB_URL (webauth.New forces ?search_path=authula)
-// unless AURA_AUTHULA_DSN overrides it. Under $CI an unset required var t.Fatals (no
-// skip-as-green); locally it skips with guidance. Run with -p 1: the shared Postgres is
-// also exercised by a parallel session, so these tests serialize their user-set assertions.
+// Requires AURA_DB_URL (aura.* pool, for identity_auth_links). AURA_AUTHULA_SECRET is
+// honored when set; otherwise the test uses a deterministic non-production secret because
+// it constructs an isolated embedded provider. The Authula schema DSN defaults to
+// AURA_DB_URL (webauth.New forces ?search_path=authula) unless AURA_AUTHULA_DSN overrides
+// it. Run with -p 1: the shared Postgres is also exercised by a parallel session, so
+// these tests serialize their user-set assertions.
 
 package webauth
 
@@ -57,6 +58,7 @@ func multiEnvOrSkip(t *testing.T, key string) string {
 
 // seededLocalIdentityID is the migration-0004 seeded `local` identity (wildcard `*`).
 const seededLocalIdentityID = "00000000-0000-0000-0000-000000000001"
+const testAuthulaSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 // newMultiUserProvider builds the embedded Authula provider on the isolated authula
 // schema and an IdentityLinker over the aura pool, returning both plus a cleanup. It is
@@ -64,7 +66,10 @@ const seededLocalIdentityID = "00000000-0000-0000-0000-000000000001"
 func newMultiUserProvider(t *testing.T, ctx context.Context) (*Provider, *IdentityLinker, *pgxpool.Pool) {
 	t.Helper()
 	auraDSN := multiEnvOrSkip(t, "AURA_DB_URL")
-	secret := multiEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	secret := os.Getenv("AURA_AUTHULA_SECRET")
+	if secret == "" {
+		secret = testAuthulaSecret
+	}
 	authulaDSN := os.Getenv("AURA_AUTHULA_DSN")
 	if authulaDSN == "" {
 		authulaDSN = auraDSN // webauth.New appends ?search_path=authula

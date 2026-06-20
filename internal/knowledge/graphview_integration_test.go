@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,19 +154,21 @@ func TestGraphViewLive_Footprint(t *testing.T) {
 		t.Log("no :Conversation footprint live — the loop may write only :Entity nodes; asserting the schema-overview fallback")
 	}
 
-	// Regardless: a non-existent thread MUST fall back to the schema overview, never
-	// a blank result (D-08). This is the load-bearing default-open guarantee.
+	// Regardless: a non-existent thread MUST fall back to the drawable relationship
+	// overview + schema, never a blank result (D-08). On a graph with relationships this
+	// may legitimately include sample nodes/edges; on an empty graph it may be schema-only.
 	res, err := gv.Query(ctx, GraphIntent{Op: OpSeed, Session: "no-such-thread-xyz-27"})
 	if err != nil {
 		t.Fatalf("empty-seed fallback Query: %v", err)
 	}
-	if len(res.Nodes) != 0 {
-		t.Fatalf("empty-seed must produce no nodes, got %d", len(res.Nodes))
-	}
 	if len(res.Schema.Labels) == 0 {
 		t.Fatalf("empty-seed must fall back to a non-empty schema overview, got %+v", res.Schema)
 	}
-	t.Logf("empty-seed fallback OK: schema overview carries %d labels", len(res.Schema.Labels))
+	if !strings.Contains(res.Query, "MATCH (s)-[r]->(n)") {
+		t.Fatalf("empty-seed fallback should expose the overview Cypher, got %q", res.Query)
+	}
+	t.Logf("empty-seed fallback OK: overview carries %d nodes, %d edges, %d labels",
+		len(res.Nodes), len(res.Edges), len(res.Schema.Labels))
 }
 
 // TestGraphViewLive_Schema asserts GraphView.Schema returns a non-empty label set

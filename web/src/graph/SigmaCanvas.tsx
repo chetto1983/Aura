@@ -45,7 +45,7 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
   useEffect(() => {
     const dataKey = layoutDataKey(nodes, edges);
     const needsLayout = dataKey !== lastLayoutKey;
-    const graph = new Graph();
+    const graph = new Graph({ multi: true });
 
     for (const node of nodes) {
       const cached = POSITION_CACHE.get(node.id);

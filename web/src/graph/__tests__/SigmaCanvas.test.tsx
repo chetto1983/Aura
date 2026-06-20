@@ -49,6 +49,10 @@ const NODES: readonly ClientNode[] = [
   { id: 'n2', caption: 'Bravo', color: '#81C995', size: 6, labels: ['Document'] },
 ];
 const EDGES: readonly ClientEdge[] = [{ id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' }];
+const PARALLEL_EDGES: readonly ClientEdge[] = [
+  { id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' },
+  { id: 'e2', source: 'n1', target: 'n2', label: 'CITES' },
+];
 
 beforeEach(() => {
   loadGraph.mockClear();
@@ -99,6 +103,22 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     const graph = loadGraph.mock.calls[0]?.[0] as { order: number; size: number };
     expect(graph.order).toBe(2); // both nodes flowed in
     expect(graph.size).toBe(1); // the one edge flowed in
+  });
+
+  it('loads parallel Neo4j relationships without crashing the graphology renderer', () => {
+    render(
+      <SigmaCanvas
+        nodes={NODES}
+        edges={PARALLEL_EDGES}
+        pinnedPath={new Set()}
+        sigmaKey={0}
+        onNodeClick={vi.fn()}
+      />,
+    );
+
+    const graph = loadGraph.mock.calls[0]?.[0] as { order: number; size: number };
+    expect(graph.order).toBe(2);
+    expect(graph.size).toBe(2);
   });
 
   it('registers node events so a canvas click can open the inspector (non-hover path wiring)', () => {
