@@ -37,21 +37,25 @@ export const governanceEn = {
       },
       redacted: 'redacted',
       detail: {
+        source: 'Source',
         trust: 'Trust',
+        riskPolicy: 'Risk policy',
         runtime: 'Runtime',
         startup: 'Startup',
         authStatus: 'Auth status',
+        profiles: 'Profiles',
+        networkAllowlist: 'Network allowlist',
         envKeys: 'Environment keys',
         toolCount: 'Tools',
         probeDetail: 'Probe result',
         lastError: 'Last error',
         noEnvKeys: 'No environment keys.',
+        none: '-',
       },
     },
     skills: {
       emptyHeading: 'No skills yet',
-      emptyBody:
-        "No skills in this stage yet. Skills appear here as they're installed and used.",
+      emptyBody: "No skills in this stage yet. Skills appear here as they're installed and used.",
       stages: {
         active: 'Active',
         pending: 'Pending',
@@ -77,8 +81,7 @@ export const governanceEn = {
     },
     scheduler: {
       emptyHeading: 'No scheduled tasks',
-      emptyBody:
-        'Nothing is scheduled yet. Scheduled jobs and their run history will appear here.',
+      emptyBody: 'Nothing is scheduled yet. Scheduled jobs and their run history will appear here.',
       field: {
         kind: 'Kind',
         schedule: 'Schedule',
@@ -131,6 +134,11 @@ export const governanceIt = {
       },
       redacted: 'nascosto',
       detail: {
+        source: 'Origine',
+        riskPolicy: 'Policy rischio',
+        profiles: 'Profili',
+        networkAllowlist: 'Allowlist rete',
+        none: '-',
         trust: 'Affidabilità',
         runtime: 'Runtime',
         startup: 'Avvio',

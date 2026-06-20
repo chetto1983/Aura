@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -53,15 +54,20 @@ type mcpEnvChip struct {
 }
 
 // mcpServerRow is one GOV-01 MCP-governance row: the static status snapshot fields plus
-// the redacted env-KEY chips. lastError is RedactSecrets-cleaned before it reaches here.
+// the configured source/profile/risk-policy fields and redacted env-KEY chips. lastError is
+// RedactSecrets-cleaned before it reaches here.
 type mcpServerRow struct {
-	Name         string       `json:"name"`
-	Trust        string       `json:"trust"`
-	Runtime      string       `json:"runtime"`
-	StartupState string       `json:"startupState"`
-	AuthStatus   string       `json:"authStatus"`
-	EnvKeys      []mcpEnvChip `json:"envKeys"`
-	LastError    string       `json:"lastError,omitempty"`
+	Name             string       `json:"name"`
+	Source           string       `json:"source"`
+	Trust            string       `json:"trust"`
+	RiskPolicy       string       `json:"riskPolicy"`
+	Runtime          string       `json:"runtime"`
+	StartupState     string       `json:"startupState"`
+	AuthStatus       string       `json:"authStatus"`
+	Profiles         []string     `json:"profiles"`
+	NetworkAllowlist []string     `json:"networkAllowlist"`
+	EnvKeys          []mcpEnvChip `json:"envKeys"`
+	LastError        string       `json:"lastError,omitempty"`
 }
 
 // skillRow is one GOV-02 skills-governance row. It is the projection shared by the active
@@ -114,14 +120,16 @@ type schedulerTaskRow struct {
 	UpdatedAt    time.Time         `json:"UpdatedAt"`
 }
 
-// schedulerRunRow is the safe run-history projection. It omits PausedStateToken and
-// LastHeartbeatAt; operator-visible text fields are sanitized before serialization.
+// schedulerRunRow is the safe run-history projection. It omits PausedStateToken while
+// preserving LastHeartbeatAt for the read-only operator board; operator-visible text
+// fields are sanitized before serialization.
 type schedulerRunRow struct {
 	ID                string    `json:"ID"`
 	TaskID            string    `json:"TaskID"`
 	Status            string    `json:"Status"`
 	StepBudget        int       `json:"StepBudget"`
 	StartedAt         time.Time `json:"StartedAt"`
+	LastHeartbeatAt   time.Time `json:"LastHeartbeatAt"`
 	CompletedWithHash string    `json:"CompletedWithHash"`
 	Summary           string    `json:"Summary"`
 	LastError         string    `json:"LastError"`
@@ -156,17 +164,42 @@ func (s *Server) handleMCPList(w http.ResponseWriter, _ *http.Request) {
 	statuses := mcpmanager.SnapshotStatus(doc)
 	rows := make([]mcpServerRow, 0, len(statuses))
 	for _, st := range statuses {
+		server := doc.MCPServers[st.Name]
 		rows = append(rows, mcpServerRow{
-			Name:         st.Name,
-			Trust:        st.Trust,
-			Runtime:      st.Runtime,
-			StartupState: st.StartupState,
-			AuthStatus:   st.AuthStatus,
-			EnvKeys:      envChips(doc.MCPServers[st.Name].Env),
-			LastError:    mcp.RedactSecrets(st.LastError),
+			Name:             st.Name,
+			Source:           server.Source,
+			Trust:            st.Trust,
+			RiskPolicy:       st.Trust,
+			Runtime:          st.Runtime,
+			StartupState:     st.StartupState,
+			AuthStatus:       st.AuthStatus,
+			Profiles:         mcpProfiles(doc, st.Name),
+			NetworkAllowlist: stringList(server.Runtime.Network),
+			EnvKeys:          envChips(server.Env),
+			LastError:        mcp.RedactSecrets(st.LastError),
 		})
 	}
 	writeJSON(w, map[string]any{"servers": rows})
+}
+
+func mcpProfiles(doc mcp.ManagedConfig, server string) []string {
+	profiles := make([]string, 0, len(doc.Profiles))
+	for profile, cfg := range doc.Profiles {
+		for _, name := range cfg.Servers {
+			if name == server {
+				profiles = append(profiles, profile)
+				break
+			}
+		}
+	}
+	sort.Strings(profiles)
+	return profiles
+}
+
+func stringList(in []string) []string {
+	out := make([]string, 0, len(in))
+	out = append(out, in...)
+	return out
 }
 
 // envChips projects a server's `KEY=VALUE` env slice onto redacted KEY chips. The VALUE is
@@ -440,6 +473,7 @@ func schedulerRunRows(runs []cron.Run) []schedulerRunRow {
 			Status:            run.Status,
 			StepBudget:        run.StepBudget,
 			StartedAt:         run.StartedAt,
+			LastHeartbeatAt:   run.LastHeartbeatAt,
 			CompletedWithHash: run.CompletedWithHash,
 			Summary:           SanitizeString(run.Summary),
 			LastError:         SanitizeString(run.LastError),

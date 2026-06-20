@@ -119,7 +119,11 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
 
   // ---- interview dispatch (one /step call per intent; the wizard owns busy/auth state) ----
   const dispatchStep = useCallback(
-    async (intent: 'answer' | 'confirm' | 'edit' | 'skip', text?: string, answers?: OnboardingAnswers) => {
+    async (
+      intent: 'answer' | 'confirm' | 'edit' | 'skip',
+      text?: string,
+      answers?: OnboardingAnswers,
+    ) => {
       if (sessionToken === '') return;
       setStepBusy(true);
       try {
@@ -217,9 +221,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   if (startStatus === 'error-forbidden') {
     return overlay(
       <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
-        <p className="max-w-md text-[15.5px] text-danger">
-          {t('onboarding.error.noCapability')}
-        </p>
+        <p className="max-w-md text-[15.5px] text-danger">{t('onboarding.error.noCapability')}</p>
       </div>,
     );
   }

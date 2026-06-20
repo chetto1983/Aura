@@ -11,7 +11,8 @@ const SESSION_TOKEN = 'sess-e2e-28-06';
 const PASSWORD = 'E2E-Super-Secret-PW-28406';
 const DEEP_LINK = 'https://t.me/AuraBot?start=onb-e2e-28-06';
 const BOT_TOKEN = '1234567890:AAH-this-token-must-not-render';
-const QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>';
+const QR_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>';
 
 async function clickFirstVisible(locator: Locator) {
   const count = await locator.count();
@@ -36,9 +37,7 @@ async function hasVisibleCandidate(locator: Locator) {
 }
 
 async function waitForVisibleCandidate(locator: Locator) {
-  await expect
-    .poll(async () => hasVisibleCandidate(locator), { timeout: 10_000 })
-    .toBe(true);
+  await expect.poll(async () => hasVisibleCandidate(locator), { timeout: 10_000 }).toBe(true);
 }
 
 async function installShellRoutes(page: Page) {

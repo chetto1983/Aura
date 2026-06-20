@@ -78,6 +78,11 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
                 {run.Summary !== '' ? (
                   <span className="break-words text-[13px] text-text-muted">{run.Summary}</span>
                 ) : null}
+                {run.LastHeartbeatAt !== '' && !run.LastHeartbeatAt.startsWith('0001-01-01') ? (
+                  <span className="break-all font-mono text-[12px] text-text-muted">
+                    {t('governance.scheduler.runs.heartbeat')}: {run.LastHeartbeatAt}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>

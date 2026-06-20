@@ -123,9 +123,7 @@ async function installGovernanceRoutes(page: Page) {
     );
   });
   await page.route('**/api/governance/skills?*', (route) => route.fulfill(json(SKILLS_ACTIVE)));
-  await page.route('**/api/governance/skills/audit*', (route) =>
-    route.fulfill(json({ rows: [] })),
-  );
+  await page.route('**/api/governance/skills/audit*', (route) => route.fulfill(json({ rows: [] })));
   await page.route('**/api/governance/scheduler', (route) => route.fulfill(json(SCHED_TASKS)));
   await page.route('**/api/governance/scheduler/*/runs*', (route) =>
     route.fulfill(json(SCHED_RUNS)),
@@ -188,7 +186,10 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
     await expect(page.getByText('reminder')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('0 9 * * *')).toBeVisible();
 
-    await page.getByRole('button', { name: /reminder/ }).first().click();
+    await page
+      .getByRole('button', { name: /reminder/ })
+      .first()
+      .click();
     await expect(page.getByText('Run history')).toBeVisible();
     await expect(page.getByText('first run')).toBeVisible();
     await expect(page.getByText('Showing 1 of 1')).toBeVisible();
@@ -236,7 +237,10 @@ test.describe('Phase 28 — Governance mobile bottom sheet', () => {
     await openGovernance(page);
     await expect(page.getByText('github')).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /github/ }).first().click();
+    await page
+      .getByRole('button', { name: /github/ })
+      .first()
+      .click();
     // The detail (bottom sheet) shows the env KEY; closing via the backdrop dismisses it.
     await expect(page.getByText('GITHUB_TOKEN')).toBeVisible();
 

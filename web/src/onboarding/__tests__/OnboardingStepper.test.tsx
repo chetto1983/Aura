@@ -25,9 +25,7 @@ describe('OnboardingStepper', () => {
       'upcoming',
     ]);
     // The active step (interview) carries aria-current="step"; no other does.
-    const current = screen.getAllByText(
-      (_t, el) => el?.getAttribute('aria-current') === 'step',
-    );
+    const current = screen.getAllByText((_t, el) => el?.getAttribute('aria-current') === 'step');
     expect(current).toHaveLength(1);
     expect(current[0]?.textContent).toBe('Interview');
   });

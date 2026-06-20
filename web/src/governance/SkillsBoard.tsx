@@ -184,9 +184,7 @@ export function SkillsBoard() {
               <span className="shrink-0 text-[13px] text-text-muted">{skill.type}</span>
             </span>
             {tab === 'pending' ? (
-              <span className="text-[13px] text-warning">
-                {t('governance.skills.pendingNote')}
-              </span>
+              <span className="text-[13px] text-warning">{t('governance.skills.pendingNote')}</span>
             ) : null}
           </button>
         </div>

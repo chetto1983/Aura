@@ -26,6 +26,7 @@ function Field({ label, value }: { readonly label: string; readonly value: strin
 
 export function McpServerDetail({ server, probe, probeLoading, onClose }: McpServerDetailProps) {
   const { t } = useTranslation();
+  const none = t('governance.mcp.detail.none');
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -45,10 +46,20 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
       </header>
 
       <dl className="flex flex-col gap-3">
+        <Field label={t('governance.mcp.detail.source')} value={server.source || none} />
         <Field label={t('governance.mcp.detail.trust')} value={server.trust} />
+        <Field label={t('governance.mcp.detail.riskPolicy')} value={server.riskPolicy || none} />
         <Field label={t('governance.mcp.detail.runtime')} value={server.runtime} />
         <Field label={t('governance.mcp.detail.startup')} value={server.startupState} />
         <Field label={t('governance.mcp.detail.authStatus')} value={server.authStatus} />
+        <Field
+          label={t('governance.mcp.detail.profiles')}
+          value={server.profiles.length > 0 ? server.profiles.join(', ') : none}
+        />
+        <Field
+          label={t('governance.mcp.detail.networkAllowlist')}
+          value={server.networkAllowlist.length > 0 ? server.networkAllowlist.join(', ') : none}
+        />
       </dl>
 
       <section className="flex flex-col gap-1">
@@ -96,7 +107,9 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
               <dt className="text-[13px] font-semibold text-text-muted">
                 {t('governance.mcp.detail.probeDetail')}
               </dt>
-              <dd className={`break-words font-mono text-[13px] ${probe.ok ? 'text-success' : 'text-danger'}`}>
+              <dd
+                className={`break-words font-mono text-[13px] ${probe.ok ? 'text-success' : 'text-danger'}`}
+              >
                 {probe.detail}
               </dd>
             </div>

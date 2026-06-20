@@ -11,7 +11,7 @@ import { BoardLayout } from '../BoardLayout';
 // §A11y). matchMedia is overridden per-test to drive each viewport.
 
 function setViewport(isMobile: boolean) {
-  window.matchMedia = ((query: string) => ({
+  window.matchMedia = (query: string) => ({
     matches: isMobile,
     media: query,
     onchange: null,
@@ -20,7 +20,7 @@ function setViewport(isMobile: boolean) {
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
     dispatchEvent: () => false,
-  })) as typeof window.matchMedia;
+  });
 }
 
 // A small harness exercising the BoardLayout open/close contract with a real originating button

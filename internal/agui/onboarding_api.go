@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -161,32 +162,9 @@ func (s *Server) handleOnboardingStart(w http.ResponseWriter, r *http.Request) {
 // the intent, and projects {content, step, status, draft?, preferences?}. A terminal
 // session is a clean terminal status, NOT a 500.
 func (s *Server) handleOnboardingStep(w http.ResponseWriter, r *http.Request) {
-	if s.onboarding == nil {
-		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	token := r.PathValue("sessionToken")
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	var req OnboardingStepRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if err := validateOnboardingStep(req); err != nil {
-		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
-		return
-	}
-	requester, ok := principalIdentityID(r)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	resp, err := s.onboarding.Step(r.Context(), requester, token, req)
-	if err != nil {
-		s.writeOnboardingError(w, err)
-		return
-	}
-	writeJSON(w, resp)
+	handleOnboardingMutation(s, w, r, validateOnboardingStep, func(ctx context.Context, requester, token string, req OnboardingStepRequest) (OnboardingStepResponse, error) {
+		return s.onboarding.Step(ctx, requester, token, req)
+	})
 }
 
 // handleOnboardingProvision serves POST /api/onboarding/{sessionToken}/provision
@@ -196,32 +174,53 @@ func (s *Server) handleOnboardingStep(w http.ResponseWriter, r *http.Request) {
 // no-escalation (subset ⊆ creator-grants AND no '*') before any write. The password is
 // hashed immediately by the service and never echoed in the response.
 func (s *Server) handleOnboardingProvision(w http.ResponseWriter, r *http.Request) {
-	if s.onboarding == nil {
-		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	token := r.PathValue("sessionToken")
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	var req OnboardingProvisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if err := validateOnboardingProvision(req); err != nil {
-		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
-		return
-	}
-	requester, ok := principalIdentityID(r)
+	handleOnboardingMutation(s, w, r, validateOnboardingProvision, func(ctx context.Context, requester, token string, req OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
+		return s.onboarding.Provision(ctx, requester, token, req)
+	})
+}
+
+func handleOnboardingMutation[Req any, Resp any](
+	s *Server,
+	w http.ResponseWriter,
+	r *http.Request,
+	validate func(Req) error,
+	call func(context.Context, string, string, Req) (Resp, error),
+) {
+	var req Req
+	token, requester, ok := s.prepareOnboardingMutation(w, r, func() error {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return errors.New("invalid request body")
+		}
+		return validate(req)
+	})
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	resp, err := s.onboarding.Provision(r.Context(), requester, token, req)
+	resp, err := call(r.Context(), requester, token, req)
 	if err != nil {
 		s.writeOnboardingError(w, err)
 		return
 	}
 	writeJSON(w, resp)
+}
+
+func (s *Server) prepareOnboardingMutation(w http.ResponseWriter, r *http.Request, decodeAndValidate func() error) (string, string, bool) {
+	if s.onboarding == nil {
+		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
+		return "", "", false
+	}
+	token := r.PathValue("sessionToken")
+	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
+	if err := decodeAndValidate(); err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
+		return "", "", false
+	}
+	requester, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return "", "", false
+	}
+	return token, requester, true
 }
 
 // handleTelegramStatus serves GET /api/onboarding/{sessionToken}/telegram-status

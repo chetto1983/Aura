@@ -138,19 +138,6 @@ func (st *sessionStore) get(token string) (*sessionEntry, bool) {
 	return e, true
 }
 
-// setOnboardingToken records the minted Telegram token on a live entry under the store
-// lock (so a concurrent get/poll is race-free). A missing entry is a no-op.
-func (st *sessionStore) setOnboardingToken(sessionToken, onboardingToken string) {
-	st.mu.Lock()
-	e, ok := st.entries[sessionToken]
-	st.mu.Unlock()
-	if ok {
-		e.mu.Lock()
-		e.onboardingToken = onboardingToken
-		e.mu.Unlock()
-	}
-}
-
 // sweepLocked drops every entry past its idle deadline. The caller holds st.mu. This is
 // the lazy GC that replaces a background reaper (goleak-clean); it runs on each put/get so
 // an abandoned wizard's entry is reclaimed on the next access of ANY session.

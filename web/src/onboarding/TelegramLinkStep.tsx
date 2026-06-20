@@ -49,7 +49,9 @@ export function TelegramLinkStep({
 
   if (deepLink === undefined) {
     return (
-      <p className="text-[15.5px] leading-relaxed text-text-muted">{t('onboarding.telegram.none')}</p>
+      <p className="text-[15.5px] leading-relaxed text-text-muted">
+        {t('onboarding.telegram.none')}
+      </p>
     );
   }
 
@@ -59,7 +61,9 @@ export function TelegramLinkStep({
         <span aria-hidden="true" className="text-4xl leading-none text-success">
           ◍
         </span>
-        <p className="text-[15.5px] font-semibold text-success">{t('onboarding.telegram.linked')}</p>
+        <p className="text-[15.5px] font-semibold text-success">
+          {t('onboarding.telegram.linked')}
+        </p>
       </div>
     );
   }
@@ -78,7 +82,11 @@ export function TelegramLinkStep({
       {qrSvg !== undefined ? (
         <div className="flex flex-col items-center gap-2">
           <div className="rounded-lg border-2 border-accent bg-surface p-3">
-            <img src={svgDataUri(qrSvg)} alt={t('onboarding.telegram.qrAlt')} className="h-44 w-44" />
+            <img
+              src={svgDataUri(qrSvg)}
+              alt={t('onboarding.telegram.qrAlt')}
+              className="h-44 w-44"
+            />
           </div>
           <p className="text-[13px] text-text-muted">{t('onboarding.telegram.qrCaption')}</p>
         </div>

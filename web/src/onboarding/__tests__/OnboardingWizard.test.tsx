@@ -321,9 +321,7 @@ describe('OnboardingWizard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
     await waitFor(() => {
-      expect(
-        screen.getByText("You don't have permission to create an identity."),
-      ).toBeTruthy();
+      expect(screen.getByText("You don't have permission to create an identity.")).toBeTruthy();
     });
   });
 });

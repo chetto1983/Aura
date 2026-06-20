@@ -49,6 +49,7 @@ function run(i: number): SchedulerRun {
     Status: 'completed',
     StepBudget: 10,
     StartedAt: `2026-06-1${String(i % 9)}T09:00:00Z`,
+    LastHeartbeatAt: `2026-06-1${String(i % 9)}T09:01:00Z`,
     CompletedWithHash: 'h',
     Summary: `run summary ${String(i)}`,
     LastError: '',
@@ -163,7 +164,9 @@ describe('SchedulerBoard (GOV-03)', () => {
     expect(runText).toContain('completed');
     expect(runText).toContain('failed');
     expect(runText).toContain('Status');
+    expect(runText).toContain('Heartbeat');
     expect(screen.getByText(withSummary.StartedAt)).toBeTruthy();
+    expect(screen.getByText(withSummary.LastHeartbeatAt, { exact: false })).toBeTruthy();
     // The non-empty summary renders; the empty-summary run shows no summary text.
     expect(screen.getByText('run summary 1')).toBeTruthy();
     // A short page (2 < 25) hides Show-more and reports the exact total.
@@ -214,7 +217,8 @@ describe('SchedulerBoard (GOV-03)', () => {
   });
 
   it('renders the schedule fallbacks: every-N-minutes, one-shot RunAt, and the dash', async () => {
-    const base = TASKS[0]!;
+    const base = TASKS[0];
+    if (base === undefined) throw new Error('base task fixture missing');
     const variants: SchedulerTask[] = [
       { ...base, ID: 'every', Kind: 'agent_job', CronExpr: '', EveryMinutes: 15 },
       {
@@ -265,7 +269,9 @@ describe('SchedulerBoard (GOV-03)', () => {
     });
 
     // Both the detail ✕ and the lg:hidden backdrop carry "Close"; the detail ✕ is first.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]!);
+    const closeButton = screen.getAllByRole('button', { name: 'Close' })[0];
+    if (closeButton === undefined) throw new Error('close button not found');
+    fireEvent.click(closeButton);
     await waitFor(() => {
       expect(screen.getByText('Select a row to see details')).toBeTruthy();
     });

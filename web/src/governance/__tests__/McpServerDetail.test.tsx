@@ -10,10 +10,14 @@ import type { McpProbeResult, McpServerRow } from '../governanceApi';
 
 const SERVER: McpServerRow = {
   name: 'github',
+  source: 'recipe:github',
   trust: 'trusted',
+  riskPolicy: 'trusted_recipe',
   runtime: 'stdio',
   startupState: 'configured',
   authStatus: 'ok',
+  profiles: ['work'],
+  networkAllowlist: ['api.github.com'],
   envKeys: [
     { key: 'GITHUB_TOKEN', redacted: true },
     { key: 'GITHUB_ORG', redacted: false },
@@ -24,10 +28,25 @@ const HEALTHY: McpProbeResult = { name: 'github', ok: true, tool_count: 7, detai
 
 describe('McpServerDetail', () => {
   it('renders every static field label and value', () => {
-    render(<McpServerDetail server={SERVER} probe={HEALTHY} probeLoading={false} onClose={() => undefined} />);
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={HEALTHY}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+    );
 
     expect(screen.getByText('Trust')).toBeTruthy();
     expect(screen.getByText('trusted')).toBeTruthy();
+    expect(screen.getByText('Source')).toBeTruthy();
+    expect(screen.getByText('recipe:github')).toBeTruthy();
+    expect(screen.getByText('Risk policy')).toBeTruthy();
+    expect(screen.getByText('trusted_recipe')).toBeTruthy();
+    expect(screen.getByText('Profiles')).toBeTruthy();
+    expect(screen.getByText('work')).toBeTruthy();
+    expect(screen.getByText('Network allowlist')).toBeTruthy();
+    expect(screen.getByText('api.github.com')).toBeTruthy();
     expect(screen.getByText('Runtime')).toBeTruthy();
     expect(screen.getByText('stdio')).toBeTruthy();
     expect(screen.getByText('Startup')).toBeTruthy();
@@ -37,7 +56,14 @@ describe('McpServerDetail', () => {
   });
 
   it('renders a redacted chip ONLY for a redacted key (the non-redacted key has no chip suffix)', () => {
-    render(<McpServerDetail server={SERVER} probe={HEALTHY} probeLoading={false} onClose={() => undefined} />);
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={HEALTHY}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+    );
 
     expect(screen.getByText('GITHUB_TOKEN')).toBeTruthy();
     expect(screen.getByText('GITHUB_ORG')).toBeTruthy();
@@ -46,7 +72,14 @@ describe('McpServerDetail', () => {
   });
 
   it('renders the healthy probe tool count + detail in the success tone', () => {
-    render(<McpServerDetail server={SERVER} probe={HEALTHY} probeLoading={false} onClose={() => undefined} />);
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={HEALTHY}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+    );
     expect(screen.getByText('7')).toBeTruthy();
     const detail = screen.getByText('ok (7 tools)');
     expect(detail).toBeTruthy();
@@ -55,14 +88,33 @@ describe('McpServerDetail', () => {
   });
 
   it('renders a failed probe detail in the danger tone', () => {
-    const failed: McpProbeResult = { name: 'github', ok: false, tool_count: 0, detail: 'dial failed' };
-    render(<McpServerDetail server={SERVER} probe={failed} probeLoading={false} onClose={() => undefined} />);
+    const failed: McpProbeResult = {
+      name: 'github',
+      ok: false,
+      tool_count: 0,
+      detail: 'dial failed',
+    };
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={failed}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+    );
     const detail = screen.getByText('dial failed');
     expect(detail.className).toContain('text-danger');
   });
 
   it('renders Checking… while the probe is loading', () => {
-    render(<McpServerDetail server={SERVER} probe={undefined} probeLoading={true} onClose={() => undefined} />);
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={undefined}
+        probeLoading={true}
+        onClose={() => undefined}
+      />,
+    );
     expect(screen.getByText('Checking…')).toBeTruthy();
   });
 
@@ -74,7 +126,14 @@ describe('McpServerDetail', () => {
       detail: 'dial failed',
       err: 'connection refused',
     };
-    render(<McpServerDetail server={SERVER} probe={failed} probeLoading={false} onClose={() => undefined} />);
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={failed}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+    );
     expect(screen.getByText('dial failed')).toBeTruthy();
     expect(screen.getByText('connection refused')).toBeTruthy();
   });
@@ -82,15 +141,21 @@ describe('McpServerDetail', () => {
   it('renders "no env keys" + the static lastError when present, and fires onClose', () => {
     const bare: McpServerRow = {
       name: 'fs',
+      source: '',
       trust: 'trusted',
+      riskPolicy: '',
       runtime: 'stdio',
       startupState: 'configured',
       authStatus: 'ok',
+      profiles: [],
+      networkAllowlist: [],
       envKeys: [],
       lastError: 'spawn failed',
     };
     const onClose = vi.fn();
-    render(<McpServerDetail server={bare} probe={undefined} probeLoading={false} onClose={onClose} />);
+    render(
+      <McpServerDetail server={bare} probe={undefined} probeLoading={false} onClose={onClose} />,
+    );
 
     expect(screen.getByText('No environment keys.')).toBeTruthy();
     expect(screen.getByText('spawn failed')).toBeTruthy();

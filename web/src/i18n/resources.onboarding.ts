@@ -82,8 +82,7 @@ export const onboardingEn = {
     error: {
       noCapability: "You don't have permission to create an identity.",
       duplicate: 'That email is empty or already in use. Choose another.',
-      rolledBack:
-        "Couldn't finish creating the identity, so nothing was saved. Try again.",
+      rolledBack: "Couldn't finish creating the identity, so nothing was saved. Try again.",
     },
   },
 } as const;
@@ -123,11 +122,11 @@ export const onboardingIt = {
       emailPlaceholder: 'nome@esempio.com',
       passwordLabel: 'Password iniziale',
       passwordHint:
-        'Il nuovo utente configura l\'accesso a due fattori al primo login. La password non verrà più mostrata.',
+        "Il nuovo utente configura l'accesso a due fattori al primo login. La password non verrà più mostrata.",
     },
     capabilities: {
       label: 'Capacità per la nuova identità',
-      hint: 'Puoi concedere solo le capacità che possiedi. L\'accesso completo (`*`) non è concedibile.',
+      hint: "Puoi concedere solo le capacità che possiedi. L'accesso completo (`*`) non è concedibile.",
       none: 'Non possiedi capacità concedibili. La nuova identità verrà creata senza nessuna.',
     },
     interview: {
@@ -165,7 +164,7 @@ export const onboardingIt = {
       noCapability: "Non hai i permessi per creare un'identità.",
       duplicate: "Quell'email è vuota o già in uso. Scegline un'altra.",
       rolledBack:
-        'Impossibile completare la creazione dell\'identità, quindi nulla è stato salvato. Riprova.',
+        "Impossibile completare la creazione dell'identità, quindi nulla è stato salvato. Riprova.",
     },
   },
 } as const;

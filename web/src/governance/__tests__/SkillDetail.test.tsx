@@ -34,7 +34,9 @@ describe('SkillDetail', () => {
   });
 
   it('renders the pending note only when isPending', () => {
-    const { rerender } = render(<SkillDetail skill={FULL} isPending={false} onClose={() => undefined} />);
+    const { rerender } = render(
+      <SkillDetail skill={FULL} isPending={false} onClose={() => undefined} />,
+    );
     expect(screen.queryByText('Pending — inactive and cannot be run.')).toBeNull();
 
     rerender(<SkillDetail skill={FULL} isPending={true} onClose={() => undefined} />);

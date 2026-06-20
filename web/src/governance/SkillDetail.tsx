@@ -35,7 +35,10 @@ export function SkillDetail({ skill, isPending, onClose }: SkillDetailProps) {
       </header>
 
       {isPending ? (
-        <p role="note" className="rounded-md border border-border bg-surface-2 px-3 py-2 text-[13px] text-warning">
+        <p
+          role="note"
+          className="rounded-md border border-border bg-surface-2 px-3 py-2 text-[13px] text-warning"
+        >
           {t('governance.skills.pendingNote')}
         </p>
       ) : null}

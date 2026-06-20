@@ -70,13 +70,7 @@ describe('isTerminalStatus', () => {
 
 describe('phaseIndex / PHASES', () => {
   it('returns the 0-based position in the linear flow', () => {
-    expect(PHASES).toEqual([
-      'credentials',
-      'capabilities',
-      'interview',
-      'review',
-      'complete',
-    ]);
+    expect(PHASES).toEqual(['credentials', 'capabilities', 'interview', 'review', 'complete']);
     expect(phaseIndex('credentials')).toBe(0);
     expect(phaseIndex('capabilities')).toBe(1);
     expect(phaseIndex('interview')).toBe(2);

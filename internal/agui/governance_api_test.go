@@ -114,6 +114,9 @@ func boolPtr(b bool) *bool { return &b }
 // assertions can both run off one fixture.
 func secretMCPDoc() mcp.ManagedConfig {
 	return mcp.ManagedConfig{
+		Profiles: map[string]mcp.ManagedProfile{
+			"work": {Servers: []string{"alpha"}},
+		},
 		MCPServers: map[string]mcp.ManagedServer{
 			"zeta": {
 				Command: "zeta-bin",
@@ -125,7 +128,11 @@ func secretMCPDoc() mcp.ManagedConfig {
 				Command: "alpha-bin",
 				Enabled: boolPtr(true),
 				Env:     []string{"PLAIN_SETTING=1"},
+				Source:  "recipe:alpha",
 				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
+				Runtime: mcp.ManagedRuntime{
+					Network: []string{"api.alpha.test"},
+				},
 			},
 		},
 	}
@@ -143,10 +150,17 @@ func TestGovernanceMCPNoSecretAndOrdering(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "sk-supersecretvalue") {
 		t.Fatalf("MCP list leaked a raw env secret value: %s", rec.Body.String())
 	}
+	if strings.Contains(rec.Body.String(), `"networkAllowlist":null`) {
+		t.Fatalf("MCP list encoded an empty network allowlist as null: %s", rec.Body.String())
+	}
 	var resp struct {
 		Servers []struct {
-			Name    string `json:"name"`
-			EnvKeys []struct {
+			Name             string   `json:"name"`
+			Source           string   `json:"source"`
+			RiskPolicy       string   `json:"riskPolicy"`
+			Profiles         []string `json:"profiles"`
+			NetworkAllowlist []string `json:"networkAllowlist"`
+			EnvKeys          []struct {
 				Key      string `json:"key"`
 				Redacted bool   `json:"redacted"`
 			} `json:"envKeys"`
@@ -161,6 +175,18 @@ func TestGovernanceMCPNoSecretAndOrdering(t *testing.T) {
 	// By-name order: alpha before zeta.
 	if resp.Servers[0].Name != "alpha" || resp.Servers[1].Name != "zeta" {
 		t.Fatalf("rows not by-name ordered: %s then %s", resp.Servers[0].Name, resp.Servers[1].Name)
+	}
+	if resp.Servers[0].Source != "recipe:alpha" {
+		t.Fatalf("alpha source = %q, want recipe:alpha", resp.Servers[0].Source)
+	}
+	if resp.Servers[0].RiskPolicy != mcp.TrustTrustedLocal {
+		t.Fatalf("alpha riskPolicy = %q, want %q", resp.Servers[0].RiskPolicy, mcp.TrustTrustedLocal)
+	}
+	if len(resp.Servers[0].Profiles) != 1 || resp.Servers[0].Profiles[0] != "work" {
+		t.Fatalf("alpha profiles = %#v, want [work]", resp.Servers[0].Profiles)
+	}
+	if len(resp.Servers[0].NetworkAllowlist) != 1 || resp.Servers[0].NetworkAllowlist[0] != "api.alpha.test" {
+		t.Fatalf("alpha networkAllowlist = %#v, want [api.alpha.test]", resp.Servers[0].NetworkAllowlist)
 	}
 	// zeta's secret KEY is rendered as a redacted chip; its value is absent.
 	var sawSecretKey, secretFlagged bool
@@ -439,11 +465,13 @@ func TestGovernanceSchedulerRunsExplicitPagination(t *testing.T) {
 // TestGovernanceSchedulerRunsSafeDTO proves run history omits resume tokens and sanitizes
 // operator-visible text fields before they reach the board.
 func TestGovernanceSchedulerRunsSafeDTO(t *testing.T) {
+	heartbeat := time.Date(2026, 6, 20, 12, 30, 0, 0, time.UTC)
 	board := &scriptedSchedulerBoard{runs: []cron.Run{{
 		ID:               "run-1",
 		TaskID:           "22222222-2222-2222-2222-222222222222",
 		Status:           "failed",
 		Summary:          "summary",
+		LastHeartbeatAt:  heartbeat,
 		LastError:        "connect postgres://aura:topsecret@db.internal:5432 failed",
 		PausedStateToken: "33333333-3333-3333-3333-333333333333",
 	}}}
@@ -451,6 +479,9 @@ func TestGovernanceSchedulerRunsSafeDTO(t *testing.T) {
 	rec := doGov(t, s, http.MethodGet, "/api/governance/scheduler/22222222-2222-2222-2222-222222222222/runs")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "LastHeartbeatAt") || !strings.Contains(rec.Body.String(), "2026-06-20T12:30:00Z") {
+		t.Fatalf("scheduler run DTO must include safe heartbeat, got %s", rec.Body.String())
 	}
 	for _, banned := range []string{"PausedStateToken", "33333333-3333-3333-3333-333333333333", "topsecret", "db.internal"} {
 		if strings.Contains(rec.Body.String(), banned) {

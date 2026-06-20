@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var governanceVisibleApplianceSidecars = []string{"calendar", "whatsapp"}
 
 // serve_governance.go wires the composition-root adapters for the Phase-28 read-only
 // governance boards (GOV-01/02/03). The agui consumer declares the narrow board
@@ -34,6 +38,62 @@ func (a mcpBoardAdapter) Servers() mcp.ManagedConfig { return a.doc }
 
 func (a mcpBoardAdapter) Probe(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
 	return mcp.ProbeServer(ctx, name, server)
+}
+
+func governanceMCPBoardConfig(cfg *config.Config) (mcp.ManagedConfig, error) {
+	doc, _, err := loadManagedMCPConfig()
+	if err != nil {
+		return mcp.ManagedConfig{}, err
+	}
+	if doc.MCPServers == nil {
+		doc.MCPServers = map[string]mcp.ManagedServer{}
+	}
+	if cfg != nil {
+		addMCPPolicyRows(&doc, cfg.MCPPolicies)
+		addLegacyMCPRows(&doc, cfg.MCPServers)
+	}
+	addApplianceSidecarRows(&doc)
+	return doc, nil
+}
+
+func addMCPPolicyRows(doc *mcp.ManagedConfig, policies map[string]mcp.ManagedServer) {
+	for name, server := range policies {
+		if _, exists := doc.MCPServers[name]; exists {
+			continue
+		}
+		doc.MCPServers[name] = server
+	}
+}
+
+func addLegacyMCPRows(doc *mcp.ManagedConfig, servers map[string]mcp.ServerConfig) {
+	for name, server := range servers {
+		if _, exists := doc.MCPServers[name]; exists {
+			continue
+		}
+		doc.MCPServers[name] = mcp.ManagedServer{
+			Command: server.Command,
+			Args:    server.Args,
+			Env:     server.Env,
+			Source:  "env:AURA_MCP_SERVERS_JSON",
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
+		}
+	}
+}
+
+func addApplianceSidecarRows(doc *mcp.ManagedConfig) {
+	if os.Getenv("AURA_IN_CONTAINER") != "1" {
+		return
+	}
+	for _, name := range governanceVisibleApplianceSidecars {
+		if _, exists := doc.MCPServers[name]; exists {
+			continue
+		}
+		recipe, ok := mcpmanager.LookupCatalog(name)
+		if !ok {
+			continue
+		}
+		doc.MCPServers[name] = recipe.Server
+	}
 }
 
 // skillsBoardAdapter satisfies agui.SkillsBoardProvider over the active Loader, the Wave-0
@@ -67,7 +127,7 @@ func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFil
 func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui.SchedulerBoardProvider) agui.GovernanceProviders {
 	var providers agui.GovernanceProviders
 
-	if doc, _, err := loadManagedMCPConfig(); err != nil {
+	if doc, err := governanceMCPBoardConfig(cfg); err != nil {
 		// A managed-config load failure leaves the MCP board nil (503), never fatal —
 		// mirrors the SetGraphView best-effort warn.
 		slog.Warn("aura serve: governance mcp board unavailable", "err", err)

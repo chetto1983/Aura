@@ -99,9 +99,7 @@ describe('InterviewStep (draft review)', () => {
 
   it('treats a response carrying a draft as draft mode even when status is not "draft"', () => {
     const h = handlers();
-    render(
-      <InterviewStep step={{ ...DRAFT, status: 'active' }} busy={false} {...h} />,
-    );
+    render(<InterviewStep step={{ ...DRAFT, status: 'active' }} busy={false} {...h} />);
     // The confirm CTA (draft-mode only) is present because a draft string exists.
     expect(screen.getByRole('button', { name: 'Looks right — continue' })).toBeTruthy();
   });

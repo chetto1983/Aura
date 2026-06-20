@@ -14,6 +14,7 @@ import { fetchMcpServers, probeMcpServer, type McpServerRow } from './governance
 // Selecting a row opens McpServerDetail (the live doctor result + tool list) as a desktop column
 // / mobile bottom sheet.
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function statusLabel(
   t: ReturnType<typeof useTranslation>['t'],
   probe: { ok: boolean; tool_count: number; detail: string; err?: string } | undefined,
@@ -122,6 +123,10 @@ export function McpBoard() {
               {server.envKeys.length > 0 ? (
                 <span className="shrink-0 rounded-sm bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-text-muted">
                   {server.envKeys.length} · {t('governance.mcp.redacted')}
+                </span>
+              ) : server.source !== '' ? (
+                <span className="shrink-0 rounded-sm bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-text-muted">
+                  {server.source}
                 </span>
               ) : null}
             </span>

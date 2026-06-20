@@ -27,7 +27,9 @@ const PENDING: SkillRow[] = [
   { name: 'pending-skill', description: 'awaiting review', type: 'executable', language: 'python' },
 ];
 
-function auditRow(over: Partial<AuditRow> & Pick<AuditRow, 'ID' | 'CreatedAt' | 'SkillName'>): AuditRow {
+function auditRow(
+  over: Partial<AuditRow> & Pick<AuditRow, 'ID' | 'CreatedAt' | 'SkillName'>,
+): AuditRow {
   return {
     ActorID: 'local',
     Action: 'install',
@@ -245,7 +247,9 @@ describe('SkillsBoard (GOV-02)', () => {
 
     // Close returns to the detail-empty state (no pending note on an active skill). Both the
     // detail ✕ and the lg:hidden backdrop carry "Close"; the detail ✕ is first in DOM order.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]!);
+    const closeButton = screen.getAllByRole('button', { name: 'Close' })[0];
+    if (closeButton === undefined) throw new Error('close button not found');
+    fireEvent.click(closeButton);
     await waitFor(() => {
       expect(screen.getByText('Select a row to see details')).toBeTruthy();
     });

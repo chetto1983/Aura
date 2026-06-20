@@ -27,10 +27,14 @@ export interface McpEnvChip {
 /** One static MCP server row (GET /api/governance/mcp). */
 export interface McpServerRow {
   readonly name: string;
+  readonly source: string;
   readonly trust: string;
+  readonly riskPolicy: string;
   readonly runtime: string;
   readonly startupState: string;
   readonly authStatus: string;
+  readonly profiles: readonly string[];
+  readonly networkAllowlist: readonly string[];
   readonly envKeys: readonly McpEnvChip[];
   readonly lastError?: string;
 }
@@ -94,6 +98,7 @@ export interface SchedulerRun {
   readonly Status: string;
   readonly StepBudget: number;
   readonly StartedAt: string;
+  readonly LastHeartbeatAt: string;
   readonly CompletedWithHash: string;
   readonly Summary: string;
   readonly LastError: string;

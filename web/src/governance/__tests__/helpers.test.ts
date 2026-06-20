@@ -99,7 +99,12 @@ describe('boardStatus + isAuthError', () => {
 
   it('maps an auth error to error-auth and any other error to error', () => {
     expect(
-      boardStatus({ isLoading: false, isError: true, error: new Error('HTTP 401'), isEmpty: false }),
+      boardStatus({
+        isLoading: false,
+        isError: true,
+        error: new Error('HTTP 401'),
+        isEmpty: false,
+      }),
     ).toBe('error-auth');
     expect(
       boardStatus({ isLoading: false, isError: true, error: new Error('HTTP 502'), isEmpty: true }),

@@ -27,20 +27,28 @@ const SECRET_VALUE = 'super-secret-token-VALUE-42';
 const SERVERS: McpServerRow[] = [
   {
     name: 'github',
+    source: 'recipe:github',
     trust: 'trusted',
+    riskPolicy: 'trusted',
     runtime: 'stdio',
     startupState: 'configured',
     authStatus: 'ok',
+    profiles: ['work'],
+    networkAllowlist: ['api.github.com'],
     // The backend NEVER serializes the value — only the redacted KEY chip. The fixture proves
     // the board renders the key, never a value (the value below is local to the test only).
     envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
   },
   {
     name: 'filesystem',
+    source: 'manual',
     trust: 'trusted',
+    riskPolicy: 'trusted',
     runtime: 'stdio',
     startupState: 'configured',
     authStatus: 'ok',
+    profiles: [],
+    networkAllowlist: [],
     envKeys: [],
   },
 ];
@@ -169,9 +177,7 @@ describe('McpBoard (GOV-01)', () => {
     });
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Your session expired. Sign in again to continue.'),
-      ).toBeTruthy();
+      expect(screen.getByText('Your session expired. Sign in again to continue.')).toBeTruthy();
     });
     expect(screen.getByRole('alert')).toBeTruthy();
   });
@@ -202,7 +208,9 @@ describe('McpBoard (GOV-01)', () => {
 
     // Close returns to the detail-empty state. On desktop both the detail ✕ and the (lg:hidden)
     // backdrop carry the "Close" label; the detail ✕ is first in DOM order.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]!);
+    const closeButton = screen.getAllByRole('button', { name: 'Close' })[0];
+    if (closeButton === undefined) throw new Error('close button not found');
+    fireEvent.click(closeButton);
     await waitFor(() => {
       expect(screen.getByText('Select a row to see details')).toBeTruthy();
     });
@@ -212,10 +220,14 @@ describe('McpBoard (GOV-01)', () => {
     const failing: McpServerRow[] = [
       {
         name: 'filesystem',
+        source: 'manual',
         trust: 'trusted',
+        riskPolicy: 'trusted',
         runtime: 'stdio',
         startupState: 'configured',
         authStatus: 'ok',
+        profiles: [],
+        networkAllowlist: [],
         envKeys: [],
         lastError: 'spawn failed (sanitized)',
       },
@@ -245,6 +257,7 @@ describe('McpBoard (GOV-01)', () => {
     await waitFor(() => {
       expect(screen.getByText('No environment keys.')).toBeTruthy();
     });
+    expect(screen.getAllByText('manual').length).toBeGreaterThan(0);
     // The probe err + the static lastError both render (sanitized).
     expect(screen.getByText('connection refused (sanitized)')).toBeTruthy();
     expect(screen.getByText('spawn failed (sanitized)')).toBeTruthy();
