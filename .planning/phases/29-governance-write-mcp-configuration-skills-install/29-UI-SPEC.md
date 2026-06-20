@@ -53,7 +53,7 @@ The locked system is a **density-scalar** model (`--space-unit`, operator = `4px
 |-------|------------------|----------|-------|
 | xs | 4px | `gap-1` / `p-1` / `py-0.5` | chip inset, status-dot gap, badge inner |
 | sm | 8px | `gap-2` / `p-2` | field-row gaps, env-state-chip gaps, form-control gaps |
-| md | 12px | `px-3` / `py-2` | default control padding (row buttons, inputs, install-form fields) — matches existing board rows |
+| md | 12px | `px-3` / `py-2` | default control padding (row buttons, inputs, install-form fields) — *justified exception: 12px is outside the canonical {4,8,16,24,32,48,64} set but is inherited from existing Phase-28 board rows for visual parity — multiple of 4, intentionally retained.* |
 | lg | 16px | `gap-4` / `p-4` | detail-pane padding, install-panel section gaps, dialog body padding |
 | xl | 24px | `gap-6` / `py-6` | wizard-step separation, form-section breaks |
 | 2xl | 32px | `p-8` | empty-state centering (existing `BoardStateView` uses `p-8`) |
@@ -67,17 +67,18 @@ The locked system is a **density-scalar** model (`--space-unit`, operator = `4px
 
 ## Typography
 
-Roles map to the locked `03-SPEC` §3.4 scale, expressed at the px values the shipped boards already render (so new surfaces are visually consistent with the read boards, not a new scale).
+Roles map to the locked `03-SPEC` §3.4 scale, expressed at the px values the shipped boards already render (so new surfaces are visually consistent with the read boards, not a new scale). **The scale uses exactly three distinct sizes — 13px · 15.5px · 20px** (the Display/Body/Label/Mono *roles* are preserved; only the distinct pixel count is collapsed to satisfy the ≤4-sizes gate).
 
 | Role | Size | Weight | Line Height | Family | Usage |
 |------|------|--------|-------------|--------|-------|
-| Display | 18–22px (`text-[18px]` detail header, `text-[22px]` empty-state heading) | 600 | 1.2 | `font-display` (Fraunces) | install-panel title, env-edit form title, dialog title, empty-state heading |
+| Display | 20px (`text-[20px]` for both the panel/detail header and the empty-state heading) | 600 | 1.2 | `font-display` (Fraunces) | install-panel title, env-edit form title, dialog title, empty-state heading |
 | Heading | 13px, `uppercase tracking-wide` | 600 (semibold) | 1.4 | `font-sans` | section eyebrows inside detail/form panes (`Environment`, `Validation checklist`, `Lifecycle`) — matches `McpServerDetail` `<h4>` |
 | Body | 15.5px | 400 | 1.5 (`leading-relaxed` for prose) | `font-sans` | field values, descriptions, helper prose, soft-warning body, error body |
 | Label | 13px | 600 (semibold) | 1.4 | `font-sans` | field labels (`<dt>`/`<label>`), button text, tab labels, env-state-chip labels, risk-tier badge text |
-| Mono | 13px (12px for dense inline chips) | 400 | 1.5, `tabular-nums` | `font-mono` (Commit Mono) | **all data-shaped values**: env KEY names, CLI-equivalent command, managed-config destination path, content hash, source field, resume token, server/skill identifier names |
+| Mono | 13px (dense inline chips render at the same 13px with tighter `tracking-tight`, NOT a smaller size) | 400 | 1.5, `tabular-nums` | `font-mono` (Commit Mono) | **all data-shaped values**: env KEY names, CLI-equivalent command, managed-config destination path, content hash, source field, resume token, server/skill identifier names |
 
 Hard rules (binding):
+- **Exactly three distinct font sizes: 13px (Heading/Label/Mono) · 15.5px (Body) · 20px (Display).** No 12px dense-chip exception (dense Mono chips share the 13px Mono size with tighter tracking); no 18/22 Display split (one 20px Display size covers both the panel header and the empty-state heading). The ≤4-sizes gate is satisfied with margin.
 - **Exactly these weights: 400 (regular) + 600 (semibold).** No 500/700+. Existing boards use `font-semibold` (600) for labels/selected rows and 400 for values — match it.
 - **Every value the backend produces or that is an identifier/secret/hash/path renders in `font-mono`** — this is the existing "reads as data, not prose" discipline (`McpServerDetail` comment). The CLI-equivalent preview, the destination path, the content hash, and the source field are all mono.
 - Backend strings are **always rendered as React-escaped text nodes**, never `dangerouslySetInnerHTML` (carried from `InlineApprovalCard` SECURITY note T-25-20).
@@ -102,7 +103,7 @@ The locked blue palette (operator-accepted 2026-06-18). Values below are the `co
 4. The cross-thread pending-approval badge count (already built, Phase 25 — the skill-approval entry feeds it; do NOT mint a second badge).
 5. `text-accent-text` for the audit-row `Action` label and any "jump to approval queue" link (existing `SkillsBoard` audit list already uses `text-accent-text` for `Action`).
 
-Everything else stays neutral `surface`/`border`/`text`. Secondary buttons (`Disable`, `Cancel`, `Archive`, `Restore`, the eye-reveal toggle, `Add custom server`) are `surface-2` + `border-strong` + `text`, never accent-filled. The enable/disable **toggle** is neutral; **enabled** state is signalled by `text-success` label + a `success` dot, **disabled** by `text-text-muted` — color is never the sole signal (icon/label always present, WCAG 1.4.1).
+Everything else stays neutral `surface`/`border`/`text`. Secondary buttons (`Disable server`, `Discard changes`, `Discard install`, `Archive skill`, `Restore skill`, the eye-reveal toggle, `Add custom server`) are `surface-2` + `border-strong` + `text`, never accent-filled. The enable/disable **toggle** is neutral; **enabled** state is signalled by `text-success` label + a `success` dot, **disabled** by `text-text-muted` — color is never the sole signal (icon/label always present, WCAG 1.4.1).
 
 **Status / tone tokens (never color-alone — always dot + label):**
 
@@ -127,7 +128,7 @@ The six new WRITE surfaces. Each extends an existing Phase-28 mount **in place**
 - **Recipe mode:** a dropdown of `BuiltInCatalog()` recipes (calculator/calendar/whatsapp/memory). Selecting one renders its `RequiredEnv []string` as a **guided form** (one labelled input per required var; secret-typed vars use the masked field of §2). A required var left empty is allowed but surfaces the **soft warning** (§2) inline, not a hard block.
 - **Custom mode:** three fields — `command` (mono input), `args` (repeatable mono inputs / one-per-line), `env` (key+value rows, secret values masked). Custom defaults to trust `blocked` — render a neutral note: "Custom servers start blocked until you trust-approve them."
 - **Pre-save PREVIEW (mandatory — MCPW-01 AC):** below the form, a read-only block showing (a) the **equivalent CLI command** (`aura mcp install …` / `aura mcp add … -- …`) in `font-mono` on `surface-3`, and (b) the **managed-config destination path** (`~/.aura/mcp/servers.json`, or the `AURA_MCP_CONFIG`/`AURA_MCP_SERVERS_JSON` override source in effect) in `font-mono`. The preview updates live as the form changes. Label it `Will write to:` so the operator sees the exact destination before committing.
-- **Submit:** `Install server` (accent CTA, 44px). On a duplicate name the panel shows an inline field error on the name input (`text-danger`, `aria-invalid`) — `Install` stays disabled, no request fires (idempotency edge, MCPW-01).
+- **Submit:** `Install server` (accent CTA, 44px). On a duplicate name the panel shows an inline field error on the name input (`text-danger`, `aria-invalid`) — `Install` stays disabled, no request fires (idempotency edge, MCPW-01). Abandoning the panel uses `Discard install` (secondary, neutral), not a bare `Cancel`.
 - **States:** submitting → button spinner + disabled; success → panel closes, list re-fetches, the new row appears `blocked` with a `Trust & approve` affordance; failure → sanitized inline error (no stack/secret).
 
 ### 2. MCP env-edit form (MCPW-02) — the four-state field + redacted-secret-chip
@@ -148,11 +149,11 @@ This is the highest-precision surface. It lives in the **MCP server detail pane*
 - Non-secret env vars are plain mono inputs (editable in place, like elysia's non-protected keys).
 
 **Soft-warning behavior (MCPW-02 AC — the F-2 decision):** if any **required** var is still `missing` or `placeholder` at save, show a **soft warning card** above the submit (`border-warning bg-warning/10`, `IoWarning`-equivalent dot + `text-warning` heading + a bulleted list of the offending keys, mirroring elysia's `WarningCard`/`ApiKeysSection`). **Save is still allowed** — the server persists and stays `blocked`/unhealthy until filled. The warning is informational, never a blocker.
-- **Submit:** `Save changes` (accent CTA). Edits one value via whole-entry atomic write (D-05); other env values and untouched secrets are preserved. On success the section returns to read mode (redacted chips), the row re-fetches, one `mcp_audit` row is written.
+- **Submit:** `Save changes` (accent CTA). Abandoning the edit uses `Discard changes` (secondary, neutral), not a bare `Cancel`. Edits one value via whole-entry atomic write (D-05); other env values and untouched secrets are preserved. On success the section returns to read mode (redacted chips), the row re-fetches, one `mcp_audit` row is written.
 
 ### 3. MCP lifecycle controls (MCPW-02 / MCPW-03)
 Inline on the server **detail pane** header (and a compact mirror on the row where space allows), as a control cluster — NOT a kebab menu (keep affordances visible, minimal-industrial):
-- **Enable / Disable toggle** — a reversible switch. Enabled = `success` dot + `Enabled` label; disabled = `text-muted` dot + `Disabled` label. Idempotent (double-tap is a no-op). One `mcp_audit` row per real transition.
+- **Enable / Disable toggle** — a reversible switch (`Enable server` / `Disable server` labels). Enabled = `success` dot + `Enabled` label; disabled = `text-muted` dot + `Disabled` label. Idempotent (double-tap is a no-op). One `mcp_audit` row per real transition.
 - **Trust & approve** (D-12) — an **inline operator-direct action** on the server row/detail (NOT a model-gated `ask_user` pause — it is an operator decision). It opens a small inline form requiring a **reason** (free-text, mono-optional) then confirms; on success it populates `ApprovedBy`/`ApprovedAt`/`Reason`, writes one `mcp_audit` row, and flips the server runnable (the board then shows its mounted tool count via the existing live probe). Show the approval metadata read-back (`Approved by … · {ts} · "{reason}"`) in the detail afterward.
 - **Remove** — a **destructive confirmation** (see §Copywriting / §Destructive). A confirm dialog restating the server name; the destructive button is `text-danger` outline, **not default-focused** (NN/g). One `mcp_audit` row on remove. A double-submitted remove removes once then 404s (idempotency edge).
 - **Denied / destructive tool surfacing (MCPW-03 — prohibition #6):** in the detail's tool list, a tool excluded by the mount-time allowlist renders **explicitly** with a `danger` marker + label (`Excluded — destructive/denied`), and is visibly absent from the runtime-mounted count. It is NEVER silently omitted. A failing/hung server shows a **fail-soft per-row warning** (`text-warning`) on its row only — the board and sibling rows keep rendering (reuses the Phase-28 bounded-timeout probe isolation; `McpBoard` already does per-row probe isolation).
@@ -166,7 +167,7 @@ Lives in the **Skills tab** as a primary `+ Install skill` CTA opening an instal
   - **Source** (mono), **Content hash** (`sha256:…`, mono), **Preview** (the `SKILL.md` body, scrollable, mono/prose), **Destination** (mono path), and
   - a prominent **RISK TIER badge**: `RISKY` (`bg-warning/15` + `text-warning` + dot) — install is **ALWAYS rendered RISKY supply-chain input, never "safe"** (prohibition #5).
   - the **validation checklist** — the **FIVE** items (D-09; NOT six — the `--ignore-scripts` item is removed): `sanitized env` · `SKILL.md parse` · `body cap` · `injection-literal blocklist` · `sanitized name/path`. Each renders pass (`text-success` ✓) or fail (`text-danger` ✗ + the matched position/reason). Below the list, a **container-isolation note** (neutral): `Runs in Aura's container — install scripts permitted; isolation = the container boundary + this approval gate + Writer validation.` (the honest-risk framing, D-07). An over-cap body or a blocklist hit fails the checklist and blocks staging.
-- **Submit:** `Stage for approval` (accent CTA) — NOT `Install` and NOT `Activate`. It routes the fetched body through the Writer gate, stages to `pending/`, and creates the approval-queue entry (§5). Make explicit in copy that staging ≠ activation.
+- **Submit:** `Stage for approval` (accent CTA) — NOT `Install` and NOT `Activate`. It routes the fetched body through the Writer gate, stages to `pending/`, and creates the approval-queue entry (§5). Abandoning the panel uses `Discard install` (secondary, neutral), not a bare `Cancel`. Make explicit in copy that staging ≠ activation.
 
 ### 5. Skill approval queue entry (SKW-02) — reuse the Phase-25 surface, do NOT mint a new one
 The RISKY/DESTRUCTIVE skill action is an entry in the **existing unified `/api/approvals` cross-thread queue** (D-11), rendered by the existing `ApprovalList` / `InlineApprovalCard` shells (`web/src/approvals/*`). Extend, do not duplicate:
@@ -176,7 +177,7 @@ The RISKY/DESTRUCTIVE skill action is an entry in the **existing unified `/api/a
 
 ### 6. Skill lifecycle tabs (SKW-03) — restore/archive on the existing four tabs
 The existing `SkillsBoard` four-tab `role="tablist"` (active / pending / archived / audit) gains write controls **in place**:
-- **active** rows gain an `Archive` secondary button (neutral). **archived** rows gain a `Restore` secondary button. **pending** rows keep **NO run/activate control** (by construction — only the approval queue activates). **audit** stays append-only with **NO mutate control** (prohibition: no UI control mutates a `skill_audit` row).
+- **active** rows gain an `Archive skill` secondary button (neutral). **archived** rows gain a `Restore skill` secondary button. **pending** rows keep **NO run/activate control** (by construction — only the approval queue activates). **audit** stays append-only with **NO mutate control** (prohibition: no UI control mutates a `skill_audit` row).
 - Per-row metadata (already partly shown; surface the rest): **capability scope · last used · use count · TTL/archive state · risk tier · content hash** (mono for hash/counts).
 - **Archive** is reversible (no confirm needed — it is recoverable via Restore). **Restore** whose name collides with an active skill is rejected with a safe inline error (no silent overwrite — SKW-03 adjacency edge).
 - **audit tab:** newest-first, append-only, stable tiebreak (`created_at desc, id desc`); the new write rows (install/restore/archive/trust) appear here. Existing `AuditList` already sorts newest-first — keep it.
@@ -187,32 +188,36 @@ The existing `SkillsBoard` four-tab `role="tablist"` (active / pending / archive
 
 All copy is i18n en+it — **every new key MUST exist in BOTH `governanceEn` and `governanceIt`** (and the approval keys in their bundle); a missing key in either locale is a defect (existing `resources.governance.ts` discipline). Backend strings render verbatim/escaped; only these UI-authored strings are translated.
 
-| Element | Copy (en — `it` mirror required) |
-|---------|------|
-| **Primary CTA — MCP install** | `Install server` |
-| **Primary CTA — MCP env edit** | `Save changes` |
-| **Primary CTA — MCP trust** | `Trust & approve` |
-| **Primary CTA — skill install** | `Stage for approval` (never "Install"/"Activate") |
-| **Secondary CTAs** | `Add MCP server` · `Edit environment` · `Disable` / `Enable` · `Remove` · `Archive` · `Restore` · `Cancel` |
-| Empty state — MCP (heading / body) | `No MCP servers configured` / `No MCP servers yet. Add one with **Add MCP server** — pick a recipe or a custom command.` (REPLACES the read-only "Add one from the CLI" copy — the write path now exists) |
-| Empty state — skills (heading / body) | `No skills yet` / `No skills in this stage. Install one with **Install skill** from a repo, URL, or the skills.sh catalog — it stages for approval first.` |
-| Empty state — approval queue | reuse the existing Phase-25 approvals empty copy (do not mint a new one) |
-| Empty state — audit tab | `No audit entries yet.` (existing key) |
-| Error state (generic) | `Couldn't complete that. The service may be unavailable. Retry, or check the runtime status.` (mirror of existing `governance.error`) |
-| Error state — auth | `Your session expired. Sign in again to continue.` (existing `governance.authExpired`) |
-| Error — duplicate MCP name | `A server named "{{name}}" already exists. Choose a different name.` |
-| Error — empty/invalid skill source | `Enter a valid source — owner/repo, a URL, or a path.` |
-| Error — colliding restore | `An active skill named "{{name}}" already exists. Archive or rename it first.` |
-| Soft warning — placeholder required env | heading `Required values still missing` / body `These required variables are still empty or placeholders. You can save now — the server stays blocked until they're set:` + `{{keys}}` list |
-| Secret-preserved affirmation | `Unchanged secrets were preserved.` |
-| Risk banner — skill install | `RISKY — supply-chain input. Review the source, hash, and checklist before staging.` |
-| Container-isolation note | `Runs in Aura's container. Install scripts are permitted; isolation is the container boundary + this approval gate + Writer validation.` |
-| Denied-tool marker | `Excluded — destructive/denied tool (not mounted).` |
-| Fail-soft probe warning | `This server didn't respond — shown for this row only.` |
-| External-discovery toggle | label `External discovery (skills.sh)` · off-note `Off — enable to search the public skills.sh catalog.` |
-| **Destructive confirmation — Remove MCP server** | title `Remove "{{name}}"?` · body `This deletes the server from your managed config and unmounts its tools. This can't be undone. An audit entry is recorded.` · confirm button `Remove server` · cancel `Keep server` (action-specific labels, NOT Yes/No — NN/g; destructive button `text-danger` outline, **not** default-focused) |
+| Element | Copy (en) | Copy (it) |
+|---------|-----------|-----------|
+| **Primary CTA — MCP install** | `Install server` | `Installa server` |
+| **Primary CTA — MCP env edit** | `Save changes` | `Salva modifiche` |
+| **Primary CTA — MCP trust** | `Trust & approve` | `Fidati e approva` |
+| **Primary CTA — skill install** | `Stage for approval` (never "Install"/"Activate") | `Metti in coda per approvazione` |
+| **Secondary — discard install panel** | `Discard install` | `Annulla installazione` |
+| **Secondary — discard env edit** | `Discard changes` | `Annulla modifiche` |
+| **Secondary CTAs (remaining)** | `Add MCP server` · `Add custom server` · `Edit environment` · `Disable server` / `Enable server` · `Remove server` · `Archive skill` · `Restore skill` | `Aggiungi server MCP` · `Aggiungi server personalizzato` · `Modifica ambiente` · `Disabilita server` / `Abilita server` · `Rimuovi server` · `Archivia skill` · `Ripristina skill` |
+| Empty state — MCP (heading / body) | `No MCP servers configured` / `No MCP servers yet. Add one with **Add MCP server** — pick a recipe or a custom command.` (REPLACES the read-only "Add one from the CLI" copy — the write path now exists) | `Nessun server MCP configurato` / `Ancora nessun server MCP. Aggiungine uno con **Aggiungi server MCP** — scegli una ricetta o un comando personalizzato.` |
+| Empty state — skills (heading / body) | `No skills yet` / `No skills in this stage. Install one with **Install skill** from a repo, URL, or the skills.sh catalog — it stages for approval first.` | `Ancora nessuna skill` / `Nessuna skill in questa fase. Installane una con **Installa skill** da un repo, un URL o il catalogo skills.sh — viene prima messa in coda per approvazione.` |
+| Empty state — approval queue | reuse the existing Phase-25 approvals empty copy (do not mint a new one) | (reuse Phase-25 it bundle) |
+| Empty state — audit tab | `No audit entries yet.` (existing key) | (existing key) |
+| Error state (generic) | `Couldn't complete that. The service may be unavailable. Retry, or check the runtime status.` (mirror of existing `governance.error`) | (existing `governance.error` it) |
+| Error state — auth | `Your session expired. Sign in again to continue.` (existing `governance.authExpired`) | (existing `governance.authExpired` it) |
+| Error — duplicate MCP name | `A server named "{{name}}" already exists. Choose a different name.` | `Esiste già un server chiamato "{{name}}". Scegli un nome diverso.` |
+| Error — empty/invalid skill source | `Enter a valid source — owner/repo, a URL, or a path.` | `Inserisci una sorgente valida — owner/repo, un URL o un percorso.` |
+| Error — colliding restore | `An active skill named "{{name}}" already exists. Archive or rename it first.` | `Esiste già una skill attiva chiamata "{{name}}". Archiviala o rinominala prima.` |
+| Soft warning — placeholder required env | heading `Required values still missing` / body `These required variables are still empty or placeholders. You can save now — the server stays blocked until they're set:` + `{{keys}}` list | heading `Valori obbligatori ancora mancanti` / body `Queste variabili obbligatorie sono ancora vuote o segnaposto. Puoi salvare ora — il server resta bloccato finché non le imposti:` + `{{keys}}` |
+| Secret-preserved affirmation | `Unchanged secrets were preserved.` | `I segreti non modificati sono stati preservati.` |
+| Risk banner — skill install | `RISKY — supply-chain input. Review the source, hash, and checklist before staging.` | `RISCHIOSO — input supply-chain. Verifica sorgente, hash e checklist prima di mettere in coda.` |
+| Container-isolation note | `Runs in Aura's container. Install scripts are permitted; isolation is the container boundary + this approval gate + Writer validation.` | `Gira nel container di Aura. Gli script di installazione sono consentiti; l'isolamento è il confine del container + questa approvazione + la validazione del Writer.` |
+| Denied-tool marker | `Excluded — destructive/denied tool (not mounted).` | `Escluso — strumento distruttivo/negato (non montato).` |
+| Fail-soft probe warning | `This server didn't respond — shown for this row only.` | `Questo server non ha risposto — mostrato solo per questa riga.` |
+| External-discovery toggle | label `External discovery (skills.sh)` · off-note `Off — enable to search the public skills.sh catalog.` | label `Ricerca esterna (skills.sh)` · off-note `Disattivata — abilita per cercare nel catalogo pubblico skills.sh.` |
+| **Destructive confirmation — Remove MCP server** | title `Remove "{{name}}"?` · body `This deletes the server from your managed config and unmounts its tools. This can't be undone. An audit entry is recorded.` · confirm button `Remove server` · cancel `Keep server` (action-specific labels, NOT Yes/No — NN/g; destructive button `text-danger` outline, **not** default-focused) | title `Rimuovere "{{name}}"?` · body `Questo elimina il server dalla configurazione gestita e smonta i suoi strumenti. Non è reversibile. Viene registrata una voce di audit.` · confirm `Rimuovi server` · cancel `Mantieni server` |
 
 > No type-to-confirm is required for any Phase-29 action — none rises to the NN/g "most dangerous, rarely-performed" bar (remove is recoverable by re-install; archive is reversible by restore). A single confirmation dialog for `Remove` is the correct friction level. Do NOT add type-to-confirm.
+>
+> **No generic/bare CTA labels.** Every secondary action carries an action-specific verb+noun (`Discard install`, `Discard changes`, `Disable server`, `Remove server`, `Archive skill`, `Restore skill`, `Keep server`) — there is **no bare `Cancel`/`Submit`/`OK`** anywhere in this contract (NN/g; generic-label block).
 
 ---
 
