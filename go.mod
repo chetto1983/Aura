@@ -36,6 +36,7 @@ require (
 	golang.org/x/text v0.37.0
 	gopkg.in/telebot.v4 v4.0.0-beta.9
 	pgregory.net/rapid v1.3.0
+	rsc.io/qr v0.2.0
 )
 
 require (
@@ -209,6 +210,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.51.0 // indirect
-	rsc.io/qr v0.2.0 // indirect
 	zombiezen.com/go/sqlite v1.4.2 // indirect
 )
