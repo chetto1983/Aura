@@ -55,6 +55,8 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03)
 - [x] **Phase 30: Telegram Onboarding on Frontend (Link + QR)** — ✅ **absorbed-into-28** (D-09): Telegram link/QR is delivered as **ONBD-01b** inside Phase 28's onboarding wizard. See `28-SPEC §ONBD-01b`; `30-SPEC.md` is a tombstone. _(Original scope: surface Telegram account linking in the web cockpit — deep-link + scannable QR over the existing Telegram channel + setup-wizard backend.)_
 
+- [ ] **Phase 31: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)** — GPU cross-encoder reranking + two-stage retrieval (vector→rerank-seeds→graph-expand) wired into memory recall + document retrieval + full-document ingest E2E across ALL markitdown-supported formats (pdf/docx/pptx/xlsx/html/csv/md/images/…, not PDF-only) + GraphRAG connected-nodes, over the existing Neo4j stack (no migration). Spike-gated by 068/069/070 (GPU Qwen3-Reranker-0.6B Q4_K_M, rerank-seeds pipeline, RRF fallback, self-learning deferred). (RET-01..05)
+
 > **Cockpit Overhaul (post-Phase-25, in progress — not a formal phase).** After Phase 25 closed, a
 > premium-bar overhaul reworked the Phase-23/24/25 surfaces in place: a logo-matched **blue** design
 > system (operator-accepted 2026-06-18, fonts + WCAG AA gate), a responsive shell (svh grid, drawers,
@@ -282,6 +284,28 @@ Plans:
 
 - [x] Absorbed into Phase 28 (ONBD-01b) — see `28-SPEC §ONBD-01b`
 
+### Phase 31: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)
+
+**Goal**: Aura's retrieval is precision-hardened end-to-end — a GPU cross-encoder reranker (Qwen3-Reranker-0.6B Q4_K_M) behind a fail-soft Go client and a two-stage pipeline (vector seed → rerank seeds → graph-expand winners), wired into BOTH memory recall and document retrieval over the existing Neo4j stack (no DB migration), with the full-document ingest path (ANY markitdown-supported format — pdf/docx/pptx/xlsx/html/csv/md/txt/images/… via the existing `markitdown` sidecar, not PDF-only → format-aware chunk with page/sheet/slide/section locator → Granite 384d embed → connected `:Chunk`/`:NEXT_CHUNK` graph) hardened and proven E2E, gated by an eval harness (nDCG@10 / Recall@5 / MRR), a non-monotonic rerank guard, a per-stage p95 budget, and graceful RRF fallback when GPU is absent.
+**Depends on**: Phase 15 (Memory Subsystem), Phase 22 (perimeter hardening), Phase 27 (graphview read seam). Independent of Phases 28/29.
+**Research-first**: no — spikes 068/069/070 ARE the research. Plan with `--skip-research`. Locked decisions: GPU Qwen3-Reranker-0.6B Q4_K_M (`server-cuda`, `--reranking --pooling rank -ngl 99`, Apache-2.0, <1GB VRAM, 333ms/15-docs; CPU=23s rejected; jina-v3 rejected broken+NC; Q3_K_M rejected slower); rerank-the-seeds-then-expand (267ms fast-path, not expand-then-rerank 1.4s); RRF fallback; Neo4j stays; Leiden = external `leidenalg`/`graspologic` sidecar; self-learning OUT (deferred).
+**Requirements**: RET-01, RET-02, RET-03, RET-04, RET-05
+**Success Criteria** (what must be TRUE):
+
+  1. A GPU reranker sidecar (`server-cuda` Qwen3-Reranker-0.6B Q4_K_M, `--reranking --pooling rank -ngl 99`) is reachable behind an `internal/rerank` client mirroring `documents.EmbeddingClient`; with the sidecar / GPU absent, retrieval degrades to RRF order and never hard-fails (fail-soft proven) (RET-01)
+  2. Two-stage retrieval (vector/BM25 seed → rerank the ~10 seeds → graph-expand winners for context) is wired into memory recall AND document retrieval; the `messages[0]` KV-cache invariant is preserved (cache-invariant gate green); end-to-end retrieval p95 < 500ms on a representative corpus (RET-02)
+  3. The full-document ingest pipeline accepts ALL markitdown-supported formats (pdf/docx/pptx/xlsx/xlsm/html/htm/csv/md/markdown/txt/json/xml/epub/images via the existing `markitdown` sidecar — the artificial `isSupportedDocument` 4-format cap is removed and the sidecar `/extract` emits format-aware chunks with a page/sheet/slide/section locator, generic-markdown fallback for the long tail) → Granite 384d embed → Neo4j `:Chunk` + `:NEXT_CHUNK` connected graph; hardened (bounded/streamed, provenance-scoped chunks) and proven E2E on the real G220-class PDF manual PLUS at least one non-PDF format (e.g. PPTX or HTML) (RET-03)
+  4. GraphRAG connected-nodes retrieval (vector seed → 1-hop graph expansion → rerank) returns evidence within the documented per-stage p95 budget (vector + graph ~tens of ms; rerank the dominant bounded cost) (RET-04)
+  5. An eval harness (nDCG@10 / Recall@5 / MRR, vector vs vector+rerank) shows a measured precision lift with zero queries regressed beyond noise (non-monotonic guard); `make coverage` ≥85% owned-surface; a live retrieval/`rerank_integration` E2E tier runs green in CI; self-learning is explicitly OUT (deferred) (RET-05)
+
+**Plans**: 5 plans
+- [ ] 31-01-PLAN.md — Rerank GPU sidecar + internal/rerank fail-soft client + AURA_RERANK_BASE_URL (RET-01) [wave 1]
+- [ ] 31-02-PLAN.md — Full-docs ingest: single allowlist (all markitdown formats) + PPTX/HTML/CSV handlers + :NEXT_CHUNK edges (RET-03) [wave 2]
+- [ ] 31-03-PLAN.md — Two-stage retrieval (seed → rerank seeds → expand winners) wired into document retrieval + memory recall, RRF fallback, messages[0] preserved (RET-02) [wave 3]
+- [ ] 31-04-PLAN.md — GraphRAG connected-nodes retrieval over :NEXT_CHUNK with per-stage p95 budget (RET-04) [wave 4]
+- [ ] 31-05-PLAN.md — Eval harness (nDCG@10/Recall@5/MRR) + non-monotonic guard + CI live tiers + coverage ≥85% + self-learning OUT (RET-05) [wave 5]
+**UI hint**: no
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
@@ -296,3 +320,4 @@ Plans:
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 5/6 | In Progress|  |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
 | 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | — | Absorbed into 28 | 2026-06-20 |
+| 31. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 0/? | Planning | - |
