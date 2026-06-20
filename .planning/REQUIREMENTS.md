@@ -85,7 +85,7 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 ### Web Onboarding (ONBD) — Slice J (pulled into v1.0.0)
 
 - [x] **ONBD-01**: A new operator can complete a web onboarding / setup wizard (beyond the `:9081` loopback setup) that links identity and seeds the `Agent.md` profile
-- [ ] **ONBD-02**: The wizard drives the existing onboarding LoopAgent / `Agent.md` flow with confirm/edit/skip and without duplicate LLM turns
+- [x] **ONBD-02**: The wizard drives the existing onboarding LoopAgent / `Agent.md` flow with confirm/edit/skip and without duplicate LLM turns
 
 ### MCP Configuration — write/governance (MCPW) — Phase 29 (ux-spec Frame 08)
 
@@ -187,7 +187,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | GOV-02 | Phase 28 | Complete |
 | GOV-03 | Phase 28 | Complete |
 | ONBD-01 | Phase 28 | Complete |
-| ONBD-02 | Phase 28 | Pending |
+| ONBD-02 | Phase 28 | Complete |
 | MCPW-01 | Phase 29 | Pending |
 | MCPW-02 | Phase 29 | Pending |
 | MCPW-03 | Phase 29 | Pending |
