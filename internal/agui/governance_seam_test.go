@@ -75,11 +75,12 @@ func TestSetOnboardingServiceOffConstructor(t *testing.T) {
 	}
 }
 
-// TestGovernanceSeamsAddNoRoutes proves this plan's seams do NOT register any routes on
-// the mux (the governance/onboarding routes land in Plan 02 / Plan 05). A wired Server
-// must still answer the new paths 404 — the handlers do not exist yet — so existing
-// callers and the route table are unchanged by Wave 0.
-func TestGovernanceSeamsAddNoRoutes(t *testing.T) {
+// TestOnboardingSeamAddsNoRoutes proves the onboarding seam does NOT register any routes
+// on the mux yet (the onboarding routes land in Plan 05). A wired Server must still answer
+// the onboarding path 404 — the handler does not exist yet. The governance routes ARE now
+// registered by Plan 02 (registerGovernanceRoutes), so /api/governance/mcp is asserted
+// non-404 here to lock in that the Wave-0 seam is consumed.
+func TestOnboardingSeamAddsNoRoutes(t *testing.T) {
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	s.SetGovernanceProviders(GovernanceProviders{MCP: fakeMCPBoard{}})
 	s.SetOnboardingService(fakeOnboarding{})
@@ -88,10 +89,12 @@ func TestGovernanceSeamsAddNoRoutes(t *testing.T) {
 	// that the seam matches the Wave-0 backend artifact).
 	var _ CapabilitySource = (*identity.Store)(nil)
 
-	for _, path := range []string{"/api/governance/mcp", "/api/onboarding/start"} {
-		rec := doGraph(t, s, "GET", path, nil)
-		if rec.Code != 404 {
-			t.Errorf("%s: want 404 (no route registered in Wave 0), got %d", path, rec.Code)
-		}
+	// Plan 05 has not registered the onboarding routes yet — still a clean 404.
+	if rec := doGraph(t, s, "GET", "/api/onboarding/start", nil); rec.Code != 404 {
+		t.Errorf("/api/onboarding/start: want 404 (no route registered until Plan 05), got %d", rec.Code)
+	}
+	// Plan 02 DID register the governance routes — a wired MCP board answers, not 404.
+	if rec := doGraph(t, s, "GET", "/api/governance/mcp", nil); rec.Code == 404 {
+		t.Errorf("/api/governance/mcp: want a registered handler (Plan 02), got 404")
 	}
 }

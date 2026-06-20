@@ -9,6 +9,7 @@ import (
 	"iter"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
@@ -96,6 +97,10 @@ type Server struct {
 	onboarding OnboardingService
 	idgen      IDGenerator
 	cfg        ServerConfig
+	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
+	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
+	// quickly. Kept off the constructor so production uses the 3s default.
+	probeTimeout time.Duration
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -158,6 +163,11 @@ func (s *Server) Mux() http.Handler {
 	// RequireAuth (no RequireCapability — read-only milestone) lives in
 	// cmd/aura/serve_webui.go.
 	s.registerGraphRoutes(mux)
+	// GOV-01/02/03 read-only governance-board routes (Phase 28 plan 28-02): the six
+	// /api/governance/* GETs (MCP list + per-row probe, skills list + audit, scheduler
+	// tasks + run history). Colocated with their handlers; the parent-mux mount behind
+	// RequireAuth (no RequireCapability — read-only) lives in cmd/aura/serve_webui.go.
+	s.registerGovernanceRoutes(mux)
 	return s.withCORS(mux)
 }
 
