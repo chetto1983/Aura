@@ -11,6 +11,7 @@ export const onboardingEn = {
     title: 'Create identity',
     open: 'Create identity',
     close: 'Close',
+    cancel: 'Cancel',
     backendUnavailable:
       "Couldn't start onboarding. The service may be unavailable. Retry, or check the runtime status.",
     authExpired: 'Your session expired. Sign in again to continue.',
@@ -22,6 +23,7 @@ export const onboardingEn = {
       continue: 'Continue',
       confirm: 'Looks right — continue',
       edit: 'Edit answer',
+      applyEdit: 'Save changes',
       skip: 'Skip this step',
       provision: 'Create identity',
       provisionInFlight: 'Creating identity…',
@@ -91,6 +93,7 @@ export const onboardingIt = {
     title: 'Crea identità',
     open: 'Crea identità',
     close: 'Chiudi',
+    cancel: 'Annulla',
     backendUnavailable:
       'Impossibile avviare la procedura. Il servizio potrebbe non essere disponibile. Riprova, o controlla lo stato del runtime.',
     authExpired: 'La tua sessione è scaduta. Accedi di nuovo per continuare.',
@@ -102,6 +105,7 @@ export const onboardingIt = {
       continue: 'Continua',
       confirm: 'Va bene — continua',
       edit: 'Modifica risposta',
+      applyEdit: 'Salva modifiche',
       skip: 'Salta questo passaggio',
       provision: 'Crea identità',
       provisionInFlight: 'Creazione identità…',

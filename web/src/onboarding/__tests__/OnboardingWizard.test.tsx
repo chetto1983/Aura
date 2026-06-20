@@ -163,6 +163,10 @@ describe('OnboardingWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('Identity created')).toBeTruthy();
     });
+    // The provision result's deep-link + QR flow into the Telegram step (optional-chaining wired).
+    const link = await screen.findByRole('link', { name: 'Open in Telegram' });
+    expect(link.getAttribute('href')).toBe('https://t.me/AuraBot?start=onb-xyz');
+    expect(screen.getByRole('img', { name: 'QR code to link Telegram' })).toBeTruthy();
     expect(provisionOnboarding).toHaveBeenCalledWith(
       SESSION_TOKEN,
       expect.objectContaining({
@@ -174,6 +178,114 @@ describe('OnboardingWizard', () => {
     );
     // Still no password in the DOM at completion.
     expect(container.textContent).not.toContain(PASSWORD);
+  });
+
+  it('navigates back from capabilities to credentials (Back)', async () => {
+    startOnboarding.mockResolvedValue(START);
+    renderWizard();
+    await fillCredentialsAndAdvance();
+    await waitFor(() => {
+      expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => {
+      expect(screen.getByText('New operator credentials')).toBeTruthy();
+    });
+  });
+
+  it('drives confirm then edit through the wizard (intent confirm/edit) before terminal', async () => {
+    startOnboarding.mockResolvedValue(START);
+    // 1st answer → draft (active draft); confirm → completed terminal.
+    stepOnboarding
+      .mockResolvedValueOnce({
+        content: 'Draft ready.',
+        step: 'draft',
+        status: 'draft',
+        draft: '# Agent.md\n\nName: Dav',
+      })
+      .mockResolvedValueOnce({
+        content: 'Draft updated.',
+        step: 'draft',
+        status: 'draft',
+        draft: '# Agent.md\n\nName: Davide',
+      })
+      .mockResolvedValueOnce({ content: 'done', step: 'draft', status: 'completed' });
+    provisionOnboarding.mockResolvedValue({ identityId: 'id-1' });
+
+    renderWizard();
+    await fillCredentialsAndAdvance();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // caps → interview
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Your answer')).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText('Your answer'), { target: { value: 'Dav' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // answer → draft
+
+    // Draft mode: edit the draft (intent edit → re-renders).
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit answer' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit answer' }));
+    // The edit form's first field (its label is reused from the credentials email label).
+    fireEvent.change(screen.getByLabelText('Operator email'), { target: { value: 'Davide' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => {
+      expect(screen.getByText(/Name: Davide/)).toBeTruthy();
+    });
+    expect(stepOnboarding).toHaveBeenCalledWith(SESSION_TOKEN, {
+      intent: 'edit',
+      answers: { name: 'Davide' },
+    });
+
+    // Confirm → terminal → review.
+    fireEvent.click(screen.getByRole('button', { name: 'Looks right — continue' }));
+    await waitFor(() => {
+      expect(screen.getByText('Review and create')).toBeTruthy();
+    });
+    expect(stepOnboarding).toHaveBeenCalledWith(SESSION_TOKEN, { intent: 'confirm' });
+  });
+
+  it('completes WITHOUT a Telegram link when linkTelegram is unchecked', async () => {
+    startOnboarding.mockResolvedValue(START);
+    stepOnboarding.mockResolvedValue({ content: 'done', step: 'draft', status: 'skipped' });
+    provisionOnboarding.mockResolvedValue({ identityId: 'id-1' });
+
+    renderWizard();
+    await fillCredentialsAndAdvance();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // caps → interview
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Skip this step' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Skip this step' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Review and create')).toBeTruthy();
+    });
+    // Uncheck Telegram before creating.
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Identity created')).toBeTruthy();
+    });
+    // No Telegram deep-link rendered (linkTelegram was false → no TelegramLinkStep).
+    expect(screen.queryByRole('link', { name: 'Open in Telegram' })).toBeNull();
+    expect(provisionOnboarding).toHaveBeenCalledWith(
+      SESSION_TOKEN,
+      expect.objectContaining({ linkTelegram: false }),
+    );
+  });
+
+  it('closes the wizard via the header close button', async () => {
+    startOnboarding.mockResolvedValue(START);
+    const onClose = vi.fn();
+    renderWizard(onClose);
+    await waitFor(() => {
+      expect(screen.getByText('New operator credentials')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('maps a 403 from /provision to the no-permission copy (constructive CTA, distinct error)', async () => {

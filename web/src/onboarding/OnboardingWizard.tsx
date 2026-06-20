@@ -3,8 +3,19 @@ import { useTranslation } from 'react-i18next';
 import { CapabilityPicker } from './CapabilityPicker';
 import { CredentialStep } from './CredentialStep';
 import { InterviewStep } from './InterviewStep';
-import { ReviewStep, type ProvisionErrorKind } from './ReviewStep';
+import { OnboardingStepper } from './OnboardingStepper';
+import { OnboardingWizardNav } from './OnboardingWizardNav';
+import { ReviewStep } from './ReviewStep';
 import { TelegramLinkStep } from './TelegramLinkStep';
+import {
+  credentialsValid,
+  isAuthError,
+  isTerminalStatus,
+  phaseIndex as phaseIndexOf,
+  provisionErrorKind,
+  type Phase,
+  type ProvisionErrorKind,
+} from './onboardingWizardModel';
 import {
   provisionOnboarding,
   startOnboarding,
@@ -34,31 +45,6 @@ export interface OnboardingWizardProps {
 }
 
 type StartStatus = 'starting' | 'ready' | 'error' | 'error-auth';
-type Phase = 'credentials' | 'capabilities' | 'interview' | 'review' | 'complete';
-
-const PHASES: readonly Phase[] = [
-  'credentials',
-  'capabilities',
-  'interview',
-  'review',
-  'complete',
-];
-
-const TERMINAL_STATUSES = new Set(['completed', 'skipped', 'canceled']);
-
-function isAuthError(err: unknown): boolean {
-  return err instanceof Error && err.message === 'HTTP 401';
-}
-
-/** Map a thrown Error("HTTP <n>") from /provision to the matching distinct copy key. A 403 is the
- * no-capability path, a 409 the duplicate/empty-email path, anything else the rolled-back path. */
-function provisionErrorKind(err: unknown): ProvisionErrorKind {
-  if (err instanceof Error) {
-    if (err.message === 'HTTP 403') return 'noCapability';
-    if (err.message === 'HTTP 409') return 'duplicate';
-  }
-  return 'rolledBack';
-}
 
 export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   const { t } = useTranslation();
@@ -140,7 +126,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
           ...(answers !== undefined ? { answers } : {}),
         });
         setInterview(resp);
-        if (TERMINAL_STATUSES.has(resp.status)) {
+        if (isTerminalStatus(resp.status)) {
           setPhase('review');
         }
       } catch (err) {
@@ -178,8 +164,8 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     }
   }, [sessionToken, email, password, selectedCaps, linkTelegram]);
 
-  const credentialsValid = email.trim() !== '' && password !== '';
-  const phaseIndex = PHASES.indexOf(phase);
+  const canAdvanceCredentials = credentialsValid(email, password);
+  const phaseIndex = phaseIndexOf(phase);
 
   const overlay = (children: React.ReactNode) => (
     <div
@@ -242,7 +228,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
 
   return overlay(
     <div className="flex min-h-0 flex-1 flex-col">
-      <Stepper phaseIndex={phaseIndex} />
+      <OnboardingStepper phaseIndex={phaseIndex} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-8">
@@ -254,14 +240,14 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 onEmailChange={setEmail}
                 onPasswordChange={setPassword}
               />
-              <WizardNav
+              <OnboardingWizardNav
                 onBack={onClose}
-                backLabel={t('onboarding.close')}
+                backLabel={t('onboarding.cancel')}
                 onNext={() => {
                   setPhase('capabilities');
                 }}
                 nextLabel={t('onboarding.cta.continue')}
-                nextDisabled={!credentialsValid}
+                nextDisabled={!canAdvanceCredentials}
               />
             </>
           ) : null}
@@ -273,7 +259,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 selected={selectedCaps}
                 onToggle={toggleCap}
               />
-              <WizardNav
+              <OnboardingWizardNav
                 onBack={() => {
                   setPhase('credentials');
                 }}
@@ -352,93 +338,5 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         </div>
       </div>
     </div>,
-  );
-}
-
-/** Stepper renders the linear desktop step strip + the compact mobile "Step N of M" indicator.
- * Color is never the only encoding — the active step carries an accent dot AND its label, and the
- * mobile indicator is text. */
-function Stepper({ phaseIndex }: { readonly phaseIndex: number }) {
-  const { t } = useTranslation();
-  const labels: readonly { key: Phase; label: string }[] = [
-    { key: 'credentials', label: t('onboarding.steps.credentials') },
-    { key: 'capabilities', label: t('onboarding.steps.capabilities') },
-    { key: 'interview', label: t('onboarding.steps.interview') },
-    { key: 'review', label: t('onboarding.steps.review') },
-    { key: 'complete', label: t('onboarding.steps.telegram') },
-  ];
-
-  return (
-    <div className="shrink-0 border-b border-border bg-surface px-4 py-3">
-      {/* Desktop: the full linear strip. */}
-      <ol className="hidden items-center gap-2 lg:flex" aria-label={t('onboarding.title')}>
-        {labels.map((s, i) => {
-          const active = i === phaseIndex;
-          const done = i < phaseIndex;
-          return (
-            <li key={s.key} className="flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                className={`h-2 w-2 rounded-full ${
-                  active ? 'bg-accent-text' : done ? 'bg-success' : 'bg-surface-3'
-                }`}
-              />
-              <span
-                aria-current={active ? 'step' : undefined}
-                className={`text-[13px] font-semibold ${active ? 'text-text' : 'text-text-muted'}`}
-              >
-                {s.label}
-              </span>
-              {i < labels.length - 1 ? (
-                <span aria-hidden="true" className="mx-1 h-px w-6 bg-border" />
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-
-      {/* Mobile: a compact text indicator. */}
-      <p className="text-[13px] font-semibold text-text-muted lg:hidden">
-        {t('onboarding.progress', { current: phaseIndex + 1, total: labels.length })}
-        {' · '}
-        <span className="text-text">{labels[phaseIndex]?.label}</span>
-      </p>
-    </div>
-  );
-}
-
-/** WizardNav is the shared Back / Next control bar for the form-style phases (credentials +
- * capabilities). The interview/review/complete phases own their own CTAs. */
-function WizardNav({
-  onBack,
-  backLabel,
-  onNext,
-  nextLabel,
-  nextDisabled,
-}: {
-  readonly onBack: () => void;
-  readonly backLabel: string;
-  readonly onNext: () => void;
-  readonly nextLabel: string;
-  readonly nextDisabled: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <button
-        type="button"
-        onClick={onBack}
-        className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text-muted outline-none transition-colors hover:border-border-strong hover:text-text focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {backLabel}
-      </button>
-      <button
-        type="button"
-        disabled={nextDisabled}
-        onClick={onNext}
-        className="min-h-[44px] rounded-md bg-accent px-6 py-2 text-[13px] font-semibold text-on-accent outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-      >
-        {nextLabel}
-      </button>
-    </div>
   );
 }

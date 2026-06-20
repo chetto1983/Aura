@@ -11,7 +11,9 @@
     "!src/graph/**/__tests__/**",
     "!src/graph/types.ts",
     "src/governance/**/*.{ts,tsx}",
-    "!src/governance/**/__tests__/**"
+    "!src/governance/**/__tests__/**",
+    "src/onboarding/**/*.{ts,tsx}",
+    "!src/onboarding/**/__tests__/**"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,

@@ -114,7 +114,7 @@ export function InterviewStep({
                 onClick={submitEdit}
                 className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
-                {t('onboarding.cta.edit')}
+                {t('onboarding.cta.applyEdit')}
               </button>
             </div>
           ) : null}

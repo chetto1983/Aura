@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { ProvisionErrorKind } from './onboardingWizardModel';
 
 // ReviewStep (ONBD-01a / UI-SPEC) — the final summary before the cross-store saga. It shows the
 // new operator email + the chosen capabilities + the Telegram-link choice, and a CONSTRUCTIVE
@@ -10,9 +11,6 @@ import { useTranslation } from 'react-i18next';
 //   - 403 → no-permission   - 409 → duplicate/empty email   - rolled-back (502/other) → nothing saved
 // The password is NEVER echoed here (no-leak, T-28-06-01) — only the email + capabilities + the
 // Telegram choice. Capability names are backend-supplied → React-escaped mono text.
-
-/** The mapped provision-error copy key, or undefined when there is no error. */
-export type ProvisionErrorKind = 'noCapability' | 'duplicate' | 'rolledBack';
 
 export interface ReviewStepProps {
   readonly email: string;
