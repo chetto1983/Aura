@@ -100,6 +100,13 @@ the cross-cutting auth/no-leak boundary) are **not** duplicated here.
   provision identity (login + capability grants) → Telegram link (deep-link +
   QR) → 5-step `Agent.md` interview → confirm. Provisioning and the interview
   are **one** flow (SPEC goal: "seed `Agent.md` AND fully provisions").
+- **D-04 clarification (operator-approved 2026-06-20):** the cross-store write
+  executes atomically at the final Confirm — the wizard collects
+  credentials/capabilities/Telegram-intent/interview answers into the
+  server-held session and runs legs A+B+C only on Create; this is orphan-free
+  and supersedes a literal provision-first reading of the screen order. The
+  wizard UI step order stays credentials → capability picker → Telegram link+QR
+  → 5-step interview → review+Create, with the saga firing at Create.
 
 ### Identity provisioning (ONBD-01a)
 - **D-05 — Credential = operator sets email + initial (temp) password.** The

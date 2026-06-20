@@ -514,12 +514,16 @@ Per the SPEC's locked sequencing (interview round 2: "All four; boards first (lo
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Tool-count probe depth (L1).** The existing doctor does NOT count mounted tools. Does GOV-01 require a real per-server `tools/list` (dial each server), or is "reachable + count-when-cheaply-available" acceptable? — *Recommendation:* real list under the 3s isolated timeout; flag if mini-PC load is a concern. (SPEC AC wants a live count.)
+   - **RESOLVED (Plan 28-02 owns it; backend seam in Plan 28-01 Task 2):** adopt the recommendation — a real `tools/list` dial for a live mounted-tool count (the SPEC AC requires a live count). `internal/mcp.probeServer` (extracted in 28-01 Task 2) dials each server via `internal/mcp.Client.Open` + a `tools/list` call under a bounded `context.WithTimeout(r.Context(), 3*time.Second)`; `GET /api/governance/mcp/{name}/probe` (28-02 Task 1) surfaces the count per row with per-row isolation + a 5–10s cache. Mini-PC load is bounded by the per-server timeout + cache (no re-spawn on rapid re-render).
 2. **Wizard sequencing (L9/A6).** Provision-then-interview (D-04 literal) vs saga-on-final-confirm (orphan-free). — *Recommendation:* saga at final confirm; confirm with discuss-phase if D-04 ordering is load-bearing.
+   - **RESOLVED (Plan 28-05 owns it):** operator-approved (2026-06-20) — the cross-store saga executes atomically ONLY at the wizard's final "Create" confirm (see the **D-04 clarification** in 28-CONTEXT.md). The wizard collects credentials/capabilities/Telegram-intent/interview answers into the server-held session and runs legs A+B+C only on Create; this is orphan-free and supersedes a literal provision-first reading of the D-04 screen order. The wizard UI step order is unchanged (credentials → capability picker → Telegram link+QR → 5-step interview → review+Create); only the saga firing point is pinned to Create.
 3. **`aura.identities.name` uniqueness (A4).** Confirm the UNIQUE constraint for idempotent create. — *Recommendation:* read migration 0004 at plan; add explicit handling if absent.
+   - **RESOLVED (Plan 28-05 owns it):** verified `aura.identities.name` is `NOT NULL UNIQUE`, so the create is idempotent on name — a double-submit yields exactly ONE identity and a clean `23505` → 409 (no 2nd identity). The pre-check (`GetIdentityByName`) + the DB UNIQUE together make concurrent same-email creates resolve to one winner; 28-05 Task 2 asserts this (`TestProvisionIdempotent`).
 4. **Scheduler board status scope (L10).** Active-only tasks, or all statuses? — *Recommendation:* active-only (matches "scheduled tasks"); run-history shows terminal runs regardless. A "show all" toggle is v2.
+   - **RESOLVED (Plan 28-02 owns it):** adopt the recommendation — the scheduler board lists ACTIVE tasks only via `cron.Store.ListActiveTasks` (matches "scheduled tasks"); per-task run history (`ListRunsForTask`, 28-01 Task 1) shows terminal runs regardless of task status. A "show all statuses" toggle is deferred to Phase-29 / v2 (GOVW-03).
 
 ---
 
