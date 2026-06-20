@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 29 context gathered
-last_updated: "2026-06-20T17:42:37.182Z"
+stopped_at: Phase 29 UI-SPEC approved
+last_updated: "2026-06-20T23:26:00.351Z"
 last_activity: 2026-06-20
 progress:
   total_phases: 10
@@ -389,9 +389,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-20T17:42:37.168Z
-Stopped at: Phase 29 context gathered
-Resume file: .planning/phases/29-governance-write-mcp-configuration-skills-install/29-CONTEXT.md
+Last session: 2026-06-20T23:26:00.339Z
+Stopped at: Phase 29 UI-SPEC approved
+Resume file: .planning/phases/29-governance-write-mcp-configuration-skills-install/29-UI-SPEC.md
 
 ## Operator Next Steps
 
