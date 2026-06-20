@@ -53,7 +53,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04) (completed 2026-06-19)
 - [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
 - [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03)
-- [ ] **Phase 30: Telegram Onboarding on Frontend (Link + QR)** — Surface Telegram account linking in the web cockpit: a deep-link to the bot + a scannable QR encoding the setup token, over the existing Telegram channel + setup-wizard backend
+- [x] **Phase 30: Telegram Onboarding on Frontend (Link + QR)** — ✅ **absorbed-into-28** (D-09): Telegram link/QR is delivered as **ONBD-01b** inside Phase 28's onboarding wizard. See `28-SPEC §ONBD-01b`; `30-SPEC.md` is a tombstone. _(Original scope: surface Telegram account linking in the web cockpit — deep-link + scannable QR over the existing Telegram channel + setup-wizard backend.)_
 
 > **Cockpit Overhaul (post-Phase-25, in progress — not a formal phase).** After Phase 25 closed, a
 > premium-bar overhaul reworked the Phase-23/24/25 surfaces in place: a logo-matched **blue** design
@@ -273,14 +273,14 @@ Plans:
 
 ### Phase 30: Telegram Onboarding on Frontend with Link and QR Code
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** ✅ **Absorbed into Phase 28** (D-09, 2026-06-20) — the Telegram link/QR surface is delivered as requirement **ONBD-01b** inside Phase 28's onboarding wizard (deep-link + server-rendered scannable QR, reusing the existing setup-wizard mint/`ConsumeOnboarding` token flow). This phase is a tombstone; do NOT plan/execute it separately. Original requirement traceability is preserved in `30-SPEC.md` → see `28-SPEC §ONBD-01b`.
+**Requirements**: ONBD-01b (delivered in Phase 28)
 **Depends on:** Phase 29
-**Plans:** 0/6 plans executed
+**Plans:** absorbed into Phase 28 (no separate plans)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 30 to break down)
+- [x] Absorbed into Phase 28 (ONBD-01b) — see `28-SPEC §ONBD-01b`
 
 ## Progress
 
@@ -295,4 +295,4 @@ Plans:
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 1/6 | In Progress|  |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
-| 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | 0/? | Not started | - |
+| 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | — | Absorbed into 28 | 2026-06-20 |

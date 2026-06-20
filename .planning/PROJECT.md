@@ -79,7 +79,7 @@ v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; 
 - [ ] **GRAPH-\***: Neo4j Graph Explorer (read-only)
 - [ ] **GOV-\***: Read-only governance boards (MCP / skills / scheduler)
 - [ ] **MCPW-\* / SKW-\***: Governance write — MCP configuration + skills install/approval lifecycle
-- [ ] **ONBOARD-\***: Web onboarding / setup wizard
+- [ ] **ONBOARD-\***: Web onboarding / setup wizard — incl. full provisioning of a 2nd loginable identity (`identities` + `capability_grants` + Authula login + Telegram link), capability-gated via `identity.create`, authz stays `capability_grants`-only (Phase 28, D-07; prd.md amendment #64)
 
 ### Out of Scope
 
@@ -87,7 +87,7 @@ v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; 
 - **Native Windows runtime** — Aura gira in container (Docker Compose) o contro Docker sidecar. Su Windows solo via Docker Desktop in dev. Memory `feedback_sqlite_wal_windows_corruption.md` + Slice 2 OQ5: named volumes mandatory, no bind-mount Windows.
 - **Conversational voice mode** — Aura legge audio in ingresso (STT) e produce voice replies TTS su Telegram (Kokoro, Phase 13). Una modalità voce conversazionale full-duplex resta future milestone.
 - **Marketplace skills pubblico** — Slice 7 ha skill installer locale (`skill_install`/`skill_create`); niente registry pubblico, niente sharing skills tra utenti, niente versioning distribuito. Local-first per definizione.
-- **Multi-user con auth/RBAC reale** — Slice 1.7 fornisce solo "identity minimal + `capability_grants` scaffolding". v1.0.0 aggiunge una boundary web minima (reverse-proxy + session-cookie firmato che attiva lo scaffolding `capability_grants`); ma niente login multi-tenant, RBAC, o OAuth reale in questa milestone.
+- **Multi-user con auth/RBAC reale** — Slice 1.7 fornisce "identity minimal + `capability_grants` scaffolding". v1.0.0 Phase 28 introduce una **2nd web-loginable identity** via il cockpit onboarding wizard. **L'authz RESTA `capability_grants`-based — NO RBAC, NO route-scoping oltre `RequireCapability`, NO OAuth.** L'identity resolution generalizza 1:N via `aura.identity_auth_links` (già 1:N-ready, migration 0019); il guard `OperatorUserID` single-user è rilassato (vedi prd.md amendment #64, D-07). Resta fuori scope: login multi-tenant, RBAC reale, OAuth, per-identity session isolation (post-v1.0.0).
 - **Native Go Neo4j driver** — disciplina PRD: tutto accesso Neo4j passa da `mcp-neo4j-cypher` MCP server (subprocess stdio). Pattern uniforme con altri MCP tools.
 
 ## Context

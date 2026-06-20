@@ -1,8 +1,15 @@
 # Phase 30: Telegram Onboarding on Frontend with Link and QR Code — Specification
 
+> # ⚰️ TOMBSTONE — ABSORBED INTO PHASE 28 (D-09, 2026-06-20)
+>
+> **Phase 30 is absorbed into Phase 28.** The Telegram link/QR cockpit surface is delivered as requirement **ONBD-01b** inside Phase 28's onboarding wizard (deep-link + server-rendered scannable QR, reusing the existing `internal/setup` mint + `ConsumeOnboarding` single-use token flow). **Do NOT plan or execute Phase 30 separately** — it has no plans of its own.
+>
+> **Authoritative spec → [`28-SPEC.md`](../28-governance-boards-web-onboarding/28-SPEC.md) §ONBD-01b.** The original Phase-30 requirements (7 locked, below) are retained verbatim **for traceability only**; ONBD-01b is the live contract. Recorded by the Phase-28 D-07 PRD-amendment commit (prd.md amendment #64).
+
 **Created:** 2026-06-19
+**Status:** ⚰️ Absorbed into Phase 28 (ONBD-01b) — 2026-06-20 (D-09)
 **Ambiguity score:** 0.14 (gate: ≤ 0.20)
-**Requirements:** 7 locked
+**Requirements:** 7 locked (retained for traceability; delivered as 28-SPEC §ONBD-01b)
 
 ## Goal
 
