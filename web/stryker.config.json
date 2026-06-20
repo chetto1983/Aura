@@ -9,7 +9,9 @@
     "!src/chat/displays/types.ts",
     "src/graph/**/*.{ts,tsx}",
     "!src/graph/**/__tests__/**",
-    "!src/graph/types.ts"
+    "!src/graph/types.ts",
+    "src/governance/**/*.{ts,tsx}",
+    "!src/governance/**/__tests__/**"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "concurrency": 4,

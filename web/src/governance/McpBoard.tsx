@@ -14,7 +14,7 @@ import { fetchMcpServers, probeMcpServer, type McpServerRow } from './governance
 // Selecting a row opens McpServerDetail (the live doctor result + tool list) as a desktop column
 // / mobile bottom sheet.
 
-function statusLabel(
+export function statusLabel(
   t: ReturnType<typeof useTranslation>['t'],
   probe: { ok: boolean; tool_count: number; detail: string; err?: string } | undefined,
   isLoading: boolean,

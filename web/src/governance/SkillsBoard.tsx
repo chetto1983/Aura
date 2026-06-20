@@ -200,11 +200,7 @@ export function SkillsBoard() {
       <div className="min-h-0 flex-1">
         <BoardStateView
           status={status}
-          emptyHeading={
-            tab === 'audit'
-              ? t('governance.skills.emptyHeading')
-              : t('governance.skills.emptyHeading')
-          }
+          emptyHeading={t('governance.skills.emptyHeading')}
           emptyBody={
             tab === 'audit' ? t('governance.skills.auditEmpty') : t('governance.skills.emptyBody')
           }

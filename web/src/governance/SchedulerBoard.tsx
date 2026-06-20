@@ -13,7 +13,7 @@ import { fetchSchedulerTasks, type SchedulerTask } from './governanceApi';
 // shape. Selecting a row opens TaskRunHistory (the paginated, newest-first runs with the
 // Show-more / "Showing X of Y" control) as a desktop column / mobile bottom sheet.
 
-function scheduleText(task: SchedulerTask, dash: string): string {
+export function scheduleText(task: SchedulerTask, dash: string): string {
   if (task.CronExpr !== '') {
     return task.CronExpr;
   }

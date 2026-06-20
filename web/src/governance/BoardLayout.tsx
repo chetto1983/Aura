@@ -39,7 +39,13 @@ export function BoardLayout({
     if (!detailOpen) {
       return;
     }
-    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    // The focus trap is a MOBILE-only concern (the lg detail is a static column). Guard the
+    // matchMedia lookup: a runtime without it (jsdom / older embed) simply skips the trap rather
+    // than crashing the board.
+    const isMobile =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 1023px)').matches
+        : false;
     if (!isMobile) {
       return;
     }

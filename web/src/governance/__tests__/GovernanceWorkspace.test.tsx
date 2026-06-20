@@ -52,6 +52,10 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     expect(mcpTab.getAttribute('aria-selected')).toBe('true');
     expect(skillsTab.getAttribute('aria-selected')).toBe('false');
 
+    // Roving tabindex: the active tab is 0, inactive are -1 (kills the tabIndex ternary mutant).
+    expect(mcpTab.getAttribute('tabindex')).toBe('0');
+    expect(skillsTab.getAttribute('tabindex')).toBe('-1');
+
     fireEvent.click(skillsTab);
 
     await waitFor(() => {
@@ -59,6 +63,8 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     });
     expect(skillsTab.getAttribute('aria-selected')).toBe('true');
     expect(mcpTab.getAttribute('aria-selected')).toBe('false');
+    expect(skillsTab.getAttribute('tabindex')).toBe('0');
+    expect(mcpTab.getAttribute('tabindex')).toBe('-1');
   });
 
   it('roams tabs with the arrow keys (roving tabindex)', async () => {
@@ -72,5 +78,27 @@ describe('GovernanceWorkspace (boards mocked)', () => {
       expect(screen.getByTestId('scheduler-board')).toBeTruthy();
     });
     expect(schedulerTab.getAttribute('aria-selected')).toBe('true');
+
+    // ArrowRight wraps back to the first tab.
+    fireEvent.keyDown(schedulerTab, { key: 'ArrowRight' });
+    await waitFor(() => {
+      expect(screen.getByTestId('mcp-board')).toBeTruthy();
+    });
+  });
+
+  it('Home selects the first tab and End selects the last', async () => {
+    render(<GovernanceWorkspace />);
+    const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
+    const schedulerTab = screen.getByRole('tab', { name: 'Scheduler' });
+
+    fireEvent.keyDown(mcpTab, { key: 'End' });
+    await waitFor(() => {
+      expect(schedulerTab.getAttribute('aria-selected')).toBe('true');
+    });
+
+    fireEvent.keyDown(schedulerTab, { key: 'Home' });
+    await waitFor(() => {
+      expect(mcpTab.getAttribute('aria-selected')).toBe('true');
+    });
   });
 });
