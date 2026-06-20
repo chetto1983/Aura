@@ -24,6 +24,10 @@ const ExternalStoreChat = lazy(() =>
 // pulls in must never land in the main bundle — it loads only when surface==='graph'.
 const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 
+// The Phase-28 Governance workspace (MCP/Skills/Scheduler boards) is its own lazy chunk too
+// (D-01) — it loads only when surface==='governance'.
+const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
+
 interface LogoutTarget {
   path: string;
   headers?: Record<string, string>;
@@ -81,10 +85,11 @@ export function AppShell() {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { surface, setSurface } = useSurfaceIntent();
-  // The Graph Explorer is a focused workspace with its own three panes (seed | canvas |
-  // inspector), so the shell's right-hand runtime rail is redundant there — drop it on lg so the
-  // evidence canvas gets the width back instead of being squeezed into a narrow middle column.
-  const isGraph = surface === 'graph';
+  // The Graph Explorer and the Governance boards are focused workspaces with their own panes
+  // (canvas/inspector, master/detail), so the shell's right-hand runtime rail is redundant
+  // there — drop it on lg so the workspace gets the width back instead of being squeezed into a
+  // narrow middle column. The chat approval cards are also chat-only.
+  const isFocusedWorkspace = surface === 'graph' || surface === 'governance';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
@@ -211,7 +216,7 @@ export function AppShell() {
           (380px) ≈ 924px < 1024px, so the `lg` flip honours the floor by construction. */}
       <main
         className={`grid min-h-0 grid-cols-1 ${
-          isGraph
+          isFocusedWorkspace
             ? 'lg:grid-cols-[15rem_minmax(0,1fr)]'
             : 'lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]'
         }`}
@@ -234,12 +239,18 @@ export function AppShell() {
                   role="status"
                   className="grid h-full place-items-center text-sm text-text-muted"
                 >
-                  {surface === 'graph' ? t('graph.loading') : t('chat.loading')}
+                  {surface === 'graph'
+                    ? t('graph.loading')
+                    : surface === 'governance'
+                      ? t('governance.loading')
+                      : t('chat.loading')}
                 </div>
               }
             >
               {surface === 'graph' ? (
                 <GraphExplorer threadId={activeThreadId} />
+              ) : surface === 'governance' ? (
+                <GovernanceWorkspace />
               ) : (
                 <ExternalStoreChat
                   threadId={activeThreadId}
@@ -250,7 +261,7 @@ export function AppShell() {
               )}
             </Suspense>
           </div>
-          {surface !== 'graph' ? (
+          {!isFocusedWorkspace ? (
             <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
           ) : null}
         </section>
@@ -258,7 +269,7 @@ export function AppShell() {
         <aside
           aria-label={t('shell.displayWorkspace')}
           className={`hidden min-h-0 overflow-y-auto border-l border-border bg-surface ${
-            isGraph ? '' : 'lg:block'
+            isFocusedWorkspace ? '' : 'lg:block'
           }`}
         >
           {runtime}

@@ -1,4 +1,5 @@
 import { displayEn, displayIt } from './resources.display';
+import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 
 export const resources = {
@@ -61,6 +62,7 @@ export const resources = {
           chat: 'Chat',
           tree: 'Tree',
           graph: 'Graph',
+          governance: 'Governance',
           displays: 'Displays',
           settings: 'Settings',
         },
@@ -142,6 +144,7 @@ export const resources = {
         },
       },
       ...displayEn,
+      ...governanceEn,
       ...graphEn,
       conversations: {
         heading: 'Conversations',
@@ -336,6 +339,7 @@ export const resources = {
           chat: 'Chat',
           tree: 'Albero',
           graph: 'Grafo',
+          governance: 'Governance',
           displays: 'Display',
           settings: 'Impostazioni',
         },
@@ -417,6 +421,7 @@ export const resources = {
         },
       },
       ...displayIt,
+      ...governanceIt,
       ...graphIt,
       conversations: {
         heading: 'Conversazioni',
