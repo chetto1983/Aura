@@ -86,14 +86,16 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run       Runner
-	conv      ConversationStore
-	approvals ApprovalStore
-	assets    AssetService
-	images    ImageFetcher
-	graph     GraphView
-	idgen     IDGenerator
-	cfg       ServerConfig
+	run        Runner
+	conv       ConversationStore
+	approvals  ApprovalStore
+	assets     AssetService
+	images     ImageFetcher
+	graph      GraphView
+	governance GovernanceProviders
+	onboarding OnboardingService
+	idgen      IDGenerator
+	cfg        ServerConfig
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The

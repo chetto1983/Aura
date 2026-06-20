@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
-
-var mcpLookPath = exec.LookPath
 
 func mcpStatus(args []string, out io.Writer) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") { //nolint:gosec // G602 false positive: args[0] guarded by len(args)==1
@@ -66,7 +63,7 @@ func mcpDoctorAll(ctx context.Context, out io.Writer) error {
 		if status.Trust == mcp.TrustBlocked {
 			continue
 		}
-		if err := writeRuntimeCheck(out, status.Name, server); err != nil {
+		if err := writeRuntimeCheck(ctx, out, status.Name, server); err != nil {
 			return err
 		}
 		if err := writeRecipeChecks(ctx, out, status.Name, server); err != nil {
@@ -90,14 +87,22 @@ func mcpLogs(args []string, out io.Writer) error {
 	return writef(out, "%s logs: no captured log tail yet; run doctor for live diagnostics\n", args[0])
 }
 
-func writeRuntimeCheck(out io.Writer, name string, server mcp.ManagedServer) error {
+// writeRuntimeCheck renders one server's reachability line for `mcp doctor --all`
+// from the structured mcp.ProbeServer result (GOV-01: one probe, two renderers — the
+// CLI text here and the governance board JSON elsewhere). The message vocabulary is
+// unchanged: an HTTP/streamable server reports its configured endpoint without a dial;
+// a stdio server with no command reports the missing command; otherwise the probe
+// dials + tools/list under ctx and a success/failure maps to "runtime ok (cmd)" /
+// "runtime missing cmd". ctx bounds the dial so a hung server cannot stall the doctor.
+func writeRuntimeCheck(ctx context.Context, out io.Writer, name string, server mcp.ManagedServer) error {
 	if server.Type == mcp.ServerTypeStreamableHTTP || server.URL != "" {
 		return writef(out, "%s: http endpoint configured\n", name)
 	}
 	if strings.TrimSpace(server.Command) == "" {
 		return writef(out, "%s: runtime missing command\n", name)
 	}
-	if _, err := mcpLookPath(server.Command); err != nil {
+	res := mcp.ProbeServer(ctx, name, server)
+	if !res.OK {
 		return writef(out, "%s: runtime missing %s\n", name, server.Command)
 	}
 	return writef(out, "%s: runtime ok (%s)\n", name, server.Command)
