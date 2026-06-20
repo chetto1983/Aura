@@ -168,6 +168,11 @@ func (s *Server) Mux() http.Handler {
 	// tasks + run history). Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only) lives in cmd/aura/serve_webui.go.
 	s.registerGovernanceRoutes(mux)
+	// ONBD-01/02 onboarding wizard routes (Phase 28 plan 28-05): POST /api/onboarding/start
+	// + /{token}/step + /{token}/provision + GET /{token}/telegram-status. Colocated with
+	// their handlers; the parent-mux mount (RequireCapability(identity.create) on start +
+	// provision, RequireAuth on step + telegram-status) lives in cmd/aura/serve_webui.go.
+	s.registerOnboardingRoutes(mux)
 	return s.withCORS(mux)
 }
 

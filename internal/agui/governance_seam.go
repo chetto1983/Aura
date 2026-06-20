@@ -64,13 +64,34 @@ type CapabilitySource interface {
 }
 
 // OnboardingService is the server-held provisioning + interview surface the onboarding
-// wizard handlers (Plan 05) consume: start a session, apply one step intent to the
-// server-held session, run the cross-store provisioning saga, and poll the Telegram
-// link. The concrete service (session store + saga) is built in Plan 05; this plan only
-// declares the seam so the field + setter exist. The capability source is embedded so
-// the picker read goes through the same narrow interface.
+// wizard handlers (Plan 05) consume: start a session (returns the D-06 capability picker
+// options = the creator's grants minus '*'), apply one step intent to the server-held
+// session (exactly one LLM extraction per free-text answer — RESEARCH §Hard Problem 4),
+// run the ordered cross-store provisioning saga at the final confirm (RESEARCH §Hard
+// Problem 1 — orphan-free on abandonment because the saga ONLY runs here), and poll the
+// Telegram link over PendingConsumed (REST, not SSE — D-03). The concrete service (the
+// goroutine-free TTL session store + the saga) is built in onboarding_service.go and
+// wired at the composition root via SetOnboardingService; a Server with it unwired
+// answers the onboarding routes 503. The handlers depend only on these methods (D-A2-02
+// narrow seam), never the concrete service.
 type OnboardingService interface {
-	CapabilitySource
+	// StartSession mints a server-held onboarding session keyed by an opaque token for
+	// the creating operator and returns the first step + the capability picker options
+	// (the creator's grants with '*' excluded — ONBD-01a / D-06).
+	StartSession(ctx context.Context, creatorIdentityID string) (OnboardingStart, error)
+	// Step applies one onboarding intent (answer/confirm/edit/skip) to the server-held
+	// session: an answer carrying free text runs the LLM extractor EXACTLY once, then
+	// advances the session; replay/edit emit no second LLM turn (ONBD-02 / D-03).
+	Step(ctx context.Context, token string, in OnboardingStepRequest) (OnboardingStepResponse, error)
+	// Provision runs the ordered cross-store saga (Leg B Authula → Leg A aura tx → Leg C
+	// Telegram mint → one immutable audit row) with per-leg compensation + the three-way
+	// no-escalation re-validation, and returns the Telegram deep-link + server-rendered QR
+	// (ONBD-01a/01b). The password is write-only (hashed immediately, never echoed/logged).
+	Provision(ctx context.Context, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error)
+	// TelegramStatus reports whether the minted onboarding token has been consumed (the
+	// user scanned the deep-link and linked Telegram) via a REST poll over PendingConsumed
+	// (ONBD-01b / R6).
+	TelegramStatus(ctx context.Context, token string) (OnboardingTelegramStatus, error)
 }
 
 // SetGovernanceProviders wires the read-only governance board providers (GOV-01/02/03).

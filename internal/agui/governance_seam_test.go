@@ -37,9 +37,46 @@ func (fakeSchedulerBoard) ListRunsForTask(context.Context, string, int, int) ([]
 	return nil, nil
 }
 
-type fakeOnboarding struct{}
+// fakeOnboarding is the scriptable OnboardingService fake shared by the seam test and the
+// onboarding-handler tests (onboarding_api_test.go). It satisfies the full Plan-05
+// interface (StartSession/Step/Provision/TelegramStatus + the embedded CapabilitySource)
+// and records the routed token/intent so the thin handlers can be asserted.
+type fakeOnboarding struct {
+	start      OnboardingStart
+	startErr   error
+	stepResp   OnboardingStepResponse
+	stepErr    error
+	gotToken   string
+	gotIntent  string
+	provResp   OnboardingProvisionResponse
+	provErr    error
+	statusResp OnboardingTelegramStatus
+	statusErr  error
+}
 
-func (fakeOnboarding) ListCapabilities(context.Context, string) ([]string, error) { return nil, nil }
+func (f *fakeOnboarding) StartSession(context.Context, string) (OnboardingStart, error) {
+	return f.start, f.startErr
+}
+
+func (f *fakeOnboarding) Step(_ context.Context, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
+	f.gotToken = token
+	f.gotIntent = in.Intent
+	return f.stepResp, f.stepErr
+}
+
+func (f *fakeOnboarding) Provision(_ context.Context, token string, _ OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
+	f.gotToken = token
+	return f.provResp, f.provErr
+}
+
+func (f *fakeOnboarding) TelegramStatus(_ context.Context, token string) (OnboardingTelegramStatus, error) {
+	f.gotToken = token
+	return f.statusResp, f.statusErr
+}
+
+func (f *fakeOnboarding) ListCapabilities(context.Context, string) ([]string, error) {
+	return nil, nil
+}
 
 // TestSetGovernanceProvidersOffConstructor proves SetGovernanceProviders exists, that
 // NewServer leaves the providers unset (off the constructor, D-A2-02), and that the
@@ -69,29 +106,31 @@ func TestSetOnboardingServiceOffConstructor(t *testing.T) {
 	if s.onboarding != nil {
 		t.Fatalf("NewServer must leave onboarding service nil, got %v", s.onboarding)
 	}
-	s.SetOnboardingService(fakeOnboarding{})
+	s.SetOnboardingService(&fakeOnboarding{})
 	if s.onboarding == nil {
 		t.Fatal("SetOnboardingService did not wire the service")
 	}
 }
 
-// TestOnboardingSeamAddsNoRoutes proves the onboarding seam does NOT register any routes
-// on the mux yet (the onboarding routes land in Plan 05). A wired Server must still answer
-// the onboarding path 404 — the handler does not exist yet. The governance routes ARE now
-// registered by Plan 02 (registerGovernanceRoutes), so /api/governance/mcp is asserted
-// non-404 here to lock in that the Wave-0 seam is consumed.
-func TestOnboardingSeamAddsNoRoutes(t *testing.T) {
+// TestGovernanceAndOnboardingRoutesRegistered proves both the Plan-02 governance routes
+// and the Plan-05 onboarding routes are now registered on the mux (the Wave-0 seam test's
+// "no onboarding routes yet" assertion is superseded by Plan 05, which registers them via
+// registerOnboardingRoutes). A wired Server answers them (never 404); the onboarding
+// routes are POST, so a GET probe gets 405 (method-not-allowed) — proving the path IS
+// registered, not absent.
+func TestGovernanceAndOnboardingRoutesRegistered(t *testing.T) {
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	s.SetGovernanceProviders(GovernanceProviders{MCP: fakeMCPBoard{}})
-	s.SetOnboardingService(fakeOnboarding{})
+	s.SetOnboardingService(&fakeOnboarding{})
 
 	// The capability source interface is satisfied by identity.Store (compile-time check
 	// that the seam matches the Wave-0 backend artifact).
 	var _ CapabilitySource = (*identity.Store)(nil)
 
-	// Plan 05 has not registered the onboarding routes yet — still a clean 404.
-	if rec := doGraph(t, s, "GET", "/api/onboarding/start", nil); rec.Code != 404 {
-		t.Errorf("/api/onboarding/start: want 404 (no route registered until Plan 05), got %d", rec.Code)
+	// Plan 05 registered POST /api/onboarding/start — a GET probe gets 405, NOT 404, so
+	// the route now exists (the Wave-0 placeholder 404 is superseded).
+	if rec := doGraph(t, s, "GET", "/api/onboarding/start", nil); rec.Code == 404 {
+		t.Errorf("/api/onboarding/start: want a registered handler (Plan 05), got 404")
 	}
 	// Plan 02 DID register the governance routes — a wired MCP board answers, not 404.
 	if rec := doGraph(t, s, "GET", "/api/governance/mcp", nil); rec.Code == 404 {
