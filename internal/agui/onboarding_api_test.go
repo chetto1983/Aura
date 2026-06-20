@@ -74,8 +74,8 @@ func (w *recordingProfileWriter) WriteProfile(identity string, _ profile.Profile
 	return nil
 }
 
-func newInterviewService(ext answerExtractor, caps CapabilitySource, pw profileWriter) *onboardingService {
-	return newOnboardingService(onboardingDeps{
+func newInterviewService(ext AnswerExtractor, caps CapabilitySource, pw ProfileWriter) *onboardingService {
+	return newOnboardingService(OnboardingDeps{
 		Capabilities: caps,
 		Extractor:    ext,
 		Profiles:     pw,

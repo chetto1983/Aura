@@ -335,6 +335,17 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		chat.close()
 		return nil, fmt.Errorf("build auth deps: %w", err)
 	}
+	// Wire the Phase-28 onboarding wizard + provisioning saga (ONBD-01/02). Built
+	// best-effort over the daemon's existing seams (the identity Store for the capability
+	// picker + the aura-leg write, the Authula provider's CoreServices for Leg B, the
+	// Telegram Store for the Leg C mint + the status poll, the LLM extractor + profile
+	// store for the interview). The Authula provider is nil on the passphrase path, so
+	// provisioning is wired only when Authula is the auth provider; an interview-only
+	// service still answers start/step, and provision answers a sanitized backend-
+	// unavailable error. A missing piece leaves the routes degraded, MUST NOT abort boot
+	// (the SetGovernanceProviders best-effort precedent). The mounts (RequireCapability on
+	// start+provision, RequireAuth on step+telegram-status) live in serve_webui.go.
+	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, authulaProvider))
 	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider)
 	if err != nil {
 		_ = authulaProvider.Close()

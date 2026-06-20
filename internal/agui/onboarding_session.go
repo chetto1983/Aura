@@ -58,7 +58,11 @@ type sessionEntry struct {
 	creatorIdentityID string
 	capabilityOptions []string
 	linkTelegram      bool
-	expiresAt         time.Time
+	// onboardingToken is the Telegram mint token assigned by Provision (Leg C). The
+	// telegram-status poll reads it back from the same server-held entry to check
+	// PendingConsumed. Empty until provisioning mints it.
+	onboardingToken string
+	expiresAt       time.Time
 }
 
 // sessionStore is a goroutine-free, mutex-guarded onboarding-session store with a per-
@@ -132,6 +136,16 @@ func (st *sessionStore) get(token string) (*sessionEntry, bool) {
 	return e, true
 }
 
+// setOnboardingToken records the minted Telegram token on a live entry under the store
+// lock (so a concurrent get/poll is race-free). A missing entry is a no-op.
+func (st *sessionStore) setOnboardingToken(sessionToken, onboardingToken string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if e, ok := st.entries[sessionToken]; ok {
+		e.onboardingToken = onboardingToken
+	}
+}
+
 // sweepLocked drops every entry past its idle deadline. The caller holds st.mu. This is
 // the lazy GC that replaces a background reaper (goleak-clean); it runs on each put/get so
 // an abandoned wizard's entry is reclaimed on the next access of ANY session.
@@ -160,30 +174,38 @@ func (st *sessionStore) len() int {
 
 // Typed sentinels the handlers (onboarding_api.go) map onto HTTP status codes. They are
 // declared here, alongside the service that returns them, so the error contract is one
-// source of truth. errOnboardingSessionNotFound → 404 (missing/expired token);
-// errOnboardingEscalation → 400 (no-escalation rejection); errOnboardingDuplicate → 409
-// (duplicate identity/email); errOnboardingForbidden → 403 (missing-capability re-check).
+// source of truth. ErrOnboardingSessionNotFound → 404 (missing/expired token);
+// ErrOnboardingEscalation → 400 (no-escalation rejection); ErrOnboardingDuplicate → 409
+// (duplicate identity/email); ErrOnboardingForbidden → 403 (missing-capability re-check).
+// The duplicate + escalation sentinels are EXPORTED so the composition-root aura-leg
+// adapter (cmd/aura/serve_onboarding.go) can return them from the tx and the saga's
+// errors.Is matches; the others are package-internal.
 var (
 	errOnboardingSessionNotFound = errors.New("onboarding: session not found or expired")
-	errOnboardingEscalation      = errors.New("onboarding: capability escalation rejected")
-	errOnboardingDuplicate       = errors.New("onboarding: identity already exists")
-	errOnboardingForbidden       = errors.New("onboarding: missing required capability")
+	// ErrOnboardingEscalation is returned (and recognized via errors.Is) when a requested
+	// capability would escalate privilege ('*' or a cap the creator lacks).
+	ErrOnboardingEscalation = errors.New("onboarding: capability escalation rejected")
+	// ErrOnboardingDuplicate is returned when the new identity name/email already exists
+	// (the aura.identities NOT NULL UNIQUE name → 23505 → a clean 409, idempotent double-
+	// submit yields one identity).
+	ErrOnboardingDuplicate = errors.New("onboarding: identity already exists")
+	errOnboardingForbidden = errors.New("onboarding: missing required capability")
 )
 
-// answerExtractor is the consumer-side narrow port for the one-shot per-answer LLM
+// AnswerExtractor is the consumer-side narrow port for the one-shot per-answer LLM
 // extraction (ONBD-02). *onboarding.LLMAnswerExtractor satisfies it. It is called EXACTLY
 // once per inbound free-text answer; replay/edit never call it (the no-duplicate-LLM-turn
 // guarantee — RESEARCH §Hard Problem 4). Declared as an interface so tests inject a
-// call-counting fake.
-type answerExtractor interface {
+// call-counting fake and the composition root wires the real extractor.
+type AnswerExtractor interface {
 	Extract(ctx context.Context, step onboarding.Step, raw string) (onboarding.Answers, error)
 }
 
-// profileWriter is the consumer-side narrow port for persisting the confirmed Agent.md to
+// ProfileWriter is the consumer-side narrow port for persisting the confirmed Agent.md to
 // ~/.aura/agents/<id>/ (ONBD-02). *profile.Store satisfies it. The write happens at
 // provision time (when the new identity id exists), reading the session's accumulated
 // DraftAgentMD; a skipped interview writes nothing.
-type profileWriter interface {
+type ProfileWriter interface {
 	WriteProfile(identity string, p profile.Profile) error
 }
 
@@ -197,34 +219,42 @@ type profileWriter interface {
 type onboardingService struct {
 	sessions  *sessionStore
 	caps      CapabilitySource
-	extractor answerExtractor
-	profiles  profileWriter
+	extractor AnswerExtractor
+	profiles  ProfileWriter
 
 	// provisioning ports (onboarding_provision.go): the Authula core, the atomic aura-leg
 	// writer + its compensation, the Telegram mint/poll, and the deep-link bot username.
-	authula  authulaCore
-	auraLeg  auraLegWriter
-	telegram telegramMint
+	authula  AuthulaCore
+	auraLeg  AuraLegWriter
+	telegram TelegramMint
 	botName  string
 }
 
-// onboardingDeps bundles the narrow ports the composition root wires into the service.
-// Any provisioning port may be nil for an interview-only deployment, in which case
-// Provision answers a sanitized error; the interview side (StartSession/Step) needs only
-// caps + extractor + profiles.
-type onboardingDeps struct {
+// OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
+// into the service via NewOnboardingService. Any provisioning port may be nil for an
+// interview-only deployment, in which case Provision answers a sanitized error; the
+// interview side (StartSession/Step) needs only Capabilities + Extractor + Profiles.
+type OnboardingDeps struct {
 	TTL          time.Duration
 	Capabilities CapabilitySource
-	Extractor    answerExtractor
-	Profiles     profileWriter
-	Authula      authulaCore
-	AuraLeg      auraLegWriter
-	Telegram     telegramMint
+	Extractor    AnswerExtractor
+	Profiles     ProfileWriter
+	Authula      AuthulaCore
+	AuraLeg      AuraLegWriter
+	Telegram     TelegramMint
 	BotUsername  string
 }
 
-// newOnboardingService assembles the service over the supplied narrow ports.
-func newOnboardingService(d onboardingDeps) *onboardingService {
+// NewOnboardingService assembles the OnboardingService over the supplied narrow ports.
+// Exported so the daemon composition root can build it and wire it via
+// SetOnboardingService; the ports keep the agui package free of the telegram import (which
+// would cycle).
+func NewOnboardingService(d OnboardingDeps) OnboardingService {
+	return newOnboardingService(d)
+}
+
+// newOnboardingService assembles the concrete service over the supplied narrow ports.
+func newOnboardingService(d OnboardingDeps) *onboardingService {
 	return &onboardingService{
 		sessions:  newSessionStore(d.TTL),
 		caps:      d.Capabilities,
@@ -330,7 +360,7 @@ func (s *onboardingService) Step(ctx context.Context, token string, in Onboardin
 		// a plain sanitized error so the handler renders a 502-safe message; but a
 		// draft-required confirm is really a 400. Map both to the escalation 400 path.
 		if errors.Is(err, onboarding.ErrDraftRequired) || errors.Is(err, onboarding.ErrInvalidIntent) {
-			return OnboardingStepResponse{}, errOnboardingEscalation
+			return OnboardingStepResponse{}, ErrOnboardingEscalation
 		}
 		return OnboardingStepResponse{}, err
 	}

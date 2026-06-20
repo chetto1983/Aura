@@ -166,6 +166,29 @@ const (
 	governanceSchedRunsRoute   = "GET /api/governance/scheduler/{id}/runs"
 )
 
+// identityCreateCapability is the capability_grants name the onboarding CREATE mutations
+// (start + provision) are gated on (ONBD-01a / D-04, parity with agentRunCapability). The
+// seeded `local` identity holds the '*' wildcard so it passes; the name becomes load-
+// bearing for provisioned identities (which never get '*' nor identity.create unless the
+// creator explicitly grants it AND holds it). It mirrors the agui-side const of the same
+// value (onboarding_provision.go) so the gate name is one truth across the mount + the
+// service re-check.
+const identityCreateCapability = "identity.create"
+
+// onboarding* are the Phase-28 ONBD-01/02 onboarding wizard routes. start + provision are
+// the CREATE mutations — interposed with RequireCapability(identity.create) exactly like
+// POST /agent/run (the method+path-specific pattern wins Go 1.22 longest-pattern precedence
+// and fires AFTER RequireAuth binds the principal). step + telegram-status are non-create
+// (the session is authz'd at start) and inherit RequireAuth from the whole-mux wrap with NO
+// capability gate. All four are SPECIFIC method+path siblings under the "/api/" exclusion
+// carve-out — NEVER a bare "/api/" (which would shadow /api/integrations/, T-28-05).
+const (
+	onboardingStartRoute     = "POST /api/onboarding/start"
+	onboardingStepRoute      = "POST /api/onboarding/{sessionToken}/step"
+	onboardingProvisionRoute = "POST /api/onboarding/{sessionToken}/provision"
+	onboardingTgStatusRoute  = "GET /api/onboarding/{sessionToken}/telegram-status"
+)
+
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
 // Resuming or cancelling another thread's (possibly background) run is privileged
 // (Security V4 / T-25-07), so it is interposed with RequireCapability exactly like
@@ -293,6 +316,18 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSkillsAuditRoute, aguiHandler)
 	mux.Handle(governanceSchedulerRoute, aguiHandler)
 	mux.Handle(governanceSchedRunsRoute, aguiHandler)
+	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
+	// mutations: interposed with RequireCapability(identity.create) exactly like POST
+	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator
+	// without identity.create is 403 with no session/identity created). step +
+	// telegram-status are non-create — the session is authz'd at start — so they delegate
+	// straight to the AG-UI handler and inherit RequireAuth from the whole-mux wrap. All
+	// four are method+path-specific so they win longest-pattern precedence over the "/"
+	// embed catch-all; the "/api/" fallback exclusion already returns them as backend routes.
+	mux.Handle(onboardingStartRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
+	mux.Handle(onboardingProvisionRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
+	mux.Handle(onboardingStepRoute, aguiHandler)
+	mux.Handle(onboardingTgStatusRoute, aguiHandler)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the

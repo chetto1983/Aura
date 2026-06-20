@@ -276,9 +276,9 @@ func (s *Server) writeOnboardingError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errOnboardingSessionNotFound):
 		http.Error(w, "onboarding session not found", http.StatusNotFound)
-	case errors.Is(err, errOnboardingEscalation):
+	case errors.Is(err, ErrOnboardingEscalation):
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
-	case errors.Is(err, errOnboardingDuplicate):
+	case errors.Is(err, ErrOnboardingDuplicate):
 		http.Error(w, "identity already exists", http.StatusConflict)
 	case errors.Is(err, errOnboardingForbidden):
 		http.Error(w, "forbidden", http.StatusForbidden)
