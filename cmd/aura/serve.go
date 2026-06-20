@@ -310,6 +310,14 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		chat.mcpClosers = append(chat.mcpClosers, gclient.Close)
 		aguiServer.SetGraphView(knowledge.NewGraphView(gclient))
 	}
+	// Wire the Phase-28 read-only governance boards (GOV-01/02/03): the MCP registry +
+	// per-row live probe, the skills lifecycle + audit ledger, the scheduler tasks + run
+	// history. Built best-effort over the existing seams (the managed MCP config, the
+	// skills loader/stage-reader/audit store, the cron Store) — a provider that cannot be
+	// constructed is left nil so its board answers 503, MUST NOT abort boot (the
+	// SetGraphView best-effort precedent). The reads inherit RequireAuth from the parent
+	// mux; no capability gate (read-only).
+	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store))
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell

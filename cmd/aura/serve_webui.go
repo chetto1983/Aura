@@ -149,6 +149,23 @@ const (
 	graphQueryRoute  = "POST /api/graph/query"
 )
 
+// governance* are the Phase-28 GOV-01/02/03 read-only governance-board routes (the MCP
+// registry + per-row live probe, the skills lifecycle + audit ledger, the scheduler tasks
+// + run history). Like the graph routes they are SPECIFIC method+path siblings under the
+// "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the integrations
+// proxy, T-28-02-05). All six delegate to the AG-UI handler (the routes live on
+// Server.Mux) and inherit RequireAuth from the whole-mux wrap below with NO
+// RequireCapability — read-only reads (no write/PATCH/DELETE governance surface; the
+// onboarding create mutation lands in Plan 05 with its own capability gate).
+const (
+	governanceMCPListRoute     = "GET /api/governance/mcp"
+	governanceMCPProbeRoute    = "GET /api/governance/mcp/{name}/probe"
+	governanceSkillsRoute      = "GET /api/governance/skills"
+	governanceSkillsAuditRoute = "GET /api/governance/skills/audit"
+	governanceSchedulerRoute   = "GET /api/governance/scheduler"
+	governanceSchedRunsRoute   = "GET /api/governance/scheduler/{id}/runs"
+)
+
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
 // Resuming or cancelling another thread's (possibly background) run is privileged
 // (Security V4 / T-25-07), so it is interposed with RequireCapability exactly like
@@ -265,6 +282,17 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// catch-all; the "/api/" fallback exclusion already returns them as backend routes.
 	mux.Handle(graphSchemaRoute, aguiHandler)
 	mux.Handle(graphQueryRoute, aguiHandler)
+	// The Phase-28 GOV-01/02/03 governance-board reads delegate to the AG-UI handler
+	// (routes on Server.Mux). Read-only, so they inherit RequireAuth from the whole-mux
+	// wrap below with NO RequireCapability (contrast the mutating POST /agent/run + branch
+	// re-runs). Method+path-specific so they win longest-pattern precedence over the "/"
+	// embed catch-all; the "/api/" fallback exclusion already returns them as backend routes.
+	mux.Handle(governanceMCPListRoute, aguiHandler)
+	mux.Handle(governanceMCPProbeRoute, aguiHandler)
+	mux.Handle(governanceSkillsRoute, aguiHandler)
+	mux.Handle(governanceSkillsAuditRoute, aguiHandler)
+	mux.Handle(governanceSchedulerRoute, aguiHandler)
+	mux.Handle(governanceSchedRunsRoute, aguiHandler)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the
