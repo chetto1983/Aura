@@ -96,6 +96,54 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgent
 	return i, err
 }
 
+const listRunsForTask = `-- name: ListRunsForTask :many
+SELECT id, task_id, status, step_budget, started_at, last_heartbeat_at,
+    completed_with_hash, summary, last_error, missed_since, paused_state_token, completed_at
+FROM aura.agent_job_runs
+WHERE task_id = $1
+ORDER BY started_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListRunsForTaskParams struct {
+	TaskID pgtype.UUID `json:"task_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
+}
+
+func (q *Queries) ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error) {
+	rows, err := q.db.Query(ctx, listRunsForTask, arg.TaskID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraAgentJobRuns{}
+	for rows.Next() {
+		var i AuraAgentJobRuns
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Status,
+			&i.StepBudget,
+			&i.StartedAt,
+			&i.LastHeartbeatAt,
+			&i.CompletedWithHash,
+			&i.Summary,
+			&i.LastError,
+			&i.MissedSince,
+			&i.PausedStateToken,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markUnknownRecovery = `-- name: MarkUnknownRecovery :exec
 UPDATE aura.agent_job_runs
 SET status = 'unknown_recovery', missed_since = now()

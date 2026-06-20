@@ -157,6 +157,17 @@ type AuraIdentities struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Append-only identity-provisioning audit ledger (Phase 28, ONBD-01a). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 1/6). One immutable row per successful onboarding provision, written inside the provisioning db.WithTx.
+type AuraIdentityAudit struct {
+	ID                  pgtype.UUID        `json:"id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	ActorIdentityID     string             `json:"actor_identity_id"`
+	NewIdentityID       pgtype.UUID        `json:"new_identity_id"`
+	NewIdentityName     string             `json:"new_identity_name"`
+	GrantedCapabilities []string           `json:"granted_capabilities"`
+	AuthulaUserID       string             `json:"authula_user_id"`
+}
+
 // Maps an Authula user-id to a seeded aura.identities row (spec §5). Single-operator: the operator user pins to `local` (…0001). The A2 session-validate seam maps authula user-id -> this identity_id -> principalKey{}.
 type AuraIdentityAuthLinks struct {
 	IdentityID    pgtype.UUID        `json:"identity_id"`

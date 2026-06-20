@@ -10,6 +10,14 @@ SELECT id, task_id, status, step_budget, started_at, last_heartbeat_at,
 FROM aura.agent_job_runs
 WHERE id = $1;
 
+-- name: ListRunsForTask :many
+SELECT id, task_id, status, step_budget, started_at, last_heartbeat_at,
+    completed_with_hash, summary, last_error, missed_since, paused_state_token, completed_at
+FROM aura.agent_job_runs
+WHERE task_id = $1
+ORDER BY started_at DESC
+LIMIT $2 OFFSET $3;
+
 -- name: UpdateHeartbeat :exec
 UPDATE aura.agent_job_runs
 SET last_heartbeat_at = now()

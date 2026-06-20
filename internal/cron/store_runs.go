@@ -72,6 +72,39 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 	return runFromRow(row), nil
 }
 
+// defaultRunHistoryLimit bounds an unspecified ListRunsForTask page (GOV-03 board
+// pagination). A non-positive limit falls back to this; the handler may pass its own.
+const defaultRunHistoryLimit = 25
+
+// ListRunsForTask returns the run history for one task, newest-first (started_at
+// DESC), honoring limit/offset for the GOV-03 paginated board. A non-positive limit
+// falls back to defaultRunHistoryLimit; both limit and offset are clamped to a safe
+// int32 range so an out-of-range page never wraps negative (parity with DueTasks /
+// SweepDueNotifications, CodeQL go/incorrect-integer-conversion). It mutates nothing.
+func (s *Store) ListRunsForTask(ctx context.Context, taskID string, limit, offset int) ([]Run, error) {
+	tu, err := parseUUID(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("list runs for task: %w", err)
+	}
+	lim := int32(defaultRunHistoryLimit)
+	if limit > 0 && limit <= math.MaxInt32 {
+		lim = int32(limit)
+	}
+	var off int32
+	if offset > 0 && offset <= math.MaxInt32 {
+		off = int32(offset)
+	}
+	rows, err := s.q.ListRunsForTask(ctx, sqlc.ListRunsForTaskParams{TaskID: tu, Limit: lim, Offset: off})
+	if err != nil {
+		return nil, fmt.Errorf("list runs for task %q: %w", taskID, err)
+	}
+	out := make([]Run, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, runFromRow(r))
+	}
+	return out, nil
+}
+
 // DueTasks returns up to limit active tasks whose next_run_at has passed (the tick
 // loop's batch pickup). It does NOT row-lock: the query runs on the autocommit pool,
 // where a FOR UPDATE SKIP LOCKED would release the instant the SELECT returns (inert,

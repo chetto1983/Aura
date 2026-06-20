@@ -137,6 +137,26 @@ func (s *Store) HasCapability(ctx context.Context, identityID, capability string
 	return ok, nil
 }
 
+// ListCapabilities returns the identity's granted capability names, ordered by
+// name. The '*' wildcard is returned verbatim when present — filtering it out (for
+// the D-06 capability picker) is the handler's job, not the store's. An identity
+// with no grants yields an empty slice; an invalid UUID is a wrapped error.
+func (s *Store) ListCapabilities(ctx context.Context, identityID string) ([]string, error) {
+	id, err := parseUUID(identityID)
+	if err != nil {
+		return nil, fmt.Errorf("list capabilities: %w", err)
+	}
+	rows, err := s.q.ListCapabilities(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("list capabilities for %s: %w", identityID, err)
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.Capability)
+	}
+	return out, nil
+}
+
 // GrantCapability grants an ordinary capability to an identity, idempotently:
 // the underlying INSERT uses ON CONFLICT DO NOTHING, and a 23505 unique_violation
 // (belt-and-suspenders) is swallowed so a repeat grant is a no-op, never an
