@@ -12,7 +12,7 @@ export function ModeTabBar({
   return (
     <nav
       aria-label={t('shell.mobileModes')}
-      className="grid grid-cols-3 border-t border-border bg-surface md:hidden"
+      className="shell-mode-tabbar flex min-w-0 overflow-x-auto overscroll-x-contain border-t border-border bg-surface md:hidden"
     >
       {LIVE_MODES.map((mode) => {
         return (
@@ -23,7 +23,7 @@ export function ModeTabBar({
             onClick={() => {
               onSelect(mode);
             }}
-            className="min-h-11 px-1 text-[0.75rem] font-medium text-text-muted outline-none aria-[current=page]:bg-surface-3 aria-[current=page]:text-accent-text focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent"
+            className="min-h-11 min-w-[6.5rem] flex-1 shrink-0 px-1 text-[0.75rem] font-medium text-text-muted outline-none aria-[current=page]:bg-surface-3 aria-[current=page]:text-accent-text focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent"
           >
             {t(`shell.modes.${mode}`)}
           </button>

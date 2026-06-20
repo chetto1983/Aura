@@ -188,6 +188,19 @@ describe('shell utilities', () => {
     expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
     expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
     expect(treeButton.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByRole('navigation', { name: 'Primary' }).className).toContain(
+      'overflow-x-auto',
+    );
+    expect(screen.getByRole('navigation', { name: 'Primary' }).className).toContain(
+      'shell-mode-switcher',
+    );
+    expect(screen.getByRole('navigation', { name: 'Modes' }).className).toContain(
+      'overflow-x-auto',
+    );
+    expect(screen.getByRole('navigation', { name: 'Modes' }).className).toContain(
+      'shell-mode-tabbar',
+    );
+    expect(primary.getByRole('button', { name: 'Governance' }).className).toContain('shrink-0');
     expect(mobile.queryByRole('button', { name: 'Tree' })).toBeNull();
     expect(mobile.queryByRole('button', { name: 'Displays' })).toBeNull();
     expect(mobile.queryByRole('button', { name: 'Settings' })).toBeNull();

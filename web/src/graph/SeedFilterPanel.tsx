@@ -43,7 +43,7 @@ function ToggleChip({
           : 'border-border bg-surface-2 text-text hover:border-border-strong'
       }`}
     >
-      {label}
+      <span className="block min-w-0 overflow-wrap-anywhere">{label}</span>
     </button>
   );
 }
@@ -72,7 +72,9 @@ export function SeedFilterPanel({
         disabled={!canSeed}
         className="min-h-[44px] rounded-md bg-accent px-3 py-2 text-[14px] font-semibold leading-tight text-on-accent transition-opacity disabled:opacity-40"
       >
-        {t('graph.cta.seedConversation')}
+        <span className="block min-w-0 overflow-wrap-anywhere">
+          {t('graph.cta.seedConversation')}
+        </span>
       </button>
 
       {labels.length > 0 ? (

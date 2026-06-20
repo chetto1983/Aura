@@ -79,6 +79,7 @@ describe('AppShell §3.1c intent-aware restore + §1.1b chat-lane floor', () => 
     if (!main) throw new Error('expected a <main> region');
     // The 3-col grid is gated on the content-derived window-floor breakpoint, not a
     // guessed prefix. The chat lane carries an explicit ≥380px floor in the grid track.
+    expect(main.className).toContain('shell-main');
     expect(main.className).toContain('lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]');
   });
 });

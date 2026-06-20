@@ -260,124 +260,130 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   // inspector is a sheet that appears on selection. On lg it flips to seed | canvas | inspector
   // with the evidence strip under the canvas.
   return (
-    <div
-      data-testid="graph-workspace"
-      className={`relative flex h-full min-h-0 flex-col lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
-        inspectorOpen
-          ? 'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]'
-          : 'lg:grid-cols-[18rem_minmax(0,1fr)]'
-      }`}
-    >
-      {/* MOBILE control bar — keeps the canvas dominant; Seed + Filters live here, not in an
-          always-on top strip. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 lg:hidden">
-        <button
-          type="button"
-          onClick={onSeed}
-          disabled={threadId.length === 0}
-          className="min-h-[40px] flex-1 rounded-md bg-accent px-3 py-1.5 text-[14px] font-semibold text-on-accent transition-opacity disabled:opacity-40"
-        >
-          {t('graph.cta.seedConversation')}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFiltersOpen(true);
-          }}
-          className="flex min-h-[40px] items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-[14px] font-semibold text-text transition-colors hover:border-border-strong"
-        >
-          {t('graph.filter.labels')}
-          {activeFilterCount > 0 ? (
-            <span className="rounded-full bg-accent px-1.5 text-[12px] font-bold text-on-accent">
-              {activeFilterCount}
-            </span>
-          ) : null}
-        </button>
-      </div>
-
-      {/* SEED / FILTER — desktop left column; mobile bottom sheet (filtersOpen). ONE instance. */}
-      <aside
-        aria-label={t('graph.filter.labels')}
-        className={`min-h-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex lg:flex-col lg:border-r lg:border-border ${
-          filtersOpen
-            ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[80svh] flex-col rounded-t-2xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
-            : 'hidden lg:flex'
+    <div className="graph-workspace-container h-full min-h-0">
+      <div
+        data-testid="graph-workspace"
+        className={`graph-workspace relative flex h-full min-h-0 flex-col lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
+          inspectorOpen
+            ? 'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]'
+            : 'lg:grid-cols-[18rem_minmax(0,1fr)]'
         }`}
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3 lg:hidden">
-          <h2 className="font-display text-[17px] font-semibold text-text">
-            {t('graph.filter.labels')}
-          </h2>
+        {/* MOBILE control bar — keeps the canvas dominant; Seed + Filters live here, not in an
+          always-on top strip. */}
+        <div className="graph-workspace__mobile-bar flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 lg:hidden">
+          <button
+            type="button"
+            onClick={onSeed}
+            disabled={threadId.length === 0}
+            className="min-h-[40px] min-w-0 flex-1 rounded-md bg-accent px-3 py-1.5 text-[14px] font-semibold text-on-accent transition-opacity disabled:opacity-40"
+          >
+            <span className="block min-w-0 overflow-wrap-anywhere">
+              {t('graph.cta.seedConversation')}
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => {
-              setFiltersOpen(false);
+              setFiltersOpen(true);
             }}
-            aria-label={t('display.closeAria')}
-            className="min-h-[40px] min-w-[40px] rounded-md text-text-muted hover:text-text"
+            className="flex min-h-[40px] items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-[14px] font-semibold text-text transition-colors hover:border-border-strong"
           >
-            ✕
+            {t('graph.filter.labels')}
+            {activeFilterCount > 0 ? (
+              <span className="rounded-full bg-accent px-1.5 text-[12px] font-bold text-on-accent">
+                {activeFilterCount}
+              </span>
+            ) : null}
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{seedPanel}</div>
-      </aside>
 
-      {/* CANVAS — the dominant element. Mobile: flex-1 with a real min-height. Desktop: center cell. */}
-      <section
-        aria-label={t('graph.title')}
-        className="relative min-h-[46svh] flex-1 bg-bg lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:flex-none"
-      >
-        {canvasPane}
-      </section>
+        {/* SEED / FILTER — desktop left column; mobile bottom sheet (filtersOpen). ONE instance. */}
+        <aside
+          aria-label={t('graph.filter.labels')}
+          data-open={filtersOpen ? 'true' : 'false'}
+          className={`graph-workspace__filters min-h-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex lg:flex-col lg:border-r lg:border-border ${
+            filtersOpen
+              ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[80svh] flex-col rounded-t-2xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
+              : 'hidden lg:flex'
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-border px-4 py-3 lg:hidden">
+            <h2 className="font-display text-[17px] font-semibold text-text">
+              {t('graph.filter.labels')}
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                setFiltersOpen(false);
+              }}
+              aria-label={t('display.closeAria')}
+              className="min-h-[40px] min-w-[40px] rounded-md text-text-muted hover:text-text"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">{seedPanel}</div>
+        </aside>
 
-      {/* INSPECTOR — desktop right column only when selected; mobile bottom sheet on selection.
+        {/* CANVAS — the dominant element. Mobile: flex-1 with a real min-height. Desktop: center cell. */}
+        <section
+          aria-label={t('graph.title')}
+          className="graph-workspace__canvas relative min-h-[46svh] flex-1 bg-bg lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:flex-none"
+        >
+          {canvasPane}
+        </section>
+
+        {/* INSPECTOR — desktop right column only when selected; mobile bottom sheet on selection.
           ONE instance (no duplicate DOM / strict-mode collision). */}
-      <aside
-        aria-label={t('graph.inspector.emptyHeading')}
-        className={`min-h-0 lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:static lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
-          inspectorOpen
-            ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:border-t-0 lg:shadow-none'
-            : 'hidden'
-        }`}
-      >
-        <NodeInspector
-          node={selected}
-          query={view.result?.query ?? ''}
-          onPinPath={pinPath}
-          onClose={closeInspector}
-        />
-      </aside>
+        <aside
+          aria-label={t('graph.inspector.emptyHeading')}
+          data-open={inspectorOpen ? 'true' : 'false'}
+          className={`graph-workspace__inspector min-h-0 lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:static lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
+            inspectorOpen
+              ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:border-t-0 lg:shadow-none'
+              : 'hidden'
+          }`}
+        >
+          <NodeInspector
+            node={selected}
+            query={view.result?.query ?? ''}
+            onPinPath={pinPath}
+            onClose={closeInspector}
+          />
+        </aside>
 
-      {/* EVIDENCE — path strip + a11y parallel DOM. Mobile: a capped scroll region below the
+        {/* EVIDENCE — path strip + a11y parallel DOM. Mobile: a capped scroll region below the
           canvas (canvas stays dominant). Desktop: the strip under the canvas (col 2). */}
-      <div className="max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-[32vh] lg:shrink lg:overflow-y-auto">
-        <PathStrip
-          nodes={view.result?.nodes ?? []}
-          edges={view.result?.edges ?? []}
-          pinnedPath={pinnedPath}
-          onSelectNode={selectNode}
-        />
-      </div>
+        <div className="graph-workspace__evidence max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-[32vh] lg:shrink lg:overflow-y-auto">
+          <PathStrip
+            nodes={view.result?.nodes ?? []}
+            edges={view.result?.edges ?? []}
+            pinnedPath={pinnedPath}
+            onSelectNode={selectNode}
+          />
+        </div>
 
-      {/* Mobile sheet backdrops (lg:hidden). Tap to dismiss. */}
-      {filtersOpen ? (
-        <button
-          type="button"
-          aria-label={t('display.closeAria')}
-          onClick={() => {
-            setFiltersOpen(false);
-          }}
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-        />
-      ) : null}
-      {selected !== undefined ? (
-        <button
-          type="button"
-          aria-label={t('display.closeAria')}
-          onClick={closeInspector}
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-        />
-      ) : null}
+        {/* Mobile sheet backdrops (lg:hidden). Tap to dismiss. */}
+        {filtersOpen ? (
+          <button
+            type="button"
+            aria-label={t('display.closeAria')}
+            onClick={() => {
+              setFiltersOpen(false);
+            }}
+            className="graph-workspace__backdrop fixed inset-0 z-30 bg-black/50 lg:hidden"
+          />
+        ) : null}
+        {selected !== undefined ? (
+          <button
+            type="button"
+            aria-label={t('display.closeAria')}
+            onClick={closeInspector}
+            className="graph-workspace__backdrop fixed inset-0 z-30 bg-black/50 lg:hidden"
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

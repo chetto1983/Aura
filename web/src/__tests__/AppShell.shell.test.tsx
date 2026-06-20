@@ -51,8 +51,11 @@ describe('AppShell', () => {
   });
 
   it('renders the Aura brand mark', () => {
-    renderShell();
+    const { container } = renderShell();
     expect(screen.getByRole('img', { name: /aura/i })).toBeTruthy();
+    expect(container.firstElementChild?.className).toContain('aura-shell');
+    expect(container.querySelector('.shell-header')).toBeTruthy();
+    expect(container.querySelector('.shell-main')).toBeTruthy();
   });
 
   it('switches the cockpit shell to Italian', () => {

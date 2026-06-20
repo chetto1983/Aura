@@ -206,7 +206,7 @@ export function AppShell() {
 
   return (
     <div
-      className="grid h-[100svh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
+      className="aura-shell grid h-[100svh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
       {...edgeSwipe}
     >
       <ShellHeader
@@ -236,7 +236,7 @@ export function AppShell() {
           so it is correctly deferred to `lg`. Window-floor = rails (34rem) + --chat-lane-min
           (380px) ≈ 924px < 1024px, so the `lg` flip honours the floor by construction. */}
       <main
-        className={`grid min-h-0 grid-cols-1 ${
+        className={`shell-main grid min-h-0 grid-cols-1 ${
           isFocusedWorkspace
             ? 'lg:grid-cols-[15rem_minmax(0,1fr)]'
             : 'lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]'
@@ -244,7 +244,7 @@ export function AppShell() {
       >
         <aside
           aria-label={t('shell.navigation')}
-          className="hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
+          className="shell-side-nav hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
         >
           {navigation}
         </aside>
@@ -289,7 +289,7 @@ export function AppShell() {
 
         <aside
           aria-label={t('shell.displayWorkspace')}
-          className={`hidden min-h-0 overflow-y-auto border-l border-border bg-surface ${
+          className={`shell-runtime-rail hidden min-h-0 overflow-y-auto border-l border-border bg-surface ${
             isFocusedWorkspace ? '' : 'lg:block'
           }`}
         >

@@ -32,12 +32,12 @@ export function ShellHeader({
   const logoutLabel = t('shell.logout');
 
   return (
-    <header className="grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-surface px-2 py-2 sm:px-3">
+    <header className="shell-header grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-surface px-2 py-2 sm:px-3">
       <button
         type="button"
         onClick={onNavigationOpen}
         aria-label={t('shell.openNavigation')}
-        className="flex min-h-10 min-w-10 items-center justify-center rounded-[var(--radius-md)] text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:hidden"
+        className="shell-nav-trigger flex min-h-10 min-w-10 items-center justify-center rounded-[var(--radius-md)] text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:hidden"
       >
         <span aria-hidden="true" className="font-mono text-base">
           =
@@ -69,8 +69,8 @@ export function ShellHeader({
             </div>
           ) : null}
         </div>
-        <ThemeSwitcher className="hidden sm:flex" />
-        <LanguageSwitcher className="hidden sm:flex" />
+        <ThemeSwitcher className="shell-header__wide-only hidden sm:flex" />
+        <LanguageSwitcher className="shell-header__wide-only hidden sm:flex" />
         <button
           type="button"
           aria-label={logoutLabel}

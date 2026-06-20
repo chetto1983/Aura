@@ -1,0 +1,112 @@
+.aura-shell {
+  container: aura-shell / inline-size;
+}
+
+.graph-workspace-container {
+  container: aura-graph / inline-size;
+}
+
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+}
+
+@container aura-shell (max-width: 44rem) {
+  .shell-header {
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+  }
+
+  .shell-nav-trigger {
+    display: flex !important;
+  }
+
+  .shell-mode-switcher,
+  .shell-side-nav,
+  .shell-runtime-rail,
+  .shell-header__wide-only {
+    display: none !important;
+  }
+
+  .shell-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .shell-mode-tabbar {
+    display: flex !important;
+  }
+}
+
+@container aura-graph (max-width: 44rem) {
+  .graph-workspace {
+    display: flex !important;
+    flex-direction: column;
+    grid-template-columns: none !important;
+    grid-template-rows: none !important;
+  }
+
+  .graph-workspace__mobile-bar {
+    display: flex !important;
+  }
+
+  .graph-workspace__filters {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+
+  .graph-workspace__filters[data-open='false'] {
+    display: none !important;
+  }
+
+  .graph-workspace__filters[data-open='true'] {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    z-index: 40 !important;
+    display: flex !important;
+    max-height: 80svh !important;
+    flex-direction: column;
+    border-top: 1px solid var(--color-border) !important;
+    border-right: 0 !important;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+    background: var(--color-surface) !important;
+    box-shadow: var(--shadow-drawer) !important;
+  }
+
+  .graph-workspace__canvas {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    min-height: 46svh !important;
+    flex: 1 1 0% !important;
+  }
+
+  .graph-workspace__inspector {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+
+  .graph-workspace__inspector[data-open='false'] {
+    display: none !important;
+  }
+
+  .graph-workspace__inspector[data-open='true'] {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    z-index: 40 !important;
+    display: block !important;
+    max-height: 78svh !important;
+    overflow-y: auto;
+    border-top: 1px solid var(--color-border) !important;
+    border-left: 0 !important;
+    background: var(--color-surface) !important;
+    box-shadow: var(--shadow-drawer) !important;
+  }
+
+  .graph-workspace__evidence {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    max-height: 40svh !important;
+    flex-shrink: 0 !important;
+  }
+
+  .graph-workspace__backdrop {
+    display: block !important;
+  }
+}

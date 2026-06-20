@@ -34,10 +34,9 @@ describe('SeedFilterPanel', () => {
 
   it('disables the seed CTA when canSeed is false', () => {
     renderPanel({ canSeed: false });
-    expect(screen.getByRole('button', { name: 'Explore this conversation' })).toHaveProperty(
-      'disabled',
-      true,
-    );
+    const seed = screen.getByRole('button', { name: 'Explore this conversation' });
+    expect(seed).toHaveProperty('disabled', true);
+    expect(seed.firstElementChild?.className).toContain('overflow-wrap-anywhere');
   });
 
   it('renders the live-schema label + rel-type toggles and raises the toggle callbacks', () => {

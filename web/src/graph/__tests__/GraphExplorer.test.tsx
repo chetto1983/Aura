@@ -91,6 +91,10 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:2:1');
     });
+    expect(screen.getByTestId('graph-workspace').className).toContain('graph-workspace');
+    expect(screen.getByTestId('graph-workspace').parentElement?.className).toContain(
+      'graph-workspace-container',
+    );
     expect(screen.getByTestId('graph-workspace').className).toContain(
       'lg:grid-cols-[18rem_minmax(0,1fr)]',
     );
@@ -164,11 +168,13 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     });
     // Filter toggle (the dispatch path).
     fireEvent.click(screen.getByRole('button', { name: 'Entity' }));
+    expect(screen.getByLabelText('Node types').getAttribute('data-open')).toBe('false');
     // Select a node via the path-strip node list (the non-hover access path) → inspector opens.
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
     expect(screen.getByTestId('graph-workspace').className).toContain(
       'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]',
     );
+    expect(screen.getByLabelText('Select a node').getAttribute('data-open')).toBe('true');
     expect(screen.getByText('Connections')).toBeTruthy(); // inspector degree label
   });
 
