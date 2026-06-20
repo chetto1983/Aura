@@ -1,6 +1,7 @@
 import { displayEn, displayIt } from './resources.display';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
+import { onboardingEn, onboardingIt } from './resources.onboarding';
 
 export const resources = {
   en: {
@@ -146,6 +147,7 @@ export const resources = {
       ...displayEn,
       ...governanceEn,
       ...graphEn,
+      ...onboardingEn,
       conversations: {
         heading: 'Conversations',
         loading: 'Loading conversations...',
@@ -423,6 +425,7 @@ export const resources = {
       ...displayIt,
       ...governanceIt,
       ...graphIt,
+      ...onboardingIt,
       conversations: {
         heading: 'Conversazioni',
         loading: 'Caricamento conversazioni...',

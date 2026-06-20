@@ -28,6 +28,11 @@ const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 // (D-01) — it loads only when surface==='governance'.
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
 
+// The Phase-28 onboarding+provisioning wizard is a SEPARATE full-screen overlay (D-04 — NOT a
+// MODES entry / surface tab). Its own lazy chunk: it loads only when the operator opens the
+// "Create identity" overlay, never landing in the main bundle.
+const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
+
 interface LogoutTarget {
   path: string;
   headers?: Record<string, string>;
@@ -101,6 +106,9 @@ export function AppShell() {
   const surfaces = useSurfaceRestore();
   const [resumeNonce, setResumeNonce] = useState(0);
   const [logoutPending, setLogoutPending] = useState(false);
+  // The onboarding+provisioning wizard is a full-screen overlay (D-04), opened by an explicit
+  // trigger and covering the shell while active — NOT a surface/mode.
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   if ((routeId ?? '') !== lastRouteId) {
     setLastRouteId(routeId ?? '');
@@ -175,6 +183,19 @@ export function AppShell() {
           selectThread(id);
         }}
       />
+      <button
+        type="button"
+        onClick={() => {
+          setOnboardingOpen(true);
+          surfaces.closeNav();
+        }}
+        className="flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span aria-hidden="true" className="text-accent-text">
+          +
+        </span>
+        {t('onboarding.open')}
+      </button>
       <div className="min-h-0 flex-1 overflow-hidden">
         <ConversationSidebar activeId={activeThreadId} onSelect={selectThread} />
       </div>
@@ -300,6 +321,28 @@ export function AppShell() {
       >
         {runtime}
       </Drawer>
+
+      {/* Full-screen onboarding wizard overlay (D-04) — a lazy chunk covering the shell when
+          active. It is NOT a surface/mode; an explicit trigger opens it and its own close button
+          (or completion) dismisses it. */}
+      {onboardingOpen ? (
+        <Suspense
+          fallback={
+            <div
+              role="status"
+              className="fixed inset-0 z-50 grid place-items-center bg-bg text-sm text-text-muted"
+            >
+              {t('onboarding.starting')}
+            </div>
+          }
+        >
+          <OnboardingWizard
+            onClose={() => {
+              setOnboardingOpen(false);
+            }}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }
