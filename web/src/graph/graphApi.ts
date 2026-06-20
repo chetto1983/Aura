@@ -1,3 +1,4 @@
+import { getJSON, postJSON } from '../api/json';
 import type { GraphIntent, GraphResult, GraphSchema } from './types';
 
 // graphApi.ts is the GRAPH-01 data layer over the plan-02 thin REST adapter
@@ -14,30 +15,6 @@ import type { GraphIntent, GraphResult, GraphSchema } from './types';
 
 export const GRAPH_SCHEMA_PATH = '/api/graph/schema';
 export const GRAPH_QUERY_PATH = '/api/graph/query';
-
-async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as T;
-}
-
-async function postJSON<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as T;
-}
 
 /** GET /api/graph/schema — the live label/rel-type/property-key overview (D-06) that
  * feeds the filters + color legend. Rejects on a non-200 (incl. 401) so the consumer

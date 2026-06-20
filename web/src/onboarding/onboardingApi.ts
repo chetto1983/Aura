@@ -1,3 +1,5 @@
+import { getJSON, postJSON } from '../api/json';
+
 // onboardingApi.ts is the Phase-28 data layer over the Plan-05 onboarding REST routes. It
 // mirrors graphApi.ts / governanceApi.ts EXACTLY: ALWAYS credentials: 'same-origin' (the SPA is
 // served by the same binary that exposes the routes, behind the Phase-24 RequireAuth whole-origin
@@ -79,30 +81,6 @@ export interface OnboardingProvisionResponse {
 /** GET /{token}/telegram-status response: whether the minted token was consumed (user scanned). */
 export interface OnboardingTelegramStatus {
   readonly linked: boolean;
-}
-
-async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as T;
-}
-
-async function postJSON<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as T;
 }
 
 function stepPath(token: string): string {
