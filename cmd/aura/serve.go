@@ -74,10 +74,12 @@ type serveEnv struct {
 	// ScanOrphans on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. runServe Start/Stops it.
 	sweeper *conversations.Sweeper
 
-	// authulaProvider is the embedded Authula web-auth framework, non-nil only when
-	// AURA_WEB_AUTH_PROVIDER=authula (Option A2). close() releases its plugins + core
-	// systems (the expiry-cleanup workers) so shutdown is goleak-clean; nil otherwise.
-	authulaProvider *webauth.Provider
+	// authulaProvider is the active embedded Authula web-auth framework, non-nil only
+	// when AURA_WEB_AUTH_PROVIDER=authula (Option A2). onboardingAuthulaProvider is a
+	// provisioning-only Authula core used by the onboarding saga when the cockpit still
+	// logs in via passphrase but Authula DB+secret are configured.
+	authulaProvider           *webauth.Provider
+	onboardingAuthulaProvider *webauth.Provider
 }
 
 // close reverse-releases the daemon-owned resources the embedded chatEnv does not:
@@ -85,12 +87,21 @@ type serveEnv struct {
 // (pool + MCP closers). It is the single teardown the deferred env.close() in runServe
 // drives.
 func (e *serveEnv) close() {
-	if e.authulaProvider != nil {
-		if err := e.authulaProvider.Close(); err != nil {
+	closeAuthulaProviders(e.authulaProvider, e.onboardingAuthulaProvider)
+	e.chatEnv.close()
+}
+
+func closeAuthulaProviders(active, onboarding *webauth.Provider) {
+	if onboarding != nil && onboarding != active {
+		if err := onboarding.Close(); err != nil {
+			slog.Warn("aura serve: onboarding authula provider close", "err", err)
+		}
+	}
+	if active != nil {
+		if err := active.Close(); err != nil {
 			slog.Warn("aura serve: authula provider close", "err", err)
 		}
 	}
-	e.chatEnv.close()
 }
 
 // runServe is the `aura serve` entry point: boot, start the tick loop, block on a
@@ -335,20 +346,28 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		chat.close()
 		return nil, fmt.Errorf("build auth deps: %w", err)
 	}
+	onboardingAuthulaProvider := authulaProvider
+	if onboardingAuthulaProvider == nil && authulaProvisioningConfigured(chat.cfg) {
+		var authulaErr error
+		onboardingAuthulaProvider, _, authulaErr = buildAuthulaProvider(ctx, chat, auth.LocalIdentityID)
+		if authulaErr != nil {
+			slog.Warn("aura serve: onboarding provisioning authula unavailable", "err", authulaErr)
+		}
+	}
 	// Wire the Phase-28 onboarding wizard + provisioning saga (ONBD-01/02). Built
 	// best-effort over the daemon's existing seams (the identity Store for the capability
 	// picker + the aura-leg write, the Authula provider's CoreServices for Leg B, the
 	// Telegram Store for the Leg C mint + the status poll, the LLM extractor + profile
-	// store for the interview). The Authula provider is nil on the passphrase path, so
-	// provisioning is wired only when Authula is the auth provider; an interview-only
-	// service still answers start/step, and provision answers a sanitized backend-
-	// unavailable error. A missing piece leaves the routes degraded, MUST NOT abort boot
-	// (the SetGovernanceProviders best-effort precedent). The mounts (RequireCapability on
-	// start+provision, RequireAuth on step+telegram-status) live in serve_webui.go.
-	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, authulaProvider))
+	// store for the interview). When passphrase login is active but Authula DB+secret are
+	// configured, a provisioning-only Authula provider supplies Leg B without mounting
+	// /auth or changing the active login provider. A missing piece leaves the routes
+	// degraded, MUST NOT abort boot (the SetGovernanceProviders best-effort precedent).
+	// The mounts (RequireCapability on start+provision, RequireAuth on step+telegram-
+	// status) live in serve_webui.go.
+	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
 	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider)
 	if err != nil {
-		_ = authulaProvider.Close()
+		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
 		chat.close()
 		return nil, fmt.Errorf("build serve handler: %w", err)
 	}
@@ -356,6 +375,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// credential. The returned error flows to runServe, which prints "aura serve: <err>"
 	// and exits exitInfra (no second exit path). Loopback boots unchanged.
 	if err := config.GuardWebBind(chat.cfg.AGUIBind, chat.cfg.WebAuthSecret, chat.cfg.WebTrustProxy); err != nil {
+		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
 		chat.close()
 		return nil, err
 	}
@@ -378,14 +398,15 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
 	// cron.ChannelDeliverer; runServe StartAll/StopAll them (Phase 13, UX-02/03).
 	return &serveEnv{
-		chatEnv:         chat,
-		store:           store,
-		scheduler:       scheduler,
-		httpSrv:         httpSrv,
-		channels:        reg,
-		setupSrv:        setupSrv,
-		sweeper:         sweeper,
-		authulaProvider: authulaProvider,
+		chatEnv:                   chat,
+		store:                     store,
+		scheduler:                 scheduler,
+		httpSrv:                   httpSrv,
+		channels:                  reg,
+		setupSrv:                  setupSrv,
+		sweeper:                   sweeper,
+		authulaProvider:           authulaProvider,
+		onboardingAuthulaProvider: onboardingAuthulaProvider,
 	}, nil
 }
 

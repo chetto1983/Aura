@@ -27,4 +27,7 @@ func TestGovernanceMCPBoardIncludesApplianceSidecars(t *testing.T) {
 			t.Fatalf("%s source = %q, want recipe:%s", name, server.Source, name)
 		}
 	}
+	if _, ok := doc.MCPServers["calculator"]; ok {
+		t.Fatalf("calculator is install-on-demand and must not be injected as an appliance sidecar: %#v", doc.MCPServers["calculator"])
+	}
 }

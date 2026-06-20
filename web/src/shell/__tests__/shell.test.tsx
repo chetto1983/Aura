@@ -162,7 +162,7 @@ describe('shell utilities', () => {
     expect(localStorage.getItem('aura.shell.surface')).toBe('graph');
   });
 
-  it('mode controls expose future modes as disabled buttons but the live graph mode selects', () => {
+  it('desktop mode control exposes future modes disabled, while the mobile dock shows live modes only', () => {
     const selected: SurfaceIntent[] = [];
     render(
       <>
@@ -181,22 +181,18 @@ describe('shell utilities', () => {
       </>,
     );
 
-    const treeButtons = screen.getAllByRole('button', { name: 'Tree' });
-    const graphButtons = screen.getAllByRole('button', { name: 'Graph' });
-    const treeButton = treeButtons[0];
-    const graphButton = graphButtons[0];
-    if (!treeButton || !graphButton) throw new Error('Expected desktop and mobile mode controls');
-    for (const button of screen.getAllByRole('button', { name: 'Chat' })) {
-      expect(button.getAttribute('aria-current')).toBe('page');
-    }
-    // 'tree' is still a future mode → disabled and not selectable.
-    for (const button of treeButtons) {
-      expect(button.getAttribute('aria-disabled')).toBe('true');
-    }
-    // 'graph' is live (Phase 27) → enabled and selectable.
-    for (const button of graphButtons) {
-      expect(button.getAttribute('aria-disabled')).toBeNull();
-    }
+    const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
+    const mobile = within(screen.getByRole('navigation', { name: 'Modes' }));
+    const treeButton = primary.getByRole('button', { name: 'Tree' });
+    const graphButton = primary.getByRole('button', { name: 'Graph' });
+    expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
+    expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
+    expect(treeButton.getAttribute('aria-disabled')).toBe('true');
+    expect(mobile.queryByRole('button', { name: 'Tree' })).toBeNull();
+    expect(mobile.queryByRole('button', { name: 'Displays' })).toBeNull();
+    expect(mobile.queryByRole('button', { name: 'Settings' })).toBeNull();
+    expect(graphButton.getAttribute('aria-disabled')).toBeNull();
+    expect(mobile.getByRole('button', { name: 'Graph' }).getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(treeButton);
     fireEvent.click(graphButton);
     expect(selected).toEqual(['graph']);

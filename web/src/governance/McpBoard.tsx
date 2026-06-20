@@ -66,6 +66,7 @@ export function McpBoard() {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const servers = useQuery({
     queryKey: ['governance', 'mcp', 'list'],
@@ -97,13 +98,46 @@ export function McpBoard() {
     setSelected(name);
   }
 
+  function focusRow(index: number) {
+    rowRefs.current[index]?.focus();
+  }
+
+  function onRowKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (rows.length === 0) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      focusRow((index + 1) % rows.length);
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      focusRow((index - 1 + rows.length) % rows.length);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      focusRow(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      focusRow(rows.length - 1);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const server = rows[index];
+      if (server !== undefined) {
+        selectRow(server.name, event.currentTarget);
+      }
+    }
+  }
+
   const master = (
     <div role="list" aria-label={t('governance.tabs.mcp')} className="flex flex-col gap-1 p-2">
-      {rows.map((server) => (
+      {rows.map((server, index) => (
         <div key={server.name} role="listitem">
           <button
             type="button"
             aria-pressed={selected === server.name}
+            ref={(el) => {
+              rowRefs.current[index] = el;
+            }}
+            onKeyDown={(e) => {
+              onRowKeyDown(e, index);
+            }}
             onClick={(e) => {
               selectRow(server.name, e.currentTarget);
             }}

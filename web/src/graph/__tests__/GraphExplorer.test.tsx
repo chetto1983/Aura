@@ -91,6 +91,11 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:2:1');
     });
+    expect(screen.getByTestId('graph-workspace').className).toContain(
+      'lg:grid-cols-[18rem_minmax(0,1fr)]',
+    );
+    expect(screen.getByLabelText('Select a node').className).toContain('hidden');
+    expect(screen.getByLabelText('Select a node').className).not.toContain('lg:block');
     // The schema-overview fallback was NOT taken (we had a real result).
     expect(fetchGraphSchema).not.toHaveBeenCalled();
   });
@@ -161,6 +166,9 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Entity' }));
     // Select a node via the path-strip node list (the non-hover access path) → inspector opens.
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
+    expect(screen.getByTestId('graph-workspace').className).toContain(
+      'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]',
+    );
     expect(screen.getByText('Connections')).toBeTruthy(); // inspector degree label
   });
 

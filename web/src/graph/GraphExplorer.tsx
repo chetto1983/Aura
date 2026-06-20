@@ -172,6 +172,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
 
   const clientGraph =
     view.result !== undefined ? rowsToClientGraph(view.result) : { nodes: [], edges: [] };
+  const inspectorOpen = selected !== undefined;
 
   const seedPanel = (
     <SeedFilterPanel
@@ -259,7 +260,14 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   // inspector is a sheet that appears on selection. On lg it flips to seed | canvas | inspector
   // with the evidence strip under the canvas.
   return (
-    <div className="relative flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)_auto]">
+    <div
+      data-testid="graph-workspace"
+      className={`relative flex h-full min-h-0 flex-col lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
+        inspectorOpen
+          ? 'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]'
+          : 'lg:grid-cols-[18rem_minmax(0,1fr)]'
+      }`}
+    >
       {/* MOBILE control bar — keeps the canvas dominant; Seed + Filters live here, not in an
           always-on top strip. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 lg:hidden">
@@ -322,14 +330,14 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         {canvasPane}
       </section>
 
-      {/* INSPECTOR — desktop right column (empty state when nothing selected); mobile bottom sheet
-          on selection. ONE instance (no duplicate DOM / strict-mode collision). */}
+      {/* INSPECTOR — desktop right column only when selected; mobile bottom sheet on selection.
+          ONE instance (no duplicate DOM / strict-mode collision). */}
       <aside
         aria-label={t('graph.inspector.emptyHeading')}
-        className={`min-h-0 lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:static lg:block lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
-          selected !== undefined
+        className={`min-h-0 lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:static lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
+          inspectorOpen
             ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:border-t-0 lg:shadow-none'
-            : 'hidden lg:block'
+            : 'hidden'
         }`}
       >
         <NodeInspector

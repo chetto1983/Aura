@@ -119,12 +119,51 @@ async function getJSON<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function stringList(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function envChipList(value: unknown): readonly McpEnvChip[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): McpEnvChip[] => {
+    if (entry === null || typeof entry !== 'object') return [];
+    const raw = entry as Record<string, unknown>;
+    const key = stringValue(raw.key);
+    if (key === '') return [];
+    return [{ key, redacted: raw.redacted === true }];
+  });
+}
+
+function normalizeMcpServerRow(row: McpServerRow): McpServerRow {
+  const raw = row as unknown as Record<string, unknown>;
+  const normalized: McpServerRow = {
+    name: stringValue(raw.name),
+    source: stringValue(raw.source),
+    trust: stringValue(raw.trust),
+    riskPolicy: stringValue(raw.riskPolicy),
+    runtime: stringValue(raw.runtime),
+    startupState: stringValue(raw.startupState),
+    authStatus: stringValue(raw.authStatus),
+    profiles: stringList(raw.profiles),
+    networkAllowlist: stringList(raw.networkAllowlist),
+    envKeys: envChipList(raw.envKeys),
+  };
+  return typeof raw.lastError === 'string'
+    ? { ...normalized, lastError: raw.lastError }
+    : normalized;
+}
+
 /** GET /api/governance/mcp — the static MCP registry rows (always renders; the live probe
  * is a separate per-row call). Rejects on a non-200 (incl. 401) so the board shows the
  * auth/error state, never a blank list (T-28-03-04). */
 export async function fetchMcpServers(): Promise<readonly McpServerRow[]> {
   const body = await getJSON<{ servers?: readonly McpServerRow[] }>(GOV_MCP_PATH);
-  return body.servers ?? [];
+  return (body.servers ?? []).map(normalizeMcpServerRow);
 }
 
 /** GET /api/governance/mcp/{name}/probe — the bounded LIVE probe for ONE server. Each row

@@ -105,6 +105,16 @@ func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.
 	return deps, provider, nil
 }
 
+func authulaProvisioningConfigured(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if strings.TrimSpace(cfg.AuthulaSecret) == "" {
+		return false
+	}
+	return strings.TrimSpace(cfg.AuthulaDatabaseURL) != "" || strings.TrimSpace(cfg.DB.URL) != ""
+}
+
 // buildAuthulaProvider constructs the embedded Authula framework on the isolated authula
 // schema (deriving the DSN from AURA_DB_URL with ?search_path=authula when
 // AURA_AUTHULA_DATABASE_URL is unset), builds the identity-link resolver over Aura's

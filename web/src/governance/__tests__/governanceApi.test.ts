@@ -23,11 +23,39 @@ afterEach(() => {
 
 describe('governanceApi same-origin throwing fetch', () => {
   it('fetchMcpServers unwraps {servers} and sends Accept + same-origin', async () => {
-    const fetchMock = okJSON({ servers: [{ name: 'github' }] });
+    const fetchMock = okJSON({
+      servers: [
+        {
+          name: 'github',
+          source: 'recipe:github',
+          trust: 'trusted',
+          riskPolicy: 'trusted_recipe',
+          runtime: 'stdio',
+          startupState: 'configured',
+          authStatus: 'ok',
+          profiles: ['work'],
+          networkAllowlist: ['api.github.com'],
+          envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
+        },
+      ],
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const rows = await fetchMcpServers();
-    expect(rows).toEqual([{ name: 'github' }]);
+    expect(rows).toEqual([
+      {
+        name: 'github',
+        source: 'recipe:github',
+        trust: 'trusted',
+        riskPolicy: 'trusted_recipe',
+        runtime: 'stdio',
+        startupState: 'configured',
+        authStatus: 'ok',
+        profiles: ['work'],
+        networkAllowlist: ['api.github.com'],
+        envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
+      },
+    ]);
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/governance/mcp');
@@ -38,6 +66,60 @@ describe('governanceApi same-origin throwing fetch', () => {
   it('fetchMcpServers returns [] when the body omits servers', async () => {
     vi.stubGlobal('fetch', okJSON({}));
     expect(await fetchMcpServers()).toEqual([]);
+  });
+
+  it('fetchMcpServers normalizes null or missing arrays before UI render', async () => {
+    vi.stubGlobal(
+      'fetch',
+      okJSON({
+        servers: [
+          {
+            name: 'calendar',
+            trust: 'trusted_recipe',
+            runtime: 'remote_http',
+            startupState: 'unknown',
+            authStatus: 'unsupported',
+            profiles: null,
+            networkAllowlist: null,
+            envKeys: null,
+          },
+          {
+            name: 'whatsapp',
+            trust: 'trusted_recipe',
+            runtime: 'remote_http',
+            startupState: 'unknown',
+            authStatus: 'unsupported',
+          },
+        ],
+      }),
+    );
+
+    expect(await fetchMcpServers()).toEqual([
+      {
+        name: 'calendar',
+        source: '',
+        trust: 'trusted_recipe',
+        riskPolicy: '',
+        runtime: 'remote_http',
+        startupState: 'unknown',
+        authStatus: 'unsupported',
+        profiles: [],
+        networkAllowlist: [],
+        envKeys: [],
+      },
+      {
+        name: 'whatsapp',
+        source: '',
+        trust: 'trusted_recipe',
+        riskPolicy: '',
+        runtime: 'remote_http',
+        startupState: 'unknown',
+        authStatus: 'unsupported',
+        profiles: [],
+        networkAllowlist: [],
+        envKeys: [],
+      },
+    ]);
   });
 
   it('probeMcpServer encodes the name and hits the probe path', async () => {

@@ -179,11 +179,11 @@ func (a telegramMintAdapter) PendingConsumed(ctx context.Context, onboardingToke
 
 // buildOnboardingService assembles the OnboardingService best-effort. The interview side
 // (capability picker + LLM extraction + profile write) is always wired when a pool exists;
-// the provisioning saga is wired only when Authula is the auth provider (provider !=
-// nil) — the passphrase path cannot mint an Authula login, so provision degrades to a
-// sanitized backend-unavailable error. The Telegram bot username is resolved live (a
-// best-effort getMe); an empty username simply omits the deep-link/QR (the identity is
-// still created + the token minted).
+// the provisioning saga is wired when the composition root supplies an Authula provider
+// (either the active auth provider or a provisioning-only provider while passphrase login
+// remains active). The Telegram bot username is resolved live (a best-effort getMe); an
+// empty username simply omits the deep-link/QR (the identity is still created + the token
+// minted).
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,

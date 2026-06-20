@@ -122,6 +122,12 @@ var errProvisioningUnavailable = errors.New("onboarding: provisioning backend no
 // password is hashed immediately and never echoed/logged.
 func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
 	if s.authula == nil || s.auraLeg == nil || (in.LinkTelegram && s.telegram == nil) {
+		slog.Warn("onboarding: provisioning backend not configured",
+			"authula", s.authula != nil,
+			"aura_leg", s.auraLeg != nil,
+			"telegram", s.telegram != nil,
+			"link_telegram", in.LinkTelegram,
+		)
 		return OnboardingProvisionResponse{}, errProvisioningUnavailable
 	}
 	entry, err := s.sessionForRequester(token, requesterIdentityID)

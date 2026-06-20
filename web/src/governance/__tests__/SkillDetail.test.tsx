@@ -56,4 +56,15 @@ describe('SkillDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('uses a stable vertical scroll pane for mobile sheet content', () => {
+    const { container } = render(
+      <SkillDetail skill={FULL} isPending={false} onClose={() => undefined} />,
+    );
+
+    const pane = container.firstElementChild;
+    expect(pane?.className).toContain('overflow-y-scroll');
+    expect(pane?.className).toContain('overscroll-contain');
+    expect(pane?.className).toContain('[scrollbar-gutter:stable]');
+  });
 });

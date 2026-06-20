@@ -70,7 +70,7 @@ export function SeedFilterPanel({
         type="button"
         onClick={onSeed}
         disabled={!canSeed}
-        className="min-h-[44px] rounded-md bg-accent px-3 py-2 text-[15.5px] font-semibold text-on-accent transition-opacity disabled:opacity-40"
+        className="min-h-[44px] rounded-md bg-accent px-3 py-2 text-[14px] font-semibold leading-tight text-on-accent transition-opacity disabled:opacity-40"
       >
         {t('graph.cta.seedConversation')}
       </button>

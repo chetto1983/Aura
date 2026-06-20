@@ -147,8 +147,8 @@ function BottomDockSkeleton() {
         <SkeletonText size="xs" widths="3.25rem" />
         <SkeletonBlock className="min-w-[10rem]" height={6} radius="full" />
       </div>
-      <div className="grid grid-cols-5 border-t border-border md:hidden">
-        {Array.from({ length: 5 }).map((_, index) => (
+      <div className="grid grid-cols-3 border-t border-border md:hidden">
+        {Array.from({ length: 3 }).map((_, index) => (
           <SkeletonBlock key={index} height={44} radius="sm" />
         ))}
       </div>

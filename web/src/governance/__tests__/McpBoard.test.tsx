@@ -216,6 +216,39 @@ describe('McpBoard (GOV-01)', () => {
     });
   });
 
+  it('moves focus with ArrowDown and selects the focused row with Enter', async () => {
+    fetchMcpServers.mockResolvedValue(SERVERS);
+    probeMcpServer.mockResolvedValue({
+      name: 'filesystem',
+      ok: false,
+      tool_count: 0,
+      detail: 'dial failed',
+    });
+
+    render(<McpBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('github')).toBeTruthy();
+      expect(screen.getByText('filesystem')).toBeTruthy();
+    });
+
+    const github = screen.getByText('github').closest('button');
+    const filesystem = screen.getByText('filesystem').closest('button');
+    if (github === null || filesystem === null) throw new Error('mcp row button not found');
+
+    github.focus();
+    fireEvent.keyDown(github, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(filesystem);
+
+    fireEvent.keyDown(filesystem, { key: 'Enter' });
+    await waitFor(() => {
+      expect(screen.getByText('No environment keys.')).toBeTruthy();
+    });
+    expect(filesystem.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('the detail pane shows the probe error + lastError, and "no env keys" for a keyless server', async () => {
     const failing: McpServerRow[] = [
       {
