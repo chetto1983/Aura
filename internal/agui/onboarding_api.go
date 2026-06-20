@@ -176,7 +176,12 @@ func (s *Server) handleOnboardingStep(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return
 	}
-	resp, err := s.onboarding.Step(r.Context(), token, req)
+	requester, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	resp, err := s.onboarding.Step(r.Context(), requester, token, req)
 	if err != nil {
 		s.writeOnboardingError(w, err)
 		return
@@ -206,7 +211,12 @@ func (s *Server) handleOnboardingProvision(w http.ResponseWriter, r *http.Reques
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return
 	}
-	resp, err := s.onboarding.Provision(r.Context(), token, req)
+	requester, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	resp, err := s.onboarding.Provision(r.Context(), requester, token, req)
 	if err != nil {
 		s.writeOnboardingError(w, err)
 		return
@@ -223,7 +233,12 @@ func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.PathValue("sessionToken")
-	status, err := s.onboarding.TelegramStatus(r.Context(), token)
+	requester, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	status, err := s.onboarding.TelegramStatus(r.Context(), requester, token)
 	if err != nil {
 		s.writeOnboardingError(w, err)
 		return

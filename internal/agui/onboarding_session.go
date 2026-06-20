@@ -54,10 +54,12 @@ const sessionTokenBytes = 32
 // capability options offered at start (the creator's grants minus '*'), the
 // link-Telegram intent, and the idle-expiry deadline.
 type sessionEntry struct {
+	mu                sync.Mutex
 	session           *onboarding.Session
 	creatorIdentityID string
 	capabilityOptions []string
 	linkTelegram      bool
+	provisioned       bool
 	// onboardingToken is the Telegram mint token assigned by Provision (Leg C). The
 	// telegram-status poll reads it back from the same server-held entry to check
 	// PendingConsumed. Empty until provisioning mints it.
@@ -140,9 +142,12 @@ func (st *sessionStore) get(token string) (*sessionEntry, bool) {
 // lock (so a concurrent get/poll is race-free). A missing entry is a no-op.
 func (st *sessionStore) setOnboardingToken(sessionToken, onboardingToken string) {
 	st.mu.Lock()
-	defer st.mu.Unlock()
-	if e, ok := st.entries[sessionToken]; ok {
+	e, ok := st.entries[sessionToken]
+	st.mu.Unlock()
+	if ok {
+		e.mu.Lock()
 		e.onboardingToken = onboardingToken
+		e.mu.Unlock()
 	}
 }
 
@@ -310,6 +315,20 @@ func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID 
 	}, nil
 }
 
+func (s *onboardingService) sessionForRequester(token, requesterIdentityID string) (*sessionEntry, error) {
+	if requesterIdentityID == "" {
+		return nil, errOnboardingForbidden
+	}
+	entry, ok := s.sessions.get(token)
+	if !ok {
+		return nil, errOnboardingSessionNotFound
+	}
+	if entry.creatorIdentityID != requesterIdentityID {
+		return nil, errOnboardingForbidden
+	}
+	return entry, nil
+}
+
 // Step applies one onboarding intent to the server-held session and returns the per-step
 // contract. On an answer carrying free text it runs the LLM extractor EXACTLY once, merges
 // the structured facts into the Input, and applies it (advancing the step). On edit it
@@ -318,9 +337,14 @@ func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID 
 // applies directly. A terminal session yields a clean terminal status (ErrTerminal handled,
 // not a 500). An empty answer is recorded empty without error (the session's mergeAnswers
 // no-ops on empty).
-func (s *onboardingService) Step(ctx context.Context, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
-	entry, ok := s.sessions.get(token)
-	if !ok {
+func (s *onboardingService) Step(ctx context.Context, requesterIdentityID, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
+	entry, err := s.sessionForRequester(token, requesterIdentityID)
+	if err != nil {
+		return OnboardingStepResponse{}, err
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.provisioned {
 		return OnboardingStepResponse{}, errOnboardingSessionNotFound
 	}
 

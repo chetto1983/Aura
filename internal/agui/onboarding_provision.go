@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/profile"
 )
 
@@ -119,15 +120,21 @@ var errProvisioningUnavailable = errors.New("onboarding: provisioning backend no
 // success it persists the confirmed interview Agent.md for the new identity (ONBD-02) and
 // returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
 // password is hashed immediately and never echoed/logged.
-func (s *onboardingService) Provision(ctx context.Context, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
-	if s.authula == nil || s.auraLeg == nil {
+func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
+	if s.authula == nil || s.auraLeg == nil || (in.LinkTelegram && s.telegram == nil) {
 		return OnboardingProvisionResponse{}, errProvisioningUnavailable
 	}
-	entry, ok := s.sessions.get(token)
-	if !ok {
+	entry, err := s.sessionForRequester(token, requesterIdentityID)
+	if err != nil {
+		return OnboardingProvisionResponse{}, err
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.provisioned {
 		return OnboardingProvisionResponse{}, errOnboardingSessionNotFound
 	}
 	creator := entry.creatorIdentityID
+	entry.linkTelegram = in.LinkTelegram
 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
 	if err := s.validateNoEscalation(ctx, creator, in.Capabilities); err != nil {
@@ -180,14 +187,17 @@ func (s *onboardingService) Provision(ctx context.Context, token string, in Onbo
 	}
 
 	// ---- 3. LEG C (Telegram token mint) ----
-	onboardingToken := uuid.NewString()
-	if err := s.telegram.InsertPending(ctx, onboardingToken, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
-		// C failed → undo A (identity + grants + link cascade) then B.
-		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
-			slog.Error("onboarding: COMP_A (delete identity) failed", "step", "compensate")
+	onboardingToken := ""
+	if in.LinkTelegram {
+		onboardingToken = uuid.NewString()
+		if err := s.telegram.InsertPending(ctx, onboardingToken, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
+			// C failed → undo A (identity + grants + link cascade) then B.
+			if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+				slog.Error("onboarding: COMP_A (delete identity) failed", "step", "compensate")
+			}
+			compB()
+			return OnboardingProvisionResponse{}, provisionFail("telegram mint", err)
 		}
-		compB()
-		return OnboardingProvisionResponse{}, provisionFail("telegram mint", err)
 	}
 
 	// ---- 4. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
@@ -207,9 +217,11 @@ func (s *onboardingService) Provision(ctx context.Context, token string, in Onbo
 	}
 
 	// ---- 5. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
-	// Record the minted onboarding token on the live session entry (race-free, under the
-	// store lock) so the telegram-status poll can read it back via PendingConsumed.
-	s.sessions.setOnboardingToken(token, onboardingToken)
+	// Record the minted onboarding token on the live session entry so the telegram-status
+	// poll can read it back via PendingConsumed. Mark the session provisioned so retry /
+	// double-submit attempts cannot run the saga a second time.
+	entry.onboardingToken = onboardingToken
+	entry.provisioned = true
 	// A confirmed interview wrote DraftAgentMD + StatusCompleted into the session; a skipped
 	// interview leaves no draft → no profile (the AC: skip writes no profile). This is
 	// idempotent + best-effort: a profile write failure does NOT roll back the (committed)
@@ -233,18 +245,20 @@ func (s *onboardingService) Provision(ctx context.Context, token string, in Onbo
 // scanned the deep-link and the channel linked the identity) via a REST poll over
 // PendingConsumed (ONBD-01b / R6 — NOT SSE). The session must still be live (the wizard is
 // polling); an unknown token to PendingConsumed surfaces as not-linked, never a 500.
-func (s *onboardingService) TelegramStatus(ctx context.Context, token string) (OnboardingTelegramStatus, error) {
-	if s.telegram == nil {
-		return OnboardingTelegramStatus{}, errProvisioningUnavailable
+func (s *onboardingService) TelegramStatus(ctx context.Context, requesterIdentityID, token string) (OnboardingTelegramStatus, error) {
+	entry, err := s.sessionForRequester(token, requesterIdentityID)
+	if err != nil {
+		return OnboardingTelegramStatus{}, err
 	}
-	entry, ok := s.sessions.get(token)
-	if !ok {
-		return OnboardingTelegramStatus{}, errOnboardingSessionNotFound
-	}
+	entry.mu.Lock()
 	tok := entry.onboardingToken
+	entry.mu.Unlock()
 	if tok == "" {
 		// No token minted yet (provision not yet called / no Telegram link requested).
 		return OnboardingTelegramStatus{Linked: false}, nil
+	}
+	if s.telegram == nil {
+		return OnboardingTelegramStatus{}, errProvisioningUnavailable
 	}
 	linked, err := s.telegram.PendingConsumed(ctx, tok)
 	if err != nil {
@@ -280,8 +294,8 @@ func (s *onboardingService) validateNoEscalation(ctx context.Context, creator st
 		return errOnboardingForbidden
 	}
 	for _, c := range requested {
-		if c == wildcardCapability {
-			return fmt.Errorf("%w: '*' is system-managed", ErrOnboardingEscalation)
+		if err := identity.ValidateCapabilityName(c); err != nil {
+			return fmt.Errorf("%w: %v", ErrOnboardingEscalation, err)
 		}
 		if !hasWildcard && !creatorSet[c] {
 			return fmt.Errorf("%w: %q is not held by the creator", ErrOnboardingEscalation, c)

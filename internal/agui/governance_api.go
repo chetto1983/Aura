@@ -77,6 +77,58 @@ type skillRow struct {
 	ContentHash string `json:"contentHash,omitempty"`
 }
 
+// skillAuditRow is the safe wire projection for one audit ledger row. It deliberately
+// omits PausedStateToken and IdentityID: those are authorization/resume internals that do
+// not belong in the read-only board response. The parent mux gates this route with
+// governance.read, and this DTO is the second line of defense if more fields land on the
+// domain row later.
+type skillAuditRow struct {
+	ID                string                `json:"ID"`
+	CreatedAt         time.Time             `json:"CreatedAt"`
+	ActorID           string                `json:"ActorID"`
+	SkillName         string                `json:"SkillName"`
+	Action            skills.AuditAction    `json:"Action"`
+	ContentHash       string                `json:"ContentHash"`
+	ApprovalSource    skills.ApprovalSource `json:"ApprovalSource"`
+	GateRecommended   bool                  `json:"GateRecommended"`
+	GateTaken         bool                  `json:"GateTaken"`
+	BlocklistOverride bool                  `json:"BlocklistOverride"`
+}
+
+// schedulerTaskRow is the safe wire projection for a scheduled task. It omits Payload,
+// IdentityID, and OriginConversationID, which can carry private prompt/context material
+// or cross-identity linkage not needed by the board.
+type schedulerTaskRow struct {
+	ID           string            `json:"ID"`
+	Kind         cron.TaskKind     `json:"Kind"`
+	ScheduleKind cron.ScheduleKind `json:"ScheduleKind"`
+	CronExpr     string            `json:"CronExpr"`
+	EveryMinutes int               `json:"EveryMinutes"`
+	RunAt        time.Time         `json:"RunAt"`
+	TZ           string            `json:"TZ"`
+	StepBudget   int               `json:"StepBudget"`
+	Status       string            `json:"Status"`
+	NextRunAt    time.Time         `json:"NextRunAt"`
+	NotifyRoute  string            `json:"NotifyRoute"`
+	CreatedAt    time.Time         `json:"CreatedAt"`
+	UpdatedAt    time.Time         `json:"UpdatedAt"`
+}
+
+// schedulerRunRow is the safe run-history projection. It omits PausedStateToken and
+// LastHeartbeatAt; operator-visible text fields are sanitized before serialization.
+type schedulerRunRow struct {
+	ID                string    `json:"ID"`
+	TaskID            string    `json:"TaskID"`
+	Status            string    `json:"Status"`
+	StepBudget        int       `json:"StepBudget"`
+	StartedAt         time.Time `json:"StartedAt"`
+	CompletedWithHash string    `json:"CompletedWithHash"`
+	Summary           string    `json:"Summary"`
+	LastError         string    `json:"LastError"`
+	MissedSince       time.Time `json:"MissedSince"`
+	CompletedAt       time.Time `json:"CompletedAt"`
+}
+
 // registerGovernanceRoutes mounts the six read-only governance routes on the supplied mux
 // using Go 1.22 method-pattern routing. They are SPECIFIC method+path siblings under the
 // /api/ carve-out — never a bare /api/ (which would shadow /api/integrations/). The
@@ -279,7 +331,7 @@ func (s *Server) handleSkillsAudit(w http.ResponseWriter, r *http.Request) {
 	if rows == nil {
 		rows = []skills.AuditRow{}
 	}
-	writeJSON(w, map[string]any{"rows": rows})
+	writeJSON(w, map[string]any{"rows": skillAuditRows(rows)})
 }
 
 // handleSchedulerList serves GET /api/governance/scheduler (GOV-03): the active tasks
@@ -298,7 +350,7 @@ func (s *Server) handleSchedulerList(w http.ResponseWriter, r *http.Request) {
 	if tasks == nil {
 		tasks = []cron.Task{}
 	}
-	writeJSON(w, map[string]any{"tasks": tasks})
+	writeJSON(w, map[string]any{"tasks": schedulerTaskRows(tasks)})
 }
 
 // handleSchedulerRuns serves GET /api/governance/scheduler/{id}/runs (GOV-03): the
@@ -335,7 +387,67 @@ func (s *Server) handleSchedulerRuns(w http.ResponseWriter, r *http.Request) {
 	if runs == nil {
 		runs = []cron.Run{}
 	}
-	writeJSON(w, map[string]any{"runs": runs})
+	writeJSON(w, map[string]any{"runs": schedulerRunRows(runs)})
+}
+
+func skillAuditRows(rows []skills.AuditRow) []skillAuditRow {
+	out := make([]skillAuditRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, skillAuditRow{
+			ID:                row.ID,
+			CreatedAt:         row.CreatedAt,
+			ActorID:           row.ActorID,
+			SkillName:         row.SkillName,
+			Action:            row.Action,
+			ContentHash:       row.ContentHash,
+			ApprovalSource:    row.ApprovalSource,
+			GateRecommended:   row.GateRecommended,
+			GateTaken:         row.GateTaken,
+			BlocklistOverride: row.BlocklistOverride,
+		})
+	}
+	return out
+}
+
+func schedulerTaskRows(tasks []cron.Task) []schedulerTaskRow {
+	out := make([]schedulerTaskRow, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, schedulerTaskRow{
+			ID:           task.ID,
+			Kind:         task.Kind,
+			ScheduleKind: task.ScheduleKind,
+			CronExpr:     task.CronExpr,
+			EveryMinutes: task.EveryMinutes,
+			RunAt:        task.RunAt,
+			TZ:           task.TZ,
+			StepBudget:   task.StepBudget,
+			Status:       task.Status,
+			NextRunAt:    task.NextRunAt,
+			NotifyRoute:  task.NotifyRoute,
+			CreatedAt:    task.CreatedAt,
+			UpdatedAt:    task.UpdatedAt,
+		})
+	}
+	return out
+}
+
+func schedulerRunRows(runs []cron.Run) []schedulerRunRow {
+	out := make([]schedulerRunRow, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, schedulerRunRow{
+			ID:                run.ID,
+			TaskID:            run.TaskID,
+			Status:            run.Status,
+			StepBudget:        run.StepBudget,
+			StartedAt:         run.StartedAt,
+			CompletedWithHash: run.CompletedWithHash,
+			Summary:           SanitizeString(run.Summary),
+			LastError:         SanitizeString(run.LastError),
+			MissedSince:       run.MissedSince,
+			CompletedAt:       run.CompletedAt,
+		})
+	}
+	return out
 }
 
 // parseTaskID resolves the {id} path param to a clean 404 BEFORE any store call: a

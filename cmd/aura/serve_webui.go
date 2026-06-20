@@ -98,6 +98,11 @@ func fallbackExcludedPrefixes() []string {
 // grants arrive in Phase 28. It invents no governance write routes — those land later.
 const agentRunCapability = "agent.run"
 
+// governanceReadCapability gates the Phase-28 governance board read surface. The boards
+// are read-only, but scheduler and audit rows can reveal cross-identity operational
+// metadata, so they require an explicit grant instead of authentication alone.
+const governanceReadCapability = "governance.read"
+
 // conversationsRoutePrefix is the CHAT-02 conversation-management subtree (Phase 25),
 // registered on the parent mux as a SPECIFIC subtree delegating to the AG-UI handler.
 // It MUST stay a sibling of "/api/integrations/" under the "/api/" exclusion carve-out
@@ -154,9 +159,9 @@ const (
 // + run history). Like the graph routes they are SPECIFIC method+path siblings under the
 // "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the integrations
 // proxy, T-28-02-05). All six delegate to the AG-UI handler (the routes live on
-// Server.Mux) and inherit RequireAuth from the whole-mux wrap below with NO
-// RequireCapability — read-only reads (no write/PATCH/DELETE governance surface; the
-// onboarding create mutation lands in Plan 05 with its own capability gate).
+// Server.Mux) and are interposed with RequireCapability(governance.read). These reads run
+// after RequireAuth binds the principal. There is no write/PATCH/DELETE governance
+// surface; onboarding create has its own identity.create gate.
 const (
 	governanceMCPListRoute     = "GET /api/governance/mcp"
 	governanceMCPProbeRoute    = "GET /api/governance/mcp/{name}/probe"
@@ -306,16 +311,15 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(graphSchemaRoute, aguiHandler)
 	mux.Handle(graphQueryRoute, aguiHandler)
 	// The Phase-28 GOV-01/02/03 governance-board reads delegate to the AG-UI handler
-	// (routes on Server.Mux). Read-only, so they inherit RequireAuth from the whole-mux
-	// wrap below with NO RequireCapability (contrast the mutating POST /agent/run + branch
-	// re-runs). Method+path-specific so they win longest-pattern precedence over the "/"
-	// embed catch-all; the "/api/" fallback exclusion already returns them as backend routes.
-	mux.Handle(governanceMCPListRoute, aguiHandler)
-	mux.Handle(governanceMCPProbeRoute, aguiHandler)
-	mux.Handle(governanceSkillsRoute, aguiHandler)
-	mux.Handle(governanceSkillsAuditRoute, aguiHandler)
-	mux.Handle(governanceSchedulerRoute, aguiHandler)
-	mux.Handle(governanceSchedRunsRoute, aguiHandler)
+	// (routes on Server.Mux) behind an explicit governance.read capability. Method+path-
+	// specific so they win longest-pattern precedence over the "/" embed catch-all; the
+	// "/api/" fallback exclusion already returns them as backend routes.
+	mux.Handle(governanceMCPListRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceMCPProbeRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceSkillsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceSkillsAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceSchedulerRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceSchedRunsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator

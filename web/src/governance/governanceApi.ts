@@ -55,24 +55,22 @@ export interface SkillRow {
 }
 
 /** One append-only skills-audit ledger row (GET /api/governance/skills/audit).
- * The backend struct carries no json tags, so the fields are PascalCase. */
+ * Sensitive resume/session internals are not part of the board DTO. */
 export interface AuditRow {
   readonly ID: string;
   readonly CreatedAt: string;
   readonly ActorID: string;
-  readonly IdentityID: string;
   readonly SkillName: string;
   readonly Action: string;
   readonly ContentHash: string;
   readonly ApprovalSource: string;
-  readonly PausedStateToken: string;
   readonly GateRecommended: boolean;
   readonly GateTaken: boolean;
   readonly BlocklistOverride: boolean;
 }
 
-/** One scheduler task (GET /api/governance/scheduler). The backend struct carries
- * no json tags, so the fields are PascalCase. */
+/** One scheduler task (GET /api/governance/scheduler). Prompt payloads and identity
+ * linkage fields stay server-side. */
 export interface SchedulerTask {
   readonly ID: string;
   readonly Kind: string;
@@ -85,25 +83,21 @@ export interface SchedulerTask {
   readonly Status: string;
   readonly NextRunAt: string;
   readonly NotifyRoute: string;
-  readonly IdentityID: string;
-  readonly OriginConversationID: string;
   readonly CreatedAt: string;
   readonly UpdatedAt: string;
 }
 
-/** One scheduler run-history row (GET /api/governance/scheduler/{id}/runs). PascalCase. */
+/** One scheduler run-history row (GET /api/governance/scheduler/{id}/runs). */
 export interface SchedulerRun {
   readonly ID: string;
   readonly TaskID: string;
   readonly Status: string;
   readonly StepBudget: number;
   readonly StartedAt: string;
-  readonly LastHeartbeatAt: string;
   readonly CompletedWithHash: string;
   readonly Summary: string;
   readonly LastError: string;
   readonly MissedSince: string;
-  readonly PausedStateToken: string;
   readonly CompletedAt: string;
 }
 

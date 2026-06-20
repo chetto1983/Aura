@@ -42,34 +42,38 @@ func (fakeSchedulerBoard) ListRunsForTask(context.Context, string, int, int) ([]
 // interface (StartSession/Step/Provision/TelegramStatus + the embedded CapabilitySource)
 // and records the routed token/intent so the thin handlers can be asserted.
 type fakeOnboarding struct {
-	start      OnboardingStart
-	startErr   error
-	stepResp   OnboardingStepResponse
-	stepErr    error
-	gotToken   string
-	gotIntent  string
-	provResp   OnboardingProvisionResponse
-	provErr    error
-	statusResp OnboardingTelegramStatus
-	statusErr  error
+	start        OnboardingStart
+	startErr     error
+	stepResp     OnboardingStepResponse
+	stepErr      error
+	gotToken     string
+	gotRequester string
+	gotIntent    string
+	provResp     OnboardingProvisionResponse
+	provErr      error
+	statusResp   OnboardingTelegramStatus
+	statusErr    error
 }
 
 func (f *fakeOnboarding) StartSession(context.Context, string) (OnboardingStart, error) {
 	return f.start, f.startErr
 }
 
-func (f *fakeOnboarding) Step(_ context.Context, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
+func (f *fakeOnboarding) Step(_ context.Context, requester, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
+	f.gotRequester = requester
 	f.gotToken = token
 	f.gotIntent = in.Intent
 	return f.stepResp, f.stepErr
 }
 
-func (f *fakeOnboarding) Provision(_ context.Context, token string, _ OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
+func (f *fakeOnboarding) Provision(_ context.Context, requester, token string, _ OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
+	f.gotRequester = requester
 	f.gotToken = token
 	return f.provResp, f.provErr
 }
 
-func (f *fakeOnboarding) TelegramStatus(_ context.Context, token string) (OnboardingTelegramStatus, error) {
+func (f *fakeOnboarding) TelegramStatus(_ context.Context, requester, token string) (OnboardingTelegramStatus, error) {
+	f.gotRequester = requester
 	f.gotToken = token
 	return f.statusResp, f.statusErr
 }

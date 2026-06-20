@@ -10,6 +10,7 @@ import { TelegramLinkStep } from './TelegramLinkStep';
 import {
   credentialsValid,
   isAuthError,
+  isForbiddenError,
   isTerminalStatus,
   phaseIndex as phaseIndexOf,
   provisionErrorKind,
@@ -44,7 +45,7 @@ export interface OnboardingWizardProps {
   readonly onClose: () => void;
 }
 
-type StartStatus = 'starting' | 'ready' | 'error' | 'error-auth';
+type StartStatus = 'starting' | 'ready' | 'error' | 'error-auth' | 'error-forbidden';
 
 export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   const { t } = useTranslation();
@@ -88,7 +89,9 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         setStartStatus('ready');
       } catch (err) {
         if (cancelled) return;
-        setStartStatus(isAuthError(err) ? 'error-auth' : 'error');
+        setStartStatus(
+          isAuthError(err) ? 'error-auth' : isForbiddenError(err) ? 'error-forbidden' : 'error',
+        );
       }
     }
     void run();
@@ -130,7 +133,9 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
           setPhase('review');
         }
       } catch (err) {
-        setStartStatus(isAuthError(err) ? 'error-auth' : 'error');
+        setStartStatus(
+          isAuthError(err) ? 'error-auth' : isForbiddenError(err) ? 'error-forbidden' : 'error',
+        );
       } finally {
         setStepBusy(false);
       }
@@ -205,6 +210,16 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     return overlay(
       <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
         <p className="max-w-md text-[15.5px] text-danger">{t('onboarding.authExpired')}</p>
+      </div>,
+    );
+  }
+
+  if (startStatus === 'error-forbidden') {
+    return overlay(
+      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
+        <p className="max-w-md text-[15.5px] text-danger">
+          {t('onboarding.error.noCapability')}
+        </p>
       </div>,
     );
   }

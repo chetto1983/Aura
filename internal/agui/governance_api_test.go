@@ -325,7 +325,14 @@ func TestGovernanceSkillsAuditNewestFirst(t *testing.T) {
 	now := time.Now().UTC()
 	board := &scriptedSkillsBoard{
 		audit: []skills.AuditRow{
-			{ID: "newest", SkillName: "s", Action: skills.AuditAction("create"), CreatedAt: now},
+			{
+				ID:               "newest",
+				IdentityID:       "secret-identity",
+				SkillName:        "s",
+				Action:           skills.AuditAction("create"),
+				PausedStateToken: "11111111-1111-1111-1111-111111111111",
+				CreatedAt:        now,
+			},
 			{ID: "older", SkillName: "s", Action: skills.AuditAction("update"), CreatedAt: now.Add(-time.Hour)},
 		},
 	}
@@ -345,13 +352,25 @@ func TestGovernanceSkillsAuditNewestFirst(t *testing.T) {
 	if len(resp.Rows) != 2 || resp.Rows[0].ID != "newest" {
 		t.Fatalf("audit rows not newest-first as the store yielded: %+v", resp.Rows)
 	}
+	for _, banned := range []string{"PausedStateToken", "11111111-1111-1111-1111-111111111111", "IdentityID", "secret-identity"} {
+		if strings.Contains(rec.Body.String(), banned) {
+			t.Fatalf("audit DTO leaked %q: %s", banned, rec.Body.String())
+		}
+	}
 }
 
 // TestGovernanceSchedulerOrdered: the scheduler list returns the store's tasks (ordered by
 // next fire by contract) projected to JSON; an empty set → 200 {tasks: []}.
 func TestGovernanceSchedulerOrdered(t *testing.T) {
 	board := &scriptedSchedulerBoard{tasks: []cron.Task{
-		{ID: "11111111-1111-1111-1111-111111111111", Kind: cron.TaskKind("reminder"), Status: "active"},
+		{
+			ID:                   "11111111-1111-1111-1111-111111111111",
+			Kind:                 cron.TaskKind("reminder"),
+			Status:               "active",
+			Payload:              []byte("secret prompt payload"),
+			IdentityID:           "secret-identity",
+			OriginConversationID: "secret-conversation",
+		},
 	}}
 	s := govServer(GovernanceProviders{Scheduler: board})
 	rec := doGov(t, s, http.MethodGet, "/api/governance/scheduler")
@@ -363,6 +382,12 @@ func TestGovernanceSchedulerOrdered(t *testing.T) {
 	}
 
 	// Empty set → safe empty array.
+	for _, banned := range []string{"Payload", "secret prompt payload", "IdentityID", "secret-identity", "OriginConversationID", "secret-conversation"} {
+		if strings.Contains(rec.Body.String(), banned) {
+			t.Fatalf("scheduler task DTO leaked %q: %s", banned, rec.Body.String())
+		}
+	}
+
 	empty := govServer(GovernanceProviders{Scheduler: &scriptedSchedulerBoard{}})
 	erec := doGov(t, empty, http.MethodGet, "/api/governance/scheduler")
 	if !strings.Contains(erec.Body.String(), `"tasks":[]`) {
@@ -408,6 +433,29 @@ func TestGovernanceSchedulerRunsExplicitPagination(t *testing.T) {
 	doGov(t, s, http.MethodGet, "/api/governance/scheduler/22222222-2222-2222-2222-222222222222/runs?limit=5&offset=10")
 	if board.gotLimit != 5 || board.gotOffset != 10 {
 		t.Fatalf("explicit pagination = limit %d offset %d, want 5/10", board.gotLimit, board.gotOffset)
+	}
+}
+
+// TestGovernanceSchedulerRunsSafeDTO proves run history omits resume tokens and sanitizes
+// operator-visible text fields before they reach the board.
+func TestGovernanceSchedulerRunsSafeDTO(t *testing.T) {
+	board := &scriptedSchedulerBoard{runs: []cron.Run{{
+		ID:               "run-1",
+		TaskID:           "22222222-2222-2222-2222-222222222222",
+		Status:           "failed",
+		Summary:          "summary",
+		LastError:        "connect postgres://aura:topsecret@db.internal:5432 failed",
+		PausedStateToken: "33333333-3333-3333-3333-333333333333",
+	}}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodGet, "/api/governance/scheduler/22222222-2222-2222-2222-222222222222/runs")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for _, banned := range []string{"PausedStateToken", "33333333-3333-3333-3333-333333333333", "topsecret", "db.internal"} {
+		if strings.Contains(rec.Body.String(), banned) {
+			t.Fatalf("scheduler run DTO leaked %q: %s", banned, rec.Body.String())
+		}
 	}
 }
 

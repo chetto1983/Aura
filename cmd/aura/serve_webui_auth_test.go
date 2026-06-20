@@ -27,7 +27,7 @@ func (w wiringIdentities) GetIdentityByID(_ context.Context, id string) (agui.Id
 }
 
 func (w wiringIdentities) HasCapability(_ context.Context, id, capability string) (bool, error) {
-	return id == w.id && capability == agentRunCapability, nil // local holds agent.run
+	return id == w.id && (capability == agentRunCapability || capability == governanceReadCapability), nil
 }
 
 var errWiringNotFound = errors.New("identity not found")
@@ -279,6 +279,17 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
+	t.Run("valid cookie /api/governance/mcp with governance.read reaches the AG-UI handler", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/governance/mcp", nil)
+		req.AddCookie(sessionCookie)
+		handler.ServeHTTP(rec, req)
+		if len(aguiHits) != 1 || aguiHits[0] != "/api/governance/mcp" {
+			t.Fatalf("valid-session governance read did not reach the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
+		}
+	})
+
 	t.Run("no cookie /api/assets -> 401 (RequireAuth inherited)", func(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
@@ -465,4 +476,18 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 			t.Fatalf("%s %s reached the AG-UI handler despite a denied capability: %v", tc.method, tc.path, aguiHits)
 		}
 	}
+
+	t.Run("governance reads require governance.read", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/governance/mcp", nil)
+		req.AddCookie(sessionCookie)
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("GET /api/governance/mcp with an uncapable principal = %d, want 403", rec.Code)
+		}
+		if len(aguiHits) != 0 {
+			t.Fatalf("GET /api/governance/mcp reached the AG-UI handler despite denied governance.read: %v", aguiHits)
+		}
+	})
 }

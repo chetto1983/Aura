@@ -79,7 +79,7 @@ func (a liveAuraLeg) CreateIdentityWithGrants(ctx context.Context, p AuraLegPara
 		return "", err
 	}
 	for _, c := range p.Capabilities {
-		if c == "*" {
+		if err := identity.ValidateCapabilityName(c); err != nil {
 			return "", ErrOnboardingEscalation
 		}
 		if err := q.GrantCapability(ctx, sqlc.GrantCapabilityParams{
@@ -320,7 +320,7 @@ func TestProvisionSagaLive(t *testing.T) {
 		au := newStatefulAuthula()
 		svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 		t.Cleanup(func() { env.cleanupProvisioned(email) })
-		resp, err := svc.Provision(context.Background(), tok, OnboardingProvisionRequest{
+		resp, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
 			Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: true,
 		})
 		if err != nil {
@@ -359,7 +359,7 @@ func TestProvisionSagaLive(t *testing.T) {
 			au := tc.auFn()
 			svc, tok, email := env.service(t, au, tc.legFn(), tc.tgFn())
 			t.Cleanup(func() { env.cleanupProvisioned(email) })
-			if _, err := svc.Provision(context.Background(), tok, OnboardingProvisionRequest{
+			if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
 				Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: true,
 			}); err == nil {
 				t.Fatalf("%s: provision must error", tc.name)
@@ -382,7 +382,7 @@ func TestProvisionIdempotent(t *testing.T) {
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
 
-	if _, err := svc.Provision(context.Background(), tok, OnboardingProvisionRequest{
+	if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
 		Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
 	}); err != nil {
 		t.Fatalf("first provision: %v", err)
@@ -391,7 +391,7 @@ func TestProvisionIdempotent(t *testing.T) {
 	// Second provision with the SAME email on a fresh session: the Authula pre-check sees
 	// the existing user → ErrOnboardingDuplicate (no write); one identity remains.
 	svc2, tok2, _ := env.service(t, au, env.auraLeg, env.telegram)
-	_, err := svc2.Provision(context.Background(), tok2, OnboardingProvisionRequest{
+	_, err := svc2.Provision(context.Background(), env.creator, tok2, OnboardingProvisionRequest{
 		Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
 	})
 	if !errors.Is(err, ErrOnboardingDuplicate) {
@@ -419,7 +419,7 @@ func TestIdentityAuditImmutable(t *testing.T) {
 	au := newStatefulAuthula()
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
-	if _, err := svc.Provision(context.Background(), tok, OnboardingProvisionRequest{
+	if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
 		Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
 	}); err != nil {
 		t.Fatalf("Provision: %v", err)
@@ -442,7 +442,7 @@ func TestIdentityAuditImmutable(t *testing.T) {
 	au2.failCreateUser = true
 	svc2, tok2, email2 := env.service(t, au2, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email2) })
-	_, _ = svc2.Provision(ctx, tok2, OnboardingProvisionRequest{
+	_, _ = svc2.Provision(ctx, env.creator, tok2, OnboardingProvisionRequest{
 		Email: email2, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
 	})
 	var rolledBackAudit int
@@ -466,7 +466,7 @@ func TestProvisionNoSecretInLogsLive(t *testing.T) {
 	au := newStatefulAuthula()
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
-	if _, err := svc.Provision(context.Background(), tok, OnboardingProvisionRequest{
+	if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
 		Email: email, Password: secret, Capabilities: []string{"agent.run"}, LinkTelegram: true,
 	}); err != nil {
 		t.Fatalf("Provision: %v", err)

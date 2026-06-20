@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -98,7 +99,7 @@ func TestNoDuplicatePrompt(t *testing.T) {
 
 	// Walk the 5 interview steps with a free-text answer each → exactly 5 extractions.
 	for i, text := range []string{"Davide", "backend dev, Go", "Aura", "AI agents", "friendly, short"} {
-		resp, err := svc.Step(ctx, tok, OnboardingStepRequest{Intent: "answer", Text: text})
+		resp, err := svc.Step(ctx, "creator-1", tok, OnboardingStepRequest{Intent: "answer", Text: text})
 		if err != nil {
 			t.Fatalf("step %d: %v", i, err)
 		}
@@ -110,7 +111,7 @@ func TestNoDuplicatePrompt(t *testing.T) {
 
 	// We are now at the draft step (StatusDraft). An edit must NOT trigger a 6th extraction
 	// (it re-renders deterministically from the SAME answers).
-	editResp, err := svc.Step(ctx, tok, OnboardingStepRequest{
+	editResp, err := svc.Step(ctx, "creator-1", tok, OnboardingStepRequest{
 		Intent:  "edit",
 		Answers: &OnboardingAnswers{TonePreference: "direct"},
 	})
@@ -125,7 +126,7 @@ func TestNoDuplicatePrompt(t *testing.T) {
 	}
 
 	// A confirm completes without any extraction.
-	confirmResp, err := svc.Step(ctx, tok, OnboardingStepRequest{Intent: "confirm"})
+	confirmResp, err := svc.Step(ctx, "creator-1", tok, OnboardingStepRequest{Intent: "confirm"})
 	if err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestOnboardingStepSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartSession: %v", err)
 	}
-	resp, err := svc.Step(ctx, start.SessionToken, OnboardingStepRequest{Intent: "skip"})
+	resp, err := svc.Step(ctx, "creator-1", start.SessionToken, OnboardingStepRequest{Intent: "skip"})
 	if err != nil {
 		t.Fatalf("skip: %v", err)
 	}
@@ -198,7 +199,7 @@ func TestOnboardingStepEmptyAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartSession: %v", err)
 	}
-	resp, err := svc.Step(ctx, start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: "   "})
+	resp, err := svc.Step(ctx, "creator-1", start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: "   "})
 	if err != nil {
 		t.Fatalf("empty answer: %v", err)
 	}
@@ -215,12 +216,31 @@ func TestOnboardingStepEmptyAnswer(t *testing.T) {
 // session-not-found sentinel (mapped to 404 by the handler).
 func TestOnboardingStepUnknownSession(t *testing.T) {
 	svc := newInterviewService(&countingExtractor{}, fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{})
-	_, err := svc.Step(context.Background(), "nope", OnboardingStepRequest{Intent: "answer", Text: "x"})
+	_, err := svc.Step(context.Background(), "creator-1", "nope", OnboardingStepRequest{Intent: "answer", Text: "x"})
 	if err == nil {
 		t.Fatal("unknown session must error")
 	}
 	if !strings.Contains(err.Error(), "session not found") {
 		t.Errorf("err = %v, want session-not-found", err)
+	}
+}
+
+// TestOnboardingStepRejectsMismatchedRequester proves the opaque session token is not a
+// bearer credential by itself: the current authenticated principal must match the
+// identity that started the session, and a rejected request must not invoke extraction.
+func TestOnboardingStepRejectsMismatchedRequester(t *testing.T) {
+	ext := &countingExtractor{}
+	svc := newInterviewService(ext, fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{})
+	start, err := svc.StartSession(context.Background(), "creator-1")
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	_, err = svc.Step(context.Background(), "creator-2", start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: "x"})
+	if !errors.Is(err, errOnboardingForbidden) {
+		t.Fatalf("mismatched requester err = %v, want forbidden", err)
+	}
+	if ext.count() != 0 {
+		t.Fatalf("mismatched requester invoked extraction %d time(s), want 0", ext.count())
 	}
 }
 
@@ -310,8 +330,8 @@ func TestOnboardingStepHandlerValidation(t *testing.T) {
 	if okResp.StatusCode != http.StatusOK {
 		t.Fatalf("valid step = %d, want 200", okResp.StatusCode)
 	}
-	if fake.gotToken != "tok-9" || fake.gotIntent != "answer" {
-		t.Errorf("service got token=%q intent=%q, want tok-9/answer", fake.gotToken, fake.gotIntent)
+	if fake.gotToken != "tok-9" || fake.gotIntent != "answer" || fake.gotRequester != "00000000-0000-0000-0000-000000000001" {
+		t.Errorf("service got requester=%q token=%q intent=%q, want principal/tok-9/answer", fake.gotRequester, fake.gotToken, fake.gotIntent)
 	}
 }
 

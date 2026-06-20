@@ -98,6 +98,15 @@ describe('OnboardingWizard', () => {
     expect(screen.getByRole('alert')).toBeTruthy();
   });
 
+  it('renders no-permission copy when /start 403s', async () => {
+    startOnboarding.mockRejectedValue(new Error('HTTP 403'));
+    renderWizard();
+    await waitFor(() => {
+      expect(screen.getByText("You don't have permission to create an identity.")).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
   it('renders the error state with a Retry that re-calls /start', async () => {
     startOnboarding.mockRejectedValueOnce(new Error('HTTP 502')).mockResolvedValueOnce(START);
     renderWizard();

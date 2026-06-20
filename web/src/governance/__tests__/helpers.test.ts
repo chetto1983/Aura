@@ -66,8 +66,6 @@ describe('scheduleText (scheduler row schedule cell)', () => {
       Status: 'active',
       NextRunAt: '',
       NotifyRoute: '',
-      IdentityID: 'local',
-      OriginConversationID: '',
       CreatedAt: '',
       UpdatedAt: '',
       ...over,

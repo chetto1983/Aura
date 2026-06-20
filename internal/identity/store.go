@@ -191,15 +191,27 @@ func (s *Store) RevokeCapability(ctx context.Context, identityID, capability str
 	return nil
 }
 
+// ValidateCapabilityName applies the canonical capability grammar without touching the
+// database. It rejects the system-managed '*' wildcard and any name outside the
+// lowercase [a-z][a-z0-9._-]{0,63} grammar. Composition-root code that must bind raw
+// sqlc queries inside an existing transaction uses this helper so the Store and tx paths
+// share one validation rule.
+func ValidateCapabilityName(capability string) error {
+	if capability == Wildcard {
+		return ErrWildcardManaged
+	}
+	if !capNameRe.MatchString(capability) {
+		return fmt.Errorf("%w: %q must match %s", ErrInvalidCapability, capability, capNameRe.String())
+	}
+	return nil
+}
+
 // validateGrantInput rejects the system-managed wildcard and invalid names
 // BEFORE any DB round-trip (the threat-model T-04-05/T-04-06 mitigation), then
 // parses the identity UUID.
 func (s *Store) validateGrantInput(identityID, capability string) (pgtype.UUID, error) {
-	if capability == Wildcard {
-		return pgtype.UUID{}, ErrWildcardManaged
-	}
-	if !capNameRe.MatchString(capability) {
-		return pgtype.UUID{}, fmt.Errorf("%w: %q must match %s", ErrInvalidCapability, capability, capNameRe.String())
+	if err := ValidateCapabilityName(capability); err != nil {
+		return pgtype.UUID{}, err
 	}
 	return parseUUID(identityID)
 }

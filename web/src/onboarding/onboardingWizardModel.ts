@@ -31,11 +31,17 @@ export function isAuthError(err: unknown): boolean {
   return err instanceof Error && err.message === 'HTTP 401';
 }
 
+/** isForbiddenError matches Error("HTTP 403") so start/provision permission failures can
+ * render the no-capability copy instead of a retryable backend outage. */
+export function isForbiddenError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'HTTP 403';
+}
+
 /** provisionErrorKind maps a thrown Error("HTTP <n>") from /provision to the matching distinct copy
  * key: a 403 → no-capability, a 409 → duplicate/empty email, anything else → rolled-back. */
 export function provisionErrorKind(err: unknown): ProvisionErrorKind {
   if (err instanceof Error) {
-    if (err.message === 'HTTP 403') return 'noCapability';
+    if (isForbiddenError(err)) return 'noCapability';
     if (err.message === 'HTTP 409') return 'duplicate';
   }
   return 'rolledBack';

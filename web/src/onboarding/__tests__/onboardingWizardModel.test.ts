@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   credentialsValid,
   isAuthError,
+  isForbiddenError,
   isTerminalStatus,
   PHASES,
   phaseIndex,
@@ -23,6 +24,18 @@ describe('isAuthError', () => {
     expect(isAuthError('HTTP 401')).toBe(false);
     expect(isAuthError(undefined)).toBe(false);
     expect(isAuthError(null)).toBe(false);
+  });
+});
+
+describe('isForbiddenError', () => {
+  it('is true ONLY for Error("HTTP 403")', () => {
+    expect(isForbiddenError(new Error('HTTP 403'))).toBe(true);
+  });
+  it('is false for auth errors, other HTTP codes, and non-Error values', () => {
+    expect(isForbiddenError(new Error('HTTP 401'))).toBe(false);
+    expect(isForbiddenError(new Error('HTTP 500'))).toBe(false);
+    expect(isForbiddenError('HTTP 403')).toBe(false);
+    expect(isForbiddenError(undefined)).toBe(false);
   });
 });
 

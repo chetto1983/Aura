@@ -116,10 +116,10 @@ func (a auraLegAdapter) CreateIdentityWithGrants(ctx context.Context, p agui.Aur
 		return "", fmt.Errorf("create identity: %w", err)
 	}
 	for _, cap := range p.Capabilities {
-		// Backstop the no-escalation re-validation at the store edge: never grant '*' (the
-		// raw sqlc GrantCapability does not reject it; identity.Store.GrantCapability does,
-		// but Leg A binds the tx-level sqlc query, so the check lands here too).
-		if cap == "*" {
+		// Backstop the no-escalation re-validation at the store edge. Leg A binds raw sqlc
+		// inside this tx, so it must reuse identity.Store's capability grammar helper
+		// instead of bypassing Store.GrantCapability.
+		if err := identity.ValidateCapabilityName(cap); err != nil {
 			return "", agui.ErrOnboardingEscalation
 		}
 		if err := q.GrantCapability(ctx, sqlc.GrantCapabilityParams{

@@ -82,16 +82,16 @@ type OnboardingService interface {
 	// Step applies one onboarding intent (answer/confirm/edit/skip) to the server-held
 	// session: an answer carrying free text runs the LLM extractor EXACTLY once, then
 	// advances the session; replay/edit emit no second LLM turn (ONBD-02 / D-03).
-	Step(ctx context.Context, token string, in OnboardingStepRequest) (OnboardingStepResponse, error)
+	Step(ctx context.Context, requesterIdentityID, token string, in OnboardingStepRequest) (OnboardingStepResponse, error)
 	// Provision runs the ordered cross-store saga (Leg B Authula → Leg A aura tx → Leg C
 	// Telegram mint → one immutable audit row) with per-leg compensation + the three-way
 	// no-escalation re-validation, and returns the Telegram deep-link + server-rendered QR
 	// (ONBD-01a/01b). The password is write-only (hashed immediately, never echoed/logged).
-	Provision(ctx context.Context, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error)
+	Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error)
 	// TelegramStatus reports whether the minted onboarding token has been consumed (the
 	// user scanned the deep-link and linked Telegram) via a REST poll over PendingConsumed
 	// (ONBD-01b / R6).
-	TelegramStatus(ctx context.Context, token string) (OnboardingTelegramStatus, error)
+	TelegramStatus(ctx context.Context, requesterIdentityID, token string) (OnboardingTelegramStatus, error)
 }
 
 // SetGovernanceProviders wires the read-only governance board providers (GOV-01/02/03).

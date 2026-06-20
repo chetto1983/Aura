@@ -37,8 +37,6 @@ const TASKS: SchedulerTask[] = [
     Status: 'active',
     NextRunAt: '2026-06-21T09:00:00Z',
     NotifyRoute: 'telegram',
-    IdentityID: 'local',
-    OriginConversationID: '',
     CreatedAt: '2026-06-01T09:00:00Z',
     UpdatedAt: '2026-06-01T09:00:00Z',
   },
@@ -51,12 +49,10 @@ function run(i: number): SchedulerRun {
     Status: 'completed',
     StepBudget: 10,
     StartedAt: `2026-06-1${String(i % 9)}T09:00:00Z`,
-    LastHeartbeatAt: '2026-06-19T09:01:00Z',
     CompletedWithHash: 'h',
     Summary: `run summary ${String(i)}`,
     LastError: '',
     MissedSince: '0001-01-01T00:00:00Z',
-    PausedStateToken: '',
     CompletedAt: '2026-06-19T09:02:00Z',
   };
 }

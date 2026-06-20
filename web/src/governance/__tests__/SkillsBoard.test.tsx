@@ -30,11 +30,9 @@ const PENDING: SkillRow[] = [
 function auditRow(over: Partial<AuditRow> & Pick<AuditRow, 'ID' | 'CreatedAt' | 'SkillName'>): AuditRow {
   return {
     ActorID: 'local',
-    IdentityID: 'local',
     Action: 'install',
     ContentHash: 'abc',
     ApprovalSource: 'cli',
-    PausedStateToken: '',
     GateRecommended: false,
     GateTaken: false,
     BlocklistOverride: false,
