@@ -77,3 +77,4 @@ internal/runner/conversations/*
 web/node_modules.broken/*
 .tmp/*
 env.linux
+web/.stryker-tmp-onb/*

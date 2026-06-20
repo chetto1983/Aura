@@ -1,230 +1,40 @@
-You are a senior software architect and principal engineer specialized in agent-loop systems, autonomous agents, orchestration runtimes, reliability engineering, observability, and production-grade infrastructure.
+/goal
 
-Your task is to perform a deep technical audit of the repository/module located at:
+Fully complete and validate Phase 28 across desktop and mobile until the project reaches a verified quality score of 9.5/10 or higher.
 
-D:\Aura\internal\agent
+Act as an autonomous senior full-stack engineer and QA engineer. Install whatever dependencies, browsers, drivers, test tools, or packages are required. Rebuild containers, restart services, and fix code/configuration/test issues as needed.
 
-Additional reference codebases, examples, experiments, or related modules may be available under:
+Important safety rule:
+Only stop, restart, or kill processes and containers that clearly belong to this project or are blocking this project. Never kill unrelated system processes. Ask for confirmation only for destructive actions, credentials, production changes, or data deletion.
 
-D:\tmp
+Tasks:
+- Inspect the repository and understand the Phase 28 goal.
+- Prepare the environment.
+- Update/rebuild containers as needed.
+- Run the app locally.
+- Use Playwright for full E2E validation.
+- Validate all Phase 28 flows on desktop.
+- Validate all Phase 28 flows on mobile using realistic device profiles.
+- Fix every discovered issue.
+- Re-run tests until they pass consistently.
+- Capture evidence where useful: screenshots, traces, logs, videos.
+- Improve reliability, error handling, UX, mobile layout, and code quality.
+- Do not rely on visual assumptions; verify behavior through real tests.
 
-Use the code in D:\tmp only as supporting context when useful. Do not assume it is production code unless there is evidence.
+Definition of done:
+- Phase 28 works end-to-end.
+- Desktop validation passes.
+- Mobile validation passes.
+- Playwright tests pass reliably.
+- No critical or high-severity issues remain.
+- The implementation meets a quality score of at least 9.8/10.
 
-Your objective is to produce a complete industrial-grade audit report and improvement plan for the agent architecture, focusing on correctness, reliability, scalability, maintainability, observability, security, testing, and production readiness.
+Final response must include:
+- What was changed.
+- What was tested.
+- Desktop and mobile validation results.
+- Commands used.
+- Any remaining risks.
+- Final quality score with justification.
 
-Write the final documentation under:
-
-D:\Aura\docs\audit
-
-Create the directory if it does not exist.
-
-You must work as if this repository is intended to become a real industrial-grade production system.
-
-Scope of the audit:
-
-1. Agent loop architecture
-   - Analyze the main agent execution loop.
-   - Identify lifecycle issues, state handling problems, retry behavior, cancellation handling, timeout handling, concurrency issues, deadlocks, race conditions, and infinite-loop risks.
-   - Verify whether the loop is deterministic, debuggable, resumable, and safe under failure.
-
-2. Tooling and action execution
-   - Inspect how tools, commands, actions, plugins, or external calls are invoked.
-   - Check validation, error handling, sandboxing, permission boundaries, retries, idempotency, and result normalization.
-   - Identify unsafe assumptions and missing guardrails.
-
-3. Memory and context management
-   - Review how short-term memory, long-term memory, conversation context, task state, and intermediate reasoning/state are stored and retrieved.
-   - Detect risks of context corruption, stale state, uncontrolled growth, missing persistence, and poor recovery after crash.
-
-4. Infrastructure and production readiness
-   - Audit configuration management, environment variables, secrets handling, logging, metrics, tracing, health checks, deployment assumptions, dependency management, and runtime isolation.
-   - Identify what is missing to make the system industrial-grade.
-
-5. Reliability and resilience
-   - Look for missing timeout policies, retry policies, circuit breakers, backpressure, rate limiting, queueing, graceful shutdown, checkpointing, transaction boundaries, and recovery mechanisms.
-
-6. Security
-   - Identify injection risks, path traversal, unsafe file operations, unsafe subprocess execution, prompt injection surfaces, secret leakage, uncontrolled network/file access, and privilege escalation risks.
-   - Flag any dangerous behavior clearly.
-
-7. Testing and quality
-   - Inspect available tests.
-   - Identify missing unit tests, integration tests, regression tests, load tests, chaos tests, contract tests, golden tests, and end-to-end tests.
-   - Propose a practical testing strategy.
-
-8. Code quality and maintainability
-   - Identify duplicated logic, unclear abstractions, excessive coupling, fragile interfaces, hidden global state, poor naming, weak typing, insufficient documentation, and unclear ownership boundaries.
-
-9. Comparison with reference code
-   - Inspect relevant code under D:\tmp when useful.
-   - Identify reusable patterns, better implementations, duplicated modules, legacy code, or conflicting approaches.
-
-Audit methodology:
-
-- Do not make unsupported claims.
-- Every bug or architectural issue must include evidence:
-  - file path
-  - function/class/module name when available
-  - line number or approximate location when possible
-  - explanation of the risk
-  - severity
-  - recommended fix
-- If something cannot be verified, mark it as UNKNOWN or NEEDS CONFIRMATION.
-- Prefer concrete findings over generic advice.
-- Do not modify production source code unless explicitly asked.
-- You may create documentation files only inside D:\Aura\docs\audit.
-- Be strict, critical, and practical.
-
-Severity scale:
-
-- P0: Critical production blocker, data loss, security breach, infinite loop, unsafe execution, or system-wide failure.
-- P1: Serious reliability, correctness, or security issue that must be fixed before production.
-- P2: Important maintainability, observability, testing, or architecture issue.
-- P3: Improvement, cleanup, documentation, or future hardening.
-
-Required output files:
-
-Create the following Markdown files inside D:\Aura\docs\audit:
-
-1. README.md
-   - Overview of the audit.
-   - How to read the reports.
-   - Summary of most important findings.
-
-2. executive-summary.md
-   - High-level assessment.
-   - Production readiness score from 0 to 10.
-   - Top risks.
-   - Recommended immediate actions.
-
-3. architecture-review.md
-   - Current architecture description.
-   - Agent-loop design analysis.
-   - Main components and responsibilities.
-   - Architecture weaknesses.
-   - Suggested target architecture.
-
-4. bug-report.md
-   - Detailed list of bugs and correctness issues.
-   - Use this format for each finding:
-
-     ## [P0/P1/P2/P3] Short title
-
-     - Evidence:
-       - File:
-       - Location:
-       - Relevant component:
-     - Problem:
-     - Impact:
-     - Reproduction or failure scenario:
-     - Recommended fix:
-     - Suggested test coverage:
-
-5. infrastructure-audit.md
-   - Missing infrastructure capabilities.
-   - Logging, metrics, tracing, configuration, deployment, secrets, health checks, queues, persistence, and runtime isolation.
-   - Concrete recommendations.
-
-6. security-audit.md
-   - Security risks.
-   - Prompt injection risks.
-   - Unsafe file/network/subprocess access.
-   - Secret handling.
-   - Permission boundaries.
-   - Recommended mitigations.
-
-7. testing-strategy.md
-   - Current test coverage assessment.
-   - Missing tests.
-   - Proposed test pyramid.
-   - Critical regression tests.
-   - Suggested CI checks.
-
-8. industrialization-roadmap.md
-   - Step-by-step plan to make the repository production-grade.
-   - Organize work into phases:
-
-     Phase 0: Stabilization
-     Phase 1: Observability and reliability
-     Phase 2: Architecture hardening
-     Phase 3: Security hardening
-     Phase 4: Scalability and production operations
-     Phase 5: Long-term maintainability
-
-   - Include priority, effort estimate, impact, dependencies, and acceptance criteria.
-
-9. action-plan.md
-   - Concrete engineering backlog.
-   - Organize items by priority:
-     - Immediate P0/P1 fixes
-     - Short-term improvements
-     - Medium-term architecture work
-     - Long-term industrialization
-   - Each task must include:
-     - title
-     - description
-     - owner role
-     - expected outcome
-     - acceptance criteria
-
-10. risk-register.md
-    - Table of risks with:
-      - ID
-      - title
-      - severity
-      - probability
-      - impact
-      - affected area
-      - mitigation
-      - status
-
-11. target-architecture.md
-    - Proposed industrial-grade target design.
-    - Include recommended modules, boundaries, interfaces, runtime flow, observability model, failure handling model, and persistence/checkpointing strategy.
-
-12. audit-index.json
-    - Machine-readable summary of the audit.
-    - Include:
-      - audit_date
-      - audited_path
-      - reference_paths
-      - production_readiness_score
-      - total_findings
-      - findings_by_severity
-      - top_10_risks
-      - recommended_next_actions
-
-Important quality requirements:
-
-- Be specific and evidence-based.
-- Use precise engineering language.
-- Avoid generic statements such as “improve error handling” unless you explain exactly where, why, and how.
-- Prefer actionable recommendations.
-- Include examples of better patterns when useful.
-- Separate confirmed issues from assumptions.
-- Clearly identify architectural debt versus implementation bugs.
-- Treat this as a real production-readiness audit for a serious industrial system.
-
-Final response:
-
-After creating the documentation, provide a concise summary containing:
-
-- Files created
-- Production readiness score
-- Number of P0, P1, P2, and P3 findings
-- Top 5 critical risks
-- Recommended next 5 engineering actions
-
-In addition to the audit documentation, create a file named proposed-patches.md under D:\Aura\docs\audit.
-
-For each major issue, include suggested code-level changes as patch-style recommendations, but do not apply them to the production source code unless explicitly instructed.
-
-Each proposed patch must include:
-
-- affected file
-- affected function/class
-- reason for change
-- before/after behavior
-- suggested implementation approach
-- tests required before merging
-- rollback considerations
+Continue working until the definition of done is satisfied. Stop only if genuine user confirmation is required.
