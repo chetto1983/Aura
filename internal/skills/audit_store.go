@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -170,6 +171,9 @@ func (s *AuditStore) List(ctx context.Context, f AuditFilter) ([]AuditRow, error
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 100
+	}
+	if limit > math.MaxInt32 {
+		limit = math.MaxInt32
 	}
 	var name pgtype.Text
 	if f.SkillName != "" {
