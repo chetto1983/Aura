@@ -2,18 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-current_phase: 27
-current_phase_name: neo4j-graph-explorer
-status: completed
-stopped_at: Phase 28 UI-SPEC approved
-last_updated: "2026-06-20T07:29:29.402Z"
+status: executing
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-06-20T08:40:41.065Z"
 last_activity: 2026-06-20
-last_activity_desc: Phase 28 planning complete
 progress:
   total_phases: 9
   completed_phases: 6
-  total_plans: 29
-  completed_plans: 29
+  total_plans: 35
+  completed_plans: 30
   percent: 67
 ---
 
@@ -24,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 28 — gov-read + onboarding (Phase 27 closed)
+**Current focus:** Phase 28 — governance-boards-web-onboarding
 
 ## Current Position
 
-Phase: 27 (neo4j-graph-explorer) — ✅ CLOSED (operator directive 2026-06-19)
-Plan: 4 of 4 complete
-Status: Phase 27 done — next: `/gsd-plan-phase 28`
-Last activity: 2026-06-20 — Phase 28 planning complete
+Phase: 28 (governance-boards-web-onboarding) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-06-20
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -191,6 +188,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 27 P27-02 | 15min | 2 tasks | 8 files |
 | Phase 27 P03 | 10min | 2 tasks | 6 files |
 | Phase 27 P27-04 | 75min | 4 tasks | 22 files |
+| Phase 28 P01 | ~50 min | 2 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -386,9 +384,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-19T20:28:17.789Z
-Stopped at: Phase 28 UI-SPEC approved
-Resume file: .planning/phases/28-governance-boards-web-onboarding/28-UI-SPEC.md
+Last session: 2026-06-20T08:40:41.046Z
+Stopped at: Completed 28-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
