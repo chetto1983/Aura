@@ -119,7 +119,8 @@ func (v *GraphView) Schema(ctx context.Context) (GraphSchema, error) {
 // compile → assertReadOnly → Read → normalize path. GraphResult.Query is set to
 // the compiled (display) Cypher so the cockpit's read-only "Show Cypher"
 // affordance (D-09) shows the exact query. On an empty seed footprint it falls
-// back to the schema overview (D-07/D-08) so the default open is never blank.
+// back to the relationship overview (D-07/D-08) so the default open can still
+// draw graphs written outside the older conversation-message footprint.
 func (v *GraphView) Query(ctx context.Context, in GraphIntent) (GraphResult, error) {
 	switch in.Op {
 	case OpSeed:
@@ -128,14 +129,14 @@ func (v *GraphView) Query(ctx context.Context, in GraphIntent) (GraphResult, err
 		cypher, params := compileExpand(in)
 		return v.runCompiled(ctx, OpExpand, cypher, params)
 	case OpSchemaOverview:
-		return v.schemaResult(ctx)
+		return v.overviewResult(ctx, in)
 	default:
 		return GraphResult{}, fmt.Errorf("%w: %q", errBadOp, in.Op)
 	}
 }
 
 // runSeed compiles + runs the conversation footprint; on zero rows it returns the
-// schema overview instead of an empty canvas (D-08 fallback).
+// relationship overview instead of an empty canvas (D-08 fallback).
 func (v *GraphView) runSeed(ctx context.Context, in GraphIntent) (GraphResult, error) {
 	cypher, params := compileSeed(in)
 	if err := assertReadOnly(cypher); err != nil {
@@ -148,7 +149,7 @@ func (v *GraphView) runSeed(ctx context.Context, in GraphIntent) (GraphResult, e
 	res := normalizeRows(OpSeed, rows)
 	res.Query = cypher
 	if len(res.Nodes) == 0 {
-		return v.schemaResult(ctx)
+		return v.overviewResult(ctx, in)
 	}
 	return res, nil
 }
@@ -167,11 +168,13 @@ func (v *GraphView) runCompiled(ctx context.Context, op, cypher string, params m
 	return res, nil
 }
 
-// schemaResult is the schema-overview as a GraphResult (the empty-state + the
-// no-footprint fallback). It carries no nodes/edges — just the schema + the
-// compiled query for the Cypher preview.
-func (v *GraphView) schemaResult(ctx context.Context) (GraphResult, error) {
-	cypher, params := compileSchema()
+// overviewResult is the drawable graph overview as a GraphResult (the explicit
+// schema_overview op + the no-footprint fallback). It samples live relationships
+// and always attaches the schema for the filters/legend. When the graph has no
+// relationships, the nodes/edges stay empty but the schema still lets the UI show
+// a meaningful empty state.
+func (v *GraphView) overviewResult(ctx context.Context, in GraphIntent) (GraphResult, error) {
+	cypher, params := compileOverview(in)
 	if err := assertReadOnly(cypher); err != nil {
 		return GraphResult{}, err
 	}
@@ -179,5 +182,12 @@ func (v *GraphView) schemaResult(ctx context.Context) (GraphResult, error) {
 	if err != nil {
 		return GraphResult{}, err
 	}
-	return GraphResult{Schema: normalizeSchema(rows), Query: cypher}, nil
+	res := normalizeRows(OpSchemaOverview, rows)
+	res.Query = cypher
+	schema, err := v.Schema(ctx)
+	if err != nil {
+		return GraphResult{}, err
+	}
+	res.Schema = schema
+	return res, nil
 }

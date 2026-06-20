@@ -243,9 +243,11 @@ func TestQueryDispatch(t *testing.T) {
 // schema overview instead of a blank canvas.
 func TestQuerySeedFallback(t *testing.T) {
 	// First Read (seed) returns no rows; the fallback Read (schema) returns the
-	// schema row. The scriptedReader drives the two phases deterministically.
+	// overview graph has no relationships; the final fallback Read returns the
+	// schema row. The scriptedReader drives the phases deterministically.
 	fr := &scriptedReader{responses: [][]map[string]any{
 		{}, // seed: empty footprint
+		{}, // overview graph: no drawable relationships
 		{{ // schema overview
 			"labels_json":    jsonLabels("Entity", "Document"),
 			"rel_types_json": jsonLabels("CITES"),
@@ -262,8 +264,49 @@ func TestQuerySeedFallback(t *testing.T) {
 	if len(res.Schema.Labels) != 2 {
 		t.Fatalf("fallback must carry the schema overview, got %+v", res.Schema)
 	}
-	if fr.calls != 2 {
-		t.Fatalf("expected 2 reads (seed + schema fallback), got %d", fr.calls)
+	if fr.calls != 3 {
+		t.Fatalf("expected 3 reads (seed + overview + schema fallback), got %d", fr.calls)
+	}
+}
+
+// TestQuerySeedFallbackUsesRelationshipOverview pins the live-data case reported from
+// the cockpit: a conversation can have no :Conversation-[:HAS_MESSAGE]->:Message
+// footprint while the memory graph still contains relationships such as RELATED_TO.
+// The fallback should return a drawable bounded overview, not schema-only metadata.
+func TestQuerySeedFallbackUsesRelationshipOverview(t *testing.T) {
+	fr := &scriptedReader{responses: [][]map[string]any{
+		{}, // seed: empty conversation footprint
+		{{ // overview graph: the live RELATED_TO shape
+			"s_id": "p1", "s_labels": jsonLabels("Entity", "Person"), "s_caption": "Davide",
+			"s_props": map[string]any{"canonical_name": "Davide"},
+			"n_id":    "c1", "n_labels": jsonLabels("Entity", "Location", "City"), "n_caption": "Caraglio",
+			"n_props": map[string]any{"canonical_name": "Caraglio"},
+			"r_id":    "r1", "r_type": "RELATED_TO", "r_src": "p1", "r_dst": "c1",
+		}},
+		{{ // schema attached to the result for filters/legend
+			"labels_json":    jsonLabels("Entity", "Person", "Location", "City"),
+			"rel_types_json": jsonLabels("RELATED_TO"),
+		}},
+	}}
+	gv := NewGraphView(fr)
+	res, err := gv.Query(context.Background(), GraphIntent{Op: OpSeed, Session: "thread-with-global-memory"})
+	if err != nil {
+		t.Fatalf("Query seed overview fallback: %v", err)
+	}
+	if len(res.Nodes) != 2 || len(res.Edges) != 1 {
+		t.Fatalf("overview fallback nodes/edges = %d/%d, want 2/1: %+v %+v", len(res.Nodes), len(res.Edges), res.Nodes, res.Edges)
+	}
+	if res.Edges[0].RelType != "RELATED_TO" {
+		t.Fatalf("overview fallback rel_type = %q, want RELATED_TO", res.Edges[0].RelType)
+	}
+	if len(res.Schema.RelTypes) != 1 || res.Schema.RelTypes[0] != "RELATED_TO" {
+		t.Fatalf("overview fallback schema = %+v, want RELATED_TO rel type", res.Schema)
+	}
+	if !strings.Contains(res.Query, "MATCH (s)-[r]->(n)") {
+		t.Fatalf("overview fallback should expose the overview Cypher, got %q", res.Query)
+	}
+	if fr.calls != 3 {
+		t.Fatalf("expected 3 reads (seed + overview + schema), got %d", fr.calls)
 	}
 }
 

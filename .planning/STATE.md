@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
+current_phase: 27
+current_phase_name: neo4j-graph-explorer
 status: completed
-stopped_at: Phase 28 context gathered
-last_updated: "2026-06-19T20:01:04.359Z"
-last_activity: 2026-06-19
+stopped_at: Phase 28 UI-SPEC approved
+last_updated: "2026-06-20T07:29:29.402Z"
+last_activity: 2026-06-20
+last_activity_desc: Phase 28 planning complete
 progress:
   total_phases: 9
   completed_phases: 6
@@ -28,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 Phase: 27 (neo4j-graph-explorer) — ✅ CLOSED (operator directive 2026-06-19)
 Plan: 4 of 4 complete
 Status: Phase 27 done — next: `/gsd-plan-phase 28`
-Last activity: 2026-06-19
+Last activity: 2026-06-20 — Phase 28 planning complete
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -383,9 +386,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-19T20:01:04.334Z
-Stopped at: Phase 28 context gathered
-Resume file: .planning/phases/28-governance-boards-web-onboarding/28-CONTEXT.md
+Last session: 2026-06-19T20:28:17.789Z
+Stopped at: Phase 28 UI-SPEC approved
+Resume file: .planning/phases/28-governance-boards-web-onboarding/28-UI-SPEC.md
 
 ## Operator Next Steps
 

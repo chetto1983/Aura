@@ -159,9 +159,38 @@ function FitGraph({ nodeCount }: { readonly nodeCount: number }) {
   useEffect(() => {
     if (nodeCount === 0) return undefined;
     const raf = window.requestAnimationFrame(() => {
-      // 0.5/0.5 is sigma's normalized graph centre; ratio < 1 tightens the frame so the graph
-      // fills the canvas. Kept conservative so edge labels are not clipped on a wide layout.
-      sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 0.82 });
+      const graph = sigma.getGraph();
+      let minX = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+
+      graph.forEachNode((_, attrs) => {
+        const x = typeof attrs.x === 'number' ? attrs.x : Number.NaN;
+        const y = typeof attrs.y === 'number' ? attrs.y : Number.NaN;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+
+      if (
+        Number.isFinite(minX) &&
+        Number.isFinite(maxX) &&
+        Number.isFinite(minY) &&
+        Number.isFinite(maxY)
+      ) {
+        const span = Math.max(maxX - minX, maxY - minY, 1);
+        const padding = span * 0.2;
+        sigma.setCustomBBox({
+          x: [minX - padding, maxX + padding],
+          y: [minY - padding, maxY + padding],
+        });
+      }
+      // 0.5/0.5 is the centre of Sigma's framed graph after normalization. The custom bbox
+      // above supplies the breathing room, so ratio 1 keeps endpoint nodes inside the viewport.
+      sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
       sigma.refresh();
     });
     return () => {

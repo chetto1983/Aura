@@ -31,7 +31,7 @@ type GraphIntent struct {
 
 // compileSeed emits the conversation-footprint read (D-07): the agent-memory
 // entities tied to the active session, plus their immediate neighbors. On zero
-// rows the caller falls back to the schema overview (D-08).
+// rows the caller falls back to the graph overview (D-08).
 func compileSeed(in GraphIntent) (cypher string, params map[string]any) {
 	cypher = `MATCH (:Conversation {session_id:$session})-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity)
 WITH DISTINCT e LIMIT $node_cap
@@ -56,6 +56,48 @@ RETURN
   elementId(endNode(r))              AS r_dst`
 	return cypher, map[string]any{
 		"session":   in.Session,
+		"labels":    nonNil(in.Labels),
+		"rel_types": nonNil(in.RelTypes),
+		"node_cap":  clamp(in.NodeCap, defaultNodeCap, maxNodeCap),
+		"edge_cap":  clamp(in.EdgeCap, defaultEdgeCap, maxEdgeCap),
+	}
+}
+
+// compileOverview emits a bounded relationship sample across the live graph. It is
+// the drawable fallback for stores that do not currently write the older
+// Conversation->Message->MENTIONS footprint but do contain memory relationships
+// such as RELATED_TO. Filters are still bound as data; the label filter keeps an
+// edge when either endpoint carries one of the selected labels.
+func compileOverview(in GraphIntent) (cypher string, params map[string]any) {
+	cypher = `MATCH (s)-[r]->(n)
+WHERE ($rel_types = [] OR type(r) IN $rel_types)
+  AND ($labels = [] OR any(l IN labels(s) WHERE l IN $labels) OR any(l IN labels(n) WHERE l IN $labels))
+WITH s, r, n LIMIT $edge_cap
+WITH collect({s:s, r:r, n:n}) AS rows
+UNWIND rows AS row
+WITH collect(DISTINCT elementId(row.s)) + collect(DISTINCT elementId(row.n)) AS candidate_ids, rows
+UNWIND candidate_ids AS candidate_id
+WITH DISTINCT candidate_id, rows LIMIT $node_cap
+WITH collect(candidate_id) AS node_ids, rows
+UNWIND rows AS row
+WITH row.s AS s, row.r AS r, row.n AS n, node_ids
+WHERE elementId(s) IN node_ids AND elementId(n) IN node_ids
+RETURN
+  elementId(s)                       AS s_id,
+  apoc.convert.toJson(labels(s))     AS s_labels,
+  s.type                             AS s_entity_type,
+  coalesce(s.name, s.canonical_name) AS s_caption,
+  properties(s)                      AS s_props,
+  elementId(n)                       AS n_id,
+  apoc.convert.toJson(labels(n))     AS n_labels,
+  n.type                             AS n_entity_type,
+  coalesce(n.name, n.canonical_name) AS n_caption,
+  properties(n)                      AS n_props,
+  elementId(r)                       AS r_id,
+  type(r)                            AS r_type,
+  elementId(startNode(r))            AS r_src,
+  elementId(endNode(r))              AS r_dst`
+	return cypher, map[string]any{
 		"labels":    nonNil(in.Labels),
 		"rel_types": nonNil(in.RelTypes),
 		"node_cap":  clamp(in.NodeCap, defaultNodeCap, maxNodeCap),

@@ -235,12 +235,24 @@ Plans:
 **Plans**: 6 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 28-01-PLAN.md — Wave-0 backend gaps + DI seams (run-history query, capability/audit stores, migration 0021, MCP probe, skills stage reader, agui seams)
-- [ ] 28-02-PLAN.md — Governance boards backend: 6 read-only /api/governance/* handlers + mounts
-- [ ] 28-03-PLAN.md — Governance boards frontend: lazy governance workspace + MCP/Skills/Scheduler boards (live probe, lifecycle tabs, run history)
 - [ ] 28-04-PLAN.md — BLOCKING PRD-amendment: relax single-operator (D-07) + absorb Phase 30 (D-09) + OperatorUserID relaxation
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 28-02-PLAN.md — Governance boards backend: 6 read-only /api/governance/* handlers + mounts
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 28-03-PLAN.md — Governance boards frontend: lazy governance workspace + MCP/Skills/Scheduler boards (live probe, lifecycle tabs, run history)
 - [ ] 28-05-PLAN.md — Onboarding backend: TTL session store + REST step + cross-store provisioning saga + QR + Telegram-status
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 28-06-PLAN.md — Onboarding frontend: full-screen wizard (credentials → capability picker → Telegram link+QR → interview → review+Create)
+
 **UI hint**: yes
 
 ### Phase 29: Governance Write — MCP Configuration + Skills Install

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import type { ClientEdge, ClientNode } from '../types';
@@ -9,11 +9,26 @@ import type { ClientEdge, ClientNode } from '../types';
 // WebGL render + interaction is asserted in the Task-4 Playwright e2e, never here.
 const loadGraph = vi.fn();
 const registerEvents = vi.fn();
+const cameraSetState = vi.fn();
+const setCustomBBox = vi.fn();
+const refresh = vi.fn();
+const graphNodes = [
+  ['n1', { x: 10, y: 20 }],
+  ['n2', { x: 110, y: 220 }],
+] as const;
 const sigmaShim = {
   getContainer: () => ({ style: {} }),
   setSetting: vi.fn(),
-  refresh: vi.fn(),
-  getGraph: () => ({ source: () => 's', target: () => 't' }),
+  refresh,
+  getGraph: () => ({
+    source: () => 's',
+    target: () => 't',
+    forEachNode: (cb: (id: string, attrs: { x: number; y: number }) => void) => {
+      for (const [id, attrs] of graphNodes) cb(id, attrs);
+    },
+  }),
+  getCamera: () => ({ setState: cameraSetState }),
+  setCustomBBox,
 };
 
 vi.mock('@react-sigma/core', () => ({
@@ -34,6 +49,20 @@ const NODES: readonly ClientNode[] = [
   { id: 'n2', caption: 'Bravo', color: '#81C995', size: 6, labels: ['Document'] },
 ];
 const EDGES: readonly ClientEdge[] = [{ id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' }];
+
+beforeEach(() => {
+  loadGraph.mockClear();
+  registerEvents.mockClear();
+  sigmaShim.setSetting.mockClear();
+  setCustomBBox.mockClear();
+  cameraSetState.mockClear();
+  refresh.mockClear();
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    cb(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+});
 
 describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
   it('gives the canvas wrapper role="img" + the accessible name with node/edge counts', () => {
@@ -117,5 +146,23 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
       (c) => c[0] === 'edgeReducer',
     )?.[1] as (id: string, data: Record<string, unknown>) => Record<string, unknown>;
     expect(edgeReducer('e1', { color: '#000' })).toBeTruthy();
+  });
+
+  it('pads the graph bounds before fitting the camera so endpoint nodes are not clipped', () => {
+    render(
+      <SigmaCanvas
+        nodes={NODES}
+        edges={EDGES}
+        pinnedPath={new Set()}
+        sigmaKey={3}
+        onNodeClick={vi.fn()}
+      />,
+    );
+
+    expect(setCustomBBox).toHaveBeenCalledWith({
+      x: [-30, 150],
+      y: [-20, 260],
+    });
+    expect(cameraSetState).toHaveBeenCalledWith({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
   });
 });
