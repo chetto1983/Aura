@@ -232,7 +232,15 @@ Plans:
   3. Operator views the scheduler board read-only — tasks, schedule, next run, status, run history, heartbeat
   4. A new operator completes a web onboarding / setup wizard (beyond the `:9081` loopback setup) that links identity and seeds the `Agent.md` profile, driving the existing onboarding LoopAgent with confirm/edit/skip and without duplicate LLM turns
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 28-01-PLAN.md — Wave-0 backend gaps + DI seams (run-history query, capability/audit stores, migration 0021, MCP probe, skills stage reader, agui seams)
+- [ ] 28-02-PLAN.md — Governance boards backend: 6 read-only /api/governance/* handlers + mounts
+- [ ] 28-03-PLAN.md — Governance boards frontend: lazy governance workspace + MCP/Skills/Scheduler boards (live probe, lifecycle tabs, run history)
+- [ ] 28-04-PLAN.md — BLOCKING PRD-amendment: relax single-operator (D-07) + absorb Phase 30 (D-09) + OperatorUserID relaxation
+- [ ] 28-05-PLAN.md — Onboarding backend: TTL session store + REST step + cross-store provisioning saga + QR + Telegram-status
+- [ ] 28-06-PLAN.md — Onboarding frontend: full-screen wizard (credentials → capability picker → Telegram link+QR → interview → review+Create)
 **UI hint**: yes
 
 ### Phase 29: Governance Write — MCP Configuration + Skills Install
@@ -256,7 +264,7 @@ Plans:
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 29
-**Plans:** 0 plans
+**Plans:** 0/6 plans executed
 
 Plans:
 
@@ -273,6 +281,6 @@ Plans:
 | 25. Chat + Approval Center | v1.0.0 | 7/7 | Complete    | 2026-06-17 |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 6/6 | Complete    | 2026-06-19 |
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
-| 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
+| 28. Governance Boards + Web Onboarding | v1.0.0 | 0/6 | Planned    |  |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
 | 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | 0/? | Not started | - |
