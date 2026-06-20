@@ -78,9 +78,9 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 
 ### Governance — read-only (GOV) — P2
 
-- [ ] **GOV-01**: Operator can view MCP servers read-only — source, status, env health, doctor result, mounted tool count, allowlist/risk policy
-- [ ] **GOV-02**: Operator can view the skills library read-only across active / pending / archived / audit tabs (pending skills not runnable or prompt-injectable)
-- [ ] **GOV-03**: Operator can view the scheduler board read-only — tasks, schedule, next run, status, run history, heartbeat
+- [x] **GOV-01**: Operator can view MCP servers read-only — source, status, env health, doctor result, mounted tool count, allowlist/risk policy
+- [x] **GOV-02**: Operator can view the skills library read-only across active / pending / archived / audit tabs (pending skills not runnable or prompt-injectable)
+- [x] **GOV-03**: Operator can view the scheduler board read-only — tasks, schedule, next run, status, run history, heartbeat
 
 ### Web Onboarding (ONBD) — Slice J (pulled into v1.0.0)
 
@@ -183,9 +183,9 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | GRAPH-02 | Phase 27 | Complete |
 | GRAPH-03 | Phase 27 | Complete |
 | GRAPH-04 | Phase 27 | Complete |
-| GOV-01 | Phase 28 | Pending |
-| GOV-02 | Phase 28 | Pending |
-| GOV-03 | Phase 28 | Pending |
+| GOV-01 | Phase 28 | Complete |
+| GOV-02 | Phase 28 | Complete |
+| GOV-03 | Phase 28 | Complete |
 | ONBD-01 | Phase 28 | Complete |
 | ONBD-02 | Phase 28 | Pending |
 | MCPW-01 | Phase 29 | Pending |

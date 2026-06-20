@@ -232,7 +232,7 @@ Plans:
   3. Operator views the scheduler board read-only — tasks, schedule, next run, status, run history, heartbeat
   4. A new operator completes a web onboarding / setup wizard (beyond the `:9081` loopback setup) that links identity and seeds the `Agent.md` profile, driving the existing onboarding LoopAgent with confirm/edit/skip and without duplicate LLM turns
 
-**Plans**: 2/6 plans executed
+**Plans**: 3/6 plans executed
 
 Plans:
 **Wave 1**
@@ -242,7 +242,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 28-02-PLAN.md — Governance boards backend: 6 read-only /api/governance/* handlers + mounts
+- [x] 28-02-PLAN.md — Governance boards backend: 6 read-only /api/governance/* handlers + mounts
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -293,6 +293,6 @@ Plans:
 | 25. Chat + Approval Center | v1.0.0 | 7/7 | Complete    | 2026-06-17 |
 | 26. Typed-Display Protocol + Router | v1.0.0 | 6/6 | Complete    | 2026-06-19 |
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
-| 28. Governance Boards + Web Onboarding | v1.0.0 | 2/6 | In Progress|  |
+| 28. Governance Boards + Web Onboarding | v1.0.0 | 3/6 | In Progress|  |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
 | 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | — | Absorbed into 28 | 2026-06-20 |
