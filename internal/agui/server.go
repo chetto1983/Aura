@@ -101,7 +101,13 @@ type Server struct {
 	// connect routes forward to (AURA_WHATSAPP_BRIDGE_URL via SetWhatsAppBridge). Empty
 	// (unwired) → the three /api/connect/whatsapp/* routes answer 503.
 	whatsappBridgeURL string
-	cfg               ServerConfig
+	// calendarMCPURL/calendarMCPToken wire the aura-pim-mcp sidecar's token-gated /admin REST
+	// API the cockpit calendar connect routes forward to (AURA_PIM_MCP_URL + ADMIN_TOKEN via
+	// SetCalendarMCP). The token is injected server-side as Authorization: Bearer and NEVER
+	// leaks to the client. An empty URL → the /api/connect/pim/* routes answer 503 (graceful).
+	calendarMCPURL   string
+	calendarMCPToken string
+	cfg              ServerConfig
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.
@@ -189,6 +195,13 @@ func (s *Server) Mux() http.Handler {
 	// RequireCapability(governance.write) (operator write-class actions) lives in
 	// cmd/aura/serve_webui.go.
 	s.registerConnectRoutes(mux)
+	// Cockpit "Connect" calendar account-linking proxy (connect_pim_api.go): the five
+	// /api/connect/pim/* routes forward to the aura-pim-mcp sidecar's token-gated /admin REST
+	// API, injecting the admin Bearer token server-side. Colocated with their handlers; the
+	// parent-mux mount behind RequireCapability(governance.write) (operator write-class actions
+	// — an operator enters their own Google OAuth client and links an account) lives in
+	// cmd/aura/serve_webui.go.
+	s.registerConnectPIMRoutes(mux)
 	return s.withCORS(mux)
 }
 

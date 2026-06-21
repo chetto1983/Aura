@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { McpEnvEditForm } from './McpEnvEditForm';
 import { McpLifecycleCluster } from './McpLifecycleCluster';
 import { WhatsAppConnect } from './WhatsAppConnect';
-import { isWhatsAppServer, type McpProbeResult, type McpServerRow } from './governanceApi';
+import { CalendarConnect } from './CalendarConnect';
+import {
+  isCalendarServer,
+  isWhatsAppServer,
+  type McpProbeResult,
+  type McpServerRow,
+} from './governanceApi';
 
 // McpServerDetail — the detail pane for a selected MCP server (the NodeInspector <dl>/<dt>/<dd>
 // idiom, NodeInspector.tsx:72-98). It renders the static row fields (trust/runtime/startup/auth)
@@ -73,6 +79,10 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
 
       {/* Cockpit "Connect" — the WhatsApp device-linking section, only for the WhatsApp server. */}
       {isWhatsAppServer(server) ? <WhatsAppConnect /> : null}
+
+      {/* Cockpit "Connect" — the Google Calendar account-linking section, only for the calendar
+          (aura-pim-mcp) server. */}
+      {isCalendarServer(server) ? <CalendarConnect /> : null}
 
       {editingEnv ? (
         <McpEnvEditForm

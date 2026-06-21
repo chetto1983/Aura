@@ -47,16 +47,22 @@ func mutatingWriteRoutes() []writeRoute {
 	}
 }
 
-// connectGatedRoutes are the cockpit "Connect" WhatsApp routes — operator write-class
-// proxies (logout drops the session, a QR scan links a device) mounted behind the SAME
-// governance.write gate. They do NOT take an audit actor (they are bridge forwards, not
-// audited mutations), so they are absent from the 401 handler-layer dimension but present
-// in the 403 production-mount dimension below.
+// connectGatedRoutes are the cockpit "Connect" routes — operator write-class proxies (WhatsApp:
+// logout drops the session, a QR scan links a device; calendar: create stores the operator's own
+// Google OAuth client, delete drops the linked account) mounted behind the SAME governance.write
+// gate. They do NOT take an audit actor (they are sidecar forwards, not audited mutations), so they
+// are absent from the 401 handler-layer dimension but present in the 403 production-mount dimension
+// below.
 func connectGatedRoutes() []writeRoute {
 	return []writeRoute{
 		{http.MethodGet, "/api/connect/whatsapp/status", ""},
 		{http.MethodGet, "/api/connect/whatsapp/qr.png", ""},
 		{http.MethodPost, "/api/connect/whatsapp/logout", ""},
+		{http.MethodGet, "/api/connect/pim/accounts", ""},
+		{http.MethodPost, "/api/connect/pim/accounts", `{"id":"x","provider":"google"}`},
+		{http.MethodDelete, "/api/connect/pim/accounts/x", ""},
+		{http.MethodGet, "/api/connect/pim/accounts/x/google/start", ""},
+		{http.MethodPost, "/api/connect/pim/accounts/x/logout", ""},
 	}
 }
 

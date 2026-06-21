@@ -313,6 +313,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// without the sidecar boots fine). The routes mount behind RequireCapability(governance.
 	// write) in serve_webui.go, so the proxy is never an open relay.
 	aguiServer.SetWhatsAppBridge(chat.cfg.WhatsAppBridgeURL)
+	// Wire the cockpit "Connect Google Calendar" admin-proxy: the aura-pim-mcp sidecar base URL
+	// (AURA_PIM_MCP_URL) + the /admin Bearer token (AURA_PIM_MCP_ADMIN_TOKEN). The five
+	// /api/connect/pim/* routes forward to its token-gated /admin REST, injecting the token
+	// server-side (it never reaches the client); an empty URL leaves them at 503 (graceful — a
+	// stack without the calendar sidecar boots fine). The routes mount behind RequireCapability(
+	// governance.write) in serve_webui.go, so the proxy is never an open relay.
+	aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.CalendarMCPAdminToken)
 	// Wire the Phase-27 GRAPH-01 read-only graph explorer. Per RESEARCH A7/Open-Q2 the
 	// serve daemon opens ONE boot-time knowledge.Client (the mcp-neo4j-cypher subprocess)
 	// for the gateway lifetime — distinct from the ReasoningLearning-gated client in

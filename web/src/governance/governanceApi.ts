@@ -431,3 +431,112 @@ export function isWhatsAppServer(server: {
   const name = server.name.toLowerCase();
   return name === 'whatsapp' || source === 'recipe:whatsapp' || source.includes('whatsapp');
 }
+
+// === Cockpit "Connect" — Google Calendar account-linking (connect_pim_api.go) ===
+// The five /api/connect/pim/* routes proxy the aura-pim-mcp sidecar's token-gated /admin REST API
+// behind the SAME governance.write gate, injecting the admin Bearer token server-side (it never
+// crosses the wire). They reuse the getJSON/sendJSON helpers (same-origin, Accept: application/json,
+// a non-200 — incl. 401/503 sidecar-unconfigured — THROWS `Error("HTTP <n>")`) so an offline/error
+// state surfaces visibly in the connect section. The operator enters their OWN Google OAuth
+// clientId/clientSecret in the wizard form — nothing is read from env.
+
+export const GOV_PIM_ACCOUNTS_PATH = '/api/connect/pim/accounts';
+
+/** One calendar account row (GET /api/connect/pim/accounts). The sidecar NEVER echoes the stored
+ * Google clientSecret — only this redacted projection reaches the wire. */
+export interface PimAccount {
+  readonly id: string;
+  readonly displayName: string;
+  readonly provider: string;
+  readonly enabled: boolean;
+}
+
+/** GET /api/connect/pim/accounts response. */
+export interface PimAccountList {
+  readonly accounts: readonly PimAccount[];
+}
+
+/** GET …/google/start response — the consent URL the operator opens + the exact redirect URI they
+ * must register in their Google Cloud OAuth client. */
+export interface PimGoogleStart {
+  readonly authUrl: string;
+  readonly redirectUri: string;
+}
+
+/** POST /api/connect/pim/accounts request body. provider is hardcoded 'google' by the wizard; the
+ * operator supplies their OWN OAuth clientId/clientSecret (never from env). */
+export interface PimCreateAccountRequest {
+  readonly id: string;
+  readonly displayName: string;
+  readonly provider: 'google';
+  readonly providerConfig: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+  };
+}
+
+function pimAccount(value: unknown): PimAccount | null {
+  if (value === null || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const id = stringValue(raw.id);
+  if (id === '') return null;
+  return {
+    id,
+    displayName: stringValue(raw.displayName),
+    provider: stringValue(raw.provider),
+    enabled: boolValue(raw.enabled),
+  };
+}
+
+/** GET /api/connect/pim/accounts — the configured calendar accounts (no secrets). Rejects on a
+ * non-200 (incl. 401/503 sidecar-unconfigured) so the connect section shows the offline/error note. */
+export async function listPimAccounts(): Promise<PimAccountList> {
+  const raw = await getJSON<{ accounts?: readonly unknown[] }>(GOV_PIM_ACCOUNTS_PATH);
+  const accounts = (raw.accounts ?? []).flatMap((entry): PimAccount[] => {
+    const acct = pimAccount(entry);
+    return acct === null ? [] : [acct];
+  });
+  return { accounts };
+}
+
+/** POST /api/connect/pim/accounts — create a Google calendar account with the operator's own OAuth
+ * client. A duplicate id throws `Error("HTTP 409")`; a validation error throws `Error("HTTP 400")`. */
+export function createPimAccount(body: PimCreateAccountRequest): Promise<PimAccount> {
+  return postJSON<PimAccount>(GOV_PIM_ACCOUNTS_PATH, body);
+}
+
+/** DELETE /api/connect/pim/accounts/{id} — remove the account (the backend appends ?logout=true so
+ * the linked Google session is dropped too). */
+export async function deletePimAccount(id: string): Promise<void> {
+  await deleteJSON<unknown>(`${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}`);
+}
+
+/** GET …/{id}/google/start — mint the Google consent URL + the redirect URI the operator registers
+ * in their Google Cloud client. A missing account throws `Error("HTTP 404")`; an account without a
+ * clientId/secret throws `Error("HTTP 400")`. */
+export function pimGoogleStart(id: string): Promise<PimGoogleStart> {
+  return getJSON<PimGoogleStart>(`${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/google/start`);
+}
+
+/** POST …/{id}/logout — drop the linked Google session without deleting the account. */
+export async function pimLogout(id: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/logout`);
+}
+
+/** isCalendarServer detects the aura-pim-mcp calendar MCP server by recipe/source (preferred) with a
+ * name/source-substring fallback (the catalog recipe id is `calendar`; the source may mention `pim`
+ * or `aura-pim-mcp`), so the detail pane knows when to render the calendar connect section. Pure;
+ * lives here (not the component file) so CalendarConnect.tsx exports only components. */
+export function isCalendarServer(server: {
+  readonly name: string;
+  readonly source: string;
+}): boolean {
+  const source = server.source.toLowerCase();
+  const name = server.name.toLowerCase();
+  return (
+    name === 'calendar' ||
+    source === 'recipe:calendar' ||
+    source.includes('pim') ||
+    source.includes('aura-pim-mcp')
+  );
+}
