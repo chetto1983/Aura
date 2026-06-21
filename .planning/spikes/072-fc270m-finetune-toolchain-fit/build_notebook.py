@@ -107,9 +107,21 @@ def to_text(row):
     )
     return {"text": text}
 
-train_ds = ds["train"].map(to_text)
-eval_ds  = ds["eval"].map(to_text)
+# Keep the full catalog for the inference cell BEFORE dropping columns.
+CATALOG = ds["train"][0]["tools"]
+
+# CRITICAL: drop messages/tools so TRL sees a pure-text dataset and does NOT take
+# its conversational branch (which silently empties the split → num_samples=0).
+train_ds = ds["train"].map(to_text, remove_columns=ds["train"].column_names)
+eval_ds  = ds["eval"].map(to_text,  remove_columns=ds["eval"].column_names)
 print("train", len(train_ds), "eval", len(eval_ds))
+assert len(train_ds) > 0, "train split is empty — check the upload / JSONL paths"
+
+# Length probe: every row carries the full 21-tool catalog, so confirm none exceed
+# MAX_SEQ_LEN (rows longer than the trainer's max get filtered → could empty the split).
+_lens = [len(tokenizer(t, add_special_tokens=False)["input_ids"]) for t in train_ds["text"]]
+print(f"token length — max {max(_lens)}  mean {sum(_lens)//len(_lens)}  (MAX_SEQ_LEN={MAX_SEQ_LEN})")
+assert max(_lens) <= MAX_SEQ_LEN, "some rows exceed MAX_SEQ_LEN — raise it or shrink the catalog"
 """
     ),
     md("### Sanity-check one formatted example\n\nConfirm you see `developer` + `<start_function_declaration>` + the `<start_function_call>call:...` target before training."),
@@ -165,7 +177,7 @@ print(stats)
     md("## 9 · Smoke-test the finetuned model\n\nThe documented bitcoin gravity-well case + a couple more. Expect `web_search`, `mail__send_email`, etc. — in FunctionGemma's `<start_function_call>call:NAME{...}` format."),
     code(
 """FastLanguageModel.for_inference(model)
-CATALOG = train_ds[0]["tools"]  # the full Aura capability catalog
+# CATALOG was captured in the format cell (before remove_columns dropped the tools column).
 
 def ask(q):
     inputs = tokenizer.apply_chat_template(
