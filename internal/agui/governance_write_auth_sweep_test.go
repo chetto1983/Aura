@@ -47,10 +47,24 @@ func mutatingWriteRoutes() []writeRoute {
 	}
 }
 
-// allGatedRoutes is the FULL 13-route set the production mount gates (the 12 mutating + the
-// privileged catalog GET).
+// connectGatedRoutes are the cockpit "Connect" WhatsApp routes — operator write-class
+// proxies (logout drops the session, a QR scan links a device) mounted behind the SAME
+// governance.write gate. They do NOT take an audit actor (they are bridge forwards, not
+// audited mutations), so they are absent from the 401 handler-layer dimension but present
+// in the 403 production-mount dimension below.
+func connectGatedRoutes() []writeRoute {
+	return []writeRoute{
+		{http.MethodGet, "/api/connect/whatsapp/status", ""},
+		{http.MethodGet, "/api/connect/whatsapp/qr.png", ""},
+		{http.MethodPost, "/api/connect/whatsapp/logout", ""},
+	}
+}
+
+// allGatedRoutes is the FULL route set the production mount gates (the 12 mutating + the
+// privileged catalog GET + the 3 cockpit Connect WhatsApp proxies).
 func allGatedRoutes() []writeRoute {
-	return append(mutatingWriteRoutes(), writeRoute{http.MethodGet, "/api/governance/skills/catalog?q=x", ""})
+	all := append(mutatingWriteRoutes(), writeRoute{http.MethodGet, "/api/governance/skills/catalog?q=x", ""})
+	return append(all, connectGatedRoutes()...)
 }
 
 func newRequestFor(rt writeRoute) *http.Request {

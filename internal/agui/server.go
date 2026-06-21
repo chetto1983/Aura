@@ -97,7 +97,11 @@ type Server struct {
 	governanceWrite GovernanceWriteProviders
 	onboarding      OnboardingService
 	idgen           IDGenerator
-	cfg             ServerConfig
+	// whatsappBridgeURL is the aura-whatsapp bridge management REST base URL the cockpit
+	// connect routes forward to (AURA_WHATSAPP_BRIDGE_URL via SetWhatsAppBridge). Empty
+	// (unwired) → the three /api/connect/whatsapp/* routes answer 503.
+	whatsappBridgeURL string
+	cfg               ServerConfig
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.
@@ -179,6 +183,12 @@ func (s *Server) Mux() http.Handler {
 	// their handlers; the parent-mux mount (RequireCapability(identity.create) on start +
 	// provision, RequireAuth on step + telegram-status) lives in cmd/aura/serve_webui.go.
 	s.registerOnboardingRoutes(mux)
+	// Cockpit "Connect" device-linking proxy (connect_api.go): the three
+	// /api/connect/whatsapp/{status,qr.png,logout} routes forward to the aura-whatsapp
+	// bridge management REST. Colocated with their handlers; the parent-mux mount behind
+	// RequireCapability(governance.write) (operator write-class actions) lives in
+	// cmd/aura/serve_webui.go.
+	s.registerConnectRoutes(mux)
 	return s.withCORS(mux)
 }
 

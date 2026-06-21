@@ -307,6 +307,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// favicons never load. It mounts behind the RequireAuth whole-origin gate (the
 	// parent mux below), so it is never an open relay.
 	aguiServer.SetImageProxy(web.NewClient(chat.cfg))
+	// Wire the cockpit "Connect" WhatsApp device-linking bridge URL (AURA_WHATSAPP_BRIDGE_URL,
+	// default the sibling aura-whatsapp sidecar). The three /api/connect/whatsapp/* routes
+	// forward to its management REST; an empty value leaves them at 503 (graceful — a stack
+	// without the sidecar boots fine). The routes mount behind RequireCapability(governance.
+	// write) in serve_webui.go, so the proxy is never an open relay.
+	aguiServer.SetWhatsAppBridge(chat.cfg.WhatsAppBridgeURL)
 	// Wire the Phase-27 GRAPH-01 read-only graph explorer. Per RESEARCH A7/Open-Q2 the
 	// serve daemon opens ONE boot-time knowledge.Client (the mcp-neo4j-cypher subprocess)
 	// for the gateway lifetime — distinct from the ReasoningLearning-gated client in

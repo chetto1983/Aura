@@ -225,6 +225,20 @@ const (
 	governanceSkillCatalogRoute = "GET /api/governance/skills/catalog"
 )
 
+// connect* are the cockpit "Connect" WhatsApp device-linking routes (connect_api.go). Each
+// is a SPECIFIC method+path sibling under the "/api/" exclusion carve-out — NEVER a bare
+// "/api/" (which would shadow /api/integrations/, Pitfall 5). All three delegate to the AG-UI
+// handler (routes on Server.Mux) and are interposed with RequireCapability(governance.write):
+// a logout drops the paired session and a QR scan links a device, so these are operator
+// write-class actions — the SAME gate as the MCP/skills write routes, not a bare read. Go
+// 1.22 longest-pattern precedence keeps each method+path sibling authoritative over the bare
+// "/api/" carve-out and the "/" embed catch-all.
+const (
+	connectWhatsAppStatusRoute = "GET /api/connect/whatsapp/status"
+	connectWhatsAppQRRoute     = "GET /api/connect/whatsapp/qr.png"
+	connectWhatsAppLogoutRoute = "POST /api/connect/whatsapp/logout"
+)
+
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
 // (start + provision) are gated on (ONBD-01a / D-04, parity with agentRunCapability). The
 // seeded `local` identity holds the '*' wildcard so it passes; the name becomes load-
@@ -400,6 +414,14 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSkillUpdateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillCatalogRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// The cockpit "Connect" WhatsApp device-linking routes delegate to the AG-UI handler
+	// (routes on Server.Mux) behind RequireCapability(governance.write) — operator
+	// write-class actions (logout drops the session, a QR scan links a device), so they
+	// share the governance.write gate. Method+path-specific so each wins Go 1.22 longest-
+	// pattern precedence over the bare "/api/" carve-out and the "/" embed catch-all.
+	mux.Handle(connectWhatsAppStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectWhatsAppQRRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectWhatsAppLogoutRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator

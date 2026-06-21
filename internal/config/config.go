@@ -198,6 +198,12 @@ type Config struct {
 	// Phase 14 (Slice 10) Agent.md profile knobs.
 	ProfileDir        string // AURA_PROFILE_DIR — per-identity Agent.md root, default ~/.aura/agents
 	ProfileCertaintyN int    // AURA_PROFILE_CERTAINTY_N — observation threshold for auto-add, default 3
+
+	// Cockpit "Connect" device-linking knob. WhatsAppBridgeURL is the aura-whatsapp bridge
+	// management REST base URL the /api/connect/whatsapp/* proxy forwards to; the in-compose
+	// default points at the sibling sidecar. An unset/empty value is NOT boot-fatal — the
+	// connect routes answer 503 at call time so a stack without the sidecar boots fine.
+	WhatsAppBridgeURL string // AURA_WHATSAPP_BRIDGE_URL — aura-whatsapp bridge mgmt REST base, default http://whatsapp:8081
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -432,6 +438,8 @@ func loadBase() *Config {
 
 		ProfileDir:        envDefault("AURA_PROFILE_DIR", profile.DefaultRoot()),
 		ProfileCertaintyN: envIntDefault("AURA_PROFILE_CERTAINTY_N", 3),
+
+		WhatsAppBridgeURL: envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),
 	}
 }
 
