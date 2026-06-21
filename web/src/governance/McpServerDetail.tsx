@@ -37,7 +37,7 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
       <header className="flex items-start justify-between gap-2">
         {/* Backend-supplied name — React-escaped text, mono (it is an identifier). */}
-        <h3 className="break-words font-display text-[18px] font-semibold text-text">
+        <h3 className="break-words font-display text-[20px] font-semibold text-text">
           {server.name}
         </h3>
         <button

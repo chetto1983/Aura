@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { Spinner } from '../components/Spinner';
 import {
   removeMcpServer,
   setMcpServerEnabled,
@@ -141,8 +142,10 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
             <button
               type="submit"
               disabled={reason.trim() === '' || trustMutation.isPending}
-              className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              aria-busy={trustMutation.isPending}
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
             >
+              {trustMutation.isPending ? <Spinner /> : null}
               {t('governance.mcp.lifecycle.trustConfirm')}
             </button>
             <button

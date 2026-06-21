@@ -21,7 +21,7 @@ export function SkillDetail({ skill, isPending, onClose }: SkillDetailProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-scroll overscroll-contain p-4 [scrollbar-gutter:stable]">
       <header className="flex items-start justify-between gap-2">
-        <h3 className="break-words font-display text-[18px] font-semibold text-text">
+        <h3 className="break-words font-display text-[20px] font-semibold text-text">
           {skill.name}
         </h3>
         <button

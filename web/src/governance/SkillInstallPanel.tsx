@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
+import { Spinner } from '../components/Spinner';
 import {
   installSkill,
   searchSkillCatalog,
@@ -249,7 +250,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
 
       {install.isError ? (
         <p role="alert" className="text-[13px] text-danger">
-          {t('governance.skills.install.emptySource')}
+          {t('governance.error')}
         </p>
       ) : null}
 
@@ -257,9 +258,11 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
         <button
           type="button"
           disabled={install.isPending || staged !== undefined}
+          aria-busy={install.isPending}
           onClick={submit}
-          className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
         >
+          {install.isPending ? <Spinner /> : null}
           {t('governance.skills.install.submit')}
         </button>
         <button

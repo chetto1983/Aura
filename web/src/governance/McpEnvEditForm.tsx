@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { Spinner } from '../components/Spinner';
 import { setMcpServerEnv, type McpEnvChip } from './governanceApi';
 
 // McpEnvEditForm (MCPW-02) — the four-state redacted env editor that REPLACES the read-only
@@ -220,9 +221,11 @@ export function McpEnvEditForm({
         <button
           type="button"
           disabled={mutation.isPending}
+          aria-busy={mutation.isPending}
           onClick={submit}
-          className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
         >
+          {mutation.isPending ? <Spinner /> : null}
           {t('governance.mcp.env.save')}
         </button>
         <button

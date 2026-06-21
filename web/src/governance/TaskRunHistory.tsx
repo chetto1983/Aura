@@ -36,7 +36,7 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
       <header className="flex items-start justify-between gap-2">
-        <h3 className="break-words font-display text-[18px] font-semibold text-text">
+        <h3 className="break-words font-display text-[20px] font-semibold text-text">
           {t('governance.scheduler.runs.heading')}
         </h3>
         <button
@@ -71,7 +71,7 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
                   <span className="text-[13px] font-semibold text-text">
                     {t('governance.scheduler.runs.status')}: {run.Status}
                   </span>
-                  <span className="shrink-0 font-mono text-[12px] text-text-muted">
+                  <span className="shrink-0 font-mono text-[13px] tracking-tight text-text-muted">
                     {run.StartedAt}
                   </span>
                 </span>
@@ -79,7 +79,7 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
                   <span className="break-words text-[13px] text-text-muted">{run.Summary}</span>
                 ) : null}
                 {run.LastHeartbeatAt !== '' && !run.LastHeartbeatAt.startsWith('0001-01-01') ? (
-                  <span className="break-all font-mono text-[12px] text-text-muted">
+                  <span className="break-all font-mono text-[13px] tracking-tight text-text-muted">
                     {t('governance.scheduler.runs.heartbeat')}: {run.LastHeartbeatAt}
                   </span>
                 ) : null}

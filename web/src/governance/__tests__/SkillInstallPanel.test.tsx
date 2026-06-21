@@ -131,6 +131,54 @@ describe('SkillInstallPanel (SKW-01)', () => {
     expect(screen.getByText(/Staged for approval/)).toBeTruthy();
   });
 
+  it('a failed install surfaces the generic governance error, not the source-format hint', async () => {
+    installSkill.mockRejectedValue(new Error('HTTP 502'));
+    renderPanel();
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'owner/repo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Stage for approval' }));
+
+    await waitFor(() => {
+      // The service-failure alert must NOT blame the operator's input.
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toContain("Couldn't load this board");
+      expect(alert.textContent).not.toContain('Enter a valid source');
+    });
+  });
+
+  it('marks the submit button aria-busy while the install is in flight', async () => {
+    let resolveInstall: (info: SkillsInstallInfo) => void = () => undefined;
+    installSkill.mockImplementation(
+      () =>
+        new Promise<SkillsInstallInfo>((resolve) => {
+          resolveInstall = resolve;
+        }),
+    );
+    renderPanel();
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'owner/repo' } });
+    const submit = screen.getByRole('button', { name: 'Stage for approval' });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(submit.getAttribute('aria-busy')).toBe('true');
+      expect(submit.hasAttribute('disabled')).toBe(true);
+    });
+
+    resolveInstall({
+      name: 'demo',
+      source: 'owner/repo',
+      content_hash: 'sha256:abc',
+      preview: '# demo',
+      destination: '~/.aura/skills/pending/demo',
+      risk_tier: 'RISKY',
+      status: 'pending_approval',
+      approval_token: 'tok-1',
+      checklist: [{ label: 'parsed', passed: true }],
+    });
+    await waitFor(() => {
+      expect(submit.getAttribute('aria-busy')).toBe('false');
+    });
+  });
+
   it('Discard install calls onClose without a request', () => {
     const onClose = vi.fn();
     renderPanel(onClose);

@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
+import { Spinner } from '../components/Spinner';
 import { installMcpServer, type McpInstallRequest } from './governanceApi';
 
 // McpInstallPanel (MCPW-01) — the install form in the BoardLayout detail slot. A 2-segment
@@ -224,9 +225,11 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
         <button
           type="button"
           disabled={!canInstall}
+          aria-busy={mutation.isPending}
           onClick={submit}
-          className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
         >
+          {mutation.isPending ? <Spinner /> : null}
           {t('governance.mcp.install.submit')}
         </button>
         <button
