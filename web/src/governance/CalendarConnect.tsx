@@ -146,7 +146,8 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
     clientId: clientId.trim() === '',
     clientSecret: clientSecret.trim() === '',
   };
-  const hasEmpty = empties.accountId || empties.displayName || empties.clientId || empties.clientSecret;
+  const hasEmpty =
+    empties.accountId || empties.displayName || empties.clientId || empties.clientSecret;
 
   const create = useMutation({
     mutationFn: async () => {

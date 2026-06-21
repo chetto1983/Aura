@@ -297,7 +297,7 @@ export const governanceIt = {
         redirectHint:
           "Registra esattamente questo redirect URI nel tuo client OAuth Google Cloud di tipo 'Applicazione web'.",
         connectGoogle: 'Connetti Google',
-        consentNote: "Completa il consenso nella scheda aperta, poi clicca Aggiorna.",
+        consentNote: 'Completa il consenso nella scheda aperta, poi clicca Aggiorna.',
       },
       detail: {
         source: 'Origine',

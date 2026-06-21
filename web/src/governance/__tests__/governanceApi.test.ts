@@ -264,7 +264,9 @@ describe('governanceApi same-origin throwing fetch', () => {
       }),
     );
     const { accounts } = await listPimAccounts();
-    expect(accounts).toEqual([{ id: 'work', displayName: 'Work', provider: 'google', enabled: true }]);
+    expect(accounts).toEqual([
+      { id: 'work', displayName: 'Work', provider: 'google', enabled: true },
+    ]);
   });
 
   it('listPimAccounts returns [] when the body omits accounts and throws on 503', async () => {
@@ -278,7 +280,12 @@ describe('governanceApi same-origin throwing fetch', () => {
   });
 
   it('createPimAccount POSTs the body and throws Error("HTTP 409") on a duplicate', async () => {
-    const fetchMock = okJSON({ id: 'work', displayName: 'Work', provider: 'google', enabled: true });
+    const fetchMock = okJSON({
+      id: 'work',
+      displayName: 'Work',
+      provider: 'google',
+      enabled: true,
+    });
     vi.stubGlobal('fetch', fetchMock);
     const body = {
       id: 'work',
@@ -309,10 +316,16 @@ describe('governanceApi same-origin throwing fetch', () => {
   });
 
   it('pimGoogleStart GETs the start route and returns {authUrl,redirectUri}', async () => {
-    const fetchMock = okJSON({ authUrl: 'https://accounts.google.com/x', redirectUri: 'http://localhost/cb' });
+    const fetchMock = okJSON({
+      authUrl: 'https://accounts.google.com/x',
+      redirectUri: 'http://localhost/cb',
+    });
     vi.stubGlobal('fetch', fetchMock);
     const start = await pimGoogleStart('work');
-    expect(start).toEqual({ authUrl: 'https://accounts.google.com/x', redirectUri: 'http://localhost/cb' });
+    expect(start).toEqual({
+      authUrl: 'https://accounts.google.com/x',
+      redirectUri: 'http://localhost/cb',
+    });
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(url).toBe('/api/connect/pim/accounts/work/google/start');
   });
