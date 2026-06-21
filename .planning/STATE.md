@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: executing
-stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-21T14:03:06.251Z"
+status: ready_to_plan
+stopped_at: Phase 29 complete (5/5) — ready to discuss Phase 30
+last_updated: 2026-06-21T14:31:54.091Z
 last_activity: 2026-06-21
 progress:
   total_phases: 9
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 29 — governance-write-mcp-configuration-skills-install
+**Current focus:** Phase 30 — retrieval memory hardening
 
 ## Current Position
 
-Phase: 29 (governance-write-mcp-configuration-skills-install) — EXECUTING
-Plan: 5 of 5 (29-01 + 29-02 + 29-03 complete; next: 29-04 React skills/MCP write UI)
-Status: Ready to execute
+Phase: 30
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-21
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
@@ -53,7 +53,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 
 **Velocity:**
 
-- Total plans completed: 164
+- Total plans completed: 169
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -81,6 +81,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | 25 | 7 | - | - |
 | 26 | 6 | - | - |
 | 27 | 4 | - | - |
+| 29 | 5 | - | - |
 
 **Recent Trend:**
 
