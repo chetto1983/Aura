@@ -83,10 +83,11 @@ func installPastValidation(t *testing.T, inst *Installer, source string) (err er
 	return err
 }
 
-// TestInstallerNoIgnoreScripts proves the transport runs `npx skills add <src> -y` WITH
-// scripts permitted — NO --ignore-scripts flag (D-06/D-07, post-D-09). The body is at
-// the cap, so it clears validation; the argv assertion happens regardless of the (nil-
-// pool) tx outcome because the runner captured the argv first.
+// TestInstallerNoIgnoreScripts proves the transport runs `npx skills add <src> --copy -y`
+// WITH scripts permitted — NO --ignore-scripts flag (D-06/D-07, post-D-09) — and WITH
+// --copy so the fetched skill materializes locally for staging. The body is at the cap, so
+// it clears validation; the argv assertion happens regardless of the (nil-pool) tx outcome
+// because the runner captured the argv first.
 func TestInstallerNoIgnoreScripts(t *testing.T) {
 	t.Parallel()
 	var argv []string
@@ -96,8 +97,8 @@ func TestInstallerNoIgnoreScripts(t *testing.T) {
 		t.Fatal("npx was never invoked")
 	}
 	joined := strings.Join(argv, " ")
-	if !strings.Contains(joined, "skills add owner/repo -y") {
-		t.Errorf("npx argv = %q, want `skills add owner/repo -y`", joined)
+	if !strings.Contains(joined, "skills add owner/repo --copy -y") {
+		t.Errorf("npx argv = %q, want `skills add owner/repo --copy -y`", joined)
 	}
 	for _, a := range argv {
 		if a == "--ignore-scripts" {

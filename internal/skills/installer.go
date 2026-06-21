@@ -52,17 +52,21 @@ type Installer struct {
 	run          CommandRunner
 	blocklist    []string
 	bodyCapBytes int
+	workDir      string
 }
 
 // InstallerConfig configures a NewInstaller. Run defaults to execCommandRunner (the
 // real `npx skills` subprocess) when nil; tests pass a fake. Blocklist/BodyCapBytes
 // come from config (the same values the Writer uses) so the install checklist matches
-// the model/CLI write boundary exactly.
+// the model/CLI write boundary exactly. WorkDir is the base for the transient clone +
+// --copy work tree; it MUST be a spacious, exec-capable filesystem (a volume), never the
+// hardened 64M noexec /tmp tmpfs. Empty WorkDir falls back to the system temp (tests).
 type InstallerConfig struct {
 	Writer       *Writer
 	Run          CommandRunner
 	Blocklist    []string
 	BodyCapBytes int
+	WorkDir      string
 }
 
 // NewInstaller builds an Installer from cfg, defaulting Run to the real npx runner.
@@ -76,6 +80,7 @@ func NewInstaller(cfg InstallerConfig) *Installer {
 		run:          run,
 		blocklist:    cfg.Blocklist,
 		bodyCapBytes: cfg.BodyCapBytes,
+		workDir:      cfg.WorkDir,
 	}
 }
 
@@ -131,15 +136,27 @@ func (i *Installer) Install(ctx context.Context, source string, actor AuditActor
 		return InstallInfo{}, fmt.Errorf("install %q: writer not configured", source)
 	}
 
-	work, err := os.MkdirTemp("", "aura-skill-install-*")
+	// The work dir holds the npx clone + the --copy materialization, which can be large (a
+	// whole skills repo cloned + copied into every detected agent layout). It MUST NOT land on
+	// the 64M noexec /tmp tmpfs (compose hardening) — i.workDir points it at a spacious volume
+	// (the run dir) in prod; an empty workDir falls back to the system temp (tests).
+	if i.workDir != "" {
+		if err := os.MkdirAll(i.workDir, 0o750); err != nil {
+			return InstallInfo{}, fmt.Errorf("install %q: ensure work base: %w", source, err)
+		}
+	}
+	work, err := os.MkdirTemp(i.workDir, "aura-skill-install-*")
 	if err != nil {
 		return InstallInfo{}, fmt.Errorf("install %q: mkdir work dir: %w", source, err)
 	}
 	defer func() { _ = os.RemoveAll(work) }()
 
-	// Scripts PERMITTED (D-06/D-07): no script-disabling flag. The container is the blast
-	// boundary; the control is the approval gate + Writer validation, not script-disabling.
-	if _, err := i.run(ctx, work, "npx", "skills", "add", source, "-y"); err != nil {
+	// `--copy` materializes the fetched skill into <work>/.claude/skills/<name>/ (the newer
+	// skills CLI otherwise only symlinks into auto-detected agent layouts and leaves no local
+	// copy for locateStagedSkill to stage). Scripts PERMITTED (D-06/D-07): no script-disabling
+	// flag — the container is the blast boundary; the control is the Writer validation +
+	// injection blocklist, not script-disabling.
+	if _, err := i.run(ctx, work, "npx", "skills", "add", source, "--copy", "-y"); err != nil {
 		return InstallInfo{}, fmt.Errorf("install %q: npx skills add: %w", source, err)
 	}
 

@@ -98,20 +98,28 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
           </p>
         ) : hits.length > 0 ? (
           <ul className="flex flex-col gap-1">
-            {hits.map((hit) => (
-              <li key={hit.source}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSource(hit.source);
-                  }}
-                  aria-pressed={source === hit.source}
-                  className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-left font-mono text-[13px] text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-accent"
-                >
-                  {hit.source}
-                </button>
-              </li>
-            ))}
+            {hits.map((hit) => {
+              // The installable spec the `npx skills` CLI expects is `owner/repo@skill`; the
+              // catalog parser splits that into source + skill, so re-join it for the install.
+              const spec = hit.skill ? `${hit.source}@${hit.skill}` : hit.source;
+              return (
+                <li key={spec}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSource(spec);
+                    }}
+                    aria-pressed={source === spec}
+                    className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-left font-mono text-[13px] text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-accent"
+                  >
+                    <span className="truncate">{spec}</span>
+                    {hit.installs ? (
+                      <span className="shrink-0 tabular-nums text-text-muted">{hit.installs}</span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </div>

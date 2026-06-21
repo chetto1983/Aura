@@ -142,6 +142,9 @@ func buildSkillsWriteProvider(cfg *config.Config, pool *pgxpool.Pool) agui.Skill
 		Writer:       writer,
 		Blocklist:    cfg.SkillInjectionBlocklist,
 		BodyCapBytes: cfg.SkillBodyCapBytes,
+		// The clone + --copy work tree must land on a spacious, exec-capable volume, never the
+		// hardened 64M noexec /tmp tmpfs — the run dir is the transient-artifact volume.
+		WorkDir: cfg.RunDir,
 	})
 	return skillsWriteAdapter{
 		installer: installer,

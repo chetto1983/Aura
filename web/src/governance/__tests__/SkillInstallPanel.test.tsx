@@ -87,10 +87,10 @@ describe('SkillInstallPanel (SKW-01, no-ceremony)', () => {
     await waitFor(() => {
       expect(searchSkillCatalog).toHaveBeenCalledWith('xlsx');
     });
-    const hit = await screen.findByRole('button', { name: 'anthropics/skills' });
-    // Clicking a hit fills the source field.
+    const hit = await screen.findByRole('button', { name: /anthropics\/skills@xlsx/ });
+    // Clicking a hit fills the source with the full installable spec (owner/repo@skill).
     fireEvent.click(hit);
-    expect(screen.getByDisplayValue('anthropics/skills')).toBeTruthy();
+    expect(screen.getByDisplayValue('anthropics/skills@xlsx')).toBeTruthy();
   });
 
   it('shows a safe inline error + fires NO request on an empty source', () => {
