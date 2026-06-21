@@ -107,12 +107,10 @@ const governanceReadCapability = "governance.read"
 // mutation + skill install). It is strictly stronger than governance.read: a write can
 // install a new MCP server or a RISKY supply-chain skill, so it requires its own grant.
 // The seeded `local` identity holds the `*` wildcard so it passes regardless of the exact
-// name (the name becomes load-bearing once real grants arrive). No routes are mounted on
-// it here — plans 02/03 add the `RequireCapability(…, governanceWriteCapability)` mounts,
-// which is why it has no consumer yet (the value is pinned now so the auth_test.go:494
-// `governance.write` 403 assertion and the later mounts agree on one string).
-//
-//nolint:unused // forward-declared in wave 1; consumed by the MCP/skill write mounts in plans 29-02/29-03.
+// name (the name becomes load-bearing once real grants arrive). Plan 29-02 mounts the six
+// MCP write routes behind it (governanceMCP*Route); plan 29-03 adds the skill-install
+// mounts. The auth_test.go:494 `governance.write` 403 assertion and these mounts agree on
+// one string.
 const governanceWriteCapability = "governance.write"
 
 // conversationsRoutePrefix is the CHAT-02 conversation-management subtree (Phase 25),
@@ -181,6 +179,29 @@ const (
 	governanceSkillsAuditRoute = "GET /api/governance/skills/audit"
 	governanceSchedulerRoute   = "GET /api/governance/scheduler"
 	governanceSchedRunsRoute   = "GET /api/governance/scheduler/{id}/runs"
+)
+
+// governance*WriteRoute are the Phase-29 MCPW-01/02/03 governance WRITE routes (install a
+// recipe/custom server, edit one server's env in place, operator-trust-approve, reversibly
+// enable/disable, confirm-remove). Each is a SPECIFIC method+path sibling under the "/api/"
+// exclusion carve-out — NEVER a bare "/api/" (which would shadow /api/integrations/,
+// Pitfall 5). All six delegate to the AG-UI handler (the routes live on Server.Mux) and are
+// interposed with RequireCapability(governance.write) — strictly stronger than
+// governance.read because a write can install a new MCP server. Go 1.22 longest-pattern
+// precedence keeps these method+path siblings authoritative over the bare "/api/" carve-out
+// and the "/" embed catch-all, and over the GET governance read siblings.
+//
+// CSRF posture (auth.go:18 Phase-29 note): these SPA writes are same-origin
+// (credentials:'same-origin') under the SameSite=Strict session cookie — no cross-origin
+// write path is introduced, so SameSite=Strict remains the sufficient CSRF control (the
+// TanStack useMutation calls are same-origin); no double-submit token is added.
+const (
+	governanceMCPInstallRoute = "POST /api/governance/mcp"
+	governanceMCPEnvRoute     = "PATCH /api/governance/mcp/{name}/env"
+	governanceMCPTrustRoute   = "POST /api/governance/mcp/{name}/trust"
+	governanceMCPEnableRoute  = "POST /api/governance/mcp/{name}/enable"
+	governanceMCPDisableRoute = "POST /api/governance/mcp/{name}/disable"
+	governanceMCPRemoveRoute  = "DELETE /api/governance/mcp/{name}"
 )
 
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
@@ -332,6 +353,18 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSkillsAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSchedulerRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSchedRunsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	// The Phase-29 MCPW-01/02/03 governance WRITE routes delegate to the AG-UI handler
+	// (routes on Server.Mux) behind RequireCapability(governance.write) — strictly stronger
+	// than governance.read (a write can install a new MCP server). Method+path-specific so
+	// each wins Go 1.22 longest-pattern precedence over the bare "/api/" carve-out, the "/"
+	// embed catch-all, AND the GET governance read siblings. CSRF: same-origin SameSite=Strict
+	// covers these SPA writes (auth.go:18) — no cross-origin write path is introduced.
+	mux.Handle(governanceMCPInstallRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPEnvRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPTrustRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPEnableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPDisableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPRemoveRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator

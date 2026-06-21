@@ -388,6 +388,65 @@ func TestGovernanceWriteByNameOrder(t *testing.T) {
 	}
 }
 
+// TestGovernanceWriteMountCapabilityGate exercises the production mount shape
+// (RequireCapability(handler, deps, "governance.write")) over the install route: the
+// `*`-holding local identity reaches the handler (200), an identity without the grant is
+// 403, and a request with no bound principal is 403. This pins the Task-3 mount contract at
+// the agui layer without a live PG (the capability check uses the fake identity store; the
+// real seeded `*` grant is covered by the db_integration capability test).
+func TestGovernanceWriteMountCapabilityGate(t *testing.T) {
+	t.Parallel()
+
+	const granteeID = "00000000-0000-0000-0000-0000000000ab"
+	const ungrantedID = "00000000-0000-0000-0000-0000000000ac"
+
+	s, _ := govWriteServer(newFakeMCPWrite())
+	deps := AuthDeps{
+		Secret:           "operator-secret",
+		SigningKey:       deriveSigningKey("operator-secret"),
+		SecretConfigured: true,
+		LocalIdentityID:  granteeID,
+		Identities: &fakeIdentities{
+			known: map[string]Identity{
+				granteeID:   {ID: granteeID, Name: "local", Kind: "user"},
+				ungrantedID: {ID: ungrantedID, Name: "other", Kind: "user"},
+			},
+			capabilities: map[string]bool{granteeID + "|governance.write": true},
+		},
+	}
+	// The production mount: RequireCapability fronts the AG-UI handler for the install route.
+	mount := RequireCapability(s.Mux(), deps, "governance.write")
+
+	body := `{"name":"calc","command":"calc-bin"}`
+
+	t.Run("grantee -> handler (200)", func(t *testing.T) {
+		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/governance/mcp", strings.NewReader(body)), granteeID)
+		rec := httptest.NewRecorder()
+		mount.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("granted install = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("no governance.write -> 403", func(t *testing.T) {
+		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/governance/mcp", strings.NewReader(body)), ungrantedID)
+		rec := httptest.NewRecorder()
+		mount.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("ungranted install = %d, want 403", rec.Code)
+		}
+	})
+
+	t.Run("no principal -> 403", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/governance/mcp", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		mount.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("no-principal install = %d, want 403", rec.Code)
+		}
+	})
+}
+
 // countAction counts entries equal to want in the fake audit log.
 func countAction(log []string, want string) int {
 	n := 0

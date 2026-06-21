@@ -329,6 +329,17 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// SetGraphView best-effort precedent). The reads inherit RequireAuth from the parent
 	// mux; no capability gate (read-only).
 	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store))
+	// Wire the Phase-29 MCP WRITE provider (MCPW-01/02/03): install/env-edit/trust/enable/
+	// disable/remove, each atomic with its mcp_audit row (WriteConfigWithAudit) and re-probed
+	// for the live tool count. Built best-effort over the shared pool + the managed-config
+	// path; a nil pool or unresolvable path leaves the provider nil so the six write routes
+	// answer 503, MUST NOT abort boot (the SetGovernanceProviders precedent). The mounts
+	// (RequireCapability(governance.write)) live in serve_webui.go.
+	if mcpWrite, werr := buildMCPWriteProvider(chat.pool); werr != nil {
+		slog.Warn("aura serve: governance mcp write unavailable", "err", werr)
+	} else if mcpWrite != nil {
+		aguiServer.SetGovernanceWriteProviders(agui.GovernanceWriteProviders{MCP: mcpWrite})
+	}
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell
