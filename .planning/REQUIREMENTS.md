@@ -99,9 +99,9 @@ Operator-directed addition (2026-06-15). Backend write capability already exists
 
 Operator-directed addition (2026-06-15). Backend write capability already exists (scoring-gated skill install/create/delete + `ask_user` approval + append-only audit, Phase 11); this adds the web install/approval surface, gated by GAP-2 auth + the approval center (Phase 25).
 
-- [ ] **SKW-01**: Operator can install a skill from a source field or a catalog item via the cockpit; the install pipeline surfaces source, content hash/preview, risk tier, and the validation checklist (sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) + destination before activation
-- [ ] **SKW-02**: RISKY/DESTRUCTIVE skill actions (install/create/update/delete) enter an approval queue with source, content preview, risk tier, and resume token; pending skills cannot run or be prompt-injected; activation is the approval resume (no model-facing approve). _Amendment (Phase 29 D-13, Option A): the cockpit install surfaces in the SAME unified `/api/approvals` queue by minting an **operator-origin `ask_user` pause** (`askuser.Store.Insert`, `Kind=approval` + `ResumeContext={type:"skill_approval", skill_name}`) from the capability-gated cmd/aura skills-write provider — widening the T-04-19 "Runner is the sole writer of `aura.paused_states`" invariant to "the Runner AND the capability-gated operator-origin governance-write path". The pause is mintable ONLY behind `RequireCapability(governance.write)` (no model/agent/unauthenticated mint; the agent stays name-gated to `ask_user`); resolution is operator-only and the install never auto-activates._
-- [ ] **SKW-03**: Operator can restore / archive skills and view the immutable audit ledger; active/pending/archived/audit tabs are separate; actions show capability scope, last used, use count, and TTL/archive state
+- [x] **SKW-01**: Operator can install a skill from a source field or a catalog item via the cockpit; the install pipeline surfaces source, content hash/preview, risk tier, and the validation checklist (sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) + destination before activation
+- [x] **SKW-02**: RISKY/DESTRUCTIVE skill actions (install/create/update/delete) enter an approval queue with source, content preview, risk tier, and resume token; pending skills cannot run or be prompt-injected; activation is the approval resume (no model-facing approve). _Amendment (Phase 29 D-13, Option A): the cockpit install surfaces in the SAME unified `/api/approvals` queue by minting an **operator-origin `ask_user` pause** (`askuser.Store.Insert`, `Kind=approval` + `ResumeContext={type:"skill_approval", skill_name}`) from the capability-gated cmd/aura skills-write provider — widening the T-04-19 "Runner is the sole writer of `aura.paused_states`" invariant to "the Runner AND the capability-gated operator-origin governance-write path". The pause is mintable ONLY behind `RequireCapability(governance.write)` (no model/agent/unauthenticated mint; the agent stays name-gated to `ask_user`); resolution is operator-only and the install never auto-activates._
+- [x] **SKW-03**: Operator can restore / archive skills and view the immutable audit ledger; active/pending/archived/audit tabs are separate; actions show capability scope, last used, use count, and TTL/archive state
 
 ## v2 Requirements
 
@@ -191,9 +191,9 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | MCPW-01 | Phase 29 | Complete |
 | MCPW-02 | Phase 29 | Complete |
 | MCPW-03 | Phase 29 | Complete |
-| SKW-01 | Phase 29 | Pending |
-| SKW-02 | Phase 29 | Pending |
-| SKW-03 | Phase 29 | Pending |
+| SKW-01 | Phase 29 | Complete |
+| SKW-02 | Phase 29 | Complete |
+| SKW-03 | Phase 29 | Complete |
 
 **Coverage:**
 

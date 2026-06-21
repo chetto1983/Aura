@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Completed 29-02-PLAN.md (MCP write backend + endpoints)
-last_updated: "2026-06-21T10:42:34.622Z"
-last_activity: 2026-06-21 -- Phase 29 plan 02 complete (MCP write backend + mutating endpoints)
+stopped_at: Completed 29-03-PLAN.md (skills install write backend + D-13 operator-origin approval pause)
+last_updated: "2026-06-21T11:57:17.702Z"
+last_activity: 2026-06-21
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 45
-  completed_plans: 37
+  completed_plans: 38
   percent: 78
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 29 (governance-write-mcp-configuration-skills-install) — EXECUTING
-Plan: 3 of 5 (29-01 + 29-02 complete; next: 29-03 skills install)
+Plan: 4 of 5 (29-01 + 29-02 + 29-03 complete; next: 29-04 React skills/MCP write UI)
 Status: Ready to execute
-Last activity: 2026-06-21 -- Phase 29 plan 02 complete (MCP write backend + mutating endpoints)
+Last activity: 2026-06-21
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -195,6 +195,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 28 P03 | 1h 16m | 2 tasks | 26 files |
 | Phase 28 P06 | ~4h | 2 tasks | 41 files |
 | Phase 29 P29-02 | ~24min | 3 tasks | 12 files |
+| Phase 29 P29-03 | ~45min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 ### Phase 29 Execution
 
 - **29-02 closed (2026-06-21): MCP write backend + the six authenticated mutating endpoints (MCPW-01/02/03).** Built over the Phase-16 manager + the 29-01 audit foundation: `internal/mcp/manager/envedit.go` `SetServerEnv` (a NEW placeholder-aware `mergeSubmittedEnv` — a submitted redacted `${KEY}` preserves the stored secret, a real value rotates, a non-secret edits/clears; the existing blanket-preserve `mergeEnvPreserveCredentials` could never rotate, so it was the wrong primitive — Rule-1 fix) + `configwrite.go` `WriteConfigWithAudit` (atomic temp config write → `InsertMCPAuditTx` inside `db.WithTx` → `os.Rename` on commit / discard temp on tx failure — one mechanism gives BOTH D-04 atomicity AND the MCPW-01 concurrency-edge temp+rename, because `SaveManagedConfig` is a direct `WriteFile` today). agui: `governance_write_seam.go` (`MCPWriteProvider` consumer-side narrow interface + `GovernanceWriteProviders` bundle + `SetGovernanceWriteProviders` setter + `ErrMCPServerExists/NotFound`→409/404 sentinels) + `governance_write_api.go` (POST `/api/governance/mcp` install + PATCH `/{name}/env` + POST `/{name}/{trust,enable,disable}` + DELETE `/{name}` — thin shells mirroring `governance_api.go`: 503 unwired, 401 no-principal, `envChips` key-only echo with NO value on the wire, install previews CLI-equiv + `ManagedConfigPath()` destination + a live reprobe, trust populates the today-empty `ApprovedBy/At/Reason` + reprobes, sanitized 502 on backend failure). cmd/aura: `serve_governance_write.go` `mcpWriteAdapter` (reload-per-call so a concurrent CLI edit isn't clobbered; custom server defaults to `TrustBlocked` — no model self-trust; recipe `RequiredEnv` soft warnings; 3s fail-soft probe) + six `RequireCapability(governance.write)` mounts (method+path-specific, never a bare `/api/`) + `buildMCPWriteProvider` best-effort wiring (nil pool/path → 503, never aborts boot). Verification: `go build`/`go vet`/`golangci-lint` clean (0 issues) on the touched packages; 17 unit tests + `-race` green; `db_integration` (live PG) `TestWriteConfigWithAuditAtomic` (induced tx-fail leaves `servers.json` byte-identical + zero audit rows; clean write flips config + exactly one row) + `TestMCPAuditOnePerAction` (one row per verb across all six) PASS; a serve-level mount test pins 200-grantee / 403-no-grant / 403-no-principal. Commits `0ed8d7dd` (SetServerEnv + atomic wrapper), `28ed1b6a` (seam + handlers), `95e541ae` (mounts + concrete provider). Summary `.planning/phases/29-governance-write-mcp-configuration-skills-install/29-02-SUMMARY.md`. Next = 29-03 (skills install — reuses the same `governance.write` mount idiom + the `GovernanceWriteProviders` bundle).
+- **29-03 closed (2026-06-21): skills install/lifecycle write backend + the D-13 operator-origin approval pause (SKW-01/02/03).** Built over the Phase-11 Writer gate + the Phase-25 approval queue. The resolved architectural checkpoint (a cockpit REST install cannot reach the `paused_states` sink through the agent — the Runner is the sole writer (T-04-19) and pauses are name-gated to `ask_user`, but a cockpit call has no agent loop) was resolved per the operator's **Option A / D-13**: `cmd/aura/serve_governance_write_skills.go` `skillsWriteAdapter.Install` stages via the Task-1 Installer (→ `pending/`, one `skill_audit` row, never self-activated) then MINTS an operator-origin `ask_user` pause via `askuser.Store.Insert` (`Kind=approval` + `ResumeContext={type:skill_approval,skill_name}`), parented to a deterministic governance conversation (provisioned idempotently for the resume-side `AppendTurn` FK). It surfaces in the SAME `/api/approvals` queue (source-agnostic `ListPendingAll`) and resolves through the EXISTING `Runner.SubmitAnswers` → `newSkillResumeHook` → `ResumeHandler.Resume` → `Writer.Activate` (accept) / `DiscardPending` (decline) bridge — no new queue/approval/activation logic. This WIDENS T-04-19 to "the Runner AND the capability-gated operator-origin governance-write path are the writers of `aura.paused_states`" — the agent stays `ask_user`-name-gated; the second writer is reachable ONLY behind `RequireCapability(governance.write)`. PRD-first: the SPEC/REQUIREMENTS D-13 amendment landed FIRST as its own atomic docs commit (`69e68b07`). agui: `SkillsWriteProvider` (added to the existing bundle) + `governance_write_skills_api.go` (install/restore/archive/create/update/delete/catalog — install renders RISKY + five-item checklist + source/hash/preview/destination + approval token, never `--ignore-scripts`; restore 409s on a name collision BEFORE `Writer.Restore`'s `os.RemoveAll` via the new `Writer.ActiveExists` stat; catalog flag-gated on `AURA_SKILLS_EXTERNAL_DISCOVERY`). `cmd/aura/serve_webui.go` seven `RequireCapability(governance.write)` mounts + `serve.go` `buildSkillsWriteProvider` wiring. Verification: `go build`/`go vet`/`golangci-lint` clean (0 issues); unit + `-race` (skills + agui) green; `db_integration` (live PG) `TestSkillsInstallApprovalBridgeAccept`/`Decline` (the mint→queue→approve→Activate round-trip) PASS. Commits `77c8d7cd` (Task 2), `229cb9d5` (Task 3). Summary `.planning/phases/29-governance-write-mcp-configuration-skills-install/29-03-SUMMARY.md`. Next = 29-04 (React skills/MCP write UI).
 
 ### Phase 25 Execution
 
@@ -360,6 +362,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 27-02: widen secretPattern to redact bolt://neo4j DSN host+credential (T-27-05/V13)
 - [Phase ?]: 27-02: serve opens ONE boot-time knowledge.Client for the graph routes (fail-closed 503, never aborts boot)
 - [Phase ?]: Phase 27/03 graph frontend core is renderer-free; labelFamilyColor is schema-driven over one brand ramp
+- [Phase ?]: Phase 29 D-13 (Option A): cockpit skill install mints an operator-origin ask_user pause via askuser.Store.Insert, widening T-04-19 to a capability-gated second paused_states writer; surfaces in /api/approvals + resumes via the existing source-agnostic bridge (no model approve, never auto-activates).
 
 ### Pending Todos
 
@@ -393,9 +396,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-20T23:26:00.339Z
+Last session: 2026-06-21T11:56:57.913Z
 Stopped at: Phase 29 UI-SPEC approved
-Resume file: .planning/phases/29-governance-write-mcp-configuration-skills-install/29-UI-SPEC.md
+Resume file: None
 
 ## Operator Next Steps
 
