@@ -80,8 +80,9 @@ env.linux
 web/.stryker-tmp-onb/*
 graphify-out/*
 # graphify knowledge graph: keep the human-readable report trackable, ignore the
-# heavy rebuildable machine artifacts (28MB graph.json + snapshot). Rebuild with
-# the host `graphify` shim (-> aura-graphify:local container). See scripts/graphify/.
+# heavy rebuildable machine artifacts (~30MB graph.json + snapshot). Rebuild with
+# the native graphify CLI: `pip install graphifyy` then `graphify update .`
+# (~/bin/graphify.exe; the auto_update PostToolUse hook runs it after commits).
 .planning/graphs/graph.json
 .planning/graphs/graph.html
 .planning/graphs/.last-build-snapshot.json
