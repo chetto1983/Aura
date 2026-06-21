@@ -1,12 +1,105 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // memoryRecipeName is the catalog/policy key for the default-on agent-memory recipe.
 const memoryRecipeName = "memory"
+
+// loadMCPServers composes the runtime MCP server set from the managed config doc, the
+// AURA_MCP_SERVERS_JSON env override, and the default-on memory recipe (D-08). It returns the
+// runnable servers + the policy map (managed recipes the operator may enable/disable).
+func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer, error) {
+	path, err := mcp.ManagedConfigPath()
+	if err != nil {
+		return nil, nil, err
+	}
+	managed, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	managedServers, err := mcpmanager.RuntimeServers(managed)
+	if err != nil {
+		return nil, nil, err
+	}
+	runnableManaged, err := mcpmanager.RunnableManagedServers(managed)
+	if err != nil {
+		return nil, nil, err
+	}
+	policies := make(map[string]mcp.ManagedServer, len(runnableManaged))
+	for name, server := range runnableManaged {
+		policies[name] = server
+	}
+	envServers, err := parseMCPServersJSON(os.Getenv("AURA_MCP_SERVERS_JSON"))
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make(map[string]mcp.ServerConfig, len(managedServers)+len(envServers))
+	for name, cfg := range managedServers {
+		out[name] = cfg
+	}
+	for name, cfg := range envServers {
+		out[name] = cfg
+		delete(policies, name)
+	}
+	// Default-on (D-08): memory is a core capability, so it mounts out of the box
+	// with no `aura mcp install`. Injected AFTER the env delete loop so an
+	// AURA_MCP_SERVERS_JSON override of `memory` still wins; respects an explicit
+	// `aura mcp disable memory` (D-09). On a fresh machine this makes len(policies)
+	// non-zero — the intended default-on behavior.
+	injectDefaultOnMemory(policies, managed, envServers)
+	if len(out) == 0 && len(policies) == 0 {
+		return nil, nil, nil
+	}
+	return out, policies, nil
+}
+
+func parseMCPServersJSON(raw string) (map[string]mcp.ServerConfig, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var wrapped struct {
+		MCPServers map[string]mcp.ServerConfig `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapped); err != nil {
+		return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: %w", err)
+	}
+	if wrapped.MCPServers != nil {
+		return validateMCPServers(wrapped.MCPServers)
+	}
+	var direct map[string]mcp.ServerConfig
+	if err := json.Unmarshal([]byte(raw), &direct); err != nil {
+		return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: %w", err)
+	}
+	return validateMCPServers(direct)
+}
+
+func validateMCPServers(in map[string]mcp.ServerConfig) (map[string]mcp.ServerConfig, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]mcp.ServerConfig, len(in))
+	for name, cfg := range in {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: server name cannot be empty")
+		}
+		if strings.TrimSpace(cfg.Command) == "" {
+			return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: server %q command cannot be empty", name)
+		}
+		cfg.Command = strings.TrimSpace(cfg.Command)
+		out[name] = cfg
+	}
+	return out, nil
+}
 
 // injectDefaultOnMemory adds the `memory` recipe to policies unless the operator
 // has ANY say of their own (D-08 default-on, D-09 respect disable). Memory is a

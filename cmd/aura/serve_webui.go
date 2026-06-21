@@ -239,6 +239,21 @@ const (
 	connectWhatsAppLogoutRoute = "POST /api/connect/whatsapp/logout"
 )
 
+// connectPIM* are the cockpit "Connect Google Calendar" routes (connect_pim_api.go). Each is a
+// SPECIFIC method+path sibling (with {id} path values) under the "/api/" carve-out — NEVER a bare
+// "/api/" (Pitfall 5). All five delegate to the AG-UI handler (routes on Server.Mux) and are
+// interposed with RequireCapability(governance.write): creating an account stores the operator's
+// own Google OAuth client and a delete drops the linked account, so these are operator write-class
+// actions — the SAME gate as the WhatsApp/MCP write routes. Go 1.22 longest-pattern precedence keeps
+// each method+path sibling authoritative over the bare "/api/" carve-out and the "/" embed catch-all.
+const (
+	connectPIMAccountsListRoute   = "GET /api/connect/pim/accounts"
+	connectPIMAccountsCreateRoute = "POST /api/connect/pim/accounts"
+	connectPIMAccountDeleteRoute  = "DELETE /api/connect/pim/accounts/{id}"
+	connectPIMGoogleStartRoute    = "GET /api/connect/pim/accounts/{id}/google/start"
+	connectPIMLogoutRoute         = "POST /api/connect/pim/accounts/{id}/logout"
+)
+
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
 // (start + provision) are gated on (ONBD-01a / D-04, parity with agentRunCapability). The
 // seeded `local` identity holds the '*' wildcard so it passes; the name becomes load-
@@ -422,6 +437,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(connectWhatsAppStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectWhatsAppQRRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectWhatsAppLogoutRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMAccountsListRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMAccountsCreateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMAccountDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMGoogleStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMLogoutRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator

@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  createPimAccount,
+  deletePimAccount,
   fetchMcpServers,
   fetchSchedulerRuns,
   fetchSchedulerTasks,
   fetchSkills,
   fetchSkillsAudit,
+  listPimAccounts,
+  pimGoogleStart,
+  pimLogout,
   probeMcpServer,
   whatsappConnectLogout,
   whatsappConnectStatus,
@@ -245,5 +250,79 @@ describe('governanceApi same-origin throwing fetch', () => {
     expect(url).toBe('/api/connect/whatsapp/logout');
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('same-origin');
+  });
+
+  it('listPimAccounts unwraps {accounts} and drops malformed entries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      okJSON({
+        accounts: [
+          { id: 'work', displayName: 'Work', provider: 'google', enabled: true },
+          { displayName: 'no-id' }, // dropped — missing id
+          'garbage', // dropped — not an object
+        ],
+      }),
+    );
+    const { accounts } = await listPimAccounts();
+    expect(accounts).toEqual([{ id: 'work', displayName: 'Work', provider: 'google', enabled: true }]);
+  });
+
+  it('listPimAccounts returns [] when the body omits accounts and throws on 503', async () => {
+    vi.stubGlobal('fetch', okJSON({}));
+    expect((await listPimAccounts()).accounts).toEqual([]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 503 }))),
+    );
+    await expect(listPimAccounts()).rejects.toThrow('HTTP 503');
+  });
+
+  it('createPimAccount POSTs the body and throws Error("HTTP 409") on a duplicate', async () => {
+    const fetchMock = okJSON({ id: 'work', displayName: 'Work', provider: 'google', enabled: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const body = {
+      id: 'work',
+      displayName: 'Work',
+      provider: 'google' as const,
+      providerConfig: { clientId: 'cid', clientSecret: 'sec' },
+    };
+    await createPimAccount(body);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/pim/accounts');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify(body));
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 409 }))),
+    );
+    await expect(createPimAccount(body)).rejects.toThrow('HTTP 409');
+  });
+
+  it('deletePimAccount DELETEs the encoded id route (204)', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    vi.stubGlobal('fetch', fetchMock);
+    await deletePimAccount('a/b');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/pim/accounts/a%2Fb');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('pimGoogleStart GETs the start route and returns {authUrl,redirectUri}', async () => {
+    const fetchMock = okJSON({ authUrl: 'https://accounts.google.com/x', redirectUri: 'http://localhost/cb' });
+    vi.stubGlobal('fetch', fetchMock);
+    const start = await pimGoogleStart('work');
+    expect(start).toEqual({ authUrl: 'https://accounts.google.com/x', redirectUri: 'http://localhost/cb' });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toBe('/api/connect/pim/accounts/work/google/start');
+  });
+
+  it('pimLogout POSTs the logout route', async () => {
+    const fetchMock = okJSON({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    await pimLogout('work');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/pim/accounts/work/logout');
+    expect(init.method).toBe('POST');
   });
 });
