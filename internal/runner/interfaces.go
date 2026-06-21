@@ -56,8 +56,20 @@ type ConversationStore interface {
 type ContextBlockProvider func(ctx context.Context, owner identity.Identity) string
 
 // PauseStore is the narrow paused_states surface the Runner consumes (D-A2-02).
-// *askuser.Store satisfies it implicitly. The Runner is the SOLE caller of Insert
-// (T-04-19: only the Runner writes paused_states, on a pause Event).
+// *askuser.Store satisfies it implicitly. The Runner writes Insert on a pause
+// Event (T-04-19).
+//
+// T-04-19 WIDENING (Phase-29 D-13, Option A): the Runner is no longer the SOLE
+// writer of aura.paused_states. The capability-gated operator-origin
+// governance-write path (the cmd/aura skills-write provider, reachable only behind
+// RequireCapability(governance.write)) is a SECOND legitimate writer: a cockpit
+// skill install mints an operator-origin ask_user pause via askuser.Store.Insert
+// (Kind=approval + ResumeContext={type:"skill_approval"}) so it surfaces in the same
+// /api/approvals queue and resolves through the same source-agnostic
+// Runner.SubmitAnswers -> ResumeHandler.Resume bridge. The widening is
+// capability-scoped, not a blanket relaxation — no model/agent/unauthenticated
+// caller can mint a pause (the agent stays name-gated to ask_user,
+// llm_agent_pause.go).
 type PauseStore interface {
 	Insert(ctx context.Context, p askuser.InsertParams) error
 	GetByToken(ctx context.Context, token string) (askuser.Pending, error)

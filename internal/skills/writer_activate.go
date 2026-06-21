@@ -95,6 +95,20 @@ func (w *Writer) Archive(ctx context.Context, name string, src ApprovalSource, a
 	return nil
 }
 
+// ActiveExists reports whether an active skill of the given name is present (an active/
+// <name>/SKILL.md on disk). It is the restore-collision chokepoint (SKW-03): the cockpit
+// restore handler calls it and 409s BEFORE Writer.Restore (which does an os.RemoveAll on
+// the active dir that would SILENTLY overwrite the active skill). A name that fails the
+// grammar is treated as "not present" — Restore self-guards the grammar again, so a bad
+// name never reaches a path join here. The check is read-only (an os.Stat, no mutation).
+func (w *Writer) ActiveExists(name string) bool {
+	if err := SanitizeName(name, name); err != nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(w.activeDir, name, "SKILL.md"))
+	return err == nil
+}
+
 // Restore is the inverse of Archive (RESEARCH Pattern 1): it promotes
 // archived/<name> → active, re-materializes the snippet into the export dir (so the
 // loader + the D-01 host path see it again), flips the usage sidecar back to "active",

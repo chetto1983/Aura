@@ -8,6 +8,16 @@
 //
 // The pause is Event-only, NEVER the iter.Seq2 error slot (RESEARCH Pattern-3
 // anti-pattern; mirrors budget exhaustion at llm_agent.go terminalBudgetEvent).
+//
+// T-04-19 WIDENING (Phase-29 D-13, Option A): the Runner is no longer the SOLE
+// writer of aura.paused_states. The capability-gated operator-origin
+// governance-write path (a cockpit skill install behind
+// RequireCapability(governance.write)) mints an operator-origin ask_user pause via
+// askuser.Store.Insert. That widening lives ENTIRELY outside the agent: the agent
+// path here stays name-gated to ask_user (only an ask_user tool call mints a pause)
+// and DB-free — no model/agent/unauthenticated caller can mint a pause through this
+// file. The second writer is scoped to the operator capability gate, not a blanket
+// relaxation of this name-gate.
 package agent
 
 import (
