@@ -26,6 +26,14 @@ import { useResolveApproval, type Approval, type ResolveAction } from './useAppr
 //
 // SECURITY (T-25-20): the question + option labels render as React text nodes
 // (auto-escaped), never raw HTML.
+//
+// Phase 29 (SKW-02 / D-11): a RISKY skill-install approval (Kind=approval, minted by the
+// operator-origin governance-write pause) renders the SAME card with an added RISKY
+// supply-chain framing strip ABOVE the existing verbs — a RISKY badge, the container-isolation
+// note, and the resume token (mono). It carries NO run/activate affordance (activation is the
+// approval RESUME only — prohibition #3/#4) and mints NO second badge/queue (the existing
+// ApprovalBadge already counts it — D-11). The source/hash/preview travel inside the verbatim
+// (React-escaped) question, never via dangerouslySetInnerHTML (T-25-20).
 
 type CardState = 'pending' | 'answered' | 'declined' | 'cancelled';
 
@@ -42,6 +50,12 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   const resolve = useResolveApproval();
   const options = parseOptions(approval.options);
   const terminal = isTerminal(approval);
+  // A RISKY skill-install approval (Kind=approval, operator-origin governance-write pause).
+  // The RISKY framing strip renders above the verbs; it carries no run/activate affordance.
+  const skillRisk = approval.kind === 'approval';
+  const riskStrip = skillRisk ? (
+    <SkillRiskStrip token={approval.token} />
+  ) : undefined;
 
   const [freeText, setFreeText] = useState('');
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -75,7 +89,7 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   // D-06: terminal interrupt (expired / auto-resolved) — explicit state, verbs gone.
   if (terminal) {
     return (
-      <CardShell question={approval.question}>
+      <CardShell question={approval.question} header={riskStrip}>
         <TerminalChip tone="warning" label={t('approval.terminal.expired')} />
       </CardShell>
     );
@@ -84,28 +98,28 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   // Post-resolve terminal chips (the in-thread transition).
   if (state === 'answered') {
     return (
-      <CardShell question={approval.question}>
+      <CardShell question={approval.question} header={riskStrip}>
         <TerminalChip tone="success" label={t('approval.card.answered')} />
       </CardShell>
     );
   }
   if (state === 'declined') {
     return (
-      <CardShell question={approval.question}>
+      <CardShell question={approval.question} header={riskStrip}>
         <TerminalChip tone="success" label={t('approval.card.declined')} />
       </CardShell>
     );
   }
   if (state === 'cancelled') {
     return (
-      <CardShell question={approval.question}>
+      <CardShell question={approval.question} header={riskStrip}>
         <TerminalChip tone="danger" label={t('approval.card.cancelled')} />
       </CardShell>
     );
   }
 
   return (
-    <CardShell question={approval.question}>
+    <CardShell question={approval.question} header={riskStrip}>
       {options.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {options.map((option) => (
@@ -220,16 +234,42 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
 
 function CardShell({
   question,
+  header,
   children,
 }: {
   readonly question: string;
+  /** Optional framing strip (the Phase-29 RISKY skill-install supply-chain note). */
+  readonly header?: React.ReactNode;
   readonly children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-accent/40 bg-surface-2 px-4 py-3">
+      {header}
       {/* The backend ask_user question, VERBATIM (no client-side rewrite). */}
       <p className="text-sm leading-relaxed text-text">{question}</p>
       {children}
+    </div>
+  );
+}
+
+/** SkillRiskStrip — the Phase-29 RISKY skill-install supply-chain framing (RISKY badge + the
+ * container-isolation note + the resume token, mono). Rendered ABOVE the verbs; no run/activate
+ * affordance (activation is the approval resume only — prohibition #3/#4). */
+function SkillRiskStrip({ token }: { readonly token: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-warning bg-warning/15 px-3 py-2">
+      <span className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-warning">
+        <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning" />
+        {t('approval.skill.riskBadge')}
+      </span>
+      <span className="text-[0.8125rem] leading-relaxed text-text">
+        {t('approval.skill.containerNote')}
+      </span>
+      <span className="flex flex-wrap items-center gap-1 text-[0.75rem] text-text-muted">
+        {t('approval.skill.resumeToken')}
+        <code className="break-all font-mono text-text">{token}</code>
+      </span>
     </div>
   );
 }

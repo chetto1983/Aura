@@ -222,6 +222,12 @@ export const resources = {
         terminal: {
           expired: 'Expired — auto-resolved.',
         },
+        skill: {
+          riskBadge: 'RISKY skill install',
+          containerNote:
+            "Runs in Aura's container. Install scripts are permitted; isolation is the container boundary + this approval + Writer validation. Approving activates it; declining discards the staged skill.",
+          resumeToken: 'Resume token:',
+        },
       },
       footer: {
         runtimeLabel: 'Runtime telemetry',
@@ -500,6 +506,12 @@ export const resources = {
         },
         terminal: {
           expired: 'Scaduta — risolta automaticamente.',
+        },
+        skill: {
+          riskBadge: 'Installazione skill RISCHIOSA',
+          containerNote:
+            "Gira nel container di Aura. Gli script di installazione sono consentiti; l'isolamento è il confine del container + questa approvazione + la validazione del Writer. Approvare la attiva; rifiutare scarta la skill in coda.",
+          resumeToken: 'Token di ripresa:',
         },
       },
       footer: {

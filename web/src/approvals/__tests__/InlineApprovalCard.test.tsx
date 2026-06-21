@@ -193,4 +193,44 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
       expect(alert.textContent).toContain("Couldn't resume this run.");
     });
   });
+
+  describe('Phase-29 RISKY skill-install approval (SKW-02 / D-11)', () => {
+    const SKILL_QUESTION =
+      'Approve RISKY skill install "fancy-skill" from "owner/fancy-skill"? (RISKY supply-chain input — container-isolated, approval-gated, Writer-validated)';
+
+    function skillApproval(over: Partial<Approval> = {}): Approval {
+      return approval({
+        token: 'sk-tok-1',
+        conversation_id: 'gov-conv',
+        kind: 'approval',
+        question: SKILL_QUESTION,
+        ...over,
+      });
+    }
+
+    it('renders the RISKY supply-chain strip (badge + container note + resume token) above the verbs', () => {
+      renderCard({ approval: skillApproval() });
+      expect(screen.getByText('RISKY skill install')).toBeTruthy();
+      expect(screen.getByText(/Runs in Aura's container/)).toBeTruthy();
+      // The resume token renders (mono) so the operator can correlate it to the staged skill.
+      expect(screen.getByText('sk-tok-1')).toBeTruthy();
+      // The verbatim question (source embedded) is rendered, React-escaped.
+      expect(screen.getByText(SKILL_QUESTION)).toBeTruthy();
+    });
+
+    it('carries NO run/activate affordance — activation is the approval resume only', () => {
+      renderCard({ approval: skillApproval() });
+      expect(screen.queryByRole('button', { name: /^(run|activate|install)\b/i })).toBeNull();
+      // The existing approve-by-answer verb IS present (the resume bridge), but never a "run".
+      expect(screen.getByRole('button', { name: 'Answer' })).toBeTruthy();
+    });
+
+    it('an expired/consumed skill approval renders the warning TerminalChip, verbs gone', () => {
+      renderCard({ approval: skillApproval({ terminal: true }) });
+      expect(screen.getByText('Expired — auto-resolved.')).toBeTruthy();
+      // The RISKY strip still frames the terminal card (never a silent disappearance).
+      expect(screen.getByText('RISKY skill install')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull();
+    });
+  });
 });
