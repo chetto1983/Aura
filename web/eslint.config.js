@@ -79,6 +79,19 @@ export default tseslint.config(
     },
   },
   {
+    // shadcn/ui primitives co-locate a CVA variant helper (e.g. `buttonVariants`)
+    // with the component so other surfaces can compose it (`cn(buttonVariants(...))`).
+    // That is the canonical new-york shape; allow the named variant export without
+    // tripping react-refresh's component-only rule for this directory only.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowExportNames: ['buttonVariants', 'badgeVariants'] },
+      ],
+    },
+  },
+  {
     // Tests keep defensive runtime guards (e.g. `node.textContent ?? ''`) even
     // where the resolved DOM types say the value is non-null — the guard hardens
     // the test across jsdom/browser type drift without weakening any assertion.

@@ -1,6 +1,8 @@
 @import './fonts.css';
 @import 'tailwindcss';
+@import 'tw-animate-css';
 @import './theme.css';
+@import './shadcn.css';
 @import './atmosphere.css';
 @import './motion.css';
 @import './skeleton.css';

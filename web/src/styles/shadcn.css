@@ -1,0 +1,28 @@
+/* shadcn variable bridge — every shadcn primitive reads the Aura @theme tokens,
+   so the new-york primitives inherit the blue/graphite palette in BOTH light + dark.
+   Never hard-code hex here and never reintroduce shadcn's default slate/zinc; the
+   only source of colour is the locked Aura tokens generated into theme.css. */
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-text);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: var(--color-on-accent);
+  --color-secondary: var(--color-surface-2);
+  --color-secondary-foreground: var(--color-text);
+  --color-muted: var(--color-surface-2);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-accent-foreground: var(--color-on-accent);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: var(--color-on-accent);
+  --color-border: var(--color-border);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-ring);
+  --radius: var(--radius-md);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+}

@@ -161,6 +161,9 @@ function auraCssCompatLintPlugin(): Plugin {
 // as default and takes { presets } (RESEARCH's named `babel`/`babelConfig` shape
 // predates the shipped 0.2.3 API).
 export default defineConfig({
+  resolve: {
+    alias: { '@': new URL('./src', import.meta.url).pathname },
+  },
   plugins: [
     babel({ include: /\.[jt]sx?$/, presets: [reactCompilerPreset()] }),
     react(),
