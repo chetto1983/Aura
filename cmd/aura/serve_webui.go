@@ -103,6 +103,18 @@ const agentRunCapability = "agent.run"
 // metadata, so they require an explicit grant instead of authentication alone.
 const governanceReadCapability = "governance.read"
 
+// governanceWriteCapability gates every Phase-29 governance WRITE surface (MCP config
+// mutation + skill install). It is strictly stronger than governance.read: a write can
+// install a new MCP server or a RISKY supply-chain skill, so it requires its own grant.
+// The seeded `local` identity holds the `*` wildcard so it passes regardless of the exact
+// name (the name becomes load-bearing once real grants arrive). No routes are mounted on
+// it here — plans 02/03 add the `RequireCapability(…, governanceWriteCapability)` mounts,
+// which is why it has no consumer yet (the value is pinned now so the auth_test.go:494
+// `governance.write` 403 assertion and the later mounts agree on one string).
+//
+//nolint:unused // forward-declared in wave 1; consumed by the MCP/skill write mounts in plans 29-02/29-03.
+const governanceWriteCapability = "governance.write"
+
 // conversationsRoutePrefix is the CHAT-02 conversation-management subtree (Phase 25),
 // registered on the parent mux as a SPECIFIC subtree delegating to the AG-UI handler.
 // It MUST stay a sibling of "/api/integrations/" under the "/api/" exclusion carve-out
