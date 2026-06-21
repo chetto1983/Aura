@@ -91,9 +91,9 @@ Industrial frontend foundation established and documented BEFORE cockpit feature
 
 Operator-directed addition (2026-06-15). Backend write capability already exists (MCP manager, Phase 16); this adds the web config surface over it, gated by GAP-2 auth (Phase 24).
 
-- [ ] **MCPW-01**: Operator can install an MCP server from a recipe or add a custom stdio server via the cockpit, with the equivalent CLI command + managed-config destination (`~/.aura/mcp/servers.json`, or the `AURA_MCP_SERVERS_JSON` override source) shown before save
-- [ ] **MCPW-02**: Operator can edit MCP env values (redacted chips after save, never raw; required/optional/missing/placeholder states distinct), enable/disable a server (reversible), and remove a server (confirmation + audit row)
-- [ ] **MCPW-03**: MCP config mutations pass trust approval + mount-time risk policy before tools enter the registry; denied/destructive tools are explicit, never silently mounted; fail-soft mount warnings are surfaced
+- [x] **MCPW-01**: Operator can install an MCP server from a recipe or add a custom stdio server via the cockpit, with the equivalent CLI command + managed-config destination (`~/.aura/mcp/servers.json`, or the `AURA_MCP_SERVERS_JSON` override source) shown before save
+- [x] **MCPW-02**: Operator can edit MCP env values (redacted chips after save, never raw; required/optional/missing/placeholder states distinct), enable/disable a server (reversible), and remove a server (confirmation + audit row)
+- [x] **MCPW-03**: MCP config mutations pass trust approval + mount-time risk policy before tools enter the registry; denied/destructive tools are explicit, never silently mounted; fail-soft mount warnings are surfaced
 
 ### Skills Install & Lifecycle — write/governance (SKW) — Phase 29 (ux-spec Frame 08)
 
@@ -188,9 +188,9 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | GOV-03 | Phase 28 | Complete |
 | ONBD-01 | Phase 28 | Complete |
 | ONBD-02 | Phase 28 | Complete |
-| MCPW-01 | Phase 29 | Pending |
-| MCPW-02 | Phase 29 | Pending |
-| MCPW-03 | Phase 29 | Pending |
+| MCPW-01 | Phase 29 | Complete |
+| MCPW-02 | Phase 29 | Complete |
+| MCPW-03 | Phase 29 | Complete |
 | SKW-01 | Phase 29 | Pending |
 | SKW-02 | Phase 29 | Pending |
 | SKW-03 | Phase 29 | Pending |

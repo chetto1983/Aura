@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-21T09:54:14.523Z"
-last_activity: 2026-06-21 -- Phase 29 execution started
+stopped_at: Completed 29-02-PLAN.md (MCP write backend + endpoints)
+last_updated: "2026-06-21T10:42:34.622Z"
+last_activity: 2026-06-21 -- Phase 29 plan 02 complete (MCP write backend + mutating endpoints)
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 45
-  completed_plans: 35
+  completed_plans: 37
   percent: 78
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 29 (governance-write-mcp-configuration-skills-install) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 29
-Last activity: 2026-06-21 -- Phase 29 execution started
+Plan: 3 of 5 (29-01 + 29-02 complete; next: 29-03 skills install)
+Status: Ready to execute
+Last activity: 2026-06-21 -- Phase 29 plan 02 complete (MCP write backend + mutating endpoints)
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -194,6 +194,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 28 P05 | ~2h 30m | 2 tasks | 14 files |
 | Phase 28 P03 | 1h 16m | 2 tasks | 26 files |
 | Phase 28 P06 | ~4h | 2 tasks | 41 files |
+| Phase 29 P29-02 | ~24min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,10 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 - Remaining webhint advisories are expected/non-blocking: `meta[name=theme-color]` support warnings for Firefox/Opera, no-http-redirect warnings for unauthenticated protected routes, and performance hints from the intentional animated login background keyframes.
 - Static gates green: `npm run build`, `npm run lint`, `npm run typecheck`, `npm run format:check`, `npm run contrast`, `go vet $(bash scripts/go_packages.sh)`, `golangci-lint run --timeout=5m $(bash scripts/go_packages.sh)`, `bash scripts/check-file-size.sh`, `go test -count=1 ./internal/webui ./cmd/aura`, `npm run test -- src/__tests__/LoginPage.test.tsx --coverage.enabled=false`, and `git diff --check`.
 - Current lint fix layer: Auth config and manifest responses carry explicit UTF-8 content types, login hint color uses the AA-safe muted token, LoginPage ARIA token validity is covered by unit tests, and Vite strips Tailwind's legacy `-webkit-text-size-adjust` normalization from emitted CSS so Edge/webhint reports no CSS compat error.
+
+### Phase 29 Execution
+
+- **29-02 closed (2026-06-21): MCP write backend + the six authenticated mutating endpoints (MCPW-01/02/03).** Built over the Phase-16 manager + the 29-01 audit foundation: `internal/mcp/manager/envedit.go` `SetServerEnv` (a NEW placeholder-aware `mergeSubmittedEnv` — a submitted redacted `${KEY}` preserves the stored secret, a real value rotates, a non-secret edits/clears; the existing blanket-preserve `mergeEnvPreserveCredentials` could never rotate, so it was the wrong primitive — Rule-1 fix) + `configwrite.go` `WriteConfigWithAudit` (atomic temp config write → `InsertMCPAuditTx` inside `db.WithTx` → `os.Rename` on commit / discard temp on tx failure — one mechanism gives BOTH D-04 atomicity AND the MCPW-01 concurrency-edge temp+rename, because `SaveManagedConfig` is a direct `WriteFile` today). agui: `governance_write_seam.go` (`MCPWriteProvider` consumer-side narrow interface + `GovernanceWriteProviders` bundle + `SetGovernanceWriteProviders` setter + `ErrMCPServerExists/NotFound`→409/404 sentinels) + `governance_write_api.go` (POST `/api/governance/mcp` install + PATCH `/{name}/env` + POST `/{name}/{trust,enable,disable}` + DELETE `/{name}` — thin shells mirroring `governance_api.go`: 503 unwired, 401 no-principal, `envChips` key-only echo with NO value on the wire, install previews CLI-equiv + `ManagedConfigPath()` destination + a live reprobe, trust populates the today-empty `ApprovedBy/At/Reason` + reprobes, sanitized 502 on backend failure). cmd/aura: `serve_governance_write.go` `mcpWriteAdapter` (reload-per-call so a concurrent CLI edit isn't clobbered; custom server defaults to `TrustBlocked` — no model self-trust; recipe `RequiredEnv` soft warnings; 3s fail-soft probe) + six `RequireCapability(governance.write)` mounts (method+path-specific, never a bare `/api/`) + `buildMCPWriteProvider` best-effort wiring (nil pool/path → 503, never aborts boot). Verification: `go build`/`go vet`/`golangci-lint` clean (0 issues) on the touched packages; 17 unit tests + `-race` green; `db_integration` (live PG) `TestWriteConfigWithAuditAtomic` (induced tx-fail leaves `servers.json` byte-identical + zero audit rows; clean write flips config + exactly one row) + `TestMCPAuditOnePerAction` (one row per verb across all six) PASS; a serve-level mount test pins 200-grantee / 403-no-grant / 403-no-principal. Commits `0ed8d7dd` (SetServerEnv + atomic wrapper), `28ed1b6a` (seam + handlers), `95e541ae` (mounts + concrete provider). Summary `.planning/phases/29-governance-write-mcp-configuration-skills-install/29-02-SUMMARY.md`. Next = 29-03 (skills install — reuses the same `governance.write` mount idiom + the `GovernanceWriteProviders` bundle).
 
 ### Phase 25 Execution
 
