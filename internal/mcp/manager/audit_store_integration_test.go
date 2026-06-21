@@ -92,7 +92,7 @@ func TestMCPAuditAppendOnly(t *testing.T) {
 	store := NewMCPAuditStore(pool)
 	ctx := context.Background()
 
-	server := "mcp-rt-" + uuid.Must(uuid.NewV7()).String()[:8]
+	server := "mcp-rt-" + uuid.Must(uuid.NewV7()).String()
 	got, err := store.InsertMCPAudit(ctx, MCPAuditInsert{
 		ActorIdentityID: "local",
 		Action:          "install",

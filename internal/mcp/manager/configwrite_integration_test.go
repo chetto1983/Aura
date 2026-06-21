@@ -43,7 +43,7 @@ func TestWriteConfigWithAuditAtomic(t *testing.T) {
 		t.Fatalf("read prior: %v", err)
 	}
 
-	server := "atomic-" + uuid.Must(uuid.NewV7()).String()[:8]
+	server := "atomic-" + uuid.Must(uuid.NewV7()).String()
 
 	// Induced tx failure: a pre-cancelled context fails pool.Begin inside db.WithTx, so
 	// the audit INSERT never runs. The wrapper must discard the temp and leave the prior
@@ -113,7 +113,10 @@ func TestMCPAuditOnePerAction(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "servers.json")
-	server := "peraction-" + uuid.Must(uuid.NewV7()).String()[:8]
+	// Full UUID, not [:8]: the first 8 hex chars of a v7 UUID are a time-based prefix
+	// shared by all v7 UUIDs within ~65s, which collides on the append-only ledger across
+	// rapid-repeat/concurrent runs and inflates the per-server count. The full UUID is unique.
+	server := "peraction-" + uuid.Must(uuid.NewV7()).String()
 
 	actions := []string{"install", "edit", "enable", "disable", "trust", "remove"}
 	for _, action := range actions {
