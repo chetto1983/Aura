@@ -99,7 +99,7 @@ Operator-directed addition (2026-06-15). Backend write capability already exists
 
 Operator-directed addition (2026-06-15). Backend write capability already exists (scoring-gated skill install/create/delete + `ask_user` approval + append-only audit, Phase 11); this adds the web install/approval surface, gated by GAP-2 auth + the approval center (Phase 25).
 
-- [ ] **SKW-01**: Operator can install a skill from a source field or a catalog item via the cockpit; the install pipeline surfaces source, content hash/preview, risk tier, and the validation checklist (`--ignore-scripts`, sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) + destination before activation
+- [ ] **SKW-01**: Operator can install a skill from a source field or a catalog item via the cockpit; the install pipeline surfaces source, content hash/preview, risk tier, and the validation checklist (sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) + destination before activation
 - [ ] **SKW-02**: RISKY/DESTRUCTIVE skill actions (install/create/update/delete) enter an approval queue with source, content preview, risk tier, and resume token; pending skills cannot run or be prompt-injected; activation is the approval resume (no model-facing approve)
 - [ ] **SKW-03**: Operator can restore / archive skills and view the immutable audit ledger; active/pending/archived/audit tabs are separate; actions show capability scope, last used, use count, and TTL/archive state
 

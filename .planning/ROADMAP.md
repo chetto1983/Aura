@@ -53,9 +53,8 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04) (completed 2026-06-19)
 - [x] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02) (completed 2026-06-20)
 - [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03) — **5 plans (Waves 1–5)**
-- [x] **Phase 30: Telegram Onboarding on Frontend (Link + QR)** — ✅ **absorbed-into-28** (D-09): Telegram link/QR is delivered as **ONBD-01b** inside Phase 28's onboarding wizard. See `28-SPEC §ONBD-01b`; `30-SPEC.md` is a tombstone. _(Original scope: surface Telegram account linking in the web cockpit — deep-link + scannable QR over the existing Telegram channel + setup-wizard backend.)_
 
-- [ ] **Phase 31: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)** — GPU cross-encoder reranking + two-stage retrieval (vector→rerank-seeds→graph-expand) wired into memory recall + document retrieval + full-document ingest E2E across ALL markitdown-supported formats (pdf/docx/pptx/xlsx/html/csv/md/images/…, not PDF-only) + GraphRAG connected-nodes, over the existing Neo4j stack (no migration). Spike-gated by 068/069/070 (GPU Qwen3-Reranker-0.6B Q4_K_M, rerank-seeds pipeline, RRF fallback, self-learning deferred). (RET-01..05)
+- [ ] **Phase 30: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)** — GPU cross-encoder reranking + two-stage retrieval (vector→rerank-seeds→graph-expand) wired into memory recall + document retrieval + full-document ingest E2E across ALL markitdown-supported formats (pdf/docx/pptx/xlsx/html/csv/md/images/…, not PDF-only) + GraphRAG connected-nodes, over the existing Neo4j stack (no migration). Spike-gated by 068/069/070 (GPU Qwen3-Reranker-0.6B Q4_K_M, rerank-seeds pipeline, RRF fallback, self-learning deferred). (RET-01..05)
 
 > **Cockpit Overhaul (post-Phase-25, in progress — not a formal phase).** After Phase 25 closed, a
 > premium-bar overhaul reworked the Phase-23/24/25 surfaces in place: a logo-matched **blue** design
@@ -240,7 +239,6 @@ Plans:
 **Wave 1**
 
 - [x] 28-01-PLAN.md — Wave-0 backend gaps + DI seams (run-history query, capability/audit stores, migration 0021, MCP probe, skills stage reader, agui seams)
-- [x] 28-04-PLAN.md — BLOCKING PRD-amendment: relax single-operator (D-07) + absorb Phase 30 (D-09) + OperatorUserID relaxation
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -259,7 +257,7 @@ Plans:
 
 ### Phase 29: Governance Write — MCP Configuration + Skills Install
 
-**Goal**: The operator can configure MCP servers (recipe / custom-stdio install, env editing with redaction, enable/disable/remove) and govern the skills lifecycle (install from a source field or catalog → risk-tiered approval queue → activate, restore/archive, immutable audit) from the cockpit — the web WRITE surface over the EXISTING backend (the MCP manager control plane from Phase 16 + the scoring-gated skill install/create/delete + `ask_user` approval + append-only audit from Phase 11), not new core capability. Per the ux-spec Frame 08 Non-Goals, this surface never shows raw saved MCP secrets, never silently mounts destructive MCP tools when an allowlist exists, never lets a model tool call self-activate a skill, never lets pending skills run or inject prompt content, and never presents `--ignore-scripts` install as safe — install remains RISKY supply-chain input.
+**Goal**: The operator can configure MCP servers (recipe / custom-stdio install, env editing with redaction, enable/disable/remove) and govern the skills lifecycle (install from a source field or catalog → risk-tiered approval queue → activate, restore/archive, immutable audit) from the cockpit — the web WRITE surface over the EXISTING backend (the MCP manager control plane from Phase 16 + the scoring-gated skill install/create/delete + `ask_user` approval + append-only audit from Phase 11), not new core capability. Per the ux-spec Frame 08 Non-Goals, this surface never shows raw saved MCP secrets, never silently mounts destructive MCP tools when an allowlist exists, never lets a model tool call self-activate a skill, never lets pending skills run or inject prompt content, and never presents a skill install as safe — install isolation = Aura's container boundary; install scripts are permitted; install remains RISKY supply-chain input, gated by the approval queue and Writer validation.
 **Depends on**: Phase 24 (GAP-2 web auth — write surfaces require it), Phase 25 (the approval center — the skill/MCP approval queue reuses the HITL `Interrupt`/`Resume[]` resume protocol), Phase 28 (the governance READ boards — these write surfaces extend them). LAST phase: the highest-risk write surfaces land only after auth + the approval center + the read-only boards are proven.
 **Requirements**: MCPW-01, MCPW-02, MCPW-03, SKW-01, SKW-02, SKW-03
 **Success Criteria** (what must be TRUE):
@@ -267,7 +265,7 @@ Plans:
   1. Operator installs an MCP server from a recipe (or adds a custom stdio server) from the cockpit, sees the equivalent CLI command + the managed-config destination (`~/.aura/mcp/servers.json` / the `AURA_MCP_SERVERS_JSON` override source) previewed before save, and after trust approval + mount-time risk policy the server appears mounted with its tool count (MCPW-01, MCPW-03)
   2. An MCP env value displays as a redacted chip after save and is never returned raw; required / optional / missing / placeholder states are visually distinct and a still-placeholder required recipe var raises a warning (MCPW-02)
   3. Operator disables a server (reversible) and removes a server (confirmation + an audit row); a destructive/denied MCP tool is shown explicitly and is never silently mounted when an allowlist exists, and fail-soft mount warnings surface (MCPW-02, MCPW-03)
-  4. Operator installs a skill from a source field or a catalog item; the install pipeline surfaces source, content hash/preview, risk tier, the validation checklist (`--ignore-scripts`, sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) and destination — and a RISKY/DESTRUCTIVE action enters the approval queue with a resume token, is NOT runnable or prompt-injectable while pending, and activates only on the approval resume (no model-facing approve) (SKW-01, SKW-02)
+  4. Operator installs a skill from a source field or a catalog item; the install pipeline surfaces source, content hash/preview, risk tier, the validation checklist (sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) and destination — and a RISKY/DESTRUCTIVE action enters the approval queue with a resume token, is NOT runnable or prompt-injectable while pending, and activates only on the approval resume (no model-facing approve) (SKW-01, SKW-02)
   5. Operator restores / archives skills across separate active / pending / archived / audit tabs (each row showing capability scope, last used, use count, TTL/archive state), and the skills audit ledger shows the install as an append-only row (SKW-02, SKW-03)
 
 **Plans**: 5 plans (Waves 1–5)
@@ -280,18 +278,7 @@ Plans:
 
 **UI hint**: yes
 
-### Phase 30: Telegram Onboarding on Frontend with Link and QR Code
-
-**Goal:** ✅ **Absorbed into Phase 28** (D-09, 2026-06-20) — the Telegram link/QR surface is delivered as requirement **ONBD-01b** inside Phase 28's onboarding wizard (deep-link + server-rendered scannable QR, reusing the existing setup-wizard mint/`ConsumeOnboarding` token flow). This phase is a tombstone; do NOT plan/execute it separately. Original requirement traceability is preserved in `30-SPEC.md` → see `28-SPEC §ONBD-01b`.
-**Requirements**: ONBD-01b (delivered in Phase 28)
-**Depends on:** Phase 29
-**Plans:** absorbed into Phase 28 (no separate plans)
-
-Plans:
-
-- [x] Absorbed into Phase 28 (ONBD-01b) — see `28-SPEC §ONBD-01b`
-
-### Phase 31: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)
+### Phase 30: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)
 
 **Goal**: Aura's retrieval is precision-hardened end-to-end — a GPU cross-encoder reranker (Qwen3-Reranker-0.6B Q4_K_M) behind a fail-soft Go client and a two-stage pipeline (vector seed → rerank seeds → graph-expand winners), wired into BOTH memory recall and document retrieval over the existing Neo4j stack (no DB migration), with the full-document ingest path (ANY markitdown-supported format — pdf/docx/pptx/xlsx/html/csv/md/txt/images/… via the existing `markitdown` sidecar, not PDF-only → format-aware chunk with page/sheet/slide/section locator → Granite 384d embed → connected `:Chunk`/`:NEXT_CHUNK` graph) hardened and proven E2E, gated by an eval harness (nDCG@10 / Recall@5 / MRR), a non-monotonic rerank guard, a per-stage p95 budget, and graceful RRF fallback when GPU is absent.
 **Depends on**: Phase 15 (Memory Subsystem), Phase 22 (perimeter hardening), Phase 27 (graphview read seam). Independent of Phases 28/29.
@@ -306,11 +293,11 @@ Plans:
   5. An eval harness (nDCG@10 / Recall@5 / MRR, vector vs vector+rerank) shows a measured precision lift with zero queries regressed beyond noise (non-monotonic guard); `make coverage` ≥85% owned-surface; a live retrieval/`rerank_integration` E2E tier runs green in CI; self-learning is explicitly OUT (deferred) (RET-05)
 
 **Plans**: 5 plans
-- [ ] 31-01-PLAN.md — Rerank GPU sidecar + internal/rerank fail-soft client + AURA_RERANK_BASE_URL (RET-01) [wave 1]
-- [ ] 31-02-PLAN.md — Full-docs ingest: single allowlist (all markitdown formats) + PPTX/HTML/CSV handlers + :NEXT_CHUNK edges (RET-03) [wave 2]
-- [ ] 31-03-PLAN.md — Two-stage retrieval (seed → rerank seeds → expand winners) wired into document retrieval + memory recall, RRF fallback, messages[0] preserved (RET-02) [wave 3]
-- [ ] 31-04-PLAN.md — GraphRAG connected-nodes retrieval over :NEXT_CHUNK with per-stage p95 budget (RET-04) [wave 4]
-- [ ] 31-05-PLAN.md — Eval harness (nDCG@10/Recall@5/MRR) + non-monotonic guard + CI live tiers + coverage ≥85% + self-learning OUT (RET-05) [wave 5]
+- [ ] 30-01-PLAN.md — Rerank GPU sidecar + internal/rerank fail-soft client + AURA_RERANK_BASE_URL (RET-01) [wave 1]
+- [ ] 30-02-PLAN.md — Full-docs ingest: single allowlist (all markitdown formats) + PPTX/HTML/CSV handlers + :NEXT_CHUNK edges (RET-03) [wave 2]
+- [ ] 30-03-PLAN.md — Two-stage retrieval (seed → rerank seeds → expand winners) wired into document retrieval + memory recall, RRF fallback, messages[0] preserved (RET-02) [wave 3]
+- [ ] 30-04-PLAN.md — GraphRAG connected-nodes retrieval over :NEXT_CHUNK with per-stage p95 budget (RET-04) [wave 4]
+- [ ] 30-05-PLAN.md — Eval harness (nDCG@10/Recall@5/MRR) + non-monotonic guard + CI live tiers + coverage ≥85% + self-learning OUT (RET-05) [wave 5]
 **UI hint**: no
 
 ## Progress
@@ -326,5 +313,4 @@ Plans:
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 6/6 | Complete   | 2026-06-20 |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/5 | Planning | - |
-| 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | — | Absorbed into 28 | 2026-06-20 |
-| 31. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 0/? | Planning | - |
+| 30. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 0/? | Planning | - |
