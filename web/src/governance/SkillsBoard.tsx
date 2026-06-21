@@ -1,12 +1,15 @@
 import { useId, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
 import { SkillDetail } from './SkillDetail';
+import { SkillInstallPanel } from './SkillInstallPanel';
 import {
+  archiveSkill,
   fetchSkills,
   fetchSkillsAudit,
+  restoreSkill,
   type AuditRow,
   type SkillRow,
   type SkillStage,
@@ -61,8 +64,11 @@ function AuditList({ rows }: { readonly rows: readonly AuditRow[] }) {
 
 export function SkillsBoard() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<SkillsTab>('active');
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  const [installing, setInstalling] = useState(false);
+  const [collisionName, setCollisionName] = useState<string | undefined>(undefined);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const tabRefs = useRef<Record<SkillsTab, HTMLButtonElement | null>>({
     active: null,
@@ -86,6 +92,26 @@ export function SkillsBoard() {
     queryFn: fetchSkillsAudit,
     retry: false,
     enabled: tab === 'audit',
+  });
+
+  function invalidateSkills() {
+    void queryClient.invalidateQueries({ queryKey: ['governance', 'skills'] });
+  }
+
+  const archiveMutation = useMutation({
+    mutationFn: (name: string) => archiveSkill(name),
+    onSuccess: invalidateSkills,
+  });
+  const restoreMutation = useMutation({
+    mutationFn: (name: string) => restoreSkill(name),
+    onSuccess: () => {
+      setCollisionName(undefined);
+      invalidateSkills();
+    },
+    onError: (_err, name) => {
+      // A 409 collision (an active skill of the same name) → the inline safe error.
+      setCollisionName(name);
+    },
   });
 
   const active = isLifecycle ? lifecycle : audit;
@@ -123,13 +149,16 @@ export function SkillsBoard() {
     setSelected(name);
   }
 
+  function openInstall(el: HTMLElement | null) {
+    restoreFocusRef.current = el;
+    setSelected(undefined);
+    setInstalling(true);
+  }
+
   const subTabs = (
-    <div
-      role="tablist"
-      aria-label={t('governance.tabs.skills')}
-      className="flex shrink-0 items-center gap-1 border-b border-border bg-surface px-2 py-1"
-    >
-      {SKILL_TABS.map((name, index) => {
+    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-2 py-1">
+      <div role="tablist" aria-label={t('governance.tabs.skills')} className="flex items-center gap-1">
+        {SKILL_TABS.map((name, index) => {
         const selectedTab = tab === name;
         return (
           <button
@@ -157,16 +186,28 @@ export function SkillsBoard() {
           >
             {t(`governance.skills.stages.${name}`)}
           </button>
-        );
-      })}
+          );
+        })}
+      </div>
+      {/* The ONE accent CTA on the board — always reachable. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          openInstall(e.currentTarget);
+        }}
+        className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {t('governance.skills.installSkill')}
+      </button>
     </div>
   );
 
-  // PENDING rows render with NO run/activate control — only a select-to-view-detail button.
+  // active rows gain Archive skill; archived rows gain Restore skill; pending keeps NO
+  // run/activate control. The lifecycle button is a SIBLING of the select button (never nested).
   const master = (
     <div role="list" aria-label={t('governance.tabs.skills')} className="flex flex-col gap-1 p-2">
       {lifecycleRows.map((skill) => (
-        <div key={skill.name} role="listitem">
+        <div key={skill.name} role="listitem" className="flex flex-col gap-1">
           <button
             type="button"
             aria-pressed={selected === skill.name}
@@ -183,10 +224,48 @@ export function SkillsBoard() {
               <span className="break-words text-[15.5px] font-semibold">{skill.name}</span>
               <span className="shrink-0 text-[13px] text-text-muted">{skill.type}</span>
             </span>
+            {/* Per-row metadata (content hash, mono) — the rest surfaces in the detail. */}
+            {skill.contentHash !== undefined && skill.contentHash !== '' ? (
+              <span className="break-all font-mono text-[12px] text-text-muted">
+                {skill.contentHash}
+              </span>
+            ) : null}
             {tab === 'pending' ? (
               <span className="text-[13px] text-warning">{t('governance.skills.pendingNote')}</span>
             ) : null}
           </button>
+          {tab === 'active' ? (
+            <button
+              type="button"
+              disabled={archiveMutation.isPending}
+              onClick={() => {
+                archiveMutation.mutate(skill.name);
+              }}
+              className="min-h-[44px] self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+            >
+              {t('governance.skills.archive')}
+            </button>
+          ) : null}
+          {tab === 'archived' ? (
+            <>
+              <button
+                type="button"
+                disabled={restoreMutation.isPending}
+                onClick={() => {
+                  setCollisionName(undefined);
+                  restoreMutation.mutate(skill.name);
+                }}
+                className="min-h-[44px] self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              >
+                {t('governance.skills.restore')}
+              </button>
+              {collisionName === skill.name ? (
+                <p role="alert" className="text-[13px] text-danger">
+                  {t('governance.skills.collidingRestore', { name: skill.name })}
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </div>
       ))}
     </div>
@@ -196,43 +275,64 @@ export function SkillsBoard() {
     <div className="flex h-full min-h-0 flex-col">
       {subTabs}
       <div className="min-h-0 flex-1">
-        <BoardStateView
-          status={status}
-          emptyHeading={t('governance.skills.emptyHeading')}
-          emptyBody={
-            tab === 'audit' ? t('governance.skills.auditEmpty') : t('governance.skills.emptyBody')
-          }
-          onRetry={() => {
-            void active.refetch();
-          }}
-        >
-          {tab === 'audit' ? (
-            <div className="h-full overflow-y-auto">
-              <AuditList rows={auditRows} />
-            </div>
-          ) : (
-            <BoardLayout
-              master={master}
-              detail={
-                selectedSkill !== undefined ? (
-                  <SkillDetail
-                    skill={selectedSkill}
-                    isPending={tab === 'pending'}
-                    onClose={() => {
-                      setSelected(undefined);
-                    }}
-                  />
-                ) : undefined
-              }
-              detailOpen={selectedSkill !== undefined}
-              onCloseDetail={() => {
-                setSelected(undefined);
-              }}
-              restoreFocusRef={restoreFocusRef}
-              detailLabel={t('governance.detailEmpty')}
-            />
-          )}
-        </BoardStateView>
+        {installing ? (
+          // The install panel is reachable from any tab/state (incl. an empty list); it slots
+          // into a BoardLayout detail pane regardless of the fetch status.
+          <BoardLayout
+            master={master}
+            detail={
+              <SkillInstallPanel
+                onClose={() => {
+                  setInstalling(false);
+                }}
+              />
+            }
+            detailOpen={true}
+            onCloseDetail={() => {
+              setInstalling(false);
+            }}
+            restoreFocusRef={restoreFocusRef}
+            detailLabel={t('governance.detailEmpty')}
+          />
+        ) : (
+          <BoardStateView
+            status={status}
+            emptyHeading={t('governance.skills.emptyHeading')}
+            emptyBody={
+              tab === 'audit' ? t('governance.skills.auditEmpty') : t('governance.skills.emptyBody')
+            }
+            onRetry={() => {
+              void active.refetch();
+            }}
+          >
+            {tab === 'audit' ? (
+              <div className="h-full overflow-y-auto">
+                <AuditList rows={auditRows} />
+              </div>
+            ) : (
+              <BoardLayout
+                master={master}
+                detail={
+                  selectedSkill !== undefined ? (
+                    <SkillDetail
+                      skill={selectedSkill}
+                      isPending={tab === 'pending'}
+                      onClose={() => {
+                        setSelected(undefined);
+                      }}
+                    />
+                  ) : undefined
+                }
+                detailOpen={selectedSkill !== undefined}
+                onCloseDetail={() => {
+                  setSelected(undefined);
+                }}
+                restoreFocusRef={restoreFocusRef}
+                detailLabel={t('governance.detailEmpty')}
+              />
+            )}
+          </BoardStateView>
+        )}
       </div>
     </div>
   );

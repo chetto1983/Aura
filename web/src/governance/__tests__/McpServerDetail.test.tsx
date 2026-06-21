@@ -1,12 +1,26 @@
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { McpServerDetail } from '../McpServerDetail';
 import type { McpProbeResult, McpServerRow } from '../governanceApi';
 
 // McpServerDetail test — renders the detail component directly with props so every field
 // label/value, the redacted-chip branch, the probe-loading/resolved/error branches, and the
-// lastError branch are asserted (mutation hardening: the rendered copy is the contract).
+// lastError branch are asserted (mutation hardening: the rendered copy is the contract). The
+// detail now embeds the Phase-29 lifecycle cluster + env-edit form (both use TanStack
+// mutations), so it is rendered inside a QueryClientProvider.
+
+function client() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+}
+
+function Providers({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={client()}>{children}</QueryClientProvider>;
+}
 
 const SERVER: McpServerRow = {
   name: 'github',
@@ -35,6 +49,7 @@ describe('McpServerDetail', () => {
         probeLoading={false}
         onClose={() => undefined}
       />,
+      { wrapper: Providers },
     );
 
     expect(screen.getByText('Trust')).toBeTruthy();
@@ -63,6 +78,7 @@ describe('McpServerDetail', () => {
         probeLoading={false}
         onClose={() => undefined}
       />,
+      { wrapper: Providers },
     );
 
     expect(screen.getByText('GITHUB_TOKEN')).toBeTruthy();
@@ -79,6 +95,7 @@ describe('McpServerDetail', () => {
         probeLoading={false}
         onClose={() => undefined}
       />,
+      { wrapper: Providers },
     );
     expect(screen.getByText('7')).toBeTruthy();
     const detail = screen.getByText('ok (7 tools)');
@@ -101,6 +118,7 @@ describe('McpServerDetail', () => {
         probeLoading={false}
         onClose={() => undefined}
       />,
+      { wrapper: Providers },
     );
     const detail = screen.getByText('dial failed');
     expect(detail.className).toContain('text-danger');
@@ -114,6 +132,7 @@ describe('McpServerDetail', () => {
         probeLoading={true}
         onClose={() => undefined}
       />,
+      { wrapper: Providers },
     );
     expect(screen.getByText('Checking…')).toBeTruthy();
   });
@@ -133,6 +152,7 @@ describe('McpServerDetail', () => {
         probeLoading={false}
         onClose={() => undefined}
       />,
+      { wrapper: Providers },
     );
     expect(screen.getByText('dial failed')).toBeTruthy();
     expect(screen.getByText('connection refused')).toBeTruthy();
@@ -155,6 +175,7 @@ describe('McpServerDetail', () => {
     const onClose = vi.fn();
     render(
       <McpServerDetail server={bare} probe={undefined} probeLoading={false} onClose={onClose} />,
+      { wrapper: Providers },
     );
 
     expect(screen.getByText('No environment keys.')).toBeTruthy();

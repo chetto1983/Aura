@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { McpEnvEditForm } from './McpEnvEditForm';
+import { McpLifecycleCluster } from './McpLifecycleCluster';
 import type { McpProbeResult, McpServerRow } from './governanceApi';
 
 // McpServerDetail — the detail pane for a selected MCP server (the NodeInspector <dl>/<dt>/<dd>
@@ -65,6 +66,9 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
           value={server.networkAllowlist.length > 0 ? server.networkAllowlist.join(', ') : none}
         />
       </dl>
+
+      {/* Lifecycle cluster — enable/disable + trust-approve + remove (inline, not a kebab). */}
+      <McpLifecycleCluster server={server} onRemoved={onClose} />
 
       {editingEnv ? (
         <McpEnvEditForm
@@ -154,6 +158,12 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
                 </dt>
                 <dd className="break-words font-mono text-[13px] text-danger">{probe.err}</dd>
               </div>
+            ) : null}
+            {/* Fail-soft per-row probe warning — this row only; the board keeps rendering. */}
+            {!probe.ok ? (
+              <p role="note" className="text-[13px] text-warning">
+                {t('governance.mcp.lifecycle.probeWarning')}
+              </p>
             ) : null}
           </dl>
         ) : null}

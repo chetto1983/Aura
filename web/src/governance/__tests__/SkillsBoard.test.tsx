@@ -127,13 +127,17 @@ describe('SkillsBoard (GOV-02)', () => {
       expect(screen.getByText('pending-skill')).toBeTruthy();
     });
 
-    // The pending note is shown, and NO run/activate/install affordance exists anywhere. An
-    // action control would be a button whose accessible name STARTS with an action verb; the
-    // pending-note sentence ("…cannot be run.") must not be mistaken for one, so anchor the verb.
+    // The pending note is shown, and a PENDING ROW carries NO run/activate/execute/enable
+    // affordance. The board-level "Install skill" CTA (which STAGES to pending → approval, never
+    // activates a pending skill) is the one allowed install action and is excluded here; the
+    // pending-note sentence ("…cannot be run.") must not be mistaken for a control.
     expect(screen.getAllByText('Pending — inactive and cannot be run.').length).toBeGreaterThan(0);
     expect(
-      screen.queryByRole('button', { name: /^(run|activate|install|enable|execute|disable)\b/i }),
+      screen.queryByRole('button', { name: /^(run|activate|enable|execute|disable)\b/i }),
     ).toBeNull();
+    // No per-row Archive/Restore on a pending row (those are active/archived controls only).
+    expect(screen.queryByRole('button', { name: 'Archive skill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Restore skill' })).toBeNull();
   });
 
   it('the audit tab lists ledger rows newest-first', async () => {
@@ -205,12 +209,13 @@ describe('SkillsBoard (GOV-02)', () => {
     fireEvent.click(screen.getByText('pending-skill'));
 
     // Detail shows the language metadata (read-only) — still no run/activate control (the only
-    // buttons are the tabs, the row-select, and the detail close ✕).
+    // buttons are the tabs, the board-level Install-skill staging CTA, the row-select, and the
+    // detail close ✕).
     await waitFor(() => {
       expect(screen.getAllByText('python').length).toBeGreaterThan(0);
     });
     expect(
-      screen.queryByRole('button', { name: /^(run|activate|install|enable|execute|disable)\b/i }),
+      screen.queryByRole('button', { name: /^(run|activate|enable|execute|disable)\b/i }),
     ).toBeNull();
   });
 
@@ -300,7 +305,9 @@ describe('SkillsBoard (GOV-02)', () => {
     await waitFor(() => {
       expect(screen.getByText('go')).toBeTruthy();
     });
-    expect(screen.getByText('deadbeefcafe')).toBeTruthy();
+    // The content hash now renders both as per-row metadata AND in the detail (Phase-29
+    // SkillsBoard surfaces the hash on the row too) — at least one occurrence is present.
+    expect(screen.getAllByText('deadbeefcafe').length).toBeGreaterThan(0);
     expect(screen.getByText('fully described')).toBeTruthy();
     // A fully-populated skill detail renders no dash placeholder.
     expect(screen.queryByText('—')).toBeNull();
