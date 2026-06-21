@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
+current_phase: 28
+current_phase_name: governance-boards-web-onboarding
 status: executing
 stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-20T23:26:00.351Z"
-last_activity: 2026-06-20
+last_updated: "2026-06-21T08:06:53.173Z"
+last_activity: 2026-06-21
+last_activity_desc: Phase 29 planning complete
 progress:
   total_phases: 10
   completed_phases: 7
@@ -28,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 Phase: 28 (governance-boards-web-onboarding) — EXECUTING
 Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-06-20
+Last activity: 2026-06-21 — Phase 29 planning complete
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
