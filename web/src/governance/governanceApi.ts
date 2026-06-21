@@ -379,3 +379,52 @@ export async function restoreSkill(name: string): Promise<void> {
 export async function archiveSkill(name: string): Promise<void> {
   await postJSON<unknown>(`${GOV_SKILLS_PATH}/${encodeURIComponent(name)}/archive`);
 }
+
+// === Cockpit "Connect" — WhatsApp device-linking (connect_api.go) ===
+// The three /api/connect/whatsapp/* routes proxy the aura-whatsapp bridge management REST
+// behind the SAME governance.write gate. They reuse the getJSON/sendJSON helpers (same-origin,
+// Accept: application/json, a non-200 THROWS `Error("HTTP <n>")`) so a bridge-offline state
+// surfaces as a VISIBLE error in the connect section, never a silent blank. The qr.png is an
+// <img> source (a binary PNG rendered server-side), so its path is exported rather than fetched.
+
+/** The exact qr.png route. The connect UI appends a cache-bust query (`?ts=…`) so each ~3s
+ * tick re-fetches the rotated QR; Cache-Control: no-store on the response is the belt. */
+export const WHATSAPP_CONNECT_QR_PATH = '/api/connect/whatsapp/qr.png';
+
+/** GET /api/connect/whatsapp/status — the bridge link state passthrough. */
+export interface WhatsAppConnectStatus {
+  readonly state: string;
+  readonly paired: boolean;
+  readonly jid: string;
+  readonly connected: boolean;
+}
+
+function boolValue(value: unknown): boolean {
+  return value === true;
+}
+
+/** GET /api/connect/whatsapp/status — the device-link state. Rejects on a non-200 (incl. 401/
+ * 503 bridge-unconfigured) so the connect section shows the offline/error note. */
+export async function whatsappConnectStatus(): Promise<WhatsAppConnectStatus> {
+  const raw = await getJSON<Record<string, unknown>>('/api/connect/whatsapp/status');
+  return {
+    state: stringValue(raw.state),
+    paired: boolValue(raw.paired),
+    jid: stringValue(raw.jid),
+    connected: boolValue(raw.connected),
+  };
+}
+
+/** POST /api/connect/whatsapp/logout — drop the paired session (operator Unlink). */
+export async function whatsappConnectLogout(): Promise<void> {
+  await postJSON<unknown>('/api/connect/whatsapp/logout');
+}
+
+/** isWhatsAppServer detects the WhatsApp MCP server by recipe/source (preferred) with a
+ * name/source-substring fallback, so the detail pane knows when to render the connect section.
+ * Pure; lives here (not the component file) so WhatsAppConnect.tsx exports only components. */
+export function isWhatsAppServer(server: { readonly name: string; readonly source: string }): boolean {
+  const source = server.source.toLowerCase();
+  const name = server.name.toLowerCase();
+  return name === 'whatsapp' || source === 'recipe:whatsapp' || source.includes('whatsapp');
+}

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { McpEnvEditForm } from './McpEnvEditForm';
 import { McpLifecycleCluster } from './McpLifecycleCluster';
-import type { McpProbeResult, McpServerRow } from './governanceApi';
+import { WhatsAppConnect } from './WhatsAppConnect';
+import { isWhatsAppServer, type McpProbeResult, type McpServerRow } from './governanceApi';
 
 // McpServerDetail — the detail pane for a selected MCP server (the NodeInspector <dl>/<dt>/<dd>
 // idiom, NodeInspector.tsx:72-98). It renders the static row fields (trust/runtime/startup/auth)
@@ -69,6 +70,9 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
 
       {/* Lifecycle cluster — enable/disable + trust-approve + remove (inline, not a kebab). */}
       <McpLifecycleCluster server={server} onRemoved={onClose} />
+
+      {/* Cockpit "Connect" — the WhatsApp device-linking section, only for the WhatsApp server. */}
+      {isWhatsAppServer(server) ? <WhatsAppConnect /> : null}
 
       {editingEnv ? (
         <McpEnvEditForm

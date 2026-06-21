@@ -3,8 +3,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
-import { McpServerDetail } from '../McpServerDetail';
 import type { McpProbeResult, McpServerRow } from '../governanceApi';
+
+// The WhatsApp "Link device" section drives its own network polling (governanceApi); the detail
+// test cares only about the PRESENCE/ABSENCE branch (isWhatsAppServer is the real heuristic from
+// governanceApi), so the section component is mocked to a sentinel. Its own status-state behavior
+// is covered in WhatsAppConnect.test.tsx.
+vi.mock('../WhatsAppConnect', () => ({
+  WhatsAppConnect: () => <div data-testid="whatsapp-connect-section" />,
+}));
+
+const { McpServerDetail } = await import('../McpServerDetail');
 
 // McpServerDetail test — renders the detail component directly with props so every field
 // label/value, the redacted-chip branch, the probe-loading/resolved/error branches, and the
@@ -207,5 +216,36 @@ describe('McpServerDetail', () => {
     // Discarding returns to the read view (the Edit affordance is back).
     fireEvent.click(screen.getByRole('button', { name: /discard|cancel/i }));
     expect(screen.getByRole('button', { name: 'Edit environment' })).toBeTruthy();
+  });
+
+  it('renders the WhatsApp connect section for the whatsapp server', () => {
+    const whatsapp: McpServerRow = {
+      ...SERVER,
+      name: 'whatsapp',
+      source: 'recipe:whatsapp',
+    };
+    render(
+      <McpServerDetail
+        server={whatsapp}
+        probe={HEALTHY}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+      { wrapper: Providers },
+    );
+    expect(screen.getByTestId('whatsapp-connect-section')).toBeTruthy();
+  });
+
+  it('does NOT render the connect section for a non-whatsapp server', () => {
+    render(
+      <McpServerDetail
+        server={SERVER}
+        probe={HEALTHY}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
+      { wrapper: Providers },
+    );
+    expect(screen.queryByTestId('whatsapp-connect-section')).toBeNull();
   });
 });

@@ -6,6 +6,8 @@ import {
   fetchSkills,
   fetchSkillsAudit,
   probeMcpServer,
+  whatsappConnectLogout,
+  whatsappConnectStatus,
 } from '../governanceApi';
 
 // governanceApi test — the data layer over the six Plan-02 reads. It asserts the same-origin
@@ -193,5 +195,55 @@ describe('governanceApi same-origin throwing fetch', () => {
       vi.fn(() => Promise.resolve(new Response('', { status: 404 }))),
     );
     await expect(probeMcpServer('ghost')).rejects.toThrow('HTTP 404');
+  });
+
+  it('whatsappConnectStatus normalizes the bridge status passthrough', async () => {
+    const fetchMock = okJSON({
+      state: 'connected',
+      paired: true,
+      jid: '123@s.whatsapp.net',
+      connected: true,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const status = await whatsappConnectStatus();
+    expect(status).toEqual({
+      state: 'connected',
+      paired: true,
+      jid: '123@s.whatsapp.net',
+      connected: true,
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/whatsapp/status');
+    expect(init.credentials).toBe('same-origin');
+  });
+
+  it('whatsappConnectStatus coerces a partial/odd body to safe defaults', async () => {
+    vi.stubGlobal('fetch', okJSON({ state: 'waiting_qr' }));
+    expect(await whatsappConnectStatus()).toEqual({
+      state: 'waiting_qr',
+      paired: false,
+      jid: '',
+      connected: false,
+    });
+  });
+
+  it('whatsappConnectStatus throws Error("HTTP 503") when the bridge is unconfigured', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 503 }))),
+    );
+    await expect(whatsappConnectStatus()).rejects.toThrow('HTTP 503');
+  });
+
+  it('whatsappConnectLogout POSTs the logout route', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await whatsappConnectLogout();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/whatsapp/logout');
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('same-origin');
   });
 });

@@ -16,11 +16,15 @@ const fetchMcpServers = vi.fn();
 const probeMcpServer = vi.fn();
 const installMcpServer = vi.fn();
 
-vi.mock('../governanceApi', () => ({
-  fetchMcpServers: (...a: unknown[]) => fetchMcpServers(...a) as Promise<readonly McpServerRow[]>,
-  probeMcpServer: (...a: unknown[]) => probeMcpServer(...a) as Promise<McpProbeResult>,
-  installMcpServer: (...a: unknown[]) => installMcpServer(...a) as Promise<unknown>,
-}));
+vi.mock('../governanceApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../governanceApi')>();
+  return {
+    ...actual,
+    fetchMcpServers: (...a: unknown[]) => fetchMcpServers(...a) as Promise<readonly McpServerRow[]>,
+    probeMcpServer: (...a: unknown[]) => probeMcpServer(...a) as Promise<McpProbeResult>,
+    installMcpServer: (...a: unknown[]) => installMcpServer(...a) as Promise<unknown>,
+  };
+});
 
 const { McpBoard } = await import('../McpBoard');
 

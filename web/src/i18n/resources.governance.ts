@@ -37,6 +37,17 @@ export const governanceEn = {
         error: 'Error — {{state}}',
       },
       redacted: 'redacted',
+      connect: {
+        heading: 'Link device',
+        checking: 'Checking link status…',
+        offline: 'WhatsApp bridge offline — start the aura-whatsapp service.',
+        connected: 'Connected',
+        unlink: 'Unlink',
+        unlinkError: "Couldn't unlink. Try again.",
+        scanInstructions:
+          'On your phone open WhatsApp → Settings → Linked Devices → Link a Device, then scan this code.',
+        qrAlt: 'WhatsApp linking QR code',
+      },
       detail: {
         source: 'Source',
         trust: 'Trust',
@@ -231,6 +242,17 @@ export const governanceIt = {
         error: 'Errore — {{state}}',
       },
       redacted: 'nascosto',
+      connect: {
+        heading: 'Collega dispositivo',
+        checking: 'Verifica stato collegamento…',
+        offline: 'Bridge WhatsApp offline — avvia il servizio aura-whatsapp.',
+        connected: 'Collegato',
+        unlink: 'Scollega',
+        unlinkError: 'Impossibile scollegare. Riprova.',
+        scanInstructions:
+          'Sul telefono apri WhatsApp → Impostazioni → Dispositivi collegati → Collega un dispositivo, poi inquadra questo codice.',
+        qrAlt: 'Codice QR per collegare WhatsApp',
+      },
       detail: {
         source: 'Origine',
         riskPolicy: 'Policy rischio',
