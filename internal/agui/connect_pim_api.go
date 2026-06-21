@@ -83,12 +83,23 @@ func (s *Server) handlePIMDeleteAccount(w http.ResponseWriter, r *http.Request) 
 	s.forwardPIMJSON(w, r, http.MethodDelete, "/admin/accounts/"+id+"?logout=true", nil)
 }
 
+// pimStartRetryAttempts / pimStartRetryDelay bound the google/start 404-retry. The sidecar
+// reloads its account config a beat after a create (reloadOnChange fires ~300ms after the
+// POST /admin/accounts write), so a /google/start fired by the wizard IMMEDIATELY after it
+// creates the account 404s transiently. Retrying the idempotent GET a few times (~2s budget)
+// absorbs that lag; a genuinely missing account still 404s after the budget is spent.
+const (
+	pimStartRetryAttempts = 8
+	pimStartRetryDelay    = 250 * time.Millisecond
+)
+
 // handlePIMGoogleStart serves GET /api/connect/pim/accounts/{id}/google/start: forward the sidecar
 // GET /admin/auth/{id}/google/start. The 200 body carries {authUrl,redirectUri} the wizard renders
-// (the user opens authUrl in a new tab and registers redirectUri in their Google Cloud client).
+// (the user opens authUrl in a new tab and registers redirectUri in their Google Cloud client). It
+// retries a transient 404 (the post-create config-reload race) within a bounded budget.
 func (s *Server) handlePIMGoogleStart(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s.forwardPIMJSON(w, r, http.MethodGet, "/admin/auth/"+id+"/google/start", nil)
+	s.forwardPIMRetry404(w, r, http.MethodGet, "/admin/auth/"+id+"/google/start", nil)
 }
 
 // handlePIMLogout serves POST /api/connect/pim/accounts/{id}/logout: forward the sidecar
@@ -129,6 +140,40 @@ func (s *Server) forwardPIMJSON(w http.ResponseWriter, r *http.Request, method, 
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(out)
+}
+
+// forwardPIMRetry404 forwards an IDEMPOTENT GET like forwardPIMJSON, but retries a transient 404
+// up to pimStartRetryAttempts (pimStartRetryDelay apart) before passing the response through. Only
+// safe for idempotent reads (the google/start fetch). A non-404 (or the final 404) is passed
+// through verbatim; a cancelled request short-circuits to 504.
+func (s *Server) forwardPIMRetry404(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {
+	for attempt := 0; attempt < pimStartRetryAttempts; attempt++ {
+		resp, ok := s.dialPIM(w, r, method, path, body)
+		if !ok {
+			return // dialPIM already wrote 503/502
+		}
+		if resp.StatusCode == http.StatusNotFound && attempt < pimStartRetryAttempts-1 {
+			_ = resp.Body.Close()
+			select {
+			case <-r.Context().Done():
+				writeJSONStatus(w, http.StatusGatewayTimeout, map[string]string{"error": "calendar sidecar timeout"})
+				return
+			case <-time.After(pimStartRetryDelay):
+			}
+			continue
+		}
+		out, err := io.ReadAll(io.LimitReader(resp.Body, maxRunBodyBytes))
+		_ = resp.Body.Close()
+		if err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "calendar sidecar read failed"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(out)
+		return
+	}
 }
 
 // dialPIM nil-checks the configured sidecar URL (503 when unwired), builds + sends the bounded

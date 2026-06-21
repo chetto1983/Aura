@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -67,6 +68,43 @@ func connectPIMServer(baseURL, token string) *httptest.Server {
 		s.SetCalendarMCP(baseURL, token)
 	}
 	return httptest.NewServer(s.Mux())
+}
+
+// TestPIMGoogleStartRetriesTransient404 proves the google/start proxy retries the sidecar's
+// post-create config-reload 404 (the wizard fires start IMMEDIATELY after create, and the .NET
+// reloadOnChange makes the account briefly invisible) and returns the eventual 200 — the
+// create→start race fix.
+func TestPIMGoogleStartRetriesTransient404(t *testing.T) {
+	var calls int32
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&calls, 1) <= 2 {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":"Account not found."}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"authUrl":"https://accounts.google.com/o/oauth2/v2/auth?x=1","redirectUri":"http://localhost:8093/admin/auth/google/callback"}`)
+	}))
+	defer sidecar.Close()
+	srv := connectPIMServer(sidecar.URL, fakePIMToken)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/connect/pim/accounts/work/google/start")
+	if err != nil {
+		t.Fatalf("GET google/start: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("google/start status = %d, want 200 (retried past transient 404)", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "accounts.google.com") {
+		t.Fatalf("google/start body not passed through after retry: %q", body)
+	}
+	if got := atomic.LoadInt32(&calls); got < 3 {
+		t.Fatalf("expected >=3 sidecar calls (2x404 + 200), got %d", got)
+	}
 }
 
 func TestPIMListAccountsForwardsWithBearer(t *testing.T) {
