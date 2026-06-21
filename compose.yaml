@@ -457,6 +457,10 @@ services:
       WHISPER_MODEL: ${STT_MODEL:-large-v3-turbo}
       WHISPER_COMPUTE_TYPE: ${STT_COMPUTE_TYPE:-int8}
       WHISPER_DEVICE: ${STT_DEVICE:-cpu}
+      # hwdsl2/whisper-server latest auto-generates auth on fresh volumes unless
+      # this is explicitly empty. Aura talks to this loopback sidecar without an
+      # Authorization header.
+      WHISPER_API_KEY: ""
     ports:
       - "127.0.0.1:${AURA_STT_PORT:-9000}:9000"
     healthcheck:
