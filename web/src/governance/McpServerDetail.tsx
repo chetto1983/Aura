@@ -146,7 +146,7 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
                 {t('governance.mcp.detail.probeDetail')}
               </dt>
               <dd
-                className={`break-words font-mono text-[13px] ${probe.ok ? 'text-success' : 'text-danger'}`}
+                className={`break-words font-mono text-[13px] tabular-nums ${probe.ok ? 'text-success' : 'text-danger'}`}
               >
                 {probe.detail}
               </dd>

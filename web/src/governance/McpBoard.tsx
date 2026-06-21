@@ -167,11 +167,11 @@ export function McpBoard() {
             <span className="flex items-center justify-between gap-2">
               <McpProbeStatus name={server.name} />
               {server.envKeys.length > 0 ? (
-                <span className="shrink-0 rounded-sm bg-surface-3 px-1.5 py-0.5 font-mono text-[13px] tracking-tight text-text-muted">
+                <span className="shrink-0 rounded-sm bg-surface-3 px-2 py-0.5 font-mono text-[13px] tabular-nums tracking-tight text-text-muted">
                   {server.envKeys.length} · {t('governance.mcp.redacted')}
                 </span>
               ) : server.source !== '' ? (
-                <span className="shrink-0 rounded-sm bg-surface-3 px-1.5 py-0.5 font-mono text-[13px] tracking-tight text-text-muted">
+                <span className="shrink-0 rounded-sm bg-surface-3 px-2 py-0.5 font-mono text-[13px] tracking-tight text-text-muted">
                   {server.source}
                 </span>
               ) : null}

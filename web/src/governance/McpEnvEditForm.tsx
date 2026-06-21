@@ -159,7 +159,7 @@ export function McpEnvEditForm({
                 >
                   {row.key}
                 </label>
-                <span className={`flex items-center gap-1.5 text-[13px] ${stateTone(state)}`}>
+                <span className={`flex items-center gap-1 text-[13px] ${stateTone(state)}`}>
                   <span
                     aria-hidden="true"
                     className={`inline-block h-2 w-2 shrink-0 rounded-sm ${STATE_DOT[state]}`}
@@ -201,7 +201,7 @@ export function McpEnvEditForm({
           <p className="text-[15.5px] leading-relaxed text-text">
             {t('governance.mcp.env.softWarning.body')}
           </p>
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-1">
             {offending.map((key) => (
               <li key={key} className="break-all font-mono text-[13px] text-warning">
                 {key}
@@ -245,5 +245,7 @@ function stateTone(state: EnvState): string {
   if (state === 'missing') return 'text-danger';
   if (state === 'placeholder') return 'text-warning';
   if (state === 'optional') return 'text-text-muted';
-  return 'text-text-muted';
+  // required (present): default text — signals "needs attention", distinct from muted optional
+  // (UI-SPEC §2 four-state table: required label = `text`).
+  return 'text-text';
 }

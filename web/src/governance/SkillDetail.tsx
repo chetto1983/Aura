@@ -62,7 +62,7 @@ export function SkillDetail({ skill, isPending, onClose }: SkillDetailProps) {
           <dt className="text-[13px] font-semibold text-text-muted">
             {t('governance.skills.field.contentHash')}
           </dt>
-          <dd className="break-all font-mono text-[13px] text-text">
+          <dd className="break-all font-mono text-[13px] tabular-nums text-text">
             {skill.contentHash !== undefined && skill.contentHash !== '' ? skill.contentHash : dash}
           </dd>
         </div>

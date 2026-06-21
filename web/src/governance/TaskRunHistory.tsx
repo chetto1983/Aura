@@ -71,7 +71,7 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
                   <span className="text-[13px] font-semibold text-text">
                     {t('governance.scheduler.runs.status')}: {run.Status}
                   </span>
-                  <span className="shrink-0 font-mono text-[13px] tracking-tight text-text-muted">
+                  <span className="shrink-0 font-mono text-[13px] tabular-nums tracking-tight text-text-muted">
                     {run.StartedAt}
                   </span>
                 </span>
@@ -79,7 +79,7 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
                   <span className="break-words text-[13px] text-text-muted">{run.Summary}</span>
                 ) : null}
                 {run.LastHeartbeatAt !== '' && !run.LastHeartbeatAt.startsWith('0001-01-01') ? (
-                  <span className="break-all font-mono text-[13px] tracking-tight text-text-muted">
+                  <span className="break-all font-mono text-[13px] tabular-nums tracking-tight text-text-muted">
                     {t('governance.scheduler.runs.heartbeat')}: {run.LastHeartbeatAt}
                   </span>
                 ) : null}

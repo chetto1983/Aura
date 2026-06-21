@@ -257,7 +257,7 @@ function SkillRiskStrip({ token }: { readonly token: string }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-warning bg-warning/15 px-3 py-2">
-      <span className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-warning">
+      <span className="flex items-center gap-1 text-[0.8125rem] font-semibold text-warning">
         <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning" />
         {t('approval.skill.riskBadge')}
       </span>
@@ -287,7 +287,7 @@ const CHIP_DOT: Record<ChipTone, string> = {
 
 function TerminalChip({ tone, label }: { readonly tone: ChipTone; readonly label: string }) {
   return (
-    <span className={`flex items-center gap-1.5 text-[0.8125rem] ${CHIP_TEXT[tone]}`}>
+    <span className={`flex items-center gap-1 text-[0.8125rem] ${CHIP_TEXT[tone]}`}>
       <span
         aria-hidden="true"
         className={`inline-block h-2 w-2 shrink-0 rounded-sm ${CHIP_DOT[tone]}`}

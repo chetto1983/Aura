@@ -99,7 +99,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
         role="note"
         className="flex flex-col gap-1 rounded-md border border-warning bg-warning/15 px-3 py-2"
       >
-        <span className="flex items-center gap-1.5 text-[13px] font-semibold text-warning">
+        <span className="flex items-center gap-1 text-[13px] font-semibold text-warning">
           <span
             aria-hidden="true"
             className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning"

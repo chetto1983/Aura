@@ -230,7 +230,7 @@ export function SkillsBoard() {
             </span>
             {/* Per-row metadata (content hash, mono) — the rest surfaces in the detail. */}
             {skill.contentHash !== undefined && skill.contentHash !== '' ? (
-              <span className="break-all font-mono text-[13px] tracking-tight text-text-muted">
+              <span className="break-all font-mono text-[13px] tabular-nums tracking-tight text-text-muted">
                 {skill.contentHash}
               </span>
             ) : null}
