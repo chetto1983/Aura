@@ -531,5 +531,9 @@
   "features": {},
   "mode": "yolo",
   "granularity": "coarse",
-  "resolve_model_ids": false
+  "resolve_model_ids": false,
+  "graphify": {
+    "enabled": true,
+    "auto_update": true
+  }
 }

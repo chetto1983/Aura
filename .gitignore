@@ -78,3 +78,10 @@ web/node_modules.broken/*
 .tmp/*
 env.linux
 web/.stryker-tmp-onb/*
+graphify-out/*
+# graphify knowledge graph: keep the human-readable report trackable, ignore the
+# heavy rebuildable machine artifacts (28MB graph.json + snapshot). Rebuild with
+# the host `graphify` shim (-> aura-graphify:local container). See scripts/graphify/.
+.planning/graphs/graph.json
+.planning/graphs/graph.html
+.planning/graphs/.last-build-snapshot.json
