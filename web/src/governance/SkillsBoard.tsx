@@ -157,35 +157,39 @@ export function SkillsBoard() {
 
   const subTabs = (
     <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-2 py-1">
-      <div role="tablist" aria-label={t('governance.tabs.skills')} className="flex items-center gap-1">
+      <div
+        role="tablist"
+        aria-label={t('governance.tabs.skills')}
+        className="flex items-center gap-1"
+      >
         {SKILL_TABS.map((name, index) => {
-        const selectedTab = tab === name;
-        return (
-          <button
-            key={name}
-            type="button"
-            role="tab"
-            id={`${tablistId}-tab-${name}`}
-            aria-selected={selectedTab}
-            tabIndex={selectedTab ? 0 : -1}
-            ref={(el) => {
-              tabRefs.current[name] = el;
-            }}
-            onKeyDown={(e) => {
-              onTabKeyDown(e, index);
-            }}
-            onClick={() => {
-              setTab(name);
-              setSelected(undefined);
-            }}
-            className={`min-h-[44px] rounded-md px-3 py-2 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              selectedTab
-                ? 'bg-accent text-on-accent'
-                : 'text-text-muted hover:bg-surface-2 hover:text-text'
-            }`}
-          >
-            {t(`governance.skills.stages.${name}`)}
-          </button>
+          const selectedTab = tab === name;
+          return (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              id={`${tablistId}-tab-${name}`}
+              aria-selected={selectedTab}
+              tabIndex={selectedTab ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[name] = el;
+              }}
+              onKeyDown={(e) => {
+                onTabKeyDown(e, index);
+              }}
+              onClick={() => {
+                setTab(name);
+                setSelected(undefined);
+              }}
+              className={`min-h-[44px] rounded-md px-3 py-2 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                selectedTab
+                  ? 'bg-accent text-on-accent'
+                  : 'text-text-muted hover:bg-surface-2 hover:text-text'
+              }`}
+            >
+              {t(`governance.skills.stages.${name}`)}
+            </button>
           );
         })}
       </div>

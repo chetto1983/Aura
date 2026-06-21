@@ -186,8 +186,9 @@ export function McpBoard() {
     <McpInstallPanel existingNames={rows.map((s) => s.name)} onClose={closeInstall} />
   ) : undefined;
 
-  const detail = installPanel ?? (
-    selectedServer !== undefined ? (
+  const detail =
+    installPanel ??
+    (selectedServer !== undefined ? (
       <McpServerDetail
         server={selectedServer}
         probe={detailProbe.data}
@@ -196,8 +197,7 @@ export function McpBoard() {
           setSelected(undefined);
         }}
       />
-    ) : undefined
-  );
+    ) : undefined);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

@@ -53,7 +53,14 @@ function json(body: unknown, status = 200) {
 // Mutable server state the mocks evolve so the flow is causal (install adds a row; trust flips
 // the trust class; archive moves a skill across tabs; restore moves it back).
 interface ServerState {
-  mcp: { name: string; trust: string; runtime: string; startupState: string; authStatus: string; envKeys: { key: string; redacted: boolean }[] }[];
+  mcp: {
+    name: string;
+    trust: string;
+    runtime: string;
+    startupState: string;
+    authStatus: string;
+    envKeys: { key: string; redacted: boolean }[];
+  }[];
   active: { name: string; description: string; type: string }[];
   archived: { name: string; description: string; type: string }[];
   collideOnRestore: boolean;
@@ -144,7 +151,9 @@ async function installGovernanceWriteRoutes(page: Page, state: ServerState) {
       row.trust = 'trusted';
       row.startupState = 'configured';
     }
-    return route.fulfill(json({ name, server: { trust: 'trusted' }, probe: { name, ok: true, tool_count: 4 } }));
+    return route.fulfill(
+      json({ name, server: { trust: 'trusted' }, probe: { name, ok: true, tool_count: 4 } }),
+    );
   });
 
   // env-edit: echo ONLY key-only redacted chips (NEVER the value), preserve a ${KEY} placeholder.

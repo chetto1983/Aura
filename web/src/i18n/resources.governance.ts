@@ -133,7 +133,8 @@ export const governanceEn = {
       install: {
         heading: 'Install skill',
         riskBadge: 'RISKY',
-        riskBanner: 'RISKY — supply-chain input. Review the source, hash, and checklist before staging.',
+        riskBanner:
+          'RISKY — supply-chain input. Review the source, hash, and checklist before staging.',
         sourceLabel: 'Source',
         sourcePlaceholder: 'owner/repo, a URL, or a path',
         emptySource: 'Enter a valid source — owner/repo, a URL, or a path.',

@@ -61,9 +61,23 @@ const PAIRS = [
   ['danger on surface-2 (tool pill)', t('danger'), t('surface-2'), 3.0, 'large', false],
   // Phase-29 governance WRITE surfaces (soft-warning card, RISKY skill strip, denied-tool
   // marker, enabled/preserved affirmations) introduce these new fg/bg pairs.
-  ['warning on surface-2 (soft-warning / RISKY strip)', t('warning'), t('surface-2'), 3.0, 'large', false],
+  [
+    'warning on surface-2 (soft-warning / RISKY strip)',
+    t('warning'),
+    t('surface-2'),
+    3.0,
+    'large',
+    false,
+  ],
   ['warning on surface-3 (install preview)', t('warning'), t('surface-3'), 3.0, 'large', false],
-  ['success on surface-2 (enabled / secret-preserved)', t('success'), t('surface-2'), 3.0, 'large', false],
+  [
+    'success on surface-2 (enabled / secret-preserved)',
+    t('success'),
+    t('surface-2'),
+    3.0,
+    'large',
+    false,
+  ],
   ['danger on surface-3 (install preview error)', t('danger'), t('surface-3'), 3.0, 'large', false],
   ['text on surface-3 (mono preview / input well)', t('text'), t('surface-3'), 4.5, 'text', false],
   ['ring on bg (focus)', t('ring'), t('bg'), 3.0, 'ui', false],

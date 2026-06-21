@@ -53,9 +53,7 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   // A RISKY skill-install approval (Kind=approval, operator-origin governance-write pause).
   // The RISKY framing strip renders above the verbs; it carries no run/activate affordance.
   const skillRisk = approval.kind === 'approval';
-  const riskStrip = skillRisk ? (
-    <SkillRiskStrip token={approval.token} />
-  ) : undefined;
+  const riskStrip = skillRisk ? <SkillRiskStrip token={approval.token} /> : undefined;
 
   const [freeText, setFreeText] = useState('');
   const [confirmingCancel, setConfirmingCancel] = useState(false);

@@ -118,7 +118,7 @@ func main() {
 		_, _ = os.Stdout.Write(blob)
 		return
 	}
-	if err := os.WriteFile(*out, blob, 0o644); err != nil {
+	if err := os.WriteFile(*out, blob, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "export-tools: write %s: %v\n", *out, err)
 		os.Exit(1)
 	}

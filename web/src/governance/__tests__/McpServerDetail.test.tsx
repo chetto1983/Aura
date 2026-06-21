@@ -187,7 +187,12 @@ describe('McpServerDetail', () => {
 
   it('toggles the inline env-edit form open and closed (the Edit environment affordance)', () => {
     render(
-      <McpServerDetail server={SERVER} probe={HEALTHY} probeLoading={false} onClose={() => undefined} />,
+      <McpServerDetail
+        server={SERVER}
+        probe={HEALTHY}
+        probeLoading={false}
+        onClose={() => undefined}
+      />,
       { wrapper: Providers },
     );
 

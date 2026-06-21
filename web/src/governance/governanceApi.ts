@@ -288,10 +288,7 @@ export function installMcpServer(req: McpInstallRequest): Promise<McpWriteRespon
 /** PATCH /api/governance/mcp/{name}/env — apply the submitted env rows over the stored entry.
  * A secret left as its redacted `${KEY}` placeholder is preserved by the backend merge; a real
  * value rotates; a non-secret edits/clears in place. No value is echoed back (key-only). */
-export function setMcpServerEnv(
-  name: string,
-  env: readonly string[],
-): Promise<McpWriteResponse> {
+export function setMcpServerEnv(name: string, env: readonly string[]): Promise<McpWriteResponse> {
   return patchJSON<McpWriteResponse>(`${GOV_MCP_PATH}/${encodeURIComponent(name)}/env`, { env });
 }
 
@@ -369,9 +366,7 @@ export function installSkill(source: string): Promise<SkillsInstallInfo> {
 
 /** GET /api/governance/skills/catalog?q= — the flag-gated external discovery search. */
 export async function searchSkillCatalog(query: string): Promise<SkillsCatalogResult> {
-  return getJSON<SkillsCatalogResult>(
-    `${GOV_SKILLS_PATH}/catalog?q=${encodeURIComponent(query)}`,
-  );
+  return getJSON<SkillsCatalogResult>(`${GOV_SKILLS_PATH}/catalog?q=${encodeURIComponent(query)}`);
 }
 
 /** POST /api/governance/skills/{name}/restore — restore an archived skill. A name collision

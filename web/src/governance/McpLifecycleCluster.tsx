@@ -83,13 +83,13 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
             }`}
           />
           <span className={enabled ? 'text-success' : 'text-text-muted'}>
-            {enabled ? t('governance.mcp.lifecycle.enabled') : t('governance.mcp.lifecycle.disabled')}
+            {enabled
+              ? t('governance.mcp.lifecycle.enabled')
+              : t('governance.mcp.lifecycle.disabled')}
           </span>
           <span className="text-text-muted">
             ·{' '}
-            {enabled
-              ? t('governance.mcp.lifecycle.disable')
-              : t('governance.mcp.lifecycle.enable')}
+            {enabled ? t('governance.mcp.lifecycle.disable') : t('governance.mcp.lifecycle.enable')}
           </span>
         </button>
 
@@ -206,9 +206,9 @@ function RemoveDialog({
         return;
       }
       if (event.key !== 'Tab' || dialog === null) return;
-      const items = Array.from(
-        dialog.querySelectorAll<HTMLElement>('button'),
-      ).filter((el) => !el.hasAttribute('disabled'));
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter(
+        (el) => !el.hasAttribute('disabled'),
+      );
       if (items.length === 0) return;
       const first = items[0];
       const last = items[items.length - 1];
