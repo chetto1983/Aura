@@ -312,5 +312,5 @@ Plans:
 | 26. Typed-Display Protocol + Router | v1.0.0 | 6/6 | Complete    | 2026-06-19 |
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 6/6 | Complete   | 2026-06-20 |
-| 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/5 | Planning | - |
+| 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 1/5 | In Progress|  |
 | 30. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 0/? | Planning | - |
