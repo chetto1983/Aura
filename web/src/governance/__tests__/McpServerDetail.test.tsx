@@ -184,4 +184,23 @@ describe('McpServerDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('toggles the inline env-edit form open and closed (the Edit environment affordance)', () => {
+    render(
+      <McpServerDetail server={SERVER} probe={HEALTHY} probeLoading={false} onClose={() => undefined} />,
+      { wrapper: Providers },
+    );
+
+    // The read view shows the env-keys section + the Edit affordance.
+    expect(screen.getByRole('button', { name: 'Edit environment' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit environment' }));
+
+    // The inline McpEnvEditForm renders (its Environment heading + the Save changes control).
+    expect(screen.getByText('Environment')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+
+    // Discarding returns to the read view (the Edit affordance is back).
+    fireEvent.click(screen.getByRole('button', { name: /discard|cancel/i }));
+    expect(screen.getByRole('button', { name: 'Edit environment' })).toBeTruthy();
+  });
 });

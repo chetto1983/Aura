@@ -12,10 +12,18 @@ import type { AuditRow, SkillRow } from '../governanceApi';
 
 const fetchSkills = vi.fn();
 const fetchSkillsAudit = vi.fn();
+const archiveSkill = vi.fn();
+const restoreSkill = vi.fn();
+const installSkill = vi.fn();
+const searchSkillCatalog = vi.fn();
 
 vi.mock('../governanceApi', () => ({
   fetchSkills: (...a: unknown[]) => fetchSkills(...a) as Promise<readonly SkillRow[]>,
   fetchSkillsAudit: (...a: unknown[]) => fetchSkillsAudit(...a) as Promise<readonly AuditRow[]>,
+  archiveSkill: (...a: unknown[]) => archiveSkill(...a) as Promise<void>,
+  restoreSkill: (...a: unknown[]) => restoreSkill(...a) as Promise<void>,
+  installSkill: (...a: unknown[]) => installSkill(...a) as Promise<unknown>,
+  searchSkillCatalog: (...a: unknown[]) => searchSkillCatalog(...a) as Promise<unknown>,
 }));
 
 const { SkillsBoard } = await import('../SkillsBoard');
@@ -60,6 +68,10 @@ describe('SkillsBoard (GOV-02)', () => {
   beforeEach(() => {
     fetchSkills.mockReset();
     fetchSkillsAudit.mockReset();
+    archiveSkill.mockReset();
+    restoreSkill.mockReset();
+    installSkill.mockReset();
+    searchSkillCatalog.mockReset();
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -352,5 +364,78 @@ describe('SkillsBoard (GOV-02)', () => {
       expect(screen.getByText('old-skill')).toBeTruthy();
     });
     expect(fetchSkills).toHaveBeenCalledWith('archived');
+  });
+
+  it('opens the RISKY install panel from the install CTA (reachable on any tab)', async () => {
+    fetchSkills.mockResolvedValue(ACTIVE);
+
+    render(<SkillsBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Install skill' }));
+
+    // The install panel renders the RISKY supply-chain banner + the five-item checklist heading.
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'RISKY — supply-chain input. Review the source, hash, and checklist before staging.',
+        ),
+      ).toBeTruthy();
+    });
+    expect(screen.getByText('Validation checklist')).toBeTruthy();
+  });
+
+  it('archives an active skill via the row Archive control', async () => {
+    fetchSkills.mockResolvedValue(ACTIVE);
+    archiveSkill.mockResolvedValue(undefined);
+
+    render(<SkillsBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive skill' }));
+    await waitFor(() => {
+      expect(archiveSkill).toHaveBeenCalledWith('golang-testing');
+    });
+  });
+
+  it('restores an archived skill; a colliding restore (409) shows the inline safe error', async () => {
+    fetchSkills.mockImplementation((stage: string) =>
+      Promise.resolve(
+        stage === 'archived'
+          ? ([{ name: 'dup-skill', description: 'retired', type: 'instruction' }] as SkillRow[])
+          : ACTIVE,
+      ),
+    );
+
+    render(<SkillsBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Archived' }));
+    await waitFor(() => {
+      expect(screen.getByText('dup-skill')).toBeTruthy();
+    });
+
+    // First restore collides (a 409 from a name-colliding active skill) → the inline error.
+    restoreSkill.mockRejectedValueOnce(new Error('HTTP 409'));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore skill' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+    });
+    expect(restoreSkill).toHaveBeenCalledWith('dup-skill');
+
+    // A subsequent successful restore clears the inline error (collisionName reset).
+    restoreSkill.mockResolvedValueOnce(undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'Restore skill' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });

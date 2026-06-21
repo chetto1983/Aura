@@ -14,10 +14,12 @@ import type { McpProbeResult, McpServerRow } from '../governanceApi';
 
 const fetchMcpServers = vi.fn();
 const probeMcpServer = vi.fn();
+const installMcpServer = vi.fn();
 
 vi.mock('../governanceApi', () => ({
   fetchMcpServers: (...a: unknown[]) => fetchMcpServers(...a) as Promise<readonly McpServerRow[]>,
   probeMcpServer: (...a: unknown[]) => probeMcpServer(...a) as Promise<McpProbeResult>,
+  installMcpServer: (...a: unknown[]) => installMcpServer(...a) as Promise<unknown>,
 }));
 
 const { McpBoard } = await import('../McpBoard');
@@ -294,5 +296,54 @@ describe('McpBoard (GOV-01)', () => {
     // The probe err + the static lastError both render (sanitized).
     expect(screen.getByText('connection refused (sanitized)')).toBeTruthy();
     expect(screen.getByText('spawn failed (sanitized)')).toBeTruthy();
+  });
+
+  it('opens the install panel from the Add button (CLI-equiv + destination preview) and closes it', async () => {
+    fetchMcpServers.mockResolvedValue(SERVERS);
+    probeMcpServer.mockResolvedValue({ name: 'github', ok: true, tool_count: 3, detail: 'ok' });
+
+    render(<McpBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    await waitFor(() => {
+      expect(screen.getByText('github')).toBeTruthy();
+    });
+
+    // The ONE accent CTA opens the install panel even with a populated list.
+    fireEvent.click(screen.getByRole('button', { name: 'Add MCP server' }));
+
+    // The panel shows the live read-only preview: the CLI-equivalent label + the
+    // `Will write to:` destination (the install previews BEFORE any save).
+    await waitFor(() => {
+      expect(screen.getByText('CLI equivalent')).toBeTruthy();
+    });
+    expect(screen.getByText('Will write to:')).toBeTruthy();
+    // Recipe | Custom mode toggle is a role=group.
+    expect(screen.getByRole('group', { name: /install mode|mode/i })).toBeTruthy();
+
+    // Close the panel via the ✕ (closeAria='Close') — both the panel ✕ and the (lg:hidden)
+    // backdrop carry the label; the panel ✕ is first in DOM order.
+    const closeButton = screen.getAllByRole('button', { name: 'Close' })[0];
+    if (closeButton === undefined) throw new Error('close button not found');
+    fireEvent.click(closeButton);
+    await waitFor(() => {
+      expect(screen.queryByText('Will write to:')).toBeNull();
+    });
+  });
+
+  it('opens the install panel even from the empty state (reachable on a zero-server list)', async () => {
+    fetchMcpServers.mockResolvedValue([]);
+
+    render(<McpBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    await waitFor(() => {
+      expect(screen.getByText('No MCP servers configured')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add MCP server' }));
+    await waitFor(() => {
+      expect(screen.getByText('Will write to:')).toBeTruthy();
+    });
   });
 });

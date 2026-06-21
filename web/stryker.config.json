@@ -13,6 +13,8 @@
     "src/graph/graphIntent.ts",
     "src/graph/SigmaCanvas_reducers.ts",
     "src/governance/governanceApi.ts",
+    "src/governance/governanceView.tsx",
+    "src/approvals/approvalState.ts",
     "src/onboarding/onboardingApi.ts",
     "src/onboarding/onboardingWizardModel.ts"
   ],
