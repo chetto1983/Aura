@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
 import { McpServerDetail } from './McpServerDetail';
+import { McpInstallPanel } from './McpInstallPanel';
 import { fetchMcpServers, probeMcpServer, type McpServerRow } from './governanceApi';
 
 // McpBoard (GOV-01) — the MCP-servers master list + detail. The static row list comes from one
@@ -65,7 +66,9 @@ function McpProbeStatus({ name }: { readonly name: string }) {
 export function McpBoard() {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  const [installing, setInstalling] = useState(false);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const servers = useQuery({
@@ -83,6 +86,15 @@ export function McpBoard() {
   });
 
   const selectedServer = rows.find((s) => s.name === selected);
+
+  function openInstall(el: HTMLElement | null) {
+    restoreFocusRef.current = el;
+    setSelected(undefined);
+    setInstalling(true);
+  }
+  function closeInstall() {
+    setInstalling(false);
+  }
 
   // The selected server's probe also feeds the detail pane (shared query key — TanStack dedupes).
   const detailProbe = useQuery({
@@ -170,36 +182,73 @@ export function McpBoard() {
     </div>
   );
 
-  return (
-    <BoardStateView
-      status={status}
-      emptyHeading={t('governance.mcp.emptyHeading')}
-      emptyBody={t('governance.mcp.emptyBody')}
-      onRetry={() => {
-        void servers.refetch();
-      }}
-    >
-      <BoardLayout
-        master={master}
-        detail={
-          selectedServer !== undefined ? (
-            <McpServerDetail
-              server={selectedServer}
-              probe={detailProbe.data}
-              probeLoading={detailProbe.isLoading}
-              onClose={() => {
-                setSelected(undefined);
-              }}
-            />
-          ) : undefined
-        }
-        detailOpen={selectedServer !== undefined}
-        onCloseDetail={() => {
+  const installPanel = installing ? (
+    <McpInstallPanel existingNames={rows.map((s) => s.name)} onClose={closeInstall} />
+  ) : undefined;
+
+  const detail = installPanel ?? (
+    selectedServer !== undefined ? (
+      <McpServerDetail
+        server={selectedServer}
+        probe={detailProbe.data}
+        probeLoading={detailProbe.isLoading}
+        onClose={() => {
           setSelected(undefined);
         }}
-        restoreFocusRef={restoreFocusRef}
-        detailLabel={t('governance.detailEmpty')}
       />
-    </BoardStateView>
+    ) : undefined
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* The ONE accent CTA on the board — always reachable, even on an empty/loading list. */}
+      <div className="flex shrink-0 items-center justify-end border-b border-border bg-surface px-2 py-1">
+        <button
+          ref={addButtonRef}
+          type="button"
+          onClick={(e) => {
+            openInstall(e.currentTarget);
+          }}
+          className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {t('governance.mcp.addServer')}
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {installing ? (
+          // The install panel is reachable from any board state (incl. an empty/loading list),
+          // so it renders in a BoardLayout detail slot regardless of the fetch status.
+          <BoardLayout
+            master={master}
+            detail={installPanel}
+            detailOpen={true}
+            onCloseDetail={closeInstall}
+            restoreFocusRef={restoreFocusRef}
+            detailLabel={t('governance.detailEmpty')}
+          />
+        ) : (
+          <BoardStateView
+            status={status}
+            emptyHeading={t('governance.mcp.emptyHeading')}
+            emptyBody={t('governance.mcp.emptyBody')}
+            onRetry={() => {
+              void servers.refetch();
+            }}
+          >
+            <BoardLayout
+              master={master}
+              detail={detail}
+              detailOpen={detail !== undefined}
+              onCloseDetail={() => {
+                setSelected(undefined);
+                setInstalling(false);
+              }}
+              restoreFocusRef={restoreFocusRef}
+              detailLabel={t('governance.detailEmpty')}
+            />
+          </BoardStateView>
+        )}
+      </div>
+    </div>
   );
 }

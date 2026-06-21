@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { McpEnvEditForm } from './McpEnvEditForm';
 import type { McpProbeResult, McpServerRow } from './governanceApi';
 
 // McpServerDetail — the detail pane for a selected MCP server (the NodeInspector <dl>/<dt>/<dd>
@@ -27,6 +29,8 @@ function Field({ label, value }: { readonly label: string; readonly value: strin
 export function McpServerDetail({ server, probe, probeLoading, onClose }: McpServerDetailProps) {
   const { t } = useTranslation();
   const none = t('governance.mcp.detail.none');
+  const [editingEnv, setEditingEnv] = useState(false);
+  const [secretPreserved, setSecretPreserved] = useState(false);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -62,29 +66,59 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
         />
       </dl>
 
-      <section className="flex flex-col gap-1">
-        <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
-          {t('governance.mcp.detail.envKeys')}
-        </h4>
-        {server.envKeys.length > 0 ? (
-          <ul className="flex flex-wrap gap-1">
-            {server.envKeys.map((chip) => (
-              <li
-                key={chip.key}
-                className="flex items-center gap-1 rounded-sm bg-surface-3 px-2 py-1 font-mono text-[13px] text-text-muted"
-              >
-                {/* The KEY name (React-escaped); the VALUE never reaches the DOM. */}
-                <span className="break-all text-text">{chip.key}</span>
-                {chip.redacted ? (
-                  <span className="text-text-muted">· {t('governance.mcp.redacted')}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[15.5px] text-text-muted">{t('governance.mcp.detail.noEnvKeys')}</p>
-        )}
-      </section>
+      {editingEnv ? (
+        <McpEnvEditForm
+          serverName={server.name}
+          envKeys={server.envKeys}
+          onSaved={(preserved) => {
+            setSecretPreserved(preserved);
+          }}
+          onClose={() => {
+            setEditingEnv(false);
+          }}
+        />
+      ) : (
+        <section className="flex flex-col gap-1">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+              {t('governance.mcp.detail.envKeys')}
+            </h4>
+            <button
+              type="button"
+              onClick={() => {
+                setSecretPreserved(false);
+                setEditingEnv(true);
+              }}
+              className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {t('governance.mcp.detail.editEnv')}
+            </button>
+          </div>
+          {secretPreserved ? (
+            <p role="status" className="text-[13px] text-success">
+              {t('governance.mcp.env.secretPreserved')}
+            </p>
+          ) : null}
+          {server.envKeys.length > 0 ? (
+            <ul className="flex flex-wrap gap-1">
+              {server.envKeys.map((chip) => (
+                <li
+                  key={chip.key}
+                  className="flex items-center gap-1 rounded-sm bg-surface-3 px-2 py-1 font-mono text-[13px] text-text-muted"
+                >
+                  {/* The KEY name (React-escaped); the VALUE never reaches the DOM. */}
+                  <span className="break-all text-text">{chip.key}</span>
+                  {chip.redacted ? (
+                    <span className="text-text-muted">· {t('governance.mcp.redacted')}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[15.5px] text-text-muted">{t('governance.mcp.detail.noEnvKeys')}</p>
+          )}
+        </section>
+      )}
 
       {/* Live probe outcome — the heavier doctor result, resolved independently per row. */}
       <section className="flex flex-col gap-1">

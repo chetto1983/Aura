@@ -7,7 +7,9 @@
 // so an expired session surfaces a VISIBLE auth-error state, never a silent blank board
 // (requirement GOV-01/02/03 state contract / threat T-28-03-04).
 //
-// The boards are READ-ONLY (all writes are Phase 29) — there is no postJSON here. The MCP
+// Phase 29 adds the WRITE layer alongside the reads: postJSON/patchJSON/deleteJSON mirror
+// getJSON EXACTLY (same-origin, Accept: application/json, a non-200-incl-401 THROWS
+// `Error("HTTP <n>")`), and every `{name}` path segment is encodeURIComponent'd. The MCP
 // probe is a per-server GET keyed by name so each row resolves independently (T-28-03-05).
 
 export const GOV_MCP_PATH = '/api/governance/mcp';
@@ -119,6 +121,44 @@ async function getJSON<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+// --- Phase-29 write layer (mirrors getJSON; never a discriminated union — a non-200,
+// INCLUDING 401/404/409, THROWS `Error("HTTP <n>")` so the mutation surfaces a visible
+// error/auth state, never a silent no-op). encodeURIComponent on every `{name}` is the
+// caller's job at the URL-build site below. ---
+
+async function sendJSON<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const init: RequestInit = {
+    method,
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+  };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    throw new Error(`HTTP ${String(res.status)}`);
+  }
+  // A 204 No Content (remove/restore/archive) has an empty body — coerce to {} so the
+  // generic T resolves without a JSON-parse throw on the empty stream.
+  if (res.status === 204) {
+    return {} as T;
+  }
+  return (await res.json()) as T;
+}
+
+export function postJSON<T>(url: string, body?: unknown): Promise<T> {
+  return sendJSON<T>('POST', url, body);
+}
+
+export function patchJSON<T>(url: string, body?: unknown): Promise<T> {
+  return sendJSON<T>('PATCH', url, body);
+}
+
+export function deleteJSON<T>(url: string): Promise<T> {
+  return sendJSON<T>('DELETE', url);
+}
+
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -206,4 +246,141 @@ export async function fetchSchedulerRuns(
     `${GOV_SCHEDULER_PATH}/${encodeURIComponent(taskId)}/runs?${params.toString()}`,
   );
   return body.runs ?? [];
+}
+
+// === Phase-29 MCP write surface (MCPW-01/02/03) ===
+// The request/response shapes mirror internal/agui/governance_write_seam.go +
+// governance_write_api.go (29-02). Env values NEVER cross the wire — the response carries
+// ONLY key-only redacted chips (McpEnvChip). The install request is either a `recipe` name
+// (resolved against the built-in catalog) or a custom command/url; `env` rows are submitted
+// as `KEY=value` strings (a secret may be left as its redacted `${KEY}` placeholder, which
+// the backend preserves).
+
+/** POST /api/governance/mcp install request (recipe OR custom). */
+export interface McpInstallRequest {
+  readonly name: string;
+  readonly recipe?: string;
+  readonly command?: string;
+  readonly args?: readonly string[];
+  readonly url?: string;
+  readonly type?: string;
+  readonly env?: readonly string[];
+}
+
+/** The common MCP write response (install/env/trust/lifecycle). EnvKeys are key-only
+ * redacted chips; cliEquivalent + destination preview the install; warnings carry the soft
+ * required-var-still-placeholder list; probe is the post-write live tool count (fail-soft). */
+export interface McpWriteResponse {
+  readonly name: string;
+  readonly envKeys: readonly McpEnvChip[];
+  readonly cliEquivalent?: string;
+  readonly destination?: string;
+  readonly warnings?: readonly string[];
+  readonly probe?: McpProbeResult;
+}
+
+/** POST /api/governance/mcp — install a recipe/custom MCP server. A duplicate name throws
+ * `Error("HTTP 409")` (the caller surfaces the inline duplicate-name field error). */
+export function installMcpServer(req: McpInstallRequest): Promise<McpWriteResponse> {
+  return postJSON<McpWriteResponse>(GOV_MCP_PATH, req);
+}
+
+/** PATCH /api/governance/mcp/{name}/env — apply the submitted env rows over the stored entry.
+ * A secret left as its redacted `${KEY}` placeholder is preserved by the backend merge; a real
+ * value rotates; a non-secret edits/clears in place. No value is echoed back (key-only). */
+export function setMcpServerEnv(
+  name: string,
+  env: readonly string[],
+): Promise<McpWriteResponse> {
+  return patchJSON<McpWriteResponse>(`${GOV_MCP_PATH}/${encodeURIComponent(name)}/env`, { env });
+}
+
+/** POST /api/governance/mcp/{name}/trust — operator-direct trust-approve with a reason. */
+export function trustMcpServer(
+  name: string,
+  trustClass: string,
+  reason: string,
+): Promise<McpWriteResponse> {
+  return postJSON<McpWriteResponse>(`${GOV_MCP_PATH}/${encodeURIComponent(name)}/trust`, {
+    class: trustClass,
+    reason,
+  });
+}
+
+/** POST /api/governance/mcp/{name}/(enable|disable) — the reversible lifecycle toggle. */
+export function setMcpServerEnabled(name: string, enabled: boolean): Promise<McpWriteResponse> {
+  const verb = enabled ? 'enable' : 'disable';
+  return postJSON<McpWriteResponse>(`${GOV_MCP_PATH}/${encodeURIComponent(name)}/${verb}`);
+}
+
+/** DELETE /api/governance/mcp/{name} — remove the server (returns 204). */
+export async function removeMcpServer(name: string): Promise<void> {
+  await deleteJSON<unknown>(`${GOV_MCP_PATH}/${encodeURIComponent(name)}`);
+}
+
+// === Phase-29 skills write surface (SKW-01/02/03) ===
+// The shapes mirror internal/agui/governance_write_seam.go (SkillsInstallInfo /
+// SkillsCatalogResult / SkillsCheckItem). Install ALWAYS returns a RISKY risk tier + the
+// FIVE-item checklist + the approval token (the install stages to pending and mints the
+// operator-origin approval pause; activation is the operator resume only — D-13).
+
+/** One validation-checklist item the install panel renders (pass/fail). */
+export interface SkillsCheckItem {
+  readonly label: string;
+  readonly passed: boolean;
+}
+
+/** POST /api/governance/skills/install response — everything the operator sees BEFORE
+ * activation (source/hash/preview/destination + the RISKY tier + the five-item checklist +
+ * the approval-queue deep-link token). */
+export interface SkillsInstallInfo {
+  readonly name: string;
+  readonly source: string;
+  readonly content_hash: string;
+  readonly preview: string;
+  readonly destination: string;
+  readonly risk_tier: string;
+  readonly status: string;
+  readonly approval_token: string;
+  readonly checklist: readonly SkillsCheckItem[];
+}
+
+/** One parsed skills.sh catalog hit. */
+export interface SkillsCatalogHit {
+  readonly source: string;
+  readonly skill: string;
+  readonly installs: string;
+}
+
+/** GET /api/governance/skills/catalog response. `enabled` reflects the server
+ * AURA_SKILLS_EXTERNAL_DISCOVERY flag (off by default); `hits` is empty when disabled OR
+ * when the search found nothing. */
+export interface SkillsCatalogResult {
+  readonly enabled: boolean;
+  readonly query: string;
+  readonly hits: readonly SkillsCatalogHit[];
+}
+
+/** POST /api/governance/skills/install — stage a skill for approval (RISKY, never activated
+ * here). An empty/invalid source throws `Error("HTTP 400")`. */
+export function installSkill(source: string): Promise<SkillsInstallInfo> {
+  return postJSON<SkillsInstallInfo>(`${GOV_SKILLS_PATH}/install`, { source });
+}
+
+/** GET /api/governance/skills/catalog?q= — the flag-gated external discovery search. */
+export async function searchSkillCatalog(query: string): Promise<SkillsCatalogResult> {
+  return getJSON<SkillsCatalogResult>(
+    `${GOV_SKILLS_PATH}/catalog?q=${encodeURIComponent(query)}`,
+  );
+}
+
+/** POST /api/governance/skills/{name}/restore — restore an archived skill. A name collision
+ * with an active skill throws `Error("HTTP 409")` (the inline colliding-restore error). */
+export async function restoreSkill(name: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_SKILLS_PATH}/${encodeURIComponent(name)}/restore`);
+}
+
+/** POST /api/governance/skills/{name}/archive — archive an active skill (reversible). */
+export async function archiveSkill(name: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_SKILLS_PATH}/${encodeURIComponent(name)}/archive`);
 }
