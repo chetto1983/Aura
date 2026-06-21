@@ -60,8 +60,18 @@ def train(cfg: cfgmod.Config, *, export_gguf: bool = False, merge_16bit: bool = 
 
     train_rows = _load_split(cfg.path("dataset_dir") / "train.jsonl")
     val_rows = _load_split(cfg.path("dataset_dir") / "val.jsonl")
-    train_ds = Dataset.from_list(train_rows).map(to_text)
-    val_ds = Dataset.from_list(val_rows).map(to_text) if val_rows else None
+    if not train_rows:
+        raise SystemExit(
+            f"train split empty at {cfg.path('dataset_dir') / 'train.jsonl'} — "
+            "run `make synth` (+ optional `make harvest`) then `make dataset` first."
+        )
+    _train_raw = Dataset.from_list(train_rows)
+    _val_raw = Dataset.from_list(val_rows) if val_rows else None
+    # Drop the normal-form columns (messages/tools/source) so TRL's SFTTrainer trains
+    # on the rendered `text` field. If they survive, SFTTrainer takes its conversational
+    # branch and silently empties the split → `num_samples=0` at the DataLoader sampler.
+    train_ds = _train_raw.map(to_text, remove_columns=_train_raw.column_names)
+    val_ds = _val_raw.map(to_text, remove_columns=_val_raw.column_names) if _val_raw else None
 
     out_dir = cfg.path("out_dir")
     out_dir.mkdir(parents=True, exist_ok=True)
