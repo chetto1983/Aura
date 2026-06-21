@@ -134,3 +134,31 @@ func buildNFKCCorpus() []string {
 func sprintfWrap(tmpl, m string) string {
 	return strings.Replace(tmpl, "%s", m, 1)
 }
+
+// TestValidatorFuzz_NonASCIINameRejected is the SKW-01 encoding-edge backstop the
+// install transport relies on: a non-ASCII or non-grammar skill name MUST be rejected
+// by ValidateForWrite via SanitizeName (^[a-z0-9-]{1,64}$), even after the frontmatter
+// parser NFKC-normalizes the name. The installer's staged-dir name check funnels through
+// the SAME chokepoint, so this property pins the validator the transport depends on.
+func TestValidatorFuzz_NonASCIINameRejected(t *testing.T) {
+	t.Parallel()
+	// Each of these is a name a fetched/cloned skill might declare. None matches the
+	// grammar (uppercase, underscores, dots, traversal, fullwidth, emoji, CJK, empty),
+	// so the model/install path must hard-reject every one with ErrInvalidName.
+	badNames := []string{
+		"Bad_Name", "UPPER", "with.dot", "../escape", "a/b", "",
+		"naïve", "日本語", "skill😀", toFullwidth("abc"), strings.Repeat("a", 65),
+		" leading", "trailing ", "under_score",
+	}
+	for _, name := range badNames {
+		fm := Frontmatter{Name: name, Description: "ok", Type: TypeInstruction}
+		if err := ValidateForWrite(fm, "clean body", fuzzBlocklist, 1<<20, false); err == nil {
+			t.Errorf("ValidateForWrite name=%q accepted; want ErrInvalidName", name)
+		}
+	}
+	// A canonical grammar-conformant name must still pass (no over-rejection).
+	good := Frontmatter{Name: "good-skill-1", Description: "ok", Type: TypeInstruction}
+	if err := ValidateForWrite(good, "clean body", fuzzBlocklist, 1<<20, false); err != nil {
+		t.Errorf("ValidateForWrite rejected a grammar-conformant name: %v", err)
+	}
+}
