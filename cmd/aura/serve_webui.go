@@ -204,6 +204,27 @@ const (
 	governanceMCPRemoveRoute  = "DELETE /api/governance/mcp/{name}"
 )
 
+// governanceSkills*WriteRoute are the Phase-29 SKW-01/02/03 governance SKILLS WRITE routes
+// (install a skill from a source field → the operator-origin /api/approvals pause; restore/
+// archive across tabs; create/update/delete; the external-catalog search). Each is a SPECIFIC
+// method+path sibling under the "/api/" exclusion carve-out — NEVER a bare "/api/" (Pitfall 5).
+// All delegate to the AG-UI handler (routes on Server.Mux) and are interposed with
+// RequireCapability(governance.write) — the SAME gate as the MCP write routes, and what makes
+// the operator-origin paused_states mint safe (D-13 / T-04-19 widening is capability-scoped:
+// only a governance.write caller can mint the install pause). The catalog GET inherits the same
+// gate (it triggers an external network fetch when the discovery flag is on — privileged, not a
+// bare read). Go 1.22 longest-pattern precedence keeps the {name}/restore + {name}/archive
+// patterns authoritative over the {name} update/delete patterns.
+const (
+	governanceSkillInstallRoute = "POST /api/governance/skills/install"
+	governanceSkillRestoreRoute = "POST /api/governance/skills/{name}/restore"
+	governanceSkillArchiveRoute = "POST /api/governance/skills/{name}/archive"
+	governanceSkillCreateRoute  = "POST /api/governance/skills"
+	governanceSkillUpdateRoute  = "PATCH /api/governance/skills/{name}"
+	governanceSkillDeleteRoute  = "DELETE /api/governance/skills/{name}"
+	governanceSkillCatalogRoute = "GET /api/governance/skills/catalog"
+)
+
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
 // (start + provision) are gated on (ONBD-01a / D-04, parity with agentRunCapability). The
 // seeded `local` identity holds the '*' wildcard so it passes; the name becomes load-
@@ -365,6 +386,20 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceMCPEnableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPDisableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPRemoveRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// The Phase-29 SKW-01/02/03 governance SKILLS WRITE routes — same governance.write gate.
+	// The install mints the operator-origin /api/approvals pause (D-13); the gate is what keeps
+	// that second paused_states writer capability-scoped. POST /api/governance/skills (create)
+	// is method-distinct from the Phase-28 GET /api/governance/skills read board, so both
+	// coexist under longest-pattern precedence; the {name}/restore + {name}/archive patterns win
+	// over the {name} update/delete patterns; /skills/catalog + /skills/install are more specific
+	// than the bare /skills subtree.
+	mux.Handle(governanceSkillInstallRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceSkillRestoreRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceSkillArchiveRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceSkillCreateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceSkillUpdateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceSkillDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceSkillCatalogRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator
