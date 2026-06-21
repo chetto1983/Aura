@@ -93,6 +93,24 @@ func TestOpenEmptyCommand(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsUnsafeCommandNameBeforeSpawn(t *testing.T) {
+	t.Parallel()
+	for _, command := range []string{
+		"sh",
+		"bash",
+		"cmd.exe",
+		"powershell",
+		"foo bar",
+		"../evil",
+	} {
+		t.Run(command, func(t *testing.T) {
+			if _, err := Open(context.Background(), "unsafe", ServerConfig{Command: command}); err == nil || !strings.Contains(err.Error(), "unsafe command") {
+				t.Fatalf("Open(%q) err = %v, want unsafe-command rejection", command, err)
+			}
+		})
+	}
+}
+
 func TestOpenSpawnFailure(t *testing.T) {
 	_, err := Open(context.Background(), "nope", ServerConfig{Command: "this-binary-does-not-exist-12345"})
 	if err == nil || !strings.Contains(err.Error(), "spawn") {

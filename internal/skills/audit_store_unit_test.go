@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -295,6 +296,28 @@ func TestAuditStoreListProjectsRows(t *testing.T) {
 	// Row 1: NULL approval source + NULL token project to empty strings.
 	if out[1].ApprovalSource != "" || out[1].PausedStateToken != "" {
 		t.Fatalf("row1 NULL columns must project to empty strings, got src=%q tok=%q", out[1].ApprovalSource, out[1].PausedStateToken)
+	}
+}
+
+func TestAuditListLimitClamp(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   int
+		want int32
+	}{
+		{name: "default zero", in: 0, want: 100},
+		{name: "default negative", in: -1, want: 100},
+		{name: "small positive", in: 25, want: 25},
+		{name: "max int32", in: math.MaxInt32, want: math.MaxInt32},
+		{name: "overflow clamp", in: math.MaxInt32 + 1, want: math.MaxInt32},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := auditListLimit(tt.in); got != tt.want {
+				t.Fatalf("auditListLimit(%d) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

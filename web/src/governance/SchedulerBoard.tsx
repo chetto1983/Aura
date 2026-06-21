@@ -81,7 +81,9 @@ export function SchedulerBoard() {
             <span className="flex items-center justify-between gap-2 text-[13px] text-text-muted">
               {/* Cron / schedule string — mono (it is a literal the operator could mistake). */}
               <span className="break-all font-mono">{scheduleText(task, dash)}</span>
-              <span className="shrink-0 font-mono text-[13px] tracking-tight">{task.NextRunAt}</span>
+              <span className="shrink-0 font-mono text-[13px] tabular-nums tracking-tight">
+                {task.NextRunAt}
+              </span>
             </span>
           </button>
         </div>

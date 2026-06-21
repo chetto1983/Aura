@@ -168,13 +168,7 @@ type AuditFilter struct {
 // List returns audit rows newest-first, filtered by skill name and/or a since
 // cutoff. It is the read half (aura_app holds SELECT).
 func (s *AuditStore) List(ctx context.Context, f AuditFilter) ([]AuditRow, error) {
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > math.MaxInt32 {
-		limit = math.MaxInt32
-	}
+	limit := auditListLimit(f.Limit)
 	var name pgtype.Text
 	if f.SkillName != "" {
 		name = pgtype.Text{String: f.SkillName, Valid: true}
@@ -184,7 +178,7 @@ func (s *AuditStore) List(ctx context.Context, f AuditFilter) ([]AuditRow, error
 		since = pgtype.Timestamptz{Time: f.Since, Valid: true}
 	}
 	rows, err := s.q.ListSkillAudit(ctx, sqlc.ListSkillAuditParams{
-		Limit:     int32(limit),
+		Limit:     limit,
 		SkillName: name,
 		Since:     since,
 	})
@@ -196,6 +190,16 @@ func (s *AuditStore) List(ctx context.Context, f AuditFilter) ([]AuditRow, error
 		out = append(out, auditFromRow(r))
 	}
 	return out, nil
+}
+
+func auditListLimit(limit int) int32 {
+	if limit <= 0 {
+		return 100
+	}
+	if limit > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(limit)
 }
 
 // auditFromRow projects a generated row onto the domain AuditRow.

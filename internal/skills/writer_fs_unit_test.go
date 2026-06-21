@@ -85,6 +85,38 @@ func TestWritePendingUnconfigured(t *testing.T) {
 	}
 }
 
+func TestWritePendingRejectsInvalidNameAtFSBoundary(t *testing.T) {
+	t.Parallel()
+	w, root := newTestWriter(t)
+	for _, bad := range []string{"../escape", "a/b", `a\b`, "Bad_Name", ""} {
+		if err := w.writePending(bad, Frontmatter{Name: bad}, "body"); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("writePending(%q) = %v, want ErrInvalidName", bad, err)
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, "pending")); len(entries) != 0 {
+		t.Fatalf("invalid direct writePending calls must not write into pending, got %v", entries)
+	}
+}
+
+func TestWriteInstallPendingRejectsInvalidNameAtFSBoundary(t *testing.T) {
+	t.Parallel()
+	w, root := newTestWriter(t)
+	_, err := w.WriteInstallPending(
+		t.Context(),
+		Frontmatter{Name: "../escape", Description: "d", Type: TypeInstruction},
+		"body",
+		filepath.Join(root, "stage"),
+		"sha256:test",
+		AuditActor{ActorID: "cli"},
+	)
+	if !errors.Is(err, ErrInvalidName) {
+		t.Fatalf("WriteInstallPending traversal name = %v, want ErrInvalidName", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, "pending")); len(entries) != 0 {
+		t.Fatalf("invalid install must not write into pending, got %v", entries)
+	}
+}
+
 // TestSkillFileBytesRendersSnippetLanguage proves the rendered SKILL.md round-trips a
 // snippet's load-bearing language line and a quote-needing description (yamlScalar) and
 // re-parses to the same frontmatter, while an instruction omits the language line.

@@ -180,13 +180,16 @@ func (w *Writer) WriteInstallPending(ctx context.Context, fm Frontmatter, body, 
 	if w.pendingDir == "" {
 		return "", fmt.Errorf("install pending: pending dir not configured")
 	}
+	if !skillNameRe.MatchString(fm.Name) || !filepath.IsLocal(fm.Name) {
+		return "", fmt.Errorf("install pending: %w: %q must match %s and be local", ErrInvalidName, fm.Name, skillNameRe.String())
+	}
 	if err := os.MkdirAll(w.pendingDir, 0o750); err != nil {
 		return "", fmt.Errorf("install pending: mkdir pending root: %w", err)
 	}
 	dst := filepath.Join(w.pendingDir, fm.Name)
 	// Promote the staged tree into pending/<name>/ atomically: copy into a sibling
 	// temp dir (symlink-stripped) then rename, mirroring writePending's crash safety.
-	tmp, err := os.MkdirTemp(w.pendingDir, "."+fm.Name+"-tmp-*")
+	tmp, err := os.MkdirTemp(w.pendingDir, ".install-tmp-*")
 	if err != nil {
 		return "", fmt.Errorf("install pending: mkdir temp: %w", err)
 	}
@@ -247,10 +250,13 @@ func (w *Writer) writePending(name string, fm Frontmatter, body string) error {
 	if w.pendingDir == "" {
 		return fmt.Errorf("pending dir not configured")
 	}
+	if !skillNameRe.MatchString(name) || !filepath.IsLocal(name) {
+		return fmt.Errorf("%w: %q must match %s and be local", ErrInvalidName, name, skillNameRe.String())
+	}
 	if err := os.MkdirAll(w.pendingDir, 0o750); err != nil {
 		return fmt.Errorf("mkdir pending root: %w", err)
 	}
-	tmp, err := os.MkdirTemp(w.pendingDir, "."+name+"-tmp-*")
+	tmp, err := os.MkdirTemp(w.pendingDir, ".skill-tmp-*")
 	if err != nil {
 		return fmt.Errorf("mkdir temp: %w", err)
 	}

@@ -23,6 +23,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,6 +36,8 @@ import (
 
 // protocolVersion is the MCP revision Aura negotiates.
 const protocolVersion = "2024-11-05"
+
+var mcpCommandNameRe = regexp.MustCompile(`^[A-Za-z0-9._:/\\-]+$`)
 
 // ErrTransport marks a broken MCP transport pipe/session. Callers use
 // IsTransportError rather than matching opaque OS error strings.
@@ -87,12 +91,22 @@ type Client struct {
 // name is a short label used in error messages (the mcpServers key). On any
 // failure the subprocess is reaped before returning.
 func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
-	if strings.TrimSpace(cfg.Command) == "" {
+	command := strings.TrimSpace(cfg.Command)
+	if command == "" {
 		return nil, fmt.Errorf("mcp %q: empty command", name)
+	}
+	if !mcpCommandNameRe.MatchString(command) {
+		return nil, fmt.Errorf("mcp %q: unsafe command %q: use a single executable name or absolute path without shell metacharacters", name, cfg.Command)
+	}
+	if commandHasPathSeparator(command) && !filepath.IsAbs(command) {
+		return nil, fmt.Errorf("mcp %q: unsafe command %q: relative executable paths are not allowed", name, cfg.Command)
+	}
+	if isShellLauncher(command) {
+		return nil, fmt.Errorf("mcp %q: unsafe command %q: shell interpreters are not allowed for stdio MCP launch", name, cfg.Command)
 	}
 	// G204: Command/Args/Env come from the operator-controlled mcpServers config
 	// (.env / config file), not from untrusted model output.
-	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...) //nolint:gosec
+	cmd := exec.CommandContext(ctx, command, cfg.Args...) //nolint:gosec
 	cmd.Env = processEnvForMCP(cfg.Env)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -120,6 +134,20 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+func commandHasPathSeparator(command string) bool {
+	return strings.ContainsAny(command, `/\`)
+}
+
+func isShellLauncher(command string) bool {
+	base := filepath.Base(strings.ReplaceAll(command, `\`, string(filepath.Separator)))
+	switch strings.ToLower(base) {
+	case "sh", "bash", "dash", "zsh", "fish", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe":
+		return true
+	default:
+		return false
+	}
 }
 
 func processEnvForMCP(configured []string) []string {
