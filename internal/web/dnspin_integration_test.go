@@ -28,7 +28,7 @@ func TestDNSRebind(t *testing.T) {
 
 	c := liveClient(t)
 	const conv = "rebind-conv"
-	target := "https://en.wikipedia.org/wiki/Knowledge_graph"
+	target := "https://example.com/"
 	host := mustHost(t, target)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)

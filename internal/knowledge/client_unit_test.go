@@ -144,8 +144,25 @@ func TestComposeYAML_LoopbackOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read compose.yaml: %v", err)
 	}
+	inPorts := false
+	portsIndent := 0
 	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if inPorts && indent <= portsIndent {
+			inPorts = false
+		}
+		if trimmed == "ports:" {
+			inPorts = true
+			portsIndent = indent
+			continue
+		}
+		if !inPorts || indent <= portsIndent {
+			continue
+		}
 		// Port mappings look like:  - "127.0.0.1:5432:5432" or with ${VAR:-127.0.0.1}.
 		if !strings.HasPrefix(trimmed, "- \"") {
 			continue
