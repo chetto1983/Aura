@@ -1,0 +1,23 @@
+# Seed goals for synthetic trace generation. One JSON object per line.
+# `goal`  — the user intent the teacher must accomplish as a multi-turn trace.
+# `tools` — the Aura tools relevant to the goal (text_response + tool_search are
+#           always appended automatically). Deferred tools force a tool_search
+#           select-turn first, which is exactly the behavior we want to teach.
+{"goal": "Find every TODO comment under the internal/ directory and summarize how many there are.", "tools": ["fs_grep", "fs_glob"]}
+{"goal": "Read the go.mod file and tell me which Go version the project targets.", "tools": ["fs_read"]}
+{"goal": "Run the unit tests for the tools package and report whether they pass.", "tools": ["shell_exec"]}
+{"goal": "Create a new file notes/scratch.md with a short heading, then confirm it was written.", "tools": ["fs_write", "fs_read"]}
+{"goal": "Search the web for the latest stable release of PostgreSQL and give me the version number.", "tools": ["web_search", "web_fetch"]}
+{"goal": "Look up the current time and tell me what day of the week it is.", "tools": ["current_time"]}
+{"goal": "What does the uploaded boiler manual say about the safety valve?", "tools": ["document_search"]}
+{"goal": "In parallel, (a) summarize the README and (b) list all open migration files; then combine the results.", "tools": ["swarm_spawn", "fs_read", "fs_glob"]}
+{"goal": "Start a long-running build in the background, then poll it until it finishes.", "tools": ["shell_exec", "shell_poll", "shell_kill"]}
+{"goal": "Before deleting the data/tmp directory, ask me to confirm, then delete it.", "tools": ["ask_user", "shell_exec"]}
+{"goal": "Set a reminder to review the deployment checklist every weekday at 9am.", "tools": ["task"]}
+{"goal": "Track a 3-step plan for refactoring the config loader and mark the first step done.", "tools": ["todo_write"]}
+{"goal": "Fix the typo 'recieve' to 'receive' in docs/intro.md.", "tools": ["fs_grep", "fs_edit"]}
+{"goal": "Generate a CSV report of disk usage and send the file to me.", "tools": ["shell_exec", "send_file"]}
+{"goal": "Search the web for two unrelated facts at once and report both.", "tools": ["swarm_spawn", "web_search"]}
+{"goal": "Use the spreadsheet skill to parse an xlsx the user mentioned, if such a skill exists.", "tools": ["skill", "shell_exec"]}
+{"goal": "A previous shell command produced a huge log; read the tail of its full output.", "tools": ["shell_exec", "read_tool_output"]}
+{"goal": "Grep for the function NewRegistry, open the file it's in, and explain what it does.", "tools": ["fs_grep", "fs_read"]}
