@@ -1,0 +1,22 @@
+# Aura FunctionGemma fine-tuning spike — Python dependencies.
+#
+# Split by stage so you can install only what a stage needs. format/tools/
+# build_dataset run on the stdlib + pyyaml alone.
+
+# --- always (config + dataset build) ---
+pyyaml>=6.0
+
+# --- synthetic generation (teacher distillation) ---
+openai>=1.40
+jsonschema>=4.0          # validates generated tool-call arguments against schemas
+
+# --- real-trace harvest (Postgres, read-only) ---
+psycopg[binary]>=3.1
+
+# --- training + evaluation (GPU recommended; CPU works for the small spike set) ---
+# Unsloth pulls a matching torch/transformers/trl set; pin lightly and let it
+# resolve. See https://docs.unsloth.ai for CUDA-specific install lines.
+unsloth>=2025.9.1
+trl>=0.22.0
+transformers>=4.56.0
+datasets>=2.20.0

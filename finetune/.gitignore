@@ -1,0 +1,9 @@
+# Pipeline outputs — regenerate with the Makefile; never commit traces (may
+# contain operator data) or multi-GB model artifacts.
+data/
+*.pt
+*.gguf
+*.safetensors
+__pycache__/
+*.pyc
+.venv/

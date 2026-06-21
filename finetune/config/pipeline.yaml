@@ -1,0 +1,46 @@
+# Aura FunctionGemma fine-tuning pipeline config.
+# Every key maps 1:1 to a field on aura_finetune.config.Config and can be
+# overridden at runtime with AURA_FT_<UPPER_KEY> (e.g. AURA_FT_EPOCHS=5).
+
+# --- paths (relative to finetune/ unless absolute) ---
+tools_json: data/aura_tools.json
+seeds_path: config/seeds.jsonl
+raw_dir: data/raw
+dataset_dir: data/dataset
+out_dir: data/out
+
+# --- base model ---
+base_model: unsloth/functiongemma-270m-it
+max_seq_len: 4096
+
+# --- teacher (synthetic distillation), OpenAI-compatible ---
+teacher_base_url: https://openrouter.ai/api/v1
+teacher_model: deepseek/deepseek-v4-flash:nitro
+teacher_api_key_env: OPENROUTER_API_KEY
+synth_samples_per_seed: 6
+synth_max_turns: 8
+synth_temperature: 0.8
+
+# --- real-trace harvest (Postgres, read-only) ---
+pg_dsn_env: AURA_DB_URL
+harvest_limit: 2000
+
+# --- dataset split ---
+train_frac: 0.85
+val_frac: 0.10
+seed: 1983
+
+# --- LoRA / SFT ---
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.0
+learning_rate: 0.0002
+epochs: 3
+batch_size: 8
+grad_accum: 2
+warmup_ratio: 0.05
+weight_decay: 0.01
+
+# Gemma turn markers for train_on_responses_only.
+instruction_part: "<start_of_turn>user\n"
+response_part: "<start_of_turn>model\n"
