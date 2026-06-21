@@ -344,9 +344,10 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     await expect(page.getByText('retired-skill')).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Restore skill' }).click();
-    // The inline safe error (role=alert) surfaces; the archived skill is untouched.
+    // The inline safe error (role=alert) surfaces; the archived skill row is untouched
+    // (scope to the row button to avoid the alert text, which also contains the name).
     await expect(page.getByRole('alert')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('retired-skill')).toBeVisible();
+    await expect(page.getByRole('button', { name: /retired-skill/ })).toBeVisible();
   });
 
   test('the remove confirmation dialog has action-specific labels (Remove / Keep)', async ({
