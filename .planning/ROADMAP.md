@@ -52,7 +52,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01) (completed 2026-06-18)
 - [x] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04) (completed 2026-06-19)
 - [x] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02) (completed 2026-06-20)
-- [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03)
+- [ ] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03) — **5 plans (Waves 1–5)**
 - [x] **Phase 30: Telegram Onboarding on Frontend (Link + QR)** — ✅ **absorbed-into-28** (D-09): Telegram link/QR is delivered as **ONBD-01b** inside Phase 28's onboarding wizard. See `28-SPEC §ONBD-01b`; `30-SPEC.md` is a tombstone. _(Original scope: surface Telegram account linking in the web cockpit — deep-link + scannable QR over the existing Telegram channel + setup-wizard backend.)_
 
 - [ ] **Phase 31: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)** — GPU cross-encoder reranking + two-stage retrieval (vector→rerank-seeds→graph-expand) wired into memory recall + document retrieval + full-document ingest E2E across ALL markitdown-supported formats (pdf/docx/pptx/xlsx/html/csv/md/images/…, not PDF-only) + GraphRAG connected-nodes, over the existing Neo4j stack (no migration). Spike-gated by 068/069/070 (GPU Qwen3-Reranker-0.6B Q4_K_M, rerank-seeds pipeline, RRF fallback, self-learning deferred). (RET-01..05)
@@ -270,7 +270,14 @@ Plans:
   4. Operator installs a skill from a source field or a catalog item; the install pipeline surfaces source, content hash/preview, risk tier, the validation checklist (`--ignore-scripts`, sanitized env, `SKILL.md` parse, body cap, injection-literal blocklist, sanitized name/path) and destination — and a RISKY/DESTRUCTIVE action enters the approval queue with a resume token, is NOT runnable or prompt-injectable while pending, and activates only on the approval resume (no model-facing approve) (SKW-01, SKW-02)
   5. Operator restores / archives skills across separate active / pending / archived / audit tabs (each row showing capability scope, last used, use count, TTL/archive state), and the skills audit ledger shows the install as an append-only row (SKW-02, SKW-03)
 
-**Plans**: TBD
+**Plans**: 5 plans (Waves 1–5)
+
+  - `29-01-PLAN.md` (Wave 1) — BLOCKING D-09 SPEC-amendment (container-isolation supersedes `--ignore-scripts`, lands FIRST) + `0022_mcp_audit` append-only ledger + `MCPAuditStore`/`InsertMCPAuditTx` + `governance.write` capability const (MCPW-02, SKW-01)
+  - `29-02-PLAN.md` (Wave 2) — MCP write backend + endpoints: in-place env-edit path (`SetServerEnv`, credential-preserving) + atomic temp→tx→rename config-write+audit wrapper + `MCPWriteProvider` seam + the six named-action handlers (install/env/trust/enable/disable/remove) behind `RequireCapability(governance.write)` (MCPW-01, MCPW-02, MCPW-03)
+  - `29-03-PLAN.md` (Wave 3) — Skills write backend + endpoints: the net-new `npx skills` install transport (stage→validate→`WriteInstallPending`) + install→`/api/approvals` queue wiring (resume-only, no model approve) + restore(409-collision-guard)/archive/create/update/delete + catalog behind `AURA_SKILLS_EXTERNAL_DISCOVERY` + `SkillsWriteProvider` seam (SKW-01, SKW-02, SKW-03)
+  - `29-04-PLAN.md` (Wave 4) — Frontend (extend Phase-28 boards in place, D-10): `governanceApi` write fns + `McpInstallPanel`/`McpEnvEditForm` (four-state + redacted, no eye-reveal) + lifecycle cluster + `SkillInstallPanel` (RISKY-honest, five-item checklist) + extend the approval card + en/it i18n + new contrast pairs (all MCPW/SKW — UI)
+  - `29-05-PLAN.md` (Wave 5) — Validation + gates: the held-out secret log-scan + DOM-grep, the redacted-placeholder property, the no-model-approve/pending-non-injectable + append-only(both ledgers) + no-silent-destructive-mount backstops, Go ≥85% full matrix + Vitest ≥85% + Stryker ≥70% + Playwright e2e + axe + contrast AA + dist rebuild (all MCPW/SKW)
+
 **UI hint**: yes
 
 ### Phase 30: Telegram Onboarding on Frontend with Link and QR Code
@@ -318,6 +325,6 @@ Plans:
 | 26. Typed-Display Protocol + Router | v1.0.0 | 6/6 | Complete    | 2026-06-19 |
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 6/6 | Complete   | 2026-06-20 |
-| 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/? | Not started | - |
+| 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 0/5 | Planning | - |
 | 30. Telegram Onboarding on Frontend (Link + QR) | v1.0.0 | — | Absorbed into 28 | 2026-06-20 |
 | 31. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 0/? | Planning | - |
