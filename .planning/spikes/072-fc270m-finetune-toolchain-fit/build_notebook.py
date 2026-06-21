@@ -42,7 +42,7 @@ runtime (T4 is plenty for 270M).
 """from unsloth import FastLanguageModel
 import torch
 
-MAX_SEQ_LEN = 8192  # full 21-tool catalog per row ~3-5k tokens; headroom for the call
+MAX_SEQ_LEN = 16384  # full 21-tool catalog per row measured ~13k tokens; 16k fits (Gemma-3 ctx = 32k)
 
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name     = "unsloth/functiongemma-270m-it",
@@ -141,8 +141,8 @@ trainer = SFTTrainer(
     args = SFTConfig(
         dataset_text_field          = "text",
         max_seq_length              = MAX_SEQ_LEN,
-        per_device_train_batch_size = 2,
-        gradient_accumulation_steps = 4,
+        per_device_train_batch_size = 1,   # 16k-token rows are memory-heavy on a T4
+        gradient_accumulation_steps = 8,   # effective batch 8
         warmup_steps                = 5,
         num_train_epochs            = 3,   # small dataset → a few epochs; watch eval loss
         learning_rate               = 2e-4,

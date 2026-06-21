@@ -82,8 +82,12 @@ that is by operator design, not a gap in the toolchain.
 
 - **Ship the notebook as the Slice-13 finetune recipe.** It regenerates from
   `build_notebook.py`; keep the two in sync.
-- **max_seq_length = 8192** — the full-catalog rows (operator chose full catalog/example)
-  run ~3-5k tokens; don't drop below that or calls get truncated.
+- **max_seq_length = 16384** — the full-catalog rows (operator chose full catalog/example)
+  measured **~12.9k tokens** each (catalog dominates; the query+call is ~30 tokens), so
+  8192 filtered every row → `num_samples=0`. 16k fits (Gemma-3 ctx = 32k). Trade-off the
+  probe makes visible: ~13k-token rows are memory-heavy (bsz=1 on a T4) and the model
+  mostly re-reads a static block — if training is too slow or quality lags, switch the
+  073 catalog to gold+distractors (matches Aura's tool_search-filtered serving).
 - **Watch eval loss across the 3 epochs** — 134 examples is small; stop if eval loss
   turns up (overfit). Scale via spike-073 slot lists, not more epochs.
 - **The finetuned GGUF still needs Aura's custom call parser** (spike 071) — llama.cpp
