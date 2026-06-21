@@ -150,7 +150,7 @@ export const governanceEn = {
         sourcePlaceholder: 'owner/repo, a URL, or a path',
         emptySource: 'Enter a valid source — owner/repo, a URL, or a path.',
         externalToggle: 'External discovery (skills.sh)',
-        externalOffNote: 'Off — enable to search the public skills.sh catalog.',
+        externalOffNote: 'External discovery is disabled on this deployment.',
         searchLabel: 'Search the skills.sh catalog',
         checklistHeading: 'Validation checklist',
         checklist: {
@@ -161,16 +161,16 @@ export const governanceEn = {
           sanitizedNamePath: 'Sanitized name/path',
         },
         containerNote:
-          "Runs in Aura's container. Install scripts are permitted; isolation is the container boundary + this approval gate + Writer validation.",
+          "Runs in Aura's container — the install is validated, then activated immediately.",
         field: {
           source: 'Source',
           hash: 'Content hash',
           preview: 'Preview',
           destination: 'Destination',
         },
-        staged: 'Staged for approval — review it in the approval queue.',
-        submit: 'Stage for approval',
-        discard: 'Discard install',
+        staged: 'Installed and active.',
+        submit: 'Install',
+        discard: 'Cancel',
       },
       field: {
         type: 'Type',
@@ -357,7 +357,7 @@ export const governanceIt = {
         sourcePlaceholder: 'owner/repo, un URL o un percorso',
         emptySource: 'Inserisci una sorgente valida — owner/repo, un URL o un percorso.',
         externalToggle: 'Ricerca esterna (skills.sh)',
-        externalOffNote: 'Disattivata — abilita per cercare nel catalogo pubblico skills.sh.',
+        externalOffNote: 'La ricerca esterna è disabilitata su questo deployment.',
         searchLabel: 'Cerca nel catalogo skills.sh',
         checklistHeading: 'Checklist di validazione',
         checklist: {
@@ -368,16 +368,16 @@ export const governanceIt = {
           sanitizedNamePath: 'Nome/percorso sanificato',
         },
         containerNote:
-          "Gira nel container di Aura. Gli script di installazione sono consentiti; l'isolamento è il confine del container + questa approvazione + la validazione del Writer.",
+          "Gira nel container di Aura — l'installazione viene validata e poi attivata subito.",
         field: {
           source: 'Sorgente',
           hash: 'Hash contenuto',
           preview: 'Anteprima',
           destination: 'Destinazione',
         },
-        staged: 'In coda per approvazione — verificala nella coda di approvazione.',
-        submit: 'Metti in coda per approvazione',
-        discard: 'Annulla installazione',
+        staged: 'Installata e attiva.',
+        submit: 'Installa',
+        discard: 'Annulla',
       },
       field: {
         type: 'Tipo',

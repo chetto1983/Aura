@@ -3,31 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { Spinner } from '../components/Spinner';
-import {
-  installSkill,
-  searchSkillCatalog,
-  type SkillsCheckItem,
-  type SkillsInstallInfo,
-} from './governanceApi';
+import { installSkill, searchSkillCatalog, type SkillsInstallInfo } from './governanceApi';
 
-// SkillInstallPanel (SKW-01) — the RISKY-HONEST install panel in the Skills detail slot. The
-// install is ALWAYS rendered RISKY supply-chain input (never "safe"): a prominent RISKY badge,
-// the FIVE validation-checklist items (post-D-09: NO --ignore-scripts), and a neutral
-// container-isolation note. A source field (owner/repo, URL, path) OR a skills.sh search behind
-// the `External discovery (skills.sh)` toggle (OFF by default, disabled with a note when off,
-// reflecting AURA_SKILLS_EXTERNAL_DISCOVERY). The submit is `Stage for approval` (NEVER
-// Install/Activate) — it stages to pending + mints the operator approval pause (D-13);
-// activation is the operator resume only. Abandon = Discard install.
-
-// The FIVE checklist item labels (the contract — rendered BEFORE staging; after staging the
-// resolved pass/fail from the install response replaces them). No --ignore-scripts item (D-09).
-const CHECKLIST_KEYS: readonly string[] = [
-  'sanitizedEnv',
-  'skillMdParse',
-  'bodyCap',
-  'injectionBlocklist',
-  'sanitizedNamePath',
-];
+// SkillInstallPanel (SKW-01) — search the skills.sh catalog and install a skill in ONE step.
+// Claude-Code parity (operator directive 2026-06-21): no approval ceremony, no "stage for
+// approval" two-step, no RISKY framing. Catalog search is on by default; a search hit (or a
+// pasted owner/repo, URL, or path in the source field) installs and activates immediately.
+// The skill validation (injection blocklist + the write-boundary checks) still runs inside the
+// container — intrinsic and invisible, not a gate the operator clicks through.
 
 export interface SkillInstallPanelProps {
   readonly onClose: () => void;
@@ -41,29 +24,26 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
   const searchId = useId();
 
   const [source, setSource] = useState('');
-  const [externalDiscovery, setExternalDiscovery] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [emptyError, setEmptyError] = useState(false);
 
-  // The catalog search is flag-gated: it only runs when the operator turns on external
-  // discovery AND has typed a non-empty query. The server is the authority — its result's
-  // `enabled` flag reflects AURA_SKILLS_EXTERNAL_DISCOVERY (the UI toggle is the operator gate).
+  // Catalog search runs as soon as the operator types — discovery is on by default (the
+  // server's `enabled` flag only goes false when a deployment explicitly opts out).
   const catalog = useQuery({
     queryKey: ['governance', 'skills', 'catalog', searchQuery],
     queryFn: () => searchSkillCatalog(searchQuery),
     retry: false,
-    enabled: externalDiscovery && searchQuery.trim() !== '',
+    enabled: searchQuery.trim() !== '',
   });
 
   const install = useMutation({
     mutationFn: (src: string) => installSkill(src),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['governance', 'skills'] });
-      void queryClient.invalidateQueries({ queryKey: ['approvals'] });
     },
   });
 
-  const staged: SkillsInstallInfo | undefined = install.data;
+  const installed: SkillsInstallInfo | undefined = install.data;
 
   function submit() {
     const trimmed = source.trim();
@@ -74,6 +54,9 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
     setEmptyError(false);
     install.mutate(trimmed);
   }
+
+  const catalogDisabled = catalog.data !== undefined && !catalog.data.enabled;
+  const hits = catalog.data?.hits ?? [];
 
   return (
     <section
@@ -94,24 +77,46 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
         </button>
       </header>
 
-      {/* RISKY badge — install is ALWAYS RISKY supply-chain input, never "safe". */}
-      <div
-        role="note"
-        className="flex flex-col gap-1 rounded-md border border-warning bg-warning/15 px-3 py-2"
-      >
-        <span className="flex items-center gap-1 text-[13px] font-semibold text-warning">
-          <span
-            aria-hidden="true"
-            className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning"
-          />
-          {t('governance.skills.install.riskBadge')}
-        </span>
-        <span className="text-[15.5px] leading-relaxed text-text">
-          {t('governance.skills.install.riskBanner')}
-        </span>
+      {/* Catalog search — primary discovery, on by default. */}
+      <div className="flex flex-col gap-2">
+        <label htmlFor={searchId} className="text-[13px] font-semibold text-text">
+          {t('governance.skills.install.searchLabel')}
+        </label>
+        <input
+          id={searchId}
+          type="search"
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+          }}
+          placeholder={t('governance.skills.install.searchLabel')}
+          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        {catalogDisabled ? (
+          <p role="note" className="text-[13px] text-text-muted">
+            {t('governance.skills.install.externalOffNote')}
+          </p>
+        ) : hits.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {hits.map((hit) => (
+              <li key={hit.source}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSource(hit.source);
+                  }}
+                  aria-pressed={source === hit.source}
+                  className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-left font-mono text-[13px] text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-accent"
+                >
+                  {hit.source}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
 
-      {/* Source field. */}
+      {/* Source field — install directly from owner/repo, a URL, or a path. */}
       <div className="flex flex-col gap-1">
         <label htmlFor={sourceId} className="text-[13px] font-semibold text-text">
           {t('governance.skills.install.sourceLabel')}
@@ -136,112 +141,18 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
         ) : null}
       </div>
 
-      {/* External-discovery toggle + flag-gated search. */}
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          aria-pressed={externalDiscovery}
-          onClick={() => {
-            setExternalDiscovery((prev) => !prev);
-          }}
-          className="flex min-h-[44px] items-center gap-2 self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span
-            aria-hidden="true"
-            className={`inline-block h-2 w-2 shrink-0 rounded-sm ${
-              externalDiscovery ? 'bg-success' : 'bg-text-muted'
-            }`}
-          />
-          {t('governance.skills.install.externalToggle')}
-        </button>
-        <label htmlFor={searchId} className="sr-only">
-          {t('governance.skills.install.searchLabel')}
-        </label>
-        <input
-          id={searchId}
-          type="search"
-          value={searchQuery}
-          disabled={!externalDiscovery}
-          onChange={(event) => {
-            setSearchQuery(event.target.value);
-          }}
-          placeholder={t('governance.skills.install.searchLabel')}
-          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        />
-        {!externalDiscovery ? (
-          <p role="note" className="text-[13px] text-text-muted">
-            {t('governance.skills.install.externalOffNote')}
-          </p>
-        ) : catalog.data?.enabled ? (
-          <ul className="flex flex-col gap-1">
-            {catalog.data.hits.map((hit) => (
-              <li key={hit.source}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSource(hit.source);
-                  }}
-                  className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-left font-mono text-[13px] text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {hit.source}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+      <p role="note" className="text-[13px] leading-relaxed text-text-muted">
+        {t('governance.skills.install.containerNote')}
+      </p>
 
-      {/* The FIVE-item validation checklist (always rendered — the contract). After staging the
-          resolved pass/fail from the install response replaces the static labels. */}
-      <section className="flex flex-col gap-1">
-        <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
-          {t('governance.skills.install.checklistHeading')}
-        </h4>
-        <ul className="flex flex-col gap-1">
-          {(staged?.checklist ?? CHECKLIST_KEYS.map((key) => ({ label: key, passed: false }))).map(
-            (item: SkillsCheckItem, index) => {
-              const label = staged
-                ? item.label
-                : t(`governance.skills.install.checklist.${CHECKLIST_KEYS[index] ?? item.label}`);
-              return (
-                <li
-                  key={staged ? item.label : (CHECKLIST_KEYS[index] ?? String(index))}
-                  className={`flex items-center gap-2 text-[13px] ${
-                    staged ? (item.passed ? 'text-success' : 'text-danger') : 'text-text-muted'
-                  }`}
-                >
-                  <span aria-hidden="true">{staged ? (item.passed ? '✓' : '✗') : '•'}</span>
-                  <span className="break-words">{label}</span>
-                </li>
-              );
-            },
-          )}
-        </ul>
-        <p role="note" className="text-[13px] leading-relaxed text-text-muted">
-          {t('governance.skills.install.containerNote')}
-        </p>
-      </section>
-
-      {/* After staging — the pre-activation surface (source/hash/preview/destination + queued). */}
-      {staged ? (
+      {/* After install — the active confirmation (source + active destination). */}
+      {installed ? (
         <dl className="flex flex-col gap-2 rounded-md bg-surface-3 p-4">
-          <StagedField label={t('governance.skills.install.field.source')} value={staged.source} />
-          <StagedField
-            label={t('governance.skills.install.field.hash')}
-            value={staged.content_hash}
-          />
-          <StagedField
+          <InstalledField label={t('governance.skills.install.field.source')} value={installed.source} />
+          <InstalledField
             label={t('governance.skills.install.field.destination')}
-            value={staged.destination}
+            value={installed.destination}
           />
-          <div className="flex flex-col">
-            <dt className="text-[13px] font-semibold text-text-muted">
-              {t('governance.skills.install.field.preview')}
-            </dt>
-            <dd className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[13px] text-text">
-              {staged.preview}
-            </dd>
-          </div>
           <p role="status" className="text-[13px] text-success">
             {t('governance.skills.install.staged')}
           </p>
@@ -257,7 +168,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={install.isPending || staged !== undefined}
+          disabled={install.isPending || installed !== undefined}
           aria-busy={install.isPending}
           onClick={submit}
           className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
@@ -277,7 +188,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
   );
 }
 
-function StagedField({ label, value }: { readonly label: string; readonly value: string }) {
+function InstalledField({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="flex flex-col">
       <dt className="text-[13px] font-semibold text-text-muted">{label}</dt>

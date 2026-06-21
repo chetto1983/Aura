@@ -29,12 +29,13 @@ import (
 // (sanitized env, SKILL.md parse, body cap, injection-literal blocklist, sanitized
 // name/path), and the container blast boundary. An install is NEVER rendered "safe".
 //
-// External skills.sh discovery (Search) is gated by AURA_SKILLS_EXTERNAL_DISCOVERY
-// (D-08): with the flag off, Search returns a disabled/empty result with the toggle
-// state explicit — no silent discovery escalation.
+// External skills.sh discovery (Search) is ON by default (Claude-Code parity,
+// operator directive 2026-06-21): a normal user opens the cockpit and searches the
+// catalog with no env to set, no toggle to flip. AURA_SKILLS_EXTERNAL_DISCOVERY is
+// an opt-OUT for a deployment that wants to forbid the external network fetch.
 
-// externalDiscoveryEnv is the operator-visible flag the cockpit toggle reflects
-// (D-08). When it is unset/falsey, Search is disabled (no external network fetch).
+// externalDiscoveryEnv is the opt-OUT flag for catalog search. Discovery is enabled
+// by default; only an explicit falsey value ("0"/"false"/"no"/"off") disables it.
 const externalDiscoveryEnv = "AURA_SKILLS_EXTERNAL_DISCOVERY"
 
 // CommandRunner runs one command and returns its combined stdout+stderr (ANSI not yet
@@ -191,8 +192,8 @@ func (i *Installer) Install(ctx context.Context, source string, actor AuditActor
 	}, nil
 }
 
-// Search runs `npx skills find <q>` ONLY when AURA_SKILLS_EXTERNAL_DISCOVERY is truthy
-// (D-08); otherwise it returns a disabled CatalogResult carrying the toggle state (no
+// Search runs `npx skills find <q>` (external discovery is on by default; an explicit
+// AURA_SKILLS_EXTERNAL_DISCOVERY=false opt-out returns a disabled CatalogResult with no
 // external network fetch). A search with no matches renders an empty Hits slice (the
 // empty-state edge). The output is ANSI-stripped + parsed by parseCatalogHits.
 func (i *Installer) Search(ctx context.Context, q string) (CatalogResult, error) {
@@ -214,15 +215,16 @@ func (i *Installer) Search(ctx context.Context, q string) (CatalogResult, error)
 	return CatalogResult{Enabled: true, Query: q, Hits: hits}, nil
 }
 
-// externalDiscoveryEnabled reports whether AURA_SKILLS_EXTERNAL_DISCOVERY is set to a
-// truthy value ("1"/"true"/"yes"/"on", case-insensitive). Any other value (incl. unset
-// and "0"/"false") disables external discovery — off by default (D-08).
+// externalDiscoveryEnabled reports whether catalog search may reach the network. It is
+// ON by default (Claude-Code parity); only an explicit falsey AURA_SKILLS_EXTERNAL_DISCOVERY
+// ("0"/"false"/"no"/"off", case-insensitive) opts out. Any other value (incl. unset)
+// keeps discovery enabled.
 func externalDiscoveryEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(externalDiscoveryEnv))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
+	case "0", "false", "no", "off":
 		return false
+	default:
+		return true
 	}
 }
 

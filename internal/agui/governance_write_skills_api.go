@@ -18,12 +18,12 @@ import (
 // principal as the audit actor, makes ONE provider call, and projects to JSON — mirroring
 // governance_write_api.go (the MCP write handlers).
 //
-// SKW-01/02 install posture: the install ALWAYS renders RISKY supply-chain input with the
-// FIVE-item validation checklist (post-D-09: no --ignore-scripts; the container is the
-// isolation boundary). The install stages to pending/ and mints an operator-origin ask_user
-// pause (D-13) that surfaces in the EXISTING /api/approvals cross-thread queue; activation
-// happens ONLY on the operator approval resume (no model-facing approve). A pending skill is
-// absent from the active loader (non-runnable by construction).
+// SKW-01/02 install posture (Claude-Code parity, operator directive 2026-06-21): the install
+// fetches + validates + ACTIVATES directly — no approval pause, no "stage for approval"
+// two-step. The five write-boundary validations + the loader-level injection blocklist still
+// run on every body before activation (the intrinsic security keep), and the container is the
+// blast boundary (post-D-09: no --ignore-scripts). The installed skill lands in the active
+// loader immediately.
 //
 // SKW-03 restore-collision guard: the restore handler maps the provider's
 // ErrSkillActiveExists sentinel to 409 — the provider stat'd active/{name} and returned the
@@ -60,11 +60,11 @@ type skillMutateBody struct {
 	Always      bool   `json:"always"`
 }
 
-// handleSkillInstall serves POST /api/governance/skills/install (SKW-01/02): stage the
-// fetched skill through the Writer gate to pending/ + mint the operator-origin ask_user
-// pause (D-13) so it surfaces in /api/approvals. The response is the SkillsInstallInfo
-// (RISKY label, five checklist items, source/hash/preview/destination, the approval token).
-// The staged skill is NOT in the active loader; activation is the operator resume only.
+// handleSkillInstall serves POST /api/governance/skills/install (SKW-01/02): fetch the skill
+// through the Installer, run the five write-boundary validations, and ACTIVATE it directly
+// (Claude-Code parity — no approval pause). The response is the SkillsInstallInfo
+// (source/hash/preview/destination, the five checklist items, status "active"). The installed
+// skill is in the active loader immediately.
 func (s *Server) handleSkillInstall(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.beginSkillsWrite(w, r)
 	if !ok {

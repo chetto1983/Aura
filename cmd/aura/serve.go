@@ -342,19 +342,18 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// answer 503, MUST NOT abort boot (the SetGovernanceProviders precedent). The mounts
 	// (RequireCapability(governance.write)) live in serve_webui.go.
 	// The Phase-29 SKILLS WRITE provider (SKW-01/02/03): install (stage→validate→pending +
-	// mint the operator-origin /api/approvals pause, D-13), restore(409-collision-guard)/
-	// archive, create/update/delete. Built best-effort over the SAME newSkillWriter wiring the
-	// CLI + model path use + the Phase-25 askuser/conversations stores (for the install pause).
-	// A nil pool / missing skills dir leaves it nil so the routes answer 503 — never aborts boot.
-	// Both write providers are wired in ONE SetGovernanceWriteProviders call so the bundle stays
-	// the single seam (no second setter).
+	// install (Claude-Code parity: fetch→validate→ACTIVATE directly, no approval pause),
+	// restore(409-collision-guard)/archive, create/update/delete. Built best-effort over the
+	// SAME newSkillWriter wiring the CLI + model path use. A nil pool / missing skills dir leaves
+	// it nil so the routes answer 503 — never aborts boot. Both write providers are wired in ONE
+	// SetGovernanceWriteProviders call so the bundle stays the single seam (no second setter).
 	var mcpWrite agui.MCPWriteProvider
 	if mw, werr := buildMCPWriteProvider(chat.pool); werr != nil {
 		slog.Warn("aura serve: governance mcp write unavailable", "err", werr)
 	} else {
 		mcpWrite = mw
 	}
-	skillsWrite := buildSkillsWriteProvider(ctx, chat.cfg, chat.pool, chat.pause, chat.conv, chat.identity)
+	skillsWrite := buildSkillsWriteProvider(chat.cfg, chat.pool)
 	if mcpWrite != nil || skillsWrite != nil {
 		aguiServer.SetGovernanceWriteProviders(agui.GovernanceWriteProviders{MCP: mcpWrite, Skills: skillsWrite})
 	}

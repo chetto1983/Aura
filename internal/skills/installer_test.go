@@ -150,11 +150,12 @@ func TestInstallerNonASCIIName(t *testing.T) {
 	}
 }
 
-// TestInstallerSearchDisabledWhenFlagOff proves Search returns a disabled, empty result
-// (toggle state explicit) when AURA_SKILLS_EXTERNAL_DISCOVERY is unset, and NEVER runs
-// npx (no silent discovery escalation, prohibition #8 / D-08).
-func TestInstallerSearchDisabledWhenFlagOff(t *testing.T) {
-	t.Setenv(externalDiscoveryEnv, "")
+// TestInstallerSearchDisabledWhenOptedOut proves Search returns a disabled, empty result
+// (toggle state explicit) when AURA_SKILLS_EXTERNAL_DISCOVERY is explicitly opted out
+// ("false"), and NEVER runs npx (no network fetch). Discovery is ON by default now, so the
+// opt-out is the only way to forbid the external fetch.
+func TestInstallerSearchDisabledWhenOptedOut(t *testing.T) {
+	t.Setenv(externalDiscoveryEnv, "false")
 	ran := false
 	inst := newTestInstaller(t, func(context.Context, string, string, ...string) (string, error) {
 		ran = true
@@ -165,13 +166,35 @@ func TestInstallerSearchDisabledWhenFlagOff(t *testing.T) {
 		t.Fatalf("Search(disabled) = %v", err)
 	}
 	if res.Enabled {
-		t.Error("Search must report Enabled=false when the flag is off")
+		t.Error("Search must report Enabled=false when explicitly opted out")
 	}
 	if len(res.Hits) != 0 {
 		t.Errorf("disabled Search must return no hits, got %v", res.Hits)
 	}
 	if ran {
-		t.Fatal("disabled Search must NOT run npx (no silent discovery)")
+		t.Fatal("opted-out Search must NOT run npx (no network fetch)")
+	}
+}
+
+// TestInstallerSearchEnabledByDefault proves Search runs `npx skills find <q>` with no env
+// set — external discovery is ON by default (Claude-Code parity, operator directive
+// 2026-06-21): a normal user searches the catalog with nothing to configure.
+func TestInstallerSearchEnabledByDefault(t *testing.T) {
+	t.Setenv(externalDiscoveryEnv, "")
+	ran := false
+	inst := newTestInstaller(t, func(context.Context, string, string, ...string) (string, error) {
+		ran = true
+		return "\x1b[1mFound 1 skill\x1b[0m\nanthropics/skills@xlsx 12K installs\n", nil
+	})
+	res, err := inst.Search(t.Context(), "xlsx")
+	if err != nil {
+		t.Fatalf("Search(default) = %v", err)
+	}
+	if !res.Enabled {
+		t.Error("Search must be Enabled by default (no env set)")
+	}
+	if !ran {
+		t.Fatal("default Search must run npx (discovery on by default)")
 	}
 }
 

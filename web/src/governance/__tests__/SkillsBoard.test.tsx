@@ -366,7 +366,7 @@ describe('SkillsBoard (GOV-02)', () => {
     expect(fetchSkills).toHaveBeenCalledWith('archived');
   });
 
-  it('opens the RISKY install panel from the install CTA (reachable on any tab)', async () => {
+  it('opens the install panel from the install CTA (reachable on any tab)', async () => {
     fetchSkills.mockResolvedValue(ACTIVE);
 
     render(<SkillsBoard />, {
@@ -378,15 +378,13 @@ describe('SkillsBoard (GOV-02)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Install skill' }));
 
-    // The install panel renders the RISKY supply-chain banner + the five-item checklist heading.
+    // The no-ceremony install panel: catalog search + an `Install` CTA (no RISKY banner,
+    // no validation-checklist heading).
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          'RISKY — supply-chain input. Review the source, hash, and checklist before staging.',
-        ),
-      ).toBeTruthy();
+      expect(screen.getByPlaceholderText('Search the skills.sh catalog')).toBeTruthy();
     });
-    expect(screen.getByText('Validation checklist')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Install' })).toBeTruthy();
+    expect(screen.queryByText('Validation checklist')).toBeNull();
   });
 
   it('archives an active skill via the row Archive control', async () => {
