@@ -423,7 +423,10 @@ export async function whatsappConnectLogout(): Promise<void> {
 /** isWhatsAppServer detects the WhatsApp MCP server by recipe/source (preferred) with a
  * name/source-substring fallback, so the detail pane knows when to render the connect section.
  * Pure; lives here (not the component file) so WhatsAppConnect.tsx exports only components. */
-export function isWhatsAppServer(server: { readonly name: string; readonly source: string }): boolean {
+export function isWhatsAppServer(server: {
+  readonly name: string;
+  readonly source: string;
+}): boolean {
   const source = server.source.toLowerCase();
   const name = server.name.toLowerCase();
   return name === 'whatsapp' || source === 'recipe:whatsapp' || source.includes('whatsapp');
