@@ -155,19 +155,21 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
 
       {/* After install — the active confirmation (source + active destination). */}
       {installed ? (
-        <dl className="flex flex-col gap-2 rounded-md bg-surface-3 p-4">
-          <InstalledField
-            label={t('governance.skills.install.field.source')}
-            value={installed.source}
-          />
-          <InstalledField
-            label={t('governance.skills.install.field.destination')}
-            value={installed.destination}
-          />
+        <div className="flex flex-col gap-2 rounded-md bg-surface-3 p-4">
+          <dl className="flex flex-col gap-2">
+            <InstalledField
+              label={t('governance.skills.install.field.source')}
+              value={installed.source}
+            />
+            <InstalledField
+              label={t('governance.skills.install.field.destination')}
+              value={installed.destination}
+            />
+          </dl>
           <p role="status" className="text-[13px] text-success">
             {t('governance.skills.install.staged')}
           </p>
-        </dl>
+        </div>
       ) : null}
 
       {install.isError ? (

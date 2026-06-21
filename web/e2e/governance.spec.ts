@@ -210,7 +210,7 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
     }
   });
 
-  test('skills lifecycle sub-tabs are a role=tablist with no run/activate control', async ({
+  test('skills lifecycle sub-tabs are a role=tablist with no run/activate row control', async ({
     page,
   }) => {
     await openGovernance(page);
@@ -223,8 +223,9 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
     await expect(skillsTabs.getByRole('tab', { name: 'Archived' })).toBeVisible();
     await expect(skillsTabs.getByRole('tab', { name: 'Audit' })).toBeVisible();
 
-    // No run/activate/install control exists on the board (read-only enforcement).
-    await expect(page.getByRole('button', { name: /^(run|activate|install)\b/i })).toHaveCount(0);
+    // No run/activate control exists on rows; the one allowed write CTA is "Install skill".
+    await expect(page.getByRole('button', { name: /^(run|activate)\b/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Install skill' })).toBeVisible();
   });
 });
 

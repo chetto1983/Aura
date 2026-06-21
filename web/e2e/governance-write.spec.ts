@@ -11,9 +11,8 @@ import { gotoAuthenticated } from './auth';
 //   (2) env-edit → submit a secret, re-open and submit the redacted ${KEY} placeholder → the
 //       secret persists AND a DOM-grep asserts no secret VALUE is in the DOM (key-only echo);
 //   (3) the four env states render; a placeholder-required save shows the soft warning yet succeeds;
-//   (4) skill install (source field) → the RISKY badge + five checklist items + container note +
-//       `Stage for approval`, resolved via the approval queue → it activates; an expired/consumed
-//       token shows the terminal chip;
+//   (4) skill install (source field) → direct container-validated activation with no RISKY
+//       approval ceremony;
 //   (5) restore/archive across tabs, with a colliding restore showing the safe inline error;
 //   (6) the remove confirmation dialog (action-specific labels, the safe action default-focused).
 // axe runs on each new surface (0 serious/critical WCAG-AA), on chromium + mobile-chrome.
@@ -198,27 +197,30 @@ async function installGovernanceWriteRoutes(page: Page, state: ServerState) {
   });
   await page.route('**/api/governance/skills/audit*', (route) => route.fulfill(json({ rows: [] })));
 
-  await page.route('**/api/governance/skills/install', (route) =>
-    route.fulfill(
+  await page.route('**/api/governance/skills/install', (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { source?: string };
+    const source = body.source ?? 'owner/repo';
+    if (!state.active.some((s) => s.name === 'demo-skill')) {
+      state.active.push({
+        name: 'demo-skill',
+        description: `Installed from ${source}`,
+        type: 'instruction',
+      });
+    }
+    return route.fulfill(
       json({
         name: 'demo-skill',
-        source: 'owner/repo',
+        source,
         content_hash: 'sha256:deadbeef',
         preview: '# demo',
-        destination: '/skills/pending/demo-skill',
+        destination: '/skills/demo-skill',
         risk_tier: 'RISKY',
-        status: 'pending_approval',
-        approval_token: '00000000-0000-0000-0000-0000000000f1',
-        checklist: [
-          { label: 'Sanitized env', passed: true },
-          { label: 'SKILL.md parse', passed: true },
-          { label: 'Body cap', passed: true },
-          { label: 'Injection-literal blocklist', passed: true },
-          { label: 'Sanitized name/path', passed: true },
-        ],
+        status: 'active',
+        approval_token: '',
+        checklist: [],
       }),
-    ),
-  );
+    );
+  });
 
   await page.route('**/api/governance/skills/*/archive', (route) => {
     const name = secondLastPathSeg(route.request().url());
@@ -310,7 +312,7 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     }
   });
 
-  test('skill install renders RISKY + the five-item checklist + the container note', async ({
+  test('skill install activates directly with the container note and no RISKY ceremony', async ({
     page,
   }) => {
     const state = freshState();
@@ -321,10 +323,16 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     await page.getByRole('button', { name: 'Install skill' }).click();
     await expect(
       page.getByText(
-        'RISKY — supply-chain input. Review the source, hash, and checklist before staging.',
+        "Runs in Aura's container — the install is validated, then activated immediately.",
       ),
     ).toBeVisible();
-    await expect(page.getByText('Validation checklist')).toBeVisible();
+    await expect(page.getByText(/RISKY — supply-chain input/)).toHaveCount(0);
+    await expect(page.getByText('Validation checklist')).toHaveCount(0);
+
+    await page.getByLabel('Source').fill('owner/repo');
+    await page.getByRole('button', { name: /^Install$/ }).click();
+    await expect(page.getByText('Installed and active.')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('/skills/demo-skill')).toBeVisible();
     assertNoSeriousAxe(await runAxe(page), 'skill-install-panel');
   });
 

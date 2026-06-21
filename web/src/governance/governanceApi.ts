@@ -317,19 +317,18 @@ export async function removeMcpServer(name: string): Promise<void> {
 
 // === Phase-29 skills write surface (SKW-01/02/03) ===
 // The shapes mirror internal/agui/governance_write_seam.go (SkillsInstallInfo /
-// SkillsCatalogResult / SkillsCheckItem). Install ALWAYS returns a RISKY risk tier + the
-// FIVE-item checklist + the approval token (the install stages to pending and mints the
-// operator-origin approval pause; activation is the operator resume only — D-13).
+// SkillsCatalogResult / SkillsCheckItem). The current operator contract installs directly
+// after the server-side validation/write-boundary checks; legacy risk/checklist fields may
+// still ride the response, but the cockpit does not render an approval ceremony.
 
-/** One validation-checklist item the install panel renders (pass/fail). */
+/** One validation-checklist item returned by the backend for legacy/audit context. */
 export interface SkillsCheckItem {
   readonly label: string;
   readonly passed: boolean;
 }
 
-/** POST /api/governance/skills/install response — everything the operator sees BEFORE
- * activation (source/hash/preview/destination + the RISKY tier + the five-item checklist +
- * the approval-queue deep-link token). */
+/** POST /api/governance/skills/install response — source/hash/preview/destination plus
+ * direct activation status. */
 export interface SkillsInstallInfo {
   readonly name: string;
   readonly source: string;
@@ -358,8 +357,8 @@ export interface SkillsCatalogResult {
   readonly hits: readonly SkillsCatalogHit[];
 }
 
-/** POST /api/governance/skills/install — stage a skill for approval (RISKY, never activated
- * here). An empty/invalid source throws `Error("HTTP 400")`. */
+/** POST /api/governance/skills/install — install and activate a validated skill. An
+ * empty/invalid source throws `Error("HTTP 400")`. */
 export function installSkill(source: string): Promise<SkillsInstallInfo> {
   return postJSON<SkillsInstallInfo>(`${GOV_SKILLS_PATH}/install`, { source });
 }
