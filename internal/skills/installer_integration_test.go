@@ -10,12 +10,14 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // fakeAddIntegration is the db_integration analog of fakeAdd: it stages a SKILL.md tree
@@ -114,5 +116,114 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 	// Newest-first ordering: the install row is the most recent for this skill.
 	if len(rows) > 0 && rows[0].Action != AuditInstall {
 		t.Errorf("newest-first: rows[0].Action = %q, want install", rows[0].Action)
+	}
+}
+
+// skillAuditSQLState extracts the SQLSTATE from a pg error, "" otherwise.
+func skillAuditSQLState(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code
+	}
+	return ""
+}
+
+// TestSkillAuditAppendOnly is the both-ledgers append-only backstop (SPEC Prohibition #4 /
+// T-29-05-02): the SKILL side, mirroring internal/mcp/manager TestMCPAuditAppendOnly. It
+// drives the real lifecycle (install → activate → archive → restore) over the Writer/
+// Installer — each appends EXACTLY ONE row of the expected action newest-first — and then
+// proves aura.skill_audit is immutable: UPDATE/DELETE/TRUNCATE as aura_app each raise
+// insufficient_privilege (42501), and every row survives. (NOTE: restore audits as the
+// EXISTING 'activate' action — there is deliberately no 'restore' constant; see
+// writer_activate.go Restore.)
+func TestSkillAuditAppendOnly(t *testing.T) {
+	pool := migratedPool(t)
+	store := NewAuditStore(pool)
+	root := t.TempDir()
+	w := NewWriter(WriterConfig{
+		Pool:         pool,
+		PendingDir:   filepath.Join(root, "pending"),
+		ActiveDir:    filepath.Join(root, "active"),
+		ExportDir:    filepath.Join(root, "export"),
+		ArchiveDir:   filepath.Join(root, "archived"),
+		Blocklist:    []string{"<|im_start|>"},
+		BodyCapBytes: 32768,
+	})
+
+	name := "led-" + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String()[:8], "-", "")
+	inst := NewInstaller(InstallerConfig{
+		Writer:       w,
+		Run:          fakeAddIntegration(name, "an append-only lifecycle body"),
+		Blocklist:    []string{"<|im_start|>"},
+		BodyCapBytes: 32768,
+	})
+
+	// install → one install row (pending).
+	if _, err := inst.Install(t.Context(), "owner/"+name, AuditActor{ActorID: "operator", IdentityID: "local"}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	// activate (operator approval, CLI source — no token needed) → one activate row.
+	if err := w.Activate(t.Context(), name, ApprovalCLI, "", AuditActor{ActorID: "cli", IdentityID: "local"}); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	// archive → one archive row.
+	if err := w.Archive(t.Context(), name, ApprovalCLI, AuditActor{ActorID: "cli", IdentityID: "local"}); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	// restore → recorded as an additional 'activate' action (the load-bearing decision).
+	if err := w.Restore(t.Context(), name, ApprovalCLI, AuditActor{ActorID: "cli", IdentityID: "local"}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	rows, err := store.List(t.Context(), AuditFilter{SkillName: name})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	counts := map[AuditAction]int{}
+	for _, r := range rows {
+		counts[r.Action]++
+	}
+	if counts[AuditInstall] != 1 {
+		t.Errorf("install rows = %d, want exactly 1", counts[AuditInstall])
+	}
+	if counts[AuditArchive] != 1 {
+		t.Errorf("archive rows = %d, want exactly 1", counts[AuditArchive])
+	}
+	// activate + restore both record as 'activate' (no 'restore' action constant).
+	if counts[AuditActivate] != 2 {
+		t.Errorf("activate rows (activate + restore) = %d, want exactly 2", counts[AuditActivate])
+	}
+	if len(rows) != 4 {
+		t.Fatalf("lifecycle rows = %d, want exactly 4 (install+activate+archive+restore)", len(rows))
+	}
+	// Newest-first: restore (the last action, recorded as activate) leads.
+	if rows[0].Action != AuditActivate {
+		t.Errorf("newest-first: rows[0].Action = %q, want activate (the restore)", rows[0].Action)
+	}
+
+	// --- Append-only: aura_app cannot UPDATE / DELETE / TRUNCATE the skill ledger ---
+	if _, err := pool.Exec(t.Context(), "UPDATE aura.skill_audit SET content_hash = 'tampered' WHERE skill_name = $1", name); err == nil {
+		t.Error("UPDATE aura.skill_audit as aura_app: want denied, got nil error")
+	} else if code := skillAuditSQLState(err); code != "42501" {
+		t.Errorf("UPDATE SQLSTATE = %q, want 42501 insufficient_privilege", code)
+	}
+	if _, err := pool.Exec(t.Context(), "DELETE FROM aura.skill_audit WHERE skill_name = $1", name); err == nil {
+		t.Error("DELETE aura.skill_audit as aura_app: want denied, got nil error")
+	} else if code := skillAuditSQLState(err); code != "42501" {
+		t.Errorf("DELETE SQLSTATE = %q, want 42501 insufficient_privilege", code)
+	}
+	if _, err := pool.Exec(t.Context(), "TRUNCATE aura.skill_audit"); err == nil {
+		t.Error("TRUNCATE aura.skill_audit as aura_app: want denied, got nil error")
+	} else if code := skillAuditSQLState(err); code != "42501" {
+		t.Errorf("TRUNCATE SQLSTATE = %q, want 42501 insufficient_privilege", code)
+	}
+
+	// All four rows survived every mutation attempt.
+	after, err := store.List(t.Context(), AuditFilter{SkillName: name})
+	if err != nil {
+		t.Fatalf("List after mutation attempts: %v", err)
+	}
+	if len(after) != 4 {
+		t.Fatalf("skill_audit rows tampered or removed: want 4 surviving rows, got %d", len(after))
 	}
 }

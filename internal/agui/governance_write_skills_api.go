@@ -79,6 +79,10 @@ func (s *Server) handleSkillInstall(w http.ResponseWriter, r *http.Request) {
 		writeSkillsWriteError(w, err)
 		return
 	}
+	// SPEC Prohibition #1 (no raw secret anywhere): a source can carry an embedded credential
+	// (`?token=...`, `user:pass@host`). Redact it before the echo crosses the wire — the
+	// held-out secret-scan (governance_write_secret_scan_test.go) catches a regression.
+	info.Source = sanitizeSkillSource(info.Source)
 	writeJSON(w, info)
 }
 

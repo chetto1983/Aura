@@ -34,6 +34,7 @@ require (
 	golang.org/x/net v0.55.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/text v0.37.0
+	golang.org/x/tools v0.44.0
 	gopkg.in/telebot.v4 v4.0.0-beta.9
 	pgregory.net/rapid v1.3.0
 	rsc.io/qr v0.2.0
