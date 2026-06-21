@@ -28,6 +28,9 @@ services:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
+      # Start the WhatsApp bridge with the stack (service_started, NOT service_healthy — Aura boot must never block on it; the connect routes fail-soft to 503).
+      whatsapp:
+        condition: service_started
     environment:
       AURA_AGUI_BIND: 0.0.0.0:9080
       AURA_SETUP_BIND: 0.0.0.0:9081
