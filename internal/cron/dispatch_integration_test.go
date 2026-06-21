@@ -322,10 +322,18 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 	// down one step at a time (bounded) until 0014's down drops identity_id, then
 	// re-up the same number of steps — the assertion stays pinned to 0014's
 	// reversibility, not to 0014 being the latest migration.
+	//
+	// The bound is HEAD-DERIVED (not a stale constant): reverting 0014 means landing
+	// at version 13, so the worst-case down distance is head-13. We add a small slack
+	// so the bound stays valid as new migrations land, while remaining finite (the
+	// guard is only there to catch a genuinely-non-reverting 0014, not to cap a moving
+	// head). A hardcoded bound silently went stale once head grew past 0021 (off-by-one
+	// at head=0022), so derive it from the live head.
+	maxDownSteps := headDownBound(ctx, t, migrateURL)
 	downSteps := 0
 	for columnExists(ctx, t, pool, "identity_id") {
-		if downSteps >= 8 {
-			t.Fatalf("identity_id still present after %d down steps — 0014's down did not drop it", downSteps)
+		if downSteps >= maxDownSteps {
+			t.Fatalf("identity_id still present after %d down steps (bound %d) — 0014's down did not drop it", downSteps, maxDownSteps)
 		}
 		if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
 			t.Fatalf("MigrateSteps down -1 (step %d toward reverting 0014): %v", downSteps+1, err)
@@ -338,6 +346,32 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 	if columnExists(ctx, t, pool, "identity_id") != true {
 		t.Fatal("identity_id column missing after re-applying 0014 — re-up is not clean")
 	}
+}
+
+// headDownBound returns a finite down-step bound that always reaches BELOW migration
+// 0014 from the current head. Reverting 0014 lands the schema at version 13, so the
+// worst-case down distance from head is (head-13); a small slack keeps the bound valid
+// across concurrent migrate races. It is derived from the LIVE head (db.Status) so it
+// never goes stale as new migrations land — a hardcoded bound silently broke once head
+// grew past 0021 (off-by-one at head=0022, deferred-items D-29-05-1).
+func headDownBound(ctx context.Context, t *testing.T, migrateURL string) int {
+	t.Helper()
+	pool, err := db.Open(ctx, &db.Config{URL: migrateURL})
+	if err != nil {
+		t.Fatalf("open migrate pool for head detection: %v", err)
+	}
+	defer pool.Close()
+	rows, err := db.Status(ctx, pool)
+	if err != nil || len(rows) == 0 {
+		t.Fatalf("migration status for head detection: %v (rows=%d)", err, len(rows))
+	}
+	head := int(rows[len(rows)-1].Version)
+	// (head-13) reaches version 13 (0014 reverted); +2 slack stays finite + future-proof.
+	bound := head - 13 + 2
+	if bound < 2 {
+		bound = 2
+	}
+	return bound
 }
 
 // columnExists probes information_schema for aura.pending_notifications.<col>.
