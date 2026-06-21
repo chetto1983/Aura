@@ -72,6 +72,7 @@ type Querier interface {
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
+	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
 	InsertPendingNotification(ctx context.Context, arg InsertPendingNotificationParams) (AuraPendingNotifications, error)
 	InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgentJobRuns, error)
@@ -104,6 +105,7 @@ type Querier interface {
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
+	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)

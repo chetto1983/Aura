@@ -183,6 +183,16 @@ type AuraKnowledgeMigrations struct {
 	AppliedAt pgtype.Timestamptz `json:"applied_at"`
 }
 
+// Append-only MCP-config-mutation audit ledger (Phase 29, MCPW-02). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 3). One immutable row per MCP config mutation, written inside the mutation db.WithTx.
+type AuraMcpAudit struct {
+	ID              pgtype.UUID        `json:"id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ActorIdentityID string             `json:"actor_identity_id"`
+	Action          string             `json:"action"`
+	ServerName      string             `json:"server_name"`
+	Reason          pgtype.Text        `json:"reason"`
+}
+
 // ask_user HITL pauses (Slice 1.5). Pending = resumed_at IS NULL. FIFO order: priority DESC, created_at ASC, token ASC.
 type AuraPausedStates struct {
 	Token              pgtype.UUID        `json:"token"`
