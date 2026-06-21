@@ -111,6 +111,14 @@ func TestOpenRejectsUnsafeCommandNameBeforeSpawn(t *testing.T) {
 	}
 }
 
+func TestCommandNameRegexAllowsWindowsRunnerShortPath(t *testing.T) {
+	t.Parallel()
+	command := `C:\Users\RUNNER~1\AppData\Local\Temp\go-build123\b001\aura.test.exe`
+	if !mcpCommandNameRe.MatchString(command) {
+		t.Fatalf("mcpCommandNameRe rejected Windows short path %q", command)
+	}
+}
+
 func TestOpenSpawnFailure(t *testing.T) {
 	_, err := Open(context.Background(), "nope", ServerConfig{Command: "this-binary-does-not-exist-12345"})
 	if err == nil || !strings.Contains(err.Error(), "spawn") {

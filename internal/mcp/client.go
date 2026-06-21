@@ -37,7 +37,7 @@ import (
 // protocolVersion is the MCP revision Aura negotiates.
 const protocolVersion = "2024-11-05"
 
-var mcpCommandNameRe = regexp.MustCompile(`^[A-Za-z0-9._:/\\-]+$`)
+var mcpCommandNameRe = regexp.MustCompile(`^[A-Za-z0-9._:/\\~-]+$`)
 
 // ErrTransport marks a broken MCP transport pipe/session. Callers use
 // IsTransportError rather than matching opaque OS error strings.
