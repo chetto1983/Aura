@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
@@ -209,69 +210,103 @@ export function SkillsBoard() {
   // active rows gain Archive skill; archived rows gain Restore skill; pending keeps NO
   // run/activate control. The lifecycle button is a SIBLING of the select button (never nested).
   const master = (
-    <div role="list" aria-label={t('governance.tabs.skills')} className="flex flex-col gap-1 p-2">
-      {lifecycleRows.map((skill) => (
-        <div key={skill.name} role="listitem" className="flex flex-col gap-1">
-          <button
-            type="button"
-            aria-pressed={selected === skill.name}
-            onClick={(e) => {
-              selectRow(skill.name, e.currentTarget);
-            }}
-            className={`flex min-h-[44px] w-full flex-col gap-1 rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              selected === skill.name
-                ? 'border-accent bg-accent text-on-accent'
-                : 'border-border bg-surface-2 text-text hover:border-border-strong'
+    <div role="list" aria-label={t('governance.tabs.skills')} className="flex flex-col gap-2 p-2">
+      {lifecycleRows.map((skill) => {
+        const isSelected = selected === skill.name;
+        const hasRowAction = tab === 'active' || tab === 'archived';
+        const archiveLabel = t('governance.skills.archive');
+        const restoreLabel = t('governance.skills.restore');
+        const metadataTone = isSelected ? 'text-on-accent/80' : 'text-text-muted';
+
+        return (
+          <div
+            key={skill.name}
+            role="listitem"
+            className={`flex flex-col rounded-md border bg-surface-2 shadow-[0_12px_28px_rgb(0_0_0_/_0.18)] transition-colors ${
+              isSelected ? 'border-accent' : 'border-border hover:border-border-strong'
             }`}
           >
-            <span className="flex items-center justify-between gap-2">
-              <span className="break-words text-[15.5px] font-semibold">{skill.name}</span>
-              <span className="shrink-0 text-[13px] text-text-muted">{skill.type}</span>
-            </span>
-            {/* Per-row metadata (content hash, mono) — the rest surfaces in the detail. */}
-            {skill.contentHash !== undefined && skill.contentHash !== '' ? (
-              <span className="break-all font-mono text-[13px] tabular-nums tracking-tight text-text-muted">
-                {skill.contentHash}
-              </span>
-            ) : null}
-            {tab === 'pending' ? (
-              <span className="text-[13px] text-warning">{t('governance.skills.pendingNote')}</span>
-            ) : null}
-          </button>
-          {tab === 'active' ? (
-            <button
-              type="button"
-              disabled={archiveMutation.isPending}
-              onClick={() => {
-                archiveMutation.mutate(skill.name);
-              }}
-              className="min-h-[44px] self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-            >
-              {t('governance.skills.archive')}
-            </button>
-          ) : null}
-          {tab === 'archived' ? (
-            <>
+            <div className="flex min-w-0 items-stretch gap-2">
               <button
                 type="button"
-                disabled={restoreMutation.isPending}
-                onClick={() => {
-                  setCollisionName(undefined);
-                  restoreMutation.mutate(skill.name);
+                aria-pressed={isSelected}
+                onClick={(e) => {
+                  selectRow(skill.name, e.currentTarget);
                 }}
-                className="min-h-[44px] self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                className={`flex min-h-[52px] min-w-0 flex-1 flex-col gap-1 rounded-md px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  hasRowAction ? 'rounded-r-sm' : ''
+                } ${
+                  isSelected
+                    ? 'bg-accent text-on-accent'
+                    : 'bg-transparent text-text hover:bg-surface-3'
+                }`}
               >
-                {t('governance.skills.restore')}
+                <span className="flex min-w-0 items-start justify-between gap-2">
+                  <span className="min-w-0 break-words text-[15.5px] font-semibold">
+                    {skill.name}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-sm px-2 py-0.5 text-[12px] ${
+                      isSelected
+                        ? 'bg-accent-pressed text-on-accent'
+                        : 'bg-surface-3 text-text-muted'
+                    }`}
+                  >
+                    {skill.type}
+                  </span>
+                </span>
+                {/* Per-row metadata (content hash, mono) — the rest surfaces in the detail. */}
+                {skill.contentHash !== undefined && skill.contentHash !== '' ? (
+                  <span
+                    className={`break-all font-mono text-[13px] tabular-nums tracking-tight ${metadataTone}`}
+                  >
+                    {skill.contentHash}
+                  </span>
+                ) : null}
+                {tab === 'pending' ? (
+                  <span className={`text-[13px] ${isSelected ? 'text-on-accent' : 'text-warning'}`}>
+                    {t('governance.skills.pendingNote')}
+                  </span>
+                ) : null}
               </button>
-              {collisionName === skill.name ? (
-                <p role="alert" className="text-[13px] text-danger">
-                  {t('governance.skills.collidingRestore', { name: skill.name })}
-                </p>
+              {tab === 'active' ? (
+                <button
+                  type="button"
+                  aria-label={archiveLabel}
+                  title={archiveLabel}
+                  disabled={archiveMutation.isPending}
+                  onClick={() => {
+                    archiveMutation.mutate(skill.name);
+                  }}
+                  className="m-1 flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-surface text-danger shadow-[0_10px_22px_rgb(0_0_0_/_0.22)] outline-none transition hover:border-danger hover:bg-danger/15 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Trash2 aria-hidden="true" focusable="false" className="h-4 w-4" />
+                </button>
               ) : null}
-            </>
-          ) : null}
-        </div>
-      ))}
+              {tab === 'archived' ? (
+                <button
+                  type="button"
+                  aria-label={restoreLabel}
+                  title={restoreLabel}
+                  disabled={restoreMutation.isPending}
+                  onClick={() => {
+                    setCollisionName(undefined);
+                    restoreMutation.mutate(skill.name);
+                  }}
+                  className="m-1 flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md border border-border-strong bg-surface text-accent-text shadow-[0_10px_22px_rgb(0_0_0_/_0.18)] outline-none transition hover:border-accent hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+                >
+                  <RotateCcw aria-hidden="true" focusable="false" className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            {tab === 'archived' && collisionName === skill.name ? (
+              <p role="alert" className="px-3 pb-2 text-[13px] text-danger">
+                {t('governance.skills.collidingRestore', { name: skill.name })}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 

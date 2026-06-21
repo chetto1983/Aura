@@ -86,3 +86,4 @@ graphify-out/*
 .planning/graphs/graph.json
 .planning/graphs/graph.html
 .planning/graphs/.last-build-snapshot.json
+.agents/skills/*

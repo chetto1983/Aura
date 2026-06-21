@@ -404,6 +404,24 @@ describe('SkillsBoard (GOV-02)', () => {
     });
   });
 
+  it('renders the archive action as a raised Lucide trash control', async () => {
+    fetchSkills.mockResolvedValue(ACTIVE);
+
+    render(<SkillsBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    const archiveButton = screen.getByRole('button', { name: 'Archive skill' });
+    expect(archiveButton.className).toContain('shadow-[');
+    expect(archiveButton.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByText('golang-testing').closest('[role="listitem"]')?.className).toContain(
+      'shadow-[',
+    );
+  });
+
   it('restores an archived skill; a colliding restore (409) shows the inline safe error', async () => {
     fetchSkills.mockImplementation((stage: string) =>
       Promise.resolve(

@@ -31,6 +31,9 @@ services:
       # Start the WhatsApp bridge with the stack (service_started, NOT service_healthy — Aura boot must never block on it; the connect routes fail-soft to 503).
       whatsapp:
         condition: service_started
+      # Calendar/PIM sidecar comes up with the stack too (service_started — never block boot; the connect routes fail-soft to 503).
+      aura-pim-mcp:
+        condition: service_started
     environment:
       AURA_AGUI_BIND: 0.0.0.0:9080
       AURA_SETUP_BIND: 0.0.0.0:9081
@@ -142,6 +145,10 @@ services:
       TTS_FORMAT: ${TTS_FORMAT:-opus}
       DOCUMENTS_BASE_URL: http://markitdown:8080
       MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
+      # Calendar/PIM connect proxy: the Go /api/connect/pim/admin/* proxy forwards to the
+      # sidecar's token-gated admin API over the docker network, injecting this admin token.
+      AURA_PIM_MCP_URL: http://aura-pim-mcp:8080
+      AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:-changeme-aura-pim-local}
       AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}
       AURA_PROFILE_CERTAINTY_N: ${AURA_PROFILE_CERTAINTY_N:-3}
     ports:
@@ -556,14 +563,27 @@ services:
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
+    # First-boot seed: the .NET host binds IConfiguration to whichever appsettings.json
+    # EXISTS at startup. With a fresh volume the data-dir file is absent, so it falls back
+    # to the baked (empty) /app/appsettings.json — while account writes go to /app/data.
+    # Result: created accounts never become visible (verified live: create→201 then "No
+    # accounts found"). Seeding an empty data-dir config makes the WRITABLE file the
+    # authoritative source (reloadOnChange then keeps created accounts live).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "test -s /app/data/appsettings.json || printf '{\"CalendarMcp\":{\"Accounts\":[]}}' > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll"
     environment:
       CALENDAR_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:-changeme-aura-pim-local}
       # The external base the sidecar uses to build the Google OAuth redirect URI
-      # (<base>/admin/auth/google/callback). Set it to the Caddy-fronted host
-      # (e.g. https://aura.local) so the URI is deterministic regardless of the
-      # cockpit→proxy→sidecar X-Forwarded path; register that exact URI in the Google
-      # client. Empty = derive from request headers (works only for direct/loopback).
-      CalendarMcp__ExternalBaseUrl: ${AURA_PIM_EXTERNAL_BASE_URL:-}
+      # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web
+      # application" client. Default targets the loopback host-publish (works for a user on
+      # the same machine as the Docker host; Google permits http://localhost:<port>). For a
+      # remote cockpit set AURA_PIM_EXTERNAL_BASE_URL to the Caddy-fronted public HTTPS host.
+      # (Empty derives from request headers and drops the port → wrong URI, so we default it.)
+      # NB: the server does Configuration.Sources.Clear() then AddEnvironmentVariables("CALENDAR_MCP_"),
+      # so the var MUST carry that prefix; after the strip it maps to CalendarMcp:ExternalBaseUrl.
+      CALENDAR_MCP_CalendarMcp__ExternalBaseUrl: ${AURA_PIM_EXTERNAL_BASE_URL:-http://localhost:8093}
     ports:
       - "127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8080"
     volumes:
