@@ -87,16 +87,17 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run        Runner
-	conv       ConversationStore
-	approvals  ApprovalStore
-	assets     AssetService
-	images     ImageFetcher
-	graph      GraphView
-	governance GovernanceProviders
-	onboarding OnboardingService
-	idgen      IDGenerator
-	cfg        ServerConfig
+	run             Runner
+	conv            ConversationStore
+	approvals       ApprovalStore
+	assets          AssetService
+	images          ImageFetcher
+	graph           GraphView
+	governance      GovernanceProviders
+	governanceWrite GovernanceWriteProviders
+	onboarding      OnboardingService
+	idgen           IDGenerator
+	cfg             ServerConfig
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.
@@ -168,6 +169,11 @@ func (s *Server) Mux() http.Handler {
 	// tasks + run history). Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only) lives in cmd/aura/serve_webui.go.
 	s.registerGovernanceRoutes(mux)
+	// MCPW-01/02/03 governance WRITE routes (Phase 29 plan 29-02): POST /api/governance/mcp
+	// (install) + PATCH .../{name}/env + POST .../{name}/{trust,enable,disable} + DELETE
+	// .../{name}. Colocated with their handlers; the parent-mux mount behind
+	// RequireCapability(governance.write) lives in cmd/aura/serve_webui.go.
+	s.registerGovernanceWriteRoutes(mux)
 	// ONBD-01/02 onboarding wizard routes (Phase 28 plan 28-05): POST /api/onboarding/start
 	// + /{token}/step + /{token}/provision + GET /{token}/telegram-status. Colocated with
 	// their handlers; the parent-mux mount (RequireCapability(identity.create) on start +
