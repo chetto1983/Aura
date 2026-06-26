@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -80,7 +81,9 @@ func TestFSWriteAtomicOverwriteAndMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o644 {
+	// Windows does not honor Unix permission bits (Stat reports 0666), so the
+	// exact-mode assertion only holds on POSIX.
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o644 {
 		t.Fatalf("create mode = %o, want 0644", perm)
 	}
 
@@ -96,7 +99,7 @@ func TestFSWriteAtomicOverwriteAndMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o644 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o644 {
 		t.Fatalf("overwrite mode = %o, want 0644", perm)
 	}
 
