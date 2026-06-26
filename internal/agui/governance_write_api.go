@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 )
@@ -103,9 +104,11 @@ func (s *Server) handleMCPEnvEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMCPTrust serves POST /api/governance/mcp/{name}/trust (MCPW-03, D-12): the
-// operator-direct trust-approve (NOT a model gate). It populates the today-empty
-// Trust.{ApprovedBy:principal, ApprovedAt:now, Reason} → atomic write + one trust audit row
-// (carrying the reason) → flips runnable → re-probes for the live tool count.
+// operator-direct trust-approve (NOT a model gate). At the HTTP boundary it REQUIRES a known
+// trust class + a non-empty reason (a blank/`{}`/empty body is a 400 with no provider call —
+// so a blocked server is never silently defaulted to trusted_local). It populates the
+// today-empty Trust.{ApprovedBy:principal, ApprovedAt:now, Reason} → atomic write + one trust
+// audit row (carrying the reason) → flips runnable → re-probes for the live tool count.
 func (s *Server) handleMCPTrust(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.beginMCPWrite(w, r)
 	if !ok {
@@ -115,7 +118,13 @@ func (s *Server) handleMCPTrust(w http.ResponseWriter, r *http.Request) {
 	if !decodeMCPBody(w, r, &body) {
 		return
 	}
-	res, err := s.governanceWrite.MCP.TrustApprove(r.Context(), actor, r.PathValue("name"), body.Class, body.Reason)
+	class := strings.TrimSpace(body.Class)
+	reason := strings.TrimSpace(body.Reason)
+	if class == "" || reason == "" || !mcp.IsKnownTrust(class) {
+		http.Error(w, "trust requires a known class and a non-empty reason", http.StatusBadRequest)
+		return
+	}
+	res, err := s.governanceWrite.MCP.TrustApprove(r.Context(), actor, r.PathValue("name"), class, reason)
 	if err != nil {
 		writeMCPWriteError(w, err)
 		return

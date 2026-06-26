@@ -307,6 +307,42 @@ func TestGovernanceWriteTrustPopulatesFields(t *testing.T) {
 	}
 }
 
+// TestGovernanceWriteTrustRejectsUnderspecified is the F-038 belt: the trust HTTP boundary
+// rejects an empty body, `{}`, a blank/whitespace class, a blank reason, and an unknown class
+// with a 400 — WITHOUT calling the provider (no config/audit mutation), so a blocked server is
+// never silently defaulted to trusted_local with a blank reason.
+func TestGovernanceWriteTrustRejectsUnderspecified(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"empty body", ""},
+		{"empty object", `{}`},
+		{"blank class", `{"class":"   ","reason":"operator vetted"}`},
+		{"missing class", `{"reason":"operator vetted"}`},
+		{"blank reason", `{"class":"trusted_local","reason":"   "}`},
+		{"missing reason", `{"class":"trusted_local"}`},
+		{"unknown class", `{"class":"super_trusted","reason":"operator vetted"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, fake := govWriteServer(newFakeMCPWrite())
+			fake.doc.MCPServers["srv"] = mcp.ManagedServer{Command: "srv-bin"}
+
+			rec := doGovWrite(t, s, http.MethodPost, "/api/governance/mcp/srv/trust", c.body, true)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+			if fake.lastTrust != (mcp.ManagedTrust{}) {
+				t.Errorf("rejected trust must not mutate trust, got %+v", fake.lastTrust)
+			}
+			if got := countAction(fake.audit, "trust:srv"); got != 0 {
+				t.Errorf("rejected trust must write no audit row, count = %d", got)
+			}
+		})
+	}
+}
+
 // TestGovernanceWriteEnableDisableIdempotent asserts each toggle is one named action and
 // returns 200.
 func TestGovernanceWriteEnableDisableIdempotent(t *testing.T) {
