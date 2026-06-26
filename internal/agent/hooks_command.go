@@ -160,12 +160,16 @@ func CommandHookManagerFromEnv(lookup func(string) (string, bool)) (*HookManager
 	return m, nil
 }
 
+// commandHookFailPolicy maps the operator-supplied fail_policy to a FailPolicy.
+// The DEFAULT (empty/unset) is FailClosed: a configured security hook that
+// crashes or times out must DENY the command, not allow it (F-006). Fail-open is
+// an explicit opt-in only.
 func commandHookFailPolicy(raw string) (FailPolicy, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "fail_open":
-		return FailOpen, nil
-	case "fail_closed":
+	case "", "fail_closed":
 		return FailClosed, nil
+	case "fail_open":
+		return FailOpen, nil
 	default:
 		return FailClosed, fmt.Errorf("unknown command hook fail_policy %q", raw)
 	}

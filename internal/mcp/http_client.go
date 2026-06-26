@@ -11,11 +11,17 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const httpProtocolVersion = "2025-06-18"
 const httpSSEMaxLineBytes = 1024 * 1024
 const httpRPCMaxBodyBytes = 8 << 20
+
+// httpCloseTimeout bounds the session-DELETE round-trip on Close so an
+// unresponsive remote endpoint cannot hang shutdown indefinitely; it mirrors the
+// stdio client's closeWaitTimeout budget.
+const httpCloseTimeout = 5 * time.Second
 
 // HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
 // plus optional static headers, bearer token, and an override http.Client.
@@ -130,7 +136,9 @@ func (c *HTTPClient) Close() error {
 	if c.sessionID == "" {
 		return nil
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, c.endpoint, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), httpCloseTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.endpoint, nil)
 	if err != nil {
 		return err
 	}

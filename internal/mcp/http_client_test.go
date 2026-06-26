@@ -243,6 +243,37 @@ func TestHTTPTimeout(t *testing.T) {
 	}
 }
 
+func TestHTTPCloseBoundedOnUnresponsiveDelete(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(httpInitHandler(t, "session-close", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+			return
+		}
+		<-release // block until released, simulating an unresponsive endpoint
+	}))
+	defer srv.Close()
+	defer close(release) // LIFO: unblock the handler before srv.Close waits on it
+	c := openHTTPTest(t, srv, HTTPConfig{})
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { done <- c.Close() }()
+
+	select {
+	case err := <-done:
+		elapsed := time.Since(start)
+		if elapsed > httpCloseTimeout+2*time.Second {
+			t.Fatalf("Close took %v, want bounded by ~%v", elapsed, httpCloseTimeout)
+		}
+		if err == nil {
+			t.Fatalf("want error from timed-out DELETE, got nil")
+		}
+	case <-time.After(httpCloseTimeout + 5*time.Second):
+		t.Fatalf("Close hung past the bounded timeout")
+	}
+}
+
 func writeHTTPRPC(t *testing.T, w http.ResponseWriter, id int64, result any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

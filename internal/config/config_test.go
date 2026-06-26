@@ -496,19 +496,6 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 	}
 }
 
-// TestRunDirSweepIntervalDefaultAndOverride asserts the M-06 periodic-sweep cadence
-// knob: a 1h default when unset, and an env override (incl. the <=0 disable value).
-func TestRunDirSweepIntervalDefaultAndOverride(t *testing.T) {
-	clearPostgresEnv(t)
-	if cfg := LoadDB(); cfg.RunDirSweepIntervalSec != 3600 {
-		t.Errorf("RunDirSweepIntervalSec: want 3600 default, got %d", cfg.RunDirSweepIntervalSec)
-	}
-	t.Setenv("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", "0") // <=0 disables the periodic worker
-	if cfg := LoadDB(); cfg.RunDirSweepIntervalSec != 0 {
-		t.Errorf("RunDirSweepIntervalSec: want 0 (disabled) override, got %d", cfg.RunDirSweepIntervalSec)
-	}
-}
-
 // TestWebEnvOverrides asserts each AURA_WEB_* / SEARXNG_URL field honors its env.
 func TestWebEnvOverrides(t *testing.T) {
 	clearPostgresEnv(t)

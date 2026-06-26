@@ -64,6 +64,14 @@ func (a *LlmAgent) executeBatch(ctx context.Context, budget *Budget, calls []llm
 }
 
 func (a *LlmAgent) runToolRecovering(ctx context.Context, budget *Budget, call llm.ToolCall, startedAt time.Time) (run toolRunResult) {
+	// Resolve the Mutating bit BEFORE executing so a tool that panics after a
+	// side effect is still classified as mutating in the recovery path (F-031):
+	// otherwise the completion gate (a.sideEffected) would not arm and the turn
+	// could finish without the post-mutation safeguard.
+	mutating := false
+	if tool, ok := a.registry.Get(call.Function.Name); ok {
+		mutating = tool.Spec().Mutating
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			recordRecoveredPanic("execute_batch")
@@ -77,6 +85,7 @@ func (a *LlmAgent) runToolRecovering(ctx context.Context, budget *Budget, call l
 				Arguments:  call.Function.Arguments,
 				StartedAt:  startedAt,
 				EndedAt:    endedAt,
+				Mutating:   mutating,
 				Preview:    preview,
 				Result:     tools.ToolResult{Preview: preview, Bytes: len(preview)},
 				Err:        msg,
