@@ -44,7 +44,8 @@ type Config struct {
 	MCPServers     map[string]mcp.ServerConfig
 	MCPPolicies    map[string]mcp.ManagedServer
 	MCPServersErr  error
-	RunDir         string
+	RunDir         string // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
+	RunDirErr      error  // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
 	ToolPreviewCap int
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
@@ -260,6 +261,9 @@ func (c *Config) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("config: required secret(s) unset: %s", strings.Join(missing, ", "))
 	}
+	if c.RunDirErr != nil {
+		return fmt.Errorf("config: %w", c.RunDirErr)
+	}
 	return nil
 }
 
@@ -328,6 +332,8 @@ func loadBase() *Config {
 	}
 	mcpServers, mcpPolicies, mcpServersErr := loadMCPServers()
 
+	runDir, runDirErr := absRunDir(envDefault("AURA_RUN_DIR", defaultRunDir()))
+
 	return &Config{
 		DB: db.Config{
 			URL:          appURL,
@@ -348,7 +354,8 @@ func loadBase() *Config {
 		MCPServers:     mcpServers,
 		MCPPolicies:    mcpPolicies,
 		MCPServersErr:  mcpServersErr,
-		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
+		RunDir:         runDir,
+		RunDirErr:      runDirErr,
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
@@ -488,6 +495,21 @@ func defaultSkillInjectionBlocklist() []string {
 		// DeepSeek / Gemma / Qwen
 		"<|fim_begin|>", "<|fim_hole|>", "<start_of_turn>", "<end_of_turn>",
 	}
+}
+
+// absRunDir normalizes an AURA_RUN_DIR value to an absolute path (F-041) so
+// sidecars resolve against a stable root, not the process cwd — a relative value
+// would make tool-result and conversation sidecars unreadable after a restart
+// from a different directory, and read_tool_output hard-fails on a relative root.
+// filepath.Abs is idempotent on an already-absolute path (defaultRunDir always is)
+// and only errors when the cwd is unobtainable; that error is returned for Validate
+// to surface at boot rather than silently keeping a relative path.
+func absRunDir(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir, fmt.Errorf("AURA_RUN_DIR=%q could not be resolved to an absolute path: %w", dir, err)
+	}
+	return abs, nil
 }
 
 // defaultRunDir returns a sensible per-user run directory for sidecar tool
