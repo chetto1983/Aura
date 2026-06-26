@@ -219,24 +219,42 @@ le tre, i 12GB sono comodi.
   (loss-on-completion). LoRA r=32/α=64, lr=2e-4, 3 epoche.
 
 ### Re-point a Qwen3 8B (diff `pipeline.yaml`)
+Guida di riferimento: **Unsloth "Qwen3 — How to Run & Fine-tune"** + notebook
+"Qwen3 Reasoning + Conversational". (NON Qwen3.5: lì il QLoRA 4-bit è sconsigliato;
+su Qwen3 8B è la via standard.)
 ```yaml
 base_model: unsloth/Qwen3-8B          # era functiongemma-270m-it
-max_seq_len: 8192                      # Qwen3 nativo 32K
+max_seq_len: 2048                      # parti piccolo per validare, poi scala (Qwen3 → 40K)
+load_in_4bit: true                     # QLoRA: sta nel 3060
 # Marker ChatML (NON Gemma) — CRITICO per train_on_responses_only:
 instruction_part: "<|im_start|>user\n"
 response_part: "<|im_start|>assistant\n"
-# verificare i token esatti nel tokenizer Qwen3 prima del run
+# verificare i token esatti + EOS nel tokenizer Qwen3 prima del run
 # rivalutare lora_r / lr / batch_size: scala 270M → 8B
 ```
-> **Trappola #1**: lasciare i marker Gemma con Qwen3 → la loss maschera il pezzo
-> sbagliato, training corrotto senza errori. Cambiali in ChatML.
+Install: `pip install --upgrade --force-reinstall --no-cache-dir unsloth unsloth_zoo`
+(transformers aggiornato). Unsloth: 2× più veloce, 70% meno VRAM, contesto 8× più lungo.
+
+> **Trappola #1 (marker)**: lasciare i marker Gemma con Qwen3 → la loss maschera il
+> pezzo sbagliato, training corrotto senza errori. Cambiali in ChatML.
+> **Trappola #2 (template parity)**: addestra e servi con lo **STESSO chat template
+> + EOS**. Unsloth segnala che la causa #1 di un modello che rende peggio in un altro
+> runtime è il template/EOS sbagliato a inference time. Train ↔ `llama-server` allineati.
+
+### Reasoning nel dataset — CORRETTO (mix, non rimozione)
+- **NON togliere il reasoning.** Unsloth avverte: fine-tunare Qwen3 su un dataset
+  **solo** non-reasoning **degrada la sua capacità di ragionamento** — proprio ciò
+  per cui hai scelto Qwen3 (tier High). Raccomandano **75% reasoning / 25% diretto**.
+- **La strategia giusta per Aura** (emerge dalla tua architettura a tier):
+  - Esempi **tier High** → con **traccia CoT** (teacher-forced da V4 Flash).
+  - Esempi **tier None/Low** → risposta diretta, senza CoT.
+  - → preserva il reasoning **e** insegna il comportamento per-tier. Meglio del 75/25 generico.
+- Strippa comunque i `<think>` dei turni **precedenti** dalla history degli esempi
+  multi-turn (il CoT sta solo sul turno corrente, mai rimesso in history).
 
 ### Vincolo e stack
 - Teacher via API → **solo SFT black-box** (no GKD/logit KD: richiedono teacher
   caricato; V4 Flash 284B ingestibile).
-- **Niente thinking nel dataset** (parti così): distilli routing+risposta dei *tuoi*
-  tool, lasci il thinking nativo di Qwen3 al classifier. Strippa i `<think>` dagli
-  esempi multi-turn.
 - Judge filter = step più importante (scarta call malformate).
 - Dataset italiano NON serve (tool/prompt in inglese).
 
