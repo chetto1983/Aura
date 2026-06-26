@@ -58,7 +58,9 @@ func (t *FSWrite) Execute(ctx context.Context, raw json.RawMessage) (ToolResult,
 			return ToolResult{}, fmt.Errorf("fs_write: %w", err)
 		}
 	}
-	if err := os.WriteFile(path, []byte(a.Content), 0o644); err != nil {
+	// Atomic temp-file + rename (AG-045): a crash mid-write never leaves a
+	// truncated file and a reader never sees a partial one — matches fs_edit.
+	if err := atomicWriteFile(path, []byte(a.Content), 0o644); err != nil {
 		return ToolResult{}, fmt.Errorf("fs_write: %w", err)
 	}
 	return NewResult(ctx, fmt.Sprintf("wrote %d bytes to %s", len(a.Content), path))

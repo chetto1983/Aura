@@ -62,6 +62,56 @@ func TestFSWriteCreatesFileAndDirs(t *testing.T) {
 	}
 }
 
+func TestFSWriteAtomicOverwriteAndMode(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "out.txt")
+	ctx := ctxWith(t, "sess-fs-atomic", "call-fs")
+	tool := &FSWrite{}
+
+	// Atomic create: no leftover temp marker, content correct, 0o644 mode.
+	if _, err := tool.Execute(ctx, mustJSON(t, fsWriteArgs{Path: p, Content: "first"})); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil || string(got) != "first" {
+		t.Fatalf("create content: got %q err %v", got, err)
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o644 {
+		t.Fatalf("create mode = %o, want 0644", perm)
+	}
+
+	// Overwrite an existing file replaces it fully (no append) and keeps mode.
+	if _, err := tool.Execute(ctx, mustJSON(t, fsWriteArgs{Path: p, Content: "second-longer"})); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	got, err = os.ReadFile(p)
+	if err != nil || string(got) != "second-longer" {
+		t.Fatalf("overwrite content: got %q err %v", got, err)
+	}
+	info, err = os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o644 {
+		t.Fatalf("overwrite mode = %o, want 0644", perm)
+	}
+
+	// The atomic temp file must not linger in the target directory.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".aura-tmp-") {
+			t.Fatalf("leftover temp file after atomic write: %s", e.Name())
+		}
+	}
+}
+
 func TestFSEditUniqueAndAmbiguous(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.go")
