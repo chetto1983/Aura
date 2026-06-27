@@ -216,16 +216,21 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 		// do NOT closeMCPServers, do NOT abort. The non-deferred built-ins keep the
 		// registry valid even when every MCP server is dropped (Pitfall 6).
 		var closer func() error
+		var mounted []string
 		var err error
 		if _, managed := cfg.MCPPolicies[name]; managed {
-			closer, _, err = mcptools.MountManagedServer(ctx, reg, name, cfg.MCPPolicies[name])
+			closer, mounted, err = mcptools.MountManagedServer(ctx, reg, name, cfg.MCPPolicies[name])
 		} else {
-			closer, _, err = mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name])
+			closer, mounted, err = mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name])
 		}
 		if err != nil {
 			slog.Warn("mcp mount failed", "server", name, "err", err)
 			continue
 		}
+		// Log the mounted tool count so a server that mounts zero tools (a degraded
+		// sidecar) is visible in the boot log rather than indistinguishable from a
+		// silent success — the signal that was missing when memory mounted 0 tools.
+		slog.Info("mcp mounted", "server", name, "tools", len(mounted))
 		closers = append(closers, closer)
 	}
 	return reg, handles, closers, nil

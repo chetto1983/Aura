@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -88,15 +91,54 @@ func TestMCPProbe_EmptyCommand(t *testing.T) {
 	}
 }
 
-// TestMCPProbe_HTTPEndpointReportedWithoutDial proves an HTTP/streamable server (no
-// stdio command) is reported reachable-by-config without spawning anything.
-func TestMCPProbe_HTTPEndpointReportedWithoutDial(t *testing.T) {
-	got := ProbeServer(context.Background(), "http-srv", ManagedServer{Type: ServerTypeStreamableHTTP, URL: "https://example.invalid/mcp"})
+// TestMCPProbe_HTTPEndpointDialsAndCountsTools proves a streamable-HTTP server is now
+// DIALED (initialize + tools/list) and its real tool count reported — the fix for the
+// cockpit board showing 0 tools for every HTTP recipe (memory/calendar/pim/whatsapp).
+func TestMCPProbe_HTTPEndpointDialsAndCountsTools(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req rpcReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "probe-1")
+			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			writeHTTPRPC(t, w, req.ID, map[string]any{"tools": []map[string]any{
+				{"name": "memory_search", "description": "Search", "inputSchema": map[string]any{"type": "object"}},
+				{"name": "memory_add_fact", "description": "Add", "inputSchema": map[string]any{"type": "object"}},
+			}})
+		default:
+			t.Fatalf("unexpected method %q", req.Method)
+		}
+	}))
+	defer server.Close()
+
+	got := ProbeServer(context.Background(), "memory", ManagedServer{Type: ServerTypeStreamableHTTP, URL: server.URL})
 	if !got.OK {
-		t.Errorf("ProbeServer(http): want OK (endpoint configured), got %+v", got)
+		t.Fatalf("ProbeServer(http): want OK, got %+v", got)
 	}
-	if got.ToolCount != 0 {
-		t.Errorf("ProbeServer(http): want ToolCount 0 (no dial), got %d", got.ToolCount)
+	if got.ToolCount != 2 {
+		t.Errorf("ProbeServer(http): want ToolCount 2, got %d (detail=%q)", got.ToolCount, got.Detail)
+	}
+}
+
+// TestMCPProbe_HTTPEndpointDialFailure proves an unreachable HTTP endpoint fails its own
+// row (OK=false) with a redacted error instead of a misleading reachable-by-config OK.
+func TestMCPProbe_HTTPEndpointDialFailure(t *testing.T) {
+	got := ProbeServer(context.Background(), "dead", ManagedServer{Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp"})
+	if got.OK {
+		t.Errorf("ProbeServer(dead http): want OK=false, got %+v", got)
+	}
+	if got.Err == "" {
+		t.Errorf("ProbeServer(dead http): want a redacted Err, got empty")
 	}
 }
 

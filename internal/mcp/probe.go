@@ -34,29 +34,28 @@ type ProbeResult struct {
 // ProbeServer dials one configured MCP server under ctx, completes the initialize
 // handshake, and counts its advertised tools (tools/list) — the real "mounted tool
 // count", not a mere LookPath reachability check (the heavier live probe GOV-01's
-// acceptance requires). An HTTP/streamable server (no stdio command) is reported as
-// reachable-by-config without a dial (the stdio client cannot speak to it). A dial,
-// handshake, or list failure yields OK=false with a redacted Err for THAT server only.
+// acceptance requires). It probes BOTH transports: a streamable-HTTP server is dialed
+// over its endpoint (OpenServer → OpenHTTP, deriving auth from env) exactly like the
+// agent's own mount, and a stdio server is spawned. Previously HTTP servers were reported
+// "reachable-by-config" with ToolCount=0, which made the cockpit governance board show
+// 0 tools for every HTTP recipe (memory, calendar, pim, whatsapp) even when the agent had
+// mounted their full tool surface — a false "broken" signal. A dial, handshake, or list
+// failure yields OK=false with a redacted Err for THAT server only (bounded by ctx).
 //
 // It is exported so cmd/aura's `mcp doctor` (package main) can render its text output
 // from the same structured probe the governance handler consumes.
 func ProbeServer(ctx context.Context, name string, server ManagedServer) ProbeResult {
 	res := ProbeResult{Name: name}
 
-	// HTTP/streamable endpoints have no stdio command to spawn; the stdio Client cannot
-	// dial them, so report the configured endpoint rather than a tool count.
-	if server.Type == ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
-		res.OK = true
-		res.Detail = RedactSecrets("http endpoint configured")
-		return res
-	}
-	if strings.TrimSpace(server.Command) == "" {
+	// A stdio server with no launch command cannot be dialed; an HTTP server is keyed by
+	// its URL, so this guard applies only to the stdio transport.
+	if normalizedServerType(server) != ServerTypeStreamableHTTP && strings.TrimSpace(server.Command) == "" {
 		res.Detail = "runtime missing command"
 		res.Err = res.Detail
 		return res
 	}
 
-	client, err := Open(ctx, name, ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env})
+	client, err := OpenServer(ctx, name, server)
 	if err != nil {
 		res.Detail = "dial failed"
 		res.Err = RedactSecrets(err.Error())
