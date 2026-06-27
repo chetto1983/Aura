@@ -2,6 +2,8 @@
 // (credentials + capabilities). The interview / review / complete phases own their own CTAs.
 // Extracted from OnboardingWizard to keep that file lean (CLAUDE.md no-god-class).
 
+import { Button } from '@/components/ui/button';
+
 export function OnboardingWizardNav({
   onBack,
   backLabel,
@@ -17,21 +19,17 @@ export function OnboardingWizardNav({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={onBack}
-        className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text-muted outline-none transition-colors hover:border-border-strong hover:text-text focus-visible:ring-2 focus-visible:ring-ring"
+        className="text-text-muted hover:text-text"
       >
         {backLabel}
-      </button>
-      <button
-        type="button"
-        disabled={nextDisabled}
-        onClick={onNext}
-        className="min-h-[44px] rounded-md bg-accent px-6 py-2 text-[13px] font-semibold text-on-accent outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-      >
+      </Button>
+      <Button type="button" disabled={nextDisabled} onClick={onNext} className="px-6">
         {nextLabel}
-      </button>
+      </Button>
     </div>
   );
 }

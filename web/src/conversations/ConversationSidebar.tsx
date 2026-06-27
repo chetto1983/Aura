@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { AlertCircle, Archive, MessageSquareText, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
@@ -12,6 +13,21 @@ import {
   useUnarchiveConversation,
   type Conversation,
 } from './useConversations';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // ConversationSidebar is the CHAT-02 conversation manager that replaces the
 // AppShell left-aside placeholder labels. It lists conversations recent-first
@@ -57,30 +73,42 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
         <h2 className="text-[0.75rem] font-medium uppercase tracking-wider text-text-faint">
           {t('conversations.heading')}
         </h2>
-        <label className="flex cursor-pointer items-center gap-1.5 text-[0.75rem] text-text-muted">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="conversation-include-archived"
             checked={includeArchived}
-            onChange={(event) => {
-              setIncludeArchived(event.target.checked);
+            onCheckedChange={(checked) => {
+              setIncludeArchived(checked === true);
             }}
-            className="h-3.5 w-3.5 accent-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           />
-          {t('conversations.includeArchived')}
-        </label>
+          <Label
+            htmlFor="conversation-include-archived"
+            className="cursor-pointer text-[0.75rem] font-normal text-text-muted"
+          >
+            {t('conversations.includeArchived')}
+          </Label>
+        </div>
       </div>
 
       {isPending ? (
-        <p className="text-sm text-text-muted">{t('conversations.loading')}</p>
+        <ConversationListSkeleton label={t('conversations.loading')} />
       ) : isError ? (
-        <p role="alert" className="text-sm text-danger">
-          {t('conversations.loadError')}
-        </p>
+        <Alert variant="destructive" className="bg-surface">
+          <AlertCircle data-icon aria-hidden="true" className="size-4" />
+          <AlertDescription>{t('conversations.loadError')}</AlertDescription>
+        </Alert>
       ) : conversations.length === 0 ? (
-        <div className="py-4">
-          <p className="text-sm font-medium text-text">{t('conversations.empty.heading')}</p>
-          <p className="mt-1 text-[0.8125rem] text-text-muted">{t('conversations.empty.body')}</p>
-        </div>
+        <Empty className="flex-none border border-dashed border-border bg-surface-2/40 py-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <MessageSquareText data-icon aria-hidden="true" className="size-5" />
+            </EmptyMedia>
+            <EmptyTitle className="text-sm">{t('conversations.empty.heading')}</EmptyTitle>
+            <EmptyDescription className="text-[0.8125rem]">
+              {t('conversations.empty.body')}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
           {groups.map((group) => (
@@ -177,66 +205,106 @@ function ConversationRow({
   const invalid = editing && draft.trim().length === 0;
 
   return (
-    <li
-      className={`group rounded-[var(--radius-md)] border px-2 py-1.5 ${
-        selected
-          ? 'border-l-2 border-l-accent border-border bg-surface-2'
-          : 'border-transparent hover:border-border hover:bg-surface-2/60'
-      }`}
-      data-animate="surface"
-    >
-      {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-          }}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              commit();
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              setEditing(false);
-            }
-          }}
-          aria-label={t('conversations.renameLabel')}
-          aria-invalid={ariaInvalid(invalid)}
-          className="min-h-[var(--row-h)] w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => {
-            onSelect(conv.ID);
-          }}
-          onDoubleClick={startEditing}
-          aria-current={selected ? 'true' : undefined}
-          className="flex w-full items-center gap-2 truncate text-left text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          {archived ? (
-            <span className="shrink-0 text-[0.75rem] uppercase tracking-wide text-text-faint">
-              {t('conversations.archivedTag')}
+    <li>
+      <Card
+        className={`group gap-2 p-2 transition-colors ${
+          selected
+            ? 'border-accent bg-surface-2 shadow-[inset_3px_0_0_var(--accent)]'
+            : 'border-transparent bg-transparent hover:border-border hover:bg-surface-2/60'
+        }`}
+        data-animate="surface"
+      >
+        {editing ? (
+          <Input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+            }}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commit();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                setEditing(false);
+              }
+            }}
+            aria-label={t('conversations.renameLabel')}
+            aria-invalid={ariaInvalid(invalid)}
+            className="bg-surface text-sm"
+          />
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              onSelect(conv.ID);
+            }}
+            onDoubleClick={startEditing}
+            aria-current={selected ? 'true' : undefined}
+            className="h-auto min-h-11 w-full justify-start gap-2 whitespace-normal rounded-md px-2 py-2 text-left font-normal hover:bg-surface-3"
+          >
+            <MessageSquareText
+              data-icon
+              aria-hidden="true"
+              className="mt-0.5 size-4 shrink-0 text-text-faint"
+            />
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              {archived ? (
+                <Badge variant="secondary" className="shrink-0 text-[0.75rem]">
+                  {t('conversations.archivedTag')}
+                </Badge>
+              ) : null}
+              <span className="truncate text-sm text-text">{label}</span>
             </span>
-          ) : null}
-          <span className="truncate">{label}</span>
-        </button>
-      )}
+          </Button>
+        )}
 
-      {!editing ? (
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.75rem] text-text-muted opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
-          <RowAction label={t('conversations.actions.rename')} onClick={startEditing} />
-          {archived ? (
-            <RowAction label={t('conversations.actions.unarchive')} onClick={onUnarchive} />
-          ) : (
-            <RowAction label={t('conversations.actions.archive')} onClick={onArchive} />
-          )}
-          <RowAction label={t('conversations.actions.delete')} onClick={onRequestDelete} danger />
-        </div>
-      ) : null}
+        {!editing ? (
+          <div className="flex flex-wrap gap-1 text-[0.75rem] text-text-muted opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
+            <RowAction
+              label={t('conversations.actions.rename')}
+              icon={<Pencil data-icon aria-hidden="true" className="size-3.5" />}
+              onClick={startEditing}
+            />
+            {archived ? (
+              <RowAction
+                label={t('conversations.actions.unarchive')}
+                icon={<RotateCcw data-icon aria-hidden="true" className="size-3.5" />}
+                onClick={onUnarchive}
+              />
+            ) : (
+              <RowAction
+                label={t('conversations.actions.archive')}
+                icon={<Archive data-icon aria-hidden="true" className="size-3.5" />}
+                onClick={onArchive}
+              />
+            )}
+            <RowAction
+              label={t('conversations.actions.delete')}
+              icon={<Trash2 data-icon aria-hidden="true" className="size-3.5" />}
+              onClick={onRequestDelete}
+              danger
+            />
+          </div>
+        ) : null}
+      </Card>
     </li>
+  );
+}
+
+function ConversationListSkeleton({ label }: { readonly label: string }) {
+  return (
+    <div aria-label={label} className="flex flex-col gap-2">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <Card key={index} className="gap-2 bg-surface-2/40 p-3">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </Card>
+      ))}
+    </div>
   );
 }
 
@@ -276,22 +344,29 @@ function startOfDay(date: Date): Date {
 
 function RowAction({
   label,
+  icon,
   onClick,
   danger,
 }: {
   readonly label: string;
+  readonly icon: ReactNode;
   readonly onClick: () => void;
   readonly danger?: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       onClick={onClick}
-      className={`rounded-sm outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-        danger ? 'text-danger' : 'text-text-muted hover:text-text'
+      className={`px-2 text-[0.75rem] font-medium ${
+        danger
+          ? 'text-danger hover:bg-danger/15 hover:text-danger'
+          : 'text-text-muted hover:text-text'
       }`}
     >
+      {icon}
       {label}
-    </button>
+    </Button>
   );
 }

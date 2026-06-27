@@ -3,6 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { isTerminal, parseOptions } from './approvalState';
 import { useResolveApproval, type Approval, type ResolveAction } from './useApprovals';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 // InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06) is the "perfectly like Claude
 // Code" in-thread card: an ask_user interrupt rendered IN that conversation's
@@ -121,25 +127,27 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
       {options.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {options.map((option) => (
-            <button
+            <Button
               key={option}
               type="button"
+              variant="outline"
+              size="sm"
               disabled={busy}
               onClick={() => {
                 submit('accept', option);
               }}
-              className="min-h-9 rounded-[var(--radius-md)] border border-border bg-surface px-3 text-[0.8125rem] font-medium text-text outline-none hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+              className="text-[0.8125rem] hover:border-accent"
             >
               {option}
-            </button>
+            </Button>
           ))}
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          <label htmlFor={freeTextId} className="text-[0.75rem] text-text-muted">
+          <Label htmlFor={freeTextId} className="text-[0.75rem] font-normal text-text-muted">
             {t('approval.card.freeText')}
-          </label>
-          <textarea
+          </Label>
+          <Textarea
             id={freeTextId}
             value={freeText}
             onChange={(event) => {
@@ -148,65 +156,71 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
             placeholder={t('approval.card.freeTextPlaceholder')}
             rows={2}
             aria-invalid={ariaInvalid(failed && freeText.trim().length === 0)}
-            className="w-full resize-y rounded-[var(--radius-md)] border border-border bg-surface px-2 py-1.5 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="resize-y bg-surface text-sm"
           />
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
         {options.length === 0 ? (
-          <button
+          <Button
             type="button"
             disabled={busy}
             onClick={() => {
               submit('accept', freeText);
             }}
-            className="min-h-9 rounded-[var(--radius-md)] bg-accent px-3 text-[0.8125rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+            className="text-[0.8125rem]"
           >
             {t('approval.card.answer')}
-          </button>
+          </Button>
         ) : null}
-        <button
+        <Button
           type="button"
+          variant="outline"
           disabled={busy}
           onClick={() => {
             // Decline sends NO operator content — the agent continues informed of
             // the refusal, not treating the typed text as the answer (T-25-17).
             submit('decline');
           }}
-          className="min-h-9 rounded-[var(--radius-md)] border border-border px-3 text-[0.8125rem] font-medium text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+          className="text-[0.8125rem] text-text-muted hover:text-text"
         >
           {t('approval.card.decline')}
-        </button>
+        </Button>
 
         {confirmingCancel ? (
           <span className="flex items-center gap-2">
             <span className="text-[0.8125rem] text-warning">
               {t('approval.card.confirmCancel')}
             </span>
-            <button
+            <Button
               type="button"
+              variant="destructive"
+              size="sm"
               disabled={busy}
               onClick={() => {
                 submit('cancel');
               }}
-              className="min-h-9 rounded-[var(--radius-md)] px-3 text-[0.8125rem] font-medium text-danger outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+              className="text-[0.8125rem]"
             >
               {t('approval.card.confirmCancelYes')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setConfirmingCancel(false);
               }}
-              className="min-h-9 rounded-[var(--radius-md)] px-3 text-[0.8125rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="text-[0.8125rem] text-text-muted hover:text-text"
             >
               {t('approval.card.confirmCancelNo')}
-            </button>
+            </Button>
           </span>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             disabled={busy}
             onClick={() => {
               // While streaming, ask for an inline confirm (NOT a modal). When the
@@ -214,17 +228,17 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
               if (isStreaming) setConfirmingCancel(true);
               else submit('cancel');
             }}
-            className="min-h-9 rounded-[var(--radius-md)] px-3 text-[0.8125rem] font-medium text-danger outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+            className="text-[0.8125rem] text-danger hover:bg-danger/15 hover:text-danger"
           >
             {t('approval.card.cancel')}
-          </button>
+          </Button>
         )}
       </div>
 
       {failed ? (
-        <p role="alert" className="text-[0.8125rem] text-danger">
-          {t('approval.card.error')}
-        </p>
+        <Alert variant="destructive" className="bg-surface">
+          <AlertDescription>{t('approval.card.error')}</AlertDescription>
+        </Alert>
       ) : null}
     </CardShell>
   );
@@ -241,12 +255,12 @@ function CardShell({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-accent/40 bg-surface-2 px-4 py-3">
+    <Card className="gap-2 border-accent/40 bg-surface-2 px-4 py-3">
       {header}
       {/* The backend ask_user question, VERBATIM (no client-side rewrite). */}
       <p className="text-sm leading-relaxed text-text">{question}</p>
       {children}
-    </div>
+    </Card>
   );
 }
 
@@ -256,11 +270,11 @@ function CardShell({
 function SkillRiskStrip({ token }: { readonly token: string }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-warning bg-warning/15 px-3 py-2">
-      <span className="flex items-center gap-1 text-[0.8125rem] font-semibold text-warning">
+    <Card className="gap-1 border-warning bg-warning/15 px-3 py-2">
+      <Badge variant="warning" className="text-[0.8125rem]">
         <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning" />
         {t('approval.skill.riskBadge')}
-      </span>
+      </Badge>
       <span className="text-[0.8125rem] leading-relaxed text-text">
         {t('approval.skill.containerNote')}
       </span>
@@ -268,7 +282,7 @@ function SkillRiskStrip({ token }: { readonly token: string }) {
         {t('approval.skill.resumeToken')}
         <code className="break-all font-mono text-text">{token}</code>
       </span>
-    </div>
+    </Card>
   );
 }
 
@@ -287,12 +301,15 @@ const CHIP_DOT: Record<ChipTone, string> = {
 
 function TerminalChip({ tone, label }: { readonly tone: ChipTone; readonly label: string }) {
   return (
-    <span className={`flex items-center gap-1 text-[0.8125rem] ${CHIP_TEXT[tone]}`}>
+    <Badge
+      variant={tone === 'danger' ? 'danger' : tone}
+      className={`text-[0.8125rem] ${CHIP_TEXT[tone]}`}
+    >
       <span
         aria-hidden="true"
         className={`inline-block h-2 w-2 shrink-0 rounded-sm ${CHIP_DOT[tone]}`}
       />
       {label}
-    </span>
+    </Badge>
   );
 }

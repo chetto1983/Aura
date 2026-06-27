@@ -1,9 +1,16 @@
 import { useId, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { Spinner } from '../components/Spinner';
 import { installMcpServer, type McpInstallRequest } from './governanceApi';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 // McpInstallPanel (MCPW-01) — the install form in the BoardLayout detail slot. A 2-segment
 // Recipe | Custom (stdio) toggle (Recipe default, lower-risk/guided); Recipe renders a
@@ -116,14 +123,16 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
         <h3 id={headingId} className="font-display text-[20px] font-semibold text-text">
           {t('governance.mcp.install.heading')}
         </h3>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={t('governance.closeAria')}
-          className="min-h-[44px] min-w-[44px] rounded-md text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-text-muted hover:text-text"
         >
-          ✕
-        </button>
+          <X data-icon aria-hidden="true" className="size-4" />
+        </Button>
       </header>
 
       {/* Mode toggle — Recipe | Custom (stdio). */}
@@ -133,29 +142,26 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
         className="flex gap-1 rounded-md bg-surface-2 p-1"
       >
         {(['recipe', 'custom'] as const).map((m) => (
-          <button
+          <Button
             key={m}
             type="button"
+            variant={mode === m ? 'default' : 'ghost'}
             aria-pressed={mode === m}
             onClick={() => {
               setMode(m);
             }}
-            className={`min-h-[44px] flex-1 rounded-md px-3 py-2 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              mode === m
-                ? 'bg-accent text-on-accent'
-                : 'text-text-muted hover:bg-surface-3 hover:text-text'
-            }`}
+            className="flex-1"
           >
             {t(`governance.mcp.install.mode.${m}`)}
-          </button>
+          </Button>
         ))}
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor={nameId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={nameId} className="text-[13px] font-semibold text-text">
           {t('governance.mcp.install.nameLabel')}
-        </label>
-        <input
+        </Label>
+        <Input
           id={nameId}
           type="text"
           value={name}
@@ -165,7 +171,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
           placeholder={mode === 'recipe' ? recipe : undefined}
           aria-invalid={ariaInvalid(duplicate)}
           aria-describedby={duplicate ? `${nameId}-err` : undefined}
-          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="font-mono text-[13px]"
         />
         {duplicate ? (
           <p id={`${nameId}-err`} role="alert" className="text-[13px] text-danger">
@@ -194,7 +200,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       )}
 
       {/* Live read-only preview — CLI-equivalent + the destination, BEFORE save. */}
-      <div className="flex flex-col gap-2 rounded-md bg-surface-3 p-4">
+      <Card className="gap-2 bg-surface-3 p-4">
         <div className="flex flex-col gap-1">
           <span className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
             {t('governance.mcp.install.cliLabel')}
@@ -207,7 +213,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
           </span>
           <code className="break-all font-mono text-[13px] text-text">{DEFAULT_DESTINATION}</code>
         </div>
-      </div>
+      </Card>
 
       {mode === 'custom' ? (
         <p role="note" className="text-[13px] text-text-muted">
@@ -216,30 +222,24 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       ) : null}
 
       {mutation.isError ? (
-        <p role="alert" className="text-[13px] text-danger">
-          {t('governance.error')}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{t('governance.error')}</AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
           disabled={!canInstall}
           aria-busy={mutation.isPending}
           onClick={submit}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
         >
           {mutation.isPending ? <Spinner /> : null}
           {t('governance.mcp.install.submit')}
-        </button>
-        <button
-          type="button"
-          disabled={mutation.isPending}
-          onClick={onClose}
-          className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        >
+        </Button>
+        <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>
           {t('governance.mcp.install.discard')}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -263,42 +263,42 @@ function RecipeFields({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <label htmlFor={selectId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={selectId} className="text-[13px] font-semibold text-text">
           {t('governance.mcp.install.recipeLabel')}
-        </label>
-        <select
+        </Label>
+        <NativeSelect
           id={selectId}
           value={recipe}
           onChange={(event) => {
             onRecipeChange(event.target.value);
           }}
-          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full bg-surface-3 text-[13px]"
         >
           {RECIPES.map((r) => (
-            <option key={r.name} value={r.name}>
+            <NativeSelectOption key={r.name} value={r.name}>
               {r.name}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       {requiredEnv.map((key) => {
         const fieldId = `recipe-env-${key}`;
         return (
           <div key={key} className="flex flex-col gap-1">
-            <label
+            <Label
               htmlFor={fieldId}
               className="break-all font-mono text-[13px] font-semibold text-text"
             >
               {key}
-            </label>
-            <input
+            </Label>
+            <Input
               id={fieldId}
               type="text"
               value={recipeEnv[key] ?? ''}
               onChange={(event) => {
                 onEnvChange(key, event.target.value);
               }}
-              className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="font-mono text-[13px]"
             />
           </div>
         );
@@ -323,17 +323,17 @@ function CustomFields({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <label htmlFor={commandId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={commandId} className="text-[13px] font-semibold text-text">
           {t('governance.mcp.install.commandLabel')}
-        </label>
-        <input
+        </Label>
+        <Input
           id={commandId}
           type="text"
           value={command}
           onChange={(event) => {
             onCommandChange(event.target.value);
           }}
-          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="font-mono text-[13px]"
         />
       </div>
       <div className="flex flex-col gap-1">
@@ -341,7 +341,7 @@ function CustomFields({
           {t('governance.mcp.install.argsLabel')}
         </span>
         {args.map((arg, index) => (
-          <input
+          <Input
             key={`arg-${String(index)}`}
             type="text"
             aria-label={t('governance.mcp.install.argAria', { index: index + 1 })}
@@ -351,18 +351,20 @@ function CustomFields({
               next[index] = event.target.value;
               onArgsChange(next);
             }}
-            className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="font-mono text-[13px]"
           />
         ))}
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => {
             onArgsChange([...args, '']);
           }}
-          className="min-h-[44px] self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+          className="self-start"
         >
+          <Plus data-icon aria-hidden="true" className="size-4" />
           {t('governance.mcp.install.addArg')}
-        </button>
+        </Button>
       </div>
     </div>
   );

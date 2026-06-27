@@ -1,6 +1,11 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { OnboardingAnswers, OnboardingStepResponse } from './onboardingApi';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 // InterviewStep (ONBD-02 / D-03) — drives the 5-step LoopAgent over /step. While the session
 // status is 'active' it renders the current question (backend-supplied content) + a free-text
@@ -79,82 +84,73 @@ export function InterviewStep({
           </pre>
 
           {editing ? (
-            <div className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4">
+            <Card className="gap-3 bg-surface p-4">
               <div className="flex flex-col gap-1">
-                <label htmlFor={`${answerId}-name`} className="text-[13px] font-semibold text-text">
+                <Label htmlFor={`${answerId}-name`} className="text-[13px] font-semibold text-text">
                   {t('onboarding.credentials.emailLabel')}
-                </label>
-                <input
+                </Label>
+                <Input
                   id={`${answerId}-name`}
                   type="text"
                   value={editName}
                   onChange={(e) => {
                     setEditName(e.target.value);
                   }}
-                  className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-2 text-[15.5px] text-text outline-none focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+                  className="bg-surface-2 text-[15.5px]"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor={`${answerId}-role`} className="text-[13px] font-semibold text-text">
+                <Label htmlFor={`${answerId}-role`} className="text-[13px] font-semibold text-text">
                   {t('onboarding.steps.interview')}
-                </label>
-                <input
+                </Label>
+                <Input
                   id={`${answerId}-role`}
                   type="text"
                   value={editRole}
                   onChange={(e) => {
                     setEditRole(e.target.value);
                   }}
-                  className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-2 text-[15.5px] text-text outline-none focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+                  className="bg-surface-2 text-[15.5px]"
                 />
               </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={submitEdit}
-                className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
+              <Button type="button" disabled={busy} onClick={submitEdit}>
                 {t('onboarding.cta.applyEdit')}
-              </button>
-            </div>
+              </Button>
+            </Card>
           ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onConfirm}
-              className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
+            <Button type="button" disabled={busy} onClick={onConfirm}>
               {t('onboarding.cta.confirm')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
               disabled={busy}
               onClick={() => {
                 setEditing((v) => !v);
               }}
-              className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               {t('onboarding.cta.edit')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               disabled={busy}
               onClick={onSkip}
-              className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text-muted outline-none transition-colors hover:border-border-strong hover:text-text focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="border border-border bg-surface-2 text-text-muted hover:border-border-strong hover:text-text"
             >
               {t('onboarding.cta.skip')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <label htmlFor={answerId} className="text-[13px] font-semibold text-text">
+            <Label htmlFor={answerId} className="text-[13px] font-semibold text-text">
               {t('onboarding.interview.answerLabel')}
-            </label>
-            <textarea
+            </Label>
+            <Textarea
               id={answerId}
               rows={4}
               value={answer}
@@ -162,26 +158,22 @@ export function InterviewStep({
               onChange={(e) => {
                 setAnswer(e.target.value);
               }}
-              className="rounded-md border border-border bg-surface-2 px-3 py-2 text-[15.5px] leading-relaxed text-text outline-none transition-colors placeholder:text-text-faint focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+              className="bg-surface-2 text-[15.5px] leading-relaxed"
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={submitAnswer}
-              className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
+            <Button type="button" disabled={busy} onClick={submitAnswer}>
               {t('onboarding.cta.continue')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               disabled={busy}
               onClick={onSkip}
-              className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text-muted outline-none transition-colors hover:border-border-strong hover:text-text focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="border border-border bg-surface-2 text-text-muted hover:border-border-strong hover:text-text"
             >
               {t('onboarding.cta.skip')}
-            </button>
+            </Button>
           </div>
         </div>
       )}

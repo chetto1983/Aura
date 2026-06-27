@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
 
 // DeleteConfirmDialog gates the D-07 hard delete (T-25-14): "Delete permanently"
 // never fires Store.Delete without this confirm. It is a native <dialog> opened
@@ -71,22 +72,24 @@ export function DeleteConfirmDialog({
         {t('conversations.delete.body', { title })}
       </p>
       <div className="mt-4 flex justify-end gap-2">
-        <button
+        <Button
           ref={cancelRef}
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[var(--radius-md)] border border-border px-3 text-sm text-text outline-none hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          variant="outline"
+          className="px-3 text-sm"
         >
           {t('conversations.delete.cancel')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={onConfirm}
           aria-describedby={bodyId}
-          className="min-h-[44px] rounded-[var(--radius-md)] bg-danger px-3 text-sm font-medium text-white outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          variant="destructive"
+          className="px-3 text-sm"
         >
           {t('conversations.delete.confirm')}
-        </button>
+        </Button>
       </div>
     </dialog>
   );

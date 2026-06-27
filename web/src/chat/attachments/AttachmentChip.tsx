@@ -1,5 +1,8 @@
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { UploadItem } from './types';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface AttachmentChipProps {
   readonly item: UploadItem;
@@ -10,21 +13,41 @@ export function AttachmentChip({ item, onRemove }: AttachmentChipProps) {
   const { t } = useTranslation();
   const label = statusLabel(item, t);
   return (
-    <span className="inline-flex min-h-9 max-w-full items-center gap-2 rounded-[var(--radius-md)] border border-border bg-surface-2 px-2 py-1 text-xs text-text">
+    <span className="inline-flex min-h-10 max-w-full items-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text">
       <span className="min-w-0 truncate">{item.file.name}</span>
-      <span className="shrink-0 text-text-muted">{label}</span>
-      <button
+      <Badge variant={statusVariant(item.status)} className="shrink-0 text-[0.75rem]">
+        {label}
+      </Badge>
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         aria-label={t('chat.attachments.remove', { name: item.file.name })}
         onClick={() => {
           onRemove(item.localId);
         }}
-        className="flex min-h-7 min-w-7 items-center justify-center rounded-full text-text-muted outline-none hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="h-8 min-h-8 w-8 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
       >
-        <span aria-hidden="true">x</span>
-      </button>
+        <X data-icon aria-hidden="true" className="size-3.5" />
+      </Button>
     </span>
   );
+}
+
+function statusVariant(
+  status: UploadItem['status'],
+): 'secondary' | 'warning' | 'success' | 'danger' {
+  switch (status) {
+    case 'ready':
+      return 'success';
+    case 'uploading':
+    case 'processing':
+    case 'queued':
+      return 'warning';
+    case 'failed':
+    case 'refused':
+      return 'danger';
+  }
 }
 
 function statusLabel(item: UploadItem, t: ReturnType<typeof useTranslation>['t']): string {

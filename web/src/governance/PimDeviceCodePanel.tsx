@@ -24,7 +24,8 @@ export function PimDeviceCodePanel({
   const status = useQuery({
     queryKey: ['connect', 'pim', 'auth', accountId],
     queryFn: () => pimAuthStatus(accountId),
-    refetchInterval: (query) => (TERMINAL.has(query.state.data?.status ?? '') ? false : AUTH_POLL_MS),
+    refetchInterval: (query) =>
+      TERMINAL.has(query.state.data?.status ?? '') ? false : AUTH_POLL_MS,
     retry: false,
   });
 
@@ -36,7 +37,9 @@ export function PimDeviceCodePanel({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-3">
-      <p className="text-[13px] font-semibold text-text">{t('governance.mcp.calendar.device.heading')}</p>
+      <p className="text-[13px] font-semibold text-text">
+        {t('governance.mcp.calendar.device.heading')}
+      </p>
 
       <p className="text-[13px] text-text-muted">{t('governance.mcp.calendar.device.codeLabel')}</p>
       <p className="select-all break-all font-mono text-[22px] font-semibold tracking-[0.18em] text-text">

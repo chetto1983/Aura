@@ -1,7 +1,12 @@
+import { ExternalLink, Inbox } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { isTerminal } from './approvalState';
 import { useApprovals, type Approval } from './useApprovals';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 
 // ApprovalList (APRV-01 / D-04) is the lightweight cross-thread popover the header
 // badge opens: one row per pending ask_user across ALL threads. Each row shows the
@@ -39,10 +44,17 @@ export function ApprovalList({ titleFor, onOpen }: ApprovalListProps) {
     <div
       role="region"
       aria-label={t('approval.list.label')}
-      className="flex max-h-80 w-80 flex-col gap-1 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface p-2 shadow-lg"
+      className="flex max-h-80 w-80 flex-col gap-2 overflow-y-auto rounded-md border border-border bg-surface p-2 shadow-lg"
     >
       {rows.length === 0 ? (
-        <p className="px-2 py-3 text-sm text-text-muted">{t('approval.list.empty')}</p>
+        <Empty className="flex-none border border-dashed border-border bg-surface-2/40 py-6">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Inbox data-icon aria-hidden="true" className="size-5" />
+            </EmptyMedia>
+            <EmptyTitle className="text-sm">{t('approval.list.empty')}</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ul className="flex flex-col gap-1">
           {rows.map((row) => (
@@ -72,35 +84,40 @@ function ApprovalRow({ row, title, onOpen }: ApprovalRowProps) {
   const terminal = isTerminal(row);
 
   return (
-    <li className="rounded-[var(--radius-md)] border border-border bg-surface-2 px-2 py-1.5">
-      <p className="truncate text-[0.8125rem] font-medium text-text">
-        {title} <span className="text-text-faint">·</span>{' '}
-        <span className="font-normal text-text-muted">{row.question}</span>
-      </p>
-      <div className="mt-1 flex items-center justify-between gap-2">
-        {terminal ? (
-          // D-06: explicit terminal state, never silently dropped. Icon + text +
-          // warning tone (never colour alone).
-          <span className="flex items-center gap-1.5 text-[0.75rem] text-warning">
-            <span
-              aria-hidden="true"
-              className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning"
-            />
-            {t('approval.terminal.expired')}
-          </span>
-        ) : (
-          <span className="text-[0.75rem] text-text-faint">
-            {t(`approval.kind.${row.kind}`, row.kind)}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={onOpen}
-          className="rounded-[var(--radius-sm)] px-2 py-0.5 text-[0.8125rem] font-medium text-accent outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          {t('approval.list.open')}
-        </button>
-      </div>
+    <li>
+      <Card className="gap-2 bg-surface-2 p-2">
+        <p className="truncate text-[0.8125rem] font-medium text-text">
+          {title} <span className="text-text-faint">·</span>{' '}
+          <span className="font-normal text-text-muted">{row.question}</span>
+        </p>
+        <div className="flex items-center justify-between gap-2">
+          {terminal ? (
+            // D-06: explicit terminal state, never silently dropped. Icon + text +
+            // warning tone (never colour alone).
+            <Badge variant="warning" className="text-[0.75rem]">
+              <span
+                aria-hidden="true"
+                className="inline-block h-2 w-2 shrink-0 rounded-sm bg-warning"
+              />
+              {t('approval.terminal.expired')}
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[0.75rem]">
+              {t(`approval.kind.${row.kind}`, row.kind)}
+            </Badge>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onOpen}
+            className="px-2 text-[0.8125rem] text-accent hover:text-accent"
+          >
+            <ExternalLink data-icon aria-hidden="true" className="size-3.5" />
+            {t('approval.list.open')}
+          </Button>
+        </div>
+      </Card>
     </li>
   );
 }

@@ -7,6 +7,7 @@ import {
   whatsappConnectLogout,
   whatsappConnectStatus,
 } from './governanceApi';
+import { Button } from '@/components/ui/button';
 
 // WhatsAppConnect — the inline "Link device" section the MCP server detail renders when the
 // selected server is the WhatsApp one. It polls the connect status (4s); when paired/connected
@@ -75,17 +76,18 @@ export function WhatsAppConnect() {
           {status.data !== undefined && status.data.jid !== '' ? (
             <p className="break-all font-mono text-[13px] text-text">{status.data.jid}</p>
           ) : null}
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => {
               logout.mutate();
             }}
             disabled={logout.isPending}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+            className="self-start px-3 text-[13px]"
           >
             {logout.isPending ? <Spinner /> : null}
             {t('governance.mcp.connect.unlink')}
-          </button>
+          </Button>
           {logout.isError ? (
             <p role="alert" className="text-[13px] text-danger">
               {t('governance.mcp.connect.unlinkError')}

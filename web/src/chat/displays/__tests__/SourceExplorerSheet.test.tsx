@@ -259,9 +259,9 @@ describe('SourceExplorerSheet (render, D-03 / DISP-05)', () => {
     render(<SourceExplorerSheet open sources={SOURCES} onClose={vi.fn()} />);
     const titleHeader = screen.getByRole('button', { name: 'Sort by Title' });
     fireEvent.click(titleHeader); // asc
-    expect(within(titleHeader).getByText('↑')).toBeTruthy();
+    expect(titleHeader.querySelector('.lucide-arrow-up')).toBeTruthy();
     fireEvent.click(titleHeader); // desc
-    expect(within(titleHeader).getByText('↓')).toBeTruthy();
+    expect(titleHeader.querySelector('.lucide-arrow-down')).toBeTruthy();
   });
 
   it('the close controls (backdrop + header button) both fire onClose', () => {

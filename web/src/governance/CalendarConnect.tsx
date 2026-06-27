@@ -30,6 +30,7 @@ import {
   type PimGoogleStart,
   type PimProviderId,
 } from './pimApi';
+import { Button } from '@/components/ui/button';
 
 // CalendarConnect — the inline calendar/PIM connect section the MCP server detail renders for the
 // aura-pim-mcp server. It lists the configured accounts (~10s poll) each with a Disconnect button,
@@ -121,18 +122,19 @@ function AccountList({
                 {acct.provider ? `${acct.provider} · ${acct.id}` : acct.id}
               </span>
             </span>
-            <button
+            <Button
               type="button"
+              variant="outline"
               disabled={remove.isPending}
               aria-busy={remove.isPending}
               onClick={() => {
                 remove.mutate(acct.id);
               }}
-              className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              className="shrink-0 px-3 text-[13px]"
             >
               {remove.isPending ? <Spinner /> : null}
               {t('governance.mcp.calendar.disconnect')}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -299,15 +301,15 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         onPriority={setPriority}
       />
 
-      <button
+      <Button
         type="submit"
         disabled={create.isPending}
         aria-busy={create.isPending}
-        className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+        className="self-start text-[13px] disabled:cursor-wait"
       >
         {create.isPending ? <Spinner /> : null}
         {t('governance.mcp.calendar.submit')}
-      </button>
+      </Button>
 
       {create.isError ? (
         <p role="alert" className="text-[13px] text-danger">

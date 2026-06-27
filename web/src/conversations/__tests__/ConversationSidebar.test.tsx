@@ -108,6 +108,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     await waitFor(() => {
       expect(screen.getByText('Latest run')).toBeTruthy();
     });
+    expect(screen.getByText('Latest run').closest('[data-slot="card"]')).not.toBeNull();
     // The store returns recent-first; the rendered order preserves it.
     const titles = screen.getAllByText(/run$/).map((el) => el.textContent);
     expect(titles).toEqual(['Latest run', 'Older run']);
@@ -124,7 +125,9 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   it('shows archived rows after the include-archived toggle', async () => {
     renderSidebar();
     await screen.findByText('Latest run');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show archived' }));
+    const checkbox = screen.getByRole('checkbox', { name: 'Show archived' });
+    expect(checkbox.getAttribute('data-slot')).toBe('checkbox');
+    fireEvent.click(checkbox);
     await waitFor(() => {
       expect(screen.getByText('Archived run')).toBeTruthy();
     });

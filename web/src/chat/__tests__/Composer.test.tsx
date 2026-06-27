@@ -56,6 +56,8 @@ describe('Composer attachments', () => {
   it('disables send while uploads are blocking', () => {
     render(<Composer uploads={uploads({ hasBlockingUploads: true })} />);
 
-    expect(screen.getByLabelText('Send message')).toHaveProperty('disabled', true);
+    const send = screen.getByLabelText('Send message');
+    expect(send).toHaveProperty('disabled', true);
+    expect(send.getAttribute('data-slot')).toBe('button');
   });
 });

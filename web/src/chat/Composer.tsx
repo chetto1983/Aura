@@ -1,8 +1,10 @@
 import { useAuiState, ComposerPrimitive } from '@assistant-ui/react';
+import { ArrowUp, Mic, Paperclip, Square } from 'lucide-react';
 import { useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import type { AttachmentUploads } from './attachments/useAttachmentUploads';
+import { Button } from '@/components/ui/button';
 
 // Composer: the query input + the Send↔Stop swap. Enter sends / Shift+Enter
 // newlines / Esc cancels are handled by ComposerPrimitive.Input. Stop is
@@ -121,22 +123,30 @@ export function Composer({ uploads }: ComposerProps) {
               aria-label={t('chat.attachments.add')}
               onChange={handleFileChange}
             />
-            <button
+            <Button
               type="button"
+              size="icon"
+              variant="ghost"
               aria-label={t('chat.attachments.add')}
               onClick={() => fileInputRef.current?.click()}
-              className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="rounded-full text-text-muted hover:text-text"
             >
-              <PaperclipIcon />
-            </button>
-            <button
+              <Paperclip data-icon aria-hidden="true" className="size-4" />
+            </Button>
+            <Button
               type="button"
+              size="icon"
+              variant="ghost"
               aria-label={t(isRecording ? 'chat.attachments.micStop' : 'chat.attachments.mic')}
               onClick={handleMic}
-              className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="rounded-full text-text-muted hover:text-text"
             >
-              {isRecording ? <StopIcon /> : <MicIcon />}
-            </button>
+              {isRecording ? (
+                <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+              ) : (
+                <Mic data-icon aria-hidden="true" className="size-4" />
+              )}
+            </Button>
           </>
         ) : null}
         <ComposerPrimitive.Input
@@ -146,83 +156,22 @@ export function Composer({ uploads }: ComposerProps) {
           className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
         {isRunning ? (
-          <ComposerPrimitive.Cancel
-            aria-label={t('chat.composer.stopAria')}
-            className="flex min-h-10 min-w-10 items-center justify-center rounded-full bg-accent text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-current" />
-          </ComposerPrimitive.Cancel>
+          <Button asChild size="icon" className="rounded-full">
+            <ComposerPrimitive.Cancel aria-label={t('chat.composer.stopAria')}>
+              <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+            </ComposerPrimitive.Cancel>
+          </Button>
         ) : (
-          <ComposerPrimitive.Send
-            aria-label={t('chat.composer.sendAria')}
-            disabled={sendDisabled}
-            className="flex min-h-10 min-w-10 items-center justify-center rounded-full bg-accent text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:bg-surface-3 disabled:text-text-disabled"
-          >
-            <ArrowUpIcon />
-          </ComposerPrimitive.Send>
+          <Button asChild size="icon" className="rounded-full">
+            <ComposerPrimitive.Send
+              aria-label={t('chat.composer.sendAria')}
+              disabled={sendDisabled}
+            >
+              <ArrowUp data-icon aria-hidden="true" className="size-4" />
+            </ComposerPrimitive.Send>
+          </Button>
         )}
       </div>
     </ComposerPrimitive.Root>
-  );
-}
-
-function PaperclipIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.8-8.8" />
-    </svg>
-  );
-}
-
-function MicIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <path d="M12 19v3" />
-    </svg>
-  );
-}
-
-function StopIcon() {
-  return <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-current" />;
-}
-
-function ArrowUpIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 19V5" />
-      <path d="m5 12 7-7 7 7" />
-    </svg>
   );
 }

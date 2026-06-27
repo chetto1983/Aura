@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { MODES, isLiveSurfaceIntent, type SurfaceIntent } from './modes';
+import { Button } from '@/components/ui/button';
 
 export function ModeSwitcher({
   active,
@@ -17,23 +18,25 @@ export function ModeSwitcher({
       {MODES.map((mode) => {
         const disabled = !isLiveSurfaceIntent(mode);
         return (
-          <button
+          <Button
             key={mode}
             type="button"
+            variant="ghost"
+            size="sm"
             aria-current={mode === active ? 'page' : undefined}
             aria-disabled={disabled ? true : undefined}
             title={disabled ? t('shell.modeUnavailable') : undefined}
             onClick={() => {
               if (!disabled) onSelect(mode);
             }}
-            className={`min-h-8 shrink-0 rounded-[var(--radius-md)] px-2.5 text-xs font-medium outline-none transition aria-[current=page]:bg-surface-3 aria-[current=page]:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+            className={`shrink-0 px-2.5 text-xs font-medium aria-[current=page]:bg-surface-3 aria-[current=page]:text-text ${
               disabled
                 ? 'cursor-not-allowed text-text-disabled'
                 : 'hover:bg-surface-2 hover:text-text'
             }`}
           >
             {t(`shell.modes.${mode}`)}
-          </button>
+          </Button>
         );
       })}
     </nav>

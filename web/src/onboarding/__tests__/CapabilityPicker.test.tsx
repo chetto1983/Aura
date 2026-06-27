@@ -58,12 +58,12 @@ describe('CapabilityPicker (D-06)', () => {
 
   it('toggles a capability in and out of the controlled selection', () => {
     render(<Harness options={OPTIONS} />);
-    const first = screen.getByRole<HTMLInputElement>('checkbox', { name: /skills.read/ });
-    expect(first.checked).toBe(false);
+    const first = screen.getByRole('checkbox', { name: /skills.read/ });
+    expect(first.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(first);
-    expect(first.checked).toBe(true);
+    expect(first.getAttribute('aria-checked')).toBe('true');
     fireEvent.click(first);
-    expect(first.checked).toBe(false);
+    expect(first.getAttribute('aria-checked')).toBe('false');
   });
 
   it('renders the no-grantable-capabilities copy when the option list is empty', () => {

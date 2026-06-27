@@ -22,6 +22,7 @@ describe('AttachmentCard actions', () => {
 
     render(<AttachmentCard asset={readyAsset} onPromote={promote} onRemove={remove} />);
 
+    expect(screen.getByText('manual.pdf').closest('[data-slot="card"]')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Promote' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove manual.pdf' }));
 

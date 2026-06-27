@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // CapabilityPicker (ONBD-01a / D-06) — a checklist over the creator's grants returned by /start,
 // which are ALREADY '*'-excluded server-side. The picker offers NO '*' option and renders the hint
@@ -49,13 +50,12 @@ export function CapabilityPicker({ options, selected, onToggle }: CapabilityPick
                       : 'border-border bg-surface-2 text-text hover:border-border-strong'
                   }`}
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={checked}
-                    onChange={() => {
+                    onCheckedChange={() => {
                       onToggle(name);
                     }}
-                    className="h-5 w-5 shrink-0 accent-[var(--color-accent-text)] outline-none"
+                    className="size-5"
                   />
                   {/* Backend-supplied capability name — React-escaped, mono (identifier). */}
                   <span className="break-all font-mono text-[15.5px]">{name}</span>

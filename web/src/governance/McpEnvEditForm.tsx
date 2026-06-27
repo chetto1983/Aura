@@ -3,6 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { setMcpServerEnv, type McpEnvChip } from './governanceApi';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // McpEnvEditForm (MCPW-02) — the four-state redacted env editor that REPLACES the read-only
 // env-keys <section> of McpServerDetail in edit mode. It renders the FOUR env states
@@ -153,21 +159,21 @@ export function McpEnvEditForm({
           return (
             <li key={row.key} className="flex flex-col gap-1">
               <span className="flex items-center justify-between gap-2">
-                <label
+                <Label
                   htmlFor={fieldId}
                   className="break-all font-mono text-[13px] font-semibold text-text"
                 >
                   {row.key}
-                </label>
-                <span className={`flex items-center gap-1 text-[13px] ${stateTone(state)}`}>
+                </Label>
+                <Badge variant={stateVariant(state)} className={`text-[13px] ${stateTone(state)}`}>
                   <span
                     aria-hidden="true"
                     className={`inline-block h-2 w-2 shrink-0 rounded-sm ${STATE_DOT[state]}`}
                   />
                   {t(STATE_LABEL[state])}
-                </span>
+                </Badge>
               </span>
-              <input
+              <Input
                 id={fieldId}
                 type="text"
                 value={row.value}
@@ -178,7 +184,7 @@ export function McpEnvEditForm({
                 // was never sent. A missing required var shows an em-dash placeholder.
                 placeholder={row.present ? undefined : '—'}
                 aria-describedby={row.secret ? `${fieldId}-hint` : undefined}
-                className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="font-mono text-[13px]"
               />
               {row.secret ? (
                 <span id={`${fieldId}-hint`} className="text-[13px] text-text-muted">
@@ -191,10 +197,7 @@ export function McpEnvEditForm({
       </ul>
 
       {offending.length > 0 ? (
-        <div
-          role="note"
-          className="flex flex-col gap-1 rounded-md border border-warning bg-warning/10 px-3 py-2"
-        >
+        <Card role="note" className="gap-1 border-warning bg-warning/10 px-3 py-2">
           <p className="text-[13px] font-semibold text-warning">
             {t('governance.mcp.env.softWarning.heading')}
           </p>
@@ -208,34 +211,28 @@ export function McpEnvEditForm({
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       ) : null}
 
       {mutation.isError ? (
-        <p role="alert" className="text-[13px] text-danger">
-          {t('governance.error')}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{t('governance.error')}</AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
           disabled={mutation.isPending}
           aria-busy={mutation.isPending}
           onClick={submit}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
         >
           {mutation.isPending ? <Spinner /> : null}
           {t('governance.mcp.env.save')}
-        </button>
-        <button
-          type="button"
-          disabled={mutation.isPending}
-          onClick={onClose}
-          className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        >
+        </Button>
+        <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>
           {t('governance.mcp.env.discard')}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -248,4 +245,10 @@ function stateTone(state: EnvState): string {
   // required (present): default text — signals "needs attention", distinct from muted optional
   // (UI-SPEC §2 four-state table: required label = `text`).
   return 'text-text';
+}
+
+function stateVariant(state: EnvState): 'secondary' | 'warning' | 'danger' {
+  if (state === 'missing') return 'danger';
+  if (state === 'placeholder') return 'warning';
+  return 'secondary';
 }

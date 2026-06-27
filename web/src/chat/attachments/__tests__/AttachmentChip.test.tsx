@@ -33,8 +33,11 @@ describe('AttachmentChip', () => {
     expect(screen.getByText('Ready')).toBeTruthy();
     expect(screen.getByText('Failed')).toBeTruthy();
     expect(screen.getByText('Refused')).toBeTruthy();
+    expect(screen.getByText('Ready').getAttribute('data-slot')).toBe('badge');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove ready.pdf' }));
+    const removeButton = screen.getByRole('button', { name: 'Remove ready.pdf' });
+    expect(removeButton.getAttribute('data-slot')).toBe('button');
+    fireEvent.click(removeButton);
 
     expect(remove).toHaveBeenCalledWith('local-ready');
   });

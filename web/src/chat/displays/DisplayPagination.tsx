@@ -1,5 +1,8 @@
 import { Children, useId, useState, type ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 // DisplayPagination (D-PAGINATION): in-card pagination that lives INSIDE each
 // display card. Ports the elysia DisplayPagination LOGIC (Children.toArray +
@@ -70,20 +73,21 @@ export function DisplayPagination({
           <label htmlFor={selectId} className="text-[0.75rem] font-medium text-text-muted">
             {t('display.pagination.perPage')}
           </label>
-          <select
+          <NativeSelect
             id={selectId}
             value={perPage}
             onChange={(e) => {
               changePerPage(Number(e.target.value));
             }}
-            className="min-h-11 rounded-[var(--radius-md)] border border-border bg-surface-2 px-2 text-xs text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            size="sm"
+            className="w-16 bg-surface-2 text-xs"
           >
             {PER_PAGE_OPTIONS.map((n) => (
-              <option key={n} value={n}>
+              <NativeSelectOption key={n} value={n}>
                 {n}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <span aria-live="polite" className="text-[0.75rem] tabular-nums text-text-faint">
@@ -92,50 +96,30 @@ export function DisplayPagination({
 
         {totalPages > 1 ? (
           <div className="flex items-center gap-1">
-            <button
+            <Button
               type="button"
               onClick={goPrev}
               disabled={current === 0}
               aria-label={t('display.pagination.previous')}
-              className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] text-text-muted hover:text-text disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              variant="ghost"
+              size="icon"
+              className="min-h-11 min-w-11 text-text-muted hover:text-text"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="m15 18-6-6 6-6" />
-              </svg>
-            </button>
+              <ChevronLeft data-icon aria-hidden="true" />
+            </Button>
             {/* The active page number is the ONLY accented element (Color rule). */}
             <span className="text-[0.75rem] tabular-nums text-accent-text">{current + 1}</span>
-            <button
+            <Button
               type="button"
               onClick={goNext}
               disabled={current >= totalPages - 1}
               aria-label={t('display.pagination.next')}
-              className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] text-text-muted hover:text-text disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              variant="ghost"
+              size="icon"
+              className="min-h-11 min-w-11 text-text-muted hover:text-text"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </button>
+              <ChevronRight data-icon aria-hidden="true" />
+            </Button>
           </div>
         ) : null}
       </div>

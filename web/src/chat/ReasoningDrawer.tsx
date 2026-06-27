@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { readReasoningPref, writeReasoningPref } from './reasoningPref';
+import { Button } from '@/components/ui/button';
 
 // ReasoningDrawer (D-01): a collapsible chain-of-thought part. The cockpit SSE
 // path streams REASONING_* deltas (server.go flip, plan 25-01); this surfaces
@@ -29,30 +31,22 @@ export function ReasoningDrawer({ text }: ReasoningDrawerProps) {
 
   return (
     <div className="rounded-[var(--radius-md)] border border-border bg-surface-2">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={toggle}
         aria-pressed={shown}
         aria-expanded={shown}
         aria-controls="reasoning-body"
-        className="flex min-h-[var(--row-h)] w-full items-center gap-2 px-3 py-1 text-xs font-medium text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="h-auto min-h-[var(--row-h)] w-full justify-start px-3 py-1 text-xs text-text-muted hover:text-text"
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <ChevronRight
+          data-icon
           aria-hidden="true"
-          className={`shrink-0 transition-transform motion-reduce:transition-none ${shown ? 'rotate-90' : ''}`}
-        >
-          <path d="m9 18 6-6-6-6" />
-        </svg>
+          className={`transition-transform motion-reduce:transition-none ${shown ? 'rotate-90' : ''}`}
+        />
         <span>{shown ? t('chat.reasoning.hide') : t('chat.reasoning.show')}</span>
-      </button>
+      </Button>
       {shown ? (
         <div
           id="reasoning-body"

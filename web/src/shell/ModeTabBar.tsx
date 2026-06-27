@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { LIVE_MODES, type SurfaceIntent } from './modes';
+import { Button } from '@/components/ui/button';
 
 export function ModeTabBar({
   active,
@@ -16,17 +17,18 @@ export function ModeTabBar({
     >
       {LIVE_MODES.map((mode) => {
         return (
-          <button
+          <Button
             key={mode}
             type="button"
+            variant="ghost"
             aria-current={mode === active ? 'page' : undefined}
             onClick={() => {
               onSelect(mode);
             }}
-            className="min-h-11 min-w-[6.5rem] flex-1 shrink-0 px-1 text-[0.75rem] font-medium text-text-muted outline-none aria-[current=page]:bg-surface-3 aria-[current=page]:text-accent-text focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent"
+            className="min-w-[6.5rem] flex-1 shrink-0 rounded-none px-1 text-[0.75rem] font-medium text-text-muted aria-[current=page]:bg-surface-3 aria-[current=page]:text-accent-text focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent"
           >
             {t(`shell.modes.${mode}`)}
-          </button>
+          </Button>
         );
       })}
     </nav>

@@ -1,6 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toolStatus, type ToolStatus } from './toolStatus';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 // ToolActivityCard (D-02): the LIGHTWEIGHT raw tool-activity view. It shows the
 // tool name + a status dot (icon + text, never colour alone) + an expandable
@@ -24,10 +27,10 @@ const RULE_CLASS: Record<ToolStatus, string> = {
   error: 'border-l-danger',
 };
 
-const PILL_CLASS: Record<ToolStatus, string> = {
-  running: 'border-warning/50 text-warning',
-  done: 'border-success/50 text-success',
-  error: 'border-danger/50 text-danger',
+const PILL_VARIANT: Record<ToolStatus, 'warning' | 'success' | 'danger'> = {
+  running: 'warning',
+  done: 'success',
+  error: 'danger',
 };
 
 /** A nested subagent / child tool entry (swarm fan-out). One level of nesting only. */
@@ -103,11 +106,9 @@ function ToolActivityRow({ toolName, argsText, result, isError, elapsed }: ToolA
             className={`inline-block h-2 w-2 shrink-0 rounded-sm ${DOT_CLASS[status]}`}
           />
           <span className="font-mono text-xs text-text">{toolName}</span>
-          <span
-            className={`rounded-[var(--radius-pill)] border px-2 py-0.5 text-[0.75rem] ${PILL_CLASS[status]}`}
-          >
+          <Badge variant={PILL_VARIANT[status]} className="text-[0.75rem]">
             {t(`chat.tool.status.${status}`)}
-          </span>
+          </Badge>
           {elapsed !== null && elapsed !== undefined ? (
             <span
               aria-hidden="true"
@@ -119,8 +120,10 @@ function ToolActivityRow({ toolName, argsText, result, isError, elapsed }: ToolA
           ) : null}
         </span>
         {hasRaw ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => {
               userToggled.current = true;
               setExpanded((v) => !v);
@@ -128,23 +131,14 @@ function ToolActivityRow({ toolName, argsText, result, isError, elapsed }: ToolA
             aria-expanded={expanded}
             aria-controls={bodyId}
             aria-label={expanded ? t('chat.tool.hideRaw') : t('chat.tool.showRaw')}
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] px-2 text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="min-h-11 min-w-11 text-text-muted hover:text-text"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            <ChevronDown
+              data-icon
               aria-hidden="true"
               className={`transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
+            />
+          </Button>
         ) : null}
       </div>
       {expanded && hasRaw ? (

@@ -1,9 +1,14 @@
 import { useId } from 'react';
+import { ChevronRight, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { ariaInvalid } from '../a11y/aria';
 import { PIM_PROVIDERS, type PimFieldDef, type PimProviderDef } from './pimProviders';
 import type { PimGoogleStart, PimProviderId } from './pimApi';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 // CalendarConnectFields holds the presentational form controls + result panels for the calendar/PIM
 // connect wizard, split out of CalendarConnect.tsx to keep that file under the 600-LOC cap. These are
@@ -22,23 +27,23 @@ export function ProviderSelect({
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[13px] font-semibold text-text">
+      <Label htmlFor={id} className="text-[13px] font-semibold text-text">
         {t('governance.mcp.calendar.providerLabel')}
-      </label>
-      <select
+      </Label>
+      <NativeSelect
         id={id}
         value={value}
         onChange={(event) => {
           onChange(event.target.value as PimProviderId);
         }}
-        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="w-full bg-surface-3 text-[13px]"
       >
         {PIM_PROVIDERS.map((p) => (
-          <option key={p.id} value={p.id}>
+          <NativeSelectOption key={p.id} value={p.id}>
             {t(p.labelKey)}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -109,23 +114,23 @@ export function SelectField({
   const id = `pim-select-${field.key}`;
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[13px] font-semibold text-text">
+      <Label htmlFor={id} className="text-[13px] font-semibold text-text">
         {t(field.labelKey)}
-      </label>
-      <select
+      </Label>
+      <NativeSelect
         id={id}
         value={value}
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="w-full bg-surface-3 text-[13px]"
       >
         {field.options?.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+          <NativeSelectOption key={opt.value} value={opt.value}>
             {t(opt.labelKey)}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -150,15 +155,20 @@ export function AdvancedSection({
   const priorityId = useId();
   return (
     <div className="flex flex-col gap-2">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={onToggle}
         aria-expanded={open}
-        className="inline-flex min-h-[44px] items-center self-start py-2 text-[13px] font-semibold text-text-muted underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        className="self-start px-2 text-[13px] text-text-muted hover:bg-transparent hover:underline"
       >
-        {open ? '▾ ' : '▸ '}
+        <ChevronRight
+          data-icon
+          aria-hidden="true"
+          className={`transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+        />
         {t('governance.mcp.calendar.advanced.toggle')}
-      </button>
+      </Button>
       {open ? (
         <>
           <Field
@@ -199,16 +209,16 @@ export function StartFailedPanel({
       <p role="status" className="text-[13px] text-warning">
         {t('governance.mcp.calendar.startFailed')}
       </p>
-      <button
+      <Button
         type="button"
         onClick={onRetry}
         disabled={pending}
         aria-busy={pending}
-        className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+        className="self-start text-[13px] disabled:cursor-wait"
       >
         {pending ? <Spinner /> : null}
         {t('governance.mcp.calendar.retryConnect')}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -222,14 +232,12 @@ export function GoogleStartPanel({ start }: { readonly start: PimGoogleStart }) 
       </p>
       <p className="break-all font-mono text-[13px] text-text">{start.redirectUri}</p>
       <p className="text-[13px] text-text-muted">{t('governance.mcp.calendar.redirectHint')}</p>
-      <a
-        href={start.authUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {t('governance.mcp.calendar.connectGoogle')}
-      </a>
+      <Button asChild className="self-start text-[13px]">
+        <a href={start.authUrl} target="_blank" rel="noopener noreferrer">
+          <ExternalLink data-icon aria-hidden="true" />
+          {t('governance.mcp.calendar.connectGoogle')}
+        </a>
+      </Button>
       <p role="note" className="text-[13px] text-text-muted">
         {t('governance.mcp.calendar.consentNote')}
       </p>
@@ -264,10 +272,10 @@ export function Field({
     .join(' ');
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[13px] font-semibold text-text">
+      <Label htmlFor={id} className="text-[13px] font-semibold text-text">
         {label}
-      </label>
-      <input
+      </Label>
+      <Input
         id={id}
         type={type}
         value={value}
@@ -277,7 +285,7 @@ export function Field({
         }}
         aria-invalid={ariaInvalid(invalid)}
         aria-describedby={describedBy === '' ? undefined : describedBy}
-        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="bg-surface-3 font-mono text-[13px]"
       />
       {hint !== undefined ? (
         <span id={hintId} className="text-[13px] text-text-muted">

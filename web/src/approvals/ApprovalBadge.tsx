@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { Bell } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useApprovals } from './useApprovals';
+import { Button } from '@/components/ui/button';
 
 // ApprovalBadge (APRV-01 / D-04) is the persistent header chrome: an accent count
 // pill (UI-SPEC accent reserved item 4 — the one thing demanding attention) showing
@@ -43,29 +45,17 @@ export function ApprovalBadge({ onToggle, expanded }: ApprovalBadgeProps) {
         {announce}
       </span>
       {count > 0 ? (
-        <button
+        <Button
           type="button"
+          size="sm"
           onClick={onToggle}
           aria-expanded={expanded}
           aria-label={t('approval.badge.aria', { count })}
-          className="inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-full bg-accent px-2.5 text-[0.75rem] font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="rounded-full px-3 text-[0.75rem]"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-          </svg>
+          <Bell data-icon aria-hidden="true" className="size-3.5" />
           <span className="font-mono tabular-nums">{count}</span>
-        </button>
+        </Button>
       ) : null}
     </>
   );

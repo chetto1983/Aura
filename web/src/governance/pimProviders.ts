@@ -66,7 +66,13 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     labelKey: `${P}.microsoft365`,
     authFlow: 'device',
     fields: [
-      { key: 'tenantId', labelKey: `${F}.tenantId`, type: 'text', required: true, hintKey: `${F}.tenantIdHint` },
+      {
+        key: 'tenantId',
+        labelKey: `${F}.tenantId`,
+        type: 'text',
+        required: true,
+        hintKey: `${F}.tenantIdHint`,
+      },
       { key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true },
     ],
   },
@@ -75,7 +81,13 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     labelKey: `${P}.outlookCom`,
     authFlow: 'device',
     fields: [
-      { key: 'tenantId', labelKey: `${F}.tenantId`, type: 'text', required: true, hintKey: `${F}.tenantIdHint` },
+      {
+        key: 'tenantId',
+        labelKey: `${F}.tenantId`,
+        type: 'text',
+        required: true,
+        hintKey: `${F}.tenantIdHint`,
+      },
       { key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true },
     ],
   },
@@ -85,9 +97,21 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     authFlow: 'none',
     fields: [
       { key: 'imapHost', labelKey: `${F}.imapHost`, type: 'text', required: true },
-      { key: 'imapPort', labelKey: `${F}.imapPort`, type: 'text', required: false, placeholder: '993' },
+      {
+        key: 'imapPort',
+        labelKey: `${F}.imapPort`,
+        type: 'text',
+        required: false,
+        placeholder: '993',
+      },
       { key: 'smtpHost', labelKey: `${F}.smtpHost`, type: 'text', required: true },
-      { key: 'smtpPort', labelKey: `${F}.smtpPort`, type: 'text', required: false, placeholder: '587' },
+      {
+        key: 'smtpPort',
+        labelKey: `${F}.smtpPort`,
+        type: 'text',
+        required: false,
+        placeholder: '587',
+      },
       { key: 'username', labelKey: `${F}.username`, type: 'text', required: true },
       { key: 'password', labelKey: `${F}.password`, type: 'password', required: true },
     ],
@@ -97,7 +121,13 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     labelKey: `${P}.ics`,
     authFlow: 'none',
     fields: [
-      { key: 'icsUrl', labelKey: `${F}.icsUrl`, type: 'text', required: true, hintKey: `${F}.icsUrlHint` },
+      {
+        key: 'icsUrl',
+        labelKey: `${F}.icsUrl`,
+        type: 'text',
+        required: true,
+        hintKey: `${F}.icsUrlHint`,
+      },
     ],
   },
   {
@@ -115,8 +145,20 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
           { value: 'onedrive', labelKey: `${S}.onedrive` },
         ],
       },
-      { key: 'filePath', labelKey: `${F}.filePath`, type: 'text', required: true, showIf: { key: 'source', value: 'local' } },
-      { key: 'oneDrivePath', labelKey: `${F}.oneDrivePath`, type: 'text', required: true, showIf: { key: 'source', value: 'onedrive' } },
+      {
+        key: 'filePath',
+        labelKey: `${F}.filePath`,
+        type: 'text',
+        required: true,
+        showIf: { key: 'source', value: 'local' },
+      },
+      {
+        key: 'oneDrivePath',
+        labelKey: `${F}.oneDrivePath`,
+        type: 'text',
+        required: true,
+        showIf: { key: 'source', value: 'onedrive' },
+      },
       {
         key: 'authAccountId',
         labelKey: `${F}.authAccountId`,

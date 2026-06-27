@@ -85,8 +85,10 @@ describe('SkillsBoard (GOV-02)', () => {
     });
 
     const tablist = screen.getByRole('tablist', { name: 'Skills' });
+    expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
     const tabs = within(tablist).getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(['Active', 'Pending', 'Archived', 'Audit']);
+    expect(tabs.every((t) => t.getAttribute('data-slot') === 'tabs-trigger')).toBe(true);
 
     // Active is selected by default (roving tabindex 0); the others are -1 and not selected.
     const activeTab = screen.getByRole('tab', { name: 'Active' });
@@ -376,7 +378,10 @@ describe('SkillsBoard (GOV-02)', () => {
       expect(screen.getByText('golang-testing')).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Install skill' }));
+    const installButton = screen.getByRole('button', { name: 'Install skill' });
+    expect(installButton.getAttribute('data-slot')).toBe('button');
+    expect(installButton.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
+    fireEvent.click(installButton);
 
     // The no-ceremony install panel: catalog search + an `Install` CTA (no RISKY banner,
     // no validation-checklist heading).
@@ -404,7 +409,7 @@ describe('SkillsBoard (GOV-02)', () => {
     });
   });
 
-  it('renders the archive action as a raised Lucide trash control', async () => {
+  it('renders the archive action and type chip with shadcn primitives', async () => {
     fetchSkills.mockResolvedValue(ACTIVE);
 
     render(<SkillsBoard />, {
@@ -415,11 +420,15 @@ describe('SkillsBoard (GOV-02)', () => {
     });
 
     const archiveButton = screen.getByRole('button', { name: 'Archive skill' });
-    expect(archiveButton.className).toContain('shadow-[');
-    expect(archiveButton.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
-    expect(screen.getByText('golang-testing').closest('[role="listitem"]')?.className).toContain(
-      'shadow-[',
-    );
+    expect(archiveButton.getAttribute('data-slot')).toBe('button');
+    expect(archiveButton.className).toContain('h-11');
+    expect(archiveButton.className).toContain('w-11');
+    expect(archiveButton.className).not.toContain('shadow-[');
+    expect(archiveButton.querySelector('svg[data-icon="icon"]')).not.toBeNull();
+    expect(screen.getByText('instruction').getAttribute('data-slot')).toBe('badge');
+    expect(
+      screen.getByText('golang-testing').closest('[role="listitem"]')?.className,
+    ).not.toContain('shadow-[');
   });
 
   it('restores an archived skill; a colliding restore (409) shows the inline safe error', async () => {

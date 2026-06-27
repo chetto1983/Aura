@@ -18,6 +18,9 @@ describe('ThemeSwitcher', () => {
   it('switches between light and dark themes with persisted state', () => {
     render(<ThemeSwitcher />);
 
+    expect(screen.getByRole('button', { name: 'Light theme' }).getAttribute('data-slot')).toBe(
+      'button',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Light theme' }));
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');

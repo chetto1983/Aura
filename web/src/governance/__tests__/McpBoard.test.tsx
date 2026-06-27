@@ -102,6 +102,8 @@ describe('McpBoard (GOV-01)', () => {
     // The row renders the server trust + the env-key count chip (github has 1 env key).
     expect(screen.getAllByText('trusted').length).toBeGreaterThan(0);
     expect(screen.getByText('1 · redacted')).toBeTruthy();
+    expect(screen.getAllByText('trusted')[0]?.getAttribute('data-slot')).toBe('badge');
+    expect(screen.getByText('1 · redacted').getAttribute('data-slot')).toBe('badge');
 
     // Selecting a row marks it aria-pressed (kills the selected === name ternary mutant).
     const row = screen.getByText('github').closest('button');
@@ -314,7 +316,10 @@ describe('McpBoard (GOV-01)', () => {
     });
 
     // The ONE accent CTA opens the install panel even with a populated list.
-    fireEvent.click(screen.getByRole('button', { name: 'Add MCP server' }));
+    const addButton = screen.getByRole('button', { name: 'Add MCP server' });
+    expect(addButton.getAttribute('data-slot')).toBe('button');
+    expect(addButton.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
+    fireEvent.click(addButton);
 
     // The panel shows the live read-only preview: the CLI-equivalent label + the
     // `Will write to:` destination (the install previews BEFORE any save).

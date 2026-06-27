@@ -4,9 +4,9 @@ import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves key
 
 // GovernanceWorkspace is the lazy tab-strip shell. The three boards are mocked (their data hooks
 // are exercised by their own board tests) so this suite asserts ONLY the workspace obligations:
-// the role=tablist tab strip renders (MCP/Skills/Scheduler), the read-only banner is present, and
-// switching tabs swaps the active board. These are the GovernanceWorkspace behavior obligations
-// from the plan acceptance criteria.
+// the shadcn Tabs strip renders (MCP/Skills/Scheduler), the obsolete read-only banner is gone,
+// and switching tabs swaps the active board. These are the GovernanceWorkspace behavior
+// obligations from the plan acceptance criteria.
 
 vi.mock('../McpBoard', () => ({
   McpBoard: () => <div data-testid="mcp-board">mcp</div>,
@@ -26,10 +26,17 @@ describe('GovernanceWorkspace (boards mocked)', () => {
 
     const tablist = screen.getByRole('tablist', { name: 'Governance' });
     expect(tablist).toBeTruthy();
+    expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
 
-    expect(screen.getByRole('tab', { name: 'MCP servers' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Skills' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Scheduler' })).toBeTruthy();
+    const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
+    expect(mcpTab.getAttribute('data-slot')).toBe('tabs-trigger');
+    expect(mcpTab.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
+    expect(screen.getByRole('tab', { name: 'Skills' }).getAttribute('data-slot')).toBe(
+      'tabs-trigger',
+    );
+    expect(screen.getByRole('tab', { name: 'Scheduler' }).getAttribute('data-slot')).toBe(
+      'tabs-trigger',
+    );
 
     // The MCP board is the default-open tab.
     await waitFor(() => {
@@ -37,11 +44,11 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     });
   });
 
-  it('renders the persistent read-only banner', () => {
+  it('does not render the obsolete read-only banner', () => {
     render(<GovernanceWorkspace />);
     expect(
-      screen.getByText('Read-only — viewing only. Changes arrive in a later phase.'),
-    ).toBeTruthy();
+      screen.queryByText('Read-only — viewing only. Changes arrive in a later phase.'),
+    ).toBeNull();
   });
 
   it('marks the active tab with aria-selected and swaps the board on tab click', async () => {

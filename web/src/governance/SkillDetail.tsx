@@ -1,5 +1,7 @@
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SkillRow } from './governanceApi';
+import { Button } from '@/components/ui/button';
 
 // SkillDetail — the detail pane for a selected skill (the NodeInspector <dl> idiom). It renders
 // the skill metadata (type / language / content hash / description) as React-escaped text, mono
@@ -24,14 +26,16 @@ export function SkillDetail({ skill, isPending, onClose }: SkillDetailProps) {
         <h3 className="break-words font-display text-[20px] font-semibold text-text">
           {skill.name}
         </h3>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={t('governance.closeAria')}
-          className="min-h-[44px] min-w-[44px] rounded-md text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-text-muted hover:text-text"
         >
-          ✕
-        </button>
+          <X data-icon aria-hidden="true" className="size-4" />
+        </Button>
       </header>
 
       {isPending ? (

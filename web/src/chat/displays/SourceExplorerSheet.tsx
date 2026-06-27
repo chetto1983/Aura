@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { focusFirstDescendant, trapTabKey } from '../../a11y/focusTrap';
 import type { DisplaySource } from './types';
@@ -11,6 +12,11 @@ import {
   type SourceSort,
   type SourceSortKey,
 } from './sourceExplorerData';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // SourceExplorerSheet (D-03 / D-13 / DISP-05): the READ-ONLY fullscreen evidence
 // dossier. It renders the SAME code-owned source registry the citations resolve
@@ -148,49 +154,51 @@ function SheetBody({ sources, initialRefId, onClose }: SheetBodyProps) {
             {t('source.rowCount', { count: sources.length })}
           </span>
         </h2>
-        <button
+        <Button
           type="button"
           onClick={onClose}
           aria-label={t('source.closeAria')}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          variant="ghost"
+          size="icon"
+          className="text-text-muted hover:text-text"
         >
-          <span aria-hidden="true">x</span>
-        </button>
+          <X data-icon aria-hidden="true" />
+        </Button>
       </header>
 
       {/* Read-only tab strip: accent underline on the active tab (Color rule #3). */}
-      <div
-        role="tablist"
-        aria-label={t('source.title')}
-        className="flex gap-1 border-b border-border px-4"
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          setTab(value as ExplorerTab);
+        }}
+        className="gap-0 border-b border-border px-4"
       >
-        {TABS.map((id) => {
-          const active = tab === id;
-          return (
-            <button
+        <TabsList
+          aria-label={t('source.title')}
+          className="w-fit gap-1 rounded-none border-0 bg-transparent p-0"
+        >
+          {TABS.map((id) => (
+            <TabsTrigger
               key={id}
-              type="button"
-              role="tab"
-              aria-selected={active}
+              value={id}
               onClick={() => {
                 setTab(id);
               }}
-              className={`min-h-11 px-3 text-xs font-medium outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                active
-                  ? 'border-b-2 border-b-accent text-accent-text'
-                  : 'border-b-2 border-b-transparent text-text-muted hover:text-text'
-              }`}
+              className="rounded-none border-b-2 border-b-transparent px-3 text-xs data-[state=active]:border-b-accent data-[state=active]:bg-transparent data-[state=active]:text-accent-text"
             >
               {t(`source.tab.${id}`)}
-            </button>
-          );
-        })}
-      </div>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {showWarning ? (
-        <p className="border-b border-border px-4 py-2 text-[0.75rem] text-warning">
-          {t('source.warningBanner')}
-        </p>
+        <Alert className="rounded-none border-x-0 border-t-0 border-warning bg-warning/10 px-4 py-2 text-warning">
+          <AlertDescription className="text-[0.75rem] text-warning">
+            {t('source.warningBanner')}
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -248,7 +256,7 @@ function TableView({ rows, query, sort, onSearch, onSort, onSelect }: TableViewP
         <label htmlFor={searchId} className="sr-only">
           {t('source.searchPlaceholder')}
         </label>
-        <input
+        <Input
           id={searchId}
           type="search"
           value={query}
@@ -259,7 +267,7 @@ function TableView({ rows, query, sort, onSearch, onSort, onSelect }: TableViewP
           placeholder={t('source.searchPlaceholder')}
           // omit-when-valid: read-only search has no invalid state (feedback_aria_invalid_omit_when_valid).
           aria-invalid={undefined}
-          className="min-h-11 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="bg-surface text-sm"
         />
       </div>
 
@@ -283,24 +291,29 @@ function TableView({ rows, query, sort, onSearch, onSort, onSelect }: TableViewP
                         aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
                         className="border-b border-border bg-surface-2 p-0 text-left"
                       >
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
                           onClick={() => {
                             onSort(key);
                             setPage(0);
                           }}
                           aria-label={t('source.sortBy', { column: t(`source.column.${key}`) })}
-                          className={`flex min-h-11 w-full items-center gap-1 px-3 text-[0.75rem] font-medium uppercase tracking-wider text-text-faint hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                          className={`h-auto min-h-11 w-full justify-start rounded-none px-3 text-[0.75rem] uppercase tracking-wider text-text-faint hover:text-text ${
                             active ? 'border-b-2 border-b-accent text-accent-text' : ''
                           }`}
                         >
                           <span>{t(`source.column.${key}`)}</span>
                           {active ? (
                             <span aria-hidden="true" className="text-accent-text">
-                              {dir === 'asc' ? '↑' : '↓'}
+                              {dir === 'asc' ? (
+                                <ArrowUp data-icon aria-hidden="true" />
+                              ) : (
+                                <ArrowDown data-icon aria-hidden="true" />
+                              )}
                             </span>
                           ) : null}
-                        </button>
+                        </Button>
                       </th>
                     );
                   })}
@@ -316,17 +329,19 @@ function TableView({ rows, query, sort, onSearch, onSort, onSelect }: TableViewP
 
           {totalPages > 1 ? (
             <div className="flex items-center justify-end gap-1">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => {
                   setPage((p) => Math.max(0, p - 1));
                 }}
                 disabled={current === 0}
                 aria-label={t('display.pagination.previous')}
-                className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] text-text-muted hover:text-text disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="min-h-11 min-w-11 text-text-muted hover:text-text"
               >
-                <span aria-hidden="true">‹</span>
-              </button>
+                <ChevronLeft data-icon aria-hidden="true" />
+              </Button>
               <span aria-live="polite" className="text-[0.75rem] tabular-nums text-accent-text">
                 {t('display.pagination.count', {
                   from: start + 1,
@@ -334,17 +349,19 @@ function TableView({ rows, query, sort, onSearch, onSort, onSelect }: TableViewP
                   total: rows.length,
                 })}
               </span>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => {
                   setPage((p) => Math.min(totalPages - 1, p + 1));
                 }}
                 disabled={current >= totalPages - 1}
                 aria-label={t('display.pagination.next')}
-                className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] text-text-muted hover:text-text disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="min-h-11 min-w-11 text-text-muted hover:text-text"
               >
-                <span aria-hidden="true">›</span>
-              </button>
+                <ChevronRight data-icon aria-hidden="true" />
+              </Button>
             </div>
           ) : null}
         </>
@@ -372,16 +389,17 @@ function SourceRow({
         {source.type !== undefined ? t(`display.type.${source.type}`) : '—'}
       </td>
       <td className="border-b border-border px-3 py-2 text-text">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => {
             onSelect(source.ref_id);
           }}
           aria-label={t('source.openRowAria', { n: source.index })}
-          className="block max-w-xs truncate text-left text-sm text-text outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="h-auto min-h-0 max-w-xs justify-start truncate p-0 text-left text-sm font-normal hover:bg-transparent hover:underline"
         >
           {title}
-        </button>
+        </Button>
       </td>
       <td className="border-b border-border px-3 py-2 text-[0.75rem] text-text-faint">
         <span className="block max-w-[10rem] truncate font-mono">{host}</span>
@@ -396,13 +414,9 @@ function SourceRow({
 function StatusTag({ cited }: { readonly cited: boolean }) {
   const { t } = useTranslation();
   return (
-    <span
-      className={`inline-block shrink-0 rounded-[var(--radius-pill)] px-1.5 py-0.5 text-[0.75rem] font-medium ${
-        cited ? 'bg-accent text-accent-text' : 'bg-surface-3 text-text-muted'
-      }`}
-    >
+    <Badge variant={cited ? 'default' : 'secondary'} className="text-[0.75rem]">
       {cited ? t('source.status.cited') : t('source.status.consulted')}
-    </span>
+    </Badge>
   );
 }
 

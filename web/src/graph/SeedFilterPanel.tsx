@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GraphSchema } from './types';
+import { Button } from '@/components/ui/button';
 
 // SeedFilterPanel — the LEFT pane of the Frame-06 three-pane workspace: the seed CTA, the
 // label/rel-type include-filter toggles (driven by the live schema), and the read-only Cypher
@@ -33,18 +34,15 @@ function ToggleChip({
   readonly onToggle: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant={active ? 'default' : 'outline'}
       aria-pressed={active}
       onClick={onToggle}
-      className={`min-h-[44px] rounded-md border px-3 py-1 text-left text-[13px] font-semibold transition-colors ${
-        active
-          ? 'border-accent bg-accent text-on-accent'
-          : 'border-border bg-surface-2 text-text hover:border-border-strong'
-      }`}
+      className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-[13px]"
     >
       <span className="block min-w-0 overflow-wrap-anywhere">{label}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -66,16 +64,16 @@ export function SeedFilterPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto bg-surface p-4">
-      <button
+      <Button
         type="button"
         onClick={onSeed}
         disabled={!canSeed}
-        className="min-h-[44px] rounded-md bg-accent px-3 py-2 text-[14px] font-semibold leading-tight text-on-accent transition-opacity disabled:opacity-40"
+        className="h-auto px-3 py-2 text-[14px] leading-tight"
       >
         <span className="block min-w-0 overflow-wrap-anywhere">
           {t('graph.cta.seedConversation')}
         </span>
-      </button>
+      </Button>
 
       {labels.length > 0 ? (
         <section className="flex flex-col gap-2">
@@ -119,16 +117,17 @@ export function SeedFilterPanel({
 
       {query.length > 0 ? (
         <section className="mt-auto flex flex-col gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
             aria-expanded={cypherOpen}
             onClick={() => {
               setCypherOpen((v) => !v);
             }}
-            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-1 text-left text-[13px] font-semibold text-accent-text"
+            className="justify-start px-3 text-left text-[13px] text-accent-text"
           >
             {cypherOpen ? t('graph.cypher.hide') : t('graph.cypher.show')}
-          </button>
+          </Button>
           {cypherOpen ? (
             <div className="flex flex-col gap-1">
               {/* Read-only — rendered as TEXT (no dangerouslySetInnerHTML), never an input. */}

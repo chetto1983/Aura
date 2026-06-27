@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Search, SearchX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { highlightSegments } from './searchHighlight';
@@ -8,6 +9,16 @@ import {
   useConversationSearch,
   type Conversation,
 } from './useConversations';
+import { Button } from '@/components/ui/button';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // SearchPanel is the CHAT-02 / D-08 FTS surface over GET /api/conversations/search.
 // Each hit projects ConversationID + Seq + Content (the snippet); the store's
@@ -52,26 +63,41 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
       <label htmlFor="conversation-search" className="sr-only">
         {t('conversations.search.label')}
       </label>
-      <input
-        id="conversation-search"
-        type="search"
-        value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-        }}
-        placeholder={t('conversations.search.placeholder')}
-        className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 px-3 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      />
+      <div className="relative">
+        <Search
+          data-icon
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-faint"
+        />
+        <Input
+          id="conversation-search"
+          type="search"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+          placeholder={t('conversations.search.placeholder')}
+          className="bg-surface-2 pl-9 text-sm"
+        />
+      </div>
 
       {trimmed.length === 0 ? null : isFetching && results.length === 0 ? (
-        <p className="text-sm text-text-muted">{t('conversations.search.searching')}</p>
-      ) : results.length === 0 ? (
-        <div className="py-2">
-          <p className="text-sm font-medium text-text">{t('conversations.search.empty.heading')}</p>
-          <p className="mt-1 text-[0.8125rem] text-text-muted">
-            {t('conversations.search.empty.body', { query: trimmed })}
-          </p>
+        <div aria-label={t('conversations.search.searching')} className="flex flex-col gap-2">
+          <Skeleton className="h-14 rounded-md" />
+          <Skeleton className="h-14 rounded-md" />
         </div>
+      ) : results.length === 0 ? (
+        <Empty className="flex-none border border-dashed border-border bg-surface-2/40 py-6">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX data-icon aria-hidden="true" className="size-5" />
+            </EmptyMedia>
+            <EmptyTitle className="text-sm">{t('conversations.search.empty.heading')}</EmptyTitle>
+            <EmptyDescription className="text-[0.8125rem]">
+              {t('conversations.search.empty.body', { query: trimmed })}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ul className="flex flex-col gap-1">
           {results.map((hit) => {
@@ -81,12 +107,13 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
               : t('conversations.untitled');
             return (
               <li key={`${hit.ConversationID}-${String(hit.Seq)}`}>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={() => {
                     open(hit.ConversationID, hit.Seq);
                   }}
-                  className="flex w-full flex-col gap-0.5 rounded-[var(--radius-md)] px-2 py-1.5 text-left outline-none hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="h-auto min-h-14 w-full flex-col items-start gap-0.5 whitespace-normal rounded-md px-2 py-2 text-left font-normal hover:bg-surface-2"
                 >
                   <span className="truncate text-[0.8125rem] font-medium text-accent">{title}</span>
                   <span className="line-clamp-2 text-[0.8125rem] text-text-muted">
@@ -103,7 +130,7 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
                       ),
                     )}
                   </span>
-                </button>
+                </Button>
               </li>
             );
           })}

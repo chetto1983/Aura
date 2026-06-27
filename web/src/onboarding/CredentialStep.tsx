@@ -1,5 +1,7 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // CredentialStep (ONBD-01a / D-05) — the new-operator email + initial-password fields. The
 // password is WRITE-ONLY: it is a masked type="password" input whose value is held in the wizard
@@ -35,10 +37,10 @@ export function CredentialStep({
       </h2>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor={emailId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={emailId} className="text-[13px] font-semibold text-text">
           {t('onboarding.credentials.emailLabel')}
-        </label>
-        <input
+        </Label>
+        <Input
           id={emailId}
           type="email"
           autoComplete="off"
@@ -48,16 +50,16 @@ export function CredentialStep({
           onChange={(e) => {
             onEmailChange(e.target.value);
           }}
-          className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-2 text-[15.5px] text-text outline-none transition-colors placeholder:text-text-faint focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+          className="bg-surface-2 text-[15.5px]"
         />
       </div>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor={passwordId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={passwordId} className="text-[13px] font-semibold text-text">
           {t('onboarding.credentials.passwordLabel')}
-        </label>
+        </Label>
         {/* WRITE-ONLY: type="password" masks the value; it is never rendered as text again. */}
-        <input
+        <Input
           id={passwordId}
           type="password"
           autoComplete="new-password"
@@ -66,7 +68,7 @@ export function CredentialStep({
           onChange={(e) => {
             onPasswordChange(e.target.value);
           }}
-          className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-2 text-[15.5px] text-text outline-none transition-colors focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+          className="bg-surface-2 text-[15.5px]"
         />
         <p id={hintId} className="text-[13px] leading-relaxed text-text-muted">
           {t('onboarding.credentials.passwordHint')}

@@ -5,6 +5,8 @@ import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
 import { TaskRunHistory } from './TaskRunHistory';
 import { fetchSchedulerTasks, type SchedulerTask } from './governanceApi';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 // SchedulerBoard (GOV-03) — the scheduled-tasks master list + paginated run-history detail. The
 // task list comes from fetchSchedulerTasks (read-only — mutates nothing). Each row shows
@@ -62,21 +64,31 @@ export function SchedulerBoard() {
     >
       {rows.map((task) => (
         <div key={task.ID} role="listitem">
-          <button
+          <Button
             type="button"
+            variant={selected === task.ID ? 'default' : 'outline'}
             aria-pressed={selected === task.ID}
             onClick={(e) => {
               selectRow(task.ID, e.currentTarget);
             }}
-            className={`flex min-h-[44px] w-full flex-col gap-1 rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`h-auto min-h-[44px] w-full flex-col items-stretch justify-start gap-1 px-3 py-2 text-left ${
               selected === task.ID
-                ? 'border-accent bg-accent text-on-accent'
-                : 'border-border bg-surface-2 text-text hover:border-border-strong'
+                ? 'text-on-accent'
+                : 'bg-surface-2 text-text hover:border-border-strong'
             }`}
           >
             <span className="flex items-center justify-between gap-2">
               <span className="break-words text-[15.5px] font-semibold">{task.Kind}</span>
-              <span className="shrink-0 text-[13px] text-text-muted">{task.Status}</span>
+              <Badge
+                variant="secondary"
+                className={
+                  selected === task.ID
+                    ? 'border-on-accent/30 bg-on-accent/15 text-on-accent'
+                    : undefined
+                }
+              >
+                {task.Status}
+              </Badge>
             </span>
             <span className="flex items-center justify-between gap-2 text-[13px] text-text-muted">
               {/* Cron / schedule string — mono (it is a literal the operator could mistake). */}
@@ -85,7 +97,7 @@ export function SchedulerBoard() {
                 {task.NextRunAt}
               </span>
             </span>
-          </button>
+          </Button>
         </div>
       ))}
     </div>

@@ -1,6 +1,9 @@
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GraphEdge, GraphNode } from './types';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // PathStrip — the surface below the canvas that doubles as (1) the D-10 path strip (the selected
 // evidence path as an ordered run of `node —REL→ node` steps) and (2) the a11y PARALLEL DOM: a
@@ -56,9 +59,7 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
           <ol className="flex flex-wrap items-center gap-1 text-[13px]">
             {pathNodes.map((node, i) => (
               <li key={node.id} className="flex items-center gap-1">
-                <span className="rounded bg-accent px-2 py-0.5 font-semibold text-on-accent">
-                  {nodeCaption(node)}
-                </span>
+                <Badge>{nodeCaption(node)}</Badge>
                 {i < pathNodes.length - 1 ? (
                   <span aria-hidden="true" className="text-text-muted">
                     —→
@@ -79,8 +80,9 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
         <div role="list" className="flex max-h-40 flex-col gap-1 overflow-y-auto">
           {nodes.map((node, i) => (
             <div key={node.id} role="listitem">
-              <button
+              <Button
                 type="button"
+                variant={pinnedPath.has(node.id) ? 'default' : 'outline'}
                 ref={(el) => {
                   itemRefs.current[i] = el;
                 }}
@@ -91,17 +93,18 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
                   onSelectNode(node);
                 }}
                 aria-pressed={pinnedPath.has(node.id)}
-                className={`flex min-h-[44px] w-full items-center justify-between rounded-md border px-3 py-1 text-left text-[15.5px] ${
-                  pinnedPath.has(node.id)
-                    ? 'border-accent bg-accent text-on-accent'
-                    : 'border-border bg-surface-2 text-text'
-                }`}
+                className="h-auto min-h-11 w-full justify-between whitespace-normal px-3 py-2 text-left text-[15.5px]"
               >
                 <span className="break-words">{nodeCaption(node)}</span>
-                <span className="ml-2 text-[13px] text-text-muted">
+                <span
+                  className={cn(
+                    'ml-2 text-[13px]',
+                    pinnedPath.has(node.id) ? 'text-on-accent' : 'text-text-muted',
+                  )}
+                >
                   {(node.labels ?? [])[0] ?? ''}
                 </span>
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -119,9 +122,9 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
               className="flex flex-wrap items-center gap-1.5 rounded-md px-1 py-0.5"
             >
               <span className="text-text">{captionById.get(edge.source) ?? edge.source}</span>
-              <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[12px] font-medium text-accent-text">
+              <Badge variant="secondary" className="font-medium text-accent-text">
                 {edge.rel_type ?? ''}
-              </span>
+              </Badge>
               <span aria-hidden="true" className="text-text-muted">
                 →
               </span>

@@ -43,8 +43,9 @@ describe('ReviewStep (ONBD-01a)', () => {
   it('the Create CTA is constructive (accent, not danger) and fires onCreate', () => {
     const { onCreate } = renderReview();
     const cta = screen.getByRole('button', { name: 'Create identity' });
-    // Constructive: the reserved accent background, never a danger token.
-    expect(cta.className).toContain('bg-accent');
+    // Constructive: shadcn primary maps to the reserved accent token, never danger.
+    expect(cta.className).toContain('bg-primary');
+    expect(cta.getAttribute('data-slot')).toBe('button');
     expect(cta.className).not.toContain('danger');
     fireEvent.click(cta);
     expect(onCreate).toHaveBeenCalledTimes(1);

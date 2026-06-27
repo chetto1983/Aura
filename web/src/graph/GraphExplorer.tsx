@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useReducer, useState } from 'react';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { fetchGraphSchema, postGraphQuery } from './graphApi';
 import {
@@ -14,6 +15,9 @@ import { SeedFilterPanel } from './SeedFilterPanel';
 import { NodeInspector } from './NodeInspector';
 import { PathStrip } from './PathStrip';
 import type { GraphNode, GraphResult, GraphSchema } from './types';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 // GraphExplorer is the lazy default export the AppShell mounts when surface==='graph' (its own
 // Vite chunk so the Sigma stack never lands in the main bundle — Pitfall 7). It is the
@@ -195,22 +199,22 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         {t('graph.loading')}
       </div>
     ) : view.status === 'error-auth' ? (
-      <div role="alert" className="grid h-full place-items-center p-8 text-center">
-        <p className="max-w-md text-[15.5px] text-danger">{t('graph.error.auth')}</p>
+      <div className="grid h-full place-items-center p-8 text-center">
+        <Alert variant="destructive" className="max-w-md bg-surface">
+          <AlertDescription>{t('graph.error.auth')}</AlertDescription>
+        </Alert>
       </div>
     ) : view.status === 'error-query' || view.status === 'error-schema' ? (
-      <div role="alert" className="grid h-full place-items-center p-8 text-center">
+      <div className="grid h-full place-items-center p-8 text-center">
         <div className="flex max-w-md flex-col items-center gap-3">
-          <p className="text-[15.5px] text-danger">
-            {view.status === 'error-schema' ? t('graph.error.schema') : t('graph.error.query')}
-          </p>
-          <button
-            type="button"
-            onClick={retry}
-            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text transition-colors hover:border-border-strong"
-          >
+          <Alert variant="destructive" className="bg-surface">
+            <AlertDescription>
+              {view.status === 'error-schema' ? t('graph.error.schema') : t('graph.error.query')}
+            </AlertDescription>
+          </Alert>
+          <Button type="button" variant="outline" onClick={retry}>
             {t('graph.error.retry')}
-          </button>
+          </Button>
         </div>
       </div>
     ) : view.status === 'empty' ? (
@@ -272,30 +276,29 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         {/* MOBILE control bar — keeps the canvas dominant; Seed + Filters live here, not in an
           always-on top strip. */}
         <div className="graph-workspace__mobile-bar flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 lg:hidden">
-          <button
+          <Button
             type="button"
             onClick={onSeed}
             disabled={threadId.length === 0}
-            className="min-h-[40px] min-w-0 flex-1 rounded-md bg-accent px-3 py-1.5 text-[14px] font-semibold text-on-accent transition-opacity disabled:opacity-40"
+            className="h-auto min-h-10 min-w-0 flex-1 px-3 py-1.5 text-[14px]"
           >
             <span className="block min-w-0 overflow-wrap-anywhere">
               {t('graph.cta.seedConversation')}
             </span>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
             onClick={() => {
               setFiltersOpen(true);
             }}
-            className="flex min-h-[40px] items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-[14px] font-semibold text-text transition-colors hover:border-border-strong"
+            className="min-h-10 gap-1.5 px-3 py-1.5 text-[14px]"
           >
             {t('graph.filter.labels')}
             {activeFilterCount > 0 ? (
-              <span className="rounded-full bg-accent px-1.5 text-[12px] font-bold text-on-accent">
-                {activeFilterCount}
-              </span>
+              <Badge className="px-1.5 text-[12px] font-bold">{activeFilterCount}</Badge>
             ) : null}
-          </button>
+          </Button>
         </div>
 
         {/* SEED / FILTER — desktop left column; mobile bottom sheet (filtersOpen). ONE instance. */}
@@ -312,16 +315,18 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
             <h2 className="font-display text-[17px] font-semibold text-text">
               {t('graph.filter.labels')}
             </h2>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => {
                 setFiltersOpen(false);
               }}
               aria-label={t('display.closeAria')}
-              className="min-h-[40px] min-w-[40px] rounded-md text-text-muted hover:text-text"
+              className="text-text-muted hover:text-text"
             >
-              ✕
-            </button>
+              <X data-icon aria-hidden="true" />
+            </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">{seedPanel}</div>
         </aside>

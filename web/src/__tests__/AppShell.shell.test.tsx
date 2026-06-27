@@ -116,7 +116,9 @@ describe('AppShell', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    const signOut = screen.getByRole('button', { name: 'Sign out' });
+    expect(signOut.getAttribute('data-slot')).toBe('button');
+    fireEvent.click(signOut);
 
     await waitFor(() => {
       expect(calls).toContain('POST /logout');

@@ -4,6 +4,7 @@ import type { DisplayCode } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { useCopyAction } from './useCopyAction';
 import { highlightCode, resolveLang } from './shiki';
+import { Button } from '@/components/ui/button';
 
 // CodeDisplay (D-10 / HARDEN-08): renders a code/shell body in mono. It shows a
 // PLAIN escaped <pre> immediately (React escapes the text — a <script> in the body
@@ -73,16 +74,17 @@ export function CodeDisplay({ payload }: CodeDisplayProps) {
   const showFull = expanded || !collapsible;
 
   const actions = (
-    <button
+    <Button
       type="button"
       onClick={() => {
         copy(body);
       }}
       aria-label={t('display.code.copyAria')}
-      className="flex min-h-11 items-center rounded-[var(--radius-md)] border border-border px-2 text-[0.75rem] font-medium text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      variant="outline"
+      className="px-3 text-[0.75rem] text-text-muted hover:text-text"
     >
       {copied ? t('display.code.copied') : t('display.code.copy')}
-    </button>
+    </Button>
   );
 
   return (
@@ -115,7 +117,7 @@ export function CodeDisplay({ payload }: CodeDisplayProps) {
       </div>
 
       {collapsible ? (
-        <button
+        <Button
           type="button"
           onClick={() => {
             setExpanded((v) => !v);
@@ -123,10 +125,11 @@ export function CodeDisplay({ payload }: CodeDisplayProps) {
           aria-expanded={expanded}
           aria-controls={bodyId}
           aria-label={expanded ? t('display.code.collapseAria') : t('display.code.expandAria')}
-          className="mt-2 flex min-h-11 items-center rounded-[var(--radius-md)] border border-border px-2 text-[0.75rem] font-medium text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          variant="outline"
+          className="mt-2 px-3 text-[0.75rem] text-text-muted hover:text-text"
         >
           {expanded ? t('display.code.collapse') : t('display.code.expand')}
-        </button>
+        </Button>
       ) : null}
     </DisplayCardShell>
   );

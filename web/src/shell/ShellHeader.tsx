@@ -1,3 +1,4 @@
+import { LogOut, PanelLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ApprovalBadge } from '../approvals/ApprovalBadge';
 import { ApprovalList } from '../approvals/ApprovalList';
@@ -6,6 +7,7 @@ import { ThemeSwitcher } from '../theme/ThemeSwitcher';
 import { ModeSwitcher } from './ModeSwitcher';
 import { RuntimeStatusChip } from './RuntimeStatusChip';
 import type { SurfaceIntent } from './modes';
+import { Button } from '@/components/ui/button';
 
 export function ShellHeader({
   activeMode,
@@ -33,16 +35,16 @@ export function ShellHeader({
 
   return (
     <header className="shell-header grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-surface px-2 py-2 sm:px-3">
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         onClick={onNavigationOpen}
         aria-label={t('shell.openNavigation')}
-        className="shell-nav-trigger flex min-h-10 min-w-10 items-center justify-center rounded-[var(--radius-md)] text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:hidden"
+        className="shell-nav-trigger text-text-muted hover:bg-surface-2 hover:text-text lg:hidden"
       >
-        <span aria-hidden="true" className="font-mono text-base">
-          =
-        </span>
-      </button>
+        <PanelLeft data-icon="icon" aria-hidden="true" focusable="false" />
+      </Button>
       <div className="flex min-w-0 items-center gap-2">
         <img
           src="/logo.png"
@@ -71,38 +73,20 @@ export function ShellHeader({
         </div>
         <ThemeSwitcher className="shell-header__wide-only hidden sm:flex" />
         <LanguageSwitcher className="shell-header__wide-only hidden sm:flex" />
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon"
           aria-label={logoutLabel}
           aria-busy={logoutPending}
           title={logoutLabel}
           disabled={logoutPending}
           onClick={onLogout}
-          className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-border bg-surface-2 text-text-muted outline-none transition hover:border-border-strong hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-70"
+          className="text-text-muted hover:border-border-strong hover:text-text disabled:cursor-wait"
         >
-          <LogoutIcon />
-        </button>
+          <LogOut data-icon="icon" aria-hidden="true" focusable="false" />
+        </Button>
       </div>
     </header>
-  );
-}
-
-function LogoutIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <path d="M16 17l5-5-5-5" />
-      <path d="M21 12H9" />
-    </svg>
   );
 }

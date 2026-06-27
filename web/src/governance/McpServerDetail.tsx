@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Pencil, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpEnvEditForm } from './McpEnvEditForm';
 import { McpLifecycleCluster } from './McpLifecycleCluster';
@@ -6,6 +7,7 @@ import { WhatsAppConnect } from './WhatsAppConnect';
 import { CalendarConnect } from './CalendarConnect';
 import { isWhatsAppServer, type McpProbeResult, type McpServerRow } from './governanceApi';
 import { isCalendarServer } from './pimApi';
+import { Button } from '@/components/ui/button';
 
 // McpServerDetail — the detail pane for a selected MCP server (the NodeInspector <dl>/<dt>/<dd>
 // idiom, NodeInspector.tsx:72-98). It renders the static row fields (trust/runtime/startup/auth)
@@ -43,14 +45,16 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
         <h3 className="break-words font-display text-[20px] font-semibold text-text">
           {server.name}
         </h3>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={t('governance.closeAria')}
-          className="min-h-[44px] min-w-[44px] rounded-md text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-text-muted hover:text-text"
         >
-          ✕
-        </button>
+          <X data-icon aria-hidden="true" className="size-4" />
+        </Button>
       </header>
 
       <dl className="flex flex-col gap-3">
@@ -97,16 +101,17 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
             <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
               {t('governance.mcp.detail.envKeys')}
             </h4>
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => {
                 setSecretPreserved(false);
                 setEditingEnv(true);
               }}
-              className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
             >
+              <Pencil data-icon aria-hidden="true" className="size-4" />
               {t('governance.mcp.detail.editEnv')}
-            </button>
+            </Button>
           </div>
           {secretPreserved ? (
             <p role="status" className="text-[13px] text-success">

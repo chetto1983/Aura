@@ -1,19 +1,15 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
-import { McpServerDetail } from './McpServerDetail';
 import { McpInstallPanel } from './McpInstallPanel';
+import { McpServerDetail } from './McpServerDetail';
 import { fetchMcpServers, probeMcpServer, type McpServerRow } from './governanceApi';
-
-// McpBoard (GOV-01) — the MCP-servers master list + detail. The static row list comes from one
-// query (fetchMcpServers, always renders). CRITICALLY each row fires its OWN probe query keyed
-// by server name (useMcpProbe in McpProbeStatus) so a hung/dead server resolves to its own
-// "Timed out"/"Error" state WITHOUT blanking or stalling sibling rows (T-28-03-05 — per-row
-// isolation). Secret env values never enter the DOM: only redacted KEY chips render (T-28-03-01).
-// Selecting a row opens McpServerDetail (the live doctor result + tool list) as a desktop column
-// / mobile bottom sheet.
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function statusLabel(
@@ -37,16 +33,12 @@ export function statusLabel(
       tone: 'text-success',
     };
   }
-  // A reachable-but-failed probe (dial/list error) → the danger "Error — {state}" copy.
   return {
     text: t('governance.mcp.status.error', { state: probe.detail }),
     tone: 'text-danger',
   };
 }
 
-/** McpProbeStatus owns ONE row's live probe. Its own useQuery means a slow/hung server only
- * delays ITS status line — the list and every sibling row stay responsive (R1 isolation). The
- * resolved status renders in a role="status" live region so AT announces the transition. */
 function McpProbeStatus({ name }: { readonly name: string }) {
   const { t } = useTranslation();
   const { data, isLoading, isError } = useQuery({
@@ -92,11 +84,11 @@ export function McpBoard() {
     setSelected(undefined);
     setInstalling(true);
   }
+
   function closeInstall() {
     setInstalling(false);
   }
 
-  // The selected server's probe also feeds the detail pane (shared query key — TanStack dedupes).
   const detailProbe = useQuery({
     queryKey: ['governance', 'mcp', 'probe', selected ?? ''],
     queryFn: () => probeMcpServer(selected ?? ''),
@@ -138,47 +130,66 @@ export function McpBoard() {
   }
 
   const master = (
-    <div role="list" aria-label={t('governance.tabs.mcp')} className="flex flex-col gap-1 p-2">
-      {rows.map((server, index) => (
-        <div key={server.name} role="listitem">
-          <button
-            type="button"
-            aria-pressed={selected === server.name}
-            ref={(el) => {
-              rowRefs.current[index] = el;
-            }}
-            onKeyDown={(e) => {
-              onRowKeyDown(e, index);
-            }}
-            onClick={(e) => {
-              selectRow(server.name, e.currentTarget);
-            }}
-            className={`flex min-h-[44px] w-full flex-col gap-1 rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              selected === server.name
-                ? 'border-accent bg-accent text-on-accent'
-                : 'border-border bg-surface-2 text-text hover:border-border-strong'
+    <div role="list" aria-label={t('governance.tabs.mcp')} className="flex flex-col gap-2 p-2">
+      {rows.map((server, index) => {
+        const isSelected = selected === server.name;
+        const selectedBadgeClass = isSelected
+          ? 'border-on-accent/30 bg-on-accent/15 text-on-accent'
+          : undefined;
+
+        return (
+          <Card
+            key={server.name}
+            role="listitem"
+            className={`gap-0 overflow-hidden p-0 transition-colors ${
+              isSelected ? 'border-accent' : 'hover:border-border-strong'
             }`}
           >
-            <span className="flex items-center justify-between gap-2">
-              {/* Backend-supplied name — React-escaped, mono (identifier). */}
-              <span className="break-all font-mono text-[15.5px]">{server.name}</span>
-              <span className="shrink-0 text-[13px] text-text-muted">{server.trust}</span>
-            </span>
-            <span className="flex items-center justify-between gap-2">
-              <McpProbeStatus name={server.name} />
-              {server.envKeys.length > 0 ? (
-                <span className="shrink-0 rounded-sm bg-surface-3 px-2 py-0.5 font-mono text-[13px] tabular-nums tracking-tight text-text-muted">
-                  {server.envKeys.length} · {t('governance.mcp.redacted')}
-                </span>
-              ) : server.source !== '' ? (
-                <span className="shrink-0 rounded-sm bg-surface-3 px-2 py-0.5 font-mono text-[13px] tracking-tight text-text-muted">
-                  {server.source}
-                </span>
-              ) : null}
-            </span>
-          </button>
-        </div>
-      ))}
+            <Button
+              type="button"
+              variant={isSelected ? 'default' : 'ghost'}
+              aria-pressed={isSelected}
+              ref={(el) => {
+                rowRefs.current[index] = el;
+              }}
+              onKeyDown={(e) => {
+                onRowKeyDown(e, index);
+              }}
+              onClick={(e) => {
+                selectRow(server.name, e.currentTarget);
+              }}
+              className={`h-auto min-h-[52px] w-full flex-col items-stretch justify-start gap-2 px-3 py-2 text-left ${
+                isSelected ? 'text-on-accent' : 'bg-transparent text-text hover:bg-surface-2'
+              }`}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="break-all font-mono text-[15.5px]">{server.name}</span>
+                <Badge variant="secondary" className={selectedBadgeClass}>
+                  {server.trust}
+                </Badge>
+              </span>
+              <span className="flex items-center justify-between gap-2">
+                <McpProbeStatus name={server.name} />
+                {server.envKeys.length > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className={`font-mono tabular-nums tracking-tight ${selectedBadgeClass ?? ''}`}
+                  >
+                    {server.envKeys.length} · {t('governance.mcp.redacted')}
+                  </Badge>
+                ) : server.source !== '' ? (
+                  <Badge
+                    variant="secondary"
+                    className={`font-mono tracking-tight ${selectedBadgeClass ?? ''}`}
+                  >
+                    {server.source}
+                  </Badge>
+                ) : null}
+              </span>
+            </Button>
+          </Card>
+        );
+      })}
     </div>
   );
 
@@ -201,23 +212,20 @@ export function McpBoard() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* The ONE accent CTA on the board — always reachable, even on an empty/loading list. */}
       <div className="flex shrink-0 items-center justify-end border-b border-border bg-surface px-2 py-1">
-        <button
+        <Button
           ref={addButtonRef}
           type="button"
           onClick={(e) => {
             openInstall(e.currentTarget);
           }}
-          className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
+          <Plus data-icon="inline-start" aria-hidden="true" focusable="false" />
           {t('governance.mcp.addServer')}
-        </button>
+        </Button>
       </div>
       <div className="min-h-0 flex-1">
         {installing ? (
-          // The install panel is reachable from any board state (incl. an empty/loading list),
-          // so it renders in a BoardLayout detail slot regardless of the fetch status.
           <BoardLayout
             master={master}
             detail={installPanel}

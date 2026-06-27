@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { DisplayChildReport } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { hasField, hasOptions, statusDotClass, statusLabelKey } from './swarmRow';
+import { Button } from '@/components/ui/button';
 
 // SwarmReportTable (SWARM-01 / D-08): a summary table over the swarm []ChildReport
 // payload — one row per worker (# goal-index / Worker child-id / Status dot+label /
@@ -94,12 +95,13 @@ function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
     <>
       <tr>
         <td colSpan={4} className="border-b border-border p-0">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onToggle}
             aria-expanded={expanded}
             aria-label={t('swarm.expand')}
-            className="grid w-full grid-cols-[3rem_1fr_8rem_2fr] items-center gap-2 px-3 py-2 text-left hover:bg-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+            className="grid h-auto min-h-11 w-full grid-cols-[3rem_1fr_8rem_2fr] justify-normal gap-2 rounded-none px-3 py-2 text-left hover:bg-surface"
           >
             <span className="font-mono text-[0.75rem] tabular-nums text-text-faint">
               {report.goal_index}
@@ -115,7 +117,7 @@ function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
             <span className="truncate text-sm text-text-muted">
               {report.summary ?? t('swarm.noSummary')}
             </span>
-          </button>
+          </Button>
         </td>
       </tr>
       {expanded ? (

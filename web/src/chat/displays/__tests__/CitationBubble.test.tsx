@@ -33,13 +33,13 @@ describe('CitationBubble (DISP-03 / D-04)', () => {
   it('a `cited` chip is accent; a `consulted`-only chip is neutral (Color rule)', () => {
     const { rerender } = render(<CitationBubble number={1} source={source({ cited: true })} />);
     const cited = screen.getByRole('button');
-    expect(cited.className).toContain('bg-accent');
-    expect(cited.className).not.toContain('bg-surface-3');
+    expect(cited.className).toContain('bg-primary');
+    expect(cited.className).not.toContain('bg-secondary');
 
     rerender(<CitationBubble number={1} source={source({ cited: false })} />);
     const consulted = screen.getByRole('button');
-    expect(consulted.className).toContain('bg-surface-3');
-    expect(consulted.className).not.toContain('bg-accent');
+    expect(consulted.className).toContain('bg-secondary');
+    expect(consulted.className).not.toContain('bg-primary');
   });
 
   it('opens the hovercard on FOCUS (keyboard path — not hover-only, D-16)', async () => {

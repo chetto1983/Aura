@@ -138,15 +138,15 @@ async function openGovernance(page: Page) {
 }
 
 test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
-  test('opens the workspace with the MCP/Skills/Scheduler tablist and the read-only banner', async ({
+  test('opens the workspace with the shadcn MCP/Skills/Scheduler tablist', async ({
     page,
   }, testInfo) => {
     await openGovernance(page);
 
-    // The read-only banner sets expectation.
+    // The obsolete read-only banner is gone now that governance has write-capable flows.
     await expect(
       page.getByText('Read-only — viewing only. Changes arrive in a later phase.'),
-    ).toBeVisible({ timeout: 15000 });
+    ).toHaveCount(0);
 
     // The tab strip is a real role=tablist with the three governance tabs.
     const tablist = page.getByRole('tablist', { name: 'Governance' });

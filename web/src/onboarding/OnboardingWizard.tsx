@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CapabilityPicker } from './CapabilityPicker';
 import { CredentialStep } from './CredentialStep';
@@ -26,6 +27,7 @@ import {
   type OnboardingStart,
   type OnboardingStepResponse,
 } from './onboardingApi';
+import { Button } from '@/components/ui/button';
 
 // OnboardingWizard is the lazy default export the AppShell mounts as a FULL-SCREEN overlay (D-04 —
 // NOT a governance tab, NOT a MODES entry). It runs the linear flow over the Plan-05 endpoints:
@@ -187,16 +189,16 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         <h1 id={titleId} className="font-display text-[18px] font-semibold text-text">
           {t('onboarding.title')}
         </h1>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           aria-label={t('onboarding.close')}
           onClick={onClose}
-          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-text-muted outline-none transition-colors hover:bg-surface-2 hover:text-text focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-text-muted hover:text-text"
         >
-          <span aria-hidden="true" className="text-lg">
-            ✕
-          </span>
-        </button>
+          <X data-icon aria-hidden="true" className="size-4" />
+        </Button>
       </header>
       {children}
     </div>
@@ -231,13 +233,9 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
       <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
         <div className="flex max-w-md flex-col items-center gap-3">
           <p className="text-[15.5px] text-danger">{t('onboarding.backendUnavailable')}</p>
-          <button
-            type="button"
-            onClick={retryStart}
-            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
-          >
+          <Button type="button" variant="outline" onClick={retryStart}>
             {t('onboarding.retry')}
-          </button>
+          </Button>
         </div>
       </div>,
     );
@@ -343,13 +341,14 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 />
               ) : null}
 
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={onClose}
-                className="min-h-[44px] self-center rounded-md border border-border bg-surface-2 px-6 py-2 text-[13px] font-semibold text-text outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+                className="self-center px-6"
               >
                 {t('onboarding.complete.done')}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>

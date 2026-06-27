@@ -73,6 +73,7 @@ describe('ApprovalBadge (APRV-01 / D-04)', () => {
     });
     const badge = await screen.findByRole('button', { name: '2 approvals waiting' });
     expect(badge.textContent).toContain('2');
+    expect(badge.getAttribute('data-slot')).toBe('button');
   });
 
   it('announces a count change via an aria-live="polite" region (not assertive)', async () => {
@@ -132,6 +133,7 @@ describe('ApprovalList (APRV-01 / D-04/D-06)', () => {
     await waitFor(() => {
       expect(screen.getByText('Which city?')).toBeTruthy();
     });
+    expect(screen.getByText('Which city?').closest('[data-slot="card"]')).not.toBeNull();
     expect(screen.getByText('Weather run')).toBeTruthy();
     expect(screen.getByText('Approve the deploy?')).toBeTruthy();
   });

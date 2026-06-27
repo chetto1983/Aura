@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSourceExplorer } from '../chat/displays/sourceExplorerControls';
 import { isSourceNode, sourcesForNode } from './nodeSources';
 import type { GraphNode } from './types';
+import { Button } from '@/components/ui/button';
 
 // NodeInspector — the RIGHT pane of the Frame-06 workspace. It renders the selected node's
 // label / properties (as TEXT, never HTML — T-27-04 / HARDEN-08) / degree / neighbors /
@@ -59,14 +61,16 @@ export function NodeInspector({ node, query, onPinPath, onClose }: NodeInspector
         <h3 className="font-display text-[18px] font-semibold text-text">
           {node.caption ?? node.id}
         </h3>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={t('display.closeAria')}
-          className="min-h-[44px] min-w-[44px] rounded-md text-text-muted hover:text-text"
+          className="text-text-muted hover:text-text"
         >
-          ✕
-        </button>
+          <X data-icon aria-hidden="true" />
+        </Button>
       </header>
 
       <dl className="flex flex-col gap-2 text-[15.5px]">
@@ -115,37 +119,38 @@ export function NodeInspector({ node, query, onPinPath, onClose }: NodeInspector
       </section>
 
       <footer className="mt-auto flex flex-col gap-2">
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => {
             onPinPath(node);
           }}
-          className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-1 text-[13px] font-semibold text-text"
         >
           {t('graph.inspector.pinPath')}
-        </button>
+        </Button>
         {isSourceNode(node) ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => {
               openSources(sourcesForNode(node), node.ref_id ?? node.id);
             }}
-            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-1 text-[13px] font-semibold text-accent-text"
+            className="text-accent-text hover:text-accent-text"
           >
             {t('graph.inspector.openSource')}
-          </button>
+          </Button>
         ) : null}
         {query.length > 0 ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
             aria-expanded={cypherOpen}
             onClick={() => {
               setCypherOpen((v) => !v);
             }}
-            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-3 py-1 text-[13px] font-semibold text-text"
           >
             {t('graph.inspector.showCypher')}
-          </button>
+          </Button>
         ) : null}
         {cypherOpen && query.length > 0 ? (
           <div className="flex flex-col gap-1">

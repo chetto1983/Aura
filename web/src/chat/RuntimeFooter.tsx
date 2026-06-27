@@ -13,6 +13,7 @@ import {
   seedSession,
 } from './footerMetrics';
 import type { TurnUsage } from './sseAdapter';
+import { Button } from '@/components/ui/button';
 
 // RuntimeFooter (CHAT-04 / D-10/D-12) is the one runtime instrument cluster
 // spanning the AppShell bottom: Tokens · Cache · Cost · Context. It reuses the
@@ -115,20 +116,21 @@ export function RuntimeFooter({
         {/* AC-7 mobile compact summary + tap-to-expand disclosure (hidden ≥sm):
             Session cost + context % are the two figures an operator scans on a
             phone; the full trio expands below it. */}
-        <button
+        <Button
           type="button"
+          variant="ghost"
           aria-expanded={expanded}
           aria-controls="footer-telemetry-detail"
           onClick={() => {
             setExpanded((v) => !v);
           }}
-          className="flex min-h-[1.5rem] items-baseline gap-3 py-1 font-mono text-xs text-text-muted outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:hidden"
+          className="h-auto min-h-[1.5rem] items-baseline gap-3 px-0 py-1 font-mono text-xs text-text-muted hover:bg-transparent sm:hidden"
         >
           <span className="text-text">
             {sessionLabel} {announced.sessionCost}
           </span>
           <span className="text-text-faint">{`${String(ctxPct)}%`}</span>
-        </button>
+        </Button>
 
         {/* Full instrument cluster: always on ≥sm; on mobile only when expanded. */}
         <div

@@ -1,5 +1,9 @@
+import { RefreshCw, UploadCloud, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Asset } from './types';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 interface AttachmentCardProps {
   readonly asset: Asset;
@@ -12,53 +16,63 @@ export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: Attachme
   const { t } = useTranslation();
   const detail = asset.error_message ?? asset.summary ?? statusText(asset.status, t);
   return (
-    <div className="max-w-sm rounded-[var(--radius-md)] border border-border bg-surface-2 px-3 py-2 text-sm text-text">
+    <Card className="max-w-sm gap-2 bg-surface-2 px-3 py-2 text-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium">{asset.file_name}</p>
-          <p className="text-xs text-text-muted">{statusText(asset.status, t)}</p>
+          <Badge variant={statusVariant(asset.status)} className="mt-1 text-[0.75rem]">
+            {statusText(asset.status, t)}
+          </Badge>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {onRetry !== undefined && asset.status === 'failed' ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 onRetry(asset.id);
               }}
-              className="rounded-[var(--radius-sm)] px-2 py-1 text-xs text-text-muted outline-none hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="px-2 text-xs text-text-muted hover:bg-surface-3 hover:text-text"
             >
+              <RefreshCw data-icon aria-hidden="true" className="size-3.5" />
               {t('chat.attachments.retry')}
-            </button>
+            </Button>
           ) : null}
           {onPromote !== undefined && isPromotable(asset) ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 onPromote(asset.id);
               }}
-              className="rounded-[var(--radius-sm)] px-2 py-1 text-xs text-text-muted outline-none hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="px-2 text-xs text-text-muted hover:bg-surface-3 hover:text-text"
             >
+              <UploadCloud data-icon aria-hidden="true" className="size-3.5" />
               {t('chat.attachments.promote')}
-            </button>
+            </Button>
           ) : null}
           {onRemove !== undefined && asset.status !== 'deleted' && asset.status !== 'canceled' ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               aria-label={t('chat.attachments.remove', { name: asset.file_name })}
               onClick={() => {
                 onRemove(asset.id);
               }}
-              className="flex min-h-7 min-w-7 items-center justify-center rounded-full text-text-muted outline-none hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="h-8 min-h-8 w-8 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
             >
-              <span aria-hidden="true">x</span>
-            </button>
+              <X data-icon aria-hidden="true" className="size-3.5" />
+            </Button>
           ) : null}
         </div>
       </div>
       {detail.length > 0 ? (
         <p className="mt-2 text-xs leading-relaxed text-text-muted">{detail}</p>
       ) : null}
-    </div>
+    </Card>
   );
 }
 
@@ -78,5 +92,18 @@ function statusText(status: Asset['status'], t: ReturnType<typeof useTranslation
       return t('chat.attachments.ready');
     default:
       return t('chat.attachments.processing');
+  }
+}
+
+function statusVariant(status: Asset['status']): 'secondary' | 'warning' | 'success' | 'danger' {
+  switch (status) {
+    case 'failed':
+    case 'refused':
+      return 'danger';
+    case 'searchable':
+    case 'complete':
+      return 'success';
+    default:
+      return 'warning';
   }
 }

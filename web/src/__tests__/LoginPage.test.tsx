@@ -86,12 +86,16 @@ describe('LoginPage', () => {
     const { container } = renderLogin();
     const field = screen.getByLabelText('Operator passphrase');
     expect(field).toBeTruthy();
+    expect(field.getAttribute('data-slot')).toBe('input');
+    expect(screen.getByRole('main').querySelector('[data-slot="card"]')).not.toBeNull();
     expect(field.getAttribute('type')).toBe('password');
     expect(field.getAttribute('autocomplete')).toBe('current-password');
     // A pristine field must NOT emit aria-invalid (omit-when-valid, not aria-invalid="false").
     expect(field.getAttribute('aria-invalid')).toBe(null);
     // The CTA keeps the name "Sign in" (frontend-design: an action keeps its name).
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sign in' }).getAttribute('data-slot')).toBe(
+      'button',
+    );
     expectLoginAriaValuesToBeAxeValid(container);
   });
 
@@ -111,6 +115,7 @@ describe('LoginPage', () => {
 
     // Pristine: the button offers to SHOW the passphrase (aria-pressed reflects state).
     const show = screen.getByRole('button', { name: 'Show passphrase' });
+    expect(show.getAttribute('data-slot')).toBe('button');
     expect(show.getAttribute('aria-pressed')).toBe('false');
 
     fireEvent.click(show);

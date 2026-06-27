@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
@@ -15,6 +16,7 @@ import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import type { TurnUsage } from './chat/sseAdapter';
 import { useCreateConversation } from './conversations/useConversations';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
+import { Button } from '@/components/ui/button';
 
 const ExternalStoreChat = lazy(() =>
   import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
@@ -183,19 +185,18 @@ export function AppShell() {
           selectThread(id);
         }}
       />
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={() => {
           setOnboardingOpen(true);
           surfaces.closeNav();
         }}
-        className="flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+        className="w-full bg-surface-2 hover:border-border-strong"
       >
-        <span aria-hidden="true" className="text-accent-text">
-          +
-        </span>
+        <Plus data-icon="inline-start" aria-hidden="true" focusable="false" />
         {t('onboarding.open')}
-      </button>
+      </Button>
       <div className="min-h-0 flex-1 overflow-hidden">
         <ConversationSidebar activeId={activeThreadId} onSelect={selectThread} />
       </div>

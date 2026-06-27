@@ -1,28 +1,24 @@
 /* eslint-disable react-refresh/only-export-components */
 import type { ReactNode } from 'react';
+import { AlertCircle, CircleSlash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { Skeleton } from '@/components/ui/skeleton';
 
-// governanceView.tsx holds the shared view-state primitives every governance board reuses,
-// so the loading / empty / error / error-auth contract is written ONCE (CLAUDE.md "reusable
-// code" — never duplicate the GraphExplorer state blocks across three boards). It mirrors the
-// GraphExplorer state machine: an expired-session 401 throws `Error("HTTP 401")` in the data
-// layer, which TanStack Query surfaces here as a VISIBLE error-auth state, never a blank board
-// (threat T-28-03-04). Every backend-supplied string is rendered by the boards as React-escaped
-// text — this module only renders translated copy.
-
-/** The five board view states (28-UI-SPEC §State contract), mirroring GraphExplorer's
- * ViewStatus. `error-auth` is the expired-session path; `error` is any other failure. */
 export type BoardStatus = 'loading' | 'populated' | 'empty' | 'error' | 'error-auth';
 
-/** isAuthError matches the data-layer's `Error("HTTP 401")` so a board renders the
- * sign-in-again copy instead of the generic error copy (the GraphExplorer precedent). */
 export function isAuthError(err: unknown): boolean {
   return err instanceof Error && err.message === 'HTTP 401';
 }
 
-/** boardStatus collapses a TanStack-style query result into a BoardStatus. `isEmpty` lets
- * each board decide emptiness (e.g. zero rows). A 401 → 'error-auth'; any other error →
- * 'error'; loading before data → 'loading'. */
 export function boardStatus(opts: {
   readonly isLoading: boolean;
   readonly isError: boolean;
@@ -43,13 +39,9 @@ export interface BoardStateViewProps {
   readonly emptyHeading: string;
   readonly emptyBody: string;
   readonly onRetry: () => void;
-  /** Rendered only when status === 'populated'. */
   readonly children: ReactNode;
 }
 
-/** BoardStateView renders the loading / empty / error / error-auth frames (token classes
- * copied from GraphExplorer) and only mounts `children` once populated. role="status" on the
- * loading region and role="alert" on the error regions keep the states announced to AT. */
 export function BoardStateView({
   status,
   emptyHeading,
@@ -61,48 +53,59 @@ export function BoardStateView({
 
   if (status === 'loading') {
     return (
-      <div role="status" className="grid h-full place-items-center p-8 text-sm text-text-muted">
-        {t('governance.loading')}
+      <div
+        role="status"
+        aria-label={t('governance.loading')}
+        className="flex h-full min-h-0 flex-col gap-3 p-4"
+      >
+        <span className="sr-only">{t('governance.loading')}</span>
+        <Skeleton className="h-12 w-full max-w-xl bg-surface-3" />
+        <Skeleton className="h-12 w-full max-w-lg bg-surface-3" />
+        <Skeleton className="h-12 w-full max-w-2xl bg-surface-3" />
       </div>
     );
   }
 
   if (status === 'error-auth') {
     return (
-      <div role="alert" className="grid h-full place-items-center p-8 text-center">
-        <p className="max-w-md text-[15.5px] text-danger">{t('governance.authExpired')}</p>
+      <div className="grid h-full place-items-center p-6 text-center">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertCircle data-icon="inline-start" aria-hidden="true" focusable="false" />
+          <AlertDescription>{t('governance.authExpired')}</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   if (status === 'error') {
     return (
-      <div role="alert" className="grid h-full place-items-center p-8 text-center">
-        <div className="flex max-w-md flex-col items-center gap-3">
-          <p className="text-[15.5px] text-danger">{t('governance.error')}</p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text transition-colors hover:border-border-strong"
-          >
-            {t('governance.retry')}
-          </button>
-        </div>
+      <div className="grid h-full place-items-center p-6 text-center">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertCircle data-icon="inline-start" aria-hidden="true" focusable="false" />
+          <AlertDescription className="gap-3">
+            <p>{t('governance.error')}</p>
+            <Button type="button" variant="outline" onClick={onRetry}>
+              {t('governance.retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   if (status === 'empty') {
     return (
-      <div className="grid h-full place-items-center p-8 text-center">
-        <div className="flex max-w-sm flex-col items-center gap-3">
-          <span aria-hidden="true" className="text-4xl leading-none text-accent-text opacity-70">
-            ◍
-          </span>
-          <h2 className="font-display text-[22px] font-semibold text-text">{emptyHeading}</h2>
-          <p className="text-[15.5px] leading-relaxed text-text-muted">{emptyBody}</p>
-        </div>
-      </div>
+      <Empty className="h-full border-0 bg-transparent">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <CircleSlash2 aria-hidden="true" focusable="false" />
+          </EmptyMedia>
+          <EmptyTitle role="heading" aria-level={2} className="font-display text-[22px]">
+            {emptyHeading}
+          </EmptyTitle>
+          <EmptyDescription className="text-[15.5px]">{emptyBody}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 

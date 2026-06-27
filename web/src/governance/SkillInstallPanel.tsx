@@ -1,9 +1,15 @@
 import { useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { Spinner } from '../components/Spinner';
 import { installSkill, searchSkillCatalog, type SkillsInstallInfo } from './governanceApi';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // SkillInstallPanel (SKW-01) — search the skills.sh catalog and install a skill in ONE step.
 // Claude-Code parity (operator directive 2026-06-21): no approval ceremony, no "stage for
@@ -67,31 +73,40 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
         <h3 id={headingId} className="font-display text-[20px] font-semibold text-text">
           {t('governance.skills.install.heading')}
         </h3>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={t('governance.closeAria')}
-          className="min-h-[44px] min-w-[44px] rounded-md text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-text-muted hover:text-text"
         >
-          ✕
-        </button>
+          <X data-icon aria-hidden="true" className="size-4" />
+        </Button>
       </header>
 
       {/* Catalog search — primary discovery, on by default. */}
       <div className="flex flex-col gap-2">
-        <label htmlFor={searchId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={searchId} className="text-[13px] font-semibold text-text">
           {t('governance.skills.install.searchLabel')}
-        </label>
-        <input
-          id={searchId}
-          type="search"
-          value={searchQuery}
-          onChange={(event) => {
-            setSearchQuery(event.target.value);
-          }}
-          placeholder={t('governance.skills.install.searchLabel')}
-          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+        </Label>
+        <div className="relative">
+          <Search
+            data-icon
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-faint"
+          />
+          <Input
+            id={searchId}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+            }}
+            placeholder={t('governance.skills.install.searchLabel')}
+            className="pl-9 text-[13px]"
+          />
+        </div>
         {catalogDisabled ? (
           <p role="note" className="text-[13px] text-text-muted">
             {t('governance.skills.install.externalOffNote')}
@@ -104,19 +119,20 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
               const spec = hit.skill ? `${hit.source}@${hit.skill}` : hit.source;
               return (
                 <li key={spec}>
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => {
                       setSource(spec);
                     }}
                     aria-pressed={source === spec}
-                    className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-left font-mono text-[13px] text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-accent"
+                    className="h-auto min-h-11 w-full justify-between whitespace-normal bg-surface-2 text-left font-mono text-[13px] aria-pressed:border-accent"
                   >
                     <span className="truncate">{spec}</span>
                     {hit.installs ? (
                       <span className="shrink-0 tabular-nums text-text-muted">{hit.installs}</span>
                     ) : null}
-                  </button>
+                  </Button>
                 </li>
               );
             })}
@@ -126,10 +142,10 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
 
       {/* Source field — install directly from owner/repo, a URL, or a path. */}
       <div className="flex flex-col gap-1">
-        <label htmlFor={sourceId} className="text-[13px] font-semibold text-text">
+        <Label htmlFor={sourceId} className="text-[13px] font-semibold text-text">
           {t('governance.skills.install.sourceLabel')}
-        </label>
-        <input
+        </Label>
+        <Input
           id={sourceId}
           type="text"
           value={source}
@@ -140,7 +156,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
           placeholder={t('governance.skills.install.sourcePlaceholder')}
           aria-invalid={ariaInvalid(emptyError)}
           aria-describedby={emptyError ? `${sourceId}-err` : undefined}
-          className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="font-mono text-[13px]"
         />
         {emptyError ? (
           <p id={`${sourceId}-err`} role="alert" className="text-[13px] text-danger">
@@ -155,7 +171,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
 
       {/* After install — the active confirmation (source + active destination). */}
       {installed ? (
-        <div className="flex flex-col gap-2 rounded-md bg-surface-3 p-4">
+        <Card className="gap-2 bg-surface-3 p-4">
           <dl className="flex flex-col gap-2">
             <InstalledField
               label={t('governance.skills.install.field.source')}
@@ -169,33 +185,28 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
           <p role="status" className="text-[13px] text-success">
             {t('governance.skills.install.staged')}
           </p>
-        </div>
+        </Card>
       ) : null}
 
       {install.isError ? (
-        <p role="alert" className="text-[13px] text-danger">
-          {t('governance.error')}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{t('governance.error')}</AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
           disabled={install.isPending || installed !== undefined}
           aria-busy={install.isPending}
           onClick={submit}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
         >
           {install.isPending ? <Spinner /> : null}
           {t('governance.skills.install.submit')}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
-        >
+        </Button>
+        <Button type="button" variant="outline" onClick={onClose}>
           {t('governance.skills.install.discard')}
-        </button>
+        </Button>
       </div>
     </section>
   );

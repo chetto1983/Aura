@@ -111,7 +111,9 @@ describe('SearchPanel (CHAT-02 / D-08)', () => {
 
   it('shows snippet rows with the conversation title and highlights the match', async () => {
     renderPanel();
-    fireEvent.change(screen.getByPlaceholderText('Search conversations'), {
+    const search = screen.getByPlaceholderText('Search conversations');
+    expect(search.getAttribute('data-slot')).toBe('input');
+    fireEvent.change(search, {
       target: { value: 'meteo' },
     });
     await waitFor(() => {

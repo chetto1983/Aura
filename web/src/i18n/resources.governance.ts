@@ -51,7 +51,7 @@ export const governanceEn = {
       calendar: {
         heading: 'Connect calendar / PIM account',
         loading: 'Loading accounts…',
-        offline: "Calendar connect is unavailable or not configured on this deployment.",
+        offline: 'Calendar connect is unavailable or not configured on this deployment.',
         empty: 'No calendar accounts yet. Add one below.',
         accountsHeading: 'Accounts',
         disconnect: 'Disconnect',
@@ -106,7 +106,8 @@ export const governanceEn = {
           heading: 'Finish sign-in on Microsoft',
           codeLabel: 'Enter this code:',
           openVerification: 'Open Microsoft sign-in',
-          instructions: 'Open the link, enter the code, and sign in. This panel updates automatically.',
+          instructions:
+            'Open the link, enter the code, and sign in. This panel updates automatically.',
           awaitingUser: 'Waiting for you to enter the code…',
           linked: 'Account linked. You can close the Microsoft tab.',
           failed: "Sign-in didn't complete. Recreate the account to try again.",
@@ -327,7 +328,8 @@ export const governanceIt = {
       calendar: {
         heading: 'Collega account calendario / PIM',
         loading: 'Caricamento account…',
-        offline: 'Il collegamento calendario non è disponibile o non è configurato su questo deployment.',
+        offline:
+          'Il collegamento calendario non è disponibile o non è configurato su questo deployment.',
         empty: 'Ancora nessun account calendario. Aggiungine uno qui sotto.',
         accountsHeading: 'Account',
         disconnect: 'Disconnetti',
@@ -349,7 +351,8 @@ export const governanceIt = {
           clientId: 'Client ID',
           clientSecret: 'Client secret',
           tenantId: 'Tenant ID',
-          tenantIdHint: 'Usa "common" per la maggior parte degli account personali, o il tuo tenant ID Azure AD.',
+          tenantIdHint:
+            'Usa "common" per la maggior parte degli account personali, o il tuo tenant ID Azure AD.',
           icsUrl: 'URL ICS',
           icsUrlHint: 'Un link http(s) pubblico a un feed calendario .ics.',
           imapHost: 'Host IMAP',
@@ -377,12 +380,14 @@ export const governanceIt = {
         redirectHint:
           "Registra esattamente questo redirect URI nel tuo client OAuth Google Cloud di tipo 'Applicazione web'.",
         connectGoogle: 'Connetti Google',
-        consentNote: 'Completa il consenso nella scheda aperta — la lista account si aggiorna da sola.',
+        consentNote:
+          'Completa il consenso nella scheda aperta — la lista account si aggiorna da sola.',
         device: {
           heading: 'Completa l’accesso su Microsoft',
           codeLabel: 'Inserisci questo codice:',
           openVerification: 'Apri accesso Microsoft',
-          instructions: 'Apri il link, inserisci il codice e accedi. Questo pannello si aggiorna da solo.',
+          instructions:
+            'Apri il link, inserisci il codice e accedi. Questo pannello si aggiorna da solo.',
           awaitingUser: 'In attesa che tu inserisca il codice…',
           linked: 'Account collegato. Puoi chiudere la scheda Microsoft.',
           failed: "L'accesso non è stato completato. Ricrea l'account per riprovare.",
@@ -390,9 +395,11 @@ export const governanceIt = {
         advanced: {
           toggle: 'Avanzate (opzionale)',
           domainsLabel: 'Domini',
-          domainsHint: "Domini email gestiti da questo account, separati da virgola (suggerimento di instradamento).",
+          domainsHint:
+            'Domini email gestiti da questo account, separati da virgola (suggerimento di instradamento).',
           priorityLabel: 'Priorità',
-          priorityHint: 'La priorità più alta vince quando più account corrispondono a un dominio (default 0).',
+          priorityHint:
+            'La priorità più alta vince quando più account corrispondono a un dominio (default 0).',
         },
       },
       detail: {

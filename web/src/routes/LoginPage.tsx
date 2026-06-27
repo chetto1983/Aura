@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ariaInvalid } from '../a11y/aria';
@@ -11,6 +12,12 @@ import {
 } from '../auth/authConfig';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { ThemeSwitcher } from '../theme/ThemeSwitcher';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 type SubmitState = 'idle' | 'submitting';
 type AuthProvider = 'passphrase' | 'authula';
@@ -295,7 +302,7 @@ export function LoginPage() {
   return (
     <main className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-bg px-6 py-8 text-text">
       <LoginParticleBackground />
-      <div className="relative z-10 w-full max-w-md rounded-[var(--radius-xl)] border border-border bg-surface/95 p-5 shadow-[0_28px_90px_rgb(0_0_0_/_0.34)] backdrop-blur-xl sm:p-6">
+      <Card className="relative z-10 w-full max-w-md gap-0 rounded-[var(--radius-xl)] bg-surface/95 p-5 shadow-[0_28px_90px_rgb(0_0_0_/_0.34)] backdrop-blur-xl sm:p-6">
         <div className="flex items-center justify-between gap-2 pb-5">
           <ThemeSwitcher />
           <LanguageSwitcher />
@@ -313,9 +320,9 @@ export function LoginPage() {
         </div>
 
         {sessionExpired ? (
-          <p role="status" className="mb-3 text-sm text-warning">
-            {t('login.sessionExpired')}
-          </p>
+          <Alert role="status" className="mb-3">
+            <AlertDescription>{t('login.sessionExpired')}</AlertDescription>
+          </Alert>
         ) : null}
 
         <form
@@ -330,11 +337,9 @@ export function LoginPage() {
         >
           {!authula ? (
             <div className="flex flex-col gap-1">
-              <label htmlFor="passphrase" className="text-sm text-text">
-                {t('login.fieldLabel')}
-              </label>
+              <Label htmlFor="passphrase">{t('login.fieldLabel')}</Label>
               <div className="relative">
-                <input
+                <Input
                   ref={passphraseRef}
                   id="passphrase"
                   name="passphrase"
@@ -342,7 +347,7 @@ export function LoginPage() {
                   autoComplete="current-password"
                   aria-invalid={ariaInvalid(error !== null)}
                   aria-describedby="passphrase-hint"
-                  className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 pl-3 pr-11 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="min-h-[var(--row-h)] bg-surface-2 pr-11 text-sm"
                 />
                 <PasswordToggle
                   pressed={showPassword}
@@ -359,10 +364,8 @@ export function LoginPage() {
           ) : authulaStep === 'credentials' ? (
             <>
               <div className="flex flex-col gap-1">
-                <label htmlFor="authula-email" className="text-sm text-text">
-                  {t('login.authula.emailLabel')}
-                </label>
-                <input
+                <Label htmlFor="authula-email">{t('login.authula.emailLabel')}</Label>
+                <Input
                   key="authula-email"
                   ref={emailRef}
                   id="authula-email"
@@ -370,21 +373,19 @@ export function LoginPage() {
                   type="email"
                   autoComplete="username"
                   aria-invalid={ariaInvalid(credentialError)}
-                  className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 px-3 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="min-h-[var(--row-h)] bg-surface-2 text-sm"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="authula-password" className="text-sm text-text">
-                  {t('login.authula.passwordLabel')}
-                </label>
+                <Label htmlFor="authula-password">{t('login.authula.passwordLabel')}</Label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="authula-password"
                     name="password"
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     aria-invalid={ariaInvalid(credentialError)}
-                    className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 pl-3 pr-11 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    className="min-h-[var(--row-h)] bg-surface-2 pr-11 text-sm"
                   />
                   <PasswordToggle
                     pressed={showPassword}
@@ -399,12 +400,12 @@ export function LoginPage() {
           ) : (
             <>
               <div className="flex flex-col gap-1">
-                <label htmlFor="authula-code" className="text-sm text-text">
+                <Label htmlFor="authula-code">
                   {useBackupCode
                     ? t('login.authula.backupCodeLabel')
                     : t('login.authula.totpLabel')}
-                </label>
-                <input
+                </Label>
+                <Input
                   key={useBackupCode ? 'authula-backup-code' : 'authula-totp-code'}
                   ref={codeRef}
                   id="authula-code"
@@ -413,45 +414,39 @@ export function LoginPage() {
                   inputMode={useBackupCode ? 'text' : 'numeric'}
                   autoComplete="one-time-code"
                   aria-invalid={ariaInvalid(codeError)}
-                  className="min-h-[var(--row-h)] w-full rounded-[var(--radius-md)] border border-border bg-surface-2 px-3 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="min-h-[var(--row-h)] bg-surface-2 text-sm"
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm text-text-muted">
-                <input
-                  name="trust_device"
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-border accent-[var(--accent)]"
-                />
+              <Label className="flex items-center gap-2 text-sm font-normal text-text-muted">
+                <Checkbox name="trust_device" />
                 {t('login.authula.trustDevice')}
-              </label>
-              <button
+              </Label>
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setUseBackupCode((value) => !value);
                   setError(null);
                 }}
-                className="self-start text-sm text-accent underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="self-start px-0 text-sm text-accent hover:bg-transparent hover:underline"
               >
                 {useBackupCode ? t('login.authula.useTotpCode') : t('login.authula.useBackupCode')}
-              </button>
+              </Button>
             </>
           )}
 
           {error !== null ? (
-            <p role="alert" className="text-sm text-danger">
-              {t(error)}
-            </p>
+            <Alert variant="destructive">
+              <AlertDescription>{t(error)}</AlertDescription>
+            </Alert>
           ) : null}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="min-h-[44px] rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-on-accent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-70"
-          >
+          <Button type="submit" disabled={submitting} className="text-sm">
             {submitLabel}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
     </main>
   );
 }
@@ -517,46 +512,20 @@ function PasswordToggle({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       onClick={onClick}
       aria-pressed={pressed}
       aria-label={label}
-      className="absolute inset-y-0 right-0 flex min-h-[var(--row-h)] min-w-11 items-center justify-center rounded-r-[var(--radius-md)] px-3 text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="absolute inset-y-0 right-0 h-auto min-h-[var(--row-h)] w-11 rounded-l-none text-text-muted hover:text-text"
     >
       {pressed ? (
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-          <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-          <path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-          <line x1="2" y1="2" x2="22" y2="22" />
-        </svg>
+        <EyeOff data-icon="icon" aria-hidden="true" focusable="false" />
       ) : (
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
+        <Eye data-icon="icon" aria-hidden="true" focusable="false" />
       )}
-    </button>
+    </Button>
   );
 }

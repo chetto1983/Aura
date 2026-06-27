@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { fetchSchedulerRuns, type SchedulerRun, type SchedulerTask } from './governanceApi';
+import { Button } from '@/components/ui/button';
 
 // TaskRunHistory — the detail pane for a selected scheduler task (GOV-03): the paginated,
 // newest-first run history. Pagination is page-size accumulation — each "Show more" raises the
@@ -39,14 +41,16 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
         <h3 className="break-words font-display text-[20px] font-semibold text-text">
           {t('governance.scheduler.runs.heading')}
         </h3>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={t('governance.closeAria')}
-          className="min-h-[44px] min-w-[44px] rounded-md text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-text-muted hover:text-text"
         >
-          ✕
-        </button>
+          <X data-icon aria-hidden="true" />
+        </Button>
       </header>
 
       {runs.isLoading ? (
@@ -92,15 +96,16 @@ export function TaskRunHistory({ task, onClose }: TaskRunHistoryProps) {
               {t('governance.pagination.status', { shown: rows.length, total })}
             </span>
             {!reachedEnd ? (
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => {
                   setLimit((n) => n + RUN_PAGE);
                 }}
-                className="min-h-[44px] rounded-md border border-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="px-4 text-[13px]"
               >
                 {t('governance.pagination.more')}
-              </button>
+              </Button>
             ) : null}
           </div>
         </>

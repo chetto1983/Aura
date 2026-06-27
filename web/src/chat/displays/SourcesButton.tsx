@@ -1,5 +1,7 @@
+import { List } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DisplaySource } from './types';
+import { Button } from '@/components/ui/button';
 
 // SourcesButton (D-13 / DISP-05): the answer-level "Sources (N)" affordance. It
 // shows the count of consulted sources and opens the read-only Source Explorer on
@@ -22,28 +24,17 @@ export function SourcesButton({ sources, onOpen }: SourcesButtonProps) {
   if (count === 0) return null; // N=0 → no button (silent empty-state)
 
   return (
-    <button
+    <Button
       type="button"
       onClick={() => {
         onOpen(sources);
       }}
       aria-label={t('source.sourcesAria', { count })}
-      className="inline-flex min-h-11 items-center gap-1 rounded-[var(--radius-md)] px-2 text-[0.75rem] font-medium text-accent-text outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      variant="ghost"
+      className="px-2 text-[0.75rem] text-accent-text hover:bg-transparent hover:underline"
     >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M4 6h16 M4 12h16 M4 18h10" />
-      </svg>
+      <List data-icon aria-hidden="true" />
       {t('source.sources', { count })}
-    </button>
+    </Button>
   );
 }

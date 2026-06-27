@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Power, ShieldCheck, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import {
@@ -8,6 +9,10 @@ import {
   trustMcpServer,
   type McpServerRow,
 } from './governanceApi';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // McpLifecycleCluster (MCPW-02/03) — the inline control cluster on the MCP server detail header
 // (NOT a kebab): an enable/disable toggle (success/muted dot + label, idempotent), a
@@ -68,15 +73,16 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
     >
       <div className="flex flex-wrap items-center gap-2">
         {/* Enable/disable toggle — never color-alone (dot + label). */}
-        <button
+        <Button
           type="button"
+          variant="outline"
           aria-pressed={enabled}
           disabled={enableMutation.isPending}
           onClick={() => {
             enableMutation.mutate(!enabled);
           }}
-          className="flex min-h-[44px] items-center gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         >
+          <Power data-icon aria-hidden="true" className="size-4" />
           <span
             aria-hidden="true"
             className={`inline-block h-2 w-2 shrink-0 rounded-sm ${
@@ -92,27 +98,30 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
             ·{' '}
             {enabled ? t('governance.mcp.lifecycle.disable') : t('governance.mcp.lifecycle.enable')}
           </span>
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => {
             setTrusting((prev) => !prev);
           }}
-          className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
         >
+          <ShieldCheck data-icon aria-hidden="true" className="size-4" />
           {t('governance.mcp.lifecycle.trust')}
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => {
             setConfirmingRemove(true);
           }}
-          className="min-h-[44px] rounded-md border border-danger px-3 py-2 text-[13px] font-semibold text-danger outline-none hover:bg-danger/10 focus-visible:ring-2 focus-visible:ring-ring"
+          className="border border-danger text-danger hover:bg-danger/10 hover:text-danger"
         >
+          <Trash2 data-icon aria-hidden="true" className="size-4" />
           {t('governance.mcp.lifecycle.remove')}
-        </button>
+        </Button>
       </div>
 
       {/* Trust & approve inline form — requires a reason. */}
@@ -125,10 +134,10 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
             trustMutation.mutate({ reason: reason.trim() });
           }}
         >
-          <label htmlFor={reasonId} className="text-[13px] font-semibold text-text">
+          <Label htmlFor={reasonId} className="text-[13px] font-semibold text-text">
             {t('governance.mcp.lifecycle.trustReasonLabel')}
-          </label>
-          <input
+          </Label>
+          <Input
             id={reasonId}
             type="text"
             value={reason}
@@ -136,28 +145,27 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
               setReason(event.target.value);
             }}
             placeholder={t('governance.mcp.lifecycle.trustReasonPlaceholder')}
-            className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="text-[13px]"
           />
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="submit"
               disabled={reason.trim() === '' || trustMutation.isPending}
               aria-busy={trustMutation.isPending}
-              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
             >
               {trustMutation.isPending ? <Spinner /> : null}
               {t('governance.mcp.lifecycle.trustConfirm')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => {
                 setTrusting(false);
                 setReason('');
               }}
-              className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t('governance.mcp.lifecycle.trustCancel')}
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}
@@ -231,13 +239,13 @@ function RemoveDialog({
   }, [onCancel]);
 
   return (
-    <div
+    <Card
       ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={bodyId}
-      className="flex flex-col gap-3 rounded-md border border-danger bg-surface-2 px-4 py-3"
+      className="gap-3 border-danger bg-surface-2 px-4 py-3"
     >
       <h4 id={titleId} className="font-display text-[20px] font-semibold text-text">
         {t('governance.mcp.lifecycle.removeTitle', { name })}
@@ -246,23 +254,19 @@ function RemoveDialog({
         {t('governance.mcp.lifecycle.removeBody')}
       </p>
       <div className="flex flex-wrap gap-2">
-        <button
-          ref={cancelRef}
-          type="button"
-          onClick={onCancel}
-          className="min-h-[44px] rounded-md border border-border-strong bg-surface-2 px-4 py-2 text-[13px] font-semibold text-text outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
-        >
+        <Button ref={cancelRef} type="button" variant="outline" onClick={onCancel}>
           {t('governance.mcp.lifecycle.removeCancel')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
           disabled={pending}
           onClick={onConfirm}
-          className="min-h-[44px] rounded-md border border-danger px-4 py-2 text-[13px] font-semibold text-danger outline-none hover:bg-danger/10 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="border border-danger text-danger hover:bg-danger/10 hover:text-danger"
         >
           {t('governance.mcp.lifecycle.removeConfirm')}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

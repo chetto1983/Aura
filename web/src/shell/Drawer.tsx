@@ -1,8 +1,10 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { focusFirstDescendant, trapTabKey } from '../a11y/focusTrap';
 import { useScrollLock } from './useScrollLock';
+import { Button } from '@/components/ui/button';
 
 /**
  * §3.1c distinguishes an explicit dismiss (close button / Esc / backdrop tap → restore the
@@ -68,16 +70,18 @@ export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
       >
         <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-3">
           <h2 className="font-display text-base text-text">{title}</h2>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => {
               onClose('explicit');
             }}
             aria-label={t('shell.closePanel')}
-            className="flex min-h-10 min-w-10 items-center justify-center rounded-[var(--radius-md)] text-text-muted outline-none hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="text-text-muted hover:bg-surface-2 hover:text-text"
           >
-            <span aria-hidden="true">x</span>
-          </button>
+            <X data-icon="icon" aria-hidden="true" focusable="false" />
+          </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>

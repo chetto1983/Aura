@@ -83,7 +83,12 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
 
   it('renders a free-text input when the pause offers no options', () => {
     renderCard({ approval: approval({ token: 't-1', conversation_id: 'c-1' }) });
-    expect(screen.getByPlaceholderText('Type your answer')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Type your answer').getAttribute('data-slot')).toBe(
+      'textarea',
+    );
+    expect(
+      screen.getByText('Which city should I check?').closest('[data-slot="card"]'),
+    ).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Answer' })).toBeTruthy();
   });
 

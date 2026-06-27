@@ -67,6 +67,7 @@ describe('shell utilities', () => {
     const dialog = screen.getByRole('dialog', { name: 'Navigation' });
     const closeButton = within(dialog).getByRole('button', { name: 'Close panel' });
     expect(dialog).toBeTruthy();
+    expect(closeButton.getAttribute('data-slot')).toBe('button');
     expect(document.body.style.overflow).toBe('hidden');
     expect(document.activeElement).toBe(closeButton);
 
@@ -185,6 +186,8 @@ describe('shell utilities', () => {
     const mobile = within(screen.getByRole('navigation', { name: 'Modes' }));
     const treeButton = primary.getByRole('button', { name: 'Tree' });
     const graphButton = primary.getByRole('button', { name: 'Graph' });
+    expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('data-slot')).toBe('button');
+    expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('data-slot')).toBe('button');
     expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
     expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
     expect(treeButton.getAttribute('aria-disabled')).toBe('true');

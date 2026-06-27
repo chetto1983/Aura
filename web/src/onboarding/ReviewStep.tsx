@@ -1,6 +1,11 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProvisionErrorKind } from './onboardingWizardModel';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 // ReviewStep (ONBD-01a / UI-SPEC) — the final summary before the cross-store saga. It shows the
 // new operator email + the chosen capabilities + the Telegram-link choice, and a CONSTRUCTIVE
@@ -59,11 +64,10 @@ export function ReviewStep({
             ) : (
               <ul className="flex flex-wrap gap-2">
                 {capabilities.map((c) => (
-                  <li
-                    key={c}
-                    className="rounded-sm bg-surface-3 px-2 py-0.5 font-mono text-[13px] text-text"
-                  >
-                    {c}
+                  <li key={c}>
+                    <Badge variant="secondary" className="font-mono text-[13px] text-text">
+                      {c}
+                    </Badge>
                   </li>
                 ))}
               </ul>
@@ -76,45 +80,44 @@ export function ReviewStep({
             {t('onboarding.review.telegramLabel')}
           </dt>
           <dd>
-            <label
+            <Label
               htmlFor={telegramId}
               className="flex min-h-[44px] cursor-pointer items-center gap-3 text-[15.5px] text-text"
             >
-              <input
+              <Checkbox
                 id={telegramId}
-                type="checkbox"
                 checked={linkTelegram}
-                onChange={(e) => {
-                  onToggleTelegram(e.target.checked);
+                onCheckedChange={(checked) => {
+                  onToggleTelegram(checked === true);
                 }}
-                className="h-5 w-5 shrink-0 accent-[var(--color-accent-text)] outline-none"
+                className="size-5"
               />
               <span>
                 {linkTelegram
                   ? t('onboarding.review.telegramOn')
                   : t('onboarding.review.telegramOff')}
               </span>
-            </label>
+            </Label>
           </dd>
         </div>
       </dl>
 
       {error !== undefined ? (
-        <p role="alert" className="text-[15.5px] text-danger">
-          {t(`onboarding.error.${error}`)}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{t(`onboarding.error.${error}`)}</AlertDescription>
+        </Alert>
       ) : null}
 
       {/* CONSTRUCTIVE primary CTA — reserved accent, NOT danger-styled. */}
-      <button
+      <Button
         type="button"
         disabled={provisioning}
         aria-busy={provisioning}
         onClick={onCreate}
-        className="min-h-[44px] rounded-md bg-accent px-4 py-2 text-[15.5px] font-semibold text-on-accent outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+        className="text-[15.5px]"
       >
         {provisioning ? t('onboarding.cta.provisionInFlight') : t('onboarding.cta.provision')}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   indexSources,
   rehypeCitations,
 } from './rehypeCitations';
+import { Button } from '@/components/ui/button';
 
 // DocumentDisplay (D-10 / D-04): renders a web_fetch document's sanitized markdown
 // through the SAME shared markdown pipeline as the chat lane (markdownConfig — the
@@ -79,16 +80,17 @@ export function DocumentDisplay({ payload, onOpenSource }: DocumentDisplayProps)
   const content = doc?.content_md ?? '';
   const actions =
     content.length > 0 ? (
-      <button
+      <Button
         type="button"
         onClick={() => {
           copy(content);
         }}
         aria-label={t('display.document.copyAria')}
-        className="flex min-h-11 items-center rounded-[var(--radius-md)] border border-border px-2 text-[0.75rem] font-medium text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        variant="outline"
+        className="px-3 text-[0.75rem] text-text-muted hover:text-text"
       >
         {copied ? t('display.document.copied') : t('display.document.copy')}
-      </button>
+      </Button>
     ) : undefined;
 
   if (content.length === 0) {
