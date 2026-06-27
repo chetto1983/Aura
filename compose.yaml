@@ -28,6 +28,15 @@ services:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
+      # Memory MCP is mounted INTO the agent loop at boot (recipe:memory, default-on) — unlike the
+      # connect-only whatsapp/pim sidecars it is a hard runtime dependency, so it must be HEALTHY
+      # before Aura starts. Otherwise the boot mount races the sidecar's own startup (it waits on
+      # neo4j+embed), fails with "connection refused", and the agent comes up with ZERO memory tools
+      # until the next full restart (the in-process mount has no boot-retry; reconnect-on-use only
+      # recovers an already-mounted server). service_healthy gates Aura on the sidecar's :8080
+      # healthcheck so `docker compose up` after a restart always mounts memory.
+      aura-agent-memory-mcp:
+        condition: service_healthy
       # Start the WhatsApp bridge with the stack (service_started, NOT service_healthy — Aura boot must never block on it; the connect routes fail-soft to 503).
       whatsapp:
         condition: service_started
