@@ -16,7 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // SourceExplorerSheet (D-03 / D-13 / DISP-05): the READ-ONLY fullscreen evidence
 // dossier. It renders the SAME code-owned source registry the citations resolve
@@ -166,65 +166,67 @@ function SheetBody({ sources, initialRefId, onClose }: SheetBodyProps) {
         </Button>
       </header>
 
-      {/* Read-only tab strip: accent underline on the active tab (Color rule #3). */}
       <Tabs
         value={tab}
         onValueChange={(value) => {
           setTab(value as ExplorerTab);
         }}
-        className="gap-0 border-b border-border px-4"
+        className="min-h-0 flex-1 gap-0"
       >
-        <TabsList
-          aria-label={t('source.title')}
-          className="w-fit gap-1 rounded-none border-0 bg-transparent p-0"
-        >
-          {TABS.map((id) => (
-            <TabsTrigger
-              key={id}
-              value={id}
-              onClick={() => {
-                setTab(id);
+        {/* Read-only tab strip: accent underline on the active tab (Color rule #3). */}
+        <div className="border-b border-border px-4">
+          <TabsList
+            aria-label={t('source.title')}
+            className="w-fit gap-1 rounded-none border-0 bg-transparent p-0"
+          >
+            {TABS.map((id) => (
+              <TabsTrigger
+                key={id}
+                value={id}
+                onClick={() => {
+                  setTab(id);
+                }}
+                className="rounded-none border-b-2 border-b-transparent px-3 text-xs data-[state=active]:border-b-accent data-[state=active]:bg-transparent data-[state=active]:text-accent-text"
+              >
+                {t(`source.tab.${id}`)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        {showWarning ? (
+          <Alert className="rounded-none border-x-0 border-t-0 border-warning bg-warning/10 px-4 py-2 text-warning">
+            <AlertDescription className="text-[0.75rem] text-warning">
+              {t('source.warningBanner')}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <TabsContent value={tab} className="min-h-0 flex-1 overflow-y-auto p-4">
+          {sources.length === 0 ? (
+            <div className="flex flex-col items-center gap-1 py-12 text-center">
+              <p className="text-sm font-medium text-text">{t('source.empty.heading')}</p>
+              <p className="text-[0.75rem] text-text-faint">{t('source.empty.body')}</p>
+            </div>
+          ) : tab === 'table' ? (
+            <TableView
+              rows={rows}
+              query={query}
+              sort={sort}
+              onSearch={setQuery}
+              onSort={toggleSort}
+              onSelect={(refId) => {
+                setSelectedRefId(refId);
+                setTab('metadata');
               }}
-              className="rounded-none border-b-2 border-b-transparent px-3 text-xs data-[state=active]:border-b-accent data-[state=active]:bg-transparent data-[state=active]:text-accent-text"
-            >
-              {t(`source.tab.${id}`)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+            />
+          ) : tab === 'metadata' ? (
+            <MetadataView source={selected} />
+          ) : (
+            <ConfigurationView sources={sources} />
+          )}
+        </TabsContent>
       </Tabs>
-
-      {showWarning ? (
-        <Alert className="rounded-none border-x-0 border-t-0 border-warning bg-warning/10 px-4 py-2 text-warning">
-          <AlertDescription className="text-[0.75rem] text-warning">
-            {t('source.warningBanner')}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {sources.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 py-12 text-center">
-            <p className="text-sm font-medium text-text">{t('source.empty.heading')}</p>
-            <p className="text-[0.75rem] text-text-faint">{t('source.empty.body')}</p>
-          </div>
-        ) : tab === 'table' ? (
-          <TableView
-            rows={rows}
-            query={query}
-            sort={sort}
-            onSearch={setQuery}
-            onSort={toggleSort}
-            onSelect={(refId) => {
-              setSelectedRefId(refId);
-              setTab('metadata');
-            }}
-          />
-        ) : tab === 'metadata' ? (
-          <MetadataView source={selected} />
-        ) : (
-          <ConfigurationView sources={sources} />
-        )}
-      </div>
     </>
   );
 }

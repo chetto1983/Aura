@@ -15,7 +15,7 @@ import {
   type SkillRow,
   type SkillStage,
 } from './governanceApi';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -145,47 +145,38 @@ export function SkillsBoard() {
   }
 
   const subTabs = (
-    <Tabs
-      value={tab}
-      onValueChange={(value) => {
-        setTab(value as SkillsTab);
-        setSelected(undefined);
-      }}
-      className="shrink-0 gap-0"
-    >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-2 py-1">
-        <TabsList aria-label={t('governance.tabs.skills')}>
-          {SKILL_TABS.map((name, index) => (
-            <TabsTrigger
-              key={name}
-              value={name}
-              tabIndex={tab === name ? 0 : -1}
-              ref={(el) => {
-                tabRefs.current[name] = el;
-              }}
-              onClick={() => {
-                setTab(name);
-                setSelected(undefined);
-              }}
-              onKeyDown={(event) => {
-                onTabKeyDown(event, index);
-              }}
-            >
-              {t(`governance.skills.stages.${name}`)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <Button
-          type="button"
-          onClick={(e) => {
-            openInstall(e.currentTarget);
-          }}
-        >
-          <Download data-icon="inline-start" aria-hidden="true" focusable="false" />
-          {t('governance.skills.installSkill')}
-        </Button>
-      </div>
-    </Tabs>
+    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-2 py-1">
+      <TabsList aria-label={t('governance.tabs.skills')}>
+        {SKILL_TABS.map((name, index) => (
+          <TabsTrigger
+            key={name}
+            value={name}
+            tabIndex={tab === name ? 0 : -1}
+            ref={(el) => {
+              tabRefs.current[name] = el;
+            }}
+            onClick={() => {
+              setTab(name);
+              setSelected(undefined);
+            }}
+            onKeyDown={(event) => {
+              onTabKeyDown(event, index);
+            }}
+          >
+            {t(`governance.skills.stages.${name}`)}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      <Button
+        type="button"
+        onClick={(e) => {
+          openInstall(e.currentTarget);
+        }}
+      >
+        <Download data-icon="inline-start" aria-hidden="true" focusable="false" />
+        {t('governance.skills.installSkill')}
+      </Button>
+    </div>
   );
 
   const master = (
@@ -292,9 +283,16 @@ export function SkillsBoard() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        setTab(value as SkillsTab);
+        setSelected(undefined);
+      }}
+      className="flex h-full min-h-0 flex-col gap-0"
+    >
       {subTabs}
-      <div className="min-h-0 flex-1">
+      <TabsContent value={tab} className="min-h-0 flex-1">
         {installing ? (
           <BoardLayout
             master={master}
@@ -351,7 +349,7 @@ export function SkillsBoard() {
             )}
           </BoardStateView>
         )}
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
