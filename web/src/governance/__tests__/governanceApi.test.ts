@@ -1,19 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  createPimAccount,
-  deletePimAccount,
   fetchMcpServers,
   fetchSchedulerRuns,
   fetchSchedulerTasks,
   fetchSkills,
   fetchSkillsAudit,
-  listPimAccounts,
-  pimGoogleStart,
-  pimLogout,
   probeMcpServer,
   whatsappConnectLogout,
   whatsappConnectStatus,
 } from '../governanceApi';
+import {
+  createPimAccount,
+  deletePimAccount,
+  listPimAccounts,
+  pimAuthCancel,
+  pimAuthStatus,
+  pimDeviceStart,
+  pimGoogleStart,
+  pimLogout,
+} from '../pimApi';
 
 // governanceApi test — the data layer over the six Plan-02 reads. It asserts the same-origin
 // throwing-fetch contract (a non-200, INCLUDING 401, THROWS Error("HTTP <n>") so the boards route
@@ -336,6 +341,67 @@ describe('governanceApi same-origin throwing fetch', () => {
     await pimLogout('work');
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/connect/pim/accounts/work/logout');
+    expect(init.method).toBe('POST');
+  });
+
+  it('pimDeviceStart POSTs auth/start and parses the device-code grant', async () => {
+    const fetchMock = okJSON({
+      accountId: 'ms',
+      userCode: 'ABCD-EFGH',
+      verificationUrl: 'https://microsoft.com/devicelogin',
+      message: 'enter the code',
+      expiresIn: 900,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const start = await pimDeviceStart('ms');
+    expect(start).toEqual({
+      userCode: 'ABCD-EFGH',
+      verificationUrl: 'https://microsoft.com/devicelogin',
+      message: 'enter the code',
+      expiresIn: 900,
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/pim/accounts/ms/auth/start');
+    expect(init.method).toBe('POST');
+  });
+
+  it('pimDeviceStart coerces a missing/non-numeric expiresIn to 0', async () => {
+    vi.stubGlobal('fetch', okJSON({ userCode: 'X', verificationUrl: 'u', message: 'm' }));
+    expect((await pimDeviceStart('ms')).expiresIn).toBe(0);
+  });
+
+  it('pimAuthStatus GETs auth/status and keeps optional code/url when present', async () => {
+    const fetchMock = okJSON({
+      status: 'awaiting_user',
+      message: 'enter the code',
+      userCode: 'ABCD-EFGH',
+      verificationUrl: 'https://microsoft.com/devicelogin',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const status = await pimAuthStatus('ms');
+    expect(status).toEqual({
+      status: 'awaiting_user',
+      message: 'enter the code',
+      userCode: 'ABCD-EFGH',
+      verificationUrl: 'https://microsoft.com/devicelogin',
+    });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toBe('/api/connect/pim/accounts/ms/auth/status');
+  });
+
+  it('pimAuthStatus drops absent optional code/url to undefined', async () => {
+    vi.stubGlobal('fetch', okJSON({ status: 'completed', message: 'ok' }));
+    const status = await pimAuthStatus('ms');
+    expect(status.userCode).toBeUndefined();
+    expect(status.verificationUrl).toBeUndefined();
+  });
+
+  it('pimAuthCancel POSTs the auth/cancel route', async () => {
+    const fetchMock = okJSON({ message: 'cancelled' });
+    vi.stubGlobal('fetch', fetchMock);
+    await pimAuthCancel('ms');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/connect/pim/accounts/ms/auth/cancel');
     expect(init.method).toBe('POST');
   });
 });

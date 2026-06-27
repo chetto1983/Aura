@@ -3,24 +3,38 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { ariaInvalid } from '../a11y/aria';
+import { PimDeviceCodePanel } from './PimDeviceCodePanel';
+import {
+  PIM_PROVIDERS,
+  pimInitialValues,
+  pimMissingRequired,
+  pimProviderById,
+  pimSubmitConfig,
+  type PimFieldDef,
+  type PimProviderDef,
+} from './pimProviders';
 import {
   createPimAccount,
   deletePimAccount,
   listPimAccounts,
+  pimDeviceStart,
   pimGoogleStart,
   type PimAccount,
+  type PimCreateAccountRequest,
+  type PimDeviceStart,
   type PimGoogleStart,
-} from './governanceApi';
+  type PimProviderId,
+} from './pimApi';
 
-// CalendarConnect — the inline "Connect Google Calendar" section the MCP server detail renders when
-// the selected server is the calendar (aura-pim-mcp) one. It lists the configured accounts (~10s
-// poll), each with a Disconnect button (DELETE), and an "Add Google account" form where the operator
-// enters their OWN Google OAuth clientId/clientSecret (nothing from env). On create it immediately
-// mints the Google consent URL (pimGoogleStart) and shows the exact redirect URI to register + a
-// "Connect Google" link that opens the consent URL in a new tab. Per the verified contract there is
-// NO reliable Google "is it linked" signal, so the v1 UX treats "account exists" as configured and
-// instructs the operator to finish consent in the opened tab, then Refresh. All copy via the
-// governance.mcp.calendar.* i18n keys (en + it); a 503 (sidecar unconfigured) → a calm offline note.
+// CalendarConnect — the inline calendar/PIM connect section the MCP server detail renders for the
+// aura-pim-mcp server. It lists the configured accounts (~10s poll) each with a Disconnect button,
+// and an "Add account" form driven by pimProviders.ts so the operator can configure EVERY provider
+// the sidecar exposes (operator directive 2026-06-27: "configure all variable on frontend not just
+// google") — not only Google's clientId/clientSecret. The provider picker swaps the visible config
+// fields; on create the wizard routes the connect step by the provider's authFlow: Google opens the
+// web-redirect consent (GoogleStartPanel), Microsoft/Outlook render the device-code grant
+// (PimDeviceCodePanel), and credential/URL providers (IMAP/ICS/JSON) are ready immediately. All copy
+// via governance.mcp.calendar.* (en + it); a 503 (sidecar unconfigured) → a calm offline note.
 
 const ACCOUNTS_POLL_MS = 10000;
 
@@ -98,7 +112,9 @@ function AccountList({
               <span className="break-words text-[15.5px] text-text">
                 {acct.displayName || acct.id}
               </span>
-              <span className="break-all font-mono text-[13px] text-text-muted">{acct.id}</span>
+              <span className="break-all font-mono text-[13px] text-text-muted">
+                {acct.provider ? `${acct.provider} · ${acct.id}` : acct.id}
+              </span>
             </span>
             <button
               type="button"
@@ -124,45 +140,74 @@ function AccountList({
   );
 }
 
+type CreateResult =
+  | { readonly kind: 'google'; readonly start: PimGoogleStart }
+  | { readonly kind: 'device'; readonly start: PimDeviceStart }
+  | { readonly kind: 'none' };
+
+function parseDomains(raw: string): readonly string[] {
+  return raw
+    .split(',')
+    .map((d) => d.trim())
+    .filter((d) => d !== '');
+}
+
+function parsePriority(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === '') return undefined;
+  const n = Number.parseInt(trimmed, 10);
+  return Number.isNaN(n) ? undefined : n;
+}
+
 function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const { t } = useTranslation();
-  const ids = {
-    accountId: useId(),
-    displayName: useId(),
-    clientId: useId(),
-    clientSecret: useId(),
-  };
+  const ids = { provider: useId(), accountId: useId(), displayName: useId() };
+
+  const [providerId, setProviderId] = useState<PimProviderId>('google');
+  const def = pimProviderById(providerId);
 
   const [accountId, setAccountId] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
+  const [values, setValues] = useState<Record<string, string>>(() => pimInitialValues(def));
+  const [domains, setDomains] = useState('');
+  const [priority, setPriority] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [started, setStarted] = useState<PimGoogleStart | null>(null);
+  const [result, setResult] = useState<CreateResult | null>(null);
 
-  const empties = {
-    accountId: accountId.trim() === '',
-    displayName: displayName.trim() === '',
-    clientId: clientId.trim() === '',
-    clientSecret: clientSecret.trim() === '',
-  };
-  const hasEmpty =
-    empties.accountId || empties.displayName || empties.clientId || empties.clientSecret;
+  function selectProvider(next: PimProviderId) {
+    const nextDef = pimProviderById(next);
+    setProviderId(next);
+    setValues(pimInitialValues(nextDef));
+    setResult(null);
+    setSubmitted(false);
+  }
+
+  const accountIdEmpty = accountId.trim() === '';
+  const displayNameEmpty = displayName.trim() === '';
+  const missingConfig = new Set(pimMissingRequired(def, values));
+  const hasEmpty = accountIdEmpty || displayNameEmpty || missingConfig.size > 0;
 
   const create = useMutation({
-    mutationFn: async () => {
-      await createPimAccount({
-        id: accountId.trim(),
+    mutationFn: async (): Promise<CreateResult> => {
+      const id = accountId.trim();
+      const domainList = parseDomains(domains);
+      const prio = parsePriority(priority);
+      const body: PimCreateAccountRequest = {
+        id,
         displayName: displayName.trim(),
-        provider: 'google',
-        providerConfig: { clientId: clientId.trim(), clientSecret: clientSecret.trim() },
-      });
+        provider: providerId,
+        providerConfig: pimSubmitConfig(def, values),
+        ...(domainList.length > 0 ? { domains: domainList } : {}),
+        ...(prio !== undefined ? { priority: prio } : {}),
+      };
+      await createPimAccount(body);
       onCreated();
-      return pimGoogleStart(accountId.trim());
+      if (def.authFlow === 'google') return { kind: 'google', start: await pimGoogleStart(id) };
+      if (def.authFlow === 'device') return { kind: 'device', start: await pimDeviceStart(id) };
+      return { kind: 'none' };
     },
-    onSuccess: (start: PimGoogleStart) => {
-      setStarted(start);
-    },
+    onSuccess: setResult,
   });
 
   function submit() {
@@ -170,6 +215,8 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
     if (hasEmpty) return;
     create.mutate();
   }
+
+  const createdId = accountId.trim();
 
   return (
     <form
@@ -183,12 +230,14 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         {t('governance.mcp.calendar.addHeading')}
       </p>
 
+      <ProviderSelect id={ids.provider} value={providerId} onChange={selectProvider} />
+
       <Field
         id={ids.accountId}
         label={t('governance.mcp.calendar.accountIdLabel')}
         value={accountId}
         onChange={setAccountId}
-        invalid={submitted && empties.accountId}
+        invalid={submitted && accountIdEmpty}
         hint={t('governance.mcp.calendar.accountIdHint')}
       />
       <Field
@@ -196,22 +245,28 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         label={t('governance.mcp.calendar.displayNameLabel')}
         value={displayName}
         onChange={setDisplayName}
-        invalid={submitted && empties.displayName}
+        invalid={submitted && displayNameEmpty}
       />
-      <Field
-        id={ids.clientId}
-        label={t('governance.mcp.calendar.clientIdLabel')}
-        value={clientId}
-        onChange={setClientId}
-        invalid={submitted && empties.clientId}
+
+      <ProviderConfigFields
+        def={def}
+        values={values}
+        onChange={(key, v) => {
+          setValues((prev) => ({ ...prev, [key]: v }));
+        }}
+        submitted={submitted}
+        missing={missingConfig}
       />
-      <Field
-        id={ids.clientSecret}
-        label={t('governance.mcp.calendar.clientSecretLabel')}
-        value={clientSecret}
-        onChange={setClientSecret}
-        invalid={submitted && empties.clientSecret}
-        type="password"
+
+      <AdvancedSection
+        open={showAdvanced}
+        onToggle={() => {
+          setShowAdvanced((o) => !o);
+        }}
+        domains={domains}
+        onDomains={setDomains}
+        priority={priority}
+        onPriority={setPriority}
       />
 
       <button
@@ -230,8 +285,189 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         </p>
       ) : null}
 
-      {started !== null ? <GoogleStartPanel start={started} /> : null}
+      {result?.kind === 'google' ? <GoogleStartPanel start={result.start} /> : null}
+      {result?.kind === 'device' ? (
+        <PimDeviceCodePanel accountId={createdId} start={result.start} />
+      ) : null}
+      {result?.kind === 'none' ? (
+        <p role="status" className="text-[13px] text-success">
+          {t('governance.mcp.calendar.noAuthCreated')}
+        </p>
+      ) : null}
     </form>
+  );
+}
+
+function ProviderSelect({
+  id,
+  value,
+  onChange,
+}: {
+  readonly id: string;
+  readonly value: PimProviderId;
+  readonly onChange: (value: PimProviderId) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-[13px] font-semibold text-text">
+        {t('governance.mcp.calendar.providerLabel')}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value as PimProviderId);
+        }}
+        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {PIM_PROVIDERS.map((p) => (
+          <option key={p.id} value={p.id}>
+            {t(p.labelKey)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ProviderConfigFields({
+  def,
+  values,
+  onChange,
+  submitted,
+  missing,
+}: {
+  readonly def: PimProviderDef;
+  readonly values: Record<string, string>;
+  readonly onChange: (key: string, value: string) => void;
+  readonly submitted: boolean;
+  readonly missing: ReadonlySet<string>;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {def.fields.map((field) => {
+        if (field.showIf !== undefined && values[field.showIf.key] !== field.showIf.value) {
+          return null;
+        }
+        const invalid = submitted && missing.has(field.key);
+        if (field.type === 'select' && field.options) {
+          return (
+            <SelectField
+              key={field.key}
+              field={field}
+              value={values[field.key] ?? ''}
+              onChange={(v) => {
+                onChange(field.key, v);
+              }}
+            />
+          );
+        }
+        return (
+          <Field
+            key={field.key}
+            id={`pim-${def.id}-${field.key}`}
+            label={t(field.labelKey)}
+            value={values[field.key] ?? ''}
+            onChange={(v) => {
+              onChange(field.key, v);
+            }}
+            invalid={invalid}
+            type={field.type === 'password' ? 'password' : 'text'}
+            placeholder={field.placeholder}
+            hint={field.hintKey !== undefined ? t(field.hintKey) : undefined}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function SelectField({
+  field,
+  value,
+  onChange,
+}: {
+  readonly field: PimFieldDef;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const id = `pim-select-${field.key}`;
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-[13px] font-semibold text-text">
+        {t(field.labelKey)}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {field.options?.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {t(opt.labelKey)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function AdvancedSection({
+  open,
+  onToggle,
+  domains,
+  onDomains,
+  priority,
+  onPriority,
+}: {
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly domains: string;
+  readonly onDomains: (value: string) => void;
+  readonly priority: string;
+  readonly onPriority: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const domainsId = useId();
+  const priorityId = useId();
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="self-start text-[13px] font-semibold text-text-muted underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {open ? '▾ ' : '▸ '}
+        {t('governance.mcp.calendar.advanced.toggle')}
+      </button>
+      {open ? (
+        <>
+          <Field
+            id={domainsId}
+            label={t('governance.mcp.calendar.advanced.domainsLabel')}
+            value={domains}
+            onChange={onDomains}
+            invalid={false}
+            hint={t('governance.mcp.calendar.advanced.domainsHint')}
+          />
+          <Field
+            id={priorityId}
+            label={t('governance.mcp.calendar.advanced.priorityLabel')}
+            value={priority}
+            onChange={onPriority}
+            invalid={false}
+            hint={t('governance.mcp.calendar.advanced.priorityHint')}
+          />
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -267,14 +503,16 @@ function Field({
   invalid,
   hint,
   type = 'text',
+  placeholder,
 }: {
   readonly id: string;
   readonly label: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly invalid: boolean;
-  readonly hint?: string;
+  readonly hint?: string | undefined;
   readonly type?: 'text' | 'password';
+  readonly placeholder?: string | undefined;
 }) {
   const { t } = useTranslation();
   const errId = `${id}-err`;
@@ -291,6 +529,7 @@ function Field({
         id={id}
         type={type}
         value={value}
+        placeholder={placeholder}
         onChange={(event) => {
           onChange(event.target.value);
         }}

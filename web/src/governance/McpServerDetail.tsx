@@ -4,12 +4,8 @@ import { McpEnvEditForm } from './McpEnvEditForm';
 import { McpLifecycleCluster } from './McpLifecycleCluster';
 import { WhatsAppConnect } from './WhatsAppConnect';
 import { CalendarConnect } from './CalendarConnect';
-import {
-  isCalendarServer,
-  isWhatsAppServer,
-  type McpProbeResult,
-  type McpServerRow,
-} from './governanceApi';
+import { isWhatsAppServer, type McpProbeResult, type McpServerRow } from './governanceApi';
+import { isCalendarServer } from './pimApi';
 
 // McpServerDetail — the detail pane for a selected MCP server (the NodeInspector <dl>/<dt>/<dd>
 // idiom, NodeInspector.tsx:72-98). It renders the static row fields (trust/runtime/startup/auth)
