@@ -26,6 +26,9 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -215,14 +218,16 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 		// (Claude Code/Desktop, VS Code). Already-mounted servers stay registered —
 		// do NOT closeMCPServers, do NOT abort. The non-deferred built-ins keep the
 		// registry valid even when every MCP server is dropped (Pitfall 6).
-		var closer func() error
-		var mounted []string
-		var err error
-		if _, managed := cfg.MCPPolicies[name]; managed {
-			closer, mounted, err = mcptools.MountManagedServer(ctx, reg, name, cfg.MCPPolicies[name])
-		} else {
-			closer, mounted, err = mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name])
+		// A transient transport failure (the sidecar is still starting / mid-restart) is
+		// retried with bounded backoff so a boot-race no longer leaves the agent with zero
+		// of a server's tools until the next restart; a permanent error fails immediately.
+		mountOnce := func(c context.Context) (func() error, []string, error) {
+			if _, managed := cfg.MCPPolicies[name]; managed {
+				return mcptools.MountManagedServer(c, reg, name, cfg.MCPPolicies[name])
+			}
+			return mcptools.MountServer(c, reg, name, cfg.MCPServers[name])
 		}
+		closer, mounted, err := mcptools.MountWithRetry(ctx, name, mcpMountRetryPolicy(), mountOnce)
 		if err != nil {
 			slog.Warn("mcp mount failed", "server", name, "err", err)
 			continue
@@ -234,6 +239,30 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 		closers = append(closers, closer)
 	}
 	return reg, handles, closers, nil
+}
+
+const (
+	defaultMCPMountAttempts  = 6
+	defaultMCPMountBaseDelay = time.Second
+	defaultMCPMountMaxDelay  = 5 * time.Second
+)
+
+// mcpMountRetryPolicy resolves the boot-time MCP mount retry budget. AURA_MCP_MOUNT_RETRY_ATTEMPTS
+// overrides the attempt count (1 disables retry, restoring the single-shot fail-soft behavior); the
+// backoff bounds use fixed defaults (1s base, 5s cap → ~17s worst-case budget for the default 6
+// attempts), spent only when a server is transiently unreachable at boot.
+func mcpMountRetryPolicy() mcptools.MountRetryPolicy {
+	policy := mcptools.MountRetryPolicy{
+		Attempts:  defaultMCPMountAttempts,
+		BaseDelay: defaultMCPMountBaseDelay,
+		MaxDelay:  defaultMCPMountMaxDelay,
+	}
+	if v := strings.TrimSpace(os.Getenv("AURA_MCP_MOUNT_RETRY_ATTEMPTS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			policy.Attempts = n
+		}
+	}
+	return policy
 }
 
 func closeMCPServers(closers []func() error) error {
