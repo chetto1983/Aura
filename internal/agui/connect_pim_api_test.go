@@ -57,6 +57,18 @@ func (p *fakePIM) handler() http.Handler {
 	mux.HandleFunc("POST /admin/accounts/{id}/logout", func(w http.ResponseWriter, r *http.Request) {
 		record(w, r, http.StatusOK, `{"ok":true}`)
 	})
+	mux.HandleFunc("GET /admin/accounts/{id}/status", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r, http.StatusOK, `{"accountId":"work","displayName":"Work","provider":"outlook.com","enabled":true,"authFlow":null}`)
+	})
+	mux.HandleFunc("POST /admin/auth/{id}/start", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r, http.StatusOK, `{"accountId":"work","userCode":"ABCD-EFGH","verificationUrl":"https://microsoft.com/devicelogin","message":"enter the code","expiresIn":900}`)
+	})
+	mux.HandleFunc("GET /admin/auth/{id}/status", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r, http.StatusOK, `{"accountId":"work","status":"awaiting_user","message":"enter the code","userCode":"ABCD-EFGH","verificationUrl":"https://microsoft.com/devicelogin"}`)
+	})
+	mux.HandleFunc("POST /admin/auth/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r, http.StatusOK, `{"message":"cancelled"}`)
+	})
 	return mux
 }
 
@@ -232,6 +244,112 @@ func TestPIMLogoutForwardsPOST(t *testing.T) {
 	}
 }
 
+// TestPIMAccountStatusForwards: GET …/{id}/status forwards to /admin/accounts/{id}/status and passes
+// the linked-state body (authFlow:null) through — the per-account badge for every provider.
+func TestPIMAccountStatusForwards(t *testing.T) {
+	p := &fakePIM{}
+	sidecar := httptest.NewServer(p.handler())
+	defer sidecar.Close()
+	srv := connectPIMServer(sidecar.URL, fakePIMToken)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/connect/pim/accounts/work/status")
+	if err != nil {
+		t.Fatalf("GET account status: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if p.gotPath != "/admin/accounts/work/status" || p.gotMethod != http.MethodGet {
+		t.Fatalf("forwarded to %s %s, want GET /admin/accounts/work/status", p.gotMethod, p.gotPath)
+	}
+	if p.gotAuth != "Bearer "+fakePIMToken {
+		t.Fatalf("Authorization = %q, want Bearer %s", p.gotAuth, fakePIMToken)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !bytes.Contains(body, []byte(`"authFlow":null`)) {
+		t.Fatalf("account-status body not passed through: %q", body)
+	}
+}
+
+// TestPIMDeviceStartForwardsPOST: POST …/{id}/auth/start forwards to /admin/auth/{id}/start (the
+// Microsoft/Outlook device-code start) with the Bearer token, passing the {userCode,verificationUrl}
+// body through so the wizard can render the device-code panel.
+func TestPIMDeviceStartForwardsPOST(t *testing.T) {
+	p := &fakePIM{}
+	sidecar := httptest.NewServer(p.handler())
+	defer sidecar.Close()
+	srv := connectPIMServer(sidecar.URL, fakePIMToken)
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/api/connect/pim/accounts/work/auth/start", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST auth/start: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("auth/start status = %d, want 200", resp.StatusCode)
+	}
+	if p.gotPath != "/admin/auth/work/start" || p.gotMethod != http.MethodPost {
+		t.Fatalf("forwarded to %s %s, want POST /admin/auth/work/start", p.gotMethod, p.gotPath)
+	}
+	if p.gotAuth != "Bearer "+fakePIMToken {
+		t.Fatalf("Authorization = %q, want Bearer %s", p.gotAuth, fakePIMToken)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !bytes.Contains(body, []byte(`"userCode":"ABCD-EFGH"`)) {
+		t.Fatalf("device-start body not passed through: %q", body)
+	}
+}
+
+// TestPIMAuthStatusForwards: GET …/{id}/auth/status forwards to /admin/auth/{id}/status so the wizard
+// can poll a pending device-code flow.
+func TestPIMAuthStatusForwards(t *testing.T) {
+	p := &fakePIM{}
+	sidecar := httptest.NewServer(p.handler())
+	defer sidecar.Close()
+	srv := connectPIMServer(sidecar.URL, fakePIMToken)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/connect/pim/accounts/work/auth/status")
+	if err != nil {
+		t.Fatalf("GET auth/status: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("auth/status = %d, want 200", resp.StatusCode)
+	}
+	if p.gotPath != "/admin/auth/work/status" || p.gotMethod != http.MethodGet {
+		t.Fatalf("forwarded to %s %s, want GET /admin/auth/work/status", p.gotMethod, p.gotPath)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !bytes.Contains(body, []byte(`"status":"awaiting_user"`)) {
+		t.Fatalf("auth-status body not passed through: %q", body)
+	}
+}
+
+// TestPIMAuthCancelForwards: POST …/{id}/auth/cancel forwards to /admin/auth/{id}/cancel.
+func TestPIMAuthCancelForwards(t *testing.T) {
+	p := &fakePIM{}
+	sidecar := httptest.NewServer(p.handler())
+	defer sidecar.Close()
+	srv := connectPIMServer(sidecar.URL, fakePIMToken)
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/api/connect/pim/accounts/work/auth/cancel", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST auth/cancel: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("auth/cancel status = %d, want 200", resp.StatusCode)
+	}
+	if p.gotPath != "/admin/auth/work/cancel" || p.gotMethod != http.MethodPost {
+		t.Fatalf("forwarded to %s %s, want POST /admin/auth/work/cancel", p.gotMethod, p.gotPath)
+	}
+}
+
 // TestPIMTokenNeverLeaksToClient: the admin Bearer token is injected server-side and must NOT
 // appear in any forwarded response body (the sidecar echoes no secrets, and we never write it).
 func TestPIMTokenNeverLeaksToClient(t *testing.T) {
@@ -263,8 +381,12 @@ func TestPIMUnwired503(t *testing.T) {
 		{"list", http.MethodGet, "/api/connect/pim/accounts"},
 		{"create", http.MethodPost, "/api/connect/pim/accounts"},
 		{"delete", http.MethodDelete, "/api/connect/pim/accounts/work"},
+		{"accountStatus", http.MethodGet, "/api/connect/pim/accounts/work/status"},
 		{"start", http.MethodGet, "/api/connect/pim/accounts/work/google/start"},
 		{"logout", http.MethodPost, "/api/connect/pim/accounts/work/logout"},
+		{"deviceStart", http.MethodPost, "/api/connect/pim/accounts/work/auth/start"},
+		{"authStatus", http.MethodGet, "/api/connect/pim/accounts/work/auth/status"},
+		{"authCancel", http.MethodPost, "/api/connect/pim/accounts/work/auth/cancel"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tc.method, srv.URL+tc.path, nil)

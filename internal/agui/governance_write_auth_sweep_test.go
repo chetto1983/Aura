@@ -61,8 +61,12 @@ func connectGatedRoutes() []writeRoute {
 		{http.MethodGet, "/api/connect/pim/accounts", ""},
 		{http.MethodPost, "/api/connect/pim/accounts", `{"id":"x","provider":"google"}`},
 		{http.MethodDelete, "/api/connect/pim/accounts/x", ""},
+		{http.MethodGet, "/api/connect/pim/accounts/x/status", ""},
 		{http.MethodGet, "/api/connect/pim/accounts/x/google/start", ""},
 		{http.MethodPost, "/api/connect/pim/accounts/x/logout", ""},
+		{http.MethodPost, "/api/connect/pim/accounts/x/auth/start", ""},
+		{http.MethodGet, "/api/connect/pim/accounts/x/auth/status", ""},
+		{http.MethodPost, "/api/connect/pim/accounts/x/auth/cancel", ""},
 	}
 }
 

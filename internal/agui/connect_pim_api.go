@@ -7,24 +7,29 @@ import (
 	"time"
 )
 
-// connect_pim_api.go is the cockpit "Connect Google Calendar" admin-proxy (operator directive
-// 2026-06-21: "can't setup calendar"). It is the thin REST adapter the Governance MCP detail's
-// calendar connect section drives, forwarding to the aura-pim-mcp sidecar's token-gated /admin
-// REST API. It mirrors connect_api.go's outbound-HTTP shape (bounded http.Client, JSON
-// passthrough, SanitizeString on every wire error, nil-check-503) — split into a sibling file so
-// connect_api.go stays under the 600-LOC cap and the Bearer-injecting dial helper is colocated
-// with the routes that need it.
+// connect_pim_api.go is the cockpit "Connect calendar / PIM account" admin-proxy (operator directive
+// 2026-06-21: "can't setup calendar"; 2026-06-27: "configure all variable on frontend not just
+// google"). It is the thin REST adapter the Governance MCP detail's calendar connect section drives,
+// forwarding to the aura-pim-mcp sidecar's token-gated /admin REST API. It mirrors connect_api.go's
+// outbound-HTTP shape (bounded http.Client, JSON passthrough, SanitizeString on every wire error,
+// nil-check-503) — split into a sibling file so connect_api.go stays under the 600-LOC cap and the
+// Bearer-injecting dial helper is colocated with the routes that need it.
 //
-// The five routes are operator WRITE-class actions (creating an account stores the operator's own
-// Google OAuth client; a delete drops the linked account), so the parent-mux mount (serve_webui.go)
-// is behind RequireCapability(governance.write). The sidecar base URL + admin token are wired by
-// the daemon composition root via SetCalendarMCP (from AURA_PIM_MCP_URL + AURA_PIM_MCP_ADMIN_TOKEN);
-// an unset URL answers 503 so a stack with the sidecar off degrades gracefully. The admin token is
-// injected server-side as Authorization: Bearer and NEVER returned to the client; a transport error
-// or a non-2xx status is passed through with a sanitized JSON body (the sidecar host never leaks).
+// The routes are operator WRITE-class actions (creating an account stores the operator's own OAuth
+// client or IMAP credentials; a delete drops the linked account; starting a device-code flow links
+// a Microsoft/Outlook account), so the parent-mux mount (serve_webui.go) is behind
+// RequireCapability(governance.write). They cover every provider the sidecar exposes — google
+// (web-redirect), microsoft365/outlook.com (device-code), imap, ics, json — not just Google. The
+// sidecar base URL + admin token are wired by the daemon composition root via SetCalendarMCP (from
+// AURA_PIM_MCP_URL + AURA_PIM_MCP_ADMIN_TOKEN); an unset URL answers 503 so a stack with the sidecar
+// off degrades gracefully. The admin token is injected server-side as Authorization: Bearer and
+// NEVER returned to the client; a transport error or a non-2xx status is passed through with a
+// sanitized JSON body (the sidecar host never leaks).
 //
 // The Google OAuth callback (GET /admin/auth/google/callback) is token-exempt and is hit DIRECTLY
 // by the user's browser at the sidecar's external base URL — it is deliberately NOT proxied here.
+// The Microsoft/Outlook device-code flow, by contrast, is fully cockpit-driven: start → poll status
+// → the user enters the user code at the verification URL in a new tab.
 
 // pimClientTimeout bounds one sidecar round-trip. The /admin API is a sibling container answering
 // account CRUD + auth-start in well under a second; 8s is generous headroom while bounding a hung
@@ -34,6 +39,15 @@ const pimClientTimeout = 8 * time.Second
 // pimClient is the bounded outbound client for every PIM-admin forward. A single shared client
 // reuses connections to the sibling sidecar across the connect wizard's calls.
 var pimClient = &http.Client{Timeout: pimClientTimeout}
+
+// pimDeviceStartTimeout bounds the Microsoft/Outlook device-code start round-trip. Unlike the
+// sub-second account-CRUD calls, POST /admin/auth/{id}/start blocks server-side until the identity
+// provider (MSAL) returns the device code, which the sidecar caps at ~30s; 35s gives that headroom
+// without hanging the cockpit indefinitely.
+const pimDeviceStartTimeout = 35 * time.Second
+
+// pimDeviceClient is the longer-timeout outbound client used ONLY by the device-code start forward.
+var pimDeviceClient = &http.Client{Timeout: pimDeviceStartTimeout}
 
 // SetCalendarMCP wires the aura-pim-mcp sidecar's /admin REST base URL + admin token the connect
 // calendar routes forward to (AURA_PIM_MCP_URL + AURA_PIM_MCP_ADMIN_TOKEN). Set by the daemon
@@ -46,16 +60,22 @@ func (s *Server) SetCalendarMCP(baseURL, adminToken string) {
 	s.calendarMCPToken = adminToken
 }
 
-// registerConnectPIMRoutes mounts the five calendar connect routes on the supplied mux using Go
-// 1.22 method-pattern + {id} path-value routing — SPECIFIC method+path siblings under the /api/
-// carve-out, never a bare /api/. Called from Mux next to registerConnectRoutes. The parent-mux
-// mount behind RequireCapability(governance.write) lives in cmd/aura/serve_webui.go.
+// registerConnectPIMRoutes mounts the calendar/PIM connect routes on the supplied mux using Go 1.22
+// method-pattern + {id} path-value routing — SPECIFIC method+path siblings under the /api/ carve-out,
+// never a bare /api/. Called from Mux next to registerConnectRoutes. The parent-mux mount behind
+// RequireCapability(governance.write) lives in cmd/aura/serve_webui.go (each route MUST be gated
+// there — an unmounted route would be ungated). The auth/* trio drives the Microsoft/Outlook
+// device-code flow; account/{id}/status drives the per-account linked badge across all providers.
 func (s *Server) registerConnectPIMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/connect/pim/accounts", s.handlePIMListAccounts)
 	mux.HandleFunc("POST /api/connect/pim/accounts", s.handlePIMCreateAccount)
 	mux.HandleFunc("DELETE /api/connect/pim/accounts/{id}", s.handlePIMDeleteAccount)
+	mux.HandleFunc("GET /api/connect/pim/accounts/{id}/status", s.handlePIMAccountStatus)
 	mux.HandleFunc("GET /api/connect/pim/accounts/{id}/google/start", s.handlePIMGoogleStart)
 	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/logout", s.handlePIMLogout)
+	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/auth/start", s.handlePIMDeviceStart)
+	mux.HandleFunc("GET /api/connect/pim/accounts/{id}/auth/status", s.handlePIMAuthStatus)
+	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/auth/cancel", s.handlePIMAuthCancel)
 }
 
 // handlePIMListAccounts serves GET /api/connect/pim/accounts: forward the sidecar
@@ -99,14 +119,50 @@ const (
 // retries a transient 404 (the post-create config-reload race) within a bounded budget.
 func (s *Server) handlePIMGoogleStart(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s.forwardPIMRetry404(w, r, http.MethodGet, "/admin/auth/"+id+"/google/start", nil)
+	s.forwardPIMRetry404(w, r, http.MethodGet, "/admin/auth/"+id+"/google/start", nil, pimClient)
 }
 
 // handlePIMLogout serves POST /api/connect/pim/accounts/{id}/logout: forward the sidecar
-// POST /admin/accounts/{id}/logout (drops the linked Google session without deleting the account).
+// POST /admin/accounts/{id}/logout (drops the linked session without deleting the account).
 func (s *Server) handlePIMLogout(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.forwardPIMJSON(w, r, http.MethodPost, "/admin/accounts/"+id+"/logout", nil)
+}
+
+// handlePIMAccountStatus serves GET /api/connect/pim/accounts/{id}/status: forward the sidecar
+// GET /admin/accounts/{id}/status. The body carries {accountId,displayName,provider,enabled,authFlow};
+// authFlow==null means no pending flow. Drives the wizard's per-account pending/linked badge across
+// every provider (no secrets are echoed).
+func (s *Server) handlePIMAccountStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.forwardPIMJSON(w, r, http.MethodGet, "/admin/accounts/"+id+"/status", nil)
+}
+
+// handlePIMDeviceStart serves POST /api/connect/pim/accounts/{id}/auth/start: forward the sidecar
+// POST /admin/auth/{id}/start — the Microsoft/Outlook device-code flow. The 200 body carries
+// {userCode,verificationUrl,message,expiresIn} the wizard renders (the user opens verificationUrl
+// and enters userCode). It uses the longer-timeout device client (the sidecar blocks on the IdP)
+// and the SAME transient-404 retry as google/start (the wizard fires start right after create, and
+// the .NET reloadOnChange briefly hides the account). Restarting is safe — the sidecar cancels any
+// in-flight flow for the account before starting a new one, so a retried 404 never double-starts.
+func (s *Server) handlePIMDeviceStart(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.forwardPIMRetry404(w, r, http.MethodPost, "/admin/auth/"+id+"/start", nil, pimDeviceClient)
+}
+
+// handlePIMAuthStatus serves GET /api/connect/pim/accounts/{id}/auth/status: forward the sidecar
+// GET /admin/auth/{id}/status so the wizard can poll a pending device-code flow
+// (pending|awaiting_user|completed|failed|cancelled|not_found).
+func (s *Server) handlePIMAuthStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.forwardPIMJSON(w, r, http.MethodGet, "/admin/auth/"+id+"/status", nil)
+}
+
+// handlePIMAuthCancel serves POST /api/connect/pim/accounts/{id}/auth/cancel: forward the sidecar
+// POST /admin/auth/{id}/cancel to abort a pending device-code flow.
+func (s *Server) handlePIMAuthCancel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.forwardPIMJSON(w, r, http.MethodPost, "/admin/auth/"+id+"/cancel", nil)
 }
 
 // readCappedBody reads the request body bounded by maxRunBodyBytes (T-12-12 DoS guard) so a hostile
@@ -126,7 +182,7 @@ func readCappedBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // is size-capped and read into memory so a sanitized 502 can replace a partial/hostile body. The
 // admin token is NEVER written to the response.
 func (s *Server) forwardPIMJSON(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {
-	resp, ok := s.dialPIM(w, r, method, path, body)
+	resp, ok := s.dialPIM(w, r, method, path, body, pimClient)
 	if !ok {
 		return
 	}
@@ -142,13 +198,15 @@ func (s *Server) forwardPIMJSON(w http.ResponseWriter, r *http.Request, method, 
 	_, _ = w.Write(out)
 }
 
-// forwardPIMRetry404 forwards an IDEMPOTENT GET like forwardPIMJSON, but retries a transient 404
-// up to pimStartRetryAttempts (pimStartRetryDelay apart) before passing the response through. Only
-// safe for idempotent reads (the google/start fetch). A non-404 (or the final 404) is passed
-// through verbatim; a cancelled request short-circuits to 504.
-func (s *Server) forwardPIMRetry404(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {
-	for attempt := 0; attempt < pimStartRetryAttempts; attempt++ {
-		resp, ok := s.dialPIM(w, r, method, path, body)
+// forwardPIMRetry404 forwards a request like forwardPIMJSON using the supplied client, but retries a
+// transient 404 up to pimStartRetryAttempts (pimStartRetryDelay apart) before passing the response
+// through. Safe only for requests whose retry is harmless: the idempotent google/start fetch and the
+// device-code start (the sidecar cancels any in-flight flow before starting a new one, and a 404 means
+// nothing started). A non-404 (or the final 404) is passed through verbatim; a cancelled request
+// short-circuits to 504.
+func (s *Server) forwardPIMRetry404(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client) {
+	for attempt := range pimStartRetryAttempts {
+		resp, ok := s.dialPIM(w, r, method, path, body, client)
 		if !ok {
 			return // dialPIM already wrote 503/502
 		}
@@ -180,7 +238,7 @@ func (s *Server) forwardPIMRetry404(w http.ResponseWriter, r *http.Request, meth
 // outbound request with the admin Bearer token injected, and maps a transport failure onto a
 // sanitized 502 (the sidecar host/path/token never leaks). It returns the live response (the caller
 // closes the body) and whether the handler may proceed — mirroring dialBridge's (value, ok) shape.
-func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte) (*http.Response, bool) {
+func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client) (*http.Response, bool) {
 	if s.calendarMCPURL == "" {
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "calendar connect not configured"})
 		return nil, false
@@ -201,7 +259,7 @@ func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path st
 	if s.calendarMCPToken != "" {
 		req.Header.Set("Authorization", "Bearer "+s.calendarMCPToken)
 	}
-	resp, err := pimClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		// The error embeds the sidecar host/URL — SanitizeString collapses any DSN/userinfo/token;
 		// the generic message keeps it diagnosable without leaking the sidecar host.

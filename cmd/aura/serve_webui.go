@@ -250,8 +250,12 @@ const (
 	connectPIMAccountsListRoute   = "GET /api/connect/pim/accounts"
 	connectPIMAccountsCreateRoute = "POST /api/connect/pim/accounts"
 	connectPIMAccountDeleteRoute  = "DELETE /api/connect/pim/accounts/{id}"
+	connectPIMAccountStatusRoute  = "GET /api/connect/pim/accounts/{id}/status"
 	connectPIMGoogleStartRoute    = "GET /api/connect/pim/accounts/{id}/google/start"
 	connectPIMLogoutRoute         = "POST /api/connect/pim/accounts/{id}/logout"
+	connectPIMDeviceStartRoute    = "POST /api/connect/pim/accounts/{id}/auth/start"
+	connectPIMAuthStatusRoute     = "GET /api/connect/pim/accounts/{id}/auth/status"
+	connectPIMAuthCancelRoute     = "POST /api/connect/pim/accounts/{id}/auth/cancel"
 )
 
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
@@ -440,8 +444,12 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(connectPIMAccountsListRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMAccountsCreateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMAccountDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMAccountStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMGoogleStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMLogoutRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMDeviceStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMAuthStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMAuthCancelRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator
