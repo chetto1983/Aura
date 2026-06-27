@@ -51,12 +51,11 @@ export const governanceEn = {
       calendar: {
         heading: 'Connect calendar / PIM account',
         loading: 'Loading accounts…',
-        offline: "Calendar connect isn't configured on this deployment.",
+        offline: "Calendar connect is unavailable or not configured on this deployment.",
         empty: 'No calendar accounts yet. Add one below.',
         accountsHeading: 'Accounts',
         disconnect: 'Disconnect',
         disconnectError: "Couldn't disconnect. Try again.",
-        refresh: 'Refresh',
         addHeading: 'Add account',
         providerLabel: 'Provider',
         providers: {
@@ -96,11 +95,13 @@ export const governanceEn = {
         required: 'Required.',
         submit: 'Create account',
         noAuthCreated: 'Account created — it is ready to use.',
+        startFailed: "Account created, but sign-in couldn't start. Retry below.",
+        retryConnect: 'Retry sign-in',
         redirectHeading: 'Register this redirect URI',
         redirectHint:
           "Register this exact redirect URI in your Google Cloud 'Web application' OAuth client.",
         connectGoogle: 'Connect Google',
-        consentNote: 'Complete consent in the opened tab, then click Refresh.',
+        consentNote: 'Complete consent in the opened tab — the account list updates automatically.',
         device: {
           heading: 'Finish sign-in on Microsoft',
           codeLabel: 'Enter this code:',
@@ -326,12 +327,11 @@ export const governanceIt = {
       calendar: {
         heading: 'Collega account calendario / PIM',
         loading: 'Caricamento account…',
-        offline: 'Il collegamento calendario non è configurato su questo deployment.',
+        offline: 'Il collegamento calendario non è disponibile o non è configurato su questo deployment.',
         empty: 'Ancora nessun account calendario. Aggiungine uno qui sotto.',
         accountsHeading: 'Account',
         disconnect: 'Disconnetti',
         disconnectError: 'Impossibile disconnettere. Riprova.',
-        refresh: 'Aggiorna',
         addHeading: 'Aggiungi account',
         providerLabel: 'Provider',
         providers: {
@@ -371,11 +371,13 @@ export const governanceIt = {
         required: 'Obbligatorio.',
         submit: 'Crea account',
         noAuthCreated: "Account creato — è pronto all'uso.",
+        startFailed: "Account creato, ma l'accesso non è partito. Riprova qui sotto.",
+        retryConnect: 'Riprova accesso',
         redirectHeading: 'Registra questo redirect URI',
         redirectHint:
           "Registra esattamente questo redirect URI nel tuo client OAuth Google Cloud di tipo 'Applicazione web'.",
         connectGoogle: 'Connetti Google',
-        consentNote: 'Completa il consenso nella scheda aperta, poi clicca Aggiorna.',
+        consentNote: 'Completa il consenso nella scheda aperta — la lista account si aggiorna da sola.',
         device: {
           heading: 'Completa l’accesso su Microsoft',
           codeLabel: 'Inserisci questo codice:',

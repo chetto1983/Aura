@@ -2,16 +2,21 @@ import { useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
-import { ariaInvalid } from '../a11y/aria';
 import { PimDeviceCodePanel } from './PimDeviceCodePanel';
 import {
-  PIM_PROVIDERS,
+  AdvancedSection,
+  Field,
+  GoogleStartPanel,
+  ProviderConfigFields,
+  ProviderSelect,
+  StartFailedPanel,
+} from './CalendarConnectFields';
+import {
   pimInitialValues,
   pimMissingRequired,
   pimProviderById,
   pimSubmitConfig,
-  type PimFieldDef,
-  type PimProviderDef,
+  type PimAuthFlow,
 } from './pimProviders';
 import {
   createPimAccount,
@@ -140,10 +145,15 @@ function AccountList({
   );
 }
 
+// CreateResult carries the connect outcome. `device` snapshots the submitted `id` so the poll
+// target never tracks the live Account ID field, and `startFailed` keeps the (already-created)
+// account's id + flow so the operator can retry sign-in WITHOUT re-creating the account (which
+// would hit the sidecar's 409-duplicate).
 type CreateResult =
   | { readonly kind: 'google'; readonly start: PimGoogleStart }
-  | { readonly kind: 'device'; readonly start: PimDeviceStart }
-  | { readonly kind: 'none' };
+  | { readonly kind: 'device'; readonly id: string; readonly start: PimDeviceStart }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'startFailed'; readonly id: string; readonly authFlow: PimAuthFlow };
 
 function parseDomains(raw: string): readonly string[] {
   return raw
@@ -157,6 +167,19 @@ function parsePriority(raw: string): number | undefined {
   if (trimmed === '') return undefined;
   const n = Number.parseInt(trimmed, 10);
   return Number.isNaN(n) ? undefined : n;
+}
+
+// startConnect runs ONLY the post-create connect step for an already-created account, mapping a
+// failure to a `startFailed` result (NOT a thrown error) so a created account whose sign-in didn't
+// start is reported as a recoverable state, not as a total create failure.
+async function startConnect(id: string, flow: PimAuthFlow): Promise<CreateResult> {
+  if (flow === 'none') return { kind: 'none' };
+  try {
+    if (flow === 'google') return { kind: 'google', start: await pimGoogleStart(id) };
+    return { kind: 'device', id, start: await pimDeviceStart(id) };
+  } catch {
+    return { kind: 'startFailed', id, authFlow: flow };
+  }
 }
 
 function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
@@ -174,14 +197,6 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<CreateResult | null>(null);
-
-  function selectProvider(next: PimProviderId) {
-    const nextDef = pimProviderById(next);
-    setProviderId(next);
-    setValues(pimInitialValues(nextDef));
-    setResult(null);
-    setSubmitted(false);
-  }
 
   const accountIdEmpty = accountId.trim() === '';
   const displayNameEmpty = displayName.trim() === '';
@@ -203,20 +218,35 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
       };
       await createPimAccount(body);
       onCreated();
-      if (def.authFlow === 'google') return { kind: 'google', start: await pimGoogleStart(id) };
-      if (def.authFlow === 'device') return { kind: 'device', start: await pimDeviceStart(id) };
-      return { kind: 'none' };
+      // create.isError now means ONLY the account creation failed; a failed connect step is a
+      // `startFailed` result so the operator isn't told creation failed when it didn't.
+      return startConnect(id, def.authFlow);
     },
     onSuccess: setResult,
   });
+
+  // retryStart re-runs ONLY the connect step against the already-created account, so a transient
+  // auth-start failure doesn't dead-end on the sidecar's 409-duplicate when re-submitting.
+  const retryStart = useMutation({
+    mutationFn: ({ id, flow }: { id: string; flow: PimAuthFlow }) => startConnect(id, flow),
+    onSuccess: setResult,
+  });
+
+  function selectProvider(next: PimProviderId) {
+    const nextDef = pimProviderById(next);
+    setProviderId(next);
+    setValues(pimInitialValues(nextDef));
+    setResult(null);
+    setSubmitted(false);
+    create.reset();
+    retryStart.reset();
+  }
 
   function submit() {
     setSubmitted(true);
     if (hasEmpty) return;
     create.mutate();
   }
-
-  const createdId = accountId.trim();
 
   return (
     <form
@@ -287,7 +317,15 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
 
       {result?.kind === 'google' ? <GoogleStartPanel start={result.start} /> : null}
       {result?.kind === 'device' ? (
-        <PimDeviceCodePanel accountId={createdId} start={result.start} />
+        <PimDeviceCodePanel accountId={result.id} start={result.start} />
+      ) : null}
+      {result?.kind === 'startFailed' ? (
+        <StartFailedPanel
+          pending={retryStart.isPending}
+          onRetry={() => {
+            retryStart.mutate({ id: result.id, flow: result.authFlow });
+          }}
+        />
       ) : null}
       {result?.kind === 'none' ? (
         <p role="status" className="text-[13px] text-success">
@@ -295,258 +333,5 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         </p>
       ) : null}
     </form>
-  );
-}
-
-function ProviderSelect({
-  id,
-  value,
-  onChange,
-}: {
-  readonly id: string;
-  readonly value: PimProviderId;
-  readonly onChange: (value: PimProviderId) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[13px] font-semibold text-text">
-        {t('governance.mcp.calendar.providerLabel')}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value as PimProviderId);
-        }}
-        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {PIM_PROVIDERS.map((p) => (
-          <option key={p.id} value={p.id}>
-            {t(p.labelKey)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function ProviderConfigFields({
-  def,
-  values,
-  onChange,
-  submitted,
-  missing,
-}: {
-  readonly def: PimProviderDef;
-  readonly values: Record<string, string>;
-  readonly onChange: (key: string, value: string) => void;
-  readonly submitted: boolean;
-  readonly missing: ReadonlySet<string>;
-}) {
-  const { t } = useTranslation();
-  return (
-    <>
-      {def.fields.map((field) => {
-        if (field.showIf !== undefined && values[field.showIf.key] !== field.showIf.value) {
-          return null;
-        }
-        const invalid = submitted && missing.has(field.key);
-        if (field.type === 'select' && field.options) {
-          return (
-            <SelectField
-              key={field.key}
-              field={field}
-              value={values[field.key] ?? ''}
-              onChange={(v) => {
-                onChange(field.key, v);
-              }}
-            />
-          );
-        }
-        return (
-          <Field
-            key={field.key}
-            id={`pim-${def.id}-${field.key}`}
-            label={t(field.labelKey)}
-            value={values[field.key] ?? ''}
-            onChange={(v) => {
-              onChange(field.key, v);
-            }}
-            invalid={invalid}
-            type={field.type === 'password' ? 'password' : 'text'}
-            placeholder={field.placeholder}
-            hint={field.hintKey !== undefined ? t(field.hintKey) : undefined}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-function SelectField({
-  field,
-  value,
-  onChange,
-}: {
-  readonly field: PimFieldDef;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  const id = `pim-select-${field.key}`;
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[13px] font-semibold text-text">
-        {t(field.labelKey)}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {field.options?.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {t(opt.labelKey)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function AdvancedSection({
-  open,
-  onToggle,
-  domains,
-  onDomains,
-  priority,
-  onPriority,
-}: {
-  readonly open: boolean;
-  readonly onToggle: () => void;
-  readonly domains: string;
-  readonly onDomains: (value: string) => void;
-  readonly priority: string;
-  readonly onPriority: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  const domainsId = useId();
-  const priorityId = useId();
-  return (
-    <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="self-start text-[13px] font-semibold text-text-muted underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {open ? '▾ ' : '▸ '}
-        {t('governance.mcp.calendar.advanced.toggle')}
-      </button>
-      {open ? (
-        <>
-          <Field
-            id={domainsId}
-            label={t('governance.mcp.calendar.advanced.domainsLabel')}
-            value={domains}
-            onChange={onDomains}
-            invalid={false}
-            hint={t('governance.mcp.calendar.advanced.domainsHint')}
-          />
-          <Field
-            id={priorityId}
-            label={t('governance.mcp.calendar.advanced.priorityLabel')}
-            value={priority}
-            onChange={onPriority}
-            invalid={false}
-            hint={t('governance.mcp.calendar.advanced.priorityHint')}
-          />
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function GoogleStartPanel({ start }: { readonly start: PimGoogleStart }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-3">
-      <p className="text-[13px] font-semibold text-text">
-        {t('governance.mcp.calendar.redirectHeading')}
-      </p>
-      <p className="break-all font-mono text-[13px] text-text">{start.redirectUri}</p>
-      <p className="text-[13px] text-text-muted">{t('governance.mcp.calendar.redirectHint')}</p>
-      <a
-        href={start.authUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {t('governance.mcp.calendar.connectGoogle')}
-      </a>
-      <p role="note" className="text-[13px] text-text-muted">
-        {t('governance.mcp.calendar.consentNote')}
-      </p>
-    </div>
-  );
-}
-
-function Field({
-  id,
-  label,
-  value,
-  onChange,
-  invalid,
-  hint,
-  type = 'text',
-  placeholder,
-}: {
-  readonly id: string;
-  readonly label: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly invalid: boolean;
-  readonly hint?: string | undefined;
-  readonly type?: 'text' | 'password';
-  readonly placeholder?: string | undefined;
-}) {
-  const { t } = useTranslation();
-  const errId = `${id}-err`;
-  const hintId = `${id}-hint`;
-  const describedBy = [invalid ? errId : null, hint !== undefined ? hintId : null]
-    .filter((entry): entry is string => entry !== null)
-    .join(' ');
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[13px] font-semibold text-text">
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        aria-invalid={ariaInvalid(invalid)}
-        aria-describedby={describedBy === '' ? undefined : describedBy}
-        className="w-full rounded-md border border-border bg-surface-3 px-3 py-2 font-mono text-[13px] text-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      />
-      {hint !== undefined ? (
-        <span id={hintId} className="text-[13px] text-text-muted">
-          {hint}
-        </span>
-      ) : null}
-      {invalid ? (
-        <p id={errId} role="alert" className="text-[13px] text-danger">
-          {t('governance.mcp.calendar.required')}
-        </p>
-      ) : null}
-    </div>
   );
 }

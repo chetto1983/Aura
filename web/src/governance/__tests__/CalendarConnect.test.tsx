@@ -119,7 +119,7 @@ describe('CalendarConnect', () => {
   it('shows the offline note when the accounts query errors (503 sidecar unconfigured)', async () => {
     listPimAccounts.mockRejectedValue(new Error('HTTP 503'));
     renderConnect();
-    expect(await screen.findByText(/isn't configured on this deployment/i)).toBeTruthy();
+    expect(await screen.findByText(/not configured on this deployment/i)).toBeTruthy();
   });
 
   it('Disconnect fires the delete mutation', async () => {
@@ -255,6 +255,31 @@ describe('CalendarConnect', () => {
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'onedrive' } });
     expect(screen.getByLabelText(/OneDrive path/i)).toBeTruthy();
     expect(screen.queryByLabelText(/File path/i)).toBeNull();
+  });
+
+  it('create OK but start fails → shows retry (not the create-error banner), retry recovers', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockResolvedValue(ACCOUNT);
+    pimGoogleStart.mockRejectedValueOnce(new Error('HTTP 500')).mockResolvedValueOnce(GOOGLE_START);
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work calendar');
+    fillField(/^Client ID/i, 'cid');
+    fillField(/^Client secret/i, 'sec');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    // The account WAS created; the connect step failed → recoverable "Retry sign-in", NOT the
+    // generic create-failure banner.
+    const retry = await screen.findByRole('button', { name: 'Retry sign-in' });
+    expect(createPimAccount).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('governance.error')).toBeNull();
+
+    fireEvent.click(retry);
+    // Retry re-runs ONLY the start (no second createPimAccount → no 409 dead-end).
+    expect(await screen.findByText(GOOGLE_START.redirectUri)).toBeTruthy();
+    expect(createPimAccount).toHaveBeenCalledTimes(1);
   });
 
   it('renders the generic error when create fails', async () => {

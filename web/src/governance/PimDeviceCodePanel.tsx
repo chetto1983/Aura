@@ -29,7 +29,10 @@ export function PimDeviceCodePanel({
   });
 
   const state = status.data?.status ?? 'pending';
-  const settled = TERMINAL.has(state);
+  // A transport/HTTP error (e.g. 503 sidecar offline) leaves status.data undefined, which would
+  // otherwise render a perpetual "waiting" spinner; treat it as a settled non-completed state so the
+  // panel surfaces the failure instead of hanging.
+  const settled = status.isError || TERMINAL.has(state);
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-3">
