@@ -20,6 +20,7 @@ CREATE TABLE aura.password_reset_challenges (
     request_ip_hash  text,
     user_agent_hash  text,
     UNIQUE (id, identity_id),
+    CHECK (attempt_count <= max_attempts),
     CHECK (expires_at > created_at)
 );
 
@@ -34,6 +35,7 @@ CREATE TABLE aura.password_reset_tokens (
     max_attempts   integer     NOT NULL DEFAULT 3 CHECK (max_attempts BETWEEN 1 AND 10),
     FOREIGN KEY (challenge_id, identity_id)
         REFERENCES aura.password_reset_challenges (id, identity_id) ON DELETE CASCADE,
+    CHECK (attempt_count <= max_attempts),
     CHECK (expires_at > created_at)
 );
 

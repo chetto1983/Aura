@@ -78,6 +78,11 @@ INSERT INTO aura.password_reset_challenges (
     identity_id, code_hash, expires_at, attempt_count, max_attempts
 ) VALUES ($1, 'code-hash', now() + interval '5 minutes', 0, 11)
 `, seedID), "23514")
+	requireSQLState(t, execErr(ctx, pool, `
+INSERT INTO aura.password_reset_challenges (
+    identity_id, code_hash, expires_at, attempt_count, max_attempts
+) VALUES ($1, 'code-hash', now() + interval '5 minutes', 6, 5)
+`, seedID), "23514")
 
 	var challengeID pgtype.UUID
 	if err := pool.QueryRow(ctx, `
@@ -102,6 +107,11 @@ INSERT INTO aura.password_reset_tokens (
 INSERT INTO aura.password_reset_tokens (
     token_hash, challenge_id, identity_id, expires_at, attempt_count, max_attempts
 ) VALUES ('bad-max-token-0023', $1, $2, now() + interval '5 minutes', 0, 11)
+`, challengeID, seedID), "23514")
+	requireSQLState(t, execErr(ctx, pool, `
+INSERT INTO aura.password_reset_tokens (
+    token_hash, challenge_id, identity_id, expires_at, attempt_count, max_attempts
+) VALUES ('over-attempt-token-0023', $1, $2, now() + interval '5 minutes', 4, 3)
 `, challengeID, seedID), "23514")
 
 	q := sqlc.New(pool)
