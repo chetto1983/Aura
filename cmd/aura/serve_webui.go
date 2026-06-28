@@ -59,6 +59,7 @@ const (
 	passwordResetStartRoute    = "POST /api/auth/password-reset/start"    // #nosec G101 -- route pattern, not credential material.
 	passwordResetVerifyRoute   = "POST /api/auth/password-reset/verify"   // #nosec G101 -- route pattern, not credential material.
 	passwordResetCompleteRoute = "POST /api/auth/password-reset/complete" // #nosec G101 -- route pattern, not credential material.
+	bootstrapOperatorRoute     = "POST /api/auth/bootstrap/operator"
 )
 
 // aguiRoutePrefixes are the route patterns the AG-UI gateway owns. Registered on
@@ -341,6 +342,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		auth.AuthBasePath = authBasePath
 	}
 	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler())
+	mux.Handle(bootstrapOperatorRoute, aguiHandler)
 	mux.Handle(passwordResetStartRoute, aguiHandler)
 	mux.Handle(passwordResetVerifyRoute, aguiHandler)
 	mux.Handle(passwordResetCompleteRoute, aguiHandler)
@@ -485,12 +487,19 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		if isPublicPasswordResetRoute(r) {
 			return true
 		}
+		if isPublicBootstrapRoute(r) {
+			return true
+		}
 		return previousPublicRoute != nil && previousPublicRoute(r)
 	}
 	// Wrap the WHOLE parent mux in the WEB-03 whole-origin gate (D-03). The public-path
 	// exceptions are handled inside RequireAuth; a no-op pass-through when no secret is
 	// configured keeps loopback dev unauthenticated.
 	return agui.RequireAuth(mux, auth), nil
+}
+
+func isPublicBootstrapRoute(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == "/api/auth/bootstrap/operator"
 }
 
 func isPublicPasswordResetRoute(r *http.Request) bool {

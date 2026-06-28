@@ -95,6 +95,7 @@ type Server struct {
 	governance      GovernanceProviders
 	governanceWrite GovernanceWriteProviders
 	onboarding      OnboardingService
+	bootstrap       BootstrapService
 	passwordReset   *PasswordResetService
 	idgen           IDGenerator
 	// whatsappBridgeURL is the aura-whatsapp bridge management REST base URL the cockpit
@@ -192,6 +193,7 @@ func (s *Server) Mux() http.Handler {
 	// Authula password-reset routes: public credential-recovery JSON endpoints. These
 	// handlers intentionally do not read a principal; Authula/session auth happens after
 	// the reset completes.
+	s.registerBootstrapRoutes(mux)
 	s.registerPasswordResetRoutes(mux)
 	// Cockpit "Connect" device-linking proxy (connect_api.go): the three
 	// /api/connect/whatsapp/{status,qr.png,logout} routes forward to the aura-whatsapp

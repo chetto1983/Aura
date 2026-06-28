@@ -98,7 +98,19 @@ describe('LoginPage', () => {
       'button',
     );
     expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create first user' })).toBeTruthy();
     expectLoginAriaValuesToBeAxeValid(container);
+  });
+
+  it('uses readable accent text for secondary login actions', () => {
+    renderLogin();
+    const forgotPassword = screen.getByRole('button', { name: 'Forgot password?' });
+    const createUser = screen.getByRole('button', { name: 'Create first user' });
+
+    expect(forgotPassword.className).toContain('text-accent-text');
+    expect(forgotPassword.className.split(/\s+/u)).not.toContain('text-accent');
+    expect(createUser.className).toContain('text-accent-text');
+    expect(createUser.className.split(/\s+/u)).not.toContain('text-accent');
   });
 
   it('renders a decorative animated particle-network background behind the form', () => {
@@ -290,6 +302,62 @@ describe('LoginPage', () => {
     expect(await screen.findByText('Password reset')).toBeTruthy();
     expect(screen.getByRole('form', { name: 'Request reset code' })).toBeTruthy();
     expect(screen.queryByRole('form', { name: 'Sign in' })).toBe(null);
+  });
+
+  it('creates the first operator from the login page', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/api/auth/config') {
+        return authulaConfigResponse();
+      }
+      if (url === '/api/auth/bootstrap/operator') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ identityId: '11111111-1111-1111-1111-111111111111' }), {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderLogin();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create first user' }));
+    const form = await screen.findByRole('form', { name: 'Create first user' });
+    expect(screen.queryByRole('form', { name: 'Sign in' })).toBe(null);
+
+    fireEvent.change(screen.getByLabelText('Operator email'), {
+      target: { value: 'first@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
+    fireEvent.change(screen.getByLabelText('Security question'), {
+      target: { value: 'First school?' },
+    });
+    fireEvent.change(screen.getByLabelText('Security answer'), {
+      target: { value: 'Ada' },
+    });
+    fireEvent.submit(form);
+
+    expect(await screen.findByText('First user created')).toBeTruthy();
+    const bootstrapCall = fetchMock.mock.calls.find(
+      ([url]) => url === '/api/auth/bootstrap/operator',
+    );
+    if (!bootstrapCall) {
+      throw new Error('missing bootstrap request');
+    }
+    const [, opts] = bootstrapCall as unknown as [string, RequestInit];
+    expect(opts.method).toBe('POST');
+    expect(opts.credentials).toBe('same-origin');
+    expect(opts.headers).toMatchObject({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(requireRequestBody(opts))).toEqual({
+      email: 'first@example.com',
+      password: 'correct-horse',
+      securityQuestion: 'First school?',
+      securityAnswer: 'Ada',
+    });
+    expectLoginAriaValuesToBeAxeValid(container);
   });
 
   it('POSTs Authula credentials as JSON with the CSRF token and advances to TOTP', async () => {

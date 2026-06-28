@@ -10,6 +10,7 @@ import {
   stringField,
   valueOrFallback,
 } from '../auth/authConfig';
+import { BootstrapPanel } from '../auth/BootstrapPanel';
 import { PasswordResetPanel } from '../auth/PasswordResetPanel';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { ThemeSwitcher } from '../theme/ThemeSwitcher';
@@ -153,6 +154,7 @@ export function LoginPage() {
   const [error, setError] = useState<LoginErrorKey | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [bootstrapOpen, setBootstrapOpen] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
@@ -296,6 +298,13 @@ export function LoginPage() {
               setError(null);
             }}
           />
+        ) : bootstrapOpen ? (
+          <BootstrapPanel
+            onCancel={() => {
+              setBootstrapOpen(false);
+              setError(null);
+            }}
+          />
         ) : (
           <form
             aria-busy={submitting}
@@ -342,18 +351,32 @@ export function LoginPage() {
                     />
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setResetOpen(true);
-                    setError(null);
-                  }}
-                  className="self-end px-0 text-sm text-accent hover:bg-transparent hover:underline"
-                >
-                  {t('login.authula.forgotPassword')}
-                </Button>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setBootstrapOpen(true);
+                      setError(null);
+                    }}
+                    className="px-0 text-sm text-accent-text hover:bg-transparent hover:text-accent-text hover:underline"
+                  >
+                    {t('login.bootstrap.openCta')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setResetOpen(true);
+                      setError(null);
+                    }}
+                    className="px-0 text-sm text-accent-text hover:bg-transparent hover:text-accent-text hover:underline"
+                  >
+                    {t('login.authula.forgotPassword')}
+                  </Button>
+                </div>
               </>
             ) : (
               <>
@@ -387,7 +410,7 @@ export function LoginPage() {
                     setUseBackupCode((value) => !value);
                     setError(null);
                   }}
-                  className="self-start px-0 text-sm text-accent hover:bg-transparent hover:underline"
+                  className="self-start px-0 text-sm text-accent-text hover:bg-transparent hover:text-accent-text hover:underline"
                 >
                   {useBackupCode
                     ? t('login.authula.useTotpCode')
