@@ -601,6 +601,14 @@ services:
     pull_policy: never
     container_name: aura-markitdown
     restart: unless-stopped
+    environment:
+      # OCR consolidation (Phase 30 follow-up): markitdown OCRs standalone images + scanned-PDF
+      # pages through the SAME GLM-OCR engine (aura-ocr-vl) the chat/vision path uses (MULTIMODAL_*),
+      # so document-ingest and vision share one OCR backend. Fail-soft: unset/unreachable -> text-only.
+      AURA_OCR_BASE_URL: ${AURA_OCR_BASE_URL:-http://aura-ocr-vl:8082/v1}
+      AURA_OCR_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
+      AURA_OCR_PDF_MAX_PAGES: ${AURA_OCR_PDF_MAX_PAGES:-40}
+      AURA_OCR_TIMEOUT_SEC: ${AURA_OCR_TIMEOUT_SEC:-120}
     ports:
       - "127.0.0.1:${AURA_MARKITDOWN_PORT:-8083}:8080"
     healthcheck:

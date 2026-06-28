@@ -1,5 +1,6 @@
 # Aura document sidecar. It keeps /convert compatible with the original
 # markitdown wrapper and adds /extract for structured document ingestion.
+import base64
 import os
 import re
 import shutil
@@ -10,7 +11,51 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from markitdown import MarkItDown
 
 app = FastAPI(title="aura-markitdown", version="2")
-_md = MarkItDown()
+
+# OCR consolidation: markitdown shares Aura's GLM-OCR engine (the aura-ocr-vl sidecar,
+# an OpenAI-compatible vision endpoint) — the SAME engine the chat/vision path uses. When
+# AURA_OCR_BASE_URL is set, standalone images and scanned-PDF pages are OCR'd through it
+# and markitdown's own converters get the llm_client (so embedded images convert too).
+# Fail-soft: no endpoint / unreachable -> text-only extraction exactly as before.
+_ocr_base = os.getenv("AURA_OCR_BASE_URL", "").strip()
+_ocr_model = os.getenv("AURA_OCR_MODEL", "glm-ocr").strip() or "glm-ocr"
+_ocr_pdf_max_pages = int(os.getenv("AURA_OCR_PDF_MAX_PAGES", "40") or "40")
+_ocr_timeout = float(os.getenv("AURA_OCR_TIMEOUT_SEC", "120") or "120")
+_OCR_PROMPT = (
+    "Extract ALL text from this image verbatim as clean Markdown. Preserve headings, "
+    "tables, lists, and reading order. Output only the extracted content, no commentary."
+)
+
+
+def _build_ocr_client():
+    if not _ocr_base:
+        return None
+    try:
+        from openai import OpenAI
+
+        return OpenAI(
+            base_url=_ocr_base,
+            api_key=os.getenv("AURA_OCR_API_KEY", "sk-noauth") or "sk-noauth",
+            timeout=_ocr_timeout,
+        )
+    except Exception:
+        return None
+
+
+_ocr = _build_ocr_client()
+if _ocr is not None:
+    try:
+        _md = MarkItDown(enable_plugins=True, llm_client=_ocr, llm_model=_ocr_model)
+    except Exception:
+        _md = MarkItDown()
+else:
+    _md = MarkItDown()
+
+_image_mime = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".tif": "image/tiff", ".tiff": "image/tiff",
+}
 _ws_re = re.compile(r"\s+")
 _atx_heading_re = re.compile(r"^(#{1,6})\s+(.*)$")
 _max_chunk_chars = 12000
@@ -51,6 +96,8 @@ async def extract(file: UploadFile = File(...), mime_type: str = Form("")) -> di
             payload = _extract_html(path)
         elif suffix == ".csv" or effective_mime == "text/csv":
             payload = _extract_csv(path)
+        elif suffix in _image_mime or effective_mime.startswith("image/"):
+            payload = _extract_image(path, effective_mime)
         else:
             payload = _extract_markdown(path)
         payload["mime_type"] = effective_mime or payload.get("mime_type", "")
@@ -133,6 +180,37 @@ def _payload(title: str, mime_type: str, chunks: list[dict], pages: int = 0, she
     }
 
 
+def _ocr_image_bytes(data: bytes, mime: str) -> str:
+    """OCR raw image bytes via the shared GLM-OCR engine. Returns '' on any failure (fail-soft)."""
+    if _ocr is None or not data:
+        return ""
+    b64 = base64.b64encode(data).decode("ascii")
+    try:
+        resp = _ocr.chat.completions.create(
+            model=_ocr_model,
+            temperature=0,
+            messages=[{"role": "user", "content": [
+                {"type": "text", "text": _OCR_PROMPT},
+                {"type": "image_url", "image_url": {"url": f"data:{mime or 'image/png'};base64,{b64}"}},
+            ]}],
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception:
+        return ""
+
+
+def _extract_image(path: str, mime: str) -> dict:
+    suffix = os.path.splitext(path)[1].lower()
+    eff_mime = mime or _image_mime.get(suffix, "image/png")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if _ocr is None:
+        raise HTTPException(status_code=503, detail="image OCR unavailable (no OCR engine configured)")
+    text = _ocr_image_bytes(data, eff_mime)
+    chunks = _chunk_text("image", text, {})
+    return _payload(os.path.basename(path), eff_mime, chunks)
+
+
 def _extract_pdf(path: str) -> dict:
     try:
         import fitz
@@ -145,6 +223,13 @@ def _extract_pdf(path: str) -> dict:
         chunks: list[dict] = []
         for index, page in enumerate(doc, start=1):
             text = page.get_text("text") or ""
+            # Scanned/image-only page: render and OCR via the shared GLM-OCR engine (bounded).
+            if not _normalize(text) and _ocr is not None and index <= _ocr_pdf_max_pages:
+                try:
+                    pix = page.get_pixmap(dpi=200)
+                    text = _ocr_image_bytes(pix.tobytes("png"), "image/png")
+                except Exception:
+                    text = ""
             chunks.extend(_chunk_text("page", text, {"page": index}))
         return _payload(title, "application/pdf", chunks, pages=doc.page_count)
     finally:

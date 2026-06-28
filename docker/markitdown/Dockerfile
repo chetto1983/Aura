@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 # markitdown converter and CSV uses the stdlib, so they add no new dependency.
 RUN pip install --no-cache-dir \
     "markitdown[all]==0.1.6" \
+    "markitdown-ocr==0.1.0" \
+    "openai==1.59.6" \
     "fastapi==0.115.6" \
     "uvicorn[standard]==0.34.0" \
     "python-multipart==0.0.20" \
