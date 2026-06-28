@@ -305,7 +305,8 @@ FROM aura.identities i
 JOIN aura.identity_auth_links ial ON ial.identity_id = i.id
 JOIN aura.identity_recovery ir ON ir.identity_id = i.id
 JOIN aura.telegram_accounts ta ON ta.identity_id = i.id
-WHERE lower(i.name) = lower($1)
+WHERE i.kind = 'user'
+  AND lower(i.name) = lower($1)
 ORDER BY COALESCE(ta.last_seen_at, ta.added_at) DESC,
          ta.added_at DESC,
          ta.telegram_user_id DESC,

@@ -108,20 +108,28 @@ func TestMigration0023IdentityRecoveryRoundTrip(t *testing.T) {
 
 	seedID := pgtype.UUID{Bytes: [16]byte{0x23, 0x01}, Valid: true}
 	otherID := pgtype.UUID{Bytes: [16]byte{0x23, 0x02}, Valid: true}
+	channelID := pgtype.UUID{Bytes: [16]byte{0x23, 0x03}, Valid: true}
 	if err := execStatements(ctx, app, []statement{
 		{sql: `INSERT INTO aura.identities (id, name, kind) VALUES
     ($1, 'recovery-0023@example.test', 'user'),
-    ($2, 'recovery-0023-other@example.test', 'user')`, args: []any{seedID, otherID}},
+    ($2, 'recovery-0023-other@example.test', 'user'),
+    ($3, 'RECOVERY-0023@example.test', 'channel')`, args: []any{seedID, otherID, channelID}},
 		{sql: `INSERT INTO aura.identity_auth_links (identity_id, authula_user_id, created_at)
     VALUES
         ($1, 'authula-recovery-0023-old', now() - interval '2 hours'),
         ($1, 'authula-recovery-0023-new', now())`, args: []any{seedID}},
+		{sql: `INSERT INTO aura.identity_auth_links (identity_id, authula_user_id, created_at)
+    VALUES ($1, 'authula-recovery-0023-channel', now() + interval '1 hour')`, args: []any{channelID}},
 		{sql: `INSERT INTO aura.identity_recovery (identity_id, question, answer_hash, answer_hash_version)
     VALUES ($1, 'Question?', 'answer-hash', 'v1')`, args: []any{seedID}},
+		{sql: `INSERT INTO aura.identity_recovery (identity_id, question, answer_hash, answer_hash_version)
+    VALUES ($1, 'Channel question?', 'channel-answer-hash', 'v1')`, args: []any{channelID}},
 		{sql: `INSERT INTO aura.telegram_accounts (telegram_user_id, identity_id, username, first_name, added_at)
     VALUES
         (230101, $1, 'old_recovery_0023', 'Old', now() - interval '1 hour'),
         (230102, $1, 'new_recovery_0023', 'New', now())`, args: []any{seedID}},
+		{sql: `INSERT INTO aura.telegram_accounts (telegram_user_id, identity_id, username, first_name, added_at, last_seen_at)
+    VALUES (230999, $1, 'channel_recovery_0023', 'Channel', now() + interval '1 hour', now() + interval '1 hour')`, args: []any{channelID}},
 	}); err != nil {
 		t.Fatalf("seed recovery invariant fixtures: %v", err)
 	}
