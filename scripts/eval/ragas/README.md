@@ -39,8 +39,36 @@ two documents) and the thresholds. The eval PASSes when, for every case:
 - mean grounded **answer_correctness** beats mean hallucinated by **≥ 0.2**.
 
 Tune the set/thresholds by editing `reference_qa.json` (no code change). This is a
-**gated/manual, paid** eval — NOT a CI step. Add real upload→chat cases as the product
-grows; pair with a task rubric for human-facing answer quality.
+**gated/manual, paid** eval — NOT a CI step. Pair with a task rubric for human-facing
+answer quality.
+
+## Growing the set
+
+`reference_qa.json` is meant to grow with **real** upload→chat cases. Each case is:
+
+```json
+{
+  "name": "<doc>-<grounded|hallucinated|partial>",
+  "kind": "grounded | hallucinated | partial",
+  "context": "the chunk text document_search actually returned for this question",
+  "question": "the user's real question",
+  "reference": "the correct, complete answer",
+  "answer": "the answer under test"
+}
+```
+
+To add a document, contribute the **triad** so the gate stays discriminating:
+
+1. **grounded** — the correct answer (expect faithfulness ≈ 1.0, high answer_correctness).
+2. **hallucinated** — a *fluent but wrong* answer (swap the numbers/facts). This is the case
+   a single 0–10 judge misses; faithfulness must drop to ≈ 0.0.
+3. **partial** — a faithful but incomplete answer (answer half the question). Proves the two
+   metrics are orthogonal (faithfulness high, answer_correctness mid).
+
+Harvest `context` from the agent's actual retrieval (the `document_search` chunk text), not
+a hand-written summary — that keeps the eval honest about what the RAG pipeline surfaces.
+Keep `m3/h`/`°C`-style units ASCII-safe. After adding cases, run `run.sh --dry-run` (free)
+to validate shape, then a paid `run.sh` to record their baseline.
 
 ## Validated baseline (spike 076, 2026-06-28, DeepSeek judge + granite embeddings)
 
@@ -51,5 +79,9 @@ grows; pair with a task rubric for human-facing answer quality.
 | g220 partial (faithful, incomplete) | 1.000 | 0.734 |
 | coffee grounded | 1.000 | 0.988 |
 | coffee hallucinated | 0.000 | 0.243 |
+
+The `pump` triad (grounded / hallucinated / partial) was added 2026-06-28 to broaden the set
+to three documents; its baseline numbers are recorded on the next paid `run.sh` (no
+unsolicited paid run was triggered to add them). `run.sh --dry-run` validates their shape.
 
 See `.planning/spikes/076-ragas-faithfulness-discriminates/` and `docs/rag-answer-eval.md`.

@@ -1,5 +1,5 @@
 {
-  "description": "Reference QA set for the RAGAS answer-quality gate (Item 3 / spike 076). Each case fixes a question, the retrieved context, the ground-truth reference, the answer under test, and its kind. 'grounded' answers must score faithfulness >= grounded_min and answer_correctness high; 'hallucinated' must score faithfulness <= hallucinated_max; 'partial' is faithful-but-incomplete (high faithfulness, mid correctness) and demonstrates the two metrics are orthogonal.",
+  "description": "Reference QA set for the RAGAS answer-quality gate (Item 3 / spike 076). Each case fixes a question, the retrieved context, the ground-truth reference, the answer under test, and its kind. 'grounded' answers must score faithfulness >= grounded_min and answer_correctness high; 'hallucinated' must score faithfulness <= hallucinated_max; 'partial' is faithful-but-incomplete (high faithfulness, mid correctness) and demonstrates the two metrics are orthogonal. GROW THIS SET over time with real upload->chat cases (see README 'Growing the set'): per document add a grounded answer, a fluent-but-wrong hallucination, and a faithful-but-incomplete partial, drawn from the actual document_search context the agent retrieved.",
   "thresholds": {
     "grounded_faithfulness_min": 0.8,
     "hallucinated_faithfulness_max": 0.4,
@@ -45,6 +45,30 @@
       "question": "What is the water tank capacity and how often should I descale?",
       "reference": "The water tank holds 1.8 litres and you should descale every two months.",
       "answer": "The water tank capacity is 3 litres and you should descale every week."
+    },
+    {
+      "name": "pump-grounded",
+      "kind": "grounded",
+      "context": "Centrifugal Pump CP-90. Maximum flow rate: 120 m3/h. Maximum head: 45 m. Inlet diameter: DN80. Seal type: mechanical. Maximum operating temperature: 90 C.",
+      "question": "What are the maximum flow rate and maximum head of the CP-90 pump?",
+      "reference": "The maximum flow rate is 120 m3/h and the maximum head is 45 m.",
+      "answer": "The CP-90 has a maximum flow rate of 120 m3/h and a maximum head of 45 m."
+    },
+    {
+      "name": "pump-hallucinated",
+      "kind": "hallucinated",
+      "context": "Centrifugal Pump CP-90. Maximum flow rate: 120 m3/h. Maximum head: 45 m. Inlet diameter: DN80. Seal type: mechanical. Maximum operating temperature: 90 C.",
+      "question": "What are the maximum flow rate and maximum head of the CP-90 pump?",
+      "reference": "The maximum flow rate is 120 m3/h and the maximum head is 45 m.",
+      "answer": "The CP-90 delivers a maximum flow rate of 250 m3/h and a maximum head of 90 m, with a ceramic seal."
+    },
+    {
+      "name": "pump-partial",
+      "kind": "partial",
+      "context": "Centrifugal Pump CP-90. Maximum flow rate: 120 m3/h. Maximum head: 45 m. Inlet diameter: DN80. Seal type: mechanical. Maximum operating temperature: 90 C.",
+      "question": "What are the maximum flow rate and maximum head of the CP-90 pump?",
+      "reference": "The maximum flow rate is 120 m3/h and the maximum head is 45 m.",
+      "answer": "The maximum flow rate is 120 m3/h."
     }
   ]
 }
