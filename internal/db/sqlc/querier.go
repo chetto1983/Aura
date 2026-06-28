@@ -22,6 +22,8 @@ type Querier interface {
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
+	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
+	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	// ConsumeTelegramSetupPending atomically marks an unconsumed, unexpired token as
 	// consumed and returns it. The consumed_at IS NULL guard makes the consume
 	// single-use: a second consume of the same token matches no row (RETURNING is
@@ -43,6 +45,7 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
@@ -50,6 +53,8 @@ type Querier interface {
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
+	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
+	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
@@ -63,6 +68,8 @@ type Querier interface {
 	GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
+	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
@@ -72,7 +79,10 @@ type Querier interface {
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
+	InsertIdentityRecoveryAudit(ctx context.Context, arg InsertIdentityRecoveryAuditParams) (AuraIdentityRecoveryAudit, error)
 	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
+	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)
+	InsertPasswordResetToken(ctx context.Context, arg InsertPasswordResetTokenParams) (AuraPasswordResetTokens, error)
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
 	InsertPendingNotification(ctx context.Context, arg InsertPendingNotificationParams) (AuraPendingNotifications, error)
 	InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgentJobRuns, error)
@@ -123,6 +133,7 @@ type Querier interface {
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
+	LookupRecoveryByEmail(ctx context.Context, lower string) (LookupRecoveryByEmailRow, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
@@ -154,6 +165,7 @@ type Querier interface {
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
+	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 }
 
 var _ Querier = (*Queries)(nil)

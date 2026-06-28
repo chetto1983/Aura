@@ -175,6 +175,27 @@ type AuraIdentityAuthLinks struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+// Per-identity recovery question and hashed answer for Telegram password reset. Raw answers are never stored.
+type AuraIdentityRecovery struct {
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	Question          string             `json:"question"`
+	AnswerHash        string             `json:"answer_hash"`
+	AnswerHashVersion string             `json:"answer_hash_version"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Append-only recovery event audit. Contains no raw emails, answers, codes, passwords, IP addresses, or Telegram tokens.
+type AuraIdentityRecoveryAudit struct {
+	ID            pgtype.UUID        `json:"id"`
+	IdentityID    pgtype.UUID        `json:"identity_id"`
+	Event         string             `json:"event"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	RequestIpHash pgtype.Text        `json:"request_ip_hash"`
+	UserAgentHash pgtype.Text        `json:"user_agent_hash"`
+	Metadata      []byte             `json:"metadata"`
+}
+
 // Audit of applied Cypher migrations. Written by aura neo4j migrate; read by aura neo4j status.
 type AuraKnowledgeMigrations struct {
 	Version   int32              `json:"version"`
@@ -191,6 +212,33 @@ type AuraMcpAudit struct {
 	Action          string             `json:"action"`
 	ServerName      string             `json:"server_name"`
 	Reason          pgtype.Text        `json:"reason"`
+}
+
+// Short-lived Telegram code challenges for self-service Authula password reset.
+type AuraPasswordResetChallenges struct {
+	ID             pgtype.UUID        `json:"id"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	CodeHash       string             `json:"code_hash"`
+	TelegramUserID pgtype.Int8        `json:"telegram_user_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt     pgtype.Timestamptz `json:"consumed_at"`
+	AttemptCount   int32              `json:"attempt_count"`
+	MaxAttempts    int32              `json:"max_attempts"`
+	RequestIpHash  pgtype.Text        `json:"request_ip_hash"`
+	UserAgentHash  pgtype.Text        `json:"user_agent_hash"`
+}
+
+// Short-lived server-side reset tokens minted after Telegram code and security answer verification.
+type AuraPasswordResetTokens struct {
+	TokenHash    string             `json:"token_hash"`
+	ChallengeID  pgtype.UUID        `json:"challenge_id"`
+	IdentityID   pgtype.UUID        `json:"identity_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt   pgtype.Timestamptz `json:"consumed_at"`
+	AttemptCount int32              `json:"attempt_count"`
+	MaxAttempts  int32              `json:"max_attempts"`
 }
 
 // ask_user HITL pauses (Slice 1.5). Pending = resumed_at IS NULL. FIFO order: priority DESC, created_at ASC, token ASC.
