@@ -112,9 +112,16 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if _, ok := doc.Ingest.(*runtimeDocumentIngestor); !ok {
 		t.Fatalf("document processor ingestor = %T, want *runtimeDocumentIngestor", doc.Ingest)
 	}
-	img, ok := svc.Processors.Image.(*assetspkg.ImageProcessor)
+	imageDoc, ok := svc.Processors.Image.(*assetspkg.ImageDocumentProcessor)
 	if !ok {
-		t.Fatalf("image processor = %T, want *assets.ImageProcessor", svc.Processors.Image)
+		t.Fatalf("image processor = %T, want *assets.ImageDocumentProcessor", svc.Processors.Image)
+	}
+	if imageDoc.Document != doc {
+		t.Fatalf("image document processor document branch = %T, want shared document processor", imageDoc.Document)
+	}
+	img, ok := imageDoc.Vision.(*assetspkg.ImageProcessor)
+	if !ok {
+		t.Fatalf("image document processor vision branch = %T, want *assets.ImageProcessor", imageDoc.Vision)
 	}
 	if img.Objects != objects {
 		t.Fatalf("image processor object store = %T, want shared fake store", img.Objects)
