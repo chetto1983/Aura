@@ -54,6 +54,8 @@ Start dependencies:
 
 ```powershell
 docker compose up -d neo4j aura-llama-embed markitdown
+# Optional GPU reranker (RET-01); retrieval falls back to RRF when it is absent.
+docker compose up -d aura-rerank
 ```
 
 Apply Neo4j schema:
@@ -111,6 +113,22 @@ smoke testing, and asset troubleshooting.
 
 The deferred `document_search` tool searches indexed chunks and returns cited
 results with document id, chunk id, file name, locator, score, and text.
+
+## Reranker (optional, GPU)
+
+A cross-encoder reranker is available as an optional GPU sidecar, `aura-rerank`
+(Apache-2.0 Qwen3-Reranker-0.6B Q4_K_M on llama.cpp). It exposes `POST /v1/rerank`
+and is wired through `AURA_RERANK_BASE_URL` (default `http://127.0.0.1:8085`).
+
+The reranker is **fail-soft**: when the sidecar or GPU is absent, retrieval
+degrades to the existing RRF/vector order and never hard-fails. CPU reranking is
+unusably slow (~23s), so the sidecar is GPU-only and intentionally not a boot
+dependency.
+
+```powershell
+docker compose up -d aura-rerank
+curl http://127.0.0.1:8085/health
+```
 
 ## Troubleshooting
 

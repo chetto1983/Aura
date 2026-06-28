@@ -211,6 +211,13 @@ type Config struct {
 	// boots fine.
 	CalendarMCPURL        string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
 	CalendarMCPAdminToken string // AURA_PIM_MCP_ADMIN_TOKEN — /admin Bearer token, default changeme-aura-pim-local
+
+	// Phase 30 (RET-01) retrieval rerank knob. RerankBaseURL is the optional
+	// aura-rerank sidecar (/v1/rerank) base. An unset/empty value is NOT
+	// boot-fatal — the rerank client fails soft to the RRF/vector order, so a
+	// GPU-absent deployment runs with rerank off (spike 070). Convention
+	// AURA_<DOMAIN>_<UNIT>.
+	RerankBaseURL string // AURA_RERANK_BASE_URL — aura-rerank /v1/rerank base, default http://127.0.0.1:8085
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -456,6 +463,8 @@ func loadBase() *Config {
 
 		CalendarMCPURL:        envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
 		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),
+
+		RerankBaseURL: envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
 	}
 }
 

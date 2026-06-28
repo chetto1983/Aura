@@ -48,6 +48,7 @@ func clearPostgresEnv(t *testing.T) {
 		"TTS_BASE_URL", "TTS_VOICE", "TTS_FORMAT",
 		"AURA_PROFILE_DIR", "AURA_PROFILE_CERTAINTY_N",
 		"AURA_WHATSAPP_BRIDGE_URL",
+		"AURA_RERANK_BASE_URL",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
