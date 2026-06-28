@@ -24,7 +24,9 @@ FROM aura.identities i
 JOIN aura.identity_auth_links ial ON ial.identity_id = i.id
 JOIN aura.identity_recovery ir ON ir.identity_id = i.id
 JOIN aura.telegram_accounts ta ON ta.identity_id = i.id
-WHERE lower(i.name) = lower($1);
+WHERE lower(i.name) = lower($1)
+ORDER BY ta.added_at DESC, ta.telegram_user_id DESC
+LIMIT 1;
 
 -- name: InsertPasswordResetChallenge :one
 INSERT INTO aura.password_reset_challenges (
@@ -93,5 +95,5 @@ RETURNING token_hash, challenge_id, identity_id, created_at, expires_at, consume
 INSERT INTO aura.identity_recovery_audit (
     identity_id, event, request_ip_hash, user_agent_hash, metadata
 )
-VALUES ($1, $2, $3, $4, $5)
+VALUES ($1, $2, $3, $4, COALESCE(sqlc.narg('metadata')::jsonb, '{}'::jsonb))
 RETURNING id, identity_id, event, created_at, request_ip_hash, user_agent_hash, metadata;
