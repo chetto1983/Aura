@@ -85,6 +85,28 @@ func TestConsumeResetTokenHashIncrementsAttemptsOnInvalidToken(t *testing.T) {
 	}
 }
 
+func TestPasswordResetChallengeParamsUseFiveAttempts(t *testing.T) {
+	identityID := uuid.New()
+	expiresAt := time.Date(2026, 6, 28, 12, 10, 0, 0, time.UTC)
+
+	got := passwordResetChallengeParams(identityID, 123456789, agui.PasswordResetChallenge{
+		CodeHash:      "code-hash",
+		ExpiresAt:     expiresAt,
+		RequestIPHash: "ip-hash",
+		UserAgentHash: "ua-hash",
+	})
+
+	if got.MaxAttempts != 5 {
+		t.Fatalf("MaxAttempts = %d, want 5", got.MaxAttempts)
+	}
+	if !got.TelegramUserID.Valid || got.TelegramUserID.Int64 != 123456789 {
+		t.Fatalf("TelegramUserID = %+v, want valid 123456789", got.TelegramUserID)
+	}
+	if !got.ExpiresAt.Valid || !got.ExpiresAt.Time.Equal(expiresAt) {
+		t.Fatalf("ExpiresAt = %+v, want %s", got.ExpiresAt, expiresAt)
+	}
+}
+
 func TestWirePasswordResetServiceRequiresAllDependencies(t *testing.T) {
 	server := &fakePasswordResetServer{}
 	deliverer := &fakeRecoveryDeliverer{}

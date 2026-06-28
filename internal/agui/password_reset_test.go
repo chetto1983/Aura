@@ -63,6 +63,62 @@ func TestPasswordResetStartSendsTelegramCode(t *testing.T) {
 	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", messenger.code, "198.51.100.10", "AuraTest")
 }
 
+func TestPasswordResetStartChallengeDeniedIsNeutral(t *testing.T) {
+	store := newFakePasswordResetStore(t)
+	store.startErr = ErrPasswordResetDenied
+	messenger := &fakeRecoveryMessenger{}
+	svc := NewPasswordResetService(PasswordResetDeps{
+		Store:     store,
+		Messenger: messenger,
+		Resetter:  &fakePasswordResetter{},
+	})
+
+	resp, err := svc.Start(context.Background(), PasswordResetStartRequest{
+		Email:     "reset@example.com",
+		RequestIP: "203.0.113.20",
+		UserAgent: "SensitiveBrowser/20",
+	})
+	if err != nil {
+		t.Fatalf("Start with denied challenge returned error: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Fatalf("status = %q, want ok", resp.Status)
+	}
+	if messenger.code != "" {
+		t.Fatalf("denied start sent a Telegram code: %q", messenger.code)
+	}
+	if len(store.events) != 1 || store.events[0].Event != "reset_start_denied" {
+		t.Fatalf("events = %+v, want reset_start_denied audit", store.events)
+	}
+	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", "203.0.113.20", "SensitiveBrowser")
+}
+
+func TestPasswordResetStartDeliveryFailureIsNeutral(t *testing.T) {
+	store := newFakePasswordResetStore(t)
+	messenger := &fakeRecoveryMessenger{err: errors.New("telegram unavailable for reset@example.com")}
+	svc := NewPasswordResetService(PasswordResetDeps{
+		Store:     store,
+		Messenger: messenger,
+		Resetter:  &fakePasswordResetter{},
+	})
+
+	resp, err := svc.Start(context.Background(), PasswordResetStartRequest{
+		Email:     "reset@example.com",
+		RequestIP: "203.0.113.21",
+		UserAgent: "SensitiveBrowser/21",
+	})
+	if err != nil {
+		t.Fatalf("Start with delivery failure returned error: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Fatalf("status = %q, want ok", resp.Status)
+	}
+	if len(store.events) != 1 || store.events[0].Event != "reset_start_denied" {
+		t.Fatalf("events = %+v, want reset_start_denied audit", store.events)
+	}
+	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", messenger.code, "203.0.113.21", "SensitiveBrowser")
+}
+
 func TestPasswordResetVerifyAndComplete(t *testing.T) {
 	store := newFakePasswordResetStore(t)
 	resetter := &fakePasswordResetter{}
@@ -105,6 +161,9 @@ func TestPasswordResetVerifyAndComplete(t *testing.T) {
 	if resetter.identityID != store.record.IdentityID || resetter.password != "new-pass-123" {
 		t.Fatalf("resetter got identity=%q password=%q", resetter.identityID, resetter.password)
 	}
+	if store.resolvedTokenHash != HashLookupToken(store.resetToken) {
+		t.Fatalf("resolved token hash = %q, want exact HashLookupToken(resetToken)", store.resolvedTokenHash)
+	}
 	if store.consumedTokenHash != HashLookupToken(store.resetToken) {
 		t.Fatalf("consumed token hash = %q, want exact HashLookupToken(resetToken)", store.consumedTokenHash)
 	}
@@ -112,6 +171,38 @@ func TestPasswordResetVerifyAndComplete(t *testing.T) {
 		t.Fatalf("events = %+v, want reset_verify then reset_complete audit events", store.events)
 	}
 	assertNoPasswordResetEventLeak(t, store.events, store.resetToken, "new-pass-123")
+}
+
+func TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(t *testing.T) {
+	store := newFakePasswordResetStore(t)
+	resetter := &fakePasswordResetter{err: errors.New("authula unavailable for new-pass-123")}
+	svc := NewPasswordResetService(PasswordResetDeps{
+		Store:     store,
+		Messenger: &fakeRecoveryMessenger{},
+		Resetter:  resetter,
+	})
+
+	_, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
+		ResetToken: store.resetToken,
+		Password:   "new-pass-123",
+	})
+	if !errors.Is(err, errPasswordResetUnavailable) {
+		t.Fatalf("Complete err = %v, want unavailable", err)
+	}
+	if store.resolvedTokenHash != HashLookupToken(store.resetToken) {
+		t.Fatalf("resolved token hash = %q, want exact HashLookupToken(resetToken)", store.resolvedTokenHash)
+	}
+	if store.consumedTokenHash != "" {
+		t.Fatalf("resetter failure consumed token hash %q", store.consumedTokenHash)
+	}
+	if len(store.events) != 0 {
+		t.Fatalf("events = %+v, want none when password update fails", store.events)
+	}
+	for _, secret := range []string{store.resetToken, "new-pass-123"} {
+		if err != nil && strings.Contains(err.Error(), secret) {
+			t.Fatalf("Complete error leaked %q: %v", secret, err)
+		}
+	}
 }
 
 func TestPasswordResetVerifyDeniedAuditsAndCountsKnownIdentity(t *testing.T) {
@@ -327,6 +418,9 @@ type fakePasswordResetStore struct {
 	verifiedCode        string
 	verifyErr           error
 	resetToken          string
+	startErr            error
+	resolvedTokenHash   string
+	resolveErr          error
 	consumedTokenHash   string
 	consumeErr          error
 	challengeAttempts   int
@@ -344,7 +438,7 @@ func (f *fakePasswordResetStore) LookupByEmail(_ context.Context, email string) 
 
 func (f *fakePasswordResetStore) StartChallenge(_ context.Context, challenge PasswordResetChallenge) error {
 	f.challenge = challenge
-	return nil
+	return f.startErr
 }
 
 func (f *fakePasswordResetStore) VerifyChallenge(_ context.Context, identityID, code string) (string, error) {
@@ -354,6 +448,14 @@ func (f *fakePasswordResetStore) VerifyChallenge(_ context.Context, identityID, 
 		return "", f.verifyErr
 	}
 	return f.resetToken, nil
+}
+
+func (f *fakePasswordResetStore) ResolveResetTokenHash(_ context.Context, tokenHash string) (string, error) {
+	f.resolvedTokenHash = tokenHash
+	if f.resolveErr != nil {
+		return "", f.resolveErr
+	}
+	return f.record.IdentityID, nil
 }
 
 func (f *fakePasswordResetStore) ConsumeResetTokenHash(_ context.Context, tokenHash string) (string, error) {

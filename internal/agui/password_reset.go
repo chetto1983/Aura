@@ -52,6 +52,7 @@ type PasswordResetStore interface {
 	LookupByEmail(ctx context.Context, email string) (RecoveryRecord, error)
 	StartChallenge(ctx context.Context, challenge PasswordResetChallenge) error
 	VerifyChallenge(ctx context.Context, identityID, code string) (string, error)
+	ResolveResetTokenHash(ctx context.Context, tokenHash string) (string, error)
 	ConsumeResetTokenHash(ctx context.Context, tokenHash string) (string, error)
 	RecordChallengeAttempt(ctx context.Context, identityID string) error
 	RecordRecoveryEvent(ctx context.Context, event RecoveryEvent) error
@@ -160,10 +161,15 @@ func (s *PasswordResetService) Start(ctx context.Context, in PasswordResetStartR
 		RequestIPHash: hashRequestValue(in.RequestIP),
 		UserAgentHash: hashRequestValue(in.UserAgent),
 	}); err != nil {
+		if errors.Is(err, ErrPasswordResetDenied) {
+			_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", record, email, in, s.now()))
+			return ok, nil
+		}
 		return ok, errPasswordResetUnavailable
 	}
 	if err := s.messenger.SendRecoveryCode(ctx, record.IdentityID, code); err != nil {
-		return ok, errPasswordResetUnavailable
+		_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", record, email, in, s.now()))
+		return ok, nil
 	}
 	if err := s.recordEvent(ctx, passwordResetEvent("reset_start", record, email, in, s.now())); err != nil {
 		return ok, errPasswordResetUnavailable
@@ -228,7 +234,8 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 	if strings.TrimSpace(in.ResetToken) == "" {
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
-	identityID, err := s.store.ConsumeResetTokenHash(ctx, HashLookupToken(in.ResetToken))
+	tokenHash := HashLookupToken(in.ResetToken)
+	identityID, err := s.store.ResolveResetTokenHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
 			return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
@@ -240,6 +247,16 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 	}
 	if err := s.resetter.SetPassword(ctx, identityID, in.Password); err != nil {
 		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
+	}
+	consumedIdentityID, err := s.store.ConsumeResetTokenHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, ErrPasswordResetDenied) {
+			return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
+		}
+		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
+	}
+	if consumedIdentityID != identityID {
+		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
 	event := RecoveryEvent{
 		Event:         "reset_complete",
