@@ -45,7 +45,8 @@ func TestIndexerSetsDocumentSearchableAfterChunkWrites(t *testing.T) {
 	if _, err := indexer.UpsertSparse(t.Context(), doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(fake.writeCalls) != 4 {
+	// document upsert + 2 chunk batches + NEXT_CHUNK edges + searchable mark.
+	if len(fake.writeCalls) != 5 {
 		t.Fatalf("write calls = %d", len(fake.writeCalls))
 	}
 	last := fake.writeCalls[len(fake.writeCalls)-1]
@@ -155,6 +156,86 @@ func TestCountFromRowsHandlesNumericShapes(t *testing.T) {
 			t.Fatalf("countFromRows(%#v) = %d, want %d", tc.row, got, tc.want)
 		}
 	}
+}
+
+func TestIndexerWritesSequentialNextChunkEdges(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	indexer := &Indexer{Client: fake, BatchSize: 2}
+	doc := testDocumentWithChunks(t, 5)
+
+	if _, err := indexer.UpsertSparse(t.Context(), doc); err != nil {
+		t.Fatal(err)
+	}
+	call, ok := nextChunkWrite(fake.writeCalls)
+	if !ok {
+		t.Fatal("no NEXT_CHUNK write recorded")
+	}
+	// Idempotent edge upsert: MERGE the relationship, never CREATE (re-ingest
+	// must not duplicate edges).
+	if !strings.Contains(call.query, "MERGE") || strings.Contains(call.query, "CREATE") {
+		t.Fatalf("NEXT_CHUNK query must MERGE (idempotent) and not CREATE:\n%s", call.query)
+	}
+	pairs, ok := call.params["pairs"].([]map[string]any)
+	if !ok {
+		t.Fatalf("pairs param type = %T", call.params["pairs"])
+	}
+	if len(pairs) != 4 {
+		t.Fatalf("NEXT_CHUNK pairs = %d, want chunk_count-1 = 4", len(pairs))
+	}
+	for i, pair := range pairs {
+		wantPrev := ChunkID(doc.ID, i)
+		wantNext := ChunkID(doc.ID, i+1)
+		if pair["prev"] != wantPrev || pair["next"] != wantNext {
+			t.Fatalf("pair[%d] = %#v, want prev=%s next=%s", i, pair, wantPrev, wantNext)
+		}
+	}
+	// Edges must be written AFTER all chunk nodes exist.
+	lastChunk := lastHasChunkWriteIndex(fake.writeCalls)
+	nextIdx := nextChunkWriteIndex(fake.writeCalls)
+	if lastChunk < 0 || nextIdx <= lastChunk {
+		t.Fatalf("NEXT_CHUNK write at %d must follow the last HAS_CHUNK write at %d", nextIdx, lastChunk)
+	}
+}
+
+func TestIndexerSingleChunkWritesNoNextChunkEdges(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	indexer := &Indexer{Client: fake}
+	doc := testDocumentWithChunks(t, 1)
+
+	if _, err := indexer.UpsertSparse(t.Context(), doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := nextChunkWrite(fake.writeCalls); ok {
+		t.Fatal("a 1-chunk document must not write any NEXT_CHUNK edges")
+	}
+}
+
+func nextChunkWrite(calls []knowledgeCall) (knowledgeCall, bool) {
+	for _, call := range calls {
+		if strings.Contains(call.query, "NEXT_CHUNK") {
+			return call, true
+		}
+	}
+	return knowledgeCall{}, false
+}
+
+func nextChunkWriteIndex(calls []knowledgeCall) int {
+	for i, call := range calls {
+		if strings.Contains(call.query, "NEXT_CHUNK") {
+			return i
+		}
+	}
+	return -1
+}
+
+func lastHasChunkWriteIndex(calls []knowledgeCall) int {
+	last := -1
+	for i, call := range calls {
+		if strings.Contains(call.query, "HAS_CHUNK") {
+			last = i
+		}
+	}
+	return last
 }
 
 func testDocumentWithChunks(t *testing.T, n int) ExtractedDocument {

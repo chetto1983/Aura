@@ -164,8 +164,10 @@ func TestServiceRejectsUnsupportedAndDirectoryPaths(t *testing.T) {
 	if _, err := service.IngestPath(t.Context(), IngestRequest{}, t.TempDir()); err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Fatalf("directory path error = %v", err)
 	}
-	txt := writeNamedTempFile(t, "notes.txt", "payload")
-	if _, err := service.IngestPath(t.Context(), IngestRequest{}, txt); err == nil || !strings.Contains(err.Error(), "unsupported") {
+	// .txt is now in the supportedDocumentExt allowlist; use a genuinely
+	// unsupported extension to exercise the rejection path.
+	blob := writeNamedTempFile(t, "notes.exe", "payload")
+	if _, err := service.IngestPath(t.Context(), IngestRequest{}, blob); err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unsupported path error = %v", err)
 	}
 }

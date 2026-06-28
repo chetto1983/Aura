@@ -186,12 +186,3 @@ func normalizeIngestRequest(req IngestRequest, path string, size int64) IngestRe
 	}
 	return req
 }
-
-func isSupportedDocument(fileName string) bool {
-	switch strings.ToLower(filepath.Ext(fileName)) {
-	case ".pdf", ".xlsx", ".xlsm", ".docx":
-		return true
-	default:
-		return false
-	}
-}

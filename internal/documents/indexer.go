@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 const defaultSparseBatchSize = 250
@@ -51,6 +52,14 @@ func (i *Indexer) UpsertSparse(ctx context.Context, doc ExtractedDocument) (int,
 			return total, fmt.Errorf("upsert chunks %d-%d: %w", start, end, err)
 		}
 		total += countFromRows(rows, end-start)
+	}
+	if pairs := nextChunkPairs(doc.Chunks); len(pairs) > 0 {
+		if _, err := i.Client.Write(ctx, nextChunkUpsertQuery, map[string]any{
+			"document_id": doc.ID,
+			"pairs":       pairs,
+		}); err != nil {
+			return total, fmt.Errorf("link next-chunk edges: %w", err)
+		}
 	}
 	if _, err := i.Client.Write(ctx, documentSearchableQuery, map[string]any{
 		"document_id": doc.ID,
@@ -129,6 +138,25 @@ func chunksParams(chunks []Chunk, fileName string) ([]map[string]any, error) {
 	return out, nil
 }
 
+// nextChunkPairs returns the consecutive {prev,next} chunk-id pairs that form a
+// document's reading-order chain, ordered by chunk index. A document with fewer
+// than two chunks has no edges.
+func nextChunkPairs(chunks []Chunk) []map[string]any {
+	if len(chunks) < 2 {
+		return nil
+	}
+	ordered := slices.Clone(chunks)
+	slices.SortFunc(ordered, func(a, b Chunk) int { return a.ChunkIndex - b.ChunkIndex })
+	pairs := make([]map[string]any, 0, len(ordered)-1)
+	for i := 0; i+1 < len(ordered); i++ {
+		pairs = append(pairs, map[string]any{
+			"prev": ordered[i].ID,
+			"next": ordered[i+1].ID,
+		})
+	}
+	return pairs
+}
+
 func countFromRows(rows []map[string]any, fallback int) int {
 	if len(rows) == 0 {
 		return fallback
@@ -188,6 +216,18 @@ SET
   c.created_at = coalesce(c.created_at, datetime())
 MERGE (d)-[:HAS_CHUNK]->(c)
 RETURN count(c) AS chunks
+`
+
+// nextChunkUpsertQuery links consecutive chunks into a reading-order chain. It
+// MATCHes the already-upserted chunk nodes (so it never creates bare duplicates)
+// and MERGEs the relationship, making re-ingest idempotent. All inputs are bound
+// $-parameters (no string interpolation), keeping the write mojibake-safe.
+const nextChunkUpsertQuery = `
+UNWIND $pairs AS pair
+MATCH (a:Chunk {id: pair.prev})
+MATCH (b:Chunk {id: pair.next})
+MERGE (a)-[:NEXT_CHUNK]->(b)
+RETURN count(*) AS chunks
 `
 
 const documentSearchableQuery = `
