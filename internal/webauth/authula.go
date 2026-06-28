@@ -69,10 +69,13 @@ const authPoolMaxConns = 5
 // Authula's bare users/sessions/accounts tables can never collide with aura.* or
 // public (H1). Secret is the 32-byte hex Authula uses to derive its HMAC/token keys
 // (AURA_AUTHULA_SECRET). TrustedOrigins seeds the CSRF Fetch-Metadata origin check.
+// RateLimitMax optionally overrides the credential-attempt ceiling per one-minute
+// in-memory window; zero keeps the production default.
 type Config struct {
 	DSN            string
 	Secret         string
 	TrustedOrigins []string
+	RateLimitMax   int
 }
 
 // Provider owns the constructed *authula.Auth: its mounted /auth/* HTTP handler, the
@@ -146,7 +149,7 @@ func New(cfg Config) (_ *Provider, err error) {
 
 	auth := authula.New(&authula.AuthConfig{
 		Config:  authCfg,
-		Plugins: buildPlugins(),
+		Plugins: buildPlugins(rateLimitMax(cfg.RateLimitMax)),
 	})
 	// Force handler construction now (registers routes/hooks once via sync.Once) so a
 	// late registration error surfaces at boot, not on the first request.
@@ -168,12 +171,19 @@ func validateAuthulaSecret(secret string) error {
 	return nil
 }
 
+func rateLimitMax(max int) int {
+	if max > 0 {
+		return max
+	}
+	return 30
+}
+
 // buildPlugins instantiates the enabled-plugin set with their Enabled flag set, so
 // authula.New caches each Config() into PreParsedConfigs and IsPluginEnabled reports
 // true (the manual-instantiation path, verified in auth.go:102-112 + util.IsPluginEnabled).
 // access-control / oauth2 / jwt / bearer are deliberately OMITTED: Aura keeps authz in
 // capability_grants (spec §5) and v1 is single-operator password+TOTP (spec §4.3).
-func buildPlugins() []authulamodels.Plugin {
+func buildPlugins(rateLimitAttempts int) []authulamodels.Plugin {
 	return []authulamodels.Plugin{
 		sessionplugin.New(sessionplugin.SessionPluginConfig{Enabled: true}),
 		emailpasswordplugin.New(emailpasswordtypes.EmailPasswordPluginConfig{
@@ -203,7 +213,7 @@ func buildPlugins() []authulamodels.Plugin {
 			// In-memory backend: no external dep that can fail-open (spec §8.4 DoS row).
 			Provider: ratelimittypes.RateLimitProviderInMemory,
 			Window:   time.Minute,
-			Max:      30,
+			Max:      rateLimitAttempts,
 		}),
 	}
 }

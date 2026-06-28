@@ -92,6 +92,18 @@ func TestHardenedCookieConstants(t *testing.T) {
 	}
 }
 
+func TestRateLimitMaxDefault(t *testing.T) {
+	if got := rateLimitMax(0); got != 30 {
+		t.Errorf("zero rate limit max = %d, want 30", got)
+	}
+	if got := rateLimitMax(-1); got != 30 {
+		t.Errorf("negative rate limit max = %d, want 30", got)
+	}
+	if got := rateLimitMax(77); got != 77 {
+		t.Errorf("configured rate limit max = %d, want 77", got)
+	}
+}
+
 // --- Validator.Validate --------------------------------------------------------------
 
 // fakeToken implements authulaservices.TokenService; Hash is identity-ish for testing.

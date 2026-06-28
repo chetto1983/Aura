@@ -172,8 +172,7 @@ for _ in $(seq 1 60); do
     cat "${SERVE_LOG}" >&2
     exit 1
   fi
-  if curl -fsS -o "${NULL_OUT}" "${BASE}/threads/nonexistent/messages" 2>/dev/null \
-     || curl -sS -o "${NULL_OUT}" -w '%{http_code}' "${BASE}/threads/nonexistent/messages" 2>/dev/null | grep -qE '^[0-9]{3}$'; then
+  if curl -fsS -o "${NULL_OUT}" "${BASE}/healthz" 2>/dev/null; then
     READY=1
     break
   fi
@@ -191,6 +190,131 @@ if grep -qiE 'address already in use|listen tcp.*bind|bind:|cannot assign reques
 fi
 echo "==> daemon ready on ${BIND}"
 
+COOKIE_JAR="${WORK}/authula-cookies.txt"
+: > "${COOKIE_JAR}"
+AUTH_COOKIE_HEADER=""
+cookie_header_from_jar() {
+  awk '
+    /^#HttpOnly_/ { sub(/^#HttpOnly_/, "", $0) }
+    /^#/ || NF < 7 { next }
+    { printf "%s%s=%s", sep, $6, $7; sep="; " }
+  ' "${COOKIE_JAR}"
+}
+if [[ -n "${AURA_AUTHULA_SECRET:-}" ]]; then
+  AUTH_EMAIL="${AURA_E2E_AUTHULA_EMAIL:-${AURA_AUTHULA_OPERATOR_EMAIL:-}}"
+  AUTH_PASSWORD="${AURA_E2E_AUTHULA_PASSWORD:-${AURA_AUTHULA_OPERATOR_PASSWORD:-}}"
+  if [[ -z "${AUTH_EMAIL}" || -z "${AUTH_PASSWORD}" ]]; then
+    echo "FAIL: Authula auth is configured; set AURA_E2E_AUTHULA_EMAIL/PASSWORD for the agui smoke" >&2
+    exit 2
+  fi
+  AUTH_CFG="$(curl -fsS -c "${COOKIE_JAR}" "${BASE}/api/auth/config" 2>&1)" || {
+    echo "FAIL: GET /api/auth/config failed" >&2
+    printf '%s\n' "${AUTH_CFG}" >&2
+    exit 1
+  }
+  read -r AUTH_BASE_PATH CSRF_HEADER CSRF_COOKIE CSRF_TOKEN < <(AUTH_CFG="${AUTH_CFG}" python3 - <<'PY'
+import json
+import os
+import sys
+
+try:
+    cfg = json.loads(os.environ["AUTH_CFG"])
+except Exception as exc:
+    raise SystemExit(f"invalid auth config json: {exc}")
+
+base = cfg.get("auth_base_path") or cfg.get("authBasePath") or "/auth"
+header = cfg.get("csrf_header_name") or cfg.get("csrfHeaderName") or "X-AUTHULA-CSRF-TOKEN"
+cookie = cfg.get("csrf_cookie_name") or cfg.get("csrfCookieName") or "__Host-authula_csrf_token"
+token = cfg.get("csrf_token") or cfg.get("csrfToken") or ""
+if cfg.get("provider") != "authula" or not token:
+    raise SystemExit(f"unexpected auth config provider={cfg.get('provider')!r} csrf={bool(token)}")
+print(base, header, cookie, token)
+PY
+  ) || {
+    echo "FAIL: parse /api/auth/config failed" >&2
+    printf '%s\n' "${AUTH_CFG}" >&2
+    exit 1
+  }
+  LOGIN_BODY="${WORK}/authula-login.json"
+  LOGIN_PAYLOAD="$(AUTH_EMAIL="${AUTH_EMAIL}" AUTH_PASSWORD="${AUTH_PASSWORD}" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "email": os.environ["AUTH_EMAIL"],
+    "password": os.environ["AUTH_PASSWORD"],
+}, separators=(",", ":")))
+PY
+)"
+  LOGIN_CODE="$(curl -sS -o "${LOGIN_BODY}" -w '%{http_code}' \
+    -X POST "${BASE}${AUTH_BASE_PATH}/email-password/sign-in" \
+    -H 'Content-Type: application/json' \
+    -H "${CSRF_HEADER}: ${CSRF_TOKEN}" \
+    -H "Origin: ${BASE}" \
+    -H "Cookie: ${CSRF_COOKIE}=${CSRF_TOKEN}" \
+    -c "${COOKIE_JAR}" \
+    -d "${LOGIN_PAYLOAD}")" || {
+    echo "FAIL: POST ${AUTH_BASE_PATH}/email-password/sign-in failed" >&2
+    cat "${LOGIN_BODY}" >&2 || true
+    exit 1
+  }
+  if [[ "${LOGIN_CODE}" != "200" ]]; then
+    echo "FAIL: Authula sign-in returned HTTP ${LOGIN_CODE}" >&2
+    cat "${LOGIN_BODY}" >&2
+    exit 1
+  fi
+  AUTH_COOKIE_HEADER="$(cookie_header_from_jar)"
+  NEED_TOTP="$(python3 - "${LOGIN_BODY}" <<'PY'
+import json
+import sys
+
+try:
+    body = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    body = {}
+print("1" if body.get("totp_redirect") is True else "0")
+PY
+)"
+  if [[ "${NEED_TOTP}" == "1" ]]; then
+    if [[ -z "${AURA_E2E_AUTHULA_TOTP_CODE:-}" ]]; then
+      echo "FAIL: Authula requested TOTP; set AURA_E2E_AUTHULA_TOTP_CODE for the agui smoke" >&2
+      exit 2
+    fi
+    VERIFY_BODY="${WORK}/authula-totp.json"
+    VERIFY_PAYLOAD="$(python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({"code": os.environ["AURA_E2E_AUTHULA_TOTP_CODE"], "trust_device": False}, separators=(",", ":")))
+PY
+)"
+    VERIFY_CODE="$(curl -sS -o "${VERIFY_BODY}" -w '%{http_code}' \
+      -X POST "${BASE}${AUTH_BASE_PATH}/totp/verify" \
+      -H 'Content-Type: application/json' \
+      -H "${CSRF_HEADER}: ${CSRF_TOKEN}" \
+      -H "Origin: ${BASE}" \
+      -H "Cookie: ${AUTH_COOKIE_HEADER}" \
+      -c "${COOKIE_JAR}" \
+      -d "${VERIFY_PAYLOAD}")" || {
+      echo "FAIL: POST ${AUTH_BASE_PATH}/totp/verify failed" >&2
+      cat "${VERIFY_BODY}" >&2 || true
+      exit 1
+    }
+    if [[ "${VERIFY_CODE}" != "200" ]]; then
+      echo "FAIL: Authula TOTP verify returned HTTP ${VERIFY_CODE}" >&2
+      cat "${VERIFY_BODY}" >&2
+      exit 1
+    fi
+    AUTH_COOKIE_HEADER="$(cookie_header_from_jar)"
+  fi
+  if [[ -z "${AUTH_COOKIE_HEADER}" || "${AUTH_COOKIE_HEADER}" != *"__Host-authula_session="* ]]; then
+    echo "FAIL: Authula login did not yield a session cookie" >&2
+    cat "${COOKIE_JAR}" >&2 || true
+    exit 1
+  fi
+  echo "==> Authula session ready for AG-UI smoke"
+fi
+
 # --- SC1: POST /agent/run SSE round-trip --------------------------------------
 RUN_BODY="$(python3 - "${TID}" "${USER_PROMPT}" <<'PY'
 import json
@@ -204,6 +328,7 @@ PY
 )"
 echo "==> POST /agent/run (SSE)"
 SSE="$(curl -sS -N --max-time "${SSE_MAX_TIME}" -X POST "${BASE}/agent/run" \
+  -H "Cookie: ${AUTH_COOKIE_HEADER}" \
   -H 'Content-Type: application/json' \
   -d "${RUN_BODY}" 2>&1)" || {
   echo "FAIL: POST /agent/run curl failed" >&2
@@ -264,7 +389,7 @@ fi
 
 # --- SC3: GET /threads/<id>/messages snapshot ---------------------------------
 echo "==> GET /threads/${TID}/messages"
-SNAP="$(curl -sS "${BASE}/threads/${TID}/messages" 2>&1)" || {
+SNAP="$(curl -sS -H "Cookie: ${AUTH_COOKIE_HEADER}" "${BASE}/threads/${TID}/messages" 2>&1)" || {
   echo "FAIL: GET messages curl failed" >&2
   printf '%s\n' "${SNAP}" >&2
   exit 1
@@ -310,7 +435,7 @@ fi
 
 # --- 404 chokepoint (T-12-11) -------------------------------------------------
 echo "==> GET /threads/does-not-exist/messages (expect 404)"
-CODE="$(curl -sS -o "${NULL_OUT}" -w '%{http_code}' "${BASE}/threads/does-not-exist/messages" 2>/dev/null || true)"
+CODE="$(curl -sS -H "Cookie: ${AUTH_COOKIE_HEADER}" -o "${NULL_OUT}" -w '%{http_code}' "${BASE}/threads/does-not-exist/messages" 2>/dev/null || true)"
 if [[ "${CODE}" != "404" ]]; then
   echo "FAIL: unknown thread returned ${CODE}, want 404" >&2
   exit 1

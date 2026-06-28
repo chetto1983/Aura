@@ -103,6 +103,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900",
 		"./docker/garage/garage.toml:/etc/garage.toml:ro",
 		"garage-data:",
+		"--profile extended",
 	} {
 		if !strings.Contains(compose, want) {
 			t.Fatalf("compose.yaml missing %q", want)

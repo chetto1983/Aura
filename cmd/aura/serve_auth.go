@@ -106,6 +106,7 @@ func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID st
 		DSN:            dsn,
 		Secret:         chat.cfg.AuthulaSecret,
 		TrustedOrigins: authulaTrustedOrigins(chat.cfg.AGUIBind),
+		RateLimitMax:   chat.cfg.AuthulaRateLimitMax,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("authula provider: %w", err)

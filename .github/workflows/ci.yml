@@ -198,6 +198,9 @@ jobs:
       # fail-loud guard in db_test.go now turns that skip into a failure under CI.
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+      AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
+      AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
       # Slice 0.7: compose.yaml now has a neo4j service with ${NEO4J_PASSWORD:?}
       # fail-fast. Any `docker compose` invocation (restore_drill.sh uses
       # `docker compose exec postgres`) parses the whole file, so the var must be
@@ -243,6 +246,9 @@ jobs:
           go run ./cmd/aura db migrate
           go run ./cmd/aura db status
           go run ./cmd/aura db ping
+
+      - name: Seed Authula operator for AG-UI smoke
+        run: go run ./scripts/authula_seed_e2e.go
 
       - name: AG-UI gateway live smoke (FakeClient/degraded leg)
         # Phase 12 SC1/SC3 LIVE wire gate: builds aura, seeds a conversation, starts
@@ -1037,6 +1043,7 @@ jobs:
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_WEB_AUTH_PROVIDER: authula
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+      AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
       AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
       NEO4J_PASSWORD: ci-test-password

@@ -384,7 +384,7 @@ services:
           --transport http \
           --host 0.0.0.0 \
           --port 8080 \
-          --profile core \
+          --profile extended \
           --session-strategy persistent \
           --user-id aura-local \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \

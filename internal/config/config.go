@@ -149,6 +149,7 @@ type Config struct {
 	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
 	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
 	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — Aura identity name the Authula operator user binds to (default "local")
+	AuthulaRateLimitMax     int    // AURA_AUTHULA_RATE_LIMIT_MAX — credential attempts per minute before Authula throttles (default 30)
 
 	// ServeShutdownGraceSec bounds the in-flight turn drain on a SIGTERM/SIGINT
 	// (audit O-06 / AP-17): on the signal the daemon stops accepting new work, then
@@ -432,6 +433,7 @@ func loadBase() *Config {
 		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
 		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
 		AuthulaOperatorIdentity: envDefault("AURA_AUTHULA_OPERATOR_IDENTITY", "local"),
+		AuthulaRateLimitMax:     envIntDefault("AURA_AUTHULA_RATE_LIMIT_MAX", 30),
 
 		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
 
