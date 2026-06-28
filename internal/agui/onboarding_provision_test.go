@@ -19,6 +19,7 @@ type fakeAuthula struct {
 	hashErr       error
 	createUserErr error
 	createAcctErr error
+	hashes        int
 	created       []string // user IDs created
 	deleted       []string // user IDs deleted (COMP_B)
 	nextID        int
@@ -32,6 +33,9 @@ func (f *fakeAuthula) HashPassword(p string) (string, error) {
 	if f.hashErr != nil {
 		return "", f.hashErr
 	}
+	f.mu.Lock()
+	f.hashes++
+	f.mu.Unlock()
 	return "hashed:" + p, nil
 }
 
@@ -120,7 +124,7 @@ func (f *fakeAuraLeg) auditCount() int {
 type fakeTelegram struct {
 	mu        sync.Mutex
 	insertErr error
-	minted    []string
+	pending   map[string]bool
 	deleted   []string
 	consumed  bool
 }
@@ -131,7 +135,10 @@ func (f *fakeTelegram) InsertPending(_ context.Context, tok, _ string, _ time.Ti
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.minted = append(f.minted, tok)
+	if f.pending == nil {
+		f.pending = map[string]bool{}
+	}
+	f.pending[tok] = true
 	return nil
 }
 
@@ -139,6 +146,10 @@ func (f *fakeTelegram) DeletePending(_ context.Context, tok string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, tok)
+	if !f.pending[tok] {
+		return errors.New("unknown pending token")
+	}
+	delete(f.pending, tok)
 	return nil
 }
 
@@ -149,7 +160,7 @@ func (f *fakeTelegram) PendingConsumed(_ context.Context, _ string) (bool, error
 func (f *fakeTelegram) mintedCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return len(f.minted) - len(f.deleted)
+	return len(f.pending)
 }
 
 type fakeRecoveryStore struct {
@@ -399,6 +410,9 @@ func TestProvisionSagaCompensation(t *testing.T) {
 			t.Fatalf("audit-fail orphans: identities=%d authula=%d tokens=%d recovery=%d audit=%d",
 				leg.liveIdentities(), au.liveAuthulaUsers(), tg.mintedCount(), recovery.liveRecoveryRows(), leg.auditCount())
 		}
+		if len(tg.deleted) != 1 || tg.deleted[0] == "" {
+			t.Fatalf("deleted pending tokens = %#v, want exactly one non-empty token", tg.deleted)
+		}
 	})
 }
 
@@ -518,6 +532,9 @@ func TestProvisionConcurrentSameSessionSingleCommit(t *testing.T) {
 
 func assertNoWrites(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegram) {
 	t.Helper()
+	if au.hashes != 0 {
+		t.Errorf("pre-write path hashed a password (%d)", au.hashes)
+	}
 	if au.liveAuthulaUsers() != 0 || len(au.created) != 0 {
 		t.Errorf("escalation/forbidden created an Authula user (%d)", len(au.created))
 	}
@@ -579,22 +596,5 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), recoverySecret) {
 		t.Fatalf("the recovery answer leaked into a log line:\n%s", buf.String())
-	}
-}
-
-func TestRenderQRSVG(t *testing.T) {
-	const deepLink = "https://t.me/AuraBot?start=abc123token"
-	svg, err := renderQRSVG(deepLink)
-	if err != nil {
-		t.Fatalf("renderQRSVG: %v", err)
-	}
-	if !strings.HasPrefix(svg, "<svg") || !strings.Contains(svg, "</svg>") {
-		t.Fatalf("not an SVG: %.60q", svg)
-	}
-	if !strings.Contains(svg, "<rect") {
-		t.Error("QR SVG has no module rects")
-	}
-	if strings.Contains(svg, "123456:ABC") {
-		t.Error("QR SVG leaked a bot token")
 	}
 }

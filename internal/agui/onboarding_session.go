@@ -271,10 +271,10 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 
 // StartSession mints a server-held onboarding session for the creating operator and
 // returns the first step + the D-06 capability picker options: the creator's OWN grants
-// with the '*' wildcard excluded (ONBD-01a). An operator holding only '*' offers an empty
-// picker — they cannot grant a capability they do not hold by name (no-escalation). The
-// capability gate (identity.create) is enforced on the route mount, so reaching here means
-// the creator is authorized to create identities.
+// with the '*' wildcard excluded (ONBD-01a). A wildcard creator may grant any named
+// capability through the service backstop, but never '*' itself; the picker still omits
+// '*' because it is system-managed. The capability gate (identity.create) is enforced on
+// the route mount, so reaching here means the creator is authorized to create identities.
 func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID string) (OnboardingStart, error) {
 	if creatorIdentityID == "" {
 		return OnboardingStart{}, errOnboardingForbidden

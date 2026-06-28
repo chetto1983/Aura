@@ -28,7 +28,7 @@ import (
 // Order (RESEARCH §Hard Problem 1):
 //
 //	0. pre-validate (no writes): creator HasCapability(identity.create); requested caps ⊆
-//	   creator-grants AND no '*'; email non-empty + Authula GetByEmail==none.
+//	   creator-grants AND no '*'; valid request shape + Authula GetByEmail==none.
 //	1. Leg B (Authula, fails cheapest on dup email): Hash → CreateUser → CreateAccount;
 //	   COMP_B = DeleteUser.
 //	2. Leg A (aura, one db.WithTx): INSERT identity + GrantCapability per cap + LinkOperator;
@@ -41,7 +41,7 @@ import (
 //
 // Then (ONBD-02) the confirmed interview Agent.md is written for the NEW identity id; a
 // skipped interview writes nothing. The Telegram CONSUME is async (the user scans later);
-// an unscanned token simply expires (1h TTL) — "identity created" = B+A+recovery+C committed.
+// an unscanned token simply expires (1h TTL) — "identity created" = B+A+recovery+C+audit committed.
 
 // onboardingTokenTTL is the Telegram onboarding-token lifetime (matches the setup wizard's
 // 1h TTL). An unscanned token expires and is GC'd; it never leaves a half-linked identity.
@@ -147,19 +147,13 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	entry.linkTelegram = in.LinkTelegram
 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
+	if err := validateOnboardingProvision(in); err != nil {
+		return OnboardingProvisionResponse{}, err
+	}
 	if err := s.validateNoEscalation(ctx, creator, in.Capabilities); err != nil {
 		return OnboardingProvisionResponse{}, err
 	}
 	identityName := strings.TrimSpace(in.Email)
-	if identityName == "" {
-		return OnboardingProvisionResponse{}, errors.New("onboarding: email is required and must be a sane length")
-	}
-	if strings.TrimSpace(in.SecurityQuestion) == "" {
-		return OnboardingProvisionResponse{}, errors.New("onboarding: security question is required and must be a sane length")
-	}
-	if strings.TrimSpace(in.SecurityAnswer) == "" {
-		return OnboardingProvisionResponse{}, errors.New("onboarding: security answer is required and must be a sane length")
-	}
 	// Duplicate pre-check (fail before any write): an existing Authula user with this email
 	// is a clean 409. A racing create is still caught by the aura.identities UNIQUE name
 	// (23505) at Leg A → ErrOnboardingDuplicate (idempotent double-submit → one identity).

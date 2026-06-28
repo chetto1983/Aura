@@ -1,13 +1,12 @@
 //go:build db_integration
 
 // Live cross-store provisioning saga coverage (ONBD-01a/01b — the high-risk track). It
-// drives the REAL onboardingService.Provision against a running aura-postgres — the aura.*
-// pool, the immutable aura.identity_audit table, and the aura.telegram_setup_pending table
-// — asserting the saga's all-or-nothing guarantee against the LIVE orphan-critical stores:
-// every RESEARCH failure-injection point (B1/B2/A/recovery/C) leaves ZERO orphans in EVERY store, a
-// double-submit yields exactly one identity (clean 409 via the NOT NULL UNIQUE name),
-// exactly one IMMUTABLE audit row per success (none for a rolled-back flow, and UPDATE/
-// DELETE rejected), and no secret reaches a log line over a full run.
+// drives the REAL onboardingService.Provision against a disposable migrated Postgres DB:
+// the aura.* pool, the immutable aura.identity_audit table, and telegram_setup_pending.
+// It asserts the saga's all-or-nothing guarantee against the LIVE orphan-critical stores:
+// every failure-injection point (B1/B2/A/recovery/C/audit) leaves ZERO orphans, a
+// double-submit yields exactly one identity, exactly one IMMUTABLE audit row per success,
+// and no secret reaches a log line over a full run.
 //
 // Authula leg note: the agui package runs under goleak.VerifyTestMain (main_test.go), and
 // the embedded Authula provider spawns long-lived database/sql + rate-limit cleanup
@@ -23,9 +22,9 @@
 //
 //	go test -tags db_integration ./internal/agui -run 'TestProvisionSagaLive|TestProvisionIdempotent|TestIdentityAuditImmutable|TestProvisionNoSecretInLogsLive' -count=1 -p 1
 //
-// Requires AURA_DB_URL + AURA_DB_MIGRATE_URL + POSTGRES_PASSWORD (migratedPool). Run with
-// -p 1 — the shared Postgres is also exercised by a parallel session. No-skip-as-green:
-// migratedPool's envOrSkip t.Fatals under $CI when the DSN is unset.
+// Requires POSTGRES_PASSWORD plus optional PGHOST/PGPORT. The test creates and drops a
+// throwaway DB, so append-only audit rows never pollute the shared aura DB. No-skip-as-
+// green: envOrSkip t.Fatals under $CI when required env is unset.
 
 package agui
 
@@ -35,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -276,8 +276,9 @@ type liveSagaEnv struct {
 
 func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
 	t.Helper()
-	pool := migratedPool(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	t.Cleanup(cancel)
+	pool := disposableLiveSagaPool(t, ctx)
 
 	creatorID := uuid.New().String()
 	if _, err := pool.Exec(ctx,
@@ -302,6 +303,69 @@ func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
 		telegram: liveTelegram{pool: pool},
 		recovery: liveRecovery{pool: pool},
 	}
+}
+
+func disposableLiveSagaPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
+	t.Helper()
+	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	host := os.Getenv("PGHOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := os.Getenv("PGPORT")
+	if port == "" {
+		port = "5432"
+	}
+	dsn := func(role, name string) string {
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, name)
+	}
+	if err := db.EnsureRoles(ctx, dsn("aura", "aura"), pwd); err != nil {
+		t.Fatalf("EnsureRoles: %v", err)
+	}
+	dbName := "aura_onboarding_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := db.Open(ctx, &db.Config{URL: dsn("aura", "aura")})
+	if err != nil {
+		t.Fatalf("open admin pool: %v", err)
+	}
+	cleanupNow := true
+	defer func() {
+		if cleanupNow {
+			_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
+			admin.Close()
+		}
+	}()
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+dbName); err != nil {
+		t.Fatalf("create disposable db: %v", err)
+	}
+	freshAdmin, err := db.Open(ctx, &db.Config{URL: dsn("aura", dbName)})
+	if err != nil {
+		t.Fatalf("open disposable admin pool: %v", err)
+	}
+	if _, err := admin.Exec(ctx, "GRANT CREATE ON DATABASE "+dbName+" TO aura_migrate"); err != nil {
+		freshAdmin.Close()
+		t.Fatalf("grant create on disposable db: %v", err)
+	}
+	if _, err := freshAdmin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
+		freshAdmin.Close()
+		t.Fatalf("grant create on public schema: %v", err)
+	}
+	if _, err := db.Migrate(ctx, dsn("aura_migrate", dbName)); err != nil {
+		freshAdmin.Close()
+		t.Fatalf("Migrate disposable db: %v", err)
+	}
+	app, err := db.Open(ctx, &db.Config{URL: dsn("aura_app", dbName)})
+	if err != nil {
+		freshAdmin.Close()
+		t.Fatalf("open disposable app pool: %v", err)
+	}
+	t.Cleanup(func() {
+		app.Close()
+		freshAdmin.Close()
+		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
+		admin.Close()
+	})
+	cleanupNow = false
+	return app
 }
 
 // service builds the real onboardingService over the env's real aura/telegram legs + the
