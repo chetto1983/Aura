@@ -400,6 +400,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// The mounts (RequireCapability on start+provision, RequireAuth on step+telegram-
 	// status) live in serve_webui.go.
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
+	wirePasswordResetService(aguiServer, chat.pool, reg, authulaProvider)
 	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider)
 	if err != nil {
 		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
