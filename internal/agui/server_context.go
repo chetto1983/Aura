@@ -18,8 +18,7 @@ import (
 // catalog path is best-effort (no docs or no identity -> no catalog, no error).
 func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, threadID string, attachmentIDs []string, userMsg *string) (*string, int, string) {
 	identityID, identityOK := principalIdentityID(r)
-	var attachmentBlock, catalogBlock string
-	attachedIDs := map[string]bool{}
+	var attachments []assets.Asset
 	if len(attachmentIDs) > 0 {
 		if s.assets == nil {
 			return userMsg, http.StatusServiceUnavailable, "asset service unavailable"
@@ -27,7 +26,7 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 		if !identityOK {
 			return userMsg, http.StatusUnauthorized, "unauthorized"
 		}
-		items := make([]assets.Asset, 0, len(attachmentIDs))
+		attachments = make([]assets.Asset, 0, len(attachmentIDs))
 		for _, id := range attachmentIDs {
 			asset, err := s.assets.GetForIdentity(ctx, id, identityID)
 			if err != nil {
@@ -36,23 +35,26 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 			if asset.ThreadID != "" && asset.ThreadID != threadID {
 				return userMsg, http.StatusNotFound, "attachment not found"
 			}
-			items = append(items, asset)
-			attachedIDs[asset.ID] = true
-		}
-		attachmentBlock = assets.BuildAttachmentBlock(items)
-	}
-	if s.assets != nil && identityOK {
-		if threadAssets, lerr := s.assets.ListForThread(ctx, identityID, threadID); lerr == nil {
-			catalogBlock = assets.BuildKnowledgeCatalog(threadAssets, attachedIDs)
+			attachments = append(attachments, asset)
 		}
 	}
-	if catalogBlock == "" && attachmentBlock == "" {
+	if s.assets == nil {
 		return userMsg, 0, ""
 	}
-	if userMsg == nil {
-		joined := catalogBlock + attachmentBlock
-		return &joined, 0, ""
+	// Compose via the shared, channel-agnostic seam — the same path the Telegram channel
+	// uses — instead of duplicating the catalog/attachment composition here. The catalog is
+	// keyed by the authenticated identity, so an unauthenticated principal gets none.
+	catalogIdentity := ""
+	if identityOK {
+		catalogIdentity = identityID
 	}
-	combined := assets.WithContextBlocks(*userMsg, catalogBlock, attachmentBlock)
+	text := ""
+	if userMsg != nil {
+		text = *userMsg
+	}
+	combined := s.assets.BuildTurnContext(ctx, catalogIdentity, threadID, attachments, text)
+	if combined == text {
+		return userMsg, 0, ""
+	}
 	return &combined, 0, ""
 }
