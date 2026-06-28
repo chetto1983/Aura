@@ -118,8 +118,8 @@ func TestBuildAuthDepsRequiresAuthulaConfigEvenWithLegacyProviderFlag(t *testing
 	if provider != nil {
 		t.Fatal("buildAuthDeps returned an Authula provider after a configuration failure")
 	}
-	if !strings.Contains(err.Error(), "Authula") {
-		t.Fatalf("error = %q, want Authula configuration context", err)
+	if !strings.Contains(err.Error(), "authula") {
+		t.Fatalf("error = %q, want authula configuration context", err)
 	}
 }
 

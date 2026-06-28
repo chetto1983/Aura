@@ -53,7 +53,7 @@ func (a identityCheckerAdapter) HasCapability(ctx context.Context, id, capabilit
 // always active through the Authula session validator.
 func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.Provider, error) {
 	if !authulaProvisioningConfigured(chat.cfg) {
-		return agui.AuthDeps{}, nil, fmt.Errorf("Authula web auth misconfigured: set AURA_AUTHULA_SECRET and AURA_AUTHULA_DATABASE_URL or AURA_DB_URL")
+		return agui.AuthDeps{}, nil, fmt.Errorf("authula web auth misconfigured: set AURA_AUTHULA_SECRET and AURA_AUTHULA_DATABASE_URL or AURA_DB_URL")
 	}
 	localIdentityID, err := resolveWebAuthIdentityID(ctx, chat.identity, chat.cfg)
 	if err != nil {

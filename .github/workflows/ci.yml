@@ -1035,7 +1035,10 @@ jobs:
       CI: "true"
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_WEB_AUTH_SECRET: ci-not-a-secret
+      AURA_WEB_AUTH_PROVIDER: authula
+      AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+      AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
+      AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
       NEO4J_PASSWORD: ci-test-password
       OPENROUTER_API_KEY: ci-degraded-no-network
       AURA_OBJECTSTORE_BACKEND: garage
@@ -1082,6 +1085,10 @@ jobs:
       - name: aura db migrate
         if: steps.changes.outputs.web == 'true'
         run: go run ./cmd/aura db migrate
+
+      - name: Seed Authula E2E operator
+        if: steps.changes.outputs.web == 'true'
+        run: go run ./scripts/authula_seed_e2e.go
 
       - name: Build web dist (fresh embed source)
         if: steps.changes.outputs.web == 'true'

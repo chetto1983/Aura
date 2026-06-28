@@ -136,19 +136,16 @@ type Config struct {
 	TelegramFileBaseURL       string // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
 	TelegramLocalBotAPI       bool   // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
 
-	// Phase 24 (WEB-02/WEB-03) web-auth knobs. Neither is boot-fatal on its own —
-	// GuardWebBind decides at boot whether a non-loopback AGUIBind may start. A loopback
-	// bind boots with both unset (dev parity, exactly as before).
-	WebAuthSecret string // AURA_WEB_AUTH_SECRET — operator login passphrase + HMAC cookie-key source; empty default, NOT boot-fatal (GuardWebBind decides)
+	// Web-auth knobs. GuardWebBind decides at boot whether a non-loopback AGUIBind
+	// may start. Authula is the active provider; WebAuthSecret is retained only so
+	// old env files/tests can be loaded without making it a product path.
+	WebAuthSecret string // AURA_WEB_AUTH_SECRET - deprecated legacy passphrase secret; not mounted by aura serve
 	WebTrustProxy bool   // AURA_WEB_TRUST_PROXY — operator vouches a reverse proxy terminates auth (D-05)
 
 	// Authula web-auth provider knobs (docs/cockpit-overhaul/05-authula-auth-SPEC.md).
-	// WebAuthProvider is the migration feature flag: "passphrase" (default — the existing
-	// stdlib HMAC login is untouched) or "authula" (the embedded Authula framework
-	// validates the session cookie). The flag is read once at boot; flipping it back to
-	// passphrase is the M2 rollback safety net (env + one restart). The other three are
-	// inert while the flag is passphrase.
-	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER ∈ {passphrase, authula} (default passphrase)
+	// WebAuthProvider defaults to authula. Legacy values are accepted for backward
+	// compatibility, but aura serve still builds the Authula-only auth boundary.
+	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER (default authula)
 	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
 	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
 	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — Aura identity name the Authula operator user binds to (default "local")
@@ -425,13 +422,13 @@ func loadBase() *Config {
 		TelegramFileBaseURL:       os.Getenv("TELEGRAM_FILE_BASE_URL"),
 		TelegramLocalBotAPI:       envBoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
-		// Phase 24 web-auth knobs (WEB-02/WEB-03). Both have non-fatal defaults; the
-		// secret is read raw (empty default — GuardWebBind decides if it is required).
+		// Web-auth knobs. The legacy secret is read raw for compatibility only; the
+		// active cockpit login path is Authula.
 		WebAuthSecret: os.Getenv("AURA_WEB_AUTH_SECRET"),
 		WebTrustProxy: envBoolDefault("AURA_WEB_TRUST_PROXY", false),
 
-		// Authula provider (default passphrase = byte-identical legacy behavior).
-		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "passphrase"),
+		// Authula provider (default authula).
+		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "authula"),
 		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
 		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
 		AuthulaOperatorIdentity: envDefault("AURA_AUTHULA_OPERATOR_IDENTITY", "local"),

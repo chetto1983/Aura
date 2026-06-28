@@ -16,13 +16,16 @@ import (
 
 const recoveryAnswerHashVersion = "argon2id-v1"
 
+// RecoveryHasher hashes and verifies normalized security-question answers.
 type RecoveryHasher struct{}
 
+// NormalizeRecoveryAnswer folds case, normalizes Unicode, and collapses whitespace.
 func NormalizeRecoveryAnswer(s string) string {
 	folded := cases.Fold().String(norm.NFKC.String(s))
 	return strings.Join(strings.Fields(folded), " ")
 }
 
+// HashAnswer hashes a normalized recovery answer for durable storage.
 func (RecoveryHasher) HashAnswer(answer string) (hash string, version string, err error) {
 	normalized := NormalizeRecoveryAnswer(answer)
 	if normalized == "" {
@@ -35,6 +38,7 @@ func (RecoveryHasher) HashAnswer(answer string) (hash string, version string, er
 	return hash, recoveryAnswerHashVersion, nil
 }
 
+// VerifyAnswer reports whether an answer matches a stored recovery-answer hash.
 func (RecoveryHasher) VerifyAnswer(answer, encoded string) bool {
 	normalized := NormalizeRecoveryAnswer(answer)
 	if normalized == "" {
@@ -43,6 +47,7 @@ func (RecoveryHasher) VerifyAnswer(answer, encoded string) bool {
 	return verifyArgon2id(normalized, encoded)
 }
 
+// HashOpaqueSecret hashes a random one-time code or similarly opaque secret.
 func HashOpaqueSecret(secret string) (string, error) {
 	if secret == "" {
 		return "", errors.New("empty opaque secret")
@@ -50,6 +55,7 @@ func HashOpaqueSecret(secret string) (string, error) {
 	return hashArgon2id(secret)
 }
 
+// VerifyOpaqueSecret reports whether a one-time code matches a stored opaque-secret hash.
 func VerifyOpaqueSecret(secret, encoded string) bool {
 	if secret == "" {
 		return false

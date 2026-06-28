@@ -51,7 +51,9 @@ describe('PasswordResetPanel', () => {
     fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
 
     expect(await screen.findByLabelText('Telegram code')).toBeTruthy();
-    expect(screen.getByText('If that account has recovery enabled, check Telegram now.')).toBeTruthy();
+    expect(
+      screen.getByText('If that account has recovery enabled, check Telegram now.'),
+    ).toBeTruthy();
 
     const [url, opts] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/auth/password-reset/start');

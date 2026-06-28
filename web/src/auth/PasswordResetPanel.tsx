@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
-import {
-  completePasswordReset,
-  startPasswordReset,
-  verifyPasswordReset,
-} from './passwordResetApi';
+import { completePasswordReset, startPasswordReset, verifyPasswordReset } from './passwordResetApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

@@ -56,9 +56,9 @@ const authBasePath = "/auth"
 const authConfigRoute = "/api/auth/config"
 
 const (
-	passwordResetStartRoute    = "POST /api/auth/password-reset/start"
-	passwordResetVerifyRoute   = "POST /api/auth/password-reset/verify"
-	passwordResetCompleteRoute = "POST /api/auth/password-reset/complete"
+	passwordResetStartRoute    = "POST /api/auth/password-reset/start"    // #nosec G101 -- route pattern, not credential material.
+	passwordResetVerifyRoute   = "POST /api/auth/password-reset/verify"   // #nosec G101 -- route pattern, not credential material.
+	passwordResetCompleteRoute = "POST /api/auth/password-reset/complete" // #nosec G101 -- route pattern, not credential material.
 )
 
 // aguiRoutePrefixes are the route patterns the AG-UI gateway owns. Registered on

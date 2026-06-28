@@ -8,6 +8,7 @@ import (
 
 const passwordResetBodyMaxBytes = 16 << 10
 
+// SetPasswordResetService wires the optional self-service password reset API.
 func (s *Server) SetPasswordResetService(service *PasswordResetService) {
 	s.passwordReset = service
 }

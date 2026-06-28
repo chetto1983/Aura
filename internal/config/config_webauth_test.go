@@ -59,14 +59,17 @@ func TestGuardWebBind(t *testing.T) {
 	}
 }
 
-// TestWebAuthConfigLoad locks that the two knobs load from env via loadBase
+// TestWebAuthConfigLoad locks that the web-auth knobs load from env via loadBase
 // (LoadDB returns them as-is), mirroring the env-coverage style in
 // config_channels_test.go / config_serve_test.go.
 func TestWebAuthConfigLoad(t *testing.T) {
 	clearPostgresEnv(t)
 
-	// Defaults: secret empty, trust-proxy false (neither boot-fatal).
+	// Defaults: Authula provider, legacy secret empty, trust-proxy false.
 	cfg := LoadDB()
+	if cfg.WebAuthProvider != "authula" {
+		t.Errorf("WebAuthProvider default = %q, want authula", cfg.WebAuthProvider)
+	}
 	if cfg.WebAuthSecret != "" {
 		t.Errorf("WebAuthSecret default = %q, want empty", cfg.WebAuthSecret)
 	}
@@ -76,6 +79,7 @@ func TestWebAuthConfigLoad(t *testing.T) {
 
 	t.Setenv("AURA_WEB_AUTH_SECRET", "operator-pass")
 	t.Setenv("AURA_WEB_TRUST_PROXY", "true")
+	t.Setenv("AURA_WEB_AUTH_PROVIDER", "legacy-value")
 
 	cfg = LoadDB()
 	if cfg.WebAuthSecret != "operator-pass" {
@@ -83,5 +87,8 @@ func TestWebAuthConfigLoad(t *testing.T) {
 	}
 	if !cfg.WebTrustProxy {
 		t.Error("WebTrustProxy override = false, want true")
+	}
+	if cfg.WebAuthProvider != "legacy-value" {
+		t.Errorf("WebAuthProvider override = %q, want legacy-value", cfg.WebAuthProvider)
 	}
 }

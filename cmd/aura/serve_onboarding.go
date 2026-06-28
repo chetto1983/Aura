@@ -33,10 +33,10 @@ import (
 // and the LLM extractor + profile store (the interview). The adapters keep the agui
 // package free of the telegram import (which would cycle).
 //
-// buildOnboardingService is best-effort: provisioning is wired only when Authula is the
-// auth provider (the passphrase path leaves the provider nil), so an interview-only
-// service still answers start/step and provision answers a sanitized backend-unavailable
-// error — never aborting daemon boot (the SetGovernanceProviders precedent).
+// buildOnboardingService is best-effort: an interview-only service still answers
+// start/step and provision answers a sanitized backend-unavailable error if Authula,
+// Telegram, recovery storage, or bot username are unavailable — never aborting daemon
+// boot (the SetGovernanceProviders precedent).
 
 // authulaCoreAdapter satisfies agui.AuthulaCore over Authula's CoreServices, replicating
 // the verified DisableSignUp-bypassing create sequence (RESEARCH §Authula): PasswordService
@@ -203,10 +203,9 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 
 // buildOnboardingService assembles the OnboardingService best-effort. The interview side
 // (capability picker + LLM extraction + profile write) is always wired when a pool exists;
-// the provisioning saga is wired when the composition root supplies an Authula provider
-// (either the active auth provider or a provisioning-only provider while passphrase login
-// remains active). The Telegram bot username is resolved live (a best-effort getMe); an
-// empty username leaves provisioning unavailable so no identity/recovery/token writes occur.
+// the provisioning saga is wired when the composition root supplies an Authula provider.
+// The Telegram bot username is resolved live (a best-effort getMe); an empty username
+// leaves provisioning unavailable so no identity/recovery/token writes occur.
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,

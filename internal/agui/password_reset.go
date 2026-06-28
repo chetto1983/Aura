@@ -14,11 +14,13 @@ import (
 const passwordResetChallengeTTL = 10 * time.Minute
 
 var (
+	// ErrPasswordResetDenied is returned for invalid or unauthorized reset attempts.
 	ErrPasswordResetDenied      = errors.New("password reset denied")
 	errPasswordResetInvalid     = errors.New("password reset invalid request")
 	errPasswordResetUnavailable = errors.New("password reset unavailable")
 )
 
+// RecoveryRecord is the private recovery profile needed to start or verify a reset.
 type RecoveryRecord struct {
 	IdentityID        string
 	Email             string
@@ -29,6 +31,7 @@ type RecoveryRecord struct {
 	TelegramUserID    int64
 }
 
+// PasswordResetChallenge is the stored Telegram-code challenge metadata.
 type PasswordResetChallenge struct {
 	IdentityID    string
 	CodeHash      string
@@ -37,6 +40,7 @@ type PasswordResetChallenge struct {
 	UserAgentHash string
 }
 
+// RecoveryEvent is an audit event for password recovery activity.
 type RecoveryEvent struct {
 	Event         string
 	IdentityID    string
@@ -46,6 +50,7 @@ type RecoveryEvent struct {
 	At            time.Time
 }
 
+// PasswordResetStore persists recovery setup, challenges, reset tokens, and audit events.
 type PasswordResetStore interface {
 	// LookupByEmail adapters must map not-found, no usable recovery row, and missing
 	// Telegram link to ErrPasswordResetDenied so callers cannot enumerate accounts.
@@ -59,20 +64,24 @@ type PasswordResetStore interface {
 	RecordRecoveryEvent(ctx context.Context, event RecoveryEvent) error
 }
 
+// ResetTokenClaim is a leased reset token that must be consumed or released.
 type ResetTokenClaim interface {
 	IdentityID() string
 	Consume(ctx context.Context) (string, error)
 	Release(ctx context.Context) error
 }
 
+// RecoveryMessenger delivers reset codes to an already-linked recovery channel.
 type RecoveryMessenger interface {
 	SendRecoveryCode(ctx context.Context, identityID, code string) error
 }
 
+// PasswordResetter updates the underlying Authula password and invalidates sessions.
 type PasswordResetter interface {
 	SetPassword(ctx context.Context, identityID, password string) error
 }
 
+// PasswordResetDeps collects concrete adapters for the password reset service.
 type PasswordResetDeps struct {
 	Store     PasswordResetStore
 	Messenger RecoveryMessenger
@@ -80,6 +89,7 @@ type PasswordResetDeps struct {
 	Clock     func() time.Time
 }
 
+// PasswordResetService implements Telegram-code plus recovery-answer password reset.
 type PasswordResetService struct {
 	store     PasswordResetStore
 	messenger RecoveryMessenger
@@ -87,16 +97,19 @@ type PasswordResetService struct {
 	clock     func() time.Time
 }
 
+// PasswordResetStartRequest is the public request to start a reset challenge.
 type PasswordResetStartRequest struct {
 	Email     string `json:"email"`
 	RequestIP string `json:"-"`
 	UserAgent string `json:"-"`
 }
 
+// PasswordResetStartResponse is the neutral response returned for reset starts.
 type PasswordResetStartResponse struct {
 	Status string `json:"status"`
 }
 
+// PasswordResetVerifyRequest verifies a Telegram code and recovery answer.
 type PasswordResetVerifyRequest struct {
 	Email     string `json:"email"`
 	Code      string `json:"code"`
@@ -105,10 +118,12 @@ type PasswordResetVerifyRequest struct {
 	UserAgent string `json:"-"`
 }
 
+// PasswordResetVerifyResponse returns the short-lived reset token after verification.
 type PasswordResetVerifyResponse struct {
 	ResetToken string `json:"resetToken"`
 }
 
+// PasswordResetCompleteRequest applies a new password with a verified reset token.
 type PasswordResetCompleteRequest struct {
 	ResetToken string `json:"resetToken"`
 	Password   string `json:"password"`
@@ -116,10 +131,12 @@ type PasswordResetCompleteRequest struct {
 	UserAgent  string `json:"-"`
 }
 
+// PasswordResetCompleteResponse reports a completed password reset.
 type PasswordResetCompleteResponse struct {
 	Status string `json:"status"`
 }
 
+// NewPasswordResetService constructs a password reset service from narrow adapters.
 func NewPasswordResetService(d PasswordResetDeps) *PasswordResetService {
 	clock := d.Clock
 	if clock == nil {
@@ -133,6 +150,7 @@ func NewPasswordResetService(d PasswordResetDeps) *PasswordResetService {
 	}
 }
 
+// Start creates a neutral reset challenge and sends the code via Telegram when possible.
 func (s *PasswordResetService) Start(ctx context.Context, in PasswordResetStartRequest) (PasswordResetStartResponse, error) {
 	ok := PasswordResetStartResponse{Status: "ok"}
 	if !s.readyForStart() {
@@ -185,6 +203,7 @@ func (s *PasswordResetService) Start(ctx context.Context, in PasswordResetStartR
 	return ok, nil
 }
 
+// Verify checks the Telegram code and recovery answer, returning a reset token.
 func (s *PasswordResetService) Verify(ctx context.Context, in PasswordResetVerifyRequest) (PasswordResetVerifyResponse, error) {
 	if !s.readyForVerify() {
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
@@ -232,6 +251,7 @@ func (s *PasswordResetService) Verify(ctx context.Context, in PasswordResetVerif
 	return PasswordResetVerifyResponse{ResetToken: token}, nil
 }
 
+// Complete consumes a reset token and updates the Authula password.
 func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCompleteRequest) (PasswordResetCompleteResponse, error) {
 	if !s.readyForComplete() {
 		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable

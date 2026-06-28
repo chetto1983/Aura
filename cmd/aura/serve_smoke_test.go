@@ -13,13 +13,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base32"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +32,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	authulamodels "github.com/Authula/authula/models"
+
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/webauth"
 )
 
 // smokeEnvOrSkip mirrors the integration-tier envOrSkip discipline: t.Fatal under $CI
@@ -119,31 +130,212 @@ func smokeGet(t *testing.T, url string, browser bool, cookies ...*http.Cookie) (
 	return resp.StatusCode, string(b)
 }
 
-// smokeLogin POSTs the operator passphrase to /login and returns the minted session
-// cookie, proving the in-binary login works end-to-end against the live identity store.
-func smokeLogin(t *testing.T, base, secret string) *http.Cookie {
+type smokeAuthConfig struct {
+	Provider       string `json:"provider"`
+	AuthBasePath   string `json:"auth_base_path"`
+	CSRFHeaderName string `json:"csrf_header_name"`
+	CSRFToken      string `json:"csrf_token"`
+}
+
+func seedSmokeAuthulaOperator(t *testing.T) {
 	t.Helper()
-	form := url.Values{"passphrase": {secret}}
-	req, err := http.NewRequest(http.MethodPost, base+"/login", strings.NewReader(form.Encode()))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	dbURL := smokeEnvOrSkip(t, "AURA_DB_URL")
+	email := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_EMAIL")
+	password := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_PASSWORD")
+	secret := smokeEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+
+	pool, err := db.Open(ctx, &db.Config{URL: dbURL})
 	if err != nil {
-		t.Fatalf("new login request: %v", err)
+		t.Fatalf("open smoke db: %v", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	defer pool.Close()
+
+	local, err := identity.New(pool).GetIdentityByName(ctx, "local")
+	if err != nil {
+		t.Fatalf("resolve local identity: %v", err)
+	}
+
+	dsn := strings.TrimSpace(os.Getenv("AURA_AUTHULA_DATABASE_URL"))
+	if dsn == "" {
+		dsn = dbURL
+	}
+	provider, err := webauth.New(webauth.Config{
+		DSN:            dsn,
+		Secret:         secret,
+		TrustedOrigins: []string{"http://127.0.0.1:9080", "https://127.0.0.1:9080"},
+	})
+	if err != nil {
+		t.Fatalf("open smoke Authula provider: %v", err)
+	}
+	defer func() { _ = provider.Close() }()
+
+	core := provider.CoreServices()
+	user, err := core.UserService.GetByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("lookup smoke Authula user: %v", err)
+	}
+	if user == nil {
+		user, err = core.UserService.Create(ctx, email, email, true, nil, nil)
+		if err != nil {
+			t.Fatalf("create smoke Authula user: %v", err)
+		}
+	}
+
+	hash, err := core.PasswordService.Hash(password)
+	if err != nil {
+		t.Fatalf("hash smoke password: %v", err)
+	}
+	account, err := core.AccountService.GetByUserIDAndProvider(ctx, user.ID, authulamodels.AuthProviderEmail.String())
+	if err != nil {
+		t.Fatalf("lookup smoke Authula account: %v", err)
+	}
+	if account == nil {
+		if _, err := core.AccountService.Create(ctx, user.ID, email, authulamodels.AuthProviderEmail.String(), &hash); err != nil {
+			t.Fatalf("create smoke Authula account: %v", err)
+		}
+	} else {
+		account.AccountID = email
+		account.Password = &hash
+		if _, err := core.AccountService.Update(ctx, account); err != nil {
+			t.Fatalf("update smoke Authula account: %v", err)
+		}
+	}
+	if err := webauth.NewIdentityLinker(pool).LinkOperator(ctx, local.ID, user.ID); err != nil {
+		t.Fatalf("link smoke Authula operator: %v", err)
+	}
+}
+
+func smokeAuthulaLogin(t *testing.T, base string) *http.Cookie {
+	t.Helper()
+	email := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_EMAIL")
+	password := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_PASSWORD")
+
+	cfgReq, err := http.NewRequest(http.MethodGet, base+"/api/auth/config", nil)
+	if err != nil {
+		t.Fatalf("new auth config request: %v", err)
+	}
+	cfgResp, err := smokeClient().Do(cfgReq)
+	if err != nil {
+		t.Fatalf("GET /api/auth/config: %v", err)
+	}
+	defer func() { _ = cfgResp.Body.Close() }()
+	if cfgResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/auth/config = %d, want 200", cfgResp.StatusCode)
+	}
+	var cfg smokeAuthConfig
+	if err := json.NewDecoder(cfgResp.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decode auth config: %v", err)
+	}
+	if cfg.Provider != "authula" {
+		t.Fatalf("auth config provider = %q, want authula", cfg.Provider)
+	}
+	if cfg.AuthBasePath == "" {
+		cfg.AuthBasePath = "/auth"
+	}
+	if cfg.CSRFHeaderName == "" {
+		cfg.CSRFHeaderName = webauth.CSRFHeaderName
+	}
+	if cfg.CSRFToken == "" {
+		cfg.CSRFToken = cfgResp.Header.Get(cfg.CSRFHeaderName)
+	}
+	if cfg.CSRFToken == "" {
+		t.Fatal("auth config did not return a CSRF token")
+	}
+
+	payload, _ := json.Marshal(map[string]string{"email": email, "password": password})
+	req, err := http.NewRequest(http.MethodPost, base+cfg.AuthBasePath+"/email-password/sign-in", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new Authula sign-in request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(cfg.CSRFHeaderName, cfg.CSRFToken)
+	req.Header.Set("Origin", base)
+	for _, c := range cfgResp.Cookies() {
+		req.AddCookie(c)
+	}
 	resp, err := smokeClient().Do(req)
 	if err != nil {
-		t.Fatalf("POST /login: %v", err)
+		t.Fatalf("POST /auth/email-password/sign-in: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("POST /login = %d, want 303 (a correct passphrase mints a session)", resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /auth/email-password/sign-in = %d, want 200\n%s", resp.StatusCode, body)
 	}
-	for _, c := range resp.Cookies() {
-		if c.Name == "__Host-aura_session" {
+	cookies := append([]*http.Cookie{}, cfgResp.Cookies()...)
+	cookies = append(cookies, resp.Cookies()...)
+	var signIn struct {
+		TOTPRedirect bool `json:"totp_redirect"`
+	}
+	_ = json.Unmarshal(body, &signIn)
+	if signIn.TOTPRedirect {
+		cookies = append(cookies, smokeVerifyTOTP(t, base, cfg, cookies)...)
+	}
+	return smokeSessionCookie(t, cookies)
+}
+
+func smokeVerifyTOTP(t *testing.T, base string, cfg smokeAuthConfig, cookies []*http.Cookie) []*http.Cookie {
+	t.Helper()
+	payload, _ := json.Marshal(map[string]any{"code": smokeAuthulaTOTPCode(t), "trust_device": false})
+	req, err := http.NewRequest(http.MethodPost, base+cfg.AuthBasePath+"/totp/verify", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new Authula TOTP request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(cfg.CSRFHeaderName, cfg.CSRFToken)
+	req.Header.Set("Origin", base)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	resp, err := smokeClient().Do(req)
+	if err != nil {
+		t.Fatalf("POST /auth/totp/verify: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /auth/totp/verify = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	return resp.Cookies()
+}
+
+func smokeSessionCookie(t *testing.T, cookies []*http.Cookie) *http.Cookie {
+	t.Helper()
+	for _, c := range cookies {
+		if c.Name == webauth.SessionCookieName {
 			return c
 		}
 	}
-	t.Fatalf("a successful login set no __Host-aura_session cookie")
+	t.Fatalf("a successful Authula login set no %s cookie", webauth.SessionCookieName)
 	return nil
+}
+
+func smokeAuthulaTOTPCode(t *testing.T) string {
+	t.Helper()
+	if code := strings.TrimSpace(os.Getenv("AURA_E2E_AUTHULA_TOTP_CODE")); code != "" {
+		return code
+	}
+	secret := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_TOTP_SECRET")
+	normalized := strings.ToUpper(strings.ReplaceAll(secret, " ", ""))
+	normalized = strings.TrimRight(normalized, "=")
+	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(normalized)
+	if err != nil {
+		t.Fatalf("decode TOTP secret: %v", err)
+	}
+	var msg [8]byte
+	binary.BigEndian.PutUint64(msg[:], uint64(time.Now().Unix()/30))
+	mac := hmac.New(sha1.New, key)
+	_, _ = mac.Write(msg[:])
+	sum := mac.Sum(nil)
+	offset := sum[len(sum)-1] & 0x0f
+	bin := (uint32(sum[offset])&0x7f)<<24 |
+		(uint32(sum[offset+1])&0xff)<<16 |
+		(uint32(sum[offset+2])&0xff)<<8 |
+		(uint32(sum[offset+3]) & 0xff)
+	return fmt.Sprintf("%06d", bin%1000000)
 }
 
 func waitHealthy(t *testing.T, base string, d time.Duration, stderr fmt.Stringer) {
@@ -165,17 +357,17 @@ func waitHealthy(t *testing.T, base string, d time.Duration, stderr fmt.Stringer
 func TestServeSmoke(t *testing.T) {
 	bin := buildSmokeBinary(t)
 
-	t.Run("WEB-02 non-loopback bind without web-auth fail-fasts", func(t *testing.T) {
-		// The daemon validates the DB/Neo4j secrets before GuardWebBind, so the live env
-		// must be present for the bind guard (not the secret check) to be what trips.
+	t.Run("non-loopback bind without Authula config fail-fasts", func(t *testing.T) {
+		// The daemon validates DB/Neo4j secrets before the auth composition root, so
+		// the live env must be present for the Authula config check to be what trips.
 		smokeEnvOrSkip(t, "AURA_DB_URL")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		// 0.0.0.0 is non-loopback; with no secret and no trust-proxy the guard must refuse.
+		// 0.0.0.0 is non-loopback; without Authula config the daemon must refuse.
 		cmd := exec.CommandContext(ctx, bin, "serve", "--only=cli")
 		cmd.Env = envWith(map[string]string{
 			"AURA_AGUI_BIND":       "0.0.0.0:0",
-			"AURA_WEB_AUTH_SECRET": "",
+			"AURA_AUTHULA_SECRET":  "",
 			"AURA_WEB_TRUST_PROXY": "false",
 		})
 		out, err := cmd.CombinedOutput()
@@ -187,7 +379,7 @@ func TestServeSmoke(t *testing.T) {
 			t.Fatalf("expected a non-zero exit, got 0\n%s", out)
 		}
 		body := string(out)
-		if !strings.Contains(body, "AURA_WEB_AUTH_SECRET") || !strings.Contains(strings.ToLower(body), "non-loopback") {
+		if !strings.Contains(body, "AURA_AUTHULA_SECRET") {
 			t.Fatalf("guard output missing the actionable env-var hint:\n%s", body)
 		}
 	})
@@ -195,16 +387,16 @@ func TestServeSmoke(t *testing.T) {
 	t.Run("WEB-01/03 served binary: api 404, healthz public, shell gated", func(t *testing.T) {
 		// Booting the real daemon needs the live DB (no-skip-as-green under $CI).
 		smokeEnvOrSkip(t, "AURA_DB_URL")
+		seedSmokeAuthulaOperator(t)
 		aguiAddr := freeAddr(t)
 		setupAddr := freeAddr(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		cmd := exec.CommandContext(ctx, bin, "serve", "--only=cli")
 		cmd.Env = envWith(map[string]string{
-			"AURA_AGUI_BIND":       aguiAddr,
-			"AURA_SETUP_BIND":      setupAddr,
-			"AURA_SETUP_TOKEN":     "smoke-setup-token",
-			"AURA_WEB_AUTH_SECRET": "smoke-secret", // loopback bind, but a secret makes RequireAuth active
+			"AURA_AGUI_BIND":   aguiAddr,
+			"AURA_SETUP_BIND":  setupAddr,
+			"AURA_SETUP_TOKEN": "smoke-setup-token",
 		})
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
@@ -243,8 +435,8 @@ func TestServeSmoke(t *testing.T) {
 			t.Fatalf("/api/nope leaked the SPA shell")
 		}
 
-		// --- Authenticated (login mints a cookie) ---
-		cookie := smokeLogin(t, base, "smoke-secret")
+		// --- Authenticated (Authula login mints a cookie) ---
+		cookie := smokeAuthulaLogin(t, base)
 		// WEB-01 / SC1: an AUTHENTICATED bogus /api path 404s as a real error, never the
 		// SPA shell — the gate let the principal through, then the SPA-fallback 404s it.
 		if code, body := smokeGet(t, base+"/api/nope", false, cookie); code != http.StatusNotFound {

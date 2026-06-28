@@ -71,9 +71,7 @@ export function ReviewStep({
           <dt className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
             {t('onboarding.review.telegramLabel')}
           </dt>
-          <dd className="text-[15.5px] text-text">
-            {t('onboarding.review.telegramRequired')}
-          </dd>
+          <dd className="text-[15.5px] text-text">{t('onboarding.review.telegramRequired')}</dd>
         </div>
       </dl>
 
