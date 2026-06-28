@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 30 plan 01 complete (rerank foundation) — ready to execute 30-02
-last_updated: "2026-06-28T04:33:00.641Z"
+stopped_at: Phase 29 UI-SPEC approved
+last_updated: "2026-06-28T05:10:13.990Z"
 last_activity: 2026-06-28
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 45
-  completed_plans: 41
+  completed_plans: 42
   percent: 89
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 30 (retrieval-memory-hardening) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-28
 
@@ -198,6 +198,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 29 P29-02 | ~24min | 3 tasks | 12 files |
 | Phase 29 P29-03 | ~45min | 3 tasks | 13 files |
 | Phase 30 P01 | 23min | 2 tasks | 9 files |
+| Phase 30 P02 | 24min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -368,6 +369,8 @@ Recent decisions affecting current work:
 - [Phase 30] 30-01: RerankClient is fail-soft — every failure mode (empty BaseURL, 5xx, decode error, length/index mismatch) returns identity (input) order with a nil error; rerank never blocks retrieval (RET-01).
 - [Phase 30] 30-01: aura-rerank is an OPTIONAL GPU sidecar (ghcr.io/ggml-org/llama.cpp:server-cuda, Qwen3-Reranker-0.6B Q4_K_M, Apache-2.0) mirroring aura-ocr-vl with no depends_on, so the stack boots without a GPU.
 - [Phase 30] 30-01: documents are truncated to 480 runes for the /v1/rerank wire body only; the returned Scored.Document keeps the ORIGINAL untruncated text.
+- [Phase ?]: 30-02: :NEXT_CHUNK uses MATCH-then-MERGE (not inline-node MERGE) so re-ingest never duplicates nodes/edges — idempotent reading-order graph for two-stage retrieval
+- [Phase ?]: 30-02: ingest gated by one supportedDocumentExt allowlist; markitdown /extract gains pptx/html/csv handlers + generic fallback; python-pptx the only added (pinned) dep
 
 ### Pending Todos
 
@@ -401,7 +404,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-28T04:31:27.019Z
+Last session: 2026-06-28T05:08:39.194Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 
