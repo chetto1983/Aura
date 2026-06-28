@@ -103,6 +103,16 @@ Operator-directed addition (2026-06-15). Backend write capability already exists
 - [x] **SKW-02**: RISKY/DESTRUCTIVE skill actions (install/create/update/delete) enter an approval queue with source, content preview, risk tier, and resume token; pending skills cannot run or be prompt-injected; activation is the approval resume (no model-facing approve). _Amendment (Phase 29 D-13, Option A): the cockpit install surfaces in the SAME unified `/api/approvals` queue by minting an **operator-origin `ask_user` pause** (`askuser.Store.Insert`, `Kind=approval` + `ResumeContext={type:"skill_approval", skill_name}`) from the capability-gated cmd/aura skills-write provider — widening the T-04-19 "Runner is the sole writer of `aura.paused_states`" invariant to "the Runner AND the capability-gated operator-origin governance-write path". The pause is mintable ONLY behind `RequireCapability(governance.write)` (no model/agent/unauthenticated mint; the agent stays name-gated to `ask_user`); resolution is operator-only and the install never auto-activates._
 - [x] **SKW-03**: Operator can restore / archive skills and view the immutable audit ledger; active/pending/archived/audit tabs are separate; actions show capability scope, last used, use count, and TTL/archive state
 
+### Retrieval & Memory Hardening (RET) — Phase 30 (rolled into v1.0.0)
+
+GPU cross-encoder reranking + two-stage retrieval (vector → rerank-seeds → graph-expand) wired into BOTH memory recall and document retrieval, full-document ingest E2E across ALL markitdown-supported formats, and GraphRAG connected-nodes — over the existing Neo4j stack (no migration). Spike-gated by 068/069/070; self-learning explicitly deferred. Backfilled into this registry at phase completion (2026-06-28) from the authoritative ROADMAP Phase 30 success criteria. Note: the GPU-dependent *live* proofs (measured rerank precision lift, live rerank p95) are deferred-by-design to a GPU host — this 4GB-GPU host cannot run the `server-cuda` reranker, so those tiers `t.Skip` off-CI; the fail-soft degraded path, the eval metrics, and the non-monotonic guard are fully proven here.
+
+- [x] **RET-01**: A GPU reranker sidecar (`server-cuda` Qwen3-Reranker-0.6B Q4_K_M, `--reranking --pooling rank -ngl 99`) is reachable behind an `internal/rerank` client mirroring `documents.EmbeddingClient`; with the sidecar / GPU absent, retrieval degrades to RRF order and never hard-fails (fail-soft proven)
+- [x] **RET-02**: Two-stage retrieval (vector/BM25 seed → rerank the ~10 seeds → graph-expand winners for context) is wired into memory recall AND document retrieval; the `messages[0]` KV-cache invariant is preserved (cache-invariant gate green); end-to-end retrieval p95 < 500ms on a representative corpus
+- [x] **RET-03**: The full-document ingest pipeline accepts ALL markitdown-supported formats (pdf/docx/pptx/xlsx/xlsm/html/htm/csv/md/markdown/txt/json/xml/epub/images via the existing `markitdown` sidecar — the artificial `isSupportedDocument` 4-format cap removed, format-aware chunks with a page/sheet/slide/section locator, generic-markdown fallback for the long tail) → Granite 384d embed → Neo4j `:Chunk` + `:NEXT_CHUNK` connected graph; hardened (bounded/streamed, provenance-scoped chunks) and proven E2E on the real G220-class PDF manual PLUS at least one non-PDF format (PPTX/HTML)
+- [x] **RET-04**: GraphRAG connected-nodes retrieval (vector seed → 1-hop graph expansion → rerank) returns evidence within the documented per-stage p95 budget (vector + graph ~tens of ms; rerank the dominant bounded cost)
+- [x] **RET-05**: An eval harness (nDCG@10 / Recall@5 / MRR, vector vs vector+rerank) shows a measured precision lift with zero queries regressed beyond noise (non-monotonic guard); `make coverage` ≥85% owned-surface; a live retrieval/`rerank_integration` E2E tier runs green in CI; self-learning is explicitly OUT (deferred)
+
 ## v2 Requirements
 
 Deferred to a follow-up milestone (acknowledged, not in this roadmap).
@@ -139,7 +149,7 @@ Deferred to a follow-up milestone (acknowledged, not in this roadmap).
 
 ## Traceability
 
-Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0 = Phases 22–29). Phase 23 (Frontend Infrastructure & Industrial Foundation) was inserted per the operator directive 2026-06-15 to establish the industrial frontend foundation before any feature code; the former Phases 23–27 shifted to 24–28.
+Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0 = Phases 22–30). Phase 23 (Frontend Infrastructure & Industrial Foundation) was inserted per the operator directive 2026-06-15 to establish the industrial frontend foundation before any feature code; the former Phases 23–27 shifted to 24–28.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -194,11 +204,16 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | SKW-01 | Phase 29 | Complete |
 | SKW-02 | Phase 29 | Complete |
 | SKW-03 | Phase 29 | Complete |
+| RET-01 | Phase 30 | Complete |
+| RET-02 | Phase 30 | Complete |
+| RET-03 | Phase 30 | Complete |
+| RET-04 | Phase 30 | Complete |
+| RET-05 | Phase 30 | Complete |
 
 **Coverage:**
 
-- v1 requirements: 51 total (12 HARDEN + 6 FND + 4 WEB + 5 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD + 3 MCPW + 3 SKW)
-- Mapped to phases: 51 (one-to-one, Phases 22–29)
+- v1 requirements: 56 total (12 HARDEN + 6 FND + 4 WEB + 5 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD + 3 MCPW + 3 SKW + 5 RET)
+- Mapped to phases: 56 (one-to-one, Phases 22–30)
 - Unmapped: 0 ✓
 
 **Phase distribution:**
@@ -211,7 +226,8 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 - Phase 27 (Neo4j Graph Explorer): GRAPH-01..04 (4)
 - Phase 28 (Governance Boards + Web Onboarding): GOV-01..03, ONBD-01..02 (5)
 - Phase 29 (Governance Write — MCP Configuration + Skills Install): MCPW-01..03, SKW-01..03 (6)
+- Phase 30 (Retrieval & Memory Pipeline Hardening): RET-01..05 (5)
 
 ---
 *Requirements defined: 2026-06-15*
-*Last updated: 2026-06-17 — CHAT-05 (conversation branch trees, D-09) added as a deliberate operator-chosen scope addition recorded BEFORE the D-09 branch backend (PRD-first, plan 25-06); v1 total 50 → 51, CHAT category 4 → 5, Phase 25 roll-up 7 → 8. Prior note (2026-06-15): roadmap revised; MCP Configuration (MCPW-01..03) + Skills Install & Lifecycle (SKW-01..03) pulled into v1.0.0 per operator directive and mapped to a new LAST Phase 29 (Governance Write — MCP Configuration + Skills Install); all v1 requirements mapped to Phases 22–29 (0 unmapped, 0 duplicates). Category breakdown 12+6+4+5+3+5+4+1+3+2+3+3 = 51; the one-to-one body↔table mapping is authoritative. Earlier headline counts (33, 39, 44, 50) were superseded as scope grew.*
+*Last updated: 2026-06-28 — RET-01..05 (Phase 30: Retrieval & Memory Pipeline Hardening) backfilled into this registry from the authoritative ROADMAP Phase 30 success criteria at phase completion; v1 total 51 → 56, new RET category (5), Phase 30 roll-up added, v1.0.0 span 22–29 → 22–30. Prior note (2026-06-17): CHAT-05 (conversation branch trees, D-09) added as a deliberate operator-chosen scope addition recorded BEFORE the D-09 branch backend (PRD-first, plan 25-06); v1 total 50 → 51, CHAT category 4 → 5, Phase 25 roll-up 7 → 8. Prior note (2026-06-15): roadmap revised; MCP Configuration (MCPW-01..03) + Skills Install & Lifecycle (SKW-01..03) pulled into v1.0.0 per operator directive and mapped to a new LAST Phase 29 (Governance Write — MCP Configuration + Skills Install); all v1 requirements mapped to Phases 22–29 (0 unmapped, 0 duplicates). Category breakdown 12+6+4+5+3+5+4+1+3+2+3+3 = 51; the one-to-one body↔table mapping is authoritative. Earlier headline counts (33, 39, 44, 50) were superseded as scope grew.*
