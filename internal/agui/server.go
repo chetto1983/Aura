@@ -16,7 +16,6 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
-	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
@@ -264,36 +263,13 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(req.Aura.AttachmentIDs) > 0 {
-		if s.assets == nil {
-			http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		identityID, ok := principalIdentityID(r)
-		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		items := make([]assets.Asset, 0, len(req.Aura.AttachmentIDs))
-		for _, id := range req.Aura.AttachmentIDs {
-			asset, err := s.assets.GetForIdentity(ctx, id, identityID)
-			if err != nil {
-				http.Error(w, "attachment not found", http.StatusNotFound)
-				return
-			}
-			if asset.ThreadID != "" && asset.ThreadID != in.ThreadID {
-				http.Error(w, "attachment not found", http.StatusNotFound)
-				return
-			}
-			items = append(items, asset)
-		}
-		if userMsg == nil {
-			empty := assets.BuildAttachmentBlock(items)
-			userMsg = &empty
-		} else {
-			combined := assets.WithAttachmentBlock(*userMsg, items)
-			userMsg = &combined
-		}
+	// Prepend per-turn context blocks (attachments + the thread's searchable-doc catalog)
+	// to the user turn; see buildTurnUserMessage (server_context.go).
+	if msg, code, emsg := s.buildTurnUserMessage(ctx, r, in.ThreadID, req.Aura.AttachmentIDs, userMsg); code != 0 {
+		http.Error(w, emsg, code)
+		return
+	} else {
+		userMsg = msg
 	}
 
 	var unlock func()

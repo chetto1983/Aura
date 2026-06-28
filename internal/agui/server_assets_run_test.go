@@ -43,6 +43,43 @@ func TestServerRunPrependsAttachmentBlock(t *testing.T) {
 	}
 }
 
+func TestServerRunInjectsKnowledgeCatalogWithoutAttachment(t *testing.T) {
+	const tid = "55555555-5555-5555-5555-555555555555"
+	run := &scriptedRunner{events: textTurn("ok")}
+	assetSvc := &fakeAssetService{listResp: []assets.Asset{{
+		ID:         "asset-7",
+		IdentityID: assetAPIIdentityID,
+		ThreadID:   tid,
+		FileName:   "g220.pdf",
+		Modality:   assets.ModalityDocument,
+		Status:     assets.StatusSearchable,
+		DocumentID: "doc-7",
+		Summary:    "Servo Drive G220 datasheet",
+	}}}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
+	s.SetAssetService(assetSvc)
+
+	// No attachment_ids this turn: the catalog is the only signal that the doc exists.
+	body := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"what is the rated torque?"}]}`
+	rec := serveRunWithPrincipal(t, s, body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if run.gotTurnUserMsg == nil {
+		t.Fatal("Runner.Turn userMsg is nil, want knowledge catalog + message")
+	}
+	got := *run.gotTurnUserMsg
+	for _, want := range []string{"<knowledge_base", "document_search", "document_id=doc-7", "g220.pdf", "User message:\nwhat is the rated torque?"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Turn userMsg missing %q:\n%s", want, got)
+		}
+	}
+	if assetSvc.listThreadID != tid {
+		t.Fatalf("ListForThread thread = %q, want %q", assetSvc.listThreadID, tid)
+	}
+}
+
 func TestServerRunStillRejectsStructuredMultimodalContent(t *testing.T) {
 	const tid = "22222222-2222-2222-2222-222222222222"
 	s := NewServer(&scriptedRunner{}, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
