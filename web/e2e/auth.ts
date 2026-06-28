@@ -36,12 +36,7 @@ function envValue(...names: string[]): string | undefined {
   return undefined;
 }
 
-function webAuthSecret(): string | undefined {
-  return envValue('AURA_WEB_AUTH_SECRET');
-}
-
 interface AuthConfig {
-  provider: 'passphrase' | 'authula';
   authBasePath: string;
   csrfHeaderName: string;
   csrfToken: string;
@@ -50,11 +45,15 @@ interface AuthConfig {
 async function authConfig(page: Page): Promise<AuthConfig> {
   const res = await page.request.get('/api/auth/config', { failOnStatusCode: false });
   if (!res.ok()) {
-    return { provider: 'passphrase', authBasePath: '/auth', csrfHeaderName: '', csrfToken: '' };
+    throw new Error(
+      `E2E Authula auth failed: /api/auth/config returned HTTP ${String(res.status())}`,
+    );
   }
   const raw = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (raw.provider !== 'authula') {
-    return { provider: 'passphrase', authBasePath: '/auth', csrfHeaderName: '', csrfToken: '' };
+    throw new Error(
+      `E2E Authula auth required, but /api/auth/config returned provider ${String(raw.provider)}`,
+    );
   }
   const csrfHeaderName =
     typeof raw.csrf_header_name === 'string' ? raw.csrf_header_name : 'X-AUTHULA-CSRF-TOKEN';
@@ -62,30 +61,10 @@ async function authConfig(page: Page): Promise<AuthConfig> {
   const bodyToken =
     typeof raw.csrf_token === 'string' && raw.csrf_token !== '' ? raw.csrf_token : undefined;
   return {
-    provider: 'authula',
     authBasePath: typeof raw.auth_base_path === 'string' ? raw.auth_base_path : '/auth',
     csrfHeaderName,
     csrfToken: bodyToken ?? headers[csrfHeaderName.toLowerCase()] ?? headers[csrfHeaderName] ?? '',
   };
-}
-
-async function authenticateViaPassphrase(page: Page) {
-  const passphrase = webAuthSecret();
-  if (passphrase === undefined) {
-    throw new Error(
-      'E2E passphrase auth required, but AURA_WEB_AUTH_SECRET is missing from env/.env',
-    );
-  }
-
-  const res = await page.request.post('/login', {
-    form: { passphrase },
-    maxRedirects: 0,
-  });
-  if (res.status() !== 303) {
-    throw new Error(
-      `E2E passphrase auth failed: POST /login returned HTTP ${String(res.status())}`,
-    );
-  }
 }
 
 function decodeBase32(input: string): Buffer {
@@ -174,11 +153,7 @@ async function authenticateViaAuthula(page: Page, config: AuthConfig) {
 
 async function authenticateViaApi(page: Page) {
   const config = await authConfig(page);
-  if (config.provider === 'authula') {
-    await authenticateViaAuthula(page, config);
-    return;
-  }
-  await authenticateViaPassphrase(page);
+  await authenticateViaAuthula(page, config);
 }
 
 function isLoginUrl(url: string): boolean {

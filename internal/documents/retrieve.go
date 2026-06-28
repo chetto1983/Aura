@@ -79,9 +79,17 @@ func (s *Service) queryVector(ctx context.Context, query string) ([]float64, boo
 	return vectors[0], true
 }
 
-// vectorSeed runs the dense seed query against the chunk_embedding HNSW index.
+// vectorSeed runs the dense seed query. Unscoped it queries the chunk_embedding HNSW index
+// (global top-k). Scoped to a document_id it uses a native metadata PRE-filter instead: it
+// ranks that document's own chunks by cosine, so a small or freshly-uploaded document is
+// never crowded out of the global top-k against a large corpus (spike 075 — the global
+// queryNodes(k)-THEN-filter returned 0 for a generic query when the answer was in the doc).
 func (s *Service) vectorSeed(ctx context.Context, vector []float64, req SearchRequest) ([]SearchHit, error) {
-	rows, err := s.Knowledge.Read(ctx, vectorSeedQuery, map[string]any{
+	query := vectorSeedQuery
+	if req.DocumentID != "" {
+		query = docScopedVectorSeedQuery
+	}
+	rows, err := s.Knowledge.Read(ctx, query, map[string]any{
 		"query_vector":    vector,
 		"candidate_limit": seedCandidateLimit,
 		"document_id":     req.DocumentID,
@@ -211,6 +219,29 @@ RETURN
   node.heading_path AS heading_path,
   score AS score
 ORDER BY score DESC
+`
+
+// docScopedVectorSeedQuery is the scoped-retrieval seed: with a document_id supplied it
+// ranks that document's OWN chunks by cosine (a native metadata pre-filter via the indexed
+// document_id property), so a small or freshly-uploaded document is never crowded out of the
+// global vector top-k (spike 075). A document has few chunks, so the per-chunk cosine is
+// exact and cheap. The projection matches vectorSeedQuery so hitsFromRows and the
+// rerank/expand stages are identical. Chunks without an embedding yet (async-embed in
+// flight) are skipped; seedHits then falls back to the sparse fulltext seed.
+const docScopedVectorSeedQuery = `
+MATCH (node:Chunk {document_id: $document_id})
+WHERE node.embedding IS NOT NULL
+WITH node, vector.similarity.cosine(node.embedding, $query_vector) AS score
+RETURN
+  node.document_id AS document_id,
+  coalesce(node.file_name, "") AS file_name,
+  node.id AS chunk_id,
+  node.text AS text,
+  node.locator_json AS locator_json,
+  node.heading_path AS heading_path,
+  score AS score
+ORDER BY score DESC
+LIMIT $candidate_limit
 `
 
 // neighborExpandQuery attaches 1-hop reading-order context: for the reranked winners it

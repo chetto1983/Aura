@@ -47,12 +47,10 @@ services:
       AURA_AGUI_BIND: 0.0.0.0:9080
       AURA_SETUP_BIND: 0.0.0.0:9081
       AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
-      # WEB-02 GuardWebBind: the 0.0.0.0:9080 cockpit bind boots only when a web-auth
-      # secret is configured (in-binary login, Plan 24-03) or a reverse proxy is trusted.
-      # Pass the auth knobs through from .env; AURA_WEB_AUTH_SECRET activates passphrase auth.
-      AURA_WEB_AUTH_SECRET: ${AURA_WEB_AUTH_SECRET:-}
+      # WEB-02 GuardWebBind: the 0.0.0.0:9080 cockpit bind boots only when Authula
+      # is configured or a reverse proxy is trusted.
       AURA_WEB_TRUST_PROXY: ${AURA_WEB_TRUST_PROXY:-false}
-      AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-passphrase}
+      AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-authula}
       AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}
       AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:-}
       AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-local}
@@ -386,7 +384,7 @@ services:
           --transport http \
           --host 0.0.0.0 \
           --port 8080 \
-          --profile core \
+          --profile extended \
           --session-strategy persistent \
           --user-id aura-local \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \

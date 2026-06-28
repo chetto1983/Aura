@@ -52,13 +52,12 @@ const sessionTokenBytes = 32
 // (the interview state machine carrying Answers + DraftAgentMD), the creating operator's
 // identity id (the D-06 subset-of-creator re-validation + the audit actor), the
 // capability options offered at start (the creator's grants minus '*'), the
-// link-Telegram intent, and the idle-expiry deadline.
+// provisioned flag, Telegram onboarding token, and the idle-expiry deadline.
 type sessionEntry struct {
 	mu                sync.Mutex
 	session           *onboarding.Session
 	creatorIdentityID string
 	capabilityOptions []string
-	linkTelegram      bool
 	provisioned       bool
 	// onboardingToken is the Telegram mint token assigned by Provision (Leg C). The
 	// telegram-status poll reads it back from the same server-held entry to check
@@ -201,6 +200,12 @@ type ProfileWriter interface {
 	WriteProfile(identity string, p profile.Profile) error
 }
 
+// RecoverySetupWriter persists the recovery challenge into aura.identity_recovery during
+// provisioning, after the identity exists and before Telegram minting.
+type RecoverySetupWriter interface {
+	UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error
+}
+
 // onboardingService is the concrete OnboardingService: the goroutine-free TTL session
 // store + the interview driver (StartSession/Step) + the provisioning saga (Provision/
 // TelegramStatus, onboarding_provision.go). It is built at the composition root
@@ -215,17 +220,19 @@ type onboardingService struct {
 	profiles  ProfileWriter
 
 	// provisioning ports (onboarding_provision.go): the Authula core, the atomic aura-leg
-	// writer + its compensation, the Telegram mint/poll, and the deep-link bot username.
+	// writer + its compensation, recovery challenge writer, Telegram mint/poll/compensation,
+	// and the deep-link bot username.
 	authula  AuthulaCore
 	auraLeg  AuraLegWriter
 	telegram TelegramMint
 	botName  string
+	recovery RecoverySetupWriter
 }
 
 // OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
-// into the service via NewOnboardingService. Any provisioning port may be nil for an
-// interview-only deployment, in which case Provision answers a sanitized error; the
-// interview side (StartSession/Step) needs only Capabilities + Extractor + Profiles.
+// into the service via NewOnboardingService. The provisioning side requires Authula,
+// AuraLeg, Recovery, Telegram, and BotUsername before it writes; the interview side
+// (StartSession/Step) needs only Capabilities + Extractor + Profiles.
 type OnboardingDeps struct {
 	TTL          time.Duration
 	Capabilities CapabilitySource
@@ -235,6 +242,7 @@ type OnboardingDeps struct {
 	AuraLeg      AuraLegWriter
 	Telegram     TelegramMint
 	BotUsername  string
+	Recovery     RecoverySetupWriter
 }
 
 // NewOnboardingService assembles the OnboardingService over the supplied narrow ports.
@@ -256,15 +264,16 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 		auraLeg:   d.AuraLeg,
 		telegram:  d.Telegram,
 		botName:   d.BotUsername,
+		recovery:  d.Recovery,
 	}
 }
 
 // StartSession mints a server-held onboarding session for the creating operator and
 // returns the first step + the D-06 capability picker options: the creator's OWN grants
-// with the '*' wildcard excluded (ONBD-01a). An operator holding only '*' offers an empty
-// picker — they cannot grant a capability they do not hold by name (no-escalation). The
-// capability gate (identity.create) is enforced on the route mount, so reaching here means
-// the creator is authorized to create identities.
+// with the '*' wildcard excluded (ONBD-01a). A wildcard creator may grant any named
+// capability through the service backstop, but never '*' itself; the picker still omits
+// '*' because it is system-managed. The capability gate (identity.create) is enforced on
+// the route mount, so reaching here means the creator is authorized to create identities.
 func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID string) (OnboardingStart, error) {
 	if creatorIdentityID == "" {
 		return OnboardingStart{}, errOnboardingForbidden

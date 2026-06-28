@@ -107,6 +107,40 @@ func TestRetrieveEmbedderErrorFallsBackToFulltext(t *testing.T) {
 	}
 }
 
+// TestRetrieveDocumentScopedUsesNativePreFilter: a request scoped to a document_id seeds
+// with the cosine pre-filter over that document's own chunks (spike 075), never the global
+// queryNodes top-k that crowds a small doc out against a large corpus.
+func TestRetrieveDocumentScopedUsesNativePreFilter(t *testing.T) {
+	knowledge := &fakeRetrieveKnowledge{seedRows: []map[string]any{
+		seedRow("doc-7", "chunk-0", "rated torque 47 Nm protection class IP54", 0.9),
+	}}
+	svc := &Service{
+		Searcher:      &fakeSearchBackend{},
+		Knowledge:     knowledge,
+		QueryEmbedder: &fakeQueryEmbedder{vector: []float64{0.1, 0.2}},
+		Reranker:      &fakeReranker{scored: []rerank.Scored{{Index: 0, Score: 0}}},
+	}
+
+	hits, err := svc.Retrieve(t.Context(), SearchRequest{Query: "protection class rating", DocumentID: "doc-7", Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := chunkIDs(hits); got != "chunk-0" {
+		t.Fatalf("scoped hits = %s, want chunk-0", got)
+	}
+	if !knowledge.readContains("vector.similarity.cosine") {
+		t.Fatal("scoped retrieval must use the document_id cosine pre-filter")
+	}
+	if knowledge.readContains("queryNodes") {
+		t.Fatal("scoped retrieval must NOT use the global queryNodes top-k")
+	}
+	for _, call := range knowledge.reads {
+		if strings.Contains(call.query, "vector.similarity.cosine") && call.params["document_id"] != "doc-7" {
+			t.Fatalf("pre-filter document_id = %v, want doc-7", call.params["document_id"])
+		}
+	}
+}
+
 // TestRetrieveExpandsOnlyWinners: after rerank, only the top-K winners (not the whole
 // seed pool) are passed to the 1-hop graph expansion.
 func TestRetrieveExpandsOnlyWinners(t *testing.T) {
@@ -318,7 +352,7 @@ type fakeRetrieveKnowledge struct {
 func (f *fakeRetrieveKnowledge) Read(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
 	f.reads = append(f.reads, knowledgeCall{query: query, params: params})
 	switch {
-	case strings.Contains(query, "queryNodes"):
+	case strings.Contains(query, "queryNodes") || strings.Contains(query, "vector.similarity.cosine"):
 		return f.seedRows, f.seedErr
 	case strings.Contains(query, "NEXT_CHUNK"):
 		return f.expandRows, f.expandErr

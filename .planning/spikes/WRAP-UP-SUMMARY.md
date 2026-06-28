@@ -114,3 +114,73 @@
   (quality/structure vs latency); STT CPU vs GPU; TTS trigger (explicit `send_voice` tool vs
   auto-on-voice-input). Formal FLEURS IT/EN WER (jiwer) is the one deferred measurement.
 - Binding decisions recorded in `.planning/spikes/MANIFEST.md` Requirements §Session-6.
+
+---
+
+# Spike Wrap-Up Summary — Sessions 7-20 (append)
+
+**Date:** 2026-06-28
+**Spikes processed (this pass):** 47 (030-077, minus the already-wrapped 020-029 and the
+no-dir folded 023/065) across sessions 7-20
+**New feature areas:** memory-graph, document-ingestion, onboarding-agent-md,
+adaptive-reasoning, tool-search-semindex, local-llm-multimodal, functiongemma-local-fc,
+packaging-box, calendar-pim, graph-db-eval, retrieval-rerank-rag
+**Skill output:** `./.claude/skills/spike-findings-Aura/` (17 reference blueprints, 79 source dirs)
+
+## Processed (by feature area)
+
+| Area | Reference | Spikes | Verdict summary |
+|------|-----------|--------|-----------------|
+| Memory graph | references/memory-graph.md | 031-035 | VALIDATED (dedup fixed via fork branch) |
+| Document ingestion | references/document-ingestion.md | 043a/b, 044-047 | VALIDATED + 2 PARTIAL (memory-bound + live recall open) |
+| Onboarding + Agent.md | references/onboarding-agent-md.md | 036-039 | VALIDATED |
+| Adaptive reasoning | references/adaptive-reasoning.md | 040-042, 052-053 | VALIDATED — SHIPPED (`16cb5380`) |
+| Tool-search + semindex | references/tool-search-semindex.md | 054-058 | VALIDATED (1 PARTIAL oracle) — SHIPPED `internal/semindex` |
+| Local-LLM multimodal | references/local-llm-multimodal.md | 030, 048-050 | VALIDATED (049b PARTIAL — IT MTP ~1.0×) |
+| FunctionGemma local FC | references/functiongemma-local-fc.md | 071-074 | 071 PARTIAL / 072-073 VALIDATED / **074 PENDING** |
+| Packaging box | references/packaging-box.md | 059-062 | VALIDATED (062 PARTIAL) — revert `ec7fe2f6` |
+| Calendar / PIM | references/calendar-pim.md | 063-066 | VALIDATED — fork `aura-pim-mcp` |
+| Graph-DB eval | references/graph-db-eval.md | 067-069 | VALIDATED verdict: STAY with Neo4j |
+| Retrieval rerank + RAG | references/retrieval-rerank-rag.md | 070, 075-077 | VALIDATED — Items 1/2/3 + RET pre-filter IMPLEMENTED 2026-06-28 |
+
+## Key Findings (sessions 7-20)
+
+- **Memory** — `aura-agent-memory-mcp` mounts live (16 deferred `memory__*`); upstream semantic
+  dedup over-merges (0.95-0.997) and is fixed only by the `aura/provenance-safe-dedup` fork
+  (`c1c2d65`) keyed on `source_id`/`document_id`/`run_id`; facts read back via `graph_query` only.
+- **Ingestion** — page-aware sparse-first lane makes the 830-pg G220 searchable in ~1.6s; the 8
+  provenance keys are the chunk identity; dense embeddings are background; PrivateGPT is reference,
+  never its Celery/S3/Qdrant stack.
+- **Onboarding** — `Agent.md` is a per-identity filesystem profile at protected user-role
+  `messages[1]` (profile-first, then skills), NOT a 2nd system message; Windows `MoveFileEx` for
+  atomic writes; Telegram onboarding = `LoopAgent` escalate-to-finish.
+- **Adaptive reasoning** — SHIPPED: granite tier classifier (90/92% @~10ms) + async
+  centroid-refresh active-learning replaced the per-turn LLM router; the tier sets `Reasoning.Effort`
+  ONLY — never `max_tokens` (the 203-turn truncation disaster); AdaptThink ≠ AutoThink.
+- **Tool-search** — semantic `tool_search` ships EMBEDDING-PRIMARY (granite 384d cosine ~2× BM25,
+  no RRF, no ANN to N=115) on ONE ~90-LOC `internal/semindex` Index that also does reasoning
+  classification; re-embed on MCP mount.
+- **Local-LLM** — one pinned `llama.cpp:server-cuda` + gemma-4 E2B Q4 + MTP draft + BF16 mmproj
+  (CPU) does text+image+audio+video in 4 GB where vLLM died; does NOT retire the 3-CPU-sidecar 9c stack.
+- **FunctionGemma** — base unusable on Aura tools (~8% top1, ~80% refusal) → Colab LoRA finetune
+  mandatory; custom `<start_function_call>` parser needed; **074 head-to-head PENDING** the Colab run.
+- **Packaging** — box = fat full-power container (root, writable, MCP/shell parity); **REVERT the
+  distroless audit `ec7fe2f6`**; gVisor `runsc` is the only optional appliance isolation tier.
+- **Calendar/PIM** — .NET 10 `calendar-mcp` interops with Aura's Go streamable-HTTP client (29
+  Deferred `calendar__*`); consolidate mail+calendar into the `aura-pim-mcp` HTTP-sidecar fork;
+  Google needs a Desktop-app OAuth client.
+- **Graph-DB** — STAY with Neo4j on maturity/risk (real-data parity ~1.0×); AGE rejected (9 gaps +
+  GDS blocker), ArcadeDB strongest fallback behind a deeper-PoC gate; embeddings are 384d, not 768d.
+- **Retrieval/RAG** — rerank is worth it but GPU-mandatory (Qwen3-Reranker-0.6B Q4); the v1.0.0
+  upload→chat Items 1 (images-searchable), 2 (knowledge-catalog), 3 (gated RAGAS) + the native
+  `document_id` pre-filter are all VALIDATED and IMPLEMENTED 2026-06-28.
+
+## Pending follow-through (sessions 7-20)
+
+- **074 FunctionGemma head-to-head** awaits the operator's Colab GGUF (run-book in `074-*/README.md`).
+- **Packaging**: revert audit `ec7fe2f6` + PRD/SPEC amendment for the gVisor tier before `/gsd-plan-phase 17`.
+- **Calendar/PIM**: the `aura-pim-mcp` fork (spec/plan banked in `docs/superpowers/`) — Phase-4 cockpit UI open.
+- **RAG follow-ups** (in flight 2026-06-28): channel-agnostic catalog/attachment turn-context across
+  AG-UI + Telegram (no per-channel duplication); the scoped **sparse** fulltext pre-filter; growing
+  `scripts/eval/ragas/reference_qa.json` with real cases.
+- Full binding decisions in `.planning/spikes/MANIFEST.md` Requirements §§Session-7→20.

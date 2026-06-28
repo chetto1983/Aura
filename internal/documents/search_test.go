@@ -30,17 +30,50 @@ func TestSearchCapsLimit(t *testing.T) {
 	}
 }
 
-func TestSearchFiltersByDocumentID(t *testing.T) {
+// TestSearchDocumentScopedUsesTermOverlapPreFilter proves the spike-075 sparse pre-filter:
+// a scoped request ranks the document's OWN chunks by query-term overlap (MATCH on the
+// indexed document_id) instead of the global db.index.fulltext.queryNodes(k)-then-filter,
+// so a small/new doc is never crowded out. Supersedes the old post-filter assertion (the
+// scoped path no longer uses the global fulltext index nor candidate_limit).
+func TestSearchDocumentScopedUsesTermOverlapPreFilter(t *testing.T) {
 	fake := &fakeKnowledgeClient{}
 	searcher := &Searcher{Client: fake}
-	if _, err := searcher.Search(t.Context(), SearchRequest{Query: "reset", DocumentID: "doc_123"}); err != nil {
+	if _, err := searcher.Search(t.Context(), SearchRequest{Query: "Reset The Line", DocumentID: "doc_123"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := fake.readCalls[0].params["document_id"]; got != "doc_123" {
-		t.Fatalf("document_id param = %#v", got)
+	call := fake.readCalls[0]
+	if !strings.Contains(call.query, "MATCH (node:Chunk {document_id: $document_id})") {
+		t.Fatalf("scoped search must pre-filter the document's own chunks, got:\n%s", call.query)
 	}
-	if got := fake.readCalls[0].params["candidate_limit"]; got != defaultSearchLimit {
-		t.Fatalf("candidate_limit = %#v, want %d", got, defaultSearchLimit)
+	if strings.Contains(call.query, "db.index.fulltext.queryNodes") {
+		t.Fatalf("scoped search must NOT use the global fulltext top-k:\n%s", call.query)
+	}
+	if got := call.params["document_id"]; got != "doc_123" {
+		t.Fatalf("document_id param = %#v, want doc_123", got)
+	}
+	terms, ok := call.params["terms"].([]string)
+	if !ok || len(terms) != 3 || terms[0] != "reset" {
+		t.Fatalf("terms param = %#v, want lowercased query terms [reset the line]", call.params["terms"])
+	}
+	if _, hasCand := call.params["candidate_limit"]; hasCand {
+		t.Fatalf("scoped pre-filter must not carry candidate_limit (no global top-k):\n%#v", call.params)
+	}
+}
+
+// TestSearchUnscopedUsesGlobalFulltext keeps the no-regression contract: with no
+// document_id the global db.index.fulltext.queryNodes path (with candidate_limit) is used.
+func TestSearchUnscopedUsesGlobalFulltext(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	searcher := &Searcher{Client: fake}
+	if _, err := searcher.Search(t.Context(), SearchRequest{Query: "reset"}); err != nil {
+		t.Fatal(err)
+	}
+	call := fake.readCalls[0]
+	if !strings.Contains(call.query, "db.index.fulltext.queryNodes") {
+		t.Fatalf("unscoped search must use the global fulltext index:\n%s", call.query)
+	}
+	if got := call.params["candidate_limit"]; got != defaultSearchLimit*3 {
+		t.Fatalf("candidate_limit = %#v, want %d", got, defaultSearchLimit*3)
 	}
 }
 

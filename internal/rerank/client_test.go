@@ -205,7 +205,9 @@ func TestRerankNegativeIndexReturnsIdentity(t *testing.T) {
 func TestRerankTruncatesWireBodyKeepsOriginalDocument(t *testing.T) {
 	longDoc := strings.Repeat("x", 600)
 	var captured wireRequest
+	var authHeader string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
 		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 			t.Errorf("decode request body: %v", err)
 		}
@@ -216,10 +218,13 @@ func TestRerankTruncatesWireBodyKeepsOriginalDocument(t *testing.T) {
 	defer srv.Close()
 
 	docs := []string{longDoc}
-	c := &RerankClient{BaseURL: srv.URL, Client: srv.Client(), Model: "custom-rerank"}
+	c := &RerankClient{BaseURL: srv.URL, Client: srv.Client(), Model: "custom-rerank", APIKey: "cloud-key"}
 	got, err := c.Rerank(t.Context(), "query", docs)
 	if err != nil {
 		t.Fatalf("Rerank err = %v, want nil", err)
+	}
+	if authHeader != "Bearer cloud-key" {
+		t.Fatalf("Authorization header = %q, want bearer token", authHeader)
 	}
 	if len(captured.Documents) != 1 {
 		t.Fatalf("wire documents = %d, want 1", len(captured.Documents))

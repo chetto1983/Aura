@@ -34,15 +34,34 @@ func (s *Searcher) Search(ctx context.Context, req SearchRequest) ([]SearchHit, 
 	if limit > maxSearchLimit {
 		limit = maxSearchLimit
 	}
-	candidateLimit := limit
-	if req.DocumentID == "" {
-		candidateLimit = limit * 3
+	if req.DocumentID != "" {
+		return s.scopedSearch(ctx, query, req.DocumentID, limit)
 	}
 	rows, err := s.Client.Read(ctx, sparseSearchQuery, map[string]any{
 		"query":           query,
-		"document_id":     req.DocumentID,
+		"document_id":     "",
 		"limit":           limit,
-		"candidate_limit": candidateLimit,
+		"candidate_limit": limit * 3,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return hitsFromRows(rows)
+}
+
+// scopedSearch is the per-document sparse seed (spike 075): with a document_id supplied it
+// ranks that document's OWN chunks by query-term overlap — a native metadata pre-filter on
+// the indexed document_id — instead of the global db.index.fulltext.queryNodes(k)-THEN-
+// filter, so a small or freshly-uploaded document is never crowded out of the global
+// fulltext top-k by a large corpus (the spike-075 crowding case). The fulltext index cannot
+// be restricted to a node set, so relevance is the count of distinct query terms present;
+// the reranker reorders these seeds. It is the sparse twin of docScopedVectorSeedQuery —
+// together they keep a scoped document reachable on both the dense and the fallback path.
+func (s *Searcher) scopedSearch(ctx context.Context, query, documentID string, limit int) ([]SearchHit, error) {
+	rows, err := s.Client.Read(ctx, docScopedSparseQuery, map[string]any{
+		"document_id": documentID,
+		"terms":       strings.Fields(strings.ToLower(query)),
+		"limit":       limit,
 	})
 	if err != nil {
 		return nil, err
@@ -151,6 +170,30 @@ const sparseSearchQuery = `
 CALL db.index.fulltext.queryNodes('chunk_text', $query, {limit: $candidate_limit})
 YIELD node, score
 WHERE ($document_id = "" OR node.document_id = $document_id)
+RETURN
+  node.document_id AS document_id,
+  coalesce(node.file_name, "") AS file_name,
+  node.id AS chunk_id,
+  node.text AS text,
+  node.locator_json AS locator_json,
+  node.heading_path AS heading_path,
+  score AS score
+ORDER BY score DESC
+LIMIT $limit
+`
+
+// docScopedSparseQuery is the scoped sparse seed (spike 075): with a document_id supplied
+// it ranks that document's OWN chunks by query-term overlap (a native metadata pre-filter
+// on the indexed document_id), so a small or freshly-uploaded document's chunks are always
+// reachable regardless of the global corpus size. The fulltext index cannot be restricted
+// to a node set, so score = the count of distinct query terms present; chunks with no term
+// match are dropped and the reranker reorders the rest. The projection matches
+// sparseSearchQuery so hitsFromRows and the rerank/expand stages are identical.
+const docScopedSparseQuery = `
+MATCH (node:Chunk {document_id: $document_id})
+WHERE node.text IS NOT NULL
+WITH node, size([term IN $terms WHERE toLower(node.text) CONTAINS term]) AS score
+WHERE score > 0
 RETURN
   node.document_id AS document_id,
   coalesce(node.file_name, "") AS file_name,

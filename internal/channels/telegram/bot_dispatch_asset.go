@@ -40,6 +40,7 @@ func (t *Telegram) ingestTelegramAsset(
 	defer func() { _ = rc.Close() }()
 	asset, err := t.deps.Assets.IngestTelegramFile(ctx, assets.TelegramIngestRequest{
 		IdentityID: account.IdentityID,
+		ThreadID:   convID(msg.Chat.ID),
 		ChatID:     msg.Chat.ID,
 		MessageID:  msg.ID,
 		FileID:     file.FileID,
@@ -54,8 +55,9 @@ func (t *Telegram) ingestTelegramAsset(
 		t.handleAssetIngressFailure(c, msg, failCopy, inboundWasVoice)
 		return nil
 	}
-	userText := assets.WithAttachmentBlock("Analizza l'allegato Telegram.", []assets.Asset{asset})
-	t.runTurn(ctx, c, msg.Chat.ID, userText, inboundWasVoice)
+	// The shared seam composes this asset's attachment block AND the thread's knowledge
+	// catalog (other searchable docs) — same path as a no-attachment text turn.
+	t.runTurnWithAssets(ctx, c, msg.Chat.ID, "Analizza l'allegato Telegram.", []assets.Asset{asset}, inboundWasVoice)
 	return nil
 }
 

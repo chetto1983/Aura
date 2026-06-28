@@ -136,22 +136,20 @@ type Config struct {
 	TelegramFileBaseURL       string // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
 	TelegramLocalBotAPI       bool   // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
 
-	// Phase 24 (WEB-02/WEB-03) web-auth knobs. Neither is boot-fatal on its own —
-	// GuardWebBind decides at boot whether a non-loopback AGUIBind may start. A loopback
-	// bind boots with both unset (dev parity, exactly as before).
-	WebAuthSecret string // AURA_WEB_AUTH_SECRET — operator login passphrase + HMAC cookie-key source; empty default, NOT boot-fatal (GuardWebBind decides)
+	// Web-auth knobs. GuardWebBind decides at boot whether a non-loopback AGUIBind
+	// may start. Authula is the active provider; WebAuthSecret is retained only so
+	// old env files/tests can be loaded without making it a product path.
+	WebAuthSecret string // AURA_WEB_AUTH_SECRET - deprecated legacy passphrase secret; not mounted by aura serve
 	WebTrustProxy bool   // AURA_WEB_TRUST_PROXY — operator vouches a reverse proxy terminates auth (D-05)
 
 	// Authula web-auth provider knobs (docs/cockpit-overhaul/05-authula-auth-SPEC.md).
-	// WebAuthProvider is the migration feature flag: "passphrase" (default — the existing
-	// stdlib HMAC login is untouched) or "authula" (the embedded Authula framework
-	// validates the session cookie). The flag is read once at boot; flipping it back to
-	// passphrase is the M2 rollback safety net (env + one restart). The other three are
-	// inert while the flag is passphrase.
-	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER ∈ {passphrase, authula} (default passphrase)
+	// WebAuthProvider defaults to authula. Legacy values are accepted for backward
+	// compatibility, but aura serve still builds the Authula-only auth boundary.
+	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER (default authula)
 	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
 	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
 	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — Aura identity name the Authula operator user binds to (default "local")
+	AuthulaRateLimitMax     int    // AURA_AUTHULA_RATE_LIMIT_MAX — credential attempts per minute before Authula throttles (default 30)
 
 	// ServeShutdownGraceSec bounds the in-flight turn drain on a SIGTERM/SIGINT
 	// (audit O-06 / AP-17): on the signal the daemon stops accepting new work, then
@@ -212,12 +210,16 @@ type Config struct {
 	CalendarMCPURL        string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
 	CalendarMCPAdminToken string // AURA_PIM_MCP_ADMIN_TOKEN — /admin Bearer token, default changeme-aura-pim-local
 
-	// Phase 30 (RET-01) retrieval rerank knob. RerankBaseURL is the optional
-	// aura-rerank sidecar (/v1/rerank) base. An unset/empty value is NOT
+	// Phase 30 (RET-01) retrieval rerank knobs. RerankBaseURL is the optional
+	// aura-rerank sidecar (/v1/rerank) base; an unset/empty value is NOT
 	// boot-fatal — the rerank client fails soft to the RRF/vector order, so a
 	// GPU-absent deployment runs with rerank off (spike 070). Convention
-	// AURA_<DOMAIN>_<UNIT>.
-	RerankBaseURL string // AURA_RERANK_BASE_URL — aura-rerank /v1/rerank base, default http://127.0.0.1:8085
+	// AURA_<DOMAIN>_<UNIT>. The local↔cloud swap is ONE knob: set AURA_RERANK_MODEL
+	// to a cloud model (e.g. cohere/rerank-4-fast) and rerank routes to the shared
+	// OpenRouter endpoint authenticated with the SINGLE OPENROUTER_API_KEY every
+	// cloud backend uses — no per-backend key (see RerankRoute, D-28 vision parity).
+	RerankBaseURL string // AURA_RERANK_BASE_URL — local rerank sidecar base, default http://127.0.0.1:8085
+	RerankModel   string // AURA_RERANK_MODEL — set to a cloud model (cohere/rerank-4-fast) to swap to OpenRouter; empty = local sidecar
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -276,15 +278,15 @@ func (c *Config) Validate() error {
 
 // GuardWebBind is the WEB-02 fail-fast boot policy for the cockpit listener (D-05).
 // A loopback bind always boots with no credential, exactly as before; a non-loopback
-// bind boots ONLY when EITHER AURA_WEB_AUTH_SECRET is set (the in-binary login is
-// active) OR trustProxy is true (the operator vouches a reverse proxy terminates auth).
+// bind boots ONLY when EITHER Authula web auth is configured OR trustProxy is true
+// (the operator vouches a reverse proxy terminates auth).
 // A non-loopback bind with neither credential returns an actionable error so the daemon
 // refuses to silently expose an unauthenticated surface. It is a pure function — total
 // (no panic path) and table-test-friendly — mirroring Validate's "config: …" posture.
 //
 // Wildcards (0.0.0.0, ::, [::]) are NOT special-cased: net.ParseIP(...).IsLoopback()
 // returns false for them, so they fall through to the gated branch, which is correct.
-func GuardWebBind(bind, webAuthSecret string, trustProxy bool) error {
+func GuardWebBind(bind string, authConfigured bool, trustProxy bool) error {
 	host, _, err := net.SplitHostPort(bind)
 	if err != nil {
 		host = bind // tolerate a bare host with no port
@@ -294,12 +296,12 @@ func GuardWebBind(bind, webAuthSecret string, trustProxy bool) error {
 	if isLoopback {
 		return nil // loopback always bootable, exactly as before (D-05)
 	}
-	if strings.TrimSpace(webAuthSecret) != "" || trustProxy {
+	if authConfigured || trustProxy {
 		return nil // unlocked by either credential (D-05)
 	}
 	return fmt.Errorf("config: AURA_AGUI_BIND=%q is non-loopback but web auth is not configured; "+
-		"set AURA_WEB_AUTH_SECRET (in-binary login) or AURA_WEB_TRUST_PROXY=true (a reverse proxy "+
-		"terminates auth), or bind a loopback address", bind)
+		"set AURA_AUTHULA_SECRET with AURA_AUTHULA_DATABASE_URL or AURA_DB_URL, set "+
+		"AURA_WEB_TRUST_PROXY=true (a reverse proxy terminates auth), or bind a loopback address", bind)
 }
 
 // LoadDB loads the non-LLM configuration only. DB-admin commands
@@ -425,16 +427,17 @@ func loadBase() *Config {
 		TelegramFileBaseURL:       os.Getenv("TELEGRAM_FILE_BASE_URL"),
 		TelegramLocalBotAPI:       envBoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
-		// Phase 24 web-auth knobs (WEB-02/WEB-03). Both have non-fatal defaults; the
-		// secret is read raw (empty default — GuardWebBind decides if it is required).
+		// Web-auth knobs. The legacy secret is read raw for compatibility only; the
+		// active cockpit login path is Authula.
 		WebAuthSecret: os.Getenv("AURA_WEB_AUTH_SECRET"),
 		WebTrustProxy: envBoolDefault("AURA_WEB_TRUST_PROXY", false),
 
-		// Authula provider (default passphrase = byte-identical legacy behavior).
-		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "passphrase"),
+		// Authula provider (default authula).
+		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "authula"),
 		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
 		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
 		AuthulaOperatorIdentity: envDefault("AURA_AUTHULA_OPERATOR_IDENTITY", "local"),
+		AuthulaRateLimitMax:     envIntDefault("AURA_AUTHULA_RATE_LIMIT_MAX", 30),
 
 		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
 
@@ -465,7 +468,41 @@ func loadBase() *Config {
 		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),
 
 		RerankBaseURL: envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
+		RerankModel:   os.Getenv("AURA_RERANK_MODEL"),
 	}
+}
+
+// RerankRoute resolves the rerank endpoint as a ONE-knob local↔cloud swap (D-28,
+// mirroring the vision route): with AURA_RERANK_MODEL unset it is the local
+// aura-rerank sidecar at RerankBaseURL with no auth; set AURA_RERANK_MODEL to a
+// cloud model (e.g. cohere/rerank-4-fast) and it routes to the shared OpenRouter
+// endpoint (LLM.BaseURL) authenticated with the SINGLE OPENROUTER_API_KEY
+// (LLM.APIKey) every cloud backend reuses. An explicitly-set non-loopback
+// RerankBaseURL overrides the OpenRouter base for a custom cloud reranker.
+func (c *Config) RerankRoute() (baseURL, apiKey, model string) {
+	if strings.TrimSpace(c.RerankModel) == "" {
+		return c.RerankBaseURL, "", "" // local sidecar, default model, no auth
+	}
+	base := c.RerankBaseURL
+	if isLoopbackURL(base) { // model set but base still the local default → shared OpenRouter
+		base = c.LLM.BaseURL
+	}
+	return base, c.LLM.APIKey, c.RerankModel
+}
+
+// isLoopbackURL reports whether a base URL points at the local host (127.0.0.1/::1/
+// localhost) — used by RerankRoute to decide when a set model should swap the local
+// default base for the shared OpenRouter endpoint.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	if u.Hostname() == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip != nil && ip.IsLoopback()
 }
 
 // composeDSN returns "" when password is empty so callers can detect an

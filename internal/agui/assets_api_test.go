@@ -147,6 +147,23 @@ func (f *fakeAssetService) ListForThread(_ context.Context, identityID, threadID
 	return f.listResp, nil
 }
 
+// BuildTurnContext mirrors the real Service seam over the fake's data: it records the
+// (identity, thread) the catalog is keyed by and composes the thread's searchable docs
+// (listResp, minus the attached) + this turn's attachment block onto the user text.
+func (f *fakeAssetService) BuildTurnContext(_ context.Context, identityID, threadID string, attachments []assets.Asset, userText string) string {
+	f.listIdentityID = identityID
+	f.listThreadID = threadID
+	excluded := make(map[string]bool, len(attachments))
+	for _, a := range attachments {
+		excluded[a.ID] = true
+	}
+	var catalog string
+	if identityID != "" && threadID != "" {
+		catalog = assets.BuildKnowledgeCatalog(f.listResp, excluded)
+	}
+	return assets.WithContextBlocks(userText, catalog, assets.BuildAttachmentBlock(attachments))
+}
+
 func (f *fakeAssetService) Promote(context.Context, string, string) (assets.Asset, error) {
 	return f.getResp, f.getErr
 }

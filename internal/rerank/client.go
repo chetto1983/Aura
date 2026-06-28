@@ -53,12 +53,16 @@ type Scored struct {
 	Score    float64
 }
 
-// RerankClient calls Aura's optional OpenAI-style rerank sidecar (/v1/rerank),
+// RerankClient calls Aura's optional OpenAI-style rerank endpoint (/v1/rerank),
 // mirroring documents.EmbeddingClient construction. A nil Client uses a default
-// http.Client with rerankTimeout.
+// http.Client with rerankTimeout. APIKey is the config-only local↔cloud swap
+// (D-28, mirroring the vision route): empty for the local sidecar (no auth), or a
+// Bearer key for a cloud reranker (e.g. OpenRouter's cohere/rerank-4-fast). It is
+// set ONLY on the Authorization header at request-build time, never logged.
 type RerankClient struct {
 	BaseURL string
 	Model   string
+	APIKey  string
 	Client  *http.Client
 }
 
@@ -90,6 +94,9 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 		return degrade(docs, "request build failed"), nil
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey) // cloud rerank route only (D-28)
+	}
 
 	client := c.Client
 	if client == nil {

@@ -159,10 +159,9 @@ export AURA_ASSET_SMOKE_THREAD_ID=asset-smoke
 export AURA_ASSET_SMOKE_MIME=application/pdf
 ```
 
-If passphrase auth is enabled, export `AURA_WEB_AUTH_SECRET`; the script will
-mint a local passphrase-session cookie for the seeded `local` identity. If you
-use Authula, pass an authenticated cookie jar with
-`AURA_ASSET_SMOKE_COOKIE_JAR=/path/to/cookies.txt`.
+Aura web auth is Authula-only. Pass an authenticated Authula cookie jar with
+`AURA_ASSET_SMOKE_COOKIE_JAR=/path/to/cookies.txt`, or pass a complete Cookie
+header with `AURA_ASSET_SMOKE_COOKIE`.
 
 ## Troubleshooting States
 

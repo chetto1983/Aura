@@ -66,6 +66,8 @@ export interface OnboardingStepResponse {
 export interface OnboardingProvisionRequest {
   readonly email: string;
   readonly password: string;
+  readonly securityQuestion: string;
+  readonly securityAnswer: string;
   readonly capabilities: readonly string[];
   readonly linkTelegram: boolean;
 }

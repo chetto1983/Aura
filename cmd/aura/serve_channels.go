@@ -50,6 +50,10 @@ const localIdentityName = "local"
 // shutdown (mirrors aguiShutdownTimeout).
 const setupShutdownTimeout = 10 * time.Second
 
+// telegramGetMeTimeout bounds the provisioning-critical getMe probe used to discover the
+// bot username. Telebot's default client timeout is longer than daemon boot should wait.
+const telegramGetMeTimeout = 5 * time.Second
+
 // bootChannelsAndSetup builds the channels Registry (with the Telegram channel
 // registered) + the setup-wizard HTTP server over the shared composition root. It
 // reads the Telegram channel config (TELEGRAM_BOT_TOKEN + the AURA_TELEGRAM_*
@@ -252,12 +256,38 @@ func resolveLocalIdentityID(ctx context.Context, idStore *identity.Store) string
 // the bot username. tele.NewBot performs the getMe at construction; on a bad
 // token it returns an error. The token is a secret — it is never logged here
 // (T-13-07-BotTokenLeak).
-func telegramGetMeProbe(_ context.Context, token string) (string, error) {
-	bot, err := tele.NewBot(tele.Settings{Token: token})
+func telegramGetMeProbe(ctx context.Context, token string) (string, error) {
+	client, cancel := telegramGetMeHTTPClient(ctx, nil)
+	defer cancel()
+	bot, err := tele.NewBot(tele.Settings{Token: token, Client: client})
 	if err != nil {
 		return "", err
 	}
 	return bot.Me.Username, nil
+}
+
+func telegramGetMeHTTPClient(ctx context.Context, base http.RoundTripper) (*http.Client, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, telegramGetMeTimeout)
+	return &http.Client{
+		Timeout:   telegramGetMeTimeout,
+		Transport: contextRoundTripper{ctx: probeCtx, base: base},
+	}, cancel
+}
+
+type contextRoundTripper struct {
+	ctx  context.Context
+	base http.RoundTripper
+}
+
+func (rt contextRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := rt.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(req.WithContext(rt.ctx))
 }
 
 // startChannelSubsystems starts the channels Registry + the setup HTTP server as

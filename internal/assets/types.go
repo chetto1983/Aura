@@ -116,6 +116,7 @@ type Result struct {
 // pipeline.
 type TelegramIngestRequest struct {
 	IdentityID string
+	ThreadID   string
 	ChatID     int64
 	MessageID  int
 	FileID     string

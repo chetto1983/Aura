@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/webauth"
 )
 
 // wiringIdentities is a DB-free identityChecker for the auth-wiring test: it satisfies
@@ -31,6 +32,35 @@ func (w wiringIdentities) HasCapability(_ context.Context, id, capability string
 }
 
 var errWiringNotFound = errors.New("identity not found")
+
+const validAuthulaSession = "valid-authula-session"
+
+func authulaTestDeps(localID string, identities aguiIdentityStore) agui.AuthDeps {
+	return agui.AuthDeps{
+		Secret:           "",
+		SigningKey:       nil,
+		SecretConfigured: true,
+		LocalIdentityID:  localID,
+		Identities:       identities,
+		LoginPath:        "/login",
+		SessionValidator: func(r *http.Request) (string, bool) {
+			c, err := r.Cookie(webauth.SessionCookieName)
+			if err != nil || c.Value != validAuthulaSession {
+				return "", false
+			}
+			return localID, true
+		},
+	}
+}
+
+type aguiIdentityStore interface {
+	GetIdentityByID(context.Context, string) (agui.Identity, error)
+	HasCapability(context.Context, string, string) (bool, error)
+}
+
+func addAuthulaSession(req *http.Request) {
+	req.AddCookie(&http.Cookie{Name: webauth.SessionCookieName, Value: validAuthulaSession})
+}
 
 type fakeAuthulaProvider struct {
 	hits []string
@@ -93,22 +123,14 @@ func TestServeWebuiAuthulaSubtreePublic(t *testing.T) {
 func TestServeWebuiAuthConfigPublic(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
 	for _, tc := range []struct {
-		name        string
-		authula     *fakeAuthulaProvider
-		wantAuthula bool
+		name    string
+		authula *fakeAuthulaProvider
 	}{
-		{name: "passphrase provider"},
-		{name: "authula provider", authula: &fakeAuthulaProvider{}, wantAuthula: true},
+		{name: "provider mounted", authula: &fakeAuthulaProvider{}},
+		{name: "provider absent"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			auth := agui.AuthDeps{
-				Secret:           "operator-secret",
-				SecretConfigured: true,
-				LocalIdentityID:  localID,
-				Identities:       wiringIdentities{id: localID},
-				LoginPath:        "/login",
-				SessionValidator: func(*http.Request) (string, bool) { return "", false },
-			}
+			auth := authulaTestDeps(localID, wiringIdentities{id: localID})
 			var aguiHits []string
 			aguiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				aguiHits = append(aguiHits, r.URL.Path)
@@ -135,70 +157,46 @@ func TestServeWebuiAuthConfigPublic(t *testing.T) {
 			if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 				t.Fatalf("Cache-Control = %q, want no-store", got)
 			}
-
-			if tc.wantAuthula {
-				if !strings.Contains(raw, `"provider":"authula"`) {
-					t.Fatalf("authula config body missing provider: %s", raw)
-				}
-				if !strings.Contains(raw, `"auth_base_path":"/auth"`) {
-					t.Fatalf("authula config body missing auth_base_path: %s", raw)
-				}
-				if !strings.Contains(raw, `"csrf_header_name":"X-AUTHULA-CSRF-TOKEN"`) {
-					t.Fatalf("authula config body missing csrf_header_name: %s", raw)
-				}
-				if rec.Header().Get("X-AUTHULA-CSRF-TOKEN") == "" {
-					t.Fatal("authula config did not return the CSRF token response header")
-				}
-				var csrfCookie *http.Cookie
-				for _, c := range rec.Result().Cookies() {
-					if c.Name == "__Host-authula_csrf_token" {
-						csrfCookie = c
-						break
-					}
-				}
-				if csrfCookie == nil {
-					t.Fatal("authula config did not set the CSRF cookie")
-				}
-				if csrfCookie.Value == "" || csrfCookie.Value != rec.Header().Get("X-AUTHULA-CSRF-TOKEN") {
-					t.Fatalf("csrf cookie/header mismatch: cookie=%q header=%q", csrfCookie.Value, rec.Header().Get("X-AUTHULA-CSRF-TOKEN"))
-				}
-				if !csrfCookie.Secure || !csrfCookie.HttpOnly || csrfCookie.Path != "/" || csrfCookie.SameSite != http.SameSiteStrictMode {
-					t.Fatalf("csrf cookie attrs = Secure:%v HttpOnly:%v Path:%q SameSite:%v", csrfCookie.Secure, csrfCookie.HttpOnly, csrfCookie.Path, csrfCookie.SameSite)
-				}
-				return
+			if !strings.Contains(raw, `"provider":"authula"`) {
+				t.Fatalf("authula config body missing provider: %s", raw)
 			}
-
-			if !strings.Contains(raw, `"provider":"passphrase"`) {
-				t.Fatalf("passphrase config body missing provider: %s", raw)
+			if !strings.Contains(raw, `"auth_base_path":"/auth"`) {
+				t.Fatalf("authula config body missing auth_base_path: %s", raw)
 			}
-			if rec.Header().Get("X-AUTHULA-CSRF-TOKEN") != "" {
-				t.Fatal("passphrase config must not return an Authula CSRF header")
+			if !strings.Contains(raw, `"csrf_header_name":"X-AUTHULA-CSRF-TOKEN"`) {
+				t.Fatalf("authula config body missing csrf_header_name: %s", raw)
 			}
-			if len(rec.Result().Cookies()) != 0 {
-				t.Fatalf("passphrase config set unexpected cookies: %v", rec.Result().Cookies())
+			if rec.Header().Get("X-AUTHULA-CSRF-TOKEN") == "" {
+				t.Fatal("authula config did not return the CSRF token response header")
+			}
+			var csrfCookie *http.Cookie
+			for _, c := range rec.Result().Cookies() {
+				if c.Name == "__Host-authula_csrf_token" {
+					csrfCookie = c
+					break
+				}
+			}
+			if csrfCookie == nil {
+				t.Fatal("authula config did not set the CSRF cookie")
+			}
+			if csrfCookie.Value == "" || csrfCookie.Value != rec.Header().Get("X-AUTHULA-CSRF-TOKEN") {
+				t.Fatalf("csrf cookie/header mismatch: cookie=%q header=%q", csrfCookie.Value, rec.Header().Get("X-AUTHULA-CSRF-TOKEN"))
+			}
+			if !csrfCookie.Secure || !csrfCookie.HttpOnly || csrfCookie.Path != "/" || csrfCookie.SameSite != http.SameSiteStrictMode {
+				t.Fatalf("csrf cookie attrs = Secure:%v HttpOnly:%v Path:%q SameSite:%v", csrfCookie.Secure, csrfCookie.HttpOnly, csrfCookie.Path, csrfCookie.SameSite)
 			}
 		})
 	}
 }
 
-// TestServeWebuiAuthWiring pins the WEB-03 wiring inside newServeHandler: with a
-// configured secret, RequireAuth gates the whole origin (an API request with no cookie
-// is 401'd before reaching the AG-UI handler), GET /healthz stays public, a valid
-// session reaches the AG-UI handler, the POST /login route is public, and POST
-// /agent/run flows through the capability gate. It uses a real session cookie minted
-// from the wired signing key and a DB-free identityChecker.
+// TestServeWebuiAuthWiring pins the WEB-03 wiring inside newServeHandler: Authula
+// validation gates the whole origin (an API request with no cookie is 401'd before
+// reaching the AG-UI handler), GET /healthz stays public, password reset remains
+// public, POST /login is not a credential route, and POST /agent/run flows through the
+// capability gate.
 func TestServeWebuiAuthWiring(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
-	const secret = "operator-secret"
-	key := sha256.Sum256([]byte(secret))
-	auth := agui.AuthDeps{
-		Secret:           secret,
-		SigningKey:       key[:],
-		SecretConfigured: true,
-		LocalIdentityID:  localID,
-		Identities:       wiringIdentities{id: localID},
-		LoginPath:        "/login",
-	}
+	auth := authulaTestDeps(localID, wiringIdentities{id: localID})
 
 	var aguiHits []string
 	aguiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,28 +205,9 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		_, _ = io.WriteString(w, `{"agui":true}`)
 	})
 
-	handler, err := newServeHandler(aguiHandler, auth, nil)
+	handler, err := newServeHandler(aguiHandler, auth, &fakeAuthulaProvider{})
 	if err != nil {
 		t.Fatalf("newServeHandler: %v", err)
-	}
-
-	// A valid session cookie is minted by exercising the wired POST /login.
-	loginRec := httptest.NewRecorder()
-	form := strings.NewReader("passphrase=" + secret)
-	loginReq := httptest.NewRequest(http.MethodPost, "/login", form)
-	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	handler.ServeHTTP(loginRec, loginReq)
-	if loginRec.Code != http.StatusSeeOther {
-		t.Fatalf("POST /login (wired) = %d, want 303", loginRec.Code)
-	}
-	var sessionCookie *http.Cookie
-	for _, c := range loginRec.Result().Cookies() {
-		if strings.HasPrefix(c.Name, "__Host-") {
-			sessionCookie = c
-		}
-	}
-	if sessionCookie == nil {
-		t.Fatal("wired POST /login did not mint a session cookie")
 	}
 
 	t.Run("no cookie API request -> 401, AG-UI never reached (gate active)", func(t *testing.T) {
@@ -244,12 +223,57 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
+	t.Run("POST /login no longer mints a passphrase session", func(t *testing.T) {
+		legacySecretAuth := auth
+		legacySecretAuth.Secret = "operator-secret"
+		key := sha256.Sum256([]byte(legacySecretAuth.Secret))
+		legacySecretAuth.SigningKey = key[:]
+		legacyHandler, err := newServeHandler(aguiHandler, legacySecretAuth, &fakeAuthulaProvider{})
+		if err != nil {
+			t.Fatalf("newServeHandler with legacy secret: %v", err)
+		}
+
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("passphrase=operator-secret"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		legacyHandler.ServeHTTP(rec, req)
+		if rec.Code == http.StatusSeeOther {
+			t.Fatalf("POST /login = %d, want legacy passphrase handler unmounted", rec.Code)
+		}
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "__Host-aura_session" {
+				t.Fatalf("POST /login minted legacy session cookie: %#v", c)
+			}
+		}
+	})
+
 	t.Run("GET /healthz stays public under the gate", func(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 		if rec.Code != http.StatusOK || len(aguiHits) != 1 {
 			t.Fatalf("/healthz code=%d hits=%v, want 200 + AG-UI reached", rec.Code, aguiHits)
+		}
+	})
+
+	t.Run("no cookie password reset routes are public and reach AG-UI", func(t *testing.T) {
+		for _, route := range []string{
+			"/api/auth/password-reset/start",
+			"/api/auth/password-reset/verify",
+			"/api/auth/password-reset/complete",
+		} {
+			aguiHits = nil
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{"email":"reset@example.com"}`))
+			handler.ServeHTTP(rec, req)
+			raw := rec.Body.String()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("%s did not reach AG-UI: code=%d hits=%v body=%s", route, rec.Code, aguiHits, raw)
+			}
+			if strings.Contains(raw, `<div id="root"`) {
+				t.Fatalf("%s leaked the SPA shell: %s", route, raw)
+			}
 		}
 	})
 
@@ -272,7 +296,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if len(aguiHits) != 1 || aguiHits[0] != "/api/conversations" {
 			t.Fatalf("valid-session /api/conversations did not reach the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
@@ -283,7 +307,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/governance/mcp", nil)
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if len(aguiHits) != 1 || aguiHits[0] != "/api/governance/mcp" {
 			t.Fatalf("valid-session governance read did not reach the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
@@ -307,7 +331,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 			aguiHits = nil
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, route, nil)
-			req.AddCookie(sessionCookie)
+			addAuthulaSession(req)
 			handler.ServeHTTP(rec, req)
 			if len(aguiHits) != 1 || aguiHits[0] != route {
 				t.Fatalf("valid-session GET %s did not reach the AG-UI handler: hits=%v code=%d", route, aguiHits, rec.Code)
@@ -330,7 +354,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 			aguiHits = nil
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.AddCookie(sessionCookie)
+			addAuthulaSession(req)
 			handler.ServeHTTP(rec, req)
 			if len(aguiHits) != 1 || aguiHits[0] != tc.path {
 				t.Fatalf("%s %s did not flow through RequireCapability to the AG-UI handler: hits=%v code=%d", tc.method, tc.path, aguiHits, rec.Code)
@@ -342,7 +366,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/threads/abc/messages", nil)
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if len(aguiHits) != 1 {
 			t.Fatalf("valid-session request did not reach the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
@@ -353,7 +377,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/agent/run", strings.NewReader("{}"))
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if len(aguiHits) != 1 || aguiHits[0] != "/agent/run" {
 			t.Fatalf("POST /agent/run did not flow through RequireCapability to the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
@@ -382,7 +406,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		wantPath := "/api/approvals/" + token + "/resolve"
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, wantPath, strings.NewReader(`{"action":"accept"}`))
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if len(aguiHits) != 1 || aguiHits[0] != wantPath {
 			t.Fatalf("POST resolve did not flow through RequireCapability to the AG-UI handler: hits=%v code=%d", aguiHits, rec.Code)
@@ -412,16 +436,7 @@ func (u uncapableIdentities) HasCapability(_ context.Context, _, _ string) (bool
 // genuinely gated on the capability, not merely on authentication.
 func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
-	const secret = "operator-secret"
-	key := sha256.Sum256([]byte(secret))
-	auth := agui.AuthDeps{
-		Secret:           secret,
-		SigningKey:       key[:],
-		SecretConfigured: true,
-		LocalIdentityID:  localID,
-		Identities:       uncapableIdentities{id: localID},
-		LoginPath:        "/login",
-	}
+	auth := authulaTestDeps(localID, uncapableIdentities{id: localID})
 
 	var aguiHits []string
 	aguiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -429,26 +444,9 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		_, _ = io.WriteString(w, `{"agui":true}`)
 	})
 
-	handler, err := newServeHandler(aguiHandler, auth, nil)
+	handler, err := newServeHandler(aguiHandler, auth, &fakeAuthulaProvider{})
 	if err != nil {
 		t.Fatalf("newServeHandler: %v", err)
-	}
-
-	loginRec := httptest.NewRecorder()
-	loginReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("passphrase="+secret))
-	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	handler.ServeHTTP(loginRec, loginReq)
-	if loginRec.Code != http.StatusSeeOther {
-		t.Fatalf("POST /login = %d, want 303", loginRec.Code)
-	}
-	var sessionCookie *http.Cookie
-	for _, c := range loginRec.Result().Cookies() {
-		if strings.HasPrefix(c.Name, "__Host-") {
-			sessionCookie = c
-		}
-	}
-	if sessionCookie == nil {
-		t.Fatal("POST /login did not mint a session cookie")
 	}
 
 	for _, tc := range []struct {
@@ -467,7 +465,7 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s %s with an uncapable principal = %d, want 403", tc.method, tc.path, rec.Code)
@@ -481,7 +479,7 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/governance/mcp", nil)
-		req.AddCookie(sessionCookie)
+		addAuthulaSession(req)
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("GET /api/governance/mcp with an uncapable principal = %d, want 403", rec.Code)

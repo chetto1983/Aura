@@ -50,35 +50,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mint_passphrase_cookie() {
-  need python3
-  python3 - "$1" "${AURA_ASSET_SMOKE_IDENTITY_ID:-00000000-0000-0000-0000-000000000001}" <<'PY'
-import base64
-import hashlib
-import hmac
-import sys
-import time
-
-secret = sys.argv[1].encode()
-identity_id = sys.argv[2]
-payload = f"{identity_id}|{int(time.time())}".encode()
-key = hashlib.sha256(secret).digest()
-sig = hmac.new(key, payload, hashlib.sha256).digest()
-
-def enc(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-print(f"{enc(payload)}.{enc(sig)}")
-PY
-}
-
 if [ -n "${AURA_ASSET_SMOKE_COOKIE_JAR:-}" ]; then
   cookie_jar="$AURA_ASSET_SMOKE_COOKIE_JAR"
 elif [ -n "${AURA_ASSET_SMOKE_COOKIE:-}" ]; then
   auth_header="Cookie: $AURA_ASSET_SMOKE_COOKIE"
-elif [ -n "${AURA_WEB_AUTH_SECRET:-}" ]; then
-  cookie="$(mint_passphrase_cookie "$AURA_WEB_AUTH_SECRET")"
-  auth_header="Cookie: __Host-aura_session=$cookie"
 fi
 
 curl_api() {

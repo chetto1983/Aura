@@ -73,7 +73,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_AGUI_BIND: 0.0.0.0:9080",
 		"AURA_SETUP_BIND: 0.0.0.0:9081",
 		"AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",
-		"AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-passphrase}",
+		"AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-authula}",
 		"AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}",
 		"AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:-}",
 		"AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-local}",
@@ -103,6 +103,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900",
 		"./docker/garage/garage.toml:/etc/garage.toml:ro",
 		"garage-data:",
+		"--profile extended",
 	} {
 		if !strings.Contains(compose, want) {
 			t.Fatalf("compose.yaml missing %q", want)

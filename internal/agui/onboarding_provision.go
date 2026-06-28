@@ -15,10 +15,10 @@ import (
 )
 
 // onboarding_provision.go is the ordered cross-store provisioning saga (ONBD-01a/01b /
-// RESEARCH §Hard Problem 1). Provisioning a loginable identity spans THREE independent
+// RESEARCH §Hard Problem 1). Provisioning a loginable identity spans FOUR independent
 // stores that cannot share a transaction — the aura.* pgx pool, the Authula `authula`
-// schema on its OWN database/sql pool, and the Telegram mint token — so atomicity is a
-// saga with per-leg compensation, NOT a single tx.
+// schema on its OWN database/sql pool, the recovery challenge row, and the Telegram mint
+// token — so atomicity is a saga with per-leg compensation, NOT a single tx.
 //
 // The saga consumes narrow consumer-side ports (declared here) so this package stays free
 // of the internal/channels/telegram import (which would cycle: telegram imports agui). The
@@ -28,19 +28,20 @@ import (
 // Order (RESEARCH §Hard Problem 1):
 //
 //	0. pre-validate (no writes): creator HasCapability(identity.create); requested caps ⊆
-//	   creator-grants AND no '*'; email non-empty + Authula GetByEmail==none.
+//	   creator-grants AND no '*'; valid request shape + Authula GetByEmail==none.
 //	1. Leg B (Authula, fails cheapest on dup email): Hash → CreateUser → CreateAccount;
 //	   COMP_B = DeleteUser.
 //	2. Leg A (aura, one db.WithTx): INSERT identity + GrantCapability per cap + LinkOperator;
 //	   on failure → COMP_B.
-//	3. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → DeleteIdentity
+//	3. Recovery setup: hash answer + upsert challenge; on failure → DeleteIdentity + COMP_B.
+//	4. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → DeleteIdentity
 //	   + COMP_B.
-//	4. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C — RESEARCH L8:
-//	   exactly one row, ONLY on full success; a rolled-back flow has none).
+//	5. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C); on failure
+//	   DeletePending + DeleteIdentity + COMP_B so a rolled-back flow has none.
 //
 // Then (ONBD-02) the confirmed interview Agent.md is written for the NEW identity id; a
 // skipped interview writes nothing. The Telegram CONSUME is async (the user scans later);
-// an unscanned token simply expires (1h TTL) — "identity created" = legs A+B+C committed.
+// an unscanned token simply expires (1h TTL) — "identity created" = B+A+recovery+C+audit committed.
 
 // onboardingTokenTTL is the Telegram onboarding-token lifetime (matches the setup wizard's
 // 1h TTL). An unscanned token expires and is GC'd; it never leaves a half-linked identity.
@@ -102,11 +103,12 @@ type AuraLegWriter interface {
 	DeleteIdentity(ctx context.Context, identityName string) error
 }
 
-// TelegramMint is the narrow port over the Telegram mint/poll (Leg C + the status poll).
-// The composition-root adapter wraps *telegram.Store (InsertPending + PendingConsumed),
-// avoiding the telegram→agui import cycle. The consume is async (channel-side), never here.
+// TelegramMint is the narrow port over the Telegram mint/poll (Leg C + compensation + the
+// status poll). The composition-root adapter wraps *telegram.Store, avoiding the
+// telegram→agui import cycle. The consume is async (channel-side), never here.
 type TelegramMint interface {
 	InsertPending(ctx context.Context, onboardingToken, identityID string, expiresAt time.Time) error
+	DeletePending(ctx context.Context, onboardingToken string) error
 	PendingConsumed(ctx context.Context, onboardingToken string) (bool, error)
 }
 
@@ -121,14 +123,8 @@ var errProvisioningUnavailable = errors.New("onboarding: provisioning backend no
 // returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
 // password is hashed immediately and never echoed/logged.
 func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
-	if s.authula == nil || s.auraLeg == nil || (in.LinkTelegram && s.telegram == nil) {
-		slog.Warn("onboarding: provisioning backend not configured",
-			"authula", s.authula != nil,
-			"aura_leg", s.auraLeg != nil,
-			"telegram", s.telegram != nil,
-			"link_telegram", in.LinkTelegram,
-		)
-		return OnboardingProvisionResponse{}, errProvisioningUnavailable
+	if err := validateOnboardingProvision(in); err != nil {
+		return OnboardingProvisionResponse{}, err
 	}
 	entry, err := s.sessionForRequester(token, requesterIdentityID)
 	if err != nil {
@@ -140,9 +136,18 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, errOnboardingSessionNotFound
 	}
 	creator := entry.creatorIdentityID
-	entry.linkTelegram = in.LinkTelegram
 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
+	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
+		slog.Warn("onboarding: provisioning backend not configured",
+			"authula", s.authula != nil,
+			"aura_leg", s.auraLeg != nil,
+			"telegram", s.telegram != nil,
+			"bot_username", strings.TrimSpace(s.botName) != "",
+			"recovery", s.recovery != nil,
+		)
+		return OnboardingProvisionResponse{}, errProvisioningUnavailable
+	}
 	if err := s.validateNoEscalation(ctx, creator, in.Capabilities); err != nil {
 		return OnboardingProvisionResponse{}, err
 	}
@@ -192,12 +197,32 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, provisionFail("aura identity write", err)
 	}
 
-	// ---- 3. LEG C (Telegram token mint) ----
+	// ---- 3. RECOVERY SETUP (required before Telegram mint) ----
+	answerHash, answerVersion, err := (RecoveryHasher{}).HashAnswer(in.SecurityAnswer)
+	if err != nil {
+		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+			slog.Error("onboarding: COMP_A (delete identity) after recovery hash failed", "step", "compensate")
+		}
+		compB()
+		return OnboardingProvisionResponse{}, provisionFail("recovery hash", err)
+	}
+	if err := s.recovery.UpsertRecovery(ctx, identityID, strings.TrimSpace(in.SecurityQuestion), answerHash, answerVersion); err != nil {
+		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+			slog.Error("onboarding: COMP_A (delete identity) after recovery write failed", "step", "compensate")
+		}
+		compB()
+		return OnboardingProvisionResponse{}, provisionFail("recovery write", err)
+	}
+
+	// ---- 4. LEG C (Telegram token mint) ----
 	onboardingToken := ""
 	if in.LinkTelegram {
 		onboardingToken = uuid.NewString()
 		if err := s.telegram.InsertPending(ctx, onboardingToken, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
 			// C failed → undo A (identity + grants + link cascade) then B.
+			if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+				slog.Error("onboarding: COMP_C (delete telegram pending) after mint failure failed", "step", "compensate")
+			}
 			if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 				slog.Error("onboarding: COMP_A (delete identity) failed", "step", "compensate")
 			}
@@ -206,7 +231,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		}
 	}
 
-	// ---- 4. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
+	// ---- 5. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
 	if err := s.auraLeg.WriteAuditRow(ctx, AuraLegParams{
 		IdentityName:    identityName,
 		Capabilities:    in.Capabilities,
@@ -215,6 +240,9 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	}, identityID); err != nil {
 		// The audit row is a MUST (no loginable identity without it). If it fails, fully
 		// compensate the whole saga so we never leave an unaudited identity.
+		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+			slog.Error("onboarding: COMP_C (delete telegram pending) after audit failure failed", "step", "compensate")
+		}
 		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 			slog.Error("onboarding: COMP_A (delete identity) after audit failure failed", "step", "compensate")
 		}
@@ -222,7 +250,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, provisionFail("identity audit write", err)
 	}
 
-	// ---- 5. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
+	// ---- 6. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
 	// Record the minted onboarding token on the live session entry so the telegram-status
 	// poll can read it back via PendingConsumed. Mark the session provisioned so retry /
 	// double-submit attempts cannot run the saga a second time.
@@ -334,20 +362,10 @@ func (s *onboardingService) persistProfile(entry *sessionEntry, identityID strin
 
 // provisionFail wraps an internal saga error with a FIXED stage label and logs a fixed
 // message (never err.Error() verbatim — the setup handleToken precedent, T-13-07: a
-// transport error could echo the password or bot token). The returned error carries the
-// stage for the test's 502 assertion; the handler runs it through sanitizeErr before the
-// wire, and the no-secret-in-logs test asserts the secret never reaches a log line.
-func provisionFail(stage string, err error) error {
+// transport error could echo the password or recovery answer). The returned error carries
+// only the fixed stage + sentinel, never the arbitrary backend message the handler may
+// surface.
+func provisionFail(stage string, _ error) error {
 	slog.Error("onboarding: provisioning step failed", "stage", stage)
-	return fmt.Errorf("onboarding: %s failed: %w", stage, redactProvisionErr(err))
-}
-
-// redactProvisionErr collapses a saga error to a sanitized form so a secret embedded in a
-// transport/driver error never propagates into the returned error (which the handler
-// surfaces as a 502 body). It reuses SanitizeString (DSN/userinfo/token redaction).
-func redactProvisionErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	return errors.New(SanitizeString(err.Error()))
+	return fmt.Errorf("onboarding: %s failed: %w", stage, errProvisioningUnavailable)
 }

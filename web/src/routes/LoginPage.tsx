@@ -10,6 +10,7 @@ import {
   stringField,
   valueOrFallback,
 } from '../auth/authConfig';
+import { PasswordResetPanel } from '../auth/PasswordResetPanel';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { ThemeSwitcher } from '../theme/ThemeSwitcher';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -20,11 +21,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 type SubmitState = 'idle' | 'submitting';
-type AuthProvider = 'passphrase' | 'authula';
 type AuthulaStep = 'credentials' | 'totp';
 type SubmitOutcome = 'done' | 'continue' | 'failed';
 type LoginErrorKey =
-  | 'login.errors.wrongPassphrase'
   | 'login.errors.wrongCredentials'
   | 'login.errors.wrongCode'
   | 'login.errors.network';
@@ -45,7 +44,6 @@ interface ParticleLink {
 }
 
 interface AuthConfig {
-  provider: AuthProvider;
   authBasePath: string;
   csrfCookieName: string;
   csrfHeaderName: string;
@@ -53,7 +51,6 @@ interface AuthConfig {
 }
 
 const defaultAuthConfig: AuthConfig = {
-  provider: 'passphrase',
   authBasePath: '/auth',
   csrfCookieName: '__Host-authula_csrf_token',
   csrfHeaderName: 'X-AUTHULA-CSRF-TOKEN',
@@ -113,7 +110,6 @@ async function loadAuthConfig(): Promise<AuthConfig> {
       defaultAuthConfig.csrfHeaderName,
     );
     return {
-      provider: 'authula',
       authBasePath: valueOrFallback(
         stringField(raw, 'auth_base_path'),
         defaultAuthConfig.authBasePath,
@@ -156,7 +152,7 @@ export function LoginPage() {
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [error, setError] = useState<LoginErrorKey | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const passphraseRef = useRef<HTMLInputElement>(null);
+  const [resetOpen, setResetOpen] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
@@ -171,29 +167,10 @@ export function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (authConfig.provider === 'authula' && authulaStep === 'totp') {
+    if (authulaStep === 'totp') {
       codeRef.current?.focus();
     }
-  }, [authConfig.provider, authulaStep]);
-
-  async function submitPassphrase(form: HTMLFormElement): Promise<SubmitOutcome> {
-    const entry = new FormData(form).get('passphrase');
-    const passphrase = typeof entry === 'string' ? entry : '';
-    const body = new URLSearchParams({ passphrase });
-
-    const res = await fetch('/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-      credentials: 'same-origin',
-    });
-    if (res.ok) {
-      void navigate('/');
-      return 'done';
-    }
-    setError('login.errors.wrongPassphrase');
-    return 'failed';
-  }
+  }, [authulaStep]);
 
   async function submitAuthulaCredentials(form: HTMLFormElement): Promise<SubmitOutcome> {
     const data = new FormData(form);
@@ -244,15 +221,11 @@ export function LoginPage() {
   }
 
   function focusActiveField() {
-    if (authConfig.provider === 'authula') {
-      if (authulaStep === 'totp') {
-        codeRef.current?.focus();
-      } else {
-        emailRef.current?.focus();
-      }
+    if (authulaStep === 'totp') {
+      codeRef.current?.focus();
       return;
     }
-    passphraseRef.current?.focus();
+    emailRef.current?.focus();
   }
 
   async function submit(form: HTMLFormElement) {
@@ -261,14 +234,10 @@ export function LoginPage() {
 
     let outcome: SubmitOutcome = 'failed';
     try {
-      if (authConfig.provider === 'authula') {
-        outcome =
-          authulaStep === 'totp'
-            ? await submitAuthulaCode(form)
-            : await submitAuthulaCredentials(form);
-      } else {
-        outcome = await submitPassphrase(form);
-      }
+      outcome =
+        authulaStep === 'totp'
+          ? await submitAuthulaCode(form)
+          : await submitAuthulaCredentials(form);
     } catch {
       setError('login.errors.network');
     } finally {
@@ -280,18 +249,13 @@ export function LoginPage() {
   }
 
   const submitting = state === 'submitting';
-  const authula = authConfig.provider === 'authula';
   const credentialError = error !== null && authulaStep === 'credentials';
   const codeError = error !== null && authulaStep === 'totp';
-  const passwordToggleLabel = authula
-    ? showPassword
-      ? t('login.authula.hidePassword')
-      : t('login.authula.showPassword')
-    : showPassword
-      ? t('login.hidePassword')
-      : t('login.showPassword');
+  const passwordToggleLabel = showPassword
+    ? t('login.authula.hidePassword')
+    : t('login.authula.showPassword');
   const submitLabel =
-    authula && authulaStep === 'totp'
+    authulaStep === 'totp'
       ? submitting
         ? t('login.authula.verifyInFlight')
         : t('login.authula.verifyCta')
@@ -325,127 +289,124 @@ export function LoginPage() {
           </Alert>
         ) : null}
 
-        <form
-          aria-busy={submitting}
-          aria-label={t('login.cta')}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit(event.currentTarget);
-          }}
-          className="flex flex-col gap-3"
-          noValidate
-        >
-          {!authula ? (
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="passphrase">{t('login.fieldLabel')}</Label>
-              <div className="relative">
-                <Input
-                  ref={passphraseRef}
-                  id="passphrase"
-                  name="passphrase"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  aria-invalid={ariaInvalid(error !== null)}
-                  aria-describedby="passphrase-hint"
-                  className="min-h-[var(--row-h)] bg-surface-2 pr-11 text-sm"
-                />
-                <PasswordToggle
-                  pressed={showPassword}
-                  label={passwordToggleLabel}
-                  onClick={() => {
-                    setShowPassword((value) => !value);
-                  }}
-                />
-              </div>
-              <p id="passphrase-hint" className="text-[0.75rem] text-text-muted">
-                {t('login.fieldHint')}
-              </p>
-            </div>
-          ) : authulaStep === 'credentials' ? (
-            <>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="authula-email">{t('login.authula.emailLabel')}</Label>
-                <Input
-                  key="authula-email"
-                  ref={emailRef}
-                  id="authula-email"
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                  aria-invalid={ariaInvalid(credentialError)}
-                  className="min-h-[var(--row-h)] bg-surface-2 text-sm"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="authula-password">{t('login.authula.passwordLabel')}</Label>
-                <div className="relative">
+        {resetOpen ? (
+          <PasswordResetPanel
+            onCancel={() => {
+              setResetOpen(false);
+              setError(null);
+            }}
+          />
+        ) : (
+          <form
+            aria-busy={submitting}
+            aria-label={t('login.cta')}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit(event.currentTarget);
+            }}
+            className="flex flex-col gap-3"
+            noValidate
+          >
+            {authulaStep === 'credentials' ? (
+              <>
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="authula-email">{t('login.authula.emailLabel')}</Label>
                   <Input
-                    id="authula-password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
+                    key="authula-email"
+                    ref={emailRef}
+                    id="authula-email"
+                    name="email"
+                    type="email"
+                    autoComplete="username"
                     aria-invalid={ariaInvalid(credentialError)}
-                    className="min-h-[var(--row-h)] bg-surface-2 pr-11 text-sm"
-                  />
-                  <PasswordToggle
-                    pressed={showPassword}
-                    label={passwordToggleLabel}
-                    onClick={() => {
-                      setShowPassword((value) => !value);
-                    }}
+                    className="min-h-[var(--row-h)] bg-surface-2 text-sm"
                   />
                 </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="authula-code">
-                  {useBackupCode
-                    ? t('login.authula.backupCodeLabel')
-                    : t('login.authula.totpLabel')}
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="authula-password">{t('login.authula.passwordLabel')}</Label>
+                  <div className="relative">
+                    <Input
+                      id="authula-password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      aria-invalid={ariaInvalid(credentialError)}
+                      className="min-h-[var(--row-h)] bg-surface-2 pr-11 text-sm"
+                    />
+                    <PasswordToggle
+                      pressed={showPassword}
+                      label={passwordToggleLabel}
+                      onClick={() => {
+                        setShowPassword((value) => !value);
+                      }}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setResetOpen(true);
+                    setError(null);
+                  }}
+                  className="self-end px-0 text-sm text-accent hover:bg-transparent hover:underline"
+                >
+                  {t('login.authula.forgotPassword')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="authula-code">
+                    {useBackupCode
+                      ? t('login.authula.backupCodeLabel')
+                      : t('login.authula.totpLabel')}
+                  </Label>
+                  <Input
+                    key={useBackupCode ? 'authula-backup-code' : 'authula-totp-code'}
+                    ref={codeRef}
+                    id="authula-code"
+                    name="code"
+                    type="text"
+                    inputMode={useBackupCode ? 'text' : 'numeric'}
+                    autoComplete="one-time-code"
+                    aria-invalid={ariaInvalid(codeError)}
+                    className="min-h-[var(--row-h)] bg-surface-2 text-sm"
+                  />
+                </div>
+                <Label className="flex items-center gap-2 text-sm font-normal text-text-muted">
+                  <Checkbox name="trust_device" />
+                  {t('login.authula.trustDevice')}
                 </Label>
-                <Input
-                  key={useBackupCode ? 'authula-backup-code' : 'authula-totp-code'}
-                  ref={codeRef}
-                  id="authula-code"
-                  name="code"
-                  type="text"
-                  inputMode={useBackupCode ? 'text' : 'numeric'}
-                  autoComplete="one-time-code"
-                  aria-invalid={ariaInvalid(codeError)}
-                  className="min-h-[var(--row-h)] bg-surface-2 text-sm"
-                />
-              </div>
-              <Label className="flex items-center gap-2 text-sm font-normal text-text-muted">
-                <Checkbox name="trust_device" />
-                {t('login.authula.trustDevice')}
-              </Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setUseBackupCode((value) => !value);
-                  setError(null);
-                }}
-                className="self-start px-0 text-sm text-accent hover:bg-transparent hover:underline"
-              >
-                {useBackupCode ? t('login.authula.useTotpCode') : t('login.authula.useBackupCode')}
-              </Button>
-            </>
-          )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setUseBackupCode((value) => !value);
+                    setError(null);
+                  }}
+                  className="self-start px-0 text-sm text-accent hover:bg-transparent hover:underline"
+                >
+                  {useBackupCode
+                    ? t('login.authula.useTotpCode')
+                    : t('login.authula.useBackupCode')}
+                </Button>
+              </>
+            )}
 
-          {error !== null ? (
-            <Alert variant="destructive">
-              <AlertDescription>{t(error)}</AlertDescription>
-            </Alert>
-          ) : null}
+            {error !== null ? (
+              <Alert variant="destructive">
+                <AlertDescription>{t(error)}</AlertDescription>
+              </Alert>
+            ) : null}
 
-          <Button type="submit" disabled={submitting} className="text-sm">
-            {submitLabel}
-          </Button>
-        </form>
+            <Button type="submit" disabled={submitting} className="text-sm">
+              {submitLabel}
+            </Button>
+          </form>
+        )}
       </Card>
     </main>
   );

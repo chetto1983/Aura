@@ -74,10 +74,9 @@ type serveEnv struct {
 	// ScanOrphans on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. runServe Start/Stops it.
 	sweeper *conversations.Sweeper
 
-	// authulaProvider is the active embedded Authula web-auth framework, non-nil only
-	// when AURA_WEB_AUTH_PROVIDER=authula (Option A2). onboardingAuthulaProvider is a
-	// provisioning-only Authula core used by the onboarding saga when the cockpit still
-	// logs in via passphrase but Authula DB+secret are configured.
+	// authulaProvider is the active embedded Authula web-auth framework.
+	// onboardingAuthulaProvider is kept as a distinct slot so cleanup stays correct if a
+	// future setup-only composition creates a separate provisioning provider.
 	authulaProvider           *webauth.Provider
 	onboardingAuthulaProvider *webauth.Provider
 }
@@ -257,7 +256,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
 	// (Assumption A3). The bind may now be non-loopback (WEB-02/D-06 lifted the
 	// hardcoded-loopback restriction); config.GuardWebBind (called below before httpSrv
-	// is built) refuses a non-loopback AURA_AGUI_BIND unless AURA_WEB_AUTH_SECRET or
+	// is built) refuses a non-loopback AURA_AGUI_BIND unless Authula auth or
 	// AURA_WEB_TRUST_PROXY is set, so the auth boundary — not a hardcoded bind — is the
 	// compensating control.
 	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
@@ -370,12 +369,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// (FND-02). A webui embed failure is fatal at boot — a committed dist makes it
 	// unreachable, but a half-wired host must not start.
 	//
-	// WEB-03: the parent mux is wrapped in the in-binary web-auth boundary. buildAuthDeps
-	// derives the HMAC signing key from AURA_WEB_AUTH_SECRET, binds the session to the
-	// seeded `local` identity, and sets SecretConfigured from the non-empty secret. When
-	// no secret is configured (loopback dev) RequireAuth is a no-op pass-through, so the
-	// daemon serves unauthenticated exactly as before; GuardWebBind (below) guarantees an
-	// unconfigured secret is only reachable on a loopback bind.
+	// WEB-03: the parent mux is wrapped in the Authula web-auth boundary. buildAuthDeps
+	// constructs the Authula provider and wires its session validator into RequireAuth.
+	// GuardWebBind below keeps non-loopback binds behind Authula auth or an explicit
+	// trust-proxy deployment.
 	auth, authulaProvider, err := buildAuthDeps(ctx, chat)
 	if err != nil {
 		chat.close()
@@ -392,14 +389,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// Wire the Phase-28 onboarding wizard + provisioning saga (ONBD-01/02). Built
 	// best-effort over the daemon's existing seams (the identity Store for the capability
 	// picker + the aura-leg write, the Authula provider's CoreServices for Leg B, the
-	// Telegram Store for the Leg C mint + the status poll, the LLM extractor + profile
-	// store for the interview). When passphrase login is active but Authula DB+secret are
-	// configured, a provisioning-only Authula provider supplies Leg B without mounting
-	// /auth or changing the active login provider. A missing piece leaves the routes
-	// degraded, MUST NOT abort boot (the SetGovernanceProviders best-effort precedent).
+	// recovery adapter, the Telegram Store for Leg C mint/status/compensation, and the LLM
+	// extractor + profile store for the interview). A missing provisioning piece,
+	// including bot username, fails before writes and MUST NOT abort boot.
 	// The mounts (RequireCapability on start+provision, RequireAuth on step+telegram-
 	// status) live in serve_webui.go.
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
+	wirePasswordResetService(aguiServer, chat.pool, reg, authulaProvider)
 	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider)
 	if err != nil {
 		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
@@ -409,7 +405,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// WEB-02 fail-fast: refuse to start a non-loopback bind that has no web-auth
 	// credential. The returned error flows to runServe, which prints "aura serve: <err>"
 	// and exits exitInfra (no second exit path). Loopback boots unchanged.
-	if err := config.GuardWebBind(chat.cfg.AGUIBind, chat.cfg.WebAuthSecret, chat.cfg.WebTrustProxy); err != nil {
+	if err := config.GuardWebBind(chat.cfg.AGUIBind, auth.SecretConfigured, chat.cfg.WebTrustProxy); err != nil {
 		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
 		chat.close()
 		return nil, err

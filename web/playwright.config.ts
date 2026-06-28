@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
 // Playwright's webServer does NOT inherit the runner/process env by default
@@ -9,11 +10,11 @@ import { defineConfig, devices } from '@playwright/test';
 const SERVE_ENV_KEYS = [
   'AURA_DB_URL',
   'AURA_DB_MIGRATE_URL',
-  'AURA_WEB_AUTH_SECRET',
   'AURA_WEB_AUTH_PROVIDER',
   'AURA_AUTHULA_DATABASE_URL',
   'AURA_AUTHULA_SECRET',
   'AURA_AUTHULA_OPERATOR_IDENTITY',
+  'AURA_AUTHULA_RATE_LIMIT_MAX',
   'OPENROUTER_API_KEY',
   'NEO4J_PASSWORD',
   'POSTGRES_USER',
@@ -53,6 +54,8 @@ for (const key of SERVE_ENV_KEYS) {
 // managed webServer below so the existing instance is reused as-is).
 const SERVE_ORIGIN = process.env.AURA_E2E_ORIGIN ?? 'http://127.0.0.1:9080';
 const USE_EXTERNAL_SERVE = process.env.AURA_E2E_ORIGIN !== undefined;
+const AURA_BINARY =
+  process.platform === 'win32' && existsSync('../aura.exe') ? '..\\aura.exe' : '../aura';
 
 // The cockpit session cookie is `__Host-aura_session; Secure`. WebKit (unlike Chromium,
 // which whitelists 127.0.0.1) refuses to store a Secure cookie over plain http, so the
@@ -113,7 +116,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: '../aura serve --only=cli',
+          command: `${AURA_BINARY} serve --only=cli`,
           url: `${SERVE_ORIGIN}/healthz`,
           reuseExistingServer: !process.env.CI,
           timeout: 60_000,

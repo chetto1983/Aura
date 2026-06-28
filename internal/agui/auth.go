@@ -1,9 +1,8 @@
 // auth.go is the WEB-03 in-binary web-auth boundary (D-01..D-04): a constant-time
-// operator-secret login that mints an HMAC-signed session cookie, a RequireAuth
-// middleware that gates the whole origin except the public paths (login + assets +
-// GET /healthz), a POST /logout that clears the cookie, and a capability gate on the
-// only mutating route (POST /agent/run). The cookie crypto lives in auth_cookie.go;
-// this file owns the HTTP surface + the consumer-side identity seam.
+// Auth middleware gates the whole origin except the public paths (login + assets +
+// GET /healthz), clears sessions on logout, and applies capability gates to mutating
+// routes. The legacy HMAC passphrase helpers remain covered by unit tests, but
+// `aura serve` mounts Authula as the only credential issuer.
 //
 // The boundary is stdlib-only (crypto/hmac + crypto/sha256 + crypto/subtle +
 // net/http + time) — no gorilla/* or other 3rd-party session library (RESEARCH
@@ -46,10 +45,9 @@ type Identity struct {
 	Kind string
 }
 
-// AuthDeps carries everything the login handler + RequireAuth + the capability gate
-// need, threaded from bootServe. SecretConfigured is the master switch: when false
-// (loopback dev, which the Plan-01 boot guard confines to loopback) RequireAuth is a
-// no-op pass-through and login is unavailable. SigningKey is sha256(AURA_WEB_AUTH_SECRET).
+// AuthDeps carries everything RequireAuth + the capability gate need, threaded from
+// bootServe. SecretConfigured is the master switch: when false (loopback dev, which
+// the boot guard confines to loopback) RequireAuth is a no-op pass-through.
 type AuthDeps struct {
 	// Secret is the raw operator passphrase (AURA_WEB_AUTH_SECRET) the login form is
 	// compared against constant-time. Empty ⇒ login fail-closed.
@@ -71,11 +69,10 @@ type AuthDeps struct {
 	// LoginPath is the public login page route an unauthenticated browser GET is
 	// redirected to (default "/login").
 	LoginPath string
-	// AuthBasePath, when non-empty, is the credential-flow route prefix served by the
+	// AuthBasePath is the credential-flow route prefix served by the
 	// embedded Authula provider (its BasePath, "/auth"). Every path under it is public
 	// (reachable WITHOUT a session) because login / TOTP-verify happen before a session
-	// exists; Authula's own per-route metadata + CSRF middleware gate those routes. Empty
-	// (the passphrase path) means no such prefix is public.
+	// exists; Authula's own per-route metadata + CSRF middleware gate those routes.
 	AuthBasePath string
 	// PublicAsset reports whether a path is a real embedded static asset the login page
 	// needs before a session exists (the shared SPA bundle/styles, the PWA service
@@ -89,9 +86,8 @@ type AuthDeps struct {
 	PublicRoute func(r *http.Request) bool
 	// SessionValidator, when non-nil, REPLACES the HMAC cookie-validation core inside
 	// RequireAuth (the Option-A2 seam, AURA_WEB_AUTH_PROVIDER=authula): given a request
-	// it returns the bound Aura identity UUID + ok. When nil (the default,
-	// AURA_WEB_AUTH_PROVIDER=passphrase) RequireAuth keeps the stdlib HMAC verifySession
-	// path verbatim. Either way the result feeds the SAME existence re-check +
+	// it returns the bound Aura identity UUID + ok. When nil, RequireAuth falls back to
+	// the legacy stdlib HMAC verifySession path used by unit tests. Either way the result feeds the SAME existence re-check +
 	// withPrincipal + RequireCapability contract — only the issuer/validator of the
 	// cookie changes, never the principalKey{} downstream.
 	SessionValidator func(r *http.Request) (identityID string, ok bool)

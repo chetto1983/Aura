@@ -1,0 +1,5 @@
+[
+  {"op": "call", "tool": "list_accounts"},
+  {"op": "call", "tool": "list_calendars", "args": {"accountId": "outlook-personal"}},
+  {"op": "call", "tool": "get_calendar_events", "args": {"timeZone": "Europe/Rome", "accountId": "outlook-personal", "startDate": "2026-06-16", "endDate": "2026-07-16", "count": 20}}
+]

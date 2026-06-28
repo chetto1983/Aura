@@ -33,8 +33,8 @@ import { Button } from '@/components/ui/button';
 // NOT a governance tab, NOT a MODES entry). It runs the linear flow over the Plan-05 endpoints:
 //   credentials → capabilities → interview (5-step LoopAgent /step) → review → create (/provision)
 //   → Telegram link (deep-link + QR + /telegram-status poll) + completion.
-// It holds the sessionToken from /start and the accumulated inputs (email/password/capabilities/
-// link-Telegram), and reuses the GraphExplorer ViewStatus + error-auth contract: a /start that
+// It holds the sessionToken from /start and the accumulated inputs (email/password/recovery/
+// capabilities), and reuses the GraphExplorer ViewStatus + error-auth contract: a /start that
 // REJECTS with HTTP 401 renders a VISIBLE auth-error (never a blank), any other failure the error
 // state with retry (T-28-06-04). Secrets never render: the password is write-only (CredentialStep)
 // and the bot token never enters the DOM (TelegramLinkStep renders only the deep-link + QR).
@@ -59,9 +59,10 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   const [sessionToken, setSessionToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [capabilityOptions, setCapabilityOptions] = useState<readonly string[]>([]);
   const [selectedCaps, setSelectedCaps] = useState<ReadonlySet<string>>(new Set());
-  const [linkTelegram, setLinkTelegram] = useState(true);
 
   const [interview, setInterview] = useState<OnboardingStepResponse | undefined>(undefined);
   const [stepBusy, setStepBusy] = useState(false);
@@ -157,12 +158,15 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
       const result = await provisionOnboarding(sessionToken, {
         email,
         password,
+        securityQuestion,
+        securityAnswer,
         capabilities: [...selectedCaps],
-        linkTelegram,
+        linkTelegram: true,
       });
       setProvisionResult(result);
       // Password lives only until the saga ran; clear it so it cannot linger in state.
       setPassword('');
+      setSecurityAnswer('');
       setPhase('complete');
     } catch (err) {
       if (isAuthError(err)) {
@@ -173,9 +177,9 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     } finally {
       setProvisioning(false);
     }
-  }, [sessionToken, email, password, selectedCaps, linkTelegram]);
+  }, [sessionToken, email, password, securityQuestion, securityAnswer, selectedCaps]);
 
-  const canAdvanceCredentials = credentialsValid(email, password);
+  const canAdvanceCredentials = credentialsValid(email, password, securityQuestion, securityAnswer);
   const phaseIndex = phaseIndexOf(phase);
 
   const overlay = (children: React.ReactNode) => (
@@ -252,8 +256,12 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
               <CredentialStep
                 email={email}
                 password={password}
+                securityQuestion={securityQuestion}
+                securityAnswer={securityAnswer}
                 onEmailChange={setEmail}
                 onPasswordChange={setPassword}
+                onSecurityQuestionChange={setSecurityQuestion}
+                onSecurityAnswerChange={setSecurityAnswer}
               />
               <OnboardingWizardNav
                 onBack={onClose}
@@ -311,8 +319,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
             <ReviewStep
               email={email}
               capabilities={[...selectedCaps]}
-              linkTelegram={linkTelegram}
-              onToggleTelegram={setLinkTelegram}
               provisioning={provisioning}
               error={provisionError}
               onCreate={() => {
@@ -332,14 +338,12 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 </p>
               </div>
 
-              {linkTelegram ? (
-                <TelegramLinkStep
-                  sessionToken={sessionToken}
-                  deepLink={provisionResult?.deepLink}
-                  qrSvg={provisionResult?.qrSvg}
-                  polling
-                />
-              ) : null}
+              <TelegramLinkStep
+                sessionToken={sessionToken}
+                deepLink={provisionResult?.deepLink}
+                qrSvg={provisionResult?.qrSvg}
+                polling
+              />
 
               <Button
                 type="button"

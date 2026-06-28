@@ -1382,8 +1382,7 @@ func (a recoveryStoreAdapter) VerifyChallenge(ctx context.Context, rec agui.Reco
 	return token, nil
 }
 
-func (a recoveryStoreAdapter) ConsumeResetToken(ctx context.Context, token string) (string, error) {
-	tokenHash := agui.HashLookupToken(token)
+func (a recoveryStoreAdapter) ConsumeResetTokenHash(ctx context.Context, tokenHash string) (string, error) {
 	q := sqlc.New(a.pool)
 	row, err := q.GetPasswordResetToken(ctx, tokenHash)
 	if err != nil {

@@ -13,6 +13,8 @@
 
 This section updates the spec against the current local code. It does not weaken the original acceptance criteria; it marks which parts have moved from plan to implementation.
 
+**2026-06-28 update:** Aura web auth is Authula-only. Password reset uses a Telegram one-time code plus the security answer captured during onboarding. The legacy passphrase provider is no longer an active product path.
+
 **Local commits present on `master` (ahead of `origin/master`):**
 
 - `d3aee82d feat(authula): M0 dependency + migration 0019 isolated authula schema`

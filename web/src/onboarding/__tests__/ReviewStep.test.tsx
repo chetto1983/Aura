@@ -5,34 +5,32 @@ import { ReviewStep } from '../ReviewStep';
 import type { ProvisionErrorKind } from '../onboardingWizardModel';
 
 // ReviewStep test (ONBD-01a / T-28-06-04). The review summary shows email + chosen capabilities +
-// the Telegram-link choice, a CONSTRUCTIVE Create CTA (accent, NOT danger-styled), the in-flight
+// the required Telegram-link posture, a CONSTRUCTIVE Create CTA (accent, NOT danger-styled), the in-flight
 // state, and the THREE distinct provision-error copy paths (403 no-capability / 409 duplicate-or-
 // empty / rolled-back). The password is NEVER part of this surface (no-leak).
 
 function renderReview(overrides: Partial<React.ComponentProps<typeof ReviewStep>> = {}) {
-  const onToggleTelegram = vi.fn();
   const onCreate = vi.fn();
   const props: React.ComponentProps<typeof ReviewStep> = {
     email: 'new@example.com',
     capabilities: ['skills.read', 'scheduler.read'],
-    linkTelegram: true,
-    onToggleTelegram,
     provisioning: false,
     error: undefined,
     onCreate,
     ...overrides,
   };
   render(<ReviewStep {...props} />);
-  return { onToggleTelegram, onCreate };
+  return { onCreate };
 }
 
 describe('ReviewStep (ONBD-01a)', () => {
-  it('shows the email, chosen capabilities, and the Telegram-link choice', () => {
+  it('shows the email, chosen capabilities, and the required Telegram link posture', () => {
     renderReview();
     expect(screen.getByText('new@example.com')).toBeTruthy();
     expect(screen.getByText('skills.read')).toBeTruthy();
     expect(screen.getByText('scheduler.read')).toBeTruthy();
-    expect(screen.getByText('A link will be generated')).toBeTruthy();
+    expect(screen.getByText('Required for password reset')).toBeTruthy();
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
   it('renders "None" when no capabilities were chosen', () => {
@@ -56,13 +54,6 @@ describe('ReviewStep (ONBD-01a)', () => {
     const cta = screen.getByRole('button', { name: 'Creating identity…' });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(cta.getAttribute('aria-busy')).toBe('true');
-  });
-
-  it('toggling the Telegram checkbox calls onToggleTelegram with the new value', () => {
-    const { onToggleTelegram } = renderReview({ linkTelegram: false });
-    expect(screen.getByText('Not linked')).toBeTruthy();
-    fireEvent.click(screen.getByRole('checkbox'));
-    expect(onToggleTelegram).toHaveBeenCalledWith(true);
   });
 
   const ERROR_CASES: readonly { kind: ProvisionErrorKind; copy: string }[] = [
@@ -90,8 +81,6 @@ describe('ReviewStep (ONBD-01a)', () => {
       <ReviewStep
         email="new@example.com"
         capabilities={['skills.read']}
-        linkTelegram
-        onToggleTelegram={vi.fn()}
         provisioning={false}
         error={undefined}
         onCreate={vi.fn()}
