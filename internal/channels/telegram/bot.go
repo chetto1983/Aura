@@ -48,6 +48,10 @@ type documentIngestor interface {
 type assetIngress interface {
 	IngestTelegramFile(ctx context.Context, req assets.TelegramIngestRequest) (assets.Asset, error)
 	GetForIdentity(ctx context.Context, assetID, identityID string) (assets.Asset, error)
+	// BuildTurnContext composes the channel-agnostic per-turn context (this turn's
+	// attachments + the thread's knowledge catalog) onto the user text — the same seam
+	// the AG-UI gateway uses, so catalog/attachment injection is not duplicated per channel.
+	BuildTurnContext(ctx context.Context, identityID, threadID string, attachments []assets.Asset, userText string) string
 }
 
 // botSender is the narrow telebot surface the render consumers (status_pane.go /

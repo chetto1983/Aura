@@ -205,6 +205,7 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 	}
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        req.IdentityID,
+		ThreadID:          req.ThreadID,
 		SourceKind:        SourceTelegram,
 		SourceRef:         sourceRef,
 		Scope:             ScopeThread,

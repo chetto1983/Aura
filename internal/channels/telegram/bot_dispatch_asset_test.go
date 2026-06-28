@@ -101,3 +101,10 @@ func (r *recordingAssetIngress) GetForIdentity(_ context.Context, assetID, ident
 	}
 	return assetspkg.Asset{}, errors.New("asset not found")
 }
+
+// BuildTurnContext mirrors the real Service seam for the no-store unit harness: it
+// composes this turn's attachment block (the catalog needs a store, absent here), so the
+// attachment context still reaches the turn exactly as the production path renders it.
+func (r *recordingAssetIngress) BuildTurnContext(_ context.Context, _, _ string, attachments []assetspkg.Asset, userText string) string {
+	return assetspkg.WithContextBlocks(userText, assetspkg.BuildAttachmentBlock(attachments))
+}
