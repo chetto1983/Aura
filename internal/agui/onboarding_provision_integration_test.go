@@ -4,7 +4,7 @@
 // drives the REAL onboardingService.Provision against a running aura-postgres — the aura.*
 // pool, the immutable aura.identity_audit table, and the aura.telegram_setup_pending table
 // — asserting the saga's all-or-nothing guarantee against the LIVE orphan-critical stores:
-// every RESEARCH failure-injection point (B1/B2/A/C) leaves ZERO orphans in EVERY store, a
+// every RESEARCH failure-injection point (B1/B2/A/recovery/C) leaves ZERO orphans in EVERY store, a
 // double-submit yields exactly one identity (clean 409 via the NOT NULL UNIQUE name),
 // exactly one IMMUTABLE audit row per success (none for a rolled-back flow, and UPDATE/
 // DELETE rejected), and no secret reaches a log line over a full run.
@@ -137,6 +137,19 @@ func (a liveTelegram) PendingConsumed(ctx context.Context, token string) (bool, 
 	return consumed.Valid, nil
 }
 
+type liveRecovery struct{ pool *pgxpool.Pool }
+
+func (a liveRecovery) UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error {
+	id, err := uuid.Parse(identityID)
+	if err != nil {
+		return err
+	}
+	return sqlc.New(a.pool).UpsertIdentityRecovery(ctx, sqlc.UpsertIdentityRecoveryParams{
+		IdentityID: pgtype.UUID{Bytes: id, Valid: true}, Question: question,
+		AnswerHash: answerHash, AnswerHashVersion: answerHashVersion,
+	})
+}
+
 // statefulAuthula is the in-memory Authula leg (goleak-clean — no provider goroutines). It
 // records created/deleted users so COMP_B's zero-orphan-user property is provable, with
 // optional fault injection at CreateUser (B1) / CreateAccount (B2). It mirrors the real
@@ -226,6 +239,18 @@ func (f faultTelegram) InsertPending(ctx context.Context, token, id string, exp 
 	return f.TelegramMint.InsertPending(ctx, token, id, exp)
 }
 
+type faultRecovery struct {
+	RecoverySetupWriter
+	fail bool
+}
+
+func (f faultRecovery) UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error {
+	if f.fail {
+		return errors.New("injected: recovery write")
+	}
+	return f.RecoverySetupWriter.UpsertRecovery(ctx, identityID, question, answerHash, answerHashVersion)
+}
+
 // --- live test harness ---
 
 type liveSagaEnv struct {
@@ -233,6 +258,7 @@ type liveSagaEnv struct {
 	creator  string
 	auraLeg  liveAuraLeg
 	telegram liveTelegram
+	recovery liveRecovery
 }
 
 func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
@@ -261,6 +287,7 @@ func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
 		pool: pool, creator: creatorID,
 		auraLeg:  liveAuraLeg{pool: pool},
 		telegram: liveTelegram{pool: pool},
+		recovery: liveRecovery{pool: pool},
 	}
 }
 
@@ -273,6 +300,7 @@ func (e *liveSagaEnv) service(t *testing.T, au AuthulaCore, leg AuraLegWriter, t
 		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBotTest",
+		Recovery: e.recovery,
 	})
 	entry := &sessionEntry{session: onboarding.NewSession("", "new-identity"), creatorIdentityID: e.creator}
 	token, err := svc.sessions.put(entry)
@@ -283,9 +311,17 @@ func (e *liveSagaEnv) service(t *testing.T, au AuthulaCore, leg AuraLegWriter, t
 	return svc, token, email
 }
 
+func liveProvReq(email, password string) OnboardingProvisionRequest {
+	return OnboardingProvisionRequest{
+		Email: email, Password: password,
+		SecurityQuestion: "First school?", SecurityAnswer: "Blue School",
+		Capabilities: []string{"agent.run"}, LinkTelegram: true,
+	}
+}
+
 // auraOrphans counts the LIVE aura/telegram/audit rows tied to email (the orphan-critical
 // stores). authulaUsers is the in-memory fake's live-user count.
-func (e *liveSagaEnv) auraOrphans(t *testing.T, email string) (identities, grants, links, tokens, audit int) {
+func (e *liveSagaEnv) auraOrphans(t *testing.T, email string) (identities, grants, links, tokens, recovery, audit int) {
 	t.Helper()
 	ctx := context.Background()
 	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.identities WHERE name=$1`, email).Scan(&identities); err != nil {
@@ -296,6 +332,7 @@ func (e *liveSagaEnv) auraOrphans(t *testing.T, email string) (identities, grant
 		_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.capability_grants WHERE identity_id=$1::uuid`, idID).Scan(&grants)
 		_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.identity_auth_links WHERE identity_id=$1::uuid`, idID).Scan(&links)
 		_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.telegram_setup_pending WHERE identity_id=$1::uuid`, idID).Scan(&tokens)
+		_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.identity_recovery WHERE identity_id=$1::uuid`, idID).Scan(&recovery)
 	}
 	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.identity_audit WHERE new_identity_name=$1`, email).Scan(&audit)
 	return
@@ -307,11 +344,12 @@ func (e *liveSagaEnv) auraOrphans(t *testing.T, email string) (identities, grant
 func (e *liveSagaEnv) cleanupProvisioned(email string) {
 	ctx := context.Background()
 	_, _ = e.pool.Exec(ctx, `DELETE FROM aura.telegram_setup_pending WHERE identity_id IN (SELECT id FROM aura.identities WHERE name=$1)`, email)
+	_, _ = e.pool.Exec(ctx, `DELETE FROM aura.identity_recovery WHERE identity_id IN (SELECT id FROM aura.identities WHERE name=$1)`, email)
 	_, _ = e.pool.Exec(ctx, `DELETE FROM aura.identities WHERE name=$1`, email)
 }
 
 // TestProvisionSagaLive proves the happy path commits all legs + exactly one audit row,
-// then each failure-injection point (B1/B2/A/C) leaves ZERO orphans across EVERY live aura
+// then each failure-injection point (B1/B2/A/recovery/C) leaves ZERO orphans across EVERY live aura
 // store + zero orphan Authula users.
 func TestProvisionSagaLive(t *testing.T) {
 	env := newLiveSagaEnv(t)
@@ -320,16 +358,14 @@ func TestProvisionSagaLive(t *testing.T) {
 		au := newStatefulAuthula()
 		svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 		t.Cleanup(func() { env.cleanupProvisioned(email) })
-		resp, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
-			Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: true,
-		})
+		resp, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123"))
 		if err != nil {
 			t.Fatalf("Provision: %v", err)
 		}
-		ids, grants, links, tokens, audit := env.auraOrphans(t, email)
-		if ids != 1 || grants != 1 || links != 1 || tokens != 1 || audit != 1 || au.liveUsers() != 1 {
-			t.Fatalf("happy path stores: identities=%d grants=%d links=%d tokens=%d audit=%d authula=%d",
-				ids, grants, links, tokens, audit, au.liveUsers())
+		ids, grants, links, tokens, recovery, audit := env.auraOrphans(t, email)
+		if ids != 1 || grants != 1 || links != 1 || tokens != 1 || recovery != 1 || audit != 1 || au.liveUsers() != 1 {
+			t.Fatalf("happy path stores: identities=%d grants=%d links=%d tokens=%d recovery=%d audit=%d authula=%d",
+				ids, grants, links, tokens, recovery, audit, au.liveUsers())
 		}
 		if resp.DeepLink == "" || resp.QRSVG == "" {
 			t.Error("happy path must return deep-link + QR")
@@ -344,30 +380,33 @@ func TestProvisionSagaLive(t *testing.T) {
 		auFn  func() *statefulAuthula
 		legFn func() AuraLegWriter
 		tgFn  func() TelegramMint
+		recFn func() RecoverySetupWriter
 	}{
 		{"B1 create-user fails", func() *statefulAuthula { a := newStatefulAuthula(); a.failCreateUser = true; return a },
-			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram }},
+			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
 		{"B2 create-account fails", func() *statefulAuthula { a := newStatefulAuthula(); a.failCreateAcct = true; return a },
-			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram }},
+			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
 		{"A aura-leg fails", newStatefulAuthula,
-			func() AuraLegWriter { return faultAuraLeg{AuraLegWriter: env.auraLeg, fail: true} }, func() TelegramMint { return env.telegram }},
+			func() AuraLegWriter { return faultAuraLeg{AuraLegWriter: env.auraLeg, fail: true} }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
+		{"recovery write fails", newStatefulAuthula,
+			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram },
+			func() RecoverySetupWriter { return faultRecovery{RecoverySetupWriter: env.recovery, fail: true} }},
 		{"C telegram mint fails", newStatefulAuthula,
-			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return faultTelegram{TelegramMint: env.telegram, fail: true} }},
+			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return faultTelegram{TelegramMint: env.telegram, fail: true} }, func() RecoverySetupWriter { return env.recovery }},
 	}
 	for _, tc := range inject {
 		t.Run(tc.name+" -> zero orphans", func(t *testing.T) {
 			au := tc.auFn()
 			svc, tok, email := env.service(t, au, tc.legFn(), tc.tgFn())
+			svc.recovery = tc.recFn()
 			t.Cleanup(func() { env.cleanupProvisioned(email) })
-			if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
-				Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: true,
-			}); err == nil {
+			if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err == nil {
 				t.Fatalf("%s: provision must error", tc.name)
 			}
-			ids, grants, links, tokens, audit := env.auraOrphans(t, email)
-			if ids != 0 || grants != 0 || links != 0 || tokens != 0 || audit != 0 || au.liveUsers() != 0 {
-				t.Fatalf("%s LEFT ORPHANS: identities=%d grants=%d links=%d tokens=%d audit=%d authula=%d",
-					tc.name, ids, grants, links, tokens, audit, au.liveUsers())
+			ids, grants, links, tokens, recovery, audit := env.auraOrphans(t, email)
+			if ids != 0 || grants != 0 || links != 0 || tokens != 0 || recovery != 0 || audit != 0 || au.liveUsers() != 0 {
+				t.Fatalf("%s LEFT ORPHANS: identities=%d grants=%d links=%d tokens=%d recovery=%d audit=%d authula=%d",
+					tc.name, ids, grants, links, tokens, recovery, audit, au.liveUsers())
 			}
 		})
 	}
@@ -382,18 +421,14 @@ func TestProvisionIdempotent(t *testing.T) {
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
 
-	if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
-		Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
-	}); err != nil {
+	if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err != nil {
 		t.Fatalf("first provision: %v", err)
 	}
 
 	// Second provision with the SAME email on a fresh session: the Authula pre-check sees
 	// the existing user → ErrOnboardingDuplicate (no write); one identity remains.
 	svc2, tok2, _ := env.service(t, au, env.auraLeg, env.telegram)
-	_, err := svc2.Provision(context.Background(), env.creator, tok2, OnboardingProvisionRequest{
-		Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
-	})
+	_, err := svc2.Provision(context.Background(), env.creator, tok2, liveProvReq(email, "temp-pw-123"))
 	if !errors.Is(err, ErrOnboardingDuplicate) {
 		t.Fatalf("double-submit err = %v, want ErrOnboardingDuplicate", err)
 	}
@@ -419,9 +454,7 @@ func TestIdentityAuditImmutable(t *testing.T) {
 	au := newStatefulAuthula()
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
-	if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
-		Email: email, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
-	}); err != nil {
+	if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	ctx := context.Background()
@@ -442,9 +475,7 @@ func TestIdentityAuditImmutable(t *testing.T) {
 	au2.failCreateUser = true
 	svc2, tok2, email2 := env.service(t, au2, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email2) })
-	_, _ = svc2.Provision(ctx, env.creator, tok2, OnboardingProvisionRequest{
-		Email: email2, Password: "temp-pw-123", Capabilities: []string{"agent.run"}, LinkTelegram: false,
-	})
+	_, _ = svc2.Provision(ctx, env.creator, tok2, liveProvReq(email2, "temp-pw-123"))
 	var rolledBackAudit int
 	_ = env.pool.QueryRow(ctx, `SELECT count(*) FROM aura.identity_audit WHERE new_identity_name=$1`, email2).Scan(&rolledBackAudit)
 	if rolledBackAudit != 0 {
@@ -466,9 +497,7 @@ func TestProvisionNoSecretInLogsLive(t *testing.T) {
 	au := newStatefulAuthula()
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
-	if _, err := svc.Provision(context.Background(), env.creator, tok, OnboardingProvisionRequest{
-		Email: email, Password: secret, Capabilities: []string{"agent.run"}, LinkTelegram: true,
-	}); err != nil {
+	if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, secret)); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	if strings.Contains(buf.String(), secret) {

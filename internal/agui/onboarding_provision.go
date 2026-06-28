@@ -15,10 +15,10 @@ import (
 )
 
 // onboarding_provision.go is the ordered cross-store provisioning saga (ONBD-01a/01b /
-// RESEARCH §Hard Problem 1). Provisioning a loginable identity spans THREE independent
+// RESEARCH §Hard Problem 1). Provisioning a loginable identity spans FOUR independent
 // stores that cannot share a transaction — the aura.* pgx pool, the Authula `authula`
-// schema on its OWN database/sql pool, and the Telegram mint token — so atomicity is a
-// saga with per-leg compensation, NOT a single tx.
+// schema on its OWN database/sql pool, the recovery challenge row, and the Telegram mint
+// token — so atomicity is a saga with per-leg compensation, NOT a single tx.
 //
 // The saga consumes narrow consumer-side ports (declared here) so this package stays free
 // of the internal/channels/telegram import (which would cycle: telegram imports agui). The
@@ -33,14 +33,15 @@ import (
 //	   COMP_B = DeleteUser.
 //	2. Leg A (aura, one db.WithTx): INSERT identity + GrantCapability per cap + LinkOperator;
 //	   on failure → COMP_B.
-//	3. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → DeleteIdentity
+//	3. Recovery setup: hash answer + upsert challenge; on failure → DeleteIdentity + COMP_B.
+//	4. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → DeleteIdentity
 //	   + COMP_B.
-//	4. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C — RESEARCH L8:
+//	5. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C — RESEARCH L8:
 //	   exactly one row, ONLY on full success; a rolled-back flow has none).
 //
 // Then (ONBD-02) the confirmed interview Agent.md is written for the NEW identity id; a
 // skipped interview writes nothing. The Telegram CONSUME is async (the user scans later);
-// an unscanned token simply expires (1h TTL) — "identity created" = legs A+B+C committed.
+// an unscanned token simply expires (1h TTL) — "identity created" = B+A+recovery+C committed.
 
 // onboardingTokenTTL is the Telegram onboarding-token lifetime (matches the setup wizard's
 // 1h TTL). An unscanned token expires and is GC'd; it never leaves a half-linked identity.
@@ -121,11 +122,13 @@ var errProvisioningUnavailable = errors.New("onboarding: provisioning backend no
 // returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
 // password is hashed immediately and never echoed/logged.
 func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
-	if s.authula == nil || s.auraLeg == nil || (in.LinkTelegram && s.telegram == nil) {
+	if !in.LinkTelegram || s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
 		slog.Warn("onboarding: provisioning backend not configured",
 			"authula", s.authula != nil,
 			"aura_leg", s.auraLeg != nil,
 			"telegram", s.telegram != nil,
+			"bot_username", strings.TrimSpace(s.botName) != "",
+			"recovery", s.recovery != nil,
 			"link_telegram", in.LinkTelegram,
 		)
 		return OnboardingProvisionResponse{}, errProvisioningUnavailable
@@ -147,6 +150,9 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, err
 	}
 	identityName := strings.TrimSpace(in.Email)
+	if identityName == "" {
+		return OnboardingProvisionResponse{}, errors.New("onboarding: email is required and must be a sane length")
+	}
 	// Duplicate pre-check (fail before any write): an existing Authula user with this email
 	// is a clean 409. A racing create is still caught by the aura.identities UNIQUE name
 	// (23505) at Leg A → ErrOnboardingDuplicate (idempotent double-submit → one identity).
@@ -193,13 +199,6 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	}
 
 	// ---- 3. RECOVERY SETUP (required before Telegram mint) ----
-	if s.recovery == nil {
-		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
-			slog.Error("onboarding: COMP_A (delete identity) after recovery unavailable failed", "step", "compensate")
-		}
-		compB()
-		return OnboardingProvisionResponse{}, errProvisioningUnavailable
-	}
 	answerHash, answerVersion, err := (RecoveryHasher{}).HashAnswer(in.SecurityAnswer)
 	if err != nil {
 		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
@@ -230,7 +229,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		}
 	}
 
-	// ---- 4. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
+	// ---- 5. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
 	if err := s.auraLeg.WriteAuditRow(ctx, AuraLegParams{
 		IdentityName:    identityName,
 		Capabilities:    in.Capabilities,
@@ -246,7 +245,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, provisionFail("identity audit write", err)
 	}
 
-	// ---- 5. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
+	// ---- 6. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
 	// Record the minted onboarding token on the live session entry so the telegram-status
 	// poll can read it back via PendingConsumed. Mark the session provisioned so retry /
 	// double-submit attempts cannot run the saga a second time.

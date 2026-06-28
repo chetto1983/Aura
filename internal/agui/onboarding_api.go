@@ -268,7 +268,7 @@ func validateOnboardingStep(req OnboardingStepRequest) error {
 // and no-'*' checks are the service's job (they need the creator's grants); this is the
 // fail-fast length/shape front door.
 func validateOnboardingProvision(req OnboardingProvisionRequest) error {
-	if req.Email == "" || len(req.Email) > onboardingEmailMaxLen {
+	if strings.TrimSpace(req.Email) == "" || len(req.Email) > onboardingEmailMaxLen {
 		return errors.New("onboarding: email is required and must be a sane length")
 	}
 	if req.Password == "" || len(req.Password) > onboardingPasswordMaxLen {

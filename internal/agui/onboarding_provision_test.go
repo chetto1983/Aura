@@ -11,15 +11,6 @@ import (
 	"time"
 )
 
-// onboarding_provision_test.go covers the cross-store provisioning saga with FAKE ports
-// (no DB): the three-way no-escalation re-validation, the ordered saga + each compensation
-// leg (the 6 RESEARCH failure-injection points asserting compensation ran), the QR render
-// (deep-link in, bot token never), and the no-secret-in-logs guarantee over a full run.
-// The LIVE end-to-end saga + zero-orphan assertions against real Postgres + Authula are in
-// onboarding_provision_integration_test.go (build tag db_integration).
-
-// --- fake saga ports (call-recording, fault-injectable) ---
-
 type fakeAuthula struct {
 	mu            sync.Mutex
 	existing      bool // UserByEmail result
@@ -66,8 +57,6 @@ func (f *fakeAuthula) DeleteUser(_ context.Context, userID string) error {
 	return nil
 }
 
-// liveAuthulaUsers reports user ids created but not compensated (the "orphan Authula user"
-// count for the fake-level assertion).
 func (f *fakeAuthula) liveAuthulaUsers() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -155,9 +144,11 @@ func (f *fakeTelegram) mintedCount() int {
 type fakeRecoveryStore struct {
 	identityID, question, hash, version string
 	err                                 error
+	upserts                             int
 }
 
 func (f *fakeRecoveryStore) UpsertRecovery(_ context.Context, identityID, question, answerHash, answerHashVersion string) error {
+	f.upserts++
 	f.identityID, f.question, f.hash, f.version = identityID, question, answerHash, answerHashVersion
 	return f.err
 }
@@ -224,6 +215,7 @@ func TestProvisionStoresRecoveryQuestionAndHash(t *testing.T) {
 
 func TestValidateOnboardingProvisionRequiresRecovery(t *testing.T) {
 	cases := map[string]func(*OnboardingProvisionRequest){
+		"whitespace email":          func(req *OnboardingProvisionRequest) { req.Email = " \t\n " },
 		"missing security question": func(req *OnboardingProvisionRequest) { req.SecurityQuestion = "" },
 		"missing security answer":   func(req *OnboardingProvisionRequest) { req.SecurityAnswer = "" },
 		"linkTelegram=false":        func(req *OnboardingProvisionRequest) { req.LinkTelegram = false },
@@ -237,8 +229,39 @@ func TestValidateOnboardingProvisionRequiresRecovery(t *testing.T) {
 	}
 }
 
-// TestProvisionSagaHappyPath proves the full ordered saga commits all legs + writes exactly
-// one audit row + returns the deep-link + a QR (bot token never in either) on success.
+func TestProvisionPrerequisitesFailBeforeWrites(t *testing.T) {
+	cases := map[string]func(*onboardingService, *OnboardingProvisionRequest){
+		"linkTelegram=false": func(_ *onboardingService, req *OnboardingProvisionRequest) { req.LinkTelegram = false },
+		"nil authula":        func(s *onboardingService, _ *OnboardingProvisionRequest) { s.authula = nil },
+		"nil aura leg":       func(s *onboardingService, _ *OnboardingProvisionRequest) { s.auraLeg = nil },
+		"nil telegram":       func(s *onboardingService, _ *OnboardingProvisionRequest) { s.telegram = nil },
+		"empty bot username": func(s *onboardingService, _ *OnboardingProvisionRequest) { s.botName = "" },
+		"nil recovery":       func(s *onboardingService, _ *OnboardingProvisionRequest) { s.recovery = nil },
+		"whitespace email":   func(_ *onboardingService, req *OnboardingProvisionRequest) { req.Email = " \t\n " },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+			recovery := &fakeRecoveryStore{}
+			svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
+			svc.recovery = recovery
+			req := provReq(nil)
+			mutate(svc, &req)
+			_, err := svc.Provision(context.Background(), "creator-1", tok, req)
+			if err == nil {
+				t.Fatal("Provision succeeded, want error")
+			}
+			if name != "whitespace email" && !errors.Is(err, errProvisioningUnavailable) {
+				t.Fatalf("Provision err = %v, want provisioning unavailable", err)
+			}
+			assertNoWrites(t, au, leg, tg)
+			if recovery.upserts != 0 {
+				t.Fatalf("recovery writes = %d, want 0", recovery.upserts)
+			}
+		})
+	}
+}
+
 func TestProvisionSagaHappyPath(t *testing.T) {
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create", "agent.run"})
@@ -265,8 +288,6 @@ func TestProvisionSagaHappyPath(t *testing.T) {
 	}
 }
 
-// TestProvisionRejectsMismatchedRequester proves the session token is bound to the
-// authenticated creator identity for the write path and the Telegram status poll.
 func TestProvisionRejectsMismatchedRequester(t *testing.T) {
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
@@ -283,36 +304,18 @@ func TestProvisionRejectsMismatchedRequester(t *testing.T) {
 	}
 }
 
-// TestProvisionWithoutTelegramLinkSkipsMint proves linkTelegram=false really skips Leg C:
-// no setup token row is minted and no deep-link/QR is returned.
-func TestProvisionWithoutTelegramLinkSkipsMint(t *testing.T) {
+func TestProvisionWithoutTelegramLinkFailsBeforeWrites(t *testing.T) {
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
 	req := provReq(nil)
 	req.LinkTelegram = false
 
-	resp, err := svc.Provision(context.Background(), "creator-1", tok, req)
-	if err != nil {
-		t.Fatalf("Provision without Telegram: %v", err)
+	if _, err := svc.Provision(context.Background(), "creator-1", tok, req); !errors.Is(err, errProvisioningUnavailable) {
+		t.Fatalf("Provision without Telegram err = %v, want provisioning unavailable", err)
 	}
-	if tg.mintedCount() != 0 {
-		t.Fatalf("linkTelegram=false minted %d token(s), want 0", tg.mintedCount())
-	}
-	if resp.DeepLink != "" || resp.QRSVG != "" {
-		t.Fatalf("linkTelegram=false returned link/QR: deepLink=%q qr=%q", resp.DeepLink, resp.QRSVG)
-	}
-	status, err := svc.TelegramStatus(context.Background(), "creator-1", tok)
-	if err != nil {
-		t.Fatalf("TelegramStatus after no-link provision: %v", err)
-	}
-	if status.Linked {
-		t.Fatal("no-link provision must report linked=false")
-	}
+	assertNoWrites(t, au, leg, tg)
 }
 
-// TestProvisionSagaCompensation injects each of the RESEARCH failure-injection points and
-// asserts the right compensation ran so NO orphan survives at the fake-port level (the LIVE
-// zero-orphan store assertions are in the integration test).
 func TestProvisionSagaCompensation(t *testing.T) {
 	boom := errors.New("injected failure")
 
@@ -376,6 +379,19 @@ func TestProvisionSagaCompensation(t *testing.T) {
 		}
 	})
 
+	t.Run("recovery write fails -> DeleteIdentity + COMP_B", func(t *testing.T) {
+		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
+		svc.recovery = &fakeRecoveryStore{err: boom}
+		if _, err := svc.Provision(context.Background(), "creator-1", tok, provReq(nil)); err == nil {
+			t.Fatal("want recovery write failure")
+		}
+		if au.liveAuthulaUsers() != 0 || leg.liveIdentities() != 0 || tg.mintedCount() != 0 || leg.auditCount() != 0 {
+			t.Fatalf("recovery orphans: authula=%d identities=%d tokens=%d audit=%d",
+				au.liveAuthulaUsers(), leg.liveIdentities(), tg.mintedCount(), leg.auditCount())
+		}
+	})
+
 	t.Run("audit-write fails -> full rollback (no unaudited identity)", func(t *testing.T) {
 		au := &fakeAuthula{}
 		leg := &fakeAuraLeg{auditErr: boom}
@@ -392,16 +408,13 @@ func TestProvisionSagaCompensation(t *testing.T) {
 	})
 }
 
-// TestProvisionAbandonedLeavesNothing proves an abandoned wizard (session expired before
-// provision) runs NO saga, so zero rows — the orphan-free-on-abandonment property
-// (RESEARCH §Hard Problem 4 A6).
 func TestProvisionAbandonedLeavesNothing(t *testing.T) {
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: []string{"identity.create"}},
 		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
-		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot",
+		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: &fakeRecoveryStore{},
 	})
 	// Provision against a token that was never started (or expired/swept).
 	_, err := svc.Provision(context.Background(), "creator-1", "never-started", provReq(nil))
@@ -413,9 +426,6 @@ func TestProvisionAbandonedLeavesNothing(t *testing.T) {
 	}
 }
 
-// TestNoEscalation asserts the three-way no-escalation: a '*' request and a creator-lacked
-// cap request are both rejected (escalation, no write); an operator without identity.create
-// is forbidden (no write).
 func TestNoEscalation(t *testing.T) {
 	t.Run("'*' request rejected, no write", func(t *testing.T) {
 		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
@@ -476,9 +486,6 @@ func TestNoEscalation(t *testing.T) {
 	})
 }
 
-// TestProvisionConcurrentSameSessionSingleCommit exercises the per-session lock around
-// the saga: a burst of create clicks against the same live session yields one committed
-// identity and every later attempt is rejected without a second write.
 func TestProvisionConcurrentSameSessionSingleCommit(t *testing.T) {
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
@@ -534,11 +541,6 @@ func assertNoWrites(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTel
 	}
 }
 
-// TestProvisionNoSecretInLogs captures slog over a FULL provisioning run (success + a
-// failure path) and asserts the Authula password never appears in any log line. The
-// per-leg failure path logs a FIXED message (never err.Error() verbatim), so an error
-// embedding a secret cannot leak. (The live MCP-env/bot-token leak scan is in the
-// integration test, which exercises the real stores.)
 func TestProvisionNoSecretInLogs(t *testing.T) {
 	var buf bytes.Buffer
 	prev := slog.Default()
@@ -577,7 +579,6 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 	}
 }
 
-// TestRenderQRSVG proves the QR render embeds the deep-link only and never the bot token.
 func TestRenderQRSVG(t *testing.T) {
 	const deepLink = "https://t.me/AuraBot?start=abc123token"
 	svg, err := renderQRSVG(deepLink)
