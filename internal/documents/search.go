@@ -47,6 +47,13 @@ func (s *Searcher) Search(ctx context.Context, req SearchRequest) ([]SearchHit, 
 	if err != nil {
 		return nil, err
 	}
+	return hitsFromRows(rows)
+}
+
+// hitsFromRows projects Neo4j result rows into SearchHits. Shared by the sparse
+// Searcher and the two-stage Retrieve seed/expand stages so all three produce
+// identical SearchHit shapes.
+func hitsFromRows(rows []map[string]any) ([]SearchHit, error) {
 	hits := make([]SearchHit, 0, len(rows))
 	for _, row := range rows {
 		hit, err := searchHitFromRow(row)

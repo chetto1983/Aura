@@ -44,6 +44,13 @@ type Service struct {
 	Embedder  EmbedQueue
 	Clock     Clock
 	MaxBytes  int64
+
+	// Two-stage retrieval (RET-02) collaborators, all optional. When Reranker is
+	// nil, Retrieve degrades to the sparse fulltext Search path with no regression.
+	Knowledge       KnowledgeClient    // raw graph client for the vector seed + 1-hop expand
+	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 384d seed vector
+	Reranker        Reranker           // reorders seed chunks by relevance (fail-soft)
+	RerankThreshold float64            // non-monotonic guard: keep seed order when the top rerank score is below this
 }
 
 // IngestPath ingests a local document file and returns once sparse search is ready.
