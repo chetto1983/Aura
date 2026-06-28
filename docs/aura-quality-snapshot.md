@@ -59,6 +59,19 @@ Effect on this snapshot: the GraphRAG recall@5 row above implicitly depends on `
 
 ---
 
+## RAG answer quality (RAGAS) — gated/manual, not CI
+
+**Answer-quality is graded by RAGAS faithfulness + answer_correctness, NOT a single 0–10 score** (Session-20 Item 3; spike 076). The retrieval rows above measure *which chunks come back*; this measures *whether the generated answer is grounded in them and actually answers*. A single 0–10 LLM judge is uncalibrated and context-blind — spike 076's naive judge rated a fluent hallucination 10/10 — so it is replaced by two decomposed, context-grounded metrics. Gated/manual + paid (NOT a per-PR CI step); harness + reference set in `scripts/eval/ragas/`, methodology in [`docs/rag-answer-eval.md`](rag-answer-eval.md).
+
+| Metric | Value | Method | Last measured | Status |
+|---|---|---|---|---|
+| Faithfulness — grounded vs hallucinated | **1.000 vs 0.000** | RAGAS Faithfulness over the 5-case reference set (2 docs × grounded/hallucinated/partial), DeepSeek judge + granite embeddings; repeatable at temp 0 (stdev 0) | 2026-06-28 | ADVISORY — gated/manual eval |
+| Answer_correctness — grounded vs hallucinated | **0.984 vs 0.236** (margin 0.75) | RAGAS AnswerCorrectness (factual F1 + granite semantic similarity) over the same set | 2026-06-28 | ADVISORY — gated/manual eval |
+
+**Gate:** grounded faithfulness ≥ 0.8, hallucinated ≤ 0.4, answer_correctness margin ≥ 0.2 (thresholds in `scripts/eval/ragas/reference_qa.json`). Grow the reference set with real upload→chat cases; pair with a task rubric for human-facing answer quality.
+
+---
+
 ## CI gate contract
 
 The gate script `scripts/quality_snapshot_gate.sh` (implemented in Phase 20) does the following:

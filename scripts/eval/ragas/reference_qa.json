@@ -1,0 +1,50 @@
+{
+  "description": "Reference QA set for the RAGAS answer-quality gate (Item 3 / spike 076). Each case fixes a question, the retrieved context, the ground-truth reference, the answer under test, and its kind. 'grounded' answers must score faithfulness >= grounded_min and answer_correctness high; 'hallucinated' must score faithfulness <= hallucinated_max; 'partial' is faithful-but-incomplete (high faithfulness, mid correctness) and demonstrates the two metrics are orthogonal.",
+  "thresholds": {
+    "grounded_faithfulness_min": 0.8,
+    "hallucinated_faithfulness_max": 0.4,
+    "answer_correctness_margin_min": 0.2
+  },
+  "cases": [
+    {
+      "name": "g220-grounded",
+      "kind": "grounded",
+      "context": "Servo Drive G220 Datasheet. Electrical Specifications. Rated torque: 47 Nm. Peak torque: 132 Nm. Maximum input voltage: 415 V AC. Rated output current: 18 A. Protection class: IP54.",
+      "question": "What is the rated torque and protection class of the G220 servo drive?",
+      "reference": "The rated torque is 47 Nm and the protection class is IP54.",
+      "answer": "The G220 has a rated torque of 47 Nm and a protection class of IP54."
+    },
+    {
+      "name": "g220-hallucinated",
+      "kind": "hallucinated",
+      "context": "Servo Drive G220 Datasheet. Electrical Specifications. Rated torque: 47 Nm. Peak torque: 132 Nm. Maximum input voltage: 415 V AC. Rated output current: 18 A. Protection class: IP54.",
+      "question": "What is the rated torque and protection class of the G220 servo drive?",
+      "reference": "The rated torque is 47 Nm and the protection class is IP54.",
+      "answer": "The G220 has a rated torque of 90 Nm and a protection class of IP67."
+    },
+    {
+      "name": "g220-partial",
+      "kind": "partial",
+      "context": "Servo Drive G220 Datasheet. Electrical Specifications. Rated torque: 47 Nm. Peak torque: 132 Nm. Maximum input voltage: 415 V AC. Rated output current: 18 A. Protection class: IP54.",
+      "question": "What is the rated torque and protection class of the G220 servo drive?",
+      "reference": "The rated torque is 47 Nm and the protection class is IP54.",
+      "answer": "The rated torque is 47 Nm."
+    },
+    {
+      "name": "coffee-grounded",
+      "kind": "grounded",
+      "context": "Barista Pro Coffee Machine. Water tank capacity: 1.8 litres. Run the descaling cycle every two months. Use the steam wand to froth milk for a cappuccino.",
+      "question": "What is the water tank capacity and how often should I descale?",
+      "reference": "The water tank holds 1.8 litres and you should descale every two months.",
+      "answer": "The water tank capacity is 1.8 litres and you should run the descaling cycle every two months."
+    },
+    {
+      "name": "coffee-hallucinated",
+      "kind": "hallucinated",
+      "context": "Barista Pro Coffee Machine. Water tank capacity: 1.8 litres. Run the descaling cycle every two months. Use the steam wand to froth milk for a cappuccino.",
+      "question": "What is the water tank capacity and how often should I descale?",
+      "reference": "The water tank holds 1.8 litres and you should descale every two months.",
+      "answer": "The water tank capacity is 3 litres and you should descale every week."
+    }
+  ]
+}
