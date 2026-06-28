@@ -121,3 +121,34 @@ func TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(t *testing.T)
 		}
 	}
 }
+
+func TestPasswordResetCompleteIgnoresAuditFailureAfterPasswordUpdate(t *testing.T) {
+	store := newFakePasswordResetStore(t)
+	store.eventErr = errors.New("audit unavailable")
+	resetter := &fakePasswordResetter{}
+	svc := NewPasswordResetService(PasswordResetDeps{
+		Store:     store,
+		Messenger: &fakeRecoveryMessenger{},
+		Resetter:  resetter,
+	})
+
+	complete, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
+		ResetToken: store.resetToken,
+		Password:   "new-pass-123",
+	})
+	if err != nil {
+		t.Fatalf("Complete returned error after password update and token consume: %v", err)
+	}
+	if complete.Status != "password_updated" {
+		t.Fatalf("complete status = %q, want password_updated", complete.Status)
+	}
+	if resetter.password != "new-pass-123" {
+		t.Fatalf("password was not updated before audit failure, got %q", resetter.password)
+	}
+	if store.consumedTokenHash != HashLookupToken(store.resetToken) {
+		t.Fatalf("consumed token hash = %q, want exact HashLookupToken(resetToken)", store.consumedTokenHash)
+	}
+	if len(store.events) != 1 || store.events[0].Event != "reset_complete" {
+		t.Fatalf("events = %+v, want reset_complete attempt recorded in memory fake", store.events)
+	}
+}

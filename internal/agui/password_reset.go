@@ -281,9 +281,7 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 		UserAgentHash: hashRequestValue(in.UserAgent),
 		At:            s.now(),
 	}
-	if err := s.recordEvent(ctx, event); err != nil {
-		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
-	}
+	_ = s.recordEvent(ctx, event)
 	return PasswordResetCompleteResponse{Status: "password_updated"}, nil
 }
 
