@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -56,7 +55,10 @@ func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.
 	if !authulaProvisioningConfigured(chat.cfg) {
 		return agui.AuthDeps{}, nil, fmt.Errorf("Authula web auth misconfigured: set AURA_AUTHULA_SECRET and AURA_AUTHULA_DATABASE_URL or AURA_DB_URL")
 	}
-	localIdentityID := resolveWebAuthIdentityID(ctx, chat.identity, chat.cfg)
+	localIdentityID, err := resolveWebAuthIdentityID(ctx, chat.identity, chat.cfg)
+	if err != nil {
+		return agui.AuthDeps{}, nil, err
+	}
 	provider, validator, err := buildAuthulaProvider(ctx, chat, localIdentityID)
 	if err != nil {
 		return agui.AuthDeps{}, nil, err
@@ -143,7 +145,7 @@ type identityNameResolver interface {
 // resolveWebAuthIdentityID returns the Aura identity id used by Authula web auth.
 // AURA_AUTHULA_OPERATOR_IDENTITY overrides the seeded `local` identity so operators can
 // bind the Authula user to a non-default Aura identity without touching code.
-func resolveWebAuthIdentityID(ctx context.Context, idStore identityNameResolver, cfg *config.Config) string {
+func resolveWebAuthIdentityID(ctx context.Context, idStore identityNameResolver, cfg *config.Config) (string, error) {
 	name := localIdentityName
 	if cfg != nil {
 		if configured := strings.TrimSpace(cfg.AuthulaOperatorIdentity); configured != "" {
@@ -152,10 +154,12 @@ func resolveWebAuthIdentityID(ctx context.Context, idStore identityNameResolver,
 	}
 	id, err := idStore.GetIdentityByName(ctx, name)
 	if err != nil {
-		slog.Warn("aura serve: resolve web-auth identity", "name", name, "err", err)
-		return ""
+		return "", fmt.Errorf("resolve web-auth identity %q: %w", name, err)
 	}
-	return id.ID
+	if strings.TrimSpace(id.ID) == "" {
+		return "", fmt.Errorf("resolve web-auth identity %q: empty identity id", name)
+	}
+	return id.ID, nil
 }
 
 // authulaTrustedOrigins derives the CSRF Fetch-Metadata trusted-origin list from the

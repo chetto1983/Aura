@@ -20,6 +20,7 @@ package webauth
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -92,8 +93,8 @@ func New(cfg Config) (_ *Provider, err error) {
 	if derr != nil {
 		return nil, fmt.Errorf("webauth: authula dsn: %w", derr)
 	}
-	if strings.TrimSpace(cfg.Secret) == "" {
-		return nil, fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be set when AURA_WEB_AUTH_PROVIDER=authula")
+	if err := validateAuthulaSecret(cfg.Secret); err != nil {
+		return nil, err
 	}
 
 	defer func() {
@@ -151,6 +152,20 @@ func New(cfg Config) (_ *Provider, err error) {
 	// late registration error surfaces at boot, not on the first request.
 	_ = auth.Handler()
 	return &Provider{auth: auth}, nil
+}
+
+func validateAuthulaSecret(secret string) error {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be set when AURA_WEB_AUTH_PROVIDER=authula")
+	}
+	if len(secret) != 64 {
+		return fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
+	}
+	if _, err := hex.DecodeString(secret); err != nil {
+		return fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
+	}
+	return nil
 }
 
 // buildPlugins instantiates the enabled-plugin set with their Enabled flag set, so

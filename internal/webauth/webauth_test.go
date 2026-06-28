@@ -58,8 +58,23 @@ func TestNewRejectsEmptySecret(t *testing.T) {
 	}
 }
 
+func TestNewRejectsWeakSecret(t *testing.T) {
+	for _, secret := range []string{
+		"secret",
+		"0123456789abcdef0123456789abcdef",
+		"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+	} {
+		t.Run(secret, func(t *testing.T) {
+			_, err := New(Config{DSN: "postgres://u:p@h:5432/db", Secret: secret})
+			if err == nil || !strings.Contains(err.Error(), "64 hex characters") {
+				t.Fatalf("want weak secret error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestNewRejectsBadDSN(t *testing.T) {
-	_, err := New(Config{DSN: "://%zz", Secret: "deadbeef"})
+	_, err := New(Config{DSN: "://%zz", Secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"})
 	if err == nil || !strings.Contains(err.Error(), "dsn") {
 		t.Fatalf("want dsn error, got %v", err)
 	}

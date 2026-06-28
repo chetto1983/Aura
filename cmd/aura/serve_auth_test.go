@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -11,12 +12,16 @@ import (
 )
 
 type namedIdentityStore struct {
+	err  error
 	seen []string
 	ids  map[string]identity.Identity
 }
 
 func (s *namedIdentityStore) GetIdentityByName(_ context.Context, name string) (identity.Identity, error) {
 	s.seen = append(s.seen, name)
+	if s.err != nil {
+		return identity.Identity{}, s.err
+	}
 	return s.ids[name], nil
 }
 
@@ -26,10 +31,13 @@ func TestResolveWebAuthIdentityIDUsesAuthulaOperatorIdentity(t *testing.T) {
 		"operator": {ID: "operator-id", Name: "operator"},
 	}}
 
-	got := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
+	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
 		WebAuthProvider:         "authula",
 		AuthulaOperatorIdentity: "operator",
 	})
+	if err != nil {
+		t.Fatalf("resolveWebAuthIdentityID: %v", err)
+	}
 
 	if got != "operator-id" {
 		t.Fatalf("identity id = %q, want operator-id", got)
@@ -45,16 +53,37 @@ func TestResolveWebAuthIdentityIDUsesOperatorIdentityIndependentOfProvider(t *te
 		"operator": {ID: "operator-id", Name: "operator"},
 	}}
 
-	got := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
+	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
 		WebAuthProvider:         "passphrase",
 		AuthulaOperatorIdentity: "operator",
 	})
+	if err != nil {
+		t.Fatalf("resolveWebAuthIdentityID: %v", err)
+	}
 
 	if got != "operator-id" {
 		t.Fatalf("identity id = %q, want operator-id", got)
 	}
 	if len(store.seen) != 1 || store.seen[0] != "operator" {
 		t.Fatalf("resolved names = %v, want [operator]", store.seen)
+	}
+}
+
+func TestResolveWebAuthIdentityIDFailsWhenConfiguredIdentityMissing(t *testing.T) {
+	store := &namedIdentityStore{err: errors.New("identity not found")}
+
+	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
+		AuthulaOperatorIdentity: "missing-operator",
+	})
+
+	if err == nil {
+		t.Fatalf("resolveWebAuthIdentityID returned nil error with identity id %q", got)
+	}
+	if got != "" {
+		t.Fatalf("identity id = %q, want empty on lookup failure", got)
+	}
+	if len(store.seen) != 1 || store.seen[0] != "missing-operator" {
+		t.Fatalf("resolved names = %v, want [missing-operator]", store.seen)
 	}
 }
 

@@ -410,7 +410,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// WEB-02 fail-fast: refuse to start a non-loopback bind that has no web-auth
 	// credential. The returned error flows to runServe, which prints "aura serve: <err>"
 	// and exits exitInfra (no second exit path). Loopback boots unchanged.
-	if err := config.GuardWebBind(chat.cfg.AGUIBind, chat.cfg.WebAuthSecret, chat.cfg.WebTrustProxy); err != nil {
+	if err := config.GuardWebBind(chat.cfg.AGUIBind, auth.SecretConfigured, chat.cfg.WebTrustProxy); err != nil {
 		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
 		chat.close()
 		return nil, err

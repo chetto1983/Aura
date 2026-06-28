@@ -284,7 +284,7 @@ func (c *Config) Validate() error {
 //
 // Wildcards (0.0.0.0, ::, [::]) are NOT special-cased: net.ParseIP(...).IsLoopback()
 // returns false for them, so they fall through to the gated branch, which is correct.
-func GuardWebBind(bind, webAuthSecret string, trustProxy bool) error {
+func GuardWebBind(bind string, authConfigured bool, trustProxy bool) error {
 	host, _, err := net.SplitHostPort(bind)
 	if err != nil {
 		host = bind // tolerate a bare host with no port
@@ -294,12 +294,12 @@ func GuardWebBind(bind, webAuthSecret string, trustProxy bool) error {
 	if isLoopback {
 		return nil // loopback always bootable, exactly as before (D-05)
 	}
-	if strings.TrimSpace(webAuthSecret) != "" || trustProxy {
+	if authConfigured || trustProxy {
 		return nil // unlocked by either credential (D-05)
 	}
 	return fmt.Errorf("config: AURA_AGUI_BIND=%q is non-loopback but web auth is not configured; "+
-		"set AURA_WEB_AUTH_SECRET (in-binary login) or AURA_WEB_TRUST_PROXY=true (a reverse proxy "+
-		"terminates auth), or bind a loopback address", bind)
+		"set AURA_AUTHULA_SECRET with AURA_AUTHULA_DATABASE_URL or AURA_DB_URL, set "+
+		"AURA_WEB_TRUST_PROXY=true (a reverse proxy terminates auth), or bind a loopback address", bind)
 }
 
 // LoadDB loads the non-LLM configuration only. DB-admin commands
