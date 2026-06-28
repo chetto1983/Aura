@@ -1,0 +1,20 @@
+# Spike 060 — the SPEC Req 5 "fat runtime" layer (runtime stage only; no aura Go build).
+# Goal: prove python3 + uv/uvx + node/npx + pinned mcp-neo4j-cypher==0.6.0 all resolve,
+# measure size, and confirm the heavy layer is cache-stable (ordered BEFORE any COPY aura).
+FROM debian:bookworm-slim
+
+# --- heavy runtime layer (cache-stable: nothing here changes when aura's code changes) ---
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 python3-pip nodejs npm git curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# uv/uvx as static binaries (sandbox-runtime finding: COPY from the astral image, not pip)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# pinned MCP server (SPEC constraint); Debian python is PEP-668 externally-managed -> break-system-packages
+RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0
+
+# --- in the real image, the LAST layer is `COPY --from=build /out/aura /usr/local/bin/aura` ---
+# (omitted here: this spike validates the runtime base, not the Go build)
+CMD ["sleep", "infinity"]
