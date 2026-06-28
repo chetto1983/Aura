@@ -23,4 +23,5 @@ type Config struct {
 	ConnectTimeoutSec int    // first-call connect/retry budget
 	EmbedURL          string // OpenAI-compat embeddings base URL (sidecar)
 	EmbedDimensions   int    // contract dim; boot self-test refuses a mismatch
+	EmbedModel        string // AURA_EMBED_MODEL — set to a cloud model (e.g. qwen/qwen3-embedding-8b) to swap embeddings to OpenRouter; empty = local granite sidecar
 }

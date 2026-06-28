@@ -70,3 +70,48 @@ func TestEmbeddingClientRequiresBaseURL(t *testing.T) {
 		t.Fatalf("want base URL error, got %v", err)
 	}
 }
+
+// TestEmbeddingClientCloudRoute asserts the D-28 cloud swap: APIKey set sends a
+// Bearer header AND the Matryoshka `dimensions` param; the local route (no key)
+// sends neither — the request stays byte-identical to the granite-sidecar shape.
+func TestEmbeddingClientCloudRoute(t *testing.T) {
+	capture := func(t *testing.T, apiKey string, dims int) (auth string, body map[string]any) {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			auth = r.Header.Get("Authorization")
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"embedding": []float64{1, 2, 3, 4}}},
+			})
+		}))
+		defer srv.Close()
+		client := &EmbeddingClient{BaseURL: srv.URL, Client: srv.Client(), APIKey: apiKey, Model: "qwen/qwen3-embedding-8b", Dimensions: dims}
+		if _, err := client.Embed(t.Context(), []string{"x"}); err != nil {
+			t.Fatalf("Embed: %v", err)
+		}
+		return auth, body
+	}
+
+	t.Run("cloud sends bearer + dimensions", func(t *testing.T) {
+		auth, body := capture(t, "shared-key", 4)
+		if auth != "Bearer shared-key" {
+			t.Errorf("Authorization = %q, want Bearer shared-key", auth)
+		}
+		if body["dimensions"] != float64(4) {
+			t.Errorf("dimensions = %v, want 4", body["dimensions"])
+		}
+		if body["model"] != "qwen/qwen3-embedding-8b" {
+			t.Errorf("model = %v", body["model"])
+		}
+	})
+
+	t.Run("local sends neither", func(t *testing.T) {
+		auth, body := capture(t, "", 4)
+		if auth != "" {
+			t.Errorf("local Authorization = %q, want none", auth)
+		}
+		if _, has := body["dimensions"]; has {
+			t.Errorf("local request sent a dimensions param %v, want none", body["dimensions"])
+		}
+	})
+}

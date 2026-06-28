@@ -12,11 +12,9 @@ package telegram
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 
+	"github.com/chetto1983/aura/internal/multimodal"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -35,25 +33,35 @@ func VoiceModePref(_ string) bool {
 	return false
 }
 
-// ttsClient POSTs reply text to the aura-tts sidecar and sends the returned opus
-// as a Telegram voice note. Thin OpenAI-compat client (zero Go ML).
+// ttsClient wraps the shared TTS client and sends the returned audio as a Telegram
+// voice note. It owns only the telegram glue (the ASCII-safe caption + the
+// configured guard the auto-speak path reads). Zero Go ML; the local↔cloud TTS
+// branch lives inside multimodal.TTSClient.
 type ttsClient struct {
-	cfg        MultimodalConfig
-	httpClient *http.Client
+	tts     *multimodal.TTSClient
+	caption string
+	// configured reports whether TTS can produce audio at all (a local sidecar base
+	// URL OR a cloud model). speakIfNeeded reads it to no-op when TTS is unwired.
+	// The local arm is byte-identical to the old TTSBaseURL!="" guard; the cloud
+	// arm additionally fires when only AURA_TTS_MODEL is set.
+	configured bool
 }
 
 // newTTSClient builds a TTS client over the multimodal config.
 func newTTSClient(cfg MultimodalConfig) *ttsClient {
-	return &ttsClient{cfg: cfg, httpClient: newSidecarHTTPClient()}
-}
-
-// ttsRequest is the OpenAI /audio/speech body. response_format=opus produces a
-// voice-note-ready container (no transcode); voice is the Kokoro id (if_sara).
-type ttsRequest struct {
-	Model          string `json:"model,omitempty"`
-	Input          string `json:"input"`
-	Voice          string `json:"voice"`
-	ResponseFormat string `json:"response_format"`
+	return &ttsClient{
+		tts: multimodal.NewTTSClient(multimodal.TTSConfig{
+			LocalBaseURL:      cfg.TTSBaseURL,
+			Voice:             cfg.TTSVoice,
+			Format:            cfg.TTSFormat,
+			CloudModel:        cfg.TTSModel,
+			OpenRouterBaseURL: cfg.OpenRouterBaseURL,
+			OpenRouterAPIKey:  cfg.OpenRouterAPIKey,
+			TimeoutSec:        cfg.TimeoutSec,
+		}),
+		caption:    cfg.TTSCaption,
+		configured: cfg.TTSBaseURL != "" || cfg.TTSModel != "",
+	}
 }
 
 // Speak synthesizes text via the aura-tts sidecar and sends the opus bytes as a
@@ -70,14 +78,10 @@ func (t *ttsClient) Speak(ctx context.Context, bot botSender, to tele.Recipient,
 		return nil, err
 	}
 
-	format := t.cfg.TTSFormat
-	if format == "" {
-		format = "opus"
-	}
 	voice := &tele.Voice{
 		File:    tele.FromReader(bytes.NewReader(opus)),
-		Caption: asciiCaption(t.cfg.TTSCaption),
-		MIME:    "audio/" + format,
+		Caption: asciiCaption(t.caption),
+		MIME:    "audio/" + t.tts.AudioFormat(),
 	}
 	msg, err := bot.Send(to, voice)
 	if err != nil {
@@ -86,41 +90,8 @@ func (t *ttsClient) Speak(ctx context.Context, bot botSender, to tele.Recipient,
 	return msg, nil
 }
 
-// synthesize POSTs the reply text to TTS_BASE_URL/audio/speech and returns the
-// raw opus bytes. A non-2xx response is a *sidecarStatusError.
+// synthesize delegates to the shared TTS client, returning the raw audio bytes
+// (the AudioFormat container). A non-2xx response is a *multimodal.StatusError.
 func (t *ttsClient) synthesize(ctx context.Context, text string) ([]byte, error) {
-	reqCtx, cancel := t.cfg.withTimeout(ctx)
-	defer cancel()
-
-	format := t.cfg.TTSFormat
-	if format == "" {
-		format = "opus"
-	}
-	body, err := json.Marshal(ttsRequest{
-		// Model is omitted: Kokoro is single-model and the TTS sidecar selects the
-		// voice via the `voice` field, not a model id (there is no TTS model knob).
-		Input:          text,
-		Voice:          t.cfg.TTSVoice,
-		ResponseFormat: format,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
-		t.cfg.TTSBaseURL+"/audio/speech", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := t.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
-		return nil, &sidecarStatusError{endpoint: "tts", statusCode: resp.StatusCode}
-	}
-	return io.ReadAll(resp.Body)
+	return t.tts.Synthesize(ctx, text)
 }

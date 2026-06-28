@@ -4,65 +4,39 @@ package assets
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/jpeg"
 	_ "image/png"
 	"io"
-	"net/http"
 
-	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 	xdraw "golang.org/x/image/draw"
 )
 
+// assetVisionPrompt is the instruction sent with an uploaded image. Kept here (not
+// in multimodal) because it is the asset pipeline's product decision; the telegram
+// channel passes its own localized prompt.
+const assetVisionPrompt = "Describe this image."
+
+// ImageProcessor turns an uploaded image asset into a text summary. The OpenAI-
+// compatible vision call (local sidecar or OpenRouter cloud, with the one
+// config-only swap) lives in internal/multimodal; this processor owns only the
+// objectstore read, the VRAM-friendly downscale, and the Result mapping.
 type ImageProcessor struct {
-	Objects    objectstore.Store
-	Config     VisionConfig
-	HTTPClient *http.Client
+	Objects objectstore.Store
+	Vision  *multimodal.VisionClient
 }
 
-func NewImageProcessor(objects objectstore.Store, cfg VisionConfig) *ImageProcessor {
-	return &ImageProcessor{Objects: objects, Config: cfg, HTTPClient: sidecarHTTPClient()}
-}
-
-type visionChatRequest struct {
-	Model    string              `json:"model"`
-	Messages []visionChatMessage `json:"messages"`
-}
-
-type visionChatMessage struct {
-	Role    string              `json:"role"`
-	Content []visionContentPart `json:"content"`
-}
-
-type visionContentPart struct {
-	Type     string          `json:"type"`
-	Text     string          `json:"text,omitempty"`
-	ImageURL *visionImageURL `json:"image_url,omitempty"`
-}
-
-type visionImageURL struct {
-	URL string `json:"url"`
-}
-
-type visionChatResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
+// NewImageProcessor builds an image processor over the shared vision client.
+func NewImageProcessor(objects objectstore.Store, cfg multimodal.VisionConfig) *ImageProcessor {
+	return &ImageProcessor{Objects: objects, Vision: multimodal.NewVisionClient(cfg)}
 }
 
 func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
-	if p == nil || p.Objects == nil {
+	if p == nil || p.Objects == nil || p.Vision == nil {
 		return Result{}, fmt.Errorf("image processor is not configured")
-	}
-	baseURL, apiKey, model := p.route()
-	if baseURL == "" {
-		return Result{}, fmt.Errorf("image processor base URL is not configured")
 	}
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
 	rc, attrs, err := p.Objects.Get(ctx, ref)
@@ -84,72 +58,17 @@ func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if ds, dsMime := downscaleAssetForVision(imageBytes); dsMime != "" {
 		imageBytes, mimeType = ds, dsMime
 	}
-	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(imageBytes)
-	body, err := json.Marshal(visionChatRequest{
-		Model: model,
-		Messages: []visionChatMessage{{
-			Role: "user",
-			Content: []visionContentPart{
-				{Type: "text", Text: "Describe this image."},
-				{Type: "image_url", ImageURL: &visionImageURL{URL: dataURL}},
-			},
-		}},
-	})
+	summary, err := p.Vision.Describe(ctx, imageBytes, mimeType, assetVisionPrompt)
 	if err != nil {
 		return Result{}, err
 	}
-
-	reqCtx, cancel := timeoutContext(ctx, p.Config.TimeoutSec)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return Result{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	resp, err := p.httpClient().Do(req)
-	if err != nil {
-		return Result{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
-		return Result{}, &sidecarStatusError{endpoint: "vision", statusCode: resp.StatusCode}
-	}
-	var decoded visionChatResponse
-	if err = json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return Result{}, fmt.Errorf("asset vision: decode: %w", err)
-	}
-	if len(decoded.Choices) == 0 {
-		return Result{}, fmt.Errorf("asset vision: empty choices")
-	}
-	summary := decoded.Choices[0].Message.Content
 	return Result{
 		Status:  StatusComplete,
 		Summary: summary,
 		Metadata: map[string]any{
-			"vision_model": model,
+			"vision_model": p.Vision.VisionModel(),
 		},
 	}, nil
-}
-
-func (p *ImageProcessor) route() (baseURL, apiKey, model string) {
-	if p.Config.VisionCloud {
-		model := p.Config.Model
-		if !llm.SupportsVision(model) {
-			model = p.Config.FallbackModel
-		}
-		return p.Config.OpenRouterBaseURL, p.Config.OpenRouterAPIKey, model
-	}
-	return p.Config.MultimodalBaseURL, "", p.Config.MultimodalModel
-}
-
-func (p *ImageProcessor) httpClient() *http.Client {
-	if p.HTTPClient != nil {
-		return p.HTTPClient
-	}
-	return sidecarHTTPClient()
 }
 
 const (
@@ -157,6 +76,10 @@ const (
 	assetVisionJPEGQuality = 85
 )
 
+// downscaleAssetForVision shrinks an oversized image to assetVisionMaxEdge on its
+// long edge (JPEG) so the CPU/4 GB-GPU OCR sidecar isn't handed a full-res photo.
+// A decode failure or an already-small image returns ("", "") — the caller keeps
+// the original bytes/mime.
 func downscaleAssetForVision(raw []byte) (out []byte, mime string) {
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {

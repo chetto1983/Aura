@@ -2,33 +2,31 @@
 package assets
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
-	"net/http"
 
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
+// AudioProcessor turns an uploaded audio asset into a transcript. The OpenAI-
+// compatible speech-to-text call (local faster-whisper multipart or OpenRouter
+// cloud JSON, with the one config-only swap) lives in internal/multimodal; this
+// processor owns only the objectstore read and the Result mapping.
 type AudioProcessor struct {
-	Objects    objectstore.Store
-	Config     STTConfig
-	HTTPClient *http.Client
+	Objects objectstore.Store
+	STT     *multimodal.STTClient
 }
 
-func NewAudioProcessor(objects objectstore.Store, cfg STTConfig) *AudioProcessor {
-	return &AudioProcessor{Objects: objects, Config: cfg, HTTPClient: sidecarHTTPClient()}
+// NewAudioProcessor builds an audio processor over the shared STT client.
+func NewAudioProcessor(objects objectstore.Store, cfg multimodal.STTConfig) *AudioProcessor {
+	return &AudioProcessor{Objects: objects, STT: multimodal.NewSTTClient(cfg)}
 }
 
 func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
-	if p == nil || p.Objects == nil {
+	if p == nil || p.Objects == nil || p.STT == nil {
 		return Result{}, fmt.Errorf("audio processor is not configured")
-	}
-	if p.Config.BaseURL == "" {
-		return Result{}, fmt.Errorf("audio processor base URL is not configured")
 	}
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
 	rc, _, err := p.Objects.Get(ctx, ref)
@@ -40,7 +38,7 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	transcript, err := p.postTranscription(ctx, asset.FileName, audioBytes)
+	transcript, err := p.STT.Transcribe(ctx, audioBytes, asset.FileName, audioFormat(asset.MIMEType))
 	if err != nil {
 		return Result{}, err
 	}
@@ -53,61 +51,22 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	}, nil
 }
 
-func (p *AudioProcessor) postTranscription(ctx context.Context, fileName string, audio []byte) (string, error) {
-	reqCtx, cancel := timeoutContext(ctx, p.Config.TimeoutSec)
-	defer cancel()
-
-	if fileName == "" {
-		fileName = "audio.bin"
+// audioFormat maps an asset MIME to the container hint the cloud STT JSON route
+// needs (the local multipart route ignores it — the file part carries the
+// container). Defaults to "ogg", the Telegram/voice-note container.
+func audioFormat(mimeType string) string {
+	switch mimeType {
+	case "audio/mpeg", "audio/mp3":
+		return "mp3"
+	case "audio/wav", "audio/x-wav":
+		return "wav"
+	case "audio/webm":
+		return "webm"
+	case "audio/flac":
+		return "flac"
+	case "audio/mp4", "audio/m4a", "audio/x-m4a":
+		return "m4a"
+	default:
+		return "ogg"
 	}
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	fw, err := mw.CreateFormFile("file", fileName)
-	if err != nil {
-		return "", err
-	}
-	if _, err = fw.Write(audio); err != nil {
-		return "", err
-	}
-	if p.Config.Model != "" {
-		if err = mw.WriteField("model", p.Config.Model); err != nil {
-			return "", err
-		}
-	}
-	if p.Config.Language != "" {
-		if err = mw.WriteField("language", p.Config.Language); err != nil {
-			return "", err
-		}
-	}
-	if err = mw.Close(); err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, p.Config.BaseURL+"/audio/transcriptions", &body)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := p.httpClient().Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
-		return "", &sidecarStatusError{endpoint: "stt", statusCode: resp.StatusCode}
-	}
-	var decoded struct {
-		Text string `json:"text"`
-	}
-	if err = json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return "", fmt.Errorf("asset stt: decode transcript: %w", err)
-	}
-	return decoded.Text, nil
-}
-
-func (p *AudioProcessor) httpClient() *http.Client {
-	if p.HTTPClient != nil {
-		return p.HTTPClient
-	}
-	return sidecarHTTPClient()
 }

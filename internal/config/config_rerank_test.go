@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -50,8 +51,13 @@ func TestRerankRoute(t *testing.T) {
 			LLM:           llm.Config{BaseURL: "https://openrouter.ai/api/v1", APIKey: "shared-key"},
 		}
 		base, key, model := cfg.RerankRoute()
-		if base != "https://openrouter.ai/api/v1" || key != "shared-key" || model != "cohere/rerank-4-fast" {
-			t.Fatalf("RerankRoute cloud = (%q,%q,%q), want shared llm route", base, key, model)
+		// The shared OpenRouter base has its trailing /v1 stripped: the rerank
+		// client appends "/v1/rerank", so a base of ".../api/v1" would build the
+		// double-/v1 ".../api/v1/v1/rerank" that 404s (and the fail-soft client
+		// silently degrades to identity). The route must yield ".../api" so the
+		// final URL is the validated ".../api/v1/rerank".
+		if base != "https://openrouter.ai/api" || key != "shared-key" || model != "cohere/rerank-4-fast" {
+			t.Fatalf("RerankRoute cloud = (%q,%q,%q), want shared llm route with /v1 stripped", base, key, model)
 		}
 	})
 
@@ -64,6 +70,40 @@ func TestRerankRoute(t *testing.T) {
 		base, key, model := cfg.RerankRoute()
 		if base != "https://rerank.example.test" || key != "shared-key" || model != "custom-model" {
 			t.Fatalf("RerankRoute custom = (%q,%q,%q), want custom base with shared key/model", base, key, model)
+		}
+	})
+}
+
+func TestEmbedRoute(t *testing.T) {
+	t.Run("local sidecar when model unset", func(t *testing.T) {
+		cfg := &Config{Neo4j: knowledge.Config{EmbedURL: "http://127.0.0.1:8081"}}
+		base, key, model := cfg.EmbedRoute()
+		if base != "http://127.0.0.1:8081" || key != "" || model != "" {
+			t.Fatalf("EmbedRoute local = (%q,%q,%q), want local base with no auth/model", base, key, model)
+		}
+	})
+
+	t.Run("model swaps loopback base to shared llm route with /v1 stripped", func(t *testing.T) {
+		cfg := &Config{
+			Neo4j: knowledge.Config{EmbedURL: "http://127.0.0.1:8081", EmbedModel: "qwen/qwen3-embedding-8b"},
+			LLM:   llm.Config{BaseURL: "https://openrouter.ai/api/v1", APIKey: "shared-key"},
+		}
+		base, key, model := cfg.EmbedRoute()
+		// Same /v1-strip contract as RerankRoute: the embed client appends
+		// "/v1/embeddings", so the base must be ".../api" → ".../api/v1/embeddings".
+		if base != "https://openrouter.ai/api" || key != "shared-key" || model != "qwen/qwen3-embedding-8b" {
+			t.Fatalf("EmbedRoute cloud = (%q,%q,%q), want shared llm route with /v1 stripped", base, key, model)
+		}
+	})
+
+	t.Run("custom non-loopback embed base wins", func(t *testing.T) {
+		cfg := &Config{
+			Neo4j: knowledge.Config{EmbedURL: "https://embed.example.test", EmbedModel: "custom-embed"},
+			LLM:   llm.Config{BaseURL: "https://openrouter.ai/api/v1", APIKey: "shared-key"},
+		}
+		base, key, model := cfg.EmbedRoute()
+		if base != "https://embed.example.test" || key != "shared-key" || model != "custom-embed" {
+			t.Fatalf("EmbedRoute custom = (%q,%q,%q), want custom base with shared key/model", base, key, model)
 		}
 	})
 }

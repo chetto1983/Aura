@@ -32,7 +32,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
@@ -255,11 +254,7 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		// Local embedding-based reasoning-tier classifier (granite sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.
-		Embedder: &documents.EmbeddingClient{
-			BaseURL:    cfg.Neo4j.EmbedURL,
-			Client:     documentHTTPClient(cfg),
-			Dimensions: cfg.Neo4j.EmbedDimensions,
-		},
+		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 	}
 	// Set the store-backed fields only when the graph client opened (a nil
 	// *Store wrapped in an interface would be a non-nil interface and panic).

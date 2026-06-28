@@ -119,9 +119,11 @@ func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
 		STTBaseURL:        cfg.STTBaseURL,
 		STTModel:          cfg.STTModel,
 		STTLanguage:       cfg.STTLanguage,
+		STTCloudModel:     cfg.STTCloudModel,
 		TTSBaseURL:        cfg.TTSBaseURL,
 		TTSVoice:          cfg.TTSVoice,
 		TTSFormat:         cfg.TTSFormat,
+		TTSModel:          cfg.TTSModel,
 		DocumentsBaseURL:  cfg.DocumentsBaseURL,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}

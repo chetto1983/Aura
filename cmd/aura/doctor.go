@@ -12,7 +12,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/knowledge"
 )
 
@@ -133,11 +132,7 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	defer client.CloseIdleConnections()
-	embedder := &documents.EmbeddingClient{
-		BaseURL:    cfg.Neo4j.EmbedURL,
-		Client:     client,
-		Dimensions: cfg.Neo4j.EmbedDimensions,
-	}
+	embedder := embeddingClient(cfg, client)
 	vectors, err := embedder.Embed(ctx, []string{"aura doctor probe"})
 	if err != nil {
 		return "", err

@@ -357,9 +357,14 @@ services:
       # (postgres, searxng, sidecars) without an OpenRouter secret. The memory
       # MCP itself can still be pointed at a real key through OPENROUTER_API_KEY.
       NAM_LLM_API_KEY: ${OPENROUTER_API_KEY:-aura-memory-mcp-placeholder-key}
-      NAM_EMBEDDING: openai/granite-embedding-97m-multilingual-r2-q8
-      OPENAI_API_KEY: local-llama
-      OPENAI_BASE_URL: http://aura-llama-embed:8081/v1
+      # Embedder local↔cloud swap (D-28), reusing the SINGLE OpenRouter key + the
+      # SINGLE AURA_EMBED_DIMENSIONS. Defaults preserve the local granite sidecar.
+      # To go cloud: AURA_EMBED_MODEL=qwen/qwen3-embedding-8b (the openai/ adapter
+      # prefix is prepended), AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1,
+      # AURA_MEMORY_EMBED_API_KEY=${OPENROUTER_API_KEY}.
+      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-97m-multilingual-r2-q8}
+      OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
+      OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
     command:
       - sh
       - -lc
@@ -388,7 +393,7 @@ services:
           --session-strategy persistent \
           --user-id aura-local \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
-          --embedding-dimensions 384 \
+          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-384} \
           --no-auto-preferences
     ports:
       - "127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}:8080"

@@ -128,7 +128,7 @@ func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, 
 // already reached the user). It no-ops on a cancelled ctx, an unconfigured TTS
 // sidecar, an empty answer, or a content consumer that does not expose finalText.
 func (t *Telegram) speakIfNeeded(ctx context.Context, bot botSender, to tele.Recipient, content eventConsumer, inboundWasVoice bool) {
-	if ctx.Err() != nil || t.tts == nil || t.tts.cfg.TTSBaseURL == "" {
+	if ctx.Err() != nil || t.tts == nil || !t.tts.configured {
 		return
 	}
 	if !ShouldSpeak(VoiceModePref(""), inboundWasVoice) {

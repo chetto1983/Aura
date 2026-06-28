@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
@@ -62,9 +63,9 @@ func TestImageProcessorReadsObjectAndCallsVisionSidecar(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := NewImageProcessor(objects, VisionConfig{
-		MultimodalBaseURL: srv.URL,
-		MultimodalModel:   "glm-ocr",
+	result, err := NewImageProcessor(objects, multimodal.VisionConfig{
+		LocalBaseURL: srv.URL,
+		LocalModel:   "glm-ocr",
 	}).ProcessAsset(context.Background(), Asset{
 		ID:           "asset-1",
 		Modality:     ModalityImage,

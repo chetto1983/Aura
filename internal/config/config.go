@@ -184,9 +184,11 @@ type Config struct {
 	MultimodalModel         string // MULTIMODAL_MODEL — local vision model id
 	MultimodalFallbackModel string // MULTIMODAL_FALLBACK_MODEL — cloud vision fallback (default minimax/minimax-m3)
 	STTBaseURL              string // STT_BASE_URL — aura-stt OpenAI-compat base
-	STTModel                string // STT_MODEL — speech-to-text model id
+	STTModel                string // STT_MODEL — LOCAL faster-whisper model id (NOT the cloud switch)
+	STTCloudModel           string // AURA_STT_CLOUD_MODEL — set to a cloud STT model (e.g. openai/whisper-large-v3) to swap STT to OpenRouter; empty = local faster-whisper sidecar
 	STTLanguage             string // STT_LANGUAGE — transcription language hint (default "it"; "" = whisper auto-detect, unreliable on short clips — spike-027)
 	TTSBaseURL              string // TTS_BASE_URL — aura-tts OpenAI-compat base
+	TTSModel                string // AURA_TTS_MODEL — set to a cloud TTS model (e.g. hexgrad/kokoro-82m) to swap TTS to OpenRouter; empty = local Kokoro sidecar
 	TTSVoice                string // TTS_VOICE — Kokoro voice id (default if_sara)
 	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
 	DocumentsBaseURL        string // DOCUMENTS_BASE_URL — markitdown /convert base (UX-04 documents leg)
@@ -359,6 +361,7 @@ func loadBase() *Config {
 			ConnectTimeoutSec: envIntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
+			EmbedModel:        os.Getenv("AURA_EMBED_MODEL"),
 		},
 		MCPServers:     mcpServers,
 		MCPPolicies:    mcpPolicies,
@@ -452,8 +455,10 @@ func loadBase() *Config {
 		MultimodalFallbackModel: envDefault("MULTIMODAL_FALLBACK_MODEL", "minimax/minimax-m3"),
 		STTBaseURL:              os.Getenv("STT_BASE_URL"),
 		STTModel:                os.Getenv("STT_MODEL"),
+		STTCloudModel:           os.Getenv("AURA_STT_CLOUD_MODEL"),
 		STTLanguage:             envDefault("STT_LANGUAGE", "it"),
 		TTSBaseURL:              os.Getenv("TTS_BASE_URL"),
+		TTSModel:                os.Getenv("AURA_TTS_MODEL"),
 		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
 		DocumentsBaseURL:        os.Getenv("DOCUMENTS_BASE_URL"),
@@ -470,39 +475,6 @@ func loadBase() *Config {
 		RerankBaseURL: envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
 		RerankModel:   os.Getenv("AURA_RERANK_MODEL"),
 	}
-}
-
-// RerankRoute resolves the rerank endpoint as a ONE-knob local↔cloud swap (D-28,
-// mirroring the vision route): with AURA_RERANK_MODEL unset it is the local
-// aura-rerank sidecar at RerankBaseURL with no auth; set AURA_RERANK_MODEL to a
-// cloud model (e.g. cohere/rerank-4-fast) and it routes to the shared OpenRouter
-// endpoint (LLM.BaseURL) authenticated with the SINGLE OPENROUTER_API_KEY
-// (LLM.APIKey) every cloud backend reuses. An explicitly-set non-loopback
-// RerankBaseURL overrides the OpenRouter base for a custom cloud reranker.
-func (c *Config) RerankRoute() (baseURL, apiKey, model string) {
-	if strings.TrimSpace(c.RerankModel) == "" {
-		return c.RerankBaseURL, "", "" // local sidecar, default model, no auth
-	}
-	base := c.RerankBaseURL
-	if isLoopbackURL(base) { // model set but base still the local default → shared OpenRouter
-		base = c.LLM.BaseURL
-	}
-	return base, c.LLM.APIKey, c.RerankModel
-}
-
-// isLoopbackURL reports whether a base URL points at the local host (127.0.0.1/::1/
-// localhost) — used by RerankRoute to decide when a set model should swap the local
-// default base for the shared OpenRouter endpoint.
-func isLoopbackURL(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" {
-		return false
-	}
-	if u.Hostname() == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(u.Hostname())
-	return ip != nil && ip.IsLoopback()
 }
 
 // composeDSN returns "" when password is empty so callers can detect an

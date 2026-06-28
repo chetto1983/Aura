@@ -21,6 +21,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/multimodal"
 )
 
 // Tier size boundaries (T-13-08-SidecarDoS). asyncTierMinBytes is the >sync
@@ -73,7 +75,7 @@ type documentsClient struct {
 
 // newDocumentsClient builds a tiered markitdown client over the multimodal config.
 func newDocumentsClient(cfg MultimodalConfig) *documentsClient {
-	return &documentsClient{cfg: cfg, httpClient: newSidecarHTTPClient()}
+	return &documentsClient{cfg: cfg, httpClient: multimodal.HTTPClient()}
 }
 
 // Convert routes a document to the right size tier. ≤5MB converts synchronously
@@ -117,10 +119,10 @@ func (d *documentsClient) Stop(_ context.Context) {
 
 // postConvert builds the multipart /convert body (the document bytes in the
 // `file` field) and POSTs it to the markitdown sidecar, decoding the markdown. A
-// non-2xx response is a *sidecarStatusError. (A2: the request shape is ASSUMED —
-// isolated here for a one-line change if the real image differs.)
+// non-2xx response is a *multimodal.StatusError. (A2: the request shape is ASSUMED
+// — isolated here for a one-line change if the real image differs.)
 func (d *documentsClient) postConvert(ctx context.Context, payload []byte, fileName string) (string, error) {
-	reqCtx, cancel := d.cfg.withTimeout(ctx)
+	reqCtx, cancel := multimodal.TimeoutContext(ctx, d.cfg.TimeoutSec)
 	defer cancel()
 
 	var body bytes.Buffer
@@ -148,7 +150,7 @@ func (d *documentsClient) postConvert(ctx context.Context, payload []byte, fileN
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
-		return "", &sidecarStatusError{endpoint: "markitdown", statusCode: resp.StatusCode}
+		return "", &multimodal.StatusError{Endpoint: "markitdown", StatusCode: resp.StatusCode}
 	}
 
 	var decoded struct {

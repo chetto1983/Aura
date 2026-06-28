@@ -17,10 +17,14 @@ type EmbeddingGenerator interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
-// EmbeddingClient calls Aura's OpenAI-compatible local embedding sidecar.
+// EmbeddingClient calls Aura's OpenAI-compatible embedding endpoint — the local
+// granite sidecar by default, or an OpenRouter cloud embedder when APIKey is set
+// (the config-only local↔cloud swap; resolve via config.EmbedRoute). APIKey is
+// set ONLY on the Authorization header at request-build time, never logged.
 type EmbeddingClient struct {
 	BaseURL    string
 	Model      string
+	APIKey     string
 	Client     *http.Client
 	Dimensions int
 }
@@ -33,10 +37,17 @@ func (c *EmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float6
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model": inputModel(c.Model),
 		"input": texts,
-	})
+	}
+	if c.APIKey != "" && c.Dimensions > 0 {
+		// Cloud embedders (e.g. qwen3-embedding-8b) Matryoshka-truncate to the
+		// requested width — the SINGLE AURA_EMBED_DIMENSIONS knob. The local granite
+		// sidecar is fixed-dim, so the param is omitted there (request unchanged).
+		payload["dimensions"] = c.Dimensions
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +56,9 @@ func (c *EmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float6
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey) // cloud embed route only (D-28)
+	}
 	client := c.Client
 	if client == nil {
 		client = &http.Client{Timeout: 60 * time.Second}

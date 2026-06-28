@@ -126,14 +126,17 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if img.Objects != objects {
 		t.Fatalf("image processor object store = %T, want shared fake store", img.Objects)
 	}
-	if !img.Config.VisionCloud || img.Config.Model != "deepseek/deepseek-v4-flash" ||
-		img.Config.MultimodalBaseURL != "http://vision-local.test/v1" ||
-		img.Config.MultimodalModel != "glm-ocr" ||
-		img.Config.FallbackModel != "minimax/minimax-m3" ||
-		img.Config.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
-		img.Config.OpenRouterAPIKey != "test-key" ||
-		img.Config.TimeoutSec != 7 {
-		t.Fatalf("image processor config = %+v, want projected vision config", img.Config)
+	// The vision config is now opaque inside the shared multimodal client, so assert
+	// the cfg -> multimodal.VisionConfig projection directly (the wiring under test).
+	vcfg := visionConfigFrom(cfg)
+	if !vcfg.VisionCloud || vcfg.Model != "deepseek/deepseek-v4-flash" ||
+		vcfg.LocalBaseURL != "http://vision-local.test/v1" ||
+		vcfg.LocalModel != "glm-ocr" ||
+		vcfg.FallbackModel != "minimax/minimax-m3" ||
+		vcfg.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
+		vcfg.OpenRouterAPIKey != "test-key" ||
+		vcfg.TimeoutSec != 7 {
+		t.Fatalf("vision config = %+v, want projected vision config", vcfg)
 	}
 	audio, ok := svc.Processors.Audio.(*assetspkg.AudioProcessor)
 	if !ok {
@@ -142,10 +145,13 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if audio.Objects != objects {
 		t.Fatalf("audio processor object store = %T, want shared fake store", audio.Objects)
 	}
-	if audio.Config.BaseURL != "http://stt.test/v1" ||
-		audio.Config.Model != "large-v3-turbo" ||
-		audio.Config.Language != "it" ||
-		audio.Config.TimeoutSec != 7 {
-		t.Fatalf("audio processor config = %+v, want projected STT config", audio.Config)
+	scfg := sttConfigFrom(cfg)
+	if scfg.LocalBaseURL != "http://stt.test/v1" ||
+		scfg.LocalModel != "large-v3-turbo" ||
+		scfg.Language != "it" ||
+		scfg.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
+		scfg.OpenRouterAPIKey != "test-key" ||
+		scfg.TimeoutSec != 7 {
+		t.Fatalf("stt config = %+v, want projected STT config", scfg)
 	}
 }

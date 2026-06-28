@@ -5,6 +5,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -38,12 +39,12 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 	}
 }
 
-func visionConfigFrom(cfg *config.Config) assets.VisionConfig {
-	return assets.VisionConfig{
+func visionConfigFrom(cfg *config.Config) multimodal.VisionConfig {
+	return multimodal.VisionConfig{
 		VisionCloud:       cfg.VisionCloud,
 		Model:             cfg.LLM.Model,
-		MultimodalBaseURL: cfg.MultimodalBaseURL,
-		MultimodalModel:   cfg.MultimodalModel,
+		LocalBaseURL:      cfg.MultimodalBaseURL,
+		LocalModel:        cfg.MultimodalModel,
 		FallbackModel:     cfg.MultimodalFallbackModel,
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
@@ -51,11 +52,14 @@ func visionConfigFrom(cfg *config.Config) assets.VisionConfig {
 	}
 }
 
-func sttConfigFrom(cfg *config.Config) assets.STTConfig {
-	return assets.STTConfig{
-		BaseURL:    cfg.STTBaseURL,
-		Model:      cfg.STTModel,
-		Language:   cfg.STTLanguage,
-		TimeoutSec: cfg.MultimodalTimeoutSec,
+func sttConfigFrom(cfg *config.Config) multimodal.STTConfig {
+	return multimodal.STTConfig{
+		LocalBaseURL:      cfg.STTBaseURL,
+		LocalModel:        cfg.STTModel,
+		Language:          cfg.STTLanguage,
+		CloudModel:        cfg.STTCloudModel,
+		OpenRouterBaseURL: cfg.LLM.BaseURL,
+		OpenRouterAPIKey:  cfg.LLM.APIKey,
+		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}
 }

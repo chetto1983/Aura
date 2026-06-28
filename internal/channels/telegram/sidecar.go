@@ -1,20 +1,12 @@
-// Package telegram — this file is the shared 9c multimodal sidecar config + the
-// thin OpenAI-compat HTTP-client ctor the four media clients (voice/tts/photo/
-// documents) reuse. There is ZERO Go ML here: the sidecars own the models
-// (faster-whisper STT, Kokoro TTS, GLM-OCR vision, markitdown); Aura is a plain
-// HTTP POST + decode + error-wrap. The client mirrors internal/llm/openai_compat
-// (a connect-timeout on the dialer + a request ctx that carries the total
-// timeout, DisableKeepAlives so a kept-alive conn never outlives the request and
-// trips goleak).
+// Package telegram — this file is the shared 9c multimodal sidecar config the four
+// media clients (voice/tts/photo/documents) project onto the central
+// internal/config knobs. There is ZERO Go ML here: the sidecars own the models
+// (faster-whisper STT, Kokoro TTS, GLM-OCR vision, markitdown). The wire format,
+// HTTP client, request-timeout ctx and typed status error now live in the shared
+// internal/multimodal package; the media clients wrap its VisionClient/STTClient/
+// TTSClient (and documents.go calls its HTTPClient/TimeoutContext/StatusError
+// directly for the LOCAL-only markitdown /convert leg).
 package telegram
-
-import (
-	"context"
-	"fmt"
-	"net"
-	"net/http"
-	"time"
-)
 
 // MultimodalConfig is the telegram-package projection of the central
 // internal/config multimodal knobs (AURA_VISION_CLOUD + the upstream-named
@@ -41,9 +33,11 @@ type MultimodalConfig struct {
 	MultimodalModel   string
 	FallbackModel     string
 
-	// OpenRouterBaseURL/APIKey are the cloud vision endpoint (VisionCloud=true).
-	// The key is set ONLY on the Authorization header at request-build time, never
-	// logged or serialized (the openai_compat D-28 discipline).
+	// OpenRouterBaseURL/APIKey are the shared cloud endpoint + key (the same
+	// credential the agent loop uses), reused by every cloud media leg
+	// (VisionCloud, STTCloudModel, TTSModel). The key is set ONLY on the
+	// Authorization header at request-build time, never logged or serialized (the
+	// openai_compat D-28 discipline, enforced inside internal/multimodal).
 	OpenRouterBaseURL string
 	OpenRouterAPIKey  string
 
@@ -53,6 +47,9 @@ type MultimodalConfig struct {
 	STTBaseURL  string
 	STTModel    string
 	STTLanguage string
+	// STTCloudModel — AURA_STT_CLOUD_MODEL — cloud STT model; empty = local
+	// faster-whisper sidecar.
+	STTCloudModel string
 
 	// TTSBaseURL/Voice/Format are the text-to-speech sidecar (aura-tts, Kokoro).
 	// TTSCaption is the (optional) ASCII-safe caption put on the voice note.
@@ -60,6 +57,8 @@ type MultimodalConfig struct {
 	TTSVoice   string
 	TTSFormat  string
 	TTSCaption string
+	// TTSModel — AURA_TTS_MODEL — cloud TTS model; empty = local Kokoro sidecar.
+	TTSModel string
 
 	// DocumentsBaseURL is the markitdown /convert base.
 	DocumentsBaseURL string
@@ -72,56 +71,4 @@ type MultimodalConfig struct {
 	// zero). The timeout rides the request ctx, not http.Client.Timeout, so a
 	// healthy slow body is not aborted mid-read.
 	TimeoutSec int
-}
-
-// defaultSidecarTimeoutSec is the per-request ceiling (T-13-08-SidecarDoS). 30s
-// matches the PRD sync ceiling and is generous for the CPU sidecars.
-const defaultSidecarTimeoutSec = 30
-
-// connectTimeoutSec bounds the TCP dial (the connect leg only — the total
-// request budget is the ctx deadline).
-const connectTimeoutSec = 10
-
-// newSidecarHTTPClient builds the shared HTTP client for the media sidecars. It
-// mirrors openai_compat.New: a connect timeout on the dialer, NO
-// http.Client.Timeout (the deadline rides the request ctx), and DisableKeepAlives
-// so a pooled conn never lingers past the request and trips the package goleak.
-func newSidecarHTTPClient() *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: connectTimeoutSec * time.Second,
-			}).DialContext,
-			DisableKeepAlives: true,
-		},
-	}
-}
-
-// requestTimeout resolves the per-request ctx ceiling from the config (30s
-// default).
-func (c MultimodalConfig) requestTimeout() time.Duration {
-	sec := c.TimeoutSec
-	if sec <= 0 {
-		sec = defaultSidecarTimeoutSec
-	}
-	return time.Duration(sec) * time.Second
-}
-
-// withTimeout derives a request-scoped ctx carrying the sidecar timeout. The
-// caller MUST call the returned cancel (defer) so the timer is released — an
-// undrained timer goroutine would trip goleak.
-func (c MultimodalConfig) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, c.requestTimeout())
-}
-
-// sidecarStatusError wraps a non-2xx sidecar response into a typed error so the
-// retry loop (voice.go) and the handlers classify on a status code, never a
-// string. It never carries the request body (no secret leak).
-type sidecarStatusError struct {
-	endpoint   string
-	statusCode int
-}
-
-func (e *sidecarStatusError) Error() string {
-	return fmt.Sprintf("telegram sidecar %s: HTTP %d", e.endpoint, e.statusCode)
 }

@@ -269,13 +269,9 @@ func (q runtimeEmbeddingQueue) Enqueue(ctx context.Context, doc documents.Extrac
 		}
 		defer func() { _ = mcp.Close() }()
 		worker := &documents.EmbeddingWorker{
-			Jobs: documents.NewPostgresJobStore(q.pool),
-			Generator: &documents.EmbeddingClient{
-				BaseURL:    q.cfg.Neo4j.EmbedURL,
-				Client:     documentHTTPClient(q.cfg),
-				Dimensions: q.cfg.Neo4j.EmbedDimensions,
-			},
-			Indexer: &documents.Indexer{Client: mcp},
+			Jobs:      documents.NewPostgresJobStore(q.pool),
+			Generator: embeddingClient(q.cfg, documentHTTPClient(q.cfg)),
+			Indexer:   &documents.Indexer{Client: mcp},
 		}
 		_ = worker.Process(runCtx, doc)
 	}()
@@ -304,13 +300,9 @@ func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequ
 	// OpenRouter endpoint + the single OPENROUTER_API_KEY; unset → local sidecar.
 	rerankBase, rerankKey, rerankModel := s.cfg.RerankRoute()
 	svc := &documents.Service{
-		Searcher:  &documents.Searcher{Client: mcp},
-		Knowledge: mcp,
-		QueryEmbedder: &documents.EmbeddingClient{
-			BaseURL:    s.cfg.Neo4j.EmbedURL,
-			Client:     documentHTTPClient(s.cfg),
-			Dimensions: s.cfg.Neo4j.EmbedDimensions,
-		},
+		Searcher:      &documents.Searcher{Client: mcp},
+		Knowledge:     mcp,
+		QueryEmbedder: embeddingClient(s.cfg, documentHTTPClient(s.cfg)),
 		Reranker: &rerank.RerankClient{
 			BaseURL: rerankBase,
 			Model:   rerankModel,

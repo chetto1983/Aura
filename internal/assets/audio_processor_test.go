@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
@@ -58,10 +59,10 @@ func TestAudioProcessorReadsObjectAndCallsSTTSidecar(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := NewAudioProcessor(objects, STTConfig{
-		BaseURL:  srv.URL,
-		Model:    "large-v3-turbo",
-		Language: "it",
+	result, err := NewAudioProcessor(objects, multimodal.STTConfig{
+		LocalBaseURL: srv.URL,
+		LocalModel:   "large-v3-turbo",
+		Language:     "it",
 	}).ProcessAsset(context.Background(), Asset{
 		ID:           "asset-1",
 		Modality:     ModalityAudio,

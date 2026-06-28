@@ -9,15 +9,12 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
-	"net/http"
 	"time"
 
+	"github.com/chetto1983/aura/internal/multimodal"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -47,12 +44,12 @@ type botReactor interface {
 	React(to tele.Recipient, msg tele.Editable, r tele.Reactions) error
 }
 
-// voiceClient POSTs OGG/Opus voice notes to the aura-stt sidecar and returns the
-// transcript. It is a thin OpenAI-compat multipart client (zero Go ML).
+// voiceClient transcribes OGG/Opus voice notes via the shared STT client and owns
+// the telegram glue (telebot download + retry/backoff + hard-fail reaction). Zero
+// Go ML; the local↔cloud STT branch lives inside multimodal.STTClient.
 type voiceClient struct {
-	cfg        MultimodalConfig
-	httpClient *http.Client
-	backoff    []time.Duration
+	stt     *multimodal.STTClient
+	backoff []time.Duration
 }
 
 // newVoiceClient builds an STT client over the multimodal config. The retry
@@ -67,9 +64,16 @@ func newVoiceClient(cfg MultimodalConfig) *voiceClient {
 		backoff[i] = time.Duration(ms) * time.Millisecond
 	}
 	return &voiceClient{
-		cfg:        cfg,
-		httpClient: newSidecarHTTPClient(),
-		backoff:    backoff,
+		stt: multimodal.NewSTTClient(multimodal.STTConfig{
+			LocalBaseURL:      cfg.STTBaseURL,
+			LocalModel:        cfg.STTModel,
+			Language:          cfg.STTLanguage,
+			CloudModel:        cfg.STTCloudModel,
+			OpenRouterBaseURL: cfg.OpenRouterBaseURL,
+			OpenRouterAPIKey:  cfg.OpenRouterAPIKey,
+			TimeoutSec:        cfg.TimeoutSec,
+		}),
+		backoff: backoff,
 	}
 }
 
@@ -125,61 +129,12 @@ func (v *voiceClient) download(bot botFiler, voice *tele.Voice) ([]byte, error) 
 	return io.ReadAll(rc)
 }
 
-// postTranscription builds the multipart body (the OGG bytes in the `file` field
-// + the model field) and POSTs it to the STT sidecar, decoding the transcript.
-// A non-2xx response is a *sidecarStatusError the retry loop treats as transient.
+// postTranscription delegates one transcription attempt to the shared STT client.
+// Telegram voice notes are OGG/Opus, so the format hint is "ogg" and the multipart
+// part name is voice.ogg. A non-2xx response is a *multimodal.StatusError the retry
+// loop treats as transient.
 func (v *voiceClient) postTranscription(ctx context.Context, ogg []byte) (string, error) {
-	reqCtx, cancel := v.cfg.withTimeout(ctx)
-	defer cancel()
-
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	fw, err := mw.CreateFormFile("file", "voice.ogg")
-	if err != nil {
-		return "", err
-	}
-	if _, err = fw.Write(ogg); err != nil {
-		return "", err
-	}
-	if v.cfg.STTModel != "" {
-		if err = mw.WriteField("model", v.cfg.STTModel); err != nil {
-			return "", err
-		}
-	}
-	// Pin the transcription language: whisper auto-detect mis-reads short voice
-	// notes (spike-027 probe used language=it; a 2.8s IT clip auto-detected as 'ja').
-	if v.cfg.STTLanguage != "" {
-		if err = mw.WriteField("language", v.cfg.STTLanguage); err != nil {
-			return "", err
-		}
-	}
-	if err = mw.Close(); err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
-		v.cfg.STTBaseURL+"/audio/transcriptions", &body)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-
-	resp, err := v.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
-		return "", &sidecarStatusError{endpoint: "stt", statusCode: resp.StatusCode}
-	}
-
-	var decoded struct {
-		Text string `json:"text"`
-	}
-	if err = json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return "", fmt.Errorf("telegram stt: decode transcript: %w", err)
-	}
-	return decoded.Text, nil
+	return v.stt.Transcribe(ctx, ogg, "voice.ogg", "ogg")
 }
 
 // sleep waits for d honoring ctx-cancel. It returns false if ctx was cancelled
