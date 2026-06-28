@@ -253,6 +253,20 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
+	t.Run("no cookie password reset start is public and reaches AG-UI", func(t *testing.T) {
+		aguiHits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset/start", strings.NewReader(`{"email":"reset@example.com"}`))
+		handler.ServeHTTP(rec, req)
+		raw := rec.Body.String()
+		if len(aguiHits) != 1 || aguiHits[0] != "/api/auth/password-reset/start" {
+			t.Fatalf("password reset start did not reach AG-UI: code=%d hits=%v body=%s", rec.Code, aguiHits, raw)
+		}
+		if strings.Contains(raw, `<div id="root"`) {
+			t.Fatalf("password reset start leaked the SPA shell: %s", raw)
+		}
+	})
+
 	// CHAT-02 (Phase 25): /api/conversations inherits the whole-origin gate - a request
 	// with no cookie is 401'd before reaching the AG-UI handler (no second auth check on
 	// the new subtree; RequireAuth wrapping the whole mux is the sole gate).

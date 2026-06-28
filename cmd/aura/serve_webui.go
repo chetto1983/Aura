@@ -56,6 +56,12 @@ const authBasePath = "/auth"
 // the next unsafe /auth/* request must echo.
 const authConfigRoute = "/api/auth/config"
 
+const (
+	passwordResetStartRoute    = "POST /api/auth/password-reset/start"
+	passwordResetVerifyRoute   = "POST /api/auth/password-reset/verify"
+	passwordResetCompleteRoute = "POST /api/auth/password-reset/complete"
+)
+
 // aguiRoutePrefixes are the route patterns the AG-UI gateway owns. Registered on
 // the parent mux ahead of the "/" catch-all, Go 1.22 ServeMux precedence keeps them
 // authoritative — a request to any of these reaches the AG-UI handler, never the
@@ -338,6 +344,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		auth.AuthBasePath = authBasePath
 	}
 	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler(authulaEnabled))
+	mux.Handle(passwordResetStartRoute, aguiHandler)
+	mux.Handle(passwordResetVerifyRoute, aguiHandler)
+	mux.Handle(passwordResetCompleteRoute, aguiHandler)
 	// The mutating route is interposed with the capability gate FIRST: "POST /agent/run"
 	// is a more specific pattern than the bare "/agent/run" the prefix loop registers, so
 	// Go 1.22 longest-pattern precedence routes the POST through RequireCapability →
@@ -478,12 +487,29 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		if r.Method == http.MethodGet && r.URL.Path == authConfigRoute {
 			return true
 		}
+		if isPublicPasswordResetRoute(r) {
+			return true
+		}
 		return previousPublicRoute != nil && previousPublicRoute(r)
 	}
 	// Wrap the WHOLE parent mux in the WEB-03 whole-origin gate (D-03). The public-path
 	// exceptions are handled inside RequireAuth; a no-op pass-through when no secret is
 	// configured keeps loopback dev unauthenticated.
 	return agui.RequireAuth(mux, auth), nil
+}
+
+func isPublicPasswordResetRoute(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	switch r.URL.Path {
+	case "/api/auth/password-reset/start",
+		"/api/auth/password-reset/verify",
+		"/api/auth/password-reset/complete":
+		return true
+	default:
+		return false
+	}
 }
 
 func credentialProviderConfigured(provider credentialProvider) bool {

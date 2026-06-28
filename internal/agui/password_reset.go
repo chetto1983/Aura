@@ -26,7 +26,7 @@ type RecoveryRecord struct {
 	Question          string
 	AnswerHash        string
 	AnswerHashVersion string
-	TelegramUserID    string
+	TelegramUserID    int64
 }
 
 type PasswordResetChallenge struct {
@@ -47,10 +47,13 @@ type RecoveryEvent struct {
 }
 
 type PasswordResetStore interface {
+	// LookupByEmail adapters must map not-found, no usable recovery row, and missing
+	// Telegram link to ErrPasswordResetDenied so callers cannot enumerate accounts.
 	LookupByEmail(ctx context.Context, email string) (RecoveryRecord, error)
 	StartChallenge(ctx context.Context, challenge PasswordResetChallenge) error
 	VerifyChallenge(ctx context.Context, identityID, code string) (string, error)
-	ConsumeResetToken(ctx context.Context, tokenHash string) (string, error)
+	ConsumeResetTokenHash(ctx context.Context, tokenHash string) (string, error)
+	RecordChallengeAttempt(ctx context.Context, identityID string) error
 	RecordRecoveryEvent(ctx context.Context, event RecoveryEvent) error
 }
 
@@ -172,26 +175,39 @@ func (s *PasswordResetService) Verify(ctx context.Context, in PasswordResetVerif
 	if !s.readyForVerify() {
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
-	record, err := s.store.LookupByEmail(ctx, strings.TrimSpace(in.Email))
+	email := strings.TrimSpace(in.Email)
+	record, err := s.store.LookupByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
+			_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", RecoveryRecord{}, email, in, s.now()))
 			return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 		}
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
-	if !record.canRecover() || record.AnswerHashVersion != recoveryAnswerHashVersion ||
+	if !record.canRecover() {
+		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
+	}
+	if record.AnswerHashVersion != recoveryAnswerHashVersion ||
 		!(RecoveryHasher{}).VerifyAnswer(in.Answer, record.AnswerHash) {
+		_ = s.store.RecordChallengeAttempt(ctx, record.IdentityID)
+		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
 		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 	}
 	token, err := s.store.VerifyChallenge(ctx, record.IdentityID, in.Code)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
+			_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
 			return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 		}
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
 	if token == "" {
+		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
 		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
+	}
+	if err := s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify", record, email, in, s.now())); err != nil {
+		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
 	return PasswordResetVerifyResponse{ResetToken: token}, nil
 }
@@ -206,7 +222,7 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 	if strings.TrimSpace(in.ResetToken) == "" {
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
-	identityID, err := s.store.ConsumeResetToken(ctx, HashLookupToken(in.ResetToken))
+	identityID, err := s.store.ConsumeResetTokenHash(ctx, HashLookupToken(in.ResetToken))
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
 			return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
@@ -259,10 +275,21 @@ func (s *PasswordResetService) recordEvent(ctx context.Context, event RecoveryEv
 }
 
 func (r RecoveryRecord) canRecover() bool {
-	return r.IdentityID != "" && r.AnswerHash != "" && r.TelegramUserID != ""
+	return r.IdentityID != "" && r.AnswerHash != "" && r.TelegramUserID != 0
 }
 
 func passwordResetEvent(event string, record RecoveryRecord, email string, in PasswordResetStartRequest, at time.Time) RecoveryEvent {
+	return RecoveryEvent{
+		Event:         event,
+		IdentityID:    record.IdentityID,
+		EmailHash:     hashRequestValue(email),
+		RequestIPHash: hashRequestValue(in.RequestIP),
+		UserAgentHash: hashRequestValue(in.UserAgent),
+		At:            at,
+	}
+}
+
+func passwordResetVerifyEvent(event string, record RecoveryRecord, email string, in PasswordResetVerifyRequest, at time.Time) RecoveryEvent {
 	return RecoveryEvent{
 		Event:         event,
 		IdentityID:    record.IdentityID,

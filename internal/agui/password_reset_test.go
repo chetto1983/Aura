@@ -87,6 +87,10 @@ func TestPasswordResetVerifyAndComplete(t *testing.T) {
 	if store.verifiedIdentity != store.record.IdentityID || store.verifiedCode != "123456" {
 		t.Fatalf("VerifyChallenge got identity=%q code=%q", store.verifiedIdentity, store.verifiedCode)
 	}
+	if len(store.events) != 1 || store.events[0].Event != "reset_verify" {
+		t.Fatalf("events after verify = %+v, want one reset_verify audit event", store.events)
+	}
+	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", "123456", "Blue bicycle")
 
 	complete, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
 		ResetToken: store.resetToken,
@@ -104,10 +108,83 @@ func TestPasswordResetVerifyAndComplete(t *testing.T) {
 	if store.consumedTokenHash == "" || strings.Contains(store.consumedTokenHash, store.resetToken) {
 		t.Fatalf("reset token was not hashed before consume: %q", store.consumedTokenHash)
 	}
-	if len(store.events) != 1 || store.events[0].Event != "reset_complete" {
-		t.Fatalf("events = %+v, want one reset_complete audit event", store.events)
+	if len(store.events) != 2 || store.events[1].Event != "reset_complete" {
+		t.Fatalf("events = %+v, want reset_verify then reset_complete audit events", store.events)
 	}
 	assertNoPasswordResetEventLeak(t, store.events, store.resetToken, "new-pass-123")
+}
+
+func TestPasswordResetVerifyDeniedAuditsAndCountsKnownIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mutate    func(*fakePasswordResetStore)
+		req       PasswordResetVerifyRequest
+		wantCount int
+	}{
+		{
+			name: "wrong answer counts active challenge attempt",
+			req: PasswordResetVerifyRequest{
+				Email: "reset@example.com", Code: "raw-code", Answer: "wrong answer",
+				RequestIP: "203.0.113.8:4000", UserAgent: "SensitiveBrowser/9",
+			},
+			wantCount: 1,
+		},
+		{
+			name: "unsupported hash version counts active challenge attempt",
+			mutate: func(store *fakePasswordResetStore) {
+				store.record.AnswerHashVersion = "argon2id-v0"
+			},
+			req: PasswordResetVerifyRequest{
+				Email: "reset@example.com", Code: "raw-code", Answer: "Blue bicycle",
+				RequestIP: "203.0.113.8:4000", UserAgent: "SensitiveBrowser/9",
+			},
+			wantCount: 1,
+		},
+		{
+			name: "wrong code audits denial without counting answer attempt",
+			mutate: func(store *fakePasswordResetStore) {
+				store.verifyErr = ErrPasswordResetDenied
+			},
+			req: PasswordResetVerifyRequest{
+				Email: "reset@example.com", Code: "raw-code", Answer: "Blue bicycle",
+				RequestIP: "203.0.113.8:4000", UserAgent: "SensitiveBrowser/9",
+			},
+		},
+		{
+			name: "missing recovery audits denial",
+			mutate: func(store *fakePasswordResetStore) {
+				store.record.TelegramUserID = 0
+			},
+			req: PasswordResetVerifyRequest{
+				Email: "reset@example.com", Code: "raw-code", Answer: "Blue bicycle",
+				RequestIP: "203.0.113.8:4000", UserAgent: "SensitiveBrowser/9",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakePasswordResetStore(t)
+			if tc.mutate != nil {
+				tc.mutate(store)
+			}
+			svc := NewPasswordResetService(PasswordResetDeps{
+				Store:     store,
+				Messenger: &fakeRecoveryMessenger{},
+				Resetter:  &fakePasswordResetter{},
+			})
+
+			_, err := svc.Verify(context.Background(), tc.req)
+			if !errors.Is(err, ErrPasswordResetDenied) {
+				t.Fatalf("Verify err = %v, want ErrPasswordResetDenied", err)
+			}
+			if store.challengeAttempts != tc.wantCount {
+				t.Fatalf("challenge attempts = %d, want %d", store.challengeAttempts, tc.wantCount)
+			}
+			if len(store.events) != 1 || store.events[0].Event != "reset_verify_denied" {
+				t.Fatalf("events = %+v, want one reset_verify_denied audit event", store.events)
+			}
+			assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", "raw-code", "Blue bicycle", "wrong answer", "203.0.113.8", "SensitiveBrowser")
+		})
+	}
 }
 
 func TestPasswordResetSanitizesDeniedFlow(t *testing.T) {
@@ -154,6 +231,36 @@ func TestPasswordResetSanitizesDeniedFlow(t *testing.T) {
 	}
 }
 
+func TestPasswordResetStartDeniesUnsupportedRecoveryWithoutEnumeration(t *testing.T) {
+	store := newFakePasswordResetStore(t)
+	store.record.TelegramUserID = 0
+	messenger := &fakeRecoveryMessenger{}
+	svc := NewPasswordResetService(PasswordResetDeps{
+		Store:     store,
+		Messenger: messenger,
+		Resetter:  &fakePasswordResetter{},
+	})
+
+	resp, err := svc.Start(context.Background(), PasswordResetStartRequest{
+		Email:     "reset@example.com",
+		RequestIP: "203.0.113.10",
+		UserAgent: "SensitiveBrowser/10",
+	})
+	if err != nil {
+		t.Fatalf("unsupported recovery Start returned error: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Fatalf("unsupported recovery status = %q, want ok", resp.Status)
+	}
+	if messenger.code != "" {
+		t.Fatalf("unsupported recovery sent a Telegram code: %q", messenger.code)
+	}
+	if len(store.events) != 1 || store.events[0].Event != "reset_start_denied" {
+		t.Fatalf("events = %+v, want reset_start_denied audit", store.events)
+	}
+	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", "203.0.113.10", "SensitiveBrowser")
+}
+
 func newFakePasswordResetStore(t *testing.T) *fakePasswordResetStore {
 	t.Helper()
 	answerHash, answerVersion, err := (RecoveryHasher{}).HashAnswer("blue bicycle")
@@ -168,7 +275,7 @@ func newFakePasswordResetStore(t *testing.T) *fakePasswordResetStore {
 			Question:          "Favorite bike?",
 			AnswerHash:        answerHash,
 			AnswerHashVersion: answerVersion,
-			TelegramUserID:    "telegram-1",
+			TelegramUserID:    123456789,
 		},
 		resetToken: "reset-token-secret",
 	}
@@ -185,6 +292,7 @@ type fakePasswordResetStore struct {
 	resetToken        string
 	consumedTokenHash string
 	consumeErr        error
+	challengeAttempts int
 	events            []RecoveryEvent
 }
 
@@ -210,12 +318,19 @@ func (f *fakePasswordResetStore) VerifyChallenge(_ context.Context, identityID, 
 	return f.resetToken, nil
 }
 
-func (f *fakePasswordResetStore) ConsumeResetToken(_ context.Context, tokenHash string) (string, error) {
+func (f *fakePasswordResetStore) ConsumeResetTokenHash(_ context.Context, tokenHash string) (string, error) {
 	f.consumedTokenHash = tokenHash
 	if f.consumeErr != nil {
 		return "", f.consumeErr
 	}
 	return f.record.IdentityID, nil
+}
+
+func (f *fakePasswordResetStore) RecordChallengeAttempt(_ context.Context, identityID string) error {
+	if identityID == f.record.IdentityID {
+		f.challengeAttempts++
+	}
+	return nil
 }
 
 func (f *fakePasswordResetStore) RecordRecoveryEvent(_ context.Context, event RecoveryEvent) error {
