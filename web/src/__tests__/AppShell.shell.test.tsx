@@ -87,7 +87,7 @@ describe('AppShell', () => {
     expect(screen.getAllByText('Context').length).toBeGreaterThan(0);
   });
 
-  it('posts logout from the shell header and returns to login', async () => {
+  it('does not fall back to the legacy passphrase logout route', async () => {
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -95,8 +95,8 @@ describe('AppShell', () => {
         const url =
           typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         calls.push(`${init?.method ?? 'GET'} ${url}`);
-        if (url === '/logout') {
-          return Promise.resolve(new Response(null, { status: 200 }));
+        if (url === '/api/auth/config') {
+          return Promise.resolve(new Response('auth unavailable', { status: 500 }));
         }
         if (url.includes('/api/conversations')) {
           return Promise.resolve(new Response('[]', { status: 200 }));
@@ -121,9 +121,10 @@ describe('AppShell', () => {
     fireEvent.click(signOut);
 
     await waitFor(() => {
-      expect(calls).toContain('POST /logout');
-      expect(screen.getByText('login page')).toBeTruthy();
+      expect(calls).toContain('GET /api/auth/config');
+      expect(screen.queryByText('login page')).toBe(null);
     });
+    expect(calls).not.toContain('POST /logout');
   });
 
   it('uses the Authula sign-out endpoint with its CSRF token when configured', async () => {

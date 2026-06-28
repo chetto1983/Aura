@@ -41,20 +41,19 @@ interface LogoutTarget {
   body?: string;
 }
 
-const passphraseLogoutTarget: LogoutTarget = { path: '/logout' };
 const defaultAuthulaBasePath = '/auth';
 const defaultCSRFCookieName = '__Host-authula_csrf_token';
 const defaultCSRFHeaderName = 'X-AUTHULA-CSRF-TOKEN';
 
-async function loadLogoutTarget(): Promise<LogoutTarget> {
+async function loadLogoutTarget(): Promise<LogoutTarget | null> {
   try {
     const res = await fetch('/api/auth/config', {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
     });
-    if (!res.ok) return passphraseLogoutTarget;
+    if (!res.ok) return null;
     const raw = await readJSON(res);
-    if (stringField(raw, 'provider') !== 'authula') return passphraseLogoutTarget;
+    if (stringField(raw, 'provider') !== 'authula') return null;
 
     const authBasePath = valueOrFallback(
       stringField(raw, 'auth_base_path'),
@@ -72,7 +71,7 @@ async function loadLogoutTarget(): Promise<LogoutTarget> {
       stringField(raw, 'csrf_token'),
       res.headers.get(csrfHeaderName) ?? readCookie(csrfCookieName),
     );
-    if (csrfToken === '') return passphraseLogoutTarget;
+    if (csrfToken === '') return null;
 
     return {
       path: `${authBasePath}/sign-out`,
@@ -83,7 +82,7 @@ async function loadLogoutTarget(): Promise<LogoutTarget> {
       body: '{}',
     };
   } catch {
-    return passphraseLogoutTarget;
+    return null;
   }
 }
 
@@ -148,6 +147,10 @@ export function AppShell() {
     setLogoutPending(true);
     try {
       const target = await loadLogoutTarget();
+      if (target === null) {
+        setLogoutPending(false);
+        return;
+      }
       const init: RequestInit = {
         method: 'POST',
         credentials: 'same-origin',

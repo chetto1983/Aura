@@ -82,20 +82,22 @@ describe('LoginPage', () => {
     await i18n.changeLanguage('en');
   });
 
-  it('renders a labelled passphrase field with autocomplete=current-password', () => {
+  it('renders Authula credential fields by default', () => {
     const { container } = renderLogin();
-    const field = screen.getByLabelText('Operator passphrase');
-    expect(field).toBeTruthy();
-    expect(field.getAttribute('data-slot')).toBe('input');
+    const email = screen.getByLabelText('Operator email');
+    const password = screen.getByLabelText('Password');
+    expect(email.getAttribute('data-slot')).toBe('input');
+    expect(password.getAttribute('data-slot')).toBe('input');
     expect(screen.getByRole('main').querySelector('[data-slot="card"]')).not.toBeNull();
-    expect(field.getAttribute('type')).toBe('password');
-    expect(field.getAttribute('autocomplete')).toBe('current-password');
-    // A pristine field must NOT emit aria-invalid (omit-when-valid, not aria-invalid="false").
-    expect(field.getAttribute('aria-invalid')).toBe(null);
-    // The CTA keeps the name "Sign in" (frontend-design: an action keeps its name).
+    expect(email.getAttribute('autocomplete')).toBe('username');
+    expect(password.getAttribute('type')).toBe('password');
+    expect(password.getAttribute('autocomplete')).toBe('current-password');
+    expect(email.getAttribute('aria-invalid')).toBe(null);
+    expect(screen.queryByLabelText('Operator passphrase')).toBe(null);
     expect(screen.getByRole('button', { name: 'Sign in' }).getAttribute('data-slot')).toBe(
       'button',
     );
+    expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeTruthy();
     expectLoginAriaValuesToBeAxeValid(container);
   });
 
@@ -108,19 +110,18 @@ describe('LoginPage', () => {
     expect(container.querySelectorAll('[data-login-link]').length).toBeGreaterThan(4);
   });
 
-  it('toggles passphrase visibility via the show/hide button', () => {
+  it('toggles password visibility via the show/hide button', () => {
     renderLogin();
-    const field = screen.getByLabelText('Operator passphrase');
+    const field = screen.getByLabelText('Password');
     expect(field.getAttribute('type')).toBe('password');
 
-    // Pristine: the button offers to SHOW the passphrase (aria-pressed reflects state).
-    const show = screen.getByRole('button', { name: 'Show passphrase' });
+    const show = screen.getByRole('button', { name: 'Show password' });
     expect(show.getAttribute('data-slot')).toBe('button');
     expect(show.getAttribute('aria-pressed')).toBe('false');
 
     fireEvent.click(show);
     expect(field.getAttribute('type')).toBe('text');
-    const hide = screen.getByRole('button', { name: 'Hide passphrase' });
+    const hide = screen.getByRole('button', { name: 'Hide password' });
     expect(hide.getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(hide);
@@ -131,37 +132,42 @@ describe('LoginPage', () => {
     renderLogin();
     fireEvent.click(screen.getByRole('button', { name: 'Italiano' }));
 
-    expect(screen.getByLabelText('Frase segreta operatore')).toBeTruthy();
+    expect(screen.getByLabelText('Email operatore')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Accedi' })).toBeTruthy();
-    expect(screen.getByText('Necessaria quando Aura è esposta oltre il loopback.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Password dimenticata?' })).toBeTruthy();
   });
 
   it('renders a role=alert error and sets aria-invalid on a failed submit', async () => {
-    // The server returns a generic 401 on a wrong/unconfigured passphrase.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('unauthorized', { status: 401 }))),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
 
-    const field = screen.getByLabelText('Operator passphrase');
-    fireEvent.change(field, { target: { value: 'wrong-pass' } });
+    const email = await screen.findByLabelText('Operator email');
+    const password = screen.getByLabelText('Password');
+    fireEvent.change(email, { target: { value: 'operator@example.com' } });
+    fireEvent.change(password, { target: { value: 'wrong-pass' } });
     submitForm(container);
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe("That passphrase didn't match. Check it and try again.");
+    expect(alert.textContent).toBe("That email or password didn't match. Check it and try again.");
     await waitFor(() => {
-      expect(field.getAttribute('aria-invalid')).toBe('true');
+      expect(email.getAttribute('aria-invalid')).toBe('true');
+      expect(password.getAttribute('aria-invalid')).toBe('true');
     });
     expectLoginAriaValuesToBeAxeValid(container);
   });
 
   it('navigates to the cockpit on a successful login', async () => {
-    // A 2xx from /login means the server set the cookie and redirected; the SPA navigates to "/".
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ session: { id: 's1' } }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
     render(
       <MemoryRouter initialEntries={['/login']}>
         <Routes>
@@ -170,54 +176,63 @@ describe('LoginPage', () => {
         </Routes>
       </MemoryRouter>,
     );
+    fireEvent.change(await screen.findByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
     fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
     expect(await screen.findByText('cockpit home')).toBeTruthy();
   });
 
-  it('POSTs the passphrase to /login same-origin as form-encoded', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(new Response('unauthorized', { status: 401 })));
+  it('does not fall back to /login when auth config cannot be loaded', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('no', { status: 500 }));
     vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
-    fireEvent.change(screen.getByLabelText('Operator passphrase'), {
-      target: { value: 'hunter2' },
+
+    fireEvent.change(screen.getByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
     });
     submitForm(container);
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
-    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(
+      "Couldn't reach Aura. Check the server is running and try again.",
+    );
     const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
-    const loginCall = calls.find(([url]) => url === '/login');
-    expect(loginCall).toBeTruthy();
-    if (!loginCall) {
-      throw new Error('missing /login fetch call');
-    }
-    const [url, opts] = loginCall;
-    expect(url).toBe('/login');
-    expect(opts.method).toBe('POST');
-    expect(opts.credentials).toBe('same-origin');
-    expect(opts.headers).toMatchObject({ 'Content-Type': 'application/x-www-form-urlencoded' });
-    expect(opts.body).toBeInstanceOf(URLSearchParams);
-    expect((opts.body as URLSearchParams).get('passphrase')).toBe('hunter2');
+    expect(calls.some(([url]) => url === '/login')).toBe(false);
   });
 
   it('shows the in-flight CTA and disables submit while the request is pending', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => undefined)), // never resolves → stays submitting
-    );
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockImplementationOnce(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
+    fireEvent.change(await screen.findByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
     submitForm(container);
     const inFlight = await screen.findByRole('button', { name: 'Signing in...' });
     expect((inFlight as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('returns focus to the passphrase field after a failed submit (WCAG 3.3.1)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('no', { status: 401 }))),
-    );
+  it('returns focus to the email field after a failed submit (WCAG 3.3.1)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockResolvedValueOnce(new Response('no', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
-    const field = screen.getByLabelText('Operator passphrase');
+    const field = await screen.findByLabelText('Operator email');
     submitForm(container);
     await waitFor(() => {
       expect(document.activeElement).toBe(field);
@@ -230,11 +245,18 @@ describe('LoginPage', () => {
   });
 
   it('surfaces the network-error copy when the fetch throws', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.reject(new Error('network down'))),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => authulaConfigResponse())
+      .mockRejectedValueOnce(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
+    fireEvent.change(await screen.findByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
     submitForm(container);
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe(
@@ -254,6 +276,20 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('Password')).toBeTruthy();
     expect(screen.queryByLabelText('Operator passphrase')).toBe(null);
     expectLoginAriaValuesToBeAxeValid(container);
+  });
+
+  it('opens the Telegram password reset panel from the credentials step', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => authulaConfigResponse()),
+    );
+    renderLogin();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+
+    expect(await screen.findByText('Password reset')).toBeTruthy();
+    expect(screen.getByRole('form', { name: 'Request reset code' })).toBeTruthy();
+    expect(screen.queryByRole('form', { name: 'Sign in' })).toBe(null);
   });
 
   it('POSTs Authula credentials as JSON with the CSRF token and advances to TOTP', async () => {
