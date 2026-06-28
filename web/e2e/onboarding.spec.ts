@@ -9,6 +9,8 @@ import { gotoAuthenticated } from './auth';
 const CONV_ID = '99999999-9999-9999-9999-999999999999';
 const SESSION_TOKEN = 'sess-e2e-28-06';
 const PASSWORD = 'E2E-Super-Secret-PW-28406';
+const SECURITY_QUESTION = 'First school?';
+const SECURITY_ANSWER = 'E2E-Recovery-Answer-28406';
 const DEEP_LINK = 'https://t.me/AuraBot?start=onb-e2e-28-06';
 const BOT_TOKEN = '1234567890:AAH-this-token-must-not-render';
 const QR_SVG =
@@ -196,6 +198,8 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
 
     await page.getByLabel('Operator email').fill('new@example.com');
     await page.getByLabel('Initial password').fill(PASSWORD);
+    await page.getByLabel('Security question').fill(SECURITY_QUESTION);
+    await page.getByLabel('Security answer').fill(SECURITY_ANSWER);
     await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page.getByText('Capabilities for the new identity')).toBeVisible();
@@ -228,6 +232,7 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
 
     const html = await page.locator('body').innerHTML();
     expect(html).not.toContain(PASSWORD);
+    expect(html).not.toContain(SECURITY_ANSWER);
     expect(html).not.toContain(BOT_TOKEN);
 
     await expect(page.getByText('Telegram linked')).toBeVisible({ timeout: 5000 });
@@ -236,6 +241,8 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
       {
         email: 'new@example.com',
         password: PASSWORD,
+        securityQuestion: SECURITY_QUESTION,
+        securityAnswer: SECURITY_ANSWER,
         capabilities: ['skills.read'],
         linkTelegram: true,
       },

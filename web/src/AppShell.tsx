@@ -157,11 +157,9 @@ export function AppShell() {
       };
       if (target.headers !== undefined) init.headers = target.headers;
       if (target.body !== undefined) init.body = target.body;
-      const res = await fetch(target.path, init);
-      if (res.ok) {
-        void navigate('/login', { replace: true });
-        return;
-      }
+      await fetch(target.path, init);
+      void navigate('/login', { replace: true });
+      return;
     } catch {
       // Keep the operator in the cockpit if the server could not clear the session.
     }

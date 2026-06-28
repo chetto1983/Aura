@@ -210,12 +210,16 @@ type Config struct {
 	CalendarMCPURL        string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
 	CalendarMCPAdminToken string // AURA_PIM_MCP_ADMIN_TOKEN — /admin Bearer token, default changeme-aura-pim-local
 
-	// Phase 30 (RET-01) retrieval rerank knob. RerankBaseURL is the optional
-	// aura-rerank sidecar (/v1/rerank) base. An unset/empty value is NOT
+	// Phase 30 (RET-01) retrieval rerank knobs. RerankBaseURL is the optional
+	// aura-rerank sidecar (/v1/rerank) base; an unset/empty value is NOT
 	// boot-fatal — the rerank client fails soft to the RRF/vector order, so a
 	// GPU-absent deployment runs with rerank off (spike 070). Convention
-	// AURA_<DOMAIN>_<UNIT>.
-	RerankBaseURL string // AURA_RERANK_BASE_URL — aura-rerank /v1/rerank base, default http://127.0.0.1:8085
+	// AURA_<DOMAIN>_<UNIT>. The local↔cloud swap is ONE knob: set AURA_RERANK_MODEL
+	// to a cloud model (e.g. cohere/rerank-4-fast) and rerank routes to the shared
+	// OpenRouter endpoint authenticated with the SINGLE OPENROUTER_API_KEY every
+	// cloud backend uses — no per-backend key (see RerankRoute, D-28 vision parity).
+	RerankBaseURL string // AURA_RERANK_BASE_URL — local rerank sidecar base, default http://127.0.0.1:8085
+	RerankModel   string // AURA_RERANK_MODEL — set to a cloud model (cohere/rerank-4-fast) to swap to OpenRouter; empty = local sidecar
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -464,7 +468,41 @@ func loadBase() *Config {
 		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),
 
 		RerankBaseURL: envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
+		RerankModel:   os.Getenv("AURA_RERANK_MODEL"),
 	}
+}
+
+// RerankRoute resolves the rerank endpoint as a ONE-knob local↔cloud swap (D-28,
+// mirroring the vision route): with AURA_RERANK_MODEL unset it is the local
+// aura-rerank sidecar at RerankBaseURL with no auth; set AURA_RERANK_MODEL to a
+// cloud model (e.g. cohere/rerank-4-fast) and it routes to the shared OpenRouter
+// endpoint (LLM.BaseURL) authenticated with the SINGLE OPENROUTER_API_KEY
+// (LLM.APIKey) every cloud backend reuses. An explicitly-set non-loopback
+// RerankBaseURL overrides the OpenRouter base for a custom cloud reranker.
+func (c *Config) RerankRoute() (baseURL, apiKey, model string) {
+	if strings.TrimSpace(c.RerankModel) == "" {
+		return c.RerankBaseURL, "", "" // local sidecar, default model, no auth
+	}
+	base := c.RerankBaseURL
+	if isLoopbackURL(base) { // model set but base still the local default → shared OpenRouter
+		base = c.LLM.BaseURL
+	}
+	return base, c.LLM.APIKey, c.RerankModel
+}
+
+// isLoopbackURL reports whether a base URL points at the local host (127.0.0.1/::1/
+// localhost) — used by RerankRoute to decide when a set model should swap the local
+// default base for the shared OpenRouter endpoint.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	if u.Hostname() == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip != nil && ip.IsLoopback()
 }
 
 // composeDSN returns "" when password is empty so callers can detect an

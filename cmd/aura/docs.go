@@ -300,6 +300,9 @@ func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequ
 		return nil, err
 	}
 	defer func() { _ = mcp.Close() }()
+	// One-knob local↔cloud rerank swap (D-28): AURA_RERANK_MODEL set → shared
+	// OpenRouter endpoint + the single OPENROUTER_API_KEY; unset → local sidecar.
+	rerankBase, rerankKey, rerankModel := s.cfg.RerankRoute()
 	svc := &documents.Service{
 		Searcher:  &documents.Searcher{Client: mcp},
 		Knowledge: mcp,
@@ -308,7 +311,11 @@ func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequ
 			Client:     documentHTTPClient(s.cfg),
 			Dimensions: s.cfg.Neo4j.EmbedDimensions,
 		},
-		Reranker: &rerank.RerankClient{BaseURL: s.cfg.RerankBaseURL},
+		Reranker: &rerank.RerankClient{
+			BaseURL: rerankBase,
+			Model:   rerankModel,
+			APIKey:  rerankKey,
+		},
 	}
 	return svc.Retrieve(ctx, req)
 }
