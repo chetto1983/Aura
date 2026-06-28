@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,6 +44,21 @@ func TestProvisionShapeValidationFailsBeforeWrites(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProvisionShapeValidationRunsBeforeSessionLookup(t *testing.T) {
+	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+	svc, _ := sagaService(t, au, leg, tg, []string{"identity.create"})
+	req := provReq(nil)
+	req.LinkTelegram = false
+	_, err := svc.Provision(context.Background(), "creator-1", "never-started", req)
+	if err == nil {
+		t.Fatal("Provision succeeded, want validation error")
+	}
+	if errors.Is(err, errOnboardingSessionNotFound) || errors.Is(err, errProvisioningUnavailable) {
+		t.Fatalf("Provision err = %v, want validation before session/backend checks", err)
+	}
+	assertNoWrites(t, au, leg, tg)
 }
 
 func manyCaps(n int) []string {

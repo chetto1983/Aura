@@ -123,6 +123,9 @@ var errProvisioningUnavailable = errors.New("onboarding: provisioning backend no
 // returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
 // password is hashed immediately and never echoed/logged.
 func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
+	if err := validateOnboardingProvision(in); err != nil {
+		return OnboardingProvisionResponse{}, err
+	}
 	entry, err := s.sessionForRequester(token, requesterIdentityID)
 	if err != nil {
 		return OnboardingProvisionResponse{}, err
@@ -133,12 +136,8 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, errOnboardingSessionNotFound
 	}
 	creator := entry.creatorIdentityID
-	entry.linkTelegram = in.LinkTelegram
 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
-	if err := validateOnboardingProvision(in); err != nil {
-		return OnboardingProvisionResponse{}, err
-	}
 	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
 		slog.Warn("onboarding: provisioning backend not configured",
 			"authula", s.authula != nil,

@@ -52,13 +52,12 @@ const sessionTokenBytes = 32
 // (the interview state machine carrying Answers + DraftAgentMD), the creating operator's
 // identity id (the D-06 subset-of-creator re-validation + the audit actor), the
 // capability options offered at start (the creator's grants minus '*'), the
-// link-Telegram intent, and the idle-expiry deadline.
+// provisioned flag, Telegram onboarding token, and the idle-expiry deadline.
 type sessionEntry struct {
 	mu                sync.Mutex
 	session           *onboarding.Session
 	creatorIdentityID string
 	capabilityOptions []string
-	linkTelegram      bool
 	provisioned       bool
 	// onboardingToken is the Telegram mint token assigned by Provision (Leg C). The
 	// telegram-status poll reads it back from the same server-held entry to check

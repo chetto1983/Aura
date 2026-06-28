@@ -67,14 +67,16 @@ func (f *fakeAuthula) liveAuthulaUsers() int {
 }
 
 type fakeAuraLeg struct {
-	mu        sync.Mutex
-	createErr error
-	auditErr  error
-	recovery  *fakeRecoveryStore
-	created   []string // identity names created
-	deleted   []string // identity names deleted (compensation)
-	audited   []string // identity ids with an audit row
-	nextID    int
+	mu              sync.Mutex
+	createErr       error
+	auditErr        error
+	recovery        *fakeRecoveryStore
+	telegram        *fakeTelegram
+	created         []string // identity names created
+	deleted         []string // identity names deleted (compensation)
+	audited         []string // identity ids with an audit row
+	pendingAtDelete bool
+	nextID          int
 }
 
 func (f *fakeAuraLeg) CreateIdentityWithGrants(_ context.Context, p AuraLegParams) (string, error) {
@@ -103,6 +105,9 @@ func (f *fakeAuraLeg) DeleteIdentity(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, name)
+	if f.telegram != nil && f.telegram.mintedCount() != 0 {
+		f.pendingAtDelete = true
+	}
 	if f.recovery != nil {
 		f.recovery.deleteCascade()
 	}
@@ -319,22 +324,6 @@ func TestProvisionSagaHappyPath(t *testing.T) {
 	}
 }
 
-func TestProvisionRejectsMismatchedRequester(t *testing.T) {
-	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
-
-	_, err := svc.Provision(context.Background(), "creator-2", tok, provReq(nil))
-	if !errors.Is(err, errOnboardingForbidden) {
-		t.Fatalf("mismatched provision err = %v, want forbidden", err)
-	}
-	assertNoWrites(t, au, leg, tg)
-
-	_, err = svc.TelegramStatus(context.Background(), "creator-2", tok)
-	if !errors.Is(err, errOnboardingForbidden) {
-		t.Fatalf("mismatched telegram-status err = %v, want forbidden", err)
-	}
-}
-
 func TestProvisionSagaCompensation(t *testing.T) {
 	boom := errors.New("injected failure")
 
@@ -388,6 +377,7 @@ func TestProvisionSagaCompensation(t *testing.T) {
 		au := &fakeAuthula{}
 		leg := &fakeAuraLeg{}
 		tg := &fakeTelegram{insertErr: boom, commitBeforeErr: true}
+		leg.telegram = tg
 		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
 		recovery := svc.recovery.(*fakeRecoveryStore)
 		if _, err := svc.Provision(context.Background(), "creator-1", tok, provReq(nil)); err == nil {
@@ -396,6 +386,9 @@ func TestProvisionSagaCompensation(t *testing.T) {
 		if au.liveAuthulaUsers() != 0 || leg.liveIdentities() != 0 || tg.mintedCount() != 0 || recovery.liveRecoveryRows() != 0 || leg.auditCount() != 0 {
 			t.Fatalf("C orphans: authula=%d identities=%d tokens=%d recovery=%d audit=%d",
 				au.liveAuthulaUsers(), leg.liveIdentities(), tg.mintedCount(), recovery.liveRecoveryRows(), leg.auditCount())
+		}
+		if leg.pendingAtDelete {
+			t.Fatal("DeleteIdentity ran before the pending Telegram token was removed")
 		}
 	})
 

@@ -36,6 +36,7 @@ func TestClampInt64ToInt(t *testing.T) {
 }
 
 func TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(t *testing.T) {
+	start := time.Now()
 	parent, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 	rt := &captureContextRoundTripper{}
@@ -50,11 +51,12 @@ func TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(t *testing.T) {
 	if !rt.hasDeadline {
 		t.Fatal("probe request context has no deadline")
 	}
-	if until := time.Until(rt.deadline); until > telegramGetMeTimeout || until <= 0 {
-		t.Fatalf("probe deadline in %v, want within %v", until, telegramGetMeTimeout)
+	if got := rt.deadline.Sub(start); got < telegramGetMeTimeout-500*time.Millisecond || got > telegramGetMeTimeout+500*time.Millisecond {
+		t.Fatalf("probe deadline offset = %v, want about %v", got, telegramGetMeTimeout)
 	}
 
-	early, cancelEarly := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	earlyStart := time.Now()
+	early, cancelEarly := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelEarly()
 	rt = &captureContextRoundTripper{}
 	client, cancelProbe = telegramGetMeHTTPClient(early, rt)
@@ -62,8 +64,8 @@ func TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(t *testing.T) {
 	if err := doCapturedRequest(client); err != nil {
 		t.Fatalf("Do with early context: %v", err)
 	}
-	if until := time.Until(rt.deadline); until > 500*time.Millisecond || until <= 0 {
-		t.Fatalf("early parent deadline in %v, want parent deadline respected", until)
+	if got := rt.deadline.Sub(earlyStart); got < 1500*time.Millisecond || got > 2500*time.Millisecond {
+		t.Fatalf("early parent deadline offset = %v, want about 2s", got)
 	}
 }
 
