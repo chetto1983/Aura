@@ -91,12 +91,13 @@ func TestRenderToolDefs_Namespaced(t *testing.T) {
 
 func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 	tests := []struct {
-		name        string
-		tool        Tool
-		wantName    string
-		wantSummary string
-		wantPhrases []string
-		wantMutate  bool
+		name         string
+		tool         Tool
+		wantName     string
+		wantSummary  string
+		wantPhrases  []string
+		wantMutate   bool
+		wantDeferred bool
 	}{
 		{
 			name:        "read",
@@ -106,12 +107,13 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 			wantPhrases: []string{"1-based `offset`", "Read a file with this tool BEFORE editing", "large result pages"},
 		},
 		{
-			name:        "edit",
-			tool:        &FSEdit{},
-			wantName:    "fs_edit",
-			wantSummary: "Replace an exact string in a file.",
-			wantPhrases: []string{"Read the file first", "must be UNIQUE", "`replace_all`"},
-			wantMutate:  true,
+			name:         "edit",
+			tool:         &FSEdit{},
+			wantName:     "fs_edit",
+			wantSummary:  "Replace an exact string in a file.",
+			wantPhrases:  []string{"Read the file first", "must be UNIQUE", "`replace_all`"},
+			wantMutate:   true,
+			wantDeferred: true,
 		},
 		{
 			name:        "write",
@@ -122,18 +124,20 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 			wantMutate:  true,
 		},
 		{
-			name:        "glob",
-			tool:        &FSGlob{},
-			wantName:    "fs_glob",
-			wantSummary: "Find files by name pattern.",
-			wantPhrases: []string{"Find files by NAME", "`**`", "use fs_grep to search their contents"},
+			name:         "glob",
+			tool:         &FSGlob{},
+			wantName:     "fs_glob",
+			wantSummary:  "Find files by name pattern.",
+			wantPhrases:  []string{"Find files by NAME", "`**`", "use fs_grep to search their contents"},
+			wantDeferred: true,
 		},
 		{
-			name:        "grep",
-			tool:        &FSGrep{},
-			wantName:    "fs_grep",
-			wantSummary: "Search file contents with a regexp.",
-			wantPhrases: []string{"Search file CONTENTS", "RE2 regular expression", "To find files by NAME use fs_glob"},
+			name:         "grep",
+			tool:         &FSGrep{},
+			wantName:     "fs_grep",
+			wantSummary:  "Search file contents with a regexp.",
+			wantPhrases:  []string{"Search file CONTENTS", "RE2 regular expression", "To find files by NAME use fs_glob"},
+			wantDeferred: true,
 		},
 	}
 
@@ -146,8 +150,8 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 			if spec.Summary != tt.wantSummary {
 				t.Fatalf("Summary = %q, want %q", spec.Summary, tt.wantSummary)
 			}
-			if spec.Deferred {
-				t.Fatal("filesystem tools must be visible without deferred discovery")
+			if spec.Deferred != tt.wantDeferred {
+				t.Fatalf("Deferred = %v, want %v (only fs_read/fs_write stay always-visible; glob/grep/edit are deferred, discoverable via tool_search — operator directive)", spec.Deferred, tt.wantDeferred)
 			}
 			if spec.Mutating != tt.wantMutate {
 				t.Fatalf("Mutating = %v, want %v", spec.Mutating, tt.wantMutate)

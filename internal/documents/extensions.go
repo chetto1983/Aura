@@ -31,6 +31,18 @@ var supportedDocumentExt = map[string]struct{}{
 	".webp":     {},
 }
 
+// SupportedDocumentExts returns the ingest allowlist extensions (lowercased, with the
+// leading dot). Exported so the asset-upload layer (internal/assets) can assert its own
+// document allowlist stays in sync with what the ingest pipeline actually accepts — the
+// drift that silently 400'd pptx/html uploads. Order is unspecified.
+func SupportedDocumentExts() []string {
+	out := make([]string, 0, len(supportedDocumentExt))
+	for ext := range supportedDocumentExt {
+		out = append(out, ext)
+	}
+	return out
+}
+
 // isSupportedDocument reports whether fileName carries an extension Aura
 // ingests. The match is case-insensitive over the file extension; a name with
 // no extension is unsupported.
