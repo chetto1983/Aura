@@ -14,7 +14,28 @@ type Limits struct {
 	MaxAudioBytes    int64
 }
 
-var documentExts = map[string]bool{".pdf": true, ".xlsx": true, ".xlsm": true, ".docx": true}
+// documentExts is the asset-upload allowlist for the ModalityDocument path. It MUST
+// stay in sync with the text-document subset of documents.supportedDocumentExt (the
+// ingest/markitdown allowlist) — image formats live on the ModalityImage path, so they
+// are intentionally excluded here. Drift between the two lists silently 400s uploads of
+// formats the ingest pipeline supports (the pptx/html regression). limits_sync_test.go
+// asserts they match.
+var documentExts = map[string]bool{
+	".pdf":      true,
+	".docx":     true,
+	".pptx":     true,
+	".xlsx":     true,
+	".xlsm":     true,
+	".html":     true,
+	".htm":      true,
+	".csv":      true,
+	".md":       true,
+	".markdown": true,
+	".txt":      true,
+	".json":     true,
+	".xml":      true,
+	".epub":     true,
+}
 
 func InferModality(fileName, mimeType string) Modality {
 	ext := strings.ToLower(filepath.Ext(fileName))

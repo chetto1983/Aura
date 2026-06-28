@@ -36,7 +36,10 @@ func (t *FSGlob) Spec() Spec {
 		Summary:     "Find files by name pattern.",
 		Description: "Find files by NAME across a directory tree; returns matching paths, sorted. `pattern` is a glob over forward-slash paths — `*` and `?` within a path segment, `**` to cross directories (e.g. `**/*.go`, `cmd/*/main.go`); optionally set a `path` root (default workspace). .git/node_modules/vendor are skipped; results cap at max_results (default 500). Use this to locate files by name; use fs_grep to search their contents.",
 		Parameters:  params,
-		Deferred:    false,
+		// Deferred: filesystem search is a long-tail capability discoverable via tool_search.
+		// Keeping only fs_read/fs_write visible trims the manifest and stops the agent
+		// defaulting to fs_glob/fs_grep for uploaded-document questions (use document_search).
+		Deferred: true,
 	}
 }
 

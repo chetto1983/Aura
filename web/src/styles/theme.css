@@ -1,14 +1,14 @@
 /* GENERATED from tokens/tokens.json by generate-theme.mjs — do not hand-edit */
 @theme {
-  --color-bg: #131314;
-  --color-surface: #1E1F20;
-  --color-surface-2: #333537;
-  --color-surface-3: #3C4043;
-  --color-border: #3C4043;
-  --color-border-strong: #5F6368;
-  --color-text: #E3E3E3;
-  --color-text-muted: #C4C7C5;
-  --color-text-faint: #9AA0A6;
+  --color-bg: #101214;
+  --color-surface: #191C20;
+  --color-surface-2: #252A31;
+  --color-surface-3: #303741;
+  --color-border: #343C46;
+  --color-border-strong: #566170;
+  --color-text: #EEF2F6;
+  --color-text-muted: #C8D0D8;
+  --color-text-faint: #9BA8B5;
   --color-text-disabled: #6F7377;
   --color-accent: #1F3760;
   --color-accent-text: #D3E3FD;
@@ -20,16 +20,16 @@
   --color-danger: #F28B82;
   --color-info: #AECBFA;
   --color-ring: #8AB4F8;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
   --radius-pill: 999px;
   --font-display: Fraunces, Georgia, serif;
   --font-sans: "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Commit Mono", ui-monospace, SFMono-Regular, monospace;
-  --shadow-drawer: 0 24px 80px rgb(0 0 0 / 0.24);
-  --shadow-popover: 0 12px 34px rgb(0 0 0 / 0.16);
+  --shadow-drawer: 0 28px 90px rgb(0 0 0 / 0.28);
+  --shadow-popover: 0 18px 44px rgb(0 0 0 / 0.18);
   --shadow-focus: 0 0 0 3px rgb(138 180 248 / 0.32);
   --motion-fast: 140ms;
   --motion-base: 220ms;
@@ -39,21 +39,21 @@
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --color-bg: #FDFCFC;
+  --color-bg: #F8FAFB;
   --color-surface: #FFFFFF;
-  --color-surface-2: #F2F0F0;
-  --color-surface-3: #E8EAED;
-  --color-border: #DADCE0;
-  --color-border-strong: #BDC1C6;
-  --color-text: #1F1F1F;
-  --color-text-muted: #444746;
-  --color-text-faint: #5F6368;
+  --color-surface-2: #F3F6F8;
+  --color-surface-3: #E8EEF2;
+  --color-border: #DEE3E8;
+  --color-border-strong: #BFC8D2;
+  --color-text: #172026;
+  --color-text-muted: #3F4B55;
+  --color-text-faint: #64717D;
   --color-text-disabled: #9AA0A6;
-  --color-accent: #D3E3FD;
-  --color-accent-text: #062E6F;
-  --color-accent-muted: #A9C7F8;
-  --color-accent-pressed: #C2D7F6;
-  --color-on-accent: #062E6F;
+  --color-accent: #D7E7FF;
+  --color-accent-text: #07346F;
+  --color-accent-muted: #B5D1FA;
+  --color-accent-pressed: #C5DAF8;
+  --color-on-accent: #07346F;
   --color-success: #188038;
   --color-warning: #B06000;
   --color-danger: #D93025;
@@ -62,15 +62,15 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #131314;
-  --color-surface: #1E1F20;
-  --color-surface-2: #333537;
-  --color-surface-3: #3C4043;
-  --color-border: #3C4043;
-  --color-border-strong: #5F6368;
-  --color-text: #E3E3E3;
-  --color-text-muted: #C4C7C5;
-  --color-text-faint: #9AA0A6;
+  --color-bg: #101214;
+  --color-surface: #191C20;
+  --color-surface-2: #252A31;
+  --color-surface-3: #303741;
+  --color-border: #343C46;
+  --color-border-strong: #566170;
+  --color-text: #EEF2F6;
+  --color-text-muted: #C8D0D8;
+  --color-text-faint: #9BA8B5;
   --color-text-disabled: #6F7377;
   --color-accent: #1F3760;
   --color-accent-text: #D3E3FD;

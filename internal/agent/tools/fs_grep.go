@@ -40,7 +40,10 @@ func (t *FSGrep) Spec() Spec {
 		Summary:     "Search file contents with a regexp.",
 		Description: "Search file CONTENTS across a directory tree with an RE2 regular expression; returns matching lines as `path:line: text`. `pattern` is the regex; optionally restrict to a `path` (file or directory, default workspace root) and a filename `glob` (e.g. `*.go`). Binary files and .git/node_modules/vendor are skipped; results cap at max_results (default 200). Use this for content search instead of shell grep so matches come back structured. To find files by NAME use fs_glob; to read a known range use fs_read.",
 		Parameters:  params,
-		Deferred:    false,
+		// Deferred: filesystem content-search is a long-tail capability discoverable via
+		// tool_search. Keeping only fs_read/fs_write visible trims the manifest and stops the
+		// agent defaulting to fs_grep for uploaded-document questions (use document_search).
+		Deferred: true,
 	}
 }
 

@@ -22,7 +22,4 @@
   --color-input: var(--color-border);
   --color-ring: var(--color-ring);
   --radius: var(--radius-md);
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
 }

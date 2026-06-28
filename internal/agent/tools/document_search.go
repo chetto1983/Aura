@@ -30,13 +30,17 @@ type documentSearchArgs struct {
 func (t *DocumentSearch) Spec() Spec {
 	return Spec{
 		Name:    "document_search",
-		Summary: "Search indexed user documents and return cited chunks.",
-		Description: "Search documents that Aura has indexed through the native Neo4j document pipeline. " +
-			"Use this for questions about uploaded PDFs, spreadsheets, and DOCX files. " +
-			"Results are chunks with document id, chunk id, file name, locator (page, sheet/rows, or section), score, and text. " +
-			"Set document_id when the user is asking about a specific indexed document. Keep limit small unless broad recall is needed. " +
-			"Use it for the user's OWN uploaded/indexed files — NOT the public web (that is the web search/fetch tools). " +
-			"Example: {\"query\":\"valvola di sicurezza della caldaia\",\"limit\":5}.",
+		Summary: "Search the user's uploaded/indexed documents and return cited chunks.",
+		Description: "THE tool for any question about the user's own uploaded or indexed documents/files " +
+			"(PDF, DOCX, PPTX, XLSX, HTML, CSV, MD, TXT, and more). Aura ingests uploaded documents into a " +
+			"searchable Neo4j knowledge base (two-stage retrieval: vector/BM25 seed -> cross-encoder rerank -> " +
+			"graph-expand). Uploaded documents do NOT live on the filesystem — do NOT use fs_glob, fs_grep, or the " +
+			"shell to look for them; they will not be found there. When the user refers to 'this document', 'the " +
+			"file I uploaded', 'the manual/spreadsheet/PDF', or asks what a document says/contains/lists, call " +
+			"document_search FIRST. Results are chunks with document id, chunk id, file name, locator (page, " +
+			"sheet/rows, or section), relevance score, and text — cite them. Set document_id to scope to one " +
+			"specific indexed document (e.g. the attachment's document_id). This is for the user's OWN files, NOT " +
+			"the public web (use web search/fetch for that). Example: {\"query\":\"safety valve pressure rating\",\"limit\":5}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -46,7 +50,12 @@ func (t *DocumentSearch) Spec() Spec {
   },
   "required": ["query"]
 }`),
-		Deferred: true,
+		// Always-visible (NOT deferred): document_search is the headline "chat with your
+		// documents" capability. Hiding it behind tool_search made the agent default to the
+		// visible fs_glob/fs_grep for uploaded-document questions and never discover retrieval
+		// (the live upload->chat regression). Senior agentic-RAG systems (elysia, Neo4j
+		// llm-graph-builder, LibreChat) keep retrieval permanently visible; mirror that.
+		Deferred: false,
 	}
 }
 
