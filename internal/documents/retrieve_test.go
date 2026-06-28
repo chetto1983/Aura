@@ -220,6 +220,64 @@ func TestRetrieveNoRerankerMatchesSearch(t *testing.T) {
 	}
 }
 
+// TestRetrieveVectorSeedErrorFallsBackToFulltext: a vector-query error (with a working
+// embedder) still falls back to the sparse fulltext seeds with no hard fail.
+func TestRetrieveVectorSeedErrorFallsBackToFulltext(t *testing.T) {
+	knowledge := &fakeRetrieveKnowledge{seedErr: errors.New("vector index offline")}
+	searcher := &fakeSearchBackend{hits: []SearchHit{{DocumentID: "doc-1", ChunkID: "ft-0", Text: "fallback"}}}
+	svc := &Service{
+		Searcher:      searcher,
+		Knowledge:     knowledge,
+		QueryEmbedder: &fakeQueryEmbedder{vector: []float64{0.1}},
+		Reranker:      &fakeReranker{scored: []rerank.Scored{{Index: 0, Score: 0}}},
+	}
+
+	hits, err := svc.Retrieve(t.Context(), SearchRequest{Query: "q", Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := chunkIDs(hits); got != "ft-0" {
+		t.Fatalf("hits = %s, want fulltext fallback after a vector-seed error", got)
+	}
+	if len(searcher.requests) != 1 {
+		t.Fatalf("fulltext searcher called %d times", len(searcher.requests))
+	}
+}
+
+// TestRetrieveSeedErrorPropagates: with the reranker on but no usable seed source
+// (embedder fails, no fulltext searcher) Retrieve surfaces the seed error.
+func TestRetrieveSeedErrorPropagates(t *testing.T) {
+	svc := &Service{
+		QueryEmbedder: &fakeQueryEmbedder{err: errors.New("embed down")},
+		Reranker:      &fakeReranker{},
+	}
+	if _, err := svc.Retrieve(t.Context(), SearchRequest{Query: "q"}); err == nil {
+		t.Fatal("want a seed-fallback error when no searcher is configured")
+	}
+}
+
+// TestRetrieveEmptySeedsReturnsEmpty: an empty seed pool yields an empty result without
+// calling the reranker or expansion.
+func TestRetrieveEmptySeedsReturnsEmpty(t *testing.T) {
+	reranker := &fakeReranker{}
+	svc := &Service{
+		Searcher:      &fakeSearchBackend{}, // returns nil hits
+		QueryEmbedder: &fakeQueryEmbedder{err: errors.New("embed down")},
+		Reranker:      reranker,
+	}
+
+	hits, err := svc.Retrieve(t.Context(), SearchRequest{Query: "q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 0 {
+		t.Fatalf("hits = %d, want 0", len(hits))
+	}
+	if reranker.calls != 0 {
+		t.Fatalf("reranker called %d times on an empty seed pool", reranker.calls)
+	}
+}
+
 func TestEffectiveLimitClamps(t *testing.T) {
 	cases := []struct{ in, want int }{{0, defaultSearchLimit}, {-3, defaultSearchLimit}, {5, 5}, {99, maxSearchLimit}}
 	for _, tc := range cases {
