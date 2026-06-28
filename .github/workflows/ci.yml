@@ -393,6 +393,15 @@ jobs:
       # bounded generously here — it reports without flaking CI. The strict 30ms
       # default still gates on the operator's known hardware.
       AURA_SMOKE_P95_MS: "2000"
+      # RET-05: the rerank/retrieval live tiers read this endpoint. The aura-rerank
+      # cross-encoder is GPU-MANDATORY (spike 070: CPU is ~70-1000x too slow), and the
+      # standard GitHub runner has no GPU, so the rerank_integration / graphrag_live /
+      # retrieval_eval tiers DEGRADE to a compile floor here (see the "Compile the
+      # rerank/retrieval live tiers" step + the CI tier matrix in
+      # docs/document-ingestion.md). Their test code t.Fatals under $CI when this env is
+      # unset (no-skip-as-green), so a GPU runner that DOES bring the sidecar up cannot
+      # silently skip them; on that runner they run live against this endpoint.
+      AURA_RERANK_BASE_URL: http://127.0.0.1:8085
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -430,6 +439,22 @@ jobs:
 
       - name: Knowledge integration suite with race
         run: go test -race -count=1 -tags 'db_integration neo4j_integration' ./internal/knowledge/...
+
+      - name: Compile the rerank/retrieval live tiers (no-rot floor; GPU/fixture run is operator/GPU-host)
+        # RET-05 (spike 070): the cross-encoder reranker is GPU-MANDATORY and the
+        # document live tiers need a PDF fixture, so these tiers do NOT execute on the
+        # GPU-less, fixture-less standard runner. They ALWAYS compile here (the cheap
+        # always-green floor proving the tagged files never rot), and their test code
+        # t.Fatals under $CI when their env (AURA_RERANK_BASE_URL exported above /
+        # AURA_DOC_TEST_PDF) is unset, so a GPU runner with the sidecar up runs them
+        # live and can never silently skip them. The retrieval_eval harness stays a
+        # gated paid/GPU tier — compiled here, never `go test`-run in CI. See the CI
+        # tier matrix + GPU-tier degradation rule in docs/document-ingestion.md.
+        run: |
+          go vet -tags rerank_integration ./internal/rerank/
+          go vet -tags document_ingest_live ./internal/documents/
+          go vet -tags graphrag_live ./internal/documents/
+          go vet -tags retrieval_eval ./internal/eval/
 
       - name: Italian retrieval smoke (recall@5 hard gate, p95 reported)
         run: make smoke

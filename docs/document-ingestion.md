@@ -233,6 +233,38 @@ non-2xx, decode, length/index mismatch), leaves the original embedding order
 unchanged. It only **reorders** already-scoped results, so it can never widen memory
 scope.
 
+### Retrieval eval + CI tier matrix (RET-05)
+
+The rerank lift is gated by an offline eval harness (nDCG@10 / Recall@5 / MRR, vector
+vs vector+rerank) and a non-monotonic guard. See `docs/retrieval-eval.md` for the harness
+and `internal/documents/rerank_guard.go` for the guard (`applyRerankGuard`): a confident
+rerank reorders, a below-threshold / identity / corrupt result keeps the seed order, and
+the optional blend mode (`Service.RerankBlend`) RRF-fuses seed rank + rerank rank so one
+low-confidence demotion can never bury a strong seed hit (the spike-070 back-to-box case).
+
+The retrieval/rerank tiers form a layered matrix. The cross-encoder is **GPU-mandatory**
+(spike 070: CPU is ~70-1000x too slow) and the document live tiers need a PDF fixture, so
+the live tiers are operator/GPU-host runs; the standard GitHub runner compiles them as a
+no-rot floor and the default unit tier + coverage gate carry the always-on signal:
+
+| Tier | Build tag | CI on standard runner | Runs live on |
+|---|---|---|---|
+| Pure metrics (nDCG@10/Recall@5/MRR) | none (default) | **runs** (unit + `make coverage`) | every CI run |
+| Rerank client fail-soft contract | none (default) | **runs** (unit tier) | every CI run |
+| `rerank_integration` (live sidecar) | `rerank_integration` | compile floor (`go vet`) | GPU runner / operator host |
+| `document_ingest_live` (PDF E2E) | `document_ingest_live` | compile floor (`go vet`) | host with a doc fixture |
+| `graphrag_live` (per-stage p95) | `graphrag_live` | compile floor (`go vet`) | host with a doc fixture |
+| `retrieval_eval` (rerank-lift harness) | `retrieval_eval` | compile floor (`go vet`) — never `go test`-run in CI (paid/GPU) | GPU host |
+
+**GPU-tier degradation rule:** the GPU/fixture-gated tiers do not execute on the GPU-less,
+fixture-less standard runner — they compile (`go vet -tags …`, the always-green no-rot
+floor) and their test code `t.Fatal`s under `$CI` when their env (`AURA_RERANK_BASE_URL`
+exported in the knowledge job / `AURA_DOC_TEST_PDF`) is unset. That is the no-skip-as-green
+contract: a runner that DOES bring the sidecar up runs them live and can never silently
+skip; a runner that does not has a compiling floor, not a falsely-green skip. `make coverage`
+(owned surface) counts the pure metrics and the guard under the default build, so the
+retrieval quality code is held to the >=85% floor without any GPU.
+
 ## Troubleshooting
 
 Neo4j unreachable:
