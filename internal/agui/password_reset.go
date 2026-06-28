@@ -52,10 +52,17 @@ type PasswordResetStore interface {
 	LookupByEmail(ctx context.Context, email string) (RecoveryRecord, error)
 	StartChallenge(ctx context.Context, challenge PasswordResetChallenge) error
 	VerifyChallenge(ctx context.Context, identityID, code string) (string, error)
+	ClaimResetTokenHash(ctx context.Context, tokenHash string) (ResetTokenClaim, error)
 	ResolveResetTokenHash(ctx context.Context, tokenHash string) (string, error)
 	ConsumeResetTokenHash(ctx context.Context, tokenHash string) (string, error)
 	RecordChallengeAttempt(ctx context.Context, identityID string) error
 	RecordRecoveryEvent(ctx context.Context, event RecoveryEvent) error
+}
+
+type ResetTokenClaim interface {
+	IdentityID() string
+	Consume(ctx context.Context) (string, error)
+	Release(ctx context.Context) error
 }
 
 type RecoveryMessenger interface {
@@ -171,9 +178,10 @@ func (s *PasswordResetService) Start(ctx context.Context, in PasswordResetStartR
 		_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", record, email, in, s.now()))
 		return ok, nil
 	}
-	if err := s.recordEvent(ctx, passwordResetEvent("reset_start", record, email, in, s.now())); err != nil {
-		return ok, errPasswordResetUnavailable
-	}
+	// Public start responses stay neutral even if the append-only audit sink is
+	// temporarily unavailable; backend observability can be added here without
+	// changing the user-visible flow.
+	_ = s.recordEvent(ctx, passwordResetEvent("reset_start", record, email, in, s.now()))
 	return ok, nil
 }
 
@@ -235,27 +243,35 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
 	tokenHash := HashLookupToken(in.ResetToken)
-	identityID, err := s.store.ResolveResetTokenHash(ctx, tokenHash)
+	claim, err := s.store.ClaimResetTokenHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
 			return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 		}
 		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
 	}
+	if claim == nil {
+		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
+	}
+	identityID := claim.IdentityID()
 	if identityID == "" {
+		_ = claim.Release(ctx)
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
 	if err := s.resetter.SetPassword(ctx, identityID, in.Password); err != nil {
+		_ = claim.Release(ctx)
 		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
 	}
-	consumedIdentityID, err := s.store.ConsumeResetTokenHash(ctx, tokenHash)
+	consumedIdentityID, err := claim.Consume(ctx)
 	if err != nil {
+		_ = claim.Release(ctx)
 		if errors.Is(err, ErrPasswordResetDenied) {
 			return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 		}
 		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
 	}
 	if consumedIdentityID != identityID {
+		_ = claim.Release(ctx)
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
 	event := RecoveryEvent{

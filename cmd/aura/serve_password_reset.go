@@ -143,6 +143,25 @@ func (a recoveryStoreAdapter) ResolveResetTokenHash(ctx context.Context, tokenHa
 	return resolveResetTokenHash(ctx, sqlc.New(a.pool), tokenHash)
 }
 
+func (a recoveryStoreAdapter) ClaimResetTokenHash(ctx context.Context, tokenHash string) (agui.ResetTokenClaim, error) {
+	if a.pool == nil {
+		return nil, errors.New("password reset store unavailable")
+	}
+	tx, err := a.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	identityID, err := claimResetTokenHash(ctx, tx, tokenHash)
+	if err != nil {
+		return nil, err
+	}
+	return &pgPasswordResetTokenClaim{
+		tx:         tx,
+		tokenHash:  tokenHash,
+		identityID: identityID,
+	}, nil
+}
+
 func (a recoveryStoreAdapter) ConsumeResetTokenHash(ctx context.Context, tokenHash string) (string, error) {
 	if a.pool == nil {
 		return "", errors.New("password reset store unavailable")
@@ -205,6 +224,59 @@ type passwordResetTokenQueries interface {
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
 }
 
+type passwordResetTokenLocker interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func claimResetTokenHash(ctx context.Context, tx pgx.Tx, tokenHash string) (string, error) {
+	if tokenHash == "" {
+		_ = tx.Rollback(ctx)
+		return "", agui.ErrPasswordResetDenied
+	}
+	token, err := getPasswordResetTokenForUpdate(ctx, tx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = sqlc.New(tx).IncrementPasswordResetTokenAttempts(ctx, tokenHash)
+			_ = tx.Commit(ctx)
+			return "", agui.ErrPasswordResetDenied
+		}
+		_ = tx.Rollback(ctx)
+		return "", err
+	}
+	if token.ConsumedAt.Valid || !token.ExpiresAt.Valid || !token.ExpiresAt.Time.After(time.Now()) ||
+		token.AttemptCount >= token.MaxAttempts {
+		_ = sqlc.New(tx).IncrementPasswordResetTokenAttempts(ctx, tokenHash)
+		_ = tx.Commit(ctx)
+		return "", agui.ErrPasswordResetDenied
+	}
+	if !token.IdentityID.Valid {
+		_ = tx.Rollback(ctx)
+		return "", agui.ErrPasswordResetDenied
+	}
+	return uuid.UUID(token.IdentityID.Bytes).String(), nil
+}
+
+func getPasswordResetTokenForUpdate(ctx context.Context, q passwordResetTokenLocker, tokenHash string) (sqlc.AuraPasswordResetTokens, error) {
+	row := q.QueryRow(ctx, `
+SELECT token_hash, challenge_id, identity_id, created_at, expires_at, consumed_at,
+    attempt_count, max_attempts
+FROM aura.password_reset_tokens
+WHERE token_hash = $1
+FOR UPDATE`, tokenHash)
+	var token sqlc.AuraPasswordResetTokens
+	err := row.Scan(
+		&token.TokenHash,
+		&token.ChallengeID,
+		&token.IdentityID,
+		&token.CreatedAt,
+		&token.ExpiresAt,
+		&token.ConsumedAt,
+		&token.AttemptCount,
+		&token.MaxAttempts,
+	)
+	return token, err
+}
+
 func resolveResetTokenHash(ctx context.Context, q passwordResetTokenQueries, tokenHash string) (string, error) {
 	if q == nil || tokenHash == "" {
 		return "", agui.ErrPasswordResetDenied
@@ -244,6 +316,54 @@ func consumeResetTokenHash(ctx context.Context, q passwordResetTokenQueries, tok
 		return "", agui.ErrPasswordResetDenied
 	}
 	return uuid.UUID(consumed.IdentityID.Bytes).String(), nil
+}
+
+type pgPasswordResetTokenClaim struct {
+	tx         pgx.Tx
+	tokenHash  string
+	identityID string
+	closed     bool
+}
+
+func (c *pgPasswordResetTokenClaim) IdentityID() string {
+	if c == nil {
+		return ""
+	}
+	return c.identityID
+}
+
+func (c *pgPasswordResetTokenClaim) Consume(ctx context.Context) (string, error) {
+	if c == nil || c.closed {
+		return "", agui.ErrPasswordResetDenied
+	}
+	q := sqlc.New(c.tx)
+	consumed, err := q.ConsumePasswordResetToken(ctx, c.tokenHash)
+	if err != nil {
+		_ = c.Release(ctx)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", agui.ErrPasswordResetDenied
+		}
+		return "", err
+	}
+	if !consumed.IdentityID.Valid {
+		_ = c.Release(ctx)
+		return "", agui.ErrPasswordResetDenied
+	}
+	identityID := uuid.UUID(consumed.IdentityID.Bytes).String()
+	if err := c.tx.Commit(ctx); err != nil {
+		c.closed = true
+		return "", err
+	}
+	c.closed = true
+	return identityID, nil
+}
+
+func (c *pgPasswordResetTokenClaim) Release(ctx context.Context) error {
+	if c == nil || c.closed {
+		return nil
+	}
+	c.closed = true
+	return c.tx.Rollback(ctx)
 }
 
 type recoveryCodeDeliverer interface {

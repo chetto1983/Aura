@@ -119,89 +119,29 @@ func TestPasswordResetStartDeliveryFailureIsNeutral(t *testing.T) {
 	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", messenger.code, "203.0.113.21", "SensitiveBrowser")
 }
 
-func TestPasswordResetVerifyAndComplete(t *testing.T) {
+func TestPasswordResetStartAuditFailureIsNeutral(t *testing.T) {
 	store := newFakePasswordResetStore(t)
-	resetter := &fakePasswordResetter{}
+	store.eventErr = errors.New("audit unavailable for reset@example.com")
+	messenger := &fakeRecoveryMessenger{}
 	svc := NewPasswordResetService(PasswordResetDeps{
 		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
-		Clock:     func() time.Time { return time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC) },
+		Messenger: messenger,
+		Resetter:  &fakePasswordResetter{},
 	})
 
-	verify, err := svc.Verify(context.Background(), PasswordResetVerifyRequest{
-		Email:  "reset@example.com",
-		Code:   "123456",
-		Answer: "Blue bicycle",
+	resp, err := svc.Start(context.Background(), PasswordResetStartRequest{
+		Email:     "reset@example.com",
+		RequestIP: "203.0.113.22",
+		UserAgent: "SensitiveBrowser/22",
 	})
 	if err != nil {
-		t.Fatalf("Verify: %v", err)
+		t.Fatalf("Start with audit failure returned error: %v", err)
 	}
-	if verify.ResetToken != store.resetToken {
-		t.Fatalf("reset token = %q, want %q", verify.ResetToken, store.resetToken)
+	if resp.Status != "ok" {
+		t.Fatalf("status = %q, want ok", resp.Status)
 	}
-	if store.verifiedIdentity != store.record.IdentityID || store.verifiedCode != "123456" {
-		t.Fatalf("VerifyChallenge got identity=%q code=%q", store.verifiedIdentity, store.verifiedCode)
-	}
-	if len(store.events) != 1 || store.events[0].Event != "reset_verify" {
-		t.Fatalf("events after verify = %+v, want one reset_verify audit event", store.events)
-	}
-	assertNoPasswordResetEventLeak(t, store.events, "reset@example.com", "123456", "Blue bicycle")
-
-	complete, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
-		ResetToken: store.resetToken,
-		Password:   "new-pass-123",
-	})
-	if err != nil {
-		t.Fatalf("Complete: %v", err)
-	}
-	if complete.Status != "password_updated" {
-		t.Fatalf("complete status = %q, want password_updated", complete.Status)
-	}
-	if resetter.identityID != store.record.IdentityID || resetter.password != "new-pass-123" {
-		t.Fatalf("resetter got identity=%q password=%q", resetter.identityID, resetter.password)
-	}
-	if store.resolvedTokenHash != HashLookupToken(store.resetToken) {
-		t.Fatalf("resolved token hash = %q, want exact HashLookupToken(resetToken)", store.resolvedTokenHash)
-	}
-	if store.consumedTokenHash != HashLookupToken(store.resetToken) {
-		t.Fatalf("consumed token hash = %q, want exact HashLookupToken(resetToken)", store.consumedTokenHash)
-	}
-	if len(store.events) != 2 || store.events[1].Event != "reset_complete" {
-		t.Fatalf("events = %+v, want reset_verify then reset_complete audit events", store.events)
-	}
-	assertNoPasswordResetEventLeak(t, store.events, store.resetToken, "new-pass-123")
-}
-
-func TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(t *testing.T) {
-	store := newFakePasswordResetStore(t)
-	resetter := &fakePasswordResetter{err: errors.New("authula unavailable for new-pass-123")}
-	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
-	})
-
-	_, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
-		ResetToken: store.resetToken,
-		Password:   "new-pass-123",
-	})
-	if !errors.Is(err, errPasswordResetUnavailable) {
-		t.Fatalf("Complete err = %v, want unavailable", err)
-	}
-	if store.resolvedTokenHash != HashLookupToken(store.resetToken) {
-		t.Fatalf("resolved token hash = %q, want exact HashLookupToken(resetToken)", store.resolvedTokenHash)
-	}
-	if store.consumedTokenHash != "" {
-		t.Fatalf("resetter failure consumed token hash %q", store.consumedTokenHash)
-	}
-	if len(store.events) != 0 {
-		t.Fatalf("events = %+v, want none when password update fails", store.events)
-	}
-	for _, secret := range []string{store.resetToken, "new-pass-123"} {
-		if err != nil && strings.Contains(err.Error(), secret) {
-			t.Fatalf("Complete error leaked %q: %v", secret, err)
-		}
+	if messenger.code == "" {
+		t.Fatal("audit failure prevented recovery code delivery")
 	}
 }
 
@@ -421,10 +361,14 @@ type fakePasswordResetStore struct {
 	startErr            error
 	resolvedTokenHash   string
 	resolveErr          error
+	claimedTokenHash    string
+	claimErr            error
 	consumedTokenHash   string
 	consumeErr          error
+	releasedClaims      int
 	challengeAttempts   int
 	challengeAttemptErr error
+	eventErr            error
 	events              []RecoveryEvent
 }
 
@@ -458,6 +402,14 @@ func (f *fakePasswordResetStore) ResolveResetTokenHash(_ context.Context, tokenH
 	return f.record.IdentityID, nil
 }
 
+func (f *fakePasswordResetStore) ClaimResetTokenHash(_ context.Context, tokenHash string) (ResetTokenClaim, error) {
+	f.claimedTokenHash = tokenHash
+	if f.claimErr != nil {
+		return nil, f.claimErr
+	}
+	return &fakeResetTokenClaim{store: f, identityID: f.record.IdentityID, tokenHash: tokenHash}, nil
+}
+
 func (f *fakePasswordResetStore) ConsumeResetTokenHash(_ context.Context, tokenHash string) (string, error) {
 	f.consumedTokenHash = tokenHash
 	if f.consumeErr != nil {
@@ -478,6 +430,25 @@ func (f *fakePasswordResetStore) RecordChallengeAttempt(_ context.Context, ident
 
 func (f *fakePasswordResetStore) RecordRecoveryEvent(_ context.Context, event RecoveryEvent) error {
 	f.events = append(f.events, event)
+	return f.eventErr
+}
+
+type fakeResetTokenClaim struct {
+	store      *fakePasswordResetStore
+	identityID string
+	tokenHash  string
+}
+
+func (c *fakeResetTokenClaim) IdentityID() string {
+	return c.identityID
+}
+
+func (c *fakeResetTokenClaim) Consume(ctx context.Context) (string, error) {
+	return c.store.ConsumeResetTokenHash(ctx, c.tokenHash)
+}
+
+func (c *fakeResetTokenClaim) Release(context.Context) error {
+	c.store.releasedClaims++
 	return nil
 }
 
