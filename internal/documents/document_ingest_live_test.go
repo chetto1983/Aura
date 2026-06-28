@@ -148,19 +148,6 @@ func TestLiveDocumentIngestE2E(t *testing.T) {
 	}
 }
 
-func liveP95(values []time.Duration) time.Duration {
-	if len(values) == 0 {
-		return 0
-	}
-	sorted := append([]time.Duration(nil), values...)
-	for i := 1; i < len(sorted); i++ {
-		for j := i; j > 0 && sorted[j] < sorted[j-1]; j-- {
-			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
-		}
-	}
-	return sorted[int(float64(len(sorted)-1)*0.95)]
-}
-
 func liveIndustrialScore(ingest, p95 time.Duration, hits, chunks int) float64 {
 	score := 100.0
 	if chunks == 0 {

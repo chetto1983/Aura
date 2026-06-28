@@ -156,6 +156,56 @@ identity order, the result is the pre-rerank RRF/vector seed order. Retrieval is
 message-prefix-safe — it operates only on chunk rows and never touches the cached
 `messages[0]` system prefix.
 
+### GraphRAG connected-nodes retrieval (RET-04)
+
+`documents.Service.GraphRAG` exposes the same spike-070 Q4 order as a *connected-nodes*
+result with **per-stage timing**, so the retrieval budget is observable (and provable
+by the perf gate). It returns a `GraphRAGResult`:
+
+- `Hits` — the reranked winner chunks (the answer), in reranked order.
+- `Context` — their unique 1-hop connected neighbours over the connected-document graph
+  (`(:Chunk)-[:NEXT_CHUNK|HAS_CHUNK]-(:Chunk)`, bounded by a per-winner neighbour cap;
+  `:NEXT_CHUNK` is the reading-order edge that supplies context today, `:HAS_CHUNK`
+  being the `Document->Chunk` membership edge).
+- `Stages` — `VectorMS`, `ExpandMS`, `RerankMS`, each timed on a monotonic clock.
+
+The order is fixed **seed → rerank → expand** and never re-seeds from the expanded pool;
+only the reranked winners are expanded. Every stage is fail-soft, exactly as RET-02, and
+rerank failure never blocks GraphRAG (it degrades to the seed order with context still
+attached).
+
+**Per-stage p95 budget:**
+
+| Stage | p95 (spike, direct Bolt) | p95 (Aura, via MCP) | Notes |
+|-------|--------------------------|----------------------|-------|
+| vector seed (`db.index.vector.queryNodes`) | ~10–12 ms | ~50–65 ms | trivially cheap |
+| graph expand (1-hop `:NEXT_CHUNK`) | ~15 ms | ~50–65 ms | trivially cheap |
+| rerank (Qwen3-Reranker-0.6B Q4_K_M GPU) | ~333 ms (267 ms fast-path) | same (GPU) | the dominant bounded cost |
+| end-to-end (seed-rerank path) | — | ~130 ms (no rerank) | < 500 ms with the GPU reranker |
+
+Spike 070 Q2 measured the cheap stages at ~10–15 ms over a **direct Bolt driver**; Aura
+reads the graph through the **`mcp-neo4j-cypher` MCP seam** (CLAUDE.md bans a native Go
+driver), which adds ~40–50 ms of subprocess/JSON-RPC round-trip per read. The live tier
+therefore holds the cheap stages to a **150 ms** per-stage ceiling — still a small
+fraction of the 333 ms GPU rerank and the 500 ms end-to-end budget, so the spike thesis
+holds: vector seed and graph expand are cheap, **rerank dominates** and scales with
+`pool_size × doc_length`, which is why only the ~15 seeds (not the expanded pool) are
+reranked.
+
+Run the live tier (ingests + embeds the fixture, then asserts the per-stage budget). It
+is **no-skip-as-green**: with `AURA_DOC_TEST_PDF` unset it skips locally but `t.Fatal`s
+under `$CI`. The reranker is optional — without `AURA_RERANK_BASE_URL` (GPU-less host)
+the rerank-dominant comparison is skipped but the vector + expand + end-to-end budget
+still asserts:
+
+```powershell
+$env:AURA_DOC_TEST_PDF='C:\Users\Davide\OneDrive - Sonepar\Documenti\G220_op_instr_0824_en-US.pdf'
+$env:AURA_RERANK_BASE_URL='http://127.0.0.1:8085'  # optional; omit on a GPU-less host
+go test -tags graphrag_live -run TestGraphRAGLive ./internal/documents -count=1 -v
+```
+
+The tier logs a per-stage p50/p95 table for vector / expand / rerank / end-to-end.
+
 ## Reranker (optional, GPU)
 
 A cross-encoder reranker is available as an optional GPU sidecar, `aura-rerank`
