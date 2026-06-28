@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: ready_to_plan
-stopped_at: Phase 29 complete (5/5) — ready to discuss Phase 30
-last_updated: 2026-06-21T14:31:54.091Z
-last_activity: 2026-06-21
+status: executing
+stopped_at: Phase 30 plan 01 complete (rerank foundation) — ready to execute 30-02
+last_updated: "2026-06-28T04:33:00.641Z"
+last_activity: 2026-06-28
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 45
-  completed_plans: 40
+  completed_plans: 41
   percent: 89
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 30 — retrieval memory hardening
+**Current focus:** Phase 30 — retrieval-memory-hardening
 
 ## Current Position
 
-Phase: 30
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-21
+Phase: 30 (retrieval-memory-hardening) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-06-28
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
 
@@ -197,6 +197,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 28 P06 | ~4h | 2 tasks | 41 files |
 | Phase 29 P29-02 | ~24min | 3 tasks | 12 files |
 | Phase 29 P29-03 | ~45min | 3 tasks | 13 files |
+| Phase 30 P01 | 23min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -364,6 +365,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 27-02: serve opens ONE boot-time knowledge.Client for the graph routes (fail-closed 503, never aborts boot)
 - [Phase ?]: Phase 27/03 graph frontend core is renderer-free; labelFamilyColor is schema-driven over one brand ramp
 - [Phase ?]: Phase 29 D-13 (Option A): cockpit skill install mints an operator-origin ask_user pause via askuser.Store.Insert, widening T-04-19 to a capability-gated second paused_states writer; surfaces in /api/approvals + resumes via the existing source-agnostic bridge (no model approve, never auto-activates).
+- [Phase 30] 30-01: RerankClient is fail-soft — every failure mode (empty BaseURL, 5xx, decode error, length/index mismatch) returns identity (input) order with a nil error; rerank never blocks retrieval (RET-01).
+- [Phase 30] 30-01: aura-rerank is an OPTIONAL GPU sidecar (ghcr.io/ggml-org/llama.cpp:server-cuda, Qwen3-Reranker-0.6B Q4_K_M, Apache-2.0) mirroring aura-ocr-vl with no depends_on, so the stack boots without a GPU.
+- [Phase 30] 30-01: documents are truncated to 480 runes for the /v1/rerank wire body only; the returned Scored.Document keeps the ORIGINAL untruncated text.
 
 ### Pending Todos
 
@@ -397,7 +401,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-21T14:03:06.238Z
+Last session: 2026-06-28T04:31:27.019Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 
