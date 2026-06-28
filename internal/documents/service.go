@@ -51,6 +51,7 @@ type Service struct {
 	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 384d seed vector
 	Reranker        Reranker           // reorders seed chunks by relevance (fail-soft)
 	RerankThreshold float64            // non-monotonic guard: keep seed order when the top rerank score is below this
+	RerankBlend     bool               // non-monotonic guard: blend seed rank + rerank rank (RRF) instead of the hard threshold gate
 
 	// timeSource is the monotonic clock GraphRAG times its stages with (RET-04). A
 	// nil value uses time.Now, whose monotonic reading makes elapsed-time subtraction

@@ -92,41 +92,36 @@ func (s *Service) vectorSeed(ctx context.Context, vector []float64, req SearchRe
 	return hitsFromRows(rows)
 }
 
-// rerankSeeds reorders seeds by rerank relevance. It is fail-soft and honours the
-// non-monotonic guard hook (RerankThreshold): a weak top score, an identity result, a
-// rerank error, or a length/index mismatch all keep the original seed order.
+// rerankSeeds reorders seeds by rerank relevance, then applies the non-monotonic guard
+// (applyRerankGuard). It is fail-soft: a missing reranker, a rerank error, a weak top
+// score, an identity result, or a length/index mismatch all keep the original seed
+// order — the guard owns that decision so Retrieve and GraphRAG share one implementation.
 func (s *Service) rerankSeeds(ctx context.Context, query string, seeds []SearchHit) []SearchHit {
-	if s.Reranker == nil || len(seeds) < 2 {
+	scored, ok := s.rerankScores(ctx, query, seeds)
+	if !ok {
 		return seeds
+	}
+	return applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend)
+}
+
+// rerankScores is the I/O half of the two-stage rerank: it runs the reranker over the
+// seed texts and returns the scored result. ok is false (and the caller keeps the seed
+// order) when no reranker is wired, the pool is too small to reorder, or the rerank
+// call errors. Kept apart from the pure applyRerankGuard so both Retrieve and GraphRAG
+// reuse one rerank call and one guard (no duplicated threshold logic — CLAUDE.md).
+func (s *Service) rerankScores(ctx context.Context, query string, seeds []SearchHit) ([]rerank.Scored, bool) {
+	if s.Reranker == nil || len(seeds) < 2 {
+		return nil, false
 	}
 	texts := make([]string, len(seeds))
 	for i := range seeds {
 		texts[i] = seeds[i].Text
 	}
 	scored, err := s.Reranker.Rerank(ctx, query, texts)
-	if err != nil || len(scored) != len(seeds) {
-		return seeds
+	if err != nil {
+		return nil, false
 	}
-	if scored[0].Score < s.RerankThreshold {
-		return seeds // non-monotonic guard: top score too weak to trust the reorder
-	}
-	reordered := make([]SearchHit, 0, len(seeds))
-	changed := false
-	for i, sc := range scored {
-		if sc.Index < 0 || sc.Index >= len(seeds) {
-			return seeds
-		}
-		if sc.Index != i {
-			changed = true
-		}
-		hit := seeds[sc.Index]
-		hit.Score = sc.Score
-		reordered = append(reordered, hit)
-	}
-	if !changed {
-		return seeds // identity order — keep the seed hits (and their seed scores)
-	}
-	return reordered
+	return scored, true
 }
 
 // expandWinners attaches 1-hop reading-order neighbour context to the reranked

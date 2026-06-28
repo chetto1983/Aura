@@ -59,7 +59,10 @@ func (s *Service) GraphRAG(ctx context.Context, req SearchRequest) (GraphRAGResu
 		return GraphRAGResult{Stages: stages}, nil
 	}
 
-	ranked := s.rerankSeeds(ctx, req.Query, seeds)
+	ranked := seeds
+	if scored, ok := s.rerankScores(ctx, req.Query, seeds); ok {
+		ranked = applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend)
+	}
 	t2 := s.nowMono()
 	stages.RerankMS = t2.Sub(t1).Milliseconds()
 	winners := topHits(ranked, effectiveLimit(req.Limit))
