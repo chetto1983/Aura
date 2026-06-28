@@ -7,6 +7,10 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
+# markitdown[all] already pulls these transitively, but the /extract handlers
+# import them directly (PyMuPDF/openpyxl/python-docx/python-pptx), so they are
+# pinned explicitly for supply-chain reproducibility. HTML extraction reuses the
+# markitdown converter and CSV uses the stdlib, so they add no new dependency.
 RUN pip install --no-cache-dir \
     "markitdown[all]==0.1.6" \
     "fastapi==0.115.6" \
@@ -14,7 +18,8 @@ RUN pip install --no-cache-dir \
     "python-multipart==0.0.20" \
     "PyMuPDF==1.24.14" \
     "openpyxl==3.1.5" \
-    "python-docx==1.1.2"
+    "python-docx==1.1.2" \
+    "python-pptx==1.0.2"
 
 WORKDIR /app
 COPY app.py .

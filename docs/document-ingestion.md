@@ -1,8 +1,8 @@
 # Aura Document Ingestion
 
-Aura indexes large PDF, XLSX, and DOCX files through a two-lane pipeline. Files
-can enter through the CLI, Telegram, or the shared asset pipeline used by the web
-cockpit:
+Aura indexes documents in every markitdown-readable format through a two-lane
+pipeline. Files can enter through the CLI, Telegram, or the shared asset pipeline
+used by the web cockpit:
 
 ```text
 file -> extractor sidecar /extract -> Postgres job state
@@ -20,6 +20,8 @@ Neo4j stores document data:
 - `(:Document)` metadata and lifecycle.
 - `(:Chunk)` text, locator JSON, hashes, optional embedding.
 - `(:Document)-[:HAS_CHUNK]->(:Chunk)`.
+- `(:Chunk)-[:NEXT_CHUNK]->(:Chunk)` reading-order chain (one document has
+  `chunk_count - 1` such edges; the upsert is idempotent on re-ingest).
 
 The agent-memory MCP server is separate. It is for conversational memory,
 entities, preferences, and facts. It is not the primary store for document
@@ -37,10 +39,21 @@ background enhancement and must not block user questions.
 
 ## Supported Files
 
-- `.pdf`
-- `.xlsx`
-- `.xlsm`
-- `.docx`
+A single allowlist (`internal/documents/extensions.go`) gates ingestion. Each
+format gets a format-aware locator (page, sheet/row range, slide, or section):
+
+- `.pdf` — page locators
+- `.docx` — section/heading locators
+- `.pptx` — one chunk per slide, slide + title locators
+- `.xlsx`, `.xlsm` — sheet + row-range locators
+- `.csv` — row-range locators
+- `.html`, `.htm` — section/heading locators
+- `.md`, `.markdown`, `.txt`, `.json`, `.xml`, `.epub` — generic markdown
+- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` — markitdown image text extraction
+
+Any other markitdown-readable format still ingests through the generic-markdown
+fallback (`_extract_markdown`) to at least one chunk with an empty-but-valid
+locator. The size ceiling (`DefaultMaxIngestBytes`, 50 MiB) is enforced for all.
 
 Default size policy:
 
@@ -88,9 +101,17 @@ Live E2E:
 $env:AURA_DOC_TEST_PDF='C:\Users\Davide\OneDrive - Sonepar\Documenti\G220_op_instr_0824_en-US.pdf'
 $env:AURA_DOC_TEST_XLSX='C:\Users\Davide\Desktop\Gestito Linea Automazione 2025.xlsx'
 $env:AURA_DOC_TEST_DOCX='C:\Users\Davide\OneDrive - Sonepar\Documenti\Corso Robot\Corso Base Robot.docx'
+$env:AURA_DOC_TEST_PPTX='C:\Users\Davide\OneDrive - Sonepar\Documenti\deck.pptx'  # exercises a non-PDF format
+$env:AURA_DOC_TEST_HTML='C:\Users\Davide\OneDrive - Sonepar\Documenti\page.html'  # optional, section locators
 $env:AURA_DOC_TEST_RESET='1'
 go test -tags document_ingest_live ./internal/documents -run TestLiveDocumentIngestE2E -count=1 -v
 ```
+
+The live tier asserts each file reaches `searchable` with `>= 1` chunk and that
+the `:NEXT_CHUNK` edge count equals `chunk_count - 1`. It enforces
+no-skip-as-green: with none of the `AURA_DOC_TEST_*` vars set it skips locally
+but `t.Fatal`s under `$CI`. New `.pptx`/`.html` handlers require a markitdown
+sidecar rebuilt from this revision (`docker compose up -d --build markitdown`).
 
 ## Telegram
 

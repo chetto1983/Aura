@@ -12,6 +12,7 @@ from markitdown import MarkItDown
 app = FastAPI(title="aura-markitdown", version="2")
 _md = MarkItDown()
 _ws_re = re.compile(r"\s+")
+_atx_heading_re = re.compile(r"^(#{1,6})\s+(.*)$")
 _max_chunk_chars = 12000
 
 
@@ -44,6 +45,12 @@ async def extract(file: UploadFile = File(...), mime_type: str = Form("")) -> di
             payload = _extract_xlsx(path)
         elif suffix == ".docx" or effective_mime.endswith("wordprocessingml.document"):
             payload = _extract_docx(path)
+        elif suffix == ".pptx" or effective_mime.endswith("presentationml.presentation"):
+            payload = _extract_pptx(path)
+        elif suffix in (".html", ".htm") or effective_mime in ("text/html", "application/xhtml+xml"):
+            payload = _extract_html(path)
+        elif suffix == ".csv" or effective_mime == "text/csv":
+            payload = _extract_csv(path)
         else:
             payload = _extract_markdown(path)
         payload["mime_type"] = effective_mime or payload.get("mime_type", "")
@@ -256,6 +263,114 @@ def _heading_level(style_name: str) -> int:
     if not match:
         return 1
     return max(1, min(6, int(match.group(1))))
+
+
+def _extract_pptx(path: str) -> dict:
+    try:
+        from pptx import Presentation
+    except Exception:
+        raise HTTPException(status_code=503, detail="pptx extractor unavailable")
+
+    prs = Presentation(path)
+    chunks: list[dict] = []
+    slide_count = 0
+    for index, slide in enumerate(prs.slides, start=1):
+        slide_count += 1
+        title = _slide_title(slide)
+        lines: list[str] = []
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for paragraph in shape.text_frame.paragraphs:
+                text = _normalize("".join(run.text for run in paragraph.runs))
+                if text:
+                    lines.append(text)
+        section = title or f"slide {index}"
+        heading_path = [title] if title else []
+        chunks.extend(
+            _chunk_text("slide", "\n".join(lines), {"slide": index, "section": section}, heading_path)
+        )
+    mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    return _payload(os.path.basename(path), mime, chunks, sections=slide_count)
+
+
+def _slide_title(slide: Any) -> str:
+    try:
+        title_shape = slide.shapes.title
+    except Exception:
+        title_shape = None
+    if title_shape is not None and getattr(title_shape, "has_text_frame", False):
+        return _normalize(title_shape.text)
+    return ""
+
+
+def _extract_html(path: str) -> dict:
+    result = _md.convert(path)
+    chunks = _split_markdown_sections(result.text_content)
+    return _payload(os.path.basename(path), "text/html", chunks, sections=len(chunks))
+
+
+def _split_markdown_sections(markdown: str) -> list[dict]:
+    chunks: list[dict] = []
+    heading = ""
+    buffer: list[str] = []
+
+    def flush() -> None:
+        nonlocal buffer
+        if not buffer:
+            return
+        section = heading or "body"
+        heading_path = [heading] if heading else []
+        chunks.extend(_chunk_text("section", "\n".join(buffer), {"section": section}, heading_path))
+        buffer = []
+
+    for line in (markdown or "").splitlines():
+        match = _atx_heading_re.match(line.strip())
+        if match:
+            flush()
+            heading = _normalize(match.group(2))
+            if heading:
+                buffer.append(heading)
+            continue
+        buffer.append(line)
+    flush()
+    if not chunks:
+        chunks = _chunk_text("section", markdown, {"section": "body"})
+    return chunks
+
+
+def _extract_csv(path: str) -> dict:
+    import csv
+
+    chunks: list[dict] = []
+    lines: list[str] = []
+    row_start = 0
+    row_end = 0
+
+    def flush() -> None:
+        nonlocal lines, row_start, row_end
+        if not lines:
+            return
+        chunks.extend(
+            _chunk_text("rows", "\n".join(lines), {"row_start": row_start, "row_end": row_end})
+        )
+        lines = []
+        row_start = 0
+        row_end = 0
+
+    with open(path, newline="", encoding="utf-8", errors="replace") as fh:
+        for row_index, row in enumerate(csv.reader(fh), start=1):
+            cells = [cell.strip() for cell in row if cell and cell.strip()]
+            if not cells:
+                continue
+            if row_start == 0:
+                row_start = row_index
+            row_end = row_index
+            lines.append(f"row {row_index}: " + " | ".join(cells))
+            if len("\n".join(lines)) >= _max_chunk_chars or len(lines) >= 50:
+                flush()
+        flush()
+    return _payload(os.path.basename(path), "text/csv", chunks)
 
 
 def _extract_markdown(path: str) -> dict:

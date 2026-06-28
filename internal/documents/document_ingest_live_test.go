@@ -13,11 +13,31 @@ import (
 	"github.com/chetto1983/aura/internal/knowledge"
 )
 
+// docTestEnvs are the per-format file-path env vars the live tier reads.
+var docTestEnvs = []string{
+	"AURA_DOC_TEST_PDF",
+	"AURA_DOC_TEST_XLSX",
+	"AURA_DOC_TEST_DOCX",
+	"AURA_DOC_TEST_PPTX",
+	"AURA_DOC_TEST_HTML",
+}
+
 func TestLiveDocumentIngestE2E(t *testing.T) {
-	if os.Getenv("AURA_DOC_TEST_PDF") == "" &&
-		os.Getenv("AURA_DOC_TEST_XLSX") == "" &&
-		os.Getenv("AURA_DOC_TEST_DOCX") == "" {
-		t.Skip("set at least one of AURA_DOC_TEST_PDF, AURA_DOC_TEST_XLSX, or AURA_DOC_TEST_DOCX")
+	anySet := false
+	for _, key := range docTestEnvs {
+		if os.Getenv(key) != "" {
+			anySet = true
+			break
+		}
+	}
+	// No-skip-as-green: under $CI an unset env set is a misconfigured job, never a
+	// silent green pass; locally it skips so a developer without fixtures is not
+	// blocked. GitHub Actions always sets CI=true.
+	if !anySet {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("document_ingest_live requires at least one of %v under CI — a skipped tier must never pass as green", docTestEnvs)
+		}
+		t.Skipf("set at least one of %v to run the document_ingest_live tier locally", docTestEnvs)
 	}
 
 	cfg := config.LoadDB()
@@ -69,6 +89,8 @@ func TestLiveDocumentIngestE2E(t *testing.T) {
 		{name: "pdf", env: "AURA_DOC_TEST_PDF", query: "safety reset", maxIngest: 3 * time.Second, minScore: 85},
 		{name: "xlsx", env: "AURA_DOC_TEST_XLSX", query: "automazione linea", maxIngest: 3 * time.Second, minScore: 85},
 		{name: "docx", env: "AURA_DOC_TEST_DOCX", query: "robot corso base", maxIngest: time.Second, minScore: 85},
+		{name: "pptx", env: "AURA_DOC_TEST_PPTX", query: "agenda", maxIngest: 3 * time.Second, minScore: 85},
+		{name: "html", env: "AURA_DOC_TEST_HTML", query: "introduction", maxIngest: 3 * time.Second, minScore: 85},
 	}
 	for _, tc := range cases {
 		path := os.Getenv(tc.env)
@@ -86,6 +108,20 @@ func TestLiveDocumentIngestE2E(t *testing.T) {
 			t.Fatalf("%s ingest: %v", tc.name, err)
 		}
 		ingest := time.Since(start)
+		if job.SparseChunks < 1 {
+			t.Fatalf("%s: ingested %d chunks, want >= 1", tc.name, job.SparseChunks)
+		}
+		// The reading-order chain must hold for every format: one document has
+		// exactly chunk_count-1 :NEXT_CHUNK edges.
+		edgeRows, err := mcp.Read(ctx,
+			"MATCH (:Chunk {document_id:$id})-[:NEXT_CHUNK]->() RETURN count(*) AS count",
+			map[string]any{"id": job.DocumentID})
+		if err != nil {
+			t.Fatalf("%s next-chunk count: %v", tc.name, err)
+		}
+		if got := countFromRows(edgeRows, -1); got != job.SparseChunks-1 {
+			t.Fatalf("%s: NEXT_CHUNK edges = %d, want chunk_count-1 = %d", tc.name, got, job.SparseChunks-1)
+		}
 		var latencies []time.Duration
 		var hits []SearchHit
 		for range 5 {

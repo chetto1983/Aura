@@ -93,10 +93,13 @@ type Chunk struct {
 	HeadingPath []string
 }
 
-// Locator identifies where a chunk came from inside the source document.
+// Locator identifies where a chunk came from inside the source document. The
+// field is format-appropriate: page for PDFs, sheet/row range for spreadsheets
+// and CSVs, slide for presentations, and section for documents and HTML.
 type Locator struct {
 	Page      int    `json:"page,omitempty"`
 	Sheet     string `json:"sheet,omitempty"`
+	Slide     int    `json:"slide,omitempty"`
 	RowStart  int    `json:"row_start,omitempty"`
 	RowEnd    int    `json:"row_end,omitempty"`
 	Section   string `json:"section,omitempty"`
