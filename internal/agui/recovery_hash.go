@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -26,6 +25,9 @@ func NormalizeRecoveryAnswer(s string) string {
 
 func (RecoveryHasher) HashAnswer(answer string) (hash string, version string, err error) {
 	normalized := NormalizeRecoveryAnswer(answer)
+	if normalized == "" {
+		return "", "", errors.New("empty recovery answer")
+	}
 	hash, err = hashArgon2id(normalized)
 	if err != nil {
 		return "", "", err
@@ -34,17 +36,28 @@ func (RecoveryHasher) HashAnswer(answer string) (hash string, version string, er
 }
 
 func (RecoveryHasher) VerifyAnswer(answer, encoded string) bool {
-	return verifyArgon2id(NormalizeRecoveryAnswer(answer), encoded)
+	normalized := NormalizeRecoveryAnswer(answer)
+	if normalized == "" {
+		return false
+	}
+	return verifyArgon2id(normalized, encoded)
 }
 
 func HashOpaqueSecret(secret string) (string, error) {
+	if secret == "" {
+		return "", errors.New("empty opaque secret")
+	}
 	return hashArgon2id(secret)
 }
 
 func VerifyOpaqueSecret(secret, encoded string) bool {
+	if secret == "" {
+		return false
+	}
 	return verifyArgon2id(secret, encoded)
 }
 
+// HashLookupToken hashes only high-entropy random reset tokens, not user-chosen secrets.
 func HashLookupToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
@@ -72,31 +85,30 @@ func verifyArgon2id(secret, encoded string) bool {
 
 func parseArgon2id(encoded string) ([]byte, []byte, error) {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 7 || parts[1] != "aura" || parts[2] != "argon2id" || parts[3] != "v=19" {
+	if len(parts) != 7 || parts[0] != "" || parts[1] != "aura" || parts[2] != "argon2id" || parts[3] != "v=19" {
 		return nil, nil, errors.New("invalid argon2id hash")
 	}
-	params := map[string]int{}
-	for _, p := range strings.Split(parts[4], ",") {
-		kv := strings.SplitN(p, "=", 2)
-		if len(kv) != 2 {
-			return nil, nil, errors.New("invalid argon2id params")
-		}
-		n, err := strconv.Atoi(kv[1])
-		if err != nil {
-			return nil, nil, err
-		}
-		params[kv[0]] = n
-	}
-	if params["m"] != 65536 || params["t"] != 1 || params["p"] != 4 {
+	if parts[4] != "m=65536,t=1,p=4" {
 		return nil, nil, errors.New("unsupported argon2id params")
 	}
-	salt, err := base64.RawStdEncoding.DecodeString(parts[5])
+	salt, err := decodeCanonicalRawStdBase64(parts[5], 16)
 	if err != nil {
 		return nil, nil, err
 	}
-	hash, err := base64.RawStdEncoding.DecodeString(parts[6])
+	hash, err := decodeCanonicalRawStdBase64(parts[6], 32)
 	if err != nil {
 		return nil, nil, err
 	}
 	return salt, hash, nil
+}
+
+func decodeCanonicalRawStdBase64(encoded string, wantLen int) ([]byte, error) {
+	decoded, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, err
+	}
+	if len(decoded) != wantLen || base64.RawStdEncoding.EncodeToString(decoded) != encoded {
+		return nil, errors.New("invalid argon2id field")
+	}
+	return decoded, nil
 }
