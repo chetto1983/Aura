@@ -2,6 +2,7 @@
 package assets
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -96,6 +97,31 @@ func WithContextBlocks(userText string, blocks ...string) string {
 		return userText
 	}
 	return prefix.String() + "User message:\n" + userText
+}
+
+// BuildTurnContext composes the per-turn context blocks — this turn's attachments
+// (detailed, untrusted) plus the thread's knowledge catalog of the OTHER searchable
+// documents — onto userText, channel-agnostically. Both the AG-UI gateway and the
+// Telegram channel call this so attachment + catalog injection lives in ONE place (no
+// per-channel duplication). attachments are the assets attached THIS turn (already
+// resolved and authorized by the caller); the catalog is the thread's other searchable
+// docs (minus these) read from ListForThread. Both blocks ride the user-turn tail —
+// cache-safe, leaving messages[0]/[1] byte-stable. It is best-effort: an empty
+// identity/thread or a ListForThread error yields no catalog (never an error), and a
+// plain turn with nothing to add returns userText unchanged.
+func (s *Service) BuildTurnContext(ctx context.Context, identityID, threadID string, attachments []Asset, userText string) string {
+	attachmentBlock := BuildAttachmentBlock(attachments)
+	excluded := make(map[string]bool, len(attachments))
+	for _, a := range attachments {
+		excluded[a.ID] = true
+	}
+	var catalogBlock string
+	if s != nil && s.Store != nil && identityID != "" && threadID != "" {
+		if items, err := s.ListForThread(ctx, identityID, threadID); err == nil {
+			catalogBlock = BuildKnowledgeCatalog(items, excluded)
+		}
+	}
+	return WithContextBlocks(userText, catalogBlock, attachmentBlock)
 }
 
 func sanitizeLine(value string) string {
