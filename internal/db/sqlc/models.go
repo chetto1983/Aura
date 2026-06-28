@@ -294,6 +294,15 @@ type AuraSchedulerTasks struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Cockpit-editable runtime override layer for model-backend knobs (Settings page). MUTABLE (aura_app full DML). Overlaid onto the environment at boot by internal/settings (DB wins); applied on restart. is_secret rows are redacted in API GET responses.
+type AuraSettings struct {
+	Key       string             `json:"key"`
+	Value     string             `json:"value"`
+	IsSecret  bool               `json:"is_secret"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.Text        `json:"updated_by"`
+}
+
 // Append-only skill-mutation audit ledger (Slice 7c / Phase 11, D-29). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 1/6). The D-29 coherence CHECK constrains the approval tuple to five allowed events; content_hash is the D-23 recovery path on every row.
 type AuraSkillAudit struct {
 	ID             pgtype.UUID        `json:"id"`

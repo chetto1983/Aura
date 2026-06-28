@@ -40,6 +40,7 @@ type Querier interface {
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
+	DeleteSetting(ctx context.Context, key string) error
 	// Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
 	// row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
@@ -57,6 +58,7 @@ type Querier interface {
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
+	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
 	GetTelegramAccountByTelegramID(ctx context.Context, telegramUserID int64) (AuraTelegramAccounts, error)
@@ -120,6 +122,7 @@ type Querier interface {
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
+	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
@@ -166,6 +169,7 @@ type Querier interface {
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
+	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 }
 
 var _ Querier = (*Queries)(nil)
