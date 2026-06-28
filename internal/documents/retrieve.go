@@ -130,42 +130,56 @@ func (s *Service) rerankSeeds(ctx context.Context, query string, seeds []SearchH
 }
 
 // expandWinners attaches 1-hop reading-order neighbour context to the reranked
-// winners. Only the WINNERS are expanded (not the whole pool); winners stay first in
-// reranked order with unique neighbours appended. Expansion is best-effort context:
-// any graph error returns the winners unchanged (the answer is already in the seeds).
+// winners as one flat list (winners first in reranked order, unique neighbours
+// appended). It is the Retrieve-shaped view of expandNeighbors; GraphRAG keeps the
+// winners and neighbours apart instead.
 func (s *Service) expandWinners(ctx context.Context, winners []SearchHit) []SearchHit {
-	if s.Knowledge == nil || len(winners) == 0 {
+	neighbors := s.expandNeighbors(ctx, neighborExpandQuery, winners)
+	if len(neighbors) == 0 {
 		return winners
 	}
+	out := make([]SearchHit, 0, len(winners)+len(neighbors))
+	out = append(out, winners...)
+	out = append(out, neighbors...)
+	return out
+}
+
+// expandNeighbors fetches the unique 1-hop graph neighbours of the winners via the
+// given bounded, $-parameter expansion query, de-duplicated against the winners and
+// each other. Only the WINNERS are expanded — never the whole candidate pool — and
+// the read is capped at neighborsPerWinner per winner (T-30-11: 1-hop + neighbour
+// cap bound the fan-out). Expansion is best-effort context: a missing graph client
+// or any graph/decode error yields no neighbours (the answer is in the winners).
+func (s *Service) expandNeighbors(ctx context.Context, query string, winners []SearchHit) []SearchHit {
+	if s.Knowledge == nil || len(winners) == 0 {
+		return nil
+	}
 	ids := make([]string, len(winners))
+	seen := make(map[string]struct{}, len(winners))
 	for i := range winners {
 		ids[i] = winners[i].ChunkID
+		seen[winners[i].ChunkID] = struct{}{}
 	}
-	rows, err := s.Knowledge.Read(ctx, neighborExpandQuery, map[string]any{
+	rows, err := s.Knowledge.Read(ctx, query, map[string]any{
 		"winner_ids":   ids,
 		"expand_limit": len(ids) * neighborsPerWinner,
 	})
 	if err != nil {
-		return winners
+		return nil
 	}
 	neighbors, err := hitsFromRows(rows)
 	if err != nil {
-		return winners
+		return nil
 	}
-	out := make([]SearchHit, 0, len(winners)+len(neighbors))
-	seen := make(map[string]struct{}, len(winners)+len(neighbors))
-	for _, w := range winners {
-		out = append(out, w)
-		seen[w.ChunkID] = struct{}{}
-	}
+	unique := make([]SearchHit, 0, len(neighbors))
 	for _, n := range neighbors {
 		if _, ok := seen[n.ChunkID]; ok {
 			continue
 		}
 		seen[n.ChunkID] = struct{}{}
-		out = append(out, n)
+		unique = append(unique, n)
 	}
-	return out
+	return unique
 }
 
 // topHits keeps the first k hits (the reranked winners); k<=0 keeps all.

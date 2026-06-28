@@ -51,6 +51,13 @@ type Service struct {
 	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 384d seed vector
 	Reranker        Reranker           // reorders seed chunks by relevance (fail-soft)
 	RerankThreshold float64            // non-monotonic guard: keep seed order when the top rerank score is below this
+
+	// timeSource is the monotonic clock GraphRAG times its stages with (RET-04). A
+	// nil value uses time.Now, whose monotonic reading makes elapsed-time subtraction
+	// immune to wall-clock jumps; tests inject a deterministic source. It is distinct
+	// from Clock, which stamps UTC wall-clock document times (UTC strips the monotonic
+	// reading, so Clock must never be used to measure a duration).
+	timeSource func() time.Time
 }
 
 // IngestPath ingests a local document file and returns once sparse search is ready.
