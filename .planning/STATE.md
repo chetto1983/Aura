@@ -4,13 +4,13 @@ milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
 stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-28T05:51:39.662Z"
+last_updated: "2026-06-28T06:41:03.719Z"
 last_activity: 2026-06-28
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 45
-  completed_plans: 43
+  completed_plans: 44
   percent: 89
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 30 (retrieval-memory-hardening) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-28
 
@@ -200,6 +200,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 30 P01 | 23min | 2 tasks | 9 files |
 | Phase 30 P02 | 24min | 2 tasks | 11 files |
 | Phase 30 P03 | ~50min | 2 tasks | 12 files |
+| Phase 30 P04 | ~50min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -375,6 +376,9 @@ Recent decisions affecting current work:
 - [Phase 30] 30-03: non-monotonic guard hook (Service.RerankThreshold, default permissive 0) keeps the seed order when the top rerank score is below threshold, so RET-05 can tune the guard without re-plumbing.
 - [Phase 30] 30-03: expansion uses :NEXT_CHUNK only — :HAS_CHUNK is a Document→Chunk edge (indexer.go), so it cannot be a 1-hop chunk-to-chunk context edge (deviation from the plan's literal :NEXT_CHUNK|:HAS_CHUNK pattern).
 - [Phase 30] 30-03: agent-memory recall rerank is stdlib urllib (mirrors the Go stdlib client; httpx is only an optional extra), run off the event loop via asyncio.to_thread in BaseMemory.rerank_results; it only REORDERS already-scoped results so memory scope can never widen (T-30-10).
+- [Phase 30] 30-04: documents.Service.GraphRAG (RET-04) returns reranked winners in Hits + their 1-hop connected neighbours in Context + StageTimings{VectorMS,ExpandMS,RerankMS} timed on an injectable monotonic clock (timeSource; nil→time.Now, never the UTC Clock), in the fixed seed→rerank→expand order; rerank failure never blocks it.
+- [Phase 30] 30-04: graphExpandQuery uses the non-deprecated :NEXT_CHUNK|HAS_CHUNK union (re-adding :HAS_CHUNK per the 30-04 plan's explicit connected-graph set); live-verified on Neo4j 5.26 that :HAS_CHUNK is Document→Chunk so the :NEXT_CHUNK reading-order edge supplies the 1-hop context (reconciles the 30-03 :NEXT_CHUNK-only note: the union is bounded + inert for the HAS_CHUNK arm today).
+- [Phase 30] 30-04: per-stage p95 ceiling is 150ms for Aura's mcp-neo4j-cypher path (spike 070 measured ~10ms over direct Bolt; the MCP stdio seam adds ~40-50ms/read) — still a small fraction of the 333ms GPU rerank + 500ms e2e, so the spike thesis holds. Live @ HEAD: vector p95 54ms, expand p95 45ms, e2e p95 111ms over 828 G220 chunks (827 :NEXT_CHUNK edges, all 828 embedded).
 - [Phase ?]: 30-02: :NEXT_CHUNK uses MATCH-then-MERGE (not inline-node MERGE) so re-ingest never duplicates nodes/edges — idempotent reading-order graph for two-stage retrieval
 - [Phase ?]: 30-02: ingest gated by one supportedDocumentExt allowlist; markitdown /extract gains pptx/html/csv handlers + generic fallback; python-pptx the only added (pinned) dep
 
@@ -410,7 +414,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-28T05:51:39.648Z
+Last session: 2026-06-28T06:41:03.705Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 
