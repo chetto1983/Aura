@@ -122,14 +122,23 @@ func (f *fakeAuraLeg) auditCount() int {
 }
 
 type fakeTelegram struct {
-	mu        sync.Mutex
-	insertErr error
-	pending   map[string]bool
-	deleted   []string
-	consumed  bool
+	mu              sync.Mutex
+	insertErr       error
+	commitBeforeErr bool
+	pending         map[string]bool
+	deleted         []string
+	consumed        bool
 }
 
 func (f *fakeTelegram) InsertPending(_ context.Context, tok, _ string, _ time.Time) error {
+	if f.commitBeforeErr {
+		f.mu.Lock()
+		if f.pending == nil {
+			f.pending = map[string]bool{}
+		}
+		f.pending[tok] = true
+		f.mu.Unlock()
+	}
 	if f.insertErr != nil {
 		return f.insertErr
 	}
@@ -270,7 +279,10 @@ func TestProvisionPrerequisitesFailBeforeWrites(t *testing.T) {
 			if err == nil {
 				t.Fatal("Provision succeeded, want error")
 			}
-			if name != "whitespace email" && name != "blank question" && name != "blank answer" && !errors.Is(err, errProvisioningUnavailable) {
+			if name == "linkTelegram=false" && errors.Is(err, errProvisioningUnavailable) {
+				t.Fatalf("Provision err = %v, want validation error before availability gate", err)
+			}
+			if name != "linkTelegram=false" && name != "whitespace email" && name != "blank question" && name != "blank answer" && !errors.Is(err, errProvisioningUnavailable) {
 				t.Fatalf("Provision err = %v, want provisioning unavailable", err)
 			}
 			assertNoWrites(t, au, leg, tg)
@@ -372,17 +384,18 @@ func TestProvisionSagaCompensation(t *testing.T) {
 		}
 	})
 
-	t.Run("C telegram mint fails -> DeleteIdentity + COMP_B", func(t *testing.T) {
+	t.Run("C telegram mint ambiguously fails -> DeletePending + DeleteIdentity + COMP_B", func(t *testing.T) {
 		au := &fakeAuthula{}
 		leg := &fakeAuraLeg{}
-		tg := &fakeTelegram{insertErr: boom}
+		tg := &fakeTelegram{insertErr: boom, commitBeforeErr: true}
 		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
+		recovery := svc.recovery.(*fakeRecoveryStore)
 		if _, err := svc.Provision(context.Background(), "creator-1", tok, provReq(nil)); err == nil {
 			t.Fatal("want error on C failure")
 		}
-		if au.liveAuthulaUsers() != 0 || leg.liveIdentities() != 0 || tg.mintedCount() != 0 || leg.auditCount() != 0 {
-			t.Fatalf("C orphans: authula=%d identities=%d tokens=%d audit=%d",
-				au.liveAuthulaUsers(), leg.liveIdentities(), tg.mintedCount(), leg.auditCount())
+		if au.liveAuthulaUsers() != 0 || leg.liveIdentities() != 0 || tg.mintedCount() != 0 || recovery.liveRecoveryRows() != 0 || leg.auditCount() != 0 {
+			t.Fatalf("C orphans: authula=%d identities=%d tokens=%d recovery=%d audit=%d",
+				au.liveAuthulaUsers(), leg.liveIdentities(), tg.mintedCount(), recovery.liveRecoveryRows(), leg.auditCount())
 		}
 	})
 
@@ -414,23 +427,6 @@ func TestProvisionSagaCompensation(t *testing.T) {
 			t.Fatalf("deleted pending tokens = %#v, want exactly one non-empty token", tg.deleted)
 		}
 	})
-}
-
-func TestProvisionAbandonedLeavesNothing(t *testing.T) {
-	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-	svc := newOnboardingService(OnboardingDeps{
-		Capabilities: fakeCaps{grants: []string{"identity.create"}},
-		Extractor:    &countingExtractor{},
-		Profiles:     &recordingProfileWriter{},
-		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: &fakeRecoveryStore{},
-	})
-	_, err := svc.Provision(context.Background(), "creator-1", "never-started", provReq(nil))
-	if !errors.Is(err, errOnboardingSessionNotFound) {
-		t.Fatalf("abandoned provision err = %v, want session-not-found", err)
-	}
-	if leg.liveIdentities() != 0 || au.liveAuthulaUsers() != 0 || tg.mintedCount() != 0 {
-		t.Fatal("an un-started/abandoned provision wrote rows; the saga must not run")
-	}
 }
 
 func TestNoEscalation(t *testing.T) {

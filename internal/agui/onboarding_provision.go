@@ -123,17 +123,6 @@ var errProvisioningUnavailable = errors.New("onboarding: provisioning backend no
 // returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
 // password is hashed immediately and never echoed/logged.
 func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
-	if !in.LinkTelegram || s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
-		slog.Warn("onboarding: provisioning backend not configured",
-			"authula", s.authula != nil,
-			"aura_leg", s.auraLeg != nil,
-			"telegram", s.telegram != nil,
-			"bot_username", strings.TrimSpace(s.botName) != "",
-			"recovery", s.recovery != nil,
-			"link_telegram", in.LinkTelegram,
-		)
-		return OnboardingProvisionResponse{}, errProvisioningUnavailable
-	}
 	entry, err := s.sessionForRequester(token, requesterIdentityID)
 	if err != nil {
 		return OnboardingProvisionResponse{}, err
@@ -149,6 +138,16 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
 	if err := validateOnboardingProvision(in); err != nil {
 		return OnboardingProvisionResponse{}, err
+	}
+	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
+		slog.Warn("onboarding: provisioning backend not configured",
+			"authula", s.authula != nil,
+			"aura_leg", s.auraLeg != nil,
+			"telegram", s.telegram != nil,
+			"bot_username", strings.TrimSpace(s.botName) != "",
+			"recovery", s.recovery != nil,
+		)
+		return OnboardingProvisionResponse{}, errProvisioningUnavailable
 	}
 	if err := s.validateNoEscalation(ctx, creator, in.Capabilities); err != nil {
 		return OnboardingProvisionResponse{}, err
@@ -222,6 +221,9 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		onboardingToken = uuid.NewString()
 		if err := s.telegram.InsertPending(ctx, onboardingToken, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
 			// C failed → undo A (identity + grants + link cascade) then B.
+			if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+				slog.Error("onboarding: COMP_C (delete telegram pending) after mint failure failed", "step", "compensate")
+			}
 			if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 				slog.Error("onboarding: COMP_A (delete identity) failed", "step", "compensate")
 			}
