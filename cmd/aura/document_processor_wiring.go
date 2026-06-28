@@ -10,15 +10,22 @@ import (
 )
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
+	docProcessor := &assets.DocumentProcessor{
+		Objects: objectStore,
+		Ingest:  newRuntimeDocumentIngestor(cfg, pool),
+	}
 	return &assets.Service{
 		Store:   assets.NewStore(pool),
 		Objects: objectStore,
 		Processors: assets.ProcessorSet{
-			Document: &assets.DocumentProcessor{
-				Objects: objectStore,
-				Ingest:  newRuntimeDocumentIngestor(cfg, pool),
+			Document: docProcessor,
+			// An uploaded image gets BOTH a vision summary (inline chat) AND searchable
+			// OCR chunks: the document processor OCRs+indexes it via markitdown (spike 075),
+			// the image processor keeps the "describe this image" summary. Fail-soft.
+			Image: &assets.ImageDocumentProcessor{
+				Vision:   assets.NewImageProcessor(objectStore, visionConfigFrom(cfg)),
+				Document: docProcessor,
 			},
-			Image: assets.NewImageProcessor(objectStore, visionConfigFrom(cfg)),
 			Audio: assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg)),
 		},
 		Limits: assets.Limits{
