@@ -1,0 +1,162 @@
+[
+  {
+    "query": "what tightening torque do the terminal cover screws need",
+    "relevant_phrases": ["tightening torque", "terminal"],
+    "note": "spike-070: vector #1 was a TOC false-positive (Load monitoring for torque); rerank found the real instruction with the Nm value"
+  },
+  {
+    "query": "what does fault code F mean and how do I clear it",
+    "relevant_phrases": ["fault", "acknowledge"],
+    "note": "spike-070: F-code; vector hit a TOC entry, rerank found the description"
+  },
+  {
+    "query": "what is the permitted ambient temperature for operation",
+    "relevant_phrases": ["ambient temperature"],
+    "note": "spike-070: bi-encoder returned a flat 0.82-0.84 blob; rerank sharpened to the operating-temperature chunk"
+  },
+  {
+    "query": "what cable cross-section or wire thickness should I use",
+    "relevant_phrases": ["cross-section"],
+    "note": "spike-070: wire thickness -> the cross-section in mm2 chunk"
+  },
+  {
+    "query": "how do I restore the converter to factory settings",
+    "relevant_phrases": ["factory", "reset"],
+    "note": "spike-070: already-correct on vector; rerank neutral (no regression expected)"
+  },
+  {
+    "query": "how do I pack the device back into its box for return",
+    "relevant_phrases": ["packaging"],
+    "note": "spike-070 back-to-box: rerank mildly HURT here (demoted the clean answer) -> the exact non-monotonic case the guard protects"
+  },
+  {
+    "query": "what is the rated power of the converter",
+    "relevant_phrases": ["rated power"],
+    "note": "G220-class spec lookup"
+  },
+  {
+    "query": "what is the rated input voltage range",
+    "relevant_phrases": ["rated", "voltage"],
+    "note": "G220-class spec lookup"
+  },
+  {
+    "query": "what protection rating or IP class does the enclosure have",
+    "relevant_phrases": ["degree of protection"],
+    "note": "G220-class enclosure spec"
+  },
+  {
+    "query": "how do I mount the device on a DIN rail",
+    "relevant_phrases": ["mounting"],
+    "note": "G220-class installation"
+  },
+  {
+    "query": "what clearance distances are required around the unit for cooling",
+    "relevant_phrases": ["clearance"],
+    "note": "G220-class thermal install"
+  },
+  {
+    "query": "how do I connect the protective earth ground",
+    "relevant_phrases": ["protective", "ground"],
+    "note": "G220-class safety wiring"
+  },
+  {
+    "query": "what are the control terminal assignments",
+    "relevant_phrases": ["terminal", "assignment"],
+    "note": "G220-class wiring reference"
+  },
+  {
+    "query": "how do I set the motor rated current parameter",
+    "relevant_phrases": ["rated current"],
+    "note": "G220-class commissioning"
+  },
+  {
+    "query": "how do I perform the quick commissioning procedure",
+    "relevant_phrases": ["commissioning"],
+    "note": "G220-class startup"
+  },
+  {
+    "query": "how do I configure the digital inputs",
+    "relevant_phrases": ["digital input"],
+    "note": "G220-class IO config"
+  },
+  {
+    "query": "how do I scale the analog output signal",
+    "relevant_phrases": ["analog output"],
+    "note": "G220-class IO config"
+  },
+  {
+    "query": "how do I set the ramp-up and ramp-down times",
+    "relevant_phrases": ["ramp"],
+    "note": "G220-class motion config"
+  },
+  {
+    "query": "how do I enable and configure the holding brake",
+    "relevant_phrases": ["brake"],
+    "note": "G220-class safety/motion"
+  },
+  {
+    "query": "what is the switching frequency setting and its effect",
+    "relevant_phrases": ["switching frequency"],
+    "note": "G220-class drive tuning"
+  },
+  {
+    "query": "how do I activate the Safe Torque Off STO function",
+    "relevant_phrases": ["safe torque off"],
+    "note": "G220-class functional safety"
+  },
+  {
+    "query": "what fieldbus or communication interfaces are supported",
+    "relevant_phrases": ["interface"],
+    "note": "G220-class connectivity"
+  },
+  {
+    "query": "how do I set the PROFINET device IP address",
+    "relevant_phrases": ["address"],
+    "note": "G220-class connectivity"
+  },
+  {
+    "query": "how do I read and acknowledge an alarm",
+    "relevant_phrases": ["alarm"],
+    "note": "G220-class diagnostics"
+  },
+  {
+    "query": "where do I find the list of warning messages",
+    "relevant_phrases": ["warning"],
+    "note": "G220-class diagnostics"
+  },
+  {
+    "query": "how do I back up and restore the parameter set",
+    "relevant_phrases": ["parameter", "backup"],
+    "note": "G220-class maintenance"
+  },
+  {
+    "query": "how do I update the converter firmware",
+    "relevant_phrases": ["firmware"],
+    "note": "G220-class maintenance"
+  },
+  {
+    "query": "what is the maximum permitted altitude for installation",
+    "relevant_phrases": ["altitude"],
+    "note": "G220-class environmental derating"
+  },
+  {
+    "query": "what is the relative humidity limit for storage",
+    "relevant_phrases": ["humidity"],
+    "note": "G220-class environmental"
+  },
+  {
+    "query": "what spare fuse rating does the unit require",
+    "relevant_phrases": ["fuse"],
+    "note": "G220-class protection"
+  },
+  {
+    "query": "how do I tune the speed controller gains",
+    "relevant_phrases": ["controller"],
+    "note": "G220-class closed-loop tuning"
+  },
+  {
+    "query": "what is the EMC category and required line filter",
+    "relevant_phrases": ["EMC"],
+    "note": "G220-class compliance"
+  }
+]
