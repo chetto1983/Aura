@@ -50,10 +50,9 @@ import (
 // marking, and the fallback exclusion cannot drift.
 const authBasePath = "/auth"
 
-// authConfigRoute is the tiny public bootstrap contract the SPA login page reads to
-// choose between the legacy passphrase form and the Authula email/password + TOTP flow.
-// It reveals no secret material; Authula mode also mints the double-submit CSRF token
-// the next unsafe /auth/* request must echo.
+// authConfigRoute is the tiny public bootstrap contract the SPA login page reads for
+// the Authula email/password + TOTP flow. It reveals no secret material and mints the
+// double-submit CSRF token the next unsafe /auth/* request must echo.
 const authConfigRoute = "/api/auth/config"
 
 const (
@@ -314,15 +313,13 @@ const (
 // mounting a half-wired host.
 //
 // WEB-03 (D-03/D-04): the whole returned subtree is wrapped in agui.RequireAuth so the
-// origin is private when a secret is configured — the public-path exceptions (the login
-// route + its assets + GET /healthz) are handled INSIDE the middleware, not by leaving
-// routes unwrapped. POST /login + POST /logout register as public credential endpoints.
-// The only mutating route, POST /agent/run, is additionally interposed with
+// origin is private when Authula auth is configured — the public-path exceptions (the
+// login route + its assets + GET /healthz) are handled INSIDE the middleware, not by
+// leaving routes unwrapped. POST /logout remains for cookie clearing. The only mutating
+// route, POST /agent/run, is additionally interposed with
 // agui.RequireCapability ahead of the AG-UI prefix loop (Go 1.22 method-pattern
 // precedence makes "POST /agent/run" win over the bare "/agent/run") so the capability
-// gate fires AFTER RequireAuth has bound the principal. When no secret is configured
-// (loopback dev) RequireAuth is a no-op pass-through and the daemon serves exactly as
-// before (the Plan-01 boot guard confines an unconfigured secret to loopback).
+// gate fires AFTER RequireAuth has bound the principal.
 type credentialProvider interface {
 	Handler() http.Handler
 }
@@ -334,16 +331,16 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	}
 	mux := http.NewServeMux()
 	authulaEnabled := credentialProviderConfigured(authulaProvider)
-	// The embedded Authula provider (Option A2) serves all credential flows under
-	// /auth/* (login, totp/verify, logout, csrf token issuance). Registered as a
-	// subtree ahead of "/", it wins Go 1.22 longest-pattern precedence over the embed
-	// catch-all; RequireAuth marks the prefix public (AuthBasePath below) so the routes
-	// are reachable before a session exists. Mounted only when the flag selected Authula.
+	// The embedded Authula provider serves all credential flows under /auth/* (login,
+	// totp/verify, logout, csrf token issuance). Registered as a subtree ahead of "/",
+	// it wins Go 1.22 longest-pattern precedence over the embed catch-all; RequireAuth
+	// marks the prefix public (AuthBasePath below) so the routes are reachable before a
+	// session exists.
 	if authulaEnabled {
 		mux.Handle(authBasePath+"/", authulaProvider.Handler())
 		auth.AuthBasePath = authBasePath
 	}
-	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler(authulaEnabled))
+	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler())
 	mux.Handle(passwordResetStartRoute, aguiHandler)
 	mux.Handle(passwordResetVerifyRoute, aguiHandler)
 	mux.Handle(passwordResetCompleteRoute, aguiHandler)
@@ -355,10 +352,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	for _, prefix := range aguiRoutePrefixes {
 		mux.Handle(prefix, aguiHandler)
 	}
-	// Public credential endpoints (NOT behind the gate — RequireAuth's public-path set
-	// lets the login route + assets through, and these POST handlers issue/clear the
-	// cookie). They mount on the parent mux so they sit beside the AG-UI routes.
-	mux.HandleFunc("POST /login", auth.LoginHandler())
+	// Public credential endpoint for clearing the old Aura session cookie. Authula's own
+	// logout flow lives under /auth/* on the provider subtree.
 	mux.HandleFunc("POST /logout", auth.LogoutHandler())
 	// The CHAT-02 conversation-management subtree (Phase 25) delegates to the AG-UI
 	// handler, which carries the /api/conversations/ routes on its own Server.Mux. It
@@ -533,36 +528,33 @@ type frontendAuthConfig struct {
 	CSRFToken      string `json:"csrf_token,omitempty"`
 }
 
-func newAuthConfigHandler(authulaEnabled bool) http.HandlerFunc {
+func newAuthConfigHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-		cfg := frontendAuthConfig{Provider: "passphrase"}
-		if authulaEnabled {
-			token, err := newCSRFToken()
-			if err != nil {
-				http.Error(w, "csrf token", http.StatusInternalServerError)
-				return
-			}
-			cfg = frontendAuthConfig{
-				Provider:       "authula",
-				AuthBasePath:   authBasePath,
-				CSRFCookieName: webauth.CSRFCookieName,
-				CSRFHeaderName: webauth.CSRFHeaderName,
-				CSRFToken:      token,
-			}
-			w.Header().Set(webauth.CSRFHeaderName, token)
-			http.SetCookie(w, &http.Cookie{
-				Name:     webauth.CSRFCookieName,
-				Value:    token,
-				Path:     "/",
-				MaxAge:   int((24 * time.Hour).Seconds()),
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteStrictMode,
-			})
+		token, err := newCSRFToken()
+		if err != nil {
+			http.Error(w, "csrf token", http.StatusInternalServerError)
+			return
 		}
+		cfg := frontendAuthConfig{
+			Provider:       "authula",
+			AuthBasePath:   authBasePath,
+			CSRFCookieName: webauth.CSRFCookieName,
+			CSRFHeaderName: webauth.CSRFHeaderName,
+			CSRFToken:      token,
+		}
+		w.Header().Set(webauth.CSRFHeaderName, token)
+		http.SetCookie(w, &http.Cookie{
+			Name:     webauth.CSRFCookieName,
+			Value:    token,
+			Path:     "/",
+			MaxAge:   int((24 * time.Hour).Seconds()),
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+		})
 		if err := json.NewEncoder(w).Encode(cfg); err != nil {
 			http.Error(w, "auth config", http.StatusInternalServerError)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -38,7 +39,7 @@ func TestResolveWebAuthIdentityIDUsesAuthulaOperatorIdentity(t *testing.T) {
 	}
 }
 
-func TestResolveWebAuthIdentityIDKeepsPassphraseOnLocal(t *testing.T) {
+func TestResolveWebAuthIdentityIDUsesOperatorIdentityIndependentOfProvider(t *testing.T) {
 	store := &namedIdentityStore{ids: map[string]identity.Identity{
 		"local":    {ID: "local-id", Name: "local"},
 		"operator": {ID: "operator-id", Name: "operator"},
@@ -49,15 +50,15 @@ func TestResolveWebAuthIdentityIDKeepsPassphraseOnLocal(t *testing.T) {
 		AuthulaOperatorIdentity: "operator",
 	})
 
-	if got != "local-id" {
-		t.Fatalf("identity id = %q, want local-id", got)
+	if got != "operator-id" {
+		t.Fatalf("identity id = %q, want operator-id", got)
 	}
-	if len(store.seen) != 1 || store.seen[0] != "local" {
-		t.Fatalf("resolved names = %v, want [local]", store.seen)
+	if len(store.seen) != 1 || store.seen[0] != "operator" {
+		t.Fatalf("resolved names = %v, want [operator]", store.seen)
 	}
 }
 
-func TestAuthulaProvisioningConfiguredAllowsPassphraseOnboarding(t *testing.T) {
+func TestAuthulaProvisioningConfiguredIgnoresLegacyProviderFlag(t *testing.T) {
 	cfg := &config.Config{
 		WebAuthProvider: "passphrase",
 		DB:              db.Config{URL: "postgres://aura_app:pw@127.0.0.1:5432/aura"},
@@ -65,7 +66,31 @@ func TestAuthulaProvisioningConfiguredAllowsPassphraseOnboarding(t *testing.T) {
 	}
 
 	if !authulaProvisioningConfigured(cfg) {
-		t.Fatal("passphrase login with Authula DB+secret should still wire onboarding provisioning")
+		t.Fatal("Authula DB+secret should be configured regardless of the legacy provider flag")
+	}
+}
+
+func TestBuildAuthDepsRequiresAuthulaConfigEvenWithLegacyProviderFlag(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("buildAuthDeps panicked before returning an Authula configuration error: %v", r)
+		}
+	}()
+	_, provider, err := buildAuthDeps(context.Background(), &chatEnv{
+		cfg: &config.Config{
+			WebAuthProvider: "passphrase",
+			WebAuthSecret:   "legacy-passphrase",
+		},
+	})
+
+	if err == nil {
+		t.Fatal("buildAuthDeps succeeded without Authula DSN+secret, want boot failure")
+	}
+	if provider != nil {
+		t.Fatal("buildAuthDeps returned an Authula provider after a configuration failure")
+	}
+	if !strings.Contains(err.Error(), "Authula") {
+		t.Fatalf("error = %q, want Authula configuration context", err)
 	}
 }
 

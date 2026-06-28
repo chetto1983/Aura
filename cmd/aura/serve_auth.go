@@ -6,22 +6,13 @@
 //     consumer-side identityChecker seam. identity.Store returns identity.Identity;
 //     agui declares its own narrow Identity projection so the agui package does not
 //     import internal/identity. The adapter does the trivial field copy.
-//   - buildAuthDeps: derives the HMAC signing key from AURA_WEB_AUTH_SECRET (one
-//     operator secret governs both login and signing — RESEARCH A2), binds the
-//     session to the seeded `local` identity, and sets SecretConfigured from the
-//     non-empty secret so RequireAuth no-ops on loopback dev (where the Plan-01 boot
-//     guard permits an unconfigured secret).
-//   - the Authula provider seam (docs/cockpit-overhaul/05-authula-auth-SPEC.md,
-//     Option A2): when AURA_WEB_AUTH_PROVIDER=authula, it constructs the embedded
-//     Authula framework on the isolated authula schema, binds the operator user ⇄
-//     `local` identity, and injects a SessionValidator into AuthDeps so RequireAuth's
-//     cookie core validates the Authula session instead of the HMAC cookie. Default
-//     (passphrase) leaves everything byte-identical to before.
+//   - buildAuthDeps: constructs the embedded Authula framework on the isolated authula
+//     schema, binds the operator user ⇄ Aura identity, and injects a SessionValidator
+//     into AuthDeps so RequireAuth's cookie core validates the Authula session.
 package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -57,50 +48,33 @@ func (a identityCheckerAdapter) HasCapability(ctx context.Context, id, capabilit
 	return a.store.HasCapability(ctx, id, capability)
 }
 
-// buildAuthDeps assembles the WEB-03 auth bundle from the booted composition root. The
-// secret comes from AURA_WEB_AUTH_SECRET (chat.cfg.WebAuthSecret); SecretConfigured is
-// true only for a non-empty trimmed secret, which gates whether RequireAuth is active.
-// The signing key is sha256(secret) so a single operator secret governs both the login
-// compare and the cookie signature. The session binds to the seeded `local` identity
-// (resolved by name, the existing fail-soft helper) — its `*` wildcard passes the
-// capability gate.
-//
-// When AURA_WEB_AUTH_PROVIDER=authula it ALSO constructs the embedded Authula provider
-// (returned so the daemon can Close its cleanup workers) and injects a SessionValidator
-// so RequireAuth validates the Authula session cookie. A provider construction failure
-// is returned so bootServe fails the daemon boot cleanly rather than silently falling
-// back to passphrase on a misconfigured cutover. The default passphrase path returns a
-// nil provider and a nil SessionValidator (byte-identical legacy behavior).
+// buildAuthDeps assembles the WEB-03 auth bundle from the booted composition root.
+// Authula is the only web-auth provider: boot fails when its DB/secret configuration is
+// incomplete, the legacy passphrase secret/signing key stay neutral, and RequireAuth is
+// always active through the Authula session validator.
 func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.Provider, error) {
-	secret := strings.TrimSpace(chat.cfg.WebAuthSecret)
-	key := sha256.Sum256([]byte(secret))
-	deps := agui.AuthDeps{
-		Secret:           secret,
-		SigningKey:       key[:],
-		SecretConfigured: secret != "",
-		LocalIdentityID:  resolveWebAuthIdentityID(ctx, chat.identity, chat.cfg),
-		Identities:       identityCheckerAdapter{store: chat.identity},
-		LoginPath:        "/login",
+	if !authulaProvisioningConfigured(chat.cfg) {
+		return agui.AuthDeps{}, nil, fmt.Errorf("Authula web auth misconfigured: set AURA_AUTHULA_SECRET and AURA_AUTHULA_DATABASE_URL or AURA_DB_URL")
 	}
-
-	if !strings.EqualFold(strings.TrimSpace(chat.cfg.WebAuthProvider), "authula") {
-		return deps, nil, nil // passphrase (default) — no Authula, no validator
-	}
-
-	provider, validator, err := buildAuthulaProvider(ctx, chat, deps.LocalIdentityID)
+	localIdentityID := resolveWebAuthIdentityID(ctx, chat.identity, chat.cfg)
+	provider, validator, err := buildAuthulaProvider(ctx, chat, localIdentityID)
 	if err != nil {
 		return agui.AuthDeps{}, nil, err
 	}
-	// The Authula provider is now the cookie issuer/validator. SecretConfigured stays
-	// true so the whole-origin gate is active even when no passphrase secret is set —
-	// the Authula cutover should not require a passphrase to keep the gate on.
-	deps.SecretConfigured = true
-	deps.SessionValidator = func(r *http.Request) (string, bool) {
-		id, verr := validator.Validate(r)
-		if verr != nil {
-			return "", false
-		}
-		return id, true
+	deps := agui.AuthDeps{
+		Secret:           "",
+		SigningKey:       nil,
+		SecretConfigured: true,
+		LocalIdentityID:  localIdentityID,
+		Identities:       identityCheckerAdapter{store: chat.identity},
+		LoginPath:        "/login",
+		SessionValidator: func(r *http.Request) (string, bool) {
+			id, verr := validator.Validate(r)
+			if verr != nil {
+				return "", false
+			}
+			return id, true
+		},
 	}
 	return deps, provider, nil
 }
@@ -166,13 +140,12 @@ type identityNameResolver interface {
 	GetIdentityByName(ctx context.Context, name string) (identity.Identity, error)
 }
 
-// resolveWebAuthIdentityID returns the Aura identity id used by the active web-auth
-// provider. The passphrase provider intentionally stays pinned to the seeded `local`
-// identity; the Authula provider honors AURA_AUTHULA_OPERATOR_IDENTITY so operators can
+// resolveWebAuthIdentityID returns the Aura identity id used by Authula web auth.
+// AURA_AUTHULA_OPERATOR_IDENTITY overrides the seeded `local` identity so operators can
 // bind the Authula user to a non-default Aura identity without touching code.
 func resolveWebAuthIdentityID(ctx context.Context, idStore identityNameResolver, cfg *config.Config) string {
 	name := localIdentityName
-	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.WebAuthProvider), "authula") {
+	if cfg != nil {
 		if configured := strings.TrimSpace(cfg.AuthulaOperatorIdentity); configured != "" {
 			name = configured
 		}
