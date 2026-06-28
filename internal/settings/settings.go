@@ -25,9 +25,12 @@ import (
 type Kind string
 
 const (
+	// KindString marks a free-form string setting.
 	KindString Kind = "string"
-	KindBool   Kind = "bool"
-	KindInt    Kind = "int"
+	// KindBool marks a boolean setting.
+	KindBool Kind = "bool"
+	// KindInt marks an integer setting.
+	KindInt Kind = "int"
 )
 
 // KeyMeta describes an allowlisted setting key for the API + settings page.
