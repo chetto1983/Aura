@@ -137,6 +137,11 @@ func (a liveTelegram) PendingConsumed(ctx context.Context, token string) (bool, 
 	return consumed.Valid, nil
 }
 
+func (a liveTelegram) DeletePending(ctx context.Context, token string) error {
+	_, err := a.pool.Exec(ctx, `DELETE FROM aura.telegram_setup_pending WHERE onboarding_token=$1`, token)
+	return err
+}
+
 type liveRecovery struct{ pool *pgxpool.Pool }
 
 func (a liveRecovery) UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error {
@@ -217,14 +222,22 @@ func (a *statefulAuthula) liveUsers() int {
 
 type faultAuraLeg struct {
 	AuraLegWriter
-	fail bool
+	failCreate bool
+	failAudit  bool
 }
 
 func (f faultAuraLeg) CreateIdentityWithGrants(ctx context.Context, p AuraLegParams) (string, error) {
-	if f.fail {
+	if f.failCreate {
 		return "", errors.New("injected: aura leg")
 	}
 	return f.AuraLegWriter.CreateIdentityWithGrants(ctx, p)
+}
+
+func (f faultAuraLeg) WriteAuditRow(ctx context.Context, p AuraLegParams, id string) error {
+	if f.failAudit {
+		return errors.New("injected: audit row")
+	}
+	return f.AuraLegWriter.WriteAuditRow(ctx, p, id)
 }
 
 type faultTelegram struct {
@@ -387,12 +400,14 @@ func TestProvisionSagaLive(t *testing.T) {
 		{"B2 create-account fails", func() *statefulAuthula { a := newStatefulAuthula(); a.failCreateAcct = true; return a },
 			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
 		{"A aura-leg fails", newStatefulAuthula,
-			func() AuraLegWriter { return faultAuraLeg{AuraLegWriter: env.auraLeg, fail: true} }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
+			func() AuraLegWriter { return faultAuraLeg{AuraLegWriter: env.auraLeg, failCreate: true} }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
 		{"recovery write fails", newStatefulAuthula,
 			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return env.telegram },
 			func() RecoverySetupWriter { return faultRecovery{RecoverySetupWriter: env.recovery, fail: true} }},
 		{"C telegram mint fails", newStatefulAuthula,
 			func() AuraLegWriter { return env.auraLeg }, func() TelegramMint { return faultTelegram{TelegramMint: env.telegram, fail: true} }, func() RecoverySetupWriter { return env.recovery }},
+		{"audit write fails", newStatefulAuthula,
+			func() AuraLegWriter { return faultAuraLeg{AuraLegWriter: env.auraLeg, failAudit: true} }, func() TelegramMint { return env.telegram }, func() RecoverySetupWriter { return env.recovery }},
 	}
 	for _, tc := range inject {
 		t.Run(tc.name+" -> zero orphans", func(t *testing.T) {

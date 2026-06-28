@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -41,14 +42,12 @@ func (f *fakeAuthula) CreateUser(_ context.Context, email string) (AuthulaUser, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nextID++
-	id := "authula-user-" + itoa(f.nextID)
+	id := "authula-user-" + strconv.Itoa(f.nextID)
 	f.created = append(f.created, id)
 	return AuthulaUser{ID: id, Email: email}, nil
 }
 
-func (f *fakeAuthula) CreateAccount(_ context.Context, _, _, _ string) error {
-	return f.createAcctErr
-}
+func (f *fakeAuthula) CreateAccount(_ context.Context, _, _, _ string) error { return f.createAcctErr }
 
 func (f *fakeAuthula) DeleteUser(_ context.Context, userID string) error {
 	f.mu.Lock()
@@ -67,6 +66,7 @@ type fakeAuraLeg struct {
 	mu        sync.Mutex
 	createErr error
 	auditErr  error
+	recovery  *fakeRecoveryStore
 	created   []string // identity names created
 	deleted   []string // identity names deleted (compensation)
 	audited   []string // identity ids with an audit row
@@ -80,7 +80,7 @@ func (f *fakeAuraLeg) CreateIdentityWithGrants(_ context.Context, p AuraLegParam
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nextID++
-	id := "identity-" + itoa(f.nextID)
+	id := "identity-" + strconv.Itoa(f.nextID)
 	f.created = append(f.created, p.IdentityName)
 	return id, nil
 }
@@ -99,6 +99,9 @@ func (f *fakeAuraLeg) DeleteIdentity(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, name)
+	if f.recovery != nil {
+		f.recovery.deleteCascade()
+	}
 	return nil
 }
 
@@ -117,17 +120,25 @@ func (f *fakeAuraLeg) auditCount() int {
 type fakeTelegram struct {
 	mu        sync.Mutex
 	insertErr error
-	minted    []string // identity ids a token was minted for
+	minted    []string
+	deleted   []string
 	consumed  bool
 }
 
-func (f *fakeTelegram) InsertPending(_ context.Context, _, identityID string, _ time.Time) error {
+func (f *fakeTelegram) InsertPending(_ context.Context, tok, _ string, _ time.Time) error {
 	if f.insertErr != nil {
 		return f.insertErr
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.minted = append(f.minted, identityID)
+	f.minted = append(f.minted, tok)
+	return nil
+}
+
+func (f *fakeTelegram) DeletePending(_ context.Context, tok string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, tok)
 	return nil
 }
 
@@ -138,42 +149,37 @@ func (f *fakeTelegram) PendingConsumed(_ context.Context, _ string) (bool, error
 func (f *fakeTelegram) mintedCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return len(f.minted)
+	return len(f.minted) - len(f.deleted)
 }
 
 type fakeRecoveryStore struct {
 	identityID, question, hash, version string
 	err                                 error
-	upserts                             int
+	upserts, deleted                    int
 }
 
 func (f *fakeRecoveryStore) UpsertRecovery(_ context.Context, identityID, question, answerHash, answerHashVersion string) error {
+	if f.err != nil {
+		return f.err
+	}
 	f.upserts++
 	f.identityID, f.question, f.hash, f.version = identityID, question, answerHash, answerHashVersion
-	return f.err
+	return nil
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
-}
+func (f *fakeRecoveryStore) deleteCascade() { f.deleted = f.upserts }
+
+func (f *fakeRecoveryStore) liveRecoveryRows() int { return f.upserts - f.deleted }
 
 func sagaService(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegram, creatorGrants []string) (*onboardingService, string) {
 	t.Helper()
+	recovery := &fakeRecoveryStore{}
+	leg.recovery = recovery
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: creatorGrants},
 		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
-		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: &fakeRecoveryStore{},
+		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: recovery,
 	})
 	start, err := svc.StartSession(context.Background(), "creator-1")
 	if err != nil {
@@ -238,6 +244,8 @@ func TestProvisionPrerequisitesFailBeforeWrites(t *testing.T) {
 		"empty bot username": func(s *onboardingService, _ *OnboardingProvisionRequest) { s.botName = "" },
 		"nil recovery":       func(s *onboardingService, _ *OnboardingProvisionRequest) { s.recovery = nil },
 		"whitespace email":   func(_ *onboardingService, req *OnboardingProvisionRequest) { req.Email = " \t\n " },
+		"blank question":     func(_ *onboardingService, req *OnboardingProvisionRequest) { req.SecurityQuestion = " " },
+		"blank answer":       func(_ *onboardingService, req *OnboardingProvisionRequest) { req.SecurityAnswer = " \t\n " },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -251,7 +259,7 @@ func TestProvisionPrerequisitesFailBeforeWrites(t *testing.T) {
 			if err == nil {
 				t.Fatal("Provision succeeded, want error")
 			}
-			if name != "whitespace email" && !errors.Is(err, errProvisioningUnavailable) {
+			if name != "whitespace email" && name != "blank question" && name != "blank answer" && !errors.Is(err, errProvisioningUnavailable) {
 				t.Fatalf("Provision err = %v, want provisioning unavailable", err)
 			}
 			assertNoWrites(t, au, leg, tg)
@@ -302,18 +310,6 @@ func TestProvisionRejectsMismatchedRequester(t *testing.T) {
 	if !errors.Is(err, errOnboardingForbidden) {
 		t.Fatalf("mismatched telegram-status err = %v, want forbidden", err)
 	}
-}
-
-func TestProvisionWithoutTelegramLinkFailsBeforeWrites(t *testing.T) {
-	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
-	req := provReq(nil)
-	req.LinkTelegram = false
-
-	if _, err := svc.Provision(context.Background(), "creator-1", tok, req); !errors.Is(err, errProvisioningUnavailable) {
-		t.Fatalf("Provision without Telegram err = %v, want provisioning unavailable", err)
-	}
-	assertNoWrites(t, au, leg, tg)
 }
 
 func TestProvisionSagaCompensation(t *testing.T) {
@@ -393,17 +389,15 @@ func TestProvisionSagaCompensation(t *testing.T) {
 	})
 
 	t.Run("audit-write fails -> full rollback (no unaudited identity)", func(t *testing.T) {
-		au := &fakeAuthula{}
-		leg := &fakeAuraLeg{auditErr: boom}
-		tg := &fakeTelegram{}
+		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{auditErr: boom}, &fakeTelegram{}
 		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
+		recovery := svc.recovery.(*fakeRecoveryStore)
 		if _, err := svc.Provision(context.Background(), "creator-1", tok, provReq(nil)); err == nil {
 			t.Fatal("want error on audit failure")
 		}
-		// A loginable identity MUST NOT exist without an audit row → full compensation.
-		if leg.liveIdentities() != 0 || au.liveAuthulaUsers() != 0 || leg.auditCount() != 0 {
-			t.Fatalf("audit-fail orphans: identities=%d authula=%d audit=%d",
-				leg.liveIdentities(), au.liveAuthulaUsers(), leg.auditCount())
+		if leg.liveIdentities() != 0 || au.liveAuthulaUsers() != 0 || tg.mintedCount() != 0 || recovery.liveRecoveryRows() != 0 || leg.auditCount() != 0 {
+			t.Fatalf("audit-fail orphans: identities=%d authula=%d tokens=%d recovery=%d audit=%d",
+				leg.liveIdentities(), au.liveAuthulaUsers(), tg.mintedCount(), recovery.liveRecoveryRows(), leg.auditCount())
 		}
 	})
 }
@@ -416,7 +410,6 @@ func TestProvisionAbandonedLeavesNothing(t *testing.T) {
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: &fakeRecoveryStore{},
 	})
-	// Provision against a token that was never started (or expired/swept).
 	_, err := svc.Provision(context.Background(), "creator-1", "never-started", provReq(nil))
 	if !errors.Is(err, errOnboardingSessionNotFound) {
 		t.Fatalf("abandoned provision err = %v, want session-not-found", err)
@@ -439,7 +432,6 @@ func TestNoEscalation(t *testing.T) {
 
 	t.Run("creator-lacked cap rejected, no write", func(t *testing.T) {
 		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-		// Creator holds identity.create + agent.run; requesting graph.write (not held) is escalation.
 		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create", "agent.run"})
 		_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{"graph.write"}))
 		if !errors.Is(err, ErrOnboardingEscalation) {
@@ -464,7 +456,6 @@ func TestNoEscalation(t *testing.T) {
 
 	t.Run("operator without identity.create forbidden, no write", func(t *testing.T) {
 		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-		// Creator holds only agent.run — NOT identity.create and NOT '*'.
 		svc, tok := sagaService(t, au, leg, tg, []string{"agent.run"})
 		_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{"agent.run"}))
 		if !errors.Is(err, errOnboardingForbidden) {
@@ -550,7 +541,6 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 	const secret = "Sup3rSecret-Passw0rd!"
 	const recoverySecret = "School Mascot Secret"
 
-	// Success path.
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
 	req := provReq(nil)
@@ -560,7 +550,6 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 		t.Fatalf("provision: %v", err)
 	}
 
-	// Failure path: a leg error that embeds the secret must NOT reach a log line.
 	au2 := &fakeAuthula{createAcctErr: errors.New("authula refused password " + secret)}
 	leg2, tg2 := &fakeAuraLeg{}, &fakeTelegram{}
 	svc2, tok2 := sagaService(t, au2, leg2, tg2, []string{"identity.create"})
@@ -569,6 +558,20 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 	req2.SecurityAnswer = recoverySecret
 	if _, err := svc2.Provision(context.Background(), "creator-1", tok2, req2); err == nil {
 		t.Fatal("want B2 failure")
+	} else if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), recoverySecret) {
+		t.Fatalf("provision error leaked a secret: %v", err)
+	}
+
+	au3, leg3, tg3 := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+	svc3, tok3 := sagaService(t, au3, leg3, tg3, []string{"identity.create"})
+	svc3.recovery = &fakeRecoveryStore{err: errors.New("recovery refused answer " + recoverySecret)}
+	req3 := provReq(nil)
+	req3.Password = secret
+	req3.SecurityAnswer = recoverySecret
+	if _, err := svc3.Provision(context.Background(), "creator-1", tok3, req3); err == nil {
+		t.Fatal("want recovery failure")
+	} else if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), recoverySecret) {
+		t.Fatalf("recovery error leaked a secret: %v", err)
 	}
 
 	if strings.Contains(buf.String(), secret) {
@@ -591,9 +594,6 @@ func TestRenderQRSVG(t *testing.T) {
 	if !strings.Contains(svg, "<rect") {
 		t.Error("QR SVG has no module rects")
 	}
-	// The bot TOKEN (a Telegram bot API token like 123456:ABC...) must never appear — the
-	// QR encodes the deep-link URL (onboarding token), not the bot credential. Assert a
-	// representative bot-token shape is absent.
 	if strings.Contains(svg, "123456:ABC") {
 		t.Error("QR SVG leaked a bot token")
 	}

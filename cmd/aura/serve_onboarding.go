@@ -29,8 +29,9 @@ import (
 // these tiny adapters satisfy them over the daemon's existing seams — the identity Store
 // (capability picker + the atomic aura-leg write + compensation + the immutable audit
 // row), the Authula provider's CoreServices (Leg B), the Telegram Store (Leg C mint + the
-// status poll), and the LLM extractor + profile store (the interview). The adapters keep
-// the agui package free of the telegram import (which would cycle).
+// status poll + pending-token compensation), the recovery adapter (identity_recovery),
+// and the LLM extractor + profile store (the interview). The adapters keep the agui
+// package free of the telegram import (which would cycle).
 //
 // buildOnboardingService is best-effort: provisioning is wired only when Authula is the
 // auth provider (the passphrase path leaves the provider nil), so an interview-only
@@ -162,6 +163,7 @@ func (a auraLegAdapter) DeleteIdentity(ctx context.Context, identityName string)
 // status poll), so the agui package never imports telegram (the cycle break).
 type telegramMintAdapter struct {
 	store *telegram.Store
+	pool  *pgxpool.Pool
 }
 
 func (a telegramMintAdapter) InsertPending(ctx context.Context, onboardingToken, identityID string, expiresAt time.Time) error {
@@ -175,6 +177,11 @@ func (a telegramMintAdapter) InsertPending(ctx context.Context, onboardingToken,
 
 func (a telegramMintAdapter) PendingConsumed(ctx context.Context, onboardingToken string) (bool, error) {
 	return a.store.PendingConsumed(ctx, onboardingToken)
+}
+
+func (a telegramMintAdapter) DeletePending(ctx context.Context, onboardingToken string) error {
+	_, err := a.pool.Exec(ctx, `DELETE FROM aura.telegram_setup_pending WHERE onboarding_token=$1`, onboardingToken)
+	return err
 }
 
 type recoverySetupAdapter struct {
@@ -199,8 +206,7 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 // the provisioning saga is wired when the composition root supplies an Authula provider
 // (either the active auth provider or a provisioning-only provider while passphrase login
 // remains active). The Telegram bot username is resolved live (a best-effort getMe); an
-// empty username simply omits the deep-link/QR (the identity is still created + the token
-// minted).
+// empty username leaves provisioning unavailable so no identity/recovery/token writes occur.
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,
@@ -209,7 +215,7 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 	}
 	if chat.pool != nil {
 		deps.AuraLeg = auraLegAdapter{pool: chat.pool}
-		deps.Telegram = telegramMintAdapter{store: telegram.New(chat.pool)}
+		deps.Telegram = telegramMintAdapter{store: telegram.New(chat.pool), pool: chat.pool}
 		deps.Recovery = recoverySetupAdapter{pool: chat.pool}
 	}
 	if authulaProvider != nil {
@@ -223,8 +229,8 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 
 // resolveBotUsername does a best-effort live getMe to learn the bot username for the
 // onboarding deep-link (t.me/<bot>?start=<token>). It NEVER logs the token (the
-// telegramGetMeProbe precedent, T-13-07). An empty token or a failed probe yields "" so
-// the wizard omits the deep-link/QR rather than crashing boot.
+// telegramGetMeProbe precedent, T-13-07). An empty token or a failed probe yields ""; the
+// core service treats that as provisioning unavailable and fails before writes.
 func resolveBotUsername(ctx context.Context, token string) string {
 	if token == "" {
 		return ""

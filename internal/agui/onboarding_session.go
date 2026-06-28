@@ -201,6 +201,8 @@ type ProfileWriter interface {
 	WriteProfile(identity string, p profile.Profile) error
 }
 
+// RecoverySetupWriter persists the recovery challenge into aura.identity_recovery during
+// provisioning, after the identity exists and before Telegram minting.
 type RecoverySetupWriter interface {
 	UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error
 }
@@ -219,7 +221,8 @@ type onboardingService struct {
 	profiles  ProfileWriter
 
 	// provisioning ports (onboarding_provision.go): the Authula core, the atomic aura-leg
-	// writer + its compensation, the Telegram mint/poll, and the deep-link bot username.
+	// writer + its compensation, recovery challenge writer, Telegram mint/poll/compensation,
+	// and the deep-link bot username.
 	authula  AuthulaCore
 	auraLeg  AuraLegWriter
 	telegram TelegramMint
@@ -228,9 +231,9 @@ type onboardingService struct {
 }
 
 // OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
-// into the service via NewOnboardingService. Any provisioning port may be nil for an
-// interview-only deployment, in which case Provision answers a sanitized error; the
-// interview side (StartSession/Step) needs only Capabilities + Extractor + Profiles.
+// into the service via NewOnboardingService. The provisioning side requires Authula,
+// AuraLeg, Recovery, Telegram, and BotUsername before it writes; the interview side
+// (StartSession/Step) needs only Capabilities + Extractor + Profiles.
 type OnboardingDeps struct {
 	TTL          time.Duration
 	Capabilities CapabilitySource

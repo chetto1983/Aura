@@ -392,11 +392,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// Wire the Phase-28 onboarding wizard + provisioning saga (ONBD-01/02). Built
 	// best-effort over the daemon's existing seams (the identity Store for the capability
 	// picker + the aura-leg write, the Authula provider's CoreServices for Leg B, the
-	// Telegram Store for the Leg C mint + the status poll, the LLM extractor + profile
-	// store for the interview). When passphrase login is active but Authula DB+secret are
+	// recovery adapter, the Telegram Store for Leg C mint/status/compensation, and the LLM
+	// extractor + profile store for the interview). When passphrase login is active but Authula DB+secret are
 	// configured, a provisioning-only Authula provider supplies Leg B without mounting
-	// /auth or changing the active login provider. A missing piece leaves the routes
-	// degraded, MUST NOT abort boot (the SetGovernanceProviders best-effort precedent).
+	// /auth or changing the active login provider. A missing provisioning piece, including
+	// bot username, fails before writes and MUST NOT abort boot.
 	// The mounts (RequireCapability on start+provision, RequireAuth on step+telegram-
 	// status) live in serve_webui.go.
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))

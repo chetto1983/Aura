@@ -36,8 +36,8 @@ import (
 //	3. Recovery setup: hash answer + upsert challenge; on failure → DeleteIdentity + COMP_B.
 //	4. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → DeleteIdentity
 //	   + COMP_B.
-//	5. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C — RESEARCH L8:
-//	   exactly one row, ONLY on full success; a rolled-back flow has none).
+//	5. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C); on failure
+//	   DeletePending + DeleteIdentity + COMP_B so a rolled-back flow has none.
 //
 // Then (ONBD-02) the confirmed interview Agent.md is written for the NEW identity id; a
 // skipped interview writes nothing. The Telegram CONSUME is async (the user scans later);
@@ -103,11 +103,12 @@ type AuraLegWriter interface {
 	DeleteIdentity(ctx context.Context, identityName string) error
 }
 
-// TelegramMint is the narrow port over the Telegram mint/poll (Leg C + the status poll).
-// The composition-root adapter wraps *telegram.Store (InsertPending + PendingConsumed),
-// avoiding the telegram→agui import cycle. The consume is async (channel-side), never here.
+// TelegramMint is the narrow port over the Telegram mint/poll (Leg C + compensation + the
+// status poll). The composition-root adapter wraps *telegram.Store, avoiding the
+// telegram→agui import cycle. The consume is async (channel-side), never here.
 type TelegramMint interface {
 	InsertPending(ctx context.Context, onboardingToken, identityID string, expiresAt time.Time) error
+	DeletePending(ctx context.Context, onboardingToken string) error
 	PendingConsumed(ctx context.Context, onboardingToken string) (bool, error)
 }
 
@@ -152,6 +153,12 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	identityName := strings.TrimSpace(in.Email)
 	if identityName == "" {
 		return OnboardingProvisionResponse{}, errors.New("onboarding: email is required and must be a sane length")
+	}
+	if strings.TrimSpace(in.SecurityQuestion) == "" {
+		return OnboardingProvisionResponse{}, errors.New("onboarding: security question is required and must be a sane length")
+	}
+	if strings.TrimSpace(in.SecurityAnswer) == "" {
+		return OnboardingProvisionResponse{}, errors.New("onboarding: security answer is required and must be a sane length")
 	}
 	// Duplicate pre-check (fail before any write): an existing Authula user with this email
 	// is a clean 409. A racing create is still caught by the aura.identities UNIQUE name
@@ -238,6 +245,9 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	}, identityID); err != nil {
 		// The audit row is a MUST (no loginable identity without it). If it fails, fully
 		// compensate the whole saga so we never leave an unaudited identity.
+		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+			slog.Error("onboarding: COMP_C (delete telegram pending) after audit failure failed", "step", "compensate")
+		}
 		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 			slog.Error("onboarding: COMP_A (delete identity) after audit failure failed", "step", "compensate")
 		}
@@ -357,20 +367,10 @@ func (s *onboardingService) persistProfile(entry *sessionEntry, identityID strin
 
 // provisionFail wraps an internal saga error with a FIXED stage label and logs a fixed
 // message (never err.Error() verbatim — the setup handleToken precedent, T-13-07: a
-// transport error could echo the password or bot token). The returned error carries the
-// stage for the test's 502 assertion; the handler runs it through sanitizeErr before the
-// wire, and the no-secret-in-logs test asserts the secret never reaches a log line.
-func provisionFail(stage string, err error) error {
+// transport error could echo the password or recovery answer). The returned error carries
+// only the fixed stage + sentinel, never the arbitrary backend message the handler may
+// surface.
+func provisionFail(stage string, _ error) error {
 	slog.Error("onboarding: provisioning step failed", "stage", stage)
-	return fmt.Errorf("onboarding: %s failed: %w", stage, redactProvisionErr(err))
-}
-
-// redactProvisionErr collapses a saga error to a sanitized form so a secret embedded in a
-// transport/driver error never propagates into the returned error (which the handler
-// surfaces as a 502 body). It reuses SanitizeString (DSN/userinfo/token redaction).
-func redactProvisionErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	return errors.New(SanitizeString(err.Error()))
+	return fmt.Errorf("onboarding: %s failed: %w", stage, errProvisioningUnavailable)
 }
