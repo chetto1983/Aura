@@ -190,7 +190,13 @@ func (s *PasswordResetService) Verify(ctx context.Context, in PasswordResetVerif
 	}
 	if record.AnswerHashVersion != recoveryAnswerHashVersion ||
 		!(RecoveryHasher{}).VerifyAnswer(in.Answer, record.AnswerHash) {
-		_ = s.store.RecordChallengeAttempt(ctx, record.IdentityID)
+		if err := s.store.RecordChallengeAttempt(ctx, record.IdentityID); err != nil {
+			if errors.Is(err, ErrPasswordResetDenied) {
+				_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+				return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
+			}
+			return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
+		}
 		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
 		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 	}
