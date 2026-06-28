@@ -257,7 +257,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
 	// (Assumption A3). The bind may now be non-loopback (WEB-02/D-06 lifted the
 	// hardcoded-loopback restriction); config.GuardWebBind (called below before httpSrv
-	// is built) refuses a non-loopback AURA_AGUI_BIND unless AURA_WEB_AUTH_SECRET or
+	// is built) refuses a non-loopback AURA_AGUI_BIND unless Authula auth or
 	// AURA_WEB_TRUST_PROXY is set, so the auth boundary — not a hardcoded bind — is the
 	// compensating control.
 	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
@@ -370,12 +370,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// (FND-02). A webui embed failure is fatal at boot — a committed dist makes it
 	// unreachable, but a half-wired host must not start.
 	//
-	// WEB-03: the parent mux is wrapped in the in-binary web-auth boundary. buildAuthDeps
-	// derives the HMAC signing key from AURA_WEB_AUTH_SECRET, binds the session to the
-	// seeded `local` identity, and sets SecretConfigured from the non-empty secret. When
-	// no secret is configured (loopback dev) RequireAuth is a no-op pass-through, so the
-	// daemon serves unauthenticated exactly as before; GuardWebBind (below) guarantees an
-	// unconfigured secret is only reachable on a loopback bind.
+	// WEB-03: the parent mux is wrapped in the Authula web-auth boundary. buildAuthDeps
+	// constructs the Authula provider and wires its session validator into RequireAuth.
+	// GuardWebBind below keeps non-loopback binds behind Authula auth or an explicit
+	// trust-proxy deployment.
 	auth, authulaProvider, err := buildAuthDeps(ctx, chat)
 	if err != nil {
 		chat.close()
