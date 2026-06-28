@@ -56,8 +56,10 @@ func TestMigration0023IdentityRecoveryRoundTrip(t *testing.T) {
 		{sql: `INSERT INTO aura.identities (id, name, kind) VALUES
     ($1, 'recovery-0023@example.test', 'user'),
     ($2, 'recovery-0023-other@example.test', 'user')`, args: []any{seedID, otherID}},
-		{sql: `INSERT INTO aura.identity_auth_links (identity_id, authula_user_id)
-    VALUES ($1, 'authula-recovery-0023')`, args: []any{seedID}},
+		{sql: `INSERT INTO aura.identity_auth_links (identity_id, authula_user_id, created_at)
+    VALUES
+        ($1, 'authula-recovery-0023-old', now() - interval '2 hours'),
+        ($1, 'authula-recovery-0023-new', now())`, args: []any{seedID}},
 		{sql: `INSERT INTO aura.identity_recovery (identity_id, question, answer_hash, answer_hash_version)
     VALUES ($1, 'Question?', 'answer-hash', 'v1')`, args: []any{seedID}},
 		{sql: `INSERT INTO aura.telegram_accounts (telegram_user_id, identity_id, username, first_name, added_at)
@@ -82,6 +84,11 @@ INSERT INTO aura.password_reset_challenges (
 INSERT INTO aura.password_reset_challenges (
     identity_id, code_hash, expires_at, attempt_count, max_attempts
 ) VALUES ($1, 'code-hash', now() + interval '5 minutes', 6, 5)
+`, seedID), "23514")
+	requireSQLState(t, execErr(ctx, pool, `
+INSERT INTO aura.password_reset_challenges (
+    identity_id, code_hash, created_at, expires_at, attempt_count, max_attempts
+) VALUES ($1, 'code-hash', '2026-01-01 00:00:00+00', '2026-01-01 00:00:00+00', 0, 5)
 `, seedID), "23514")
 
 	var challengeID pgtype.UUID
@@ -113,6 +120,11 @@ INSERT INTO aura.password_reset_tokens (
     token_hash, challenge_id, identity_id, expires_at, attempt_count, max_attempts
 ) VALUES ('over-attempt-token-0023', $1, $2, now() + interval '5 minutes', 4, 3)
 `, challengeID, seedID), "23514")
+	requireSQLState(t, execErr(ctx, pool, `
+INSERT INTO aura.password_reset_tokens (
+    token_hash, challenge_id, identity_id, created_at, expires_at, attempt_count, max_attempts
+) VALUES ('expired-token-0023', $1, $2, '2026-01-01 00:00:00+00', '2026-01-01 00:00:00+00', 0, 3)
+`, challengeID, seedID), "23514")
 
 	q := sqlc.New(pool)
 	auditRow, err := q.InsertIdentityRecoveryAudit(ctx, sqlc.InsertIdentityRecoveryAuditParams{
@@ -139,6 +151,9 @@ INSERT INTO aura.password_reset_tokens (
 	}
 	if lookup.TelegramUserID != 230102 {
 		t.Fatalf("lookup telegram_user_id = %d, want most recent 230102", lookup.TelegramUserID)
+	}
+	if lookup.AuthulaUserID != "authula-recovery-0023-new" {
+		t.Fatalf("lookup authula_user_id = %q, want newest authula-recovery-0023-new", lookup.AuthulaUserID)
 	}
 }
 
