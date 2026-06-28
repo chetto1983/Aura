@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 )
 
 // onboarding_api.go is the thin REST adapter over the server-held OnboardingService
@@ -31,11 +32,13 @@ import (
 // grammar is re-checked at the identity store (GrantCapability), so these are defense-in-
 // depth, not the sole control.
 const (
-	onboardingTextMaxLen     = 8192
-	onboardingEmailMaxLen    = 320 // RFC 5321 max email length
-	onboardingPasswordMaxLen = 1024
-	onboardingCapNameMaxLen  = 64 // identity.capNameRe upper bound
-	onboardingMaxCaps        = 64
+	onboardingTextMaxLen             = 8192
+	onboardingEmailMaxLen            = 320 // RFC 5321 max email length
+	onboardingPasswordMaxLen         = 1024
+	onboardingSecurityQuestionMaxLen = 256
+	onboardingSecurityAnswerMaxLen   = 512
+	onboardingCapNameMaxLen          = 64 // identity.capNameRe upper bound
+	onboardingMaxCaps                = 64
 )
 
 // validOnboardingIntents is the closed step-intent set the wizard drives. Anything else
@@ -100,10 +103,12 @@ type OnboardingStepResponse struct {
 // the write-only initial password, the requested capability set (re-validated server-side
 // as a subset of the creator's grants with no '*'), and whether to mint a Telegram link.
 type OnboardingProvisionRequest struct {
-	Email        string   `json:"email"`
-	Password     string   `json:"password"`
-	Capabilities []string `json:"capabilities"`
-	LinkTelegram bool     `json:"linkTelegram"`
+	Email            string   `json:"email"`
+	Password         string   `json:"password"`
+	SecurityQuestion string   `json:"securityQuestion"`
+	SecurityAnswer   string   `json:"securityAnswer"`
+	Capabilities     []string `json:"capabilities"`
+	LinkTelegram     bool     `json:"linkTelegram"`
 }
 
 // OnboardingProvisionResponse is the saga success result: the new identity id, and (when
@@ -268,6 +273,15 @@ func validateOnboardingProvision(req OnboardingProvisionRequest) error {
 	}
 	if req.Password == "" || len(req.Password) > onboardingPasswordMaxLen {
 		return errors.New("onboarding: password is required and must be a sane length")
+	}
+	if strings.TrimSpace(req.SecurityQuestion) == "" || len(req.SecurityQuestion) > onboardingSecurityQuestionMaxLen {
+		return errors.New("onboarding: security question is required and must be a sane length")
+	}
+	if strings.TrimSpace(req.SecurityAnswer) == "" || len(req.SecurityAnswer) > onboardingSecurityAnswerMaxLen {
+		return errors.New("onboarding: security answer is required and must be a sane length")
+	}
+	if !req.LinkTelegram {
+		return errors.New("onboarding: Telegram link is required for recovery")
 	}
 	if len(req.Capabilities) > onboardingMaxCaps {
 		return errors.New("onboarding: too many capabilities")

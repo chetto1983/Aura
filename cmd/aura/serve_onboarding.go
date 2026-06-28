@@ -177,6 +177,23 @@ func (a telegramMintAdapter) PendingConsumed(ctx context.Context, onboardingToke
 	return a.store.PendingConsumed(ctx, onboardingToken)
 }
 
+type recoverySetupAdapter struct {
+	pool *pgxpool.Pool
+}
+
+func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error {
+	id, err := uuid.Parse(identityID)
+	if err != nil {
+		return fmt.Errorf("upsert recovery identity: %w", err)
+	}
+	return sqlc.New(a.pool).UpsertIdentityRecovery(ctx, sqlc.UpsertIdentityRecoveryParams{
+		IdentityID:        pgtype.UUID{Bytes: id, Valid: true},
+		Question:          question,
+		AnswerHash:        answerHash,
+		AnswerHashVersion: answerHashVersion,
+	})
+}
+
 // buildOnboardingService assembles the OnboardingService best-effort. The interview side
 // (capability picker + LLM extraction + profile write) is always wired when a pool exists;
 // the provisioning saga is wired when the composition root supplies an Authula provider
@@ -193,6 +210,7 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 	if chat.pool != nil {
 		deps.AuraLeg = auraLegAdapter{pool: chat.pool}
 		deps.Telegram = telegramMintAdapter{store: telegram.New(chat.pool)}
+		deps.Recovery = recoverySetupAdapter{pool: chat.pool}
 	}
 	if authulaProvider != nil {
 		if core := authulaProvider.CoreServices(); core != nil {

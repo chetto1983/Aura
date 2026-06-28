@@ -201,6 +201,10 @@ type ProfileWriter interface {
 	WriteProfile(identity string, p profile.Profile) error
 }
 
+type RecoverySetupWriter interface {
+	UpsertRecovery(ctx context.Context, identityID, question, answerHash, answerHashVersion string) error
+}
+
 // onboardingService is the concrete OnboardingService: the goroutine-free TTL session
 // store + the interview driver (StartSession/Step) + the provisioning saga (Provision/
 // TelegramStatus, onboarding_provision.go). It is built at the composition root
@@ -220,6 +224,7 @@ type onboardingService struct {
 	auraLeg  AuraLegWriter
 	telegram TelegramMint
 	botName  string
+	recovery RecoverySetupWriter
 }
 
 // OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
@@ -235,6 +240,7 @@ type OnboardingDeps struct {
 	AuraLeg      AuraLegWriter
 	Telegram     TelegramMint
 	BotUsername  string
+	Recovery     RecoverySetupWriter
 }
 
 // NewOnboardingService assembles the OnboardingService over the supplied narrow ports.
@@ -256,6 +262,7 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 		auraLeg:   d.AuraLeg,
 		telegram:  d.Telegram,
 		botName:   d.BotUsername,
+		recovery:  d.Recovery,
 	}
 }
 

@@ -152,6 +152,16 @@ func (f *fakeTelegram) mintedCount() int {
 	return len(f.minted)
 }
 
+type fakeRecoveryStore struct {
+	identityID, question, hash, version string
+	err                                 error
+}
+
+func (f *fakeRecoveryStore) UpsertRecovery(_ context.Context, identityID, question, answerHash, answerHashVersion string) error {
+	f.identityID, f.question, f.hash, f.version = identityID, question, answerHash, answerHashVersion
+	return f.err
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
@@ -166,18 +176,13 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
-// sagaService builds a fully-wired onboardingService over fake ports with a creator that
-// holds identity.create + the named caps the test grants.
 func sagaService(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegram, creatorGrants []string) (*onboardingService, string) {
 	t.Helper()
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: creatorGrants},
 		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
-		Authula:      au,
-		AuraLeg:      leg,
-		Telegram:     tg,
-		BotUsername:  "AuraBot",
+		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: &fakeRecoveryStore{},
 	})
 	start, err := svc.StartSession(context.Background(), "creator-1")
 	if err != nil {
@@ -186,13 +191,49 @@ func sagaService(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegr
 	return svc, start.SessionToken
 }
 
-// provReq is a valid provision request granting only caps the creator holds.
 func provReq(caps []string) OnboardingProvisionRequest {
-	return OnboardingProvisionRequest{
-		Email:        "newbie@aura.local",
-		Password:     "s3cret-temp-pw",
-		Capabilities: caps,
-		LinkTelegram: true,
+	return OnboardingProvisionRequest{Email: "newbie@aura.local", Password: "s3cret-temp-pw", SecurityQuestion: "First school?", SecurityAnswer: "Blue School", Capabilities: caps, LinkTelegram: true}
+}
+
+func TestProvisionStoresRecoveryQuestionAndHash(t *testing.T) {
+	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+	recovery := &fakeRecoveryStore{}
+	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
+	svc.recovery = recovery
+
+	req := provReq(nil)
+	req.SecurityQuestion = "First school?"
+	req.SecurityAnswer = "  Blue   School "
+	resp, err := svc.Provision(context.Background(), "creator-1", tok, req)
+	if err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	if recovery.identityID != resp.IdentityID {
+		t.Fatalf("recovery identity = %q, want %q", recovery.identityID, resp.IdentityID)
+	}
+	if recovery.question != "First school?" {
+		t.Fatalf("question = %q", recovery.question)
+	}
+	if recovery.hash == "" || strings.Contains(recovery.hash, "Blue") {
+		t.Fatalf("answer hash leaked raw answer: %q", recovery.hash)
+	}
+	if recovery.version != recoveryAnswerHashVersion {
+		t.Fatalf("version = %q, want %q", recovery.version, recoveryAnswerHashVersion)
+	}
+}
+
+func TestValidateOnboardingProvisionRequiresRecovery(t *testing.T) {
+	cases := map[string]func(*OnboardingProvisionRequest){
+		"missing security question": func(req *OnboardingProvisionRequest) { req.SecurityQuestion = "" },
+		"missing security answer":   func(req *OnboardingProvisionRequest) { req.SecurityAnswer = "" },
+		"linkTelegram=false":        func(req *OnboardingProvisionRequest) { req.LinkTelegram = false },
+	}
+	for name, mutate := range cases {
+		req := provReq(nil)
+		mutate(&req)
+		if err := validateOnboardingProvision(req); err == nil {
+			t.Fatalf("%s should fail", name)
+		}
 	}
 }
 
@@ -505,12 +546,14 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	const secret = "Sup3rSecret-Passw0rd!"
+	const recoverySecret = "School Mascot Secret"
 
 	// Success path.
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
 	req := provReq(nil)
 	req.Password = secret
+	req.SecurityAnswer = recoverySecret
 	if _, err := svc.Provision(context.Background(), "creator-1", tok, req); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
@@ -521,12 +564,16 @@ func TestProvisionNoSecretInLogs(t *testing.T) {
 	svc2, tok2 := sagaService(t, au2, leg2, tg2, []string{"identity.create"})
 	req2 := provReq(nil)
 	req2.Password = secret
+	req2.SecurityAnswer = recoverySecret
 	if _, err := svc2.Provision(context.Background(), "creator-1", tok2, req2); err == nil {
 		t.Fatal("want B2 failure")
 	}
 
 	if strings.Contains(buf.String(), secret) {
 		t.Fatalf("the Authula password leaked into a log line:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), recoverySecret) {
+		t.Fatalf("the recovery answer leaked into a log line:\n%s", buf.String())
 	}
 }
 

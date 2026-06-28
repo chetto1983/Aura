@@ -192,7 +192,31 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, provisionFail("aura identity write", err)
 	}
 
-	// ---- 3. LEG C (Telegram token mint) ----
+	// ---- 3. RECOVERY SETUP (required before Telegram mint) ----
+	if s.recovery == nil {
+		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+			slog.Error("onboarding: COMP_A (delete identity) after recovery unavailable failed", "step", "compensate")
+		}
+		compB()
+		return OnboardingProvisionResponse{}, errProvisioningUnavailable
+	}
+	answerHash, answerVersion, err := (RecoveryHasher{}).HashAnswer(in.SecurityAnswer)
+	if err != nil {
+		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+			slog.Error("onboarding: COMP_A (delete identity) after recovery hash failed", "step", "compensate")
+		}
+		compB()
+		return OnboardingProvisionResponse{}, provisionFail("recovery hash", err)
+	}
+	if err := s.recovery.UpsertRecovery(ctx, identityID, strings.TrimSpace(in.SecurityQuestion), answerHash, answerVersion); err != nil {
+		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+			slog.Error("onboarding: COMP_A (delete identity) after recovery write failed", "step", "compensate")
+		}
+		compB()
+		return OnboardingProvisionResponse{}, provisionFail("recovery write", err)
+	}
+
+	// ---- 4. LEG C (Telegram token mint) ----
 	onboardingToken := ""
 	if in.LinkTelegram {
 		onboardingToken = uuid.NewString()
