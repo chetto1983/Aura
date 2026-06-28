@@ -151,8 +151,13 @@ func (a recoveryStoreAdapter) ClaimResetTokenHash(ctx context.Context, tokenHash
 	if err != nil {
 		return nil, err
 	}
-	identityID, err := claimResetTokenHash(ctx, tx, tokenHash)
+	identityID, err := claimResetTokenHash(ctx, tx, sqlc.New(tx), tokenHash)
 	if err != nil {
+		if errors.Is(err, agui.ErrPasswordResetDenied) {
+			_ = tx.Commit(ctx)
+		} else {
+			_ = tx.Rollback(ctx)
+		}
 		return nil, err
 	}
 	return &pgPasswordResetTokenClaim{
@@ -228,32 +233,38 @@ type passwordResetTokenLocker interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func claimResetTokenHash(ctx context.Context, tx pgx.Tx, tokenHash string) (string, error) {
+func claimResetTokenHash(ctx context.Context, locker passwordResetTokenLocker, q passwordResetTokenQueries, tokenHash string) (string, error) {
 	if tokenHash == "" {
-		_ = tx.Rollback(ctx)
 		return "", agui.ErrPasswordResetDenied
 	}
-	token, err := getPasswordResetTokenForUpdate(ctx, tx, tokenHash)
+	token, err := getPasswordResetTokenForUpdate(ctx, locker, tokenHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			_ = sqlc.New(tx).IncrementPasswordResetTokenAttempts(ctx, tokenHash)
-			_ = tx.Commit(ctx)
+			_ = q.IncrementPasswordResetTokenAttempts(ctx, tokenHash)
 			return "", agui.ErrPasswordResetDenied
 		}
-		_ = tx.Rollback(ctx)
 		return "", err
 	}
 	if token.ConsumedAt.Valid || !token.ExpiresAt.Valid || !token.ExpiresAt.Time.After(time.Now()) ||
 		token.AttemptCount >= token.MaxAttempts {
-		_ = sqlc.New(tx).IncrementPasswordResetTokenAttempts(ctx, tokenHash)
-		_ = tx.Commit(ctx)
+		_ = q.IncrementPasswordResetTokenAttempts(ctx, tokenHash)
 		return "", agui.ErrPasswordResetDenied
 	}
 	if !token.IdentityID.Valid {
-		_ = tx.Rollback(ctx)
 		return "", agui.ErrPasswordResetDenied
 	}
-	return uuid.UUID(token.IdentityID.Bytes).String(), nil
+	consumed, err := q.ConsumePasswordResetToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = q.IncrementPasswordResetTokenAttempts(ctx, tokenHash)
+			return "", agui.ErrPasswordResetDenied
+		}
+		return "", err
+	}
+	if !consumed.IdentityID.Valid || consumed.IdentityID.Bytes != token.IdentityID.Bytes {
+		return "", agui.ErrPasswordResetDenied
+	}
+	return uuid.UUID(consumed.IdentityID.Bytes).String(), nil
 }
 
 func getPasswordResetTokenForUpdate(ctx context.Context, q passwordResetTokenLocker, tokenHash string) (sqlc.AuraPasswordResetTokens, error) {
@@ -336,26 +347,12 @@ func (c *pgPasswordResetTokenClaim) Consume(ctx context.Context) (string, error)
 	if c == nil || c.closed {
 		return "", agui.ErrPasswordResetDenied
 	}
-	q := sqlc.New(c.tx)
-	consumed, err := q.ConsumePasswordResetToken(ctx, c.tokenHash)
-	if err != nil {
-		_ = c.Release(ctx)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", agui.ErrPasswordResetDenied
-		}
-		return "", err
-	}
-	if !consumed.IdentityID.Valid {
-		_ = c.Release(ctx)
-		return "", agui.ErrPasswordResetDenied
-	}
-	identityID := uuid.UUID(consumed.IdentityID.Bytes).String()
 	if err := c.tx.Commit(ctx); err != nil {
 		c.closed = true
 		return "", err
 	}
 	c.closed = true
-	return identityID, nil
+	return c.identityID, nil
 }
 
 func (c *pgPasswordResetTokenClaim) Release(ctx context.Context) error {

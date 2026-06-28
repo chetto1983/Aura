@@ -85,6 +85,35 @@ func TestConsumeResetTokenHashIncrementsAttemptsOnInvalidToken(t *testing.T) {
 	}
 }
 
+func TestClaimResetTokenHashConsumesWhileTokenIsValid(t *testing.T) {
+	identityID := uuid.New()
+	challengeID := uuid.New()
+	tokenHash := agui.HashLookupToken("raw-reset-token")
+	token := sqlc.AuraPasswordResetTokens{
+		TokenHash:   tokenHash,
+		ChallengeID: pgtype.UUID{Bytes: challengeID, Valid: true},
+		IdentityID:  pgtype.UUID{Bytes: identityID, Valid: true},
+		ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
+		MaxAttempts: 3,
+	}
+	locker := &fakePasswordResetTokenLocker{row: fakePasswordResetTokenRow{token: token}}
+	queries := &fakePasswordResetTokenQueries{wantTokenHash: tokenHash, token: token}
+
+	got, err := claimResetTokenHash(context.Background(), locker, queries, tokenHash)
+	if err != nil {
+		t.Fatalf("claimResetTokenHash: %v", err)
+	}
+	if got != identityID.String() {
+		t.Fatalf("identityID = %q, want %q", got, identityID.String())
+	}
+	if !queries.consumed {
+		t.Fatal("claim did not consume the token inside the claim transaction")
+	}
+	if !strings.Contains(locker.query, "FOR UPDATE") {
+		t.Fatalf("claim query = %q, want row lock", locker.query)
+	}
+}
+
 func TestPasswordResetChallengeParamsUseFiveAttempts(t *testing.T) {
 	identityID := uuid.New()
 	expiresAt := time.Date(2026, 6, 28, 12, 10, 0, 0, time.UTC)
@@ -197,6 +226,7 @@ type fakePasswordResetTokenQueries struct {
 	getErr        error
 	consumeErr    error
 	incremented   bool
+	consumed      bool
 }
 
 func (q *fakePasswordResetTokenQueries) GetPasswordResetToken(_ context.Context, tokenHash string) (sqlc.AuraPasswordResetTokens, error) {
@@ -206,6 +236,7 @@ func (q *fakePasswordResetTokenQueries) GetPasswordResetToken(_ context.Context,
 
 func (q *fakePasswordResetTokenQueries) ConsumePasswordResetToken(_ context.Context, tokenHash string) (sqlc.AuraPasswordResetTokens, error) {
 	q.assertTokenHash(tokenHash)
+	q.consumed = true
 	return q.token, q.consumeErr
 }
 
@@ -219,4 +250,34 @@ func (q *fakePasswordResetTokenQueries) assertTokenHash(tokenHash string) {
 	if tokenHash != q.wantTokenHash {
 		panic("unexpected token hash: " + tokenHash)
 	}
+}
+
+type fakePasswordResetTokenLocker struct {
+	query string
+	row   pgx.Row
+}
+
+func (l *fakePasswordResetTokenLocker) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	l.query = sql
+	return l.row
+}
+
+type fakePasswordResetTokenRow struct {
+	token sqlc.AuraPasswordResetTokens
+	err   error
+}
+
+func (r fakePasswordResetTokenRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	*(dest[0].(*string)) = r.token.TokenHash
+	*(dest[1].(*pgtype.UUID)) = r.token.ChallengeID
+	*(dest[2].(*pgtype.UUID)) = r.token.IdentityID
+	*(dest[3].(*pgtype.Timestamptz)) = r.token.CreatedAt
+	*(dest[4].(*pgtype.Timestamptz)) = r.token.ExpiresAt
+	*(dest[5].(*pgtype.Timestamptz)) = r.token.ConsumedAt
+	*(dest[6].(*int32)) = r.token.AttemptCount
+	*(dest[7].(*int32)) = r.token.MaxAttempts
+	return nil
 }
