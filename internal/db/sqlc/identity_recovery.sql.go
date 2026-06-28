@@ -75,6 +75,7 @@ FROM aura.password_reset_challenges
 WHERE identity_id = $1
   AND consumed_at IS NULL
   AND expires_at > now()
+  AND attempt_count < max_attempts
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -145,6 +146,9 @@ const incrementPasswordResetChallengeAttempts = `-- name: IncrementPasswordReset
 UPDATE aura.password_reset_challenges
 SET attempt_count = attempt_count + 1
 WHERE id = $1
+  AND consumed_at IS NULL
+  AND expires_at > now()
+  AND attempt_count < max_attempts
 `
 
 func (q *Queries) IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error {
@@ -156,6 +160,9 @@ const incrementPasswordResetTokenAttempts = `-- name: IncrementPasswordResetToke
 UPDATE aura.password_reset_tokens
 SET attempt_count = attempt_count + 1
 WHERE token_hash = $1
+  AND consumed_at IS NULL
+  AND expires_at > now()
+  AND attempt_count < max_attempts
 `
 
 func (q *Queries) IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error {
@@ -317,8 +324,8 @@ type LookupRecoveryByEmailRow struct {
 	TelegramUserID    int64       `json:"telegram_user_id"`
 }
 
-func (q *Queries) LookupRecoveryByEmail(ctx context.Context, lower string) (LookupRecoveryByEmailRow, error) {
-	row := q.db.QueryRow(ctx, lookupRecoveryByEmail, lower)
+func (q *Queries) LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error) {
+	row := q.db.QueryRow(ctx, lookupRecoveryByEmail, email)
 	var i LookupRecoveryByEmailRow
 	err := row.Scan(
 		&i.IdentityID,

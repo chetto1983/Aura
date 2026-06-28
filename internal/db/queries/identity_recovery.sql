@@ -24,7 +24,7 @@ FROM aura.identities i
 JOIN aura.identity_auth_links ial ON ial.identity_id = i.id
 JOIN aura.identity_recovery ir ON ir.identity_id = i.id
 JOIN aura.telegram_accounts ta ON ta.identity_id = i.id
-WHERE lower(i.name) = lower($1)
+WHERE lower(i.name) = lower(sqlc.arg(email))
 ORDER BY COALESCE(ta.last_seen_at, ta.added_at) DESC,
          ta.added_at DESC,
          ta.telegram_user_id DESC,
@@ -48,13 +48,17 @@ FROM aura.password_reset_challenges
 WHERE identity_id = $1
   AND consumed_at IS NULL
   AND expires_at > now()
+  AND attempt_count < max_attempts
 ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: IncrementPasswordResetChallengeAttempts :exec
 UPDATE aura.password_reset_challenges
 SET attempt_count = attempt_count + 1
-WHERE id = $1;
+WHERE id = $1
+  AND consumed_at IS NULL
+  AND expires_at > now()
+  AND attempt_count < max_attempts;
 
 -- name: ConsumePasswordResetChallenge :one
 UPDATE aura.password_reset_challenges
@@ -83,7 +87,10 @@ WHERE token_hash = $1;
 -- name: IncrementPasswordResetTokenAttempts :exec
 UPDATE aura.password_reset_tokens
 SET attempt_count = attempt_count + 1
-WHERE token_hash = $1;
+WHERE token_hash = $1
+  AND consumed_at IS NULL
+  AND expires_at > now()
+  AND attempt_count < max_attempts;
 
 -- name: ConsumePasswordResetToken :one
 UPDATE aura.password_reset_tokens

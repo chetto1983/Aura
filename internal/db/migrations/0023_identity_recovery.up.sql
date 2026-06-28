@@ -51,6 +51,9 @@ CREATE TABLE aura.identity_recovery_audit (
 
 CREATE INDEX identity_recovery_updated_idx
     ON aura.identity_recovery (updated_at DESC);
+CREATE UNIQUE INDEX identities_user_name_lower_uniq
+    ON aura.identities (lower(name))
+    WHERE kind = 'user';
 CREATE INDEX password_reset_challenges_identity_active_idx
     ON aura.password_reset_challenges (identity_id, expires_at)
     WHERE consumed_at IS NULL;

@@ -133,7 +133,7 @@ type Querier interface {
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
-	LookupRecoveryByEmail(ctx context.Context, lower string) (LookupRecoveryByEmailRow, error)
+	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
