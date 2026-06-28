@@ -135,6 +135,27 @@ smoke testing, and asset troubleshooting.
 The deferred `document_search` tool searches indexed chunks and returns cited
 results with document id, chunk id, file name, locator, score, and text.
 
+### Two-stage retrieval (RET-02)
+
+`document_search` routes through `documents.Service.Retrieve`, which runs the fast
+order proven by spike 070 Q4:
+
+1. **Seed** — embed the query and take the top `<= 15` candidates from the dense
+   `chunk_embedding` HNSW index. If the query cannot be embedded (embed sidecar
+   down), the seed falls back to the sparse `chunk_text` fulltext index (RRF order).
+2. **Rerank the seeds** — the ~15 seed chunks (not the expanded pool) are reordered
+   by the `aura-rerank` sidecar with short truncation (~480 chars). A non-monotonic
+   guard (`RerankThreshold`) keeps the seed order when the top rerank score is weak.
+3. **Expand the winners** — only the reranked top-K winners are 1-hop expanded over
+   `(:Chunk)-[:NEXT_CHUNK]-(:Chunk)` to attach reading-order context; winners stay
+   first, unique neighbours follow.
+
+The whole path is **fail-soft and regression-free**: with no reranker configured it
+is exactly the current fulltext `Search`; when the reranker is absent or returns its
+identity order, the result is the pre-rerank RRF/vector seed order. Retrieval is
+message-prefix-safe — it operates only on chunk rows and never touches the cached
+`messages[0]` system prefix.
+
 ## Reranker (optional, GPU)
 
 A cross-encoder reranker is available as an optional GPU sidecar, `aura-rerank`
@@ -150,6 +171,17 @@ dependency.
 docker compose up -d aura-rerank
 curl http://127.0.0.1:8085/health
 ```
+
+### Memory-recall reranking
+
+The agent-memory MCP sidecar applies the same reranker to conversational recall.
+`neo4j_agent_memory.rerank.rerank()` (stdlib only, mirroring the Go client) post-
+processes the embedding-ranked `SEARCH_*_BY_EMBEDDING` results in
+`ShortTermMemory.search_messages` via the fail-soft `BaseMemory.rerank_results`
+hook. It reads `AURA_RERANK_BASE_URL` and, on any failure (no URL, transport,
+non-2xx, decode, length/index mismatch), leaves the original embedding order
+unchanged. It only **reorders** already-scoped results, so it can never widen memory
+scope.
 
 ## Troubleshooting
 

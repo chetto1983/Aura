@@ -1,12 +1,15 @@
 """Base memory classes and protocols."""
 
+import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from neo4j_agent_memory.embeddings.base import Embedder
@@ -159,3 +162,46 @@ class BaseMemory(ABC, Generic[T]):
         if self._embedder is None:
             return None
         return await self._embedder.embed_batch(texts)
+
+    async def rerank_results(
+        self,
+        query: str,
+        results: list[T],
+        *,
+        text_of: Callable[[T], str],
+        base_url: str | None = None,
+    ) -> list[T]:
+        """Reorder embedding-search results by aura-rerank relevance (RET-02, fail-soft).
+
+        Post-processes the already-scoped, already-limited embedding recall through the
+        optional aura-rerank sidecar (mirrors the Go documents.Retrieve rerank stage).
+        On ANY failure -- no base_url, transport, non-2xx, decode, length/index
+        mismatch, or an import error -- the original embedding order is returned
+        unchanged. It only REORDERS the given results; it never adds rows, so the memory
+        scope of ``SEARCH_*_BY_EMBEDDING_SCOPED`` cannot be widened (threat T-30-10).
+
+        Args:
+            query: The recall query the results were retrieved for.
+            results: The embedding-ranked result objects to reorder.
+            text_of: Extracts the text to rerank from each result object.
+            base_url: Optional override; defaults to ``AURA_RERANK_BASE_URL``.
+
+        Returns:
+            The results in reranked order, or the input order on any failure.
+        """
+        if len(results) < 2:
+            return results
+        try:
+            import asyncio
+
+            from neo4j_agent_memory.rerank import rerank as _rerank
+
+            docs = [text_of(item) for item in results]
+            # Run the blocking stdlib HTTP call off the event loop.
+            order = await asyncio.to_thread(_rerank, query, docs, base_url)
+            if sorted(order) != list(range(len(results))):
+                return results  # defensive: not a valid permutation
+            return [results[index] for index in order]
+        except Exception:  # noqa: BLE001 - rerank must never break recall
+            logger.debug("rerank_results: keeping embedding order after error", exc_info=True)
+            return results

@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/rerank"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -285,7 +286,12 @@ type docsToolSearcher struct {
 	cfg *config.Config
 }
 
-func (s docsToolSearcher) Search(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
+// Retrieve runs the two-stage retrieval pipeline for the document_search tool. It
+// seeds from the dense chunk_embedding index (embed sidecar) or the sparse fulltext
+// index, reranks the seeds via the optional aura-rerank sidecar, and 1-hop expands the
+// winners. Every stage is fail-soft: a down embed/rerank sidecar degrades to the
+// RRF/vector seed order, so retrieval never blocks on optional infrastructure.
+func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
 	if s.cfg == nil {
 		return nil, fmt.Errorf("document search config is nil")
 	}
@@ -294,7 +300,17 @@ func (s docsToolSearcher) Search(ctx context.Context, req documents.SearchReques
 		return nil, err
 	}
 	defer func() { _ = mcp.Close() }()
-	return (&documents.Searcher{Client: mcp}).Search(ctx, req)
+	svc := &documents.Service{
+		Searcher:  &documents.Searcher{Client: mcp},
+		Knowledge: mcp,
+		QueryEmbedder: &documents.EmbeddingClient{
+			BaseURL:    s.cfg.Neo4j.EmbedURL,
+			Client:     documentHTTPClient(s.cfg),
+			Dimensions: s.cfg.Neo4j.EmbedDimensions,
+		},
+		Reranker: &rerank.RerankClient{BaseURL: s.cfg.RerankBaseURL},
+	}
+	return svc.Retrieve(ctx, req)
 }
 
 func documentsBaseURL(cfg *config.Config) string {

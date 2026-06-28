@@ -62,16 +62,46 @@ func toolTestContext(t *testing.T) context.Context {
 	return WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096)
 }
 
+// TestDocumentSearchToolNoRerankerMatchesSearchOrder wires a REAL documents.Service
+// with no reranker configured and asserts the tool returns the sparse fulltext Search
+// order unchanged (Retrieve degrades to Search — no regression vs today's behaviour).
+func TestDocumentSearchToolNoRerankerMatchesSearchOrder(t *testing.T) {
+	svc := &documents.Service{Searcher: &stubSearchBackend{hits: []documents.SearchHit{
+		{DocumentID: "doc-1", ChunkID: "ft-0", Text: "first"},
+		{DocumentID: "doc-1", ChunkID: "ft-1", Text: "second"},
+	}}}
+	tool := &DocumentSearch{Searcher: svc}
+	result, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"query":"hello"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := strings.Index(result.Preview, `"chunk_id":"ft-0"`)
+	second := strings.Index(result.Preview, `"chunk_id":"ft-1"`)
+	if first < 0 || second < 0 || first > second {
+		t.Fatalf("want fulltext Search order ft-0 then ft-1, preview = %s", result.Preview)
+	}
+}
+
 type fakeDocumentSearchBackend struct {
 	req  documents.SearchRequest
 	hits []documents.SearchHit
 	err  error
 }
 
-func (f *fakeDocumentSearchBackend) Search(_ context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
+func (f *fakeDocumentSearchBackend) Retrieve(_ context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
 	f.req = req
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.hits, nil
+}
+
+// stubSearchBackend is a sparse SearchBackend used to drive a real documents.Service
+// (no reranker) through the tool, proving the no-regression Retrieve==Search path.
+type stubSearchBackend struct {
+	hits []documents.SearchHit
+}
+
+func (s *stubSearchBackend) Search(_ context.Context, _ documents.SearchRequest) ([]documents.SearchHit, error) {
+	return s.hits, nil
 }

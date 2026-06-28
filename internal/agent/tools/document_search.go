@@ -9,8 +9,12 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 )
 
+// DocumentSearchBackend retrieves cited document chunks for the document_search
+// tool. Retrieve runs the two-stage pipeline (vector/BM25 seed -> rerank seeds ->
+// 1-hop graph-expand winners) and is fail-soft: with no reranker configured it
+// returns the current sparse-search order (no regression).
 type DocumentSearchBackend interface {
-	Search(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error)
+	Retrieve(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error)
 }
 
 type DocumentSearch struct {
@@ -64,7 +68,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	if args.Limit > 20 {
 		args.Limit = 20
 	}
-	hits, err := t.Searcher.Search(ctx, documents.SearchRequest{
+	hits, err := t.Searcher.Retrieve(ctx, documents.SearchRequest{
 		Query:      args.Query,
 		DocumentID: strings.TrimSpace(args.DocumentID),
 		Limit:      args.Limit,

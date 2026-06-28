@@ -898,7 +898,9 @@ class ShortTermMemory(BaseMemory[Message]):
             )
             messages.append(msg)
 
-        return messages
+        # RET-02 memory-recall hook: reorder the embedding-ranked recall through the
+        # optional aura-rerank sidecar; fail-soft to the original embedding order.
+        return await self.rerank_results(query, messages, text_of=lambda m: m.content)
 
     async def get_context(self, query: str, **kwargs: Any) -> str:
         """
