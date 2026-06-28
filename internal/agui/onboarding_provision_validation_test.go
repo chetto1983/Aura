@@ -61,6 +61,22 @@ func TestProvisionShapeValidationRunsBeforeSessionLookup(t *testing.T) {
 	assertNoWrites(t, au, leg, tg)
 }
 
+func TestProvisionShapeValidationWinsOverUnavailableBackend(t *testing.T) {
+	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+	svc, tok := sagaService(t, au, leg, tg, []string{"identity.create"})
+	svc.authula = nil
+	req := provReq(nil)
+	req.LinkTelegram = false
+	_, err := svc.Provision(context.Background(), "creator-1", tok, req)
+	if err == nil {
+		t.Fatal("Provision succeeded, want validation error")
+	}
+	if errors.Is(err, errProvisioningUnavailable) {
+		t.Fatalf("Provision err = %v, want validation before backend availability", err)
+	}
+	assertNoWrites(t, au, leg, tg)
+}
+
 func manyCaps(n int) []string {
 	caps := make([]string, n)
 	for i := range caps {

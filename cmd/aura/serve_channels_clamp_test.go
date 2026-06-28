@@ -36,11 +36,12 @@ func TestClampInt64ToInt(t *testing.T) {
 }
 
 func TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(t *testing.T) {
-	start := time.Now()
 	parent, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 	rt := &captureContextRoundTripper{}
+	before := time.Now()
 	client, cancelProbe := telegramGetMeHTTPClient(parent, rt)
+	after := time.Now()
 	defer cancelProbe()
 	if client.Timeout != telegramGetMeTimeout {
 		t.Fatalf("client timeout = %v, want %v", client.Timeout, telegramGetMeTimeout)
@@ -51,12 +52,13 @@ func TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(t *testing.T) {
 	if !rt.hasDeadline {
 		t.Fatal("probe request context has no deadline")
 	}
-	if got := rt.deadline.Sub(start); got < telegramGetMeTimeout-500*time.Millisecond || got > telegramGetMeTimeout+500*time.Millisecond {
-		t.Fatalf("probe deadline offset = %v, want about %v", got, telegramGetMeTimeout)
+	if rt.deadline.Before(before.Add(telegramGetMeTimeout)) || rt.deadline.After(after.Add(telegramGetMeTimeout)) {
+		t.Fatalf("probe deadline = %v, want between %v and %v", rt.deadline, before.Add(telegramGetMeTimeout), after.Add(telegramGetMeTimeout))
 	}
 
-	earlyStart := time.Now()
+	earlyBefore := time.Now()
 	early, cancelEarly := context.WithTimeout(context.Background(), 2*time.Second)
+	earlyAfter := time.Now()
 	defer cancelEarly()
 	rt = &captureContextRoundTripper{}
 	client, cancelProbe = telegramGetMeHTTPClient(early, rt)
@@ -64,8 +66,8 @@ func TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(t *testing.T) {
 	if err := doCapturedRequest(client); err != nil {
 		t.Fatalf("Do with early context: %v", err)
 	}
-	if got := rt.deadline.Sub(earlyStart); got < 1500*time.Millisecond || got > 2500*time.Millisecond {
-		t.Fatalf("early parent deadline offset = %v, want about 2s", got)
+	if rt.deadline.Before(earlyBefore.Add(2*time.Second)) || rt.deadline.After(earlyAfter.Add(2*time.Second)) {
+		t.Fatalf("early parent deadline = %v, want between %v and %v", rt.deadline, earlyBefore.Add(2*time.Second), earlyAfter.Add(2*time.Second))
 	}
 }
 
