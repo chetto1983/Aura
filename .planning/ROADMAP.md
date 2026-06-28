@@ -295,7 +295,7 @@ Plans:
 **Plans**: 5 plans
 - [x] 30-01-PLAN.md — Rerank GPU sidecar + internal/rerank fail-soft client + AURA_RERANK_BASE_URL (RET-01) [wave 1]
 - [x] 30-02-PLAN.md — Full-docs ingest: single allowlist (all markitdown formats) + PPTX/HTML/CSV handlers + :NEXT_CHUNK edges (RET-03) [wave 2]
-- [ ] 30-03-PLAN.md — Two-stage retrieval (seed → rerank seeds → expand winners) wired into document retrieval + memory recall, RRF fallback, messages[0] preserved (RET-02) [wave 3]
+- [x] 30-03-PLAN.md — Two-stage retrieval (seed → rerank seeds → expand winners) wired into document retrieval + memory recall, RRF fallback, messages[0] preserved (RET-02) [wave 3]
 - [ ] 30-04-PLAN.md — GraphRAG connected-nodes retrieval over :NEXT_CHUNK with per-stage p95 budget (RET-04) [wave 4]
 - [ ] 30-05-PLAN.md — Eval harness (nDCG@10/Recall@5/MRR) + non-monotonic guard + CI live tiers + coverage ≥85% + self-learning OUT (RET-05) [wave 5]
 **UI hint**: no
@@ -313,4 +313,4 @@ Plans:
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 6/6 | Complete   | 2026-06-20 |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 5/5 | Complete    | 2026-06-21 |
-| 30. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 2/5 | In Progress|  |
+| 30. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 3/5 | In Progress|  |

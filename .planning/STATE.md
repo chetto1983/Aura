@@ -4,13 +4,13 @@ milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
 stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-28T05:10:13.990Z"
+last_updated: "2026-06-28T05:51:39.662Z"
 last_activity: 2026-06-28
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 45
-  completed_plans: 42
+  completed_plans: 43
   percent: 89
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 30 (retrieval-memory-hardening) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-28
 
@@ -199,6 +199,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 29 P29-03 | ~45min | 3 tasks | 13 files |
 | Phase 30 P01 | 23min | 2 tasks | 9 files |
 | Phase 30 P02 | 24min | 2 tasks | 11 files |
+| Phase 30 P03 | ~50min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -369,6 +370,11 @@ Recent decisions affecting current work:
 - [Phase 30] 30-01: RerankClient is fail-soft — every failure mode (empty BaseURL, 5xx, decode error, length/index mismatch) returns identity (input) order with a nil error; rerank never blocks retrieval (RET-01).
 - [Phase 30] 30-01: aura-rerank is an OPTIONAL GPU sidecar (ghcr.io/ggml-org/llama.cpp:server-cuda, Qwen3-Reranker-0.6B Q4_K_M, Apache-2.0) mirroring aura-ocr-vl with no depends_on, so the stack boots without a GPU.
 - [Phase 30] 30-01: documents are truncated to 480 runes for the /v1/rerank wire body only; the returned Scored.Document keeps the ORIGINAL untruncated text.
+- [Phase 30] 30-03: documents.Service.Retrieve runs the spike-070 Q4 fast order — vector/BM25 SEED → rerank the ~15 SEEDS → 1-hop graph-expand only the WINNERS (NOT the 1.4s expand-then-rerank); winners stay first, neighbours appended (RET-02).
+- [Phase 30] 30-03: no-regression gate — with Reranker==nil, Retrieve IS Search (today's fulltext order); when the reranker is absent/identity the result is the pre-rerank RRF/vector seed order; an embedder failure falls back to fulltext seeds (no hard fail).
+- [Phase 30] 30-03: non-monotonic guard hook (Service.RerankThreshold, default permissive 0) keeps the seed order when the top rerank score is below threshold, so RET-05 can tune the guard without re-plumbing.
+- [Phase 30] 30-03: expansion uses :NEXT_CHUNK only — :HAS_CHUNK is a Document→Chunk edge (indexer.go), so it cannot be a 1-hop chunk-to-chunk context edge (deviation from the plan's literal :NEXT_CHUNK|:HAS_CHUNK pattern).
+- [Phase 30] 30-03: agent-memory recall rerank is stdlib urllib (mirrors the Go stdlib client; httpx is only an optional extra), run off the event loop via asyncio.to_thread in BaseMemory.rerank_results; it only REORDERS already-scoped results so memory scope can never widen (T-30-10).
 - [Phase ?]: 30-02: :NEXT_CHUNK uses MATCH-then-MERGE (not inline-node MERGE) so re-ingest never duplicates nodes/edges — idempotent reading-order graph for two-stage retrieval
 - [Phase ?]: 30-02: ingest gated by one supportedDocumentExt allowlist; markitdown /extract gains pptx/html/csv handlers + generic fallback; python-pptx the only added (pinned) dep
 
@@ -404,7 +410,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-28T05:08:39.194Z
+Last session: 2026-06-28T05:51:39.648Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 
