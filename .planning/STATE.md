@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: executing
+status: verifying
 stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-28T06:41:03.719Z"
+last_updated: "2026-06-28T07:32:40.133Z"
 last_activity: 2026-06-28
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 45
-  completed_plans: 44
+  completed_plans: 45
   percent: 89
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 Phase: 30 (retrieval-memory-hardening) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-28
 
 ### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
@@ -53,7 +53,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 
 **Velocity:**
 
-- Total plans completed: 169
+- Total plans completed: 170
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -201,6 +201,7 @@ Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for no
 | Phase 30 P02 | 24min | 2 tasks | 11 files |
 | Phase 30 P03 | ~50min | 2 tasks | 12 files |
 | Phase 30 P04 | ~50min | 2 tasks | 8 files |
+| Phase 30 P05 | ~75min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -381,6 +382,9 @@ Recent decisions affecting current work:
 - [Phase 30] 30-04: per-stage p95 ceiling is 150ms for Aura's mcp-neo4j-cypher path (spike 070 measured ~10ms over direct Bolt; the MCP stdio seam adds ~40-50ms/read) — still a small fraction of the 333ms GPU rerank + 500ms e2e, so the spike thesis holds. Live @ HEAD: vector p95 54ms, expand p95 45ms, e2e p95 111ms over 828 G220 chunks (827 :NEXT_CHUNK edges, all 828 embedded).
 - [Phase ?]: 30-02: :NEXT_CHUNK uses MATCH-then-MERGE (not inline-node MERGE) so re-ingest never duplicates nodes/edges — idempotent reading-order graph for two-stage retrieval
 - [Phase ?]: 30-02: ingest gated by one supportedDocumentExt allowlist; markitdown /extract gains pptx/html/csv handlers + generic fallback; python-pptx the only added (pinned) dep
+- [Phase 30] 30-05: applyRerankGuard (internal/documents/rerank_guard.go) is the pure non-monotonic guard (spike-070) — a confident reorder (top score >= threshold, order differs) is trusted; below-threshold / identity / length-mismatch / out-of-range all keep the seed (RRF/vector) order. Optional blend mode (Service.RerankBlend) RRF-fuses seed rank + rerank rank so one low-confidence demotion can never bury a strong seed hit. Both Retrieve (via rerankSeeds) and GraphRAG call it through the shared rerankScores I/O helper — no duplicated threshold logic.
+- [Phase 30] 30-05: retrieval eval (RET-05) — pure nDCG@10/Recall@5/MRR (internal/eval/retrieval_metrics.go, NO build tag, coverage-counted) + a gated retrieval_eval tier scoring vector-only (identity reranker) vs vector+rerank over 32 judged queries; judgments carry stable content phrases resolved live to gold chunk ids (chunk ids are content-hash-derived, can't be hard-coded). Asserts a mean nDCG@10 lift + ZERO per-query regressions beyond the noise threshold; NO-SKIP-AS-GREEN (CI t.Fatal on unset env / no-op rerank). The harness stays OUT of go test ./... + quality-full.
+- [Phase 30] 30-05: CI knowledge job exports AURA_RERANK_BASE_URL + compile-floors the GPU/fixture-gated tiers (rerank_integration / document_ingest_live / graphrag_live / retrieval_eval) — GPU-mandatory + fixture-dependent tiers degrade to a go-vet floor on the GPU-less runner (documented matrix in docs/document-ingestion.md). make coverage owned-surface 88.1% >= 85%. Self-learning explicitly OUT (deferred per spike-070).
 
 ### Pending Todos
 
@@ -414,7 +418,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-28T06:41:03.705Z
+Last session: 2026-06-28T07:32:40.120Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 

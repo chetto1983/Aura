@@ -54,7 +54,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02) (completed 2026-06-20)
 - [x] **Phase 29: Governance Write — MCP Configuration + Skills Install** — Cockpit write surfaces over the existing MCP manager + scoring-gated skill install/approval/audit backend: recipe/custom MCP install with CLI + managed-config preview, redacted env editing, enable/disable/remove, skills install → risk-tiered approval queue → activate, restore/archive, immutable audit (MCPW-01..03, SKW-01..03) — **5 plans (Waves 1–5)** (completed 2026-06-21)
 
-- [ ] **Phase 30: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)** — GPU cross-encoder reranking + two-stage retrieval (vector→rerank-seeds→graph-expand) wired into memory recall + document retrieval + full-document ingest E2E across ALL markitdown-supported formats (pdf/docx/pptx/xlsx/html/csv/md/images/…, not PDF-only) + GraphRAG connected-nodes, over the existing Neo4j stack (no migration). Spike-gated by 068/069/070 (GPU Qwen3-Reranker-0.6B Q4_K_M, rerank-seeds pipeline, RRF fallback, self-learning deferred). (RET-01..05)
+- [x] **Phase 30: Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E)** — GPU cross-encoder reranking + two-stage retrieval (vector→rerank-seeds→graph-expand) wired into memory recall + document retrieval + full-document ingest E2E across ALL markitdown-supported formats (pdf/docx/pptx/xlsx/html/csv/md/images/…, not PDF-only) + GraphRAG connected-nodes, over the existing Neo4j stack (no migration). Spike-gated by 068/069/070 (GPU Qwen3-Reranker-0.6B Q4_K_M, rerank-seeds pipeline, RRF fallback, self-learning deferred). (RET-01..05) (completed 2026-06-28)
 
 > **Cockpit Overhaul (post-Phase-25, in progress — not a formal phase).** After Phase 25 closed, a
 > premium-bar overhaul reworked the Phase-23/24/25 surfaces in place: a logo-matched **blue** design
@@ -296,8 +296,8 @@ Plans:
 - [x] 30-01-PLAN.md — Rerank GPU sidecar + internal/rerank fail-soft client + AURA_RERANK_BASE_URL (RET-01) [wave 1]
 - [x] 30-02-PLAN.md — Full-docs ingest: single allowlist (all markitdown formats) + PPTX/HTML/CSV handlers + :NEXT_CHUNK edges (RET-03) [wave 2]
 - [x] 30-03-PLAN.md — Two-stage retrieval (seed → rerank seeds → expand winners) wired into document retrieval + memory recall, RRF fallback, messages[0] preserved (RET-02) [wave 3]
-- [ ] 30-04-PLAN.md — GraphRAG connected-nodes retrieval over :NEXT_CHUNK with per-stage p95 budget (RET-04) [wave 4]
-- [ ] 30-05-PLAN.md — Eval harness (nDCG@10/Recall@5/MRR) + non-monotonic guard + CI live tiers + coverage ≥85% + self-learning OUT (RET-05) [wave 5]
+- [x] 30-04-PLAN.md — GraphRAG connected-nodes retrieval over :NEXT_CHUNK with per-stage p95 budget (RET-04) [wave 4]
+- [x] 30-05-PLAN.md — Eval harness (nDCG@10/Recall@5/MRR) + non-monotonic guard + CI live tiers + coverage ≥85% + self-learning OUT (RET-05) [wave 5]
 **UI hint**: no
 
 ## Progress
@@ -313,4 +313,4 @@ Plans:
 | 27. Neo4j Graph Explorer | v1.0.0 | 4/4 | Complete   | 2026-06-19 |
 | 28. Governance Boards + Web Onboarding | v1.0.0 | 6/6 | Complete   | 2026-06-20 |
 | 29. Governance Write — MCP Configuration + Skills Install | v1.0.0 | 5/5 | Complete    | 2026-06-21 |
-| 30. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 3/5 | In Progress|  |
+| 30. Retrieval & Memory Pipeline Hardening (Rerank + Full-Docs E2E) | v1.0.0 | 5/5 | Complete   | 2026-06-28 |
