@@ -27,6 +27,7 @@
 //	set -a; source ~/aura.env; set +a
 //	PWD_ENC=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['POSTGRES_PASSWORD'],safe=''))")
 //	export AURA_DB_URL="postgres://aura_app:${PWD_ENC}@127.0.0.1:5432/aura?sslmode=disable"
+//	export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${PWD_ENC}@127.0.0.1:5432/aura?sslmode=disable"
 //	export DOCUMENTS_BASE_URL=http://127.0.0.1:8083
 //	cd /mnt/d/Aura && go run ./.planning/spikes/075-image-ocr-searchable-chunks
 package main
