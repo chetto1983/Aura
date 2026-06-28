@@ -80,18 +80,20 @@ describe('phaseIndex / PHASES', () => {
 });
 
 describe('credentialsValid', () => {
-  it('is true only when BOTH email (trimmed non-empty) and password are present', () => {
-    expect(credentialsValid('a@b.com', 'pw')).toBe(true);
+  it('requires email, password, security question, and security answer', () => {
+    expect(credentialsValid('a@b.com', 'pw', 'Question?', 'answer')).toBe(true);
+    expect(credentialsValid('a@b.com', 'pw', '', 'answer')).toBe(false);
+    expect(credentialsValid('a@b.com', 'pw', 'Question?', '')).toBe(false);
   });
   it('is false when email is empty/whitespace', () => {
-    expect(credentialsValid('', 'pw')).toBe(false);
-    expect(credentialsValid('   ', 'pw')).toBe(false);
+    expect(credentialsValid('', 'pw', 'Question?', 'answer')).toBe(false);
+    expect(credentialsValid('   ', 'pw', 'Question?', 'answer')).toBe(false);
   });
   it('is false when password is empty', () => {
-    expect(credentialsValid('a@b.com', '')).toBe(false);
+    expect(credentialsValid('a@b.com', '', 'Question?', 'answer')).toBe(false);
   });
   it('does NOT trim the password (a whitespace password is accepted as entered)', () => {
-    expect(credentialsValid('a@b.com', '   ')).toBe(true);
+    expect(credentialsValid('a@b.com', '   ', 'Question?', 'answer')).toBe(true);
   });
 });
 

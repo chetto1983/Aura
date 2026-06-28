@@ -1,27 +1,22 @@
-import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProvisionErrorKind } from './onboardingWizardModel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 
 // ReviewStep (ONBD-01a / UI-SPEC) — the final summary before the cross-store saga. It shows the
-// new operator email + the chosen capabilities + the Telegram-link choice, and a CONSTRUCTIVE
+// new operator email + the chosen capabilities + the required Telegram-link posture, and a CONSTRUCTIVE
 // "Create identity" CTA (the reserved accent — NOT a danger-styled confirm: identity creation is a
 // constructive mutation, UI-SPEC §Destructive confirmation note). The CTA calls /provision via the
 // wizard. While the saga runs it shows "Creating identity…"; the three distinct failure paths
 // render distinct copy (T-28-06-04):
 //   - 403 → no-permission   - 409 → duplicate/empty email   - rolled-back (502/other) → nothing saved
 // The password is NEVER echoed here (no-leak, T-28-06-01) — only the email + capabilities + the
-// Telegram choice. Capability names are backend-supplied → React-escaped mono text.
+// Telegram requirement. Capability names are backend-supplied → React-escaped mono text.
 
 export interface ReviewStepProps {
   readonly email: string;
   readonly capabilities: readonly string[];
-  readonly linkTelegram: boolean;
-  readonly onToggleTelegram: (value: boolean) => void;
   readonly provisioning: boolean;
   readonly error: ProvisionErrorKind | undefined;
   readonly onCreate: () => void;
@@ -30,14 +25,11 @@ export interface ReviewStepProps {
 export function ReviewStep({
   email,
   capabilities,
-  linkTelegram,
-  onToggleTelegram,
   provisioning,
   error,
   onCreate,
 }: ReviewStepProps) {
   const { t } = useTranslation();
-  const telegramId = useId();
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,25 +71,8 @@ export function ReviewStep({
           <dt className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
             {t('onboarding.review.telegramLabel')}
           </dt>
-          <dd>
-            <Label
-              htmlFor={telegramId}
-              className="flex min-h-[44px] cursor-pointer items-center gap-3 text-[15.5px] text-text"
-            >
-              <Checkbox
-                id={telegramId}
-                checked={linkTelegram}
-                onCheckedChange={(checked) => {
-                  onToggleTelegram(checked === true);
-                }}
-                className="size-5"
-              />
-              <span>
-                {linkTelegram
-                  ? t('onboarding.review.telegramOn')
-                  : t('onboarding.review.telegramOff')}
-              </span>
-            </Label>
+          <dd className="text-[15.5px] text-text">
+            {t('onboarding.review.telegramRequired')}
           </dd>
         </div>
       </dl>

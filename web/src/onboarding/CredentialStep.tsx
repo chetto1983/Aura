@@ -15,20 +15,31 @@ import { Label } from '@/components/ui/label';
 export interface CredentialStepProps {
   readonly email: string;
   readonly password: string;
+  readonly securityQuestion: string;
+  readonly securityAnswer: string;
   readonly onEmailChange: (value: string) => void;
   readonly onPasswordChange: (value: string) => void;
+  readonly onSecurityQuestionChange: (value: string) => void;
+  readonly onSecurityAnswerChange: (value: string) => void;
 }
 
 export function CredentialStep({
   email,
   password,
+  securityQuestion,
+  securityAnswer,
   onEmailChange,
   onPasswordChange,
+  onSecurityQuestionChange,
+  onSecurityAnswerChange,
 }: CredentialStepProps) {
   const { t } = useTranslation();
   const emailId = useId();
   const passwordId = useId();
+  const questionId = useId();
+  const answerId = useId();
   const hintId = useId();
+  const answerHintId = useId();
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,6 +83,42 @@ export function CredentialStep({
         />
         <p id={hintId} className="text-[13px] leading-relaxed text-text-muted">
           {t('onboarding.credentials.passwordHint')}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={questionId} className="text-[13px] font-semibold text-text">
+          {t('onboarding.credentials.securityQuestionLabel')}
+        </Label>
+        <Input
+          id={questionId}
+          type="text"
+          autoComplete="off"
+          value={securityQuestion}
+          onChange={(e) => {
+            onSecurityQuestionChange(e.target.value);
+          }}
+          className="bg-surface-2 text-[15.5px]"
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={answerId} className="text-[13px] font-semibold text-text">
+          {t('onboarding.credentials.securityAnswerLabel')}
+        </Label>
+        <Input
+          id={answerId}
+          type="password"
+          autoComplete="off"
+          value={securityAnswer}
+          aria-describedby={answerHintId}
+          onChange={(e) => {
+            onSecurityAnswerChange(e.target.value);
+          }}
+          className="bg-surface-2 text-[15.5px]"
+        />
+        <p id={answerHintId} className="text-[13px] leading-relaxed text-text-muted">
+          {t('onboarding.credentials.securityAnswerHint')}
         </p>
       </div>
     </div>

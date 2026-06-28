@@ -61,6 +61,10 @@ async function fillCredentialsAndAdvance() {
     target: { value: 'new@example.com' },
   });
   fireEvent.change(screen.getByLabelText('Initial password'), { target: { value: PASSWORD } });
+  fireEvent.change(screen.getByLabelText('Security question'), {
+    target: { value: 'First school?' },
+  });
+  fireEvent.change(screen.getByLabelText('Security answer'), { target: { value: 'blue' } });
   // The Continue CTA (the credentials-phase WizardNav next button).
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 }
@@ -181,6 +185,8 @@ describe('OnboardingWizard', () => {
       expect.objectContaining({
         email: 'new@example.com',
         password: PASSWORD,
+        securityQuestion: 'First school?',
+        securityAnswer: 'blue',
         capabilities: ['skills.read'],
         linkTelegram: true,
       }),
@@ -255,10 +261,14 @@ describe('OnboardingWizard', () => {
     expect(stepOnboarding).toHaveBeenCalledWith(SESSION_TOKEN, { intent: 'confirm' });
   });
 
-  it('completes WITHOUT a Telegram link when linkTelegram is unchecked', async () => {
+  it('always provisions with Telegram enabled because recovery depends on it', async () => {
     startOnboarding.mockResolvedValue(START);
     stepOnboarding.mockResolvedValue({ content: 'done', step: 'draft', status: 'skipped' });
-    provisionOnboarding.mockResolvedValue({ identityId: 'id-1' });
+    provisionOnboarding.mockResolvedValue({
+      identityId: 'id-1',
+      deepLink: 'https://t.me/AuraBot?start=onb-xyz',
+      qrSvg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    });
 
     renderWizard();
     await fillCredentialsAndAdvance();
@@ -271,18 +281,21 @@ describe('OnboardingWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('Review and create')).toBeTruthy();
     });
-    // Uncheck Telegram before creating.
-    fireEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByText('Required for password reset')).toBeTruthy();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
 
     await waitFor(() => {
       expect(screen.getByText('Identity created')).toBeTruthy();
     });
-    // No Telegram deep-link rendered (linkTelegram was false → no TelegramLinkStep).
-    expect(screen.queryByRole('link', { name: 'Open in Telegram' })).toBeNull();
+    expect(await screen.findByRole('link', { name: 'Open in Telegram' })).toBeTruthy();
     expect(provisionOnboarding).toHaveBeenCalledWith(
       SESSION_TOKEN,
-      expect.objectContaining({ linkTelegram: false }),
+      expect.objectContaining({
+        securityQuestion: 'First school?',
+        securityAnswer: 'blue',
+        linkTelegram: true,
+      }),
     );
   });
 

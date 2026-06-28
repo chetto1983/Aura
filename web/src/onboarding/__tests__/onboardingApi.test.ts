@@ -64,6 +64,8 @@ describe('onboardingApi same-origin throwing fetch', () => {
     const res = await provisionOnboarding('tok', {
       email: 'a@b.com',
       password: 'pw',
+      securityQuestion: 'First school?',
+      securityAnswer: 'blue',
       capabilities: ['skills.read'],
       linkTelegram: true,
     });
@@ -73,6 +75,8 @@ describe('onboardingApi same-origin throwing fetch', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       email: 'a@b.com',
       password: 'pw',
+      securityQuestion: 'First school?',
+      securityAnswer: 'blue',
       capabilities: ['skills.read'],
       linkTelegram: true,
     });
@@ -102,8 +106,10 @@ describe('onboardingApi same-origin throwing fetch', () => {
       provisionOnboarding('tok', {
         email: 'a@b.com',
         password: 'pw',
+        securityQuestion: 'First school?',
+        securityAnswer: 'blue',
         capabilities: [],
-        linkTelegram: false,
+        linkTelegram: true,
       }),
     ).rejects.toThrow('HTTP 403');
   });
@@ -114,8 +120,10 @@ describe('onboardingApi same-origin throwing fetch', () => {
       provisionOnboarding('tok', {
         email: 'dup@b.com',
         password: 'pw',
+        securityQuestion: 'First school?',
+        securityAnswer: 'blue',
         capabilities: [],
-        linkTelegram: false,
+        linkTelegram: true,
       }),
     ).rejects.toThrow('HTTP 409');
   });
@@ -126,8 +134,10 @@ describe('onboardingApi same-origin throwing fetch', () => {
       provisionOnboarding('tok', {
         email: 'a@b.com',
         password: 'pw',
+        securityQuestion: 'First school?',
+        securityAnswer: 'blue',
         capabilities: [],
-        linkTelegram: false,
+        linkTelegram: true,
       }),
     ).rejects.toThrow('HTTP 502');
   });

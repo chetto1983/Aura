@@ -52,10 +52,19 @@ export function phaseIndex(phase: Phase): number {
   return PHASES.indexOf(phase);
 }
 
-/** credentialsValid gates the credentials → capabilities advance: a non-empty email AND a non-empty
- * password (the password is required for provisioning). */
-export function credentialsValid(email: string, password: string): boolean {
-  return email.trim() !== '' && password !== '';
+/** credentialsValid gates the credentials -> capabilities advance. */
+export function credentialsValid(
+  email: string,
+  password: string,
+  securityQuestion: string,
+  securityAnswer: string,
+): boolean {
+  return (
+    email.trim() !== '' &&
+    password !== '' &&
+    securityQuestion.trim() !== '' &&
+    securityAnswer.trim() !== ''
+  );
 }
 
 /** A stepper item's visual state relative to the active phase. */

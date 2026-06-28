@@ -12,7 +12,7 @@ import { fetchTelegramStatus } from './onboardingApi';
 // deep-link URL + the QR (T-28-06-02). An expired session (404) surfaces the expired copy.
 //
 // The QR accent frame is the reserved accent (UI-SPEC §Color). When no deep-link was minted (the
-// operator skipped Telegram, or no bot is configured) the step renders the no-link note.
+// server could not mint a link) the step renders the no-link note.
 
 export interface TelegramLinkStepProps {
   readonly sessionToken: string;

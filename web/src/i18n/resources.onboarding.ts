@@ -42,6 +42,10 @@ export const onboardingEn = {
       passwordLabel: 'Initial password',
       passwordHint:
         'The new user sets up two-factor sign-in on first login. The password is never shown again.',
+      securityQuestionLabel: 'Security question',
+      securityAnswerLabel: 'Security answer',
+      securityAnswerHint:
+        'Used with Telegram to reset this password. The answer is never shown again.',
     },
     capabilities: {
       label: 'Capabilities for the new identity',
@@ -69,10 +73,8 @@ export const onboardingEn = {
       emailLabel: 'Operator email',
       capabilitiesLabel: 'Capabilities',
       telegramLabel: 'Telegram',
-      telegramOn: 'A link will be generated',
-      telegramOff: 'Not linked',
+      telegramRequired: 'Required for password reset',
       noCapabilities: 'None',
-      linkTelegram: 'Generate a Telegram link for the new identity',
     },
     complete: {
       heading: 'Identity created',
@@ -123,6 +125,10 @@ export const onboardingIt = {
       passwordLabel: 'Password iniziale',
       passwordHint:
         "Il nuovo utente configura l'accesso a due fattori al primo login. La password non verrà più mostrata.",
+      securityQuestionLabel: 'Domanda di sicurezza',
+      securityAnswerLabel: 'Risposta di sicurezza',
+      securityAnswerHint:
+        'Usata con Telegram per resettare questa password. La risposta non viene piu mostrata.',
     },
     capabilities: {
       label: 'Capacità per la nuova identità',
@@ -150,10 +156,8 @@ export const onboardingIt = {
       emailLabel: 'Email operatore',
       capabilitiesLabel: 'Capacità',
       telegramLabel: 'Telegram',
-      telegramOn: 'Verrà generato un link',
-      telegramOff: 'Non collegato',
+      telegramRequired: 'Richiesto per il reset password',
       noCapabilities: 'Nessuna',
-      linkTelegram: 'Genera un link Telegram per la nuova identità',
     },
     complete: {
       heading: 'Identità creata',
