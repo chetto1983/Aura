@@ -154,6 +154,27 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 2. Shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — each with a parity test.
 3. Targeted test gaps closed (`web/throttle`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing).
 
+**Plans:** 10 plans (3 waves)
+
+**Wave 1** *(QUAL-02 dead-code clean-slate)*
+
+- [ ] 32-01-PLAN.md — assets.Status{Created,Embedding,Canceled} keep/kill operator escalation (D-02/D-04)
+- [ ] 32-02-PLAN.md — Go stdlib swaps + keeps: RequestID load-bearing test, agui indexByte/stringList, truncateRunes decision
+- [ ] 32-03-PLAN.md — Go redundant-code removal: telebot blank import + discarded Build() restructure
+- [ ] 32-04-PLAN.md — AURA_MEMORY_EMBED_* full-stack removal (Go + web + i18n + compose/.env doc + dist)
+
+**Wave 2** *(QUAL-03 test-first shared-helper extractions; blocked on Wave 1)*
+
+- [ ] 32-05-PLAN.md — leaf extractions: internal/neostore + internal/db numeric + internal/envutil (+ D-13 coverage-gate)
+- [ ] 32-06-PLAN.md — agent extractions: canonicaljson.CanonicalArgs + shared isTransientNetworkErr (asymmetric)
+- [ ] 32-07-PLAN.md — internal/agentrender render primitives (+ documented eval json.Number fix)
+- [ ] 32-08-PLAN.md — web dedup: single getJSON + canonical focusTrap + skeleton unification + dist rebuild
+
+**Wave 3** *(QUAL-05 targeted test gaps; blocked on Wave 2)*
+
+- [ ] 32-09-PLAN.md — test gaps: web/throttle, setup SSE ordering, Authula ensureAuthulaSearchPath DSN
+- [ ] 32-10-PLAN.md — test gaps: Telegram answersFromText fallback, truncateTailBytes UTF-8, memory_integration CI verify+doc
+
 #### Phase 33: Runtime Profiles + Config Validation
 
 **Goal:** 4 validated profiles (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) in `internal/config`; production fails fast on unsafe defaults; all hot-path `AURA_*` knobs catalogued.
