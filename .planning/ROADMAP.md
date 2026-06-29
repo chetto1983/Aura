@@ -88,7 +88,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   - Goal: one in-process policy decision on every tool call; fail-closed for mutating tools; durable reservation.
   - Success: (1) no tool executes without a recorded policy decision; (2) a timing-out/crashing command hook denies under hardened/production; (3) a mutating tool is blocked when ledger reservation fails in production; (4) gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 - [ ] **Phase 36: Multi-User Identity Isolation + Authula Cutover** — `MUSR-01..06`, `QUAL`(Authula DSN test) (F-012/028/032/039/050)
-  - Goal: owner-scope every user-facing store/API/job to the authenticated principal; cut over to Authula (no RBAC). Includes per-identity isolation for MCP config, Garage object-store, and skills dirs (see spike `docs/spikes/`).
+  - Goal: owner-scope every user-facing store/API/job to the authenticated principal; cut over to Authula (no RBAC). Includes per-identity isolation for MCP config, Garage object-store, and skills dirs (see spike `.planning/spikes/`).
   - Success: (1) two-identity live E2E — B cannot list/get/delete/archive/resolve A's data (404/403), B-created chat owned by B and runs; (2) session B cannot poll/kill session A's shell, jobs expire by TTL; (3) conversation delete evicts all session tool state; (4) Authula default with provisioning + break-glass, no token in URLs.
 - [ ] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036)
   - Goal: resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; host never exposed.
@@ -110,7 +110,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 >
 > **Quality audit now fully phased:** the 4-slice maintainability audit (`docs/audit/quality/`) is taken into the roadmap as **Phase 31** (Wave 0 stabilization) + **Phase 32** (dead-code + shared-helper extraction), with correctness/security-overlapping items distributed into Phases 33 (env catalog), 34 (pool-leak/int32), 36 (Authula DSN), 38 (trust-norm/F-027), and 40 (decode-body/F-052). Nothing left as "refactor-on-touch only".
 >
-> **Spike (parallel, during Codex wait):** `docs/spikes/` — agent-sandbox feasibility (single-host Docker-direct vs K8s) + per-identity multi-user isolation model for MCP / Garage / Skills, de-risking Phases 36–37.
+> **Spike (parallel, during Codex wait):** `.planning/spikes/` — agent-sandbox feasibility (single-host Docker-direct vs K8s) + per-identity multi-user isolation model for MCP / Garage / Skills, de-risking Phases 36–37.
 
 ## Progress
 
