@@ -88,6 +88,8 @@
 - [ ] **SEC-05**: CI publishes an SBOM (syft / cyclonedx-gomod), `govulncheck` is a blocking gate, and all third-party Actions + tool versions are SHA/exact pinned; a workflow-lint gate rejects `@latest`/semver-floating refs. *(F-051)*
 - [ ] **SEC-06**: Privileged JSON routes (`/agent/run`, approvals resolve, onboarding, assets, governance writes) use strict decoding — size cap, content-type check, `DisallowUnknownFields`, single-decode EOF, per-route `allowEmpty`. *(F-052)*
 - [ ] **SEC-07**: Go build/test/vulnerability CI jobs reuse `scripts/go_packages.sh` (no raw `./...`); a CI lint rejects raw `go test ./...` / `govulncheck ./...`. *(F-015)*
+- [ ] **SEC-08** (pulled forward to Phase 31): The critical CodeQL `go/request-forgery` (SSRF) finding at `internal/mcp/http_client.go` is remediated — outbound MCP HTTP request targets are validated against an allow-list / SSRF guard rather than driven by unvalidated input — and the CodeQL alert resolves to fixed. *(CodeQL-surfaced; not in the F-001..F-052 audit set)*
+- [ ] **SEC-09**: The high CodeQL `go/weak-sensitive-data-hashing` finding at `internal/agui/recovery_hash.go` is remediated — sensitive recovery material uses a cryptographically strong, salted KDF/hash rather than a weak/fast hash — and the CodeQL alert resolves to fixed. *(CodeQL-surfaced; not in the F-001..F-052 audit set)*
 
 ### Production Operations, Scale & Capability Evaluation (OPS)
 
@@ -146,11 +148,11 @@ Derived from the maintainability/architecture audit `docs/audit/quality/` (4-sli
 
 ## Traceability
 
-Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every requirement maps to exactly one phase; all 51 findings (F-001..F-052, F-044 absent) are covered.
+Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every requirement maps to exactly one phase; all 51 findings (F-001..F-052, F-044 absent) are covered, plus 2 CodeQL-surfaced findings tracked outside the F-series (SEC-08 → Phase 31, SEC-09 → Phase 40).
 
 | Category | REQs | Findings closed | Suggested phase |
 |----------|------|-----------------|-----------------|
-| QUAL | QUAL-01 (Wave 0) | quality audit `docs/audit/quality/` + F-015 (CI `./...`) | Phase 31 |
+| QUAL | QUAL-01 (Wave 0), SEC-08 | quality audit `docs/audit/quality/` + F-015 (CI `./...`) + CodeQL SSRF | Phase 31 |
 | QUAL | QUAL-02/03/05 | quality audit dead-code + shared-helper extraction + test gaps | Phase 32 |
 | PROF | PROF-01..06 (+QUAL-04 env catalog) | F-002, F-007, F-016, F-018, F-026, F-041 | Phase 33 |
 | LOOP | LOOP-01..11 (+QUAL-04 pool-leak/int32) | F-003, F-004, F-005, F-009, F-010, F-029, F-030, F-031, F-040, F-045, F-048 | Phase 34 |
@@ -159,13 +161,15 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | SBX | SBX-01..05 | F-001(sbx), F-036 | Phase 37 |
 | MCPH | MCPH-01..09 (+QUAL-03 trust-norm) | F-013, F-014, F-027, F-033, F-034, F-035, F-037, F-038, F-046 | Phase 38 |
 | OBS | OBS-01..06 | F-008, F-017, F-023, F-024, F-049 (+F-020 idempotency) | Phase 39 |
-| SEC | SEC-01..07 (+QUAL decode-body) | F-019(sec), F-021, F-022, F-047, F-051, F-052 | Phase 40 |
+| SEC | SEC-01..06, SEC-09 (+QUAL decode-body) | F-019(sec), F-021, F-022, F-047, F-051, F-052, CodeQL weak-hash | Phase 40 |
+| SEC | SEC-07 (F-015), SEC-08 | CI `./...` hygiene + CodeQL SSRF (pulled forward) | Phase 31 |
 | OPS | OPS-01..06 | F-019(ops), F-025, F-042, F-043 | Phase 41 |
 | REL | REL-01..03 | (cross-cutting evidence bar) | Phase 41 / all |
 
 **Coverage:**
-- v2.0.0 requirements: 57 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, MCPH 9, OBS 6, SEC 7, OPS 6, REL 3, QUAL 5)
+- v2.0.0 requirements: 59 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5)
 - Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
+- CodeQL-surfaced findings (outside the F-series): 2 / 2 — SEC-08 SSRF (`internal/mcp/http_client.go`) → Phase 31, SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40 ✓
 - Quality/maintainability audit: `docs/audit/quality/` (4-slice, ~64 findings) → QUAL-01..05 + routed to security phases ✓
 - Unmapped findings: 0 ✓
 

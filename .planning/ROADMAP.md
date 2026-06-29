@@ -72,9 +72,9 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Goal:** Close the entire 2026-06-21 industrial audit (51 findings, F-001..F-052) **AND** the maintainability/architecture audit (`docs/audit/quality/`, ~64 findings) to an **honest 10/10** production-readiness (from 4.6/10) — via a per-user full-capability sandbox (Docker, resolving F-001 without stripping the full-host surface), multi-user identity isolation (no RBAC), Authula cutover, a central ToolGateway, observability/security/ops industrialization, and an upfront code-quality cleanup. Every hardening behavior is a **no-op under `dev`/`local_trusted`** — the operator's daily full-host experience is unchanged; hardening activates under `server_production`. Dependency rule: stabilize+cleanup → profiles + ledger → gateway → identity → sandbox → MCP → idempotency/obs → security → ops/eval. Requirements + traceability in [`REQUIREMENTS.md`](REQUIREMENTS.md); research in [`research/SUMMARY.md`](research/SUMMARY.md); quality audit in [`../docs/audit/quality/`](../../docs/audit/quality/README.md).
 
-- [ ] **Phase 31: Stabilization & CI Unblock** (Wave 0 — URGENT, prerequisite) — `QUAL-01` (quality audit + F-015)
-  - Goal: clean tree + green CI so every commit passes hooks (drop the `--no-verify` workaround). Coordinate with the in-flight Codex session on the over-cap files.
-  - Success: (1) no production/test file >600 LOC (`cmd/aura/serve_webui.go`, `web/src/__tests__/LoginPage.test.tsx` split); (2) `internal/webui/dist` rebuilt → `web-dist-freshness` green; (3) all Go CI jobs use `scripts/go_packages.sh`, no raw `./...` (F-015); (4) frontend branch-coverage gate restored ≥85%.
+- [ ] **Phase 31: Stabilization & CI Unblock** (Wave 0 — URGENT, prerequisite) — `QUAL-01`, `F-015`, `SEC-08` (quality audit + CI hygiene + critical CodeQL SSRF)
+  - Goal: clean tree + green CI so every commit passes hooks (drop the `--no-verify` workaround); remediate the critical CodeQL SSRF pulled forward from the security backlog.
+  - Success: (1) no production/test file >600 LOC (`cmd/aura/serve_webui.go`, `web/src/__tests__/LoginPage.test.tsx` split); (2) `internal/webui/dist` rebuilt → `web-dist-freshness` green; (3) all Go CI jobs use `scripts/go_packages.sh`, no raw `./...` (F-015); (4) frontend branch-coverage gate restored ≥85%; (5) critical CodeQL `go/request-forgery` (SSRF) at `internal/mcp/http_client.go` remediated + alert resolved (SEC-08).
 - [ ] **Phase 32: Quality Cleanup — Dead Code + Shared Helpers** — `QUAL-02/03/05` (quality audit ~64 findings)
   - Goal: kill cross-package duplication + dead code BEFORE feature phases build on them (so later work reuses clean shared packages).
   - Success: (1) dead exports/placeholders removed, each confirmed via `deadcode`/`knip`/repo-wide `rg`; (2) shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — with a parity test per extraction; (3) targeted test gaps closed (`web/throttle`, setup ordering, Telegram keyword fallback, `truncateTailBytes`).
@@ -111,6 +111,146 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 > **Quality audit now fully phased:** the 4-slice maintainability audit (`docs/audit/quality/`) is taken into the roadmap as **Phase 31** (Wave 0 stabilization) + **Phase 32** (dead-code + shared-helper extraction), with correctness/security-overlapping items distributed into Phases 33 (env catalog), 34 (pool-leak/int32), 36 (Authula DSN), 38 (trust-norm/F-027), and 40 (decode-body/F-052). Nothing left as "refactor-on-touch only".
 >
 > **Spike (parallel, during Codex wait):** `.planning/spikes/` — agent-sandbox feasibility (single-host Docker-direct vs K8s) + per-identity multi-user isolation model for MCP / Garage / Skills, de-risking Phases 36–37.
+
+### Phase Details
+
+> Per-phase detail sections (GSD `roadmap.get-phase` format). Added incrementally as each phase is planned. Phases 32–41 retain the summary-checklist entry above until their `/gsd-plan-phase` run lands their detail section here.
+
+#### Phase 31: Stabilization & CI Unblock
+
+**Goal:** Clean working tree + green CI so every commit passes the pre-commit hooks and CI gates without the `--no-verify` workaround, and remediate the one critical CodeQL SSRF pulled forward from the security backlog.
+
+**Requirements:** QUAL-01, F-015, SEC-08
+
+**Success Criteria**:
+1. No tracked production or test source file exceeds the 600-LOC cap (`cmd/aura/serve_webui.go` and `web/src/__tests__/LoginPage.test.tsx` split); `scripts/check-file-size.sh` is green whole-tree.
+2. `internal/webui/dist` is rebuilt from `web/` and committed so the `web-dist-freshness` CI job is green (no drift between source and committed bundle).
+3. Every Go build/test/vulnerability CI job sources its package list from `scripts/go_packages.sh` (no raw `./...`), and a CI lint rejects raw `go test ./...` / `govulncheck ./...` (F-015).
+4. The frontend coverage gate is restored to ≥85% on all four vitest thresholds and the suite actually passes at that floor.
+5. The critical CodeQL `go/request-forgery` (SSRF) finding at `internal/mcp/http_client.go` is remediated (outbound request target validated against an allow-list / SSRF guard) and the CodeQL alert resolves to fixed (SEC-08).
+
+**Validation:** `scripts/check-file-size.sh` exit 0; `web-dist-freshness` job green; a CI grep-lint finds zero raw `./...` in `.github/workflows/`; `vitest run --coverage` meets the four 85% thresholds; a CodeQL re-scan shows the `go/request-forgery` alert closed.
+
+#### Phase 32: Quality Cleanup — Dead Code + Shared Helpers
+
+**Goal:** Kill cross-package duplication + dead code BEFORE feature phases build on them, so later work reuses clean shared packages.
+
+**Requirements:** QUAL-02, QUAL-03, QUAL-05
+
+**Success Criteria**:
+1. Dead exports/placeholders removed (`assets.Status{Created,Embedding,Canceled}`, sidecar-only `AURA_MEMORY_EMBED_*` keys, `agui.indexByte`/`stringList`, redundant telebot blank import, redundant `RequestID` re-stamp), each confirmed via `deadcode`/`knip`/repo-wide `rg`.
+2. Shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — each with a parity test.
+3. Targeted test gaps closed (`web/throttle`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing).
+
+#### Phase 33: Runtime Profiles + Config Validation
+
+**Goal:** 4 validated profiles (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) in `internal/config`; production fails fast on unsafe defaults; all hot-path `AURA_*` knobs catalogued.
+
+**Requirements:** PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, PROF-06, QUAL-04
+
+**Success Criteria**:
+1. `aura config validate --profile server_production` exits non-zero listing every unmet requirement.
+2. Copying `.env.example`→`.env` keeps the destructive-shell gate active.
+3. Invalid env fails-fast under production, warns under dev.
+4. `dev`/`local_trusted` preserve today's full-host behavior unchanged.
+
+#### Phase 34: Agent-Loop Correctness + Durable Ledger
+
+**Goal:** Terminal-response exclusivity, atomic HITL resume/pause, fenced sidecars, durable ledger state machine (migration 0025).
+
+**Requirements:** LOOP-01, LOOP-02, LOOP-03, LOOP-04, LOOP-05, LOOP-06, LOOP-07, LOOP-08, LOOP-09, LOOP-10, LOOP-11, QUAL-04
+
+**Success Criteria**:
+1. `text_response` + a mutating sibling never executes the sibling.
+2. Duplicate single/batch resume → exactly one answer/pause; an append-failure leaves a repairable state.
+3. Outside-root/traversal/symlink sidecar reads are rejected.
+4. A mutating tool that panics post-side-effect still arms the completion gate.
+
+#### Phase 35: ToolGateway + Policy Engine
+
+**Goal:** One in-process policy decision on every tool call; fail-closed for mutating tools; durable reservation.
+
+**Requirements:** GATE-01, GATE-02, GATE-03, GATE-04
+
+**Success Criteria**:
+1. No tool executes without a recorded policy decision.
+2. A timing-out/crashing command hook denies under hardened/production.
+3. A mutating tool is blocked when ledger reservation fails in production.
+4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
+
+#### Phase 36: Multi-User Identity Isolation + Authula Cutover
+
+**Goal:** Owner-scope every user-facing store/API/job to the authenticated principal; cut over to Authula (no RBAC). Includes per-identity isolation for MCP config, Garage object-store, and skills dirs (see spike `.planning/spikes/`).
+
+**Requirements:** MUSR-01, MUSR-02, MUSR-03, MUSR-04, MUSR-05, MUSR-06
+
+**Success Criteria**:
+1. Two-identity live E2E — B cannot list/get/delete/archive/resolve A's data (404/403); a B-created chat is owned by B and runs.
+2. Session B cannot poll/kill session A's shell; jobs expire by TTL.
+3. Conversation delete evicts all session tool state.
+4. Authula is the default with provisioning + break-glass; no token in URLs.
+
+#### Phase 37: Per-User Full-Capability Sandbox
+
+**Goal:** Resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; the host is never exposed.
+
+**Requirements:** SBX-01, SBX-02, SBX-03, SBX-04, SBX-05
+
+**Success Criteria**:
+1. Under `server_production`, shell/fs target the per-identity sandbox and the real host filesystem is unreachable.
+2. Docker-socket/`--privileged`/`--network host`/bind-mounts are unrepresentable (test-asserted).
+3. Cross-identity leakage is impossible and the idle-TTL lifecycle works.
+4. A configured egress allowlist cannot reach a disallowed host (default `--network none`).
+5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
+
+#### Phase 38: MCP Governance Hardening
+
+**Goal:** One canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
+
+**Requirements:** MCPH-01, MCPH-02, MCPH-03, MCPH-04, MCPH-05, MCPH-06, MCPH-07, MCPH-08, MCPH-09
+
+**Success Criteria**:
+1. Mixed url+command / empty-remote-trust is blocked and never calls stdio open.
+2. A hung mount drops within deadline; an oversized stdio frame aborts without large alloc; shutdown leaves no child processes.
+3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
+4. A dead HTTP MCP endpoint reports OK=false.
+
+#### Phase 39: Idempotency + Observability Pack
+
+**Goal:** Idempotent mutating tools + a production observability surface (migration 0026).
+
+**Requirements:** OBS-01, OBS-02, OBS-03, OBS-04, OBS-05, OBS-06
+
+**Success Criteria**:
+1. `/readyz` fails on unhealthy DB/listener/migration/scheduler; the Compose healthcheck probes `/readyz`.
+2. The OTel metric path emits LLM/tool/MCP/DB/scheduler metrics; alert YAML + Grafana JSON validate in CI.
+3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
+4. Learning stores enforce a bounded retention cap.
+
+#### Phase 40: Security & Supply-Chain Pack
+
+**Goal:** Close security + supply-chain findings; prove prompt-injection denial under production.
+
+**Requirements:** SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-09
+
+**Success Criteria**:
+1. Injected shell/file/network/MCP requests are DENIED under `server_production` (regression suite).
+2. Secret-like values are redacted before persistence; permissive CORS is refused when auth is disabled (except dev).
+3. CI publishes an SBOM, `govulncheck` blocks high-severity, all Actions are SHA-pinned.
+4. Privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
+5. The high CodeQL `go/weak-sensitive-data-hashing` finding at `internal/agui/recovery_hash.go` is remediated with a strong salted KDF and the alert resolves (SEC-09).
+
+#### Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout
+
+**Goal:** Drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
+
+**Requirements:** OPS-01, OPS-02, OPS-03, OPS-04, OPS-05, OPS-06, REL-01, REL-02, REL-03
+
+**Success Criteria**:
+1. A drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented).
+2. Scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill.
+3. A load + chaos harness runs in CI (no-skip-as-green) + a capability-eval pass/fail report.
+4. ADRs + a release-readiness checklist + a production-readiness evidence bundle → a defensible 10/10.
 
 ## Progress
 
