@@ -104,6 +104,16 @@
 - [ ] **REL-02**: Owned-surface coverage stays ≥85%; mutation testing ≥70% killed on the gateway, identity-isolation, profile-validation, and sandbox files.
 - [ ] **REL-03**: The production-readiness score reaches a defensible 10/10 with a written evidence bundle (two-identity live E2E, prompt-injection-denied-under-production, drilled DR with RPO/RTO, honest `/readyz`, effective-behavior profile validation) — score bounded by weakest evidence, not green-check count.
 
+### Code Quality Cleanup (QUAL)
+
+Derived from the maintainability/architecture audit `docs/audit/quality/` (4-slice, ~64 findings: 0 Critical, ~8 High, ~26 Medium, ~26 Low). Most items ride **refactor-on-touch** inside the phases above; the security-overlapping dups are routed to their phase (F-027→36, F-052→38, F-015→38, F-016→31). These QUAL requirements capture the work that does NOT naturally fall inside another phase.
+
+- [ ] **QUAL-01** (Wave 0 — URGENT, unblocks CI): split the two >600-LOC files (`cmd/aura/serve_webui.go` 628, `web/src/__tests__/LoginPage.test.tsx` 643) and rebuild+commit `internal/webui/dist` (the `file-size` pre-commit hook and `web-dist-freshness` CI job are currently red).
+- [ ] **QUAL-02** (Wave 1): delete dead exports / reinvented-stdlib / placeholders — `assets.Status{Created,Embedding,Canceled}`, sidecar-only `settings AURA_MEMORY_EMBED_*` keys, `agui.indexByte`/`stringList`, redundant `channels/deps.go` telebot blank import, redundant `RequestID` re-stamp — each confirmed via `deadcode`/`knip`/repo-wide `rg` before removal.
+- [ ] **QUAL-03** (Wave 2): extract shared helpers to kill cross-package duplication — `internal/neostore` (store helpers + `GraphClient`), `internal/envutil` (3× env helpers + agent-tool knobs), `internal/agentrender` (`chat_render`↔`eval` ~80 LOC), agent `CanonicalArgs` + `isTransientNetworkErr` primitives, web single `getJSON` + shared `focusTrap` reuse. Parity test per extraction.
+- [ ] **QUAL-04** (Wave 3): correctness fixes — `askuser/store.go:231` int32 overflow guard (CodeQL candidate), `bootChatEnvWithConfig` single-`Validate` + deferred pool-close (verify no overlay-path pool leak), catalogue hot-path `AURA_*` knobs in config.
+- [ ] **QUAL-05** (Wave 4): close targeted test gaps — `web/throttle.go`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing.
+
 ---
 
 ## Future Requirements (deferred — post-v2.0.0)
@@ -150,10 +160,12 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | SEC | SEC-01..07 | F-015, F-019(sec), F-021, F-022, F-047, F-051, F-052 | Phase 38 |
 | OPS | OPS-01..06 | F-019(ops), F-025, F-042, F-043 | Phase 39 |
 | REL | REL-01..03 | (cross-cutting evidence bar) | Phase 39 / all |
+| QUAL | QUAL-01..05 | quality audit `docs/audit/quality/` (~64 findings) + F-015/016/027/052 (routed) | Wave 0 urgent + refactor-on-touch across phases |
 
 **Coverage:**
-- v2.0.0 requirements: 52 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, MCPH 9, OBS 6, SEC 7, OPS 6, REL 3 — minus shared = 52 distinct)
-- Audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
+- v2.0.0 requirements: 57 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, MCPH 9, OBS 6, SEC 7, OPS 6, REL 3, QUAL 5)
+- Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
+- Quality/maintainability audit: `docs/audit/quality/` (4-slice, ~64 findings) → QUAL-01..05 + routed to security phases ✓
 - Unmapped findings: 0 ✓
 
 ---

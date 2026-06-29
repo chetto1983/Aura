@@ -102,6 +102,8 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 > **Host-constrained / deferred-tier flag:** Phase 39's load/chaos + DR drills and any gVisor/`server_production` live tiers may carry the same NO-SKIP-AS-GREEN "deferred verification tier" pattern as v1.0.0's 6 deferred items, pending an adequate host (DGX Spark). Decided at the Phase-39/closeout boundary.
 
+> **Code-quality audit (`docs/audit/quality/`):** a separate 4-slice maintainability/architecture audit (~64 findings: 0 Critical, ~8 High; architecture sound — `agent ⇸ agui` clean, store/learn split correct) feeds `QUAL-01..05`. **Wave 0 is URGENT** — two >600-LOC files (`serve_webui.go`, `LoginPage.test.tsx`) block the file-size pre-commit hook and `internal/webui/dist` needs a rebuild or `web-dist-freshness` CI fails on next push. Waves 1–2 (dead-code deletion + shared-helper extraction: `internal/neostore`/`envutil`/`agentrender`) ride refactor-on-touch; security-overlapping dups route to Phases 36 (F-027 trust-norm) and 38 (F-052 decode-body, F-015 CI `./...`).
+
 ## Progress
 
 | Milestone | Phases | Plans | Status | Completed |
