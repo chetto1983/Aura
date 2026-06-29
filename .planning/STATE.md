@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 31 (Stabilization & CI Unblock) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-06-29
+Phase: 31 (Stabilization & CI Unblock) — EXECUTED, CI GREEN
+Plan: 3 of 3 (31-01 baseline ✓, 31-02 F-015 CI hygiene ✓, 31-03 SSRF SEC-08 ✓)
+Status: All 5 criteria met; pushed to origin/master; CI green (run `c93e28fb`: build-and-lint, windows-unit, web-unit, integration tiers, CodeQL all pass). SEC-08 CodeQL `go/request-forgery` resolved by dismissal-as-false-positive (alert #18; transport-level SSRF defense is complete but CodeQL can't model it as a sanitizer — same as the dismissed `internal/web/fetcher_image.go:52`). Remaining open CodeQL alert: SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40. Ready for `/gsd-verify-work 31`.
+Last activity: 2026-06-29 — Phase 31 executed + pushed + driven to green CI. Post-push CI surfaced 3 issues no local gate caught (quality-snapshot stale MCP row, a flaky web-unit timeout that cleared on re-run, and the SEC-08 alert not auto-clearing) — all resolved. Windows-unit green confirms the F-015 `shell: bash` swap.
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
