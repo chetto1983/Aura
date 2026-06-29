@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Awaiting next milestone — scope via `/gsd-new-milestone`
+**Current focus:** v2.0.0 Industrial Hardening & Multi-User Production — roadmap created (Phases 31–39), ready to plan Phase 31.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 31 — Runtime Profiles + Config Validation (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-29 — Milestone v2.0.0 started
+Status: Roadmap created — ready for `/gsd-plan-phase 31`
+Last activity: 2026-06-29 — Milestone v2.0.0 scoped: research complete, REQUIREMENTS.md (52 reqs, 51 findings mapped) + ROADMAP.md (9 phases 31–39) written
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 

@@ -1,233 +1,342 @@
 # Pitfalls Research
 
-**Domain:** Rich agentic operator web cockpit (embedded Vite/React SPA) on top of a Go single-binary SSE backend (Aura)
-**Researched:** 2026-06-15
-**Confidence:** HIGH for backend-grounded claims (verified against real Aura source); MEDIUM for the web/SSE/CSRF/WebGL best-practice points (verified against current docs + multiple sources)
+**Domain:** Industrial hardening + per-user sandbox + multi-user identity isolation + ToolGateway + Authula cutover on an existing trusted-single-operator Go agent runtime (Aura v2.0.0, mini-PC / DGX Spark target)
+**Researched:** 2026-06-29
+**Confidence:** HIGH (audit findings + actual code read; external ecosystem facts verified via current sources)
 
-> Scope note: this milestone adds the FULL operator cockpit + the two cross-cutting backend gaps it depends on — **GAP-1** richer AG-UI typed-display protocol (the event spine) and **GAP-2** web auth (the AG-UI gateway is loopback-only by design today, amendment #35; auth is currently Out of Scope in PROJECT.md §Multi-user). Most pitfalls below are *security-load-bearing* or *cheap-now/expensive-later*. Phase names below are suggestions for the roadmapper; they cluster into roughly: **(A) serve/auth/transport foundation**, **(B) AG-UI typed-display protocol**, **(C) operator-OS shell + ui_control**, **(D) governance UI (MCP/skills/web-safety)**, **(E) graph explorer**, **(F) packaging/embed/observability/PWA**.
+> Scope note: these are pitfalls of **ADDING** isolation/gateway/auth/profiles/ops to *this* system, not generic advice. Every pitfall maps to the audit finding(s) it relates to and the owning v2.0.0 phase. The minimal-industrial-form LINE for the ToolGateway and the sandbox is stated explicitly (Pitfall 11, Pitfall 1), and the honest-10/10 evidence bar is in the dedicated section near the end. Phase numbers below are *logical owners* (Sandbox / Multi-user+Auth / ToolGateway / Profiles / Agent-loop / MCP / Observability / Security / Ops / Eval) — the roadmapper assigns the actual phase IDs (31+).
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Treating SSE reconnect as "the browser handles it" — it does not for AG-UI
+### Pitfall 1: "Full-capability inside" accidentally becomes "full host" (mount/socket/network leaks)
 
 **What goes wrong:**
-The cockpit assumes the browser's `EventSource` auto-reconnect + `Last-Event-ID` will resume a dropped stream. It won't. `@ag-ui/client`'s `HttpAgent` streams over **`fetch` POST + a ReadableStream reader**, not `EventSource`, because an AG-UI run requires a request body (`RunAgentInput`). The browser's automatic reconnect/`Last-Event-ID` machinery only applies to native `EventSource` GETs — so a dropped connection mid-run silently stops yielding events with **no** auto-reconnect and **no** resume, leaving a half-rendered timeline and an orphaned (or still-running) backend turn.
+The locked decision (F-001) is per-user **full-capability isolated sandbox** — the agent keeps full shell/fs/network *inside* its box, the real host is never exposed. The classic failure is implementing "full capability" by handing the container the host: mounting the Docker socket (`/var/run/docker.sock`) so the agent can build/run things, `--network host` or `--privileged` so networking/devices "just work", bind-mounting `/` or `$HOME` or `~/.aura` read-write so the agent "sees its files", or sharing the user's real `/tmp`/run-dir. Each of those re-exposes exactly the host F-001/R-001 was meant to fence — and worse, a Docker-socket mount is *root-on-host* RCE by design.
 
 **Why it happens:**
-Every "SSE 101" article describes `EventSource` + `Last-Event-ID`. The AG-UI transport looks like SSE on the wire (`text/event-stream`) so developers reach for the wrong mental model.
+The product value is "the agent experiences a full host." The path of least resistance to deliver that experience is to give it a real one. The operator's own memory (`feedback_aura_full_host_terminal_primary`) makes this seductive: the team already believes the terminal is THE surface.
 
 **How to avoid:**
-- Design resume explicitly around the **two existing backend endpoints**: `POST /agent/run` (the live stream) and `GET /threads/{id}/messages` (the `MESSAGES_SNAPSHOT` one-shot, `internal/agui/server.go:handleMessages`). On reconnect, the client re-fetches the snapshot to rehydrate authoritative state, then decides whether to re-attach.
-- Respect the backend's **single-writer-per-thread lock**: `handleRun` calls `TryLockThread` and returns **409 `ErrThreadBusy`** (`internal/agui/server.go:186-195`). A naive reconnect that re-POSTs `/agent/run` against a still-running turn will 409 — the UI must treat 409 as "run still in flight, poll snapshot / show running state," not as an error toast.
-- The snapshot already projects a paused turn's `ToolCalls` (WR-04, `projectMessages`), so a reconnect onto a paused (ask_user) thread can rehydrate the pending approval. Verify the cockpit surfaces that, not an empty thread.
-- Add client-side exponential backoff on the fetch-reader retry (the browser gives you none here).
+- The sandbox gets a *full but synthetic* host: its own writable rootfs/overlay, its own loopback, its own `/tmp`, its own workspace volume — never a host bind. Use **named volumes only** (already mandated in PROJECT.md constraints), never bind-mounts (Windows-corruption rule + escape vector).
+- Hard-ban at construction time: no `docker.sock` mount, no `--privileged`, no `--network host`, no `--pid host`, no `--cap-add SYS_ADMIN`, no host-path bind. Make these *unrepresentable* in the sandbox profile struct (no field to set them), not merely defaulted off.
+- If the agent needs to build containers, give it a nested/rootless builder (buildkit rootless or a per-user nested daemon), never the host daemon.
+- Per-user network: deny-by-default egress (`--network none` baseline, already the Slice-2 default), explicit allowlist enforced by a **real** mechanism (proxy/firewall), not an advisory env var (see Pitfall 3 / F-036).
 
 **Warning signs:**
-Timeline freezes after a network blip and never recovers; duplicated assistant turns after reconnect; 409s shown as hard errors; resume works in dev (localhost, no drops) but not on Wi-Fi/mobile.
+- Any sandbox spec field, env, or compose line containing `docker.sock`, `privileged`, `network_mode: host`, `cap_add`, or a host absolute path under `volumes:`.
+- The agent can `docker ps` and see *host* containers, or can reach a host-only service (Postgres on 5432, Neo4j on 7687) from inside the sandbox.
+- A test that proves isolation passes in <1s (it's not actually launching a container — skip-as-green).
 
-**Phase to address:** (A) serve/auth/transport foundation — wire the reconnect+snapshot+409 contract before any rich rendering.
+**THE LINE (where to stop):** A per-user **container** (over the existing rivetdev/sandbox-agent or plain Docker), one warm container per active identity, full capability *inside* the namespace, host never bind-mounted, egress proxy-enforced. Do **not** reach for full K8s/k3s, microVMs (Firecracker/Kata), or gVisor for v2.0.0 — see Pitfall 2 for why on this hardware.
+
+**Phase to address:** Per-user sandbox phase. **Finding: F-001 / R-001 (also F-036/R-030 for egress).**
 
 ---
 
-### Pitfall 2: Backpressure / slow-client drops are silent on the UI — dropped deltas look like a stalled agent
+### Pitfall 2: Choosing a heavyweight isolation runtime that doesn't fit a 16-core/32GB mini-PC
 
 **What goes wrong:**
-The backend SSE pump (`streamSSE` / `pumpSend` in `internal/agui/server.go`) deliberately **drops non-lifecycle delta frames** when the per-connection buffer (default cap 64, `AURA_AGUI_BUFFER_CAP`) is full, to never block the agent Loop (T-12-09). Lifecycle frames (RUN_STARTED/FINISHED/ERROR, TEXT/TOOL/REASONING start/end, CUSTOM, STATE_SNAPSHOT — see `isLifecycleFrame`) are protected, but text/reasoning *content deltas* can vanish. A cockpit that renders text purely by appending deltas will show **gaps or truncated answers** with no indication anything was dropped, while a slow browser tab (background, throttled, heavy graph render) makes this routine.
+Reaching for the "most secure" isolation tier (gVisor/runsc, Kata/Firecracker microVMs, or orchestrating with k3s/k0s) crushes the resource budget and/or destroys the very workload Aura runs. Concrete, verified numbers:
+- **gVisor** imposes ~10-30% overhead on typical workloads but **+125% execution time on syscall/IO-heavy work** (e.g. SQLite inserts, `Build ABSL`). A "full host shell" agent is *the* syscall/IO-heavy workload (file reads/writes, builds, `git`, `npm`, compilers). gVisor would make the headline feature feel broken.
+- **k3s single-node** consumes ~565MB-768MB RAM idle plus continuous CPU heartbeat/health/metrics churn that "isn't negligible" even at idle. On a host already at ~5.7-6.2GB idle / ~7GB peak (PROJECT.md), adding a full control plane is pure tax for a need (one container per user) that Docker already serves.
+- **Firecracker/Kata microVMs** allocate a dedicated kernel + ~1GB RAM *per sandbox* (E2B default). At even 3-4 concurrent identities that's the whole RAM budget gone, before LLM sidecars.
 
 **Why it happens:**
-The drop is a server-side correctness choice (protect the Loop). The UI never learns a delta was dropped — `recordSSEDropped()` only increments a server metric + WARN log.
+Security-maximalism + "industrial = Kubernetes" cargo-culting. The audit's word "industrial" gets misread as "enterprise orchestration."
 
 **How to avoid:**
-- On the protected `*_END` lifecycle frames, treat the **final text content as authoritative** and reconcile/replace the delta-accumulated buffer (the END frame carries or implies the complete message). Do not trust the delta concatenation as final.
-- Surface a quiet "stream degraded / reconnect to refresh" affordance when the client detects a sequence gap (e.g., a TEXT_END without matching delta volume), and offer a snapshot re-fetch.
-- Keep heavy work (graph layout, large display rendering) off the same task that drains the stream reader, so the *client* doesn't become the slow consumer that triggers drops.
-- Consider raising `AURA_AGUI_BUFFER_CAP` for the cockpit connection, but treat that as a mitigation, not a fix — the gap-reconciliation is the fix.
+- Match the threat model to the trust model: v2.0.0 is **identity isolation, NOT a hostile-multi-tenant SaaS** (PROJECT.md: NO RBAC, isolation = data+process+fs per identity). Containers (namespaces + cgroups + seccomp + user-ns remap) are the correct industrial tier for trusted-but-separated users. The operator explicitly rejects "atomic bombs."
+- Keep the existing **rivetdev/sandbox-agent + Docker** substrate (already adopted, D-15). Add: one warm container per active identity, cgroup mem/CPU caps, seccomp default-deny (already a Slice-2 requirement), user-namespace remap so container-root ≠ host-root, named-volume workspace per identity.
+- Reserve gVisor/Kata as a *documented future escalation* gated on the DGX Spark hardware, not v2.0.0. Record the decision as an ADR (F-025).
 
 **Warning signs:**
-Answers occasionally end mid-sentence; reasoning panel shows partial thoughts; server logs `agui server: SSE client slow, dropping event`; `aura_sse_dropped` metric climbs under load.
+- A roadmap phase titled "k3s setup" or "Firecracker integration."
+- RAM idle creeps past ~7GB after the sandbox phase lands; OOM-kills of Neo4j/embed sidecars under 2-3 concurrent users.
+- Build/compile tasks inside the sandbox run 2x+ slower than host (gVisor tell).
 
-**Phase to address:** (A) transport foundation (gap detection + END-frame reconciliation) and (B) AG-UI typed-display protocol (ensure END frames carry enough to reconcile).
+**Phase to address:** Per-user sandbox phase (research-locked design fork: container-per-user vs K8s/k3s). **Finding: F-001 / R-001; mini-PC budget per `feedback_minipc_cpu_budget`.**
 
 ---
 
-### Pitfall 3: Web auth bolt-on quietly breaks the loopback "bind IS the control" model
+### Pitfall 3: Per-user egress/volume "isolation" that is advisory, not enforced
 
 **What goes wrong:**
-Today the AG-UI gateway and setup wizard are **hardcoded loopback** (`AURA_AGUI_BIND` default `127.0.0.1:9080`, `AURA_SETUP_BIND` `127.0.0.1:9081`; `config.go:309/317`). The loopback bind is the *compensating control* for the auth-deferred posture (amendment #35; comment at `serve.go:218-221`: "the bind is hardcoded loopback ... the compensating control for the auth-deferred posture"). Adding the cockpit tempts a `--bind 0.0.0.0` so it's reachable from a phone — but if auth is added carelessly (or the bind is opened *before* auth lands), the daemon goes from "unreachable off-host" to "agent with shell_exec + filesystem + MCP mounts, exposed to the LAN."
+Two specific leaks already flagged: (1) the Docker MCP network allowlist (`AURA_MCP_NETWORK_ALLOW`) is passed as *env data the container may ignore* while the container actually runs on a bridge network with full egress — F-036/R-030. The same trap repeats when you add per-user sandboxes: you set an "allowlist" but the network namespace still routes everywhere. (2) Per-user **volume leakage** — two identities' sandboxes share a workspace root, a `/tmp`, or a run-dir, so user B reads user A's artifacts.
 
 **Why it happens:**
-"Make it reachable from my phone" is the natural next step; the auth and the bind change are separate PRs and the bind one is trivial, so it ships first.
+Egress enforcement is genuinely harder than passing a string; teams ship the string and call it done. Volume sharing is the default when you reuse one named volume or one workspace path across sessions.
 
 **How to avoid:**
-- Treat GAP-2 (web auth) as a **hard prerequisite gate** for any non-loopback bind. Mirror the PRD's existing posture (`server.go:2796`): "`--bind` non-loopback richiede auth + fail-fast sotto local-only (#35)." Make a non-loopback bind **fail-fast at boot** unless auth is configured. This is cheap-now, catastrophic-later.
-- Prefer **token/Authorization-header session** over cookies for the SPA (memory-held token), which sidesteps CSRF entirely for the API surface (see Pitfall 4). The existing setup wizard already uses a one-time `AURA_SETUP_TOKEN` printed to stdout (amendment #10) — reuse that bootstrap pattern to mint a cockpit session.
-- Keep **liveness/readiness/metrics/debug endpoints** (`/healthz`, `/readyz`, `/metrics`, `/debug/vars` — all on `Mux()`) behind the same auth or on a separate loopback-only listener. `/debug/vars` (expvar) and `/metrics` leak operational shape; today they're safe only because of loopback.
-- The agent's shell/filesystem/MCP power means the blast radius of an auth bypass is RCE-class. Threat-model it as such (golang-security STRIDE: Spoofing + Elevation of Privilege).
+- Egress: keep `--network none` unless a *real* enforcement backend exists (per-user egress proxy with host allowlist, or an iptables/nftables OUTPUT policy generated from resolved IPs — the Slice-2b mechanism). An allowlist with bridge networking = no allowlist. Write an integration test that proves a disallowed host is unreachable (F-036 suggested coverage).
+- Volumes: one named volume per identity, derived from the authenticated principal (`aura-ws-<identityID>`), never a shared path. On identity delete, the volume is destroyed (ties to Pitfall 6 / F-039).
+- Per-user `/tmp` and run-dir: each sandbox gets its own tmpfs and its own `$AURA_RUN_DIR` subtree; never the host's.
 
 **Warning signs:**
-A `--bind` flag or `AURA_AGUI_BIND=0.0.0.0` appears in a commit before an auth middleware exists; `/metrics` reachable without a token; "it works from my phone" demo predates the auth phase.
+- A sandbox with a non-`none` network and a non-empty allowlist but no proxy/firewall in the data path.
+- `docker volume ls` shows one shared workspace volume reused across identities.
+- A test reads a file written by "user A" from "user B"'s sandbox and it succeeds.
 
-**Phase to address:** (A) serve/auth foundation — auth + bind-gating + endpoint protection land together, before the cockpit is reachable off-host.
+**Phase to address:** Per-user sandbox phase. **Finding: F-036 / R-030 (egress); F-001 + cross-ref F-028 (per-user volume scoping).**
 
 ---
 
-### Pitfall 4: CSRF on state-changing endpoints — the agent can be driven by a forged cross-site request
+### Pitfall 4: Cold-start latency breaking UX (and the warm-pool / container-reuse security trap)
 
 **What goes wrong:**
-`POST /agent/run` *starts an agentic run* (shell, filesystem, MCP, mail/WhatsApp sends). Other state-changers will follow (MCP enable/remove, skill approve, scheduler create/cancel, conversation delete). If the cockpit authenticates with a **cookie** and these endpoints accept simple/credentialed cross-origin requests, a malicious page the operator visits can forge a request that makes Aura *do things* — CSRF with an RCE-class blast radius. Note the current CORS knob (`AURA_AGUI_CORS_PERMISSIVE`) sets `Access-Control-Allow-Origin: *` (`withCORS`) — permissive CORS + cookie auth is the classic foot-gun combo.
+Per-user sandboxing adds container spin-up to the critical path. If you cold-start a container per request, the first tool call after idle stalls for seconds — the agent feels broken vs today's instant host shell. The "fix" — keeping warm pools or reusing one long-lived container — re-introduces the exact security tension the isolation was for: **reused containers leak state between tasks and weaken per-execution isolation**, and idle warm pools burn the mini-PC's scarce RAM.
 
 **Why it happens:**
-SSE/`fetch` POST feels "API-like" so CSRF is assumed handled; the permissive-CORS dev knob gets left on; cookie auth is the default reflex.
+Latency is visible immediately; the isolation regression from reuse is invisible until an incident. On a constrained host, "just keep N warm" silently consumes the RAM headroom.
 
 **How to avoid:**
-- **Prefer Authorization-header (bearer) auth with the token in memory** — an attacker site cannot set a custom header cross-origin, so CSRF protection is structurally unnecessary for the API (OWASP / Clerk guidance). This is the cleanest fit for a same-binary SPA.
-- If cookies are used anyway: set `SameSite=Strict` (or `Lax`), `HttpOnly`, `Secure`, **and** require a CSRF token header on every POST/PUT/PATCH/DELETE (`/agent/run`, MCP mutations, skill approve, scheduler, conversation delete). SameSite alone is not sufficient (PortSwigger: bypasses exist).
-- **Never ship `AURA_AGUI_CORS_PERMISSIVE=1` with a non-loopback bind / cookie auth.** Make permissive CORS mutually exclusive with cookie auth at config-validation time.
-- Reuse the same protection for the setup wizard's `/setup/*` state-changers.
+- Right-size the pool to the trust model: this is **identity isolation, not per-request ephemeral isolation**. One warm container **per active identity** (not per request) is the correct grain — state *within* one user's session is fine to keep; state *across* users must never share. That matches the locked decision and keeps warm-count = active-users (small on a mini-PC).
+- Lazy-start + keep-warm-with-TTL: start a user's container on first tool call, keep it for the session, evict on idle TTL or identity logout/delete. Tie eviction to the SessionEvictor path (Pitfall 6).
+- Never reuse one container across *different* identities. Reuse within one identity's conversations is acceptable (same trust principal).
+- Budget the warm pool: cap concurrent warm containers (`AURA_SANDBOX_MAX_CONCURRENT_SESSIONS` already exists, default 5) so the pool can't exceed RAM headroom.
 
 **Warning signs:**
-`Access-Control-Allow-Origin: *` in prod config; cookie auth with no CSRF token; state-changing GETs; a state-changing endpoint that works from a `curl` with only a cookie and no custom header.
+- First-tool-call p95 jumps from ~ms to seconds after the sandbox phase.
+- RAM grows linearly with *total ever-seen* identities instead of *currently active* ones (pool never evicts).
+- A container is handed to identity B that previously served identity A.
 
-**Phase to address:** (A) serve/auth foundation. Cheap-now (pick header auth), expensive-later (retrofitting CSRF tokens across every mutation).
+**Phase to address:** Per-user sandbox phase. **Finding: F-001 / R-001 (UX + isolation grain); cross-ref F-039/R-033 (eviction).**
 
 ---
 
-### Pitfall 5: `ui_control` becomes arbitrary frontend automation (the design's biggest footgun)
+### Pitfall 5: Half-done identity isolation — some stores scoped, others global
 
 **What goes wrong:**
-The agent can emit `ui_control` events to drive the cockpit (`open_panel`, `highlight_source`, `set_mode`, `show_job`, `set_density`, `theme_preview`). If the frontend treats these as a generic "do what the model says" channel, an LLM (steered by a malicious web page it fetched, a poisoned MCP tool result, or prompt injection in a document) can pivot into **client-side automation**: navigating the operator, hiding warnings, faking approvals' visual context, injecting CSS/DOM, or exfiltrating via crafted targets. The ux-spec is explicit: "Do not let AI UI-control events become arbitrary frontend automation. Everything must be allowlisted, scoped, logged, and reversible."
+This is the headline multi-user trap and it's *already present* (F-028/R-022): conversation and approval APIs list/mutate **global** stores, while the runner later enforces context-identity against conversation-identity. So a provisioned user B can list/get/archive/delete/resolve user A's conversations and approvals; and a B-created web conversation is born owned by `local` (confirmed in `runner_conversation.go`: `NewConversationWithID` hard-codes `GetIdentityByName(ctx, localIdentityName)` regardless of `identityctx.IdentityID(ctx)`), then `/agent/run` fails later with an identity mismatch. Half-scoped isolation is *worse* than none because it looks done.
 
 **Why it happens:**
-It's easy to write a generic dispatcher (`applyUiControl(event)`) and hard to resist adding "just one more" control. The model output is *untrusted input* but feels first-party because it's "our agent."
+Isolation was retrofitted onto a single-operator design where `local` was the only principal. The `identityctx` plumbing exists (`internal/identityctx`) but isn't threaded into every store/API call. Each store/handler must be individually converted; it's easy to convert the obvious ones (conversations list) and miss the long tail (approvals, search, background shells, sandbox volumes, sidecar dirs, learning stores).
 
 **How to avoid:**
-- **Closed allowlist of verbs**, validated server-side AND client-side. Honor the ux-spec contract exactly: `open_panel` → panel id from an allowlist only; `set_mode` → one of `chat|tree|graph|displays|settings`; `highlight_source` → an owned, DOM-safe internal id; `show_job` → a job id **owned by the active run/user**; `set_density` → `compact|operator|review`; `theme_preview` → a token object **validated by schema, no arbitrary CSS**.
-- **Reject, never coerce**, anything off-allowlist. "The model must never emit raw CSS selectors, scripts, URLs to execute, or unbounded DOM mutations" (ux-spec). Drop + audit unknown verbs/targets.
-- **Scope every target to the current run/user** so one run cannot drive another's UI or reference cross-run job ids.
-- **Audit + replay**: "UI-control events should be replayable from the run log so debugging a session reconstructs what the operator saw." Persist each accepted/rejected ui_control with the run id. This is the only way to forensically answer "what did the agent make the screen do?"
-- ui_control must be **cosmetic only** — it can *suggest* and *navigate*, never *act*. An approval, a mount, a delete must always go through the explicit governance gate, never through a ui_control side effect.
+- **Enumerate every store and surface that holds per-user data and convert each to owner-scoped**: conversations (list/get/create/archive/delete/search incl. spilled-content search F-048), approvals/pauses, background shells (F-032), sandbox containers+volumes (Pitfall 3), tool-output sidecars + run-dir (F-041), learning stores (`reasoningstore`, `toolselectstore`, `activelearn` — F-049), memory subgraph, Agent.md profile dir. Make a checklist artifact; the roadmap should treat "the list of owner-scoped surfaces" as a deliverable, not implicit.
+- Fix `NewConversation` to use `identityctx.IdentityID(ctx)` with `local` *only* as the CLI/no-principal fallback (exact F-028 recommended fix).
+- Cross-principal get/mutate returns **404 (not 403)** to avoid an existence oracle, or 403 by deliberate choice — pick one and apply uniformly.
+- Filter at the **store layer**, not just the handler, so a future caller can't bypass a handler-only filter (defense in depth — golang-security "every layer protects itself").
 
 **Warning signs:**
-A `default:` branch in the ui_control handler that does anything but drop+log; `theme_preview` accepting a string of CSS; `highlight_source` taking a CSS selector or URL; no run-log row per ui_control; the model able to switch modes into `settings` and trigger a config change in one flow.
+- A list/search query with no `WHERE identity_id = $1`.
+- A new conversation's `identity_id` is `local` when created by an authenticated non-local principal.
+- Any store method that takes a conversation ID but not a principal.
+- Tests assert "isolation" with a single identity (can't prove cross-identity denial — see Pitfall 13).
 
-**Phase to address:** (C) operator-OS shell + ui_control — build the allowlist/scope/audit/replay as the *first* thing in that phase, not after the verbs work.
+**Phase to address:** Multi-user identity isolation phase. **Finding: F-028 / R-022 (primary); F-032/R-026, F-039/R-033, F-041/R-034, F-048, F-049 (the long-tail surfaces).**
 
 ---
 
-### Pitfall 6: Rendering a skill/MCP secret, or showing pending state wrong
+### Pitfall 6: Session eviction misses on delete; stale in-memory tool state survives
 
 **What goes wrong:**
-Three distinct leaks, all security-load-bearing:
-1. **Rendering a saved MCP secret.** Env values "are editable but never displayed raw after save" (ux-spec); "Do not show raw saved MCP secrets in the UI." The backend stores env as `KEY=VALUE` strings in `~/.aura/mcp/servers.json` (0600) and only ever *redacts* for display (`mcp.RedactSecrets`, `manager.authStatus` infers posture without echoing the value). A cockpit that GETs the raw config to populate an "edit env" form will ship the plaintext token to the browser.
-2. **Surfacing an internal error that embeds a secret.** Tool/infra errors can carry DSNs/bearer tokens; the backend sanitizes at the wire (`SanitizeString` / `redactEvent` in `agui/server.go`, `mcp.RedactSecrets`). If the cockpit adds a *new* error surface (a config-validation endpoint, an MCP doctor stderr panel) it must route through the same sanitizer — a new endpoint is a new leak path.
-3. **Redacted-state correctness.** The UI must distinguish required / optional / missing / **redacted-but-set** states (ux-spec) and warn when "required recipe env variables still contain placeholders" (the backend's `authStatus` already detects `CHANGE_ME` / `${...}` placeholders). Showing "redacted" for an *empty* required var hides a misconfiguration.
+Some delete/clear flows delete the *persisted* conversation row directly without routing through a runner lifecycle method that evicts session-scoped in-memory state (F-039/R-033). Result: todo state, shell cwd, approval maps, and background-shell buffers survive deletion. With **deterministic conversation IDs** (Telegram chat → UUIDv5), a later chat reuses the same ID and **inherits another context's stale tool state** — a cross-identity leak once multi-user lands. Background shells make this worse: they're process-scoped, not session-keyed (confirmed in `shell_bg.go`: `Evict(string)` prunes by *completion*, ignoring the session arg), so a running job started by A is not evicted when A's conversation is deleted.
 
 **Why it happens:**
-The "edit env" UX naturally wants to prefill the field; error panels naturally want the full error; redaction state is a 4-way enum that's easy to collapse to a boolean.
+There are multiple deletion entry points (AG-UI delete, Telegram `/clear`, CLI clear) and only some go through the runner. Background-shell registry was deliberately process-scoped for a single operator; that assumption breaks under multi-user.
 
 **How to avoid:**
-- **Never return raw env values to the browser.** The edit flow sends *new* values down; it never receives saved ones. Display only redacted chips + a per-key state (required/optional/missing/redacted-set/placeholder).
-- Route **every** new error/log/doctor surface through `SanitizeString` / `mcp.RedactSecrets` server-side *before* it reaches the response body. Add a test asserting a known token shape never appears in any cockpit response.
-- Model the env-key state as the explicit 4–5-way enum from the ux-spec, driven by the backend's `authStatus`-style detection, so "missing-required" is visually distinct from "set-and-redacted."
+- Route **all** deletion through one runner lifecycle method that: cancels active work → auto-resolves/expires pending pauses → invokes every registered `SessionEvictor` → handles background jobs by policy → *then* deletes persistence (exact F-039 fix).
+- Bind background shells to session/actor (Pitfall 8 / F-032) so eviction can target a specific owner's jobs, not just finished ones.
+- On identity delete (multi-user), cascade: evict sessions, destroy the per-user sandbox container + volume (Pitfall 3), invalidate sessions (auth, Pitfall 9).
 
 **Warning signs:**
-A network response containing `SMTP_PASS=...` or a bearer token; an edit form prefilled with a real secret; a doctor/stderr panel showing a full DSN; "redacted" rendered for a never-set required var.
+- Two code paths call the conversation store's delete directly.
+- A deterministic-ID conversation shows stale cwd/todos after a `/clear` + re-chat.
+- A background job keeps running after its conversation is deleted.
 
-**Phase to address:** (D) governance UI (MCP + skills). Highest-priority security item in that phase.
+**Phase to address:** Multi-user identity isolation phase (lifecycle), with the agent-loop phase for pause auto-resolution. **Finding: F-039 / R-033; cross-ref F-032/R-026.**
 
 ---
 
-### Pitfall 7: Pending skills running, injecting prompt content, or the UI lying about activation
+### Pitfall 7: IDOR via predictable, unscoped resource IDs
 
-**What goes wrong + a real backend/spec contradiction to resolve:**
-The ux-spec's non-goals say: "Do not activate installed or generated skills directly from a model tool call" and "Do not allow pending skills to run, inject prompt content, or override active skills before approval." **But the shipped backend does NOT match this for the in-box path.** Per the live tool schema (`skillParamsSchemaHonest` in `internal/agent/tools/skill.go`) and `writeAction` (`skill_write.go:164-174`, P5 2026-06-10): *model-authored `create`/`update` with `always:false` activate IMMEDIATELY in this container after validation + audit* (container = boundary, Claude-Code parity). Only `always:true` create/update and `delete` are approval-gated and staged pending. `save_snippet` stages pending. So:
-- If the cockpit renders the **aspirational** non-goal ("nothing activates without approval"), it will **lie** — model-authored skills are already live, and the operator won't see an approval prompt that the backend no longer issues.
-- Conversely, for the genuinely gated actions (`always:true`, `delete`, snippet save), a UI that lets the operator "run" or "preview-inject" a *pending* skill before approval breaks the real gate.
+**What goes wrong:**
+Background shell IDs are sequential and process-scoped (`sh_1`, `sh_2`, … — confirmed in `shell_bg.go`: `id := fmt.Sprintf("sh_%d", b.seq)`), and poll/kill accept only the ID with no owner check. Another conversation/identity in the same daemon can guess `sh_1`, poll its output (which may contain secrets), or kill it (F-032/R-026). The same IDOR class applies to any new per-user resource you add with a guessable ID and no owner binding (sandbox container IDs, approval IDs, conversation IDs if not UUIDs).
 
 **Why it happens:**
-The design doc predates / diverges from the P5 in-box-activation decision. Two sources of truth disagree; the UI is built from the doc.
+Sequential IDs are the simplest thing that works for one operator. Owner checks feel redundant when there's only one user.
 
 **How to avoid:**
-- **Make the UI mirror the *backend's actual* state machine, not the doc.** Surface the real distinction: `always:false` model-authored create/update = *active immediately (audited, in-box)*; `always:true` + `delete` + `save_snippet` = *pending → approval-gated*. Show the audit row for the auto-activated ones so the operator still *sees* the self-extension (the headless `Alerter` path exists for exactly this, `skill_write.go`).
-- For the gated path, enforce the non-goal rigorously: **pending skills (status `pending_approval`, living under `~/.aura/skills/pending/<name>/`) must never be runnable, previewable-as-injected, or shown as active** in the library. The active/pending/archived/audit tabs (ux-spec Frame 08) must be *backed by real status*, not optimistic UI.
-- **No model-facing approve.** Activation is human-only via `ask_user` resume or `aura skills approve` CLI (D-03, `skill.go:182-185`). The cockpit's approve action must hit the resume/CLI path, not a tool call.
-- **Flag the doc/backend divergence to the roadmapper** as a decision to settle: either ship the UI honest to P5, or re-gate in-box activation (a backend change). Do not paper over it in the UI.
+- Random unguessable IDs (UUIDv4/crypto-random) for any cross-task-visible resource. (Note: conversation IDs already use UUIDv7 — keep that; `sh_N` is the offender.)
+- Bind each background job to session/actor metadata; require matching session/actor for poll/kill (admin capability is the only override) — exact F-032 fix.
+- Apply the rule uniformly to new v2 resources: per-user sandbox handles, idempotency keys, approval tokens.
 
 **Warning signs:**
-An approval queue that never receives `always:false` create/update events (because they don't pause); a "run pending skill" button; the library showing a pending skill as runnable; UI copy promising "nothing runs without approval" while skills self-activate in chat.
+- Any ID built from a monotonic counter (`fmt.Sprintf("...%d", seq)`).
+- A poll/kill/get handler that takes an ID but not a principal/session.
+- Test: session B polls `sh_1` started by session A and succeeds.
 
-**Phase to address:** (D) governance UI (skills). Resolve the doc/backend contradiction *during discuss-phase*, before building the queue.
+**Phase to address:** Multi-user identity isolation phase. **Finding: F-032 / R-026.**
 
 ---
 
-### Pitfall 8: SSRF / web-safety states leaking internal detail, or mis-rendering the error enum
+### Pitfall 8: ToolGateway fail-open by default (the command-hook trap, generalized)
 
 **What goes wrong:**
-The backend is careful: SSRF block reasons name a *class* never a concrete IP/host/CIDR (`ReasonPrivateOrMetadata = "private_or_metadata_target"`, not `169.254.169.254`; `internal/web/errors.go`), and the rich `internalError` (with `resolvedIP`/`host`/`redirectFrom`) is **never** sent to the model — `sanitize()` is the single chokepoint. The cockpit can undo this in two ways: (1) by fetching/rendering a *richer* internal error surface (a debug endpoint, raw stderr) that re-exposes the IP/host; (2) by treating the safe enum as free text and mangling it. The ux-spec is explicit: "SSRF blocks must show safe reasons only" and web-safety events are *typed displays*, not text appended to the answer.
+Command hooks already default to **fail-open** (F-006/R-006): if the security hook crashes, times out, or is misconfigured, execution proceeds. A new central ToolGateway can inherit or repeat this: if the policy check, ledger reservation, or approval lookup errors, does the tool run or not? Fail-open means a transient infra failure silently disables the entire security boundary you just built. Related: the mutating-panic path **loses the mutating classification** (F-031/R-025), so a tool that side-effects then panics is treated as non-mutating and the completion gate is skipped.
 
 **Why it happens:**
-Debugging convenience ("why was it blocked? show me the IP") plus the temptation to render `web_safety_event.message` as a generic toast.
+Fail-open feels "robust" — you don't want a hook bug to block the operator. For a trusted single operator that was defensible; for the gateway that is the production security boundary it's a critical bug. The panic-classification loss happens because the recovered result doesn't copy the descriptor's `Mutating` flag.
 
 **How to avoid:**
-- Render web-safety as a **typed `system_event` / `web_safety_event` display** keyed off the stable enum: `web_search_unavailable`, `blocked_url`, `unsupported_scheme`, `unsupported_content_type`, `response_too_large`, `timeout`, `http_error`, `extraction_failed`, plus reasons `searxng_not_configured` / `searxng_unreachable` / `private_or_metadata_target` / `redirect_to_blocked_target` / `invalid_target` (`internal/web/errors.go`). Map each to **fixed, safe remediation copy** — do not interpolate the raw `message` into an IP-revealing string.
-- **Never add a cockpit endpoint that returns the `internalError`.** If a debug view is needed, it must go through `AsWebError`/`sanitize` like everything else. The sensitive fields are unexported precisely to prevent accidental marshalling — don't add a sibling exported one.
-- Treat the enum as a **contract**: the comment "never rename without a PRD amendment" applies to the UI too — a switch on these strings with a safe `default:` (generic copy, never the raw message) avoids both leaks and blank cards on a new enum value.
-- Do **not** expose raw SearXNG backend parameters to operator or model (ux-spec non-goal) — the search panel surfaces results, not query internals.
+- The ToolGateway and security hooks default **fail-closed** for mutating/high-risk tools (F-006 fix: default configured command hooks fail-closed, or require explicit policy when configured). Fail-open is allowed *only* for non-security enrichment hooks, and only with an explicit opt-in.
+- Resolve and preserve the tool's `Mutating` flag **before** execution and copy it into panic-recovery results so the completion gate always fires after a side effect (F-031 fix).
+- Make the default a function of **runtime profile**: `dev` may fail-open with a loud warning; `single_user_hardened` / `server_production` fail-closed, no override.
 
 **Warning signs:**
-A blocked-URL card showing `169.254.x.x` or an internal hostname; a redirect-block card showing the redirect target; rendering `message` verbatim; a new "web debug" endpoint returning host/IP.
+- A policy/ledger/hook error path that returns "allow" or falls through to execution.
+- Panic-recovery result with `Mutating=false` for a tool whose descriptor says `Mutating=true`.
+- A profile where fail-open survives into production.
 
-**Phase to address:** (D) governance UI / web-safety states, with the enum contract pinned in (B) the typed-display protocol.
+**Phase to address:** ToolGateway phase (defaults + panic classification), Runtime-profiles phase (profile-gated default). **Finding: F-006 / R-006, F-031 / R-025.**
 
 ---
 
-### Pitfall 9: Neo4j graph rendered as a hairball / non-deterministic / GPU-melting on the mini-PC
+### Pitfall 9: Auth cutover (passphrase → Authula) — lockout, session-format break, capability regression
 
 **What goes wrong:**
-Dumping a Cypher result into a force-directed canvas produces a "hairball" that answers no question, re-lays-out differently every run (force layouts are non-deterministic), and on the shared mini-PC (no discrete GPU, WebGL software/iGPU fallback) tanks the whole host. Canvas/2D libs choke around ~5k nodes; WebGL gets to ~10k but the mini-PC won't have the GPU headroom, and a background browser tab throttles WebGL — making the graph the *slow consumer* that triggers SSE drops (Pitfall 2). The ux-spec is explicit: "Do not render Neo4j as a decorative hairball" and "Dense graphs should default to filtered evidence paths, not hairball views."
+Flipping the default from the HMAC passphrase cookie to Authula has several sharp edges, several already visible in the code:
+- **Lockout / no-enrollment bootstrap:** Authula is configured `DisableSignUp: true` (single operator provisioned out-of-band, `authula.go`). If the cutover ships without a provisioning path, the operator is locked out — there's no sign-up and no passphrase fallback.
+- **Session-format incompatibility:** the two providers issue *different cookies* (`__Host-authula_session` vs `__Host-aura_session`) and different validation cores (`validateSession` dispatches on `SessionValidator != nil`). Existing logged-in sessions break across the flip; mid-flight users get 401s.
+- **CORS + auth interplay (F-022/R-020):** permissive CORS + no-auth loopback already lets a drive-by page drive the local instance. The Authula path adds CSRF (double-submit + Fetch-Metadata) but the legacy passphrase path's CSRF posture is *SameSite=Strict only* and the code itself flags "Re-evaluate if Phase 28/29 introduces a cross-origin write surface" — multi-user web is exactly that surface.
+- **Capability-grants boundary break:** authz must stay `capability_grants`-based per-route (`RequireCapability`). Authula ships an access-control plugin that is *deliberately omitted* (`buildPlugins` comment). Re-enabling it, or letting Authula sessions bypass `RequireCapability`, forks the authz model.
+- **Token-in-URL (F-050):** long-lived tokens accepted/advertised in query strings leak via history/logs. The setup bootstrap token must stay short-lived and setup-only.
 
 **Why it happens:**
-"Just visualize the graph" with a default force layout and no node cap; testing on a dev laptop with a real GPU.
+Auth cutovers are treated as a config flip, but they cross session format, CSRF, authz, and bootstrap simultaneously. The "default flip" hides a migration.
 
 **How to avoid:**
-- **Default to 20–80 visible nodes** of *selected evidence paths* (ux-spec rendering rule), collapse high-degree neighbors behind expandable clusters, expand only on intent.
-- **Deterministic layout per query** ("repeated runs do not jump") — seed the layout / cache positions keyed by the query so a re-run is stable. Honor the graph payload contract (`nodes/edges/paths/schema/query` with stable ids) so positions can be keyed off stable node ids.
-- **Always pair the canvas with a readable textual path + inspector**, and **offer a table fallback** for accessibility, export, and very large result sets (ux-spec). The table fallback is the escape hatch when WebGL is unavailable/too slow.
-- **Budget for the mini-PC** (memory `feedback_minipc_cpu_budget`, `feedback_gpu_not_for_embedding_workload`): cap node count, debounce layout, stop the simulation once settled (don't run the force tick forever), and never run layout on the stream-draining task.
-- Hover cannot be the only access path — tap/focus opens the inspector on mobile/keyboard (ux-spec Frame 06).
+- Ship an explicit **operator-provisioning path** before flipping default (CLI enroll or first-run wizard), and a **break-glass** (documented passphrase fallback or local recovery) so a bad flip isn't a permanent lockout.
+- Treat existing sessions as invalidated on cutover *by design* — communicate "re-login required," don't try to translate cookie formats. Both paths already converge on the same principal/`withPrincipal` contract, so only the issuer changes.
+- Add the **double-submit CSRF token** to any cross-origin or multi-user web write path (the code's own re-evaluation trigger), and replace permissive CORS wildcard with an explicit origin allowlist gated by runtime profile (F-022 fix). Set `Vary: Origin`.
+- Keep `RequireCapability` as the single authz seam for both providers; do **not** enable Authula's access-control/RBAC plugin (stays out of scope — PROJECT.md NO RBAC).
+- Reserve query-string tokens for short-lived setup bootstrap only; long-lived access via secure cookie/header; never log token query values (F-050 fix).
 
 **Warning signs:**
-Graph layout visibly different on each run; node count unbounded; the tab pegs a CPU core while the graph is open; SSE drops spike when the graph view is active; no table fallback; mobile users can't open the node inspector.
+- The flip lands with `DisableSignUp: true` and no provisioning command.
+- A successful Authula login that reaches a mutating route without passing `RequireCapability`.
+- Permissive CORS still wildcard in a non-dev profile; a cross-origin POST to `/agent/run` preflights OK with no auth.
+- Any URL in install output / logs containing a long-lived token in the query string.
 
-**Phase to address:** (E) Neo4j graph explorer. Node-cap + deterministic layout + table fallback are acceptance criteria, not polish.
+**Phase to address:** Multi-user + Authula cutover phase. **Finding: F-022 / R-020, F-050; cross-ref capability_grants boundary (CORE-03).**
 
 ---
 
-### Pitfall 10: Stale embedded assets / broken dev-vs-prod serving / Node toolchain in the image
+### Pitfall 10: Runtime profiles that LIE — validation passes but unsafe defaults still apply
 
 **What goes wrong:**
-Single-binary `//go:embed` of the Vite `dist/` has a well-known failure cluster:
-- **Stale assets:** `go build` embeds whatever is in `dist/` *at compile time*. If the Vite build doesn't run before `go build` (CI ordering, local muscle memory), the binary ships the *previous* frontend — silently. "Works in dev, old UI in the binary."
-- **`embed` of a missing/empty dir** fails the Go build (or embeds nothing), and an empty `dist/` is easy to produce.
-- **SPA deep-link 404s:** embedded static serving must fall back unknown paths to `index.html` or client-side routes 404 on refresh.
-- **Dev vs embedded:** the same handler must proxy to the Vite dev server in dev (HMR) and serve embedded `dist/` in prod, gated by an env/build tag — getting this wrong means either no HMR in dev or a proxy attempt in prod.
-- **Docker image bloat / supply chain:** putting the full Node toolchain in the runtime image (instead of a multi-stage build that builds the SPA then copies only the binary) bloats the image and widens the attack surface; the existing Dockerfile is offline-first (vendored MCP bins, pinned commits — `catalog.go`).
+Profiles are supposed to make "production mode" an enforceable contract (F-026/F-002/F-007/F-008/F-016/F-017/F-022/F-041). The trap is profiles that *validate green but don't actually change behavior*:
+- **Empty-override trap (F-002/R-002):** `.env.example` sets `AURA_SHELL_DESTRUCTIVE_PATTERNS=` and the parser treats *empty* as "disable the gate" (vs *unset* = "use defaults"). Copying the sample silently disables the destructive-shell approval. A profile validator that only checks "is the var present" passes while the gate is off.
+- **Silent env fallback (F-016/R-016):** invalid int/bool env values silently use defaults (`envIntDefault`/`envBoolDefault`). An operator sets a security knob, typos it, and the runtime ignores it with no error — the profile reports healthy.
+- **Relative run-dir (F-041/R-034):** `AURA_RUN_DIR=run` resolves differently per cwd; sidecars become unreadable after restart, but config validation passes.
+- **Healthcheck that lies (F-008/F-017):** the container healthcheck runs `aura version`, so the container is "healthy" while the HTTP API/listener is down; readiness isn't wired to listener+dependency state.
+- **Default secrets accepted (F-007/R-007):** static object-store/Garage credentials pass validation; single-replica Garage (F-018/R-017) passes as "durable."
 
 **Why it happens:**
-Build ordering is implicit; the embed is "set once and forget"; the dev/prod switch is added late.
+Validation is written to check *presence/shape*, not *effective behavior*. "Empty means disable" is a subtle parser asymmetry. Health = "process alive" is the easy check.
 
 **How to avoid:**
-- **Make the SPA build a hard dependency of `go build`** in the Makefile/CI: `vite build` → assert `dist/index.html` exists and is newer than sources → `go build`. Fail the build if `dist/` is empty/stale (mirror the existing `make quality` discipline). Consider a content-hash check so a stale embed fails CI.
-- Use the proven dev/prod pattern: **build tag or `ENV=dev` proxy to Vite** in dev, `//go:embed dist` + `fs.Sub` in prod, with an **`index.html` SPA fallback** for unknown non-asset paths.
-- **Multi-stage Docker:** Node stage builds the SPA, Go stage embeds + compiles, runtime stage carries only the binary + sidecars. No Node in the runtime image. Preserve the offline-first posture (`feedback_preserve_docker_build_cache` — never prune the ~45–60 min stack cache).
-- Pin the Node/Vite version (Vite 8 / Node 24 per the milestone stack) in CI to avoid cross-platform lock drift (memory `feedback_npm_lock_cross_platform_drift`).
+- Validate **effective behavior, not presence**: the production profile asserts the destructive-shell gate is *active*, fail-policies are fail-closed, no default secrets, run-dir is absolute, listener+deps feed readiness. Add a `production-readiness` command that fails on any unmet requirement (F-026 fix).
+- Fix the empty-override asymmetry: empty = "use defaults"; require explicit `off` to disable (F-002 fix). Add a config smoke test proving defaults survive copying `.env.example`.
+- Production profile: invalid env for security/reliability knobs is a **fatal error**, not a silent default; dev profile warns (F-016 fix). Emit a config diagnostics report.
+- Normalize `RunDir` to absolute at load or reject relative in validation (F-041 fix).
+- Healthcheck → HTTP `/readyz` that reflects listener + dependency state; listener failure is fatal or flips readiness (F-008/F-017 fix).
+- Reject default object-store/Garage secrets and replication-factor-1 outside dev (F-007/F-018 fix).
+
+**Avoid the opposite failure — profile sprawl / painful local dev:** four profiles (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) is the cap. Don't add per-knob profiles. `dev` must stay frictionless (loopback no-auth pass-through is *already* the design — `SecretConfigured==false` ⇒ no-op gate, confined to loopback by the boot guard). Don't make developers set 12 env vars to run locally.
 
 **Warning signs:**
-The binary shows an old UI after a frontend change; `index.html: no such file` build errors; refresh on a deep link 404s; Node in the runtime image; CI builds Go before the frontend.
+- A validator that checks `os.Getenv("X") != ""` instead of the resolved effective value.
+- Copying `.env.example` disables a gate.
+- Container healthy + API unreachable simultaneously.
+- A typo'd security env produces no error in production.
 
-**Phase to address:** (F) packaging/embed foundation. Build-ordering guard is cheap-now, debugging "why is my UI old" is expensive-later.
+**Phase to address:** Runtime-profiles phase. **Finding: F-002/R-002, F-007/R-007, F-008/R-008, F-016/R-016, F-017, F-018/R-017, F-022/R-020, F-026, F-041/R-034.**
+
+---
+
+### Pitfall 11: Over-abstracting the ToolGateway into an "atomic bomb" — OR under-building it into a bottleneck
+
+**What goes wrong:**
+Two opposite failures around the central `ToolGateway` (F-001 recommended fix: "all tool calls pass through one ToolGateway before execution and one ToolResultNormalizer after"):
+- **Over-engineering:** building an ABAC/policy-DSL engine, a pluggable rule language, tenant/workspace policy trees, an external authorization-fabric API call before every tool — the enterprise "agent gateway" shape (Google/AWS/Microsoft). The operator explicitly rejects this (`feedback_no_atomic_bombs_minimal_industrial_shape`). It adds latency to *every* tool call and becomes a maintenance sink for a single-host, identity-isolation (not RBAC) system.
+- **Single point of failure / bottleneck:** routing every tool through one synchronous chokepoint that does a DB ledger write + policy eval + approval lookup *inline* on the hot path. If the ledger DB hiccups, every tool stalls; if the gateway panics, the loop dies. The existing ledger is already best-effort (F-011) precisely to avoid this — but best-effort drops the forensic guarantee.
+
+**Why it happens:**
+"Central policy point" reads as "build a policy platform." And making it durable reads as "block on the DB."
+
+**THE LINE (minimal industrial form):**
+- The gateway is a **single in-process function/middleware** every tool dispatch passes through — not a service, not a DSL, not an external call. Input: `(principal, tool descriptor incl. Mutating + risk class, args, runtime profile)`. Output: `allow | deny | needs-approval`, plus a ledger reservation handle.
+- Policy is **table-driven Go**, not a rule language: reuse the existing `internal/scoring/` risk tiers (SAFE/NORMAL/RISKY/DESTRUCTIVE) + the command capability classes the audit recommends. Hard-coded mapping, ~100 LOC, like the existing risk scorer.
+- **Ledger: pre-execution reservation for mutating tools in production profile only** (F-011 fix). Read-only tools degrade per policy (don't block on ledger). Use the natural idempotency key already in the data model — `ConversationID + RequestID + ToolCallID` (confirmed in `toolinvocations.Event`) — so a reservation is idempotent and a retry/recovery can't double-execute (F-020 state machine: planned→authorized→started→side-effect-committed→result-persisted).
+- **Not a SPOF:** the gateway is in-process (dies with the loop, no separate availability domain). The *ledger write* is the only external dependency; make it a fast single INSERT with a bounded timeout, and in non-production profiles keep it best-effort. Don't put policy eval behind a network call.
+- One `ToolResultNormalizer` after execution (redaction, sidecar, untrusted-provenance marking) — also in-process, also a single function.
+
+**What's explicitly OUT (the atomic-bomb side):** no policy DSL/Rego/OPA, no per-tenant policy store, no external auth-fabric API, no RBAC, no plugin policy modules. If a phase proposes any of those, it's over the line.
+
+**Warning signs:**
+- A "policy engine" with its own config language or external service.
+- Every read-only tool call now does a synchronous DB write.
+- Gateway code that imports OPA/Rego or defines a rule grammar.
+- A gateway abstraction with >1 implementation or a plugin interface "for future policies."
+
+**Phase to address:** ToolGateway phase. **Finding: F-001/R-001, F-011/R-010, F-020, F-031/R-025; minimal-form discipline per `feedback_no_atomic_bombs_minimal_industrial_shape`.**
+
+---
+
+### Pitfall 12: Production-ops surfaces that were "added" but never drilled / never run in CI
+
+**What goes wrong:**
+The ops findings cluster around things that *exist as code but were never exercised under real failure*:
+- **Backup/restore never drilled (F-019/R-018):** a `pg_dump` handler exists but no DR restore drill with measured RPO/RTO. A backup you've never restored is a hope, not a backup. Single-replica Garage (F-018) means an artifact backup may have nothing to restore from.
+- **Scheduler drain cancels in-flight work (F-035/R-035):** on SIGTERM, handler contexts are canceled immediately despite "graceful drain" comments — a long backup or agent_job fails mid-write. Stop-admission and job-work share one cancellation path.
+- **systemd stop budget shorter than backup (F-043/R-036):** `TimeoutStopSec` < max backup duration ⇒ systemd SIGKILLs the scheduler mid-`pg_dump`, leaving partial output that might get promoted.
+- **Load/chaos tests that don't run in CI (F-019):** adversarial prompt-injection, loop-liveness, cancellation, high-concurrency, pause/resume races have no mandatory gate. And the project's own **no-skip-as-green** rule (CLAUDE.md) is the exact trap: a chaos test that `t.Skip`s when its env is unset is a falsely-green job exercising nothing.
+- **Healthcheck that lies (F-008/F-017):** covered in Pitfall 10 but it's an ops failure too — orchestrators trust a green container that can't serve.
+
+**Why it happens:**
+Ops code is written to the happy path and validated by "it compiled / it ran once." Failure behavior (kill mid-work, restore from scratch, 100 concurrent loops) is never triggered. Skip-on-missing-env makes the gate green without running.
+
+**How to avoid:**
+- **Actually drill restore:** a scripted DR drill that dumps, wipes a scratch instance, restores, and asserts data equality; record measured RPO/RTO as the contract (F-019 fix). Atomic backup promotion via temp-file + rename so a killed backup never promotes partial output (F-043 fix).
+- **Separate stop-admission from job-work contexts** with an explicit drain deadline (F-035 fix); in-flight handlers keep a live context until the deadline, no new jobs admitted.
+- **Align `TimeoutStopSec` ≥ longest handler duration + grace**, asserted by a static test (F-043 fix).
+- **Load/chaos harness that runs in CI and fails-loud, never skips:** under `$CI`, missing env ⇒ `t.Fatal`, not `t.Skip` (project no-skip-as-green discipline). Golden tests for prompt-injection, terminal-sibling rejection, runaway-loop budgets, pause/resume races, MCP timeout, shell cancellation, background-job TTL (F-019 suggested coverage).
+- **Readiness probe** reflecting listener + dependency state; listener failure fatal (F-008/F-017).
+
+**Warning signs:**
+- "Backup" handler with no corresponding restore test.
+- SIGTERM during a long job marks it failed.
+- A "chaos"/"load" CI job that finishes in under a second (it skipped).
+- `TimeoutStopSec` numerically below the backup max duration.
+
+**Phase to address:** Production-ops phase (backup/DR, scheduler drain, systemd budgets, load/chaos), Observability phase (readiness/health). **Finding: F-018/R-017, F-019/R-018, F-035/R-035, F-042, F-043/R-036, F-008/R-008, F-017.**
+
+---
+
+### Pitfall 13: Test coverage that doesn't actually prove two-identity isolation (and the dishonest 10/10)
+
+**What goes wrong:**
+The whole milestone's headline claim is "honest 10/10." The way teams fake it:
+- **Single-identity "isolation" tests:** asserting one user can see their own data proves nothing about cross-user denial. You need *two authenticated identities with separate sessions* proving B cannot list/get/delete/archive/resolve A's data (exact F-028 suggested coverage). A green test with one identity is coverage theater.
+- **Skip-as-green:** the integration/chaos/DR tiers `t.Skip` when their env (composed DSNs, sandbox stack, OpenRouter key) is unset, so CI is green while exercising nothing. The project already mandates `t.Fatal`-under-`$CI` skip-helpers; the new v2 tiers must adopt the same.
+- **Coverage theater:** hitting an 85% line number with assertions that don't constrain behavior (`assert reply == "4"` passes if the model hallucinates without invoking the tool — the project's own anti-pattern list).
+- **Probe verifies the reply, not the artifact:** an isolation/sandbox test that checks `r.Reply` instead of the filesystem/DB/container state (project rule: every Verify needs ≥1 assertion off the artifact, not the reply).
+
+**Why it happens:**
+Isolation is hard to test (needs two sessions + real stores). Skips make red go green. Line coverage is the easy metric.
+
+**How to avoid:** see the dedicated honest-10/10 section below. In short: two-identity E2E proof, no-skip-as-green across every v2 tier, behavior-constraining assertions off artifacts, mutation-testing ≥70% on the new gateway/isolation/profile critical files, and prompt-injection regression that asserts *denial* under production profile.
+
+**Warning signs:**
+- An "isolation" test file that constructs one identity.
+- A multi-user/chaos/DR CI job under ~1s runtime.
+- Coverage ≥85% but the gateway's deny path has no test that proves a denied tool didn't execute.
+
+**Phase to address:** Every v2 phase (each owns its proof), Capability-eval phase (the cross-cutting suite). **Finding: F-019/R-018, F-028/R-022; project test-discipline + no-skip-as-green + coverage-floor-85% rules.**
 
 ---
 
@@ -235,143 +344,154 @@ The binary shows an old UI after a frontend change; `index.html: no such file` b
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Open `--bind 0.0.0.0` before web auth lands | Reachable from phone for a demo | LAN-exposed RCE-class agent (shell/fs/MCP) | **Never** — gate non-loopback bind on auth, fail-fast |
-| Cookie auth without CSRF tokens | Familiar, "browser handles it" | Forged cross-site runs/mutations | Never for state-changers; prefer header auth instead |
-| Generic `applyUiControl(event)` dispatcher | Ship ui_control fast | Arbitrary frontend automation, no audit/replay | Never — allowlist + scope + audit from day one |
-| Render raw config (incl. env) into the edit form | One GET prefills everything | Plaintext secret shipped to browser | Never — send new values down only |
-| Force layout with no node cap | "It visualizes the graph" | Hairball, non-deterministic, GPU melt on mini-PC | Never as default; allow opt-in expand |
-| Skip the SPA-build-before-go-build guard | Faster local loop | Stale embedded UI ships silently | Only in throwaway local builds, never CI |
-| Trust delta concatenation as final text | Simple append renderer | Truncated answers on slow-client drops | Never — reconcile on END frames |
-| UI built from ux-spec non-goals as if they're backend truth | Matches the design doc | UI lies about skill activation (P5 divergence) | Never — mirror real backend state |
-| Permissive CORS left on (`AURA_AGUI_CORS_PERMISSIVE=1`) | Cross-origin dev convenience | CSRF amplifier with cookie auth / open bind | Dev-only, loopback-only, mutually exclusive with cookie auth |
+| Mount host Docker socket into the sandbox for "build support" | Agent can build/run containers instantly | Root-on-host RCE; nullifies F-001 entirely | **Never** — use rootless nested builder |
+| One shared workspace volume across identities | Simpler volume wiring | Cross-identity data leak (F-028 class) | **Never** in multi-user; OK only single-operator pre-v2 |
+| Best-effort ledger on the tool hot path | No latency, no DB blocking | No forensic record of mutating side effects (F-011) | Read-only tools any profile; mutating tools **only** in dev profile |
+| Fail-open security hook/gateway | A hook bug never blocks the operator | Transient failure silently disables the boundary (F-006) | Non-security enrichment hooks only |
+| `t.Skip` when integration/chaos env unset | CI stays green locally | Falsely-green job exercises nothing (no-skip-as-green) | Local dev only; under `$CI` must `t.Fatal` |
+| Sequential resource IDs (`sh_N`) | Trivial to generate/debug | IDOR enumeration once multi-user (F-032) | **Never** for cross-task-visible resources |
+| Profile validator checks env presence, not effective behavior | Quick to write | Profiles that lie green (F-002/F-016) | **Never** — assert resolved behavior |
+| Keep large warm pool to kill cold-start | Snappy UX | Idle RAM burn + container reuse weakens isolation (mini-PC OOM) | Pool = active identities, TTL-evicted |
+| k3s/Firecracker "because industrial" | Feels enterprise-grade | ~600MB+ idle / +125% syscall overhead on a 32GB host | **Never** for v2.0.0; revisit on DGX Spark via ADR |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `@ag-ui/client` HttpAgent (SSE over fetch-POST) | Assuming `EventSource`/`Last-Event-ID` auto-reconnect | Explicit reconnect → `GET /threads/{id}/messages` snapshot; handle 409 `ErrThreadBusy`; client-side backoff |
-| AG-UI SSE pump | Rendering only delta concatenation | Reconcile on protected lifecycle END frames; detect gaps; raise `AURA_AGUI_BUFFER_CAP` as mitigation only |
-| Neo4j MCP graph result | Dump nodes/edges into force layout | Normalize to the `nodes/edges/paths/schema/query` contract; 20–80 node cap; deterministic layout; table fallback |
-| MCP managed config (`servers.json`) | GET raw env to prefill edit form | Redacted chips + per-key state enum; never return saved values |
-| MCP doctor / stderr panel | Render raw stderr | Route through `mcp.RedactSecrets` first |
-| Web-safety / SSRF block | Show IP/host or render `message` verbatim | Switch on the stable enum → fixed safe remediation copy; never expose `internalError` |
-| Skill governance | Build approval queue from ux-spec non-goals | Mirror real backend state machine (P5 in-box auto-activation vs gated `always:true`/`delete`/snippet) |
-| Setup wizard (`:9081`) bootstrap | New ad-hoc cockpit auth | Reuse `AURA_SETUP_TOKEN` one-time-token bootstrap (amendment #10) |
-| `/metrics` `/debug/vars` (expvar/prom) | Left open with the open bind | Same auth or separate loopback-only listener |
+| rivetdev/sandbox-agent (per-user) | One shared container/volume across identities; bind-mount host paths | One warm container + named volume per identity; no host bind; user-ns remap; seccomp default-deny |
+| Docker network allowlist | Pass `AURA_MCP_NETWORK_ALLOW` as env on a bridge network (advisory) | Enforce via egress proxy/firewall, or keep `--network none` (F-036) |
+| Authula | Flip default with `DisableSignUp:true` and no provisioning; let sessions bypass `RequireCapability` | Ship enroll path + break-glass first; keep `RequireCapability` as sole authz seam; isolate to `authula` PG schema (already done) |
+| identityctx propagation | Thread it into handlers only, miss store layer + background shells + sandbox + learning stores | Scope at the store layer for every per-user surface; enumerate the surface list as a deliverable |
+| Postgres ledger reservation | Block every tool on a synchronous INSERT | Reserve only mutating tools in production; idempotency key = ConversationID+RequestID+ToolCallID; bounded timeout |
+| systemd + scheduler | `TimeoutStopSec` < backup max duration; SIGTERM cancels in-flight | Stop-admission ≠ job-work context + drain deadline; `TimeoutStopSec` ≥ longest handler + grace; atomic backup rename |
+| CORS + multi-user web | Permissive wildcard + no-auth loopback; SameSite-only CSRF on a cross-origin write path | Explicit origin allowlist gated by profile; add double-submit CSRF token for cross-origin/multi-user writes; `Vary: Origin` |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Graph force layout uncapped | CPU core pegged, hairball, non-deterministic | 20–80 node cap, stop sim when settled, deterministic seed | >~2–5k nodes (Canvas) / GPU-starved mini-PC at far fewer |
-| Heavy render on the stream-draining task | SSE deltas dropped (Pitfall 2) | Render off the reader task; reconcile on END | Whenever graph/large display renders while streaming |
-| Metric cardinality explosion | Prometheus memory growth, slow `/metrics` | Low-cardinality labels: never per-conversation/per-URL/per-tool-call-id as a label; use IDs in structured logs, not metric labels (golang-error-handling rule 15) | Grows unbounded with conversations/runs |
-| Unbounded SSE connections | Goroutine/heap growth | Cap concurrent connections; the pump is goleak-clean on ctx-cancel — keep it that way | Many tabs / reconnect storms |
-| Background-tab WebGL throttling | Graph stalls, becomes slow consumer | Pause simulation when tab hidden (Page Visibility) | Operator backgrounds the cockpit |
+| gVisor/runsc for the agent shell | Builds/`git`/`npm` run 2x+ slower | Use plain containers (namespaces+cgroups+seccomp); reserve gVisor for DGX-Spark future | Any syscall/IO-heavy task (i.e. the core feature) |
+| k3s control plane on the mini-PC | Idle RAM +~600MB, constant CPU heartbeat | Container-per-user over Docker, no orchestrator | Concurrent users + LLM sidecars push past ~7GB → OOM |
+| Per-request cold-start | First-tool-call p95 in seconds | Warm container per *active identity*, lazy-start + idle-TTL evict | Idle gaps between turns; container per request |
+| Unbounded warm pool | RAM grows with total-ever-seen identities | Cap via `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS`; evict on logout/idle | More provisioned identities than RAM allows warm |
+| Synchronous ledger on hot path | Every tool call waits on a DB write | Mutating-only reservation in production; bounded timeout; async/best-effort for read-only | DB latency spike stalls the whole loop |
+| Unbounded learning stores | Heap + Neo4j rows grow forever | Max examples per label/tool, TTL/compaction, bounded `seen` map, metrics (F-049) | Long-running deployment, high-cardinality inputs |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Non-loopback bind without auth | LAN-exposed RCE-class agent | Fail-fast boot unless auth configured (amendment #35 posture) |
-| Cookie auth + permissive CORS, no CSRF token | Forged agent runs/mutations | Header (bearer) auth in memory, or SameSite+HttpOnly+Secure+CSRF token on all mutations |
-| Returning raw MCP env / config to browser | Secret exfiltration | Never return saved secrets; redacted chips only |
-| New error/log/doctor surface bypassing sanitizers | DSN/token/IP/host leak | Route through `SanitizeString` / `mcp.RedactSecrets` / `AsWebError`; test no token in any response |
-| `ui_control` without allowlist/scope | Arbitrary frontend automation, social-engineering the operator | Closed allowlist, run/user-scoped targets, reject+audit unknowns, replayable log |
-| Pending skill runnable/injectable | Unapproved self-extension takes effect | Pending status hard-blocks run/inject/active; approve only via resume/CLI |
-| Rendering model output as HTML | XSS from poisoned tool results / injection | Auto-escape (React does by default); never `dangerouslySetInnerHTML` on model/tool/web content without sanitization |
-| `/metrics` `/debug/vars` exposed | Operational shape / internal detail leak | Auth-gate or loopback-only |
-| SSRF reason exposing IP/host | Internal topology disclosure | Stable class enum only (`private_or_metadata_target`), never concrete address |
+| Docker socket / `--privileged` / `--network host` in sandbox | Root-on-host RCE; F-001 nullified | Unrepresentable in the sandbox profile struct; user-ns remap |
+| Advisory egress allowlist on a bridge network | "Sandboxed" MCP/sandbox reaches arbitrary hosts (F-036) | Proxy/firewall enforcement or `--network none` |
+| Global conversation/approval stores under multi-user | Cross-identity read/mutate/delete (F-028) | Owner-scope every store at the store layer; 404/403 on cross-principal |
+| Predictable `sh_N` IDs, no owner check | IDOR: poll/kill another user's job, read secrets (F-032) | Random IDs + session/actor binding for poll/kill |
+| Fail-open gateway/hook | Transient failure disables the boundary (F-006) | Fail-closed for mutating/high-risk; profile-gated |
+| Mutating tool panics → classified non-mutating | Completion gate skipped after side effect (F-031) | Preserve `Mutating` flag into panic recovery |
+| DB-stored sidecar path read directly | Arbitrary local file read into history (F-005) | Reconstruct path from runDir+convID+seq; containment + reject symlinks |
+| Default object-store/Garage secrets pass validation | Artifact store compromise if reused (F-007) | Reject defaults outside dev profile |
+| Long-lived token in URL query | Leak via history/logs/proxy (F-050) | Query tokens setup-only/short-lived; cookies/headers for long-lived |
+| Permissive CORS + no-auth loopback | Drive-by page drives local Aura (F-022) | Explicit origin allowlist; refuse permissive CORS when auth disabled outside dev |
+| Mixed `url`+`command` MCP entry, empty trust | Appears remote-HTTP, launches local command (F-027) | One canonical transport classifier; reject ambiguous; empty trust = blocked (F-013) |
+| Strict JSON not enforced on privileged routes | Trailing values / unknown fields silently accepted (F-052) | DisallowUnknownFields + single-decode EOF + size cap + content-type |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Theme/density boot flash (FOUC) | Light flash then dark; layout jump | Apply persisted theme/density **before app boot** (ux-spec Frame 07); inline pre-paint script |
-| Flattening typed payloads into generic cards | Loses the whole point of the cockpit | Typed display router (`web_result`/`document`/`code`/`graph_*`/`swarm_report`/`system_event`...) per ux-spec |
-| Dropped SSE deltas shown as a stalled agent | Operator thinks Aura hung | Surface "stream degraded — refresh" + snapshot re-fetch |
-| Dock/window state lost on minimize | Re-do research/compare from scratch | Dock chips preserve progress/selection/streams (ux-spec Frame 07) |
-| ui_control steals active selection | Operator's chat/graph/source selection yanked away | Tool state must not steal active selection (ux-spec Design Direction) |
-| Hover-only graph inspector | Mobile/keyboard users locked out | Tap/focus opens inspector drawer |
-| Missing PWA install metadata | Can't install to home screen; wrong theme-color | Provide manifest + theme-color; paint before boot |
-| Approval queue weaker on mobile | Operators approve risky actions with less context | "Mobile uses the same approval queue as a drawer, not a reduced-risk shortcut" (ux-spec) |
+| Cold-start stall on first tool call | Agent feels broken vs instant host shell today | Warm-per-identity + lazy-start; sub-second first call |
+| Local dev needs many env vars / auth to run | Developers stop using the runtime locally | `dev` profile = loopback no-auth pass-through (already designed); keep frictionless |
+| Auth cutover invalidates sessions with no notice | Operator/users 401'd mid-task, confused | Communicate "re-login required"; ship provisioning + break-glass first |
+| Outside-workspace approval advertised but not wired | Agent loops / repeatedly asks (F-009) | Implement the send-file resume hook or remove the advertised route |
+| Spilled conversation content not searchable | Important terms vanish from search (F-048) | Searchable preview column or document exclusion explicitly |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **SSE streaming:** Often missing reconnect/resume — verify a mid-run network drop rehydrates from `GET /threads/{id}/messages` and handles 409 `ErrThreadBusy` (not just "works on localhost").
-- [ ] **SSE rendering:** Often missing drop-resilience — verify a slow client (throttled tab) still shows the *complete* final answer via END-frame reconciliation, not truncated deltas.
-- [ ] **Web auth:** Often missing bind-gating — verify a non-loopback bind **fails fast** without auth, and `/metrics` `/debug/vars` are protected.
-- [ ] **CSRF:** Often missing on state-changers — verify every POST/mutation rejects a request lacking the custom header/CSRF token (test with cookie-only `curl`).
-- [ ] **ui_control:** Often missing the deny path — verify an off-allowlist verb/target is dropped + audited, and every accepted event has a replayable run-log row.
-- [ ] **MCP env:** Often missing redaction on edit — verify no network response ever contains a saved secret; verify the 4–5-way key-state enum (incl. placeholder detection).
-- [ ] **Skills governance:** Often missing real-state backing — verify the UI matches the *backend* (P5 in-box auto-activation surfaced via audit; gated path truly blocks pending run/inject).
-- [ ] **Web-safety:** Often missing the safe-copy contract — verify no blocked-URL/redirect card reveals an IP/host; verify a new enum value falls back to safe generic copy, not a blank card.
-- [ ] **Graph:** Often missing the table fallback + node cap — verify 20–80 default, deterministic re-run, table fallback works with WebGL disabled.
-- [ ] **Embed:** Often missing the build-order guard — verify a frontend change without a frontend rebuild **fails CI** rather than shipping a stale UI.
-- [ ] **Observability:** Often missing low-cardinality discipline — verify no per-conversation/per-URL metric labels; verify no secret in logs/traces.
-- [ ] **PWA/theme:** Often missing pre-boot paint — verify no FOUC; verify install metadata + theme-color.
+- [ ] **Per-user sandbox:** Often missing real egress enforcement and per-identity volumes — verify a disallowed host is unreachable and user B can't read user A's workspace (live container test, not a <1s skip).
+- [ ] **Multi-user isolation:** Often missing the long-tail stores (approvals, background shells, sandbox, sidecars, learning stores) — verify a two-identity E2E denies B on *every* surface, and `NewConversation` owns by the authenticated principal not `local`.
+- [ ] **Session eviction:** Often missing on one of the three delete paths — verify AG-UI delete, Telegram `/clear`, and CLI clear all invoke every `SessionEvictor` and handle running background jobs.
+- [ ] **ToolGateway:** Often missing fail-closed default and panic-classification preservation — verify a denied mutating tool did NOT execute (artifact check) and a mutating-then-panic still arms the completion gate.
+- [ ] **Ledger durability:** Often missing pre-execution reservation in production — verify a mutating tool is blocked when ledger reservation fails (production profile) while read-only degrades.
+- [ ] **Runtime profiles:** Often missing effective-behavior validation — verify copying `.env.example` does NOT disable the destructive-shell gate, and a typo'd security env is fatal in production.
+- [ ] **Auth cutover:** Often missing provisioning + break-glass — verify a fresh deploy can enroll the first operator and recover from a bad flip without a permanent lockout.
+- [ ] **Healthcheck/readiness:** Often missing dependency awareness — verify `/readyz` goes red when the listener or a dependency fails (not just `aura version`).
+- [ ] **Backup/DR:** Often missing an actual restore — verify a scripted dump→wipe→restore→data-equality drill with recorded RPO/RTO.
+- [ ] **Scheduler drain:** Often missing the stop-admission/job-work split — verify SIGTERM during a long backup keeps the handler context live to the drain deadline.
+- [ ] **Load/chaos/prompt-injection gates:** Often missing because they skip — verify they `t.Fatal` (not `t.Skip`) under `$CI` and assert *denial* under production profile.
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Non-loopback bind shipped without auth | HIGH | Immediately revert to loopback; rotate any exposed secrets/tokens; add bind-gating before re-exposing |
-| Secret rendered to browser | HIGH | Rotate the leaked credential; remove the raw-config endpoint; add a no-token-in-response test |
-| ui_control was a generic dispatcher | MEDIUM | Replace with allowlist; add audit/replay; review run logs for abuse during the window |
-| Stale embedded UI shipped | LOW | Add the build-order guard; rebuild; (no security impact, just confusion) |
-| Truncated answers from SSE drops | MEDIUM | Add END-frame reconciliation + gap detection; raise buffer cap as stopgap |
-| Graph hairball / GPU melt | LOW–MEDIUM | Add node cap + deterministic layout + table fallback; pause sim on hidden tab |
-| UI lied about skill activation (P5) | MEDIUM | Re-source the skills UI from backend status; settle the doc/backend divergence (PRD amendment) |
+| Docker-socket/host-bind shipped in sandbox | HIGH | Treat as security incident: rotate host secrets, rebuild sandbox image without host access, add struct-level ban + test |
+| Half-scoped isolation (some stores global) | MEDIUM | Audit every store for `WHERE identity_id`; add store-layer scoping; backfill two-identity tests; data-leak review of access logs |
+| Chose k3s/gVisor, hit resource/perf wall | MEDIUM | Rip out orchestrator; revert to container-per-user over Docker; record ADR (F-025) on why |
+| Auth cutover lockout | HIGH (if no break-glass) / LOW (if planned) | Break-glass recovery path; if absent, manual DB session/credential repair — hence ship break-glass *before* flip |
+| Fail-open gateway in production | MEDIUM | Flip defaults fail-closed; audit which mutating actions ran during the open window via ledger (if durable) |
+| Backup that can't restore | HIGH | Restore drill reveals it; fix dump format/atomic-promote; never count a backup until one restore succeeds |
+| Profile that lied (gate was off) | MEDIUM | Add effective-behavior validation; audit production deployments that used the lying profile |
 
 ## Pitfall-to-Phase Mapping
 
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| 1. SSE reconnect/resume (no EventSource) | (A) serve/auth/transport foundation | Mid-run drop test rehydrates via snapshot; 409 handled |
-| 2. Backpressure / slow-client drops | (A) transport + (B) typed-display protocol | Throttled-client test yields complete final answer |
-| 3. Auth breaks loopback model | (A) serve/auth foundation | Non-loopback bind fails fast without auth; endpoints gated |
-| 4. CSRF on state-changers | (A) serve/auth foundation | Cookie-only request to a mutation is rejected |
-| 5. ui_control = arbitrary automation | (C) operator-OS shell + ui_control | Off-allowlist verb dropped+audited; replay reconstructs session |
-| 6. Secret leakage in UI | (D) governance UI (MCP/skills) | No secret in any response; key-state enum correct |
-| 7. Pending-skill / activation correctness | (D) governance UI (skills) | UI matches backend state machine; pending blocked |
-| 8. SSRF/web-safety leak + enum render | (B) typed-display + (D) web-safety states | No IP/host in cards; safe-copy default branch |
-| 9. Graph hairball / mini-PC GPU | (E) Neo4j graph explorer | 20–80 cap, deterministic, table fallback w/ WebGL off |
-| 10. Stale embed / build order / Node image | (F) packaging/embed foundation | Frontend change w/o rebuild fails CI; no Node in runtime image |
-| Metric cardinality / log-secret | (F) observability | No high-cardinality labels; no secret in logs/traces |
-| Theme boot flash / PWA | (F) PWA polish | No FOUC; install metadata present |
-| The 13 ux-spec non-goals | enforced across (B)(C)(D)(E) | Each non-goal has a guard/test (see below) |
+| Pitfall | Prevention Phase (logical owner) | Verification | Findings |
+|---------|----------------------------------|--------------|----------|
+| 1. Host-leak via mount/socket/network | Per-user sandbox | Sandbox can't reach host daemon/services; no host bind in spec | F-001/R-001, F-036/R-030 |
+| 2. Heavyweight isolation runtime | Per-user sandbox (design fork) | Idle RAM ≤~7GB; builds not 2x slower; no k3s/microVM | F-001/R-001 |
+| 3. Advisory egress / shared volumes | Per-user sandbox | Disallowed host unreachable; per-identity volume isolation test | F-036/R-030, F-028 |
+| 4. Cold-start / warm-pool trap | Per-user sandbox | First-tool-call sub-second; pool = active identities; no cross-identity reuse | F-001/R-001, F-039 |
+| 5. Half-done identity isolation | Multi-user isolation | Two-identity E2E denies B on every surface; conversations owned by principal | F-028/R-022 + long tail |
+| 6. Session eviction misses on delete | Multi-user isolation + agent-loop | All 3 delete paths evict; background jobs handled | F-039/R-033, F-032 |
+| 7. IDOR via predictable IDs | Multi-user isolation | Session B can't poll/kill A's shell | F-032/R-026 |
+| 8. Fail-open gateway/hook + panic classification | ToolGateway + Profiles | Denied mutating tool didn't run; panic arms completion gate | F-006/R-006, F-031/R-025 |
+| 9. Auth cutover sharp edges | Multi-user + Authula cutover | Provisioning + break-glass; CSRF on cross-origin; capability seam intact | F-022/R-020, F-050 |
+| 10. Profiles that lie | Runtime profiles | `.env.example` doesn't disable gate; typo'd security env fatal in prod; `/readyz` honest | F-002/F-007/F-008/F-016/F-017/F-018/F-041/F-026 |
+| 11. Gateway over/under-build | ToolGateway | In-process, table-driven, mutating-only reservation; no DSL/external service | F-001/F-011/R-010/F-020 |
+| 12. Ops never drilled / CI skips | Production-ops + Observability | Restore drill w/ RPO/RTO; drain deadline; chaos `t.Fatal` not skip | F-018/F-019/F-035/F-042/F-043/F-008/F-017 |
+| 13. Isolation tests don't prove isolation | All phases + Capability-eval | Two-identity proof; mutation ≥70% on gateway/isolation files; injection denial | F-019/R-018, F-028/R-022 |
 
-## The ux-spec's 13 Non-Goals as Enforceable Guards
+---
 
-The design lists explicit non-goals; treat each as a testable guard the roadmap must enforce:
+## What an HONEST 10/10 Requires (evidence bar — so the score isn't gamed)
 
-1. Don't copy Elysia's Weaviate collection model → no collection abstraction in the source explorer.
-2. Don't use the abstract sphere as main decoration → trust shown via source/provenance/execution structure.
-3. No swarm talk/join/mailbox/sibling-chat UI → swarm = worker *report* table only (ux-spec Frame 02: not a fake inter-agent chat graph).
-4. Don't expose raw SearXNG params to operator/model → search panel shows results, not query internals.
-5. Don't flatten every payload into generic cards → typed display router is mandatory.
-6. Don't render Neo4j as a hairball → **Pitfall 9** (evidence paths, provenance visible).
-7. Don't copy Odysseus personal-workspace sprawl → dock/window only where it improves investigation.
-8. Don't let ui_control become arbitrary automation → **Pitfall 5** (allowlist/scope/log/reversible).
-9. Don't show raw saved MCP secrets → **Pitfall 6**.
-10. Don't silently mount destructive MCP tools when an allowlist exists → denied/destructive tools shown explicitly (mail/WhatsApp), backed by real trust/policy (`NormalizedTrust`, `TrustBlocked`).
-11. Don't activate installed/generated skills directly from a model tool call → **Pitfall 7** (note P5 divergence to resolve).
-12. Don't present skills install as safe because `--ignore-scripts` → keep RISKY supply-chain framing in the install checklist.
-13. Don't let pending skills run/inject/override before approval → **Pitfall 7** (status hard-blocks).
+"10/10 production readiness" (up from the audit's 4.6/10) is only honest if it is **evidenced by artifacts and live execution**, not by ticking findings closed. The bar:
+
+1. **All 51 findings closed with a reproducing test that fails before the fix, passes after** (project TDD-reverse rule). Closing a finding without a regression test is reopening it later. Each P1 needs the specific suggested coverage from `bug-report.md` (e.g. F-028 → two authenticated identities, separate sessions, B denied on list/get/delete/archive/resolve).
+
+2. **Two-identity isolation proven end-to-end, live.** A test harness with two real authenticated sessions over the real stores proving cross-identity denial on *every* owner-scoped surface (conversations, approvals, background shells, sandbox volumes, sidecars, learning stores, memory). A single-identity "isolation" test is theater (Pitfall 13).
+
+3. **No-skip-as-green across every v2 tier.** Integration, sandbox, multi-user, load, chaos, DR, and prompt-injection tiers `t.Fatal` under `$CI` when their env is unset — a skipped tier *fails* the gate, never passes it. A sub-second "integration"/"chaos" runtime is a skip tell; verify execution, not just PASS (project no-skip-as-green discipline). Integration/owned-surface coverage stays ≥85% measured across the full tag matrix (project floor, overrides PRD's 75/60).
+
+4. **Mutation testing ≥70% killed on the new critical files** (ToolGateway policy, identity-scoping store layer, runtime-profile validator, sandbox launcher, auth cutover seam) — documented in each phase's VALIDATION.md Manual-Only table, run live on WSL (the only go1.26 fork). Behavior-constraining assertions, not line-count coverage; reject the project's named anti-patterns (`assert reply == "4"`, no-syscall-verification, etc.).
+
+5. **Prompt-injection regression suite that asserts DENIAL under production profile.** A golden corpus of injected "run destructive shell / read absolute path / reach disallowed host" prompts; under `server_production` the ToolGateway must *deny* (artifact check that the side effect did NOT happen), not merely log (F-019 suggested coverage).
+
+6. **Drilled DR, not hoped DR.** A scripted dump→wipe-scratch→restore→assert-data-equality run, with measured RPO/RTO recorded as the deployment contract (F-019). A backup counts only once a restore has succeeded.
+
+7. **Honest health/readiness.** `/readyz` proven to go red on listener or dependency failure (F-008/F-017); the Compose/systemd probe uses it, not `aura version`.
+
+8. **Profiles validate effective behavior.** A `production-readiness` command (F-026) that fails on any unmet requirement, plus a config smoke test proving copying `.env.example` does not disable the destructive-shell gate (F-002) and that a typo'd security env is fatal in production (F-016).
+
+9. **Artifact-grounded verification.** Every Verify asserts off the artifact (filesystem/DB/container/API state), never off `r.Reply` (project rule). Inspect bodies visually for mojibake/structure, not just PASS status.
+
+10. **ADRs + release-readiness checklist exist and are referenced** (F-025/F-026/F-045/F-049): the isolation-runtime decision (container-per-user over k3s/gVisor), the gateway minimal-form line, the multi-user-without-RBAC scope, the DR contract — each an ADR, so the 10/10 is *traceable*, not asserted.
+
+**The anti-gaming rule:** if a finding is "closed" but the only evidence is a code change with no failing-then-passing test, a skipped tier, a single-identity test, a healthcheck that still runs `aura version`, or a backup never restored — it is **not closed**. The honest score is bounded by the weakest evidence, not the count of green checkmarks.
+
+---
 
 ## Sources
 
-- Real Aura backend (verified, HIGH confidence): `internal/agui/server.go` (SSE pump, slow-client drop, lifecycle-frame protection, `TryLockThread`/409, `SanitizeString`/`redactEvent`, CORS knob), `internal/web/errors.go` + `internal/web/ssrf.go` (stable safe enum, class-not-IP reasons, `internalError` never crosses model boundary), `internal/mcp/managed_config.go` + `internal/mcp/manager/{runtime,status,catalog}.go` + `internal/mcp/redact.go` (trust classes, `TrustBlocked` gate, 0600 config, redaction, placeholder detection), `internal/agent/tools/skill.go` + `skill_write.go` (P5 in-box auto-activation vs gated path, no model-facing approve), `internal/agent/tools/shell_approval.go` (destructive-command approval pattern), `internal/scoring/scoring.go` (Safe/Normal/Risky/Destructive tiers, `GateRecommended`), `cmd/aura/serve.go` + `internal/config/config.go` (loopback-only bind, amendment #35 comment, distinct setup port).
-- Design docs: `docs/design/aura-deep-search-figma/ux-spec.md` (Important Non-Goals, ui_control contract, web-safety states, MCP/skills governance, graph rendering rules), `BACKEND_CAPABILITY_MAP.md`.
-- PRD `prd.md` (amendment #35 auth/bind posture line 2796; SSRF CIDR catalog 1928–1929; setup-token amendment #10 line 2928/5140).
-- Aura memories: `feedback_minipc_cpu_budget`, `feedback_gpu_not_for_embedding_workload`, `feedback_preserve_docker_build_cache`, `feedback_npm_lock_cross_platform_drift`, `reference_mcp_sidecar_lifecycle_and_openclaw_host`.
-- Web best-practice (MEDIUM, multi-source verified):
-  - SSE / Last-Event-ID + the fetch-POST-not-EventSource transport: [MDN Using server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events), [HTML Living Standard §9.2](https://html.spec.whatwg.org/multipage/server-sent-events.html), [SSE over POST without EventSource](https://medium.com/@david.richards.tech/sse-server-sent-events-using-a-post-request-without-eventsource-1c0bd6f14425), [@ag-ui/client](https://www.npmjs.com/package/@ag-ui/client).
-  - CSRF / SameSite / header-vs-cookie: [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html), [Clerk CSRF protection](https://clerk.com/docs/guides/secure/best-practices/csrf-protection), [PortSwigger SameSite bypasses](https://portswigger.net/web-security/csrf/bypassing-samesite-restrictions).
-  - WebGL graph perf limits: [Cylynx JS graph viz comparison](https://www.cylynx.io/blog/a-comparison-of-javascript-graph-network-visualisation-libraries/), [Nightingale: visualizing a million-node graph](https://nightingaledvs.com/how-to-visualize-a-graph-with-a-million-nodes/), [reagraph](https://github.com/reaviz/reagraph).
-  - Go embed + Vite single binary: [Embed Vite app in a Go Binary](https://www.tushar.ch/writing/embed-vite-app-in-go-binary), [Embed Vite React in Golang with live reload](https://dev.to/danhawkins/embed-vite-react-in-golang-binary-with-live-reload-1k4d).
-- Skills: `golang-security` (STRIDE, header/cookie CSRF, binding to 0.0.0.0, returning detailed errors, timing/secret handling), `golang-concurrency` (goroutine exit/leak, ctx.Done in select, backpressure/buffer discipline — maps to the SSE pump), `golang-error-handling` (single-handling rule, low-cardinality log messages, never expose technical errors to users).
+- `d:\Aura\docs\audit\bug-report.md` — 51 findings F-001..F-052 with reproduction + suggested coverage (HIGH)
+- `d:\Aura\docs\audit\risk-register.md` — R-001..R-036 probability/impact (HIGH)
+- `d:\Aura\docs\audit\security-audit.md` — trust boundaries, prompt-injection surfaces, ToolGateway/Normalizer recommendation (HIGH)
+- `d:\Aura\.planning\PROJECT.md` — locked v2.0.0 scope, decisions (NO RBAC, container-per-user fork, Authula cutover), mini-PC budget (HIGH)
+- `d:\Aura\.planning\codebase\CONCERNS.md` — capability_grants scaffolding, seccomp/SSRF/risk-tier design, no-skip-as-green roots (HIGH)
+- Actual code read: `internal/runner/runner_conversation.go` (F-028 `local` ownership), `internal/agent/tools/shell_bg.go` (F-032 `sh_%d` IDs, process-scoped Evict), `internal/identityctx/identityctx.go` (propagation seam), `internal/webauth/authula.go` + `internal/agui/auth.go` (cutover seams, CSRF re-eval note, capability gate), `internal/toolinvocations/store.go` (idempotency key in data model) (HIGH)
+- golang-security / golang-concurrency / golang-testing SKILL.md — fail-closed, client-header anti-pattern, IDOR, goroutine-leak, two-identity test discipline, no-skip (HIGH)
+- KubeBlocks containerization benchmark + gVisor performance docs — gVisor +125% on syscall/IO-heavy workloads, ~10-30% typical (MEDIUM, verified multiple sources): https://kubeblocks.io/blog/does-containerization-affect-the-performance-of-databases , https://gvisor.dev/docs/architecture_guide/performance/
+- k3s resource profiling + idle-footprint discussions — ~565MB-768MB idle, ~1.6GB guidance, non-negligible idle CPU (MEDIUM): https://docs.k3s.io/reference/resource-profiling , https://github.com/k3s-io/k3s/discussions/3558
+- AI-agent sandbox isolation surveys — warm-pool/cold-start tension, container-reuse weakens isolation, ~1GB/microVM (MEDIUM): https://northflank.com/blog/sandboxes-on-kubernetes , https://manveerc.substack.com/p/ai-agent-sandboxing-guide
+- Enterprise agent-gateway references (Google/AWS/Microsoft) — the over-engineered shape to avoid for a single-host identity-isolation system (MEDIUM, used as the anti-pattern boundary): https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview
 
 ---
-*Pitfalls research for: Aura operator web cockpit (frontend + infra milestone)*
-*Researched: 2026-06-15*
+*Pitfalls research for: Aura v2.0.0 Industrial Hardening & Multi-User Production*
+*Researched: 2026-06-29*

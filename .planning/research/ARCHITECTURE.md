@@ -1,445 +1,374 @@
 # Architecture Research
 
-**Domain:** Operator web cockpit ("Aura Deep Search") integration over an already-shipped Go single-binary AG-UI/SSE substrate
-**Researched:** 2026-06-15
-**Confidence:** HIGH (every integration claim grounded in real backend source; graph contract verified against llm-graph-builder + internal/knowledge; classifier pattern verified against elysia-frontend)
+**Domain:** Industrial hardening + per-user sandbox isolation + multi-user identity isolation + ToolGateway, integrated into Aura's existing Go single-binary agent substrate
+**Researched:** 2026-06-29
+**Confidence:** HIGH (integration points verified line-by-line against the live codebase; sandbox-fork external backends MEDIUM pending STACK)
 
-> **Scope.** This file answers *how the cockpit wires into the existing backend and in what order to build it*. It does NOT relitigate the stack (Vite 8 + React 19 + embedded SPA — see STACK.md) or the feature taxonomy (see FEATURES.md). It designs the five integration mechanisms — (1) typed-display protocol GAP-1, (2) graph payload contract, (3) serve/embed, (4) web auth GAP-2, (5) observability + (6) ui_control lane — and gives a (7) dependency-ordered build order as vertical slices.
-
----
+> **Grounding note.** The codebase map in `.planning/codebase/ARCHITECTURE.md` + `STRUCTURE.md` is the 2026-05-28 *skeleton* snapshot and is stale (it predates the whole v0.0.0/v1.0.0 build). This research is grounded in the ACTUAL code at HEAD: `internal/runner`, `internal/agent`, `internal/agent/tools`, `internal/agent/mcptools`, `internal/agui`, `internal/config`, `internal/conversations`, `internal/askuser`, `internal/identityctx`, `internal/identity`, `internal/scoring`, `internal/toolinvocations`, `internal/obs`. Two ground-truth surprises drive the recommendations:
+>
+> 1. **The sandbox tool is currently DORMANT.** `internal/sandboxagent/` and `internal/agent/tools/sandbox_exec.go` do **not** exist in the live tree (confirmed by `ls`/`grep`). The host `shell_exec` + `fs_*` tools are THE execution surface today (`internal/agent/tools/shell_exec.go` runs `exec.CommandContext` in-process with operator privileges). The rivetdev/sandbox-agent client (`:2468`, `AURA_SANDBOX_AGENT_*`) survives only as a *reference pattern* in `docs/`. **Per-user sandbox is therefore a near-greenfield build, not a swap of an existing live tool.**
+> 2. **Identity already flows on the request context.** `internal/agui/auth.go:283` `withPrincipal` stashes the authenticated id on BOTH `principalKey{}` and `identityctx.WithIdentityID(ctx)`. So `identityctx.IdentityID(ctx)` is *already populated* in every authenticated AG-UI handler and propagated into `Runner.Turn` — the multi-user gap is that the **stores and APIs ignore it**, not that the plumbing is missing.
 
 ## Standard Architecture
 
-### System Overview
+### System Overview — target v2.0.0 integration (new = ★, modified = ◆)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  BROWSER — embedded SPA (Vite 8 / React 19, served by the binary)              │
-│  ┌────────────┐  ┌──────────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ chat lane  │  │ display router   │  │ graph canvas │  │ shell/ui_control │  │
-│  │ assistant- │  │ (typed payloads) │  │ @neo4j-nvl   │  │ Zustand store +  │  │
-│  │ ui+ag-ui   │  │ web/doc/code/... │  │ /react       │  │ allowlist reducer│  │
-│  └─────┬──────┘  └────────┬─────────┘  └──────┬───────┘  └────────┬─────────┘  │
-│        │ SSE (POST /agent/run)  │ same SSE stream  │ REST (graph)  │ SSE CUSTOM │
-└────────┼────────────────────────┼──────────────────┼───────────────┼───────────┘
-         │                        │                  │               │
-══════════════════════ HTTP boundary (loopback OR reverse proxy + auth, GAP-2) ════
-         │                        │                  │               │
-┌────────▼────────────────────────▼──────────────────▼───────────────▼───────────┐
-│  internal/agui — HTTP gateway (one http.Server in cmd/aura/serve.go)            │
-│  ┌──────────────┐  ┌──────────────────────────┐  ┌───────────────────────────┐ │
-│  │ static SPA   │  │ POST /agent/run (SSE)     │  │ REST read API (NEW)       │ │
-│  │ handler(NEW) │  │ streamSSE + Translate     │  │ /api/{convs,graph,mcp,    │ │
-│  │ embed.FS     │  │ + typed-display emit (GAP1)│  │  skills,tasks,health}     │ │
-│  └──────────────┘  └────────────┬─────────────┘  └─────────────┬─────────────┘ │
-├──────────────────────────────────┼──────────────────────────────┼──────────────┤
-│  internal/agent — Event stream (iter.Seq2[*agent.Event,error])  │  read stores  │
-│  Actions{ToolInvocation, ArtifactDelta, StateDelta, AwaitingInput, Display(NEW)}│
-├──────────────────────────────────┼──────────────────────────────┼──────────────┤
-│  TOOLS / SOURCES                  │                              │              │
-│  web_search/web_fetch  knowledge(mcp-neo4j-cypher)  swarm  mcp/manager  cron    │
-│  internal/web          internal/knowledge   internal/swarm  ...    askuser/store│
-└──────────────────────────────────┴──────────────────────────────┴──────────────┘
+│  CLIENT / TRANSPORT                                                            │
+│  cmd/aura (CLI) │ internal/channels/telegram │ internal/agui (AG-UI/SSE/Web)  │
+│     identityctx.WithIdentityID(ctx) set at the auth boundary (auth.go:283)     │
+│  ◆ conversations_api / approvals_api  → FILTER by identityctx principal        │
+│  ◆ /readyz reflects listener + DB + migration + scheduler state (F-008/F-017) │
+└───────────────────────────────────┬──────────────────────────────────────────┘
+                                     │  ctx carries identity_id + (new) runtime profile
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ORCHESTRATION — internal/runner.Runner                                        │
+│  ◆ NewConversation inherits identityctx.IdentityID(ctx)  (fixes F-028)         │
+│  ◆ owner-scoped Conv.List/Delete/Get + Pause.ListPendingAll  (F-028/F-039)     │
+│  ◆ session eviction on conversation delete (F-039)                             │
+│  Owns: per-thread lock, paused_states writer, durable ledger reservation       │
+└───────────────────────────────────┬──────────────────────────────────────────┘
+                                     │  builds fresh LlmAgent per turn (buildAgent)
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  AGENT LOOP — internal/agent.LlmAgent                                          │
+│  dispatch (terminal/runnable split, F-003) → executeBatch → runTool → execTool │
+│  ◆ runTool/execTool route EVERY tool through  ★ ToolGateway                    │
+│     ┌──────────────────────────────────────────────────────────────────────┐ │
+│     │ ★ internal/toolgateway.Gateway (the single Policy Enforcement Point)  │ │
+│     │   1. PolicyEngine.Decide(actor, profile, spec, args) allow/deny/approve│ │
+│     │   2. ledger RESERVE (started) — mutating tools block if reserve fails   │ │
+│     │   3. SandboxRouter.Resolve(identityID) → exec target                    │ │
+│     │   4. tool.Execute(ctx)  [host | per-user sandbox | MCP | swarm]         │ │
+│     │   5. normalize + redact + ledger FINALIZE (succeeded/failed)            │ │
+│     └──────────────────────────────────────────────────────────────────────┘ │
+│  Existing seams kept: HookManager.BeforeTool/AfterTool, completion gate (F-031)│
+└──────────┬───────────────────────────────────┬───────────────────────────────┘
+           │                                    │
+           ▼                                    ▼
+┌────────────────────────────┐   ┌──────────────────────────────────────────────┐
+│  EXECUTION BACKENDS         │   │  ★ internal/sandboxrouter                     │
+│  shell_exec / fs_* (host)   │   │  identityID → Sandbox endpoint (pool / CRD)   │
+│  mcptools.bridgedTool       │◄──┤  lifecycle owned by serve composition root    │
+│  swarm_spawn                │   │  Docker-pool route  |  K8s/agent-sandbox route │
+└────────────────────────────┘   └──────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  PERSISTENCE — PG aura.* (sqlc/pgx) │ Neo4j via mcp-neo4j-cypher │ $AURA_RUN_DIR │
+│  ◆ tool_invocations (0011) upgraded best-effort → DURABLE reservation (F-020)  │
+│  ★ migration 0025+: runtime profile audit, sandbox sessions, retention meta    │
+│  ◆ owner-scoped conversation/approval queries  (F-028)                         │
+│  ObservabilityLayer: OTel (internal/agent/tracing.go) ◆ extended to MCP/DB/cron│
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | New vs Modified | File |
-|-----------|----------------|-----------------|------|
-| `agent.Event.Actions.Display` | NEW typed-display payload slot on the agent Event (the GAP-1 spine) | **NEW field** | `internal/agent/event.go` |
-| `agui.Translate` typed-display branch | Map `Actions.Display` → namespaced AG-UI `CUSTOM` event (`aura.display`) | **Modified** | `internal/agui/translator.go` |
-| Display classifier (Go) | Normalize each tool result into a typed `Display` payload, keyed by tool name + Meta | **NEW** | `internal/agent/display/` (new pkg) |
-| Graph normalizer | `[]map[string]any` Cypher rows → `{nodes,edges,paths,schema,query}` NVL contract | **NEW** | `internal/knowledge/graphview.go` |
-| REST read API | Non-stream reads (conversations, graph, mcp, skills, tasks, health) | **NEW** | `internal/agui/api_*.go` |
-| Static SPA handler | `embed.FS` + SPA-fallback excluding API routes | **NEW** | `internal/webui/` + `agui.Mux` |
-| Auth middleware | Session/proxy boundary; protects writes (GAP-2) | **NEW** | `internal/agui/auth.go` |
-| `ui_control` lane | Allowlist-validated CUSTOM event, run-log replayable | **NEW** | `internal/agui` + frontend reducer |
-| Observability surface | `runtime_status` aggregation behind `/api/health/runtime` | **Modified** (extend `/healthz`) | `cmd/aura/serve.go`, `internal/agui` |
+| Component | Responsibility | New / Modified | Key files |
+|-----------|----------------|----------------|-----------|
+| `internal/toolgateway` (★ new) | Single policy-enforcement-point: every tool call passes through `Gateway.Execute`. Owns policy decision → ledger reserve → sandbox-route → execute → normalize/redact → ledger finalize | NEW package | `internal/toolgateway/gateway.go`, `policy.go`, `decision.go` |
+| `internal/agent.LlmAgent` | Loop driver. `runTool`/`execTool` become the seam where the Gateway is invoked instead of `tool.Execute` directly | MODIFIED | `llm_agent.go:488` (runTool), `llm_agent_retry.go:36` (execTool) |
+| `internal/sandboxrouter` (★ new) | Maps `identityctx.IdentityID(ctx)` → a per-identity sandbox endpoint; owns sandbox lifecycle (create/reuse/evict). Backend-pluggable (Docker-pool or K8s) | NEW package | `internal/sandboxrouter/router.go`, `docker.go` OR `k8s.go` |
+| `internal/config` runtime profile (★ new, distinct from `internal/profile` which is Agent.md) | Parses + validates `dev`/`local_trusted`/`single_user_hardened`/`server_production`; gates feature wiring at boot; backs `aura config validate --profile` | NEW field + new validation; reuse existing `Validate()`/`GuardWebBind` posture | `internal/config/config.go`, `internal/config/runtime_profile.go` (new) |
+| `internal/runner.Runner` | Orchestration: identity inheritance on `NewConversation` (F-028); owner-scoped list/delete; session eviction on delete (F-039); durable ledger reservation gate | MODIFIED | `runner_conversation.go:20`, `runner.go`, `runner_persist.go:180` |
+| `internal/conversations.Store` | Add owner-scoped query variants (`ListForIdentity`, `GetForIdentity`, `DeleteForIdentity`) | MODIFIED (+ sqlc queries) | `internal/conversations/store.go:173` |
+| `internal/askuser.Store` | Add `ListPendingAllForIdentity` (JOIN conversations on identity_id) | MODIFIED (+ sqlc query) | `internal/askuser/store.go:192` |
+| `internal/agui` conv/approval APIs | Read `identityctx.IdentityID(r.Context())` and call owner-scoped store methods | MODIFIED | `conversations_api.go:48`, `approvals_api.go` |
+| `internal/toolinvocations.Store` | Add `Reserve`/`Finalize` (or status transitions) so the ledger is a durable reservation, not append-only best-effort | MODIFIED | `internal/toolinvocations/store.go` |
+| `internal/obs` + tracing | Extend OTel spans to MCP roundtrips, DB ops, scheduler ticks; standard span attributes (`actor_id`, `runtime_profile`, `policy_decision_id`, `tool_invocation_id`) | MODIFIED | `internal/agent/tracing.go`, `internal/obs/init.go`, `internal/mcp`, `internal/cron` |
 
----
-
-## 1. Typed-Display Event Protocol (GAP-1) — the spine
-
-### The decision: normalize in the Go translator, emit a typed CUSTOM event
-
-The design's Implementation Model is `Aura event -> display classifier -> typed renderer`. Two places could host the classifier:
-
-- **Frontend classifier** (bootstrap-only): infer the display type from the existing `TOOL_CALL_START.toolCallName` + `TOOL_CALL_RESULT` text. This works *today with zero backend change* (the translator already stamps tool name on `TOOL_CALL_START` via `emitToolInvocation`, `translator.go:303`), but it forces the browser to re-parse opaque tool-result text and re-derive structure the backend already had.
-- **Go translator normalization** (the recommendation, GAP-1 proper): the backend already holds the structured result — `ToolInvocation.ToolName`, `ToolInvocation.Meta`, `ToolInvocation.ResultSidecarPath`, `Actions.ArtifactDelta`, and the typed `web.WebError` enum. Normalize there, emit a typed payload, and the frontend becomes a pure renderer.
-
-**Recommendation: build the Go-side normalizer as the contract; keep a thin frontend classifier only as the v0 fallback for tool families not yet normalized.** Rationale: (a) the structure exists backend-side and re-deriving it client-side from prose is exactly the "regex on natural language" anti-pattern the project forbids; (b) the typed payload is *replayable from the run log* (a hard `ui_control` requirement that bleeds into displays); (c) it keeps AG-UI protocol compatibility because the payload rides a single namespaced `CUSTOM` event, exactly like the shipped `aura.artifact` (`translator.go:19`).
-
-### Go-level design (protocol-compatible)
-
-Add ONE typed slot to the agent `Event` — mirroring the existing `ArtifactDelta` precedent (`event.go:71`), purely additive (omitempty so existing events are byte-identical):
-
-```go
-// internal/agent/event.go — Actions
-type Actions struct {
-    // ...existing: Escalate, StateDelta, ArtifactDelta, AwaitingInput, ToolInvocation, DiscardStreamed
-    Display *DisplayPayload `json:"display,omitempty"` // NEW — typed-display payload (GAP-1)
-}
-
-// DisplayPayload is the channel-agnostic typed-display envelope. Type names are a
-// wire contract (mirror ux-spec lines 420-438); Data is the type-specific body.
-type DisplayPayload struct {
-    Type       string          `json:"type"`              // web_result|document|code|local_artifact|table|chart|swarm_report|graph_chunk|graph_path|graph_schema|system_event|mcp_*|skill_*|background_job|ui_control
-    ToolCallID string          `json:"tool_call_id,omitempty"`
-    Source     string          `json:"source,omitempty"`  // originating tool/collection (for merged-tab grouping)
-    Title      string          `json:"title,omitempty"`
-    Data       json.RawMessage `json:"data"`              // type-specific structured body
-    Citations  []Citation      `json:"citations,omitempty"`
-}
-```
-
-Translator change — one new branch, slotted before the generic StateDelta branch (same position as the artifact branch at `translator.go:115`), emitting a namespaced CUSTOM event so any AG-UI consumer that does not understand it simply ignores it (protocol-compatible by construction):
-
-```go
-// internal/agui/translator.go
-const DisplayEventName = "aura.display" // sibling of ArtifactEventName "aura.artifact"
-
-if ev.Actions.Display != nil {
-    if !closeRuns() { return }
-    if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) { return }
-    continue
-}
-```
-
-> `events.EventTypeCustom` is ALREADY in the `isLifecycleFrame` allowlist (`server.go:340`) so a display event is never dropped under SSE backpressure — the existing artifact branch relies on this same guarantee.
-
-### Where each display type is sourced (Go normalizer, `internal/agent/display/`)
-
-The classifier runs at the same seam that builds `toolResultEvent` (`llm_agent_events.go:95`), reading `run.ToolName` + `run.Result.Meta`:
-
-| Display type | Backend source (file) | Normalization |
-|--------------|----------------------|---------------|
-| `web_result` | `web_search` tool, `internal/web/searxng.go` results | tool result JSON → `{results:[{title,url,snippet,domain,cached}]}` |
-| `document` | `web_fetch` markdown, `internal/web/fetcher.go` | markdown body → `{markdown, url, title, truncated, sidecar_path}` |
-| `code` / `local_artifact` | `sandbox_exec`/`shell_exec` sidecar, `ToolInvocation.ResultSidecarPath` + `ExitCode` | `{stdout, stderr, exit_code, sidecar_path, host_vs_sandbox}`; `send_file` rides existing `aura.artifact` (do NOT duplicate) |
-| `swarm_report` | `swarm.ChildReport`, `internal/swarm/report.go:32` | reports JSON → `{children:[{goal_index,child_id,status,summary,error,question,options}]}` (no inter-agent chat — anti-feature) |
-| `graph_chunk`/`graph_path`/`graph_schema`/`table` | `knowledge` MCP rows, `internal/knowledge/client.go` | see §2 (graph contract) |
-| `system_event` | `web.WebError` stable enum, `internal/web/errors.go:11-30` | `{error, reason, message, status_code}` — the enum is ALREADY a safe contract; pass through verbatim, never re-derive |
-| `mcp_*` | `manager.SnapshotStatus`, `internal/mcp/manager/status.go:40` | status snapshot → `mcp_server`/`mcp_tool`/`mcp_doctor_result`/`mcp_mount_warning` (these are REST reads, not stream events — see build order) |
-| `skill_*` | `aura.skill_audit` + pending roots, `internal/agent/tools/skill*.go` | governance reads → REST, mutation requests → `approval_gate` (interrupt) |
-| `background_job` | research/compare progress | rides `STATE_DELTA` (already emitted) or a `background_job` display; updates rail + dock chip client-side |
-| `ui_control` | agent-requested safe UI change | see §6 (allowlist lane) |
-
-### Normalization split (definitive)
-
-- **Backend (Go translator/normalizer):** structure extraction, the safe web-error enum, the graph contract, swarm reports, sidecar pointers, citations. Everything that has structure server-side OR carries a safety contract (web errors, ui_control allowlist).
-- **Frontend (classifier/renderer):** display-type → React component routing (the elysia `switch (payload.type)` pattern, verified in `RenderDisplay.tsx`), merged-tab grouping by `Source`, pagination, raw/code toggle, citation hover. The frontend is a pure renderer over the typed envelope; it classifies *only* when `Display == nil` (the v0 fallback path, decommissioned per tool family as the Go normalizer covers it).
-
-**Data flow (typed display):**
-```
-tool executes → toolResultEvent (llm_agent_events.go) reads ToolName+Meta
-  → display.Classify(run) builds Actions.Display
-  → Translate emits aura.display CUSTOM event (translator.go)
-  → SSE → @ag-ui/client → frontend onCustomEvent("aura.display")
-  → RenderDisplay switch(payload.type) → typed React card
-```
-
----
-
-## 2. Neo4j Graph Payload Contract
-
-### The seam
-
-`internal/knowledge/client.go` `Read(ctx, query, params)` already returns `[]map[string]any` decoded from the `mcp-neo4j-cypher` `{"content":[{"type":"text","text":"<json-array>"}]}` envelope (`decodeRows`, `client.go:291`). Schema introspection uses APOC `get-schema` (per neo4j-mcp-skill) via the same Read path; `SchemaExecutor` (`schema.go`) is DDL-only and is NOT the read path. The whole `NEO4J_READ_ONLY=true` posture (neo4j-mcp-skill) is the right default for the cockpit — the graph explorer reads, it does not mutate.
-
-### The normalizer (NEW: `internal/knowledge/graphview.go`)
-
-Map raw Cypher rows → the ux-spec contract (lines 446-454), which is exactly the shape `@neo4j-nvl/react` consumes. Verified against `llm-graph-builder/frontend/src/utils/Utils.ts:processGraphData`: NVL nodes are `{id, caption, color, labels, properties, size}` and relationships are `{id, from, to, caption}`, mapped from Neo4j `element_id` / `start_node_element_id` / `end_node_element_id`. **Do this mapping in Go** so the frontend gets a stable contract and the safety/redaction posture stays server-side:
-
-```go
-// internal/knowledge/graphview.go
-type GraphView struct {
-    Nodes  []GraphNode  `json:"nodes"`
-    Edges  []GraphEdge  `json:"edges"`
-    Paths  []GraphPath  `json:"paths"`
-    Schema GraphSchema  `json:"schema"`
-    Query  GraphQuery   `json:"query"`
-}
-type GraphNode struct {
-    ID         string         `json:"id"`          // element_id (stable)
-    Labels     []string       `json:"labels"`      // → NVL color by labels[0] (source/claim/entity/agent/topic/conflict)
-    Title      string         `json:"title"`       // → NVL caption
-    Subtitle   string         `json:"subtitle,omitempty"`
-    Properties map[string]any `json:"properties"`
-    Confidence float64        `json:"confidence,omitempty"` // → NVL size
-    Degree     int            `json:"degree,omitempty"`
-    SourceRefs []string       `json:"source_refs,omitempty"`
-}
-type GraphEdge struct {
-    ID       string   `json:"id"`                  // element_id
-    Source   string   `json:"source"`              // start_node_element_id → NVL from
-    Target   string   `json:"target"`              // end_node_element_id → NVL to
-    Type     string   `json:"type"`                // relationship type → NVL caption
-    Weight   float64  `json:"weight,omitempty"`
-    EvidenceRefs []string `json:"evidence_refs,omitempty"`
-}
-type GraphPath struct { NodeIDs []string `json:"node_ids"`; EdgeIDs []string `json:"edge_ids"`; Summary string `json:"summary"`; SupportCount int `json:"support_count"`; ConflictCount int `json:"conflict_count"` }
-type GraphSchema struct { LabelCounts map[string]int `json:"label_counts"`; RelCounts map[string]int `json:"rel_counts"`; IndexedProperties []string `json:"indexed_properties"`; Warnings []string `json:"warnings"` }
-type GraphQuery struct { Prompt string `json:"prompt"`; Cypher string `json:"cypher"`; Params map[string]any `json:"params,omitempty"`; ExecMS int64 `json:"exec_ms"`; ResultCount int `json:"result_count"`; SafetyNotes []string `json:"safety_notes,omitempty"` }
-```
-
-### Delivery: REST, not the chat stream
-
-The graph explorer (Frame 06) is a *workspace mode*, not a chat turn. Serve it as a REST read endpoint, not an SSE display event:
+## Recommended Project Structure
 
 ```
-GET  /api/graph/schema          → GraphSchema (APOC get-schema, cached)
-POST /api/graph/query           → {prompt|cypher, params} → GraphView (read-only Cypher)
+internal/
+├── toolgateway/              # ★ NEW — single policy-enforcement-point
+│   ├── gateway.go            #   Gateway.Execute(ctx, call, actor) — the seam runTool calls
+│   ├── policy.go             #   PolicyEngine.Decide → allow/deny/require_approval
+│   ├── decision.go           #   ToolPolicyDecision + ActorContext + reason codes
+│   └── ledger.go             #   reserve/finalize bridge over toolinvocations.Store
+├── sandboxrouter/            # ★ NEW — identity → sandbox endpoint
+│   ├── router.go             #   SandboxRouter interface + Resolve(ctx) (reads identityctx)
+│   ├── docker.go             #   Docker-pool backend (route A)  OR
+│   ├── k8s.go                #   agent-sandbox CRD/REST backend (route B)
+│   └── lifecycle.go          #   create/reuse/evict; owned by serve composition root
+├── config/
+│   ├── config.go             # ◆ add RuntimeProfile field + profile-gated wiring inputs
+│   └── runtime_profile.go    # ★ NEW — profile enum, parse, ValidateProfile(profile)
+├── agent/
+│   ├── llm_agent.go          # ◆ runTool routes through Gateway (the minimal seam)
+│   ├── llm_agent_retry.go    # ◆ execTool becomes Gateway-internal or Gateway-wrapped
+│   └── tracing.go            # ◆ add policy/sandbox/actor span attributes
+├── runner/
+│   ├── runner_conversation.go# ◆ NewConversation inherits identityctx.IdentityID(ctx)
+│   ├── runner.go             # ◆ owner-scoped list/get; session eviction on delete
+│   └── interfaces.go         # ◆ widen ConversationStore/PauseStore with *ForIdentity
+├── conversations/store.go    # ◆ owner-scoped query variants (+ db/queries + migration?)
+├── askuser/store.go          # ◆ ListPendingAllForIdentity
+├── agui/
+│   ├── conversations_api.go  # ◆ filter by principal
+│   ├── approvals_api.go      # ◆ filter by principal
+│   └── readiness.go          # ◆ add migration + scheduler probes (F-008/F-017)
+├── toolinvocations/store.go  # ◆ Reserve/Finalize durable states (F-020)
+└── db/migrations/
+    ├── 0025_tool_ledger_states.up.sql    # ★ planned|started|succeeded|failed
+    ├── 0026_runtime_profile_audit.up.sql # ★ profile resolution + boot validation audit
+    └── 0027_sandbox_sessions.up.sql      # ★ per-identity sandbox session + retention meta
 ```
 
-The cockpit's NL-to-Cypher path can reuse the agent (a turn that calls knowledge), but the *visualization* read is a direct REST call so the canvas is not coupled to a chat run. Cypher executed from the cockpit must go through a **read-only guard** (reject `CREATE/MERGE/SET/DELETE/DROP`; the MCP client's `write` flag stays `false`) — the `NEO4J_READ_ONLY` posture made explicit at the HTTP boundary. Deterministic layout (ux-spec rule) is a frontend NVL concern (seed by node id); the backend's job is the stable `element_id`-keyed contract that makes layout reproducible.
+### Structure Rationale
 
-When a graph result *does* arrive as part of a chat turn (the agent queried Neo4j mid-conversation), emit it as a `graph_chunk`/`graph_path` typed display (§1) carrying a compact `GraphView` so the chat can show an inline preview with a "open in Graph mode" affordance.
-
----
-
-## 3. Serving + Embedding Model
-
-### Embed package (NEW: `internal/webui/`)
-
-Mirrors the four existing `//go:embed` packages in the codebase (`db/migrate.go`, `knowledge/migrate.go`, `skills/builtin.go`, `conversations/tiktoken.go`) — established pattern, no new dependency:
-
-```go
-// internal/webui/embed.go
-package webui
-import "embed"
-//go:embed all:dist
-var Assets embed.FS
-```
-
-### Mount on the existing http.Server
-
-`cmd/aura/serve.go` already builds ONE `http.Server` (`env.httpSrv`, `serve.go:245`) over `aguiServer.Mux()`. The SPA handler registers on that SAME mux (`agui.Server.Mux`, `server.go:90`) so the cockpit is "just another route family" on the daemon already running — single port, single process, single binary invariant holds.
-
-```go
-// internal/agui/server.go — Mux(), add LAST (catch-all is lowest priority)
-sub, _ := fs.Sub(webui.Assets, "dist")
-fileSrv := http.FileServer(http.FS(sub))
-mux.Handle("GET /", s.spaFallback(sub, fileSrv)) // catch-all SPA host
-```
-
-### SPA-fallback that excludes API routes
-
-Go 1.22 method-pattern routing already gives explicit precedence to the registered routes (`POST /agent/run`, `GET /threads/{id}/messages`, `/healthz`, `/readyz`, `/metrics`, `/debug/vars`, and the new `/api/*`). The `GET /` catch-all only fires for unmatched paths. The fallback serves the asset if it exists, else `index.html` (client-side routing), **but never for an API prefix** so an API typo returns a real 404 instead of HTML:
-
-```go
-func (s *Server) spaFallback(sub fs.FS, fileSrv http.Handler) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        p := strings.TrimPrefix(r.URL.Path, "/")
-        // API prefixes must 404 as API, never fall back to index.html
-        for _, api := range []string{"agent/", "threads/", "api/", "healthz", "readyz", "metrics", "debug/"} {
-            if strings.HasPrefix(p, api) { http.NotFound(w, r); return }
-        }
-        if p == "" { p = "index.html" }
-        if _, err := fs.Stat(sub, p); err != nil { p = "index.html" } // deep-link → SPA shell
-        r.URL.Path = "/" + p
-        fileSrv.ServeHTTP(w, r)
-    }
-}
-```
-
-### Build pipeline (single-binary invariant)
-
-Per STACK.md: `cd web && npm ci && npm run build` → copy `web/dist` → `internal/webui/dist` → `go build` bakes it in. Add a Makefile `web` target and a Node-24 Docker stage. Gate the Node build so Go-only contributors are not forced into Node (ship a checked-in placeholder `dist/` with a single `index.html`, or a `web-build` CI artifact, so `//go:embed all:dist` always compiles).
-
----
-
-## 4. Web Auth / Session Model (GAP-2)
-
-### Current posture (do not silently break it)
-
-The gateway is **deliberately unauthenticated**: loopback bind IS the compensating control (`server.go:71`, `serve.go:221`, amendment #35). PROJECT.md §Out of Scope: "Multi-user con auth/RBAC reale … Niente login, niente sessioni HTTP autenticate, niente OAuth in v1." This milestone is a **flagged scope expansion** — it must add the *minimum* boundary, not OAuth/RBAC/multi-tenant.
-
-### The three options (increasing in-binary cost)
-
-| Option | Shape | Fit | Protects writes how |
-|--------|-------|-----|---------------------|
-| **Reverse-proxy-enforced** (recommended start) | Aura stays loopback; Caddy/oauth2-proxy terminates TLS + auth | Best fit: zero change to the auth-deferred Go posture, aligns with the documented Caddy on-demand TLS (commit `5f70703f`) and the single-operator DGX-Spark bundle | Proxy gates the whole origin; Aura trusts the proxy on loopback. All mutations are behind the proxy by definition. |
-| **In-binary session cookie** (recommended upgrade path) | Go middleware on the mux issues/validates a signed `HttpOnly + Secure + SameSite=Strict` cookie | The right in-binary choice when the proxy is undesired; pairs naturally with a browser SPA (no token in JS) | Middleware rejects unauthenticated requests on mutating routes; the session principal maps to an `identity` row |
-| **Bearer token** | static operator token in `Authorization` header | Reserve for machine/API callers (`HttpAgent` supports custom headers), NOT the human cockpit | XSS-exposed in the browser — inferior to a cookie for a browser app |
-
-### Recommendation + the identity seam
-
-**Ship behind the reverse proxy first** (no Go change, aligns with the existing Caddy story), and **build a thin in-binary session-cookie middleware** as the documented upgrade — because mutating governance actions (MCP install/remove, skill install/delete, task approve, Cypher) must be gated regardless of whether a proxy is present (defense in depth, per golang-security: "every layer should protect itself").
-
-Concrete in-binary design (`internal/agui/auth.go`, NEW):
-- A `RequireAuth` middleware wrapping the mutating mux subtree; reads SPA cookies, never client headers (golang-security: "trusting client headers" is an anti-pattern).
-- Login issues a signed session bound to an **`identity` row** (PROJECT.md CORE-03 `capability_grants` is the existing seam). Session validation is constant-time (`crypto/subtle.ConstantTimeCompare`); fail closed.
-- **Read vs write split:** GET reads can stay loopback/proxy-gated; **all mutations (POST/DELETE governance routes) require the auth principal + a `capability_grants` check** — this is where identity/capability_grants finally earns its keep (it was scaffolding until now). The agent's own mutating tool calls (skill install, MCP add) already route through `ask_user`/approval gates; the HTTP mutation endpoints must enforce the SAME gate (an operator-initiated install still lands a pending state + audit row, never a direct activation — ux-spec Non-Goal: "Do not activate installed or generated skills directly").
-
-**What protects writes (summary):** proxy boundary (origin) → in-binary auth middleware (principal) → capability_grants (authorization) → existing risk/approval gate (RISKY/DESTRUCTIVE → pending + audit). Four layers; the cockpit adds the middle two.
-
----
-
-## 5. Observability Wiring (`runtime_status` surface)
-
-### What already exists (do NOT rebuild)
-
-The gateway already ships the observability primitives the cockpit's health panels read:
-
-| Endpoint | Emits | File |
-|----------|-------|------|
-| `GET /healthz` | `{ok, scheduler_last_tick, ...}` — PG ping liveness + scheduler last tick | `server.go:101`, `serve.go:225-237` |
-| `GET /readyz` | `{ready, deps:{postgres, neo4j}}` — required-dep readiness probes | `readiness.go:33`, `serve.go:281` |
-| `GET /metrics` | Prometheus (`promhttp`) — incl. `aura_agui_sse_dropped_total` | `server.go:95`, `metrics.go` |
-| `GET /debug/vars` | expvar | `server.go:94` |
-| OTel tracer + JSON slog (redacted) | spans + structured logs (`obs.Init`, OtelExporter/Endpoint config) | `internal/obs/init.go`, `serve.go:110` |
-
-### The gap: an aggregated `runtime_status` read
-
-The design's `runtime_status` (ux-spec lines 503-505) wants one panel-ready snapshot: `{daemon_state, agui_bind, scheduler_tick_state, registry_valid, mcp_mounted/failed_count, cache_hit_rate}`. Today these are scattered. Add ONE aggregation endpoint that composes existing sources (no new collection):
-
-```
-GET /api/health/runtime → RuntimeStatus
-```
-
-| Panel | Read from (existing) |
-|-------|---------------------|
-| daemon / AG-UI health | `/healthz` body + `cfg.AGUIBind` |
-| scheduler tick | `scheduler.LastTick()` (already in `HealthDetails`, `serve.go:232`); heartbeat from `cron.Store` |
-| registry validity | `reg.Validate()` result (boot-time, `main.go:179`) |
-| MCP mounted/failed | `manager.SnapshotStatus` (`status.go:40`) + the boot mount-warning count (`buildRegistryWithMCP` WARN drops, `main.go:224`) |
-| cache hit rate | `aura cache-stats` data (`cache_metrics` table); `STATE_DELTA` usage already carries per-turn `cache_hit_tokens` (`llm_agent_events.go:224`) |
-| tool ledger | `internal/toolinvocations` store (append-only `aura.tool_invocations`) → `GET /api/tools/ledger` |
-
-> **Decision:** the cockpit's daemon/scheduler/MCP/cache/tool-ledger panels read from the EXISTING `/healthz` + `/readyz` + `/metrics` + a NEW thin `/api/health/runtime` aggregator + `/api/tools/ledger`. Do not add a new metrics system — the Prometheus + OTel + expvar trio is shipped; the cockpit just renders it. A panel that needs live numbers polls `/api/health/runtime` via React Query (REST), not SSE.
-
----
-
-## 6. ui_control Allowlist + Audit Lane + Background-Job/Dock State
-
-### The contract (ux-spec lines 464-475)
-
-`ui_control` lets the agent drive the UI — the highest-abuse-risk surface in the milestone. The contract is strict: allowlisted verbs only, no raw CSS/scripts/URLs/unbounded DOM, replayable from the run log.
-
-Allowlisted verbs: `open_panel` (panel id from allowlist), `highlight_source` (source/internal target id), `set_mode` (`chat|tree|graph|displays|settings`), `show_job` (job id owned by active run/user), `set_density` (`compact|operator|review`), `theme_preview` (schema-validated token object).
-
-### Two-layer validation (defense in depth)
-
-1. **Backend emit + validate (`internal/agui`):** the agent emits a `ui_control` via `Actions.Display{Type:"ui_control", Data:...}`. A backend validator rejects any verb/target not on the allowlist BEFORE it reaches the wire, and writes an audit row (the run log) — `crypto/subtle`-free but strict enum + id-shape checks. Emit as the `aura.display` CUSTOM event (type `ui_control`).
-2. **Frontend reducer allowlist (Zustand):** the client applies a ui_control ONLY through an allowlist reducer (STACK.md). The reducer maps a verb to a state mutation; an unknown verb is dropped + logged. `set_mode` maps to the 5-mode allowlist; `theme_preview` validates the token object against a schema; `highlight_source`/`show_job` resolve against ids the client already holds for the active run (no arbitrary DOM).
-
-### Run-log replay
-
-Because `ui_control` rides the same typed-display envelope and is recorded server-side, a session's UI events are replayable: re-streaming the run's events reconstructs "what the operator saw". This is the SAME property the typed-display normalization buys (§1) — another reason to normalize server-side, not client-side.
-
-### Background-job / dock state
-
-Long jobs (Deep Research, Compare) expose running/queued/error/completed outside the modal that created them (ux-spec Frame 07). Backend: a `background_job` display (or `STATE_DELTA`) carries job id + status + progress; the existing `STATE_DELTA` stream already coalesces deterministically (`stateDeltaOps`, `translator.go:341`). Frontend: the Zustand store routes job state to BOTH the icon rail and the relevant dock chip; dock chips "preserve state" (selected sources, trace) across minimize/restore — pure client state, no backend dependency beyond the job-status events. `show_job` (a ui_control verb) focuses a chip; the job id must be owned by the active run/user (validated both ends).
-
----
-
-## 7. Suggested Build Order / Phase Decomposition
-
-**Principle:** the two gating dependencies (GAP-1 protocol + GAP-2 auth) and the serve/embed infra must land BEFORE the UI surfaces that consume them. Organize as vertical slices that each ship a working end-to-end sliver. Memory `feedback_no_atomic_bombs`: each slice is the minimal industrial shape that satisfies its success criteria.
-
-### Phase A — Serve + Embed + Auth boundary (infra; no UI surfaces yet)
-**Why first:** nothing is reachable until the binary serves a page and the boundary exists. Pure infra; unblocks every later slice.
-- `internal/webui` embed package + Makefile `web` target + Node-24 Docker stage (§3)
-- SPA-fallback handler on `agui.Mux` excluding API routes (§3)
-- TLS reverse-proxy story (Caddy) documented + the in-binary `RequireAuth` middleware skeleton on the mutating subtree (§4)
-- **Ships:** a static "hello cockpit" shell behind the boundary, health panel reading existing `/healthz`/`/readyz`. Proves the single-binary serve + auth boundary end to end.
-
-### Phase B — Typed-display protocol (GAP-1 backend spine)
-**Why second:** ~6 of 8 frames depend on it; it is the single biggest backend build (FEATURES.md). Must precede every typed-display UI surface.
-- `agent.Event.Actions.Display` slot + `DisplayPayload` type (§1)
-- `internal/agent/display/` Go normalizer for the first tool families (`web_search`→`web_result`, `web_fetch`→`document`, `web.WebError`→`system_event`)
-- `agui.Translate` `aura.display` CUSTOM branch (§1)
-- **Ships:** chat lane (assistant-ui + ag-ui, near-free per STACK.md) + the FIRST typed displays (web_result, document, system_event) rendering from the live stream. The classifier fallback path for un-normalized tools.
-
-### Phase C — REST read API + observability aggregation
-**Why third:** the governance/health surfaces are REST-shaped reads (React Query), independent of the display stream. Composes existing stores.
-- `/api/conversations`, `/api/conversations/{id}/search` (over `conversations.Store`)
-- `/api/health/runtime` aggregator + `/api/tools/ledger` (§5)
-- `/api/mcp/*`, `/api/skills/*`, `/api/tasks/*` read endpoints (over `manager.SnapshotStatus`, skill audit, `cron.Store`)
-- **Ships:** conversation list/history, runtime-status panel, read-only MCP/skills/scheduler boards.
-
-### Phase D — Graph explorer (Frame 06)
-**Why fourth:** depends on B (graph_chunk inline displays) + C (REST shape) but is otherwise self-contained; the normalizer is a discrete build.
-- `internal/knowledge/graphview.go` normalizer (§2) + read-only Cypher guard
-- `GET /api/graph/schema`, `POST /api/graph/query`
-- `@neo4j-nvl/react` canvas + inspector + path strip (frontend)
-- **Ships:** the Neo4j evidence graph mode.
-
-### Phase E — Approval center + remaining typed displays (swarm, code/artifact)
-**Why fifth:** HITL protocol already exists (interrupt/resume); this is mostly UI + the remaining normalizers.
-- `swarm_report`, `code`/`local_artifact` normalizers (§1)
-- "list all pending across threads" endpoint over `askuser.Store`
-- approval-center component (priority, resume-token, accept/decline/cancel)
-- **Ships:** swarm worker-report table, execution/artifact displays, the approval queue.
-
-### Phase F — Operator-OS shell + ui_control lane + governance mutations
-**Why last:** highest-risk surface; depends on A (auth), B (display envelope), C (governance reads). Build the abuse-prone `ui_control` once everything it touches exists.
-- `ui_control` allowlist validator (backend) + Zustand allowlist reducer (frontend) + run-log replay (§6)
-- adaptive icon rail, dockable windows, dock chips, command palette (cmdk), background-job feedback
-- **mutating governance endpoints** (MCP install/remove, skill install/delete, task approve) behind `RequireAuth` + `capability_grants` + existing approval/audit gate (§4)
-- **Ships:** the full operator cockpit with safe agent-driven UI + governed mutations.
-
-**Ordering rationale:** A (serve/auth) → B (protocol) → C (REST reads) are the three infra/protocol pillars; D/E/F are the consuming UI surfaces, each a vertical slice that lights up a frame group. GAP-1 (B) and GAP-2 (A) both precede every UI surface that depends on them, satisfying the hard ordering constraint. Mutations (F) land last, after auth + reads + protocol are all proven.
-
----
+- **`internal/toolgateway/` as a NEW package, not new methods on `LlmAgent`:** the Gateway is consumed by `internal/agent` but must be definable without importing `agent` (avoid the cycle). Define a narrow `Gateway` interface *where it is consumed* (in `internal/agent`, per `golang-structs-interfaces` "interfaces belong to consumers"), implemented by `*toolgateway.Gateway`. The agent injects a `Gateway` like it already injects `*tools.Registry` and `*HookManager`.
+- **`internal/sandboxrouter/` separate from `toolgateway`:** the Gateway *decides* (policy) and the router *resolves* (where to run). Splitting them keeps each ≤600 LOC and lets the sandbox-fork swap (Docker vs K8s) happen behind one interface without touching policy logic.
+- **`runtime_profile.go` in `internal/config`, NOT a new package named `profile`:** `internal/profile` already exists and owns Agent.md rendering. Naming a runtime-profile package `profile` would collide. Keep runtime-profile parsing inside `config` (it gates `config`-driven wiring anyway).
+- **Owner-scoping as NEW query variants, not mutated signatures:** add `ListForIdentity`/`GetForIdentity`/`DeleteForIdentity` alongside the existing `List`/`Get`/`Delete`. The CLI and background workers (auto-title, scheduler) legitimately run un-scoped; only the AG-UI authenticated path scopes. This avoids a breaking change to every caller.
 
 ## Architectural Patterns
 
-### Pattern 1: Additive typed slot on the Event (not a new event type)
-**What:** GAP-1 rides ONE new `Actions.Display` field + ONE namespaced `CUSTOM` event, exactly like the shipped `aura.artifact`. **When:** any new structured payload from the agent loop to a consumer. **Trade-offs:** keeps AG-UI protocol compatibility (unknown consumers ignore the custom event) + keeps `decode(encode())==identity` (omitempty); the cost is the frontend must understand the envelope, which is the point.
+### Pattern 1: ToolGateway as the single Policy Enforcement Point (the minimal seam)
 
-### Pattern 2: Normalize server-side, render client-side
-**What:** structure extraction + safety contracts (web-error enum, graph contract, ui_control allowlist) live in Go; React is a pure renderer over a typed envelope. **When:** the structure exists server-side OR carries a safety guarantee. **Trade-offs:** more Go code vs a thin frontend; buys run-log replay + no "regex on prose" + a stable contract across ~50 components.
+**What:** Every tool call — host `shell_exec`/`fs_*`, MCP-bridged tools, `swarm_spawn` — already funnels through ONE method: `LlmAgent.runTool` (`llm_agent.go:488`) → `execTool` (`llm_agent_retry.go:36`) → `tool.Execute`. The Gateway slots in at exactly that choke point. No tool needs to know it exists.
 
-### Pattern 3: REST for state, SSE for the run
-**What:** the live agent turn is SSE (`POST /agent/run`); everything else (conversation list, graph query, governance reads, runtime status) is REST (React Query). **When:** the data is a snapshot, not a turn. **Trade-offs:** two transports, but each is the right tool — SSE for streaming deltas, REST for cacheable reads.
+**When to use:** Now — this is the F-001/F-011/F-020/F-031 keystone. It supersedes the scattered enforcement that exists today (the `ShellApprovals` destructive-pattern ledger in `shell_exec.go`, the `HookManager.BeforeTool` veto in `dispatch`, the best-effort `tool_invocations` insert in `runner_persist.go:180`).
+
+**Trade-offs:** + One enforceable boundary, one audit trail, profile-aware default-deny. − A new mandatory dependency in the hot path; it MUST fail-open in `dev`/`local_trusted` to preserve "the host shell IS the capability" (memory `feedback_aura_full_host_terminal_primary`) and default-deny only in `server_production`.
+
+**The minimal seam (illustrative):**
+```go
+// internal/agent — interface defined where consumed (golang-structs-interfaces)
+type ToolGateway interface {
+    // Execute decides policy, reserves the ledger, routes to the sandbox, runs,
+    // normalizes/redacts, finalizes. Returns the same ToolResult tool.Execute would.
+    Execute(ctx context.Context, spec tools.Spec, call llm.ToolCall, actor ActorContext) (tools.ToolResult, error)
+}
+
+// llm_agent_retry.go execTool — the ONE line that changes (conceptually):
+//   was: res, err = tool.Execute(ctx, args)
+//   now: res, err = a.gateway.Execute(ctx, tool.Spec(), call, a.actor(ctx))
+// The retry loop stays; the Gateway wraps Execute, NOT the retry, so mutating
+// tools still get at-most-once (execTool already refuses to retry Mutating).
+```
+**Relationship to existing seams (keep all three, do not replace):**
+- **HookManager** (`dispatch`, `hooks.go`): stays as the *pre-execution rewrite/veto* hook (FailClosed/FailOpen). The Gateway is downstream of the hook (hooks rewrite the call shape; the Gateway then authorizes the rewritten call). Order: `BeforeTool` (rewrite) → `Gateway.Decide` (authorize) → `Gateway.Execute` (reserve+run) → `AfterTool` (rewrite result).
+- **tool_invocations ledger** (`runner_persist.go:180`): today the *runner* inserts best-effort, post-hoc, off the `ToolInvocation` event. v2.0.0 moves the *reservation* into the Gateway (pre-execution `started` row) so a mutating tool is **blocked when reservation fails in `server_production`** (F-020). The runner's existing event-sourced insert becomes the `finalize` write (or is subsumed). This is why **ledger work must land before idempotency** in the build order.
+- **Mutating classification / completion gate (F-031):** `Spec.Mutating` (`spec.go:45`) already drives `a.sideEffected` (`dispatch.go:100`) and the completion critic (`llm_agent_completion.go`). The Gateway reads the SAME `Spec.Mutating` bit for its reserve/deny decision — no reclassification, one source of truth. `runToolRecovering` (`llm_agent_parallel.go:71`) already resolves Mutating before exec for panic-safety; the Gateway reuses that.
+
+### Pattern 2: Per-identity sandbox routing — the central fork (TWO fully-sketched designs)
+
+**What:** F-001 is resolved by giving each identity a FULL-capability isolated sandbox (shell/fs/network all intact inside it) instead of stripping capability. The agent still "sees a full host" — it just sees the *user's* sandbox host, never the real one. The host `shell_exec`/`fs_*` tools either run host-direct (dev/local_trusted profile) or are *re-targeted* to the user's sandbox endpoint (hardened/server profile). The re-target point is the same `SandboxRouter.Resolve(ctx)` for both designs; only the backend differs.
+
+**When to use:** `single_user_hardened` + `server_production` profiles. In `dev`/`local_trusted` the router returns the host-direct target (zero behavior change — preserves the core terminal surface).
+
+**Where it slots relative to existing tools:** the router is consumed *inside the Gateway* (step 3). When the decision says "run in sandbox", the Gateway hands the router-resolved endpoint to a sandbox-aware execution path. The cleanest implementation: the host tools (`ShellExec`, `fs_*`) gain an injected `Executor` seam (host-exec by default) that the Gateway swaps for a sandbox-exec client per call, keyed by `identityctx.IdentityID(ctx)`. The dormant rivetdev/sandbox-agent HTTP client (`POST /v1/processes/run` at `:2468`, documented in `docs/aura-toolset-design-claude-code-parity-2026-06-05.md`) is the *reference shape* for that sandbox-exec client.
 
 ---
+**Route A — K8s / k3s controller (agent-sandbox CRD/REST/MCP):**
+```
+Aura serve (Go controller)
+  └─ internal/sandboxrouter/k8s.go
+       ├─ on first call for identity X: create a per-identity Sandbox CR
+       │    (kind: Sandbox, spec: full shell+fs, per-user PVC, NetworkPolicy)
+       ├─ wait Ready → record endpoint in aura.sandbox_sessions (identity_id PK)
+       ├─ shell_exec/fs_* re-targeted: tool.Execute body POSTs to the Sandbox's
+       │    exec endpoint (REST) or its MCP exec tool, NOT exec.CommandContext
+       └─ evict: delete the CR on idle TTL or conversation delete (F-039)
+```
+- **New packages:** `internal/sandboxrouter` (k8s backend), a thin k8s client (`client-go` or a REST shim). **Modified tools:** `shell_exec.go`, `fs_*.go` gain an `Executor` interface; the in-process `exec.CommandContext` becomes the default `hostExecutor`, a new `sandboxExecutor` POSTs to the CR endpoint.
+- **identity routing:** `SandboxRouter.Resolve(ctx)` reads `identityctx.IdentityID(ctx)` (already on ctx from auth/runner), looks up or creates the Sandbox CR, returns its endpoint.
+- **lifecycle ownership:** the **serve composition root** owns the router; the runner does NOT (the runner is per-turn, sandboxes are cross-turn/per-identity). Conversation delete signals the router to evict only when no other live conversation for that identity remains.
+- **preserves "full host":** the CR's container is a real full OS userspace; the agent gets an unrestricted shell *inside it*. Capability is never stripped — only the blast boundary moves to the pod.
+- **Cost/fit:** heaviest; needs a k3s control plane on the mini-PC or the DGX Spark target. Best for the eventual multi-tenant appliance; overkill for a single-operator box. STACK research should weigh idle RAM (the mini-PC budget is ~6 GB idle per memory `feedback_minipc_cpu_budget`).
+
+**Route B — Pattern-over-Docker (per-identity container pool):**
+```
+Aura serve
+  └─ internal/sandboxrouter/docker.go
+       ├─ pool: map[identity_id] → running container (full shell/fs inside,
+       │    per-user named volume, network policy = none|allowlist)
+       ├─ on first call for identity X: docker run (or reuse) → record endpoint
+       ├─ shell_exec/fs_* re-targeted: sandboxExecutor POSTs to the container's
+       │    sandbox-agent HTTP endpoint (the dormant :2468 client, revived per-user)
+       └─ evict: stop+rm container on idle TTL / conversation delete (F-039)
+```
+- **New packages:** `internal/sandboxrouter` (docker backend) + revival of the dormant `internal/sandboxagent` HTTP client as the per-container exec transport. **Modified tools:** same `Executor` seam as Route A.
+- **identity routing:** identical `Resolve(ctx)` contract; backend resolves identity → container endpoint via the pool map (guarded by `sync.RWMutex`, per `golang-concurrency`).
+- **lifecycle ownership:** serve composition root; pool eviction worker with idle TTL (mirror the existing `BackgroundShells` TTL pattern + the cron drain pattern). Named volumes mandatory on Windows (PROJECT.md constraint).
+- **preserves "full host":** the per-user container has a full shell/fs; same "host inside the sandbox" property as Route A with far less control-plane weight.
+- **Cost/fit:** light; reuses the existing Docker Compose stack and the proven sandbox-agent shape. Best fit for the current mini-PC + the single→few-user reality v2.0.0 actually targets (identity isolation, NO RBAC). **This is the route the integration leans toward** unless STACK surfaces a hard multi-tenant requirement.
+
+**Shared trade-off:** both designs add a per-call network hop for hardened/server profiles. The `dev`/`local_trusted` host-direct path stays in-process (no hop), so the operator's daily experience is unchanged. The `Executor` seam is the single abstraction that makes the two routes interchangeable — commit to it in the roadmap before either backend.
+
+### Pattern 3: Runtime profiles gate boot wiring (fail-fast validation)
+
+**What:** A new `RuntimeProfile` (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) read from `AURA_RUNTIME_PROFILE`. It is parsed in `config.Load`, validated in a new `ValidateProfile`, and gates which features the serve composition root wires (default-deny Gateway policy, sandbox-required executor, CORS, object-store secret rejection). It rides the *existing* fail-fast posture (`config.Validate` at `config.go:264`, `GuardWebBind` at `config.go:291`).
+
+**When to use:** Every boot. `aura config validate --profile server_production` runs the full validation matrix and reports all unmet requirements without starting the daemon.
+
+**Trade-offs:** + One switch separates "trusted local" from "shared production", closing F-002/F-007/F-008/F-016/F-017/F-022/F-041. − Must enumerate every profile-conditional requirement explicitly; a missed one is a false sense of safety.
+
+**Structure (illustrative):**
+```go
+// internal/config/runtime_profile.go
+type RuntimeProfile string
+const ( ProfileDev RuntimeProfile = "dev"; ProfileLocalTrusted = "local_trusted"
+        ProfileSingleUserHardened = "single_user_hardened"; ProfileServerProduction = "server_production" )
+
+// ValidateProfile returns ALL unmet requirements (not first-fail) so the CLI
+// prints a complete checklist — mirrors config.Validate's accumulate-then-join.
+func (c *Config) ValidateProfile(p RuntimeProfile) []error {
+    var errs []error
+    if p == ProfileServerProduction {
+        if c.ObjectStoreAccessKey == defaultObjectStoreAccessKey { errs = append(errs, errDefaultObjStoreKey) }
+        if c.ObjectStoreSecretKey == defaultObjectStoreSecretKey { errs = append(errs, errDefaultObjStoreSecret) }
+        // GuardWebBind already covers a non-loopback bind without auth; reuse it here
+        // require sandbox executor (host-direct forbidden), strict secret validation, etc.
+    }
+    return errs
+}
+```
+`aura config validate --profile X` = a thin cmd wrapper calling `ValidateProfile` and printing the slice (exit non-zero if non-empty). It reuses the existing `config_validate_test.go` accumulate pattern.
+
+### Pattern 4: Observability — OTel spans wrap the same seams that already span LLM/tool
+
+**What:** `internal/agent/tracing.go` already mints a real `TracerProvider` and spans `llm.request` + `tool.execute` (`startToolSpan`/`endToolSpan` in `runTool`). v2.0.0 extends spans to MCP roundtrips (`mcptools.bridgedTool.Execute`), DB ops (sqlc seam), and scheduler ticks (`cron.scheduler`), and stamps the standard attribute set (`run_id`, `conversation_id`, `step_id`, `tool_invocation_id`, `actor_id`, `runtime_profile`, `policy_decision_id`, `mcp_server_id`) — exactly the identifiers the target architecture lists.
+
+**When to use:** Production observability pack (F-023/F-024/F-048). `/readyz` (`readiness.go`, already probe-injectable) gains migration-state + scheduler-state probes alongside the existing PG+Neo4j probes (F-008/F-017). The Gateway is the natural place to stamp `policy_decision_id` + `actor_id` on the tool span.
+
+**Trade-offs:** + Replayable, attributable traces with one root span per run. − Span attribute discipline must be enforced (a new span without `actor_id` is a forensic hole); add a test that asserts required attributes on the root span (parallel to `tracing_spans_test.go`).
+
+## Data Flow
+
+### Request Flow — a mutating tool call in `server_production`
+
+```
+authenticated AG-UI request
+   ↓ withPrincipal → identityctx.WithIdentityID(ctx) [auth.go:283]
+Runner.Turn(ctx, convID)
+   ↓ scopeContextToConversation verifies identity owns conv [runner.go:475]
+LlmAgent.dispatch  → BeforeTool hook (rewrite/veto)  [dispatch.go:39]
+   ↓ executeBatch → runTool [llm_agent.go:488]
+   ↓ ★ Gateway.Execute(ctx, spec, call, actor)
+       1. PolicyEngine.Decide → require_approval? → persist scoped approval, NO side effect
+       2. allow → ledger RESERVE 'started' (block if reserve fails — F-020)
+       3. SandboxRouter.Resolve(identityID) → per-user sandbox endpoint
+       4. sandboxExecutor.Run(endpoint, command)   [shell_exec re-targeted]
+       5. normalize + redact (RedactForLedger) → ledger FINALIZE 'succeeded'
+   ↓ AfterTool hook → history append → ToolInvocation event
+completion gate (if sideEffected) [llm_agent_completion.go]
+   ↓ text_response terminal [dispatch.go:116]
+persistAssistantAnswer + cache_metric  [runner_persist.go:249]
+```
+
+### State Management — durable ledger reservation (F-020)
+
+```
+tool_invocations row lifecycle (migration 0025 adds the state machine):
+  planned ─(Gateway reserve)→ started ─(exec ok)→ succeeded
+                                  └────(exec fail/timeout)→ failed
+  On restart: recover by status (target-architecture.md §Checkpointing):
+    planned   → discard or retry-if-idempotent
+    started   → tool-specific recovery
+    succeeded_unpersisted → reconcile if external proof
+    failed    → append normalized failure if not already model-visible
+```
+
+### Key Data Flows
+
+1. **Identity isolation (F-028):** `NewConversation` reads `identityctx.IdentityID(ctx)` instead of hard-coding `localIdentityName` (`runner_conversation.go:31`). AG-UI list/get/delete call `*ForIdentity` store variants gated on the principal. `aura.identity_auth_links` (migration 0019) is already UNIQUE on `authula_user_id` (1:N-ready) — no new identity table needed.
+2. **Session eviction on delete (F-039):** `Conv.Delete` (or a runner wrapper) signals the `SandboxRouter` to evict the identity's sandbox iff no other live conversation remains, AND clears the per-thread lock in `runner.threadLocks` (`runner.go:162`) + `askuser.AutoResolveForConversation`.
+3. **Approval queue scoping (F-028):** `approvals_api` calls a new `askuser.ListPendingAllForIdentity` (JOIN `aura.conversations` on `identity_id`) instead of `ListPendingAll` (`askuser/store.go:192`).
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 1 operator (today, dev/local_trusted) | Gateway fail-open, host-direct executor, no sandbox hop — zero behavior change. The whole v2.0.0 hardening is *latent* until the profile flips. |
+| 2–10 identities (single_user_hardened / small server) | Docker-pool sandbox route (Route B): one container per active identity, idle-TTL evicted. Mini-PC RAM is the bound — cap concurrent live sandboxes (mirror `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS`). |
+| Multi-tenant appliance (DGX Spark bundle) | K8s/agent-sandbox route (Route A): per-identity Sandbox CR + PVC + NetworkPolicy, control-plane-managed eviction. The `Executor` seam means this is a backend swap, not a rewrite. |
+
+### Scaling Priorities
+
+1. **First bottleneck: per-identity sandbox memory.** Each live full-capability sandbox is a container/pod with real userspace. Idle-TTL eviction + a concurrent-sandbox cap is the first control. Measure idle footprint before committing the route (STACK).
+2. **Second bottleneck: ledger write amplification.** Durable reserve+finalize doubles `tool_invocations` writes vs today's single best-effort insert. The table is append-mostly; partition/retention (F-048) keeps it bounded. The reserve must be a fast single INSERT, not a transaction with the turn.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Client-side re-parsing of tool-result prose
-**What people do:** infer display type/structure by regexing the `TOOL_CALL_RESULT` text in the browser. **Why wrong:** the backend already held the structure (`ToolInvocation.Meta`, the `web.WebError` enum); re-deriving from prose is the forbidden "regex on natural language" anti-pattern and breaks run-log replay. **Instead:** normalize in the Go translator (Pattern 2); keep client classification only as the v0 fallback for not-yet-normalized tools.
+### Anti-Pattern 1: Enforcing policy inside each tool
 
-### Anti-Pattern 2: A second metrics/health system for the cockpit
-**What people do:** add a new health collector for the panels. **Why wrong:** `/healthz` + `/readyz` + `/metrics` + `/debug/vars` + OTel + slog are ALL shipped. **Instead:** add ONE thin `/api/health/runtime` aggregator that composes the existing sources.
+**What people do:** Add capability checks inside `shell_exec.Execute`, `fs_write.Execute`, each MCP bridge.
+**Why it's wrong:** N enforcement points drift; MCP-bridged tools (`mcptools.bridgedTool`) and `swarm_spawn` would be missed (exactly the F-001 "tool authority broader than loop authority" finding). The current `ShellApprovals` destructive-pattern gate inside `shell_exec.go` is a symptom of this — it only covers shell, not fs or MCP.
+**Do this instead:** One Gateway at `runTool`/`execTool`. Every tool — host, MCP, swarm — already passes through it. Tools stay dumb executors.
 
-### Anti-Pattern 3: Exposing graph writes (or unauthenticated mutations) over HTTP
-**What people do:** let the cockpit run arbitrary Cypher or hit governance mutations on the loopback-trusting mux. **Why wrong:** the gateway trusts loopback; off-loopback that is an injection + privilege surface. **Instead:** read-only Cypher guard (`NEO4J_READ_ONLY` posture at the HTTP boundary); all mutations behind `RequireAuth` + `capability_grants` + the existing approval/audit gate.
+### Anti-Pattern 2: Mutating the ToolGateway into the agent as methods
 
-### Anti-Pattern 4: Pushing the whole graph as a chat-stream event
-**What people do:** stream a 5k-node graph through SSE display events. **Why wrong:** SSE is for turn deltas; a graph workspace is a snapshot read. **Instead:** REST `/api/graph/query` returning a bounded `GraphView` (20-80 evidence nodes per ux-spec); inline chat graph results carry only a compact preview.
+**What people do:** Add `LlmAgent.decidePolicy`, `LlmAgent.reserveLedger` directly on the agent.
+**Why it's wrong:** Bloats `llm_agent.go` past the 600-LOC cap, couples policy to the loop, and makes the Gateway untestable in isolation. It also forces `internal/agent` to import the ledger/sandbox stores, widening the dependency graph.
+**Do this instead:** `internal/toolgateway` package; inject a narrow `ToolGateway` interface defined in `internal/agent` (consumer-side), satisfied by `*toolgateway.Gateway` built in the serve composition root — same pattern as `*tools.Registry`/`*HookManager` injection in `buildAgent` (`runner.go:565`).
 
----
+### Anti-Pattern 3: Breaking the host-shell experience to achieve "10/10"
+
+**What people do:** Default-deny the host shell everywhere, fence fs to a workspace in all profiles.
+**Why it's wrong:** Violates the core invariant (memory `feedback_aura_full_host_terminal_primary`: "the host shell IS the surface"). The audit's own resolution (PROJECT.md F-001) is *per-user full-capability sandbox*, NOT fencing.
+**Do this instead:** Profile-gate it. `dev`/`local_trusted` keep host-direct full capability. Only `single_user_hardened`/`server_production` route to the per-user sandbox — where the agent STILL gets a full shell, just inside its own box.
+
+### Anti-Pattern 4: Scoping by mutating every store signature
+
+**What people do:** Change `Store.List(ctx, includeArchived)` to `Store.List(ctx, identityID, includeArchived)`.
+**Why it's wrong:** Breaks every caller (CLI, auto-title worker, scheduler) that legitimately runs un-scoped, and risks an un-scoped default (empty identity = all rows) leaking cross-user.
+**Do this instead:** Add `ListForIdentity` variants. The AG-UI authenticated path uses them; un-scoped internal callers keep `List`. Enforce with a two-identity E2E integration test (the F-028 acceptance criterion).
 
 ## Integration Points
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `agui` ↔ `agent` | one-way: `agui` imports `agent`, never reverse (CI-enforced `scripts/agui_boundary_check.sh`) | GAP-1's `Actions.Display` lives in `agent`; `agui` translates it — the boundary is preserved |
-| `agui` ↔ `knowledge` | `agui`/REST API calls `knowledge.Read` + the new `graphview` normalizer | read-only Cypher; MCP subprocess holds the only bolt conn |
-| `agui` ↔ `webui` | `agui.Mux` mounts `webui.Assets` (embed.FS) | new dependency edge; trivial (static serving) |
-| `agui` ↔ `conversations`/`mcp/manager`/`cron`/`askuser`/`toolinvocations` | REST read endpoints over the existing stores (consumer-declared narrow interfaces, the `ConversationStore` pattern at `types.go:26`) | accept interfaces, return structs |
-| HTTP mutations ↔ `identity`/`capability_grants` | `RequireAuth` middleware → capability check | the seam that finally activates the auth scaffolding (GAP-2) |
 
 ### External Services
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| `mcp-neo4j-cypher` subprocess | stdio JSON-RPC via `knowledge.Client` (existing) | `NEO4J_READ_ONLY=true` posture for the cockpit graph reads (neo4j-mcp-skill) |
-| Reverse proxy (Caddy) | terminates TLS + auth in front of the loopback daemon | the recommended GAP-2 boundary; existing Caddy on-demand TLS story (commit `5f70703f`) |
-| Browser (`@ag-ui/client` HttpAgent) | SSE over `POST /agent/run` | same AG-UI protocol as the vendored Go SDK — wire-compatible by construction |
+| Per-user sandbox (Docker pool, Route B) | HTTP exec client per container (revive dormant `internal/sandboxagent` shape, `:2468`) | Named volumes mandatory (Windows); idle-TTL eviction; network policy none/allowlist |
+| Per-user sandbox (k3s, Route A) | Go controller → Sandbox CRD / REST / MCP exec | Heavier; control-plane on host or DGX Spark; PVC + NetworkPolicy per identity |
+| OTel collector | OTLP/gRPC (already wired, `tracing.go`) | Extend instrumentation to MCP/DB/cron; `none` exporter = zero overhead |
+| mcp-neo4j-cypher | stdio MCP subprocess (existing, `internal/mcp`) | Add per-server mount timeout, frame cap, process-tree teardown (F-013/F-027/F-037) |
+| Authula | embedded auth provider (existing, `internal/webauth`) | Cutover default passphrase→Authula; `identity_auth_links` already 1:N-ready |
+
+### Internal Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `internal/agent` ↔ `internal/toolgateway` | narrow `ToolGateway` interface (defined in agent, impl in toolgateway) | Avoids import cycle; same injection pattern as Registry/HookManager |
+| `internal/toolgateway` ↔ `internal/sandboxrouter` | `SandboxRouter` interface | Backend (Docker/K8s) swappable; reads `identityctx.IdentityID(ctx)` |
+| `internal/toolgateway` ↔ `internal/toolinvocations` | reserve/finalize methods | Durable reservation gate (F-020); the existing runner best-effort insert becomes finalize |
+| `internal/runner` ↔ `internal/conversations`/`internal/askuser` | widened narrow interfaces (`*ForIdentity` methods in `interfaces.go`) | Owner-scoping; un-scoped variants retained |
+| `internal/agui` ↔ stores | via runner / store `*ForIdentity` using `identityctx.IdentityID(r.Context())` | Identity already on ctx from `withPrincipal`; APIs just need to use it |
+
+## Build Order (dependency-ordered) — what must land before what
+
+> Rule: **ToolGateway + runtime profiles before sandbox enforcement; durable ledger before idempotency; identity scoping is independent and can parallelize.** Migrations and breaking changes flagged inline.
+
+1. **Runtime profiles** (`config.RuntimeProfile` + `ValidateProfile` + `aura config validate --profile`). *No migration; not breaking* (new env, defaults to `local_trusted`). **Foundational** — the Gateway's default-deny and the sandbox executor both key off the profile. Closes F-002/F-007/F-016/F-022/F-041 (validation) early. Also lands the P0 `AURA_SHELL_DESTRUCTIVE_PATTERNS` empty-sample fix (action-plan).
+2. **Durable ledger states** (`toolinvocations` reserve/finalize + **migration 0025** state machine). *Migration; not breaking* (additive columns/states). MUST precede the Gateway's reservation gate and ALL idempotency work (F-020).
+3. **ToolGateway skeleton + PolicyEngine** (`internal/toolgateway`, narrow interface injected into `LlmAgent`, `runTool`/`execTool` reroute). *No migration; cross-cutting* (touches the hot path; must fail-open in dev/local_trusted to preserve current behavior — guard with the profile from step 1). Reuses `Spec.Mutating` (F-031) + wraps `tool_invocations` (step 2). Closes F-001/F-011 boundary. **Must land before sandbox enforcement.**
+4. **Identity isolation** (parallelizable with 1–3): NewConversation identity inheritance (`runner_conversation.go`, **fixes F-028**), owner-scoped store variants (`conversations`/`askuser` + sqlc queries; *possible migration only if an index is added — otherwise none*), AG-UI conv/approval filtering, session eviction on delete (F-039). *Breaking risk contained* by additive `*ForIdentity` variants. Two-identity E2E test is the gate.
+5. **Per-user sandbox** (`internal/sandboxrouter` + `Executor` seam in `shell_exec`/`fs_*` + **migration 0027** sandbox sessions). *Migration; cross-cutting* (modifies the keystone host tools). Depends on the Gateway (step 3 routes to it) and profiles (step 1 decides when). **Route A vs Route B decided by STACK** before this lands — but the `Executor` seam is committed regardless. Closes F-001/R-001 fully.
+6. **MCP governance hardening** (transport classifier, explicit remote trust, mount timeout, frame cap, process-tree teardown; `internal/mcp` + `mcptools`; **migration 0022 `mcp_audit` already exists**, may extend). *Mostly no migration; not breaking.* Independent of sandbox; can parallelize with 4–5. Closes F-013/F-014/F-027/F-031..F-038/F-046.
+7. **Idempotency keys** (pause/resume + tool calls; builds on the durable ledger of step 2). *No new migration if keys ride existing rows; otherwise additive.* Closes F-004/F-005/F-029/F-030. **After the ledger (step 2), not before.**
+8. **Observability pack** (OTel span extension to MCP/DB/cron + standard attributes incl. `policy_decision_id` from the Gateway; `/readyz` migration+scheduler probes; retention/cleanup command + **migration 0026** retention meta). *Migration; not breaking.* Best last — it instruments the surfaces the prior steps create (F-008/F-017/F-023/F-024/F-048).
+
+**Cross-cutting / breaking flags summary:**
+- **Migrations:** 0025 (ledger states), 0026 (retention/profile audit), 0027 (sandbox sessions); optional index migrations for owner-scoped queries.
+- **Cross-cutting (hot path):** ToolGateway (step 3), sandbox `Executor` seam in keystone tools (step 5), OTel attributes (step 8).
+- **Behavior-preserving guards:** every step must be a no-op in `dev`/`local_trusted` (Gateway fail-open, host-direct executor) — the operator's daily experience is unchanged; hardening activates only under the production profile.
+- **Not breaking (additive):** runtime profile (defaults preserve today), owner-scoped store variants (un-scoped retained), ledger states (additive).
 
 ## Sources
 
-- **Backend source (read in full):** `internal/agui/{server.go,translator.go,types.go,readiness.go,metrics.go,fanout.go}`, `internal/agent/{event.go,llm_agent_events.go}`, `cmd/aura/{serve.go,main.go}`, `internal/knowledge/{client.go,schema.go}`, `internal/mcp/manager/status.go`, `internal/cron/dispatch.go`, `internal/swarm/report.go`, `internal/askuser/store.go`, `internal/web/errors.go`, `internal/obs/init.go`, `internal/toolinvocations/store.go`, `internal/config/config.go`.
-- **Design package (truth-source):** `docs/design/aura-deep-search-figma/{ux-spec.md, BACKEND_CAPABILITY_MAP.md}` — Implementation Model, display-type mapping (420-438), graph payload contract (446-454), ui_control contract (464-475), backend capability model (503-519).
-- **Integration references (D:/tmp):** `llm-graph-builder/frontend/src/utils/Utils.ts` (`processGraphData` → NVL node/edge contract, verified `element_id`/`start_node_element_id`/`end_node_element_id` mapping); `elysia-frontend/app/components/chat/RenderDisplay.tsx` (the `switch(payload.type)` frontend classifier pattern).
-- **Parallel research (built upon, not relitigated):** `.planning/research/STACK.md` (embedded SPA decision, integration table, auth options), `.planning/research/FEATURES.md` (GAP-1/GAP-2 framing, feature→backend evidence).
-- **Skills:** `neo4j-mcp-skill` (read-only mode, get-schema/read-cypher), `golang-security` (cookie flags, client-header anti-pattern, fail-closed), `golang-context`/`golang-concurrency` (SSE pump/ctx propagation already in place).
+- Live codebase (HIGH): `internal/agent/llm_agent.go:488` (runTool), `llm_agent_retry.go:36` (execTool), `llm_agent_dispatch.go` (terminal/runnable split + hook + dedup), `llm_agent_completion.go` (F-031 completion gate), `llm_agent_parallel.go:71` (Mutating pre-resolution), `tools/spec.go:45` (Mutating flag), `tools/shell_exec.go` (host exec, in-process), `agent/mcptools/bridge.go` (MCP tool adaptation), `runner/runner.go:475/565` (identity scope + buildAgent), `runner/runner_conversation.go:31` (F-028 hard-coded local), `runner/runner_persist.go:180` (best-effort ledger), `runner/interfaces.go` (narrow store interfaces), `identityctx/identityctx.go`, `agui/auth.go:283` (withPrincipal sets identityctx), `agui/conversations_api.go` + `approvals_api.go` (unscoped), `agui/readiness.go` (injectable probes), `config/config.go:264/291` (Validate/GuardWebBind), `internal/profile/*` (Agent.md — name-collision avoidance), `internal/scoring/scoring.go` (RiskTier), `agent/tracing.go` (OTel), `db/migrations/0019_authula_schema.up.sql` (identity_auth_links 1:N-ready), `db/migrations/` (24 migrations, next 0025).
+- `docs/audit/target-architecture.md` (HIGH) — AgentLoop/ToolGateway/PolicyEngine/SandboxManager interfaces, runtime profiles table, checkpointing states, observability identifiers.
+- `docs/audit/architecture-review.md` + `docs/audit/action-plan.md` (HIGH) — weaknesses (implicit capability model, non-atomic host mutation+audit, terminal-not-a-barrier), the four subagent deltas (identity/MCP/pause-resume/lifecycle boundaries), and the medium/long-term ToolGateway + workspace grants + sandbox backend tasks.
+- `.planning/PROJECT.md` (HIGH) — F-001 resolution decision (per-user full-capability sandbox, NOT fencing), multi-user = identity isolation NOT RBAC, Authula cutover, sandbox-fork (K8s vs Docker) deferred to research.
+- `docs/aura-quality-snapshot.md` + `docs/aura-toolset-design-claude-code-parity-2026-06-05.md` (MEDIUM) — dormant sandbox-agent shape (`:2468`, `/v1/processes/run`, `AURA_SANDBOX_AGENT_*`) as the per-user sandbox-exec client reference.
+- Skills (HIGH): `golang-structs-interfaces` (interfaces defined where consumed; accept-interfaces-return-structs — drives the Gateway/Router injection), `golang-concurrency` (sandbox pool sync, eviction worker exit), `golang-context` (identityctx propagation), `golang-database` (sqlc owner-scoped queries, durable ledger transactions).
 
 ---
-*Architecture research for: Aura operator web cockpit (cockpit↔backend integration + build order)*
-*Researched: 2026-06-15*
+*Architecture research for: Aura v2.0.0 industrial hardening + per-user sandbox + multi-user isolation*
+*Researched: 2026-06-29*

@@ -1,178 +1,158 @@
-# Stack Research
+# Stack Research — v2.0.0 Industrial Hardening & Multi-User Production
 
-**Domain:** Operator web cockpit ("Aura Deep Search") — a typed-display agentic frontend + serving infra over an existing Go single-binary AG-UI/SSE backend
-**Researched:** 2026-06-15
-**Confidence:** HIGH (versions verified live against npm registry + Context7 + design specs read in full; D:/tmp sources inspected at source level)
+**Domain:** Hardening/industrialization of an existing Go-native agentic substrate (single-binary + Docker-Compose, mini-PC deployment, DGX Spark appliance as long-term target)
+**Researched:** 2026-06-29
+**Confidence:** HIGH on versions/licenses (verified web + already-pinned go.mod); HIGH on the sandbox recommendation (quantified footprint + existing repo evidence)
+
+> **Read this first.** This is a *subsequent* milestone. Most of the v2.0.0 stack is **already in `go.mod` / `compose.yaml`** — the work is mostly *wiring and policy*, not *adoption*. Concretely: Authula `v1.11.0`, OpenTelemetry Go SDK `v1.44.0` (trace + metric + OTLP/grpc + stdout exporters), `prometheus/client_golang v1.23.2`, `govulncheck` (CI `vuln` job), `testcontainers-go v0.42.0`, the Docker Go SDK (`moby/moby/client v0.4.1`), Garage S3 `v2.0.0`, AWS S3 SDK v2, and a ready-but-OFF `compose.gvisor.yaml` runsc overlay all exist today. The net-new *dependencies* are small; the net-new *engineering* (ToolGateway, per-user sandbox controller, owner-scoping, dashboards, SBOM, DR drill) is large. This document flags, per item, **ADOPT (new) vs WIRE (present) vs BUMP (present, newer available)**.
 
 ---
 
-## TL;DR — The load-bearing decision
+## TL;DR — The Sandbox Fork
 
-**Primary recommendation: Shape (A) — Embedded SPA in the Go binary.**
-A **Vite 8 + React 19 + TypeScript** SPA, built to static assets and embedded via Go `embed.FS`, served by `aura serve` with an SPA-fallback handler. It connects to the *existing* `internal/agui` SSE gateway through the official `@ag-ui/client` `HttpAgent` (the TypeScript twin of the Go SDK Aura already vendors).
+**Recommendation: Option B (per-user full-capability pattern over Docker via the already-present Docker Go SDK), with Option C's `compose.gvisor.yaml` runsc overlay as the optional defense-in-depth tier on native-Linux/DGX appliances. Reject Option A (Kubernetes) for the mini-PC.**
 
-**Runner-up: Shape (B) — Separate SPA.** Same JS stack, deployed standalone behind the reverse proxy. Identical app code; only the serving + auth boundary differs.
+Rationale in one paragraph: Option A (k3s/k0s + `kubernetes-sigs/agent-sandbox` or `agent-sandbox/agent-sandbox`) is the *correct* architecture for the DGX Spark appliance and the most direct literal match to the operator's reference repos — but the control plane alone costs **~0.6–1.2 GB RAM + a CPU core at idle** on a host already carrying ~6 GB of sidecars with a 16 GB floor, and it **breaks the single-binary + Docker-Compose deployment invariant** that every other Aura surface depends on. Option B reuses the Docker engine that already runs the entire stack, gives each identity a full-shell/full-fs/full-network container (the "agent still sees a full host" requirement is met inside the container), isolates users via per-identity named volumes + a per-user Docker network, and is driven by the Docker SDK *already in `go.mod`* — zero new daemon, zero new control plane, ~**+150–400 MB per *active* user container** (idle pool can be zero). Option C primitives (gVisor `runsc`, Sysbox) layer *under* Option B as the runtime, hardening the per-user containers without changing the controller. This keeps a single code path that scales from mini-PC (Docker + Option B) to DGX Spark (same controller, optionally K8s-backed later) and honors `feedback_aura_full_host_terminal_primary` + `feedback_no_atomic_bombs_minimal_industrial_shape`.
 
-**Rejected: Shape (C) — templ + htmx + vanilla JS.** It cannot meet the design's hard requirements — an interactive Neo4j node-link graph canvas (NVL/WebGL), a stateful dockable-window manager that survives minimize/restore, a typed-payload display router, and `cmdk` — without re-implementing a component framework in vanilla JS. Odysseus (the cited static-first source) proves vanilla *can* do an operator shell, but at the cost of ~40 hand-rolled JS modules with no type safety; that is the opposite of "minimal industrial shape" for a surface this rich.
-
-**The decisive trade-off (A vs B):** A preserves Aura's single-binary deploy and the loopback-bind compensating control the gateway already relies on (no new public attack surface); the price is adding a Node build stage to CI and the Docker image. B avoids touching the Go build but breaks the single-binary promise (two artifacts, CORS, a separate deploy/TLS story) for zero functional gain. The design ethos ("single-binary, minimal industrial shape, no atomic bombs") points at A. Crucially, **the app code is identical** — picking A does not lock out B; flipping to B later is a serving-layer change, not a rewrite.
+Detailed evidence in **§1**.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Technologies (the v2.0.0 additions/changes)
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| **React** | 19.2.7 | UI framework | Every curated source (Elysia, llm-graph-builder, assistant-ui) is React. The two accelerators that make this milestone cheap — `@neo4j-nvl/react` and `@assistant-ui/react-ag-ui` — are React-only. React 19 stable since Dec 2024; 19.2 (Oct 2025) is the floor for the current ecosystem. |
-| **TypeScript** | 5.9.x | Type safety | The design is a *typed*-display router + a `ui_control` allowlist + a graph payload contract with strict node/edge/path schemas. Types are the cheapest way to keep those contracts honest across ~50 components. Vanilla JS (Shape C) forfeits this. |
-| **Vite** | 8.0.x | Build tool + dev server | The 2026 default for SPAs. v8 (2026-03-12) ships Rolldown (Rust bundler), 10–30× faster builds — matters for the CI build stage on a mini-PC. `output: dist/` is a flat static tree that drops straight into `embed.FS`. llm-graph-builder (Neo4j's own tool) uses Vite. **Deliberately NOT Next.js** — see "What NOT to Use". |
-| **`@vitejs/plugin-react`** | 6.0.x | React/JSX + Fast Refresh for Vite | Standard React-on-Vite plugin. |
-| **Tailwind CSS** | 4.3.1 | Styling | The design ships `tokens.json` (colors, radius, spacing, typography, density modes). Tailwind v4's CSS-first `@theme` maps those tokens 1:1 with zero JS config. v4 install is `@tailwindcss/vite` (4.3.1) — one plugin, no PostCSS chain. Elysia (v3) and llm-graph-builder (v4) both use Tailwind. |
-| **`@ag-ui/client`** | 0.0.57 | SSE transport to Aura's gateway | The official TS client for the AG-UI protocol. Its `HttpAgent` connects to an AG-UI SSE endpoint exactly like Aura's `POST /agent/run`. Aura's Go side already vendors `ag-ui-protocol/ag-ui/sdks/community/go` (go.mod) — client and server are the **same protocol's two reference SDKs**, so the wire is compatible by construction, not by adaptation. |
+| Technology | Version | ADOPT/WIRE/BUMP | Purpose | Why Recommended |
+|------------|---------|-----------------|---------|-----------------|
+| **Docker Engine Go SDK** (`github.com/moby/moby/client`) | `v0.4.1` (present, indirect) | **WIRE** (promote to direct) | Per-user sandbox controller: create/start/exec/stop per-identity containers | Already pulled in transitively (testcontainers). Drives Option B with no new daemon. Container lifecycle, exec, volume + network mgmt are all first-class. |
+| **gVisor `runsc`** | latest weekly (`release-2026062x.0`-class; near-weekly tags) | **WIRE** (`compose.gvisor.yaml` exists) | Optional kernel-isolation runtime under the per-user containers | `compose.gvisor.yaml` already registers `runtime: runsc`. Best-in-class container isolation w/o a VM; ~10–30% I/O/syscall overhead, ~0% on CPU-bound. Native Docker/containerd integration. Apache-2.0. |
+| **Sysbox** (`nestybox/sysbox`) | `v0.7.0` (Mar 2026) | ADOPT (alternative to runsc) | Rootless/Docker-in-container runtime for the per-user containers, near-runc perf | Near-zero overhead (emulation only on privileged syscalls); lets a sandboxed container run nested Docker/systemd if a skill needs it. Apache-2.0. Pick **runsc for max isolation**, **sysbox for max compatibility/perf**. |
+| **Authula** (`github.com/Authula/authula`) | `v1.11.0` present → **BUMP `v1.12.0`** (Jun 2026) | **WIRE + BUMP** | Multi-tenant auth: capability-per-route, 2FA/TOTP, OAuth, Postgres | Already in `go.mod` and the *default* `AURA_WEB_AUTH_PROVIDER`. v1.12.0 adds an event bus usable in Library Mode (useful for audit-ledger hooks). Capability-per-route **without** RBAC — exactly the constraint. Apache-2.0. |
+| **OpenTelemetry Go SDK** (`go.opentelemetry.io/otel/{trace,metric,sdk}`) | `v1.44.0` (present) | **WIRE** (metrics path) | Traces (wired) + **metrics** (not yet wired) per target-architecture observability model | SDK is in `go.mod`; `internal/obs` + `internal/agent/tracing.go` already install the tracer provider. v2.0.0 adds the **metric** SDK path (spans exist, metrics don't yet flow through OTel). Apache-2.0. |
+| **prometheus/client_golang** | `v1.23.2` (present) | **WIRE** (expand) | Native `/metrics` exposition + the v2.0.0 alert-driving counters/histograms | Already wired (`internal/agent/metrics.go`). v2.0.0 adds the audit/finding metrics (loop error rate, tool-timeout rate, pause/resume failures, ledger states, readiness). BSD-3-Clause. |
+| **OpenTelemetry Collector (contrib)** | `v0.154.0` (Jun 2026) | ADOPT (optional sidecar/host) | Trace pipeline + Prometheus scrape + export; single egress point | Only needed when an external trace backend is wired. For single-binary mini-PC, Prometheus scrape of Aura's `/metrics` is often enough; Collector is the DGX/server-profile add. Apache-2.0. |
 
-### Graph Visualization (hard requirement — Frame 06 Neo4j Graph Explorer)
+### Supporting Libraries & Tools
 
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| **`@neo4j-nvl/react`** + **`@neo4j-nvl/base`** | 1.2.0 | Interactive Neo4j node-link graph canvas + selected-node inspector | **This is the choice.** NVL (Neo4j Visualization Library) is the engine behind Neo4j Bloom and Explore — WebGL-rendered, built for exactly the labels/edges/paths/degree/confidence model the spec's graph payload contract describes. The Neo4j team's own `llm-graph-builder` uses `InteractiveNvlWrapper` (`@neo4j-nvl/react`) over a `mcp-neo4j-cypher`-shaped result — the *same backend Aura has*. Peer dep: React 18/19 (verified). It gives node colouring by label family, degree-based sizing, deterministic layout, hit-testing → inspector, and zoom/fit out of the box. Reaching parity with Cytoscape/sigma is weeks of work. |
-| **`@neo4j-nvl/layout-workers`** | 1.2.0 | Off-main-thread force layout | Keeps the layout simulation off the UI thread (mini-PC CPU budget: do not saturate the main thread). |
+| Library / Tool | Version | ADOPT/WIRE | Purpose | When to Use |
+|---------|---------|-----------|---------|-------------|
+| **syft** (`anchore/syft`) | `v1.44.0+` (2026) | ADOPT (CI tool) | SBOM generation (source + compiled single binary), SPDX/CycloneDX | The de-facto Go SBOM tool; understands Go's static-link build. Run in CI on the `aura` binary + image. Apache-2.0. |
+| **cyclonedx-gomod** (`CycloneDX/cyclonedx-gomod`) | latest (CycloneDX spec 1.6; needs Go ≥1.25) | ADOPT (CI tool) | Go-module-native CycloneDX SBOM (`mod`, `bin`, `app` modes) | Complements syft with module-accurate provenance; `app` mode SBOMs the single binary. Use syft as canonical + cyclonedx-gomod for cross-check. Apache-2.0. |
+| **govulncheck** (`golang.org/x/vuln`) | latest (already CI `vuln` job) | **WIRE** (gate severity) | Reachability-aware Go CVE scan | Already run; v2.0.0 makes it a *blocking* gate (high-severity → fail unless waived). BSD-3-Clause. |
+| **dependency-review-action** + **action SHA-pinning** | GH Action; pin via `ratchet` / `pin-github-action` | ADOPT (CI) | Block vulnerable dep PRs; pin all third-party Actions to commit SHA | Closes F-051/F-052 (supply-chain). `ratchet`/`pin-github-action` resolve `@vN` → `@<sha>`. MIT/Apache-2.0. |
+| **k6** (`grafana/k6`) | `v2.1.0` (Jun 2026) | ADOPT (test harness) | HTTP/SSE load + scenario-based load profiles; fault injection via `xk6-disruptor` | Modern, Go-core, JS scenarios. Drives AG-UI/SSE + Telegram-webhook load. Defines supported concurrency + degradation (F-018). AGPL-3.0 (tool only; not linked into Aura). |
+| **vegeta** (`tsenart/vegeta`) | `v12.x` (Go lib + CLI) | ADOPT (test harness) | Constant-rate HTTP load, embeddable as a Go library in `internal/eval`-style tiers | Simpler than k6 for CI smoke + p95/p99 latency assertions; composes with `jq`. MIT. |
+| **toxiproxy** (`Shopify/toxiproxy/v2`) | `v2.12.0` (Mar 2025) | ADOPT (chaos) | TCP fault injection (latency, slow-close, partition) in front of PG/Neo4j/MCP sidecars | Go client + server are the community standard; drives chaos AC (DB outage, MCP timeout storm, object-store outage) F-035. MIT. |
+| **ghz** (`bojand/ghz`) | `v0.121.0` | ADOPT *only if* gRPC | gRPC load/benchmark | Aura's transports are SSE/HTTP today; OTLP/gRPC export is the only gRPC surface. Use **only** if a gRPC API is added — otherwise skip (no scope creep). MIT. |
+| **testcontainers-go** | `v0.42.0` (present) | **WIRE** (reuse) | Spin PG17 + Neo4j 5.26 in load/chaos/DR integration tiers | Already in `go.mod` (db_integration). Reuse for the DR restore-drill harness. MIT. |
 
-### Chat surface accelerator
+### Development / Ops Tools
 
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| **`@assistant-ui/react`** | 0.14.21 | Chat thread primitives (message list, composer, streaming, auto-scroll, branch/edit, interrupt handling) | MIT. Purpose-built React library for agent chat UIs. Saves the entire chat-stream lifecycle (the part of Frame 01 that is generic). |
-| **`@assistant-ui/react-ag-ui`** | 0.0.40 | Wires an `@ag-ui/client` `HttpAgent` into the assistant-ui runtime | **The single biggest accelerator in this milestone.** `useAgUiRuntime({ agent: new HttpAgent({ url: "/agent/run" }) })` turns Aura's existing SSE gateway into a working chat UI with run-timeline, tool lifecycle, reasoning, and protocol-native interrupt/resume — i.e. the `ask_user` HITL the translator already emits as AG-UI `Interrupt`. README explicitly lists "custom Python/**Go**/TS agents" as supported backends. |
-
-> **Adoption discipline (memory: feedback_no_atomic_bombs):** adopt assistant-ui for the *chat lane only* (Frame 01 message stream + composer + HITL). The typed-display router, graph mode, dockable tools, source explorer, MCP/skills governance, and `ui_control` lane are Aura-specific and built directly on the raw `@ag-ui/client` event stream — do NOT try to force them through assistant-ui's thread model. Treat assistant-ui as a removable accelerator behind Aura's own shell, not the shell itself.
-
-### Supporting Libraries
-
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| **`@ag-ui/core`** | 0.0.57 | AG-UI event type definitions (TS) | Type the raw event stream for the display router, `ui_control` lane, and graph/MCP/skill payloads. Mirror of the Go SDK's `events` package. |
-| **`cmdk`** | 1.1.1 | Command palette (⌘K) + slash actions | MIT. The exact library Elysia uses; the spec's "command palette searches runs, sources, tools, actions". Unstyled, accessible, fast. |
-| **`@xyflow/react`** (React Flow) | 12.11.0 | Tree/decision-trace canvas (Frame 02), MCP/flow diagrams | This is the DAG/flow renderer Elysia uses (`FlowDisplay.tsx` + `dagre`) for its decision tree. Use it for Frame 02 **only** — it is a layered-flow renderer, **not** a network-graph renderer; do not use it for Frame 06 (that is NVL's job). |
-| **`dagre`** | 0.8.5 | Layered layout for the React Flow tree | Pairs with `@xyflow/react`; Elysia's exact pairing. |
-| **Zustand** | 5.0.14 | Client state (shell/dock/window state, mode, density, selection) | The dockable-window manager, dock chips that "preserve state", active-selection guards, and density boot are client-side concerns. Zustand is the minimal-shape store (no boilerplate, no context churn). `ui_control` events mutate this store through an allowlist reducer. |
-| **`@tanstack/react-query`** | 5.101.0 | Server-state for non-stream reads | Conversations list, MCP server rows, skills library, scheduler tasks, source-explorer rows, `GET /threads/{id}/messages` snapshot. SSE handles the live run; React Query handles the REST-shaped reads. Caching + retry/stale logic for free. |
-| **`@tanstack/react-router`** | 1.170.15 | Type-safe routing | Primary modes (chat/tree/graph/displays/settings) + deep-links to a run/source/node. Type-safe params suit the `ui_control` `set_mode` allowlist. *Optional* — for a 5-mode shell, a small switch on Zustand state is also acceptable; pick the router only if deep-linking/back-button is required. |
-| **`react-markdown`** | 10.1.0 | Render `document`/`web_fetch` markdown displays | `web_fetch` already returns markdown; this renders it. Elysia + llm-graph-builder both use it. |
-| **`lucide-react`** | latest (0.5xx line; pin at adoption) | Icon set | Industrial line icons; matches the dark-cockpit tone. The icon rail + tool chips need a consistent set. |
-| **shadcn/ui** | (copy-in, not a dep) | Button/Input/Dialog/Tabs/Table/Popover primitives | shadcn is *copied source* (Radix + Tailwind under the hood), not an npm dependency — fits "own your components". Use it to materialize the `Aura/Button`, `Aura/Chip`, `Aura/Panel`, `Aura/Table` component families from FIGMA_PROJECT.md. Radix primitives (what Elysia uses directly) are the alternative if you prefer not to copy. |
-
-### Go-side serving / embedding
-
-| Component | Approach | Why |
-|-----------|----------|-----|
-| **`//go:embed`** | New package `internal/webui` (mirrors picobot's `embeds` pattern, `D:/tmp/picobot/embeds/embeds.go`) holding `//go:embed all:dist` → `embed.FS`. | Aura already uses `//go:embed` in 4 packages (`db/migrate.go`, `knowledge/migrate.go`, `skills/builtin.go`, `conversations/tiktoken.go`) — this is an established codebase pattern, not a new dependency. `all:` includes dotfiles Vite may emit. |
-| **SPA fallback handler** | `fs.Sub(dist, "dist")` → `http.FileServer(http.FS(sub))`, with a wrapper that serves `index.html` on 404 for non-asset, non-API paths (the PocketBase pattern). | Client-side routing (TanStack Router) needs deep-link refreshes to fall back to `index.html`. Exclude `/agent/`, `/threads/`, `/healthz`, `/readyz`, `/metrics`, `/debug/` from the fallback so API 404s stay real. |
-| **Mount point** | Register the static handler on the *same* `agui.Server.Mux()` (or a sibling mux on the same `http.Server` in `serve.go`), behind the same loopback bind. | Reuses the existing `http.Server` in `cmd/aura/serve.go` (`env.httpSrv`). One port, one process, one binary — the single-binary invariant holds. The cockpit becomes "just another route family" on the daemon already running. |
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| **gosec** (`securego/gosec`) | Go SAST beyond linters | Pair with the existing `golangci-lint` v2.12.2 + `govulncheck`. Add to the security-regression CI (F-047). |
+| **pg_dump / pg_restore (PG17 client)** | Postgres DR | Online, consistent logical backup. Already have `AURA_BACKUP_DIR` + `/backups` mount + role separation. DR drill restores into a throwaway testcontainer and asserts row counts (RPO/RTO). |
+| **neo4j-admin database dump/load (5.26)** | Neo4j DR | **⚠ Community = OFFLINE only.** `neo4j-admin database backup` (online/differential) is Enterprise-only. See **§Constraints/Flags**. |
+| **mc / aws-cli (S3)** | Garage object-store DR | Bucket snapshot + restore drill; AWS S3 SDK v2 already in `go.mod` for app-side, CLI for ops drill. |
 
 ---
 
-## Installation
+## §1 — Per-User Full-Capability Sandbox: Evidence & Recommendation
+
+The DEFINING fork. The requirement (from PROJECT.md / Key Decisions): **each identity drives a full-capability isolated sandbox — the agent still sees a full host (shell/fs/network), the real host is never exposed, users are isolated.** This resolves F-001/R-001 *without removing capability* (honors `feedback_aura_full_host_terminal_primary`).
+
+### Current baseline (what exists today)
+
+- `internal/agent/tools/shell_exec.go` runs the command **in-process, with the Aura process's own privileges, no sandbox hop, no path fence** (amendment #50 / D-15c). This is literally F-001.
+- The rivetdev/sandbox-agent HTTP runner (`:2468`, `make sandbox-up`) is the documented **deliberate-escalation** path (memory `project_sandbox_pivot_to_code_sandbox_mcp`), not the primary surface. There is **no `tools.SandboxExec` in the current Go tree** (grep-confirmed) — the live tool is the host-direct `shell_exec`.
+- `compose.gvisor.yaml` **already exists**: a one-line `runtime: runsc` overlay, OFF by default, intended for native-Linux/arm64 appliances. The repo already frames isolation as "performance cost, not capability stripping."
+- The Docker Go SDK (`moby/moby/client v0.4.1`) and `testcontainers-go v0.42.0` are already in `go.mod`.
+
+### Option A — Kubernetes (k3s/k0s) + agent-sandbox CRDs
+
+| Attribute | `kubernetes-sigs/agent-sandbox` | `agent-sandbox/agent-sandbox` |
+|---|---|---|
+| Version | **v0.5.0** (Jun 24 2026) | **v0.7.0** (Jun 24 2026) |
+| License | Apache-2.0 | Apache-2.0 |
+| Languages | Go (controller + `clients/go/sandbox`) | Go 52% / TS 45% |
+| Model | CRDs: `Sandbox`, `SandboxTemplate`, `SandboxClaim`, `SandboxWarmPool` | "AIO Sandbox" image, multi-tenant per-agent/per-user |
+| Isolation | gVisor + Kata (via runtimeClass) | container isolation; E2B-compatible |
+| K8s req | ≥1.26 | ≥1.26 |
+| MCP | (controller-level) | **MCP server at `/mcp`, SSE/Streamable-HTTP** |
+| E2B | — | **fully E2B protocol + SDK compatible** |
+| Go client | `go get sigs.k8s.io/agent-sandbox/clients/go/sandbox@latest` | Python SDK shown; Go client not documented |
+| Maturity | SIG-Apps, 3k★, 13 releases | v0.7.0, active |
+
+**Mini-PC footprint (the decider):**
+- **k3s** server node ≈ **1.2 GB RAM** in a small cluster (official profiling); single-node min 512 MB–1 GB + 1 CPU. Bundles ingress + LB (extra overhead).
+- **k0s** single-node min **1 GB RAM + 1 vCPU**; "comfortable" 2 GB + 2 vCPU. Slightly leaner than k3s (pick-your-components), embedded etcd.
+- Realistic **idle control-plane cost: ~0.6–1.2 GB RAM + ~0.5–1.0 CPU core** before a single sandbox pod runs.
+- Host budget today: **~5.7–6.2 GB idle, ~7 GB peak**, on a **16 GB floor**. Adding a K8s control plane pushes idle to ~6.5–7.5 GB and erodes the headroom Slice 13 (vLLM, +5–7 GB, deferred) will need on the DGX path.
+
+**Verdict on A:** Architecturally ideal **for DGX Spark** (where full K8s + gVisor/Kata runtimeClasses + warm pools shine, and `kubernetes-sigs/agent-sandbox` is the literal match). **Rejected for the mini-PC**: it violates the single-binary + Docker-Compose invariant, adds a second orchestrator to operate/back-up/monitor, and costs ~1 GB + a core at idle for a 1–few-user deployment. *Keep A as the documented DGX-appliance evolution path, not the v2.0.0 mini-PC mechanism.*
+
+### Option B — Per-user full-capability pattern over Docker (RECOMMENDED)
+
+Implement Aura's own thin Go controller (e.g. `internal/sandbox/usersandbox`) over the **Docker Engine the stack already runs**, using the Docker Go SDK already in `go.mod`:
+
+- **One container per active identity**, image = a full Linux userland (the existing AIO-style image or a Debian/Alpine base with the skill toolchain). Inside: full shell, full fs, full network — the agent's "full host" is real, just *not the real host*.
+- **Isolation:** per-identity **named volume** (`aura-sbx-<identityID>`) mounted at the workspace; per-identity **Docker network** (or `network_mode: none` + explicit egress allowlist proxy, reusing the egress-allowlist pattern already in `.planning/spikes/009-sandbox-egress-allowlist/`); `pids_limit`, `mem_limit`, `cpus`, `read_only` root + tmpfs, dropped caps as policy dials.
+- **Lifecycle:** create-on-first-tool-use, idle-TTL reap (mirrors the background-shell TTL the audit already wants), explicit `docker stop` on session end. Idle pool can be **zero containers** → **zero idle RAM cost**.
+- **`shell_exec` becomes a ToolGateway-routed `docker exec`** into the caller's identity container instead of an in-process host spawn. The host shell stays available only in `dev`/`local_trusted` profiles (per the runtime-profile table in target-architecture.md).
+- **E2B/MCP:** not required for B — Aura already speaks its own tool protocol; the controller is internal. (If you later want the E2B wire, the AIO image from `agent-sandbox/agent-sandbox` is drop-in as the container image, since it's E2B+MCP-compatible — a clean upgrade path that does **not** require K8s.)
+
+**Footprint:** **+0 idle** (no control plane, no idle pool), **~+150–400 MB per *active* user container** depending on base image + workload. On a 1–few-user mini-PC this is strictly cheaper than A and bounded by concurrency, not by a standing orchestrator.
+
+**Why B wins:** reuses the engine that already runs *everything* (the Compose stack), no new daemon/control-plane to operate-back-up-monitor, single code path mini-PC→DGX, satisfies "agent sees a full host / real host never exposed / users isolated," and the Docker SDK + egress-allowlist pattern + gvisor overlay are **already in the repo**. Lowest blast radius for the deployment invariant.
+
+### Option C — Lower-level primitives (the runtime under B)
+
+These are **not a competing controller** — they are the *runtime* the Option-B containers run on, and the defense-in-depth dial:
+
+| Primitive | Version | Role under B | Overhead | License |
+|---|---|---|---|---|
+| **gVisor `runsc`** | weekly (`release-2026062x.0`) | `runtime: runsc` per container → user-space kernel, strongest non-VM isolation | ~10–30% I/O/syscall, ~0% CPU-bound | Apache-2.0 |
+| **Sysbox** | v0.7.0 | rootless + nested-Docker-capable runtime, near-runc perf | near-zero (emulation only on privileged syscalls) | Apache-2.0 |
+| **Firecracker / microVM** | n/a | Hardware-VM isolation | higher (VM boot, mem) | Apache-2.0 |
+| **landlock + seccomp + namespaces (Go)** | stdlib + `landlock-lsm/go-landlock` | In-process fence *without* a container | minimal | BSD-2/MIT |
+
+**Verdict on C:** Use **gVisor `runsc` as the per-container runtime in `single_user_hardened`/`server_production`** (the `compose.gvisor.yaml` mechanism, applied to the per-user containers, native-Linux/DGX only — keep OFF on Docker Desktop dev). **Reject Firecracker/microVM** for the mini-PC (overkill, breaks Compose simplicity). **Reject pure landlock/seccomp-without-container** as the *primary* mechanism: it does not give the agent a "full host" view and complicates the full-shell requirement — but landlock/seccomp are fine as *additional* hardening inside the container. Sysbox is the runtime to pick when a skill needs Docker-in-the-sandbox.
+
+### Sandbox decision summary
+
+```
+v2.0.0 mini-PC:    Aura Go controller (Docker SDK)  ->  per-identity container (runc by default)
+                                                         |- named volume (per-user fs isolation)
+                                                         |- per-user network / egress-allowlist proxy
+                                                         |- policy: pids/mem/cpu/caps via ToolGateway
+hardened/server:   + runtime: runsc (gVisor)  [compose.gvisor.yaml mechanism, native-Linux]
+DGX Spark (later): same controller, optionally backed by k8s-sigs/agent-sandbox CRDs + warm pools
+```
+
+---
+
+## Installation (new dependencies only)
 
 ```bash
-# scaffold (in a new web/ dir at repo root)
-npm create vite@latest web -- --template react-ts
+# Go deps — promote present-indirect to direct + bump auth (rest already in go.mod)
+go get github.com/moby/moby/client@v0.4.1            # WIRE: promote to direct (per-user sandbox controller)
+go get github.com/Authula/authula@v1.12.0            # BUMP from v1.11.0 (event bus in Library Mode)
+go get github.com/landlock-lsm/go-landlock@latest    # optional in-container hardening (Linux)
 
-# Core
-npm install react@19 react-dom@19
-npm install @ag-ui/client @ag-ui/core
+# CI / ops tools (NOT app deps — installed in CI runners / appliance image)
+go install github.com/anchore/syft/cmd/syft@latest                 # SBOM (binary + source)
+go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+go install github.com/Shopify/toxiproxy/v2/cmd/toxiproxy-server@latest
+go install github.com/Shopify/toxiproxy/v2/cmd/toxiproxy-cli@latest
+go install github.com/securego/gosec/v2/cmd/gosec@latest
+# k6 + vegeta installed as standalone binaries (release archives), not go-get into the module
 
-# Chat accelerator (chat lane only)
-npm install @assistant-ui/react @assistant-ui/react-ag-ui
-
-# Graph (Frame 06 — Neo4j explorer)
-npm install @neo4j-nvl/react @neo4j-nvl/base @neo4j-nvl/layout-workers
-
-# Tree/flow (Frame 02 — decision trace)
-npm install @xyflow/react dagre
-
-# Shell + state + UX
-npm install zustand @tanstack/react-query cmdk lucide-react react-markdown
-npm install @tanstack/react-router   # optional, if deep-linking required
-
-# Styling (Tailwind v4 — vite plugin, no PostCSS)
-npm install -D tailwindcss @tailwindcss/vite
-
-# Dev
-npm install -D vite @vitejs/plugin-react typescript
+# Host runtime (native-Linux / DGX appliance only — NOT Docker Desktop dev):
+sudo runsc install && sudo systemctl reload docker    # gVisor; compose.gvisor.yaml then applies
+# (alternative) install nestybox/sysbox v0.7.0 per its deb / k8s installer
 ```
 
-```go
-// internal/webui/embed.go
-package webui
-
-import "embed"
-
-//go:embed all:dist
-var Assets embed.FS
-```
-
----
-
-## Build / CI / Single-binary pipeline
-
-The single-binary constraint is satisfied by building the JS *before* the Go build and committing the contract that `internal/webui/dist/` exists at compile time.
-
-**Local + CI sequence:**
-```
-1. cd web && npm ci && npm run build           # Vite → web/dist
-2. copy web/dist → internal/webui/dist          # (Makefile target, or build into place)
-3. go build ./...                                # //go:embed all:dist bakes it into the binary
-```
-
-**Makefile:** add a `web` target (`npm ci && npm run build && rsync dist → internal/webui/dist`) and make `build`/`quality-full` depend on a present `dist`. Gate it so Go-only contributors are not forced to install Node for unrelated changes (ship a checked-in `dist` placeholder or a `web-build` CI artifact).
-
-**Docker (multi-stage):** the current `Dockerfile` has **no Node stage** (verified) — add one:
-```dockerfile
-FROM node:24-alpine AS web        # Node 24 matches the repo's Node-24 CI/release posture
-WORKDIR /web
-COPY web/package*.json ./
-RUN npm ci
-COPY web/ ./
-RUN npm run build                  # → /web/dist
-# ... existing Go builder stage ...
-COPY --from=web /web/dist /src/internal/webui/dist
-RUN go build ...                   # embeds dist
-```
-This adds one cached layer; the cold image cost is bounded by `npm ci` (the Go build is unchanged). Honors memory `feedback_preserve_docker_build_cache` — the web layer caches on `package*.json`.
-
-**Staleness risk:** Vite 8 + React 19 + Tailwind 4 are all current majors (2025–2026), so the chosen stack has the longest staleness runway available today. The one watch-item is the `@ag-ui/*` and `@assistant-ui/*` packages (pre-1.0, `0.0.x`/`0.14.x`) — pin exact versions and treat upgrades as deliberate; the *protocol* is stable (Aura's Go SDK speaks it), only the client API surface churns.
-
----
-
-## Integration points with `internal/agui` (verified against source)
-
-| Cockpit need | Existing backend seam | Notes |
-|--------------|----------------------|-------|
-| Live run stream | `POST /agent/run` → SSE via `streamSSE` (`server.go`) | `@ag-ui/client` `HttpAgent({ url: "/agent/run" })` consumes it directly. The translator emits the full lifecycle (RUN_STARTED → text/reasoning/tool/state deltas → RUN_FINISHED). |
-| Run timeline (reasoning, tool start/args/end/result, state delta) | `translator.go` already maps these to AG-UI `TEXT_MESSAGE_*`, `REASONING_*`, `TOOL_CALL_*`, `STATE_DELTA` | The frontend run-timeline (Frame 01 + BACKEND_CAPABILITY_MAP `run_timeline_event`) renders these event types directly. |
-| HITL approval center | Pause → `RUN_FINISHED` with `Interrupt` (`interruptFrom`, `responseSchema`); resume via `Resume[]` → `SubmitAnswers` | The `ask_user` approval queue maps to AG-UI interrupt/resume — assistant-ui's runtime handles this idiom; the schema-constrained options come through `ResponseSchema`. |
-| Artifact delivery | `CUSTOM` event `"aura.artifact"` (`ArtifactEventName`) | The display router keys on this custom event name to render a `local_artifact` display. |
-| History snapshot | `GET /threads/{id}/messages` → `MESSAGES_SNAPSHOT` JSON | React Query fetch on thread open / rehydrate. |
-| Health / readiness | `GET /healthz`, `GET /readyz` (PG + Neo4j probes), `/metrics`, `/debug/vars` | Frame 07 / runtime-status surface (`runtime_status`) reads these. |
-| Typed-display payload router | **No backend change for v1** — classify off the existing event stream + tool name (`web_search`→`web_result`, `web_fetch`→`document`, Neo4j MCP→`graph_*`, etc., per ux-spec mapping) | The spec's "richer AG-UI typed-display event protocol" is a *roadmap* item; v1 can classify client-side from tool-call names + StateDelta markers (the translator already stamps `tool_call_id`). A typed `CUSTOM` display event is the clean v2 once the client-side classifier proves the taxonomy. |
-| `ui_control` lane | **New** — a namespaced AG-UI `CUSTOM` event (`aura.ui_control`), allowlist-validated client-side | Mirrors the existing `aura.artifact` custom-event pattern. The allowlist (`open_panel`/`highlight_source`/`set_mode`/`show_job`/`set_density`/`theme_preview`) is enforced in the Zustand reducer; events are replayable from the run log per spec. |
-| Auth boundary | Gateway is **loopback-bind, auth-deferred** (amendment #35; the bind *is* the control) | See web-auth section — the cockpit milestone is where this graduates beyond loopback. |
-
----
-
-## Web-auth approaches (stack-level outline)
-
-The gateway today binds loopback with no auth (the bind is the compensating control). A web cockpit that an operator reaches over a network needs a real boundary. Three shapes, in increasing Aura-fit order:
-
-| Approach | Shape | Fit for Aura | Trade-off |
-|----------|-------|--------------|-----------|
-| **Reverse-proxy-enforced** (Caddy/oauth2-proxy/basic-auth in front) | Aura stays loopback; the proxy terminates TLS + auth | **Recommended starting point.** Aura already documents Caddy on-demand TLS (recent commit `5f70703f`). The daemon keeps its loopback posture *unchanged* (no new code, no new attack surface in Go), and the operator boundary lives in infra. Matches "minimal industrial shape". | Auth lives outside the binary — fine for the DGX-Spark single-operator bundle, weaker for true multi-tenant (which PROJECT.md explicitly defers: "Multi-user con auth/RBAC reale" is out of scope). |
-| **Session cookie** (server-set, HttpOnly + Secure + SameSite) | Go middleware on the mux issues/validates a signed session cookie | The right *in-binary* choice if/when the proxy is not desired. `golang-security` skill: HttpOnly + Secure + SameSite, constant-time compare, fail-closed. Pairs naturally with a browser SPA (no token storage in JS). | Adds session store + login surface to the daemon — real scope. Only worth it when the proxy boundary is insufficient. |
-| **Bearer token** (header on `fetch`/`HttpAgent`) | A static/operator token validated by Go middleware | Simplest in-binary option; `HttpAgent` supports custom headers. | Token must live in the browser (XSS-exposed); inferior to a cookie for a browser app. Reserve for machine/API callers, not the human cockpit. |
-
-**Recommendation:** ship the cockpit behind the **reverse proxy** boundary first (zero change to the auth-deferred Go posture, aligns with the existing Caddy story and the single-operator bundle), and design a thin Go session-cookie middleware as the documented in-binary upgrade path. Do **not** build OAuth/RBAC/multi-tenant — PROJECT.md puts that out of scope for v1.
+OTel metrics SDK, Prometheus client, OTLP exporters, testcontainers, AWS S3 SDK, govulncheck: **already present — no install, just wire.**
 
 ---
 
@@ -180,37 +160,46 @@ The gateway today binds loopback with no auth (the bind is the compensating cont
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| **Shape A (embedded SPA)** | Shape B (separate SPA) | When the cockpit must scale/deploy independently of the daemon, or be served from a CDN. Same app code — purely a serving/auth-boundary decision; defer until there's a concrete reason to split. |
-| **Vite 8** | Next.js 15 (`output: export`) | Only if SSR/SSG/file-routing is wanted. Elysia uses it — but Elysia *also* compiles to a static `out/` it copies into a backend (`export.sh`), i.e. it uses Next purely as a static builder. For a pure SPA embedded in a Go binary, Next's SSR machinery is dead weight; Vite is the leaner fit. |
-| **`@neo4j-nvl/react`** | Cytoscape.js 3.34 / `react-cytoscapejs` 2.0 | If a permissive OSI license is a hard procurement requirement (Cytoscape is MIT; NVL is a custom Neo4j license — see below). Cytoscape is canvas-rendered (degrades past ~3–5k nodes) and you build the Neo4j label/degree/path model yourself. |
-| **`@neo4j-nvl/react`** | sigma.js 3.0 + graphology 0.26 | If the graph routinely exceeds ~50k nodes and raw WebGL throughput dominates. The spec explicitly says default to 20–80 evidence-path nodes and *avoid hairballs* — so NVL's scale is more than enough and its Neo4j-native model wins. |
-| **assistant-ui** | Raw `@ag-ui/client` + hand-built chat | If assistant-ui's thread model fights Aura's shell. Keep it removable; the raw client always works (it is the foundation assistant-ui sits on). |
-| **Zustand** | Redux Toolkit / Jotai | Redux only if a large team needs strict conventions; overkill here. Jotai if atom-granular re-render tuning becomes a measured bottleneck. |
-| **Tailwind v4** | CSS Modules / vanilla-extract | If the team prefers scoped CSS over utilities. But `tokens.json` → Tailwind `@theme` is the lowest-friction path given the design package. |
+| Option B (Docker SDK controller) | Option A (k3s/k0s + agent-sandbox CRDs) | **DGX Spark appliance** or a true multi-tenant SaaS with warm-pool scale — there K8s + `kubernetes-sigs/agent-sandbox` is correct. Not the mini-PC. |
+| Option B controller | rivetdev/sandbox-agent as the *primary* path | Keep rivetdev as the **deliberate-escalation** runner it already is; B subsumes it for the per-user default. Use rivetdev if you specifically want its E2B-on-cloud (Daytona/Vercel) deploy targets. |
+| gVisor `runsc` | Sysbox | When a sandboxed skill must run **nested Docker/systemd** or you need near-runc perf over max isolation. |
+| Authula | Keep HMAC passphrase cookie | `dev`/`local_trusted` single-operator only. Multi-user production **requires** Authula (per-route capability + per-principal identity). |
+| Prometheus scrape (single-binary) | OTel Collector sidecar | Add the Collector only when exporting traces/metrics to an **external** backend (server_production/DGX). Mini-PC: scrape Aura's `/metrics` directly. |
+| k6 | vegeta (Go lib) | Use vegeta for **in-CI Go-embedded** smoke + p95 assertions; k6 for richer multi-stage scenario load. Run both (they don't conflict). |
+| syft (canonical SBOM) | cyclonedx-gomod | Use cyclonedx-gomod for module-accurate cross-check / `app`-mode binary SBOM; syft stays canonical. |
 
 ---
 
-## What NOT to Use
+## What NOT to Use (scope guards)
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| **Shape C: templ + htmx + vanilla JS** | Cannot deliver the WebGL Neo4j canvas, stateful dockable windows, typed-display router, and `cmdk` without re-inventing a component runtime in untyped JS. Odysseus proves it's *possible* but at ~40 bespoke modules with no types — an anti-pattern for a surface this rich. | Vite + React SPA (Shape A). |
-| **Next.js as the runtime** (server mode) | Pulls a Node server into a Go single-binary product — defeats the deploy model. Even `output: export` adds SSR scaffolding you never run. | Vite SPA → `embed.FS`. |
-| **React Flow (`@xyflow/react`) for the Neo4j graph** | It's a layered DAG/flow renderer, not a force-directed network graph. Using it for Frame 06 produces a wrong-shaped, non-scaling graph. | `@neo4j-nvl/react` for Frame 06; keep React Flow for the Frame 02 decision *tree* only. |
-| **Three.js / `@react-three/*`** (Elysia's sphere) | Pure decoration; ux-spec Non-Goals explicitly forbid copying Elysia's abstract sphere. Heavy GPU/bundle cost on a mini-PC. | Nothing — drop it. |
-| **Socket.IO / raw WebSocket** (Elysia's transport) | Aura's backend is SSE (`text/event-stream`), not WS. Adopting Elysia's transport would mean re-plumbing the gateway. | `@ag-ui/client` `HttpAgent` over the existing SSE. |
-| **A second graph lib alongside NVL** | Two graph engines = double the bundle + double the maintenance. | One network-graph lib (NVL) + one flow lib (React Flow) for distinct jobs. |
-| **OAuth/RBAC/multi-tenant auth** | PROJECT.md puts real multi-user auth out of scope for v1. | Reverse-proxy boundary now; session-cookie middleware as the documented upgrade. |
-| **CSR data-fetching without React Query** | Hand-rolled fetch/loading/error/retry across ~8 governance surfaces = bug surface. | `@tanstack/react-query` for all REST-shaped reads. |
+| **Full Kubernetes / k3s / k0s on the mini-PC** | ~0.6–1.2 GB + a CPU core idle control plane; breaks single-binary + Docker-Compose invariant; second orchestrator to operate | Option B Docker-SDK controller; reserve K8s for the DGX appliance |
+| **RBAC frameworks** (Casbin, OPA-as-RBAC, role tables) | Explicitly out of scope — authz stays `capability_grants` + Authula per-route capability | Authula capability-per-route (no roles) |
+| **New LLM providers / GPU-gated stacks** (vLLM/LMCache, new rerankers) | Slice 13 is deferred; GPU work is out of scope | Existing OpenRouter/DeepSeek-V4 path unchanged |
+| **OAuth multi-provider login, SaaS multi-tenant** | Out of scope (RBAC/OAuth = post-v2.0.0); v2.0.0 is identity isolation only | Authula email+password + capability; identity-scoped store/API |
+| **Firecracker/microVM on mini-PC** | VM boot + mem overhead, breaks Compose simplicity | gVisor `runsc` (already wired) for the isolation dial |
+| **ghz** (unless gRPC API added) | No gRPC serving surface today (only OTLP export) | k6/vegeta for the HTTP/SSE surfaces |
+| **Neo4j Enterprise online backup** | Community is offline-dump only; do not assume online/differential backup exists | Scheduled offline `neo4j-admin database dump` + restore drill (see Flags) |
+| **A second secrets system / vault** | Scope creep; `.env` + profile validation is the minimal industrial shape | Profile validation that *rejects* default secrets in `server_production` (F-002/F-007) |
 
 ---
 
-## Licensing note (decision-grade)
+## Stack Patterns by Variant (runtime profiles)
 
-| Package | License | Implication |
-|---------|---------|-------------|
-| React, Vite, Tailwind, cmdk, assistant-ui, `@ag-ui/*`, Zustand, TanStack, `@xyflow/react` | MIT (xyflow: MIT) | No constraint. |
-| **`@neo4j-nvl/*` (1.2.0)** | **Custom Neo4j license** (`SEE LICENSE IN 'LICENSE.txt'`, verified via npm registry) — *not* OSI/MIT | Free to install from public npm with no auth (verified) and used in Neo4j's own OSS `llm-graph-builder`. But it is a Neo4j-authored license, not MIT/Apache. **Read `LICENSE.txt` before shipping the commercial DGX-Spark bundle** (PROJECT.md's commercial target). If the custom license is a blocker for the bundle, the fallback is **Cytoscape.js (MIT)** with a hand-built Neo4j adapter — more work, fully permissive. Flag this as a roadmap decision gate, not a silent default. |
+Maps to target-architecture.md's profile table. The sandbox + auth + observability dials change per profile:
+
+**If `dev`:**
+- Sandbox = `host_direct` (in-process `shell_exec`); auth = none/HMAC; OTel exporter = `stdout`/`none`. Today's behavior, explicitly labeled dev.
+
+**If `local_trusted`:**
+- Sandbox = host-direct with approvals; auth = HMAC or Authula; OTel = optional. The single-operator mini-PC default that exists now.
+
+**If `single_user_hardened`:**
+- Sandbox = **per-user Docker container (Option B), runtime `runsc`** (native-Linux); auth = Authula; metrics + `/readyz` on; secrets strict. Host shell disabled except via explicit grant.
+
+**If `server_production`:**
+- Sandbox = **per-user container mandatory**, host shell **disabled**, egress-allowlisted; auth = Authula required + per-principal owner-scoping enforced; OTel + Prometheus + alert rules + readiness mandatory; **fail-fast on default secrets / default object-store creds / listener bind failure** (F-002/F-007/F-008/F-016). SBOM + govulncheck gates blocking.
 
 ---
 
@@ -218,40 +207,48 @@ The gateway today binds loopback with no auth (the bind is the compensating cont
 
 | Package A | Compatible With | Notes |
 |-----------|-----------------|-------|
-| `@neo4j-nvl/react@1.2.0` | `react@18 \|\| ^19` | Peer dep verified — React 19 OK. |
-| `@assistant-ui/react-ag-ui@0.0.40` | `@ag-ui/client@^0.0.5x`, `react@18 \|\| 19` | Devdep tracks react 19; peer allows 18\|19. |
-| `@ag-ui/client@0.0.57` (TS) | `ag-ui-protocol/go SDK @ v0.0.0-2026...` (Go, vendored) | Same protocol, two official SDKs — wire-compatible by spec. Both pre-1.0; pin exact and upgrade deliberately. |
-| Tailwind `4.3.1` + `@tailwindcss/vite@4.3.1` | Vite 8 | v4 uses the Vite plugin (no PostCSS config). |
-| Vite `8.0.x` + `@vitejs/plugin-react@6.0.x` | React 19 | Current pairing. |
-| Go `1.26.4` + `//go:embed all:dist` | — | `all:` prefix includes dotfiles; matches existing Aura embed usage. |
-| Node `24` (CI/Docker build stage) | Vite 8 / npm | Matches Aura's Node-24 release posture (commit `5f70703f`). |
+| Go `1.26.4` | cyclonedx-gomod (needs Go ≥1.25) | OK |
+| OTel SDK `v1.44.0` (trace) | OTel metric `v1.44.0` | Same release train — wire the metric reader/exporter at the version already in `go.mod` (no bump needed) |
+| Authula `v1.12.0` | pgx `v5.9.2` / PG17 | Authula supports Postgres backend; shares the `aura.*` DB or its own schema; v1.12 event bus -> audit-ledger hook |
+| Docker SDK `moby/moby/client v0.4.1` | Docker Engine on host / Compose | Same engine the stack runs; no Docker Desktop on the prod path (Linux only per constraints) |
+| gVisor `runsc` | Linux ≥4.14.77, native Linux/arm64 | `compose.gvisor.yaml` already gates this to native-Linux appliances; OFF on Docker Desktop |
+| testcontainers-go `v0.42.0` | PG17 + Neo4j 5.26 modules `v0.42.0` | Already pinned matching; reuse for DR + chaos tiers |
+| Neo4j `5.26.26-community` | `neo4j-admin database dump/load` | **Offline-only** in Community (Flag below) |
+
+---
+
+## Constraints / Flags for the Roadmapper
+
+1. **Single-binary + Docker-Compose invariant.** Option A (K8s) violates it; **Option B preserves it.** This is the load-bearing reason for the B recommendation. Any roadmap phase that proposes K8s on the mini-PC contradicts PROJECT.md constraints.
+2. **Mini-PC RAM headroom is tight.** Idle ~5.7–6.2 GB on a 16 GB floor; Slice 13 (deferred) wants +5–7 GB. The per-user sandbox must be **idle-zero** (Option B with no warm pool) — do not stand up an idle orchestrator or warm pool on this host.
+3. **⚠ Neo4j Community = offline backup only.** `neo4j-admin database backup` (online/differential) is **Enterprise-only**. The DR drill (F-042) must use scheduled **offline `neo4j-admin database dump`** (brief downtime / snapshot window) + `database load` restore, OR budget Neo4j Enterprise on the DGX appliance. **Flag this in the DR-harness phase** — it affects RPO/RTO targets.
+4. **Default secrets in compose.yaml are intentional dev defaults** (`GARAGE_RPC_SECRET`, `AURA_OBJECTSTORE_ACCESS_KEY/SECRET_KEY`, PIM admin token). The profile-validation work (F-002/F-007) must **reject these in `server_production`** — they exist in the repo today as the F-007 finding.
+5. **Authula is already the compose default** (`AURA_WEB_AUTH_PROVIDER: authula`) but go.mod pins v1.11.0 while v1.12.0 ships an event bus for Library Mode. The cutover is a *flip + bump + per-principal owner-scoping*, not an adoption. Confirm the existing HMAC↔Authula boundary converges on one principal/capability model (it already does per PROJECT.md).
+6. **OTel traces are wired; OTel metrics are not.** `internal/obs` installs the tracer provider; `internal/agent/metrics.go` uses Prometheus directly. The observability-pack phase (F-023/F-024) wires the OTel **metric** SDK path and the audit's required identifiers (`run_id`, `tool_invocation_id`, `actor_id`, `runtime_profile`, `policy_decision_id`, …) as span attrs + metric labels.
+7. **gVisor overlay exists but is OFF and native-Linux-only.** Do not enable on Docker Desktop dev; it's the hardened/DGX dial. The per-user-container work should make `runtime: runsc` a per-profile policy, not a global flag.
+8. **No GPU, no RBAC, no new LLM providers** in v2.0.0 — confirmed against the "DO NOT add" list. ghz only if a gRPC API materializes (it shouldn't).
 
 ---
 
 ## Sources
 
-- **Design package (truth-source, read in full):** `docs/design/aura-deep-search-figma/{ux-spec.md, README.md, FIGMA_PROJECT.md, BACKEND_CAPABILITY_MAP.md, tokens.json, odysseus-pattern-study.md}` — requirements, component inventory, graph payload contract, `ui_control` allowlist, copy contract, non-goals.
-- **Aura backend source (read):** `internal/agui/server.go` (SSE pump, CORS, health/ready, redaction), `internal/agui/translator.go` (AG-UI event mapping, interrupt/resume, `aura.artifact` custom event), `cmd/aura/serve.go` (the live `http.Server` to mount on), `go.mod` (Go 1.26.4; vendored `ag-ui-protocol/go` SDK).
-- **D:/tmp sources inspected at source level:**
-  - `elysia-frontend/` — Next.js 14 `output: export` → static copy into backend (`export.sh`); React 18 + Tailwind 3 + Radix + `cmdk`; `@xyflow/react`+`dagre` for the *decision tree*; transport is **Socket.IO/WebSocket** (`SocketContext.tsx`), not SSE. Proves the typed-display + static-export-into-backend pattern; proves React Flow is for the tree, not the graph.
-  - `llm-graph-builder/frontend/` — **Vite 4 + React 18 + Tailwind 4 + `@neo4j-nvl/react` (`InteractiveNvlWrapper`) + `@neo4j-ndl/react`**; the Neo4j team's own tool over a Cypher backend. Decisive evidence for NVL as the graph engine.
-  - `assistant-ui/packages/react-ag-ui/` — `@assistant-ui/react-ag-ui` wraps `@ag-ui/client` `HttpAgent`; README lists Go agents as supported. Decisive evidence the chat lane is near-free over Aura's existing SSE.
-  - `odysseus/static/` — pure vanilla JS, ~40 hand-rolled modules, no build/types (`package.json` has only an Anthropic SDK dep). Proves vanilla *can* do the operator-shell mechanics but at high hand-rolled cost → argues against Shape C for a surface this rich.
-  - `picobot/embeds/embeds.go` — minimal `//go:embed` pattern reference for the Go-side embed package.
-  - `nanobot/webui/` — has a separate JS webui (Shape-B-style); confirms the separate-SPA shape exists but is not single-binary.
-- **Version verification (live npm registry / Context7 / WebSearch, 2026-06-15):**
-  - Vite 8.0.16 (Rolldown; 2026-03-12) — vite.dev/blog/announcing-vite8 [MEDIUM→HIGH, multi-source]
-  - React 19.2 stable (Oct 2025) — react.dev/versions [HIGH]
-  - Tailwind 4.3.1 (Dec 2025) — tailwindcss.com/blog [HIGH]
-  - `@neo4j-nvl/{base,react}` 1.2.0, custom license, peer react 18\|19 — npm registry (curl) [HIGH]
-  - `@ag-ui/client` 0.0.57, `@ag-ui/core` 0.0.57 — npm registry [HIGH]
-  - `@assistant-ui/react` 0.14.21 (MIT), `@assistant-ui/react-ag-ui` 0.0.40 — npm registry [HIGH]
-  - `cmdk` 1.1.1 (MIT) — jsDelivr [HIGH]
-  - `@xyflow/react` 12.11.0, `cytoscape` 3.34.0, `sigma` 3.0.3, `graphology` 0.26.0, `react-force-graph` 1.48.2 — npm registry [HIGH]
-  - Zustand 5.0.14, `@tanstack/react-query` 5.101.0, `@tanstack/react-router` 1.170.15, `@vitejs/plugin-react` 6.0.2 — npm registry [HIGH]
-  - Graph-lib performance comparison (sigma WebGL > cytoscape canvas ~3–5k node ceiling) — pkgpulse / memgraph [MEDIUM]
-  - Go+Vite `embed.FS` SPA-fallback pattern — PocketBase + ofeng.org/matteogassend write-ups [HIGH, well-established]
+- `D:\Aura\go.mod` — current pins: Authula v1.11.0, OTel v1.44.0, prometheus/client_golang v1.23.2, moby/moby/client v0.4.1, testcontainers-go v0.42.0, aws-sdk-go-v2/service/s3, neo4j-go-driver v5.28.4 (HIGH — ground truth)
+- `D:\Aura\compose.yaml` + `D:\Aura\compose.gvisor.yaml` — existing sidecar footprint, Garage v2.0.0, runsc overlay (HIGH — ground truth)
+- `D:\Aura\internal\agent\tools\shell_exec.go`, `internal\obs\init.go` — F-001 in-process host shell + tracer-only OTel wiring (HIGH — ground truth)
+- github.com/kubernetes-sigs/agent-sandbox — v0.5.0, Apache-2.0, CRDs, Go client `sigs.k8s.io/agent-sandbox/clients/go/sandbox`, gVisor/Kata, K8s ≥1.26 (HIGH)
+- github.com/agent-sandbox/agent-sandbox — v0.7.0, Apache-2.0, E2B+MCP-compatible AIO Sandbox, per-user isolation (HIGH)
+- github.com/rivet-dev/sandbox-agent — E2B-compatible, ~15MB static binary, MCP server, per-user/per-agent isolation (MEDIUM — web)
+- portainer.io / k3s docs / siderolabs — k3s ~1.2 GB server-node RAM, k0s 1 GB min / 2 GB comfortable; control-plane idle cost (MEDIUM — multiple sources agree)
+- gvisor.dev/docs/architecture_guide/performance + pistack.xyz runtime comparison — runsc ~10–30% I/O overhead / ~0% CPU; Sysbox near-runc (MEDIUM — official + corroborating)
+- nestybox/sysbox releases — v0.7.0 (Mar 2026), Apache-2.0 (HIGH)
+- github.com/Authula/authula + /tags — v1.12.0 (Jun 20 2026) latest, Apache-2.0, capability-per-route (NOT RBAC), 2FA/TOTP, OAuth, PG/MySQL/SQLite, Library Mode + event bus (HIGH)
+- open-telemetry/opentelemetry-go — v1.44.0 latest stable, Apache-2.0 (HIGH — matches go.mod)
+- prometheus/client_golang releases — v1.23.2 latest, BSD-3-Clause (HIGH — matches go.mod)
+- open-telemetry/opentelemetry-collector-releases — v0.154.0 (Jun 2026), Apache-2.0 (MEDIUM — web)
+- anchore syft v1.44.0+ / CycloneDX cyclonedx-gomod (spec 1.6, Go ≥1.25) — Apache-2.0 (MEDIUM)
+- grafana/k6 v2.1.0 (Jun 2026, AGPL-3.0) / Shopify/toxiproxy v2.12.0 (MIT) / tsenart/vegeta (MIT) / bojand/ghz v0.121.0 (MIT) (MEDIUM — multiple sources)
+- neo4j.com/docs/operations-manual backup-restore — Community = offline dump/load only; online/differential = Enterprise (HIGH — official)
 
 ---
-*Stack research for: Aura operator web cockpit (frontend + serving infra)*
-*Researched: 2026-06-15*
+*Stack research for: v2.0.0 Industrial Hardening & Multi-User Production (subsequent milestone — wiring/policy over an existing single-binary Go substrate)*
+*Researched: 2026-06-29*
