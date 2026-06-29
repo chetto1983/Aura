@@ -103,12 +103,22 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     return screen.getByText(title).closest('li') as HTMLElement;
   }
 
+  function openActions(title: string): HTMLElement {
+    const row = rowFor(title);
+    fireEvent.click(within(row).getByRole('button', { name: 'Conversation actions' }));
+    return row;
+  }
+
   it('renders the conversation rows recent-first over GET /api/conversations', async () => {
     renderSidebar();
     await waitFor(() => {
       expect(screen.getByText('Latest run')).toBeTruthy();
     });
-    expect(screen.getByText('Latest run').closest('[data-slot="card"]')).not.toBeNull();
+    expect(screen.getByText('Latest run').closest('[data-slot="card"]')).toBeNull();
+    expect(
+      within(rowFor('Latest run')).getByRole('button', { name: 'Conversation actions' }),
+    ).toBeTruthy();
+    expect(within(rowFor('Latest run')).queryByRole('button', { name: 'Rename' })).toBeNull();
     // The store returns recent-first; the rendered order preserves it.
     const titles = screen.getAllByText(/run$/).map((el) => el.textContent);
     expect(titles).toEqual(['Latest run', 'Older run']);
@@ -145,7 +155,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   it('inline-renames a conversation → POST /rename', async () => {
     renderSidebar();
     await screen.findByText('Latest run');
-    fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Rename' }));
+    fireEvent.click(within(openActions('Latest run')).getByRole('menuitem', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Conversation title' });
     fireEvent.change(input, { target: { value: 'Renamed run' } });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
@@ -157,7 +167,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   it('Escape cancels an inline rename without a POST', async () => {
     renderSidebar();
     await screen.findByText('Latest run');
-    fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Rename' }));
+    fireEvent.click(within(openActions('Latest run')).getByRole('menuitem', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Conversation title' });
     fireEvent.change(input, { target: { value: 'Discarded' } });
     fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });
@@ -171,7 +181,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   it('does not POST a rename when the draft is blank (commit no-op)', async () => {
     renderSidebar();
     await screen.findByText('Latest run');
-    fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Rename' }));
+    fireEvent.click(within(openActions('Latest run')).getByRole('menuitem', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Conversation title' });
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
@@ -184,7 +194,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   it('archives via the reversible primary action → POST /archive', async () => {
     renderSidebar();
     await screen.findByText('Latest run');
-    fireEvent.click(within(rowFor('Latest run')).getByRole('button', { name: 'Archive' }));
+    fireEvent.click(within(openActions('Latest run')).getByRole('menuitem', { name: 'Archive' }));
     await waitFor(() => {
       expect(log.some((c) => c.method === 'POST' && c.url.endsWith('/c-recent/archive'))).toBe(
         true,
@@ -197,7 +207,9 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     await screen.findByText('Latest run');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Show archived' }));
     await screen.findByText('Archived run');
-    fireEvent.click(screen.getByRole('button', { name: 'Unarchive' }));
+    fireEvent.click(
+      within(openActions('Archived run')).getByRole('menuitem', { name: 'Unarchive' }),
+    );
     await waitFor(() => {
       expect(log.some((c) => c.method === 'POST' && c.url.endsWith('/c-arch/unarchive'))).toBe(
         true,
@@ -211,7 +223,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
 
     // "Delete permanently" opens the dialog — but does NOT fire DELETE.
     fireEvent.click(
-      within(rowFor('Latest run')).getByRole('button', { name: 'Delete permanently' }),
+      within(openActions('Latest run')).getByRole('menuitem', { name: 'Delete permanently' }),
     );
     const dialog = await screen.findByRole('dialog');
     expect(screen.getByText('Delete conversation?')).toBeTruthy();
@@ -233,7 +245,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     renderSidebar();
     await screen.findByText('Latest run');
     fireEvent.click(
-      within(rowFor('Latest run')).getByRole('button', { name: 'Delete permanently' }),
+      within(openActions('Latest run')).getByRole('menuitem', { name: 'Delete permanently' }),
     );
     const dialog = await screen.findByRole('dialog');
     // The confirm button inside the dialog (also labelled "Delete permanently").

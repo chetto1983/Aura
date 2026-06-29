@@ -36,8 +36,8 @@ const defaultStopTimeout = 10 * time.Second
 // "after seq >= 3"). System(1) + first user(2) + first assistant(3).
 const autoTitleMinSeq = 3
 
-// localIdentityName is the seeded single-user identity that owns new conversations
-// (Slice 1.7 scaffolding).
+// localIdentityName is the pre-Authula seeded identity. It remains only as a
+// fallback for legacy databases that have no user identity yet.
 const localIdentityName = "local"
 
 // ErrThreadBusy reports that a caller tried to start a second concurrent run for

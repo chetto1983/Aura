@@ -26,6 +26,7 @@ export interface InterviewStepProps {
   readonly onConfirm: () => void;
   readonly onEdit: (answers: OnboardingAnswers) => void;
   readonly onSkip: () => void;
+  readonly skipLabel?: string;
 }
 
 const isDraft = (step: OnboardingStepResponse): boolean =>
@@ -38,6 +39,7 @@ export function InterviewStep({
   onConfirm,
   onEdit,
   onSkip,
+  skipLabel,
 }: InterviewStepProps) {
   const { t } = useTranslation();
   const answerId = useId();
@@ -47,6 +49,7 @@ export function InterviewStep({
   const [editRole, setEditRole] = useState('');
 
   const draftMode = isDraft(step);
+  const effectiveSkipLabel = skipLabel ?? t('onboarding.cta.skip');
 
   function submitAnswer() {
     onAnswer(answer);
@@ -87,7 +90,7 @@ export function InterviewStep({
             <Card className="gap-3 bg-surface p-4">
               <div className="flex flex-col gap-1">
                 <Label htmlFor={`${answerId}-name`} className="text-[13px] font-semibold text-text">
-                  {t('onboarding.credentials.emailLabel')}
+                  {t('onboarding.interview.editNameLabel')}
                 </Label>
                 <Input
                   id={`${answerId}-name`}
@@ -101,7 +104,7 @@ export function InterviewStep({
               </div>
               <div className="flex flex-col gap-1">
                 <Label htmlFor={`${answerId}-role`} className="text-[13px] font-semibold text-text">
-                  {t('onboarding.steps.interview')}
+                  {t('onboarding.interview.editRoleLabel')}
                 </Label>
                 <Input
                   id={`${answerId}-role`}
@@ -140,7 +143,7 @@ export function InterviewStep({
               onClick={onSkip}
               className="border border-border bg-surface-2 text-text-muted hover:border-border-strong hover:text-text"
             >
-              {t('onboarding.cta.skip')}
+              {effectiveSkipLabel}
             </Button>
           </div>
         </div>
@@ -172,7 +175,7 @@ export function InterviewStep({
               onClick={onSkip}
               className="border border-border bg-surface-2 text-text-muted hover:border-border-strong hover:text-text"
             >
-              {t('onboarding.cta.skip')}
+              {effectiveSkipLabel}
             </Button>
           </div>
         </div>

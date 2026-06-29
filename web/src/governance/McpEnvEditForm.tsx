@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type ComponentProps } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
@@ -9,21 +9,19 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SecretInput } from '@/components/ui/secret-input';
 
-// McpEnvEditForm (MCPW-02) — the four-state redacted env editor that REPLACES the read-only
-// env-keys <section> of McpServerDetail in edit mode. It renders the FOUR env states
-// (required / optional / missing / placeholder) as a dot + label (NEVER color-alone), masks a
-// stored secret as the redacted ${KEY} placeholder with NO eye-reveal (the value was never
-// sent — leaving it untouched PRESERVES the secret server-side), and surfaces a SOFT warning
-// card (border-warning bg-warning/10 + the offending keys) when a required var is still
-// missing/placeholder at save — the save is still ALLOWED (informational, MCPW-02 / D-F2).
+// McpEnvEditForm (MCPW-02): the four-state redacted env editor that replaces the read-only
+// env-keys section of McpServerDetail in edit mode. It renders the four env states
+// (required / optional / missing / placeholder) as a dot + label (never color-alone), masks
+// secret rows by default, and surfaces a soft warning when a required var is still
+// missing/placeholder at save. The save remains allowed (informational, MCPW-02 / D-F2).
 //
-// SECURITY (T-29-04-01): no raw secret VALUE ever enters the DOM on any state. A secret row's
-// initial value is the redacted ${KEY} placeholder, not the value; the value is sent ONLY
-// when the operator types a real replacement (rotate). Submitting the unchanged placeholder
-// preserves the stored secret (the backend SetServerEnv four-state merge).
+// SECURITY (T-29-04-01): no raw secret value ever enters the DOM. A stored secret row's
+// initial value is the redacted ${KEY} placeholder, not the value; the value is sent only when
+// the operator types a real replacement. Submitting the unchanged placeholder preserves the
+// stored secret through the backend SetServerEnv four-state merge.
 
-/** One editable env row's derived health state (UI-SPEC §2 four-state table). */
 export type EnvState = 'required' | 'optional' | 'missing' | 'placeholder';
 
 const STATE_DOT: Record<EnvState, string> = {
@@ -40,14 +38,10 @@ const STATE_LABEL: Record<EnvState, string> = {
   placeholder: 'governance.mcp.env.state.placeholder',
 };
 
-/** The redacted placeholder literal shown for a stored secret in edit mode. The value is
- * NEVER in the DOM; this `${KEY}` token is what the backend round-trips to preserve. */
 function placeholderToken(key: string): string {
   return `\${${key}}`;
 }
 
-/** One row's editable model. `secret` masks the field as the redacted ${KEY} placeholder;
- * `present` distinguishes a stored value from a never-set (missing) required var. */
 interface EnvRow {
   readonly key: string;
   readonly secret: boolean;
@@ -65,13 +59,8 @@ function deriveState(row: EnvRow): EnvState {
 
 export interface McpEnvEditFormProps {
   readonly serverName: string;
-  /** The stored env-key chips (key-only; a redacted chip is a secret). */
   readonly envKeys: readonly McpEnvChip[];
-  /** The recipe RequiredEnv keys, if any — drives required/missing classification. A custom
-   * server passes []; every present key is then `optional`. */
   readonly requiredEnv?: readonly string[];
-  /** Called on a successful save with whether any untouched secret was preserved, so the
-   * parent can surface the "Unchanged secrets were preserved." affirmation in read mode. */
   readonly onSaved?: (preservedSecret: boolean) => void;
   readonly onClose: () => void;
 }
@@ -97,8 +86,6 @@ export function McpEnvEditForm({
       present: true,
       value: chip.redacted ? placeholderToken(chip.key) : '',
     }));
-    // A required var with no stored chip is a MISSING row (rendered, contributes to the
-    // soft warning) so the operator can fill it in place.
     const missing = requiredEnv
       .filter((key) => !envKeys.some((chip) => chip.key === key))
       .map<EnvRow>((key) => ({ key, secret: true, required: true, present: false, value: '' }));
@@ -110,8 +97,6 @@ export function McpEnvEditForm({
       setMcpServerEnv(serverName, vars.env).then(() => vars.preserved),
     onSuccess: (preserved: boolean) => {
       void queryClient.invalidateQueries({ queryKey: ['governance', 'mcp'] });
-      // The affirmation is surfaced by the parent in read mode (the section returns to read
-      // mode on success — UI-SPEC §2).
       onSaved?.(preserved);
       onClose();
     },
@@ -121,22 +106,15 @@ export function McpEnvEditForm({
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, value } : row)));
   }
 
-  // The soft-warning offending keys: every required var still missing or holding its
-  // placeholder literal. The save stays ALLOWED (informational, not a blocker).
   const offending = rows
     .filter((row) => row.required)
     .filter((row) => !row.present || row.value === '' || row.value === placeholderToken(row.key))
     .map((row) => row.key);
 
   function submit() {
-    // Whether any secret row was left at its redacted placeholder (so the parent can surface
-    // the "Unchanged secrets were preserved." affirmation on save).
     const preserved = rows.some(
       (row) => row.secret && row.present && row.value === placeholderToken(row.key),
     );
-    // A secret left at its redacted placeholder is submitted verbatim → the backend
-    // PRESERVES the stored value (it never overwrites with the placeholder). A missing
-    // required var with no typed value is omitted (nothing to write).
     const env = rows
       .filter((row) => row.present || row.value !== '')
       .map((row) => `${row.key}=${row.value}`);
@@ -173,16 +151,17 @@ export function McpEnvEditForm({
                   {t(STATE_LABEL[state])}
                 </Badge>
               </span>
-              <Input
+              <EnvValueInput
+                secret={row.secret}
+                showLabel={t('secret.show', { label: row.key })}
+                hideLabel={t('secret.hide', { label: row.key })}
                 id={fieldId}
                 type="text"
                 value={row.value}
                 onChange={(event) => {
                   setRowValue(row.key, event.target.value);
                 }}
-                // A secret shows the redacted ${KEY} placeholder — NO eye-reveal, the value
-                // was never sent. A missing required var shows an em-dash placeholder.
-                placeholder={row.present ? undefined : '—'}
+                placeholder={row.present ? undefined : '-'}
                 aria-describedby={row.secret ? `${fieldId}-hint` : undefined}
                 className="font-mono text-[13px]"
               />
@@ -238,12 +217,23 @@ export function McpEnvEditForm({
   );
 }
 
+interface EnvValueInputProps extends ComponentProps<'input'> {
+  readonly secret: boolean;
+  readonly showLabel: string;
+  readonly hideLabel: string;
+}
+
+function EnvValueInput({ hideLabel, secret, showLabel, type, ...props }: EnvValueInputProps) {
+  if (secret) {
+    return <SecretInput {...props} showLabel={showLabel} hideLabel={hideLabel} />;
+  }
+  return <Input {...props} type={type} />;
+}
+
 function stateTone(state: EnvState): string {
   if (state === 'missing') return 'text-danger';
   if (state === 'placeholder') return 'text-warning';
   if (state === 'optional') return 'text-text-muted';
-  // required (present): default text — signals "needs attention", distinct from muted optional
-  // (UI-SPEC §2 four-state table: required label = `text`).
   return 'text-text';
 }
 

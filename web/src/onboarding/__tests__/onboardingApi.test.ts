@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  completeProfileOnboarding,
   fetchTelegramStatus,
   provisionOnboarding,
+  startProfileOnboarding,
   startOnboarding,
   stepOnboarding,
 } from '../onboardingApi';
@@ -44,6 +46,24 @@ describe('onboardingApi same-origin throwing fetch', () => {
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('same-origin');
     expect((init.headers as Record<string, string>).Accept).toBe('application/json');
+  });
+
+  it('startProfileOnboarding POSTs the current-profile start route', async () => {
+    const body = {
+      sessionToken: 'tok',
+      step: 'identity',
+      content: 'q',
+      status: 'active',
+      capabilityOptions: [],
+    };
+    const fetchMock = okJSON(body);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(startProfileOnboarding()).resolves.toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/onboarding/profile/start');
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('same-origin');
   });
 
   it('stepOnboarding POSTs the intent body to the encoded {token}/step path', async () => {
@@ -93,6 +113,20 @@ describe('onboardingApi same-origin throwing fetch', () => {
     expect(init.credentials).toBe('same-origin');
     // GET has no method override → undefined (fetch default).
     expect(init.method).toBeUndefined();
+  });
+
+  it('completeProfileOnboarding POSTs the current-profile completion route', async () => {
+    const fetchMock = okJSON({ completed: true, skipped: false });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(completeProfileOnboarding('tok')).resolves.toEqual({
+      completed: true,
+      skipped: false,
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/onboarding/tok/profile');
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('same-origin');
   });
 
   it('throws Error("HTTP 401") on a 401 so the wizard routes the auth state', async () => {

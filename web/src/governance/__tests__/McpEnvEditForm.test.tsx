@@ -90,6 +90,22 @@ describe('McpEnvEditForm (MCPW-02)', () => {
     expect(document.body.textContent).not.toContain(SECRET_VALUE);
   });
 
+  it('masks secret env rows by default and reveals only on explicit request', () => {
+    renderForm({
+      envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
+      requiredEnv: ['GITHUB_TOKEN'],
+    });
+
+    const field = screen.getByLabelText<HTMLInputElement>('GITHUB_TOKEN');
+    expect(field.getAttribute('type')).toBe('password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show GITHUB_TOKEN' }));
+    expect(field.getAttribute('type')).toBe('text');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide GITHUB_TOKEN' }));
+    expect(field.getAttribute('type')).toBe('password');
+  });
+
   it('shows the soft-warning card AND still allows save when a required var is a placeholder', async () => {
     const onClose = vi.fn();
     renderForm({

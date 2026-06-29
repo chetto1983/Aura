@@ -196,10 +196,15 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
       await expect(page.getByText(/Step 1 of 5/)).toBeVisible();
     }
 
-    await page.getByLabel('Operator email').fill('new@example.com');
-    await page.getByLabel('Initial password').fill(PASSWORD);
-    await page.getByLabel('Security question').fill(SECURITY_QUESTION);
-    await page.getByLabel('Security answer').fill(SECURITY_ANSWER);
+    await dialog.getByRole('textbox', { name: 'Operator email' }).fill('new@example.com');
+    await dialog.getByRole('textbox', { name: 'Initial password', exact: true }).fill(PASSWORD);
+    await dialog
+      .getByRole('textbox', { name: 'Confirm initial password', exact: true })
+      .fill(PASSWORD);
+    await dialog.getByRole('textbox', { name: 'Security question' }).fill(SECURITY_QUESTION);
+    await dialog
+      .getByRole('textbox', { name: 'Security answer', exact: true })
+      .fill(SECURITY_ANSWER);
     await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page.getByText('Capabilities for the new identity')).toBeVisible();

@@ -114,6 +114,7 @@ checkout or release directory:
 function New-Hex { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
 @"
 POSTGRES_PASSWORD=$(New-Hex)
+POSTGRES_IMAGE=postgres:18.4-alpine3.23
 POSTGRES_USER=aura
 POSTGRES_DB=aura
 NEO4J_USER=neo4j
@@ -122,14 +123,28 @@ AURA_NEO4J_DATABASE=neo4j
 AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
 AURA_ACCESS_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
+AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
+AURA_EMBED_NGL=99
+AURA_EMBED_DIMENSIONS=768
+AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
+AURA_RERANK_NGL=99
 OPENROUTER_API_KEY=
 "@ | Set-Content -Path .env -Encoding ascii
 
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi
 docker compose up -d
 ```
 
+Aura's local embedding and rerank sidecars require Docker GPU passthrough. Fix
+Docker/NVIDIA before starting Aura if the `nvidia-smi` container check fails.
+
 Set `OPENROUTER_API_KEY` before production use. For local development images,
 replace `AURA_IMAGE` with `aura:local` after building the image.
+
+Postgres 18 is the default Compose image for new installs. When upgrading an
+existing Aura deployment from Postgres 17, migrate the data with `pg_dump` /
+`pg_restore` or `pg_upgrade`; a Postgres 18 container cannot reuse a Postgres 17
+data volume directly.
 
 ### Access
 

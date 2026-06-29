@@ -1,7 +1,25 @@
-import { createHmac } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createHash, createHmac } from 'node:crypto';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { expect, type Page } from '@playwright/test';
+
+type BrowserContext = ReturnType<Page['context']>;
+type BrowserStorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
+
+const authStateVersion = 1;
+const authLockStaleMs = 120_000;
+const authLockPollMs = 250;
 
 function unquoteEnvValue(value: string): string {
   const trimmed = value.trim();
@@ -34,6 +52,123 @@ function envValue(...names: string[]): string | undefined {
     if (fromProcess !== undefined && fromProcess.trim() !== '') return fromProcess;
   }
   return undefined;
+}
+
+function authStatePath(): string {
+  const origin =
+    process.env.AURA_E2E_HTTPS_ORIGIN ??
+    process.env.AURA_E2E_ORIGIN ??
+    envFileValue('AURA_E2E_ORIGIN') ??
+    'http://127.0.0.1:9080';
+  const digest = createHash('sha256').update(origin).digest('hex').slice(0, 16);
+  return resolve(process.cwd(), 'test-results', '.auth', `authula-${digest}.json`);
+}
+
+function readAuthState(): BrowserStorageState | undefined {
+  const path = authStatePath();
+  if (!existsSync(path)) return undefined;
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+      version?: unknown;
+      state?: unknown;
+    };
+    if (raw.version !== authStateVersion || typeof raw.state !== 'object' || raw.state === null) {
+      return undefined;
+    }
+    const state = raw.state as BrowserStorageState;
+    const now = Date.now() / 1000;
+    const hasLiveSession = state.cookies.some(
+      (cookie) =>
+        /session/i.test(cookie.name) && (cookie.expires === -1 || cookie.expires > now + 30),
+    );
+    return hasLiveSession ? state : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeAuthState(state: BrowserStorageState) {
+  const path = authStatePath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ version: authStateVersion, state }), { encoding: 'utf8' });
+}
+
+function clearAuthState() {
+  rmSync(authStatePath(), { force: true });
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+async function withAuthStateLock<T>(fn: () => Promise<T>): Promise<T> {
+  const path = authStatePath();
+  mkdirSync(dirname(path), { recursive: true });
+  const lockPath = `${path}.lock`;
+  let fd: number | undefined;
+  while (fd === undefined) {
+    try {
+      fd = openSync(lockPath, 'wx');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw error;
+      try {
+        const ageMs = Date.now() - statSync(lockPath).mtimeMs;
+        if (ageMs > authLockStaleMs) {
+          rmSync(lockPath, { force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      await delay(authLockPollMs);
+    }
+  }
+
+  let result: T | undefined;
+  let fnError: unknown;
+  try {
+    result = await fn();
+  } catch (error) {
+    fnError = error;
+  }
+
+  let cleanupError: unknown;
+  try {
+    closeSync(fd);
+    try {
+      unlinkSync(lockPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        cleanupError = error;
+      }
+    }
+  } catch (error) {
+    cleanupError = error;
+  }
+
+  if (fnError !== undefined) throw asError(fnError);
+  if (cleanupError !== undefined) throw asError(cleanupError);
+  return result as T;
+}
+
+async function applyAuthState(page: Page): Promise<boolean> {
+  const state = readAuthState();
+  if (state === undefined) return false;
+  if (state.cookies.length > 0) {
+    await page.context().addCookies(state.cookies);
+  }
+  if (state.origins.length > 0) {
+    await page.addInitScript((origins) => {
+      for (const originState of origins) {
+        if (originState.origin !== window.location.origin) continue;
+        for (const item of originState.localStorage) {
+          window.localStorage.setItem(item.name, item.value);
+        }
+      }
+    }, state.origins);
+  }
+  return true;
 }
 
 interface AuthConfig {
@@ -156,18 +291,40 @@ async function authenticateViaApi(page: Page) {
   await authenticateViaAuthula(page, config);
 }
 
+async function ensureAuthState(page: Page) {
+  if (await applyAuthState(page)) return;
+  await withAuthStateLock(async () => {
+    if (await applyAuthState(page)) return;
+    await authenticateViaApi(page);
+    writeAuthState(await page.context().storageState());
+  });
+}
+
 function isLoginUrl(url: string): boolean {
   return new URL(url).pathname === '/login';
+}
+
+async function installCompletedProfileFixture(page: Page) {
+  await page.route('**/api/onboarding/status', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ required: false, completed: true, skipped: false }),
+    }),
+  );
 }
 
 export async function gotoAuthenticated(page: Page, path: string) {
   await page.addInitScript(() => {
     window.localStorage.setItem('aura.language', 'en');
   });
+  await installCompletedProfileFixture(page);
 
+  await applyAuthState(page);
   await page.goto(path, { waitUntil: 'domcontentloaded' });
   if (isLoginUrl(page.url())) {
-    await authenticateViaApi(page);
+    clearAuthState();
+    await ensureAuthState(page);
     await page.goto(path, { waitUntil: 'domcontentloaded' });
   }
 

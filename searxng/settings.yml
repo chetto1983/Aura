@@ -7,7 +7,14 @@
 #   https://docs.searxng.org/admin/settings/settings_search.html
 #   https://docs.searxng.org/admin/settings/settings_server.html
 # verified against the pinned image entrypoint (Granian binds :8080) 2026-06-02.
-use_default_settings: true
+use_default_settings:
+  engines:
+    remove:
+      # These optional engines fail to import in the pinned image and create
+      # startup noise without improving Aura's default metasearch path.
+      - ahmia
+      - radio browser
+      - torch
 
 general:
   instance_name: "Aura SearXNG"
@@ -30,10 +37,8 @@ search:
 server:
   # NOTE: the container's Granian entrypoint binds :8080 via GRANIAN_PORT and
   # overrides this file's port/bind_address; SEARXNG_URL=http://searxng:8080/search.
-  # secret_key MUST be set for a non-default instance; this instance has no host
-  # port (D-03) so it is unreachable outside the Compose network. Operators may
-  # override via ${SEARXNG_SECRET}.
-  secret_key: "aura-searxng-internal-only-change-via-SEARXNG_SECRET"
+  # Rendered from installer-generated SEARXNG_SECRET by compose.yaml at boot.
+  secret_key: "__AURA_SEARXNG_SECRET__"
   # Internal single-consumer instance — no bot limiter, no public-instance feature
   # surface. The lack of a published host port (D-03) is the actual access control.
   limiter: false

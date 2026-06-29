@@ -444,6 +444,17 @@ func (f *fakeIdentityStore) GetIdentityByName(_ context.Context, name string) (i
 	return id, nil
 }
 
+func (f *fakeIdentityStore) ListIdentities(context.Context) ([]identity.Identity, error) {
+	out := make([]identity.Identity, 0, len(f.byName))
+	for _, id := range f.byName {
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
 func (f *fakeIdentityStore) GetIdentityByID(_ context.Context, identityID string) (identity.Identity, error) {
 	for _, id := range f.byName {
 		if id.ID == identityID {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -133,7 +134,9 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey) // set ONLY here — D-28
+	if strings.TrimSpace(c.cfg.APIKey) != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	}
 	for k, v := range c.cfg.Headers {
 		httpReq.Header.Set(k, v) // HTTP-Referer + X-Title attribution — D-20
 	}

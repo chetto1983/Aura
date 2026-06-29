@@ -6,27 +6,32 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SecretInput } from '@/components/ui/secret-input';
 
 type SubmitState = 'idle' | 'submitting' | 'done';
 type BootstrapErrorKey =
   | 'login.bootstrap.errors.generic'
   | 'login.bootstrap.errors.required'
-  | 'login.bootstrap.errors.passwordLength';
+  | 'login.bootstrap.errors.passwordLength'
+  | 'login.bootstrap.errors.passwordMismatch';
 
 interface BootstrapPanelProps {
   readonly onCancel: () => void;
+  readonly onCreated?: (created: { readonly email: string; readonly password: string }) => void;
 }
 
-export function BootstrapPanel({ onCancel }: BootstrapPanelProps) {
+export function BootstrapPanel({ onCancel, onCreated }: BootstrapPanelProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<SubmitState>('idle');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [securityAnswer, setSecurityAnswer] = useState('');
   const [error, setError] = useState<BootstrapErrorKey | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     emailRef.current?.focus();
@@ -39,6 +44,7 @@ export function BootstrapPanel({ onCancel }: BootstrapPanelProps) {
     if (
       normalizedEmail === '' ||
       password === '' ||
+      confirmPassword === '' ||
       normalizedQuestion === '' ||
       normalizedAnswer === ''
     ) {
@@ -51,6 +57,11 @@ export function BootstrapPanel({ onCancel }: BootstrapPanelProps) {
       passwordRef.current?.focus();
       return;
     }
+    if (password !== confirmPassword) {
+      setError('login.bootstrap.errors.passwordMismatch');
+      confirmPasswordRef.current?.focus();
+      return;
+    }
     setError(null);
     setState('submitting');
     try {
@@ -60,8 +71,10 @@ export function BootstrapPanel({ onCancel }: BootstrapPanelProps) {
         securityQuestion: normalizedQuestion,
         securityAnswer: normalizedAnswer,
       });
+      onCreated?.({ email: normalizedEmail, password });
       setState('done');
       setPassword('');
+      setConfirmPassword('');
     } catch {
       setError('login.bootstrap.errors.generic');
       setState('idle');
@@ -122,19 +135,43 @@ export function BootstrapPanel({ onCancel }: BootstrapPanelProps) {
         </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor="bootstrap-password">{t('login.authula.passwordLabel')}</Label>
-          <Input
+          <SecretInput
             ref={passwordRef}
             id="bootstrap-password"
             name="password"
-            type="password"
             autoComplete="new-password"
             value={password}
             onChange={(event) => {
               setPassword(event.target.value);
             }}
+            showLabel={t('login.authula.showPassword')}
+            hideLabel={t('login.authula.hidePassword')}
             aria-invalid={ariaInvalid(
               error === 'login.bootstrap.errors.required' ||
-                error === 'login.bootstrap.errors.passwordLength',
+                error === 'login.bootstrap.errors.passwordLength' ||
+                error === 'login.bootstrap.errors.passwordMismatch',
+            )}
+            className="min-h-[var(--row-h)] bg-surface-2 text-sm"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="bootstrap-confirm-password">
+            {t('login.bootstrap.confirmPasswordLabel')}
+          </Label>
+          <SecretInput
+            ref={confirmPasswordRef}
+            id="bootstrap-confirm-password"
+            name="confirmPassword"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => {
+              setConfirmPassword(event.target.value);
+            }}
+            showLabel={t('secret.show', { label: t('login.bootstrap.confirmPasswordLabel') })}
+            hideLabel={t('secret.hide', { label: t('login.bootstrap.confirmPasswordLabel') })}
+            aria-invalid={ariaInvalid(
+              error === 'login.bootstrap.errors.required' ||
+                error === 'login.bootstrap.errors.passwordMismatch',
             )}
             className="min-h-[var(--row-h)] bg-surface-2 text-sm"
           />
@@ -160,15 +197,16 @@ export function BootstrapPanel({ onCancel }: BootstrapPanelProps) {
           <Label htmlFor="bootstrap-security-answer">
             {t('login.bootstrap.securityAnswerLabel')}
           </Label>
-          <Input
+          <SecretInput
             id="bootstrap-security-answer"
             name="securityAnswer"
-            type="text"
             autoComplete="off"
             value={securityAnswer}
             onChange={(event) => {
               setSecurityAnswer(event.target.value);
             }}
+            showLabel={t('secret.show', { label: t('login.bootstrap.securityAnswerLabel') })}
+            hideLabel={t('secret.hide', { label: t('login.bootstrap.securityAnswerLabel') })}
             aria-invalid={ariaInvalid(error === 'login.bootstrap.errors.required')}
             className="min-h-[var(--row-h)] bg-surface-2 text-sm"
           />

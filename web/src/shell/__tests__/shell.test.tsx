@@ -186,6 +186,7 @@ describe('shell utilities', () => {
     const mobile = within(screen.getByRole('navigation', { name: 'Modes' }));
     const treeButton = primary.getByRole('button', { name: 'Tree' });
     const graphButton = primary.getByRole('button', { name: 'Graph' });
+    const settingsButton = primary.getByRole('button', { name: 'Settings' });
     expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('data-slot')).toBe('button');
     expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('data-slot')).toBe('button');
     expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
@@ -197,20 +198,32 @@ describe('shell utilities', () => {
     expect(screen.getByRole('navigation', { name: 'Primary' }).className).toContain(
       'shell-mode-switcher',
     );
-    expect(screen.getByRole('navigation', { name: 'Modes' }).className).toContain(
-      'overflow-x-auto',
-    );
-    expect(screen.getByRole('navigation', { name: 'Modes' }).className).toContain(
-      'shell-mode-tabbar',
-    );
+    const mobileNav = screen.getByRole('navigation', { name: 'Modes' });
+    expect(mobileNav.className).toContain('shell-mode-tabbar');
+    expect(mobileNav.className).toContain('grid-cols-4');
+    expect(mobileNav.className).toContain('overflow-hidden');
     expect(primary.getByRole('button', { name: 'Governance' }).className).toContain('shrink-0');
     expect(mobile.queryByRole('button', { name: 'Tree' })).toBeNull();
     expect(mobile.queryByRole('button', { name: 'Displays' })).toBeNull();
-    expect(mobile.queryByRole('button', { name: 'Settings' })).toBeNull();
+    expect(
+      mobile.getAllByRole('button').every((button) => button.className.includes('min-w-0')),
+    ).toBe(true);
+    expect(
+      mobile
+        .getAllByRole('button')
+        .every((button) =>
+          button.querySelector('[data-mode-label]')?.className.includes('truncate'),
+        ),
+    ).toBe(true);
     expect(graphButton.getAttribute('aria-disabled')).toBeNull();
+    expect(settingsButton.getAttribute('aria-disabled')).toBeNull();
     expect(mobile.getByRole('button', { name: 'Graph' }).getAttribute('aria-disabled')).toBeNull();
+    expect(
+      mobile.getByRole('button', { name: 'Settings' }).getAttribute('aria-disabled'),
+    ).toBeNull();
     fireEvent.click(treeButton);
     fireEvent.click(graphButton);
-    expect(selected).toEqual(['graph']);
+    fireEvent.click(settingsButton);
+    expect(selected).toEqual(['graph', 'settings']);
   });
 });

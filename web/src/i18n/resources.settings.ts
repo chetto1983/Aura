@@ -1,0 +1,121 @@
+export const settingsEn = {
+  settings: {
+    kicker: 'Operations',
+    heading: 'Runtime settings',
+    body: 'Model, token, cloud, and local sidecar settings are stored in Postgres and can be changed here without editing .env files.',
+    loading: 'Loading runtime settings...',
+    error: "Couldn't load runtime settings. Check the server and try again.",
+    restartRequired:
+      'Saved changes are in Postgres. Restart Aura to apply them to already-created model clients.',
+    saved: 'Runtime settings saved.',
+    secretPlaceholder: 'Enter a new value',
+    modelRouting: {
+      heading: 'Model routing',
+      body: 'Choose whether Aura uses a cloud OpenRouter endpoint or a local OpenAI-compatible model server, then set the model and token budget.',
+    },
+    provider: {
+      label: 'Primary model provider',
+      cloud: 'Cloud',
+      local: 'Local',
+    },
+    tokens: {
+      heading: 'Token budget',
+      body: 'Tune the response cap and context window Aura uses when planning chat turns and history compaction.',
+    },
+    backends: {
+      heading: 'Sidecar and cloud backends',
+      body: 'Swap embeddings, rerank, speech, vision, and memory embedding backends between local services and cloud models.',
+    },
+    fields: {
+      primaryModel: 'Primary model',
+      primaryBaseUrl: 'Primary base URL',
+      openRouterKey: 'OpenRouter API key',
+      maxTokens: 'Max response tokens',
+      contextWindow: 'Context window tokens',
+      maxOutputTokens: 'Reserved output tokens',
+      embedBaseUrl: 'Embedding base URL',
+      embedModel: 'Embedding model',
+      embedDimensions: 'Embedding dimensions',
+      rerankBaseUrl: 'Rerank base URL',
+      rerankModel: 'Rerank model',
+      sttCloudModel: 'Speech-to-text cloud model',
+      ttsModel: 'Text-to-speech model',
+      visionCloud: 'Vision uses cloud',
+      memoryEmbedBaseUrl: 'Memory embedding base URL',
+      memoryEmbedKey: 'Memory embedding API key',
+      enabled: 'Enabled',
+    },
+    status: {
+      configured: 'Configured',
+      notConfigured: 'Not set',
+    },
+    actions: {
+      save: 'Save runtime settings',
+      continue: 'Continue',
+      skip: 'Skip runtime setup',
+      reset: 'Reset',
+      retry: 'Retry',
+    },
+  },
+} as const;
+
+export const settingsIt = {
+  settings: {
+    kicker: 'Operazioni',
+    heading: 'Impostazioni runtime',
+    body: 'Modello, token, cloud e sidecar locali sono salvati in Postgres e si cambiano qui senza toccare file .env.',
+    loading: 'Caricamento impostazioni runtime...',
+    error: 'Impossibile caricare le impostazioni runtime. Controlla il server e riprova.',
+    restartRequired:
+      'Modifiche salvate in Postgres. Riavvia Aura per applicarle ai client modello gia creati.',
+    saved: 'Impostazioni runtime salvate.',
+    secretPlaceholder: 'Inserisci un nuovo valore',
+    modelRouting: {
+      heading: 'Instradamento modello',
+      body: 'Scegli se Aura usa OpenRouter cloud o un server locale compatibile OpenAI, poi imposta modello e budget token.',
+    },
+    provider: {
+      label: 'Provider modello primario',
+      cloud: 'Cloud',
+      local: 'Locale',
+    },
+    tokens: {
+      heading: 'Budget token',
+      body: 'Regola limite risposta e finestra contesto usati da Aura per chat e compattazione cronologia.',
+    },
+    backends: {
+      heading: 'Sidecar e backend cloud',
+      body: 'Scambia embedding, rerank, voce, visione e memoria tra servizi locali e modelli cloud.',
+    },
+    fields: {
+      primaryModel: 'Modello primario',
+      primaryBaseUrl: 'URL base primario',
+      openRouterKey: 'Chiave API OpenRouter',
+      maxTokens: 'Token massimi risposta',
+      contextWindow: 'Token finestra contesto',
+      maxOutputTokens: 'Token output riservati',
+      embedBaseUrl: 'URL base embedding',
+      embedModel: 'Modello embedding',
+      embedDimensions: 'Dimensioni embedding',
+      rerankBaseUrl: 'URL base rerank',
+      rerankModel: 'Modello rerank',
+      sttCloudModel: 'Modello cloud speech-to-text',
+      ttsModel: 'Modello text-to-speech',
+      visionCloud: 'Visione usa cloud',
+      memoryEmbedBaseUrl: 'URL base embedding memoria',
+      memoryEmbedKey: 'Chiave API embedding memoria',
+      enabled: 'Attivo',
+    },
+    status: {
+      configured: 'Configurato',
+      notConfigured: 'Non impostato',
+    },
+    actions: {
+      save: 'Salva impostazioni runtime',
+      continue: 'Continua',
+      skip: 'Salta configurazione runtime',
+      reset: 'Ripristina',
+      retry: 'Riprova',
+    },
+  },
+} as const;

@@ -41,9 +41,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// localIdentityName is the seeded `local` identity (migration 0004) the
-// onboarding tokens + telegram accounts FK to. The setup server needs its UUID so
-// a minted pending token references a real identity row.
+// localIdentityName is the pre-Authula seeded identity. It remains only as a
+// fallback for legacy databases that have no user identity yet.
 const localIdentityName = "local"
 
 // setupShutdownTimeout bounds the graceful drain of the setup server on daemon
@@ -203,7 +202,7 @@ func buildSetupServer(ctx context.Context, chat *chatEnv) *http.Server {
 		Probe:      telegramGetMeProbe,
 		Bind:       chat.cfg.SetupBind,
 		Token:      chat.cfg.SetupToken,
-		IdentityID: resolveLocalIdentityID(ctx, chat.identity),
+		IdentityID: resolveSetupIdentityID(ctx, chat.identity),
 	})
 	return srv.HTTPServer(chat.cfg.SetupBind)
 }
@@ -241,14 +240,33 @@ func (a setupStoreAdapter) CountAccounts(ctx context.Context) (int64, error) {
 	return a.inner.CountAccounts(ctx)
 }
 
-// resolveLocalIdentityID looks up the seeded `local` identity UUID for the setup
-// onboarding FK. A lookup failure is logged and returns "" (the setup server
-// still boots; an onboarding mint then surfaces the FK error to the operator
+// setupIdentityResolver is the identity-store surface the setup server needs to
+// choose a real user owner before falling back to legacy `local`.
 // rather than aborting the daemon — fail-soft).
-func resolveLocalIdentityID(ctx context.Context, idStore *identity.Store) string {
+type setupIdentityResolver interface {
+	ListIdentities(ctx context.Context) ([]identity.Identity, error)
+	GetIdentityByName(ctx context.Context, name string) (identity.Identity, error)
+}
+
+func resolveSetupIdentityID(ctx context.Context, idStore setupIdentityResolver) string {
+	if idStore == nil {
+		return ""
+	}
+	ids, err := idStore.ListIdentities(ctx)
+	if err != nil {
+		slog.Warn("aura serve: list identities for setup onboarding", "err", err)
+	} else {
+		for _, id := range ids {
+			if id.Kind == "user" && id.ID != "" {
+				return id.ID
+			}
+		}
+	}
 	id, err := idStore.GetIdentityByName(ctx, localIdentityName)
 	if err != nil {
-		slog.Warn("aura serve: resolve local identity for setup onboarding", "err", err)
+		if !errors.Is(err, identity.ErrIdentityNotFound) {
+			slog.Warn("aura serve: resolve legacy local identity for setup onboarding", "err", err)
+		}
 		return ""
 	}
 	return id.ID

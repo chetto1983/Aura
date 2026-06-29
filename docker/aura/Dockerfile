@@ -17,6 +17,8 @@ COPY web/ ./
 COPY internal/agui/testdata/golden-events.json /internal/agui/testdata/golden-events.json
 RUN npm run build
 
+FROM dxflrs/garage:v2.0.0 AS garagebin
+
 FROM golang:1.26.4-alpine AS build
 
 WORKDIR /src
@@ -34,8 +36,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/aura ./
 FROM debian:bookworm-slim
 
 RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates \
         curl \
         git \
         gnupg \
@@ -59,10 +63,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 RUN install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
         | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg \
-    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-17 \
+    && apt-get install -y --no-install-recommends postgresql-client-18 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
@@ -82,6 +86,9 @@ RUN uvx --from "calculator-mcp-server@git+https://github.com/chetto1983/calculat
 ENV AURA_IN_CONTAINER=1
 
 COPY --from=build /out/aura /usr/local/bin/aura
+COPY --from=garagebin /garage /usr/local/bin/garage
+COPY docker/aura/aura-garage-bootstrap.sh /usr/local/bin/aura-garage-bootstrap.sh
+RUN chmod +x /usr/local/bin/aura-garage-bootstrap.sh
 
 ENTRYPOINT ["aura"]
 CMD ["serve"]

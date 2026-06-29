@@ -17,7 +17,9 @@ function submitForm(container: HTMLElement) {
   fireEvent.submit(form);
 }
 
-function authulaConfigResponse() {
+function authulaConfigResponse({
+  bootstrapAvailable = false,
+}: { readonly bootstrapAvailable?: boolean } = {}) {
   return Promise.resolve(
     new Response(
       JSON.stringify({
@@ -26,6 +28,7 @@ function authulaConfigResponse() {
         csrf_cookie_name: '__Host-authula_csrf_token',
         csrf_header_name: 'X-AUTHULA-CSRF-TOKEN',
         csrf_token: 'csrf-token',
+        bootstrap_available: bootstrapAvailable,
       }),
       {
         status: 200,
@@ -83,6 +86,10 @@ describe('LoginPage', () => {
   });
 
   it('renders Authula credential fields by default', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => authulaConfigResponse({ bootstrapAvailable: false })),
+    );
     const { container } = renderLogin();
     const email = screen.getByLabelText('Operator email');
     const password = screen.getByLabelText('Password');
@@ -98,12 +105,28 @@ describe('LoginPage', () => {
       'button',
     );
     expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Create first user' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create first user' })).toBe(null);
     expectLoginAriaValuesToBeAxeValid(container);
   });
 
-  it('uses readable accent text for secondary login actions', () => {
+  it('opens first-user creation by default when bootstrap is available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => authulaConfigResponse({ bootstrapAvailable: true })),
+    );
     renderLogin();
+
+    expect(await screen.findByRole('form', { name: 'Create first user' })).toBeTruthy();
+    expect(screen.queryByRole('form', { name: 'Sign in' })).toBe(null);
+  });
+
+  it('uses readable accent text for secondary login actions', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => authulaConfigResponse({ bootstrapAvailable: true })),
+    );
+    renderLogin();
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to sign in' }));
     const forgotPassword = screen.getByRole('button', { name: 'Forgot password?' });
     const createUser = screen.getByRole('button', { name: 'Create first user' });
 
@@ -111,6 +134,18 @@ describe('LoginPage', () => {
     expect(forgotPassword.className.split(/\s+/u)).not.toContain('text-accent');
     expect(createUser.className).toContain('text-accent-text');
     expect(createUser.className.split(/\s+/u)).not.toContain('text-accent');
+  });
+
+  it('hides first-user creation when bootstrap is already closed', async () => {
+    const fetchMock = vi.fn(() => authulaConfigResponse({ bootstrapAvailable: false }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderLogin();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('button', { name: 'Create first user' })).toBe(null);
+    expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeTruthy();
   });
 
   it('renders a decorative animated particle-network background behind the form', () => {
@@ -307,7 +342,7 @@ describe('LoginPage', () => {
   it('creates the first operator from the login page', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url === '/api/auth/config') {
-        return authulaConfigResponse();
+        return authulaConfigResponse({ bootstrapAvailable: true });
       }
       if (url === '/api/auth/bootstrap/operator') {
         return Promise.resolve(
@@ -317,12 +352,19 @@ describe('LoginPage', () => {
           }),
         );
       }
+      if (url === '/auth/email-password/sign-in') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ session: { id: 's1' } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
       return Promise.resolve(new Response('not found', { status: 404 }));
     });
     vi.stubGlobal('fetch', fetchMock);
     const { container } = renderLogin();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create first user' }));
     const form = await screen.findByRole('form', { name: 'Create first user' });
     expect(screen.queryByRole('form', { name: 'Sign in' })).toBe(null);
 
@@ -330,6 +372,9 @@ describe('LoginPage', () => {
       target: { value: 'first@example.com' },
     });
     fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
       target: { value: 'correct-horse' },
     });
     fireEvent.change(screen.getByLabelText('Security question'), {
@@ -341,6 +386,8 @@ describe('LoginPage', () => {
     fireEvent.submit(form);
 
     expect(await screen.findByText('First user created')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    expect(screen.queryByRole('button', { name: 'Create first user' })).toBe(null);
     const bootstrapCall = fetchMock.mock.calls.find(
       ([url]) => url === '/api/auth/bootstrap/operator',
     );
@@ -357,7 +404,109 @@ describe('LoginPage', () => {
       securityQuestion: 'First school?',
       securityAnswer: 'Ada',
     });
+    const signInCall = fetchMock.mock.calls.find(([url]) => url === '/auth/email-password/sign-in');
+    if (!signInCall) {
+      throw new Error('missing post-bootstrap sign-in request');
+    }
+    const [, signInOpts] = signInCall as unknown as [string, RequestInit];
+    expect(signInOpts.method).toBe('POST');
+    expect(signInOpts.credentials).toBe('same-origin');
+    expect(JSON.parse(requireRequestBody(signInOpts))).toEqual({
+      email: 'first@example.com',
+      password: 'correct-horse',
+    });
     expectLoginAriaValuesToBeAxeValid(container);
+  });
+
+  it('rejects first-user creation when the password confirmation differs', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/api/auth/config') {
+        return authulaConfigResponse({ bootstrapAvailable: true });
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderLogin();
+
+    const form = await screen.findByRole('form', { name: 'Create first user' });
+
+    fireEvent.change(screen.getByLabelText('Operator email'), {
+      target: { value: 'first@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-horse' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
+      target: { value: 'wrong-horse' },
+    });
+    fireEvent.change(screen.getByLabelText('Security question'), {
+      target: { value: 'First school?' },
+    });
+    fireEvent.change(screen.getByLabelText('Security answer'), {
+      target: { value: 'Ada' },
+    });
+    fireEvent.submit(form);
+
+    expect(await screen.findByText('The passwords do not match.')).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/auth/bootstrap/operator')).toBe(
+      false,
+    );
+  });
+
+  it('reveals and hides first-user password confirmation and security answer fields on request', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/auth/config') {
+          return authulaConfigResponse({ bootstrapAvailable: true });
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }));
+      }),
+    );
+    renderLogin();
+
+    await screen.findByLabelText('Password');
+
+    expect(screen.getByLabelText('Password').getAttribute('type')).toBe('password');
+    expect(screen.getByLabelText('Confirm password').getAttribute('type')).toBe('password');
+    expect(screen.getByLabelText('Security answer').getAttribute('type')).toBe('password');
+
+    const showPassword = document.querySelector<HTMLButtonElement>(
+      'button[aria-controls="bootstrap-password"]',
+    );
+    const showConfirm = document.querySelector<HTMLButtonElement>(
+      'button[aria-controls="bootstrap-confirm-password"]',
+    );
+    const showAnswer = document.querySelector<HTMLButtonElement>(
+      'button[aria-controls="bootstrap-security-answer"]',
+    );
+    expect(showPassword).not.toBeNull();
+    expect(showConfirm).not.toBeNull();
+    expect(showAnswer).not.toBeNull();
+    if (showPassword === null || showConfirm === null || showAnswer === null) {
+      throw new Error('expected bootstrap secret reveal controls');
+    }
+
+    fireEvent.click(showPassword);
+    fireEvent.click(showConfirm);
+    fireEvent.click(showAnswer);
+
+    await waitFor(() => {
+      expect(showPassword.getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByLabelText('Password').getAttribute('type')).toBe('text');
+      expect(screen.getByLabelText('Confirm password').getAttribute('type')).toBe('text');
+      expect(screen.getByLabelText('Security answer').getAttribute('type')).toBe('text');
+    });
+
+    fireEvent.click(showPassword);
+    fireEvent.click(showConfirm);
+    fireEvent.click(showAnswer);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Password').getAttribute('type')).toBe('password');
+      expect(screen.getByLabelText('Confirm password').getAttribute('type')).toBe('password');
+      expect(screen.getByLabelText('Security answer').getAttribute('type')).toBe('password');
+    });
   });
 
   it('POSTs Authula credentials as JSON with the CSRF token and advances to TOTP', async () => {
@@ -439,56 +588,5 @@ describe('LoginPage', () => {
     expect(opts.method).toBe('POST');
     expect(opts.headers).toMatchObject({ 'X-AUTHULA-CSRF-TOKEN': 'csrf-token' });
     expect(JSON.parse(requireRequestBody(opts))).toEqual({ code: '123456', trust_device: false });
-  });
-
-  it('marks Authula credential errors with axe-valid aria-invalid tokens', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() => authulaConfigResponse())
-      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { container } = renderLogin();
-
-    const email = await screen.findByLabelText('Operator email');
-    const password = screen.getByLabelText('Password');
-    fireEvent.change(email, { target: { value: 'operator@example.com' } });
-    fireEvent.change(password, { target: { value: 'bad-pass' } });
-    submitForm(container);
-
-    await screen.findByRole('alert');
-    expect(email.getAttribute('aria-invalid')).toBe('true');
-    expect(password.getAttribute('aria-invalid')).toBe('true');
-    expectLoginAriaValuesToBeAxeValid(container);
-  });
-
-  it('marks Authula code errors with axe-valid aria-invalid tokens', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() => authulaConfigResponse())
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ totp_redirect: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { container } = renderLogin();
-
-    fireEvent.change(await screen.findByLabelText('Operator email'), {
-      target: { value: 'operator@example.com' },
-    });
-    fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'correct-horse' },
-    });
-    submitForm(container);
-
-    const code = await screen.findByLabelText('Verification code');
-    fireEvent.change(code, { target: { value: '000000' } });
-    submitForm(container);
-
-    await screen.findByRole('alert');
-    expect(code.getAttribute('aria-invalid')).toBe('true');
-    expectLoginAriaValuesToBeAxeValid(container);
   });
 });

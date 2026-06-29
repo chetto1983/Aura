@@ -27,10 +27,13 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     const tablist = screen.getByRole('tablist', { name: 'Governance' });
     expect(tablist).toBeTruthy();
     expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
+    expect(tablist.className).toContain('grid-cols-3');
 
     const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
     expect(mcpTab.getAttribute('data-slot')).toBe('tabs-trigger');
+    expect(mcpTab.className).toContain('min-w-0');
     expect(mcpTab.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
+    expect(mcpTab.querySelector('[data-tab-label]')?.className).toContain('truncate');
     expect(screen.getByRole('tab', { name: 'Skills' }).getAttribute('data-slot')).toBe(
       'tabs-trigger',
     );

@@ -189,6 +189,83 @@ func TestOnboardingStepSkip(t *testing.T) {
 	}
 }
 
+func TestProfileOnboardingCompleteWritesCurrentIdentityProfile(t *testing.T) {
+	pw := &recordingProfileWriter{}
+	tg := &fakeTelegram{}
+	svc := newOnboardingService(OnboardingDeps{
+		Capabilities: fakeCaps{grants: []string{"agent.run"}},
+		Extractor:    &countingExtractor{},
+		Profiles:     pw,
+		Telegram:     tg,
+		BotUsername:  "AuraBot",
+	})
+	ctx := context.Background()
+	start, err := svc.StartProfileSession(ctx, "operator-1")
+	if err != nil {
+		t.Fatalf("StartProfileSession: %v", err)
+	}
+	for _, text := range []string{"Davide", "backend dev, Go", "Aura", "AI agents", "friendly, short"} {
+		if _, err := svc.Step(ctx, "operator-1", start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: text}); err != nil {
+			t.Fatalf("answer: %v", err)
+		}
+	}
+	if _, err := svc.Step(ctx, "operator-1", start.SessionToken, OnboardingStepRequest{Intent: "confirm"}); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	done, err := svc.CompleteProfile(ctx, "operator-1", start.SessionToken)
+	if err != nil {
+		t.Fatalf("CompleteProfile: %v", err)
+	}
+	if !done.Completed || done.Skipped {
+		t.Fatalf("CompleteProfile = %+v, want completed", done)
+	}
+	if !strings.HasPrefix(done.DeepLink, "https://t.me/AuraBot?start=") || strings.TrimSpace(done.QRSVG) == "" {
+		t.Fatalf("CompleteProfile Telegram link = deepLink:%q qr:%t, want deep-link and QR", done.DeepLink, strings.TrimSpace(done.QRSVG) != "")
+	}
+	if tg.mintedCount() != 1 {
+		t.Fatalf("telegram pending tokens = %d, want 1", tg.mintedCount())
+	}
+	if len(pw.writes) != 1 || pw.writes[0] != "operator-1" {
+		t.Fatalf("profile writes = %v, want current operator", pw.writes)
+	}
+}
+
+func TestProfileOnboardingCompleteWritesSkippedMetadata(t *testing.T) {
+	pw := &recordingProfileWriter{}
+	tg := &fakeTelegram{}
+	svc := newOnboardingService(OnboardingDeps{
+		Capabilities: fakeCaps{grants: []string{"agent.run"}},
+		Extractor:    &countingExtractor{},
+		Profiles:     pw,
+		Telegram:     tg,
+		BotUsername:  "AuraBot",
+	})
+	ctx := context.Background()
+	start, err := svc.StartProfileSession(ctx, "operator-1")
+	if err != nil {
+		t.Fatalf("StartProfileSession: %v", err)
+	}
+	if _, err := svc.Step(ctx, "operator-1", start.SessionToken, OnboardingStepRequest{Intent: "skip"}); err != nil {
+		t.Fatalf("skip: %v", err)
+	}
+	done, err := svc.CompleteProfile(ctx, "operator-1", start.SessionToken)
+	if err != nil {
+		t.Fatalf("CompleteProfile: %v", err)
+	}
+	if done.Completed || !done.Skipped {
+		t.Fatalf("CompleteProfile = %+v, want skipped", done)
+	}
+	if !strings.HasPrefix(done.DeepLink, "https://t.me/AuraBot?start=") || strings.TrimSpace(done.QRSVG) == "" {
+		t.Fatalf("CompleteProfile Telegram link = deepLink:%q qr:%t, want deep-link and QR", done.DeepLink, strings.TrimSpace(done.QRSVG) != "")
+	}
+	if tg.mintedCount() != 1 {
+		t.Fatalf("telegram pending tokens = %d, want 1", tg.mintedCount())
+	}
+	if len(pw.writes) != 1 || pw.writes[0] != "operator-1" {
+		t.Fatalf("profile writes = %v, want current operator skip marker", pw.writes)
+	}
+}
+
 // TestOnboardingStepEmptyAnswer proves an empty answer is recorded without error and
 // without an LLM extraction (the session no-ops on empty).
 func TestOnboardingStepEmptyAnswer(t *testing.T) {

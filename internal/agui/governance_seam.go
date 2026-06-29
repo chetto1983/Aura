@@ -92,6 +92,14 @@ type OnboardingService interface {
 	// user scanned the deep-link and linked Telegram) via a REST poll over PendingConsumed
 	// (ONBD-01b / R6).
 	TelegramStatus(ctx context.Context, requesterIdentityID, token string) (OnboardingTelegramStatus, error)
+	// StartProfileSession starts the same profile interview for the already-authenticated
+	// requester. It is current-user setup, not identity provisioning, so it does not
+	// expose capability grants or require identity.create.
+	StartProfileSession(ctx context.Context, requesterIdentityID string) (OnboardingStart, error)
+	// CompleteProfile persists the terminal current-user profile interview as the
+	// requester's Agent.md profile, or records an explicit skip so first-run setup stops
+	// reopening.
+	CompleteProfile(ctx context.Context, requesterIdentityID, token string) (OnboardingProfileComplete, error)
 }
 
 // SetGovernanceProviders wires the read-only governance board providers (GOV-01/02/03).

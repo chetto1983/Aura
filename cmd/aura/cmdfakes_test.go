@@ -265,6 +265,10 @@ type cmdIdentityFake struct{}
 
 func newCmdIdentityFake() *cmdIdentityFake { return &cmdIdentityFake{} }
 
+func (cmdIdentityFake) ListIdentities(context.Context) ([]identity.Identity, error) {
+	return []identity.Identity{{ID: "00000000-0000-0000-0000-000000000001", Name: "local", Kind: "system"}}, nil
+}
+
 func (cmdIdentityFake) GetIdentityByName(_ context.Context, name string) (identity.Identity, error) {
 	if name != "local" {
 		return identity.Identity{}, identity.ErrIdentityNotFound

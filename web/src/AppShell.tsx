@@ -1,7 +1,7 @@
-import { Suspense, lazy, useCallback, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
 import { RuntimeFooter } from './chat/RuntimeFooter';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
@@ -13,6 +13,7 @@ import { ShellHeader } from './shell/ShellHeader';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
+import { fetchOnboardingStatus } from './onboarding/onboardingApi';
 import type { TurnUsage } from './chat/sseAdapter';
 import { useCreateConversation } from './conversations/useConversations';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
@@ -29,11 +30,13 @@ const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 // The Phase-28 Governance workspace (MCP/Skills/Scheduler boards) is its own lazy chunk too
 // (D-01) — it loads only when surface==='governance'.
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
+const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 
 // The Phase-28 onboarding+provisioning wizard is a SEPARATE full-screen overlay (D-04 — NOT a
 // MODES entry / surface tab). Its own lazy chunk: it loads only when the operator opens the
 // "Create identity" overlay, never landing in the main bundle.
 const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
+const ProfileOnboardingWizard = lazy(() => import('./onboarding/ProfileOnboardingWizard'));
 
 interface LogoutTarget {
   path: string;
@@ -90,12 +93,14 @@ export function AppShell() {
   const { t } = useTranslation();
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { surface, setSurface } = useSurfaceIntent();
   // The Graph Explorer and the Governance boards are focused workspaces with their own panes
   // (canvas/inspector, master/detail), so the shell's right-hand runtime rail is redundant
   // there — drop it on lg so the workspace gets the width back instead of being squeezed into a
   // narrow middle column. The chat approval cards are also chat-only.
-  const isFocusedWorkspace = surface === 'graph' || surface === 'governance';
+  const isFocusedWorkspace =
+    surface === 'graph' || surface === 'governance' || surface === 'settings';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
@@ -105,11 +110,14 @@ export function AppShell() {
   // the one-heavy-surface intent reducer, NOT two independent booleans. At `lg` the regions
   // are permanent columns, so these only gate the portaled drawers.
   const surfaces = useSurfaceRestore();
+  const closeNav = surfaces.closeNav;
   const [resumeNonce, setResumeNonce] = useState(0);
   const [logoutPending, setLogoutPending] = useState(false);
   // The onboarding+provisioning wizard is a full-screen overlay (D-04), opened by an explicit
   // trigger and covering the shell while active — NOT a surface/mode.
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
+  const autoOpenedOnboarding = useRef(false);
 
   if ((routeId ?? '') !== lastRouteId) {
     setLastRouteId(routeId ?? '');
@@ -118,6 +126,29 @@ export function AppShell() {
   }
 
   const activeThreadId = selectedId;
+
+  useEffect(() => {
+    if (searchParams.get('onboarding') !== '1' || autoOpenedOnboarding.current) return;
+    autoOpenedOnboarding.current = true;
+    setProfileOnboardingOpen(true);
+    closeNav();
+    void navigate('/', { replace: true });
+  }, [closeNav, navigate, searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchOnboardingStatus()
+      .then((status) => {
+        if (cancelled || autoOpenedOnboarding.current || !status.required) return;
+        autoOpenedOnboarding.current = true;
+        setProfileOnboardingOpen(true);
+        closeNav();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [closeNav]);
 
   function selectThread(id: string) {
     setSelectedId(id);
@@ -266,7 +297,9 @@ export function AppShell() {
                     ? t('graph.loading')
                     : surface === 'governance'
                       ? t('governance.loading')
-                      : t('chat.loading')}
+                      : surface === 'settings'
+                        ? t('settings.loading')
+                        : t('chat.loading')}
                 </div>
               }
             >
@@ -274,6 +307,8 @@ export function AppShell() {
                 <GraphExplorer threadId={activeThreadId} />
               ) : surface === 'governance' ? (
                 <GovernanceWorkspace />
+              ) : surface === 'settings' ? (
+                <SettingsWorkspace />
               ) : (
                 <ExternalStoreChat
                   threadId={activeThreadId}
@@ -341,6 +376,24 @@ export function AppShell() {
           <OnboardingWizard
             onClose={() => {
               setOnboardingOpen(false);
+            }}
+          />
+        </Suspense>
+      ) : null}
+      {profileOnboardingOpen ? (
+        <Suspense
+          fallback={
+            <div
+              role="status"
+              className="fixed inset-0 z-50 grid place-items-center bg-bg text-sm text-text-muted"
+            >
+              {t('onboarding.starting')}
+            </div>
+          }
+        >
+          <ProfileOnboardingWizard
+            onClose={() => {
+              setProfileOnboardingOpen(false);
             }}
           />
         </Suspense>

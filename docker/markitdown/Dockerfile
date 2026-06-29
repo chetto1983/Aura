@@ -3,8 +3,9 @@
 # discipline). markitdown[all] pulls the document extractors (pdf/docx/pptx/xlsx/…).
 FROM python:3.12-slim
 
-# curl for the compose healthcheck; build-essential is NOT needed (wheels only).
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# curl for the compose healthcheck; ffmpeg satisfies pydub audio conversion.
+# build-essential is NOT needed (wheels only).
+RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # markitdown[all] already pulls these transitively, but the /extract handlers

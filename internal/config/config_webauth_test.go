@@ -79,11 +79,15 @@ func TestWebAuthConfigLoad(t *testing.T) {
 	if cfg.AuthulaRateLimitMax != 30 {
 		t.Errorf("AuthulaRateLimitMax default = %d, want 30", cfg.AuthulaRateLimitMax)
 	}
+	if cfg.AuthulaOperatorIdentity != "" {
+		t.Errorf("AuthulaOperatorIdentity default = %q, want empty", cfg.AuthulaOperatorIdentity)
+	}
 
 	t.Setenv("AURA_WEB_AUTH_SECRET", "operator-pass")
 	t.Setenv("AURA_WEB_TRUST_PROXY", "true")
 	t.Setenv("AURA_WEB_AUTH_PROVIDER", "legacy-value")
 	t.Setenv("AURA_AUTHULA_RATE_LIMIT_MAX", "77")
+	t.Setenv("AURA_AUTHULA_OPERATOR_IDENTITY", "operator")
 
 	cfg = LoadDB()
 	if cfg.WebAuthSecret != "operator-pass" {
@@ -97,5 +101,8 @@ func TestWebAuthConfigLoad(t *testing.T) {
 	}
 	if cfg.AuthulaRateLimitMax != 77 {
 		t.Errorf("AuthulaRateLimitMax override = %d, want 77", cfg.AuthulaRateLimitMax)
+	}
+	if cfg.AuthulaOperatorIdentity != "operator" {
+		t.Errorf("AuthulaOperatorIdentity override = %q, want operator", cfg.AuthulaOperatorIdentity)
 	}
 }

@@ -61,6 +61,9 @@ async function fillCredentialsAndAdvance() {
     target: { value: 'new@example.com' },
   });
   fireEvent.change(screen.getByLabelText('Initial password'), { target: { value: PASSWORD } });
+  fireEvent.change(screen.getByLabelText('Confirm initial password'), {
+    target: { value: PASSWORD },
+  });
   fireEvent.change(screen.getByLabelText('Security question'), {
     target: { value: 'First school?' },
   });
@@ -242,8 +245,7 @@ describe('OnboardingWizard', () => {
       expect(screen.getByRole('button', { name: 'Edit answer' })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole('button', { name: 'Edit answer' }));
-    // The edit form's first field (its label is reused from the credentials email label).
-    fireEvent.change(screen.getByLabelText('Operator email'), { target: { value: 'Davide' } });
+    fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Davide' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => {
       expect(screen.getByText(/Name: Davide/)).toBeTruthy();

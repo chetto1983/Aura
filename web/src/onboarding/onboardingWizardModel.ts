@@ -56,12 +56,15 @@ export function phaseIndex(phase: Phase): number {
 export function credentialsValid(
   email: string,
   password: string,
+  confirmPassword: string,
   securityQuestion: string,
   securityAnswer: string,
 ): boolean {
   return (
     email.trim() !== '' &&
     password !== '' &&
+    confirmPassword !== '' &&
+    password === confirmPassword &&
     securityQuestion.trim() !== '' &&
     securityAnswer.trim() !== ''
   );

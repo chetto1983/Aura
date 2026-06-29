@@ -86,19 +86,20 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run             Runner
-	conv            ConversationStore
-	approvals       ApprovalStore
-	assets          AssetService
-	images          ImageFetcher
-	graph           GraphView
-	governance      GovernanceProviders
-	governanceWrite GovernanceWriteProviders
-	settings        settingsStore
-	onboarding      OnboardingService
-	bootstrap       BootstrapService
-	passwordReset   *PasswordResetService
-	idgen           IDGenerator
+	run              Runner
+	conv             ConversationStore
+	approvals        ApprovalStore
+	assets           AssetService
+	images           ImageFetcher
+	graph            GraphView
+	governance       GovernanceProviders
+	governanceWrite  GovernanceWriteProviders
+	settings         settingsStore
+	onboarding       OnboardingService
+	onboardingStatus OnboardingStatusSource
+	bootstrap        BootstrapService
+	passwordReset    *PasswordResetService
+	idgen            IDGenerator
 	// whatsappBridgeURL is the aura-whatsapp bridge management REST base URL the cockpit
 	// connect routes forward to (AURA_WHATSAPP_BRIDGE_URL via SetWhatsAppBridge). Empty
 	// (unwired) → the three /api/connect/whatsapp/* routes answer 503.

@@ -23,10 +23,13 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	for _, want := range []string{
 		"FROM golang:",
 		"FROM debian:bookworm-slim",
-		"postgresql-client-17",
+		"FROM dxflrs/garage:v2.0.0 AS garagebin",
+		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.21",
 		"mcp-neo4j-cypher==0.6.0",
 		"ENV AURA_IN_CONTAINER=1",
+		"COPY --from=garagebin /garage /usr/local/bin/garage",
+		"aura-garage-bootstrap.sh",
 		"ENTRYPOINT [\"aura\"]",
 		"CMD [\"serve\"]",
 	} {
@@ -56,9 +59,16 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}",
 		"AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}",
 		"AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}",
-		"AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:-GK000000000000000000000000}",
-		"AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:-0000000000000000000000000000000000000000000000000000000000000000}",
+		"AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:?AURA_OBJECTSTORE_ACCESS_KEY required in .env}",
+		"AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:?AURA_OBJECTSTORE_SECRET_KEY required in .env}",
 		"AURA_OBJECTSTORE_PATH_STYLE: ${AURA_OBJECTSTORE_PATH_STYLE:-true}",
+		"garage-bootstrap:",
+		"service_completed_successfully",
+		"entrypoint: [\"sh\", \"-lc\", \"aura-garage-bootstrap.sh && aura objectstore bootstrap\"]",
+		"AURA_GARAGE_KEY_NAME: ${AURA_GARAGE_KEY_NAME:-aura-assets-local}",
+		"AURA_GARAGE_ZONE: ${AURA_GARAGE_ZONE:-dc1}",
+		"AURA_GARAGE_CAPACITY: ${AURA_GARAGE_CAPACITY:-1G}",
+		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
 		"TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}",
 		"AURA_TELEGRAM_STATUS_THROTTLE_MS: ${AURA_TELEGRAM_STATUS_THROTTLE_MS:-1500}",
 		"AURA_TELEGRAM_CONTENT_THROTTLE_MS: ${AURA_TELEGRAM_CONTENT_THROTTLE_MS:-500}",
@@ -75,12 +85,17 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",
 		"AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-authula}",
 		"AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}",
-		"AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:-}",
-		"AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-local}",
+		"AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}",
+		"AURA_AUTHULA_RATE_LIMIT_MAX: ${AURA_AUTHULA_RATE_LIMIT_MAX:-30}",
+		"AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-}",
+		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda",
+		"AURA_EMBED_NGL:-99",
+		"LLAMA_ARG_HOST: 0.0.0.0",
 		"aura-migrate:",
 		"service_completed_successfully",
 		"entrypoint: [\"sh\", \"-lc\", \"aura db migrate && aura neo4j migrate\"]",
 		"command: []",
+		"POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}",
 		"AURA_CONFIG_DIR: /var/lib/aura",
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
@@ -99,10 +114,21 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"healthcheck:",
 		"garage:",
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}",
-		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}",
+		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
+		"AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}",
+		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",
+		"/etc/searxng/settings.template.yml",
+		"/etc/searxng/limiter.toml",
+		"__AURA_SEARXNG_SECRET__",
+		"NEO4J_server_memory_heap_initial__size: 512m",
+		"NEO4J_server_jvm_additional: \"--add-modules=jdk.incubator.vector\"",
 		"127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900",
 		"./docker/garage/garage.toml:/etc/garage.toml:ro",
 		"garage-data:",
+		"driver: nvidia",
+		"capabilities: [gpu]",
+		"start_period: 90s",
+		"start_period: 300s",
 		"--profile extended",
 	} {
 		if !strings.Contains(compose, want) {
@@ -177,11 +203,22 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 	for _, want := range []string{
 		"garage bucket allow --read --write --owner",
+		"required_env_value AURA_OBJECTSTORE_ACCESS_KEY",
+		"required_env_value AURA_OBJECTSTORE_SECRET_KEY",
 		"AURA_OBJECTSTORE_ENDPOINT=http://garage:3900",
 		"aura objectstore bootstrap",
 	} {
 		if !strings.Contains(garageBootstrap, want) {
 			t.Fatalf("scripts/garage_bootstrap.sh missing %q:\n%s", want, garageBootstrap)
+		}
+	}
+	for _, retired := range []string{
+		"GK000000000000000000000000",
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		"aura-searxng-internal-only-change-via-SEARXNG_SECRET",
+	} {
+		if strings.Contains(compose+garageBootstrap, retired) {
+			t.Fatalf("container artifacts still contain retired dummy secret %q", retired)
 		}
 	}
 }
@@ -202,16 +239,20 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"https://get.docker.com",
 		"brew install --cask docker",
 		"openssl rand -hex 32",
+		"ensure_internal_env_secrets",
 		"ensure_objectstore_env_secrets",
 		"ensure_objectstore_public_endpoint",
 		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT \"https://$(host_for_summary)\"",
+		"AURA_AUTHULA_SECRET=${authula_secret}",
+		"AURA_PIM_MCP_ADMIN_TOKEN=${pim_admin_token}",
+		"SEARXNG_SECRET=${searxng_secret}",
 		"AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}",
 		"AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}",
 		"GARAGE_RPC_SECRET=${garage_rpc_secret}",
 		"chmod 600 .env",
-		"existing .env is missing",
+		"download_file searxng/settings.yml searxng/settings.yml",
+		"download_file searxng/limiter.toml searxng/limiter.toml",
 		"download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh",
-		"bash scripts/garage_bootstrap.sh",
 		"AURA_ACCESS_TOKEN",
 		"docker compose -f compose.yaml up -d",
 		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",

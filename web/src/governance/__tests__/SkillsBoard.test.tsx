@@ -86,9 +86,19 @@ describe('SkillsBoard (GOV-02)', () => {
 
     const tablist = screen.getByRole('tablist', { name: 'Skills' });
     expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
+    expect(tablist.className).toContain('grid-cols-4');
+    expect(tablist.className).toContain('min-w-0');
+    expect(tablist.className).toContain('flex-1');
     const tabs = within(tablist).getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(['Active', 'Pending', 'Archived', 'Audit']);
     expect(tabs.every((t) => t.getAttribute('data-slot') === 'tabs-trigger')).toBe(true);
+    expect(tabs.every((t) => t.className.includes('min-w-0'))).toBe(true);
+    expect(
+      tabs.every((t) => t.querySelector('[data-tab-label]')?.className.includes('truncate')),
+    ).toBe(true);
+    const installButton = screen.getByRole('button', { name: 'Install skill' });
+    expect(installButton.getAttribute('title')).toBe('Install skill');
+    expect(installButton.querySelector('[data-action-label]')?.className).toContain('hidden');
 
     // Active is selected by default (roving tabindex 0); the others are -1 and not selected.
     const activeTab = screen.getByRole('tab', { name: 'Active' });

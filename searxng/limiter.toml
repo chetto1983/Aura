@@ -1,0 +1,23 @@
+[botdetection]
+
+# Default SearXNG limiter schema vendored from the pinned image. The Aura
+# instance keeps server.limiter=false in settings.yml, but SearXNG still expects
+# this file to exist during startup.
+ipv4_prefix = 32
+ipv6_prefix = 48
+
+trusted_proxies = [
+  '127.0.0.0/8',
+  '::1',
+]
+
+[botdetection.ip_limit]
+
+filter_link_local = false
+link_token = false
+
+[botdetection.ip_lists]
+
+block_ip = []
+pass_ip = []
+pass_searxng_org = true

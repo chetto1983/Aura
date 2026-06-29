@@ -63,7 +63,9 @@ func addAuthulaSession(req *http.Request) {
 }
 
 type fakeAuthulaProvider struct {
-	hits []string
+	hits        []string
+	operatorID  string
+	operatorErr error
 }
 
 func (f *fakeAuthulaProvider) Handler() http.Handler {
@@ -72,6 +74,10 @@ func (f *fakeAuthulaProvider) Handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"authula":true}`)
 	})
+}
+
+func (f *fakeAuthulaProvider) OperatorUserID(context.Context) (string, error) {
+	return f.operatorID, f.operatorErr
 }
 
 // TestServeWebuiAuthulaSubtreePublic pins the Option-A2 mount: Authula credential
@@ -123,10 +129,13 @@ func TestServeWebuiAuthulaSubtreePublic(t *testing.T) {
 func TestServeWebuiAuthConfigPublic(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
 	for _, tc := range []struct {
-		name    string
-		authula *fakeAuthulaProvider
+		name                   string
+		authula                *fakeAuthulaProvider
+		wantBootstrapAvailable bool
 	}{
-		{name: "provider mounted", authula: &fakeAuthulaProvider{}},
+		{name: "provider mounted before first operator", authula: &fakeAuthulaProvider{}, wantBootstrapAvailable: true},
+		{name: "provider mounted after first operator", authula: &fakeAuthulaProvider{operatorID: "authula-user-1"}},
+		{name: "provider lookup error", authula: &fakeAuthulaProvider{operatorErr: errors.New("lookup failed")}},
 		{name: "provider absent"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,6 +174,13 @@ func TestServeWebuiAuthConfigPublic(t *testing.T) {
 			}
 			if !strings.Contains(raw, `"csrf_header_name":"X-AUTHULA-CSRF-TOKEN"`) {
 				t.Fatalf("authula config body missing csrf_header_name: %s", raw)
+			}
+			wantBootstrap := `"bootstrap_available":false`
+			if tc.wantBootstrapAvailable {
+				wantBootstrap = `"bootstrap_available":true`
+			}
+			if !strings.Contains(raw, wantBootstrap) {
+				t.Fatalf("authula config body missing %s: %s", wantBootstrap, raw)
 			}
 			if rec.Header().Get("X-AUTHULA-CSRF-TOKEN") == "" {
 				t.Fatal("authula config did not return the CSRF token response header")

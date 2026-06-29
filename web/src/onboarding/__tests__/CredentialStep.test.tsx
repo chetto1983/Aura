@@ -13,16 +13,19 @@ const PASSWORD = 'My-Plaintext-PW-4242';
 function Harness() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [securityAnswer, setSecurityAnswer] = useState('');
   return (
     <CredentialStep
       email={email}
       password={password}
+      confirmPassword={confirmPassword}
       securityQuestion={securityQuestion}
       securityAnswer={securityAnswer}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
+      onConfirmPasswordChange={setConfirmPassword}
       onSecurityQuestionChange={setSecurityQuestion}
       onSecurityAnswerChange={setSecurityAnswer}
     />
@@ -34,6 +37,7 @@ describe('CredentialStep (D-05)', () => {
     render(<Harness />);
     expect(screen.getByLabelText('Operator email')).toBeTruthy();
     expect(screen.getByLabelText('Initial password')).toBeTruthy();
+    expect(screen.getByLabelText('Confirm initial password')).toBeTruthy();
     expect(screen.getByLabelText('Security question')).toBeTruthy();
     const answer = screen.getByLabelText('Security answer');
     expect(answer.getAttribute('type')).toBe('password');
@@ -53,19 +57,61 @@ describe('CredentialStep (D-05)', () => {
     const { container } = render(<Harness />);
 
     const password = screen.getByLabelText('Initial password');
+    const confirmPassword = screen.getByLabelText('Confirm initial password');
     const answer = screen.getByLabelText('Security answer');
     // It is a masked password input (never a text input that would reveal the value).
     expect(password.getAttribute('type')).toBe('password');
+    expect(confirmPassword.getAttribute('type')).toBe('password');
     expect(answer.getAttribute('type')).toBe('password');
 
     fireEvent.change(password, { target: { value: PASSWORD } });
+    fireEvent.change(confirmPassword, { target: { value: PASSWORD } });
     fireEvent.change(answer, { target: { value: 'blue bicycle' } });
     // The value is held by the controlled input (to send on provision)...
     expect((password as HTMLInputElement).value).toBe(PASSWORD);
+    expect((confirmPassword as HTMLInputElement).value).toBe(PASSWORD);
     expect((answer as HTMLInputElement).value).toBe('blue bicycle');
     // ...but it is NEVER rendered as visible DOM text anywhere (no echo / readback).
     expect(container.textContent).not.toContain(PASSWORD);
     expect(container.textContent).not.toContain('blue bicycle');
+  });
+
+  it('reveals and hides the initial password and security answer on explicit request', () => {
+    render(<Harness />);
+
+    const password = screen.getByLabelText('Initial password');
+    const confirmPassword = screen.getByLabelText('Confirm initial password');
+    const answer = screen.getByLabelText('Security answer');
+    expect(password.getAttribute('type')).toBe('password');
+    expect(confirmPassword.getAttribute('type')).toBe('password');
+    expect(answer.getAttribute('type')).toBe('password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Initial password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show Confirm initial password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show Security answer' }));
+
+    expect(password.getAttribute('type')).toBe('text');
+    expect(confirmPassword.getAttribute('type')).toBe('text');
+    expect(answer.getAttribute('type')).toBe('text');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Initial password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Confirm initial password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Security answer' }));
+
+    expect(password.getAttribute('type')).toBe('password');
+    expect(confirmPassword.getAttribute('type')).toBe('password');
+    expect(answer.getAttribute('type')).toBe('password');
+  });
+
+  it('shows an inline mismatch alert when the password confirmation differs', () => {
+    render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Initial password'), { target: { value: PASSWORD } });
+    const confirmPassword = screen.getByLabelText('Confirm initial password');
+    fireEvent.change(confirmPassword, { target: { value: 'not-the-same' } });
+
+    expect(screen.getByRole('alert').textContent).toContain('The passwords do not match.');
+    expect(confirmPassword.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('drives the controlled email value', () => {

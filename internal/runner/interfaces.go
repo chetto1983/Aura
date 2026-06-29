@@ -97,9 +97,10 @@ type ToolInvocationStore interface {
 }
 
 // IdentityStore is the narrow identity surface the Runner consumes (D-A2-02).
-// *identity.Store satisfies it implicitly. The Runner looks up the owning identity
-// when it creates a new conversation (single-user `local` scaffolding, Slice 1.7).
+// *identity.Store satisfies it implicitly. New conversations prefer a real user
+// identity and retain `local` only as a legacy fallback for pre-Authula installs.
 type IdentityStore interface {
+	ListIdentities(ctx context.Context) ([]identity.Identity, error)
 	GetIdentityByName(ctx context.Context, name string) (identity.Identity, error)
 	GetIdentityByID(ctx context.Context, identityID string) (identity.Identity, error)
 }

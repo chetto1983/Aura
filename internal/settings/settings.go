@@ -44,18 +44,22 @@ type KeyMeta struct {
 // OverlayEnv + the API enforce it: a key outside this map is rejected/ignored, so
 // the settings layer can never reach connection or security env.
 var AllowedKeys = map[string]KeyMeta{
-	"AURA_LLM_MODEL":             {Kind: KindString, Label: "Primary LLM model"},
-	"OPENROUTER_API_KEY":         {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
-	"AURA_RERANK_MODEL":          {Kind: KindString, Label: "Rerank cloud model"},
-	"AURA_RERANK_BASE_URL":       {Kind: KindString, Label: "Rerank base URL"},
-	"AURA_EMBED_MODEL":           {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_DIMENSIONS":      {Kind: KindInt, Label: "Embedding dimensions"},
-	"AURA_EMBED_BASE_URL":        {Kind: KindString, Label: "Embedding base URL"},
-	"AURA_TTS_MODEL":             {Kind: KindString, Label: "TTS cloud model"},
-	"AURA_STT_CLOUD_MODEL":       {Kind: KindString, Label: "STT cloud model"},
-	"AURA_VISION_CLOUD":          {Kind: KindBool, Label: "Vision uses cloud"},
-	"AURA_MEMORY_EMBED_BASE_URL": {Kind: KindString, Label: "Memory MCP embedding base URL"},
-	"AURA_MEMORY_EMBED_API_KEY":  {Secret: true, Kind: KindString, Label: "Memory MCP embedding key"},
+	"AURA_LLM_MODEL":               {Kind: KindString, Label: "Primary LLM model"},
+	"AURA_LLM_BASE_URL":            {Kind: KindString, Label: "Primary LLM base URL"},
+	"AURA_LLM_MAX_TOKENS":          {Kind: KindInt, Label: "Max response tokens"},
+	"AURA_MODEL_CONTEXT_WINDOW":    {Kind: KindInt, Label: "Context window tokens"},
+	"AURA_MODEL_MAX_OUTPUT_TOKENS": {Kind: KindInt, Label: "Reserved output tokens"},
+	"OPENROUTER_API_KEY":           {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
+	"AURA_RERANK_MODEL":            {Kind: KindString, Label: "Rerank cloud model"},
+	"AURA_RERANK_BASE_URL":         {Kind: KindString, Label: "Rerank base URL"},
+	"AURA_EMBED_MODEL":             {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_EMBED_DIMENSIONS":        {Kind: KindInt, Label: "Embedding dimensions"},
+	"AURA_EMBED_BASE_URL":          {Kind: KindString, Label: "Embedding base URL"},
+	"AURA_TTS_MODEL":               {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_STT_CLOUD_MODEL":         {Kind: KindString, Label: "STT cloud model"},
+	"AURA_VISION_CLOUD":            {Kind: KindBool, Label: "Vision uses cloud"},
+	"AURA_MEMORY_EMBED_BASE_URL":   {Kind: KindString, Label: "Memory MCP embedding base URL"},
+	"AURA_MEMORY_EMBED_API_KEY":    {Secret: true, Kind: KindString, Label: "Memory MCP embedding key"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.

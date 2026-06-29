@@ -83,3 +83,16 @@ func TestLLMConfiguredClientBypassesKeylessGuard(t *testing.T) {
 		t.Fatal("configured LLM client should not use the keyless guard")
 	}
 }
+
+func TestLLMLocalOpenAICompatClientAllowsEmptyCloudKey(t *testing.T) {
+	for _, baseURL := range []string{
+		"http://127.0.0.1:8080/v1",
+		"http://aura-vllm-chat:8000/v1",
+		"http://192.168.1.40:11434/v1",
+	} {
+		client := newLLMClient(llm.Config{BaseURL: baseURL})
+		if _, guarded := client.(llmNotConfiguredClient); guarded {
+			t.Fatalf("local base URL %q should not require OPENROUTER_API_KEY", baseURL)
+		}
+	}
+}

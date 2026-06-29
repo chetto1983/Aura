@@ -5,6 +5,7 @@
 # Optional env:
 #   AURA_INSTALL_REF=vX.Y.Z
 #   AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
+#   POSTGRES_IMAGE=postgres:18.4-alpine3.23
 #   AURA_INSTALL_DIR=/opt/aura
 
 set -euo pipefail
@@ -221,6 +222,15 @@ set_env_value() {
   rm -f "$tmp"
 }
 
+ensure_env_default() {
+  key="$1"
+  value="$2"
+  if [ -n "$(env_value "$key")" ]; then
+    return
+  fi
+  set_env_value "$key" "$value"
+}
+
 ensure_generated_env_secret() {
   key="$1"
   bytes="$2"
@@ -241,6 +251,22 @@ ensure_objectstore_env_secrets() {
   ensure_generated_env_secret GARAGE_RPC_SECRET 32
 }
 
+ensure_internal_env_secrets() {
+  command -v openssl >/dev/null 2>&1 || {
+    echo "FAIL: openssl is required to generate Aura internal secrets." >&2
+    exit 1
+  }
+  ensure_generated_env_secret POSTGRES_PASSWORD 32
+  ensure_generated_env_secret NEO4J_PASSWORD 32
+  ensure_generated_env_secret AURA_ACCESS_TOKEN 32
+  ensure_generated_env_secret AURA_AUTHULA_SECRET 32
+  ensure_generated_env_secret AURA_PIM_MCP_ADMIN_TOKEN 32
+  ensure_generated_env_secret SEARXNG_SECRET 32
+  ensure_objectstore_env_secrets
+  ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}"
+  ensure_env_default AURA_IMAGE "${AURA_IMAGE:-$DEFAULT_IMAGE}"
+}
+
 ensure_objectstore_public_endpoint() {
   if [ -n "$(env_value AURA_OBJECTSTORE_PUBLIC_ENDPOINT)" ]; then
     return
@@ -250,13 +276,7 @@ ensure_objectstore_public_endpoint() {
 
 write_env_if_missing() {
   if [ -f .env ]; then
-    for key in POSTGRES_PASSWORD NEO4J_PASSWORD AURA_ACCESS_TOKEN AURA_IMAGE; do
-      if [ -z "$(env_value "$key")" ]; then
-        echo "FAIL: existing .env is missing ${key}; add it manually. Existing secrets were not modified." >&2
-        exit 1
-      fi
-    done
-    ensure_objectstore_env_secrets
+    ensure_internal_env_secrets
     chmod 600 .env
     return
   fi
@@ -272,12 +292,16 @@ write_env_if_missing() {
   objectstore_access_key="GK$(openssl rand -hex 12)"
   objectstore_secret_key="$(openssl rand -hex 32)"
   garage_rpc_secret="$(openssl rand -hex 32)"
+  authula_secret="$(openssl rand -hex 32)"
+  pim_admin_token="$(openssl rand -hex 32)"
+  searxng_secret="$(openssl rand -hex 32)"
   aura_image="${AURA_IMAGE:-$DEFAULT_IMAGE}"
   openrouter_key="${OPENROUTER_API_KEY:-}"
 
   umask 077
   cat > .env <<EOF
 POSTGRES_PASSWORD=${pg_pw}
+POSTGRES_IMAGE=${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
 POSTGRES_USER=aura
 POSTGRES_DB=aura
 POSTGRES_HOST=127.0.0.1
@@ -289,12 +313,21 @@ AURA_NEO4J_DATABASE=neo4j
 
 AURA_IMAGE=${aura_image}
 AURA_ACCESS_TOKEN=${access_token}
+AURA_AUTHULA_SECRET=${authula_secret}
 AURA_HTTPS_PORT=443
 AURA_AGUI_PORT=9080
 AURA_SETUP_PORT=9081
 AURA_WHATSAPP_MCP_PORT=8092
 AURA_AGENT_MEMORY_MCP_PORT=8091
+AURA_PIM_MCP_ADMIN_TOKEN=${pim_admin_token}
 AURA_BACKUP_DIR=./backups
+SEARXNG_SECRET=${searxng_secret}
+
+AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
+AURA_EMBED_NGL=99
+AURA_EMBED_DIMENSIONS=768
+AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
+AURA_RERANK_NGL=99
 
 AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
 AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}
@@ -381,7 +414,7 @@ preflight_hw
 install_docker
 provision_gvisor
 
-as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts"
+as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "$INSTALL_DIR/searxng"
 if need_sudo; then
   as_root chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
 fi
@@ -391,6 +424,8 @@ download_file compose.yaml compose.yaml
 download_file compose.gvisor.yaml compose.gvisor.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
 download_file deploy/aura.service deploy/aura.service
+download_file searxng/settings.yml searxng/settings.yml
+download_file searxng/limiter.toml searxng/limiter.toml
 download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
 chmod +x scripts/garage_bootstrap.sh
 
@@ -402,8 +437,6 @@ aura_image="$(env_value AURA_IMAGE)"
 if [ "${aura_image}" != "aura:local" ]; then
   docker pull "$aura_image"
 fi
-
-bash scripts/garage_bootstrap.sh
 
 if [ "$GVISOR" -eq 1 ]; then
   docker compose -f compose.yaml -f compose.gvisor.yaml up -d

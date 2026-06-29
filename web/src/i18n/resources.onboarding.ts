@@ -40,8 +40,10 @@ export const onboardingEn = {
       emailLabel: 'Operator email',
       emailPlaceholder: 'name@example.com',
       passwordLabel: 'Initial password',
+      confirmPasswordLabel: 'Confirm initial password',
       passwordHint:
         'The new user sets up two-factor sign-in on first login. The password is never shown again.',
+      passwordMismatch: 'The passwords do not match.',
       securityQuestionLabel: 'Security question',
       securityAnswerLabel: 'Security answer',
       securityAnswerHint:
@@ -57,6 +59,8 @@ export const onboardingEn = {
       answerPlaceholder: 'Type your answer',
       emptyAnswer: 'No answer recorded for this step.',
       draftHeading: 'Profile draft',
+      editNameLabel: 'Preferred name',
+      editRoleLabel: 'Role or correction',
     },
     telegram: {
       deepLinkCta: 'Open in Telegram',
@@ -85,6 +89,66 @@ export const onboardingEn = {
       noCapability: "You don't have permission to create an identity.",
       duplicate: 'That email is empty or already in use. Choose another.',
       rolledBack: "Couldn't finish creating the identity, so nothing was saved. Try again.",
+    },
+    profile: {
+      kicker: 'First-run setup',
+      title: 'Set up your profile',
+      heading: 'Finish setting up Aura',
+      body: 'Create the operator profile Aura will use for chat context, saved preferences, and automation handoffs.',
+      progressLabel: 'Profile setup progress',
+      currentStep: 'Step {{current}} of {{total}}',
+      steps: {
+        identity: {
+          label: 'About you',
+          help: 'Name, role, team, location, timezone, and preferred language.',
+        },
+        work: {
+          label: 'Work stack',
+          help: 'Core expertise, tools, systems, and technical environment.',
+        },
+        projects: {
+          label: 'Projects and goals',
+          help: 'Active projects, priorities, deadlines, and what success looks like.',
+        },
+        social: {
+          label: 'People and interests',
+          help: 'Recurring collaborators, stakeholders, topics, and personal context.',
+        },
+        style: {
+          label: 'Response style',
+          help: 'Tone, answer length, language, and voice preferences.',
+        },
+        draft: {
+          label: 'Review profile',
+          help: 'Confirm the generated Agent.md profile or edit details before saving.',
+        },
+        runtime: {
+          label: 'Model and token setup',
+          help: 'Choose cloud or local model routing, token budgets, and sidecar backends before Aura starts regular work.',
+        },
+      },
+      prompts: {
+        identity:
+          'Tell Aura what to call you, your role, team or company, location, timezone, and preferred language.',
+        work: 'Share your main areas of expertise and the tools or stack you use most often.',
+        projects: 'List what you are working on now and the goals Aura should remember.',
+        social:
+          'Add recurring collaborators, stakeholders, interests, and topics Aura should keep in context.',
+        style:
+          'Describe how Aura should respond: tone, answer length, language, and whether voice replies are useful.',
+        draft: 'Review the generated Agent.md profile. Confirm it, edit it, or skip profile setup.',
+      },
+      runtime: {
+        save: 'Save and continue',
+        skip: 'Skip runtime setup',
+      },
+      skipSetup: 'Skip profile setup',
+      saving: 'Saving profile...',
+      saveError: "Couldn't save the profile. Try again.",
+      completeHeading: 'Profile ready',
+      completeBody: 'Aura can now use your Agent.md profile across the operator cockpit.',
+      skippedBody:
+        'Profile setup was skipped. Aura will ask again only when you restart first-run setup.',
     },
   },
 } as const;
@@ -123,8 +187,10 @@ export const onboardingIt = {
       emailLabel: 'Email operatore',
       emailPlaceholder: 'nome@esempio.com',
       passwordLabel: 'Password iniziale',
+      confirmPasswordLabel: 'Conferma password iniziale',
       passwordHint:
         "Il nuovo utente configura l'accesso a due fattori al primo login. La password non verrà più mostrata.",
+      passwordMismatch: 'Le password non corrispondono.',
       securityQuestionLabel: 'Domanda di sicurezza',
       securityAnswerLabel: 'Risposta di sicurezza',
       securityAnswerHint:
@@ -140,6 +206,8 @@ export const onboardingIt = {
       answerPlaceholder: 'Scrivi la tua risposta',
       emptyAnswer: 'Nessuna risposta registrata per questo passaggio.',
       draftHeading: 'Bozza del profilo',
+      editNameLabel: 'Nome preferito',
+      editRoleLabel: 'Ruolo o correzione',
     },
     telegram: {
       deepLinkCta: 'Apri in Telegram',
@@ -163,6 +231,66 @@ export const onboardingIt = {
       heading: 'Identità creata',
       body: 'La nuova identità può ora accedere. Il suo profilo Agent.md è stato salvato.',
       done: 'Fatto',
+    },
+    profile: {
+      kicker: 'Primo avvio',
+      title: 'Configura il tuo profilo',
+      heading: 'Completa la configurazione di Aura',
+      body: 'Crea il profilo operatore che Aura usera per contesto chat, preferenze salvate e automazioni.',
+      progressLabel: 'Avanzamento configurazione profilo',
+      currentStep: 'Passaggio {{current}} di {{total}}',
+      steps: {
+        identity: {
+          label: 'Chi sei',
+          help: 'Nome, ruolo, team, luogo, fuso orario e lingua preferita.',
+        },
+        work: {
+          label: 'Stack di lavoro',
+          help: 'Competenze principali, strumenti, sistemi e ambiente tecnico.',
+        },
+        projects: {
+          label: 'Progetti e obiettivi',
+          help: 'Progetti attivi, priorita, scadenze e risultati attesi.',
+        },
+        social: {
+          label: 'Persone e interessi',
+          help: 'Collaboratori ricorrenti, stakeholder, temi e contesto personale.',
+        },
+        style: {
+          label: 'Stile risposta',
+          help: 'Tono, lunghezza, lingua e preferenze voce.',
+        },
+        draft: {
+          label: 'Revisione profilo',
+          help: 'Conferma il profilo Agent.md generato o modifica i dettagli prima del salvataggio.',
+        },
+        runtime: {
+          label: 'Configurazione modello e token',
+          help: 'Scegli modello cloud o locale, budget token e backend sidecar prima del lavoro regolare.',
+        },
+      },
+      prompts: {
+        identity:
+          'Di ad Aura come chiamarti, il tuo ruolo, team o azienda, luogo, fuso orario e lingua preferita.',
+        work: 'Condividi competenze principali e strumenti o stack che usi piu spesso.',
+        projects: 'Elenca cosa stai seguendo ora e gli obiettivi che Aura deve ricordare.',
+        social:
+          'Aggiungi collaboratori ricorrenti, stakeholder, interessi e temi che Aura deve tenere in contesto.',
+        style:
+          'Descrivi come Aura deve rispondere: tono, lunghezza, lingua e se le risposte vocali sono utili.',
+        draft: 'Rivedi il profilo Agent.md generato. Confermalo, modificalo o salta il profilo.',
+      },
+      runtime: {
+        save: 'Salva e continua',
+        skip: 'Salta configurazione runtime',
+      },
+      skipSetup: 'Salta configurazione profilo',
+      saving: 'Salvataggio profilo...',
+      saveError: 'Impossibile salvare il profilo. Riprova.',
+      completeHeading: 'Profilo pronto',
+      completeBody: 'Aura puo ora usare il tuo profilo Agent.md nella console operatore.',
+      skippedBody:
+        'Configurazione profilo saltata. Aura la richiedera di nuovo solo quando riavvii il primo avvio.',
     },
     error: {
       noCapability: "Non hai i permessi per creare un'identità.",

@@ -313,9 +313,12 @@ func (m *memPauseStore) AutoResolveForConversation(_ context.Context, conversati
 	return nil
 }
 
-// memIdentityStore answers the single `local` identity lookup the Runner makes
-// when it creates the audit conversation.
+// memIdentityStore answers the legacy `local` identity lookups for the cache audit.
 type memIdentityStore struct{}
+
+func (memIdentityStore) ListIdentities(context.Context) ([]identity.Identity, error) {
+	return []identity.Identity{{ID: "00000000-0000-0000-0000-000000000001", Name: "local", Kind: "system"}}, nil
+}
 
 func (memIdentityStore) GetIdentityByName(_ context.Context, name string) (identity.Identity, error) {
 	if name != "local" {

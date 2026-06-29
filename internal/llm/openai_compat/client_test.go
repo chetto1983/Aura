@@ -84,6 +84,30 @@ func TestStream_EndToEnd(t *testing.T) {
 	}
 }
 
+func TestStreamOmitsAuthorizationWhenAPIKeyEmpty(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	cfg := testConfig(srv.URL)
+	cfg.APIKey = ""
+	c := New(cfg)
+	ch, err := c.Stream(context.Background(), llm.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	_ = drain(ch)
+
+	if gotAuth != "" {
+		t.Fatalf("Authorization header = %q, want omitted for local keyless clients", gotAuth)
+	}
+}
+
 // TestStream_CancelMidStream (Req#3): cancel ctx mid-stream → the chunk channel
 // closes within ~100ms of cancel AND runtime.NumGoroutine returns to baseline.
 // goleak (package TestMain) catches a leaked read goroutine or lingering

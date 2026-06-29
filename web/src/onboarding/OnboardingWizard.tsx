@@ -59,6 +59,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   const [sessionToken, setSessionToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [securityAnswer, setSecurityAnswer] = useState('');
   const [capabilityOptions, setCapabilityOptions] = useState<readonly string[]>([]);
@@ -166,6 +167,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
       setProvisionResult(result);
       // Password lives only until the saga ran; clear it so it cannot linger in state.
       setPassword('');
+      setConfirmPassword('');
       setSecurityAnswer('');
       setPhase('complete');
     } catch (err) {
@@ -179,7 +181,13 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     }
   }, [sessionToken, email, password, securityQuestion, securityAnswer, selectedCaps]);
 
-  const canAdvanceCredentials = credentialsValid(email, password, securityQuestion, securityAnswer);
+  const canAdvanceCredentials = credentialsValid(
+    email,
+    password,
+    confirmPassword,
+    securityQuestion,
+    securityAnswer,
+  );
   const phaseIndex = phaseIndexOf(phase);
 
   const overlay = (children: React.ReactNode) => (
@@ -256,10 +264,12 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
               <CredentialStep
                 email={email}
                 password={password}
+                confirmPassword={confirmPassword}
                 securityQuestion={securityQuestion}
                 securityAnswer={securityAnswer}
                 onEmailChange={setEmail}
                 onPasswordChange={setPassword}
+                onConfirmPasswordChange={setConfirmPassword}
                 onSecurityQuestionChange={setSecurityQuestion}
                 onSecurityAnswerChange={setSecurityAnswer}
               />

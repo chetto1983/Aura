@@ -85,8 +85,25 @@ export interface OnboardingTelegramStatus {
   readonly linked: boolean;
 }
 
+export interface OnboardingStatus {
+  readonly required: boolean;
+  readonly completed: boolean;
+  readonly skipped: boolean;
+}
+
+export interface OnboardingProfileComplete {
+  readonly completed: boolean;
+  readonly skipped: boolean;
+  readonly deepLink?: string;
+  readonly qrSvg?: string;
+}
+
 function stepPath(token: string): string {
   return `/api/onboarding/${encodeURIComponent(token)}/step`;
+}
+
+function profileCompletePath(token: string): string {
+  return `/api/onboarding/${encodeURIComponent(token)}/profile`;
 }
 
 function provisionPath(token: string): string {
@@ -102,6 +119,10 @@ function telegramStatusPath(token: string): string {
  * error state, never a blank. The capability gate (identity.create) yields a 403 here. */
 export function startOnboarding(): Promise<OnboardingStart> {
   return postJSON<OnboardingStart>(ONBOARDING_START_PATH, {});
+}
+
+export function startProfileOnboarding(): Promise<OnboardingStart> {
+  return postJSON<OnboardingStart>('/api/onboarding/profile/start', {});
 }
 
 /** POST /api/onboarding/{token}/step — apply one interview intent (answer/confirm/edit/skip) and
@@ -126,6 +147,14 @@ export function provisionOnboarding(
 
 /** GET /api/onboarding/{token}/telegram-status — the REST poll over PendingConsumed. Non-200
  * (incl. 401) throws; the caller stops polling on a thrown auth error. */
+export function completeProfileOnboarding(token: string): Promise<OnboardingProfileComplete> {
+  return postJSON<OnboardingProfileComplete>(profileCompletePath(token), {});
+}
+
 export function fetchTelegramStatus(token: string): Promise<OnboardingTelegramStatus> {
   return getJSON<OnboardingTelegramStatus>(telegramStatusPath(token));
+}
+
+export function fetchOnboardingStatus(): Promise<OnboardingStatus> {
+  return getJSON<OnboardingStatus>('/api/onboarding/status');
 }

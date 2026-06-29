@@ -16,6 +16,16 @@ func TestAllowed(t *testing.T) {
 	if m, ok := Allowed("OPENROUTER_API_KEY"); !ok || !m.Secret {
 		t.Errorf("OPENROUTER_API_KEY should be allowed + secret, got ok=%v meta=%+v", ok, m)
 	}
+	for _, key := range []string{
+		"AURA_LLM_BASE_URL",
+		"AURA_LLM_MAX_TOKENS",
+		"AURA_MODEL_CONTEXT_WINDOW",
+		"AURA_MODEL_MAX_OUTPUT_TOKENS",
+	} {
+		if m, ok := Allowed(key); !ok || m.Secret || m.Kind != KindInt && key != "AURA_LLM_BASE_URL" {
+			t.Errorf("%s should be an allowlisted non-secret model/token setting, got ok=%v meta=%+v", key, ok, m)
+		}
+	}
 	if _, ok := Allowed("AURA_RERANK_MODEL"); !ok {
 		t.Error("AURA_RERANK_MODEL should be allowed")
 	}

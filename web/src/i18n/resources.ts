@@ -3,6 +3,7 @@ import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
+import { settingsEn, settingsIt } from './resources.settings';
 
 export const resources = {
   en: {
@@ -16,6 +17,10 @@ export const resources = {
         switcherLabel: 'Theme',
         light: 'Light theme',
         dark: 'Dark theme',
+      },
+      secret: {
+        show: 'Show {{label}}',
+        hide: 'Hide {{label}}',
       },
       ...loginEn,
       shell: {
@@ -117,6 +122,7 @@ export const resources = {
       ...displayEn,
       ...governanceEn,
       ...graphEn,
+      ...settingsEn,
       ...onboardingEn,
       conversations: {
         heading: 'Conversations',
@@ -137,6 +143,7 @@ export const resources = {
           older: 'Older',
         },
         actions: {
+          more: 'Conversation actions',
           rename: 'Rename',
           archive: 'Archive',
           unarchive: 'Unarchive',
@@ -269,6 +276,10 @@ export const resources = {
         light: 'Tema chiaro',
         dark: 'Tema scuro',
       },
+      secret: {
+        show: 'Mostra {{label}}',
+        hide: 'Nascondi {{label}}',
+      },
       ...loginIt,
       shell: {
         primaryNav: 'Principale',
@@ -369,6 +380,7 @@ export const resources = {
       ...displayIt,
       ...governanceIt,
       ...graphIt,
+      ...settingsIt,
       ...onboardingIt,
       conversations: {
         heading: 'Conversazioni',
@@ -389,6 +401,7 @@ export const resources = {
           older: 'Meno recenti',
         },
         actions: {
+          more: 'Azioni conversazione',
           rename: 'Rinomina',
           archive: 'Archivia',
           unarchive: 'Ripristina',

@@ -30,16 +30,10 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
-	"github.com/chetto1983/aura/internal/webauth"
 	"github.com/chetto1983/aura/internal/webui"
 )
 
@@ -281,10 +275,13 @@ const identityCreateCapability = "identity.create"
 // capability gate. All four are SPECIFIC method+path siblings under the "/api/" exclusion
 // carve-out — NEVER a bare "/api/" (which would shadow /api/integrations/, T-28-05).
 const (
-	onboardingStartRoute     = "POST /api/onboarding/start"
-	onboardingStepRoute      = "POST /api/onboarding/{sessionToken}/step"
-	onboardingProvisionRoute = "POST /api/onboarding/{sessionToken}/provision"
-	onboardingTgStatusRoute  = "GET /api/onboarding/{sessionToken}/telegram-status"
+	onboardingStatusRoute          = "GET /api/onboarding/status"
+	onboardingProfileStartRoute    = "POST /api/onboarding/profile/start"
+	onboardingProfileCompleteRoute = "POST /api/onboarding/{sessionToken}/profile"
+	onboardingStartRoute           = "POST /api/onboarding/start"
+	onboardingStepRoute            = "POST /api/onboarding/{sessionToken}/step"
+	onboardingProvisionRoute       = "POST /api/onboarding/{sessionToken}/provision"
+	onboardingTgStatusRoute        = "GET /api/onboarding/{sessionToken}/telegram-status"
 )
 
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
@@ -321,10 +318,6 @@ const (
 // agui.RequireCapability ahead of the AG-UI prefix loop (Go 1.22 method-pattern
 // precedence makes "POST /agent/run" win over the bare "/agent/run") so the capability
 // gate fires AFTER RequireAuth has bound the principal.
-type credentialProvider interface {
-	Handler() http.Handler
-}
-
 func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvider credentialProvider) (http.Handler, error) {
 	static, err := webui.Handler(fallbackExcludedPrefixes())
 	if err != nil {
@@ -341,7 +334,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		mux.Handle(authBasePath+"/", authulaProvider.Handler())
 		auth.AuthBasePath = authBasePath
 	}
-	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler())
+	var bootstrapProvider bootstrapAvailabilityProvider
+	if candidate, ok := authulaProvider.(bootstrapAvailabilityProvider); ok {
+		bootstrapProvider = candidate
+	}
+	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler(bootstrapProvider))
 	mux.Handle(bootstrapOperatorRoute, aguiHandler)
 	mux.Handle(passwordResetStartRoute, aguiHandler)
 	mux.Handle(passwordResetVerifyRoute, aguiHandler)
@@ -472,6 +469,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// straight to the AG-UI handler and inherit RequireAuth from the whole-mux wrap. All
 	// four are method+path-specific so they win longest-pattern precedence over the "/"
 	// embed catch-all; the "/api/" fallback exclusion already returns them as backend routes.
+	mux.Handle(onboardingStatusRoute, aguiHandler)
+	mux.Handle(onboardingProfileStartRoute, aguiHandler)
+	mux.Handle(onboardingProfileCompleteRoute, aguiHandler)
 	mux.Handle(onboardingStartRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	mux.Handle(onboardingProvisionRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	mux.Handle(onboardingStepRoute, aguiHandler)
@@ -522,66 +522,4 @@ func isPublicPasswordResetRoute(r *http.Request) bool {
 	default:
 		return false
 	}
-}
-
-func credentialProviderConfigured(provider credentialProvider) bool {
-	if provider == nil {
-		return false
-	}
-	value := reflect.ValueOf(provider)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return !value.IsNil()
-	default:
-		return true
-	}
-}
-
-type frontendAuthConfig struct {
-	Provider       string `json:"provider"`
-	AuthBasePath   string `json:"auth_base_path,omitempty"`
-	CSRFCookieName string `json:"csrf_cookie_name,omitempty"`
-	CSRFHeaderName string `json:"csrf_header_name,omitempty"`
-	CSRFToken      string `json:"csrf_token,omitempty"`
-}
-
-func newAuthConfigHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-		token, err := newCSRFToken()
-		if err != nil {
-			http.Error(w, "csrf token", http.StatusInternalServerError)
-			return
-		}
-		cfg := frontendAuthConfig{
-			Provider:       "authula",
-			AuthBasePath:   authBasePath,
-			CSRFCookieName: webauth.CSRFCookieName,
-			CSRFHeaderName: webauth.CSRFHeaderName,
-			CSRFToken:      token,
-		}
-		w.Header().Set(webauth.CSRFHeaderName, token)
-		http.SetCookie(w, &http.Cookie{
-			Name:     webauth.CSRFCookieName,
-			Value:    token,
-			Path:     "/",
-			MaxAge:   int((24 * time.Hour).Seconds()),
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
-		})
-		if err := json.NewEncoder(w).Encode(cfg); err != nil {
-			http.Error(w, "auth config", http.StatusInternalServerError)
-		}
-	}
-}
-
-func newCSRFToken() (string, error) {
-	var raw [32]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }

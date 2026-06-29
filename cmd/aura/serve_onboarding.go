@@ -207,10 +207,14 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 // The Telegram bot username is resolved live (a best-effort getMe); an empty username
 // leaves provisioning unavailable so no identity/recovery/token writes occur.
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
+	profileStore := profile.NewStore("")
+	if chat != nil && chat.cfg != nil && chat.cfg.ProfileDir != "" {
+		profileStore = profile.NewStore(chat.cfg.ProfileDir)
+	}
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,
 		Extractor:    onboarding.NewLLMAnswerExtractor(chat.client, chat.cfg.LLM.Model),
-		Profiles:     profile.NewStore(""),
+		Profiles:     profileStore,
 	}
 	if chat.pool != nil {
 		deps.AuraLeg = auraLegAdapter{pool: chat.pool}
@@ -224,6 +228,38 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 	}
 	deps.BotUsername = resolveBotUsername(ctx, telegram.LoadConfig().BotToken)
 	return agui.NewOnboardingService(deps)
+}
+
+type onboardingStatusAdapter struct {
+	store *profile.Store
+}
+
+func newOnboardingStatusAdapter(chat *chatEnv) onboardingStatusAdapter {
+	root := ""
+	if chat != nil && chat.cfg != nil {
+		root = chat.cfg.ProfileDir
+	}
+	return onboardingStatusAdapter{store: profile.NewStore(root)}
+}
+
+func (a onboardingStatusAdapter) OnboardingStatus(_ context.Context, identityID string) (agui.OnboardingStatus, error) {
+	if a.store == nil || identityID == "" {
+		return agui.OnboardingStatus{Required: true}, nil
+	}
+	loaded, err := a.store.ReadProfile(identityID)
+	if err != nil {
+		if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, profile.ErrInvalidIdentity) {
+			return agui.OnboardingStatus{Required: true}, nil
+		}
+		return agui.OnboardingStatus{}, err
+	}
+	completed := loaded.Metadata.OnboardingCompleted
+	skipped := loaded.Metadata.OnboardingSkipped
+	return agui.OnboardingStatus{
+		Required:  !completed && !skipped,
+		Completed: completed,
+		Skipped:   skipped,
+	}, nil
 }
 
 // resolveBotUsername does a best-effort live getMe to learn the bot username for the

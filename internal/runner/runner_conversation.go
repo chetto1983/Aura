@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -15,8 +16,9 @@ import (
 // conversation row the turn loop appends to. No behavior change from the prior in-file
 // definitions.
 
-// NewConversation creates a new active conversation owned by the seeded `local`
-// identity and returns its id. The composition root / `aura chat new` calls it.
+// NewConversation creates a new active conversation and returns its id. Ownership
+// follows the Authula-era identity model: prefer a real user identity, with `local`
+// retained only as a legacy fallback.
 func (r *Runner) NewConversation(ctx context.Context) (string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -28,9 +30,9 @@ func (r *Runner) NewConversation(ctx context.Context) (string, error) {
 // NewConversationWithID creates a conversation with a caller-supplied id (the REPL
 // mints the id so it can key the sidecar dir before the row exists).
 func (r *Runner) NewConversationWithID(ctx context.Context, conversationID string) (string, error) {
-	owner, err := r.identity.GetIdentityByName(ctx, localIdentityName)
+	owner, err := r.defaultConversationOwner(ctx)
 	if err != nil {
-		return "", fmt.Errorf("new conversation: resolve %q identity: %w", localIdentityName, err)
+		return "", fmt.Errorf("new conversation: resolve owner identity: %w", err)
 	}
 	if _, err := r.Conv.Create(ctx, conversations.CreateParams{
 		ID:         conversationID,
@@ -40,6 +42,23 @@ func (r *Runner) NewConversationWithID(ctx context.Context, conversationID strin
 		return "", fmt.Errorf("new conversation: %w", err)
 	}
 	return conversationID, nil
+}
+
+func (r *Runner) defaultConversationOwner(ctx context.Context) (identity.Identity, error) {
+	ids, err := r.identity.ListIdentities(ctx)
+	if err != nil {
+		return identity.Identity{}, err
+	}
+	for _, id := range ids {
+		if id.Kind == "user" && id.ID != "" {
+			return id, nil
+		}
+	}
+	id, err := r.identity.GetIdentityByName(ctx, localIdentityName)
+	if err != nil {
+		return identity.Identity{}, err
+	}
+	return id, nil
 }
 
 // EnsureConversation lazily creates the conversation row when it is absent and is

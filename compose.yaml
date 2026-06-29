@@ -1,5 +1,5 @@
-# Source: Docker Compose v5 + Postgres 17 docker hub + Neo4j 5.26 community docker
-# docs + llama.cpp server docs (verified 2026-05-29).
+# Source: Docker Compose v5 + Postgres 18 docker hub + Neo4j 5.26 community docker
+# docs + llama.cpp server docs (verified 2026-06-29).
 # Aura Slice 0.5 lands postgres; Slice 0.7 appends neo4j + aura-llama-embed.
 # Repo-root location per D-02 (NOT sandbox/compose.yaml; vestigial path superseded).
 # .env feeds Compose interpolation. Runtime knobs must be forwarded explicitly
@@ -37,6 +37,8 @@ services:
       # healthcheck so `docker compose up` after a restart always mounts memory.
       aura-agent-memory-mcp:
         condition: service_healthy
+      garage-bootstrap:
+        condition: service_completed_successfully
       # Start the WhatsApp bridge with the stack (service_started, NOT service_healthy — Aura boot must never block on it; the connect routes fail-soft to 503).
       whatsapp:
         condition: service_started
@@ -52,8 +54,9 @@ services:
       AURA_WEB_TRUST_PROXY: ${AURA_WEB_TRUST_PROXY:-false}
       AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-authula}
       AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}
-      AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:-}
-      AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-local}
+      AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}
+      AURA_AUTHULA_RATE_LIMIT_MAX: ${AURA_AUTHULA_RATE_LIMIT_MAX:-30}
+      AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-}
       AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
@@ -126,8 +129,8 @@ services:
       AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}
       AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}
       AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}
-      AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:-GK000000000000000000000000}
-      AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:?AURA_OBJECTSTORE_ACCESS_KEY required in .env}
+      AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:?AURA_OBJECTSTORE_SECRET_KEY required in .env}
       AURA_OBJECTSTORE_PATH_STYLE: ${AURA_OBJECTSTORE_PATH_STYLE:-true}
       AURA_ASSET_MAX_DOCUMENT_BYTES: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
       AURA_ASSET_MAX_IMAGE_BYTES: ${AURA_ASSET_MAX_IMAGE_BYTES:-26214400}
@@ -158,7 +161,7 @@ services:
       # Calendar/PIM connect proxy: the Go /api/connect/pim/admin/* proxy forwards to the
       # sidecar's token-gated admin API over the docker network, injecting this admin token.
       AURA_PIM_MCP_URL: http://aura-pim-mcp:8080
-      AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:-changeme-aura-pim-local}
+      AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}
       AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}
       AURA_PROFILE_CERTAINTY_N: ${AURA_PROFILE_CERTAINTY_N:-3}
     ports:
@@ -195,6 +198,7 @@ services:
       AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}
       AURA_CONFIG_DIR: /var/lib/aura
       AURA_NEO4J_BOLT_URL: bolt://neo4j:7687
       NEO4J_USER: neo4j
@@ -204,6 +208,36 @@ services:
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
     volumes:
       - aura-home:/var/lib/aura
+
+  garage-bootstrap:
+    build:
+      context: .
+      dockerfile: docker/aura/Dockerfile
+    image: ${AURA_IMAGE:-aura:local}
+    pull_policy: never
+    container_name: aura-garage-bootstrap
+    restart: "no"
+    entrypoint: ["sh", "-lc", "aura-garage-bootstrap.sh && aura objectstore bootstrap"]
+    command: []
+    depends_on:
+      garage:
+        condition: service_started
+    environment:
+      AURA_OBJECTSTORE_BACKEND: ${AURA_OBJECTSTORE_BACKEND:-garage}
+      AURA_OBJECTSTORE_ENDPOINT: ${AURA_OBJECTSTORE_ENDPOINT:-http://garage:3900}
+      AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}
+      AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}
+      AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}
+      AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:?AURA_OBJECTSTORE_ACCESS_KEY required in .env}
+      AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:?AURA_OBJECTSTORE_SECRET_KEY required in .env}
+      AURA_OBJECTSTORE_PATH_STYLE: ${AURA_OBJECTSTORE_PATH_STYLE:-true}
+      AURA_GARAGE_KEY_NAME: ${AURA_GARAGE_KEY_NAME:-aura-assets-local}
+      AURA_GARAGE_ZONE: ${AURA_GARAGE_ZONE:-dc1}
+      AURA_GARAGE_CAPACITY: ${AURA_GARAGE_CAPACITY:-1G}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
+    volumes:
+      - ./docker/garage/garage.toml:/etc/garage.toml:ro
+      - garage-data:/var/lib/garage
 
   caddy:
     image: caddy:2
@@ -226,7 +260,7 @@ services:
       retries: 3
 
   postgres:
-    image: postgres:17.10-alpine3.23
+    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
     container_name: aura-postgres
     restart: unless-stopped
     environment:
@@ -237,7 +271,7 @@ services:
     ports:
       - "${POSTGRES_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - aura-postgres:/var/lib/postgresql/data
+      - aura-postgres:/var/lib/postgresql
       - ${AURA_BACKUP_DIR:-./backups}:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aura} -d ${POSTGRES_DB:-aura}"]
@@ -246,15 +280,15 @@ services:
       retries: 10
       start_period: 10s
 
-  # Industrial asset object storage foundation. The installer runs
-  # scripts/garage_bootstrap.sh to create the local bucket/key/CORS before first use;
-  # source checkouts can run the same script or set AURA_OBJECTSTORE_BACKEND=filesystem-dev.
+  # Industrial asset object storage foundation. The garage-bootstrap one-shot
+  # service creates the local bucket/key/CORS before Aura starts; install.sh
+  # generates the internal secrets consumed here.
   garage:
     image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}
     container_name: aura-garage
     restart: unless-stopped
     environment:
-      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
     ports:
       - "127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900"
     volumes:
@@ -275,9 +309,10 @@ services:
       AURA_NEO4J_HC_PW: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       NEO4J_PLUGINS: '["apoc","graph-data-science"]'
       NEO4J_dbms_security_procedures_unrestricted: 'apoc.*,gds.*'
-      NEO4J_dbms_memory_heap_initial__size: 512m
-      NEO4J_dbms_memory_heap_max__size: 1G
-      NEO4J_dbms_memory_pagecache_size: 512m
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_server_jvm_additional: "--add-modules=jdk.incubator.vector"
       AURA_BACKUP_DIR: /backups
     ports:
       - "127.0.0.1:7474:7474"
@@ -292,14 +327,16 @@ services:
       test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$AURA_NEO4J_HC_PW\" --database neo4j 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 10
-      start_period: 40s   # APOC + GDS auto-download takes time on first boot
+      retries: 20
+      start_period: 90s   # APOC + GDS auto-download takes time on first boot
 
   # ↓↓ Slice 0.7 — Granite 97M OpenAI-compat embedding sidecar ↓↓
   aura-llama-embed:
-    image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-llama-embed
     restart: unless-stopped
+    environment:
+      LLAMA_ARG_HOST: 0.0.0.0
     command:
       - --hf-repo
       - SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF
@@ -311,15 +348,20 @@ services:
       - --embd-normalize
       - "2"
       - -ngl
-      - "${AURA_EMBED_NGL:-0}"                  # 0 = CPU (CI-safe default); .env sets 99 for GPU offload (+compose.gpu.yaml device block)
-      - --host
-      - 0.0.0.0
+      - "${AURA_EMBED_NGL:-99}"                 # GPU product default: offload all layers
       - --port
       - "8081"
       - -t
-      - "4"                                    # CPU thread cap when -ngl=0; harmless under GPU offload
+      - "4"                                    # CPU thread cap for orchestration work; harmless under GPU offload
       - -ub
       - "2048"                                 # manual chunks exceeded 1024 tokens in the Granite run
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
@@ -328,8 +370,8 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 60s                        # first-boot HF model download
+      retries: 30
+      start_period: 300s                       # first-boot HF model download can exceed 4 minutes
 
   # Phase 15 spike — Granite 97M multilingual embeddings for agent-memory MCP.
   # Phase 15 spike — Neo4j Labs agent-memory MCP, colocated on the compose
@@ -440,17 +482,28 @@ services:
     image: searxng/searxng:2026.5.31-7159b8aed
     container_name: aura-searxng
     restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - |
+        : "$${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}"
+        sed "s/__AURA_SEARXNG_SECRET__/$${SEARXNG_SECRET}/g" /etc/searxng/settings.template.yml > /etc/searxng/settings.yml
+        chown searxng:searxng /etc/searxng/settings.yml
+        chmod 0644 /etc/searxng/settings.yml
+        exec /usr/local/searxng/entrypoint.sh
     ports:
       - "127.0.0.1:${AURA_SEARXNG_PORT:-18080}:8080"
     volumes:
       # Read-only so a compromised container cannot rewrite its own config (D-04,
-      # T-07-02). The entrypoint leaves an existing target untouched (it only
-      # generates one when absent), so the checked-in file stays authoritative.
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      # T-07-02). Compose renders only the installer-generated secret into the
+      # in-container settings.yml at boot; the checked-in file stays a template.
+      - ./searxng/settings.yml:/etc/searxng/settings.template.yml:ro
+      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
     networks:
       - aura-web
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget --header='X-Forwarded-For: 127.0.0.1' --header='X-Real-IP: 127.0.0.1' -qO- http://localhost:8080/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -518,6 +571,8 @@ services:
   aura-ocr-vl:
     image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-ocr-vl
+    environment:
+      LLAMA_ARG_HOST: 0.0.0.0
     # Offloaded by default to free ~2.35GB VRAM for the GPU embed sidecar. On-demand:
     # `docker compose --profile ocr up -d aura-ocr-vl`. Vision/markitdown paths fail-soft when absent.
     profiles: [ocr]
@@ -525,8 +580,6 @@ services:
     command:
       - --hf-repo
       - ${AURA_OCR_VL_HF_REPO:-ggml-org/glm-ocr-GGUF}
-      - --host
-      - 0.0.0.0
       - --port
       - "8082"
       - -ngl
@@ -561,13 +614,13 @@ services:
     image: ${AURA_RERANK_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-rerank
     restart: unless-stopped
+    environment:
+      LLAMA_ARG_HOST: 0.0.0.0
     command:
       - --hf-repo
       - ${AURA_RERANK_HF_REPO:-Voodisss/Qwen3-Reranker-0.6B-GGUF-llama_cpp}  # spike-locked: community GGUFs miss cls.output.weight
       - --hf-file
       - ${AURA_RERANK_HF_FILE:-Qwen3-Reranker-0.6B-Q4_K_M.gguf}              # Q4_K_M only (Q3_K_M slower, IQ3 broken)
-      - --host
-      - 0.0.0.0
       - --port
       - "8085"
       - --reranking                            # enable the /v1/rerank endpoint
@@ -648,7 +701,7 @@ services:
       - -c
       - "test -s /app/data/appsettings.json || printf '{\"CalendarMcp\":{\"Accounts\":[]}}' > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll"
     environment:
-      CALENDAR_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:-changeme-aura-pim-local}
+      CALENDAR_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}
       # The external base the sidecar uses to build the Google OAuth redirect URI
       # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web
       # application" client. Default targets the loopback host-publish (works for a user on

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ariaInvalid } from '../a11y/aria';
@@ -20,6 +19,7 @@ import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SecretInput } from '@/components/ui/secret-input';
 
 type SubmitState = 'idle' | 'submitting';
 type AuthulaStep = 'credentials' | 'totp';
@@ -49,6 +49,7 @@ interface AuthConfig {
   csrfCookieName: string;
   csrfHeaderName: string;
   csrfToken: string;
+  bootstrapAvailable: boolean;
 }
 
 const defaultAuthConfig: AuthConfig = {
@@ -56,6 +57,7 @@ const defaultAuthConfig: AuthConfig = {
   csrfCookieName: '__Host-authula_csrf_token',
   csrfHeaderName: 'X-AUTHULA-CSRF-TOKEN',
   csrfToken: '',
+  bootstrapAvailable: false,
 };
 
 const loginParticles = [
@@ -124,6 +126,7 @@ async function loadAuthConfig(): Promise<AuthConfig> {
         stringField(raw, 'csrf_token'),
         res.headers.get(csrfHeaderName) ?? '',
       ),
+      bootstrapAvailable: booleanField(raw, 'bootstrap_available'),
     };
   } catch {
     return defaultAuthConfig;
@@ -152,16 +155,21 @@ export function LoginPage() {
   const [authulaStep, setAuthulaStep] = useState<AuthulaStep>('credentials');
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [error, setError] = useState<LoginErrorKey | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [bootstrapOpen, setBootstrapOpen] = useState(false);
+  const [bootstrapCreated, setBootstrapCreated] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     void loadAuthConfig().then((config) => {
-      if (!cancelled) setAuthConfig(config);
+      if (!cancelled) {
+        setAuthConfig(config);
+        if (config.bootstrapAvailable) {
+          setBootstrapOpen(true);
+        }
+      }
     });
     return () => {
       cancelled = true;
@@ -178,13 +186,22 @@ export function LoginPage() {
     const data = new FormData(form);
     const email = data.get('email');
     const password = data.get('password');
+    return signInAuthula(
+      typeof email === 'string' ? email : '',
+      typeof password === 'string' ? password : '',
+      '/',
+    );
+  }
+
+  async function signInAuthula(
+    email: string,
+    password: string,
+    donePath: string,
+  ): Promise<SubmitOutcome> {
     const res = await fetch(`${authConfig.authBasePath}/email-password/sign-in`, {
       method: 'POST',
       headers: authulaHeaders(authConfig),
-      body: JSON.stringify({
-        email: typeof email === 'string' ? email : '',
-        password: typeof password === 'string' ? password : '',
-      }),
+      body: JSON.stringify({ email, password }),
       credentials: 'same-origin',
     });
     if (!res.ok) {
@@ -196,7 +213,7 @@ export function LoginPage() {
       setAuthulaStep('totp');
       return 'continue';
     }
-    void navigate('/');
+    void navigate(donePath, { replace: donePath !== '/' });
     return 'done';
   }
 
@@ -250,12 +267,25 @@ export function LoginPage() {
     }
   }
 
+  async function signInAfterBootstrap(created: {
+    readonly email: string;
+    readonly password: string;
+  }) {
+    setError(null);
+    try {
+      const outcome = await signInAuthula(created.email, created.password, '/?onboarding=1');
+      if (outcome === 'continue') {
+        setBootstrapOpen(false);
+      }
+    } catch {
+      setError('login.errors.network');
+    }
+  }
+
   const submitting = state === 'submitting';
   const credentialError = error !== null && authulaStep === 'credentials';
   const codeError = error !== null && authulaStep === 'totp';
-  const passwordToggleLabel = showPassword
-    ? t('login.authula.hidePassword')
-    : t('login.authula.showPassword');
+  const showBootstrapPanel = bootstrapOpen && (authConfig.bootstrapAvailable || bootstrapCreated);
   const submitLabel =
     authulaStep === 'totp'
       ? submitting
@@ -298,11 +328,17 @@ export function LoginPage() {
               setError(null);
             }}
           />
-        ) : bootstrapOpen ? (
+        ) : showBootstrapPanel ? (
           <BootstrapPanel
             onCancel={() => {
               setBootstrapOpen(false);
+              setBootstrapCreated(false);
               setError(null);
+            }}
+            onCreated={(created) => {
+              setBootstrapCreated(true);
+              setAuthConfig((config) => ({ ...config, bootstrapAvailable: false }));
+              void signInAfterBootstrap(created);
             }}
           />
         ) : (
@@ -333,37 +369,32 @@ export function LoginPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="authula-password">{t('login.authula.passwordLabel')}</Label>
-                  <div className="relative">
-                    <Input
-                      id="authula-password"
-                      name="password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      aria-invalid={ariaInvalid(credentialError)}
-                      className="min-h-[var(--row-h)] bg-surface-2 pr-11 text-sm"
-                    />
-                    <PasswordToggle
-                      pressed={showPassword}
-                      label={passwordToggleLabel}
-                      onClick={() => {
-                        setShowPassword((value) => !value);
-                      }}
-                    />
-                  </div>
+                  <SecretInput
+                    id="authula-password"
+                    name="password"
+                    autoComplete="current-password"
+                    aria-invalid={ariaInvalid(credentialError)}
+                    showLabel={t('login.authula.showPassword')}
+                    hideLabel={t('login.authula.hidePassword')}
+                    className="min-h-[var(--row-h)] bg-surface-2 text-sm"
+                  />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setBootstrapOpen(true);
-                      setError(null);
-                    }}
-                    className="px-0 text-sm text-accent-text hover:bg-transparent hover:text-accent-text hover:underline"
-                  >
-                    {t('login.bootstrap.openCta')}
-                  </Button>
+                  {authConfig.bootstrapAvailable ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setBootstrapCreated(false);
+                        setBootstrapOpen(true);
+                        setError(null);
+                      }}
+                      className="px-0 text-sm text-accent-text hover:bg-transparent hover:text-accent-text hover:underline"
+                    >
+                      {t('login.bootstrap.openCta')}
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"
@@ -483,33 +514,5 @@ function LoginParticleBackground() {
         </g>
       </svg>
     </div>
-  );
-}
-
-function PasswordToggle({
-  pressed,
-  label,
-  onClick,
-}: {
-  pressed: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      onClick={onClick}
-      aria-pressed={pressed}
-      aria-label={label}
-      className="absolute inset-y-0 right-0 h-auto min-h-[var(--row-h)] w-11 rounded-l-none text-text-muted hover:text-text"
-    >
-      {pressed ? (
-        <EyeOff data-icon="icon" aria-hidden="true" focusable="false" />
-      ) : (
-        <Eye data-icon="icon" aria-hidden="true" focusable="false" />
-      )}
-    </Button>
   );
 }

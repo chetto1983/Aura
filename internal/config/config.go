@@ -148,7 +148,7 @@ type Config struct {
 	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER (default authula)
 	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
 	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
-	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — Aura identity name the Authula operator user binds to (default "local")
+	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — optional legacy Aura identity fallback for Authula operator linking
 	AuthulaRateLimitMax     int    // AURA_AUTHULA_RATE_LIMIT_MAX — credential attempts per minute before Authula throttles (default 30)
 
 	// ServeShutdownGraceSec bounds the in-flight turn drain on a SIGTERM/SIGINT
@@ -439,7 +439,7 @@ func loadBase() *Config {
 		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "authula"),
 		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
 		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
-		AuthulaOperatorIdentity: envDefault("AURA_AUTHULA_OPERATOR_IDENTITY", "local"),
+		AuthulaOperatorIdentity: os.Getenv("AURA_AUTHULA_OPERATOR_IDENTITY"),
 		AuthulaRateLimitMax:     envIntDefault("AURA_AUTHULA_RATE_LIMIT_MAX", 30),
 
 		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),

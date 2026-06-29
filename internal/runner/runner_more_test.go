@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -260,6 +261,46 @@ func TestNewConversation_MintsID(t *testing.T) {
 	}
 	if err := conv.Delete(ctx, id); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNewConversationPrefersUserIdentityOverLegacyLocal(t *testing.T) {
+	conv := newFakeConvStore()
+	pause := newFakePauseStore()
+	ids := newFakeIdentityStore()
+	ids.byName["operator"] = identity.Identity{
+		ID:   "11111111-1111-1111-1111-111111111111",
+		Name: "operator",
+		Kind: "user",
+	}
+	r := New(Deps{Conv: conv, Pause: pause, Identity: ids, Client: agenttest.NewFakeClient(), LLM: llm.Config{Model: "m"}})
+	const convID = "22222222-2222-2222-2222-222222222222"
+
+	if _, err := r.NewConversationWithID(context.Background(), convID); err != nil {
+		t.Fatalf("new conversation: %v", err)
+	}
+	got, err := conv.Get(context.Background(), convID)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if got.IdentityID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("conversation owner = %q, want user identity", got.IdentityID)
+	}
+}
+
+func TestNewConversationFallsBackToLegacyLocalWhenNoUserIdentityExists(t *testing.T) {
+	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient())
+	const convID = "33333333-3333-3333-3333-333333333333"
+
+	if _, err := r.NewConversationWithID(context.Background(), convID); err != nil {
+		t.Fatalf("new conversation: %v", err)
+	}
+	got, err := conv.Get(context.Background(), convID)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if got.IdentityID != "00000000-0000-0000-0000-000000000001" {
+		t.Fatalf("conversation owner = %q, want legacy local fallback", got.IdentityID)
 	}
 }
 

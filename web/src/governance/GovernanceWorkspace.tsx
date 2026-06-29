@@ -59,7 +59,10 @@ export default function GovernanceWorkspace() {
         className="h-full min-h-0 gap-0"
       >
         <div className="shrink-0 border-b border-border bg-surface px-2 py-1">
-          <TabsList aria-label={t('governance.title')} className="w-full justify-start">
+          <TabsList
+            aria-label={t('governance.title')}
+            className="grid w-full grid-cols-3 justify-stretch"
+          >
             {TABS.map((name, index) => {
               const Icon = TAB_ICON[name];
               return (
@@ -76,10 +79,12 @@ export default function GovernanceWorkspace() {
                   onKeyDown={(event) => {
                     onTabKeyDown(event, index);
                   }}
-                  className="flex-none px-4"
+                  className="min-w-0 px-2 sm:px-4"
                 >
                   <Icon data-icon="inline-start" aria-hidden="true" focusable="false" />
-                  {t(`governance.tabs.${name}`)}
+                  <span data-tab-label className="min-w-0 truncate">
+                    {t(`governance.tabs.${name}`)}
+                  </span>
                 </TabsTrigger>
               );
             })}

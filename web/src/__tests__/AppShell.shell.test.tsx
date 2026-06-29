@@ -1,9 +1,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../AppShell';
 import i18n from '../i18n/i18n';
+import { fetchOnboardingStatus } from '../onboarding/onboardingApi';
+
+vi.mock('../onboarding/onboardingApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../onboarding/onboardingApi')>();
+  return {
+    ...actual,
+    fetchOnboardingStatus: vi.fn(),
+  };
+});
+
+vi.mock('../onboarding/OnboardingWizard', () => ({
+  default: ({ onClose }: { readonly onClose: () => void }) => (
+    <div role="dialog" aria-label="Create identity">
+      <button type="button" onClick={onClose}>
+        Close
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock('../onboarding/ProfileOnboardingWizard', () => ({
+  default: ({ onClose }: { readonly onClose: () => void }) => (
+    <div role="dialog" aria-label="Set up profile">
+      <button type="button" onClick={onClose}>
+        Close
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock('../settings/SettingsWorkspace', () => ({
+  default: () => <div>Runtime settings</div>,
+}));
 
 // The marketing-hero copy this operator console must NOT ship (ux-spec §350 / SC4).
 const MARKETING_HERO_BLOCKLIST = [
@@ -31,6 +64,12 @@ function renderShell() {
 
 describe('AppShell', () => {
   beforeEach(() => {
+    vi.mocked(fetchOnboardingStatus).mockReset();
+    vi.mocked(fetchOnboardingStatus).mockResolvedValue({
+      required: false,
+      completed: true,
+      skipped: false,
+    });
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -85,6 +124,33 @@ describe('AppShell', () => {
     expect(screen.getByText('Cost')).toBeTruthy();
     // The Context label appears in both the footer caption and the gauge label.
     expect(screen.getAllByText('Context').length).toBeGreaterThan(0);
+  });
+
+  it('opens the onboarding wizard when first-run setup is still required', async () => {
+    vi.mocked(fetchOnboardingStatus).mockResolvedValueOnce({
+      required: true,
+      completed: false,
+      skipped: false,
+    });
+
+    renderShell();
+
+    expect(await screen.findByRole('dialog', { name: 'Set up profile' })).toBeTruthy();
+    expect(fetchOnboardingStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the runtime settings workspace from the shell mode switcher', async () => {
+    renderShell();
+
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+        name: 'Settings',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Runtime settings')).toBeTruthy();
+    });
   });
 
   it('does not fall back to the legacy passphrase logout route', async () => {

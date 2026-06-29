@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, Archive, MessageSquareText, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  Archive,
+  MessageSquareText,
+  MoreHorizontal,
+  Pencil,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
@@ -113,7 +121,7 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
         <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
           {groups.map((group) => (
             <li key={group.key} className="flex flex-col gap-1">
-              <h3 className="px-2 text-[0.75rem] font-medium uppercase tracking-wider text-text-faint">
+              <h3 className="px-2 text-[0.8125rem] font-semibold text-text-faint">
                 {t(`conversations.recency.${group.key}`)}
               </h3>
               <ul className="flex flex-col gap-1">
@@ -177,10 +185,13 @@ function ConversationRow({
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLLIElement>(null);
 
   const archived = isArchived(conv);
   const label = displayTitle(conv, t('conversations.untitled'));
+  const menuLabel = t('conversations.actions.more');
 
   useEffect(() => {
     if (editing) {
@@ -189,7 +200,30 @@ function ConversationRow({
     }
   }, [editing]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function onPointerDown(event: PointerEvent) {
+      if (rowRef.current?.contains(event.target as Node)) return;
+      setMenuOpen(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    }
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
   function startEditing() {
+    setMenuOpen(false);
     setDraft(label);
     setEditing(true);
   }
@@ -205,12 +239,10 @@ function ConversationRow({
   const invalid = editing && draft.trim().length === 0;
 
   return (
-    <li>
-      <Card
-        className={`group gap-2 p-2 transition-colors ${
-          selected
-            ? 'border-accent bg-surface-2 shadow-[inset_3px_0_0_var(--accent)]'
-            : 'border-transparent bg-transparent hover:border-border hover:bg-surface-2/60'
+    <li ref={rowRef} className="relative">
+      <div
+        className={`group grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-md transition-colors ${
+          selected ? 'bg-surface-2 text-text' : 'text-text-muted hover:bg-surface-2/70'
         }`}
         data-animate="surface"
       >
@@ -233,64 +265,92 @@ function ConversationRow({
             }}
             aria-label={t('conversations.renameLabel')}
             aria-invalid={ariaInvalid(invalid)}
-            className="bg-surface text-sm"
+            className="col-span-2 min-h-9 bg-surface text-sm"
           />
         ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              onSelect(conv.ID);
-            }}
-            onDoubleClick={startEditing}
-            aria-current={selected ? 'true' : undefined}
-            className="h-auto min-h-11 w-full justify-start gap-2 whitespace-normal rounded-md px-2 py-2 text-left font-normal hover:bg-surface-3"
-          >
-            <MessageSquareText
-              data-icon
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-text-faint"
-            />
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-              {archived ? (
-                <Badge variant="secondary" className="shrink-0 text-[0.75rem]">
-                  {t('conversations.archivedTag')}
-                </Badge>
-              ) : null}
-              <span className="truncate text-sm text-text">{label}</span>
-            </span>
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                onSelect(conv.ID);
+              }}
+              onDoubleClick={startEditing}
+              aria-current={selected ? 'true' : undefined}
+              aria-label={label}
+              className="h-9 min-h-9 min-w-0 justify-start rounded-md px-2 py-1.5 text-left text-[13px] font-medium text-text hover:bg-transparent"
+            >
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                {archived ? (
+                  <Badge variant="secondary" className="shrink-0 text-[0.75rem]">
+                    {t('conversations.archivedTag')}
+                  </Badge>
+                ) : null}
+                <span className="truncate">{label}</span>
+              </span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={menuLabel}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              data-open={menuOpen ? 'true' : undefined}
+              title={menuLabel}
+              onClick={() => {
+                setMenuOpen((open) => !open);
+              }}
+              className="h-8 min-h-8 w-8 rounded-md text-text-faint opacity-100 hover:bg-surface-3 hover:text-text focus-visible:opacity-100 data-[open=true]:bg-surface-3 data-[open=true]:text-text md:opacity-0 md:group-hover:opacity-100"
+            >
+              <MoreHorizontal data-icon="icon" aria-hidden="true" focusable="false" />
+            </Button>
+          </>
         )}
 
-        {!editing ? (
-          <div className="flex flex-wrap gap-1 text-[0.75rem] text-text-muted opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
-            <RowAction
+        {menuOpen && !editing ? (
+          <div
+            role="menu"
+            aria-label={menuLabel}
+            className="absolute left-0 top-10 z-50 flex w-56 flex-col gap-1 rounded-xl border border-border bg-surface-2 p-1.5 text-[13px] text-text shadow-[var(--shadow-popover)]"
+          >
+            <MenuAction
               label={t('conversations.actions.rename')}
-              icon={<Pencil data-icon aria-hidden="true" className="size-3.5" />}
+              icon={<Pencil data-icon aria-hidden="true" className="size-4" />}
               onClick={startEditing}
             />
             {archived ? (
-              <RowAction
+              <MenuAction
                 label={t('conversations.actions.unarchive')}
-                icon={<RotateCcw data-icon aria-hidden="true" className="size-3.5" />}
-                onClick={onUnarchive}
+                icon={<RotateCcw data-icon aria-hidden="true" className="size-4" />}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onUnarchive();
+                }}
               />
             ) : (
-              <RowAction
+              <MenuAction
                 label={t('conversations.actions.archive')}
-                icon={<Archive data-icon aria-hidden="true" className="size-3.5" />}
-                onClick={onArchive}
+                icon={<Archive data-icon aria-hidden="true" className="size-4" />}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onArchive();
+                }}
               />
             )}
-            <RowAction
+            <div className="my-1 h-px bg-border" />
+            <MenuAction
               label={t('conversations.actions.delete')}
-              icon={<Trash2 data-icon aria-hidden="true" className="size-3.5" />}
-              onClick={onRequestDelete}
+              icon={<Trash2 data-icon aria-hidden="true" className="size-4" />}
+              onClick={() => {
+                setMenuOpen(false);
+                onRequestDelete();
+              }}
               danger
             />
           </div>
         ) : null}
-      </Card>
+      </div>
     </li>
   );
 }
@@ -342,7 +402,7 @@ function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function RowAction({
+function MenuAction({
   label,
   icon,
   onClick,
@@ -358,11 +418,12 @@ function RowAction({
       type="button"
       variant="ghost"
       size="sm"
+      role="menuitem"
       onClick={onClick}
-      className={`px-2 text-[0.75rem] font-medium ${
+      className={`w-full justify-start rounded-lg px-3 text-[13px] font-medium ${
         danger
           ? 'text-danger hover:bg-danger/15 hover:text-danger'
-          : 'text-text-muted hover:text-text'
+          : 'text-text hover:bg-surface-3 hover:text-text'
       }`}
     >
       {icon}

@@ -6,15 +6,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/webauth"
 )
 
 type namedIdentityStore struct {
-	err  error
-	seen []string
-	ids  map[string]identity.Identity
+	err     error
+	listErr error
+	seen    []string
+	ids     map[string]identity.Identity
+	list    []identity.Identity
 }
 
 func (s *namedIdentityStore) GetIdentityByName(_ context.Context, name string) (identity.Identity, error) {
@@ -23,6 +28,13 @@ func (s *namedIdentityStore) GetIdentityByName(_ context.Context, name string) (
 		return identity.Identity{}, s.err
 	}
 	return s.ids[name], nil
+}
+
+func (s *namedIdentityStore) ListIdentities(context.Context) ([]identity.Identity, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return append([]identity.Identity(nil), s.list...), nil
 }
 
 func TestResolveWebAuthIdentityIDUsesAuthulaOperatorIdentity(t *testing.T) {
@@ -69,6 +81,40 @@ func TestResolveWebAuthIdentityIDUsesOperatorIdentityIndependentOfProvider(t *te
 	}
 }
 
+func TestResolveWebAuthIdentityIDDefaultIsOptional(t *testing.T) {
+	store := &namedIdentityStore{ids: map[string]identity.Identity{
+		"local": {ID: "local-id", Name: "local"},
+	}}
+
+	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{})
+	if err != nil {
+		t.Fatalf("resolveWebAuthIdentityID: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("identity id = %q, want empty optional fallback", got)
+	}
+	if len(store.seen) != 0 {
+		t.Fatalf("resolved names = %v, want no lookup for empty default", store.seen)
+	}
+}
+
+func TestResolveWebAuthIdentityIDToleratesMissingLegacyLocal(t *testing.T) {
+	store := &namedIdentityStore{err: identity.ErrIdentityNotFound}
+
+	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
+		AuthulaOperatorIdentity: "local",
+	})
+	if err != nil {
+		t.Fatalf("resolveWebAuthIdentityID: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("identity id = %q, want empty when legacy local is gone", got)
+	}
+	if len(store.seen) != 1 || store.seen[0] != "local" {
+		t.Fatalf("resolved names = %v, want [local]", store.seen)
+	}
+}
+
 func TestResolveWebAuthIdentityIDFailsWhenConfiguredIdentityMissing(t *testing.T) {
 	store := &namedIdentityStore{err: errors.New("identity not found")}
 
@@ -84,6 +130,43 @@ func TestResolveWebAuthIdentityIDFailsWhenConfiguredIdentityMissing(t *testing.T
 	}
 	if len(store.seen) != 1 || store.seen[0] != "missing-operator" {
 		t.Fatalf("resolved names = %v, want [missing-operator]", store.seen)
+	}
+}
+
+func TestResolveSetupIdentityIDPrefersUserIdentity(t *testing.T) {
+	store := &namedIdentityStore{
+		ids: map[string]identity.Identity{
+			"local": {ID: "local-id", Name: "local", Kind: "system"},
+		},
+		list: []identity.Identity{
+			{ID: "local-id", Name: "local", Kind: "system"},
+			{ID: "user-id", Name: "operator", Kind: "user"},
+		},
+	}
+
+	if got := resolveSetupIdentityID(context.Background(), store); got != "user-id" {
+		t.Fatalf("setup identity id = %q, want user-id", got)
+	}
+}
+
+func TestResolveSetupIdentityIDFallsBackToLegacyLocal(t *testing.T) {
+	store := &namedIdentityStore{
+		ids: map[string]identity.Identity{
+			"local": {ID: "local-id", Name: "local", Kind: "system"},
+		},
+		list: []identity.Identity{{ID: "local-id", Name: "local", Kind: "system"}},
+	}
+
+	if got := resolveSetupIdentityID(context.Background(), store); got != "local-id" {
+		t.Fatalf("setup identity id = %q, want local-id", got)
+	}
+}
+
+func TestResolveSetupIdentityIDToleratesMissingLegacyLocal(t *testing.T) {
+	store := &namedIdentityStore{err: identity.ErrIdentityNotFound}
+
+	if got := resolveSetupIdentityID(context.Background(), store); got != "" {
+		t.Fatalf("setup identity id = %q, want empty", got)
 	}
 }
 
@@ -138,5 +221,78 @@ func TestAuthulaProvisioningConfiguredRequiresSecretAndDSN(t *testing.T) {
 				t.Fatal("incomplete Authula provisioning config must not be treated as configured")
 			}
 		})
+	}
+}
+
+type fakeStartupLinker struct {
+	resolved string
+	err      error
+	links    []struct {
+		identityID    string
+		authulaUserID string
+	}
+}
+
+func (f *fakeStartupLinker) ResolveIdentityID(context.Context, string) (string, error) {
+	return f.resolved, f.err
+}
+
+func (f *fakeStartupLinker) LinkOperator(_ context.Context, identityID, authulaUserID string) error {
+	f.links = append(f.links, struct {
+		identityID    string
+		authulaUserID string
+	}{identityID: identityID, authulaUserID: authulaUserID})
+	return nil
+}
+
+func TestEnsureAuthulaUserLinkedKeepsExistingUserLink(t *testing.T) {
+	linker := &fakeStartupLinker{resolved: "user-id"}
+	err := ensureAuthulaUserLinked(context.Background(), linker, nil, "local-id", "auth-user", func(context.Context, *pgxpool.Pool, string) (string, error) {
+		return "user-id", nil
+	})
+	if err != nil {
+		t.Fatalf("ensureAuthulaUserLinked: %v", err)
+	}
+	if len(linker.links) != 0 {
+		t.Fatalf("existing user link was overwritten: %+v", linker.links)
+	}
+}
+
+func TestEnsureAuthulaUserLinkedRepairsLegacyLocalLink(t *testing.T) {
+	linker := &fakeStartupLinker{resolved: "local-id"}
+	err := ensureAuthulaUserLinked(context.Background(), linker, nil, "local-id", "auth-user", func(context.Context, *pgxpool.Pool, string) (string, error) {
+		return "user-id", nil
+	})
+	if err != nil {
+		t.Fatalf("ensureAuthulaUserLinked: %v", err)
+	}
+	if len(linker.links) != 1 || linker.links[0].identityID != "user-id" || linker.links[0].authulaUserID != "auth-user" {
+		t.Fatalf("links = %+v, want repair to user-id/auth-user", linker.links)
+	}
+}
+
+func TestEnsureAuthulaUserLinkedUsesMatchingUserIdentityBeforeFallback(t *testing.T) {
+	linker := &fakeStartupLinker{err: webauth.ErrLinkNotFound}
+	err := ensureAuthulaUserLinked(context.Background(), linker, nil, "local-id", "auth-user", func(context.Context, *pgxpool.Pool, string) (string, error) {
+		return "user-id", nil
+	})
+	if err != nil {
+		t.Fatalf("ensureAuthulaUserLinked: %v", err)
+	}
+	if len(linker.links) != 1 || linker.links[0].identityID != "user-id" {
+		t.Fatalf("links = %+v, want user-id", linker.links)
+	}
+}
+
+func TestEnsureAuthulaUserLinkedFallsBackWhenNoUserIdentityExists(t *testing.T) {
+	linker := &fakeStartupLinker{err: webauth.ErrLinkNotFound}
+	err := ensureAuthulaUserLinked(context.Background(), linker, nil, "local-id", "auth-user", func(context.Context, *pgxpool.Pool, string) (string, error) {
+		return "", nil
+	})
+	if err != nil {
+		t.Fatalf("ensureAuthulaUserLinked: %v", err)
+	}
+	if len(linker.links) != 1 || linker.links[0].identityID != "local-id" {
+		t.Fatalf("links = %+v, want local fallback", linker.links)
 	}
 }

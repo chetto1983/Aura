@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import { SecretInput } from '@/components/ui/secret-input';
 
 // CalendarConnectFields holds the presentational form controls + result panels for the calendar/PIM
 // connect wizard, split out of CalendarConnect.tsx to keep that file under the 600-LOC cap. These are
@@ -275,18 +276,34 @@ export function Field({
       <Label htmlFor={id} className="text-[13px] font-semibold text-text">
         {label}
       </Label>
-      <Input
-        id={id}
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        aria-invalid={ariaInvalid(invalid)}
-        aria-describedby={describedBy === '' ? undefined : describedBy}
-        className="bg-surface-3 font-mono text-[13px]"
-      />
+      {type === 'password' ? (
+        <SecretInput
+          id={id}
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          showLabel={t('secret.show', { label })}
+          hideLabel={t('secret.hide', { label })}
+          aria-invalid={ariaInvalid(invalid)}
+          aria-describedby={describedBy === '' ? undefined : describedBy}
+          className="bg-surface-3 font-mono text-[13px]"
+        />
+      ) : (
+        <Input
+          id={id}
+          type={type}
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          aria-invalid={ariaInvalid(invalid)}
+          aria-describedby={describedBy === '' ? undefined : describedBy}
+          className="bg-surface-3 font-mono text-[13px]"
+        />
+      )}
       {hint !== undefined ? (
         <span id={hintId} className="text-[13px] text-text-muted">
           {hint}

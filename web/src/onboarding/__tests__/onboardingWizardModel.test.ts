@@ -80,20 +80,24 @@ describe('phaseIndex / PHASES', () => {
 });
 
 describe('credentialsValid', () => {
-  it('requires email, password, security question, and security answer', () => {
-    expect(credentialsValid('a@b.com', 'pw', 'Question?', 'answer')).toBe(true);
-    expect(credentialsValid('a@b.com', 'pw', '', 'answer')).toBe(false);
-    expect(credentialsValid('a@b.com', 'pw', 'Question?', '')).toBe(false);
+  it('requires email, password, matching confirmation, security question, and security answer', () => {
+    expect(credentialsValid('a@b.com', 'pw', 'pw', 'Question?', 'answer')).toBe(true);
+    expect(credentialsValid('a@b.com', 'pw', 'pw', '', 'answer')).toBe(false);
+    expect(credentialsValid('a@b.com', 'pw', 'pw', 'Question?', '')).toBe(false);
   });
   it('is false when email is empty/whitespace', () => {
-    expect(credentialsValid('', 'pw', 'Question?', 'answer')).toBe(false);
-    expect(credentialsValid('   ', 'pw', 'Question?', 'answer')).toBe(false);
+    expect(credentialsValid('', 'pw', 'pw', 'Question?', 'answer')).toBe(false);
+    expect(credentialsValid('   ', 'pw', 'pw', 'Question?', 'answer')).toBe(false);
   });
-  it('is false when password is empty', () => {
-    expect(credentialsValid('a@b.com', '', 'Question?', 'answer')).toBe(false);
+  it('is false when password or confirmation is empty', () => {
+    expect(credentialsValid('a@b.com', '', '', 'Question?', 'answer')).toBe(false);
+    expect(credentialsValid('a@b.com', 'pw', '', 'Question?', 'answer')).toBe(false);
+  });
+  it('is false when password and confirmation differ', () => {
+    expect(credentialsValid('a@b.com', 'pw', 'different', 'Question?', 'answer')).toBe(false);
   });
   it('does NOT trim the password (a whitespace password is accepted as entered)', () => {
-    expect(credentialsValid('a@b.com', '   ', 'Question?', 'answer')).toBe(true);
+    expect(credentialsValid('a@b.com', '   ', '   ', 'Question?', 'answer')).toBe(true);
   });
 });
 

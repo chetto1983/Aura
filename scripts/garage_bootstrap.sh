@@ -11,9 +11,37 @@ else
   cd "$(dirname "$script_dir")"
 fi
 
-bucket="${AURA_OBJECTSTORE_BUCKET:-aura-assets}"
-access_key="${AURA_OBJECTSTORE_ACCESS_KEY:-GK000000000000000000000000}"
-secret_key="${AURA_OBJECTSTORE_SECRET_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
+env_value() {
+  local key="$1"
+  local value="${!key:-}"
+  if [ -n "$value" ]; then
+    printf '%s' "$value"
+    return
+  fi
+  local env_file="${AURA_COMPOSE_ENV_FILE:-.env}"
+  if [ -f "$env_file" ]; then
+    awk -F= -v key="$key" '
+      /^[[:space:]]*#/ { next }
+      $1 == key { sub(/^[^=]*=/, ""); print; exit }
+    ' "$env_file"
+  fi
+}
+
+required_env_value() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")"
+  if [ -z "$value" ]; then
+    echo "FAIL: ${key} missing; run scripts/install.sh so Aura generates internal sidecar secrets." >&2
+    exit 1
+  fi
+  printf '%s' "$value"
+}
+
+bucket="$(env_value AURA_OBJECTSTORE_BUCKET)"
+bucket="${bucket:-aura-assets}"
+access_key="$(required_env_value AURA_OBJECTSTORE_ACCESS_KEY)"
+secret_key="$(required_env_value AURA_OBJECTSTORE_SECRET_KEY)"
 key_name="${AURA_GARAGE_KEY_NAME:-aura-assets-local}"
 zone="${AURA_GARAGE_ZONE:-dc1}"
 capacity="${AURA_GARAGE_CAPACITY:-1G}"

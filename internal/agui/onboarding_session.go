@@ -311,6 +311,35 @@ func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID 
 	}, nil
 }
 
+// StartProfileSession mints the same server-held interview session for the current
+// authenticated identity. Unlike StartSession, this is not an identity-provisioning flow:
+// no capability picker is exposed and no identity.create grant is required.
+func (s *onboardingService) StartProfileSession(_ context.Context, requesterIdentityID string) (OnboardingStart, error) {
+	if requesterIdentityID == "" {
+		return OnboardingStart{}, errOnboardingForbidden
+	}
+	entry := &sessionEntry{
+		session:           onboarding.NewSession(requesterIdentityID, requesterIdentityID),
+		creatorIdentityID: requesterIdentityID,
+		capabilityOptions: []string{},
+	}
+	first, err := entry.session.Apply(onboarding.Input{Intent: onboarding.IntentRestart})
+	if err != nil {
+		return OnboardingStart{}, err
+	}
+	token, err := s.sessions.put(entry)
+	if err != nil {
+		return OnboardingStart{}, err
+	}
+	return OnboardingStart{
+		SessionToken:      token,
+		Step:              string(entry.session.Step),
+		Content:           first.Content,
+		Status:            string(entry.session.Status),
+		CapabilityOptions: []string{},
+	}, nil
+}
+
 func (s *onboardingService) sessionForRequester(token, requesterIdentityID string) (*sessionEntry, error) {
 	if requesterIdentityID == "" {
 		return nil, errOnboardingForbidden

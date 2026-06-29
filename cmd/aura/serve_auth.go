@@ -19,6 +19,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
@@ -94,8 +97,8 @@ func authulaProvisioningConfigured(cfg *config.Config) bool {
 // buildAuthulaProvider constructs the embedded Authula framework on the isolated authula
 // schema (deriving the DSN from AURA_DB_URL with ?search_path=authula when
 // AURA_AUTHULA_DATABASE_URL is unset), builds the identity-link resolver over Aura's
-// pool, and pins the Authula operator user to the configured Aura identity (default
-// `local`). The trusted-origin list seeds Authula's CSRF Fetch-Metadata check; for a
+// pool, and makes sure the first Authula user resolves to its real Aura user identity.
+// The trusted-origin list seeds Authula's CSRF Fetch-Metadata check; for a
 // loopback/same-origin cockpit the bound host is the only trusted origin.
 func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID string) (*webauth.Provider, *webauth.Validator, error) {
 	dsn := strings.TrimSpace(chat.cfg.AuthulaDatabaseURL)
@@ -128,8 +131,10 @@ func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID st
 	// 1:N via ResolveIdentityID over that table — it never depends on OperatorUserID.
 	switch uid, uerr := provider.OperatorUserID(ctx); {
 	case uerr == nil && uid != "":
-		if lerr := linker.LinkOperator(ctx, localIdentityID, uid); lerr != nil {
+		if lerr := ensureAuthulaUserLinked(ctx, linker, chat.pool, localIdentityID, uid, preferredUserIdentityForAuthulaUser); lerr != nil {
 			fmt.Println("aura serve: authula operator link failed:", lerr)
+		} else if rerr := retireLegacyLocalIdentityForAuthulaUser(ctx, chat.pool, uid); rerr != nil {
+			fmt.Println("aura serve: legacy local identity retirement skipped:", rerr)
 		}
 	case errors.Is(uerr, webauth.ErrOperatorAmbiguous):
 		fmt.Println("aura serve: multiple operators enrolled — first-operator auto-pin skipped; multi-user resolves via identity_auth_links")
@@ -139,22 +144,168 @@ func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID st
 	return provider, webauth.NewValidator(provider, linker), nil
 }
 
+type startupIdentityLinker interface {
+	ResolveIdentityID(ctx context.Context, authulaUserID string) (string, error)
+	LinkOperator(ctx context.Context, identityID, authulaUserID string) error
+}
+
+type preferredAuthulaIdentityFunc func(context.Context, *pgxpool.Pool, string) (string, error)
+
+func ensureAuthulaUserLinked(
+	ctx context.Context,
+	linker startupIdentityLinker,
+	pool *pgxpool.Pool,
+	fallbackIdentityID string,
+	authulaUserID string,
+	preferred preferredAuthulaIdentityFunc,
+) error {
+	if linker == nil || strings.TrimSpace(authulaUserID) == "" {
+		return nil
+	}
+	preferredID, preferredErr := preferred(ctx, pool, authulaUserID)
+	existingID, err := linker.ResolveIdentityID(ctx, authulaUserID)
+	if err == nil {
+		if preferredErr == nil &&
+			strings.TrimSpace(preferredID) != "" &&
+			existingID == fallbackIdentityID &&
+			preferredID != existingID {
+			return linker.LinkOperator(ctx, preferredID, authulaUserID)
+		}
+		return nil
+	}
+	if !errors.Is(err, webauth.ErrLinkNotFound) {
+		return err
+	}
+	targetID := fallbackIdentityID
+	if preferredErr == nil && strings.TrimSpace(preferredID) != "" {
+		targetID = preferredID
+	}
+	if strings.TrimSpace(targetID) == "" {
+		return fmt.Errorf("authula user %q has no Aura identity target", authulaUserID)
+	}
+	return linker.LinkOperator(ctx, targetID, authulaUserID)
+}
+
+func retireLegacyLocalIdentityForAuthulaUser(ctx context.Context, pool *pgxpool.Pool, authulaUserID string) error {
+	if pool == nil || strings.TrimSpace(authulaUserID) == "" {
+		return nil
+	}
+	targetID, err := preferredUserIdentityForAuthulaUser(ctx, pool, authulaUserID)
+	if err != nil || strings.TrimSpace(targetID) == "" {
+		return err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("retire legacy local identity: begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	var localID string
+	if err := tx.QueryRow(ctx,
+		`SELECT id::text FROM aura.identities WHERE name=$1 AND kind='system'`,
+		localIdentityName,
+	).Scan(&localID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("retire legacy local identity: lookup local: %w", err)
+	}
+	if localID == targetID {
+		return nil
+	}
+	for _, stmt := range []string{
+		`UPDATE aura.conversations SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
+		`UPDATE aura.assets SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
+		`UPDATE aura.telegram_accounts SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
+		`UPDATE aura.identity_auth_links SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
+	} {
+		if _, err := tx.Exec(ctx, stmt, targetID, localID); err != nil {
+			return fmt.Errorf("retire legacy local identity: migrate refs: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE aura.assets
+		 SET object_key = replace(object_key, $2, $1)
+		 WHERE object_key LIKE '%' || $2 || '%'
+		   AND status IN ('deleted', 'canceled', 'failed', 'refused')`,
+		targetID, localID,
+	); err != nil {
+		return fmt.Errorf("retire legacy local identity: scrub deleted asset keys: %w", err)
+	}
+	for _, stmt := range []string{
+		`UPDATE aura.scheduler_tasks SET identity_id=$1 WHERE identity_id=$2`,
+		`UPDATE aura.pending_notifications SET identity_id=$1 WHERE identity_id=$2`,
+	} {
+		if _, err := tx.Exec(ctx, stmt, targetID, localIdentityName); err != nil {
+			return fmt.Errorf("retire legacy local identity: migrate text refs: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM aura.telegram_setup_pending WHERE identity_id=$1::uuid`,
+		localID,
+	); err != nil {
+		return fmt.Errorf("retire legacy local identity: delete pending setup tokens: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM aura.identities WHERE id=$1::uuid AND name=$2 AND kind='system'`,
+		localID, localIdentityName,
+	); err != nil {
+		return fmt.Errorf("retire legacy local identity: delete local: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("retire legacy local identity: commit: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func preferredUserIdentityForAuthulaUser(ctx context.Context, pool *pgxpool.Pool, authulaUserID string) (string, error) {
+	if pool == nil || strings.TrimSpace(authulaUserID) == "" {
+		return "", nil
+	}
+	const q = `
+		SELECT i.id::text
+		FROM authula.users u
+		JOIN aura.identities i ON i.kind = 'user' AND lower(i.name) = lower(u.email)
+		WHERE u.id::text = $1
+		LIMIT 1`
+	var identityID string
+	if err := pool.QueryRow(ctx, q, authulaUserID).Scan(&identityID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("resolve authula user identity: %w", err)
+	}
+	return identityID, nil
+}
+
 type identityNameResolver interface {
 	GetIdentityByName(ctx context.Context, name string) (identity.Identity, error)
 }
 
-// resolveWebAuthIdentityID returns the Aura identity id used by Authula web auth.
-// AURA_AUTHULA_OPERATOR_IDENTITY overrides the seeded `local` identity so operators can
-// bind the Authula user to a non-default Aura identity without touching code.
+// resolveWebAuthIdentityID returns the optional legacy Aura identity fallback used by
+// Authula web auth. Empty is valid: modern installs link Authula users to real
+// aura.identities rows during bootstrap/provisioning and do not need `local`.
 func resolveWebAuthIdentityID(ctx context.Context, idStore identityNameResolver, cfg *config.Config) (string, error) {
-	name := localIdentityName
+	name := ""
 	if cfg != nil {
 		if configured := strings.TrimSpace(cfg.AuthulaOperatorIdentity); configured != "" {
 			name = configured
 		}
 	}
+	if name == "" {
+		return "", nil
+	}
 	id, err := idStore.GetIdentityByName(ctx, name)
 	if err != nil {
+		if name == localIdentityName && errors.Is(err, identity.ErrIdentityNotFound) {
+			return "", nil
+		}
 		return "", fmt.Errorf("resolve web-auth identity %q: %w", name, err)
 	}
 	if strings.TrimSpace(id.ID) == "" {

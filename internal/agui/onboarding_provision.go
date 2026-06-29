@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 )
 
@@ -300,6 +301,108 @@ func (s *onboardingService) TelegramStatus(ctx context.Context, requesterIdentit
 		return OnboardingTelegramStatus{Linked: false}, nil
 	}
 	return OnboardingTelegramStatus{Linked: linked}, nil
+}
+
+// CompleteProfile persists the current authenticated identity's profile interview and
+// mints the required Telegram recovery link for that already-created operator. A
+// confirmed draft writes Agent.md; an explicit skip writes metadata so the shell does not
+// reopen onboarding on every login. Telegram is minted before the profile marker is
+// written, so a failed Telegram setup cannot leave first-run onboarding marked done.
+func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdentityID, token string) (OnboardingProfileComplete, error) {
+	entry, err := s.sessionForRequester(token, requesterIdentityID)
+	if err != nil {
+		return OnboardingProfileComplete{}, err
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.provisioned {
+		return OnboardingProfileComplete{}, errOnboardingSessionNotFound
+	}
+	if s.profiles == nil || entry.session == nil {
+		return OnboardingProfileComplete{}, errProvisioningUnavailable
+	}
+
+	onboardingToken, deepLink, qrSVG, err := s.mintTelegramLink(ctx, requesterIdentityID)
+	if err != nil {
+		return OnboardingProfileComplete{}, err
+	}
+	compTelegram := func() {
+		if onboardingToken == "" || s.telegram == nil {
+			return
+		}
+		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+			slog.Error("onboarding: COMP_C (delete telegram pending) after profile write failed", "step", "compensate")
+		}
+	}
+
+	switch entry.session.Status {
+	case onboarding.StatusCompleted:
+		draft := strings.TrimSpace(entry.session.DraftAgentMD)
+		if draft == "" {
+			compTelegram()
+			return OnboardingProfileComplete{}, ErrOnboardingEscalation
+		}
+		if err := s.profiles.WriteProfile(requesterIdentityID, profile.Profile{
+			AgentMD:     entry.session.DraftAgentMD,
+			Preferences: entry.session.Preferences,
+			Metadata: profile.Metadata{
+				Version:             1,
+				SchemaVersion:       1,
+				OnboardingCompleted: true,
+			},
+			Change: "first-run profile onboarding confirmed",
+		}); err != nil {
+			compTelegram()
+			return OnboardingProfileComplete{}, provisionFail("profile write", err)
+		}
+		entry.onboardingToken = onboardingToken
+		entry.provisioned = true
+		return OnboardingProfileComplete{Completed: true, DeepLink: deepLink, QRSVG: qrSVG}, nil
+	case onboarding.StatusSkipped:
+		if err := s.profiles.WriteProfile(requesterIdentityID, profile.Profile{
+			AgentMD: "",
+			Metadata: profile.Metadata{
+				Version:             1,
+				SchemaVersion:       1,
+				OnboardingCompleted: false,
+				OnboardingSkipped:   true,
+			},
+			Change: "first-run profile onboarding skipped",
+		}); err != nil {
+			compTelegram()
+			return OnboardingProfileComplete{}, provisionFail("profile skip write", err)
+		}
+		entry.onboardingToken = onboardingToken
+		entry.provisioned = true
+		return OnboardingProfileComplete{Skipped: true, DeepLink: deepLink, QRSVG: qrSVG}, nil
+	default:
+		compTelegram()
+		return OnboardingProfileComplete{}, ErrOnboardingEscalation
+	}
+}
+
+func (s *onboardingService) mintTelegramLink(ctx context.Context, identityID string) (token, deepLink, qrSVG string, err error) {
+	if s.telegram == nil || strings.TrimSpace(s.botName) == "" {
+		slog.Warn("onboarding: telegram link backend not configured",
+			"telegram", s.telegram != nil,
+			"bot_username", strings.TrimSpace(s.botName) != "",
+		)
+		return "", "", "", errProvisioningUnavailable
+	}
+	token = uuid.NewString()
+	if err := s.telegram.InsertPending(ctx, token, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
+		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), token); derr != nil {
+			slog.Error("onboarding: COMP_C (delete telegram pending) after mint failure failed", "step", "compensate")
+		}
+		return "", "", "", provisionFail("telegram mint", err)
+	}
+	deepLink = fmt.Sprintf("https://t.me/%s?start=%s", strings.TrimSpace(s.botName), token)
+	if svg, qerr := renderQRSVG(deepLink); qerr == nil {
+		qrSVG = svg
+	} else {
+		slog.Warn("onboarding: qr render failed", "step", "qr")
+	}
+	return token, deepLink, qrSVG, nil
 }
 
 // validateNoEscalation is the server-side no-escalation re-validation (ONBD-01a / D-06,

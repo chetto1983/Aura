@@ -147,6 +147,28 @@ describe('CalendarConnect', () => {
     expect(createPimAccount).not.toHaveBeenCalled();
   });
 
+  it('reveals and hides provider secret fields on explicit request', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    const clientSecret = screen.getByLabelText(/^Client secret/i);
+    expect(clientSecret.getAttribute('type')).toBe('password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Client secret' }));
+    expect(clientSecret.getAttribute('type')).toBe('text');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Client secret' }));
+    expect(clientSecret.getAttribute('type')).toBe('password');
+
+    selectProvider('imap');
+    const password = screen.getByLabelText(/^Password/i);
+    expect(password.getAttribute('type')).toBe('password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Password' }));
+    expect(password.getAttribute('type')).toBe('text');
+  });
+
   it('Google: create → google/start shows the redirect URI + the Connect Google link', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [] });
     createPimAccount.mockResolvedValue(ACCOUNT);

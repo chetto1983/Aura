@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SecretInput } from '@/components/ui/secret-input';
 
 type ResetStep = 'start' | 'verify' | 'complete' | 'done';
 type SubmitState = 'idle' | 'submitting';
@@ -229,15 +230,16 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="reset-answer">{t('login.reset.answerLabel')}</Label>
-              <Input
+              <SecretInput
                 id="reset-answer"
                 name="answer"
-                type="text"
                 autoComplete="off"
                 value={answer}
                 onChange={(event) => {
                   setAnswer(event.target.value);
                 }}
+                showLabel={t('secret.show', { label: t('login.reset.answerLabel') })}
+                hideLabel={t('secret.hide', { label: t('login.reset.answerLabel') })}
                 aria-invalid={ariaInvalid(error !== null)}
                 className="min-h-[var(--row-h)] bg-surface-2 text-sm"
               />
@@ -249,16 +251,17 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
           <>
             <div className="flex flex-col gap-1">
               <Label htmlFor="reset-password">{t('login.reset.newPasswordLabel')}</Label>
-              <Input
+              <SecretInput
                 ref={passwordRef}
                 id="reset-password"
                 name="password"
-                type="password"
                 autoComplete="new-password"
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value);
                 }}
+                showLabel={t('secret.show', { label: t('login.reset.newPasswordLabel') })}
+                hideLabel={t('secret.hide', { label: t('login.reset.newPasswordLabel') })}
                 aria-invalid={ariaInvalid(
                   error === 'login.reset.errors.passwordRequired' ||
                     error === 'login.reset.errors.passwordMismatch',
@@ -270,15 +273,16 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
               <Label htmlFor="reset-password-confirm">
                 {t('login.reset.confirmPasswordLabel')}
               </Label>
-              <Input
+              <SecretInput
                 id="reset-password-confirm"
                 name="confirm_password"
-                type="password"
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(event) => {
                   setConfirmPassword(event.target.value);
                 }}
+                showLabel={t('secret.show', { label: t('login.reset.confirmPasswordLabel') })}
+                hideLabel={t('secret.hide', { label: t('login.reset.confirmPasswordLabel') })}
                 aria-invalid={ariaInvalid(
                   error === 'login.reset.errors.passwordRequired' ||
                     error === 'login.reset.errors.passwordMismatch',

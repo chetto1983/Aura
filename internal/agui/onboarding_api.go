@@ -126,15 +126,83 @@ type OnboardingTelegramStatus struct {
 	Linked bool `json:"linked"`
 }
 
+// OnboardingStatus reports whether the signed-in operator still needs to finish
+// the profile onboarding flow.
+type OnboardingStatus struct {
+	Required  bool `json:"required"`
+	Completed bool `json:"completed"`
+	Skipped   bool `json:"skipped"`
+}
+
+// OnboardingProfileComplete is returned after the profile-only onboarding flow
+// is completed or skipped.
+type OnboardingProfileComplete struct {
+	Completed bool   `json:"completed"`
+	Skipped   bool   `json:"skipped"`
+	DeepLink  string `json:"deepLink,omitempty"`
+	QRSVG     string `json:"qrSvg,omitempty"`
+}
+
+// OnboardingStatusSource exposes persisted onboarding completion state to the
+// authenticated web shell.
+type OnboardingStatusSource interface {
+	OnboardingStatus(ctx context.Context, identityID string) (OnboardingStatus, error)
+}
+
+// SetOnboardingStatusSource wires the onboarding status read model into the
+// AG-UI HTTP server.
+func (s *Server) SetOnboardingStatusSource(source OnboardingStatusSource) {
+	s.onboardingStatus = source
+}
+
 // registerOnboardingRoutes mounts the four onboarding routes on the supplied mux using Go
 // 1.22 method-pattern routing — SPECIFIC method+path siblings under the /api/ carve-out,
 // never a bare /api/ (which would shadow /api/integrations/). The parent-mux mount (the
 // capability gate on start+provision) lives in cmd/aura/serve_webui.go.
 func (s *Server) registerOnboardingRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
+	mux.HandleFunc("POST /api/onboarding/profile/start", s.handleProfileOnboardingStart)
 	mux.HandleFunc("POST /api/onboarding/start", s.handleOnboardingStart)
 	mux.HandleFunc("POST /api/onboarding/{sessionToken}/step", s.handleOnboardingStep)
+	mux.HandleFunc("POST /api/onboarding/{sessionToken}/profile", s.handleProfileOnboardingComplete)
 	mux.HandleFunc("POST /api/onboarding/{sessionToken}/provision", s.handleOnboardingProvision)
 	mux.HandleFunc("GET /api/onboarding/{sessionToken}/telegram-status", s.handleTelegramStatus)
+}
+
+func (s *Server) handleOnboardingStatus(w http.ResponseWriter, r *http.Request) {
+	if s.onboardingStatus == nil {
+		http.Error(w, "onboarding status not configured", http.StatusServiceUnavailable)
+		return
+	}
+	identityID, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	status, err := s.onboardingStatus.OnboardingStatus(r.Context(), identityID)
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
+		return
+	}
+	writeJSON(w, status)
+}
+
+func (s *Server) handleProfileOnboardingStart(w http.ResponseWriter, r *http.Request) {
+	if s.onboarding == nil {
+		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
+		return
+	}
+	requester, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	start, err := s.onboarding.StartProfileSession(r.Context(), requester)
+	if err != nil {
+		s.writeOnboardingError(w, err)
+		return
+	}
+	writeJSON(w, start)
 }
 
 // handleOnboardingStart serves POST /api/onboarding/start (ONBD-01a / D-06): it reads the
@@ -181,6 +249,12 @@ func (s *Server) handleOnboardingStep(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOnboardingProvision(w http.ResponseWriter, r *http.Request) {
 	handleOnboardingMutation(s, w, r, validateOnboardingProvision, func(ctx context.Context, requester, token string, req OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
 		return s.onboarding.Provision(ctx, requester, token, req)
+	})
+}
+
+func (s *Server) handleProfileOnboardingComplete(w http.ResponseWriter, r *http.Request) {
+	handleOnboardingSessionRequest(s, w, r, func(ctx context.Context, requester, token string) (OnboardingProfileComplete, error) {
+		return s.onboarding.CompleteProfile(ctx, requester, token)
 	})
 }
 
@@ -232,6 +306,17 @@ func (s *Server) prepareOnboardingMutation(w http.ResponseWriter, r *http.Reques
 // (ONBD-01b / R6): a REST poll (NOT SSE) over PendingConsumed reporting whether the user
 // scanned the deep-link and linked Telegram. A missing/expired session is a sanitized 404.
 func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
+	handleOnboardingSessionRequest(s, w, r, func(ctx context.Context, requester, token string) (OnboardingTelegramStatus, error) {
+		return s.onboarding.TelegramStatus(ctx, requester, token)
+	})
+}
+
+func handleOnboardingSessionRequest[Resp any](
+	s *Server,
+	w http.ResponseWriter,
+	r *http.Request,
+	call func(context.Context, string, string) (Resp, error),
+) {
 	if s.onboarding == nil {
 		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
 		return

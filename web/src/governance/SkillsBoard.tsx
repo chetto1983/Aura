@@ -144,13 +144,19 @@ export function SkillsBoard() {
     setInstalling(true);
   }
 
+  const installLabel = t('governance.skills.installSkill');
+
   const subTabs = (
-    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-2 py-1">
-      <TabsList aria-label={t('governance.tabs.skills')}>
+    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1">
+      <TabsList
+        aria-label={t('governance.tabs.skills')}
+        className="grid min-w-0 flex-1 grid-cols-4 justify-stretch"
+      >
         {SKILL_TABS.map((name, index) => (
           <TabsTrigger
             key={name}
             value={name}
+            className="min-w-0 px-2 sm:px-3"
             tabIndex={tab === name ? 0 : -1}
             ref={(el) => {
               tabRefs.current[name] = el;
@@ -163,18 +169,25 @@ export function SkillsBoard() {
               onTabKeyDown(event, index);
             }}
           >
-            {t(`governance.skills.stages.${name}`)}
+            <span data-tab-label className="min-w-0 truncate">
+              {t(`governance.skills.stages.${name}`)}
+            </span>
           </TabsTrigger>
         ))}
       </TabsList>
       <Button
         type="button"
+        aria-label={installLabel}
+        title={installLabel}
+        className="px-3 sm:px-4"
         onClick={(e) => {
           openInstall(e.currentTarget);
         }}
       >
         <Download data-icon="inline-start" aria-hidden="true" focusable="false" />
-        {t('governance.skills.installSkill')}
+        <span data-action-label className="hidden sm:inline">
+          {installLabel}
+        </span>
       </Button>
     </div>
   );

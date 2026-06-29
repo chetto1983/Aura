@@ -97,6 +97,42 @@ describe('PasswordResetPanel', () => {
     });
   });
 
+  it('reveals and hides recovery answer and new-password fields on request', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ resetToken: 'reset-token-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText('Operator email'), {
+      target: { value: 'operator@example.com' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
+
+    const answer = await screen.findByLabelText('Security answer');
+    expect(answer.getAttribute('type')).toBe('password');
+    fireEvent.click(screen.getByRole('button', { name: 'Show Security answer' }));
+    expect(answer.getAttribute('type')).toBe('text');
+
+    fireEvent.change(screen.getByLabelText('Telegram code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.change(answer, { target: { value: 'blue bicycle' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Verify recovery code' }));
+
+    const newPassword = await screen.findByLabelText('New password');
+    const confirmPassword = screen.getByLabelText('Confirm new password');
+    expect(newPassword.getAttribute('type')).toBe('password');
+    expect(confirmPassword.getAttribute('type')).toBe('password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show New password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show Confirm new password' }));
+
+    expect(newPassword.getAttribute('type')).toBe('text');
+    expect(confirmPassword.getAttribute('type')).toBe('text');
+  });
+
   it('blocks completion when the confirmation password differs', async () => {
     const fetchMock = vi
       .fn()
