@@ -159,7 +159,7 @@ func TestMemoryReasoningTrace(t *testing.T) {
 //	0.85 <= score < 0.95 -> flagged (stored DISTINCT, with a pending SAME_AS link)
 //	score < 0.85 -> none (stored distinct, no link)
 //
-// The 384d granite embedder clusters short entity names at ~0.85-0.93 cosine, so
+// The 768d granite embedder clusters short entity names at ~0.85-0.93 cosine, so
 // against a SHARED, accumulating graph a brand-new distinct name commonly lands in the
 // `flagged` band rather than `none` — `action=none` cannot be deterministically forced
 // by name choice on a populated store. The load-bearing anti-regression for

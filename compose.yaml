@@ -73,7 +73,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-384}
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
       # RET-01/02: two-stage retrieval rerank stage. Points at the GPU aura-rerank
       # sidecar; client fails soft to RRF/vector order when absent (no hard dep).
       AURA_RERANK_BASE_URL: ${AURA_RERANK_BASE_URL:-http://aura-rerank:8085}
@@ -201,7 +201,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-384}
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
     volumes:
       - aura-home:/var/lib/aura
 
@@ -297,25 +297,27 @@ services:
 
   # ↓↓ Slice 0.7 — Granite 97M OpenAI-compat embedding sidecar ↓↓
   aura-llama-embed:
-    image: ghcr.io/ggml-org/llama.cpp:server
+    image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
     container_name: aura-llama-embed
     restart: unless-stopped
     command:
       - --hf-repo
-      - mykor/granite-embedding-97m-multilingual-r2-GGUF
+      - SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF
       - --hf-file
-      - granite-embedding-97M-multilingual-r2-Q8_0.gguf
+      - granite-embedding-311M-multilingual-r2_Q6_k.gguf
       - --embeddings
       - --pooling
       - cls
       - --embd-normalize
       - "2"
+      - -ngl
+      - "${AURA_EMBED_NGL:-0}"                  # 0 = CPU (CI-safe default); .env sets 99 for GPU offload (+compose.gpu.yaml device block)
       - --host
       - 0.0.0.0
       - --port
       - "8081"
       - -t
-      - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
+      - "4"                                    # CPU thread cap when -ngl=0; harmless under GPU offload
       - -ub
       - "2048"                                 # manual chunks exceeded 1024 tokens in the Granite run
     ports:
@@ -362,7 +364,7 @@ services:
       # To go cloud: AURA_EMBED_MODEL=qwen/qwen3-embedding-8b (the openai/ adapter
       # prefix is prepended), AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1,
       # AURA_MEMORY_EMBED_API_KEY=${OPENROUTER_API_KEY}.
-      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-97m-multilingual-r2-q8}
+      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-311m-multilingual-r2}
       OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
       OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
     command:
@@ -393,7 +395,7 @@ services:
           --session-strategy persistent \
           --user-id aura-local \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
-          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-384} \
+          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-768} \
           --no-auto-preferences
     ports:
       - "127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}:8080"
@@ -516,6 +518,9 @@ services:
   aura-ocr-vl:
     image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-ocr-vl
+    # Offloaded by default to free ~2.35GB VRAM for the GPU embed sidecar. On-demand:
+    # `docker compose --profile ocr up -d aura-ocr-vl`. Vision/markitdown paths fail-soft when absent.
+    profiles: [ocr]
     restart: unless-stopped
     command:
       - --hf-repo

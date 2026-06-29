@@ -1,0 +1,17 @@
+# GPU override for the embed sidecar. Apply on a host with an NVIDIA GPU:
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d aura-llama-embed
+#
+# CI runners have no GPU and use plain compose.yaml, so the embed sidecar stays
+# on CPU (`:server`, -ngl 0) and the agent-memory-mcp job boots green. The image
+# swap and layer offload come from .env (AURA_EMBED_IMAGE=...:server-cuda,
+# AURA_EMBED_NGL=99); this override adds the one piece env cannot toggle — the
+# nvidia device reservation (mirrors aura-ocr-vl / aura-rerank).
+services:
+  aura-llama-embed:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

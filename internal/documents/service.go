@@ -48,7 +48,7 @@ type Service struct {
 	// Two-stage retrieval (RET-02) collaborators, all optional. When Reranker is
 	// nil, Retrieve degrades to the sparse fulltext Search path with no regression.
 	Knowledge       KnowledgeClient    // raw graph client for the vector seed + 1-hop expand
-	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 384d seed vector
+	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 768d seed vector
 	Reranker        Reranker           // reorders seed chunks by relevance (fail-soft)
 	RerankThreshold float64            // non-monotonic guard: keep seed order when the top rerank score is below this
 	RerankBlend     bool               // non-monotonic guard: blend seed rank + rerank rank (RRF) instead of the hard threshold gate

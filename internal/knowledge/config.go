@@ -2,15 +2,16 @@
 // client (no native Go Neo4j driver per CLAUDE.md §Project scope discipline ban),
 // a Cypher migration runner that audits applied versions in Postgres
 // aura.knowledge_migrations, and the embedding-sidecar dim self-test that makes
-// the AURA_EMBED_DIMENSIONS=384 contract operational (Amendment #18 / Pitfall #5).
+// the AURA_EMBED_DIMENSIONS=768 contract operational (Amendment #18 / Pitfall #5).
 //
 // Config is pure data, populated by internal/config from the environment. It
 // carries everything the MCP client and embed self-test need; no methods.
 package knowledge
 
 // DefaultEmbedDimensions is the vector width emitted by the repo's default
-// Granite embedding sidecar and encoded in the initial Neo4j HNSW index.
-const DefaultEmbedDimensions = 384
+// Granite embedding sidecar (granite-embedding-311m-multilingual-r2, 768d) and
+// encoded in the initial Neo4j HNSW index.
+const DefaultEmbedDimensions = 768
 
 // Config holds the Neo4j + mcp-neo4j-cypher + embed-sidecar wiring. Populated by
 // internal/config.Load from NEO4J_*, AURA_NEO4J_*, AURA_MCP_NEO4J_*, AURA_EMBED_*.

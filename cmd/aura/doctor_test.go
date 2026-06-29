@@ -31,7 +31,7 @@ func installDoctorFakeProbes(t *testing.T) {
 
 	doctorProbePostgres = func(context.Context, *config.Config) (string, error) { return "reachable", nil }
 	doctorProbeNeo4j = func(context.Context, *config.Config) (string, error) { return "RETURN 1 ok", nil }
-	doctorProbeEmbed = func(context.Context, *config.Config) (string, error) { return "dimension 384", nil }
+	doctorProbeEmbed = func(context.Context, *config.Config) (string, error) { return "dimension 768", nil }
 	doctorProbeMCPBinary = func(context.Context, *config.Config) (string, error) { return "found", nil }
 	doctorLookupLLMKey = func() string { return "sk-test-doctor" }
 }
