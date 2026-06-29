@@ -10,7 +10,7 @@ import { AppShell } from '../AppShell';
 // /agent/run → SSE → render chain under that CPU pressure and flaked intermittently
 // (different rows on different runs). Widen the async-wait tolerance for this heavy
 // file only; the assertions and behaviour are unchanged.
-const ASYNC_TIMEOUT_MS = 20000;
+const ASYNC_TIMEOUT_MS = 60000;
 
 function sseBody(frames: readonly Record<string, unknown>[]): string {
   return frames.map((f) => `event: ${String(f.type)}\ndata: ${JSON.stringify(f)}\n\n`).join('');

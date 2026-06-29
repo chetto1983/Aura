@@ -389,7 +389,7 @@ jobs:
       AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
       AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
-      AURA_EMBED_DIMENSIONS: "384"
+      AURA_EMBED_DIMENSIONS: "768"
       # The host export dir the writer materializes ACTIVE snippets into; the SC#4
       # by-path snippet exec (now db_integration, host python3) runs them from here, so
       # the coverage gate's internal/skills tier RUNS instead of a falsely-green skip.
@@ -433,7 +433,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-97m-q8-hf-${{ runner.os }}-v2
+          key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v4
@@ -651,7 +651,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-97m-q8-hf-${{ runner.os }}-v2
+          key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v4
