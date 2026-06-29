@@ -150,17 +150,18 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 | Category | REQs | Findings closed | Suggested phase |
 |----------|------|-----------------|-----------------|
-| PROF | PROF-01..06 | F-002, F-007, F-016, F-018, F-026, F-041 | Phase 31 |
-| LOOP | LOOP-01..11 | F-003, F-004, F-005, F-009, F-010, F-029, F-030, F-031, F-040, F-045, F-048 | Phase 32 |
-| GATE | GATE-01..04 | F-001(gw), F-006, F-011, F-020 | Phase 33 |
-| MUSR | MUSR-01..06 | F-012, F-028, F-032, F-039, F-050 | Phase 34 |
-| SBX | SBX-01..05 | F-001(sbx), F-036 | Phase 35 |
-| MCPH | MCPH-01..09 | F-013, F-014, F-027, F-033, F-034, F-035, F-037, F-038, F-046 | Phase 36 |
-| OBS | OBS-01..06 | F-008, F-017, F-023, F-024, F-049 (+F-020 idempotency) | Phase 37 |
-| SEC | SEC-01..07 | F-015, F-019(sec), F-021, F-022, F-047, F-051, F-052 | Phase 38 |
-| OPS | OPS-01..06 | F-019(ops), F-025, F-042, F-043 | Phase 39 |
-| REL | REL-01..03 | (cross-cutting evidence bar) | Phase 39 / all |
-| QUAL | QUAL-01..05 | quality audit `docs/audit/quality/` (~64 findings) + F-015/016/027/052 (routed) | Wave 0 urgent + refactor-on-touch across phases |
+| QUAL | QUAL-01 (Wave 0) | quality audit `docs/audit/quality/` + F-015 (CI `./...`) | Phase 31 |
+| QUAL | QUAL-02/03/05 | quality audit dead-code + shared-helper extraction + test gaps | Phase 32 |
+| PROF | PROF-01..06 (+QUAL-04 env catalog) | F-002, F-007, F-016, F-018, F-026, F-041 | Phase 33 |
+| LOOP | LOOP-01..11 (+QUAL-04 pool-leak/int32) | F-003, F-004, F-005, F-009, F-010, F-029, F-030, F-031, F-040, F-045, F-048 | Phase 34 |
+| GATE | GATE-01..04 | F-001(gw), F-006, F-011, F-020 | Phase 35 |
+| MUSR | MUSR-01..06 (+QUAL Authula DSN) | F-012, F-028, F-032, F-039, F-050 | Phase 36 |
+| SBX | SBX-01..05 | F-001(sbx), F-036 | Phase 37 |
+| MCPH | MCPH-01..09 (+QUAL-03 trust-norm) | F-013, F-014, F-027, F-033, F-034, F-035, F-037, F-038, F-046 | Phase 38 |
+| OBS | OBS-01..06 | F-008, F-017, F-023, F-024, F-049 (+F-020 idempotency) | Phase 39 |
+| SEC | SEC-01..07 (+QUAL decode-body) | F-019(sec), F-021, F-022, F-047, F-051, F-052 | Phase 40 |
+| OPS | OPS-01..06 | F-019(ops), F-025, F-042, F-043 | Phase 41 |
+| REL | REL-01..03 | (cross-cutting evidence bar) | Phase 41 / all |
 
 **Coverage:**
 - v2.0.0 requirements: 57 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, MCPH 9, OBS 6, SEC 7, OPS 6, REL 3, QUAL 5)

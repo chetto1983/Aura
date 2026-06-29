@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** v2.0.0 Industrial Hardening & Multi-User Production — roadmap created (Phases 31–39), ready to plan Phase 31.
+**Current focus:** v2.0.0 Industrial Hardening & Multi-User Production — roadmap created (Phases 31–41), ready to plan Phase 31 (Stabilization & CI Unblock). NOTE: Phase 31 is gated on the in-flight Codex session finishing the over-cap files (`serve_webui.go`, `LoginPage.test.tsx`) + dist rebuild.
 
 ## Current Position
 
-Phase: 31 — Runtime Profiles + Config Validation (not started)
+Phase: 31 — Stabilization & CI Unblock (Wave 0; not started, gated on Codex WIP)
 Plan: —
-Status: Roadmap created — ready for `/gsd-plan-phase 31`
-Last activity: 2026-06-29 — Milestone v2.0.0 scoped: research complete, REQUIREMENTS.md (52 reqs, 51 findings mapped) + ROADMAP.md (9 phases 31–39) written
+Status: Roadmap created — ready for `/gsd-plan-phase 31` once the tree is clean
+Last activity: 2026-06-29 — Milestone v2.0.0 scoped: research + 4-slice quality audit complete; REQUIREMENTS.md (57 reqs incl. QUAL) + ROADMAP.md (11 phases 31–41, security + quality findings all phased) written; sandbox/multi-user spike in progress (docs/spikes/)
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
