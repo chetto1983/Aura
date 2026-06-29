@@ -132,10 +132,10 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Validation:** `scripts/check-file-size.sh` exit 0; `web-dist-freshness` job green; a CI grep-lint finds zero raw `./...` in `.github/workflows/`; `vitest run --coverage` meets the four 85% thresholds; a CodeQL re-scan shows the `go/request-forgery` alert closed.
 
-**Plans:** 3 plans (Wave 1: 31-01 verify-only baseline; Wave 2 parallel: 31-02 CI hygiene, 31-03 SSRF guard)
+**Plans:** 1/3 plans executed
 **Wave 1**
 
-- [ ] 31-01-PLAN.md — Verify the QUAL-01 baseline green (C1 file-size, C2 dist freshness, C4 frontend coverage)
+- [x] 31-01-PLAN.md — Verify the QUAL-01 baseline green (C1 file-size, C2 dist freshness, C4 frontend coverage)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

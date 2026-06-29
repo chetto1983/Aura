@@ -2,14 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: planning
-last_updated: "2026-06-29T18:05:24.145Z"
+status: executing
+stopped_at: Phase 29 UI-SPEC approved
+last_updated: "2026-06-29T18:18:53.522Z"
 last_activity: 2026-06-29
 progress:
-  total_phases: 0
+  total_phases: 11
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -20,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** v2.0.0 Industrial Hardening & Multi-User Production — roadmap created (Phases 31–41, all now GSD-resolvable with per-phase detail sections). Phase 31 (Stabilization & CI Unblock) is **PLANNED** (3 plans, 2 waves) — ready for `/gsd-execute-phase 31`. The Codex over-cap gate is cleared (tree clean, `serve_webui.go`=525 + `LoginPage.test.tsx`=592 under cap, dist freshness verified zero-drift).
+**Current focus:** Phase 31 — Stabilization & CI Unblock
 
 ## Current Position
 
-Phase: 31 — Stabilization & CI Unblock (Wave 0; PLANNED, ready to execute)
-Plan: 3 plans in 2 waves — 31-01 (verify QUAL-01 baseline: file-size/dist/coverage), 31-02 (F-015 CI hygiene + lint), 31-03 (SEC-08 SSRF guard)
-Status: Planned — ready for `/gsd-execute-phase 31` (Codex WIP gate cleared)
-Last activity: 2026-06-29 — Phase 31 planned end-to-end: ROADMAP made GSD-resolvable for all 11 v2.0.0 phases (31–41); 2 untracked CodeQL findings tracked (SEC-08 SSRF→P31 pulled forward, SEC-09 weak-hash→P40); researcher+planner+plan-checker passed (0 blockers, 3 warnings fixed); RESEARCH found 3/5 criteria already green (file-size, dist freshness zero-drift, coverage 90.9/85.5/90.9/92.9) → real work is F-015 + SSRF
+Phase: 31 (Stabilization & CI Unblock) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-06-29
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -193,6 +194,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 30 P03 | ~50min | 2 tasks | 12 files |
 | Phase 30 P04 | ~50min | 2 tasks | 8 files |
 | Phase 30 P05 | ~75min | 3 tasks | 14 files |
+| Phase 31 P01 | ~3min | 3 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -420,7 +422,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-28T07:32:40.120Z
+Last session: 2026-06-29T18:16:24.233Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 
