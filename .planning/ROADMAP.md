@@ -131,6 +131,11 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Validation:** `scripts/check-file-size.sh` exit 0; `web-dist-freshness` job green; a CI grep-lint finds zero raw `./...` in `.github/workflows/`; `vitest run --coverage` meets the four 85% thresholds; a CodeQL re-scan shows the `go/request-forgery` alert closed.
 
+**Plans:** 3 plans (Wave 1: 31-01 verify-only baseline; Wave 2 parallel: 31-02 CI hygiene, 31-03 SSRF guard)
+- [ ] 31-01-PLAN.md — Verify the QUAL-01 baseline green (C1 file-size, C2 dist freshness, C4 frontend coverage)
+- [ ] 31-02-PLAN.md — F-015 CI hygiene: 4 Go jobs source scripts/go_packages.sh + a no-raw-`./...` lint with negative self-test (C3)
+- [ ] 31-03-PLAN.md — SEC-08 SSRF guard: MCP-local guardEndpoint + enforce-only hardened transport, CodeQL go/request-forgery → fixed (C5)
+
 #### Phase 32: Quality Cleanup — Dead Code + Shared Helpers
 
 **Goal:** Kill cross-package duplication + dead code BEFORE feature phases build on them, so later work reuses clean shared packages.
