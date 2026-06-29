@@ -381,19 +381,19 @@ func guardEndpoint(ctx context.Context, raw string, enforce bool, res resolver) 
 | A4 | MCP-local guard (copy `classify`) is preferred over extracting shared `internal/netguard` for phase minimality | Stack / Open Q | If the team prefers single-source-of-truth now, extract instead (touches `internal/web`, parity-tested). |
 | A5 | Local Node-24 build/coverage equals CI Linux results (criteria 2/4 green in CI) | C2/C4 | Cross-platform npm-lock drift affects install, not coverage; if CI disagrees, close the specific gap. Low risk. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Shared SSRF extraction vs MCP-local copy (A4).**
+> Resolved at planning by orchestrator direction; the decisions are encoded in 31-02/31-03-PLAN.md.
+
+1. **Shared SSRF extraction vs MCP-local copy (A4).** **RESOLVED → MCP-local.**
    - Known: `internal/web` has the mutation-tested `classify`; duplicating security code risks drift.
-   - Unclear: whether the team wants the `internal/netguard` extraction now (cleaner, but touches `internal/web` and is arguably QUAL-03/Phase-32 scope).
-   - Recommendation: ship **MCP-local** for phase minimality; file the dedup as a Phase-32 QUAL-03 add-on. Let discuss/planner decide.
-2. **Does the conditional guard clear CodeQL (A1)?**
+   - Decision: ship **MCP-local** (`internal/mcp/ssrf.go`) for phase minimality; the `internal/netguard` dedup is filed as Phase-32/QUAL-03 scope. 31-03 prohibits importing or modifying `internal/web`.
+2. **Does the conditional guard clear CodeQL (A1)?** **RESOLVED → unconditional barrier + re-scan acceptance.**
    - Known: `internal/web`'s combined string+transport barrier is CodeQL-clean.
-   - Unclear: CodeQL's path-sensitivity on the `if enforce` branch.
-   - Recommendation: keep parse+scheme+metadata **unconditional**; gate the phase's C5 acceptance on the re-scan; have the allow-list escalation ready.
-3. **Optional LoginPage split.**
+   - Decision: keep parse+scheme+metadata **unconditional** (taint path breaks on every branch); gate C5 acceptance on the CodeQL re-scan, with the explicit-allow-list / unconditional-`classify` escalation documented as the fallback.
+3. **Optional LoginPage split.** **RESOLVED → leave as-is.**
    - Known: 592/600, 8 lines headroom, sibling split already exists.
-   - Recommendation: leave as-is unless a later task adds tests there.
+   - Decision: do not re-split; 31-01 prohibits re-splitting unless a later task adds tests there.
 
 ## Sources
 

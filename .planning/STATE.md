@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: planning
-last_updated: "2026-06-29T07:25:26.017Z"
+last_updated: "2026-06-29T18:05:24.145Z"
 last_activity: 2026-06-29
 progress:
   total_phases: 0
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** v2.0.0 Industrial Hardening & Multi-User Production — roadmap created (Phases 31–41), ready to plan Phase 31 (Stabilization & CI Unblock). NOTE: Phase 31 is gated on the in-flight Codex session finishing the over-cap files (`serve_webui.go`, `LoginPage.test.tsx`) + dist rebuild.
+**Current focus:** v2.0.0 Industrial Hardening & Multi-User Production — roadmap created (Phases 31–41, all now GSD-resolvable with per-phase detail sections). Phase 31 (Stabilization & CI Unblock) is **PLANNED** (3 plans, 2 waves) — ready for `/gsd-execute-phase 31`. The Codex over-cap gate is cleared (tree clean, `serve_webui.go`=525 + `LoginPage.test.tsx`=592 under cap, dist freshness verified zero-drift).
 
 ## Current Position
 
-Phase: 31 — Stabilization & CI Unblock (Wave 0; not started, gated on Codex WIP)
-Plan: —
-Status: Roadmap created — ready for `/gsd-plan-phase 31` once the tree is clean
-Last activity: 2026-06-29 — Milestone v2.0.0 scoped: research + 4-slice quality audit complete; REQUIREMENTS.md (57 reqs incl. QUAL) + ROADMAP.md (11 phases 31–41, security + quality findings all phased) written; sandbox/multi-user spike in progress (docs/spikes/)
+Phase: 31 — Stabilization & CI Unblock (Wave 0; PLANNED, ready to execute)
+Plan: 3 plans in 2 waves — 31-01 (verify QUAL-01 baseline: file-size/dist/coverage), 31-02 (F-015 CI hygiene + lint), 31-03 (SEC-08 SSRF guard)
+Status: Planned — ready for `/gsd-execute-phase 31` (Codex WIP gate cleared)
+Last activity: 2026-06-29 — Phase 31 planned end-to-end: ROADMAP made GSD-resolvable for all 11 v2.0.0 phases (31–41); 2 untracked CodeQL findings tracked (SEC-08 SSRF→P31 pulled forward, SEC-09 weak-hash→P40); researcher+planner+plan-checker passed (0 blockers, 3 warnings fixed); RESEARCH found 3/5 criteria already green (file-size, dist freshness zero-drift, coverage 90.9/85.5/90.9/92.9) → real work is F-015 + SSRF
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 

@@ -123,6 +123,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** QUAL-01, F-015, SEC-08
 
 **Success Criteria**:
+
 1. No tracked production or test source file exceeds the 600-LOC cap (`cmd/aura/serve_webui.go` and `web/src/__tests__/LoginPage.test.tsx` split); `scripts/check-file-size.sh` is green whole-tree.
 2. `internal/webui/dist` is rebuilt from `web/` and committed so the `web-dist-freshness` CI job is green (no drift between source and committed bundle).
 3. Every Go build/test/vulnerability CI job sources its package list from `scripts/go_packages.sh` (no raw `./...`), and a CI lint rejects raw `go test ./...` / `govulncheck ./...` (F-015).
@@ -132,7 +133,12 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Validation:** `scripts/check-file-size.sh` exit 0; `web-dist-freshness` job green; a CI grep-lint finds zero raw `./...` in `.github/workflows/`; `vitest run --coverage` meets the four 85% thresholds; a CodeQL re-scan shows the `go/request-forgery` alert closed.
 
 **Plans:** 3 plans (Wave 1: 31-01 verify-only baseline; Wave 2 parallel: 31-02 CI hygiene, 31-03 SSRF guard)
+**Wave 1**
+
 - [ ] 31-01-PLAN.md — Verify the QUAL-01 baseline green (C1 file-size, C2 dist freshness, C4 frontend coverage)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 31-02-PLAN.md — F-015 CI hygiene: 4 Go jobs source scripts/go_packages.sh + a no-raw-`./...` lint with negative self-test (C3)
 - [ ] 31-03-PLAN.md — SEC-08 SSRF guard: MCP-local guardEndpoint + enforce-only hardened transport, CodeQL go/request-forgery → fixed (C5)
 
@@ -143,6 +149,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** QUAL-02, QUAL-03, QUAL-05
 
 **Success Criteria**:
+
 1. Dead exports/placeholders removed (`assets.Status{Created,Embedding,Canceled}`, sidecar-only `AURA_MEMORY_EMBED_*` keys, `agui.indexByte`/`stringList`, redundant telebot blank import, redundant `RequestID` re-stamp), each confirmed via `deadcode`/`knip`/repo-wide `rg`.
 2. Shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — each with a parity test.
 3. Targeted test gaps closed (`web/throttle`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing).
@@ -154,6 +161,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, PROF-06, QUAL-04
 
 **Success Criteria**:
+
 1. `aura config validate --profile server_production` exits non-zero listing every unmet requirement.
 2. Copying `.env.example`→`.env` keeps the destructive-shell gate active.
 3. Invalid env fails-fast under production, warns under dev.
@@ -166,6 +174,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** LOOP-01, LOOP-02, LOOP-03, LOOP-04, LOOP-05, LOOP-06, LOOP-07, LOOP-08, LOOP-09, LOOP-10, LOOP-11, QUAL-04
 
 **Success Criteria**:
+
 1. `text_response` + a mutating sibling never executes the sibling.
 2. Duplicate single/batch resume → exactly one answer/pause; an append-failure leaves a repairable state.
 3. Outside-root/traversal/symlink sidecar reads are rejected.
@@ -178,6 +187,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** GATE-01, GATE-02, GATE-03, GATE-04
 
 **Success Criteria**:
+
 1. No tool executes without a recorded policy decision.
 2. A timing-out/crashing command hook denies under hardened/production.
 3. A mutating tool is blocked when ledger reservation fails in production.
@@ -190,6 +200,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** MUSR-01, MUSR-02, MUSR-03, MUSR-04, MUSR-05, MUSR-06
 
 **Success Criteria**:
+
 1. Two-identity live E2E — B cannot list/get/delete/archive/resolve A's data (404/403); a B-created chat is owned by B and runs.
 2. Session B cannot poll/kill session A's shell; jobs expire by TTL.
 3. Conversation delete evicts all session tool state.
@@ -202,6 +213,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** SBX-01, SBX-02, SBX-03, SBX-04, SBX-05
 
 **Success Criteria**:
+
 1. Under `server_production`, shell/fs target the per-identity sandbox and the real host filesystem is unreachable.
 2. Docker-socket/`--privileged`/`--network host`/bind-mounts are unrepresentable (test-asserted).
 3. Cross-identity leakage is impossible and the idle-TTL lifecycle works.
@@ -215,6 +227,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** MCPH-01, MCPH-02, MCPH-03, MCPH-04, MCPH-05, MCPH-06, MCPH-07, MCPH-08, MCPH-09
 
 **Success Criteria**:
+
 1. Mixed url+command / empty-remote-trust is blocked and never calls stdio open.
 2. A hung mount drops within deadline; an oversized stdio frame aborts without large alloc; shutdown leaves no child processes.
 3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
@@ -227,6 +240,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** OBS-01, OBS-02, OBS-03, OBS-04, OBS-05, OBS-06
 
 **Success Criteria**:
+
 1. `/readyz` fails on unhealthy DB/listener/migration/scheduler; the Compose healthcheck probes `/readyz`.
 2. The OTel metric path emits LLM/tool/MCP/DB/scheduler metrics; alert YAML + Grafana JSON validate in CI.
 3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
@@ -239,6 +253,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-09
 
 **Success Criteria**:
+
 1. Injected shell/file/network/MCP requests are DENIED under `server_production` (regression suite).
 2. Secret-like values are redacted before persistence; permissive CORS is refused when auth is disabled (except dev).
 3. CI publishes an SBOM, `govulncheck` blocks high-severity, all Actions are SHA-pinned.
@@ -252,6 +267,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Requirements:** OPS-01, OPS-02, OPS-03, OPS-04, OPS-05, OPS-06, REL-01, REL-02, REL-03
 
 **Success Criteria**:
+
 1. A drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented).
 2. Scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill.
 3. A load + chaos harness runs in CI (no-skip-as-green) + a capability-eval pass/fail report.
