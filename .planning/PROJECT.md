@@ -14,7 +14,25 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 
 **Prior: v0.0.0 Substrate — SHIPPED 2026-06-15** (24 phases, 144 plans, 233 tasks; audit PASSED). Il substrate agentico domain-neutral feature-complete e live-proven: persistence (PG+Neo4j), agent loop + workflow agents, LLM client, HITL, conversazioni, KV cache, sandbox, swarm, web tools, scheduler, skills, AG-UI gateway, Telegram multimodale, onboarding/Agent.md, memory (agent-memory MCP), MCP manager, hooks. Owned-surface coverage 90.3%. Dettaglio in `.planning/milestones/v0.0.0-*`.
 
-**Next milestone:** da definire via `/gsd-new-milestone`. Candidati noti (vedi Out of Scope + Key Decisions): il `ui_control` operator-OS shell + scheduler write surfaces (deferred dal cockpit milestone), il completamento dei 6 deferred GPU/live-CI tiers su un host GPU adeguato, Slice 13 local-LLM fallback (GPU-gated, DGX Spark path), e l'espansione multi-user auth reale su Authula.
+**Next milestone:** **v2.0.0 — Industrial Hardening & Multi-User Production** (in planning, scoped 2026-06-29 via `/gsd-new-milestone`). Vedi sezione "## Current Milestone" sotto. Altri candidati noti rinviati (vedi Out of Scope + Key Decisions): il `ui_control` operator-OS shell + scheduler write surfaces, il completamento dei 6 deferred GPU/live-CI tiers su un host GPU adeguato, Slice 13 local-LLM fallback (GPU-gated, DGX Spark path).
+
+## Current Milestone: v2.0.0 — Industrial Hardening & Multi-User Production
+
+**Goal:** Chiudere l'intero audit industriale 2026-06-21 (51 findings: 10 P1, 28 P2, 13 P3) e industrializzare Aura a un onesto **10/10** di production-readiness — via **isolamento sandbox full-capability per-utente** (agent-sandbox-class), **multi-user identity isolation**, una **ToolGateway** centrale con audit/ledger, e hardening observability/security/ops — **senza mai rimuovere il full-host terminal** che è la superficie-core di Aura. La contraddizione F-001 ("full host" vs "10/10") si dissolve: ogni identità guida una sandbox full-capability isolata, l'host reale non è mai esposto.
+
+**Target features:**
+
+- **Per-user full-capability sandbox** — runtime sandbox isolato per identità (agent-sandbox-class): l'agente conserva shell/fs/network completi; l'host reale non è mai esposto. Chiude F-001/R-001. Fork di design (full K8s/k3s vs pattern-over-rivetdev/Docker) risolto in research.
+- **Multi-user identity isolation** — store conversazioni/approval owner-scoped + API filtrate per principal autenticato; proof E2E two-identity (F-028/R-022). **NO RBAC/roles/OAuth** (resta out — forma industriale minima).
+- **Authula auth cutover** — flip default da passphrase a Authula embedded; `capability_grants` enforced per-route.
+- **ToolGateway** — singolo punto di policy + approval + ledger durevole mutating-tool (F-001, F-011, F-020, F-031).
+- **Runtime profiles** — `dev` / `local_trusted` / `single_user_hardened` / `server_production` con validation produzione (default secrets, listener health, CORS, run-dir, env-parse fail-fast: F-002, F-007, F-008, F-016, F-017, F-022, F-041).
+- **Agent-loop correctness** — terminal `text_response` exclusivity + HITL resume atomicity single+batch + pause-flush durability (F-003, F-004, F-005, F-029, F-030).
+- **MCP governance hardening** — transport classifier canonico, trust remoto esplicito, mount timeout, frame cap, process-tree teardown, CLI writes audited (F-013, F-014, F-027, F-031..F-038, F-046).
+- **Production observability pack** — OTel spans, Prometheus alert rules, Grafana dashboards, readiness probes, sidecar/trace retention + cleanup (F-023, F-024, F-048).
+- **Security & supply-chain** — secret redaction tool-output/trace, network egress policy, encrypted trace option, prompt-injection regression suite, SBOM + pinned actions (F-019, F-021, F-036, F-047, F-050, F-051, F-052).
+- **Scale & operations** — load/chaos harness, backup/DR restore drill con RPO/RTO, scheduler drain, systemd stop budgets, object-store topology validation (F-018, F-035, F-042, F-043).
+- **Capability evaluation suite + ADRs + release-readiness checklist** (F-025, F-026, F-045, F-049).
 
 ## Requirements
 
@@ -67,7 +85,19 @@ Tutti i requisiti del substrate v0.0.0 sono shipped + audit-passed (vedi `.plann
 
 ### Active
 
-*(next milestone not yet defined — run `/gsd-new-milestone` to scope it)*
+**v2.0.0 — Industrial Hardening & Multi-User Production** (in planning; requisiti formalizzati con REQ-ID in `.planning/REQUIREMENTS.md`, fasi 31+):
+
+- [ ] Per-user full-capability sandbox isolation (agent-sandbox-class) — closes F-001/R-001
+- [ ] Multi-user identity isolation + Authula auth cutover (identity-scoped, NO RBAC) — F-028/R-022
+- [ ] ToolGateway (policy + approval + durable mutating-tool ledger) — F-001/F-011/F-020/F-031
+- [ ] Runtime profiles + production validation — F-002/F-007/F-008/F-016/F-017/F-022/F-041
+- [ ] Agent-loop correctness (terminal exclusivity + HITL resume/pause atomicity) — F-003/F-004/F-005/F-029/F-030
+- [ ] MCP governance hardening (transport classifier, trust, lifecycle limits, audited writes) — F-013/F-014/F-027/F-031..F-038/F-046
+- [ ] Production observability pack (OTel, alerts, dashboards, readiness, retention) — F-023/F-024/F-048
+- [ ] Security & supply-chain (redaction, egress, prompt-injection suite, SBOM, pinned actions) — F-019/F-021/F-036/F-047/F-050/F-051/F-052
+- [ ] Scale & operations (load/chaos, backup/DR drill, scheduler drain, topology validation) — F-018/F-035/F-042/F-043
+- [ ] Capability evaluation suite + ADRs + release-readiness checklist — F-025/F-026/F-045/F-049
+- [ ] All 51 audit findings closed → honest 10/10 production readiness (from 4.6/10)
 
 ### Out of Scope
 
@@ -75,7 +105,7 @@ Tutti i requisiti del substrate v0.0.0 sono shipped + audit-passed (vedi `.plann
 - **Native Windows runtime** — Aura gira in container (Docker Compose) o contro Docker sidecar. Su Windows solo via Docker Desktop in dev. Memory `feedback_sqlite_wal_windows_corruption.md` + Slice 2 OQ5: named volumes mandatory, no bind-mount Windows.
 - **Conversational voice mode** — Aura legge audio in ingresso (STT) e produce voice replies TTS su Telegram (Kokoro, Phase 13). Una modalità voce conversazionale full-duplex resta future milestone.
 - **Marketplace skills pubblico** — Slice 7 ha skill installer locale (`skill_install`/`skill_create`); niente registry pubblico, niente sharing skills tra utenti, niente versioning distribuito. Local-first per definizione.
-- **Multi-user con auth/RBAC reale** — Slice 1.7 fornisce "identity minimal + `capability_grants` scaffolding". v1.0.0 Phase 28 introduce una **2nd web-loginable identity** via il cockpit onboarding wizard. **L'authz RESTA `capability_grants`-based — NO RBAC, NO route-scoping oltre `RequireCapability`, NO OAuth.** L'identity resolution generalizza 1:N via `aura.identity_auth_links` (già 1:N-ready, migration 0019); il guard `OperatorUserID` single-user è rilassato (vedi prd.md amendment #64, D-07). Resta fuori scope: login multi-tenant, RBAC reale, OAuth, per-identity session isolation (post-v1.0.0).
+- **Multi-user con RBAC/OAuth reale** — v2.0.0 porta IN scope la **multi-user identity isolation** (store/API owner-scoped per principal autenticato + per-identity sandbox isolation + Authula auth cutover + two-identity E2E proof), risolvendo F-028/R-022. **Resta fuori scope**: RBAC reale con ruoli/permessi (admin vs user), OAuth multi-provider, login multi-tenant SaaS-style. L'authz resta `capability_grants`-based enforced per-route. Forma industriale minima: isolamento dati+processo+fs per identità, non un sistema RBAC completo. (RBAC = candidato post-v2.0.0.)
 - **Native Go Neo4j driver** — disciplina PRD: tutto accesso Neo4j passa da `mcp-neo4j-cypher` MCP server (subprocess stdio). Pattern uniforme con altri MCP tools.
 
 ## Context
@@ -138,6 +168,10 @@ Tutti i requisiti del substrate v0.0.0 sono shipped + audit-passed (vedi `.plann
 | **Authula** embedded auth flag-gated (supersedes la passphrase cookie Phase-24) | Go embeddable, capability-per-route, 2FA/OAuth/PG; default resta passphrase | — Pending (cutover in corso) |
 | Retrieval rerank = GPU Qwen3-Reranker-0.6B Q4_K_M + two-stage (seed→rerank→expand) | Spike 068/069/070: GPU 333ms vs CPU 23s; fail-soft RRF fallback; Neo4j resta | ✓ Good — v1.0.0 (Phase 30) |
 | v1.0.0 chiuso come `override_closeout` (6 deferred GPU/live-CI tiers) | Host 4GB-GPU non esegue server-cuda; harness NO-SKIP-AS-GREEN + CI-floored; budget per-stage già live-proven | — Pending (chiudere su host GPU adeguato) |
+| v2.0.0 = major bump (trust-model shift) | Da "single trusted operator full-host" a "per-user isolated full-capability sandbox + production industrialization"; semver-major è il segnale onesto | — Pending (in planning) |
+| F-001 risolto via per-user full-capability sandbox, NON fencing | "Keep full-host always" + "10/10" si riconciliano: ogni identità guida una sandbox full-capability isolata (agent-sandbox-class); capability mai rimossa, host reale mai esposto, blast radius contenuto. Allinea memory `feedback_aura_full_host_terminal_primary` | — Pending (research valida K8s/k3s vs pattern-over-rivetdev) |
+| Multi-user = identity isolation, NON RBAC | Forma industriale minima richiesta dall'audit (F-028): owner-scoped store/API + per-identity sandbox; RBAC/OAuth restano post-v2.0.0 (memory `feedback_no_atomic_bombs_minimal_industrial_shape`) | — Pending |
+| Authula default cutover in v2.0.0 | Multi-user production richiede l'auth provider embeddable capability-per-route; flip default da passphrase (memory `project_authula_multiuser_auth_candidate`) | — Pending |
 
 ## Evolution
 
@@ -157,4 +191,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 after v1.0.0 milestone — Aura Deep Search Web Cockpit SHIPPED (9 phases [22–30], 45 plans, 113 tasks; audit PASSED 56/56 requirements; override_closeout w/ 6 deferred GPU/live-CI tiers; owned-surface coverage 88.1%). Prior: v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; coverage 90.3%). Next: scope the next milestone via /gsd-new-milestone.*
+*Last updated: 2026-06-29 — started milestone **v2.0.0 Industrial Hardening & Multi-User Production** (close 51-finding 2026-06-21 audit → honest 10/10; per-user full-capability sandbox + multi-user identity isolation + Authula cutover + ToolGateway + observability/security/ops industrialization; phases 31+). Prior: v1.0.0 Aura Deep Search Web Cockpit SHIPPED 2026-06-29 (9 phases [22–30], 45 plans, 113 tasks; audit PASSED 56/56; override_closeout w/ 6 deferred GPU/live-CI tiers; coverage 88.1%). v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; coverage 90.3%).*

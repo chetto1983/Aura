@@ -1,19 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0.0
-milestone_name: Aura Deep Search Web Cockpit
-current_phase: 0.0
-status: Awaiting next milestone
-stopped_at: Milestone v1.0.0 complete
-last_updated: "2026-06-29T06:36:40.989Z"
+milestone: v2.0.0
+milestone_name: Industrial Hardening & Multi-User Production
+status: planning
+last_updated: "2026-06-29T07:25:26.017Z"
 last_activity: 2026-06-29
-last_activity_desc: Milestone v1.0.0 completed and archived
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 45
-  completed_plans: 45
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -27,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: Milestone v1.0.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-29 — Milestone v1.0.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-06-29 — Milestone v2.0.0 started
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
