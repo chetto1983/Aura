@@ -57,7 +57,10 @@ func TestClassify(t *testing.T) {
 		// RFC-4193 IsPrivate() (fc00::/7) predicate that runs earlier — mirrored
 		// faithfully from internal/web; it is still blocked, just as "private".
 		{"ipv6_metadata_range_as_private", "fd00:ec2::254", "private", true},
-		{"multicast", "224.0.0.1", "multicast", true},
+		// 224.0.0.0/24 is link-local multicast (hits the earlier branch); use an
+		// administratively-scoped multicast address to reach the plain multicast class.
+		{"link_local_multicast", "224.0.0.1", "link_local", true},
+		{"multicast", "239.0.0.1", "multicast", true},
 		{"unspecified", "0.0.0.0", "unspecified", true},
 		{"cgnat", "100.64.0.1", "cgnat", true},
 		{"this_network", "0.1.2.3", "this_network", true},
