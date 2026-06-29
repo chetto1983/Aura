@@ -1,10 +1,7 @@
-# Compatibility GPU override for the embed sidecar. The main compose.yaml now
-# requests NVIDIA GPUs by default; keeping this file preserves existing operator
-# commands:
+# GPU override for the embed sidecar. The base compose.yaml remains CPU-safe for
+# CI and installer hosts; layer this file when Docker should reserve NVIDIA
+# devices for the local embedder:
 #   docker compose -f compose.yaml -f compose.gpu.yaml up -d aura-llama-embed
-#
-# The block intentionally mirrors compose.yaml. It is not required for normal
-# product startup, but it remains safe to layer.
 services:
   aura-llama-embed:
     deploy:

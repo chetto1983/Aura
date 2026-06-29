@@ -330,7 +330,9 @@ services:
       retries: 20
       start_period: 90s   # APOC + GDS auto-download takes time on first boot
 
-  # ↓↓ Slice 0.7 — Granite 97M OpenAI-compat embedding sidecar ↓↓
+  # ↓↓ Slice 0.7 — Granite OpenAI-compat embedding sidecar ↓↓
+  # Default compose must start on CPU-only CI/installer hosts; layer compose.gpu.yaml
+  # when the operator wants Docker to reserve NVIDIA devices for this service.
   aura-llama-embed:
     image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-llama-embed
@@ -355,13 +357,6 @@ services:
       - "4"                                    # CPU thread cap for orchestration work; harmless under GPU offload
       - -ub
       - "2048"                                 # manual chunks exceeded 1024 tokens in the Granite run
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     ports:
       - "127.0.0.1:8081:8081"
     volumes:

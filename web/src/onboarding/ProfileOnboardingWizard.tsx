@@ -1,20 +1,20 @@
-import { useCallback, useEffect, useId, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
+import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { ModelSettingsPanel } from '../settings/ModelSettingsPanel';
 import { InterviewStep } from './InterviewStep';
+import { OnboardingCenteredState, OnboardingDialog } from './OnboardingDialog';
 import { TelegramLinkStep } from './TelegramLinkStep';
-import { isAuthError, isTerminalStatus } from './onboardingWizardModel';
+import { isAuthError } from './onboardingWizardModel';
 import {
   completeProfileOnboarding,
   startProfileOnboarding,
-  stepOnboarding,
-  type OnboardingAnswers,
   type OnboardingProfileComplete,
   type OnboardingStart,
   type OnboardingStepResponse,
 } from './onboardingApi';
+import { useOnboardingStepDispatch } from './onboardingStepDispatch';
 import { Button } from '@/components/ui/button';
 
 export interface ProfileOnboardingWizardProps {
@@ -173,103 +173,61 @@ export default function ProfileOnboardingWizard({ onClose }: ProfileOnboardingWi
     }
   }, [completionStatus, sessionToken]);
 
-  const dispatchStep = useCallback(
-    async (
-      intent: 'answer' | 'confirm' | 'edit' | 'skip',
-      text?: string,
-      answers?: OnboardingAnswers,
-    ) => {
-      if (sessionToken === '') return;
-      setStepBusy(true);
-      try {
-        const resp = await stepOnboarding(sessionToken, {
-          intent,
-          ...(text !== undefined ? { text } : {}),
-          ...(answers !== undefined ? { answers } : {}),
-        });
-        setInterview(resp);
-        if (isTerminalStatus(resp.status)) {
-          setRuntimeSetupOpen(true);
-        }
-      } catch (err) {
-        setStartStatus(isAuthError(err) ? 'error-auth' : 'error');
-      } finally {
-        setStepBusy(false);
-      }
-    },
-    [sessionToken],
-  );
+  const handleStepTerminal = useCallback(() => {
+    setRuntimeSetupOpen(true);
+  }, []);
+
+  const handleStepError = useCallback((err: unknown) => {
+    setStartStatus(isAuthError(err) ? 'error-auth' : 'error');
+  }, []);
+
+  const dispatchStep = useOnboardingStepDispatch({
+    sessionToken,
+    setBusy: setStepBusy,
+    onResponse: setInterview,
+    onTerminal: handleStepTerminal,
+    onError: handleStepError,
+  });
 
   const activeStep: ProfileStepKey = runtimeSetupOpen ? 'runtime' : profileStepKey(interview);
   const activeIndex = profileStepIndex(activeStep);
   const displayedInterview =
     interview === undefined ? undefined : localizedProfileStep(interview, t);
 
-  const overlay = (children: React.ReactNode) => (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={introId}
-      className="fixed inset-0 z-50 flex flex-col bg-bg text-text"
+  const overlay = (children: ReactNode) => (
+    <OnboardingDialog
+      titleId={titleId}
+      describedBy={introId}
+      kicker={t('onboarding.profile.kicker')}
+      title={t('onboarding.profile.title')}
+      closeLabel={t('onboarding.close')}
+      onClose={onClose}
     >
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-accent-text">{t('onboarding.profile.kicker')}</p>
-          <h1 id={titleId} className="font-display text-[18px] font-semibold text-text">
-            {t('onboarding.profile.title')}
-          </h1>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t('onboarding.close')}
-          onClick={onClose}
-          className="text-text-muted hover:text-text"
-        >
-          <X data-icon aria-hidden="true" className="size-4" />
-        </Button>
-      </header>
       {children}
-    </div>
+    </OnboardingDialog>
   );
 
   if (startStatus === 'starting') {
-    return overlay(
-      <div role="status" className="grid flex-1 place-items-center p-8 text-sm text-text-muted">
-        {t('onboarding.starting')}
-      </div>,
-    );
+    return overlay(<OnboardingCenteredState message={t('onboarding.starting')} muted />);
   }
 
   if (startStatus === 'error-auth') {
-    return overlay(
-      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
-        <p className="max-w-md text-[15.5px] text-danger">{t('onboarding.authExpired')}</p>
-      </div>,
-    );
+    return overlay(<OnboardingCenteredState role="alert" message={t('onboarding.authExpired')} />);
   }
 
   if (startStatus === 'error') {
     return overlay(
-      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
-        <div className="flex max-w-md flex-col items-center gap-3">
-          <p className="text-[15.5px] text-danger">{t('onboarding.backendUnavailable')}</p>
-          <Button type="button" variant="outline" onClick={retryStart}>
-            {t('onboarding.retry')}
-          </Button>
-        </div>
-      </div>,
+      <OnboardingCenteredState
+        role="alert"
+        message={t('onboarding.backendUnavailable')}
+        retryLabel={t('onboarding.retry')}
+        onRetry={retryStart}
+      />,
     );
   }
 
   if (completionStatus === 'saving') {
-    return overlay(
-      <div role="status" className="grid flex-1 place-items-center p-8 text-sm text-text-muted">
-        {t('onboarding.profile.saving')}
-      </div>,
-    );
+    return overlay(<OnboardingCenteredState message={t('onboarding.profile.saving')} muted />);
   }
 
   if (completionStatus === 'completed' || completionStatus === 'skipped') {

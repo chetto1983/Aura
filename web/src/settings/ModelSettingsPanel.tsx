@@ -162,6 +162,40 @@ function isLocalBaseURL(value: string): boolean {
   );
 }
 
+function SettingsFields({
+  defs,
+  loaded,
+  onReset,
+  onValueChange,
+  resetting,
+}: {
+  readonly defs: readonly SettingDef[];
+  readonly loaded: LoadedState;
+  readonly resetting: string | undefined;
+  readonly onValueChange: (key: SettingsKey, value: string) => void;
+  readonly onReset: (key: SettingsKey) => void;
+}) {
+  return (
+    <SettingsGrid>
+      {defs.map((def) => (
+        <SettingField
+          key={def.key}
+          def={def}
+          item={loaded.rows[def.key] ?? emptyItem(def)}
+          value={loaded.values[def.key] ?? ''}
+          onChange={(value) => {
+            onValueChange(def.key, value);
+          }}
+          onReset={() => {
+            onReset(def.key);
+          }}
+          resetting={resetting === def.key}
+        />
+      ))}
+    </SettingsGrid>
+  );
+}
+
 export function ModelSettingsPanel({
   className,
   onComplete,
@@ -331,21 +365,13 @@ export function ModelSettingsPanel({
           </Button>
         </div>
 
-        <SettingsGrid>
-          {PRIMARY_SETTINGS.map((def) => (
-            <SettingField
-              key={def.key}
-              def={def}
-              item={loaded.rows[def.key] ?? emptyItem(def)}
-              value={loaded.values[def.key] ?? ''}
-              onChange={(value) => {
-                setValue(def.key, value);
-              }}
-              onReset={() => void resetSetting(def.key)}
-              resetting={resetting === def.key}
-            />
-          ))}
-        </SettingsGrid>
+        <SettingsFields
+          defs={PRIMARY_SETTINGS}
+          loaded={loaded}
+          resetting={resetting}
+          onValueChange={setValue}
+          onReset={(key) => void resetSetting(key)}
+        />
       </section>
 
       <section
@@ -360,21 +386,13 @@ export function ModelSettingsPanel({
             {t('settings.tokens.body')}
           </p>
         </div>
-        <SettingsGrid>
-          {TOKEN_SETTINGS.map((def) => (
-            <SettingField
-              key={def.key}
-              def={def}
-              item={loaded.rows[def.key] ?? emptyItem(def)}
-              value={loaded.values[def.key] ?? ''}
-              onChange={(value) => {
-                setValue(def.key, value);
-              }}
-              onReset={() => void resetSetting(def.key)}
-              resetting={resetting === def.key}
-            />
-          ))}
-        </SettingsGrid>
+        <SettingsFields
+          defs={TOKEN_SETTINGS}
+          loaded={loaded}
+          resetting={resetting}
+          onValueChange={setValue}
+          onReset={(key) => void resetSetting(key)}
+        />
       </section>
 
       <section
@@ -389,21 +407,13 @@ export function ModelSettingsPanel({
             {t('settings.backends.body')}
           </p>
         </div>
-        <SettingsGrid>
-          {BACKEND_SETTINGS.map((def) => (
-            <SettingField
-              key={def.key}
-              def={def}
-              item={loaded.rows[def.key] ?? emptyItem(def)}
-              value={loaded.values[def.key] ?? ''}
-              onChange={(value) => {
-                setValue(def.key, value);
-              }}
-              onReset={() => void resetSetting(def.key)}
-              resetting={resetting === def.key}
-            />
-          ))}
-        </SettingsGrid>
+        <SettingsFields
+          defs={BACKEND_SETTINGS}
+          loaded={loaded}
+          resetting={resetting}
+          onValueChange={setValue}
+          onReset={(key) => void resetSetting(key)}
+        />
       </section>
 
       {loaded.restartRequired ? (

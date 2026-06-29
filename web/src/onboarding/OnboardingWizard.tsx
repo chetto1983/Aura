@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useId, useState } from 'react';
-import { X } from 'lucide-react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CapabilityPicker } from './CapabilityPicker';
 import { CredentialStep } from './CredentialStep';
+import { OnboardingCenteredState, OnboardingDialog } from './OnboardingDialog';
 import { InterviewStep } from './InterviewStep';
 import { OnboardingStepper } from './OnboardingStepper';
 import { OnboardingWizardNav } from './OnboardingWizardNav';
@@ -12,7 +12,6 @@ import {
   credentialsValid,
   isAuthError,
   isForbiddenError,
-  isTerminalStatus,
   phaseIndex as phaseIndexOf,
   provisionErrorKind,
   type Phase,
@@ -21,12 +20,11 @@ import {
 import {
   provisionOnboarding,
   startOnboarding,
-  stepOnboarding,
-  type OnboardingAnswers,
   type OnboardingProvisionResponse,
   type OnboardingStart,
   type OnboardingStepResponse,
 } from './onboardingApi';
+import { useOnboardingStepDispatch } from './onboardingStepDispatch';
 import { Button } from '@/components/ui/button';
 
 // OnboardingWizard is the lazy default export the AppShell mounts as a FULL-SCREEN overlay (D-04 —
@@ -121,35 +119,23 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     });
   }, []);
 
-  // ---- interview dispatch (one /step call per intent; the wizard owns busy/auth state) ----
-  const dispatchStep = useCallback(
-    async (
-      intent: 'answer' | 'confirm' | 'edit' | 'skip',
-      text?: string,
-      answers?: OnboardingAnswers,
-    ) => {
-      if (sessionToken === '') return;
-      setStepBusy(true);
-      try {
-        const resp = await stepOnboarding(sessionToken, {
-          intent,
-          ...(text !== undefined ? { text } : {}),
-          ...(answers !== undefined ? { answers } : {}),
-        });
-        setInterview(resp);
-        if (isTerminalStatus(resp.status)) {
-          setPhase('review');
-        }
-      } catch (err) {
-        setStartStatus(
-          isAuthError(err) ? 'error-auth' : isForbiddenError(err) ? 'error-forbidden' : 'error',
-        );
-      } finally {
-        setStepBusy(false);
-      }
-    },
-    [sessionToken],
-  );
+  const handleStepTerminal = useCallback(() => {
+    setPhase('review');
+  }, []);
+
+  const handleStepError = useCallback((err: unknown) => {
+    setStartStatus(
+      isAuthError(err) ? 'error-auth' : isForbiddenError(err) ? 'error-forbidden' : 'error',
+    );
+  }, []);
+
+  const dispatchStep = useOnboardingStepDispatch({
+    sessionToken,
+    setBusy: setStepBusy,
+    onResponse: setInterview,
+    onTerminal: handleStepTerminal,
+    onError: handleStepError,
+  });
 
   const create = useCallback(async () => {
     if (sessionToken === '') return;
@@ -190,66 +176,39 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   );
   const phaseIndex = phaseIndexOf(phase);
 
-  const overlay = (children: React.ReactNode) => (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      className="fixed inset-0 z-50 flex flex-col bg-bg text-text"
+  const overlay = (children: ReactNode) => (
+    <OnboardingDialog
+      titleId={titleId}
+      title={t('onboarding.title')}
+      closeLabel={t('onboarding.close')}
+      onClose={onClose}
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3">
-        <h1 id={titleId} className="font-display text-[18px] font-semibold text-text">
-          {t('onboarding.title')}
-        </h1>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t('onboarding.close')}
-          onClick={onClose}
-          className="text-text-muted hover:text-text"
-        >
-          <X data-icon aria-hidden="true" className="size-4" />
-        </Button>
-      </header>
       {children}
-    </div>
+    </OnboardingDialog>
   );
 
   if (startStatus === 'starting') {
-    return overlay(
-      <div role="status" className="grid flex-1 place-items-center p-8 text-sm text-text-muted">
-        {t('onboarding.starting')}
-      </div>,
-    );
+    return overlay(<OnboardingCenteredState message={t('onboarding.starting')} muted />);
   }
 
   if (startStatus === 'error-auth') {
-    return overlay(
-      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
-        <p className="max-w-md text-[15.5px] text-danger">{t('onboarding.authExpired')}</p>
-      </div>,
-    );
+    return overlay(<OnboardingCenteredState role="alert" message={t('onboarding.authExpired')} />);
   }
 
   if (startStatus === 'error-forbidden') {
     return overlay(
-      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
-        <p className="max-w-md text-[15.5px] text-danger">{t('onboarding.error.noCapability')}</p>
-      </div>,
+      <OnboardingCenteredState role="alert" message={t('onboarding.error.noCapability')} />,
     );
   }
 
   if (startStatus === 'error') {
     return overlay(
-      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
-        <div className="flex max-w-md flex-col items-center gap-3">
-          <p className="text-[15.5px] text-danger">{t('onboarding.backendUnavailable')}</p>
-          <Button type="button" variant="outline" onClick={retryStart}>
-            {t('onboarding.retry')}
-          </Button>
-        </div>
-      </div>,
+      <OnboardingCenteredState
+        role="alert"
+        message={t('onboarding.backendUnavailable')}
+        retryLabel={t('onboarding.retry')}
+        onRetry={retryStart}
+      />,
     );
   }
 
