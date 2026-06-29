@@ -83,6 +83,10 @@ Tutti i requisiti del substrate v0.0.0 sono shipped + audit-passed (vedi `.plann
 - ✓ **MCPW-01..03, SKW-01..03**: Governance write — MCP install/env-redaction/lifecycle (`mcp_audit`) + skills install → risk-tiered approval queue → activate (operator-resume-only, append-only audit) — v1.0.0 (Phase 29)
 - ✓ **RET-01..05**: Retrieval hardening — fail-soft GPU reranker + two-stage retrieval (vector→rerank→graph-expand) + full-docs ingest (all markitdown formats) + non-monotonic guard + nDCG/Recall/MRR eval harness — v1.0.0 (Phase 30)
 
+**v2.0.0 — Industrial Hardening & Multi-User Production** (in progress, phases 31+):
+
+- ✓ **QUAL-01, SEC-07 (F-015), SEC-08**: Stabilization & CI unblock — 600-LOC cap + `web-dist-freshness` + frontend coverage ≥85% re-baselined green; the 4 root Go CI gates source `scripts/go_packages.sh` behind a failable no-raw-`./...` lint (negative self-test); MCP-local SSRF guard (CWE-918, classify+IP-pin+DNS-rebind defense) wired at the OpenHTTP seam and the CodeQL `go/request-forgery` alert resolved (dismissed false-positive — transport-level sanitizer CodeQL can't model) — v2.0.0 (Phase 31)
+
 ### Active
 
 **v2.0.0 — Industrial Hardening & Multi-User Production** (in planning; requisiti formalizzati con REQ-ID in `.planning/REQUIREMENTS.md`, fasi 31+):
@@ -191,4 +195,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 — started milestone **v2.0.0 Industrial Hardening & Multi-User Production** (close 51-finding 2026-06-21 audit → honest 10/10; per-user full-capability sandbox + multi-user identity isolation + Authula cutover + ToolGateway + observability/security/ops industrialization; phases 31+). Prior: v1.0.0 Aura Deep Search Web Cockpit SHIPPED 2026-06-29 (9 phases [22–30], 45 plans, 113 tasks; audit PASSED 56/56; override_closeout w/ 6 deferred GPU/live-CI tiers; coverage 88.1%). v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; coverage 90.3%).*
+*Last updated: 2026-06-29 — Phase 31 (Stabilization & CI Unblock) complete: CI green, SSRF remediated (QUAL-01/F-015/SEC-08). Milestone **v2.0.0 Industrial Hardening & Multi-User Production** (close 51-finding 2026-06-21 audit → honest 10/10; per-user full-capability sandbox + multi-user identity isolation + Authula cutover + ToolGateway + observability/security/ops industrialization; phases 31+). Prior: v1.0.0 Aura Deep Search Web Cockpit SHIPPED 2026-06-29 (9 phases [22–30], 45 plans, 113 tasks; audit PASSED 56/56; override_closeout w/ 6 deferred GPU/live-CI tiers; coverage 88.1%). v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; coverage 90.3%).*

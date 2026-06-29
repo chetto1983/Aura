@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: verifying
-stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-29T18:57:02.903Z"
+current_phase: 32
+current_phase_name: Quality Cleanup — Dead Code + Shared Helpers
+status: ready
+stopped_at: Phase 31 complete, ready to plan Phase 32
+last_updated: "2026-06-29T20:20:21.391Z"
 last_activity: 2026-06-29
+last_activity_desc: Phase 31 complete, transitioned to Phase 32
 progress:
   total_phases: 11
   completed_phases: 1
@@ -21,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 31 — Stabilization & CI Unblock
+**Current focus:** Phase 32 — Quality Cleanup (Dead Code + Shared Helpers)
 
 ## Current Position
 
-Phase: 31 (Stabilization & CI Unblock) — EXECUTED, CI GREEN
-Plan: 3 of 3 (31-01 baseline ✓, 31-02 F-015 CI hygiene ✓, 31-03 SSRF SEC-08 ✓)
-Status: All 5 criteria met; pushed to origin/master; CI green (run `c93e28fb`: build-and-lint, windows-unit, web-unit, integration tiers, CodeQL all pass). SEC-08 CodeQL `go/request-forgery` resolved by dismissal-as-false-positive (alert #18; transport-level SSRF defense is complete but CodeQL can't model it as a sanitizer — same as the dismissed `internal/web/fetcher_image.go:52`). Remaining open CodeQL alert: SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40. Ready for `/gsd-verify-work 31`.
-Last activity: 2026-06-29 — Phase 31 executed + pushed + driven to green CI. Post-push CI surfaced 3 issues no local gate caught (quality-snapshot stale MCP row, a flaky web-unit timeout that cleared on re-run, and the SEC-08 alert not auto-clearing) — all resolved. Windows-unit green confirms the F-015 `shell: bash` swap.
+Phase: 32 — Quality Cleanup — Dead Code + Shared Helpers
+Plan: Not started
+Status: Phase 31 CLOSED via /gsd-verify-work — UAT 6/6 pass, VERIFICATION.md status=passed, SECURITY.md threats_open=0, VALIDATION.md nyquist_compliant=true. SEC-08 CodeQL `go/request-forgery` resolved by dismissal-as-false-positive (alert #18; transport-level SSRF defense complete but CodeQL can't model it as a sanitizer — same as the dismissed `internal/web/fetcher_image.go:52`). Remaining open CodeQL alert: SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40. Ready to plan Phase 32 (Quality Cleanup).
+Last activity: 2026-06-29 — Phase 31 complete, transitioned to Phase 32
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -45,7 +48,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 170
+- Total plans completed: 115
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -74,6 +77,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 26 | 6 | - | - |
 | 27 | 4 | - | - |
 | 29 | 5 | - | - |
+| 31 | 3 | - | - |
 
 **Recent Trend:**
 

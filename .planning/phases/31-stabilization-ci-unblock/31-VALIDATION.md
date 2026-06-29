@@ -1,10 +1,11 @@
 ---
 phase: 31
 slug: stabilization-ci-unblock
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: complete
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-29
+closed: 2026-06-29
 ---
 
 # Phase 31 — Validation Strategy
@@ -43,11 +44,11 @@ created: 2026-06-29
 
 | Criterion | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | Status |
 |-----------|-------------|------------|-----------------|-----------|-------------------|--------|
-| C1 file-size ≤600 | QUAL-01 | — | N/A | CI-gate (verify-only) | `bash scripts/check-file-size.sh` (exit 0) | ⬜ pending |
-| C2 dist freshness | QUAL-01 | — | N/A | CI-gate (verify-only) | `cd web && npm ci && npm run build` → `git diff --exit-code internal/webui/dist/` | ⬜ pending |
-| C3 F-015 CI hygiene | F-015 / SEC-07 | — | N/A | CI-gate | grep-lint finds zero raw `./...` in `.github/workflows/`; lint self-test passes | ⬜ pending |
-| C4 frontend ≥85% | QUAL-01 | — | N/A | unit (vitest) | `cd web && npm run test -- --coverage` (4 thresholds ≥85; branches binding ~85.45%) | ⬜ pending |
-| C5 SSRF guard | SEC-08 | T-31-SSRF | Outbound MCP HTTP to metadata/(enforced) private ranges denied; loopback permitted under dev | unit + CodeQL | `go test ./internal/mcp/...` (table-driven allow/deny) + CodeQL re-scan alert closed | ⬜ pending |
+| C1 file-size ≤600 | QUAL-01 | — | N/A | CI-gate (verify-only) | `bash scripts/check-file-size.sh` (exit 0) | ✅ green |
+| C2 dist freshness | QUAL-01 | — | N/A | CI-gate (verify-only) | `cd web && npm ci && npm run build` → `git diff --exit-code internal/webui/dist/` | ✅ green |
+| C3 F-015 CI hygiene | F-015 / SEC-07 | — | N/A | CI-gate | grep-lint finds zero raw `./...` in `.github/workflows/`; lint self-test passes | ✅ green |
+| C4 frontend ≥85% | QUAL-01 | — | N/A | unit (vitest) | `cd web && npm run test -- --coverage` (4 thresholds ≥85; branches binding 85.62%) | ✅ green |
+| C5 SSRF guard | SEC-08 | T-31-SSRF | Outbound MCP HTTP to metadata/(enforced) private ranges denied; loopback permitted under dev | unit + CodeQL | `go test ./internal/mcp/...` (table-driven allow/deny) + CodeQL alert #18 dismissed FP | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -70,11 +71,12 @@ Existing infrastructure covers all phase requirements (go test, vitest, CI gates
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** 2026-06-29 — nyquist-auditor (all 5 criteria confirmed green by live execution;
+CodeQL FP dismissed per documented RESEARCH A1 resolution; mutation ≥70% documented as Manual-Only/WSL gate)
