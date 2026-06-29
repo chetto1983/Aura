@@ -2,13 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 32
-current_phase_name: Quality Cleanup — Dead Code + Shared Helpers
-status: ready
-stopped_at: Phase 31 complete, ready to plan Phase 32
-last_updated: "2026-06-29T20:20:21.391Z"
-last_activity: 2026-06-29
-last_activity_desc: Phase 31 complete, transitioned to Phase 32
+status: planning
+stopped_at: Phase 32 context gathered
+last_updated: "2026-06-29T20:44:47.945Z"
+last_activity: 2026-06-29 — Phase 31 complete, transitioned to Phase 32
 progress:
   total_phases: 11
   completed_phases: 1
@@ -431,9 +428,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-29T18:55:59.805Z
-Stopped at: Phase 29 UI-SPEC approved
-Resume file: None
+Last session: 2026-06-29T20:44:47.932Z
+Stopped at: Phase 32 context gathered
+Resume file: .planning/phases/32-quality-cleanup-dead-code-shared-helpers/32-CONTEXT.md
 
 ## Operator Next Steps
 
