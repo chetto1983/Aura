@@ -4,13 +4,13 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
 stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-29T18:18:53.522Z"
+last_updated: "2026-06-29T18:34:09.450Z"
 last_activity: 2026-06-29
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 31 (Stabilization & CI Unblock) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-29
 
@@ -195,6 +195,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 30 P04 | ~50min | 2 tasks | 8 files |
 | Phase 30 P05 | ~75min | 3 tasks | 14 files |
 | Phase 31 P01 | ~3min | 3 tasks | 0 files |
+| Phase 31 P02 | ~25min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -378,6 +379,8 @@ Recent decisions affecting current work:
 - [Phase 30] 30-05: applyRerankGuard (internal/documents/rerank_guard.go) is the pure non-monotonic guard (spike-070) — a confident reorder (top score >= threshold, order differs) is trusted; below-threshold / identity / length-mismatch / out-of-range all keep the seed (RRF/vector) order. Optional blend mode (Service.RerankBlend) RRF-fuses seed rank + rerank rank so one low-confidence demotion can never bury a strong seed hit. Both Retrieve (via rerankSeeds) and GraphRAG call it through the shared rerankScores I/O helper — no duplicated threshold logic.
 - [Phase 30] 30-05: retrieval eval (RET-05) — pure nDCG@10/Recall@5/MRR (internal/eval/retrieval_metrics.go, NO build tag, coverage-counted) + a gated retrieval_eval tier scoring vector-only (identity reranker) vs vector+rerank over 32 judged queries; judgments carry stable content phrases resolved live to gold chunk ids (chunk ids are content-hash-derived, can't be hard-coded). Asserts a mean nDCG@10 lift + ZERO per-query regressions beyond the noise threshold; NO-SKIP-AS-GREEN (CI t.Fatal on unset env / no-op rerank). The harness stays OUT of go test ./... + quality-full.
 - [Phase 30] 30-05: CI knowledge job exports AURA_RERANK_BASE_URL + compile-floors the GPU/fixture-gated tiers (rerank_integration / document_ingest_live / graphrag_live / retrieval_eval) — GPU-mandatory + fixture-dependent tiers degrade to a go-vet floor on the GPU-less runner (documented matrix in docs/document-ingestion.md). make coverage owned-surface 88.1% >= 85%. Self-learning explicitly OUT (deferred per spike-070).
+- [Phase ?]: 31-02 (F-015/SEC-07): all 4 raw root ./... Go CI gates now source $(bash scripts/go_packages.sh); a self-tested lint (check_ci_go_packages.sh) rejects regressions; shell: bash on both windows-unit steps.
+- [Phase ?]: F-015 lint excludes 'go list' enumeration (the legitimate package-list source) plus comment lines, so scanning scripts/ exits 0 while still rejecting every prohibited go test/build/vet/run + govulncheck ./...
 
 ### Pending Todos
 
@@ -422,7 +425,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-29T18:16:24.233Z
+Last session: 2026-06-29T18:32:11.952Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 

@@ -87,7 +87,7 @@
 - [ ] **SEC-04**: A prompt-injection / tool-policy-bypass regression suite asserts that injected shell/file/network/MCP requests are DENIED under `server_production`. *(F-019 security part)*
 - [ ] **SEC-05**: CI publishes an SBOM (syft / cyclonedx-gomod), `govulncheck` is a blocking gate, and all third-party Actions + tool versions are SHA/exact pinned; a workflow-lint gate rejects `@latest`/semver-floating refs. *(F-051)*
 - [ ] **SEC-06**: Privileged JSON routes (`/agent/run`, approvals resolve, onboarding, assets, governance writes) use strict decoding — size cap, content-type check, `DisallowUnknownFields`, single-decode EOF, per-route `allowEmpty`. *(F-052)*
-- [ ] **SEC-07**: Go build/test/vulnerability CI jobs reuse `scripts/go_packages.sh` (no raw `./...`); a CI lint rejects raw `go test ./...` / `govulncheck ./...`. *(F-015)*
+- [x] **SEC-07**: Go build/test/vulnerability CI jobs reuse `scripts/go_packages.sh` (no raw `./...`); a CI lint rejects raw `go test ./...` / `govulncheck ./...`. *(F-015)*
 - [ ] **SEC-08** (pulled forward to Phase 31): The critical CodeQL `go/request-forgery` (SSRF) finding at `internal/mcp/http_client.go` is remediated — outbound MCP HTTP request targets are validated against an allow-list / SSRF guard rather than driven by unvalidated input — and the CodeQL alert resolves to fixed. *(CodeQL-surfaced; not in the F-001..F-052 audit set)*
 - [ ] **SEC-09**: The high CodeQL `go/weak-sensitive-data-hashing` finding at `internal/agui/recovery_hash.go` is remediated — sensitive recovery material uses a cryptographically strong, salted KDF/hash rather than a weak/fast hash — and the CodeQL alert resolves to fixed. *(CodeQL-surfaced; not in the F-001..F-052 audit set)*
 
