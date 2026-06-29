@@ -111,7 +111,7 @@ function ApprovalRow({ row, title, onOpen }: ApprovalRowProps) {
             variant="ghost"
             size="sm"
             onClick={onOpen}
-            className="px-2 text-[0.8125rem] text-accent hover:text-accent"
+            className="px-2 text-[0.8125rem] text-accent-text hover:text-accent-text"
           >
             <ExternalLink data-icon aria-hidden="true" className="size-3.5" />
             {t('approval.list.open')}

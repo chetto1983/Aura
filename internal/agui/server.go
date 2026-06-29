@@ -94,6 +94,7 @@ type Server struct {
 	graph           GraphView
 	governance      GovernanceProviders
 	governanceWrite GovernanceWriteProviders
+	settings        settingsStore
 	onboarding      OnboardingService
 	bootstrap       BootstrapService
 	passwordReset   *PasswordResetService
@@ -185,6 +186,11 @@ func (s *Server) Mux() http.Handler {
 	// .../{name}. Colocated with their handlers; the parent-mux mount behind
 	// RequireCapability(governance.write) lives in cmd/aura/serve_webui.go.
 	s.registerGovernanceWriteRoutes(mux)
+	// SETTINGS-01 cockpit Settings page: GET /api/settings (effective model-backend
+	// knobs, secrets redacted) + PUT/DELETE /api/settings/{key}. Colocated with their
+	// handlers; the parent-mux mount (RequireCapability(governance.read) on GET,
+	// governance.write on PUT/DELETE) lives in cmd/aura/serve_webui.go.
+	s.registerSettingsRoutes(mux)
 	// ONBD-01/02 onboarding wizard routes (Phase 28 plan 28-05): POST /api/onboarding/start
 	// + /{token}/step + /{token}/provision + GET /{token}/telegram-status. Colocated with
 	// their handlers; the parent-mux mount (RequireCapability(identity.create) on start +

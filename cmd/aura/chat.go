@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -37,6 +38,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/chetto1983/aura/internal/toolselectstore"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -151,20 +153,50 @@ func bootServeChatEnv(ctx context.Context) (*chatEnv, error) {
 }
 
 func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error)) (*chatEnv, error) {
+	var pool *pgxpool.Pool
 	cfg, err := loadConfig()
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, llm.ErrMissingAPIKey) && !isMissingAPIKey(err) {
+			return nil, err
+		}
+		pool, ok, overlayErr := openSettingsOverlayPool(ctx)
+		if overlayErr != nil || !ok {
+			return nil, err
+		}
+		if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
+			fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
+		}
+		cfg, err = loadConfig()
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+	} else {
+		// Fail fast on an empty required infra secret (O-04) before opening any
+		// connection, so a misconfigured deploy errors at boot with a named cause
+		// instead of a late DB auth failure or a silently degraded graph.
+		if err := cfg.Validate(); err != nil {
+			return nil, err
+		}
+		pool, err = db.Open(ctx, &cfg.DB)
+		if err != nil {
+			return nil, fmt.Errorf("db open: %w", err)
+		}
+		if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
+			fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
+		}
+		cfg, err = loadConfig()
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
 	}
-	// Fail fast on an empty required infra secret (O-04) before opening any
+	// Fail fast on an empty required infra secret (O-04) before using any
 	// connection, so a misconfigured deploy errors at boot with a named cause
 	// instead of a late DB auth failure or a silently degraded graph.
 	if err := cfg.Validate(); err != nil {
+		pool.Close()
 		return nil, err
-	}
-
-	pool, err := db.Open(ctx, &cfg.DB)
-	if err != nil {
-		return nil, fmt.Errorf("db open: %w", err)
 	}
 
 	convStore := conversations.New(pool, conversations.Config{
@@ -267,6 +299,18 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 	}
 	run := runner.New(deps)
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
+}
+
+func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
+	dbCfg := config.LoadDB()
+	if strings.TrimSpace(dbCfg.DB.URL) == "" {
+		return nil, false, nil
+	}
+	pool, err := db.Open(ctx, &dbCfg.DB)
+	if err != nil {
+		return nil, false, err
+	}
+	return pool, true, nil
 }
 
 // chatList prints the persisted conversations with their title + aggregates.

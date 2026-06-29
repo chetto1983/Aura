@@ -42,7 +42,7 @@ export const baseMarkdownComponents = {
       href={href}
       rel="noreferrer"
       target="_blank"
-      className="text-accent-text underline decoration-accent-muted underline-offset-2 hover:text-accent"
+      className="text-accent-text underline decoration-accent-muted underline-offset-2 hover:text-accent-text"
     >
       {children}
     </a>

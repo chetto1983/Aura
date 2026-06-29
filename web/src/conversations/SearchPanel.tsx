@@ -115,7 +115,9 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
                   }}
                   className="h-auto min-h-14 w-full flex-col items-start gap-0.5 whitespace-normal rounded-md px-2 py-2 text-left font-normal hover:bg-surface-2"
                 >
-                  <span className="truncate text-[0.8125rem] font-medium text-accent">{title}</span>
+                  <span className="truncate text-[0.8125rem] font-medium text-accent-text">
+                    {title}
+                  </span>
                   <span className="line-clamp-2 text-[0.8125rem] text-text-muted">
                     {highlightSegments(hit.Content, trimmed).map((seg, i) =>
                       seg.match ? (

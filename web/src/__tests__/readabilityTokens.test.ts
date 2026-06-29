@@ -62,4 +62,19 @@ describe('readability design tokens', () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it('does not use fill-only accent tokens as readable text colors', () => {
+    const offenders: string[] = [];
+    const unsafeTextColorPattern =
+      /(?<![-\w])(?:hover:|\[&>a:hover\]:)?text-(?:accent|primary)(?![-\w])/gu;
+
+    for (const file of sourceFiles(join(process.cwd(), 'src'))) {
+      const source = readFileSync(file, 'utf8');
+      for (const match of source.matchAll(unsafeTextColorPattern)) {
+        offenders.push(`${relative(process.cwd(), file)}: ${match[0]}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
 });

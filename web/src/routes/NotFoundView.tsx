@@ -14,7 +14,7 @@ export function NotFoundView() {
         <h1 className="text-xl font-medium text-text">{t('notFound.title')}</h1>
         <p className="mt-2 text-sm text-text-muted">
           {t('notFound.beforeLink')}{' '}
-          <Link to="/" className="text-accent underline-offset-2 hover:underline">
+          <Link to="/" className="text-accent-text underline-offset-2 hover:underline">
             {t('notFound.link')}
           </Link>
           .

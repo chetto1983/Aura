@@ -439,6 +439,14 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSkillUpdateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillCatalogRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// The SETTINGS-01 cockpit Settings routes delegate to the AG-UI handler (routes on
+	// Server.Mux). GET is an operator read of the model-backend knobs (secrets redacted)
+	// behind governance.read; PUT/DELETE mutate aura.settings behind governance.write — the
+	// same gate as the MCP/skills writes. Method+path-specific so each wins Go 1.22
+	// longest-pattern precedence over the bare "/api/" carve-out.
+	mux.Handle("GET /api/settings", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle("PUT /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle("DELETE /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The cockpit "Connect" WhatsApp device-linking routes delegate to the AG-UI handler
 	// (routes on Server.Mux) behind RequireCapability(governance.write) — operator
 	// write-class actions (logout drops the session, a QR scan links a device), so they
