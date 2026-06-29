@@ -1,5 +1,31 @@
 # Milestones
 
+## v1.0.0 Aura Deep Search Web Cockpit (Shipped: 2026-06-29)
+
+**Phases completed:** 9 phases (22–30), 45 plans, 113 tasks
+
+**Delivered:** The embedded operator cockpit — a single-binary Vite + React + assistant-ui web UI over the AG-UI/SSE gateway — turning the v0.0.0 substrate into an operable Deep Search product: a hardened agent perimeter, streaming chat with cross-thread HITL approvals, a typed-display evidence protocol + Neo4j graph explorer, read/write governance surfaces, and GPU-reranked two-stage retrieval.
+
+**Stats:**
+
+- Git range: `c3018841` (v0.0.0 close) → `4d873ca3` — 538 commits, ~1,800 files, +200,057 / −5,289 LOC
+- Timeline: 2026-06-15 → 2026-06-29 (~14 days)
+- Closeout: **override_closeout** — milestone audit `passed` (56/56 requirements, 9/9 phases, 10/10 E2E flows). Known verification overrides: **6** (see STATE.md Deferred Items)
+
+**Key accomplishments:**
+
+- **Agent perimeter hardening (Phase 22)** — `internal/agent` made production-ready before any web exposure: a panic crash-firewall (race + goleak clean), a secret boundary (subprocess creds stripped/redacted, no verbatim reasoning history), MCP resilience (off-lock reconnect + circuit breaker + bounded timeouts), active budget/wallclock caps, and Prometheus turn-outcome + LLM-latency observability — the full `AG-001..064` finding ledger closed with zero audit residue.
+- **Embedded single-binary cockpit foundation (Phases 23–24)** — a research-locked React 19 / Vite 8 / TS 6 / Tailwind 4 foundation behind a zero-warning lint/format/type-check CI gate; the dark-operator token theme applied before paint; `//go:embed all:dist` mounted additively into `aura serve` (AG-UI routes keep priority); an HMAC `__Host-` signed-session auth boundary that finally exercises the dormant `capability_grants` scaffolding, a fail-fast non-loopback boot guard, and a read-only runtime health shell.
+- **Core-Value chat + approval center (Phase 25)** — an assistant-ui chat lane streaming the AG-UI/SSE event stream token-by-token, a conversation manager (FTS search, rename, archive-first, focus-trapped hard-delete), a Tokens·Cache·Cost·Context footer, a cross-thread HITL approval queue (accept/decline/cancel + terminal-state rendering), and D-09 conversation branch trees — all preserving the `messages[0]` KV-cache byte-invariant.
+- **Typed-display protocol + graph explorer (Phases 26–27)** — a namespaced `aura.display` CUSTOM event + Go normalizer feeding a `switch(payload.type)` display router (web/document/code/table/chart/system_event/swarm_report/local_artifact, citation bubbles, source explorer), and a read-only Neo4j WebGL graph explorer (graph-normalizer + read-only Cypher guard + node inspector + path strip + a11y parallel-DOM).
+- **Governance read + write surfaces (Phases 28–29)** — read-only MCP/skills/scheduler boards + a full-screen web onboarding wizard over the onboarding LoopAgent (cross-store provisioning saga, zero orphans on every failure-injection point), then the highest-risk write surfaces landing last: MCP install/env-redaction/enable-disable-remove (append-only `mcp_audit`) and skills install → risk-tiered approval queue → activate (operator-resume-only, never model-approve; both ledgers append-only).
+- **Retrieval & memory hardening (Phase 30)** — a fail-soft GPU cross-encoder reranker (`internal/rerank`, Qwen3-Reranker-0.6B) + two-stage retrieval (vector seed → rerank seeds → `:NEXT_CHUNK` graph-expand winners) wired into both memory recall and document retrieval, full-document ingest across all markitdown formats, a non-monotonic rerank guard, RRF fallback, and an nDCG@10/Recall@5/MRR eval harness — GPU-host live tiers deferred-by-design but NO-SKIP-AS-GREEN + CI-floored.
+- **Premium cockpit overhaul + product layer (post-Phase-25, not a formal phase)** — the logo-matched blue design system (Fraunces / Hanken Grotesk / Commit Mono, WCAG-AA contrast gate), a responsive shell (svh grid, drawers, edge-swipe, intent-restore, 380px chat floor), Authula embedded auth (flag-gated, superseding the passphrase cookie), an `aura.settings` settings page with env overlay, and calendar/PIM + WhatsApp connect.
+
+**Quality:** owned-surface `make coverage` 88.1% (≥85% floor), frontend Vitest ≥85% + Stryker ≥70%, full Go + web CI green, the `messages[0]` cache-invariant gate green throughout.
+
+---
+
 ## v0.0.0 Substrate (Shipped: 2026-06-15)
 
 **Phases completed:** 24 phases (Phase 5 superseded by the Phase 8 sandbox-agent pivot), 144 plans, 233 tasks

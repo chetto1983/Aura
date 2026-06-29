@@ -50,6 +50,52 @@
 
 ---
 
+## Milestone: v1.0.0 — Aura Deep Search Web Cockpit
+
+**Shipped:** 2026-06-29
+**Phases:** 9 (22–30) | **Plans:** 45 | **Tasks:** 113
+
+### What Was Built
+
+- The embedded operator cockpit: a single-binary Vite + React + assistant-ui web UI over the AG-UI/SSE gateway — hardened agent perimeter (Phase 22), industrial frontend foundation (23), serve/auth/health host (24), streaming chat + cross-thread HITL approval center + branch trees (25), the `aura.display` typed-display protocol + router (26), the read-only Neo4j WebGL graph explorer (27), read/write governance surfaces + web onboarding (28–29), and GPU-reranked two-stage retrieval (30).
+- A post-Phase-25 premium overhaul (not a formal phase): the logo-matched blue design system, Authula embedded auth, an `aura.settings` settings page, and calendar/PIM + WhatsApp connect.
+
+### What Worked
+
+- **Foundation-first directive** — building the research-locked frontend industrial foundation (Phase 23) and hardening the agent perimeter (Phase 22) *before* any feature code meant every later phase landed on a stable, gated base.
+- **Risk-ordered surface sequencing** — read-only governance boards (28) before the write surfaces (29); the highest-abuse surfaces (MCP config, skills install) landed LAST, after auth + the approval center + read boards were proven.
+- **Frontend gates mirrored the Go floors** — Vitest ≥85% + Stryker ≥70% + a zero-warning lint/format/type-check CI gate gave the `web/` package the same discipline as `internal/*`.
+- **One cross-cutting invariant held everywhere** — the `messages[0]` KV-cache byte-invariant survived chat branch trees, the typed-display tail-inject, source-list injection, and Phase-30 retrieval wiring, enforced by a single CI gate.
+- **Honest deferral over fake green** — the GPU live tiers this host can't run are NO-SKIP-AS-GREEN + CI-floored, not skipped-as-passing.
+
+### What Was Inefficient
+
+- **The cockpit overhaul ran outside formal GSD phases** — a large premium-bar rework of the Phase-23/24/25 surfaces accumulated as a big uncommitted working-tree layer for a stretch, tracked in `docs/cockpit-overhaul/` rather than as numbered phases. Powerful, but harder to audit than a phase chain.
+- **Auth churn mid-milestone** — the Phase-24 HMAC passphrase cookie was superseded by Authula before the milestone closed, leaving two auth providers (flag-gated) converging late.
+- **Hardware-gated verification** — a 4GB-GPU host forced 4 Phase-30 retrieval live tiers into deferred-by-design status; the rerank precision lift is proven by the eval harness but not on this machine end-to-end.
+- **STATE.md frontmatter drift** — `completed_phases` / `stopped_at` lagged the real progress and needed re-baselining at close.
+
+### Patterns Established
+
+- **Typed-display normalizer protocol** — normalize tool output server-side into a typed `DisplayPayload` union; the frontend is a pure `switch(type)` router with a raw-card fallback (never null).
+- **Operator-resume-only approval** — cockpit-initiated risky actions (skill install) mint an `ask_user` pause in the SAME unified approval queue and activate only on operator resume; no model-facing approve.
+- **Fail-soft sidecar mirroring** — the GPU `RerankClient` mirrors `EmbeddingClient` and degrades to RRF/seed order with a nil error on every failure mode; the sidecar never blocks boot.
+- **Read-surface-before-write-surface** ordering for governance.
+
+### Key Lessons
+
+1. **Foundation-first compounds** — locking the toolchain/theme/build + perimeter hardening before feature code removed whole classes of rework downstream.
+2. **Defer on hardware limits with real harnesses** — when a host can't run a tier, ship a NO-SKIP-AS-GREEN + CI-floored harness and record it as a deferred override, never a green skip.
+3. **One byte-level invariant, one gate** — a single cross-cutting CI invariant (`messages[0]`) is cheaper to defend than per-feature cache reasoning.
+4. **In-place overhauls need phase-grade ledgers** — large non-phase reworks (`docs/cockpit-overhaul/`) should still carry specs + adversarial validation + per-surface implementation ledgers to stay auditable.
+
+### Cost Observations
+
+- Model mix: orchestration/planning on Opus; bulk implementation delegated to Codex CLI (parallel sessions).
+- Notable: GPU-gated live retrieval runs were deferred rather than forced on inadequate hardware — no speculative paid/GPU runs.
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -57,14 +103,18 @@
 | Milestone | Phases | Key Change |
 |-----------|--------|------------|
 | v0.0.0 | 24 | Established GSD 3-gate discipline, PRD-first, Codex-parallel execution, no-skip-as-green CI |
+| v1.0.0 | 9 | Foundation-first (perimeter + frontend infra before features), risk-ordered surfaces, frontend gates mirroring Go floors, override-close on hardware-gated tiers |
 
 ### Cumulative Quality
 
 | Milestone | Plans | Coverage (owned) | Notable |
 |-----------|-------|------------------|---------|
 | v0.0.0 | 144 | 90.3% | Every owned package ≥85%; mutation ≥70%; CI + CodeQL + Skills green |
+| v1.0.0 | 45 | 88.1% | Frontend Vitest ≥85% + Stryker ≥70%; full Go + web CI green; `messages[0]` invariant held; 6 GPU/live-CI tiers deferred (NO-SKIP-AS-GREEN) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Minimal industrial shape beats bespoke ambition.
 2. Validate against live ground truth, not the agent's reply text.
+3. Build the foundation (perimeter + toolchain) before features; it compounds.
+4. Defer hardware-gated verification with real CI-floored harnesses, never a green skip.

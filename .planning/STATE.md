@@ -2,52 +2,46 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: verifying
-stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-28T07:32:40.133Z"
-last_activity: 2026-06-28
+current_phase: 0.0
+status: Awaiting next milestone
+stopped_at: Milestone v1.0.0 complete
+last_updated: "2026-06-29T06:36:40.989Z"
+last_activity: 2026-06-29
+last_activity_desc: Milestone v1.0.0 completed and archived
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 45
   completed_plans: 45
-  percent: 89
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-29)
+See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 30 — retrieval-memory-hardening
+**Current focus:** Awaiting next milestone — scope via `/gsd-new-milestone`
 
 ## Current Position
 
-Phase: 30 (retrieval-memory-hardening) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-06-28
+Phase: Milestone v1.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-29 — Milestone v1.0.0 completed and archived
 
-### Cockpit Overhaul (post-Phase-25, in progress — NOT a formal GSD phase)
+### v1.0.0 — shipped & archived (2026-06-29)
 
-After Phase 25 closed, a premium-bar cockpit overhaul reworked the Phase-23/24/25 surfaces in place. The full spec set + adversarial validation + per-spec implementation ledgers live in `docs/cockpit-overhaul/` (`00-VALIDATION.md` is the umbrella). Status as of 2026-06-18:
+All 9 phases (22–30) are closed and the milestone is archived to `.planning/milestones/v1.0.0-*`. The post-Phase-25 premium cockpit overhaul (logo-matched **blue** design system + fonts, responsive shell, **Authula** embedded auth flag-gated, chat/footer enrichment, `aura.settings` settings page, calendar/PIM + WhatsApp connect) is committed and shipped — `docs/cockpit-overhaul/` holds the specs + adversarial validation + per-spec ledgers (`00-VALIDATION.md` umbrella). Working tree clean. Closed as **`override_closeout`**: milestone audit PASSED (56/56), with 6 deferred-by-design verification items (see Deferred Items below).
 
-- **Design (Phase 23 surface):** token pipeline + fonts (Fraunces/Hanken Grotesk/Commit Mono) shipped; the palette shipped as a **logo-matched BLUE** theme (operator-accepted 2026-06-18 — NOT the speced gold). WCAG AA re-proven (`web/scripts/contrast-check.mjs`, 15/15 required pairs). Spec 03.
-- **Shell (Phase 23/24 surface):** 100svh grid fix + real mode nav + drawers + edge-swipe (full §3.1b contract) + intent-restore reducer + 380px chat-lane floor. Specs 01/02.
-- **Auth (Phase 24 surface):** the Phase-24 HMAC passphrase cookie is being **superseded by Authula** (embedded, flag-gated `AURA_WEB_AUTH_PROVIDER=authula`, default still `passphrase`). M0/M1/M2 committed (`d3aee82d`/`e3541f15`); the SPA login (email/password→TOTP→backup-code + `/api/auth/config` + CSRF) is implemented but **uncommitted** in the working tree. Spec 05.
-- **Chat/footer (Phase 25 surface):** `ExternalStoreChat` enhanced in place (sanitized markdown, tool-card enrichment — elapsed/auto-collapse/subagent rows, 3-tier footer gauge, settled-only ARIA-live, mobile disclosure). Specs 01/04.
+**Carry-forward for the next milestone:**
 
-A large frontend + auth layer is **uncommitted** in the working tree. The Phase-25 live UAT (SSE feel, reasoning persistence, branch nav, HITL flow, footer live, live Playwright) is best re-run ONCE against the committed overhaul + Authula stack — folded into the overhaul live cutover, not re-run against the pre-overhaul surface.
-
-### Next
-
-Phase 27 (neo4j-graph-explorer) closed 2026-06-19 by operator directive ("for now close phase 27 as done") — 4/4 plans executed + committed (task commits `57ff5ca0`, `8d21af9d`, `ecdf37af`, `adbfc587`; mobile polish `cb4d5521`), frontend automated gates green per `27-04-SUMMARY.md` (599/599 Vitest, 75.88% Stryker, 31/31 contrast, 12/12 live Playwright graph+a11y on chromium+mobile-chrome). ROADMAP `[x]` + `27-VALIDATION.md` flipped to closed. Next: `/gsd-plan-phase 28` (gov-read + onboarding). Remaining milestone-v1.0.0 phases: 29 (MCP + skills), 30 (Retrieval & Memory Pipeline Hardening).
-
-> **Uncommitted WIP (NOT part of the Phase 27 closure):** the working tree has post-commit graph edits (`web/src/graph/GraphExplorer.tsx`, `SigmaCanvas.tsx`, `PathStrip.tsx`, `graphIntent.ts`, `resources.graph.ts` + their tests, `e2e/graph*.spec.ts`), a `internal/webui/dist` rebuild, and an untracked `web/e2e/_uiux-shots.spec.ts`. These were not authored or verified in this closure and remain for review/commit/discard.
-
-> Separate prior follow-up: restore the frontend branch-coverage gate (82.85%→≥85%) regressed by the multimodal-assets merge.
+- Complete the 6 deferred GPU/live-CI verification tiers on an adequate GPU host (Phase 30 rerank/graphrag/eval/ingest live tiers + Phase 23 dist-freshness/Playwright + Phase 25 live UAT).
+- Finish the Authula auth cutover (flip default from `passphrase`) if pursued.
+- Restore the frontend branch-coverage gate to ≥85% if still regressed by the multimodal-assets merge.
+- Deferred-by-design product scope: the `ui_control` operator-OS shell + scheduler write surfaces.
 
 ## Performance Metrics
 
@@ -415,6 +409,17 @@ Items acknowledged and carried forward from previous milestone close:
 | LLM Fallback | LLM-V2-01 (vLLM + LMCache, Slice 13) | Deferred to v2 | 2026-05-29 (GPU-gated, DGX Spark bundle path) |
 | Skills | SKILL-V2-01 (Slice 7f cross-conv cluster auto-suggest) | Deferred to v1.x | 2026-05-29 (Amendment #13 scope reduction) |
 | Swarm | SWARM-V2-01 (full N-deep + DM-by-ID + tier-mapped) | Deferred to v2 | 2026-05-29 (Amendment #12 scope reduction) |
+
+Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documented as deferred-by-design in `v1.0.0-MILESTONE-AUDIT.md`, status `passed`):
+
+| Category | Item | Status | Deferred At |
+|----------|------|--------|-------------|
+| Verification | Phase 30 30-VERIFICATION.md | human_needed — 5/5 truths verified; 4 GPU live tiers unrunnable on this 4GB-GPU host (server-cuda VRAM; CPU rerank rejected per spike); harnesses NO-SKIP-AS-GREEN + CI-floored | 2026-06-29 (v1.0.0 override close) |
+| UAT | Phase 30 30-UAT.md (4 GPU tiers) | testing — rerank_integration / graphrag_live / retrieval_eval / document_ingest_live deferred to a GPU host; absolute per-stage budget already live-proven | 2026-06-29 (v1.0.0 override close) |
+| Verification | Phase 23 23-VERIFICATION.md | human_needed — code verified; live-CI dist-freshness (Win Node-22 vs Linux Node-24) + Playwright shell render deferred, first CI run reconciles | 2026-06-29 (v1.0.0 override close) |
+| UAT | Phase 23 23-HUMAN-UAT.md (2 scenarios) | partial — live-CI infra deferred | 2026-06-29 (v1.0.0 override close) |
+| UAT | Phase 25 25-HUMAN-UAT.md (6 live items) | closed-carried-forward — SSE feel / reasoning persistence / branch nav / HITL flow / footer / live Playwright folded into the cockpit-overhaul live cutover by design | 2026-06-29 (v1.0.0 override close) |
+| UAT | Phase 22 22-UAT.md | unknown (0 pending) — Gate-3 already CLOSED via operator live sign-off (commit 28c1f7c7) | 2026-06-29 (v1.0.0 override close) |
 
 ## Session Continuity
 

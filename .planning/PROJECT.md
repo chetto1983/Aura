@@ -10,26 +10,11 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 
 ## Current State
 
-**v0.0.0 Substrate — SHIPPED 2026-06-15** (24 phases, 144 plans, 233 tasks; audit PASSED). Il substrate agentico è feature-complete e live-proven sullo stack reale: persistence (PG+Neo4j), agent loop + workflow agents, LLM client, HITL, conversazioni, KV cache, sandbox, swarm, web tools, scheduler, skills, AG-UI gateway, Telegram multimodale, onboarding/Agent.md, memory (agent-memory MCP), MCP manager, hooks. Owned-surface coverage 90.3% (ogni package owned ≥85%), CI verde. Dettaglio storico in `.planning/MILESTONES.md` + `.planning/milestones/v0.0.0-*`.
+**v1.0.0 Aura Deep Search Web Cockpit — SHIPPED 2026-06-29** (9 phases [22–30], 45 plans, 113 tasks; audit PASSED, 56/56 requirements). The embedded operator cockpit is live over the v0.0.0 substrate — a single-binary Vite + React + assistant-ui web UI served from `aura serve` over the AG-UI/SSE gateway: a hardened agent perimeter, streaming chat with cross-thread HITL approvals, a typed-display evidence protocol + Neo4j graph explorer, read/write governance surfaces (MCP config + skills install lifecycle), web onboarding, and GPU-reranked two-stage retrieval. A post-Phase-25 premium overhaul layered the logo-matched blue design system, Authula embedded auth, an `aura.settings` settings page, and calendar/PIM + WhatsApp connect. Owned-surface coverage 88.1% (≥85% floor), full Go + web CI green, `messages[0]` cache-invariant gate green throughout. Closed as **`override_closeout`** with 6 deferred-by-design verification items (GPU-host live tiers this 4GB-GPU machine cannot run + live-CI-only tiers + Phase-25 carried-forward UAT). Dettaglio in `.planning/MILESTONES.md` + `.planning/milestones/v1.0.0-*`.
 
-**Next: v1.0.0 — Aura Deep Search Web Cockpit** (definito via `/gsd-new-milestone`): operator cockpit web embedded (Vite + React + assistant-ui) sopra l'AG-UI/SSE gateway, secondo `docs/design/aura-deep-search-figma/ux-spec.md`. **Progress:** Phase 22 (agent perimeter hardening) + Phase 23 (frontend infrastructure & industrial foundation — Vite/React/TS `//go:embed` scaffold, dark-operator token theme, zero-warning web CI gate, Node-24 Docker build) complete; FND-01..06 validated (2 items pending first-CI live proof). Next: Phase 24 — web foundation (serve + auth + health).
+**Prior: v0.0.0 Substrate — SHIPPED 2026-06-15** (24 phases, 144 plans, 233 tasks; audit PASSED). Il substrate agentico domain-neutral feature-complete e live-proven: persistence (PG+Neo4j), agent loop + workflow agents, LLM client, HITL, conversazioni, KV cache, sandbox, swarm, web tools, scheduler, skills, AG-UI gateway, Telegram multimodale, onboarding/Agent.md, memory (agent-memory MCP), MCP manager, hooks. Owned-surface coverage 90.3%. Dettaglio in `.planning/milestones/v0.0.0-*`.
 
-## Current Milestone: v1.0.0 — Aura Deep Search Web Cockpit
-
-**Goal:** Build the embedded "Aura Deep Search" operator cockpit (Vite + React + `@assistant-ui/react-ag-ui`) served from `aura serve` over the existing AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md` — preserving the single-binary deploy invariant — and harden the agent perimeter first so the web exposure lands on a production-ready base.
-
-**Target features:**
-- Agent perimeter production-readiness hardening (Phase 22 — `internal/agent` audit remediation: panic firewall, `shell_exec` secret-leak, MCP reconnect resilience, hook fail-soft, observability)
-- Embedded operator cockpit SPA served from `aura serve` via `//go:embed` (single binary, one port)
-- Minimal web-auth boundary (GAP-2): reverse-proxy default + in-binary signed session cookie (activates `capability_grants`) + fail-fast non-loopback guard
-- Chat lane (assistant-ui over `POST /agent/run` SSE) + conversation list/search/rename/archive + approval center (HITL) + runtime health + cost/cache footer
-- Typed-display protocol (GAP-1): `aura.display` CUSTOM event + Go normalizer + display router (web_result / document / code / table / chart / system_event / swarm_report / graph_*)
-- Neo4j Graph Explorer (WebGL canvas, path strip, node inspector, read-only Cypher guard)
-- Read-only governance boards (MCP server list/status, skills active/pending/archived/audit, scheduler board)
-- Governance write — MCP configuration (recipe/custom install, env edit, enable/disable/remove with trust + risk policy) + skills install/approval lifecycle (install → risk-tiered approval queue → activate, restore/archive, audit) over the existing backend (ux-spec Frame 08)
-- Web onboarding / setup wizard
-
-**Deferred to a follow-up milestone:** the `ui_control` operator-OS shell (dock windows, command palette, AI-driven UI events — highest abuse surface, valuable only once typed displays + multiple tool windows exist) and scheduler write surfaces via HTTP.
+**Next milestone:** da definire via `/gsd-new-milestone`. Candidati noti (vedi Out of Scope + Key Decisions): il `ui_control` operator-OS shell + scheduler write surfaces (deferred dal cockpit milestone), il completamento dei 6 deferred GPU/live-CI tiers su un host GPU adeguato, Slice 13 local-LLM fallback (GPU-gated, DGX Spark path), e l'espansione multi-user auth reale su Authula.
 
 ## Requirements
 
@@ -68,18 +53,21 @@ Tutti i requisiti del substrate v0.0.0 sono shipped + audit-passed (vedi `.plann
 - ✓ **UX-04**: Memory subsystem — *adopted forked neo4j-labs/agent-memory MCP sidecar (POLE+O), Go wiring + `aura memory` CLI* — v0.0.0 (Phase 15)
 - ✓ **EXT-01**: Plugins — in-process `HookManager` (5 LlmAgent insertion points + trust-gated command hooks) — v0.0.0 (Phase 21)
 
+**v1.0.0 — Aura Deep Search Web Cockpit** (56/56 requirements shipped + audit-passed; full archive in `.planning/milestones/v1.0.0-*`):
+
+- ✓ **HARDEN-01..12**: Agent perimeter production-readiness — panic crash-firewall, secret boundary, MCP resilience, active budget/wallclock caps, Prometheus observability (AG-001..064 ledger) — v1.0.0 (Phase 22)
+- ✓ **FND-01..06**: Industrial frontend foundation — research-locked React 19 / Vite 8 / TS 6 / Tailwind 4, dark-operator token theme, zero-warning web CI gate, `//go:embed all:dist`, Node-24 Docker build — v1.0.0 (Phase 23)
+- ✓ **WEB-01..04**: Single-binary SPA host on `aura serve` + HMAC signed-session auth boundary (activates `capability_grants`) + non-loopback boot guard + runtime health shell — v1.0.0 (Phase 24)
+- ✓ **CHAT-01..05, APRV-01..03**: assistant-ui chat lane over AG-UI/SSE + conversation manager + cost/cache footer + cross-thread HITL approval center + D-09 branch trees — v1.0.0 (Phase 25)
+- ✓ **DISP-01..05, SWARM-01**: Typed-display protocol (`aura.display` CUSTOM + Go normalizer) + `switch(type)` display router + source explorer + swarm report — v1.0.0 (Phase 26)
+- ✓ **GRAPH-01..04**: Read-only Neo4j WebGL graph explorer — graph-normalizer + read-only Cypher guard + node inspector + path strip — v1.0.0 (Phase 27)
+- ✓ **GOV-01..03, ONBD-01..02**: Read-only MCP/skills/scheduler governance boards + web onboarding wizard (2nd loginable identity, `capability_grants`-only authz, prd.md amendment #64) — v1.0.0 (Phase 28)
+- ✓ **MCPW-01..03, SKW-01..03**: Governance write — MCP install/env-redaction/lifecycle (`mcp_audit`) + skills install → risk-tiered approval queue → activate (operator-resume-only, append-only audit) — v1.0.0 (Phase 29)
+- ✓ **RET-01..05**: Retrieval hardening — fail-soft GPU reranker + two-stage retrieval (vector→rerank→graph-expand) + full-docs ingest (all markitdown formats) + non-monotonic guard + nDCG/Recall/MRR eval harness — v1.0.0 (Phase 30)
+
 ### Active
 
-v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; mapped to phases by the roadmapper):
-
-- [ ] **HARDEN-\***: Agent perimeter production-readiness remediation (Phase 22 bug-fix; `internal/agent` audit)
-- [ ] **WEB-\***: Embedded cockpit SPA host (`aura serve` + `//go:embed`) + minimal web-auth boundary (GAP-2)
-- [ ] **CHAT-\***: assistant-ui chat lane over AG-UI/SSE + conversations + approval center + runtime health + cost/cache
-- [ ] **DISPLAY-\***: Typed-display protocol (GAP-1) + display router
-- [ ] **GRAPH-\***: Neo4j Graph Explorer (read-only)
-- [ ] **GOV-\***: Read-only governance boards (MCP / skills / scheduler)
-- [ ] **MCPW-\* / SKW-\***: Governance write — MCP configuration + skills install/approval lifecycle
-- [ ] **ONBOARD-\***: Web onboarding / setup wizard — incl. full provisioning of a 2nd loginable identity (`identities` + `capability_grants` + Authula login + Telegram link), capability-gated via `identity.create`, authz stays `capability_grants`-only (Phase 28, D-07; prd.md amendment #64)
+*(next milestone not yet defined — run `/gsd-new-milestone` to scope it)*
 
 ### Out of Scope
 
@@ -111,6 +99,12 @@ v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; 
 - OpenRouter provider verificato: DeepSeek-V4 Flash supporta 80% cache savings −63% cost (memory `reference_openrouter_provider_capabilities_2026-05-27`).
 - Mini-PC CPU budget condiviso con lavoro utente: embed sidecar ≤4 thread, no busy-loop (memory `feedback_minipc_cpu_budget`).
 
+**Stato corrente (post-v1.0.0, 2026-06-29)**
+
+- Codebase Go + un greenfield `web/` (React 19 / Vite 8 / TS 6 / Tailwind 4) il cui `//go:embed all:dist` è baked nel single binary; ~1,800 file toccati e +200k LOC dal close v0.0.0 (incluso il cockpit-overhaul layer non-fase). Owned-surface coverage Go 88.1%, frontend Vitest ≥85% + Stryker ≥70%.
+- Auth in transizione: HMAC passphrase cookie (default) ↔ **Authula** embedded (flag-gated `AURA_WEB_AUTH_PROVIDER=authula`) — convergono sullo stesso boundary principal/capability.
+- Tech debt noto post-close (6 deferred, vedi STATE.md Deferred Items): 4 GPU-host retrieval live tiers (Phase 30) non eseguibili su questo host 4GB-GPU; 2 live-CI-only frontend tiers (Phase 23); Phase-25 UAT carried-forward nel cockpit-overhaul cutover. Tutti NO-SKIP-AS-GREEN + CI-floored.
+
 ## Constraints
 
 - **Tech stack**: Go 1.26. Postgres 17. Neo4j 5.26 Community. Python 3.12 slim per sandbox + MCP servers. **Sealed**: scelte derivate da spike validati (Neo4j spike 2026-05-27 in `D:/tmp/aura-neo4j-spike-2026-05-27/` ha provato 1.6-1.8s structured vs 27-75s blob+LLM).
@@ -138,6 +132,12 @@ v1.0.0 — Aura Deep Search Web Cockpit (REQ-IDs detailed in `REQUIREMENTS.md`; 
 | Slice 13 (vLLM/LMCache) out di v1 → v2 | Gated su GPU; il bundle DGX Spark sblocca il path | — Pending |
 | `Agent` interface pattern stolen, not imported, da `google/adk-go` | adk-go porta 35 GCP/OTel/Gemini deps inaccettabili; Aura reimplementa ~380 LOC stessa shape | ✓ Good |
 | GSD tooling come workflow ufficiale (3-gate per slice) | CLAUDE.md §GSD tooling: commands + agents + hooks + skills installati; pattern testato | ✓ Good |
+| Cockpit embedded single-binary (Vite+React+assistant-ui `//go:embed`) sopra AG-UI/SSE | Preserva l'invariante single-binary deploy; nessun server Node nel runtime image | ✓ Good — v1.0.0 (Phase 23–25) |
+| assistant-ui `useExternalStoreRuntime` come runtime chat | Mappa l'AG-UI event stream su `ThreadMessage[]` senza forkare il transport; deps exact-pinned | ✓ Good — v1.0.0 (Phase 25) |
+| Cockpit palette logo-matched **BLUE** (non l'oro speced) | Operator-accepted 2026-06-18; WCAG-AA re-proven; memory `project_cockpit_palette_deviation_blue_vs_graphite` | ✓ Good — v1.0.0 overhaul |
+| **Authula** embedded auth flag-gated (supersedes la passphrase cookie Phase-24) | Go embeddable, capability-per-route, 2FA/OAuth/PG; default resta passphrase | — Pending (cutover in corso) |
+| Retrieval rerank = GPU Qwen3-Reranker-0.6B Q4_K_M + two-stage (seed→rerank→expand) | Spike 068/069/070: GPU 333ms vs CPU 23s; fail-soft RRF fallback; Neo4j resta | ✓ Good — v1.0.0 (Phase 30) |
+| v1.0.0 chiuso come `override_closeout` (6 deferred GPU/live-CI tiers) | Host 4GB-GPU non esegue server-cuda; harness NO-SKIP-AS-GREEN + CI-floored; budget per-stage già live-proven | — Pending (chiudere su host GPU adeguato) |
 
 ## Evolution
 
@@ -157,4 +157,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-16 — v1.0.0 in progress: Phase 22 (agent perimeter hardening) + Phase 23 (frontend infrastructure & industrial foundation) complete; FND-01..06 validated (web-dist-freshness byte-proof + live Playwright E2E pending first CI run). Next: Phase 24 — web foundation (serve + auth + health). Prior: v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; audit PASSED, owned-surface coverage 90.3%).*
+*Last updated: 2026-06-29 after v1.0.0 milestone — Aura Deep Search Web Cockpit SHIPPED (9 phases [22–30], 45 plans, 113 tasks; audit PASSED 56/56 requirements; override_closeout w/ 6 deferred GPU/live-CI tiers; owned-surface coverage 88.1%). Prior: v0.0.0 Substrate SHIPPED 2026-06-15 (24 phases, 144 plans, 233 tasks; coverage 90.3%). Next: scope the next milestone via /gsd-new-milestone.*
