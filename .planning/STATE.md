@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: executing
+status: verifying
 stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-06-29T18:34:09.450Z"
+last_updated: "2026-06-29T18:57:02.903Z"
 last_activity: 2026-06-29
 progress:
   total_phases: 11
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 9
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 Phase: 31 (Stabilization & CI Unblock) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-29
 
 ### v1.0.0 — shipped & archived (2026-06-29)
@@ -196,6 +196,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 30 P05 | ~75min | 3 tasks | 14 files |
 | Phase 31 P01 | ~3min | 3 tasks | 0 files |
 | Phase 31 P02 | ~25min | 2 tasks | 3 files |
+| Phase 31 P03 | ~30min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -381,6 +382,7 @@ Recent decisions affecting current work:
 - [Phase 30] 30-05: CI knowledge job exports AURA_RERANK_BASE_URL + compile-floors the GPU/fixture-gated tiers (rerank_integration / document_ingest_live / graphrag_live / retrieval_eval) — GPU-mandatory + fixture-dependent tiers degrade to a go-vet floor on the GPU-less runner (documented matrix in docs/document-ingestion.md). make coverage owned-surface 88.1% >= 85%. Self-learning explicitly OUT (deferred per spike-070).
 - [Phase ?]: 31-02 (F-015/SEC-07): all 4 raw root ./... Go CI gates now source $(bash scripts/go_packages.sh); a self-tested lint (check_ci_go_packages.sh) rejects regressions; shell: bash on both windows-unit steps.
 - [Phase ?]: F-015 lint excludes 'go list' enumeration (the legitimate package-list source) plus comment lines, so scanning scripts/ exits 0 while still rejecting every prohibited go test/build/vet/run + govulncheck ./...
+- [Phase 31]: SEC-08: MCP-local SSRF guard (internal/mcp/ssrf.go) mirrors internal/web classifier; scheme+metadata+link-local barrier unconditional, private-range block gated on AURA_MCP_SSRF_ENFORCE (default off → dev no-op, loopback/sidecars reachable) — Closes the CWE-918 go/request-forgery taint flow at the OpenHTTP seam without breaking loopback httptest + compose-DNS sidecars
 
 ### Pending Todos
 
@@ -425,7 +427,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-29T18:32:11.952Z
+Last session: 2026-06-29T18:55:59.805Z
 Stopped at: Phase 29 UI-SPEC approved
 Resume file: None
 

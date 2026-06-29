@@ -72,7 +72,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Goal:** Close the entire 2026-06-21 industrial audit (51 findings, F-001..F-052) **AND** the maintainability/architecture audit (`docs/audit/quality/`, ~64 findings) to an **honest 10/10** production-readiness (from 4.6/10) — via a per-user full-capability sandbox (Docker, resolving F-001 without stripping the full-host surface), multi-user identity isolation (no RBAC), Authula cutover, a central ToolGateway, observability/security/ops industrialization, and an upfront code-quality cleanup. Every hardening behavior is a **no-op under `dev`/`local_trusted`** — the operator's daily full-host experience is unchanged; hardening activates under `server_production`. Dependency rule: stabilize+cleanup → profiles + ledger → gateway → identity → sandbox → MCP → idempotency/obs → security → ops/eval. Requirements + traceability in [`REQUIREMENTS.md`](REQUIREMENTS.md); research in [`research/SUMMARY.md`](research/SUMMARY.md); quality audit in [`../docs/audit/quality/`](../../docs/audit/quality/README.md).
 
-- [ ] **Phase 31: Stabilization & CI Unblock** (Wave 0 — URGENT, prerequisite) — `QUAL-01`, `F-015`, `SEC-08` (quality audit + CI hygiene + critical CodeQL SSRF)
+- [x] **Phase 31: Stabilization & CI Unblock** (Wave 0 — URGENT, prerequisite) — `QUAL-01`, `F-015`, `SEC-08` (quality audit + CI hygiene + critical CodeQL SSRF) (completed 2026-06-29)
   - Goal: clean tree + green CI so every commit passes hooks (drop the `--no-verify` workaround); remediate the critical CodeQL SSRF pulled forward from the security backlog.
   - Success: (1) no production/test file >600 LOC (`cmd/aura/serve_webui.go`, `web/src/__tests__/LoginPage.test.tsx` split); (2) `internal/webui/dist` rebuilt → `web-dist-freshness` green; (3) all Go CI jobs use `scripts/go_packages.sh`, no raw `./...` (F-015); (4) frontend branch-coverage gate restored ≥85%; (5) critical CodeQL `go/request-forgery` (SSRF) at `internal/mcp/http_client.go` remediated + alert resolved (SEC-08).
 - [ ] **Phase 32: Quality Cleanup — Dead Code + Shared Helpers** — `QUAL-02/03/05` (quality audit ~64 findings)
@@ -132,7 +132,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Validation:** `scripts/check-file-size.sh` exit 0; `web-dist-freshness` job green; a CI grep-lint finds zero raw `./...` in `.github/workflows/`; `vitest run --coverage` meets the four 85% thresholds; a CodeQL re-scan shows the `go/request-forgery` alert closed.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 **Wave 1**
 
 - [x] 31-01-PLAN.md — Verify the QUAL-01 baseline green (C1 file-size, C2 dist freshness, C4 frontend coverage)
@@ -140,7 +140,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 31-02-PLAN.md — F-015 CI hygiene: 4 Go jobs source scripts/go_packages.sh + a no-raw-`./...` lint with negative self-test (C3)
-- [ ] 31-03-PLAN.md — SEC-08 SSRF guard: MCP-local guardEndpoint + enforce-only hardened transport, CodeQL go/request-forgery → fixed (C5)
+- [x] 31-03-PLAN.md — SEC-08 SSRF guard: MCP-local guardEndpoint + enforce-only hardened transport, CodeQL go/request-forgery → fixed (C5)
 
 #### Phase 32: Quality Cleanup — Dead Code + Shared Helpers
 
