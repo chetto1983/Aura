@@ -340,12 +340,17 @@ This is a behavior-preserving refactor with **no new attack surface**. ASVS cate
 | A4 | Recommending "keep the rich custom skeleton, retire shadcn `ui/skeleton.tsx`" | Web / D-08 | The reverse choice is defensible; visual-regression risk → Playwright E2E gates either direction. Operator/designer may prefer otherwise. |
 | A5 | Authula DSN unit test needs no cutover infra (function already exists) | Source Conflict | If `ensureAuthulaSearchPath` is mid-refactor in a parallel branch, the test target could move — verified present at `authula.go:292` today. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **`numericFromFloat` home: `internal/db` (recommended) vs `internal/neostore` (D-07 literal).** What we know: it is a Postgres `pgtype.Numeric` helper; both callers already import `internal/db`; `db` is already coverage-gated; `neostore` is a Neo4j-named package. What's unclear: whether D-07's listing was deliberate or a bundling shorthand. Recommendation: put it in `internal/db` (cleaner, no Postgres-helper-in-Neo4j-package), flag to operator; this also keeps "3 new packages" (D-13) = exactly neostore/envutil/agentrender.
-2. **`truncateRunes` fold (QA-C-13): shared util vs accept.** What we know: 2 copies of a 5-liner in unrelated packages (`assets`, `rerank`); the audit allows "accept at this scale"; CONTEXT QUAL-02 names it for folding. What's unclear: whether a new `internal/strutil` (which would itself need coverage registration) is worth it. Recommendation: check for an existing string-util home; if none, accept-with-cross-reference-comment, or a minimal `internal/strutil` if the operator wants the fold. Low priority.
-3. **`assets.Status*` keep vs delete (D-04).** Needs operator sign-off; recommend KEEP+annotate (deferred lifecycle) over delete-and-re-add churn. If delete, only the 3 named (D-03).
-4. **`deps.go` after the anchor's removal: delete file vs keep doc-only.** The package doc comment is valuable; recommend moving it to a `doc.go` (or onto `registry.go`) and deleting `deps.go`, vs keeping `deps.go` with only the package comment. Executor's call within refactor-on-touch.
+> All four resolved at plan time (2026-06-29) — each recommendation is implemented by a Phase 32 plan:
+> OQ#1 → 32-05 Task 2 (home = `internal/db`); OQ#2 → 32-02 Task 3 (ACCEPT, cross-reference comment);
+> OQ#3 → 32-01 (operator decision checkpoint, `autonomous: false`); OQ#4 → 32-03 Task 1 (executor's call
+> within refactor-on-touch).
+
+1. **RESOLVED (→ 32-05 Task 2: `internal/db`). `numericFromFloat` home: `internal/db` (recommended) vs `internal/neostore` (D-07 literal).** What we know: it is a Postgres `pgtype.Numeric` helper; both callers already import `internal/db`; `db` is already coverage-gated; `neostore` is a Neo4j-named package. What's unclear: whether D-07's listing was deliberate or a bundling shorthand. Recommendation: put it in `internal/db` (cleaner, no Postgres-helper-in-Neo4j-package), flag to operator; this also keeps "3 new packages" (D-13) = exactly neostore/envutil/agentrender.
+2. **RESOLVED (→ 32-02 Task 3: ACCEPT with cross-reference comment). `truncateRunes` fold (QA-C-13): shared util vs accept.** What we know: 2 copies of a 5-liner in unrelated packages (`assets`, `rerank`); the audit allows "accept at this scale"; CONTEXT QUAL-02 names it for folding. What's unclear: whether a new `internal/strutil` (which would itself need coverage registration) is worth it. Recommendation: check for an existing string-util home; if none, accept-with-cross-reference-comment, or a minimal `internal/strutil` if the operator wants the fold. Low priority.
+3. **RESOLVED (→ 32-01 operator decision checkpoint, `autonomous: false`). `assets.Status*` keep vs delete (D-04).** Needs operator sign-off; recommend KEEP+annotate (deferred lifecycle) over delete-and-re-add churn. If delete, only the 3 named (D-03).
+4. **RESOLVED (→ 32-03 Task 1: executor's call within refactor-on-touch). `deps.go` after the anchor's removal: delete file vs keep doc-only.** The package doc comment is valuable; recommend moving it to a `doc.go` (or onto `registry.go`) and deleting `deps.go`, vs keeping `deps.go` with only the package comment. Executor's call within refactor-on-touch.
 
 ## Sources
 
