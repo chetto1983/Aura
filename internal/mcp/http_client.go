@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,11 +26,19 @@ const httpCloseTimeout = 5 * time.Second
 
 // HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
 // plus optional static headers, bearer token, and an override http.Client.
+//
+// Enforce gates ONLY the private/loopback-range SSRF block (the scheme + cloud-
+// metadata barrier is always on). Its zero value (false) is the dev-permissive
+// policy: loopback + compose-DNS private sidecars stay reachable and the default
+// http.DefaultClient is retained. AllowHosts is the enforce-mode sidecar allow-list
+// (lowercased hostnames that bypass the resolved-IP block); it is unused under dev.
 type HTTPConfig struct {
 	URL         string
 	Headers     map[string]string
 	BearerToken string
 	Client      *http.Client
+	Enforce     bool
+	AllowHosts  map[string]struct{}
 }
 
 // HTTPClient speaks the Streamable-HTTP MCP transport to one remote server,
@@ -54,13 +63,26 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 	if strings.TrimSpace(cfg.URL) == "" {
 		return nil, fmt.Errorf("mcp %q: empty HTTP URL", name)
 	}
+	// SSRF barrier (SEC-08 / T-31-SSRF): validate the endpoint BEFORE it becomes
+	// c.endpoint so the c.client.Do(req) sink consumes a parsed+scheme+metadata-
+	// checked value. The scheme/metadata block is unconditional; the private-range
+	// block is gated on cfg.Enforce (zero value = dev-permissive).
+	validated, err := guardEndpoint(ctx, cfg.URL, cfg.Enforce, cfg.AllowHosts, net.DefaultResolver)
+	if err != nil {
+		return nil, fmt.Errorf("mcp %q: %w", name, err)
+	}
 	httpClient := cfg.Client
 	if httpClient == nil {
 		httpClient = http.DefaultClient
+		if cfg.Enforce {
+			// Hardened Layer-2 (DNS-rebinding defense) only under enforce; dev keeps
+			// http.DefaultClient unchanged (keep-alives intact, no behaviour change).
+			httpClient = newHardenedHTTPClient(net.DefaultResolver)
+		}
 	}
 	c := &HTTPClient{
 		name:            name,
-		endpoint:        strings.TrimSpace(cfg.URL),
+		endpoint:        validated.String(),
 		headers:         cfg.Headers,
 		bearerToken:     cfg.BearerToken,
 		client:          httpClient,
