@@ -28,7 +28,7 @@ Spike sessions wrapped: 2026-06-04 (001-002), 2026-06-05 (003-010 session 2,
 020-029 + 030 session 6); 2026-06-08 (031 s7, 032-035 s8, 036-039 s9, 040-042 s10),
 2026-06-12 (043a-047 s11-12, 048-050 s13, 052-058 s14), 2026-06-14 (059-062 s15),
 2026-06-16 (063-066 s16), 2026-06-20 (067-069 s17-18), 2026-06-21 (070-074 s19),
-2026-06-28 (075-077 s20).
+2026-06-28 (075-077 s20), 2026-06-29 (078-081 s21).
 </context>
 
 <requirements>
@@ -110,6 +110,14 @@ The session-7→20 areas each carry their own non-negotiables in `references/<ar
 - **Retrieval/RAG**: rerank GPU-mandatory + fail-soft to RRF; scoped retrieval uses the native
   `document_id` PRE-filter; catalog from `ListForThread` via the cache-safe tail, never
   `messages[0]`/`[1]`; Item-3 eval is gated RAGAS (pinned `ragas==0.2.15`), not CI.
+- **Multi-user (v2.0.0 Phases 36-37)**: per-identity isolation only, **no RBAC**; one full-capability
+  sandbox box per identity over Docker (host-exposure flags unrepresentable — no socket/privileged/
+  host-net/bind), K8s reserved for DGX; object store = **bucket-per-identity + scoped key** (Garage
+  grants are per-bucket NOT per-prefix → prefix-in-shared-bucket is a silent hole; closes F-007);
+  MCP isolation has **3 classes** — (a) stdio runs in-box, (b) agent-memory = shared graph + mandatory
+  identity scope key (fork-enforced), (c) **calendar/PIM + whatsapp = per-user-account sidecars needing
+  a per-identity instance** (OAuth/pairing per identity — a scope key is NOT enough); per-identity
+  MCP/skills config via filesystem rooting like `Agent.md`, execution routed through the box.
 </requirements>
 
 <findings_index>
@@ -134,6 +142,7 @@ The session-7→20 areas each carry their own non-negotiables in `references/<ar
 | Calendar / PIM (Phase 9 ext) | references/calendar-pim.md | .NET 10 `calendar-mcp` interops with Aura's Go streamable-HTTP client (29 Deferred `calendar__*`, gate GREEN); consolidate mail+calendar into the **`aura-pim-mcp` HTTP-sidecar fork**; Google needs a Desktop-app OAuth client, Graph email ~25s lag |
 | Graph-DB eval | references/graph-db-eval.md | **STAY with Neo4j** (maturity/risk, NOT perf — real-data parity ~1.0×); AGE rejected (9 gaps + GDS Leiden/PageRank blocker), ArcadeDB strongest fallback behind a deeper-PoC gate; embeddings are **384d** (Granite-97m), not 768d |
 | Retrieval rerank + RAG (Phase 15/30) | references/retrieval-rerank-rag.md | Rerank worth it (kills TOC/lexical FPs) but **GPU-mandatory** (Qwen3-Reranker-0.6B Q4 @333ms; CPU 23s dead); v1.0.0 RAG Items 1/2/3 + native `document_id` pre-filter all VALIDATED + **IMPLEMENTED 2026-06-28** |
+| Multi-user per-identity isolation (Phase 36-37) | references/multiuser-per-identity-isolation.md | Per-identity full-cap box over Docker (live: separate named volumes isolate, no host exposure, ~1MB idle) resolves F-001 without stripping the host terminal; Garage = **bucket-per-identity** (grants are per-bucket NOT per-prefix) closes F-007; MCP has **3 classes** — stdio in-box, agent-memory scope-key, calendar/whatsapp need **per-identity sidecar instances** (per-account, not scope-keyable); agent-sandbox mirrored over Docker, K8s→DGX |
 
 ## Source Files
 
@@ -223,4 +232,8 @@ SKILL.md, the CONNECT proxy, and bridge-patch.diff are preserved under `sources/
 - 075-image-ocr-searchable-chunks
 - 076-ragas-faithfulness-discriminates
 - 077-catalog-injection-recall
+- 078-per-identity-box-multiplexing
+- 079-agent-sandbox-api-contract
+- 080-garage-per-identity-isolation
+- 081-mcp-skills-per-identity-scoping
 </metadata>

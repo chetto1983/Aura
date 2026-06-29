@@ -24,8 +24,11 @@ Given the managed MCP config (proven single-user in 001/032/064) and the skills 
 
 **MCP — shared catalog, per-identity enable + scoped instances routed through the sandbox:**
 - Keep ONE catalog/recipe set (shared, read-only). Make **enablement + trust + audit per-identity**: `~/.aura/mcp/<identity>/servers.json` (mirrors the Agent.md per-identity rooting). `mcptools.MountForIdentity(identityctx)` builds the registry from the identity's config.
-- **stdio MCP servers (local commands) run INSIDE the identity's sandbox (078)** — not as host daemons — so a per-identity MCP server is automatically isolated and counts against that identity's box, not the host. Streamable-HTTP MCP (e.g. agent-memory 032) stays shared but is **called with the identity as a scope key** (the memory subgraph is already identity/session-keyed per 032/034).
-- Avoids N×M host subprocesses (the operator's over-engineering line): shared catalog + per-identity enable + in-sandbox execution.
+- **THREE isolation classes — the live sidecars are NOT uniform** (operator caution: calendar, agent-memory AND whatsapp):
+  - **(a) stdio / stateless local** (calculator, mail-mcp): run INSIDE the identity's sandbox (078) → isolated for free, counts against that identity's box.
+  - **(b) shared graph, scope-keyable — agent-memory** (`:8091`, 16 `memory__*`): ONE shared sidecar called with the identity as a **mandatory scope key**; subgraph is identity/session-keyed (032/034) but upstream semantic dedup over-merges → the `aura/provenance-safe-dedup` fork MUST enforce the key (don't trust upstream dedup for isolation).
+  - **(c) per-user-ACCOUNT HTTP sidecars — calendar/PIM** (`aura-pim-mcp`, Google/Outlook OAuth) **+ whatsapp** (whatsmeow, one paired number): a scope key is **NOT enough** (single external account per instance) → **per-identity sidecar instance** with that identity's own OAuth/pairing, lazy-started, mounted only via that identity's `servers.json`. Never mount A's calendar/whatsapp for B.
+- Classes (a)/(b) avoid N×M subprocesses; class (c) inherently costs a per-identity instance + OAuth/pairing onboarding — a real Phase-36 resource/UX decision, not free.
 
 **Skills — per-identity dir + audit, shared built-ins:**
 - Per-identity skills root `$AURA_SKILLS_DIR/<identity>/` + per-identity snippet store `~/.aura/pyscripts/<identity>/` + per-identity `skill_audit` rows (identity-keyed) + per-identity approval queue. Built-in/materialized skills stay shared read-only.
