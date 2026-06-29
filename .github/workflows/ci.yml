@@ -45,6 +45,12 @@ jobs:
       - name: Quality snapshot gate
         run: bash scripts/quality_snapshot_gate.sh
 
+      - name: CI go-packages lint self-test
+        run: bash scripts/check_ci_go_packages_test.sh
+
+      - name: CI go-packages lint
+        run: bash scripts/check_ci_go_packages.sh
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -87,7 +93,7 @@ jobs:
           cache: true
 
       - name: go test -race
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 $(bash scripts/go_packages.sh)
 
       - name: Authula seam focused test (no-CGO posture)
         # Authula brings sqlite/mysql/testcontainer support transitively, but Aura's
@@ -114,9 +120,11 @@ jobs:
           cache: true
 
       - name: go build (windows/amd64)
-        run: go build ./...
+        shell: bash
+        run: go build $(bash scripts/go_packages.sh)
 
       - name: go test (unit tier — exercises the windows kill + atomic-write paths)
+        shell: bash
         # O-07 / R-36: the OS-specific process-kill (shell_exec_windows.go:
         # CREATE_NEW_PROCESS_GROUP + `taskkill /F /T /PID`) and the atomic file-write
         # (profile/atomic_windows.go) only compile + run under GOOS=windows, so the
@@ -125,7 +133,7 @@ jobs:
         # unit lane, and CGO race on the hosted Windows runner is finicky for zero
         # extra OS-kill-path signal. NO integration tags: the Windows runner has no
         # docker stack (db/neo4j/web/memory tiers are Linux-only by design).
-        run: go test -count=1 ./...
+        run: go test -count=1 $(bash scripts/go_packages.sh)
 
   cache-invariant:
     name: KV-cache prefix invariant gate (Postgres-free)
@@ -178,7 +186,7 @@ jobs:
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          "$(go env GOPATH)/bin/govulncheck" ./...
+          "$(go env GOPATH)/bin/govulncheck" $(bash scripts/go_packages.sh)
 
   integration-test:
     name: Integration tests (db_integration tag)
