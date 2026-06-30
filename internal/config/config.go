@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
@@ -255,28 +254,6 @@ func LoadServe() (*Config, error) {
 	}
 	cfg.LLM = *llmCfg
 	return cfg, nil
-}
-
-// Validate fails fast on an empty REQUIRED infrastructure secret so a misconfigured
-// deploy errors at boot with a named cause instead of a late, cryptic DB auth
-// failure or a silently degraded graph (O-04). The LLM API key has its own
-// fail-fast in llm.Load (D-22); this covers the composed DB DSN and the Neo4j
-// password. The daemon/REPL boot wires it in; the DB-only commands (LoadDB) skip it.
-func (c *Config) Validate() error {
-	var missing []string
-	if strings.TrimSpace(c.DB.URL) == "" {
-		missing = append(missing, "POSTGRES_PASSWORD (or AURA_DB_URL)")
-	}
-	if strings.TrimSpace(c.Neo4j.Password) == "" {
-		missing = append(missing, "NEO4J_PASSWORD")
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("config: required secret(s) unset: %s", strings.Join(missing, ", "))
-	}
-	if c.RunDirErr != nil {
-		return fmt.Errorf("config: %w", c.RunDirErr)
-	}
-	return nil
 }
 
 // GuardWebBind is the WEB-02 fail-fast boot policy for the cockpit listener (D-05).
