@@ -200,6 +200,8 @@ describe('DocumentsWorkspace', () => {
 
     render(<DocumentsWorkspace />);
 
+    expect(screen.queryByLabelText('Storage bucket')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Advanced document maintenance' }));
     fireEvent.change(await screen.findByLabelText('Storage bucket'), {
       target: { value: 'assets' },
     });

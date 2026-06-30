@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Settings2, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import {
@@ -59,6 +59,7 @@ export default function DocumentsWorkspace() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadDetail = useCallback(async (id: string) => {
@@ -285,9 +286,24 @@ export default function DocumentsWorkspace() {
           }}
           onClose={() => setDrawerOpen(false)}
         />
-        <div className="mx-auto w-full max-w-6xl px-4 pb-5 sm:px-6">
-          <StorageOrphansPanel />
-        </div>
+        <section className="border-t border-border px-4 py-3 sm:px-6">
+          <div className="mx-auto w-full max-w-6xl">
+            <Button
+              type="button"
+              variant="ghost"
+              aria-expanded={adminOpen}
+              onClick={() => setAdminOpen((open) => !open)}
+            >
+              <Settings2 aria-hidden="true" />
+              {t('documents.admin.maintenance')}
+            </Button>
+            {adminOpen ? (
+              <div className="mt-3">
+                <StorageOrphansPanel />
+              </div>
+            ) : null}
+          </div>
+        </section>
       </main>
       {uploadOpen ? (
         <div role="status" className="sr-only">

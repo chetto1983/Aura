@@ -67,12 +67,9 @@ export function StorageOrphansPanel() {
   const canDelete = report !== undefined && orphanCount > 0 && confirm === 'DELETE ORPHAN OBJECTS';
 
   return (
-    <section
-      aria-labelledby="storage-orphans"
-      className="flex flex-col gap-4 border-t border-border pt-5"
-    >
+    <section aria-labelledby="storage-orphans" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="storage-orphans" className="text-[18px] font-semibold text-text">
+        <h2 id="storage-orphans" className="text-[15px] font-semibold text-text">
           {t('documents.storage.title')}
         </h2>
         {report !== undefined ? (

@@ -53,6 +53,9 @@ export const documentsEn = {
       technical: 'Technical',
       advanced: 'Advanced',
     },
+    admin: {
+      maintenance: 'Advanced document maintenance',
+    },
     events: {
       loading: 'Loading events...',
       empty: 'No events',
@@ -138,6 +141,9 @@ export const documentsIt = {
       processing: 'Elaborazione',
       technical: 'Tecnico',
       advanced: 'Avanzate',
+    },
+    admin: {
+      maintenance: 'Manutenzione documenti avanzata',
     },
     events: {
       loading: 'Caricamento eventi...',
