@@ -468,9 +468,14 @@ function SettingField({
   const { t } = useTranslation();
   const inputId = `setting-${def.key}`;
   const label = t(def.labelKey);
-  const status = item.has_value
-    ? t('settings.status.configured')
-    : t('settings.status.notConfigured');
+  const isBooleanActive = def.kind === 'bool' && value === 'true';
+  const isConfigured = def.kind === 'bool' ? isBooleanActive : item.has_value;
+  const status =
+    def.kind === 'bool'
+      ? t(isBooleanActive ? 'settings.status.active' : 'settings.status.inactive')
+      : item.has_value
+        ? t('settings.status.configured')
+        : t('settings.status.notConfigured');
 
   return (
     <div className="flex min-h-32 flex-col gap-2 rounded-md border border-border bg-surface px-3 py-3">
@@ -478,7 +483,7 @@ function SettingField({
         <Label htmlFor={inputId} className="min-w-0 break-words text-[13px]">
           {label}
         </Label>
-        <Badge variant={item.has_value ? 'success' : 'secondary'}>{status}</Badge>
+        <Badge variant={isConfigured ? 'success' : 'secondary'}>{status}</Badge>
       </div>
       {def.kind === 'bool' ? (
         <label className="flex min-h-[44px] items-center gap-3 rounded-md border border-input bg-surface-3 px-3 text-[13px] text-text">

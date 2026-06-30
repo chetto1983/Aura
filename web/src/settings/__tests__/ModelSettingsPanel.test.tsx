@@ -268,6 +268,37 @@ describe('ModelSettingsPanel', () => {
     ).toBe(true);
   });
 
+  it('renders a false boolean setting as inactive, not configured', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          jsonResponse(
+            settingsBody([
+              buildItem({
+                key: 'AURA_VISION_CLOUD',
+                kind: 'bool',
+                value: 'false',
+                has_value: true,
+              }),
+            ]),
+          ),
+        ),
+      ),
+    );
+
+    render(<ModelSettingsPanel />);
+    await screen.findByRole('heading', { name: 'Model routing' });
+
+    const checkbox = screen.getByRole('checkbox');
+    if (!(checkbox instanceof HTMLInputElement)) {
+      throw new Error('expected the vision cloud control to be a checkbox input');
+    }
+    expect(checkbox.checked).toBe(false);
+    expect(screen.getByText('Inactive')).toBeTruthy();
+    expect(screen.queryByText('Configured')).toBeNull();
+  });
+
   it('invokes onComplete from Continue and Skip when nothing changed', async () => {
     const onComplete = vi.fn();
     const calls: string[] = [];

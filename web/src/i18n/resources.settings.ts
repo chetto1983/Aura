@@ -46,6 +46,8 @@ export const settingsEn = {
     status: {
       configured: 'Configured',
       notConfigured: 'Not set',
+      active: 'Active',
+      inactive: 'Inactive',
     },
     actions: {
       save: 'Save runtime settings',
@@ -105,6 +107,8 @@ export const settingsIt = {
     status: {
       configured: 'Configurato',
       notConfigured: 'Non impostato',
+      active: 'Attivo',
+      inactive: 'Disattivato',
     },
     actions: {
       save: 'Salva impostazioni runtime',

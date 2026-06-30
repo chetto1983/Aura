@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/secret"
 )
@@ -62,6 +63,122 @@ func TestOverlayEnvAppliesAllowlistOnly(t *testing.T) {
 	}
 	if got := os.Getenv(denied); got != "" {
 		t.Errorf("%s = %q, want unset — non-allowlisted rows must be ignored", denied, got)
+	}
+}
+
+func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
+	clearRuntimeConfigEnvForOverlayTest(t)
+
+	l := fakeLister{rows: []sqlc.AuraSettings{
+		{Key: "AURA_LLM_MODEL", Value: "settings/primary-model"},
+		{Key: "AURA_LLM_BASE_URL", Value: "https://settings-llm.example/v1"},
+		{Key: "OPENROUTER_API_KEY", Value: "sk-settings-overlay"},
+		{Key: "AURA_LLM_MAX_TOKENS", Value: "1111"},
+		{Key: "AURA_MODEL_CONTEXT_WINDOW", Value: "2222"},
+		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "333"},
+		{Key: "AURA_EMBED_MODEL", Value: "settings/embed-model"},
+		{Key: "AURA_EMBED_BASE_URL", Value: "https://settings-embed.example"},
+		{Key: "AURA_EMBED_DIMENSIONS", Value: "444"},
+		{Key: "AURA_RERANK_MODEL", Value: "settings/rerank-model"},
+		{Key: "AURA_RERANK_BASE_URL", Value: "https://settings-rerank.example"},
+		{Key: "AURA_TTS_MODEL", Value: "settings-tts-model"},
+		{Key: "AURA_STT_CLOUD_MODEL", Value: "settings-stt-model"},
+		{Key: "AURA_VISION_CLOUD", Value: "true"},
+	}}
+	if err := OverlayEnv(t.Context(), l); err != nil {
+		t.Fatalf("OverlayEnv: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load after OverlayEnv: %v", err)
+	}
+
+	if got := cfg.LLM.Model; got != "settings/primary-model" {
+		t.Errorf("LLM.Model = %q, want overlaid settings model", got)
+	}
+	if got := cfg.LLM.BaseURL; got != "https://settings-llm.example/v1" {
+		t.Errorf("LLM.BaseURL = %q, want overlaid settings base URL", got)
+	}
+	if got := cfg.LLM.APIKey; got != "sk-settings-overlay" {
+		t.Errorf("LLM.APIKey = %q, want overlaid settings API key", got)
+	}
+	if got := cfg.LLM.MaxTokens; got != 1111 {
+		t.Errorf("LLM.MaxTokens = %d, want 1111", got)
+	}
+	if got := cfg.LLM.ContextWindow; got != 2222 {
+		t.Errorf("LLM.ContextWindow = %d, want 2222", got)
+	}
+	if got := cfg.LLM.MaxOutputTokens; got != 333 {
+		t.Errorf("LLM.MaxOutputTokens = %d, want 333", got)
+	}
+	if got := cfg.Neo4j.EmbedModel; got != "settings/embed-model" {
+		t.Errorf("Neo4j.EmbedModel = %q, want overlaid settings embed model", got)
+	}
+	if got := cfg.Neo4j.EmbedURL; got != "https://settings-embed.example" {
+		t.Errorf("Neo4j.EmbedURL = %q, want overlaid settings embed base URL", got)
+	}
+	if got := cfg.Neo4j.EmbedDimensions; got != 444 {
+		t.Errorf("Neo4j.EmbedDimensions = %d, want 444", got)
+	}
+	if got := cfg.RerankModel; got != "settings/rerank-model" {
+		t.Errorf("RerankModel = %q, want overlaid settings rerank model", got)
+	}
+	if got := cfg.RerankBaseURL; got != "https://settings-rerank.example" {
+		t.Errorf("RerankBaseURL = %q, want overlaid settings rerank base URL", got)
+	}
+	if got := cfg.TTSModel; got != "settings-tts-model" {
+		t.Errorf("TTSModel = %q, want overlaid settings TTS model", got)
+	}
+	if got := cfg.STTCloudModel; got != "settings-stt-model" {
+		t.Errorf("STTCloudModel = %q, want overlaid settings STT cloud model", got)
+	}
+	if !cfg.VisionCloud {
+		t.Error("VisionCloud = false, want true from overlaid settings")
+	}
+
+	embedBase, embedKey, embedModel := cfg.EmbedRoute()
+	if embedBase != "https://settings-embed.example" || embedKey != "sk-settings-overlay" || embedModel != "settings/embed-model" {
+		t.Errorf("EmbedRoute() = (%q, %q, %q), want overlaid base/key/model", embedBase, embedKey, embedModel)
+	}
+	rerankBase, rerankKey, rerankModel := cfg.RerankRoute()
+	if rerankBase != "https://settings-rerank.example" || rerankKey != "sk-settings-overlay" || rerankModel != "settings/rerank-model" {
+		t.Errorf("RerankRoute() = (%q, %q, %q), want overlaid base/key/model", rerankBase, rerankKey, rerankModel)
+	}
+}
+
+func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
+	t.Helper()
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+
+	for _, key := range []string{
+		"OPENROUTER_API_KEY",
+		"AURA_LLM_MODEL",
+		"AURA_LLM_BASE_URL",
+		"AURA_LLM_TEMPERATURE",
+		"AURA_LLM_MAX_TOKENS",
+		"AURA_LLM_ADAPTIVE_REASONING",
+		"AURA_SHOW_REASONING",
+		"AURA_LLM_TOTAL_TIMEOUT_SEC",
+		"AURA_LLM_CONNECT_TIMEOUT_SEC",
+		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC",
+		"AURA_MODEL_CONTEXT_WINDOW",
+		"AURA_MODEL_MAX_OUTPUT_TOKENS",
+		"AURA_COMPLETION_GATE",
+		"AURA_COMPLETION_CRITIC_MODEL",
+		"AURA_LLM_REASONING_LEARNING",
+		"AURA_EMBED_MODEL",
+		"AURA_EMBED_BASE_URL",
+		"AURA_EMBED_DIMENSIONS",
+		"AURA_RERANK_MODEL",
+		"AURA_RERANK_BASE_URL",
+		"AURA_TTS_MODEL",
+		"AURA_STT_CLOUD_MODEL",
+		"AURA_VISION_CLOUD",
+	} {
+		t.Setenv(key, "")
 	}
 }
 
