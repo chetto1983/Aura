@@ -82,3 +82,47 @@ func TestDestructiveShellDefaultIsOverridable(t *testing.T) {
 		t.Fatalf("explicit custom set must match its own pattern: ok=%v err=%v", ok, err)
 	}
 }
+
+// TestDestructiveShellPatterns is the D-12 / PROF-02 truth table for the advisory
+// destructive-shell gate. The load-bearing fix: UNSET or EMPTY (incl.
+// whitespace-only, which TrimSpace collapses to empty) falls back to the built-in
+// defaults so the gate stays ACTIVE. Copying .env.example, whose
+// AURA_SHELL_DESTRUCTIVE_PATTERNS line is commented out, therefore never disables
+// the gate by accident (success criterion #2). Only an explicit, case-insensitive
+// "off" opts out; any other non-empty value REPLACES the default set.
+func TestDestructiveShellPatterns(t *testing.T) {
+	const env = "AURA_SHELL_DESTRUCTIVE_PATTERNS"
+	cases := []struct {
+		name      string
+		value     string
+		set       bool
+		probe     string
+		wantMatch bool
+	}{
+		{name: "unset_copied_sample", set: false, probe: "rm -rf /", wantMatch: true},
+		{name: "empty", value: "", set: true, probe: "rm -rf /", wantMatch: true},
+		{name: "whitespace", value: "   ", set: true, probe: "rm -rf /", wantMatch: true},
+		{name: "off_lower", value: "off", set: true, probe: "rm -rf /", wantMatch: false},
+		{name: "off_upper", value: "OFF", set: true, probe: "rm -rf /", wantMatch: false},
+		{name: "off_mixed", value: "Off", set: true, probe: "rm -rf /", wantMatch: false},
+		{name: "custom_matches_own", value: `rm -rf /tmp/x,mkfs`, set: true, probe: "rm -rf /tmp/x", wantMatch: true},
+		{name: "custom_replaces_default", value: `rm -rf /tmp/x,mkfs`, set: true, probe: "rm -rf /", wantMatch: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(env, tc.value)
+			} else {
+				os.Unsetenv(env)
+			}
+			ok, err := destructiveShellMatch(tc.probe)
+			if err != nil {
+				t.Fatalf("destructiveShellMatch(%q): %v", tc.probe, err)
+			}
+			if ok != tc.wantMatch {
+				t.Errorf("env set=%v value=%q: destructiveShellMatch(%q) = %v, want gate active=%v",
+					tc.set, tc.value, tc.probe, ok, tc.wantMatch)
+			}
+		})
+	}
+}
