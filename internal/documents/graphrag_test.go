@@ -2,6 +2,7 @@ package documents
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +128,34 @@ func TestGraphRAGExpandsOnlyWinners(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != "chunk-3" || ids[1] != "chunk-1" {
 		t.Fatalf("expanded ids = %v, want only the top-2 winners [chunk-3 chunk-1]", ids)
+	}
+}
+
+func TestGraphRAGExpansionExcludesInactiveOrDeletedNeighbors(t *testing.T) {
+	knowledge := &fakeRetrieveKnowledge{
+		seedRows: []map[string]any{
+			seedRow("doc-1", "chunk-0", "alpha", 0.9),
+			seedRow("doc-1", "chunk-1", "bravo", 0.8),
+		},
+		expandRows: []map[string]any{seedRow("doc-1", "chunk-2", "context", 0)},
+	}
+	svc := &Service{
+		Searcher:      &fakeSearchBackend{},
+		Knowledge:     knowledge,
+		QueryEmbedder: &fakeQueryEmbedder{vector: []float64{0.1}},
+		Reranker:      &fakeReranker{scored: []rerank.Scored{{Index: 0, Score: 0.9}, {Index: 1, Score: 0.8}}},
+	}
+	if _, err := svc.GraphRAG(t.Context(), SearchRequest{Query: "q", Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range knowledge.reads {
+		if strings.Contains(call.query, "NEXT_CHUNK|HAS_CHUNK") {
+			for _, want := range []string{"coalesce(n.active, true) = true", "n.deleted_at IS NULL"} {
+				if !strings.Contains(call.query, want) {
+					t.Fatalf("GraphRAG neighbor query missing %q:\n%s", want, call.query)
+				}
+			}
+		}
 	}
 }
 

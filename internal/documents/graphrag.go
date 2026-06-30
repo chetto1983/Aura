@@ -100,6 +100,8 @@ const graphExpandQuery = `
 MATCH (c:Chunk) WHERE c.id IN $winner_ids
 MATCH (c)-[:NEXT_CHUNK|HAS_CHUNK]-(n:Chunk)
 WHERE NOT n.id IN $winner_ids
+  AND coalesce(n.active, true) = true
+  AND n.deleted_at IS NULL
 WITH DISTINCT n
 RETURN
   n.document_id AS document_id,
