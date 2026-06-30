@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var governanceVisibleApplianceSidecars = []string{"calendar", "whatsapp"}
+var governanceVisibleContainerRecipes = []string{"calculator", "calendar", "whatsapp"}
 
 // serve_governance.go wires the composition-root adapters for the Phase-28 read-only
 // governance boards (GOV-01/02/03). The agui consumer declares the narrow board
@@ -52,7 +52,7 @@ func governanceMCPBoardConfig(cfg *config.Config) (mcp.ManagedConfig, error) {
 		addMCPPolicyRows(&doc, cfg.MCPPolicies)
 		addLegacyMCPRows(&doc, cfg.MCPServers)
 	}
-	addApplianceSidecarRows(&doc)
+	addContainerRecipeRows(&doc)
 	return doc, nil
 }
 
@@ -80,11 +80,11 @@ func addLegacyMCPRows(doc *mcp.ManagedConfig, servers map[string]mcp.ServerConfi
 	}
 }
 
-func addApplianceSidecarRows(doc *mcp.ManagedConfig) {
+func addContainerRecipeRows(doc *mcp.ManagedConfig) {
 	if os.Getenv("AURA_IN_CONTAINER") != "1" {
 		return
 	}
-	for _, name := range governanceVisibleApplianceSidecars {
+	for _, name := range governanceVisibleContainerRecipes {
 		if _, exists := doc.MCPServers[name]; exists {
 			continue
 		}

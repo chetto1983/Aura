@@ -10,8 +10,12 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-// memoryRecipeName is the catalog/policy key for the default-on agent-memory recipe.
-const memoryRecipeName = "memory"
+// Default-on catalog keys. Memory is a core capability everywhere; calculator is
+// default-on only inside the Aura appliance image, where uvx is warm-cached.
+const (
+	memoryRecipeName     = "memory"
+	calculatorRecipeName = "calculator"
+)
 
 // loadMCPServers composes the runtime MCP server set from the managed config doc, the
 // AURA_MCP_SERVERS_JSON env override, and the default-on memory recipe (D-08). It returns the
@@ -55,6 +59,7 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 	// `aura mcp disable memory` (D-09). On a fresh machine this makes len(policies)
 	// non-zero — the intended default-on behavior.
 	injectDefaultOnMemory(policies, managed, envServers)
+	injectDefaultOnContainerCalculator(policies, managed, envServers)
 	if len(out) == 0 && len(policies) == 0 {
 		return nil, nil, nil
 	}
@@ -133,4 +138,28 @@ func injectDefaultOnMemory(policies map[string]mcp.ManagedServer, managed mcp.Ma
 		return
 	}
 	policies[memoryRecipeName] = recipe.Server
+}
+
+// injectDefaultOnContainerCalculator adds the calculator recipe in Aura's
+// appliance container. The Docker image warm-caches the pinned uvx package, so
+// the stdio server starts without relying on egress at first use. Local dev
+// remains install-on-demand to avoid surprising non-container hosts without uvx.
+func injectDefaultOnContainerCalculator(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, envOverridden map[string]mcp.ServerConfig) {
+	if os.Getenv("AURA_IN_CONTAINER") != "1" {
+		return
+	}
+	if _, ok := policies[calculatorRecipeName]; ok {
+		return
+	}
+	if _, ok := envOverridden[calculatorRecipeName]; ok {
+		return
+	}
+	if _, ok := managed.MCPServers[calculatorRecipeName]; ok {
+		return
+	}
+	recipe, ok := mcpmanager.LookupCatalog(calculatorRecipeName)
+	if !ok {
+		return
+	}
+	policies[calculatorRecipeName] = recipe.Server
 }

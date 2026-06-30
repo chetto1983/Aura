@@ -42,6 +42,120 @@ func TestMemoryDefaultOn(t *testing.T) {
 	}
 }
 
+// TestCalculatorContainerDefaultOn proves the Aura appliance mounts the
+// warm-cached calculator recipe by default in-container, without requiring a
+// prior `aura mcp install calculator`.
+func TestCalculatorContainerDefaultOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+	t.Setenv("AURA_IN_CONTAINER", "1")
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	got, ok := cfg.MCPPolicies["calculator"]
+	if !ok {
+		t.Fatalf("MCPPolicies missing calculator in Aura container: %#v", cfg.MCPPolicies)
+	}
+	want, ok := mcpmanager.LookupCatalog("calculator")
+	if !ok {
+		t.Fatal("LookupCatalog(\"calculator\") not found")
+	}
+	if !reflect.DeepEqual(got, want.Server) {
+		t.Fatalf("calculator policy = %#v, want LookupCatalog(\"calculator\").Server %#v", got, want.Server)
+	}
+}
+
+func TestCalculatorDefaultOn_RespectsDisable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+	t.Setenv("AURA_IN_CONTAINER", "1")
+
+	disabled := false
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"calculator": {
+			Command: "uvx",
+			Args:    []string{"calculator-mcp-server", "--stdio"},
+			Source:  "recipe:calculator",
+			Enabled: &disabled,
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	if _, ok := cfg.MCPPolicies["calculator"]; ok {
+		t.Fatalf("calculator mounted despite explicit disable: %#v", cfg.MCPPolicies)
+	}
+}
+
+// TestCalculatorContainerDefaultOn_EnvServersOverrideWins proves an
+// AURA_MCP_SERVERS_JSON entry named "calculator" wins in-container — the inject
+// lands AFTER the envServers delete loop and must not re-add the recipe default.
+func TestCalculatorContainerDefaultOn_EnvServersOverrideWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+	t.Setenv("AURA_IN_CONTAINER", "1")
+	t.Setenv(
+		"AURA_MCP_SERVERS_JSON",
+		`{"mcpServers":{"calculator":{"command":"my-calc","args":["--stdio"]}}}`,
+	)
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	if _, ok := cfg.MCPPolicies["calculator"]; ok {
+		t.Fatalf("calculator should not be a policy when overridden by AURA_MCP_SERVERS_JSON: %#v", cfg.MCPPolicies)
+	}
+	got, ok := cfg.MCPServers["calculator"]
+	if !ok {
+		t.Fatalf("AURA_MCP_SERVERS_JSON calculator override not in MCPServers: %#v", cfg.MCPServers)
+	}
+	if got.Command != "my-calc" {
+		t.Fatalf("calculator command = %q, want my-calc (env override wins)", got.Command)
+	}
+}
+
+// TestCalculatorContainerDefaultOn_RespectsExplicitInstall proves an
+// operator-customized calculator entry wins in-container — the default-on inject
+// sees the existing managed/policy row and does not overwrite the custom args.
+func TestCalculatorContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+	t.Setenv("AURA_IN_CONTAINER", "1")
+
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"calculator": {
+			Command: "uvx",
+			Args:    []string{"calculator-mcp-server", "--stdio", "--operator-flag"},
+			Source:  "recipe:calculator",
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	got, ok := cfg.MCPPolicies["calculator"]
+	if !ok {
+		t.Fatalf("explicit calculator install not mounted: %#v", cfg.MCPPolicies)
+	}
+	if len(got.Args) != 3 || got.Args[2] != "--operator-flag" {
+		t.Fatalf("calculator args = %#v, want operator-customized (explicit wins)", got.Args)
+	}
+}
+
 // TestMemoryDefaultOn_RespectsDisable proves `aura mcp disable memory`
 // (Enabled=false in servers.json) keeps memory unmounted (D-09 respect disable).
 func TestMemoryDefaultOn_RespectsDisable(t *testing.T) {

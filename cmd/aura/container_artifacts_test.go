@@ -27,6 +27,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.21",
 		"mcp-neo4j-cypher==0.6.0",
+		"uvx --from \"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08\" \\\n        -- calculator-mcp-server --help",
 		"ENV AURA_IN_CONTAINER=1",
 		"COPY --from=garagebin /garage /usr/local/bin/garage",
 		"aura-garage-bootstrap.sh",

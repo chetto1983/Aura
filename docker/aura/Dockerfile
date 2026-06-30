@@ -76,7 +76,7 @@ RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0
 # calculator: warm uvx at a pinned commit (chetto1983 fork) so it runs with egress
 # blocked — an unpinned HEAD re-fetches and fails offline (Phase 17 AC7).
 RUN uvx --from "calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08" \
-        calculator-mcp-server --help >/dev/null
+        -- calculator-mcp-server --help >/dev/null
 
 # mail recipe retired: the calendar PIM sidecar (forked calendar-mcp →
 # chetto1983/aura-pim-mcp, a separate compose service) now provides email
