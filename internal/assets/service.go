@@ -190,6 +190,25 @@ func (s *Service) Retry(ctx context.Context, identityID, assetID string) (Asset,
 	return asset, nil
 }
 
+// ProcessAccepted runs the processor for an already accepted asset.
+func (s *Service) ProcessAccepted(ctx context.Context, identityID, assetID string) (Asset, error) {
+	if s.Store == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	asset, err := s.Store.GetForIdentity(ctx, assetID, identityID)
+	if err != nil {
+		return Asset{}, err
+	}
+	switch asset.Status {
+	case StatusAccepted, StatusProcessing:
+		return s.processAsset(ctx, asset)
+	case StatusSearchable, StatusComplete:
+		return asset, nil
+	default:
+		return Asset{}, fmt.Errorf("asset %s is %s, not accepted for processing", asset.ID, asset.Status)
+	}
+}
+
 func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequest) (Asset, error) {
 	if s.Store == nil || s.Objects == nil {
 		return Asset{}, fmt.Errorf("asset service is not configured")

@@ -164,6 +164,55 @@ func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
 	})
 }
 
+func TestServiceProcessAcceptedRunsProcessor(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+	processor := &recordingProcessor{
+		called: make(chan Asset, 1),
+		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "indexed"},
+	}
+	svc.Processors.Document = processor
+	asset, err := store.Create(context.Background(), CreateRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		Scope:             ScopeThread,
+		Modality:          ModalityDocument,
+		FileName:          "manual.pdf",
+		MIMEType:          "application/pdf",
+		DeclaredSizeBytes: 9,
+		ObjectBucket:      "asset-test",
+		ObjectKey:         "asset-key",
+		Metadata:          map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err = store.MarkAccepted(context.Background(), asset.ID, serviceIdentityID, 9, "hash", "application/pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	processed, err := svc.ProcessAccepted(context.Background(), serviceIdentityID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if processed.Status != StatusSearchable || processed.DocumentID != "doc-1" || processed.Summary != "indexed" {
+		t.Fatalf("processed asset = %#v", processed)
+	}
+	select {
+	case processing := <-processor.called:
+		if processing.Status != StatusProcessing || processing.ID != asset.ID {
+			t.Fatalf("processor saw asset = %#v", processing)
+		}
+	default:
+		t.Fatal("processor was not called")
+	}
+}
+
 func TestServiceIngestTelegramFileStoresObjectAndReturnsProcessedAsset(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{
 		MaxDocumentBytes: 100,
