@@ -232,10 +232,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
 				adaptiveTierSet = true
 			}
-			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
-			if adaptiveTierOK {
-				req = a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, adaptiveTier)
-			}
+			req := a.buildRequest(budget, adaptiveTier, adaptiveTierOK)
 			req.SessionID = a.sessionID
 			reasoningtrace.Record("agent_request_built", map[string]any{
 				"request_id":  requestID,
@@ -410,6 +407,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// loop: the next LLM call sees the appended RoleTool results.
 		}
 	}
+}
+
+// buildRequest selects the single per-turn request builder: the adaptive
+// reasoning-tier variant when a tier was resolved this run, the plain builder
+// otherwise. Exactly one builder runs — the discarded Build() (a wasted
+// RenderToolDefs() per turn, QUAL-02/T7) is gone — and the chosen request is
+// byte-identical to the old branch's chosen request (D-01 parity).
+func (a *LlmAgent) buildRequest(budget prompt.Budget, tier prompt.ReasoningTier, tierOK bool) llm.Request {
+	if tierOK {
+		return a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier)
+	}
+	return a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
 }
 
 // runTerminal handles the text_response terminal call (D-13). A malformed payload
