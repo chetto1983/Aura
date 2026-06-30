@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 33
 current_phase_name: runtime-profiles-config-validation
 status: executing
-stopped_at: Completed 33-01-PLAN.md
-last_updated: "2026-06-30T21:11:00.000Z"
+stopped_at: Completed 33-02-PLAN.md
+last_updated: "2026-06-30T22:05:00.000Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 33 plan 01 (RuntimeProfile primitives + config_validate split) complete
+last_activity_desc: Phase 33 plan 02 (D-12 destructive-shell empty→defaults semantics flip + truth table + .env.example) complete
 progress:
   total_phases: 11
   completed_phases: 2
   total_plans: 18
-  completed_plans: 14
+  completed_plans: 15
   percent: 18
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 33 (runtime-profiles-config-validation) — EXECUTING
-Plan: 2 of 5
-Status: Executing Phase 33 (33-01 complete)
-Last activity: 2026-06-30 — 33-01 complete: Validate() split out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields
+Plan: 3 of 5
+Status: Executing Phase 33 (33-01, 33-02 complete)
+Last activity: 2026-06-30 — 33-02 complete: D-12/F-002 destructive-shell semantics flip (empty/unset → built-in defaults, gate ACTIVE; only `off` disables) + full truth-table test + .env.example comment fix and two new commented knobs
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -206,8 +206,13 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 32 P03 | ~22min | 2 tasks | 5 files |
 | Phase 32 P04 | ~32min | 2 tasks | 7 files |
 | Phase 33 P33-01 | ~11min | 3 tasks | 5 files |
+| Phase 33 P33-02 | ~15min | 2 tasks | 3 files |
 
 ## Accumulated Context
+
+### Phase 33 Execution
+
+- **33-02 closed (2026-06-30): F-002/D-12 destructive-shell empty→defaults semantics flip (PROF-02).** The advisory destructive-command approval gate used to DISABLE when `AURA_SHELL_DESTRUCTIVE_PATTERNS` was empty — the exact state an operator produces by copying the commented `.env.example` sample line — a silent-disable footgun. Task 1 (`test`, TDD RED, `8c15daf9`): added `TestDestructiveShellPatterns` to `internal/agent/tools/shell_exec_destructive_default_test.go`, a table over `(value,set,probe,wantMatch)` driving `destructiveShellMatch` — unset/copied-sample/empty/whitespace → ACTIVE, off/OFF/Off → disabled, custom replaces-not-merges (matches its own pattern, no longer matches the default `rm -rf /`). Observed RED via WSL on the `empty` + `whitespace` rows (the documented fix), six other rows green, the three pre-existing destructive tests untouched + green. Task 2 (`feat`, GREEN, `bb89183b`): flipped `destructiveShellPatterns()` to `if !set || raw == "" { return defaultDestructivePatterns, nil }` + a separate `if strings.EqualFold(raw, "off") { return nil, nil }` (`raw` is already TrimSpace-d so whitespace→empty→defaults); comma-split custom parse unchanged; refreshed the three stale doc comments to "empty = defaults; only `off` disables" + noted the prod forbid-`off` check lives in the config validator (plan 04). `.env.example`: corrected the destructive-gate comment and documented two new COMMENTED operator knobs — `#AURA_PROFILE=dev` (four valid profiles, unset→dev) and `#AURA_OBJECTSTORE_REPLICATION_FACTOR=1` (prod needs ≥2, PROF-06). The runtime leaf stays profile-agnostic (signature unchanged, no profile param) per the plan prohibition. Verification: full `TestDestructiveShell*` truth table green under `-race` (WSL, CGO_ENABLED=1); `go vet`/`go build` clean; pre-commit gofmt/vet/file-size hooks green on both commits. No deviations. Summary `.planning/phases/33-runtime-profiles-config-validation/33-02-SUMMARY.md`. Next = 33-03 (KnobSpec registry + reparse pass + rapid PBT, Wave 2).
 
 ### Phase 32 Execution
 
@@ -292,6 +297,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-04 (Gate-3 evidence, tasks 1-2 committed c3d90b0/c807553; Task 3 human-verify PENDING): scripts/sandbox_escape_bench.sh is a DETERMINISTIC SandboxEscapeBench port (no LLM driver) — 14 runtime/kernel live-denominator probes posted to the live /exec/python wire (escape only if the technique succeeds) + 4 config-regression assertions (docker socket/privileged/writable host mount/excess caps must stay 0, SEPARATE gate not in the denominator) + 4 explicit N/A kubernetes lines (auditable denominator, OQ1); escape-rate=escapes/applicable, FAIL on >=5% or any config-regression>0; asserts userns-remap LIVE (Pitfall 3, hard-fail under $CI); runs internal/sandbox/docker.go go-mutesting spot-check (>=70%, avito-tech path same as Makefile); writes escape-rate+mutation+QEMU-arm64 caveat into docs/aura-quality-snapshot.md. .github/workflows/sandbox.yml is the REQUIRED gating DinD job: runsc install + daemon.json(userns-remap+runsc) + QEMU arm64 buildx + live sidecar under runsc + sandbox_integration negative tier + live bench + docker.go mutation + arm64 leg + 85% coverage fold; exports AURA_SANDBOX_URL/_TIMEOUT_SEC/_RUNTIME+CI=true (no-skip-as-green); documents Pitfall 2 (inner sidecar keeps seccomp despite --privileged outer DinD) + Pitfall 3. Docker daemon unavailable here -> live escape-rate/userns-remap-live/mutation-score are CI-populated (NOT fabricated) and are exactly the human-verify checkpoint sign-off items. CAP-01 NOT marked complete (verifier's call post-checkpoint).
 - [Phase 07]: 07-03: SearXNG client uses a plain http.Client (not the SSRF transport) — the in-network backend is trusted; only model-supplied web_fetch URLs cross the SSRF gate
 - [Phase 07]: 07-03: images category OUT for Phase 7 (general/news only); an unknown category is a structured error, not a panic; thumbnail/img_src kept in searxResult for a future images slice
+- [Phase 33]: 33-02: D-12/F-002 destructive-shell semantics flip. `destructiveShellPatterns()` now resolves UNSET *or* EMPTY (whitespace TrimSpace-collapses) → `defaultDestructivePatterns` (gate ACTIVE) and only a case-insensitive explicit `off` disables — closing the copy-`.env.example`-disables-gate footgun (success criterion #2). The leaf stays PROFILE-AGNOSTIC (no profile param); the `server_production` "forbid off" enforcement is deferred to plan 04's `gateDestructiveShell` (reads the raw env value, does not branch this leaf). TDD RED→GREEN observed live (empty/whitespace rows flipped). `.env.example` gained the corrected gate comment + two commented knobs (`#AURA_PROFILE=dev`, `#AURA_OBJECTSTORE_REPLICATION_FACTOR=1`). Three pre-existing destructive tests untouched.
 - [Phase 07]: 07-04 gap-closure (2026-06-02, Task 4 checkpoint bug+quality fix): the live Gate-3 found a BLOCKING bug — `AURA_WEB_RESPONSE_CAP_BYTES=24000` was applied to the RAW HTML body in gateAndRead, rejecting every real page (164KB Wikipedia → response_too_large) BEFORE extraction. Confirmed read in EXACTLY ONE place (raw-body LimitReader), never the LLM-facing payload (that is tools.NewResult preview cap). FIX Layer 1: renamed → WebFetchMaxBodyBytes / AURA_WEB_FETCH_MAX_BODY_BYTES, default 24000 → 5MB (raw-body DoS ceiling); PRD env-catalog amended first. FIX Layer 2: html.go post-processes the markdown — strips #cite_note/#cite_ref citation anchors, truncates at the References/Notes/Citations/Bibliography heading OR the first zero-padded reflist marker (the headingless Wikipedia case the live run exposed), strips the "From Wikipedia" boilerplate + <!--THE END--> converter artifact, filters fragment-only links, re-evaluates low_content post-cleanup. Gate-3 re-run LIVE: SC#2 content_md 36070→16429 B clean; SC#1 TestSearch_Live 1.01s; SC#3 4/4 blocked grep-clean; SC#4 TestDNSRebind PASS; ssrf.go mutation 94.4% (untouched); official internal/* coverage gate 87.4% (≥85%); golangci-lint 0; aura web doctor OK. Commits f5764ecc/1e424487/997b8693/00d76c59/8f25cc13. CAP-05 NOT marked complete — Task 4 human-verify still pending (the human's call).
 - [Phase 08]: 08-08 (Wave-4 live-surface wiring): the execute tool is now session-bound ALWAYS — empty session_id defaults to the ctx conversation id (D-26, WithToolCallContext, no InvocationContext change), validated by the traversal guard, routed through RunPythonSession/RunShellSession with an optional tools.SessionAcquirer Acquire/Release seam (nil in unit tier, *sandbox.SessionManager in prod); the 2a inert-reject branch is DELETED and Spec() documents the D-02 asymmetric persistence contract (python state + /workspace persist; shell cd/export do not). A non-empty network_allow appends an advisory [advisory] risk_tier/gate_recommended line (scoring.ComputeSandboxTier) — advisory ONLY, no pending-state (D-12). Conversations.Delete cascades via the consumer-declared ConversationCleaner interface -> WorkspaceManager.PurgeConversationDir (os.Root no-follow); go list -deps ./internal/conversations has NO internal/sandbox (cycle-free, landmine #4). NEW reaper-free sandbox.SessionControl backs aura sandbox sessions {list|terminate|prune} (registry reads + docker stop/rm via the LookPath-gated fixed-argv dockerCLI, D-05); aura exec --session is live with ErrSessionCapReached -> exit 75. SessionDeps gained EgressNetwork+ProxyEnv: runArgv appends the egress bridge + HTTP(S)_PROXY env ONLY for a non-empty allowlist (empty keeps the 2a egressless argv). sandbox/seccomp-session.json derives from seccomp.json by ADDING connect ONLY; compose.yaml documents the bridge-gateway-reachable proxy + empty-allowlist-egressless posture EXTENDING AR-05-01 (live spike + 08-SECURITY re-audit are 08-09). bootChat wires WorkspaceManager(cleaner)+SessionManager(reaper)+RecoverOnBoot+session-bound Execute, Closes the manager (goleak-clean). 2 obsolete 2a contract tests rewritten (justified). vet/build/test green, -race clean, gofmt clean, all <=600 LOC. CAP-02 NOT marked complete (live integration + re-audit = 08-09). Commits 78100acd/96723ad3.
 - [Phase ?]: [Phase 08]: 08-01 (PRD-amendment gate, doc-only): 5 amendments #38-#42 — D-01 two-tier persistence (per-session interpreter + workspace, not a contradiction), D-05 docker-lifecycle carve-out (CLI lifecycle, execution HTTP-only, NEVER mounts socket), D-08 host-side Go forward proxy egress + hostname-CONNECT allowlist + resolve-then-pin (SUPERSEDES iptables; CAP_NET_ADMIN incompatible with cap_drop:ALL; CAP-02 'via iptables' superseded), D-11 internal/scoring home-slice Slice 6 -> Phase 8 (+D-12 scope guard sandbox-advisory-only), D-13 os.Root/openat2 supersedes O_NOFOLLOW (cascade = manual no-follow openat walk not os.RemoveAll). Schema: 0010 -> 0008 (floor 0007), conversation_id text -> uuid. Wave-0 OQs in 08-DECISIONS-WAVE0.md: SSRF export-minimal over netguard-extract, AURA_PRIVACY_MODE add field + fail-fast under local-only+non-empty-allowlist, session connect(2)-allowed seccomp + proxy at bridge-gateway-IP + empty-allowlist-keeps-egressless + extends-AR-05-01 + live-reachability Wave-5 gate. Commits 21060757/1b18b915.
