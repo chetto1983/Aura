@@ -76,6 +76,10 @@ type serveEnv struct {
 	// ScanOrphans on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. runServe Start/Stops it.
 	sweeper *conversations.Sweeper
 
+	// assetProcessingWorker claims durable asset_process ingestion jobs and runs the
+	// shared asset processor pipeline. runServe Start/Stops it with the daemon.
+	assetProcessingWorker *runtimeIngestionWorker
+
 	// authulaProvider is the active embedded Authula web-auth framework.
 	// onboardingAuthulaProvider is kept as a distinct slot so cleanup stays correct if a
 	// future setup-only composition creates a separate provisioning provider.
@@ -178,6 +182,7 @@ func runServe(args []string) {
 	// derived) so a SIGTERM does not kill an in-flight filesystem walk mid-sweep; the
 	// drain joins it. A disabled interval launches no goroutine. Stopped in drainShutdown.
 	env.sweeper.Start(ctx)
+	env.assetProcessingWorker.Start(ctx)
 
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
 	// Start blocks until signalCtx is cancelled (SIGINT/SIGTERM) or it returns an
@@ -430,6 +435,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		RunDir:             chat.cfg.RunDir,
 		WarnThresholdBytes: int64(chat.cfg.RunDirWarnThresholdBytes),
 	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
+	assetProcessingWorker := newRuntimeAssetProcessingWorker(chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent)
 
 	// The channels Registry + the setup-wizard server (:9081) were built above (the
 	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
@@ -442,6 +448,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		channels:                  reg,
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,
+		assetProcessingWorker:     assetProcessingWorker,
 		authulaProvider:           authulaProvider,
 		onboardingAuthulaProvider: onboardingAuthulaProvider,
 	}, nil

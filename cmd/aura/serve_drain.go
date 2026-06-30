@@ -90,6 +90,9 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 	if env.sweeper != nil {
 		env.sweeper.Stop()
 	}
+	if env.assetProcessingWorker != nil {
+		env.assetProcessingWorker.Stop()
+	}
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
 	defer cancel()

@@ -139,7 +139,6 @@ func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Ass
 		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "processing_enqueue_failed", err.Error())
 		return updated, err
 	}
-	go s.process(context.WithoutCancel(ctx), asset)
 	return asset, nil
 }
 
@@ -186,7 +185,10 @@ func (s *Service) Retry(ctx context.Context, identityID, assetID string) (Asset,
 	if err != nil {
 		return Asset{}, err
 	}
-	go s.process(context.WithoutCancel(ctx), asset)
+	if err := s.enqueueProcessing(ctx, asset); err != nil {
+		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "processing_enqueue_failed", err.Error())
+		return updated, err
+	}
 	return asset, nil
 }
 

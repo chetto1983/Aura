@@ -101,7 +101,7 @@ func TestServiceFinalizeRefusesOversizedActualObject(t *testing.T) {
 	}
 }
 
-func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
+func TestServiceFinalizeMarksAcceptedAndEnqueuesProcessing(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{
 		MaxDocumentBytes: 100,
 		MaxImageBytes:    100,
@@ -151,17 +151,67 @@ func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
 
 	select {
 	case processing := <-processor.called:
-		if processing.Status != StatusProcessing || processing.ID != accepted.ID {
-			t.Fatalf("processor saw asset = %#v, want processing accepted id", processing)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("processor was not called")
+		t.Fatalf("processor ran inline for queued asset = %#v", processing)
+	case <-time.After(50 * time.Millisecond):
 	}
 
-	eventually(t, time.Second, func() bool {
-		got, err := store.GetForIdentity(context.Background(), accepted.ID, serviceIdentityID)
-		return err == nil && got.Status == StatusSearchable && got.DocumentID == "doc-1" && got.Summary == "indexed"
+	got, err := store.GetForIdentity(context.Background(), accepted.ID, serviceIdentityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusAccepted {
+		t.Fatalf("stored asset status = %s, want accepted until durable worker claims it", got.Status)
+	}
+}
+
+func TestServiceRetryEnqueuesProcessingWithoutStartingProcessor(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
 	})
+	queue := &recordingProcessingQueue{}
+	svc.ProcessingJobs = queue
+	processor := &recordingProcessor{
+		called: make(chan Asset, 1),
+		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "indexed"},
+	}
+	svc.Processors.Document = processor
+	asset, err := store.Create(context.Background(), CreateRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		Scope:             ScopeThread,
+		Modality:          ModalityDocument,
+		FileName:          "manual.pdf",
+		MIMEType:          "application/pdf",
+		DeclaredSizeBytes: 9,
+		ObjectBucket:      "asset-test",
+		ObjectKey:         "asset-key",
+		Metadata:          map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err = store.SetStatus(context.Background(), asset.ID, serviceIdentityID, StatusFailed, "processor_failed", "boom")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retry, err := svc.Retry(context.Background(), serviceIdentityID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.Status != StatusAccepted || retry.ErrorCode != "" || retry.ErrorMessage != "" {
+		t.Fatalf("retry asset = %#v, want accepted with cleared error", retry)
+	}
+	if queue.asset.ID != retry.ID || queue.asset.Status != StatusAccepted {
+		t.Fatalf("processing queue saw asset = %#v, want accepted retry %s", queue.asset, retry.ID)
+	}
+	select {
+	case processing := <-processor.called:
+		t.Fatalf("processor ran inline for retried asset = %#v", processing)
+	case <-time.After(50 * time.Millisecond):
+	}
 }
 
 func TestServiceProcessAcceptedRunsProcessor(t *testing.T) {
