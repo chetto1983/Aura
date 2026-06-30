@@ -188,7 +188,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 3. Invalid env fails-fast under production, warns under dev.
 4. `dev`/`local_trusted` preserve today's full-host behavior unchanged.
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 **Wave 1**
 
 - [x] 33-01-PLAN.md — Foundation: split Validate() out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields (wave 1) → 33-01-SUMMARY.md
@@ -204,7 +204,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 33-05-PLAN.md — `aura config validate [--profile] [--json]` CLI subcommand + exit-code/knob-name e2e test (wave 4)
+- [x] 33-05-PLAN.md — `aura config validate [--profile] [--json]` CLI subcommand + exit-code/knob-name e2e test (wave 4) → 33-05-SUMMARY.md
 
 #### Phase 34: Agent-Loop Correctness + Durable Ledger
 

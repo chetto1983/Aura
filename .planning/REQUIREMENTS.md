@@ -13,7 +13,7 @@
 
 ### Runtime Profiles & Config Validation (PROF)
 
-- [ ] **PROF-01**: Operator can select a runtime profile (`dev`, `local_trusted`, `single_user_hardened`, `server_production`) and `aura config validate --profile <p>` reports every unmet requirement and fails non-zero. *(F-026)*
+- [x] **PROF-01**: Operator can select a runtime profile (`dev`, `local_trusted`, `single_user_hardened`, `server_production`) and `aura config validate --profile <p>` reports every unmet requirement and fails non-zero. *(F-026)*
 - [ ] **PROF-02**: Copying `.env.example` to `.env` preserves the default destructive-shell approval gate (empty `AURA_SHELL_DESTRUCTIVE_PATTERNS` means "use defaults", only `off` disables); tests cover unset/empty/`off`/custom/copied-sample. *(F-002)*
 - [x] **PROF-03**: `server_production` validation fails when object-store/Garage credentials, RPC secret, bucket, or endpoint are sample/default values; passes with supplied secrets. *(F-007)*
 - [x] **PROF-04**: Invalid integer/boolean env values fail fast (error) under hardened/production profiles and warn (with diagnostics) under dev — never silently fall back for security/reliability knobs. *(F-016)*
