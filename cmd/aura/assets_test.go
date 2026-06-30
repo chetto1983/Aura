@@ -109,8 +109,12 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if doc.Objects != objects {
 		t.Fatalf("document processor object store = %T, want shared fake store", doc.Objects)
 	}
-	if _, ok := doc.Ingest.(*runtimeDocumentIngestor); !ok {
+	ingestor, ok := doc.Ingest.(*runtimeDocumentIngestor)
+	if !ok {
 		t.Fatalf("document processor ingestor = %T, want *runtimeDocumentIngestor", doc.Ingest)
+	}
+	if ingestor.MaxBytes != 123 {
+		t.Fatalf("runtime document ingestor MaxBytes = %d, want asset max document bytes 123", ingestor.MaxBytes)
 	}
 	imageDoc, ok := svc.Processors.Image.(*assetspkg.ImageDocumentProcessor)
 	if !ok {

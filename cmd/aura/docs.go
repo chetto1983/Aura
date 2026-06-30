@@ -228,12 +228,17 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 }
 
 type runtimeDocumentIngestor struct {
-	cfg  *config.Config
-	pool *pgxpool.Pool
+	cfg      *config.Config
+	pool     *pgxpool.Pool
+	MaxBytes int64
 }
 
 func newRuntimeDocumentIngestor(cfg *config.Config, pool *pgxpool.Pool) *runtimeDocumentIngestor {
-	return &runtimeDocumentIngestor{cfg: cfg, pool: pool}
+	var maxBytes int64
+	if cfg != nil {
+		maxBytes = int64(cfg.AssetMaxDocumentBytes)
+	}
+	return &runtimeDocumentIngestor{cfg: cfg, pool: pool, MaxBytes: maxBytes}
 }
 
 func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error) {
@@ -251,6 +256,7 @@ func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.
 		Indexer:   &documents.Indexer{Client: mcp},
 		Searcher:  &documents.Searcher{Client: mcp},
 		Embedder:  runtimeEmbeddingQueue{cfg: i.cfg, pool: i.pool},
+		MaxBytes:  i.MaxBytes,
 	}
 	return svc.IngestPath(ctx, req, path)
 }
