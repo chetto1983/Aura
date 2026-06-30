@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: executing
-stopped_at: Phase 32 fully executed (10/10 plans, Waves 1-3); awaiting live-cockpit UAT (32-UAT.md) — run /gsd-verify-work 32 to close
-last_updated: "2026-06-30T12:49:15Z"
+current_phase: 33
+current_phase_name: Runtime Profiles + Config Validation
+status: verifying
+stopped_at: Phase 32 context gathered
+last_updated: "2026-06-30T19:08:07.685Z"
 last_activity: 2026-06-30
+last_activity_desc: Phase 32 complete, transitioned to Phase 33
 progress:
   total_phases: 11
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 13
-  completed_plans: 7
-  percent: 9
+  completed_plans: 13
+  percent: 18
 ---
 
 # Project State
@@ -21,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 32 — quality-cleanup-dead-code-shared-helpers
+**Current focus:** Phase 33 — Runtime Profiles + Config Validation
 
 ## Current Position
 
-Phase: 32 (quality-cleanup-dead-code-shared-helpers) — EXECUTED, AWAITING UAT
-Plan: 10 of 10 (all committed)
-Status: All 10 plans complete & committed (QUAL-02 dead-code, QUAL-03 shared-helper extractions w/ parity tests, QUAL-05 test gaps). Whole-tree `go build` + consolidated `-race` regression GREEN; web gates green. Verifier: 21/21 must-haves PASS, status human_needed — 2 live-cockpit UAT items (focusTrap keyboard a11y + skeleton visuals). Phase stays pending until /gsd-verify-work 32 passes the UAT. Executed sequentially on master (no worktrees, D-14) with explicit-pathspec commits alongside a live parallel Codex session.
-Last activity: 2026-06-30
+Phase: 33 — Runtime Profiles + Config Validation
+Plan: Not started
+Status: Phase 32 CLOSED 2026-06-30 — UAT passed 2/2 (automated live-cockpit Playwright e2e: focusTrap keyboard a11y + skeleton visuals), verification 21/21 must-haves PASS, security verified (0 open threats ≥high). 10/10 plans complete & committed; whole-tree `go build` + consolidated `-race` GREEN, web gates green. Phase 33 ready to plan.
+Last activity: 2026-06-30 — Phase 32 complete, transitioned to Phase 33
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -45,7 +48,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 115
+- Total plans completed: 125
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -75,6 +78,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 27 | 4 | - | - |
 | 29 | 5 | - | - |
 | 31 | 3 | - | - |
+| 32 | 10 | - | - |
 
 **Recent Trend:**
 

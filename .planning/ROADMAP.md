@@ -75,7 +75,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 31: Stabilization & CI Unblock** (Wave 0 — URGENT, prerequisite) — `QUAL-01`, `F-015`, `SEC-08` (quality audit + CI hygiene + critical CodeQL SSRF) (completed 2026-06-29)
   - Goal: clean tree + green CI so every commit passes hooks (drop the `--no-verify` workaround); remediate the critical CodeQL SSRF pulled forward from the security backlog.
   - Success: (1) no production/test file >600 LOC (`cmd/aura/serve_webui.go`, `web/src/__tests__/LoginPage.test.tsx` split); (2) `internal/webui/dist` rebuilt → `web-dist-freshness` green; (3) all Go CI jobs use `scripts/go_packages.sh`, no raw `./...` (F-015); (4) frontend branch-coverage gate restored ≥85%; (5) critical CodeQL `go/request-forgery` (SSRF) at `internal/mcp/http_client.go` remediated + alert resolved (SEC-08).
-- [ ] **Phase 32: Quality Cleanup — Dead Code + Shared Helpers** — `QUAL-02/03/05` (quality audit ~64 findings)
+- [x] **Phase 32: Quality Cleanup — Dead Code + Shared Helpers** — `QUAL-02/03/05` (quality audit ~64 findings) (completed 2026-06-30)
   - Goal: kill cross-package duplication + dead code BEFORE feature phases build on them (so later work reuses clean shared packages).
   - Success: (1) dead exports/placeholders removed, each confirmed via `deadcode`/`knip`/repo-wide `rg`; (2) shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — with a parity test per extraction; (3) targeted test gaps closed (`web/throttle`, setup ordering, Telegram keyword fallback, `truncateTailBytes`).
 - [ ] **Phase 33: Runtime Profiles + Config Validation** (keystone) — `PROF-01..06`, `QUAL-04`(env catalog) (F-002/007/016/018/026/041)
@@ -154,7 +154,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 2. Shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — each with a parity test.
 3. Targeted test gaps closed (`web/throttle`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing).
 
-**Plans:** 4/10 plans executed
+**Plans:** 10/10 plans complete
 
 **Wave 1** *(QUAL-02 dead-code clean-slate)*
 
@@ -165,15 +165,15 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Wave 2** *(QUAL-03 test-first shared-helper extractions; blocked on Wave 1)*
 
-- [ ] 32-05-PLAN.md — leaf extractions: internal/neostore + internal/db numeric + internal/envutil (+ D-13 coverage-gate)
-- [ ] 32-06-PLAN.md — agent extractions: canonicaljson.CanonicalArgs + shared isTransientNetworkErr (asymmetric)
-- [ ] 32-07-PLAN.md — internal/agentrender render primitives (+ documented eval json.Number fix)
-- [ ] 32-08-PLAN.md — web dedup: single getJSON + canonical focusTrap + skeleton unification + dist rebuild
+- [x] 32-05-PLAN.md — leaf extractions: internal/neostore + internal/db numeric + internal/envutil (+ D-13 coverage-gate)
+- [x] 32-06-PLAN.md — agent extractions: canonicaljson.CanonicalArgs + shared isTransientNetworkErr (asymmetric)
+- [x] 32-07-PLAN.md — internal/agentrender render primitives (+ documented eval json.Number fix)
+- [x] 32-08-PLAN.md — web dedup: single getJSON + canonical focusTrap + skeleton unification + dist rebuild
 
 **Wave 3** *(QUAL-05 targeted test gaps; blocked on Wave 2)*
 
-- [ ] 32-09-PLAN.md — test gaps: web/throttle, setup SSE ordering, Authula ensureAuthulaSearchPath DSN
-- [ ] 32-10-PLAN.md — test gaps: Telegram answersFromText fallback, truncateTailBytes UTF-8, memory_integration CI verify+doc
+- [x] 32-09-PLAN.md — test gaps: web/throttle, setup SSE ordering, Authula ensureAuthulaSearchPath DSN
+- [x] 32-10-PLAN.md — test gaps: Telegram answersFromText fallback, truncateTailBytes UTF-8, memory_integration CI verify+doc
 
 #### Phase 33: Runtime Profiles + Config Validation
 

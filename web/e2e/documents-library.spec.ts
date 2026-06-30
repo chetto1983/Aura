@@ -1,12 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
-test('document library exposes product file manager controls', async ({ page }) => {
+test('document library exposes product file manager controls', async ({ page }, testInfo) => {
   await gotoAuthenticated(page, '/');
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('button', { name: /Documents/ })
-    .click();
+
+  const nav =
+    testInfo.project.name === 'chromium'
+      ? page.getByRole('navigation', { name: /Primary|Principale/ })
+      : page.getByRole('navigation', { name: /Modes|Modalit/ });
+  await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
 
   await expect(
     page.getByRole('heading', { name: /Document library|Libreria documenti/ }),
