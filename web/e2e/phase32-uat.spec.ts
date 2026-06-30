@@ -184,6 +184,10 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
   test('ConversationSidebar renders the rich skeleton while the conversation list loads', async ({
     page,
   }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'chromium',
+      'the left nav (conversation list) is a hidden off-canvas drawer on the mobile viewport; the skeleton is verified on desktop chromium',
+    );
     // Hang the conversation LIST so the sidebar stays in its loading (skeleton) state.
     await page.route('**/api/conversations**', async (route) => {
       const path = new URL(route.request().url()).pathname;
@@ -217,6 +221,10 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
   test('SearchPanel renders the rich skeleton while a search is in flight', async ({
     page,
   }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'chromium',
+      'the search panel lives in the hidden off-canvas nav drawer on the mobile viewport; the skeleton is verified on desktop chromium',
+    );
     await page.route('**/api/conversations**', async (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/conversations/search') {
