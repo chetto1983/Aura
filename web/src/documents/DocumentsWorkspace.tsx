@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { SyntheticEvent } from 'react';
-import { FileText, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
+import { RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import {
@@ -12,15 +11,24 @@ import {
   type DocumentDetail,
   type DocumentItem,
   type DocumentScope,
-  type DocumentStatus,
   type DocumentVersion,
   type UpdateDocumentInput,
 } from './documentApi';
 import { DocumentEventsPanel } from './DocumentEventsPanel';
+import { DocumentFileList } from './DocumentFileList';
+import { DocumentFilterBar, type ScopeFilter, type ViewMode } from './DocumentFilterBar';
+import { DocumentLibraryHeader } from './DocumentLibraryHeader';
 import { formatBytes } from './documentFormat';
 import { StorageOrphansPanel } from './StorageOrphansPanel';
+import {
+  activeVersionFor,
+  formatDocumentDate,
+  parseDocumentTags,
+  statusToneFor,
+  type DocumentTab,
+} from './documentViewModel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -32,10 +40,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
-import { cn } from '@/lib/utils';
 
-type ScopeFilter = DocumentScope | 'all';
 type LoadStatus = 'loading' | 'ready' | 'error';
 
 const defaultFilters = { query: '', tag: '', scope: 'all' as ScopeFilter };
@@ -46,7 +51,10 @@ export default function DocumentsWorkspace() {
   const [query, setQuery] = useState(defaultFilters.query);
   const [tag, setTag] = useState(defaultFilters.tag);
   const [scope, setScope] = useState<ScopeFilter>(defaultFilters.scope);
+  const [tab, setTab] = useState<DocumentTab>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [documents, setDocuments] = useState<readonly DocumentItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState<DocumentDetail | undefined>(undefined);
   const [listStatus, setListStatus] = useState<LoadStatus>('loading');
@@ -57,6 +65,7 @@ export default function DocumentsWorkspace() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadDetail = useCallback(async (id: string) => {
     setDetailStatus('loading');
@@ -113,32 +122,37 @@ export default function DocumentsWorkspace() {
     void Promise.resolve().then(() => loadDocuments(defaultFilters));
   }, [loadDocuments]);
 
-  const selectedDocument = detail?.document ?? documents.find((item) => item.id === selectedId);
-  const activeVersion = useMemo(() => {
-    if (detail === undefined) return undefined;
-    return (
-      detail.versions.find((version) => version.id === detail.document.active_version_id) ??
-      detail.versions[0]
-    );
-  }, [detail]);
+  const activeVersion = useMemo(() => activeVersionFor(detail), [detail]);
+  const activeVersions = useMemo(() => {
+    const versions = new Map<string, DocumentVersion | undefined>();
+    if (detail !== undefined) versions.set(detail.document.id, activeVersion);
+    return versions;
+  }, [activeVersion, detail]);
 
-  function submitSearch(event: SyntheticEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function searchDocuments() {
     void loadDocuments({ query, tag, scope }, selectedId);
   }
 
-  async function selectDocument(id: string) {
+  async function openDocument(id: string) {
     setSelectedId(id);
     await loadDetail(id);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function saveTags() {
     const document = detail?.document;
     if (document === undefined || savingTags) return;
-    const tags = parseTags(tagDraft);
     const body: UpdateDocumentInput = {
       title: document.title,
-      tags,
+      tags: parseDocumentTags(tagDraft),
       scope: document.scope,
       status: document.status,
       ...(document.active_version_id !== undefined && document.active_version_id !== ''
@@ -185,186 +199,63 @@ export default function DocumentsWorkspace() {
 
   return (
     <section aria-label={t('documents.title')} className="flex h-full min-h-0 flex-col bg-bg">
-      <div className="shrink-0 border-b border-border bg-surface px-4 py-4 sm:px-6">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-md)] border border-border bg-surface-2 text-accent-text">
-              <FileText data-icon="icon" aria-hidden="true" focusable="false" />
-            </div>
-            <h1 className="min-w-0 truncate font-display text-xl font-semibold text-text">
-              {t('documents.title')}
-            </h1>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void loadDocuments({ query, tag, scope }, selectedId);
-            }}
-          >
-            <RefreshCw aria-hidden="true" />
-            {t('documents.actions.refresh')}
-          </Button>
+      <DocumentLibraryHeader
+        query={query}
+        refreshing={listStatus === 'loading'}
+        onQueryChange={setQuery}
+        onSearch={searchDocuments}
+        onRefresh={searchDocuments}
+        onUpload={() => setUploadOpen(true)}
+      />
+      <DocumentFilterBar
+        tab={tab}
+        tag={tag}
+        scope={scope}
+        viewMode={viewMode}
+        onTabChange={setTab}
+        onTagChange={setTag}
+        onScopeChange={setScope}
+        onViewModeChange={setViewMode}
+      />
+      <main className="relative min-h-0 flex-1 overflow-y-auto">
+        <DocumentFileList
+          documents={documents}
+          activeVersions={activeVersions}
+          tab={tab}
+          selectedIds={selectedIds}
+          activeId={selectedId}
+          loading={listStatus === 'loading'}
+          error={listStatus === 'error'}
+          onToggleSelected={toggleSelected}
+          onOpenDetails={(id) => {
+            void openDocument(id);
+          }}
+          onOpenActions={(id) => {
+            void openDocument(id);
+          }}
+          onRefresh={searchDocuments}
+        />
+        <SelectedDocumentPanel
+          detail={detail}
+          status={detailStatus}
+          activeVersion={activeVersion}
+          tagDraft={tagDraft}
+          savingTags={savingTags}
+          retrying={retrying}
+          onTagDraftChange={setTagDraft}
+          onSaveTags={() => void saveTags()}
+          onRetry={() => void retryActiveAsset()}
+          onDelete={() => setDeleteOpen(true)}
+        />
+        <div className="mx-auto w-full max-w-6xl px-4 pb-5 sm:px-6">
+          <StorageOrphansPanel />
         </div>
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-border bg-surface/60 lg:border-b-0 lg:border-r">
-          <form onSubmit={submitSearch} className="grid gap-3 border-b border-border p-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="documents-search">{t('documents.filters.search')}</Label>
-              <Input
-                id="documents-search"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                }}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="grid gap-1.5">
-                <Label htmlFor="documents-tag">{t('documents.filters.tag')}</Label>
-                <Input
-                  id="documents-tag"
-                  value={tag}
-                  onChange={(event) => {
-                    setTag(event.target.value);
-                  }}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="documents-scope">{t('documents.filters.scope')}</Label>
-                <NativeSelect
-                  id="documents-scope"
-                  value={scope}
-                  onChange={(event) => {
-                    setScope(event.target.value as ScopeFilter);
-                  }}
-                >
-                  <NativeSelectOption value="all">{t('documents.scope.all')}</NativeSelectOption>
-                  <NativeSelectOption value="library">
-                    {t('documents.scope.library')}
-                  </NativeSelectOption>
-                  <NativeSelectOption value="thread">
-                    {t('documents.scope.thread')}
-                  </NativeSelectOption>
-                </NativeSelect>
-              </div>
-            </div>
-            <Button type="submit">
-              <Search aria-hidden="true" />
-              {t('documents.actions.search')}
-            </Button>
-          </form>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {listStatus === 'loading' ? (
-              <StatusLine label={t('documents.loading')} />
-            ) : listStatus === 'error' ? (
-              <Alert variant="destructive">
-                <AlertDescription>{t('documents.error.list')}</AlertDescription>
-              </Alert>
-            ) : documents.length === 0 ? (
-              <StatusLine label={t('documents.empty')} />
-            ) : (
-              <div className="grid gap-2">
-                {documents.map((document) => (
-                  <DocumentRow
-                    key={document.id}
-                    document={document}
-                    selected={document.id === selectedId}
-                    onSelect={() => {
-                      void selectDocument(document.id);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </aside>
-
-        <main className="min-h-0 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6">
-            {detailStatus === 'loading' ? (
-              <StatusLine label={t('documents.loadingDetail')} />
-            ) : detailStatus === 'error' ? (
-              <Alert variant="destructive">
-                <AlertDescription>{t('documents.error.detail')}</AlertDescription>
-              </Alert>
-            ) : selectedDocument === undefined || detail === undefined ? (
-              <StatusLine label={t('documents.empty')} />
-            ) : (
-              <>
-                <DocumentHeader document={detail.document} activeVersion={activeVersion} />
-                <section className="grid gap-3 border-y border-border py-4">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="documents-tags">{t('documents.detail.tags')}</Label>
-                    <Input
-                      id="documents-tags"
-                      value={tagDraft}
-                      onChange={(event) => {
-                        setTagDraft(event.target.value);
-                      }}
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      disabled={savingTags}
-                      onClick={() => {
-                        void saveTags();
-                      }}
-                    >
-                      {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
-                      {t('documents.actions.saveTags')}
-                    </Button>
-                    {detail.document.status === 'failed' && activeVersion?.asset_id ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={retrying}
-                        onClick={() => {
-                          void retryActiveAsset();
-                        }}
-                      >
-                        {retrying ? <Spinner /> : <RefreshCw aria-hidden="true" />}
-                        {t('documents.actions.retryProcessing')}
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={() => {
-                        setDeleteOpen(true);
-                      }}
-                    >
-                      <Trash2 aria-hidden="true" />
-                      {t('documents.actions.delete')}
-                    </Button>
-                  </div>
-                </section>
-                <section aria-labelledby="document-versions" className="flex flex-col gap-3">
-                  <h2 id="document-versions" className="text-[18px] font-semibold text-text">
-                    {t('documents.detail.versions')}
-                  </h2>
-                  <div className="grid gap-2">
-                    {detail.versions.map((version) => (
-                      <VersionRow
-                        key={version.id}
-                        version={version}
-                        active={version.id === detail.document.active_version_id}
-                      />
-                    ))}
-                  </div>
-                </section>
-                <DocumentEventsPanel key={detail.document.id} documentId={detail.document.id} />
-              </>
-            )}
-            <StorageOrphansPanel />
-          </div>
-        </main>
-      </div>
-
+      </main>
+      {uploadOpen ? (
+        <div role="status" className="sr-only">
+          {t('documents.actions.upload')}
+        </div>
+      ) : null}
       <DeleteDialog
         open={deleteOpen}
         document={detail?.document}
@@ -380,70 +271,100 @@ export default function DocumentsWorkspace() {
   );
 }
 
-function DocumentRow({
-  document,
-  selected,
-  onSelect,
-}: {
-  readonly document: DocumentItem;
-  readonly selected: boolean;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-current={selected ? 'page' : undefined}
-      onClick={onSelect}
-      className={cn(
-        'grid min-h-20 w-full gap-2 rounded-md border px-3 py-3 text-left transition-colors',
-        selected
-          ? 'border-border-strong bg-surface-3'
-          : 'border-border bg-surface hover:bg-surface-2',
-      )}
-    >
-      <span className="flex min-w-0 items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-[14px] font-semibold text-text">
-          {document.title}
-        </span>
-        <StatusBadge status={document.status} />
-      </span>
-      <span className="flex flex-wrap gap-1">
-        {document.tags.map((tag) => (
-          <Badge key={tag} variant="secondary">
-            {tag}
-          </Badge>
-        ))}
-      </span>
-    </button>
-  );
-}
-
-function DocumentHeader({
-  document,
+function SelectedDocumentPanel({
+  detail,
+  status,
   activeVersion,
+  tagDraft,
+  savingTags,
+  retrying,
+  onTagDraftChange,
+  onSaveTags,
+  onRetry,
+  onDelete,
 }: {
-  readonly document: DocumentItem;
+  readonly detail: DocumentDetail | undefined;
+  readonly status: LoadStatus;
   readonly activeVersion: DocumentVersion | undefined;
+  readonly tagDraft: string;
+  readonly savingTags: boolean;
+  readonly retrying: boolean;
+  readonly onTagDraftChange: (value: string) => void;
+  readonly onSaveTags: () => void;
+  readonly onRetry: () => void;
+  readonly onDelete: () => void;
 }) {
-  return (
-    <header className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="break-words font-display text-[24px] font-semibold text-text">
-            {document.title}
-          </h2>
-          <p className="mt-1 break-all text-[13px] text-text-faint">{document.id}</p>
-        </div>
-        <StatusBadge status={document.status} />
+  const { t } = useTranslation();
+  if (status === 'loading') return <StatusLine label={t('documents.loadingDetail')} />;
+  if (status === 'error') {
+    return (
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6">
+        <Alert variant="destructive">
+          <AlertDescription>{t('documents.error.detail')}</AlertDescription>
+        </Alert>
       </div>
-      {activeVersion === undefined ? null : (
-        <dl className="grid gap-2 text-[13px] text-text-muted sm:grid-cols-3">
-          <MetaItem label="MIME" value={activeVersion.content_type} />
-          <MetaItem label="Size" value={formatBytes(activeVersion.size_bytes)} />
-          <MetaItem label="SHA-256" value={activeVersion.sha256} />
-        </dl>
-      )}
-    </header>
+    );
+  }
+  if (detail === undefined) return null;
+  return (
+    <section className="mx-auto grid w-full max-w-6xl gap-4 border-t border-border px-4 py-5 sm:px-6">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-[18px] font-semibold text-text">{detail.document.title}</h2>
+          <p className="mt-1 text-[13px] text-text-muted">
+            {formatDocumentDate(detail.document.updated_at ?? detail.document.created_at)}
+          </p>
+        </div>
+        <Badge variant={statusToneFor(detail.document.status)}>{detail.document.status}</Badge>
+      </header>
+      <dl className="grid gap-2 text-[13px] text-text-muted sm:grid-cols-3">
+        <MetaItem label="MIME" value={activeVersion?.content_type ?? '-'} />
+        <MetaItem
+          label={t('documents.view.size')}
+          value={activeVersion === undefined ? '-' : formatBytes(activeVersion.size_bytes)}
+        />
+        <MetaItem label="SHA-256" value={activeVersion?.sha256 ?? '-'} />
+      </dl>
+      <div className="grid gap-1.5">
+        <Label htmlFor="documents-tags">{t('documents.detail.tags')}</Label>
+        <Input
+          id="documents-tags"
+          value={tagDraft}
+          onChange={(event) => onTagDraftChange(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" disabled={savingTags} onClick={onSaveTags}>
+          {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
+          {t('documents.actions.saveTags')}
+        </Button>
+        {detail.document.status === 'failed' && activeVersion?.asset_id ? (
+          <Button type="button" variant="outline" disabled={retrying} onClick={onRetry}>
+            {retrying ? <Spinner /> : <RefreshCw aria-hidden="true" />}
+            {t('documents.actions.retryProcessing')}
+          </Button>
+        ) : null}
+        <Button type="button" variant="destructive" onClick={onDelete}>
+          <Trash2 aria-hidden="true" />
+          {t('documents.actions.delete')}
+        </Button>
+      </div>
+      <section aria-labelledby="document-versions" className="grid gap-3">
+        <h3 id="document-versions" className="text-[16px] font-semibold text-text">
+          {t('documents.detail.versions')}
+        </h3>
+        <div className="grid gap-2">
+          {detail.versions.map((version) => (
+            <VersionRow
+              key={version.id}
+              version={version}
+              active={version.id === detail.document.active_version_id}
+            />
+          ))}
+        </div>
+      </section>
+      <DocumentEventsPanel key={detail.document.id} documentId={detail.document.id} />
+    </section>
   );
 }
 
@@ -455,7 +376,7 @@ function VersionRow({
   readonly active: boolean;
 }) {
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-surface px-3 py-3">
+    <div className="grid gap-2 rounded-md border border-border bg-surface px-3 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[14px] font-semibold text-text">v{version.version_number}</span>
@@ -490,18 +411,6 @@ function StatusLine({ label }: { readonly label: string }) {
   );
 }
 
-function StatusBadge({ status }: { readonly status: DocumentStatus }) {
-  const variant: BadgeProps['variant'] =
-    status === 'ready'
-      ? 'success'
-      : status === 'failed' || status === 'deleted'
-        ? 'danger'
-        : status === 'processing' || status === 'queued'
-          ? 'warning'
-          : 'secondary';
-  return <Badge variant={variant}>{status}</Badge>;
-}
-
 function DeleteDialog({
   open,
   document,
@@ -533,19 +442,11 @@ function DeleteDialog({
           <Input
             id="documents-delete-confirm"
             value={confirm}
-            onChange={(event) => {
-              onConfirmChange(event.target.value);
-            }}
+            onChange={(event) => onConfirmChange(event.target.value)}
           />
         </div>
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              onOpenChange(false);
-            }}
-          >
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             {t('documents.actions.cancel')}
           </Button>
           <Button
@@ -561,11 +462,4 @@ function DeleteDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function parseTags(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
 }

@@ -100,14 +100,18 @@ describe('DocumentsWorkspace', () => {
     render(<DocumentsWorkspace />);
 
     expect(await screen.findByRole('heading', { name: 'Document library' })).toBeTruthy();
-    expect(await screen.findByRole('button', { name: /Handbook\.pdf/ })).toBeTruthy();
+    expect(screen.getByRole('searchbox', { name: 'Search documents' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'All' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Images' })).toBeTruthy();
+    expect(await screen.findByRole('row', { name: /Handbook\.pdf.*ready.*2 KB/i })).toBeTruthy();
     expect((await screen.findAllByText('sha256-current')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('application/pdf').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2 KB').length).toBeGreaterThan(0);
     expect(await screen.findByText('ingestion_job.succeeded')).toBeTruthy();
     expect(screen.getByText('indexed')).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Search documents'), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search documents' }), {
       target: { value: 'handbook' },
     });
     fireEvent.change(screen.getByLabelText('Tag filter'), { target: { value: 'ops' } });
