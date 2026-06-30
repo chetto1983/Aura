@@ -30,6 +30,7 @@ const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 // The Phase-28 Governance workspace (MCP/Skills/Scheduler boards) is its own lazy chunk too
 // (D-01) — it loads only when surface==='governance'.
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
+const DocumentsWorkspace = lazy(() => import('./documents/DocumentsWorkspace'));
 const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 
 // The Phase-28 onboarding+provisioning wizard is a SEPARATE full-screen overlay (D-04 — NOT a
@@ -100,7 +101,10 @@ export function AppShell() {
   // there — drop it on lg so the workspace gets the width back instead of being squeezed into a
   // narrow middle column. The chat approval cards are also chat-only.
   const isFocusedWorkspace =
-    surface === 'graph' || surface === 'governance' || surface === 'settings';
+    surface === 'graph' ||
+    surface === 'governance' ||
+    surface === 'documents' ||
+    surface === 'settings';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
@@ -297,9 +301,11 @@ export function AppShell() {
                     ? t('graph.loading')
                     : surface === 'governance'
                       ? t('governance.loading')
-                      : surface === 'settings'
-                        ? t('settings.loading')
-                        : t('chat.loading')}
+                      : surface === 'documents'
+                        ? t('documents.loading')
+                        : surface === 'settings'
+                          ? t('settings.loading')
+                          : t('chat.loading')}
                 </div>
               }
             >
@@ -307,6 +313,8 @@ export function AppShell() {
                 <GraphExplorer threadId={activeThreadId} />
               ) : surface === 'governance' ? (
                 <GovernanceWorkspace />
+              ) : surface === 'documents' ? (
+                <DocumentsWorkspace />
               ) : surface === 'settings' ? (
                 <SettingsWorkspace />
               ) : (

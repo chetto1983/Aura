@@ -1,4 +1,5 @@
 import { displayEn, displayIt } from './resources.display';
+import { documentsEn, documentsIt } from './resources.documents';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
@@ -39,6 +40,7 @@ export const resources = {
           tree: 'Tree',
           graph: 'Graph',
           governance: 'Governance',
+          documents: 'Documents',
           displays: 'Displays',
           settings: 'Settings',
         },
@@ -120,6 +122,7 @@ export const resources = {
         },
       },
       ...displayEn,
+      ...documentsEn,
       ...governanceEn,
       ...graphEn,
       ...settingsEn,
@@ -297,6 +300,7 @@ export const resources = {
           tree: 'Albero',
           graph: 'Grafo',
           governance: 'Governance',
+          documents: 'Documenti',
           displays: 'Display',
           settings: 'Impostazioni',
         },
@@ -378,6 +382,7 @@ export const resources = {
         },
       },
       ...displayIt,
+      ...documentsIt,
       ...governanceIt,
       ...graphIt,
       ...settingsIt,

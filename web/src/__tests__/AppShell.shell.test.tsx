@@ -38,6 +38,10 @@ vi.mock('../settings/SettingsWorkspace', () => ({
   default: () => <div>Runtime settings</div>,
 }));
 
+vi.mock('../documents/DocumentsWorkspace', () => ({
+  default: () => <div>Document library</div>,
+}));
+
 // The marketing-hero copy this operator console must NOT ship (ux-spec §350 / SC4).
 const MARKETING_HERO_BLOCKLIST = [
   /get started for free/i,
@@ -150,6 +154,20 @@ describe('AppShell', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Runtime settings')).toBeTruthy();
+    });
+  });
+
+  it('opens the document library workspace from the shell mode switcher', async () => {
+    renderShell();
+
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+        name: 'Documents',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Document library')).toBeTruthy();
     });
   });
 

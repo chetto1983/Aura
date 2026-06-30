@@ -1,4 +1,12 @@
-export const MODES = ['chat', 'tree', 'graph', 'governance', 'displays', 'settings'] as const;
+export const MODES = [
+  'chat',
+  'tree',
+  'graph',
+  'governance',
+  'documents',
+  'displays',
+  'settings',
+] as const;
 
 export type SurfaceIntent = (typeof MODES)[number];
 
@@ -10,6 +18,7 @@ export const LIVE_MODES = [
   'chat',
   'graph',
   'governance',
+  'documents',
   'settings',
 ] as const satisfies readonly SurfaceIntent[];
 
