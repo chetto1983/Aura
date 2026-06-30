@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 33
 current_phase_name: runtime-profiles-config-validation
 status: executing
-stopped_at: Completed 33-02-PLAN.md
-last_updated: "2026-06-30T22:05:00.000Z"
+stopped_at: Completed 33-03-PLAN.md
+last_updated: "2026-06-30T21:52:12.000Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 33 plan 02 (D-12 destructive-shell empty→defaults semantics flip + truth table + .env.example) complete
+last_activity_desc: Phase 33 plan 03 (KnobSpec registry single source of truth + generic kind-driven reparsePass + 3 rapid PBT invariants) complete
 progress:
   total_phases: 11
   completed_phases: 2
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 18
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 33 (runtime-profiles-config-validation) — EXECUTING
-Plan: 3 of 5
-Status: Executing Phase 33 (33-01, 33-02 complete)
-Last activity: 2026-06-30 — 33-02 complete: D-12/F-002 destructive-shell semantics flip (empty/unset → built-in defaults, gate ACTIVE; only `off` disables) + full truth-table test + .env.example comment fix and two new commented knobs
+Plan: 4 of 5
+Status: Executing Phase 33 (33-01, 33-02, 33-03 complete)
+Last activity: 2026-06-30 — 33-03 complete: KnobSpec registry (Tier A+B single source of truth, D-08/QUAL-04) + generic kind-driven `reparsePass` (Fatal under strict tiers, Warn under lenient, PROF-04/F-016/D-07) proven by a truth-table test + 3 `rapid` PBT invariants (strictness/no-false-positive/aggregation-monotonicity) under -race; envutil leaf untouched, no Tier C knobs catalogued
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -207,11 +207,13 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 32 P04 | ~32min | 2 tasks | 7 files |
 | Phase 33 P33-01 | ~11min | 3 tasks | 5 files |
 | Phase 33 P33-02 | ~15min | 2 tasks | 3 files |
+| Phase 33 P33-03 | ~22min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
 ### Phase 33 Execution
 
+- **33-03 closed (2026-06-30): QUAL-04/PROF-04 KnobSpec registry single source of truth + generic kind-driven reparsePass (D-08/D-07/F-016).** The validation ENGINE — a data registry plus ~30 LOC of stdlib, not a framework. Task 1 (`feat`, `0f75ce48`): `internal/config/config_knobs.go` defines `KnobKind` (KindString/Int/Bool/Enum) + `KnobSpec{Name,Kind,Default,Enum,Secret}` + `knobRegistry()` — one slice literal cataloguing **13 Tier A** knobs (the AURA_PROFILE KindEnum selector + the security/reliability gate surface: object-store creds/endpoint/bucket/replication-factor, AGUI bind/CORS, destructive-patterns, Authula secret, web-trust-proxy) and **30 Tier B** int/bool reliability knobs read in internal/config (the F-016 silent-fallback surface), with **exactly four** `Secret:true` knobs (`AURA_OBJECTSTORE_ACCESS_KEY`/`SECRET_KEY`, `GARAGE_RPC_SECRET`, `AURA_AUTHULA_SECRET`). `TestKnobRegistry` round-trips the structural invariants: no dup Name, enum rows carry a non-empty Enum (and non-enum rows carry none), the secret set is EXACTLY those four (set-equality, stronger than the plan's "the four are flagged"), the AURA_PROFILE Enum spells the four runtime profiles, and no Tier C (`AURA_LOOP_`/`AURA_LLM_`/`AURA_SWARM_MAX_DEPTH`/`AURA_FS_`) knob leaked in (D-16). DB/Neo4j required secrets stay OUT of the registry — they are owned by the existing `Validate()`, not the int/bool/enum reparse surface — which keeps the four-secret assertion exact. Task 2 (`feat`, `72da6f0b`): `reparsePass(p RuntimeProfile) []Violation` re-reads every cataloged knob via `os.LookupEnv` and re-parses with the SAME stdlib mechanics as the envutil leaf (`strconv.Atoi`/`ParseBool`, `slices.Contains`) but emits a named `Violation` instead of silently absorbing (D-06) — profile coupling is one line: `sev := Warn; if p.Strict() { sev = Fatal }` (D-07); unset/whitespace skipped (uses default); KindString unchecked; never echoes a value (T-33-03b — `Violation.Msg` is "not a valid <kind>"). Proven by `TestReparsePass` (13-row table over profile × knob × value) + **three `pgregory.net/rapid` invariants**: strictness (strict⇒Fatal naming the knob, lenient⇒Warn-never-Fatal, over all checkable knobs × garbage), no-false-positive (a valid value of the kind ⇒ no violation for that knob), aggregation-monotonicity (a second bad knob never drops the first's violation). One garbage generator `[g-su-zG-SU-Z]{2,8}` (no digits, no t/f/T/F) is provably invalid for int AND bool AND enum simultaneously; rapid injects via `os.Setenv`+per-iteration `defer os.Unsetenv` over a `clearPostgresEnv(t)` baseline and asserts only about the knob under test, so host env + a second knob never cause false failures. **All green under `-race`** (WSL, CGO_ENABLED=1; rapid re-run at 2000 checks ×2, no flaky seeds). Prohibitions honored: `internal/envutil` byte-for-byte unmodified (`git diff --stat` empty), no Tier C catalogued, no per-profile runtime enforcement. **TDD note:** the host lefthook pre-commit `go vet ./...` rejects a non-compiling commit, so a standalone RED `test(...)` commit was impossible — RED was observed pre-commit for each task (`undefined: knobRegistry`/`reparsePass` → build failed) and each task landed as one atomic compiling `feat`. One deviation (Rule 3, blocking, formatting-only): golangci-lint 2.12.2's bundled gofmt re-aligned the table struct (`golangci-lint fmt`), no logic change. Summary `.planning/phases/33-runtime-profiles-config-validation/33-03-SUMMARY.md`. Next = 33-04 (ValidateProfile aggregator + bespoke profile gates + profile-aware Validate(), Wave 3, CONSUMES reparsePass).
 - **33-02 closed (2026-06-30): F-002/D-12 destructive-shell empty→defaults semantics flip (PROF-02).** The advisory destructive-command approval gate used to DISABLE when `AURA_SHELL_DESTRUCTIVE_PATTERNS` was empty — the exact state an operator produces by copying the commented `.env.example` sample line — a silent-disable footgun. Task 1 (`test`, TDD RED, `8c15daf9`): added `TestDestructiveShellPatterns` to `internal/agent/tools/shell_exec_destructive_default_test.go`, a table over `(value,set,probe,wantMatch)` driving `destructiveShellMatch` — unset/copied-sample/empty/whitespace → ACTIVE, off/OFF/Off → disabled, custom replaces-not-merges (matches its own pattern, no longer matches the default `rm -rf /`). Observed RED via WSL on the `empty` + `whitespace` rows (the documented fix), six other rows green, the three pre-existing destructive tests untouched + green. Task 2 (`feat`, GREEN, `bb89183b`): flipped `destructiveShellPatterns()` to `if !set || raw == "" { return defaultDestructivePatterns, nil }` + a separate `if strings.EqualFold(raw, "off") { return nil, nil }` (`raw` is already TrimSpace-d so whitespace→empty→defaults); comma-split custom parse unchanged; refreshed the three stale doc comments to "empty = defaults; only `off` disables" + noted the prod forbid-`off` check lives in the config validator (plan 04). `.env.example`: corrected the destructive-gate comment and documented two new COMMENTED operator knobs — `#AURA_PROFILE=dev` (four valid profiles, unset→dev) and `#AURA_OBJECTSTORE_REPLICATION_FACTOR=1` (prod needs ≥2, PROF-06). The runtime leaf stays profile-agnostic (signature unchanged, no profile param) per the plan prohibition. Verification: full `TestDestructiveShell*` truth table green under `-race` (WSL, CGO_ENABLED=1); `go vet`/`go build` clean; pre-commit gofmt/vet/file-size hooks green on both commits. No deviations. Summary `.planning/phases/33-runtime-profiles-config-validation/33-02-SUMMARY.md`. Next = 33-03 (KnobSpec registry + reparse pass + rapid PBT, Wave 2).
 
 ### Phase 32 Execution
@@ -452,9 +454,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-30T19:26:35.019Z
+Last session: 2026-06-30T21:51:43.240Z
 Stopped at: Phase 33 context gathered
-Resume file: .planning/phases/33-runtime-profiles-config-validation/33-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 

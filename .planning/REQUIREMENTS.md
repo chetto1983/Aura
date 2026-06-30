@@ -16,7 +16,7 @@
 - [ ] **PROF-01**: Operator can select a runtime profile (`dev`, `local_trusted`, `single_user_hardened`, `server_production`) and `aura config validate --profile <p>` reports every unmet requirement and fails non-zero. *(F-026)*
 - [ ] **PROF-02**: Copying `.env.example` to `.env` preserves the default destructive-shell approval gate (empty `AURA_SHELL_DESTRUCTIVE_PATTERNS` means "use defaults", only `off` disables); tests cover unset/empty/`off`/custom/copied-sample. *(F-002)*
 - [ ] **PROF-03**: `server_production` validation fails when object-store/Garage credentials, RPC secret, bucket, or endpoint are sample/default values; passes with supplied secrets. *(F-007)*
-- [ ] **PROF-04**: Invalid integer/boolean env values fail fast (error) under hardened/production profiles and warn (with diagnostics) under dev — never silently fall back for security/reliability knobs. *(F-016)*
+- [x] **PROF-04**: Invalid integer/boolean env values fail fast (error) under hardened/production profiles and warn (with diagnostics) under dev — never silently fall back for security/reliability knobs. *(F-016)*
 - [ ] **PROF-05**: `AURA_RUN_DIR` is normalized to an absolute path at config load, or rejected in validation/constructors; sidecars resolve identically across restarts and working directories. *(F-041)*
 - [ ] **PROF-06**: `server_production` validation rejects single-replica object-store topology (Garage `replication_factor = 1`) and documents it as development-only. *(F-018)*
 
@@ -113,7 +113,7 @@ Derived from the maintainability/architecture audit `docs/audit/quality/` (4-sli
 - [x] **QUAL-01** (Wave 0 — URGENT, unblocks CI): split the two >600-LOC files (`cmd/aura/serve_webui.go` 628, `web/src/__tests__/LoginPage.test.tsx` 643) and rebuild+commit `internal/webui/dist` (the `file-size` pre-commit hook and `web-dist-freshness` CI job are currently red).
 - [x] **QUAL-02** (Wave 1): delete dead exports / reinvented-stdlib / placeholders — `assets.Status{Created,Embedding,Canceled}`, sidecar-only `settings AURA_MEMORY_EMBED_*` keys, `agui.indexByte`/`stringList`, redundant `channels/deps.go` telebot blank import, redundant `RequestID` re-stamp — each confirmed via `deadcode`/`knip`/repo-wide `rg` before removal.
 - [x] **QUAL-03** (Wave 2): extract shared helpers to kill cross-package duplication — `internal/neostore` (store helpers + `GraphClient`), `internal/envutil` (3× env helpers + agent-tool knobs), `internal/agentrender` (`chat_render`↔`eval` ~80 LOC), agent `CanonicalArgs` + `isTransientNetworkErr` primitives, web single `getJSON` + shared `focusTrap` reuse. Parity test per extraction.
-- [ ] **QUAL-04** (Wave 3): correctness fixes — `askuser/store.go:231` int32 overflow guard (CodeQL candidate), `bootChatEnvWithConfig` single-`Validate` + deferred pool-close (verify no overlay-path pool leak), catalogue hot-path `AURA_*` knobs in config.
+- [x] **QUAL-04** (Wave 3): correctness fixes — `askuser/store.go:231` int32 overflow guard (CodeQL candidate), `bootChatEnvWithConfig` single-`Validate` + deferred pool-close (verify no overlay-path pool leak), catalogue hot-path `AURA_*` knobs in config.
 - [x] **QUAL-05** (Wave 4): close targeted test gaps — `web/throttle.go`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing.
 
 ---
