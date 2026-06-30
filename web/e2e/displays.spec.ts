@@ -211,7 +211,10 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     };
     await openWith(page, 'Document follows.', display, 'web_fetch');
 
-    await expect(page.getByText('Document').first()).toBeVisible({ timeout: 15000 });
+    const chatRegion = page.getByRole('region', { name: 'Chat' });
+    await expect(chatRegion.getByText('Document', { exact: true }).first()).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('heading', { name: 'Heading One' })).toBeVisible();
     await expect(page.getByText('bullet alpha')).toBeVisible();
     // The injected <script> was sanitized — it did not execute.

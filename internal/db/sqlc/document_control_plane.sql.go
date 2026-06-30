@@ -69,45 +69,6 @@ func (q *Queries) AppendIngestionEvent(ctx context.Context, arg AppendIngestionE
 	return i, err
 }
 
-const listIngestionEventsByJob = `-- name: ListIngestionEventsByJob :many
-SELECT id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at
-FROM aura.ingestion_events
-WHERE job_id = $1
-ORDER BY created_at ASC, id ASC
-`
-
-func (q *Queries) ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error) {
-	rows, err := q.db.Query(ctx, listIngestionEventsByJob, jobID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuraIngestionEvents{}
-	for rows.Next() {
-		var i AuraIngestionEvents
-		if err := rows.Scan(
-			&i.ID,
-			&i.EntityType,
-			&i.EntityID,
-			&i.JobID,
-			&i.FromStatus,
-			&i.ToStatus,
-			&i.EventType,
-			&i.Message,
-			&i.Detail,
-			&i.TraceID,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const claimIngestionJobs = `-- name: ClaimIngestionJobs :many
 WITH claim AS (
     SELECT id
@@ -675,6 +636,45 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIngestionEventsByJob = `-- name: ListIngestionEventsByJob :many
+SELECT id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at
+FROM aura.ingestion_events
+WHERE job_id = $1
+ORDER BY created_at ASC, id ASC
+`
+
+func (q *Queries) ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error) {
+	rows, err := q.db.Query(ctx, listIngestionEventsByJob, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraIngestionEvents{}
+	for rows.Next() {
+		var i AuraIngestionEvents
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.JobID,
+			&i.FromStatus,
+			&i.ToStatus,
+			&i.EventType,
+			&i.Message,
+			&i.Detail,
+			&i.TraceID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -316,7 +316,7 @@ func testDocumentWithChunks(t *testing.T, n int) ExtractedDocument {
 		FileName:   "manual.pdf",
 		MIMEType:   "application/pdf",
 		SizeBytes:  10,
-	}, "content-hash", resp, time.Unix(10, 0))
+	}, "content-hash", resp, time.Unix(10, 0).UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
