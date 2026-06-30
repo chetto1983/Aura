@@ -456,18 +456,18 @@ case "validate":
 
 **These are the items `/gsd-discuss-phase` or the planner must confirm before they become locked.** A1/A4 are the highest-leverage.
 
-## Open Questions
+## Open Questions (RESOLVED — see CONTEXT.md §"Resolved post-research" D-13..D-16 + A5/A6; confirmed with user 2026-06-30)
 
-1. **How does `config validate` read `replication_factor` (PROF-06) and `GARAGE_RPC_SECRET` (PROF-03)?** Neither is in `Config` today. `replication_factor = 1` is hardcoded in `docker/garage/garage.toml:5`; `GARAGE_RPC_SECRET` is an env var read only by compose (`${...:?}`), never into Go.
+1. **[RESOLVED → D-13]** **How does `config validate` read `replication_factor` (PROF-06) and `GARAGE_RPC_SECRET` (PROF-03)?** Neither is in `Config` today. `replication_factor = 1` is hardcoded in `docker/garage/garage.toml:5`; `GARAGE_RPC_SECRET` is an env var read only by compose (`${...:?}`), never into Go.
    - What we know: this is the **one genuinely net-new read** the phase needs (everything else gates already-wired knobs).
    - Recommendation: introduce `Config.ObjectStoreReplicationFactor int` from `AURA_OBJECTSTORE_REPLICATION_FACTOR` (convention-compliant, default 1) and `Config.GarageRPCSecret string` from `os.Getenv("GARAGE_RPC_SECRET")` (upstream name per CLAUDE.md sidecar exception). This stays inside the scope fence (config-contract validation, NOT runtime enforcement). Note the drift risk: the env knob is *declared intent*; keeping `garage.toml` in sync (e.g. install.sh templating it) is a deployment follow-on, optionally a small Phase 33 task or deferred. **Confirm with planner/discuss.**
 
-2. **Exact dev ↔ local_trusted delta.** CONTEXT hypothesis (D-09): diagnostic verbosity / intent labeling only; both warn-on-invalid, neither flips gates.
+2. **[RESOLVED → D-14: collapse to one lenient tier, label only]** **Exact dev ↔ local_trusted delta.** CONTEXT hypothesis (D-09): diagnostic verbosity / intent labeling only; both warn-on-invalid, neither flips gates.
    - Recommendation: **confirm the hypothesis** — implement both as one *lenient* tier (identical constraint column) differing only by a label/banner (e.g. local_trusted prints "trusted local mode — full host capability active"). Do not maintain two identical rule sets.
 
-3. **Should hardened forbid permissive-CORS and destructive-`off`?** (A2/A3.) D-11 locks these only for prod. Recommend forbidding permissive-CORS under hardened too (consistency, cheap); leave destructive-`off` as A3 to confirm.
+3. **[RESOLVED → D-15: hardened forbids permissive-CORS, ALLOWS destructive-`off`]** **Should hardened forbid permissive-CORS and destructive-`off`?** (A2/A3.) D-11 locks these only for prod. Recommend forbidding permissive-CORS under hardened too (consistency, cheap); leave destructive-`off` as A3 to confirm.
 
-4. **Catalogue cut (Tier A+B vs +C).** Recommended Tier A+B (the `internal/config` surface + gates). Tier C (agent-tools/loop/llm knobs) is catalog-able by name without moving reads but enlarges the registry — confirm the cut.
+4. **[RESOLVED → D-16: Tier A+B only, Tier C out]** **Catalogue cut (Tier A+B vs +C).** Recommended Tier A+B (the `internal/config` surface + gates). Tier C (agent-tools/loop/llm knobs) is catalog-able by name without moving reads but enlarges the registry — confirm the cut.
 
 ## Environment Availability
 

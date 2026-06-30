@@ -189,11 +189,21 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 4. `dev`/`local_trusted` preserve today's full-host behavior unchanged.
 
 **Plans:** 5 plans in 4 waves
+**Wave 1**
 
 - [ ] 33-01-PLAN.md — Foundation: split Validate() out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields (wave 1)
 - [ ] 33-02-PLAN.md — F-002/D-12 destructive-shell semantics flip (empty→defaults, only `off` disables) + truth table + .env.example (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 33-03-PLAN.md — KnobSpec registry (single source of truth, Tier A+B) + generic kind-driven reparse pass + rapid PBT invariants (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 33-04-PLAN.md — ValidateProfile aggregator + bespoke profile gates + profile-aware Validate() + boot warn-diagnostic (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 33-05-PLAN.md — `aura config validate [--profile] [--json]` CLI subcommand + exit-code/knob-name e2e test (wave 4)
 
 #### Phase 34: Agent-Loop Correctness + Durable Ledger
