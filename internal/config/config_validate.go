@@ -48,26 +48,54 @@ type Violation struct {
 	Msg  string
 }
 
-// Validate fails fast on an empty REQUIRED infrastructure secret so a misconfigured
-// deploy errors at boot with a named cause instead of a late, cryptic DB auth
-// failure or a silently degraded graph (O-04). The LLM API key has its own
-// fail-fast in llm.Load (D-22); this covers the composed DB DSN and the Neo4j
-// password. The daemon/REPL boot wires it in; the DB-only commands (LoadDB) skip it.
+// Validate is the profile-aware boot fail-fast: it resolves the active runtime
+// profile (c.Profile, default dev — D-03), runs the full ValidateProfile aggregation,
+// and joins every Fatal violation into a single config:-prefixed error so a
+// misconfigured deploy errors at boot NAMING every unmet requirement at once instead of
+// a late, cryptic DB auth failure or a silently degraded graph (O-04, criterion #1).
+// Under the lenient tiers (dev/local_trusted) a misconfigured cataloged knob is Warn —
+// not Fatal — so Validate stays nil and today's full-host boot is unchanged
+// (criterion #4); under the strict tiers any Fatal fails closed. The LLM API key has
+// its own fail-fast in llm.Load (D-22). The daemon/REPL boot wires it in; the DB-only
+// commands (LoadDB) skip it.
 func (c *Config) Validate() error {
-	var missing []string
-	if strings.TrimSpace(c.DB.URL) == "" {
-		missing = append(missing, "POSTGRES_PASSWORD (or AURA_DB_URL)")
+	p := c.Profile
+	if p == "" {
+		p = ProfileDev
 	}
-	if strings.TrimSpace(c.Neo4j.Password) == "" {
-		missing = append(missing, "NEO4J_PASSWORD")
+	var msgs []string
+	for _, v := range c.ValidateProfile(p) {
+		if v.Sev == Fatal {
+			msgs = append(msgs, v.Knob+": "+v.Msg)
+		}
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("config: required secret(s) unset: %s", strings.Join(missing, ", "))
-	}
-	if c.RunDirErr != nil {
-		return fmt.Errorf("config: %w", c.RunDirErr)
+	if len(msgs) > 0 {
+		return fmt.Errorf("config: %s", strings.Join(msgs, "; "))
 	}
 	return nil
+}
+
+// ValidateProfile is the aggregating config-contract (D-04/D-08): it returns the UNION
+// of the all-tier gates (required secrets, RunDir, web-bind), the generic kind-driven
+// re-parse pass (reparsePass — Fatal under strict, Warn under lenient, PROF-04/F-016),
+// and every bespoke security gate, passing the resolved profile p. It NEVER first-fails
+// — the operator sees EVERY unmet requirement in one pass (criterion #1). The only env
+// reads are reparsePass (cataloged knobs) and gateDestructiveShell (the raw
+// destructive-patterns knob); it performs no other I/O and never echoes a secret VALUE.
+func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
+	var vs []Violation
+	vs = append(vs, c.gateRequiredSecrets()...)
+	vs = append(vs, c.gateRunDir()...)
+	vs = append(vs, c.gateWebBind()...)
+	vs = append(vs, reparsePass(p)...)
+	vs = append(vs, c.gateObjectStoreCreds(p)...)
+	vs = append(vs, c.gateGarageRPCSecret(p)...)
+	vs = append(vs, c.gateReplication(p)...)
+	vs = append(vs, c.gateCORS(p)...)
+	vs = append(vs, c.gateDestructiveShell(p)...)
+	vs = append(vs, c.gateWebAuth(p)...)
+	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
+	return vs
 }
 
 // gateRequiredSecrets flags an empty REQUIRED infrastructure secret (DB DSN +
@@ -175,9 +203,9 @@ func (c *Config) gateCORS(p RuntimeProfile) []Violation {
 // gateDestructiveShell forbids an explicitly DISABLED destructive-shell gate under
 // server_production ONLY (D-11/D-15/F-002): single_user_hardened ALLOWS `off`
 // (appliance-operator flexibility, A3). It reads the RAW env value directly — it does
-// NOT import internal/agent/tools (scope fence): the runtime leaf stays profile-agnostic
-// and this validator only inspects the operator's declared knob. Only the literal `off`
-// (case-insensitive) disables the gate; every other value keeps it active.
+// NOT import the agent tools package (scope fence): the runtime leaf stays
+// profile-agnostic and this validator only inspects the operator's declared knob. Only
+// the literal `off` (case-insensitive) disables the gate; every other value keeps it active.
 func (c *Config) gateDestructiveShell(p RuntimeProfile) []Violation {
 	if p != ProfileServerProduction {
 		return nil

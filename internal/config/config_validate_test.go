@@ -13,11 +13,20 @@ import (
 // TestConfigValidate covers O-04: required infra secrets are checked at boot so a
 // misconfigured deploy fails fast with a named error instead of a late cryptic
 // auth failure (DB) or a silently degraded graph (empty NEO4J_PASSWORD).
+//
+// The full() fixture is a realistic LOADED Config (loopback AGUIBind, Profile dev,
+// replication 1) rather than the old bare {DB, Neo4j}: Validate() is now the unified
+// profile-aware contract (it runs the full gate aggregation, not just the two secret
+// checks), so the fixture must reflect a real loaded shape that validates clean under
+// the default lenient tier.
 func TestConfigValidate(t *testing.T) {
 	full := func() *Config {
 		return &Config{
-			DB:    db.Config{URL: "postgres://u:p@h:5432/db"},
-			Neo4j: knowledge.Config{Password: "neo-secret"},
+			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
+			Neo4j:                        knowledge.Config{Password: "neo-secret"},
+			Profile:                      ProfileDev,
+			AGUIBind:                     "127.0.0.1:9080",
+			ObjectStoreReplicationFactor: 1,
 		}
 	}
 	if err := full().Validate(); err != nil {
@@ -259,4 +268,103 @@ func TestGateRunDir(t *testing.T) {
 	if vs := (&Config{RunDir: abs}).gateRunDir(); len(vs) != 0 {
 		t.Errorf("absolute RunDir must pass, got %+v", vs)
 	}
+}
+
+// TestValidateProfile proves the aggregator lists EVERY unmet requirement (never
+// first-fail, criterion #1) and that Validate() is profile-aware (criterion #3/#4).
+func TestValidateProfile(t *testing.T) {
+	// criterion #1: an unsafe server_production config yields >=6 Fatal violations,
+	// each naming its offending AURA_* knob in the joined Validate() output.
+	t.Run("server_production aggregates >=6 fatals", func(t *testing.T) {
+		clearPostgresEnv(t)
+		t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "off")
+		cfg := &Config{
+			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
+			Neo4j:                        knowledge.Config{Password: "neo-secret"},
+			Profile:                      ProfileServerProduction,
+			AGUIBind:                     "127.0.0.1:9080",
+			RunDir:                       filepath.Join(t.TempDir(), "runs"),
+			ObjectStoreAccessKey:         defaultObjectStoreAccessKey,
+			ObjectStoreSecretKey:         defaultObjectStoreSecretKey,
+			GarageRPCSecret:              "",
+			AGUICORSPermissive:           true,
+			ObjectStoreReplicationFactor: 1,
+			AuthulaSecret:                "",
+		}
+		var fatals []Violation
+		for _, v := range cfg.ValidateProfile(ProfileServerProduction) {
+			if v.Sev == Fatal {
+				fatals = append(fatals, v)
+			}
+		}
+		if len(fatals) < 6 {
+			t.Fatalf("unsafe server_production config must yield >=6 Fatal violations, got %d: %+v", len(fatals), fatals)
+		}
+		t.Logf("server_production Fatal count = %d", len(fatals))
+
+		wantKnobs := []string{
+			"AURA_OBJECTSTORE_ACCESS_KEY", "AURA_OBJECTSTORE_SECRET_KEY", "GARAGE_RPC_SECRET",
+			"AURA_AGUI_CORS_PERMISSIVE", "AURA_OBJECTSTORE_REPLICATION_FACTOR",
+			"AURA_AUTHULA_SECRET", "AURA_SHELL_DESTRUCTIVE_PATTERNS",
+		}
+		for _, k := range wantKnobs {
+			if !hasViolation(fatals, k, Fatal) {
+				t.Errorf("missing Fatal violation for %s; fatals=%+v", k, fatals)
+			}
+		}
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("Validate() must be non-nil for the unsafe prod config")
+		}
+		for _, k := range wantKnobs {
+			if !strings.Contains(err.Error(), k) {
+				t.Errorf("Validate() joined output must name %s, got %q", k, err.Error())
+			}
+		}
+	})
+
+	// criterion #3/#4: the SAME invalid int knob is a Warn under dev (Validate nil)
+	// and a Fatal under server_production (Validate non-nil naming the knob).
+	t.Run("dev tolerates invalid int (Warn, Validate nil)", func(t *testing.T) {
+		clearPostgresEnv(t)
+		t.Setenv("AURA_SWARM_MAX_GOALS", "notanint")
+		dev := &Config{
+			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
+			Neo4j:                        knowledge.Config{Password: "neo-secret"},
+			Profile:                      ProfileDev,
+			AGUIBind:                     "127.0.0.1:9080",
+			RunDir:                       filepath.Join(t.TempDir(), "runs"),
+			ObjectStoreReplicationFactor: 1,
+		}
+		if err := dev.Validate(); err != nil {
+			t.Fatalf("invalid int under dev must be Warn (Validate nil), got %v", err)
+		}
+	})
+
+	t.Run("server_production rejects invalid int (Fatal, Validate non-nil)", func(t *testing.T) {
+		clearPostgresEnv(t)
+		t.Setenv("AURA_SWARM_MAX_GOALS", "notanint")
+		prod := &Config{
+			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
+			Neo4j:                        knowledge.Config{Password: "neo-secret"},
+			Profile:                      ProfileServerProduction,
+			AGUIBind:                     "127.0.0.1:9080",
+			RunDir:                       filepath.Join(t.TempDir(), "runs"),
+			ObjectStoreAccessKey:         "GKrealoperatorkey0000000001",
+			ObjectStoreSecretKey:         "realoperatorsecretvalue000000000000000000000000000000000000000000",
+			GarageRPCSecret:              "deadbeefrpcsecret",
+			AGUICORSPermissive:           false,
+			ObjectStoreReplicationFactor: 3,
+			AuthulaSecret:                "32byteshexsecretvalueforauthula0",
+			ObjectStoreBucket:            "prod-assets",
+			ObjectStoreEndpoint:          "https://garage.prod:3900",
+		}
+		err := prod.Validate()
+		if err == nil {
+			t.Fatal("invalid int under server_production must be Fatal (Validate non-nil)")
+		}
+		if !strings.Contains(err.Error(), "AURA_SWARM_MAX_GOALS") {
+			t.Errorf("Validate() error must name AURA_SWARM_MAX_GOALS, got %q", err.Error())
+		}
+	})
 }

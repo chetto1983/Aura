@@ -72,3 +72,24 @@ func TestRunDirAbsoluteNormalization(t *testing.T) {
 		})
 	}
 }
+
+// TestRunDirProfileValidation covers PROF-05/F-041: a non-absolute AURA_RUN_DIR (or a
+// load-time RunDirErr) surfaces as a Fatal violation from ValidateProfile naming
+// AURA_RUN_DIR in EVERY tier — the profile validator never relaxes the absolute-path
+// contract (sidecars must not be cwd-dependent).
+func TestRunDirProfileValidation(t *testing.T) {
+	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened, ProfileServerProduction} {
+		t.Run(string(p)+" non-absolute is Fatal", func(t *testing.T) {
+			cfg := &Config{AGUIBind: "127.0.0.1:9080", RunDir: "relative/runs"}
+			if !hasViolation(cfg.ValidateProfile(p), "AURA_RUN_DIR", Fatal) {
+				t.Errorf("non-absolute AURA_RUN_DIR under %s must be a Fatal violation naming AURA_RUN_DIR", p)
+			}
+		})
+	}
+	t.Run("RunDirErr surfaces as Fatal", func(t *testing.T) {
+		cfg := &Config{AGUIBind: "127.0.0.1:9080", RunDirErr: os.ErrInvalid}
+		if !hasViolation(cfg.ValidateProfile(ProfileDev), "AURA_RUN_DIR", Fatal) {
+			t.Error("RunDirErr must surface as a Fatal AURA_RUN_DIR violation")
+		}
+	})
+}
