@@ -48,6 +48,27 @@ func TestAssetAPIPresignValidationError400(t *testing.T) {
 	}
 }
 
+func TestAssetPresignAcceptsLibraryScope(t *testing.T) {
+	assetSvc := &fakeAssetService{}
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetAssetService(assetSvc)
+
+	body := strings.NewReader(`{"file_name":"manual.pdf","mime_type":"application/pdf","size_bytes":128,"modality_hint":"document","scope":"library"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/assets/presign", body)
+	req.Header.Set("Content-Type", "application/json")
+	req = withPrincipal(req, assetAPIIdentityID)
+	rec := httptest.NewRecorder()
+
+	s.Mux().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if assetSvc.presignReq.Scope != assets.ScopeLibrary {
+		t.Fatalf("scope = %q, want %q", assetSvc.presignReq.Scope, assets.ScopeLibrary)
+	}
+}
+
 func TestAssetAPIListUsesPrincipalAndThread(t *testing.T) {
 	assetSvc := &fakeAssetService{
 		listResp: []assets.Asset{{

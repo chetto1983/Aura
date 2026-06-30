@@ -50,6 +50,7 @@ type PresignRequest struct {
 	IdentityID        string     `json:"identity_id"`
 	SourceKind        SourceKind `json:"source_kind"`
 	ThreadID          string     `json:"thread_id"`
+	Scope             Scope      `json:"scope"`
 	FileName          string     `json:"file_name"`
 	MIMEType          string     `json:"mime_type"`
 	DeclaredSizeBytes int64      `json:"size_bytes"`
@@ -74,13 +75,20 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 	if err := s.Limits.Validate(modality, name, req.DeclaredSizeBytes); err != nil {
 		return PresignResponse{}, err
 	}
+	scope := req.Scope
+	if scope == "" {
+		scope = ScopeThread
+	}
+	if scope != ScopeThread && scope != ScopeLibrary {
+		return PresignResponse{}, fmt.Errorf("unsupported asset scope %q", scope)
+	}
 	assetID := newAssetID()
 	key := objectstore.AssetKey(req.IdentityID, assetID)
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        req.IdentityID,
 		SourceKind:        req.SourceKind,
 		ThreadID:          req.ThreadID,
-		Scope:             ScopeThread,
+		Scope:             scope,
 		Modality:          modality,
 		FileName:          name,
 		MIMEType:          mimeType,

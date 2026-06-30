@@ -66,6 +66,60 @@ func TestServicePresignNeverPutsFilenameInObjectKey(t *testing.T) {
 	}
 }
 
+func TestServicePresignAcceptsLibraryScope(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 256,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+
+	_, err := svc.Presign(context.Background(), PresignRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		Scope:             ScopeLibrary,
+		FileName:          "manual.pdf",
+		MIMEType:          "application/pdf",
+		DeclaredSizeBytes: 128,
+		ModalityHint:      ModalityDocument,
+	})
+	if err != nil {
+		t.Fatalf("Presign returned error: %v", err)
+	}
+	if len(store.created) != 1 {
+		t.Fatalf("created %d assets, want 1", len(store.created))
+	}
+	if store.created[0].Scope != ScopeLibrary {
+		t.Fatalf("Create scope = %q, want %q", store.created[0].Scope, ScopeLibrary)
+	}
+}
+
+func TestServicePresignDefaultsToThreadScope(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+
+	_, err := svc.Presign(context.Background(), PresignRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		ThreadID:          "thread-1",
+		FileName:          "note.txt",
+		MIMEType:          "text/plain",
+		DeclaredSizeBytes: 32,
+		ModalityHint:      ModalityDocument,
+	})
+	if err != nil {
+		t.Fatalf("Presign returned error: %v", err)
+	}
+	if len(store.created) != 1 {
+		t.Fatalf("created %d assets, want 1", len(store.created))
+	}
+	if store.created[0].Scope != ScopeThread {
+		t.Fatalf("Create scope = %q, want %q", store.created[0].Scope, ScopeThread)
+	}
+}
+
 func TestServiceFinalizeRefusesOversizedActualObject(t *testing.T) {
 	svc, _ := newAssetServiceTestRig(t, Limits{
 		MaxDocumentBytes: 5,

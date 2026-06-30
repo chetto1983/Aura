@@ -20,6 +20,7 @@ func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
 
 type assetPresignBody struct {
 	ThreadID  string `json:"thread_id"`
+	Scope     string `json:"scope"`
 	FileName  string `json:"file_name"`
 	MIMEType  string `json:"mime_type"`
 	SizeBytes int64  `json:"size_bytes"`
@@ -46,6 +47,7 @@ func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
 		IdentityID:        identityID,
 		SourceKind:        assets.SourceWeb,
 		ThreadID:          body.ThreadID,
+		Scope:             assets.Scope(body.Scope),
 		FileName:          body.FileName,
 		MIMEType:          body.MIMEType,
 		DeclaredSizeBytes: body.SizeBytes,

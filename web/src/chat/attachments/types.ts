@@ -45,6 +45,7 @@ export interface PresignResponse {
 
 export interface PresignAssetRequest {
   readonly thread_id: string;
+  readonly scope?: 'thread' | 'library';
   readonly file_name: string;
   readonly mime_type: string;
   readonly size_bytes: number;
