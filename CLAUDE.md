@@ -2,19 +2,14 @@
 
 Project guidance for Claude Code (claude.ai/code) on this codebase.
 
-## Project state
-
-Tabula-rasa rewrite, 2026-05-27. Prior implementation at git tag `pre-rewrite-2026-05-27`.
-
-> **Resume work** (aggiornato 2026-06-13): stato corrente + ripresa in [.planning/state.md](.planning/state.md) (full) e [NEXT.md](NEXT.md) (dashboard). **20/23 fasi complete.** Dalla nota precedente sono SHIPPED 12 (AG-UI), 13 (Telegram), 15 (Memory), oltre a 16/18/19/20. Restano aperte solo due: **14 Onboarding** — implementata + automated-green, manca live Telegram operator sign-off + flip ROADMAP (vedi `.planning/phases/14-*/14-VALIDATION.md`, status `automated_passed_manual_pending`) — e **17 Packaging** — solo `17-SPEC.md`, 16/16 acceptance non spuntate, l'ultima fase non implementata. CI verde (CI + CodeQL + Skills). Coverage owned-surface **90.3%** (re-measured 2026-06-13 @ HEAD 882df109 via `make coverage`, full integration matrix su stack live; **ogni package owned ≥85%** dopo la campagna coverage 2026-06-13, floor `swarm` 85.4%). Next action: chiudere il live sign-off di Phase 14, poi `/gsd-spec-phase 17`.
-
 - **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway, Telegram channel) → `Skill("spike-findings-Aura")`
 
 ## PRD-first principle (absolute)
 
 **Senza PRD completo non si scrive una riga di codice.** Il PRD ([prd.md](prd.md)) è la **truth-source**, non un suggerimento. Ogni decisione architettonica, ogni file target, ogni env var, ogni open question è documentata lì. Deviazioni dal PRD richiedono PRD-amendment commit prima dell'implementazione (vedi §Slice Q&A discipline → Q&A revision protocol nel PRD).
 
-<frontend_aesthetics>
+## Frontend_aesthetics
+
 You tend to converge toward generic, "on distribution" outputs. In frontend design,this creates what users call the "AI slop" aesthetic. Avoid this: make creative,distinctive frontends that surprise and delight.
 
 Focus on:
@@ -32,35 +27,8 @@ Avoid generic AI-generated aesthetics:
 - Cookie-cutter design that lacks context-specific character
 
 Interpret creatively and make unexpected choices that feel genuinely designed for the context. Vary between light and dark themes, different fonts, different aesthetics. You still tend to converge on common choices (Space Grotesk, for example) across generations. Avoid this: it is critical that you think outside the box!
-</frontend_aesthetics>
 
-## Project scope (13 slice — vedi prd.md per dettaglio completo)
 
-Infrastruttura:
-1. **0.5** — Postgres + sqlc + pgx + golang-migrate
-2. **0.7** — Neo4j Community + APOC + GDS + HNSW + embedding sidecar
-3. **0.9** — Agent runtime abstraction (`Agent` interface + workflow agents, pattern da google/adk-go non importato)
-
-Core agent:
-4. **1** — LLM client OpenAI-compat (DeepSeek-V4 via OpenRouter) + ToolResult pattern
-5. **1.5** — `ask_user` pause/resume + multi-pause FIFO
-6. **1.7** — Identity minimal + capability_grants (scaffolding multi-user)
-7. **1.8** — Conversation persistence (multi-thread Claude.ai-style) + microcompact (1.8b)
-
-Capabilities:
-8. **2** — Sandbox runner (2a stateless + 2b session-bound + workspace + network allowlist)
-9. **3** — Swarm coordinator (riusa ParallelAgent Slice 0.9)
-10. **4** — KV cache builder (stable-prefix + provider-aware)
-11. **5** — Web tools (web_search SearXNG + web_fetch)
-12. **6** — Scheduler (cron + agent jobs persistente)
-13. **7** — Skills (7a/b/c/d instruction-based + **7e** executable code snippets multi-lang con pattern analysis + TTL archived)
-
-Transport + UX:
-14. **8** — AG-UI gateway (SSE event protocol transport)
-15. **9** — Channels framework + Telegram main user-facing + Setup wizard + multimodal Gemma 4 (9a/b/c)
-16. **10** — User onboarding + `Agent.md` profile per identity
-17. **11** — Memory ingestion + taxonomy (Documents + Entities + Graph + Agent journal, 11a-11e) + **11f Task Canvas** (working-memory simbolica Mermaid effimera, sequencing-indipendente ~Phase 9-10). Pattern emendati #24 (valid-time/NOOP/reasoning traces) + #25 (Mermaid Canvas + score-cascade) studiati da **Tencent TencentDB-Agent-Memory** (<https://github.com/Tencent/TencentDB-Agent-Memory>) e adattati allo stack PG+Neo4J — vedi prd.md §Slice 11.
-18. **13** — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
 
 Persistence: Postgres `aura.*` schema (**11 migrations shippate 0001-0011** — init/knowledge_migrations/paused_states/identity/conversations/conversation_turns_fts/cache_metrics/proxied_child_id_text/scheduler/skill_audit/tool_invocations — + Neo4j Cypher **0001**). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
 
@@ -193,9 +161,9 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
 - **NO GOD CLASS.** Never create a file >600 LOC. Refactor on touch (split into `<name>_<concern>.go`).
 - **REUSABLE CODE.** Never duplicate; extract a helper.
 - **DEEP REFACTOR ON TOUCH.** Every file you edit gets dead-code removal + dupl-folding + LOC ≤600 + comments-updated in the SAME commit.
-- **GIT PUSH DISCIPLINE.** Never `git push` (or any remote-mutating command) unless explicitly requested in the current turn. A previous approval does not carry over.
+- **GIT PUSH DISCIPLINE.**  `git push` (or any remote-mutating command) at the end of a phase or a competed job and check all CI are green.
 - **NO COMMENTS UNLESS WHY IS NON-OBVIOUS.** Identifier names already explain what. Comments only for hidden constraints, workarounds, or surprising behavior.
-- **NO TEST ASILO NIDO.** Tests must follow PRD §Test discipline rigorosa: realistic fixtures, goleak, race detector, property-based dove indicato, build tags integration, coverage threshold, mutation testing spot-check. Cita la tabella esempi per slice.
+- **NO TEST BASY SITTING.** Tests must follow PRD §Test discipline rigorosa: realistic fixtures, goleak, race detector, property-based dove indicato, build tags integration, coverage threshold, mutation testing spot-check. Cita la tabella esempi per slice.
 - **NO SKIP-AS-GREEN IN CI.** Integration/smoke tests must actually run in the pipeline — a `t.Skip` that fires under `$CI` is a falsely-green job exercising nothing. (1) CI jobs export the exact env the tests read (composed DSNs `AURA_DB_URL`/`AURA_DB_MIGRATE_URL`, not just the `POSTGRES_*` primitives `config.Load` composes for the CLI). (2) Skip-helpers (`envOrSkip` and inline `t.Skip`) call `t.Fatal` when a required var is unset and `$CI` is set; locally they still skip. A sub-second "integration" runtime is a skip tell — verify execution, not just PASS.
 - **COVERAGE FLOOR 85%.** No phase/slice closes below 85% measured coverage across the full tag matrix (unit + integration + smoke). This overrides the PRD's ≥75% unit / ≥60% integration. A bare unit-only number under 85% is not an acceptable closing metric — report the combined figure.
 - **AUDIT** refer to \docs\audit for audit finding and improvement on codebase test and observability
