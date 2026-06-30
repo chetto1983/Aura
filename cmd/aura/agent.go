@@ -124,6 +124,13 @@ func dryRun(cfg dryRunConfig, w io.Writer) error {
 		if ev == nil {
 			continue
 		}
+		// KEEP (QUAL-02 triage T1, load-bearing): the fake InfiniteToolCallAgent builds
+		// its step events with NO RequestID (agenttest/mocks.go) — a real LlmAgent.newEvent
+		// copies ic.RequestID, the fake does not. scopeToToolCall returns those single-tool
+		// step events unchanged, so this re-stamp is the UNIFORM run-id source on the dry-run
+		// path (only the LoopAgent terminal event already carries ic.RequestID). Remove it and
+		// every step line emits the zero UUID, breaking SC#4 run correlation — pinned by
+		// TestDryRun_EveryEventCarriesRequestID_LoadBearing.
 		ev.RequestID = requestID // stamp the shared run id on every emitted Event (SC#4)
 		if err := enc.Encode(ev); err != nil {
 			return fmt.Errorf("encode event: %w", err)

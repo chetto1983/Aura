@@ -82,6 +82,40 @@ func TestDryRun_RequestIDVerbatim_Reproducible(t *testing.T) {
 	}
 }
 
+// TestDryRun_EveryEventCarriesRequestID_LoadBearing pins the agent.go re-stamp
+// (`ev.RequestID = requestID`) as load-bearing on the dry-run path — the QUAL-02 T1
+// KEEP verdict. The fake InfiniteToolCallAgent (agenttest/mocks.go) builds its step
+// events with NO RequestID (a real LlmAgent.newEvent copies ic.RequestID, the fake
+// does not), and scopeToToolCall returns those single-tool events unchanged, so the
+// per-step events leave the field at the zero uuid.Nil. Only the re-stamp puts the
+// uniform run id on every step line (the LoopAgent terminal event already carries
+// ic.RequestID). With the line removed, every step line would serialize the zero UUID
+// and break SC#4 run correlation; this test fails in that case (verified by temporarily
+// deleting the line — see 32-02-SUMMARY.md), proving the stamp is not dead code.
+func TestDryRun_EveryEventCarriesRequestID_LoadBearing(t *testing.T) {
+	const fixed = "0192f000-0000-7000-8000-0000000000ff"
+	const zeroUUID = "00000000-0000-0000-0000-000000000000"
+	t.Setenv("AURA_LOOP_MAX_STEPS", "5")
+	var buf bytes.Buffer
+	cfg := dryRunConfig{requestID: fixed, maxSteps: -1, maxWallclockSec: -1, dedupWindow: -1}
+	if err := dryRun(cfg, &buf); err != nil {
+		t.Fatalf("dryRun: %v", err)
+	}
+	evs := decodeLines(t, buf.String())
+	if len(evs) < 2 {
+		t.Fatalf("want at least one step + one terminal event, got %d", len(evs))
+	}
+	for i, ev := range evs {
+		id, _ := ev["request_id"].(string)
+		if id == zeroUUID {
+			t.Fatalf("line %d carries the zero RequestID %q — the agent.go re-stamp is missing (the fake agent never stamps it)", i, id)
+		}
+		if id != fixed {
+			t.Fatalf("line %d request_id %q != supplied requestID %q (the re-stamp must put the uniform run id on every event)", i, id, fixed)
+		}
+	}
+}
+
 func TestDryRun_MaxStepsOverride_Yields26Lines_LimitMaxSteps(t *testing.T) {
 	// CLI flag (non -1) overrides env/default (D-06). 25 steps → 25 step + 1 terminal.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "9") // must be overridden by the CLI flag below
