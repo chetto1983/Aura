@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -51,7 +52,7 @@ type Config struct {
 	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
 
 	// Phase 4 (Slice 1.8) conversation + context-management tuning knobs.
-	// Non-fatal envIntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).
+	// Non-fatal envutil.IntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).
 	ConversationTurnCapBytes   int // AURA_CONVERSATION_TURN_CAP_BYTES — content > this spills to a sidecar file
 	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
 	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
@@ -72,7 +73,7 @@ type Config struct {
 	WebUserAgent         string // AURA_WEB_USER_AGENT — Aura-specific UA, no browser spoof (D-34/D-35)
 
 	// Phase 9 (Slice 3) swarm knobs (D-11/D-12/D-13). All non-fatal
-	// envIntDefault fallbacks — a typo falls back rather than booting fatal.
+	// envutil.IntDefault fallbacks — a typo falls back rather than booting fatal.
 	MaxSwarmGoals        int // AURA_SWARM_MAX_GOALS — hard cap on goals per swarm_spawn call (D-13)
 	SwarmChildTimeoutSec int // AURA_SWARM_CHILD_TIMEOUT_SEC — per-child wall-clock deadline (D-11)
 	MaxSwarmConcurrent   int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
@@ -358,9 +359,9 @@ func loadBase() *Config {
 			Password:          os.Getenv("NEO4J_PASSWORD"),
 			Database:          envDefault("AURA_NEO4J_DATABASE", "neo4j"),
 			MCPBinary:         envDefault("AURA_MCP_NEO4J_CYPHER_BIN", "mcp-neo4j-cypher"),
-			ConnectTimeoutSec: envIntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
+			ConnectTimeoutSec: envutil.IntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
+			EmbedDimensions:   envutil.IntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
 			EmbedModel:        os.Getenv("AURA_EMBED_MODEL"),
 		},
 		MCPServers:     mcpServers,
@@ -368,40 +369,40 @@ func loadBase() *Config {
 		MCPServersErr:  mcpServersErr,
 		RunDir:         runDir,
 		RunDirErr:      runDirErr,
-		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
+		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 
-		ConversationTurnCapBytes:   envIntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
-		ContextToolEvictAfterTurns: envIntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
-		HistoryHardCapTurns:        envIntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
-		RunDirWarnThresholdBytes:   envIntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
-		RunDirSweepIntervalSec:     envIntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
+		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
+		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
+		HistoryHardCapTurns:        envutil.IntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
+		RunDirWarnThresholdBytes:   envutil.IntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
+		RunDirSweepIntervalSec:     envutil.IntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
 
 		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
 		// missing is fail-closed at call time, never a boot error.
 		SearxngURL:           os.Getenv("SEARXNG_URL"),
-		WebDNSPinTTLSec:      envIntDefault("AURA_WEB_DNS_PIN_TTL_SEC", 60),
-		WebFetchMaxBodyBytes: envIntDefault("AURA_WEB_FETCH_MAX_BODY_BYTES", 5_000_000),
-		WebCachePersistent:   envBoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
-		WebSearchTimeoutSec:  envIntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
-		WebFetchTimeoutSec:   envIntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 30),
+		WebDNSPinTTLSec:      envutil.IntDefault("AURA_WEB_DNS_PIN_TTL_SEC", 60),
+		WebFetchMaxBodyBytes: envutil.IntDefault("AURA_WEB_FETCH_MAX_BODY_BYTES", 5_000_000),
+		WebCachePersistent:   envutil.BoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
+		WebSearchTimeoutSec:  envutil.IntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
+		WebFetchTimeoutSec:   envutil.IntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 30),
 		WebUserAgent:         envDefault("AURA_WEB_USER_AGENT", "Aura/0.x web_fetch"),
 
-		MaxSwarmGoals:        envIntDefault("AURA_SWARM_MAX_GOALS", 8),
-		SwarmChildTimeoutSec: envIntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
-		MaxSwarmConcurrent:   envIntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
+		MaxSwarmGoals:        envutil.IntDefault("AURA_SWARM_MAX_GOALS", 8),
+		SwarmChildTimeoutSec: envutil.IntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
+		MaxSwarmConcurrent:   envutil.IntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
 
-		AgentJobMaxDurationSec: envIntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
+		AgentJobMaxDurationSec: envutil.IntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
 
-		SchedulerPreferOriginChannel: envBoolDefault("AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL", true),
+		SchedulerPreferOriginChannel: envutil.BoolDefault("AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL", true),
 
 		// Phase 11 skills knobs (D-34). Defaults derive from the per-user ~/.aura tree.
 		SkillsDir:             envDefault("AURA_SKILLS_DIR", defaultSkillsDir()),
-		SkillBodyCapBytes:     envIntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
-		SkillManifestCapBytes: envIntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
+		SkillBodyCapBytes:     envutil.IntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
+		SkillManifestCapBytes: envutil.IntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
 		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
-		SkillSnippetTTLDays:   envIntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
+		SkillSnippetTTLDays:   envutil.IntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 
 		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),
 
@@ -410,8 +411,8 @@ func loadBase() *Config {
 		// may now be any address, with GuardWebBind enforcing the non-loopback credential
 		// policy at boot (D-05).
 		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
-		AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
-		AGUIBufferCap:      envIntDefault("AURA_AGUI_BUFFER_CAP", 64),
+		AGUICORSPermissive: envutil.BoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
+		AGUIBufferCap:      envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
 
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
 		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),
@@ -420,35 +421,35 @@ func loadBase() *Config {
 		ObjectStoreBucket:         envDefault("AURA_OBJECTSTORE_BUCKET", "aura-assets"),
 		ObjectStoreAccessKey:      envDefault("AURA_OBJECTSTORE_ACCESS_KEY", defaultObjectStoreAccessKey),
 		ObjectStoreSecretKey:      envDefault("AURA_OBJECTSTORE_SECRET_KEY", defaultObjectStoreSecretKey),
-		ObjectStorePathStyle:      envBoolDefault("AURA_OBJECTSTORE_PATH_STYLE", true),
-		AssetMaxDocumentBytes:     envIntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
-		AssetMaxImageBytes:        envIntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
-		AssetMaxAudioBytes:        envIntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
-		AssetPresignTTLSec:        envIntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
-		AssetProcessingConcurrent: envIntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
+		ObjectStorePathStyle:      envutil.BoolDefault("AURA_OBJECTSTORE_PATH_STYLE", true),
+		AssetMaxDocumentBytes:     envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
+		AssetMaxImageBytes:        envutil.IntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
+		AssetMaxAudioBytes:        envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
+		AssetPresignTTLSec:        envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
+		AssetProcessingConcurrent: envutil.IntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
 		TelegramAPIBaseURL:        os.Getenv("TELEGRAM_API_BASE_URL"),
 		TelegramFileBaseURL:       os.Getenv("TELEGRAM_FILE_BASE_URL"),
-		TelegramLocalBotAPI:       envBoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
+		TelegramLocalBotAPI:       envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
 		// Web-auth knobs. The legacy secret is read raw for compatibility only; the
 		// active cockpit login path is Authula.
 		WebAuthSecret: os.Getenv("AURA_WEB_AUTH_SECRET"),
-		WebTrustProxy: envBoolDefault("AURA_WEB_TRUST_PROXY", false),
+		WebTrustProxy: envutil.BoolDefault("AURA_WEB_TRUST_PROXY", false),
 
 		// Authula provider (default authula).
 		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "authula"),
 		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
 		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
 		AuthulaOperatorIdentity: os.Getenv("AURA_AUTHULA_OPERATOR_IDENTITY"),
-		AuthulaRateLimitMax:     envIntDefault("AURA_AUTHULA_RATE_LIMIT_MAX", 30),
+		AuthulaRateLimitMax:     envutil.IntDefault("AURA_AUTHULA_RATE_LIMIT_MAX", 30),
 
-		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
+		ServeShutdownGraceSec: envutil.IntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
 
 		// Phase 13 channels + setup + multimodal. Setup bind defaults to :9081 —
 		// a loopback port DISTINCT from the AG-UI :9080 (separate-port requirement).
 		SetupBind:   envDefault("AURA_SETUP_BIND", "127.0.0.1:9081"),
 		SetupToken:  os.Getenv("AURA_SETUP_TOKEN"),
-		VisionCloud: envBoolDefault("AURA_VISION_CLOUD", false),
+		VisionCloud: envutil.BoolDefault("AURA_VISION_CLOUD", false),
 
 		MultimodalBaseURL:       os.Getenv("MULTIMODAL_BASE_URL"),
 		MultimodalModel:         os.Getenv("MULTIMODAL_MODEL"),
@@ -462,10 +463,10 @@ func loadBase() *Config {
 		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
 		DocumentsBaseURL:        os.Getenv("DOCUMENTS_BASE_URL"),
-		MultimodalTimeoutSec:    envIntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
+		MultimodalTimeoutSec:    envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
 
 		ProfileDir:        envDefault("AURA_PROFILE_DIR", profile.DefaultRoot()),
-		ProfileCertaintyN: envIntDefault("AURA_PROFILE_CERTAINTY_N", 3),
+		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),
 
 		WhatsAppBridgeURL: envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),
 

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/envutil"
 )
 
 // Registry holds the set of daemon channels and aggregates their lifecycle. It
@@ -156,18 +156,10 @@ func (r *Registry) enabled(name string) bool {
 }
 
 // envChannelEnabled reads AURA_CHANNEL_<upper(Name)>_ENABLED with the
-// silent-fallback contract of config.envBoolDefault: unset/empty/malformed →
+// silent-fallback contract of envutil.BoolDefault: unset/empty/malformed →
 // default true (a registered channel runs unless deliberately disabled, T-13-04-
 // EnableBypass accept disposition).
 func envChannelEnabled(name string) bool {
 	key := "AURA_CHANNEL_" + strings.ToUpper(name) + "_ENABLED"
-	v := os.Getenv(key)
-	if v == "" {
-		return true
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		return true
-	}
-	return b
+	return envutil.BoolDefault(key, true)
 }

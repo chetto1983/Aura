@@ -437,7 +437,7 @@ func TestLoad_Neo4jEnvOverrides(t *testing.T) {
 // TestEmbedDimensions_RequiredNonZero asserts EmbedDimensions defaults to the
 // Granite sidecar contract when AURA_EMBED_DIMENSIONS is unset — a non-zero
 // value is required for the Pattern 5 boot self-test to be meaningful. A literal
-// "0" is a deliberate misconfiguration that envIntDefault passes through verbatim
+// "0" is a deliberate misconfiguration that envutil.IntDefault passes through verbatim
 // (Atoi succeeds); it is caught downstream by the ping dim self-test, not here.
 func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	clearPostgresEnv(t)
@@ -529,39 +529,6 @@ func TestWebEnvOverrides(t *testing.T) {
 	}
 	if cfg.WebUserAgent != "Aura/1.0 custom" {
 		t.Errorf("WebUserAgent override not applied: %q", cfg.WebUserAgent)
-	}
-}
-
-// TestEnvBoolDefault_ParsesValid_FallsBackOnGarbage covers the new bool helper.
-func TestEnvBoolDefault_ParsesValid_FallsBackOnGarbage(t *testing.T) {
-	t.Setenv("AURA_TEST_BOOL_TRUE", "true")
-	if got := envBoolDefault("AURA_TEST_BOOL_TRUE", false); !got {
-		t.Error("valid true: want true, got false")
-	}
-	t.Setenv("AURA_TEST_BOOL_GARBAGE", "not-a-bool")
-	if got := envBoolDefault("AURA_TEST_BOOL_GARBAGE", true); !got {
-		t.Error("garbage: want fallback true, got false")
-	}
-	t.Setenv("AURA_TEST_BOOL_EMPTY", "")
-	if got := envBoolDefault("AURA_TEST_BOOL_EMPTY", true); !got {
-		t.Error("empty: want fallback true, got false")
-	}
-}
-
-func TestEnvIntDefault_ParsesValid_FallsBackOnGarbage(t *testing.T) {
-	t.Setenv("AURA_TEST_INT_VALID", "42")
-	if got := envIntDefault("AURA_TEST_INT_VALID", 7); got != 42 {
-		t.Errorf("valid int: want 42, got %d", got)
-	}
-
-	t.Setenv("AURA_TEST_INT_GARBAGE", "not-a-number")
-	if got := envIntDefault("AURA_TEST_INT_GARBAGE", 7); got != 7 {
-		t.Errorf("garbage: want fallback 7, got %d", got)
-	}
-
-	t.Setenv("AURA_TEST_INT_EMPTY", "")
-	if got := envIntDefault("AURA_TEST_INT_EMPTY", 13); got != 13 {
-		t.Errorf("empty: want fallback 13, got %d", got)
 	}
 }
 
