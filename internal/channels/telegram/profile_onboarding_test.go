@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/chetto1983/aura/internal/profile"
 	tele "gopkg.in/telebot.v4"
 )
+
+func ptrBool(b bool) *bool { return &b }
 
 // driveToStyle sends blank answers for identity+work+projects+social, returning
 // the last reply (which should be the style question). Returns false if any step
@@ -290,5 +293,60 @@ func TestProfileOnboarding_EditViaExtractorReplacesStack(t *testing.T) {
 	}
 	if !strings.Contains(loaded.AgentMD, "Agenti AI") {
 		t.Fatalf("saved Agent.md missing corrected value:\n%s", loaded.AgentMD)
+	}
+}
+
+// TestAnswersFromTextKeywordFallback pins the Italian-keyword FALLBACK branch of
+// answersFromText — the parser used when the LLM extractor is absent or errors
+// (handleText:152,155). The other tests only exercise the extractor path, so this
+// is the only coverage of the keyword map itself: language ("ital"), timezone
+// ("europe/rome"/"roma"), tone ("tecnic"/"technical"), length (the short>concise
+// precedence), and voice ("voce"/"voice"). The no-match case must yield the
+// zero-value Answers so a free-text answer never silently injects a preference.
+func TestAnswersFromTextKeywordFallback(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want profileflow.Answers
+	}{
+		{
+			name: "full_italian_phrase",
+			text: "italiano Europe/Rome tono tecnico risposte brevi voce",
+			want: profileflow.Answers{
+				Lang:           "it",
+				Timezone:       "Europe/Rome",
+				TonePreference: "technical",
+				ResponseLength: "short",
+				VoiceMode:      ptrBool(true),
+			},
+		},
+		{
+			name: "roma_alias_and_concisa",
+			text: "Vivo a Roma e preferisco risposte concise",
+			want: profileflow.Answers{Timezone: "Europe/Rome", ResponseLength: "concise"},
+		},
+		{
+			name: "english_keywords",
+			text: "short answers, technical tone, voice on",
+			want: profileflow.Answers{TonePreference: "technical", ResponseLength: "short", VoiceMode: ptrBool(true)},
+		},
+		{
+			name: "short_beats_concise_precedence",
+			text: "voglio risposte brevi e concise",
+			want: profileflow.Answers{ResponseLength: "short"},
+		},
+		{
+			name: "no_keyword_match_is_zero_value",
+			text: "Buongiorno, mi presento oggi",
+			want: profileflow.Answers{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := answersFromText(tc.text)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("answersFromText(%q) = %+v, want %+v", tc.text, got, tc.want)
+			}
+		})
 	}
 }
