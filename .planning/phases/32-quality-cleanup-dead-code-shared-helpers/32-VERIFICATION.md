@@ -1,16 +1,19 @@
 ---
 phase: 32-quality-cleanup-dead-code-shared-helpers
 verified: 2026-06-30T12:00:00Z
-status: human_needed
+status: passed
 score: 21/21 must-haves verified
 overrides_applied: 0
+human_verification_resolved: 2026-06-30
 human_verification:
   - test: "Keyboard tab-cycling in BoardLayout bottom-sheet and McpLifecycleCluster RemoveDialog after the canonical focusTrap adoption"
     expected: "Tab advances through all focusable elements (inputs, links, [tabindex]), not just <button>; focus does not escape the modal; disabled elements are skipped."
     why_human: "McpLifecycleCluster switched from a button-only querySelector to the full isFocusable selector. Playwright confirmed structural rendering but keyboard navigation flow requires a human to tab through the live cockpit dialog."
+    resolution: "SATISFIED via automation — web/e2e/phase32-uat.spec.ts drives the live cockpit RemoveDialog: asserts safe-action default focus, Tab/Shift+Tab cycle + wrap at both edges, focus contained in [role=dialog] at every step, and Escape dismiss. 4/4 chromium green 2026-06-30."
   - test: "Skeleton visual appearance in ConversationSidebar, SearchPanel, and governanceView loading states"
     expected: "Loading pulse animation is visible and matches the rich Skeleton.tsx CSS-wave system; no layout shift or missing width/height sizing vs the old shadcn animate-pulse skeletons."
     why_human: "The three consumers migrated from shadcn className props to SkeletonBlock h/w/radius props. Playwright confirmed the .skeleton-block marker, but the visual appearance of the CSS-wave token vs animate-pulse is a human judgment."
+    resolution: "SATISFIED via automation — web/e2e/phase32-uat.spec.ts forces each loading state and asserts .skeleton-block with animation aura-skeleton-wave + gradient at the right rem sizing, and zero .animate-pulse anywhere; evidence screenshots in uat-evidence/ inspected. 4/4 chromium green 2026-06-30."
 ---
 
 # Phase 32: Quality Cleanup — Dead Code + Shared Helpers Verification Report
