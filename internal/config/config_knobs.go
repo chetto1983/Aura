@@ -12,6 +12,13 @@
 // state, it only re-reads raw env independently to flag misconfiguration.
 package config
 
+import (
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+)
+
 // KnobKind classifies a KnobSpec so the generic re-parse pass can pick the right
 // stdlib check (strconv.Atoi / strconv.ParseBool / slices.Contains) with zero
 // per-knob code. KindString carries no parse check — secret/path string knobs are
@@ -104,4 +111,49 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_EMBED_DIMENSIONS", Kind: KindInt, Default: "768"},
 		{Name: "AURA_PROFILE_CERTAINTY_N", Kind: KindInt, Default: "3"},
 	}
+}
+
+// reparsePass is the generic, kind-driven F-016 re-parse pass (PROF-04 / D-07): it
+// re-reads every cataloged knob straight from the environment and re-parses it with
+// the same stdlib mechanics envutil uses — but emits a Violation instead of silently
+// falling back. Severity is the ONLY profile coupling: Fatal under a strict tier
+// (hardened/production), Warn under a lenient one (dev/local_trusted), keyed on the
+// plan-01 RuntimeProfile.Strict() helper. Unset or whitespace-only values are skipped
+// (the runtime read uses its default via the untouched leaf); KindString rows carry no
+// parse check. It aggregates ALL violations — one named row per bad knob, never the
+// knob VALUE (T-33-03b: secrets are flagged via KnobSpec.Secret, never echoed here).
+func reparsePass(p RuntimeProfile) []Violation {
+	sev := Warn
+	if p.Strict() {
+		sev = Fatal
+	}
+	var vs []Violation
+	for _, k := range knobRegistry() {
+		raw, set := os.LookupEnv(k.Name)
+		if !set {
+			continue
+		}
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue // whitespace-only ⇒ uses the default, no violation
+		}
+		switch k.Kind {
+		case KindInt:
+			if _, err := strconv.Atoi(trimmed); err != nil {
+				vs = append(vs, Violation{Knob: k.Name, Sev: sev, Msg: "not a valid integer"})
+			}
+		case KindBool:
+			if _, err := strconv.ParseBool(trimmed); err != nil {
+				vs = append(vs, Violation{Knob: k.Name, Sev: sev, Msg: "not a valid boolean"})
+			}
+		case KindEnum:
+			if !slices.Contains(k.Enum, trimmed) {
+				vs = append(vs, Violation{Knob: k.Name, Sev: sev, Msg: "not one of " + strings.Join(k.Enum, ", ")})
+			}
+		case KindString:
+			// no parse check — string/secret/path knobs are validated (if at all)
+			// by the bespoke gates in config_validate.go (plan 04).
+		}
+	}
+	return vs
 }
