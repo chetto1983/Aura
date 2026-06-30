@@ -159,6 +159,10 @@ func TestReparsePass(t *testing.T) {
 		{"valid bool ⇒ none", ProfileServerProduction, "AURA_AGUI_CORS_PERMISSIVE", "true", set, false, Warn},
 		{"valid enum ⇒ none", ProfileServerProduction, "AURA_PROFILE", string(ProfileLocalTrusted), set, false, Warn},
 		{"whitespace ⇒ none (uses default)", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", "   ", set, false, Warn},
+		// WR-01: a whitespace-PADDED but non-empty int silently falls back at runtime
+		// because envutil.IntDefault parses the raw (untrimmed) value — so the re-parse
+		// pass must flag it, not mask it by trimming first.
+		{"padded int ' 128' ⇒ Fatal (raw parse mirrors envutil, WR-01)", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", " 128", set, true, Fatal},
 		{"unset ⇒ none (uses default)", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", "", unset, false, Warn},
 	}
 	for _, tc := range cases {

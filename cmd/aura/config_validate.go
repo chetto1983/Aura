@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
 )
@@ -50,13 +51,29 @@ func runConfigValidate(args []string, out io.Writer) int {
 	}
 
 	// D-02: --profile overrides AURA_PROFILE for this run so an operator can lint ANY
-	// profile without mutating their environment. ParseProfile is total (unknown → dev).
+	// profile without mutating their environment.
 	p := cfg.Profile
 	if *profileFlag != "" {
-		p = config.ParseProfile(*profileFlag)
+		// ParseProfile is total (unknown → dev) — correct for the IMPLICIT AURA_PROFILE
+		// env path (D-03), but an EXPLICIT operator flag must NOT be silently substituted:
+		// a typo like `--profile server_prod` would otherwise lint `dev`, skip every strict
+		// gate, and exit 0 — a false-green CI gate on a posture that was never evaluated.
+		// A known profile round-trips to itself (its constant value equals its key);
+		// reject anything else with a usage error.
+		parsed := config.ParseProfile(*profileFlag)
+		if string(parsed) != strings.TrimSpace(*profileFlag) {
+			fmt.Fprintf(os.Stderr, "config validate: unknown profile %q (valid: dev, local_trusted, single_user_hardened, server_production)\n", *profileFlag)
+			return 2
+		}
+		p = parsed
 	}
 
 	violations := cfg.ValidateProfile(p)
+	if violations == nil {
+		// Emit `[]` not `null` so CI consumers piping --json through `jq '.[]'` get a
+		// valid empty array on the clean-config success path.
+		violations = []config.Violation{}
+	}
 
 	if *jsonOut {
 		enc := json.NewEncoder(out)
@@ -82,7 +99,7 @@ func runConfigValidate(args []string, out io.Writer) int {
 // in. A clean config prints a single "ok" line.
 func renderViolations(out io.Writer, p config.RuntimeProfile, violations []config.Violation) {
 	if len(violations) == 0 {
-		fmt.Fprintf(out, "ok: profile %s — no configuration violations\n", p)
+		_, _ = fmt.Fprintf(out, "ok: profile %s — no configuration violations\n", p)
 		return
 	}
 	var fatal, warn int
@@ -93,9 +110,9 @@ func renderViolations(out io.Writer, p config.RuntimeProfile, violations []confi
 			warn++
 		}
 	}
-	fmt.Fprintf(out, "profile %s — %d violation(s): %d fatal, %d warn\n", p, len(violations), fatal, warn)
+	_, _ = fmt.Fprintf(out, "profile %s — %d violation(s): %d fatal, %d warn\n", p, len(violations), fatal, warn)
 	for _, v := range violations {
-		fmt.Fprintf(out, "  %-5s %s: %s\n", severityLabel(v.Sev), v.Knob, v.Msg)
+		_, _ = fmt.Fprintf(out, "  %-5s %s: %s\n", severityLabel(v.Sev), v.Knob, v.Msg)
 	}
 }
 

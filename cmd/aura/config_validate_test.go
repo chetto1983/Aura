@@ -40,6 +40,24 @@ func setUnsafeServerProductionEnv(t *testing.T) {
 	t.Setenv("AURA_PROFILE", "") // base profile irrelevant; --profile overrides it (D-02)
 }
 
+// setBenignDevEnv composes a realistic, fully-valid dev posture: required secrets present,
+// NON-sample object-store creds, a loopback bind. Under the lenient dev/local_trusted tiers
+// none of the strict gates fire, so validation is clean (criterion #4 parity).
+func setBenignDevEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("AURA_DB_URL", "postgres://u:p@h:5432/db")
+	t.Setenv("NEO4J_PASSWORD", "neo-secret")
+	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9080")
+	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", "GKrealoperatorkey0000000001")
+	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", "realoperatorsecretvalue0000000000000000000000000000000000000000ab")
+	t.Setenv("GARAGE_RPC_SECRET", "deadbeefrpcsecret")
+	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "false")
+	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
+	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "")
+	t.Setenv("AURA_AUTHULA_SECRET", "")
+	t.Setenv("AURA_PROFILE", "")
+}
+
 // offendingKnobs is the set of AURA_* knobs the unsafe server_production posture above
 // must surface — criterion #1 / PROF-01: validate lists EVERY unmet requirement.
 var offendingKnobs = []string{
@@ -73,19 +91,7 @@ func TestConfigValidate_ServerProduction(t *testing.T) {
 	})
 
 	t.Run("benign --profile dev exits 0", func(t *testing.T) {
-		// Required secrets present, NON-sample object-store creds, loopback bind: under
-		// the lenient dev tier none of the strict gates fire (criterion #4 parity).
-		t.Setenv("AURA_DB_URL", "postgres://u:p@h:5432/db")
-		t.Setenv("NEO4J_PASSWORD", "neo-secret")
-		t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9080")
-		t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", "GKrealoperatorkey0000000001")
-		t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", "realoperatorsecretvalue0000000000000000000000000000000000000000ab")
-		t.Setenv("GARAGE_RPC_SECRET", "deadbeefrpcsecret")
-		t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "false")
-		t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
-		t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "")
-		t.Setenv("AURA_AUTHULA_SECRET", "")
-		t.Setenv("AURA_PROFILE", "")
+		setBenignDevEnv(t)
 		var buf bytes.Buffer
 		code := runConfigValidate([]string{"--profile", "dev"}, &buf)
 		if code != 0 {
@@ -133,6 +139,40 @@ func TestConfigValidate_ServerProduction(t *testing.T) {
 			if strings.Contains(out, secretValue) {
 				t.Errorf("secret VALUE %q must be redacted, but it appeared in:\n%s", secretValue, out)
 			}
+		}
+	})
+
+	t.Run("explicit unknown --profile is rejected, never coerced to dev (CR-01)", func(t *testing.T) {
+		// A typo in the EXPLICIT flag must NOT silently lint dev and exit 0 (a false-green
+		// CI gate on a posture never evaluated). Even with an unsafe server_production env
+		// loaded, `--profile server_prod` (typo) must be refused with a usage error (exit 2),
+		// not coerced to dev by the total ParseProfile.
+		setUnsafeServerProductionEnv(t)
+		var buf bytes.Buffer
+		code := runConfigValidate([]string{"--profile", "server_prod"}, &buf)
+		if code != 2 {
+			t.Fatalf("unknown explicit --profile must exit 2 (usage error), got %d; output:\n%s", code, buf.String())
+		}
+		if buf.Len() != 0 {
+			t.Errorf("a rejected profile must render no validation report to out, got:\n%s", buf.String())
+		}
+	})
+
+	t.Run("--json emits [] not null for a clean config (WR-03)", func(t *testing.T) {
+		// A clean config ⇒ ValidateProfile returns nil; the --json path must still emit a
+		// valid empty array so CI consumers piping through `jq '.[]'` don't choke on null.
+		setBenignDevEnv(t)
+		var buf bytes.Buffer
+		code := runConfigValidate([]string{"--profile", "dev", "--json"}, &buf)
+		if code != 0 {
+			t.Fatalf("benign dev --json must exit 0, got %d; output:\n%s", code, buf.String())
+		}
+		if got := strings.TrimSpace(buf.String()); got != "[]" {
+			t.Errorf("clean --json must emit [] not null, got %q", got)
+		}
+		var violations []config.Violation
+		if err := json.Unmarshal(buf.Bytes(), &violations); err != nil {
+			t.Fatalf("clean --json must decode into []config.Violation: %v", err)
 		}
 	})
 }

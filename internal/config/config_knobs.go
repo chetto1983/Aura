@@ -133,21 +133,27 @@ func reparsePass(p RuntimeProfile) []Violation {
 		if !set {
 			continue
 		}
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
+		if strings.TrimSpace(raw) == "" {
 			continue // whitespace-only ⇒ uses the default, no violation
 		}
 		switch k.Kind {
 		case KindInt:
-			if _, err := strconv.Atoi(trimmed); err != nil {
+			// Parse the RAW (untrimmed) value: envutil.IntDefault does NOT trim, so a
+			// whitespace-padded value like " 128" (common from YAML quoting) silently
+			// falls back to the default at runtime — surfacing it here is the whole point
+			// of the re-parse pass (F-016). Trimming would mask exactly that silent fallback.
+			if _, err := strconv.Atoi(raw); err != nil {
 				vs = append(vs, Violation{Knob: k.Name, Sev: sev, Msg: "not a valid integer"})
 			}
 		case KindBool:
-			if _, err := strconv.ParseBool(trimmed); err != nil {
+			// Raw value, same reason as KindInt — envutil.BoolDefault does not trim.
+			if _, err := strconv.ParseBool(raw); err != nil {
 				vs = append(vs, Violation{Knob: k.Name, Sev: sev, Msg: "not a valid boolean"})
 			}
 		case KindEnum:
-			if !slices.Contains(k.Enum, trimmed) {
+			// Enum knobs (AURA_PROFILE) are read at runtime via ParseProfile, which DOES
+			// trim — so mirror that and match against the trimmed value.
+			if !slices.Contains(k.Enum, strings.TrimSpace(raw)) {
 				vs = append(vs, Violation{Knob: k.Name, Sev: sev, Msg: "not one of " + strings.Join(k.Enum, ", ")})
 			}
 		case KindString:
