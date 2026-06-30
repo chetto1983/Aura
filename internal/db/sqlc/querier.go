@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
+	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
@@ -20,6 +21,7 @@ type Querier interface {
 	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
 	// 0 when the conversation has no turns.
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
@@ -34,10 +36,16 @@ type Querier interface {
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
+	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
+	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
 	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
+	CreateDocumentVersion(ctx context.Context, arg CreateDocumentVersionParams) (AuraDocumentVersions, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
+	CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (AuraIngestionJobs, error)
+	CreateStorageObject(ctx context.Context, arg CreateStorageObjectParams) (AuraStorageObjects, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
+	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
 	DeleteSetting(ctx context.Context, key string) error
@@ -50,6 +58,7 @@ type Querier interface {
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
+	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
@@ -115,6 +124,9 @@ type Querier interface {
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
+	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
+	ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error)
+	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
@@ -164,10 +176,15 @@ type Querier interface {
 	UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUploadedParams) (AuraAssets, error)
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
+	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error)
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
+	UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTagsParams) (AuraDocuments, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
+	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (AuraIngestionJobs, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
+	UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error)
+	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 }

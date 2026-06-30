@@ -66,6 +66,18 @@ type AuraAssets struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AuraAuditLogs struct {
+	ID              int64              `json:"id"`
+	ActorIdentityID pgtype.UUID        `json:"actor_identity_id"`
+	Action          string             `json:"action"`
+	EntityType      string             `json:"entity_type"`
+	EntityID        pgtype.UUID        `json:"entity_id"`
+	Before          []byte             `json:"before"`
+	After           []byte             `json:"after"`
+	Reason          string             `json:"reason"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 // Per-turn KV-cache metrics (Slice 4 / Phase 6, D-02). Append-only: one row per completed assistant turn from llm.Usage (token counts + cost only, no message content).
 type AuraCacheMetrics struct {
 	ConversationID pgtype.UUID        `json:"conversation_id"`
@@ -128,6 +140,51 @@ type AuraConversations struct {
 	Metadata          []byte             `json:"metadata"`
 }
 
+type AuraDeleteJobs struct {
+	ID            pgtype.UUID        `json:"id"`
+	DocumentID    pgtype.UUID        `json:"document_id"`
+	VersionID     pgtype.UUID        `json:"version_id"`
+	Scope         string             `json:"scope"`
+	Status        string             `json:"status"`
+	Steps         []byte             `json:"steps"`
+	AttemptCount  int32              `json:"attempt_count"`
+	MaxAttempts   int32              `json:"max_attempts"`
+	LockedBy      pgtype.Text        `json:"locked_by"`
+	LockedUntil   pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+}
+
+type AuraDocumentChunks struct {
+	ID         pgtype.UUID        `json:"id"`
+	DocumentID pgtype.UUID        `json:"document_id"`
+	VersionID  pgtype.UUID        `json:"version_id"`
+	ChunkIndex int32              `json:"chunk_index"`
+	ChunkHash  string             `json:"chunk_hash"`
+	Text       string             `json:"text"`
+	Locator    []byte             `json:"locator"`
+	Active     bool               `json:"active"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type AuraDocumentEmbeddings struct {
+	ID               pgtype.UUID        `json:"id"`
+	DocumentID       pgtype.UUID        `json:"document_id"`
+	VersionID        pgtype.UUID        `json:"version_id"`
+	ChunkID          pgtype.UUID        `json:"chunk_id"`
+	EmbeddingModel   string             `json:"embedding_model"`
+	EmbeddingVersion string             `json:"embedding_version"`
+	EmbeddingDim     int32              `json:"embedding_dim"`
+	VectorNamespace  string             `json:"vector_namespace"`
+	VectorID         string             `json:"vector_id"`
+	Active           bool               `json:"active"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // Durable document ingestion job state. Neo4j stores document/chunk graph data; Postgres tracks lifecycle and progress.
 type AuraDocumentIngestJobs struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -147,6 +204,51 @@ type AuraDocumentIngestJobs struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	SearchableAt   pgtype.Timestamptz `json:"searchable_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+}
+
+type AuraDocumentTags struct {
+	DocumentID pgtype.UUID        `json:"document_id"`
+	Tag        string             `json:"tag"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+// Immutable document content versions and processing lifecycle state.
+type AuraDocumentVersions struct {
+	ID                 pgtype.UUID        `json:"id"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	VersionNumber      int32              `json:"version_number"`
+	Status             string             `json:"status"`
+	Sha1               string             `json:"sha1"`
+	Sha256             string             `json:"sha256"`
+	ContentType        string             `json:"content_type"`
+	SizeBytes          int64              `json:"size_bytes"`
+	StorageObjectID    pgtype.UUID        `json:"storage_object_id"`
+	ChunkingConfigHash string             `json:"chunking_config_hash"`
+	PipelineConfigHash string             `json:"pipeline_config_hash"`
+	ReadyAt            pgtype.Timestamptz `json:"ready_at"`
+	ActivatedAt        pgtype.Timestamptz `json:"activated_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+}
+
+// Stable logical documents across immutable content versions; tags are operator metadata for library search.
+type AuraDocuments struct {
+	ID              pgtype.UUID        `json:"id"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	Scope           string             `json:"scope"`
+	Title           string             `json:"title"`
+	Tags            []string           `json:"tags"`
+	Metadata        []byte             `json:"metadata"`
+	ActiveVersionID pgtype.UUID        `json:"active_version_id"`
+	Status          string             `json:"status"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.
@@ -194,6 +296,43 @@ type AuraIdentityRecoveryAudit struct {
 	RequestIpHash pgtype.Text        `json:"request_ip_hash"`
 	UserAgentHash pgtype.Text        `json:"user_agent_hash"`
 	Metadata      []byte             `json:"metadata"`
+}
+
+// Operator-visible progress and lifecycle events for documents, versions, jobs, and assets.
+type AuraIngestionEvents struct {
+	ID         int64              `json:"id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	JobID      pgtype.UUID        `json:"job_id"`
+	FromStatus pgtype.Text        `json:"from_status"`
+	ToStatus   pgtype.Text        `json:"to_status"`
+	EventType  string             `json:"event_type"`
+	Message    string             `json:"message"`
+	Detail     []byte             `json:"detail"`
+	TraceID    string             `json:"trace_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+// Durable document ingestion and cleanup queue with idempotency keys and worker leases.
+type AuraIngestionJobs struct {
+	ID             pgtype.UUID        `json:"id"`
+	JobType        string             `json:"job_type"`
+	DocumentID     pgtype.UUID        `json:"document_id"`
+	VersionID      pgtype.UUID        `json:"version_id"`
+	Status         string             `json:"status"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Stage          string             `json:"stage"`
+	AttemptCount   int32              `json:"attempt_count"`
+	MaxAttempts    int32              `json:"max_attempts"`
+	LockedBy       pgtype.Text        `json:"locked_by"`
+	LockedUntil    pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload        []byte             `json:"payload"`
+	ErrorCode      string             `json:"error_code"`
+	ErrorMessage   string             `json:"error_message"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 }
 
 // Audit of applied Cypher migrations. Written by aura neo4j migrate; read by aura neo4j status.
@@ -318,6 +457,26 @@ type AuraSkillAudit struct {
 	GateRecommended   bool        `json:"gate_recommended"`
 	GateTaken         bool        `json:"gate_taken"`
 	BlocklistOverride bool        `json:"blocklist_override"`
+}
+
+// Ledger of Garage/S3 objects owned by assets, documents, versions, and derived artifacts.
+type AuraStorageObjects struct {
+	ID             pgtype.UUID        `json:"id"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	DocumentID     pgtype.UUID        `json:"document_id"`
+	VersionID      pgtype.UUID        `json:"version_id"`
+	AssetID        pgtype.UUID        `json:"asset_id"`
+	Bucket         string             `json:"bucket"`
+	ObjectKey      string             `json:"object_key"`
+	Kind           string             `json:"kind"`
+	Sha1           string             `json:"sha1"`
+	Sha256         string             `json:"sha256"`
+	Etag           string             `json:"etag"`
+	SizeBytes      int64              `json:"size_bytes"`
+	ContentType    string             `json:"content_type"`
+	RetentionClass string             `json:"retention_class"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Known Telegram accounts (Slice 9a / Phase 13, amendment #58). PK telegram_user_id; identity_id FKs aura.identities (single-user `local` this phase, D-07).
