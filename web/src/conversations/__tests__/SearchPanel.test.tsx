@@ -109,6 +109,25 @@ describe('SearchPanel (CHAT-02 / D-08)', () => {
     vi.unstubAllGlobals();
   });
 
+  it('announces an in-flight search via a role=status skeleton (loading state)', async () => {
+    // The search request hangs → isFetching with no results yet → the loading skeleton renders
+    // inside a role=status live region so assistive tech announces the in-flight search.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (urlOf(input).includes('/api/conversations/search')) {
+          return new Promise<Response>(() => undefined); // never resolves
+        }
+        return Promise.resolve(new Response(JSON.stringify(CONVERSATIONS), { status: 200 }));
+      }),
+    );
+    renderPanel();
+    const search = screen.getByPlaceholderText('Search conversations');
+    fireEvent.change(search, { target: { value: 'meteo' } });
+    const status = await screen.findByRole('status', { name: 'Searching...' });
+    expect(status.querySelectorAll('.skeleton-block')).toHaveLength(2);
+  });
+
   it('shows snippet rows with the conversation title and highlights the match', async () => {
     renderPanel();
     const search = screen.getByPlaceholderText('Search conversations');

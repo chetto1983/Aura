@@ -378,7 +378,8 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     const removeBtn = page.getByRole('button', { name: 'Remove server' }).first();
     if (await removeBtn.isVisible().catch(() => false)) {
       await removeBtn.click();
-      const dialog = page.getByRole('dialog');
+      // Destructive confirmation uses role="alertdialog" (WAI-ARIA interrupt semantics).
+      const dialog = page.getByRole('alertdialog');
       await expect(dialog).toBeVisible();
       // Action-specific labels, never generic OK/Cancel.
       await expect(page.getByRole('button', { name: 'Keep server' })).toBeVisible();

@@ -9,8 +9,11 @@ import { AppShell } from '../AppShell';
 // instrumentation. The default 1000ms async-utility timeout raced the create →
 // /agent/run → SSE → render chain under that CPU pressure and flaked intermittently
 // (different rows on different runs). Widen the async-wait tolerance for this heavy
-// file only; the assertions and behaviour are unchanged.
-const ASYNC_TIMEOUT_MS = 60000;
+// file only; the assertions and behaviour are unchanged. 60s still flaked on a loaded
+// CI runner (the create→/agent/run→SSE→render chain starved past 60s while the file
+// itself runs in ~4s locally), so the headroom is 120s — a slow CI run completes, a
+// genuine hang still fails (just later).
+const ASYNC_TIMEOUT_MS = 120000;
 
 function sseBody(frames: readonly Record<string, unknown>[]): string {
   return frames.map((f) => `event: ${String(f.type)}\ndata: ${JSON.stringify(f)}\n\n`).join('');

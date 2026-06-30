@@ -109,6 +109,18 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     return row;
   }
 
+  it('announces a pending list via a role=status skeleton (loading state)', async () => {
+    // The list request hangs → useConversations stays pending → the loading skeleton renders.
+    // The wrapper is a live region (role=status) so assistive tech announces the loading state.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    renderSidebar();
+    const status = await screen.findByRole('status', { name: 'Loading conversations...' });
+    expect(status.querySelectorAll('.skeleton-block').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('renders the conversation rows recent-first over GET /api/conversations', async () => {
     renderSidebar();
     await waitFor(() => {

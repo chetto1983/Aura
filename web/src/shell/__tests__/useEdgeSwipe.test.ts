@@ -269,4 +269,116 @@ describe('useEdgeSwipe — §3.1b gesture contract', () => {
 
     unmount();
   });
+
+  it('closes the right drawer on a rightward swipe inside an open right panel', () => {
+    const onRightClose = vi.fn();
+    const { unmount } = mountOn(host, {
+      onRightEdge: vi.fn(),
+      onRightClose,
+      isRightOpen: true,
+      edgeSize: 20,
+    });
+
+    host.dispatchEvent(touchEvent('touchstart', [{ x: 100, y: 100 }], host));
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 160, y: 102 }], host)); // lock rightward
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 330, y: 104 }], host)); // past 50% rightward
+    host.dispatchEvent(touchEvent('touchend', [{ x: 330, y: 104 }], host));
+    expect(onRightClose).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('opens the right sheet via a leftward fling below 50% (velocity rule)', () => {
+    vi.useFakeTimers();
+    const onRightEdge = vi.fn();
+    const { unmount } = mountOn(host, { onRightEdge, edgeSize: 20 });
+
+    vi.setSystemTime(0);
+    host.dispatchEvent(touchEvent('touchstart', [{ x: 396, y: 100 }], host));
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 370, y: 102 }], host)); // lock
+    vi.setSystemTime(20);
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 300, y: 103 }], host)); // fast leftward, < 50%
+    host.dispatchEvent(touchEvent('touchend', [{ x: 300, y: 103 }], host));
+    expect(onRightEdge).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+    unmount();
+  });
+
+  it('closes the left drawer via a leftward fling below 50% (velocity rule)', () => {
+    vi.useFakeTimers();
+    const onLeftClose = vi.fn();
+    const { unmount } = mountOn(host, {
+      onLeftEdge: vi.fn(),
+      onLeftClose,
+      isLeftOpen: true,
+      edgeSize: 20,
+    });
+
+    vi.setSystemTime(0);
+    host.dispatchEvent(touchEvent('touchstart', [{ x: 300, y: 100 }], host));
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 280, y: 102 }], host)); // lock leftward
+    vi.setSystemTime(20);
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 220, y: 103 }], host)); // fast leftward, < 50%
+    host.dispatchEvent(touchEvent('touchend', [{ x: 220, y: 103 }], host));
+    expect(onLeftClose).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+    unmount();
+  });
+
+  it('closes the right drawer via a rightward fling below 50% (velocity rule)', () => {
+    vi.useFakeTimers();
+    const onRightClose = vi.fn();
+    const { unmount } = mountOn(host, {
+      onRightEdge: vi.fn(),
+      onRightClose,
+      isRightOpen: true,
+      edgeSize: 20,
+    });
+
+    vi.setSystemTime(0);
+    host.dispatchEvent(touchEvent('touchstart', [{ x: 100, y: 100 }], host));
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 120, y: 102 }], host)); // lock rightward
+    vi.setSystemTime(20);
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 190, y: 103 }], host)); // fast rightward, < 50%
+    host.dispatchEvent(touchEvent('touchend', [{ x: 190, y: 103 }], host));
+    expect(onRightClose).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+    unmount();
+  });
+
+  it('ignores a touchstart that carries no active touch point', () => {
+    const onLeftEdge = vi.fn();
+    const { unmount } = mountOn(host, { onLeftEdge, edgeSize: 20 });
+
+    host.dispatchEvent(touchEvent('touchstart', [], host)); // point() → null, never arms
+    host.dispatchEvent(touchEvent('touchmove', [{ x: 220, y: 104 }], host));
+    host.dispatchEvent(touchEvent('touchend', [{ x: 220, y: 104 }], host));
+    expect(onLeftEdge).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it('a touchmove with no prior touchstart is a no-op (never preventDefault)', () => {
+    const { unmount } = mountOn(host, { onLeftEdge: vi.fn(), edgeSize: 20 });
+
+    const move = touchEvent('touchmove', [{ x: 60, y: 104 }], host);
+    host.dispatchEvent(move);
+    expect(move.defaultPrevented).toBe(false);
+
+    unmount();
+  });
+
+  it('a touchend before the gesture locks fires no callback', () => {
+    const onLeftEdge = vi.fn();
+    const { unmount } = mountOn(host, { onLeftEdge, edgeSize: 20 });
+
+    host.dispatchEvent(touchEvent('touchstart', [{ x: 6, y: 100 }], host));
+    host.dispatchEvent(touchEvent('touchend', [{ x: 6, y: 100 }], host)); // never moved → not locked
+    expect(onLeftEdge).not.toHaveBeenCalled();
+
+    unmount();
+  });
 });
