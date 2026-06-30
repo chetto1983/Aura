@@ -35,6 +35,8 @@ func runConfig(args []string) {
 		configGet(args[1:])
 	case "set":
 		configSet(args[1:])
+	case "validate":
+		configValidate(args[1:])
 	default:
 		configUsage()
 		os.Exit(1)
@@ -42,8 +44,9 @@ func runConfig(args []string) {
 }
 
 func configUsage() {
-	fmt.Fprintln(os.Stderr, "usage: aura config {show|get <key>|set <key> <value>}")
+	fmt.Fprintln(os.Stderr, "usage: aura config {show|get <key>|set <key> <value>|validate [--profile <p>] [--json]}")
 	fmt.Fprintln(os.Stderr, "  keys: llm.provider llm.model llm.base_url llm.temperature llm.max_tokens llm.adaptive_reasoning llm.total_timeout_sec llm.connect_timeout_sec")
+	fmt.Fprintln(os.Stderr, "  validate: lint the effective config against a runtime profile; non-zero exit if any Fatal violation")
 }
 
 // configShow prints the effective config. config.Load fails-fast on an empty API
