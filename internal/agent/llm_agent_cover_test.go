@@ -174,9 +174,9 @@ func TestLlmAgent_MalformedTextResponse(t *testing.T) {
 	}
 }
 
-// TestLlmAgent_NonJSONToolArgs drives canonicalArgs' fallback branches: a tool
-// call whose arguments are not valid JSON dedups on the raw bytes. Two identical
-// malformed-arg calls trip the dedup window rather than crashing.
+// TestLlmAgent_NonJSONToolArgs drives canonicaljson.CanonicalArgs' fallback
+// branches: a tool call whose arguments are not valid JSON dedups on the raw bytes.
+// Two identical malformed-arg calls trip the dedup window rather than crashing.
 func TestLlmAgent_NonJSONToolArgs(t *testing.T) {
 	recordingProvider(t)
 	reg := tools.NewRegistry()
@@ -184,7 +184,7 @@ func TestLlmAgent_NonJSONToolArgs(t *testing.T) {
 	reg.Register(&echoTool{})
 	turns := make([]agenttest.FakeTurn, 0, 6)
 	for i := 0; i < 6; i++ {
-		// Non-JSON arguments: canonicalArgs falls back to the raw bytes; identical
+		// Non-JSON arguments: CanonicalArgs falls back to the raw bytes; identical
 		// raw bytes each turn still produce a stable dedup fingerprint.
 		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `<<not-json>>`)))
 	}

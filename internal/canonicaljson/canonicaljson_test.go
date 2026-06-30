@@ -10,6 +10,62 @@ import (
 	"pgregory.net/rapid"
 )
 
+// TestCanonicalArgs locks the QUAL-03 union: CanonicalArgs is the single home for
+// the byte-identical agent.canonicalArgs and workflow.canonArgs copies. Valid JSON
+// canonicalizes (sorted keys, numbers round-tripped through the plain-Unmarshal
+// float form); malformed / empty / whitespace-only input falls back to the raw
+// bytes verbatim so a malformed-arg storm still dedups on identical raw input
+// rather than erroring out of the loop.
+func TestCanonicalArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "object unsorted keys sorted", in: `{"b":2,"a":1}`, want: `{"a":1,"b":2}`},
+		{name: "array preserves order", in: `[1,2,3]`, want: `[1,2,3]`},
+		{name: "nested object keys sorted", in: `{"nested":{"z":1,"a":[true,false,null]}}`, want: `{"nested":{"a":[true,false,null],"z":1}}`},
+		{name: "string", in: `"hello"`, want: `"hello"`},
+		{name: "bool", in: `true`, want: `true`},
+		{name: "null", in: `null`, want: `null`},
+		{name: "number exponent collapses to float", in: `1e3`, want: `1000`},
+		{name: "number trailing zero collapses", in: `1.0`, want: `1`},
+		{name: "large int exact within float53", in: `9007199254740992`, want: `9007199254740992`},
+		{name: "malformed json falls back to raw", in: `not json at all`, want: `not json at all`},
+		{name: "empty string falls back to raw", in: ``, want: ``},
+		{name: "whitespace only falls back to raw", in: "   ", want: "   "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CanonicalArgs(tt.in)
+			if !bytes.Equal(got, []byte(tt.want)) {
+				t.Fatalf("CanonicalArgs(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCanonicalArgs_KeyOrderInvariant proves the dedup fingerprint is stable across
+// argument key reordering — two semantically identical tool calls with different
+// key order must produce the same canonical bytes.
+func TestCanonicalArgs_KeyOrderInvariant(t *testing.T) {
+	a := CanonicalArgs(`{"alpha":1,"beta":2,"gamma":3}`)
+	b := CanonicalArgs(`{"gamma":3,"beta":2,"alpha":1}`)
+	if !bytes.Equal(a, b) {
+		t.Fatalf("key order must not affect canonical args: %q != %q", a, b)
+	}
+}
+
+// TestCanonicalArgs_Idempotent proves re-canonicalizing canonical output is a
+// fixpoint, so a stored fingerprint never drifts on a second pass.
+func TestCanonicalArgs_Idempotent(t *testing.T) {
+	once := CanonicalArgs(`{"b":[3,2,1],"a":{"y":2,"x":1}}`)
+	twice := CanonicalArgs(string(once))
+	if !bytes.Equal(once, twice) {
+		t.Fatalf("CanonicalArgs not idempotent: %q != %q", once, twice)
+	}
+}
+
 func TestMarshal_KeyOrderIndependent(t *testing.T) {
 	a, err := Marshal(map[string]any{"a": 1, "b": 2, "z": 3})
 	if err != nil {

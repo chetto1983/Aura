@@ -16,7 +16,6 @@
 package workflow
 
 import (
-	"encoding/json"
 	"iter"
 	"strconv"
 
@@ -140,7 +139,7 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 					seenThisTurn := make(map[string]struct{}, len(calls))
 					for i, tc := range calls {
 						last := i == len(calls)-1
-						key := tc.Function.Name + "\x00" + string(canonArgs(tc.Function.Arguments))
+						key := tc.Function.Name + "\x00" + string(canonicaljson.CanonicalArgs(tc.Function.Arguments))
 						_, dup := seenThisTurn[key]
 						seenThisTurn[key] = struct{}{}
 						stop, broke := a.guardToolCall(ic, ev, tc, last, dup, preview, &stepsConsumed, yield)
@@ -210,7 +209,7 @@ func (a *LoopAgent) guardToolCall(
 ) (terminated, broke bool) {
 	// B2 caller-canonicalizes contract: the LoopAgent produces the canonical args
 	// itself, then hands opaque bytes to the Budget dedup ring (D-18).
-	argsCanon := canonArgs(tc.Function.Arguments)
+	argsCanon := canonicaljson.CanonicalArgs(tc.Function.Arguments)
 
 	// Dedup pre-check BEFORE the side effect re-runs (D-18) — skipped for a
 	// within-turn duplicate, whose dedup decision was already made on the first
@@ -335,21 +334,4 @@ func resultPreview(ev *agent.Event) []byte {
 		return nil
 	}
 	return []byte(ev.LLMResponse.Content)
-}
-
-// canonArgs canonicalizes a tool call's JSON-string arguments into stable bytes
-// for the dedup fingerprint (B2). When the arguments are valid JSON they are
-// canonicalized through canonicaljson (sorted keys, literal numbers); otherwise
-// the raw bytes are used verbatim so a malformed-args tool still fingerprints
-// stably rather than erroring out of the loop.
-func canonArgs(arguments string) []byte {
-	var v any
-	if err := json.Unmarshal([]byte(arguments), &v); err != nil {
-		return []byte(arguments)
-	}
-	out, err := canonicaljson.Marshal(v)
-	if err != nil {
-		return []byte(arguments)
-	}
-	return out
 }

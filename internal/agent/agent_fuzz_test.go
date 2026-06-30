@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/canonicaljson"
 )
 
 // FuzzParseTextResponse fuzzes the terminal-tool argument parser (D-13). The
@@ -87,9 +88,9 @@ func FuzzCanonicalArgs(f *testing.F) {
 	f.Add(`{"k":1.0000000000000002}`)
 
 	f.Fuzz(func(t *testing.T, rawArgs string) {
-		canon := canonicalArgs(rawArgs)
+		canon := canonicaljson.CanonicalArgs(rawArgs)
 		if rawArgs != "" && len(canon) == 0 {
-			t.Fatalf("canonicalArgs returned empty for non-empty input %q", rawArgs)
+			t.Fatalf("CanonicalArgs returned empty for non-empty input %q", rawArgs)
 		}
 		// If the input is valid JSON, the canonical form must itself be valid JSON
 		// and re-canonicalizing it must be a fixpoint (deterministic fingerprint).
@@ -98,9 +99,9 @@ func FuzzCanonicalArgs(f *testing.F) {
 			if !json.Valid(canon) {
 				t.Fatalf("canonical form of valid JSON %q is not valid JSON: %q", rawArgs, canon)
 			}
-			again := canonicalArgs(string(canon))
+			again := canonicaljson.CanonicalArgs(string(canon))
 			if string(again) != string(canon) {
-				t.Fatalf("canonicalArgs not idempotent:\n once=%q\n twice=%q", canon, again)
+				t.Fatalf("CanonicalArgs not idempotent:\n once=%q\n twice=%q", canon, again)
 			}
 		}
 	})

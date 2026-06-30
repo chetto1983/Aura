@@ -66,8 +66,8 @@ func TestSequentialAgent_RootBranchHasNoParentDot(t *testing.T) {
 }
 
 // malformedArgsAgent emits one tool call whose Arguments are NOT valid JSON, to
-// cover canonArgs's raw-bytes fallback (a malformed-args tool still fingerprints
-// stably rather than erroring out of the loop).
+// cover canonicaljson.CanonicalArgs' raw-bytes fallback (a malformed-args tool
+// still fingerprints stably rather than erroring out of the loop).
 type malformedArgsAgent struct{ name string }
 
 func (a *malformedArgsAgent) Name() string                 { return a.name }
@@ -90,7 +90,7 @@ func (a *malformedArgsAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Ev
 
 // TestLoopAgent_MalformedToolArgs_FallsBackToRawFingerprint ensures the loop still
 // terminates cleanly (here: via dedup on the stable raw-bytes fingerprint) when a
-// tool's args are not valid JSON — canonArgs falls back to the raw bytes.
+// tool's args are not valid JSON — canonicaljson.CanonicalArgs falls back to raw.
 func TestLoopAgent_MalformedToolArgs_FallsBackToRawFingerprint(t *testing.T) {
 	lp := workflow.NewLoop("loop", 0, &malformedArgsAgent{name: "broken"})
 	ic := newTestIC(t, "root")

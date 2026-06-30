@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -47,7 +48,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 				vetoResults[i] = *res.Result
 			}
 		}
-		c := canonicalArgs(call.Function.Arguments)
+		c := canonicaljson.CanonicalArgs(call.Function.Arguments)
 		canon[i] = c
 		if dedup, reason := ic.Budget.BeforeToolCall(call.Function.Name, c); dedup {
 			a.appendSyntheticToolResults(calls, "skipped: duplicate call suppressed by the dedup guard")

@@ -41,6 +41,24 @@ func Marshal(v any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// CanonicalArgs canonicalizes a tool call's JSON-string arguments into stable bytes
+// for the dedup fingerprint (the caller-canonicalizes contract, B2). A non-JSON or
+// un-canonicalizable payload falls back to the raw bytes verbatim so a malformed-arg
+// storm still dedups on identical raw input rather than erroring out of the loop. It
+// is the single home for the byte-identical agent.canonicalArgs and workflow.canonArgs
+// copies (QUAL-03).
+func CanonicalArgs(rawArgs string) []byte {
+	var v any
+	if err := json.Unmarshal([]byte(rawArgs), &v); err != nil {
+		return []byte(rawArgs)
+	}
+	canon, err := Marshal(v)
+	if err != nil {
+		return []byte(rawArgs)
+	}
+	return canon
+}
+
 // normalize converts v into a tree of canonical Go values (string, json.Number,
 // bool, nil, []any, map[string]any) by round-tripping through encoding/json with
 // UseNumber. This both validates the input (NaN/Inf/func/chan surface as errors)
