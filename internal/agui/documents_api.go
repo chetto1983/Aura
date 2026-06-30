@@ -16,6 +16,7 @@ func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/documents/{id}", s.handleDocumentPatch)
 	mux.HandleFunc("DELETE /api/documents/{id}", s.handleDocumentDelete)
 	mux.HandleFunc("GET /api/documents/{id}/versions", s.handleDocumentVersions)
+	mux.HandleFunc("GET /api/documents/{id}/events", s.handleDocumentEvents)
 }
 
 type documentWriteBody struct {
@@ -95,6 +96,35 @@ func (s *Server) handleDocumentVersions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, detail.Versions)
+}
+
+func (s *Server) handleDocumentEvents(w http.ResponseWriter, r *http.Request) {
+	detail, ok := s.getDocumentDetailForRequest(w, r)
+	if !ok {
+		return
+	}
+	if s.documentEvents == nil {
+		http.Error(w, "document event store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	jobID := documentJobID(detail.Document.Metadata)
+	if jobID == "" {
+		writeJSON(w, []documents.IngestionEvent{})
+		return
+	}
+	if _, err := uuid.Parse(jobID); err != nil {
+		writeJSON(w, []documents.IngestionEvent{})
+		return
+	}
+	events, err := s.documentEvents.ListByJob(r.Context(), jobID)
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+		return
+	}
+	if events == nil {
+		events = []documents.IngestionEvent{}
+	}
+	writeJSON(w, events)
 }
 
 func (s *Server) handleDocumentPatch(w http.ResponseWriter, r *http.Request) {
@@ -200,4 +230,18 @@ func parseDocumentQueryInt(w http.ResponseWriter, r *http.Request, key string) (
 		return 0, false
 	}
 	return n, true
+}
+
+func documentJobID(metadata map[string]any) string {
+	if metadata == nil {
+		return ""
+	}
+	raw, ok := metadata["document_job_id"]
+	if !ok {
+		return ""
+	}
+	if jobID, ok := raw.(string); ok {
+		return jobID
+	}
+	return ""
 }

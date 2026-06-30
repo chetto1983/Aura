@@ -247,6 +247,12 @@ INSERT INTO aura.ingestion_events (
 )
 RETURNING *;
 
+-- name: ListIngestionEventsByJob :many
+SELECT *
+FROM aura.ingestion_events
+WHERE job_id = $1
+ORDER BY created_at ASC, id ASC;
+
 -- name: CreateDeleteJob :one
 INSERT INTO aura.delete_jobs (
     document_id,

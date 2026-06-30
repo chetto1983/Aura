@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -8,6 +9,10 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+var _ interface {
+	ListByJob(context.Context, string) ([]IngestionEvent, error)
+} = (*PostgresIngestionEventStore)(nil)
 
 func TestIngestionEventFromSQLDecodesDetail(t *testing.T) {
 	row := sqlc.AuraIngestionEvents{

@@ -91,6 +91,7 @@ type Server struct {
 	approvals        ApprovalStore
 	assets           AssetService
 	documentCatalog  DocumentCatalogService
+	documentEvents   DocumentEventService
 	storageOrphans   StorageOrphanService
 	images           ImageFetcher
 	graph            GraphView
@@ -135,12 +136,6 @@ func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
-
-// SetDocumentCatalog wires the document library/catalog API.
-func (s *Server) SetDocumentCatalog(service DocumentCatalogService) { s.documentCatalog = service }
-
-// SetStorageOrphans wires storage orphan dry-run and cleanup APIs.
-func (s *Server) SetStorageOrphans(service StorageOrphanService) { s.storageOrphans = service }
 
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
 // delegates to. Set by the daemon composition root after NewServer (the *web.Client

@@ -42,6 +42,11 @@ type IngestionEventStore interface {
 	Append(context.Context, AppendIngestionEventRequest) (IngestionEvent, error)
 }
 
+// IngestionEventReader lists previously appended ingestion lifecycle events.
+type IngestionEventReader interface {
+	ListByJob(context.Context, string) ([]IngestionEvent, error)
+}
+
 // PostgresIngestionEventStore implements ingestion event storage with sqlc.
 type PostgresIngestionEventStore struct {
 	q *sqlc.Queries
@@ -81,6 +86,27 @@ func (s *PostgresIngestionEventStore) Append(ctx context.Context, req AppendInge
 		return IngestionEvent{}, err
 	}
 	return ingestionEventFromSQL(row)
+}
+
+// ListByJob returns ingestion events for one durable ingestion job in timeline order.
+func (s *PostgresIngestionEventStore) ListByJob(ctx context.Context, jobID string) ([]IngestionEvent, error) {
+	pgJobID, err := pgUUID("event job id", jobID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.q.ListIngestionEventsByJob(ctx, pgJobID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]IngestionEvent, 0, len(rows))
+	for _, row := range rows {
+		event, err := ingestionEventFromSQL(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, event)
+	}
+	return out, nil
 }
 
 func ingestionEventFromSQL(row sqlc.AuraIngestionEvents) (IngestionEvent, error) {

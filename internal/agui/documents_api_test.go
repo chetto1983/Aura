@@ -147,6 +147,53 @@ func TestDocumentAPIDetailAndVersionsRoutes(t *testing.T) {
 	}
 }
 
+func TestDocumentAPIEventsRouteListsEventsForDocumentJob(t *testing.T) {
+	jobID := "30000000-0000-0000-0000-000000000001"
+	detail := documents.DocumentDetail{
+		Document: documents.Document{
+			ID:         "10000000-0000-0000-0000-000000000001",
+			IdentityID: documentAPIIdentityID,
+			Title:      "Servo Manual",
+			Metadata:   map[string]any{"document_job_id": jobID},
+			Status:     documents.DocumentStatusReady,
+		},
+	}
+	catalog := &fakeDocumentCatalog{detailResp: detail}
+	events := &fakeDocumentEvents{
+		resp: []documents.IngestionEvent{{
+			ID:         10,
+			EntityType: "ingestion_job",
+			EntityID:   jobID,
+			JobID:      jobID,
+			EventType:  "ingestion_job.succeeded",
+			Message:    "indexed",
+			Detail:     map[string]any{"stage": "embedding"},
+		}},
+	}
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetDocumentCatalog(catalog)
+	s.SetDocumentEvents(events)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/documents/10000000-0000-0000-0000-000000000001/events", nil)
+	req = withPrincipal(req, documentAPIIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if events.jobID != jobID {
+		t.Fatalf("event job id = %q, want %q", events.jobID, jobID)
+	}
+	var got []documents.IngestionEvent
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode events: %v", err)
+	}
+	if len(got) != 1 || got[0].EventType != "ingestion_job.succeeded" {
+		t.Fatalf("events response = %#v", got)
+	}
+}
+
 func TestDocumentAPIPatchUsesPrincipalAndDocumentID(t *testing.T) {
 	catalog := &fakeDocumentCatalog{
 		updateResp: documents.Document{
@@ -279,4 +326,14 @@ func (f *fakeDocumentCatalog) DeleteDocument(_ context.Context, identityID, docu
 	f.deleteIdentityID = identityID
 	f.deleteDocumentID = documentID
 	return f.deleteResp, nil
+}
+
+type fakeDocumentEvents struct {
+	jobID string
+	resp  []documents.IngestionEvent
+}
+
+func (f *fakeDocumentEvents) ListByJob(_ context.Context, jobID string) ([]documents.IngestionEvent, error) {
+	f.jobID = jobID
+	return f.resp, nil
 }

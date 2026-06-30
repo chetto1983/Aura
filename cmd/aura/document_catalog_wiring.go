@@ -13,6 +13,10 @@ func buildDocumentCatalogService(chat *chatEnv) agui.DocumentCatalogService {
 	}
 }
 
+func buildDocumentEventService(chat *chatEnv) agui.DocumentEventService {
+	return documents.NewPostgresIngestionEventStore(chat.pool)
+}
+
 func buildStorageOrphanService(chat *chatEnv, objects objectstore.Store) agui.StorageOrphanService {
 	return &documents.StorageOrphanService{
 		Objects: objects,
