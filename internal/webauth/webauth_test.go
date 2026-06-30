@@ -13,43 +13,7 @@ import (
 	authulaservices "github.com/Authula/authula/services"
 )
 
-// --- ensureAuthulaSearchPath ---------------------------------------------------------
-
-func TestEnsureAuthulaSearchPath(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      string
-		want    string // substring that must be present
-		absent  string // substring that must be absent ("" = skip)
-		wantErr bool
-	}{
-		{name: "appends search_path", in: "postgres://aura_app:pw@127.0.0.1:5432/aura?sslmode=disable", want: "search_path=authula"},
-		{name: "respects operator search_path", in: "postgres://u:p@h:5432/db?search_path=custom", want: "search_path=custom", absent: "authula"},
-		{name: "no query at all", in: "postgres://u:p@h:5432/db", want: "search_path=authula"},
-		{name: "empty dsn errors", in: "   ", wantErr: true},
-		{name: "garbage dsn errors", in: "://%zz", wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ensureAuthulaSearchPath(tt.in)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("want error, got %q", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if !strings.Contains(got, tt.want) {
-				t.Errorf("want %q to contain %q", got, tt.want)
-			}
-			if tt.absent != "" && strings.Contains(got, tt.absent) {
-				t.Errorf("want %q to NOT contain %q", got, tt.absent)
-			}
-		})
-	}
-}
+// ensureAuthulaSearchPath has its own co-located table in authula_test.go.
 
 func TestNewRejectsEmptySecret(t *testing.T) {
 	_, err := New(Config{DSN: "postgres://u:p@h:5432/db", Secret: "   "})
