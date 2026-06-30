@@ -210,6 +210,8 @@ const vectorSeedQuery = `
 CALL db.index.vector.queryNodes('chunk_embedding', $candidate_limit, $query_vector)
 YIELD node, score
 WHERE ($document_id = "" OR node.document_id = $document_id)
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
 RETURN
   node.document_id AS document_id,
   coalesce(node.file_name, "") AS file_name,
@@ -231,6 +233,8 @@ ORDER BY score DESC
 const docScopedVectorSeedQuery = `
 MATCH (node:Chunk {document_id: $document_id})
 WHERE node.embedding IS NOT NULL
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
 WITH node, vector.similarity.cosine(node.embedding, $query_vector) AS score
 RETURN
   node.document_id AS document_id,
@@ -252,6 +256,8 @@ const neighborExpandQuery = `
 MATCH (c:Chunk) WHERE c.id IN $winner_ids
 MATCH (c)-[:NEXT_CHUNK]-(n:Chunk)
 WHERE NOT n.id IN $winner_ids
+  AND coalesce(n.active, true) = true
+  AND n.deleted_at IS NULL
 WITH DISTINCT n
 RETURN
   n.document_id AS document_id,

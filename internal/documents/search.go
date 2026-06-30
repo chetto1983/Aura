@@ -170,6 +170,8 @@ const sparseSearchQuery = `
 CALL db.index.fulltext.queryNodes('chunk_text', $query, {limit: $candidate_limit})
 YIELD node, score
 WHERE ($document_id = "" OR node.document_id = $document_id)
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
 RETURN
   node.document_id AS document_id,
   coalesce(node.file_name, "") AS file_name,
@@ -192,6 +194,8 @@ LIMIT $limit
 const docScopedSparseQuery = `
 MATCH (node:Chunk {document_id: $document_id})
 WHERE node.text IS NOT NULL
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
 WITH node, size([term IN $terms WHERE toLower(node.text) CONTAINS term]) AS score
 WHERE score > 0
 RETURN

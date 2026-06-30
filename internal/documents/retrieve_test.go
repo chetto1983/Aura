@@ -141,6 +141,82 @@ func TestRetrieveDocumentScopedUsesNativePreFilter(t *testing.T) {
 	}
 }
 
+func TestRetrieveVectorQueriesExcludeInactiveOrDeletedChunks(t *testing.T) {
+	knowledge := &fakeRetrieveKnowledge{seedRows: []map[string]any{
+		seedRow("doc-1", "chunk-0", "alpha", 0.9),
+	}}
+	svc := &Service{
+		Searcher:      &fakeSearchBackend{},
+		Knowledge:     knowledge,
+		QueryEmbedder: &fakeQueryEmbedder{vector: []float64{0.1}},
+		Reranker:      &fakeReranker{scored: []rerank.Scored{{Index: 0, Score: 0}}},
+	}
+	if _, err := svc.Retrieve(t.Context(), SearchRequest{Query: "q"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range knowledge.reads {
+		if strings.Contains(call.query, "queryNodes") {
+			for _, want := range []string{"coalesce(node.active, true) = true", "node.deleted_at IS NULL"} {
+				if !strings.Contains(call.query, want) {
+					t.Fatalf("vector seed query missing %q:\n%s", want, call.query)
+				}
+			}
+		}
+	}
+}
+
+func TestRetrieveScopedVectorQueryExcludesInactiveOrDeletedChunks(t *testing.T) {
+	knowledge := &fakeRetrieveKnowledge{seedRows: []map[string]any{
+		seedRow("doc-1", "chunk-0", "alpha", 0.9),
+	}}
+	svc := &Service{
+		Searcher:      &fakeSearchBackend{},
+		Knowledge:     knowledge,
+		QueryEmbedder: &fakeQueryEmbedder{vector: []float64{0.1}},
+		Reranker:      &fakeReranker{scored: []rerank.Scored{{Index: 0, Score: 0}}},
+	}
+	if _, err := svc.Retrieve(t.Context(), SearchRequest{Query: "q", DocumentID: "doc-1"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range knowledge.reads {
+		if strings.Contains(call.query, "vector.similarity.cosine") {
+			for _, want := range []string{"coalesce(node.active, true) = true", "node.deleted_at IS NULL"} {
+				if !strings.Contains(call.query, want) {
+					t.Fatalf("scoped vector seed query missing %q:\n%s", want, call.query)
+				}
+			}
+		}
+	}
+}
+
+func TestRetrieveExpansionExcludesInactiveOrDeletedNeighbors(t *testing.T) {
+	knowledge := &fakeRetrieveKnowledge{
+		seedRows: []map[string]any{
+			seedRow("doc-1", "chunk-0", "alpha", 0.9),
+			seedRow("doc-1", "chunk-1", "bravo", 0.8),
+		},
+		expandRows: []map[string]any{seedRow("doc-1", "chunk-2", "context", 0)},
+	}
+	svc := &Service{
+		Searcher:      &fakeSearchBackend{},
+		Knowledge:     knowledge,
+		QueryEmbedder: &fakeQueryEmbedder{vector: []float64{0.1}},
+		Reranker:      &fakeReranker{scored: []rerank.Scored{{Index: 0, Score: 0.9}, {Index: 1, Score: 0.8}}},
+	}
+	if _, err := svc.Retrieve(t.Context(), SearchRequest{Query: "q", Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range knowledge.reads {
+		if strings.Contains(call.query, "NEXT_CHUNK") {
+			for _, want := range []string{"coalesce(n.active, true) = true", "n.deleted_at IS NULL"} {
+				if !strings.Contains(call.query, want) {
+					t.Fatalf("neighbor query missing %q:\n%s", want, call.query)
+				}
+			}
+		}
+	}
+}
+
 // TestRetrieveExpandsOnlyWinners: after rerank, only the top-K winners (not the whole
 // seed pool) are passed to the 1-hop graph expansion.
 func TestRetrieveExpandsOnlyWinners(t *testing.T) {

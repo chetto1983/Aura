@@ -77,6 +77,34 @@ func TestSearchUnscopedUsesGlobalFulltext(t *testing.T) {
 	}
 }
 
+func TestSearchQueriesExcludeInactiveOrDeletedChunks(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	searcher := &Searcher{Client: fake}
+	if _, err := searcher.Search(t.Context(), SearchRequest{Query: "reset"}); err != nil {
+		t.Fatal(err)
+	}
+	query := fake.readCalls[0].query
+	for _, want := range []string{"coalesce(node.active, true) = true", "node.deleted_at IS NULL"} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("unscoped sparse query missing %q:\n%s", want, query)
+		}
+	}
+}
+
+func TestScopedSearchQueriesExcludeInactiveOrDeletedChunks(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	searcher := &Searcher{Client: fake}
+	if _, err := searcher.Search(t.Context(), SearchRequest{Query: "reset", DocumentID: "doc_123"}); err != nil {
+		t.Fatal(err)
+	}
+	query := fake.readCalls[0].query
+	for _, want := range []string{"coalesce(node.active, true) = true", "node.deleted_at IS NULL"} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("scoped sparse query missing %q:\n%s", want, query)
+		}
+	}
+}
+
 func TestSearchDecodesLocatorJSON(t *testing.T) {
 	fake := &fakeKnowledgeClient{
 		readRows: []map[string]any{
