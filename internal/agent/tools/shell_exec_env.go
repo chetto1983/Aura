@@ -14,7 +14,8 @@ const (
 	envShellOutputBufCap = "AURA_SHELL_OUTPUT_BUF_CAP"
 	// envShellDestructivePatterns overrides the on-by-default conservative
 	// ADVISORY destructive-command set (B-10): a comma-separated list of RE2
-	// patterns REPLACES the default; the empty string or "off" disables the gate.
+	// patterns REPLACES the default; UNSET or EMPTY keeps the defaults (gate
+	// ACTIVE) and only an explicit "off" disables the gate (D-12).
 	// Advisory, not a security boundary — see defaultDestructivePatterns.
 	envShellDestructivePatterns = "AURA_SHELL_DESTRUCTIVE_PATTERNS"
 
@@ -85,7 +86,7 @@ func destructiveShellMatch(command string) (bool, error) {
 // unattended. Kept narrow on purpose: each pattern targets a whole-tree / device
 // wipe, NOT an ordinary `rm file.txt`, so legitimate work is never gated. The
 // operator can replace the set with AURA_SHELL_DESTRUCTIVE_PATTERNS, or disable
-// the gate entirely with the empty string or "off".
+// the gate entirely with an explicit "off" (an empty value keeps the defaults).
 var defaultDestructivePatterns = []*regexp.Regexp{
 	// rm -rf / (and -fr, optional sudo, root or top-level path) — whole-tree wipe.
 	regexp.MustCompile(`(?i)\brm\s+(-[a-z]*\s+)*-?[rf]*\s*-?[rf]+[a-z]*\s+(--no-preserve-root\s+)?/(\s|$|\w)`),
@@ -100,18 +101,21 @@ var defaultDestructivePatterns = []*regexp.Regexp{
 }
 
 // destructiveShellPatterns returns the active ADVISORY pattern set (B-10). The
-// gate is ON BY DEFAULT: an UNSET AURA_SHELL_DESTRUCTIVE_PATTERNS yields the
-// conservative built-in set (defaultDestructivePatterns), so a clearly
-// destructive command trips the approval pause without the operator opting in.
-// An explicit value REPLACES the default (no merge); the empty string or "off"
-// is the explicit opt-out that disables the gate.
+// gate is ON BY DEFAULT: an UNSET *or EMPTY* AURA_SHELL_DESTRUCTIVE_PATTERNS
+// yields the conservative built-in set (defaultDestructivePatterns), so a clearly
+// destructive command trips the approval pause without the operator opting in —
+// copying .env.example (commented line) therefore never disables the gate (D-12).
+// A non-empty value REPLACES the default (no merge); only an explicit, case-
+// insensitive "off" is the opt-out that disables the gate. The leaf stays
+// profile-agnostic — the production "forbid off" check lives in the config
+// validator, which reads the raw env value (it does NOT branch this function).
 func destructiveShellPatterns() ([]*regexp.Regexp, error) {
 	raw, set := os.LookupEnv(envShellDestructivePatterns)
 	raw = strings.TrimSpace(raw)
-	if !set {
+	if !set || raw == "" {
 		return defaultDestructivePatterns, nil
 	}
-	if raw == "" || strings.EqualFold(raw, "off") {
+	if strings.EqualFold(raw, "off") {
 		return nil, nil
 	}
 	parts := strings.Split(raw, ",")
