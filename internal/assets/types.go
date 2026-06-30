@@ -10,6 +10,18 @@ import (
 type Status string
 
 // Asset lifecycle statuses.
+//
+// The full 12-state set is a DEFERRED lifecycle from
+// docs/superpowers/plans/2026-06-18-industrial-multimodal-asset-pipeline.md.
+// Production currently emits only StatusPresigned and StatusUploaded; the
+// remaining states are intentionally retained for the unbuilt asset-upload
+// pipeline, so future deadcode/audit runs should treat them as known-deferred
+// rather than dead. Do NOT delete any of these constants.
+//
+// This assets.Status lifecycle is DISTINCT from internal/documents.JobStatus
+// (the wired document-ingest lifecycle: JobEmbedding, JobCanceled, etc.): the
+// two share some string values ("embedding"/"canceled") but are different types
+// in different packages and must not be conflated.
 const (
 	StatusCreated    Status = "created"
 	StatusPresigned  Status = "presigned"
