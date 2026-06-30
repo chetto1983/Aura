@@ -217,4 +217,46 @@ describe('DocumentsWorkspace', () => {
     });
     expect(await screen.findByText('Deleted 1 orphan object')).toBeTruthy();
   });
+
+  it('retries a failed document through its active version asset', async () => {
+    const failedDoc = { ...DOC, status: 'failed' };
+    const failedDetail = {
+      document: failedDoc,
+      versions: [{ ...DETAIL.versions[0], asset_id: 'asset-2', status: 'failed' }],
+    };
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push({ url, init });
+        if (url === '/api/assets/asset-2/retry') {
+          return Promise.resolve(new Response('{"status":"accepted"}', { status: 200 }));
+        }
+        if (url === '/api/documents/doc-1/events') {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        if (url === '/api/documents/doc-1') {
+          return Promise.resolve(new Response(JSON.stringify(failedDetail), { status: 200 }));
+        }
+        if (url.startsWith('/api/documents')) {
+          return Promise.resolve(new Response(JSON.stringify([failedDoc]), { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+      }),
+    );
+
+    render(<DocumentsWorkspace />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry processing' }));
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (call) => call.url === '/api/assets/asset-2/retry' && call.init?.method === 'POST',
+        ),
+      ).toBe(true);
+    });
+  });
 });

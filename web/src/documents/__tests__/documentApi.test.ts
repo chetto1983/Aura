@@ -6,6 +6,7 @@ import {
   fetchDocumentEvents,
   fetchDocuments,
   fetchStorageOrphans,
+  retryDocumentAsset,
   updateDocument,
 } from '../documentApi';
 
@@ -108,6 +109,19 @@ describe('documentApi', () => {
         dry_run_token: 'token',
         confirm: 'DELETE ORPHAN OBJECTS',
       }),
+    });
+  });
+
+  it('retries the asset behind a failed document version', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{"ok":true}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await retryDocumentAsset('asset/1');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/assets/asset%2F1/retry', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
     });
   });
 

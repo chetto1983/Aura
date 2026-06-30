@@ -176,6 +176,15 @@ export async function deleteDocument(id: string): Promise<DocumentItem> {
   return readJSON<DocumentItem>(res);
 }
 
+export async function retryDocumentAsset(assetId: string): Promise<unknown> {
+  const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}/retry`, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readJSON<unknown>(res);
+}
+
 export async function fetchStorageOrphans(
   params: StorageOrphanParams,
 ): Promise<StorageOrphanReport> {

@@ -6,6 +6,7 @@ import {
   deleteDocument,
   fetchDocumentDetail,
   fetchDocuments,
+  retryDocumentAsset,
   updateDocument,
   type DocumentDetail,
   type DocumentItem,
@@ -52,6 +53,7 @@ export default function DocumentsWorkspace() {
   const [detailStatus, setDetailStatus] = useState<LoadStatus>('ready');
   const [tagDraft, setTagDraft] = useState('');
   const [savingTags, setSavingTags] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -152,6 +154,18 @@ export default function DocumentsWorkspace() {
       setTagDraft(updated.tags.join(', '));
     } finally {
       setSavingTags(false);
+    }
+  }
+
+  async function retryActiveAsset() {
+    const assetID = activeVersion?.asset_id;
+    if (detail === undefined || assetID === undefined || assetID === '' || retrying) return;
+    setRetrying(true);
+    try {
+      await retryDocumentAsset(assetID);
+      await loadDocuments({ query, tag, scope }, detail.document.id);
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -294,6 +308,17 @@ export default function DocumentsWorkspace() {
                       {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
                       {t('documents.actions.saveTags')}
                     </Button>
+                    {detail.document.status === 'failed' && activeVersion?.asset_id ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={retrying}
+                        onClick={() => void retryActiveAsset()}
+                      >
+                        {retrying ? <Spinner /> : <RefreshCw aria-hidden="true" />}
+                        {t('documents.actions.retryProcessing')}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="destructive"
