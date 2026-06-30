@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
-stopped_at: Phase 32 context gathered
-last_updated: "2026-06-30T07:29:18.489Z"
+stopped_at: Completed 32-03-PLAN.md (QUAL-02 redundant-code removal)
+last_updated: "2026-06-30T07:52:00.000Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 13
-  completed_plans: 5
+  completed_plans: 6
   percent: 9
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 32 (quality-cleanup-dead-code-shared-helpers) — EXECUTING
-Plan: 3 of 10
-Status: Ready to execute
+Plan: 4 of 10
+Status: 32-03 complete (telebot anchor + discarded Build() removed); 32-04 next (AURA_MEMORY_EMBED_* full-stack removal)
 Last activity: 2026-06-30
 
 ### v1.0.0 — shipped & archived (2026-06-29)
@@ -199,8 +199,13 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 31 P02 | ~25min | 2 tasks | 3 files |
 | Phase 31 P03 | ~30min | 2 tasks | 6 files |
 | Phase 32 P02 | ~40min | 3 tasks | 6 files |
+| Phase 32 P03 | ~22min | 2 tasks | 5 files |
 
 ## Accumulated Context
+
+### Phase 32 Execution
+
+- **32-03 closed (2026-06-30): QUAL-02 redundant-code removal (telebot anchor + discarded Build()).** Task 1: deleted `internal/channels/deps.go` — its in-code "amendment-#58 CI pin gate" justification was FALSE (`rg telebot` over `.github/`/`scripts/`/`Makefile` = nothing); moved the `package channels` doc to a new `internal/channels/doc.go` (Open Question #4 → delete-and-move, the project doc.go idiom). `go mod tidy` confirmed `gopkg.in/telebot.v4 v4.0.0-beta.9` stays DIRECT via the genuine consumer `telegram/bot.go:18`; build green. (Incidental: tidy promoted `golang.org/x/crypto` to DIRECT — the concurrent Codex session's in-flight code uses it directly; legitimate, not reverted.) Task 2: restructured the discarded `Build()` at `llm_agent.go:235` — the old `adaptiveTierOK` path ran BOTH `Build()` and `BuildWithReasoningTier()` and threw the first away (wasted `RenderToolDefs()` per turn). Extracted `buildRequest(budget, tier, tierOK)` if/else so exactly one builder runs; chosen request byte-identical per branch (D-01 parity). Added white-box `TestBuildRequest_BranchParity` (new `*_internal_test.go`, since the helper is unexported and `llm_agent_test.go` is `package agent_test`) — pins each branch to its builder's output + a discriminating guard that the branches diverge on `req.Reasoning`. `go test -race ./internal/agent/` green (20.8s); `go vet` clean. Commits `5d6066be` (Task 1), `0428121e` (Task 2). Summary `.planning/phases/32-quality-cleanup-dead-code-shared-helpers/32-03-SUMMARY.md`. **QUAL-02 deliberately NOT marked complete — remaining items (AURA_MEMORY_EMBED_* full-stack removal) land in 32-04.** Next = 32-04.
 
 ### 2026-06-18 Edge/Web Lint Memory
 
