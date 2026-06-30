@@ -90,6 +90,7 @@ type Server struct {
 	conv             ConversationStore
 	approvals        ApprovalStore
 	assets           AssetService
+	documentCatalog  DocumentCatalogService
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders
@@ -134,6 +135,9 @@ func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 
+// SetDocumentCatalog wires the document library/catalog API.
+func (s *Server) SetDocumentCatalog(service DocumentCatalogService) { s.documentCatalog = service }
+
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
 // delegates to. Set by the daemon composition root after NewServer (the *web.Client
 // already wired for web_search/web_fetch); until set, the route answers 503. Kept off
@@ -172,6 +176,7 @@ func (s *Server) Mux() http.Handler {
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
+	s.registerDocumentRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only milestone) lives in

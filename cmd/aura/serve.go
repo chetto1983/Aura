@@ -34,6 +34,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -294,6 +295,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
 	aguiServer.SetAssetService(chat.assets)
+	aguiServer.SetDocumentCatalog(documents.NewPostgresCatalogStore(chat.pool))
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon
