@@ -191,7 +191,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 **Plans:** 5 plans in 4 waves
 **Wave 1**
 
-- [ ] 33-01-PLAN.md — Foundation: split Validate() out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields (wave 1)
+- [x] 33-01-PLAN.md — Foundation: split Validate() out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields (wave 1) → 33-01-SUMMARY.md
 - [ ] 33-02-PLAN.md — F-002/D-12 destructive-shell semantics flip (empty→defaults, only `off` disables) + truth table + .env.example (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*

@@ -2,15 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: planning
-stopped_at: Phase 33 context gathered
-last_updated: "2026-06-30T19:26:35.040Z"
-last_activity: 2026-06-30 — Phase 32 complete, transitioned to Phase 33
+current_phase: 33
+current_phase_name: runtime-profiles-config-validation
+status: executing
+stopped_at: Completed 33-01-PLAN.md
+last_updated: "2026-06-30T21:11:00.000Z"
+last_activity: 2026-06-30
+last_activity_desc: Phase 33 plan 01 (RuntimeProfile primitives + config_validate split) complete
 progress:
   total_phases: 11
   completed_phases: 2
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 18
+  completed_plans: 14
   percent: 18
 ---
 
@@ -21,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 33 — Runtime Profiles + Config Validation
+**Current focus:** Phase 33 — runtime-profiles-config-validation
 
 ## Current Position
 
-Phase: 33 — Runtime Profiles + Config Validation
-Plan: Not started
-Status: Phase 32 CLOSED 2026-06-30 — UAT passed 2/2 (automated live-cockpit Playwright e2e: focusTrap keyboard a11y + skeleton visuals), verification 21/21 must-haves PASS, security verified (0 open threats ≥high). 10/10 plans complete & committed; whole-tree `go build` + consolidated `-race` GREEN, web gates green. Phase 33 ready to plan.
-Last activity: 2026-06-30 — Phase 32 complete, transitioned to Phase 33
+Phase: 33 (runtime-profiles-config-validation) — EXECUTING
+Plan: 2 of 5
+Status: Executing Phase 33 (33-01 complete)
+Last activity: 2026-06-30 — 33-01 complete: Validate() split out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -202,6 +205,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 32 P02 | ~40min | 3 tasks | 6 files |
 | Phase 32 P03 | ~22min | 2 tasks | 5 files |
 | Phase 32 P04 | ~32min | 2 tasks | 7 files |
+| Phase 33 P33-01 | ~11min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -397,6 +401,7 @@ Recent decisions affecting current work:
 - [Phase 32]: 32-02 T1 KEEP: cmd/aura dry-run RequestID re-stamp is load-bearing (fake InfiniteToolCallAgent never stamps it); pinned by regression test + RED-on-removal, not deleted
 - [Phase 32]: 32-02 T3/T4 SWAP: agui.indexByte to strings.IndexByte and stringList inlined as append([]string{},...); both helpers deleted, non-nil-empty NetworkAllowlist preserved (marshals [] not null)
 - [Phase 32]: 32-02 T8 ACCEPT: truncateRunes 5-line dup kept with cross-reference comments (copies differ by ellipsis); no internal/strutil created (OQ#2 default)
+- [Phase 33]: 33-01: Validate() MOVED first (config.go 557->534 LOC) to clear the whole-tree 600-LOC file-size hook before any field add (RESEARCH Pitfall 3); Severity(Warn/Fatal)+Violation{Knob,Sev,Msg} contract types pre-placed in config_validate.go for plans 02-05. RuntimeProfile string enum {dev,local_trusted,single_user_hardened,server_production} (D-01) + total ParseProfile (unknown/empty->dev, D-03, never panics — T-33-01) + .Strict() lenient{dev,local_trusted}/strict{hardened,prod} tier helper (D-07/D-14). Config.Profile/ObjectStoreReplicationFactor(default 1, D-13/PROF-06)/GarageRPCSecret(upstream GARAGE_RPC_SECRET, D-13/PROF-03) populated in loadBase; clearPostgresEnv extended with the 4 new knobs. NAMING-COLLISION GUARD held: internal/profile / Config.ProfileDir / AURA_PROFILE_DIR / config_profile_test.go untouched (RESEARCH Pitfall 1). GarageRPCSecret config-read only, never logged (T-33-02); NO per-profile runtime enforcement (scope fence, plan 04+). TDD: tests written first, RED observed via WSL, then GREEN; config.go 550 LOC; full internal/config -race green. Commits 2734f43c/0d439f16/39f8dbf1.
 
 ### Pending Todos
 
