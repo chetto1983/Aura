@@ -91,6 +91,7 @@ type Server struct {
 	approvals        ApprovalStore
 	assets           AssetService
 	documentCatalog  DocumentCatalogService
+	storageOrphans   StorageOrphanService
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders
@@ -138,6 +139,9 @@ func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 // SetDocumentCatalog wires the document library/catalog API.
 func (s *Server) SetDocumentCatalog(service DocumentCatalogService) { s.documentCatalog = service }
 
+// SetStorageOrphans wires storage orphan dry-run and cleanup APIs.
+func (s *Server) SetStorageOrphans(service StorageOrphanService) { s.storageOrphans = service }
+
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
 // delegates to. Set by the daemon composition root after NewServer (the *web.Client
 // already wired for web_search/web_fetch); until set, the route answers 503. Kept off
@@ -177,6 +181,7 @@ func (s *Server) Mux() http.Handler {
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
 	s.registerDocumentRoutes(mux)
+	s.registerStorageOrphanRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only milestone) lives in

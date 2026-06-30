@@ -32,16 +32,16 @@ type StorageOrphanService struct {
 
 // StorageOrphanRequest scopes an orphan scan.
 type StorageOrphanRequest struct {
-	Bucket string
-	Prefix string
+	Bucket string `json:"bucket"`
+	Prefix string `json:"prefix"`
 }
 
 // StorageOrphanCleanupRequest executes a previously proven dry-run.
 type StorageOrphanCleanupRequest struct {
-	Bucket      string
-	Prefix      string
-	DryRunToken string
-	Confirm     string
+	Bucket      string `json:"bucket"`
+	Prefix      string `json:"prefix"`
+	DryRunToken string `json:"dry_run_token"`
+	Confirm     string `json:"confirm"`
 }
 
 // StorageOrphanReport is returned by dry-run and cleanup.

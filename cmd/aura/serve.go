@@ -300,6 +300,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	})
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
+	aguiServer.SetStorageOrphans(buildStorageOrphanService(chat, objectStore))
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon
