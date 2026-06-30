@@ -300,7 +300,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
 	aguiServer.SetAssetService(chat.assets)
-	aguiServer.SetDocumentCatalog(documents.NewPostgresCatalogStore(chat.pool))
+	aguiServer.SetDocumentCatalog(&documents.CatalogService{Store: documents.NewPostgresCatalogStore(chat.pool)})
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon

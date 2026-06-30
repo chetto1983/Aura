@@ -184,6 +184,38 @@ func TestDocumentAPIPatchUsesPrincipalAndDocumentID(t *testing.T) {
 	}
 }
 
+func TestDocumentAPIDeleteUsesPrincipalAndDocumentID(t *testing.T) {
+	catalog := &fakeDocumentCatalog{
+		deleteResp: documents.Document{
+			ID:         "10000000-0000-0000-0000-000000000001",
+			IdentityID: documentAPIIdentityID,
+			Status:     documents.DocumentStatusDeleted,
+		},
+	}
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetDocumentCatalog(catalog)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/documents/10000000-0000-0000-0000-000000000001", nil)
+	req = withPrincipal(req, documentAPIIdentityID)
+	rec := httptest.NewRecorder()
+
+	s.Mux().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if catalog.deleteIdentityID != documentAPIIdentityID || catalog.deleteDocumentID != "10000000-0000-0000-0000-000000000001" {
+		t.Fatalf("delete called identity=%q document=%q", catalog.deleteIdentityID, catalog.deleteDocumentID)
+	}
+	var got documents.Document
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Status != documents.DocumentStatusDeleted {
+		t.Fatalf("response = %#v", got)
+	}
+}
+
 func TestDocumentAPIRequiresServiceAndPrincipal(t *testing.T) {
 	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
 	req := httptest.NewRequest(http.MethodGet, "/api/documents", nil)
@@ -208,11 +240,14 @@ type fakeDocumentCatalog struct {
 
 	createResp documents.Document
 	updateResp documents.Document
+	deleteResp documents.Document
 	listResp   []documents.DocumentSummary
 	detailResp documents.DocumentDetail
 
 	detailIdentityID string
 	detailDocumentID string
+	deleteIdentityID string
+	deleteDocumentID string
 }
 
 type CreateDocumentRequestAlias = documents.CreateDocumentRequest
@@ -238,4 +273,10 @@ func (f *fakeDocumentCatalog) GetDocument(_ context.Context, identityID, documen
 	f.detailIdentityID = identityID
 	f.detailDocumentID = documentID
 	return f.detailResp, nil
+}
+
+func (f *fakeDocumentCatalog) DeleteDocument(_ context.Context, identityID, documentID string) (documents.Document, error) {
+	f.deleteIdentityID = identityID
+	f.deleteDocumentID = documentID
+	return f.deleteResp, nil
 }

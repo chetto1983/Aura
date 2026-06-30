@@ -14,6 +14,7 @@ func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/documents", s.handleDocumentList)
 	mux.HandleFunc("GET /api/documents/{id}", s.handleDocumentGet)
 	mux.HandleFunc("PATCH /api/documents/{id}", s.handleDocumentPatch)
+	mux.HandleFunc("DELETE /api/documents/{id}", s.handleDocumentDelete)
 	mux.HandleFunc("GET /api/documents/{id}/versions", s.handleDocumentVersions)
 }
 
@@ -123,6 +124,23 @@ func (s *Server) handleDocumentPatch(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, doc)
+}
+
+func (s *Server) handleDocumentDelete(w http.ResponseWriter, r *http.Request) {
+	identityID, ok := s.documentAPIReady(w, r)
+	if !ok {
+		return
+	}
+	documentID, ok := parseDocumentID(w, r)
+	if !ok {
+		return
+	}
+	doc, err := s.documentCatalog.DeleteDocument(r.Context(), identityID, documentID)
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusNotFound)
 		return
 	}
 	writeJSON(w, doc)
