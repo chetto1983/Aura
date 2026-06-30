@@ -8,6 +8,8 @@ import (
 )
 
 const defaultSparseBatchSize = 250
+const defaultEmbeddingModel = "default"
+const defaultEmbeddingVersion = "v1"
 
 // KnowledgeClient is the subset of Neo4j knowledge operations used by indexing.
 type KnowledgeClient interface {
@@ -17,8 +19,10 @@ type KnowledgeClient interface {
 
 // Indexer writes extracted documents, chunks, and embeddings into Neo4j.
 type Indexer struct {
-	Client    KnowledgeClient
-	BatchSize int
+	Client           KnowledgeClient
+	BatchSize        int
+	EmbeddingModel   string
+	EmbeddingVersion string
 }
 
 // UpsertSparse stores document metadata and searchable text chunks.
@@ -81,8 +85,11 @@ func (i *Indexer) UpsertEmbeddings(ctx context.Context, documentID string, chunk
 	params := make([]map[string]any, 0, len(chunks))
 	for _, chunk := range chunks {
 		params = append(params, map[string]any{
-			"id":        chunk.ID,
-			"embedding": chunk.Embedding,
+			"id":                chunk.ID,
+			"embedding":         chunk.Embedding,
+			"embedding_model":   i.embeddingModel(),
+			"embedding_version": i.embeddingVersion(),
+			"active":            true,
 		})
 	}
 	rows, err := i.Client.Write(ctx, embeddingUpsertQuery, map[string]any{
@@ -95,6 +102,21 @@ func (i *Indexer) UpsertEmbeddings(ctx context.Context, documentID string, chunk
 		return 0, fmt.Errorf("upsert embeddings: %w", err)
 	}
 	return countFromRows(rows, len(chunks)), nil
+}
+
+// DeactivateDocument marks one document and its chunks inactive in the graph.
+func (i *Indexer) DeactivateDocument(ctx context.Context, documentID string) error {
+	if i.Client == nil {
+		return fmt.Errorf("document indexer has no knowledge client")
+	}
+	if documentID == "" {
+		return fmt.Errorf("document id is required")
+	}
+	_, err := i.Client.Write(ctx, documentDeactivateQuery, map[string]any{"document_id": documentID})
+	if err != nil {
+		return fmt.Errorf("deactivate document graph: %w", err)
+	}
+	return nil
 }
 
 func documentParams(doc ExtractedDocument) map[string]any {
@@ -110,6 +132,7 @@ func documentParams(doc ExtractedDocument) map[string]any {
 		"status":               string(JobExtracting),
 		"chunk_count":          len(doc.Chunks),
 		"embedded_chunk_count": 0,
+		"active":               true,
 	}
 }
 
@@ -133,9 +156,24 @@ func chunksParams(chunks []Chunk, fileName string) ([]map[string]any, error) {
 			"text":         chunk.Text,
 			"locator_json": string(locator),
 			"heading_path": chunk.HeadingPath,
+			"active":       true,
 		})
 	}
 	return out, nil
+}
+
+func (i *Indexer) embeddingModel() string {
+	if i.EmbeddingModel != "" {
+		return i.EmbeddingModel
+	}
+	return defaultEmbeddingModel
+}
+
+func (i *Indexer) embeddingVersion() string {
+	if i.EmbeddingVersion != "" {
+		return i.EmbeddingVersion
+	}
+	return defaultEmbeddingVersion
 }
 
 // nextChunkPairs returns the consecutive {prev,next} chunk-id pairs that form a
@@ -191,6 +229,8 @@ SET
   d.status = $document.status,
   d.chunk_count = $document.chunk_count,
   d.embedded_chunk_count = coalesce(d.embedded_chunk_count, $document.embedded_chunk_count),
+  d.active = $document.active,
+  d.deleted_at = NULL,
   d.updated_at = datetime(),
   d.created_at = coalesce(d.created_at, datetime())
 RETURN d.id AS document_id
@@ -212,6 +252,8 @@ SET
   c.text = chunk.text,
   c.locator_json = chunk.locator_json,
   c.heading_path = chunk.heading_path,
+  c.active = chunk.active,
+  c.deleted_at = NULL,
   c.updated_at = datetime(),
   c.created_at = coalesce(c.created_at, datetime())
 MERGE (d)-[:HAS_CHUNK]->(c)
@@ -235,6 +277,8 @@ MATCH (d:Document {id: $document_id})
 SET
   d.status = "searchable",
   d.chunk_count = $chunk_count,
+  d.active = true,
+  d.deleted_at = NULL,
   d.updated_at = datetime()
 RETURN d.id AS document_id
 `
@@ -244,12 +288,33 @@ UNWIND $chunks AS chunk
 MATCH (c:Chunk {id: chunk.id})
 SET
   c.embedding = chunk.embedding,
+  c.embedding_model = chunk.embedding_model,
+  c.embedding_version = chunk.embedding_version,
+  c.active = chunk.active,
+  c.deleted_at = NULL,
   c.embedded_at = datetime()
 WITH count(c) AS embedded
 MATCH (d:Document {id: $document_id})
 SET
   d.status = $status,
   d.embedded_chunk_count = $embedded_count,
+  d.active = true,
+  d.deleted_at = NULL,
   d.updated_at = datetime()
 RETURN embedded AS embedded
+`
+
+const documentDeactivateQuery = `
+MATCH (d:Document {id: $document_id})
+SET
+  d.active = false,
+  d.deleted_at = datetime(),
+  d.updated_at = datetime()
+WITH d
+OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c:Chunk)
+SET
+  c.active = false,
+  c.deleted_at = datetime(),
+  c.updated_at = datetime()
+RETURN count(c) AS chunks
 `

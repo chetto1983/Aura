@@ -110,9 +110,41 @@ func TestIndexerStoresFileNameOnChunks(t *testing.T) {
 	t.Fatal("chunk batch not written")
 }
 
-func TestIndexerUpsertsEmbeddings(t *testing.T) {
+func TestIndexerWritesLifecycleMetadataOnDocumentsAndChunks(t *testing.T) {
 	fake := &fakeKnowledgeClient{}
 	indexer := &Indexer{Client: fake}
+	doc := testDocumentWithChunks(t, 1)
+
+	if _, err := indexer.UpsertSparse(t.Context(), doc); err != nil {
+		t.Fatal(err)
+	}
+	document := fake.writeCalls[0].params["document"].(map[string]any)
+	if document["active"] != true {
+		t.Fatalf("document active = %#v", document["active"])
+	}
+	if !strings.Contains(fake.writeCalls[0].query, "d.active = $document.active") ||
+		!strings.Contains(fake.writeCalls[0].query, "d.deleted_at = NULL") {
+		t.Fatalf("document query missing lifecycle writes:\n%s", fake.writeCalls[0].query)
+	}
+	for _, call := range fake.writeCalls {
+		chunks, ok := call.params["chunks"].([]map[string]any)
+		if ok && len(chunks) > 0 {
+			if chunks[0]["active"] != true {
+				t.Fatalf("chunk active = %#v", chunks[0]["active"])
+			}
+			if !strings.Contains(call.query, "c.active = chunk.active") ||
+				!strings.Contains(call.query, "c.deleted_at = NULL") {
+				t.Fatalf("chunk query missing lifecycle writes:\n%s", call.query)
+			}
+			return
+		}
+	}
+	t.Fatal("chunk batch not written")
+}
+
+func TestIndexerUpsertsEmbeddings(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	indexer := &Indexer{Client: fake, EmbeddingModel: "text-embedding-3-large", EmbeddingVersion: "2026-06-30"}
 
 	count, err := indexer.UpsertEmbeddings(t.Context(), "doc_1", []EmbeddedChunk{
 		{ID: "chunk_1", Embedding: []float64{0.1, 0.2}},
@@ -126,6 +158,17 @@ func TestIndexerUpsertsEmbeddings(t *testing.T) {
 	params := fake.writeCalls[0].params
 	if params["status"] != string(JobComplete) || params["embedded_count"] != 1 {
 		t.Fatalf("embedding params = %#v", params)
+	}
+	chunks := params["chunks"].([]map[string]any)
+	if chunks[0]["embedding_model"] != "text-embedding-3-large" ||
+		chunks[0]["embedding_version"] != "2026-06-30" ||
+		chunks[0]["active"] != true {
+		t.Fatalf("embedding chunk params = %#v", chunks[0])
+	}
+	if !strings.Contains(fake.writeCalls[0].query, "c.embedding_model = chunk.embedding_model") ||
+		!strings.Contains(fake.writeCalls[0].query, "c.active = chunk.active") ||
+		!strings.Contains(fake.writeCalls[0].query, "c.deleted_at = NULL") {
+		t.Fatalf("embedding query missing lifecycle writes:\n%s", fake.writeCalls[0].query)
 	}
 }
 
@@ -207,6 +250,29 @@ func TestIndexerSingleChunkWritesNoNextChunkEdges(t *testing.T) {
 	}
 	if _, ok := nextChunkWrite(fake.writeCalls); ok {
 		t.Fatal("a 1-chunk document must not write any NEXT_CHUNK edges")
+	}
+}
+
+func TestIndexerDeactivateDocumentMarksGraphInactive(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	indexer := &Indexer{Client: fake}
+
+	if err := indexer.DeactivateDocument(t.Context(), "doc_1"); err != nil {
+		t.Fatal(err)
+	}
+	call := fake.writeCalls[0]
+	if call.params["document_id"] != "doc_1" {
+		t.Fatalf("params = %#v", call.params)
+	}
+	for _, want := range []string{
+		"d.active = false",
+		"d.deleted_at = datetime()",
+		"c.active = false",
+		"c.deleted_at = datetime()",
+	} {
+		if !strings.Contains(call.query, want) {
+			t.Fatalf("deactivate query missing %q:\n%s", want, call.query)
+		}
 	}
 }
 
