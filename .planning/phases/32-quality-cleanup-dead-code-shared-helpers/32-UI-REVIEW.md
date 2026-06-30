@@ -22,13 +22,18 @@
 
 ---
 
-## Top 3 Priority Fixes
+## Top 3 Priority Fixes — ALL RESOLVED (2026-06-30)
 
-1. **ConversationListSkeleton and SearchPanel loading containers lack `role=status`/`aria-live`** — Screen readers cannot announce "Loading conversations" or "Searching" because neither wrapper carries a live region role. GovernanceView's `BoardStateView` does this correctly (`role="status"` + `aria-label` + `sr-only` span). Fix: add `role="status"` to the `<div>` at `ConversationSidebar.tsx:360` and the loading `<div>` at `SearchPanel.tsx:85`.
+> This is the quality phase; the surfaced a11y defects on the files this phase touched were
+> fixed rather than deferred. All three are closed and re-verified live (vitest 29/29 +
+> `web/e2e/phase32-uat.spec.ts` 4/4 against the rebuilt cockpit). Fixes confined to files Phase
+> 32 already modified (skeleton migration + focusTrap adoption) — no scope expansion.
 
-2. **RemoveDialog declares `role="dialog"` where `role="alertdialog"` is the correct semantic** — `alertdialog` signals to assistive technology that the dialog contains critical information requiring immediate attention (WAI-ARIA 1.1 §dialog_roles). An irreversible destructive confirmation is precisely the alertdialog use-case. Fix: change `role="dialog"` to `role="alertdialog"` in `McpLifecycleCluster.tsx:231`.
+1. ✅ **RESOLVED — ConversationListSkeleton and SearchPanel loading containers now carry `role="status"`** — Added `role="status"` to the wrapper `<div>` in `ConversationSidebar.tsx` (`ConversationListSkeleton`) and `SearchPanel.tsx` (searching state), matching `BoardStateView`'s live-region pattern so AT announces the loading/searching state. The e2e now asserts `getByRole('status', { name: … })` on all three loading surfaces.
 
-3. **Human keyboard verification of the canonical focusTrap's expanded selector remains open** — The `VERIFICATION.md` explicitly flags this as a pending human check. Code analysis confirms `FOCUSABLE_SELECTOR` covers inputs, links, and `[tabindex]` elements with the `isFocusable` disabled filter, but the static screenshots cannot verify that Tab cycling reaches non-button focusables in the live cockpit. Fix: manually tab through the RemoveDialog and the BoardLayout mobile bottom sheet in a live browser with `<input>` or `[tabindex]` elements present in the trap.
+2. ✅ **RESOLVED — RemoveDialog now declares `role="alertdialog"`** — Changed `role="dialog"` → `role="alertdialog"` in `McpLifecycleCluster.tsx` for the irreversible destructive confirmation (WAI-ARIA interrupt semantics). Unit test (`McpLifecycleCluster.test.tsx`) and the live e2e updated to query `alertdialog`; both green.
+
+3. ✅ **RESOLVED — keyboard verification of the canonical focusTrap is automated** — `web/e2e/phase32-uat.spec.ts` drives the live cockpit RemoveDialog: Tab/Shift+Tab cycle, wrap at both edges, focus contained in the modal, safe-action default focus, Escape dismiss. 4/4 chromium green. (`32-VERIFICATION.md` human-verification block canonicalized to satisfied.)
 
 ---
 

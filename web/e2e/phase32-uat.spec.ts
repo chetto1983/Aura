@@ -124,7 +124,9 @@ test.describe('Phase 32 UAT — focusTrap keyboard accessibility (McpLifecycleCl
     // Open the destructive confirmation dialog from the lifecycle cluster's toolbar.
     await page.getByRole('button', { name: 'Remove server' }).first().click();
 
-    const dialog = page.getByRole('dialog');
+    // Destructive confirmation uses role="alertdialog" (WAI-ARIA: interrupt semantics for an
+    // irreversible action), not a plain dialog.
+    const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute('aria-modal', 'true');
     await expect(dialog.getByText(/Remove "github"\?/)).toBeVisible();
@@ -137,7 +139,7 @@ test.describe('Phase 32 UAT — focusTrap keyboard accessibility (McpLifecycleCl
 
     const focusInside = () =>
       page.evaluate(() => {
-        const dlg = document.querySelector('[role="dialog"]');
+        const dlg = document.querySelector('[role="alertdialog"]');
         const active = document.activeElement;
         return dlg !== null && active !== null && dlg.contains(active);
       });
@@ -168,7 +170,7 @@ test.describe('Phase 32 UAT — focusTrap keyboard accessibility (McpLifecycleCl
 
     // 5) Escape dismisses the dialog without performing the destructive action.
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
   });
 });
 
@@ -194,7 +196,10 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
 
     await gotoAuthenticated(page, '/');
 
-    const sidebarSkeleton = page.getByLabel('Loading conversations...').locator('.skeleton-block');
+    // The loading wrapper is a live region (role="status") so AT announces the loading state.
+    const sidebarLoading = page.getByRole('status', { name: 'Loading conversations...' });
+    await expect(sidebarLoading).toBeVisible({ timeout: 15000 });
+    const sidebarSkeleton = sidebarLoading.locator('.skeleton-block');
     await expect(sidebarSkeleton.first()).toBeVisible({ timeout: 15000 });
     const styles = await waveSkeletonStyles(sidebarSkeleton);
     // Sidebar rows pair a 1rem title block (16px) with a 0.75rem subtitle block (12px);
@@ -227,7 +232,10 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
     await expect(input).toBeVisible({ timeout: 15000 });
     await input.fill('engineering');
 
-    const searchSkeletons = page.getByLabel('Searching...').locator('.skeleton-block');
+    // The searching wrapper is a live region (role="status") so AT announces the in-flight search.
+    const searchLoading = page.getByRole('status', { name: 'Searching...' });
+    await expect(searchLoading).toBeVisible({ timeout: 10000 });
+    const searchSkeletons = searchLoading.locator('.skeleton-block');
     await expect(searchSkeletons).toHaveCount(2, { timeout: 10000 });
     const styles = await waveSkeletonStyles(searchSkeletons);
     expectRemHeight(styles, 3.5, 'search rows are 3.5rem tall');

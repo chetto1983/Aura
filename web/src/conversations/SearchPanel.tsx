@@ -82,7 +82,11 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
       </div>
 
       {trimmed.length === 0 ? null : isFetching && results.length === 0 ? (
-        <div aria-label={t('conversations.search.searching')} className="flex flex-col gap-2">
+        <div
+          role="status"
+          aria-label={t('conversations.search.searching')}
+          className="flex flex-col gap-2"
+        >
           <SkeletonBlock height="3.5rem" radius="md" />
           <SkeletonBlock height="3.5rem" radius="md" />
         </div>

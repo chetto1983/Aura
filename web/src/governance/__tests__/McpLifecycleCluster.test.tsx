@@ -128,7 +128,7 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
     renderCluster();
     fireEvent.click(screen.getByRole('button', { name: 'Remove server' }));
 
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     // Action-specific labels (NOT generic OK/Cancel): Keep server (safe) + Remove server.
     const keep = screen.getByRole('button', { name: 'Keep server' });
@@ -139,7 +139,7 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
     // Escape dismisses the dialog (no remove call).
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
     });
     expect(removeMcpServer).not.toHaveBeenCalled();
   });
@@ -149,7 +149,7 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
     const onRemoved = renderCluster();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove server' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     // The destructive confirm is the in-dialog "Remove server".
     const confirm = within(dialog).getByRole('button', { name: 'Remove server' });
     fireEvent.click(confirm);

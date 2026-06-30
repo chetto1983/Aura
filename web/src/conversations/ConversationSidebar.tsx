@@ -357,7 +357,7 @@ function ConversationRow({
 
 function ConversationListSkeleton({ label }: { readonly label: string }) {
   return (
-    <div aria-label={label} className="flex flex-col gap-2">
+    <div role="status" aria-label={label} className="flex flex-col gap-2">
       {Array.from({ length: 4 }).map((_, index) => (
         <Card key={index} className="gap-2 bg-surface-2/40 p-3">
           <SkeletonBlock height="1rem" radius="md" width="75%" />

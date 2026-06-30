@@ -228,7 +228,7 @@ function RemoveDialog({
   return (
     <Card
       ref={dialogRef}
-      role="dialog"
+      role="alertdialog"
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={bodyId}
