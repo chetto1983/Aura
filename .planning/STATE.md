@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 33
-current_phase_name: runtime-profiles-config-validation
-status: executing
-stopped_at: Completed 33-05-PLAN.md
-last_updated: "2026-07-01T00:40:00.000Z"
-last_activity: 2026-07-01
-last_activity_desc: Phase 33 plan 05 (PROF-01 `aura config validate [--profile] [--json]` operator CLI — thin presenter over ValidateProfile; fail-closed exit, value-free renderer, --profile override D-02; e2e proves server_production exits 1 naming every unmet knob, dev exits 0, --json decodes, secrets redacted; -race green) complete — Phase 33 implementation-complete (5/5), ready for verifier
+current_phase: 34
+current_phase_name: Agent-Loop Correctness + Durable Ledger
+status: verifying
+stopped_at: Completed 33-05-PLAN.md — Phase 33 implementation-complete (5/5), ready for /gsd-verify-work
+last_updated: "2026-06-30T23:22:06.103Z"
+last_activity: 2026-06-30
+last_activity_desc: Phase 33 complete, transitioned to Phase 34
 progress:
   total_phases: 11
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 18
   completed_plans: 18
-  percent: 18
+  percent: 27
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 33 (runtime-profiles-config-validation) — IMPLEMENTATION-COMPLETE (5/5), ready for /gsd-verify-work
-Plan: 5 of 5 (all complete)
+Phase: 34 — Agent-Loop Correctness + Durable Ledger
+Plan: Not started
 Status: Phase 33 implementation-complete (33-01..33-05 complete) — verifier next
-Last activity: 2026-07-01 — 33-05 complete: PROF-01 operator CLI `aura config validate [--profile <p>] [--json]` shipped as a THIN presenter over `(*Config).ValidateProfile` — `configValidate(args)` → testable `runConfigValidate(args, io.Writer) int` (flag.NewFlagSet `--profile`/`--json`, `config.LoadServe()`, resolve profile via `config.ParseProfile` for the D-02 override, render human table or `json.NewEncoder`, fail-closed exit 1 on any Fatal / 2 on flag error). Renderer is a pure function of `[]config.Violation` so no knob VALUE is ever in scope — structural redaction (T-33-10). `case "validate"` wired into `runConfig` + documented in `configUsage`. `TestConfigValidate_ServerProduction` (WSL -race green): unsafe server_production exits 1 naming every offending `AURA_*` knob, benign `--profile dev` exits 0, `--json` decodes into `[]config.Violation`, sample secret VALUES never echoed. Thin-presenter grep `defaultObjectStore|replication_factor|ParseBool` == 0; no validation rule reimplemented in cmd/aura. No deviations.
+Last activity: 2026-06-30 — Phase 33 complete, transitioned to Phase 34
 
 #### (prior) 33-04 — `(*Config).ValidateProfile(p)` aggregates 10 pure tier-gated bespoke gates (each NAMES its `AURA_*` knob, mirrors GuardWebBind) + the generic `reparsePass` into one never-first-fail `[]Violation` encoding the D-09..D-16 matrix EXACTLY (strict via `p.Strict()`; replication+destructive-`off` prod-only — the hardened↔prod differentiator; CORS under both strict tiers per A2). `Validate()` is now profile-aware at the existing boot call site (an unsafe `server_production` config = 7 Fatal violations naming each knob; nil under realistic dev with a Warn-only invalid int); PROF-05 non-absolute `AURA_RUN_DIR` Fatal all tiers; bootChatEnv prints Warn diagnostics + the D-14 `local_trusted` banner. No new gating call site, no agent-tools import, scope fence honored. config -race green
 
@@ -50,7 +50,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 125
+- Total plans completed: 130
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -81,6 +81,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 29 | 5 | - | - |
 | 31 | 3 | - | - |
 | 32 | 10 | - | - |
+| 33 | 5 | - | - |
 
 **Recent Trend:**
 
