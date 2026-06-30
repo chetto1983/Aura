@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/neostore"
 )
 
 // fakeGraph is a deterministic in-memory GraphClient. Save records the params the
@@ -57,7 +59,7 @@ func TestStore_Save_NestsEmbeddingInUnwindRows(t *testing.T) {
 		t.Errorf("row source = %v, want oracle", row["source"])
 	}
 	// The MERGE key is sha256(query) — idempotent re-labeling (risk #10).
-	if row["hash"] != hashQuery("find me a restaurant") {
+	if row["hash"] != neostore.HashText("find me a restaurant") {
 		t.Errorf("row hash = %v, want sha256(query)", row["hash"])
 	}
 	gotVec, ok := row["embedding"].([]float64)
@@ -147,30 +149,6 @@ func TestStore_LoadExamples_PropagatesReadError(t *testing.T) {
 	}
 }
 
-func TestAsString_NonString(t *testing.T) {
-	if asString(42) != "" {
-		t.Error("asString of a non-string must be empty")
-	}
-	if asString(nil) != "" {
-		t.Error("asString of nil must be empty")
-	}
-}
-
-func TestAsFloats_AllTransportForms(t *testing.T) {
-	// int64 and int elements (some transports return integral embeddings as ints).
-	if got := asFloats([]any{int64(1), int(2), 3.0}); len(got) != 3 || got[0] != 1 || got[1] != 2 || got[2] != 3 {
-		t.Errorf("asFloats mixed-int list = %v", got)
-	}
-	// A non-numeric element aborts the parse (returns nil) — never a partial vector.
-	if got := asFloats([]any{1.0, "nope"}); got != nil {
-		t.Errorf("asFloats with a non-numeric element must return nil, got %v", got)
-	}
-	// An unsupported top-level type returns nil.
-	if got := asFloats(42); got != nil {
-		t.Errorf("asFloats of an unsupported type must return nil, got %v", got)
-	}
-	// An empty APOC-JSON array decodes to a zero-length slice (not an error).
-	if got := asFloats("[]"); len(got) != 0 {
-		t.Errorf("asFloats of an empty JSON array = %v", got)
-	}
-}
+// AsString/AsFloats helper-level coverage moved with the code to its canonical home
+// (internal/neostore/neostore_test.go) when QUAL-03 extracted the byte-identical copies;
+// the store tests above exercise them through the real LoadExamples/Save paths.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -114,6 +115,64 @@ func (s *FilesystemStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser
 		return nil, Attrs{}, err
 	}
 	return f, attrs, nil
+}
+
+func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validatePathPart(req.Bucket, false); err != nil {
+		return nil, fmt.Errorf("objectstore filesystem bucket: %w", err)
+	}
+	if req.Prefix != "" {
+		prefixForValidation := strings.TrimSuffix(req.Prefix, "/")
+		if prefixForValidation != "" {
+			if err := validatePathPart(prefixForValidation, true); err != nil {
+				return nil, fmt.Errorf("objectstore filesystem prefix: %w", err)
+			}
+		}
+		if strings.HasPrefix(req.Prefix, "/") || strings.Contains(req.Prefix, "\\") {
+			return nil, fmt.Errorf("objectstore filesystem prefix: unsafe prefix")
+		}
+	}
+	root, err := filepath.Abs(s.root)
+	if err != nil {
+		return nil, err
+	}
+	bucketRoot := filepath.Join(root, filepath.FromSlash(req.Bucket))
+	var out []ObjectInfo
+	err = filepath.WalkDir(bucketRoot, func(p string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".meta.json") {
+			return nil
+		}
+		key, err := filepath.Rel(bucketRoot, p)
+		if err != nil {
+			return err
+		}
+		key = filepath.ToSlash(key)
+		if !strings.HasPrefix(key, req.Prefix) {
+			return nil
+		}
+		attrs, err := readAttrs(p)
+		if err != nil {
+			return err
+		}
+		out = append(out, ObjectInfo{Ref: ObjectRef{Bucket: req.Bucket, Key: key}, Attrs: attrs})
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(out, func(a, b ObjectInfo) int {
+		return strings.Compare(a.Ref.Key, b.Ref.Key)
+	})
+	return out, nil
 }
 
 func (s *FilesystemStore) Delete(ctx context.Context, ref ObjectRef) error {

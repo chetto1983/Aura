@@ -163,6 +163,37 @@ func (s *S3Store) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attrs,
 	}, nil
 }
 
+func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, error) {
+	if strings.TrimSpace(req.Bucket) == "" {
+		return nil, fmt.Errorf("objectstore s3 bucket is empty")
+	}
+	var out []ObjectInfo
+	var token *string
+	for {
+		resp, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(req.Bucket),
+			Prefix:            aws.String(req.Prefix),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, obj := range resp.Contents {
+			out = append(out, ObjectInfo{
+				Ref: ObjectRef{Bucket: req.Bucket, Key: aws.ToString(obj.Key)},
+				Attrs: Attrs{
+					SizeBytes: aws.ToInt64(obj.Size),
+					ETag:      strings.Trim(aws.ToString(obj.ETag), `"`),
+				},
+			})
+		}
+		if !aws.ToBool(resp.IsTruncated) {
+			return out, nil
+		}
+		token = resp.NextContinuationToken
+	}
+}
+
 func (s *S3Store) Delete(ctx context.Context, ref ObjectRef) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(ref.Bucket),

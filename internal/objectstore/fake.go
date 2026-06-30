@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -94,6 +96,28 @@ func (s *FakeStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attr
 	}
 	data := bytes.Clone(obj.data)
 	return io.NopCloser(bytes.NewReader(data)), obj.attrs, nil
+}
+
+func (s *FakeStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if req.Bucket == "" {
+		return nil, fmt.Errorf("objectstore fake: bucket is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]ObjectInfo, 0)
+	for ref, obj := range s.objects {
+		if ref.Bucket != req.Bucket || !strings.HasPrefix(ref.Key, req.Prefix) {
+			continue
+		}
+		out = append(out, ObjectInfo{Ref: ref, Attrs: obj.attrs})
+	}
+	slices.SortFunc(out, func(a, b ObjectInfo) int {
+		return strings.Compare(a.Ref.Key, b.Ref.Key)
+	})
+	return out, nil
 }
 
 func (s *FakeStore) Delete(ctx context.Context, ref ObjectRef) error {

@@ -9,20 +9,10 @@ package toolselectstore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-)
 
-// GraphClient is the narrow Cypher seam Store needs. *knowledge.Client satisfies
-// it (Read/Write decode rows to []map[string]any). Copied verbatim from
-// reasoningstore.GraphClient (the proven seam) so this store depends on no Neo4j
-// concrete.
-type GraphClient interface {
-	Read(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
-	Write(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
-}
+	"github.com/chetto1983/aura/internal/neostore"
+)
 
 // LabeledVec is one loaded tool-selection example: the confirmed tool name keyed
 // to the query embedding that should route to it. The ranker folds Vec into the
@@ -35,9 +25,10 @@ type LabeledVec struct {
 }
 
 // Store reads/writes :ToolSelectionExample nodes. The content hash is the MERGE
-// key, so re-labeling the same query is idempotent (free dedup).
+// key, so re-labeling the same query is idempotent (free dedup). The Cypher seam
+// and the hash/column coercers are the canonical neostore leaf (QUAL-03).
 type Store struct {
-	Client GraphClient
+	Client neostore.GraphClient
 }
 
 const (
@@ -67,15 +58,15 @@ func (s *Store) LoadExamples(ctx context.Context) ([]LabeledVec, error) {
 	}
 	out := make([]LabeledVec, 0, len(rows))
 	for _, row := range rows {
-		tool := asString(row["tool"])
+		tool := neostore.AsString(row["tool"])
 		if tool == "" {
 			continue
 		}
-		vec := asFloats(row["embedding"])
+		vec := neostore.AsFloats(row["embedding"])
 		if len(vec) == 0 {
 			continue
 		}
-		out = append(out, LabeledVec{Tool: tool, Vec: vec, Query: asString(row["query"])})
+		out = append(out, LabeledVec{Tool: tool, Vec: vec, Query: neostore.AsString(row["query"])})
 	}
 	return out, nil
 }
@@ -102,7 +93,7 @@ func (s *Store) Save(ctx context.Context, query, tool string, vec []float64) err
 	}
 	_, err := s.Client.Write(ctx, saveQuery, map[string]any{
 		"rows": []map[string]any{{
-			"hash":      hashQuery(query),
+			"hash":      neostore.HashText(query),
 			"tool":      tool,
 			"embedding": vec,
 			"query":     query,
@@ -110,47 +101,4 @@ func (s *Store) Save(ctx context.Context, query, tool string, vec []float64) err
 		}},
 	})
 	return err
-}
-
-func hashQuery(query string) string {
-	sum := sha256.Sum256([]byte(query))
-	return hex.EncodeToString(sum[:])
-}
-
-func asString(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
-// asFloats coerces a Cypher embedding column to []float64. The load query returns
-// it as an APOC JSON string ("[-0.02,...]"); a raw []any list (other transports /
-// tests) is also accepted. Copied verbatim from reasoningstore.
-func asFloats(v any) []float64 {
-	switch t := v.(type) {
-	case string:
-		var out []float64
-		if json.Unmarshal([]byte(t), &out) != nil {
-			return nil
-		}
-		return out
-	case []any:
-		out := make([]float64, 0, len(t))
-		for _, x := range t {
-			switch n := x.(type) {
-			case float64:
-				out = append(out, n)
-			case int64:
-				out = append(out, float64(n))
-			case int:
-				out = append(out, float64(n))
-			default:
-				return nil
-			}
-		}
-		return out
-	default:
-		return nil
-	}
 }

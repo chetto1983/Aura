@@ -2,10 +2,10 @@ package activelearn
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/neostore"
 )
 
 // Learner is the label-agnostic async self-improvement worker. One bounded
@@ -63,7 +63,7 @@ func (l *Learner) Observe(text string, vec []float64, margin float64) {
 	if l == nil || margin >= l.floor || strings.TrimSpace(text) == "" {
 		return
 	}
-	if _, dup := l.seen.Load(hashText(text)); dup {
+	if _, dup := l.seen.Load(neostore.HashText(text)); dup {
 		return
 	}
 	cp := make([]float64, len(vec))
@@ -87,7 +87,7 @@ func (l *Learner) run() {
 }
 
 func (l *Learner) process(o observation) {
-	h := hashText(o.text)
+	h := neostore.HashText(o.text)
 	if _, dup := l.seen.LoadOrStore(h, struct{}{}); dup {
 		return
 	}
@@ -108,9 +108,4 @@ func (l *Learner) Close() {
 	}
 	l.once.Do(l.cancel)
 	l.wg.Wait()
-}
-
-func hashText(text string) string {
-	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:])
 }

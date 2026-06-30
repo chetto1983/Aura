@@ -7,24 +7,16 @@ package reasoningstore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
+	"github.com/chetto1983/aura/internal/neostore"
 )
 
-// GraphClient is the narrow Cypher seam Store needs. *knowledge.Client satisfies
-// it (Read/Write decode rows to []map[string]any).
-type GraphClient interface {
-	Read(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
-	Write(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
-}
-
 // Store reads/writes :ReasoningExample nodes. The content hash is the MERGE key,
-// so re-labeling the same text is idempotent (free dedup).
+// so re-labeling the same text is idempotent (free dedup). The Cypher seam and the
+// hash/column coercers are the canonical neostore leaf (QUAL-03).
 type Store struct {
-	Client GraphClient
+	Client neostore.GraphClient
 }
 
 const (
@@ -50,11 +42,11 @@ func (s *Store) LoadExamples(ctx context.Context) ([]prompt.LabeledVec, error) {
 	}
 	out := make([]prompt.LabeledVec, 0, len(rows))
 	for _, row := range rows {
-		tier := prompt.ReasoningTier(asString(row["tier"]))
+		tier := prompt.ReasoningTier(neostore.AsString(row["tier"]))
 		if !tier.Valid() {
 			continue
 		}
-		vec := asFloats(row["embedding"])
+		vec := neostore.AsFloats(row["embedding"])
 		if len(vec) == 0 {
 			continue
 		}
@@ -67,7 +59,7 @@ func (s *Store) LoadExamples(ctx context.Context) ([]prompt.LabeledVec, error) {
 func (s *Store) Save(ctx context.Context, text string, vec []float64, tier prompt.ReasoningTier) error {
 	_, err := s.Client.Write(ctx, saveQuery, map[string]any{
 		"rows": []map[string]any{{
-			"hash":      hashText(text),
+			"hash":      neostore.HashText(text),
 			"tier":      string(tier),
 			"embedding": vec,
 			"text":      text,
@@ -75,47 +67,4 @@ func (s *Store) Save(ctx context.Context, text string, vec []float64, tier promp
 		}},
 	})
 	return err
-}
-
-func hashText(text string) string {
-	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:])
-}
-
-func asString(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
-// asFloats coerces a Cypher embedding column to []float64. The load query
-// returns it as an APOC JSON string ("[-0.02,...]"); a raw []any list (other
-// transports / tests) is also accepted.
-func asFloats(v any) []float64 {
-	switch t := v.(type) {
-	case string:
-		var out []float64
-		if json.Unmarshal([]byte(t), &out) != nil {
-			return nil
-		}
-		return out
-	case []any:
-		out := make([]float64, 0, len(t))
-		for _, x := range t {
-			switch n := x.(type) {
-			case float64:
-				out = append(out, n)
-			case int64:
-				out = append(out, float64(n))
-			case int:
-				out = append(out, float64(n))
-			default:
-				return nil
-			}
-		}
-		return out
-	default:
-		return nil
-	}
 }

@@ -18,6 +18,16 @@ type Attrs struct {
 	MIMEType  string
 }
 
+type ObjectInfo struct {
+	Ref   ObjectRef
+	Attrs Attrs
+}
+
+type ListRequest struct {
+	Bucket string
+	Prefix string
+}
+
 type PutOptions struct {
 	MIMEType string
 	Size     int64
@@ -43,6 +53,7 @@ type Store interface {
 	Put(context.Context, ObjectRef, io.Reader, PutOptions) (Attrs, error)
 	Head(context.Context, ObjectRef) (Attrs, error)
 	Get(context.Context, ObjectRef) (io.ReadCloser, Attrs, error)
+	List(context.Context, ListRequest) ([]ObjectInfo, error)
 	Delete(context.Context, ObjectRef) error
 }
 

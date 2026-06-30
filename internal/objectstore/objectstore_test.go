@@ -90,6 +90,38 @@ func TestFakeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFakeListsObjectsByBucketAndPrefix(t *testing.T) {
+	ctx := context.Background()
+	store := NewFake()
+	refs := []ObjectRef{
+		{Bucket: "bucket", Key: "identity/a/asset/1/original"},
+		{Bucket: "bucket", Key: "identity/a/asset/2/original"},
+		{Bucket: "bucket", Key: "identity/b/asset/3/original"},
+		{Bucket: "other", Key: "identity/a/asset/4/original"},
+	}
+	for _, ref := range refs {
+		if _, err := store.Put(ctx, ref, strings.NewReader(ref.Key), PutOptions{MIMEType: "text/plain", Size: int64(len(ref.Key))}); err != nil {
+			t.Fatalf("Put(%#v): %v", ref, err)
+		}
+	}
+
+	items, err := store.List(ctx, ListRequest{Bucket: "bucket", Prefix: "identity/a/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(items))
+	for _, item := range items {
+		got = append(got, item.Ref.Key)
+		if item.Attrs.SizeBytes == 0 || item.Attrs.ETag == "" {
+			t.Fatalf("listed item missing attrs: %#v", item)
+		}
+	}
+	want := []string{"identity/a/asset/1/original", "identity/a/asset/2/original"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("List keys = %#v, want %#v", got, want)
+	}
+}
+
 func TestFakePresignPut(t *testing.T) {
 	store := NewFake()
 	expiresIn := 10 * time.Minute
@@ -266,5 +298,36 @@ func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 		if _, err := store.PresignPut(ctx, PresignPutRequest{Ref: ref, MIMEType: "text/plain", Size: 1}); err == nil {
 			t.Fatalf("PresignPut(%q) succeeded, want unsafe key error", key)
 		}
+	}
+}
+
+func TestFilesystemListsObjectsByBucketAndPrefix(t *testing.T) {
+	ctx := context.Background()
+	store := NewFilesystem(t.TempDir())
+	refs := []ObjectRef{
+		{Bucket: "bucket", Key: "identity/a/asset/1/original"},
+		{Bucket: "bucket", Key: "identity/a/asset/2/original"},
+		{Bucket: "bucket", Key: "identity/b/asset/3/original"},
+	}
+	for _, ref := range refs {
+		if _, err := store.Put(ctx, ref, strings.NewReader(ref.Key), PutOptions{MIMEType: "text/plain", Size: int64(len(ref.Key))}); err != nil {
+			t.Fatalf("Put(%#v): %v", ref, err)
+		}
+	}
+
+	items, err := store.List(ctx, ListRequest{Bucket: "bucket", Prefix: "identity/a/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(items))
+	for _, item := range items {
+		got = append(got, item.Ref.Key)
+		if strings.HasSuffix(item.Ref.Key, ".meta.json") {
+			t.Fatalf("List returned metadata sidecar object: %#v", item)
+		}
+	}
+	want := []string{"identity/a/asset/1/original", "identity/a/asset/2/original"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("List keys = %#v, want %#v", got, want)
 	}
 }
