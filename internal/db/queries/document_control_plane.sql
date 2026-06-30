@@ -198,6 +198,20 @@ SET
 WHERE id = $1
 RETURNING *;
 
+-- name: RetryIngestionJob :one
+UPDATE aura.ingestion_jobs
+SET
+    status = 'queued',
+    stage = $2,
+    error_code = $3,
+    error_message = $4,
+    locked_by = NULL,
+    locked_until = NULL,
+    next_attempt_at = $5,
+    updated_at = now()
+WHERE id = $1
+RETURNING *;
+
 -- name: AppendIngestionEvent :one
 INSERT INTO aura.ingestion_events (
     entity_type,

@@ -158,6 +158,7 @@ type Querier interface {
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
+	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)

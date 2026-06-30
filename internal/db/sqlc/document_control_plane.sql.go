@@ -647,6 +647,61 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 	return items, nil
 }
 
+const retryIngestionJob = `-- name: RetryIngestionJob :one
+UPDATE aura.ingestion_jobs
+SET
+    status = 'queued',
+    stage = $2,
+    error_code = $3,
+    error_message = $4,
+    locked_by = NULL,
+    locked_until = NULL,
+    next_attempt_at = $5,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, job_type, document_id, version_id, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at
+`
+
+type RetryIngestionJobParams struct {
+	ID            pgtype.UUID        `json:"id"`
+	Stage         string             `json:"stage"`
+	ErrorCode     string             `json:"error_code"`
+	ErrorMessage  string             `json:"error_message"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+}
+
+func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error) {
+	row := q.db.QueryRow(ctx, retryIngestionJob,
+		arg.ID,
+		arg.Stage,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.NextAttemptAt,
+	)
+	var i AuraIngestionJobs
+	err := row.Scan(
+		&i.ID,
+		&i.JobType,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.Stage,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.Payload,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const updateDocument = `-- name: UpdateDocument :one
 UPDATE aura.documents
 SET

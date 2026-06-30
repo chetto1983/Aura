@@ -133,6 +133,25 @@ func (s *PostgresIngestionJobStore) UpdateStatus(ctx context.Context, id, status
 	return ingestionJobFromSQL(row)
 }
 
+// Retry returns a claimed job to the queued state for a later attempt.
+func (s *PostgresIngestionJobStore) Retry(ctx context.Context, id, stage, code, message string, nextAttemptAt time.Time) (IngestionJob, error) {
+	pgID, err := pgUUID("ingestion job id", id)
+	if err != nil {
+		return IngestionJob{}, err
+	}
+	row, err := s.q.RetryIngestionJob(ctx, sqlc.RetryIngestionJobParams{
+		ID:            pgID,
+		Stage:         stage,
+		ErrorCode:     code,
+		ErrorMessage:  message,
+		NextAttemptAt: pgTime(nextAttemptAt),
+	})
+	if err != nil {
+		return IngestionJob{}, err
+	}
+	return ingestionJobFromSQL(row)
+}
+
 func ingestionJobFromSQL(row sqlc.AuraIngestionJobs) (IngestionJob, error) {
 	payload, err := ingestionJobPayloadFromJSON(row.Payload)
 	if err != nil {
