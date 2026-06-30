@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Save, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import {
@@ -14,21 +14,13 @@ import {
   type DocumentVersion,
   type UpdateDocumentInput,
 } from './documentApi';
-import { DocumentEventsPanel } from './DocumentEventsPanel';
+import { DocumentActionMenu } from './DocumentActionMenu';
+import { DocumentDetailsDrawer } from './DocumentDetailsDrawer';
 import { DocumentFileList } from './DocumentFileList';
 import { DocumentFilterBar, type ScopeFilter, type ViewMode } from './DocumentFilterBar';
 import { DocumentLibraryHeader } from './DocumentLibraryHeader';
-import { formatBytes } from './documentFormat';
 import { StorageOrphansPanel } from './StorageOrphansPanel';
-import {
-  activeVersionFor,
-  formatDocumentDate,
-  parseDocumentTags,
-  statusToneFor,
-  type DocumentTab,
-} from './documentViewModel';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
+import { activeVersionFor, parseDocumentTags, type DocumentTab } from './documentViewModel';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -58,25 +50,24 @@ export default function DocumentsWorkspace() {
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState<DocumentDetail | undefined>(undefined);
   const [listStatus, setListStatus] = useState<LoadStatus>('loading');
-  const [detailStatus, setDetailStatus] = useState<LoadStatus>('ready');
   const [tagDraft, setTagDraft] = useState('');
   const [savingTags, setSavingTags] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [actionMenuId, setActionMenuId] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<DocumentItem | undefined>(undefined);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadDetail = useCallback(async (id: string) => {
-    setDetailStatus('loading');
     try {
       const next = await fetchDocumentDetail(id);
       setDetail(next);
       setTagDraft(next.document.tags.join(', '));
-      setDetailStatus('ready');
     } catch {
       setDetail(undefined);
-      setDetailStatus('error');
     }
   }, []);
 
@@ -128,6 +119,8 @@ export default function DocumentsWorkspace() {
     if (detail !== undefined) versions.set(detail.document.id, activeVersion);
     return versions;
   }, [activeVersion, detail]);
+  const selectedDocument = detail?.document ?? documents.find((item) => item.id === selectedId);
+  const actionDocument = documents.find((item) => item.id === actionMenuId);
 
   function searchDocuments() {
     void loadDocuments({ query, tag, scope }, selectedId);
@@ -135,6 +128,8 @@ export default function DocumentsWorkspace() {
 
   async function openDocument(id: string) {
     setSelectedId(id);
+    const document = documents.find((item) => item.id === id);
+    if (document !== undefined) setTagDraft(document.tags.join(', '));
     await loadDetail(id);
   }
 
@@ -171,25 +166,30 @@ export default function DocumentsWorkspace() {
     }
   }
 
-  async function retryActiveAsset() {
-    const assetID = activeVersion?.asset_id;
-    if (detail === undefined || assetID === undefined || assetID === '' || retrying) return;
+  async function retryDocument(id: string) {
+    if (retrying || id === '') return;
     setRetrying(true);
     try {
-      await retryDocumentAsset(assetID);
-      await loadDocuments({ query, tag, scope }, detail.document.id);
+      const next = await fetchDocumentDetail(id);
+      const version =
+        next.versions.find((item) => item.id === next.document.active_version_id) ??
+        next.versions[0];
+      if (version?.asset_id !== undefined && version.asset_id !== '') {
+        await retryDocumentAsset(version.asset_id);
+      }
+      await loadDocuments({ query, tag, scope }, id);
     } finally {
       setRetrying(false);
     }
   }
 
-  async function confirmDelete() {
-    const document = detail?.document;
+  async function confirmDelete(document: DocumentItem | undefined) {
     if (document === undefined || deleteConfirm !== 'DELETE' || deleting) return;
     setDeleting(true);
     try {
       await deleteDocument(document.id);
       setDeleteOpen(false);
+      setDeleteTarget(undefined);
       setDeleteConfirm('');
       await loadDocuments({ query, tag, scope });
     } finally {
@@ -228,24 +228,62 @@ export default function DocumentsWorkspace() {
           error={listStatus === 'error'}
           onToggleSelected={toggleSelected}
           onOpenDetails={(id) => {
+            setDrawerOpen(true);
+            setActionMenuId('');
             void openDocument(id);
           }}
           onOpenActions={(id) => {
+            setActionMenuId((current) => (current === id ? '' : id));
             void openDocument(id);
           }}
           onRefresh={searchDocuments}
         />
-        <SelectedDocumentPanel
+        <DocumentActionMenu
+          document={actionDocument}
+          open={actionMenuId !== ''}
+          onClose={() => setActionMenuId('')}
+          onAsk={() => {
+            if (actionDocument !== undefined) {
+              setDrawerOpen(true);
+              void openDocument(actionDocument.id);
+            }
+            setActionMenuId('');
+          }}
+          onEditTags={() => {
+            if (actionDocument !== undefined) {
+              setDrawerOpen(true);
+              void openDocument(actionDocument.id);
+            }
+            setActionMenuId('');
+          }}
+          onRetry={() => {
+            const id = actionMenuId;
+            setActionMenuId('');
+            void retryDocument(id);
+          }}
+          onDelete={() => {
+            if (actionDocument !== undefined) {
+              setDeleteTarget(actionDocument);
+              setSelectedId(actionDocument.id);
+              setDeleteOpen(true);
+            }
+            setActionMenuId('');
+          }}
+        />
+        <DocumentDetailsDrawer
+          open={drawerOpen}
+          document={selectedDocument}
           detail={detail}
-          status={detailStatus}
           activeVersion={activeVersion}
           tagDraft={tagDraft}
           savingTags={savingTags}
-          retrying={retrying}
           onTagDraftChange={setTagDraft}
           onSaveTags={() => void saveTags()}
-          onRetry={() => void retryActiveAsset()}
-          onDelete={() => setDeleteOpen(true)}
+          onDelete={() => {
+            setDeleteTarget(selectedDocument);
+            setDeleteOpen(true);
+          }}
+          onClose={() => setDrawerOpen(false)}
         />
         <div className="mx-auto w-full max-w-6xl px-4 pb-5 sm:px-6">
           <StorageOrphansPanel />
@@ -258,156 +296,19 @@ export default function DocumentsWorkspace() {
       ) : null}
       <DeleteDialog
         open={deleteOpen}
-        document={detail?.document}
+        document={deleteTarget ?? detail?.document}
         confirm={deleteConfirm}
         deleting={deleting}
-        onOpenChange={setDeleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setDeleteTarget(undefined);
+        }}
         onConfirmChange={setDeleteConfirm}
         onDelete={() => {
-          void confirmDelete();
+          void confirmDelete(deleteTarget ?? detail?.document);
         }}
       />
     </section>
-  );
-}
-
-function SelectedDocumentPanel({
-  detail,
-  status,
-  activeVersion,
-  tagDraft,
-  savingTags,
-  retrying,
-  onTagDraftChange,
-  onSaveTags,
-  onRetry,
-  onDelete,
-}: {
-  readonly detail: DocumentDetail | undefined;
-  readonly status: LoadStatus;
-  readonly activeVersion: DocumentVersion | undefined;
-  readonly tagDraft: string;
-  readonly savingTags: boolean;
-  readonly retrying: boolean;
-  readonly onTagDraftChange: (value: string) => void;
-  readonly onSaveTags: () => void;
-  readonly onRetry: () => void;
-  readonly onDelete: () => void;
-}) {
-  const { t } = useTranslation();
-  if (status === 'loading') return <StatusLine label={t('documents.loadingDetail')} />;
-  if (status === 'error') {
-    return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6">
-        <Alert variant="destructive">
-          <AlertDescription>{t('documents.error.detail')}</AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-  if (detail === undefined) return null;
-  return (
-    <section className="mx-auto grid w-full max-w-6xl gap-4 border-t border-border px-4 py-5 sm:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-[18px] font-semibold text-text">{detail.document.title}</h2>
-          <p className="mt-1 text-[13px] text-text-muted">
-            {formatDocumentDate(detail.document.updated_at ?? detail.document.created_at)}
-          </p>
-        </div>
-        <Badge variant={statusToneFor(detail.document.status)}>{detail.document.status}</Badge>
-      </header>
-      <dl className="grid gap-2 text-[13px] text-text-muted sm:grid-cols-3">
-        <MetaItem label="MIME" value={activeVersion?.content_type ?? '-'} />
-        <MetaItem
-          label={t('documents.view.size')}
-          value={activeVersion === undefined ? '-' : formatBytes(activeVersion.size_bytes)}
-        />
-        <MetaItem label="SHA-256" value={activeVersion?.sha256 ?? '-'} />
-      </dl>
-      <div className="grid gap-1.5">
-        <Label htmlFor="documents-tags">{t('documents.detail.tags')}</Label>
-        <Input
-          id="documents-tags"
-          value={tagDraft}
-          onChange={(event) => onTagDraftChange(event.target.value)}
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" disabled={savingTags} onClick={onSaveTags}>
-          {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
-          {t('documents.actions.saveTags')}
-        </Button>
-        {detail.document.status === 'failed' && activeVersion?.asset_id ? (
-          <Button type="button" variant="outline" disabled={retrying} onClick={onRetry}>
-            {retrying ? <Spinner /> : <RefreshCw aria-hidden="true" />}
-            {t('documents.actions.retryProcessing')}
-          </Button>
-        ) : null}
-        <Button type="button" variant="destructive" onClick={onDelete}>
-          <Trash2 aria-hidden="true" />
-          {t('documents.actions.delete')}
-        </Button>
-      </div>
-      <section aria-labelledby="document-versions" className="grid gap-3">
-        <h3 id="document-versions" className="text-[16px] font-semibold text-text">
-          {t('documents.detail.versions')}
-        </h3>
-        <div className="grid gap-2">
-          {detail.versions.map((version) => (
-            <VersionRow
-              key={version.id}
-              version={version}
-              active={version.id === detail.document.active_version_id}
-            />
-          ))}
-        </div>
-      </section>
-      <DocumentEventsPanel key={detail.document.id} documentId={detail.document.id} />
-    </section>
-  );
-}
-
-function VersionRow({
-  version,
-  active,
-}: {
-  readonly version: DocumentVersion;
-  readonly active: boolean;
-}) {
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-surface px-3 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[14px] font-semibold text-text">v{version.version_number}</span>
-          {active ? <Badge variant="success">active</Badge> : null}
-        </div>
-        <Badge variant="secondary">{version.status}</Badge>
-      </div>
-      <dl className="grid gap-2 text-[13px] text-text-muted md:grid-cols-2 xl:grid-cols-4">
-        <MetaItem label="MIME" value={version.content_type} />
-        <MetaItem label="Size" value={formatBytes(version.size_bytes)} />
-        <MetaItem label="Storage" value={version.storage_object_id} />
-        <MetaItem label="SHA-256" value={version.sha256} />
-      </dl>
-    </div>
-  );
-}
-
-function MetaItem({ label, value }: { readonly label: string; readonly value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase text-text-faint">{label}</dt>
-      <dd className="break-all font-mono text-[12px] text-text">{value}</dd>
-    </div>
-  );
-}
-
-function StatusLine({ label }: { readonly label: string }) {
-  return (
-    <div role="status" className="grid min-h-40 place-items-center p-6 text-sm text-text-muted">
-      {label}
-    </div>
   );
 }
 

@@ -105,11 +105,20 @@ describe('DocumentsWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Images' })).toBeTruthy();
     expect(await screen.findByRole('row', { name: /Handbook\.pdf.*ready.*2 KB/i })).toBeTruthy();
-    expect((await screen.findAllByText('sha256-current')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('application/pdf').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('2 KB').length).toBeGreaterThan(0);
-    expect(await screen.findByText('ingestion_job.succeeded')).toBeTruthy();
-    expect(screen.getByText('indexed')).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Handbook\.pdf/ }));
+    const drawer = await screen.findByRole('dialog', { name: 'Handbook.pdf' });
+    expect(within(drawer).getByText('Versions')).toBeTruthy();
+    expect(within(drawer).getAllByText('sha256-current').length).toBeGreaterThan(0);
+    expect(within(drawer).getAllByText('application/pdf').length).toBeGreaterThan(0);
+    expect(within(drawer).getAllByText('2 KB').length).toBeGreaterThan(0);
+    expect(await within(drawer).findByText('ingestion_job.succeeded')).toBeTruthy();
+    expect(within(drawer).getByText('indexed')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Handbook.pdf' }));
+    const menu = await screen.findByRole('menu', { name: 'Actions for Handbook.pdf' });
+    expect(within(menu).getByRole('menuitem', { name: 'Edit tags' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Delete document' })).toBeTruthy();
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search documents' }), {
       target: { value: 'handbook' },
@@ -123,10 +132,10 @@ describe('DocumentsWorkspace', () => {
       );
     });
 
-    fireEvent.change(screen.getByLabelText('Document tags'), {
+    fireEvent.change(within(drawer).getByLabelText('Document tags'), {
       target: { value: 'audit, ops' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }));
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Save tags' }));
 
     await waitFor(() => {
       const patch = calls.find((call) => call.init?.method === 'PATCH');
@@ -143,7 +152,7 @@ describe('DocumentsWorkspace', () => {
       );
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete document' }));
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Delete document' }));
     const dialog = await screen.findByRole('dialog', { name: 'Delete Handbook.pdf' });
     fireEvent.change(within(dialog).getByLabelText('Type DELETE to confirm'), {
       target: { value: 'DELETE' },
@@ -253,7 +262,9 @@ describe('DocumentsWorkspace', () => {
 
     render(<DocumentsWorkspace />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Retry processing' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Handbook.pdf' }));
+    const menu = await screen.findByRole('menu', { name: 'Actions for Handbook.pdf' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Retry processing' }));
 
     await waitFor(() => {
       expect(
