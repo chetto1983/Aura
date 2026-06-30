@@ -3,11 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
-	"io"
-	"net"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -75,16 +72,16 @@ func (a *LlmAgent) streamWithOpenRetry(ctx context.Context, req llm.Request, req
 }
 
 func retryableStreamOpenError(err error) bool {
+	// Context guard FIRST and deliberately STRICT (Pitfall 2): a deadline/cancel is
+	// itself a net.Error{Timeout}, so it MUST short-circuit before the shared
+	// typed-network subset (isTransientNetworkErr) can flip it to true. This is the
+	// asymmetry vs the tool path, which DOES retry context.DeadlineExceeded.
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	var httpErr *openai_compat.HTTPError
 	if errors.As(err, &httpErr) {
 		return httpErr.StatusCode == 429 || httpErr.StatusCode >= 500
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
 	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
@@ -100,13 +97,12 @@ func retryableStreamOpenError(err error) bool {
 	if errors.Is(err, openai_compat.ErrStreamIdleTimeout) {
 		return true
 	}
-	// Typed network sentinels are the primary classifier (B-13): errors.Is sees a
+	// Typed network sentinels (net.Error timeout + io/syscall connection sentinels),
+	// shared with the tool path via isTransientNetworkErr (B-13): errors.Is sees a
 	// wrapped sentinel even when its rendered message carries no substring marker
 	// (e.g. a platform that renders ECONNRESET as "forcibly closed"). The substring
 	// table below is the last-resort fallback for platform strings without a sentinel.
-	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
-		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) ||
-		errors.Is(err, syscall.ETIMEDOUT) {
+	if isTransientNetworkErr(err) {
 		return true
 	}
 	return retryableNetworkText(err.Error())
