@@ -164,6 +164,12 @@ func truncatedDocs(docs []string) []string {
 	return out
 }
 
+// truncateRunes caps s to max runes for the wire body (no ellipsis — the sidecar only
+// needs the prefix within its context window). It is a near-duplicate of
+// internal/assets/context.go truncateRunes, which appends "..." for human-readable
+// summaries — folding the two into a shared internal/strutil is deferred (QUAL-02 T8 /
+// OQ#2): they differ by that suffix, and a new package for a 5-liner would itself need
+// coverage-gate registration, so the audit accepts the dup at this scale.
 func truncateRunes(s string, max int) string {
 	r := []rune(s)
 	if len(r) <= max {

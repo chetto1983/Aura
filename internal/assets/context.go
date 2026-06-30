@@ -130,6 +130,12 @@ func sanitizeLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
+// truncateRunes caps value to max runes, appending an ellipsis when it was longer (for
+// human-readable summaries). It is a near-duplicate of internal/rerank/client.go
+// truncateRunes, which trims WITHOUT the ellipsis for the rerank wire body — folding the
+// two into a shared internal/strutil is deferred (QUAL-02 T8 / OQ#2): they differ by the
+// "..." suffix, and a new package for a 5-liner would itself need coverage-gate
+// registration, so the audit accepts the dup at this scale.
 func truncateRunes(value string, max int) string {
 	runes := []rune(value)
 	if len(runes) <= max {
