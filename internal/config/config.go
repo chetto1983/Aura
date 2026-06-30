@@ -50,6 +50,12 @@ type Config struct {
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
 
+	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
+	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
+	// config-validation strictness tier; it does NOT itself enforce any runtime
+	// capability (Tool Gateway / Phase 35+).
+	Profile RuntimeProfile // AURA_PROFILE — runtime deployment profile, default dev (D-01/D-03)
+
 	// Phase 4 (Slice 1.8) conversation + context-management tuning knobs.
 	// Non-fatal envutil.IntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).
 	ConversationTurnCapBytes   int // AURA_CONVERSATION_TURN_CAP_BYTES — content > this spills to a sidecar file
@@ -119,22 +125,24 @@ type Config struct {
 	// Industrial asset object-store foundation. The backend is selected by the
 	// later asset service; config is intentionally non-fatal so DB/migration paths
 	// do not depend on Garage being reachable.
-	ObjectStoreBackend        string // AURA_OBJECTSTORE_BACKEND — garage|filesystem-dev|fake
-	ObjectStoreEndpoint       string // AURA_OBJECTSTORE_ENDPOINT — S3-compatible internal endpoint
-	ObjectStorePublicEndpoint string // AURA_OBJECTSTORE_PUBLIC_ENDPOINT — optional presign URL host rewrite
-	ObjectStoreRegion         string // AURA_OBJECTSTORE_REGION — Garage/S3 region
-	ObjectStoreBucket         string // AURA_OBJECTSTORE_BUCKET — asset bucket
-	ObjectStoreAccessKey      string // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
-	ObjectStoreSecretKey      string // AURA_OBJECTSTORE_SECRET_KEY — S3 secret key
-	ObjectStorePathStyle      bool   // AURA_OBJECTSTORE_PATH_STYLE — Garage requires path-style by default
-	AssetMaxDocumentBytes     int    // AURA_ASSET_MAX_DOCUMENT_BYTES — document upload ceiling
-	AssetMaxImageBytes        int    // AURA_ASSET_MAX_IMAGE_BYTES — image upload ceiling
-	AssetMaxAudioBytes        int    // AURA_ASSET_MAX_AUDIO_BYTES — audio upload ceiling
-	AssetPresignTTLSec        int    // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
-	AssetProcessingConcurrent int    // AURA_ASSET_PROCESSING_CONCURRENCY — future asset worker width
-	TelegramAPIBaseURL        string // TELEGRAM_API_BASE_URL — optional local Bot API base
-	TelegramFileBaseURL       string // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
-	TelegramLocalBotAPI       bool   // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
+	ObjectStoreBackend           string // AURA_OBJECTSTORE_BACKEND — garage|filesystem-dev|fake
+	ObjectStoreEndpoint          string // AURA_OBJECTSTORE_ENDPOINT — S3-compatible internal endpoint
+	ObjectStorePublicEndpoint    string // AURA_OBJECTSTORE_PUBLIC_ENDPOINT — optional presign URL host rewrite
+	ObjectStoreRegion            string // AURA_OBJECTSTORE_REGION — Garage/S3 region
+	ObjectStoreBucket            string // AURA_OBJECTSTORE_BUCKET — asset bucket
+	ObjectStoreAccessKey         string // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
+	ObjectStoreSecretKey         string // AURA_OBJECTSTORE_SECRET_KEY — S3 secret key
+	ObjectStorePathStyle         bool   // AURA_OBJECTSTORE_PATH_STYLE — Garage requires path-style by default
+	ObjectStoreReplicationFactor int    // AURA_OBJECTSTORE_REPLICATION_FACTOR — declared Garage durability intent, default 1 (D-13/PROF-06)
+	GarageRPCSecret              string // GARAGE_RPC_SECRET — Garage inter-node RPC secret (upstream name; D-13/PROF-03)
+	AssetMaxDocumentBytes        int    // AURA_ASSET_MAX_DOCUMENT_BYTES — document upload ceiling
+	AssetMaxImageBytes           int    // AURA_ASSET_MAX_IMAGE_BYTES — image upload ceiling
+	AssetMaxAudioBytes           int    // AURA_ASSET_MAX_AUDIO_BYTES — audio upload ceiling
+	AssetPresignTTLSec           int    // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
+	AssetProcessingConcurrent    int    // AURA_ASSET_PROCESSING_CONCURRENCY — future asset worker width
+	TelegramAPIBaseURL           string // TELEGRAM_API_BASE_URL — optional local Bot API base
+	TelegramFileBaseURL          string // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
+	TelegramLocalBotAPI          bool   // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
 
 	// Web-auth knobs. GuardWebBind decides at boot whether a non-loopback AGUIBind
 	// may start. Authula is the active provider; WebAuthSecret is retained only so
@@ -350,6 +358,9 @@ func loadBase() *Config {
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 
+		// Phase 33 runtime deployment profile (D-01/D-03). Total parse: unset/unknown -> dev.
+		Profile: ParseProfile(os.Getenv("AURA_PROFILE")),
+
 		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
 		HistoryHardCapTurns:        envutil.IntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
@@ -399,14 +410,19 @@ func loadBase() *Config {
 		ObjectStoreAccessKey:      envDefault("AURA_OBJECTSTORE_ACCESS_KEY", defaultObjectStoreAccessKey),
 		ObjectStoreSecretKey:      envDefault("AURA_OBJECTSTORE_SECRET_KEY", defaultObjectStoreSecretKey),
 		ObjectStorePathStyle:      envutil.BoolDefault("AURA_OBJECTSTORE_PATH_STYLE", true),
-		AssetMaxDocumentBytes:     envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
-		AssetMaxImageBytes:        envutil.IntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
-		AssetMaxAudioBytes:        envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
-		AssetPresignTTLSec:        envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
-		AssetProcessingConcurrent: envutil.IntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
-		TelegramAPIBaseURL:        os.Getenv("TELEGRAM_API_BASE_URL"),
-		TelegramFileBaseURL:       os.Getenv("TELEGRAM_FILE_BASE_URL"),
-		TelegramLocalBotAPI:       envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
+		// D-13: declared Garage durability intent + inter-node RPC secret. Config-contract
+		// READS only (validation surface, plan 04) — NOT runtime enforcement; keeping
+		// docker/garage/garage.toml in sync is a deployment follow-on, not this phase.
+		ObjectStoreReplicationFactor: envutil.IntDefault("AURA_OBJECTSTORE_REPLICATION_FACTOR", 1),
+		GarageRPCSecret:              os.Getenv("GARAGE_RPC_SECRET"),
+		AssetMaxDocumentBytes:        envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
+		AssetMaxImageBytes:           envutil.IntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
+		AssetMaxAudioBytes:           envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
+		AssetPresignTTLSec:           envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
+		AssetProcessingConcurrent:    envutil.IntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
+		TelegramAPIBaseURL:           os.Getenv("TELEGRAM_API_BASE_URL"),
+		TelegramFileBaseURL:          os.Getenv("TELEGRAM_FILE_BASE_URL"),
+		TelegramLocalBotAPI:          envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
 		// Web-auth knobs. The legacy secret is read raw for compatibility only; the
 		// active cockpit login path is Authula.
