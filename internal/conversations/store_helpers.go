@@ -3,22 +3,17 @@ package conversations
 import (
 	"encoding/json"
 	"fmt"
-	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/pgnumeric"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// numericScale is the fixed scale of total_cost_usd (numeric(10,4)). The cost
-// delta is encoded at this scale so the SQL `total_cost_usd + $delta` stays exact.
-const numericScale = 4
-const numericMaxCost = 999999.9999
 const postgresTextNULReplacement = "[NUL]"
 
 // conversationFromRow projects a generated conversations row onto the domain type,
@@ -33,7 +28,7 @@ func conversationFromRow(r sqlc.AuraConversations) Conversation {
 		TotalInputTokens:  r.TotalInputTokens,
 		TotalOutputTokens: r.TotalOutputTokens,
 		TotalCachedTokens: r.TotalCachedTokens,
-		TotalCostUSD:      floatFromNumeric(r.TotalCostUsd),
+		TotalCostUSD:      pgnumeric.FloatFromNumeric(r.TotalCostUsd),
 	}
 	if r.Title.Valid {
 		c.Title = r.Title.String
@@ -143,37 +138,6 @@ func optionalText(s string) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: s, Valid: true}
-}
-
-// floatFromNumeric converts a pgtype.Numeric (total_cost_usd) to float64 at the
-// read boundary. An invalid/NULL numeric reads as 0.
-func floatFromNumeric(n pgtype.Numeric) float64 {
-	if !n.Valid || n.NaN {
-		return 0
-	}
-	f, err := n.Float64Value()
-	if err != nil || !f.Valid {
-		return 0
-	}
-	return f.Float64
-}
-
-// numericFromFloat encodes a USD delta as a pgtype.Numeric at numeric(10,4) scale
-// so the SQL `total_cost_usd + $delta` stays exact (Pitfall 5). The value is
-// rounded to 4 decimals via an integer-mantissa construction (Int * 10^-4).
-func numericFromFloat(f float64) (pgtype.Numeric, error) {
-	if math.IsNaN(f) || math.IsInf(f, 0) || f > numericMaxCost || f < -numericMaxCost {
-		return pgtype.Numeric{}, fmt.Errorf("cost %v out of numeric(10,4) range +/-%.4f", f, numericMaxCost)
-	}
-	// Scale to 4 decimals as an integer mantissa, rounding half-away-from-zero.
-	scaled := f * 1e4
-	if scaled >= 0 {
-		scaled += 0.5
-	} else {
-		scaled -= 0.5
-	}
-	mantissa := big.NewInt(int64(scaled))
-	return pgtype.Numeric{Int: mantissa, Exp: -numericScale, Valid: true}, nil
 }
 
 // validateID rejects any id that could escape the fixed

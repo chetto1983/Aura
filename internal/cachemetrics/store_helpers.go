@@ -2,12 +2,11 @@ package cachemetrics
 
 import (
 	"fmt"
-	"math"
-	"math/big"
 	"strconv"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/pgnumeric"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -31,7 +30,7 @@ func NewInsertParams(p MetricParams) (sqlc.InsertCacheMetricParams, error) {
 	if err != nil {
 		return sqlc.InsertCacheMetricParams{}, err
 	}
-	cost, err := numericFromFloat(p.CostUSD)
+	cost, err := pgnumeric.NumericFromFloat(p.CostUSD)
 	if err != nil {
 		return sqlc.InsertCacheMetricParams{}, fmt.Errorf("conversation_id %q seq %d: %w", p.ConversationID, p.Seq, err)
 	}
@@ -59,43 +58,6 @@ func uuidFrom(field, s string) (pgtype.UUID, error) {
 	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }
 
-// numericMaxCost is the largest magnitude representable in cost_usd's numeric(10,4):
-// 6 integer digits + 4 fractional → ±999999.9999. A cost outside this range cannot be
-// stored without overflow, so encoding it is a loud error rather than silent truncation.
-const numericMaxCost = 999999.9999
-
-// numericFromFloat encodes a USD value as a pgtype.Numeric at numeric(10,4) scale
-// (Pitfall 5; mirrors conversations.numericFromFloat). The value is rounded
-// half-away-from-zero to 4 decimals via an integer-mantissa construction — the result
-// is exact only for magnitudes representable as k/10000 within float64 precision AND
-// within the column range (WR-01/IN-06): a value outside ±numericMaxCost is rejected
-// here so a pathological cost surfaces as an error, never a silently-overflowed mantissa.
-func numericFromFloat(f float64) (pgtype.Numeric, error) {
-	if math.IsNaN(f) || math.IsInf(f, 0) || f > numericMaxCost || f < -numericMaxCost {
-		return pgtype.Numeric{}, fmt.Errorf("cost %v out of numeric(10,4) range ±%v", f, numericMaxCost)
-	}
-	scaled := f * 1e4
-	if scaled >= 0 {
-		scaled += 0.5
-	} else {
-		scaled -= 0.5
-	}
-	return pgtype.Numeric{Int: big.NewInt(int64(scaled)), Exp: -numericScale, Valid: true}, nil
-}
-
-// floatFromNumeric converts a pgtype.Numeric (cost_usd) to float64 at the read boundary.
-// An invalid/NULL/NaN numeric reads as 0 (mirrors conversations.floatFromNumeric).
-func floatFromNumeric(n pgtype.Numeric) float64 {
-	if !n.Valid || n.NaN {
-		return 0
-	}
-	f, err := n.Float64Value()
-	if err != nil || !f.Valid {
-		return 0
-	}
-	return f.Float64
-}
-
 // anyInt64 coerces a sqlc `coalesce(sum(int),0)` result to int64. pgx may decode the
 // bigint sum as int64 directly, or as a pgtype.Numeric / text depending on the planner;
 // this covers each shape so the aggregate is stable across PG versions. An unparseable
@@ -114,7 +76,7 @@ func anyInt64(v any) (int64, error) {
 	case float64:
 		return int64(n), nil
 	case pgtype.Numeric:
-		return int64(floatFromNumeric(n)), nil
+		return int64(pgnumeric.FloatFromNumeric(n)), nil
 	case string:
 		i, err := strconv.ParseInt(n, 10, 64)
 		if err != nil {
@@ -140,7 +102,7 @@ func anyInt64(v any) (int64, error) {
 func anyNumericFloat(v any) (float64, error) {
 	switch n := v.(type) {
 	case pgtype.Numeric:
-		return floatFromNumeric(n), nil
+		return pgnumeric.FloatFromNumeric(n), nil
 	case float64:
 		return n, nil
 	case int64:

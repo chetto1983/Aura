@@ -10,6 +10,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/pgnumeric"
 )
 
 // TestAppendTurn_AutoSeqConcurrentSerializes proves that store-assigned sequence
@@ -87,7 +88,7 @@ func TestAppendAssistantTurnWithCacheMetric_AutoSeqAllocatesMetricSeq(t *testing
 	if err != nil {
 		t.Fatalf("parse conv id: %v", err)
 	}
-	cost, err := numericFromFloat(0.0042)
+	cost, err := pgnumeric.NumericFromFloat(0.0042)
 	if err != nil {
 		t.Fatalf("numeric cost: %v", err)
 	}

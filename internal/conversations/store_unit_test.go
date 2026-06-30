@@ -6,51 +6,13 @@ package conversations
 import (
 	"context"
 	"errors"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/jackc/pgx/v5/pgtype"
 )
-
-func TestNumericFloatRoundTrip(t *testing.T) {
-	t.Parallel()
-	cases := []float64{0, 0.0001, 0.1966, 1.2345, 12.5, 9999.9999, 0.00005}
-	for _, in := range cases {
-		n, err := numericFromFloat(in)
-		if err != nil {
-			t.Fatalf("numericFromFloat(%v): %v", in, err)
-		}
-		got := floatFromNumeric(n)
-		// numeric(10,4) keeps 4 decimals; allow a half-ulp at that scale.
-		if diff := got - roundTo4(in); diff > 5e-5 || diff < -5e-5 {
-			t.Errorf("round-trip %v -> %v (want ~%v)", in, got, roundTo4(in))
-		}
-	}
-}
-
-func roundTo4(f float64) float64 {
-	scaled := f * 1e4
-	if scaled >= 0 {
-		scaled += 0.5
-	} else {
-		scaled -= 0.5
-	}
-	return float64(int64(scaled)) / 1e4
-}
-
-func TestFloatFromNumeric_NullAndNaN(t *testing.T) {
-	t.Parallel()
-	if got := floatFromNumeric(pgtype.Numeric{}); got != 0 {
-		t.Errorf("invalid numeric: want 0, got %v", got)
-	}
-	if got := floatFromNumeric(pgtype.Numeric{NaN: true, Valid: true}); got != 0 {
-		t.Errorf("NaN numeric: want 0, got %v", got)
-	}
-}
 
 func TestDisplayTitle(t *testing.T) {
 	t.Parallel()
@@ -208,26 +170,6 @@ func TestOptionalText(t *testing.T) {
 	}
 	if got := optionalText("call_1"); !got.Valid || got.String != "call_1" {
 		t.Errorf("non-empty must be set: %+v", got)
-	}
-}
-
-func TestNumericFromFloat_Negative(t *testing.T) {
-	t.Parallel()
-	n, err := numericFromFloat(-1.2345)
-	if err != nil {
-		t.Fatalf("numericFromFloat(neg): %v", err)
-	}
-	if got := floatFromNumeric(n); got > -1.2344 || got < -1.2346 {
-		t.Errorf("negative round-trip: got %v", got)
-	}
-}
-
-func TestNumericFromFloat_RejectsNonFiniteAndOverflow(t *testing.T) {
-	t.Parallel()
-	for _, in := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), 1e12, -1e12} {
-		if _, err := numericFromFloat(in); err == nil {
-			t.Errorf("numericFromFloat(%v): want error, got nil", in)
-		}
 	}
 }
 

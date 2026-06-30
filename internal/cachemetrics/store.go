@@ -16,12 +16,10 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/pgnumeric"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// numericScale is the fixed scale of cost_usd (numeric(10,4)), matching the column DDL.
-const numericScale = 4
 
 // Store wraps a pgx pool and the generated Queries — the canonical shape from
 // internal/identity / internal/conversations.
@@ -70,7 +68,7 @@ func (s *Store) ListSince(ctx context.Context, since time.Time) ([]Metric, error
 			TS:             r.Ts.Time,
 			PromptTokens:   int(r.PromptTokens),
 			CachedTokens:   int(r.CachedTokens),
-			CostUSD:        floatFromNumeric(r.CostUsd),
+			CostUSD:        pgnumeric.FloatFromNumeric(r.CostUsd),
 		})
 	}
 	return out, nil

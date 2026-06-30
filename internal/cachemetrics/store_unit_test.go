@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/pgnumeric"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -96,9 +97,9 @@ func newMetricRow(t *testing.T, id string, seq int32, ts time.Time, prompt, cach
 	if err != nil {
 		t.Fatalf("uuidFrom(%q): %v", id, err)
 	}
-	costNum, err := numericFromFloat(cost)
+	costNum, err := pgnumeric.NumericFromFloat(cost)
 	if err != nil {
-		t.Fatalf("numericFromFloat(%v): %v", cost, err)
+		t.Fatalf("NumericFromFloat(%v): %v", cost, err)
 	}
 	return []any{
 		convID,
@@ -228,9 +229,9 @@ func aggRow(turns int64, prompt, cached, cost any) *fakeRow {
 
 func TestAggregateSince_Success(t *testing.T) {
 	t.Parallel()
-	cost, err := numericFromFloat(1.2345)
+	cost, err := pgnumeric.NumericFromFloat(1.2345)
 	if err != nil {
-		t.Fatalf("numericFromFloat: %v", err)
+		t.Fatalf("NumericFromFloat: %v", err)
 	}
 	fake := &fakeDBTX{queryRowVal: aggRow(3, int64(6000), int64(5400), cost)}
 	s := newTestStore(fake)

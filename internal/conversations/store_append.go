@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/pgnumeric"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -172,7 +173,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
-	cost, err := numericFromFloat(p.CostUSD)
+	cost, err := pgnumeric.NumericFromFloat(p.CostUSD)
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
