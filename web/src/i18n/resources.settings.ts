@@ -41,8 +41,6 @@ export const settingsEn = {
       sttCloudModel: 'Speech-to-text cloud model',
       ttsModel: 'Text-to-speech model',
       visionCloud: 'Vision uses cloud',
-      memoryEmbedBaseUrl: 'Memory embedding base URL',
-      memoryEmbedKey: 'Memory embedding API key',
       enabled: 'Enabled',
     },
     status: {
@@ -102,8 +100,6 @@ export const settingsIt = {
       sttCloudModel: 'Modello cloud speech-to-text',
       ttsModel: 'Modello text-to-speech',
       visionCloud: 'Visione usa cloud',
-      memoryEmbedBaseUrl: 'URL base embedding memoria',
-      memoryEmbedKey: 'Chiave API embedding memoria',
       enabled: 'Attivo',
     },
     status: {

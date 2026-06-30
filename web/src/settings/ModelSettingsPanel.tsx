@@ -35,9 +35,7 @@ type SettingsKey =
   | 'AURA_RERANK_BASE_URL'
   | 'AURA_TTS_MODEL'
   | 'AURA_STT_CLOUD_MODEL'
-  | 'AURA_VISION_CLOUD'
-  | 'AURA_MEMORY_EMBED_BASE_URL'
-  | 'AURA_MEMORY_EMBED_API_KEY';
+  | 'AURA_VISION_CLOUD';
 
 interface SettingDef {
   readonly key: SettingsKey;
@@ -99,17 +97,6 @@ const BACKEND_SETTINGS: readonly SettingDef[] = [
   { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
   { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
   { key: 'AURA_VISION_CLOUD', kind: 'bool', labelKey: 'settings.fields.visionCloud' },
-  {
-    key: 'AURA_MEMORY_EMBED_BASE_URL',
-    kind: 'string',
-    labelKey: 'settings.fields.memoryEmbedBaseUrl',
-  },
-  {
-    key: 'AURA_MEMORY_EMBED_API_KEY',
-    kind: 'string',
-    secret: true,
-    labelKey: 'settings.fields.memoryEmbedKey',
-  },
 ];
 
 const ALL_SETTINGS = [...PRIMARY_SETTINGS, ...TOKEN_SETTINGS, ...BACKEND_SETTINGS] as const;

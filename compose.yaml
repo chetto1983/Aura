@@ -401,6 +401,11 @@ services:
       # To go cloud: AURA_EMBED_MODEL=qwen/qwen3-embedding-8b (the openai/ adapter
       # prefix is prepended), AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1,
       # AURA_MEMORY_EMBED_API_KEY=${OPENROUTER_API_KEY}.
+      # AURA_MEMORY_EMBED_BASE_URL / AURA_MEMORY_EMBED_API_KEY are sidecar-owned
+      # compose/.env vars: this container reads them HERE at start to set
+      # OPENAI_BASE_URL / OPENAI_API_KEY below. They are NOT runtime-overridable via
+      # the cockpit Settings page — the daemon's os.Setenv overlay cannot reach an
+      # already-running sidecar (so they were removed from settings.AllowedKeys).
       NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-311m-multilingual-r2}
       OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
       OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
