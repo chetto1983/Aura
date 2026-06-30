@@ -1,10 +1,13 @@
 //go:build cot_eval || live_e2e
 
-// capture_cot_eval.go mirrors cmd/aura/chat_render.go's Event-stream extraction
-// (the unexported renderTurn/usageFromStateDelta logic) so the live CoT harness can
-// observe everything a real `aura chat` turn would render WITHOUT importing the
-// production main package or changing it. ~80 lines duplicated by design (the rule
-// in the task: production stays untouched; test code may mirror the extractor).
+// capture_cot_eval.go drives one LlmAgent.Run the way the production REPL renderer
+// (cmd/aura/chat_render.go) does, so the live CoT harness observes everything a real
+// `aura chat` turn would render WITHOUT importing the production main package. The
+// render primitives it shares with the REPL — FlushRemainder, IsToolResultPreview,
+// IsTerminalToolCall, UsageFromStateDelta — now live in internal/agentrender (Phase
+// 32-07); the ~80 LOC formerly duplicated here are gone, and this path picks up the
+// agentrender AnyInt superset that counts the json.Number token fields the old eval
+// copy silently zeroed (QA-C-04 / T-32-07-FIX).
 //
 // It captures, per turn: the rendered prose (what the operator would see), the
 // ordered Event kinds (chunk -> tool_call -> tool_result -> final / terminal), the
@@ -13,11 +16,11 @@
 package eval
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agentrender"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -109,7 +112,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 		}
 		resp := ev.LLMResponse
 		switch {
-		case len(resp.ToolCalls) > 0 && !isTerminalToolCall(resp.ToolCalls):
+		case len(resp.ToolCalls) > 0 && !agentrender.IsTerminalToolCall(resp.ToolCalls):
 			c.eventKinds = append(c.eventKinds, kindToolCall)
 			for i := range resp.ToolCalls {
 				c.toolNames = append(c.toolNames, resp.ToolCalls[i].Function.Name)
@@ -119,16 +122,16 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 		case resp.FinishReason != "":
 			c.eventKinds = append(c.eventKinds, kindFinal)
 			c.finish = resp.FinishReason
-			flushRemainder(&prose, resp.Content, func(s string) {
+			agentrender.FlushRemainder(&prose, resp.Content, func(s string) {
 				prose.WriteString(s)
 				raw.WriteString(s)
 			})
-			c.usage = usageFromStateDelta(ev.Actions.StateDelta)
+			c.usage = agentrender.UsageFromStateDelta(ev.Actions.StateDelta)
 			c.prose = prose.String()
 			c.rawProse = raw.String()
 			c.totalMS = float64(time.Since(start).Microseconds()) / 1000.0
 			return c
-		case isToolResultPreview(ev):
+		case agentrender.IsToolResultPreview(ev):
 			c.eventKinds = append(c.eventKinds, kindToolResult)
 			c.toolResults = append(c.toolResults, resp.Content)
 			c.toolResultMS = append(c.toolResultMS, float64(time.Since(start).Microseconds())/1000.0)
@@ -148,82 +151,4 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 	c.rawProse = raw.String()
 	c.totalMS = float64(time.Since(start).Microseconds()) / 1000.0
 	return c
-}
-
-// flushRemainder mirrors cmd/aura/chat_render.go flushRemainder: emit the tail of
-// the final answer streaming did not already show.
-func flushRemainder(prose *strings.Builder, finalAnswer string, emit func(string)) {
-	already := prose.String()
-	if finalAnswer == "" || finalAnswer == already {
-		return
-	}
-	if strings.HasPrefix(finalAnswer, already) {
-		emit(finalAnswer[len(already):])
-		return
-	}
-	prose.Reset()
-	emit(finalAnswer)
-}
-
-// isToolResultPreview mirrors chat_render.go: a tool-result Event is marked by the
-// tool_call_id the LlmAgent stamps into Actions.StateDelta.
-func isToolResultPreview(ev *agent.Event) bool {
-	_, ok := ev.Actions.StateDelta["tool_call_id"]
-	return ok
-}
-
-// isTerminalToolCall mirrors chat_render.go: the loop-terminating text_response.
-func isTerminalToolCall(calls []llm.ToolCall) bool {
-	for i := range calls {
-		if calls[i].Function.Name == "text_response" {
-			return true
-		}
-	}
-	return false
-}
-
-// usageFromStateDelta mirrors chat_render.go: reconstruct llm.Usage from the final
-// Event StateDelta the LlmAgent stamped.
-func usageFromStateDelta(d map[string]any) llm.Usage {
-	if d == nil {
-		return llm.Usage{}
-	}
-	u := llm.Usage{
-		PromptTokens:     anyInt(d["prompt_tokens"]),
-		CompletionTokens: anyInt(d["completion_tokens"]),
-		CachedTokens:     anyInt(d["cache_hit_tokens"]),
-	}
-	if c, ok := anyFloat(d["cost_usd"]); ok {
-		u.Cost = &c
-	}
-	return u
-}
-
-func anyInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	default:
-		return 0
-	}
-}
-
-func anyFloat(v any) (float64, bool) {
-	switch f := v.(type) {
-	case float64:
-		return f, true
-	case int:
-		return float64(f), true
-	case json.Number:
-		// M-07 sibling: the StateDelta is decoded with UseNumber, so cost_usd can
-		// arrive as a json.Number; parse it instead of silently dropping the cost.
-		n, err := f.Float64()
-		return n, err == nil
-	default:
-		return 0, false
-	}
 }

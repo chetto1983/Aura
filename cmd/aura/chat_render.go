@@ -13,12 +13,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agentrender"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -63,7 +63,7 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 		}
 		resp := ev.LLMResponse
 		switch {
-		case len(resp.ToolCalls) > 0 && !isTerminalToolCall(resp.ToolCalls):
+		case len(resp.ToolCalls) > 0 && !agentrender.IsTerminalToolCall(resp.ToolCalls):
 			reason.clear(w)
 			renderToolActivity(w, resp.ToolCalls)
 		case resp.FinishReason != "":
@@ -76,9 +76,9 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 			// this event, so the range terminates naturally and the worker fires.
 			reason.clear(w)
 			finish = resp.FinishReason
-			flushRemainder(&prose, resp.Content, emit)
-			usage = usageFromStateDelta(ev.Actions.StateDelta)
-		case isToolResultPreview(ev):
+			agentrender.FlushRemainder(&prose, resp.Content, emit)
+			usage = agentrender.UsageFromStateDelta(ev.Actions.StateDelta)
+		case agentrender.IsToolResultPreview(ev):
 			// A tool-result Event carries the raw tool output (e.g. an RFC3339
 			// timestamp from current_time) in Content for AG-UI forward-compat — it
 			// is NOT assistant prose. Skip it so the raw preview never streams into
@@ -108,25 +108,6 @@ func costFooterFromFinish(cfg *config.Config, usage llm.Usage, _ string) string 
 	return costFooter(cfg.LLM.Prices, cfg.LLM.Model, usage, 0)
 }
 
-// flushRemainder emits the tail of the final answer that streaming did not already
-// show. On the text_response path the agent surfaces the full decoded answer only
-// on the final Event, so nothing was streamed yet — emit the whole answer. On the
-// content-stop path the chunks already streamed, so only a divergent tail (e.g.
-// the truncation notice D-21) is emitted.
-func flushRemainder(prose *strings.Builder, finalAnswer string, emit func(string)) {
-	already := prose.String()
-	if finalAnswer == "" || finalAnswer == already {
-		return
-	}
-	if strings.HasPrefix(finalAnswer, already) {
-		emit(finalAnswer[len(already):])
-		return
-	}
-	// Divergent: reset and emit the full answer.
-	prose.Reset()
-	emit(finalAnswer)
-}
-
 // discardStreamed erases the partial prose a failed stream attempt already showed
 // (B-12 mid-stream retry) and resets the buffer so the retry renders clean. It moves
 // the cursor to column 0, up over each newline the partial spanned, then clears to
@@ -146,28 +127,6 @@ func discardStreamed(prose *strings.Builder, w io.Writer) {
 	b.WriteString("\x1b[J")
 	_, _ = io.WriteString(w, b.String())
 	prose.Reset()
-}
-
-// isToolResultPreview reports whether ev is a tool-result Event (the raw tool
-// output the LlmAgent threads back into history and surfaces for AG-UI fan-out),
-// identified by the tool_call_id the agent stamps into Actions.StateDelta. Such
-// events carry their text in LLMResponse.Content with no FinishReason — the same
-// shape as a streamed assistant chunk — so this marker is the only way the prose
-// renderer can tell them apart and skip them.
-func isToolResultPreview(ev *agent.Event) bool {
-	_, ok := ev.Actions.StateDelta["tool_call_id"]
-	return ok
-}
-
-// isTerminalToolCall reports whether the calls are the loop-terminating
-// text_response (whose `text` is the prose, not an activity line).
-func isTerminalToolCall(calls []llm.ToolCall) bool {
-	for i := range calls {
-		if calls[i].Function.Name == "text_response" {
-			return true
-		}
-	}
-	return false
 }
 
 // renderToolActivity prints a dim one-liner per non-terminal tool call (D-12) so
@@ -190,61 +149,6 @@ func costFooter(prices map[string]llm.Price, model string, usage llm.Usage, late
 	usd, _ := llm.CostUSD(prices, model, usage.PromptTokens, usage.CompletionTokens, usage.Cost)
 	return fmt.Sprintf("\x1b[2m· %d tok (%d in / %d out) · %s · %.1fs\x1b[0m",
 		total, usage.PromptTokens, usage.CompletionTokens, usd, latencySec)
-}
-
-// usageFromStateDelta reconstructs the per-turn llm.Usage the LlmAgent stamped into
-// the final Event's Actions.StateDelta (D-11). The values are plain in-process
-// ints/floats here (no JSON round-trip on this path), but anyInt tolerates the
-// numeric widening JSON would introduce so the footer is robust either way.
-func usageFromStateDelta(d map[string]any) llm.Usage {
-	if d == nil {
-		return llm.Usage{}
-	}
-	u := llm.Usage{
-		PromptTokens:     anyInt(d["prompt_tokens"]),
-		CompletionTokens: anyInt(d["completion_tokens"]),
-		CachedTokens:     anyInt(d["cache_hit_tokens"]),
-	}
-	if c, ok := anyFloat(d["cost_usd"]); ok {
-		u.Cost = &c
-	}
-	return u
-}
-
-func anyInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	case json.Number:
-		// A UseNumber decoder or a jsonb round-trip widens token counts to
-		// json.Number (M-07); parse it instead of silently zeroing the usage row.
-		if i, err := n.Int64(); err == nil {
-			return int(i)
-		}
-		return 0
-	default:
-		return 0
-	}
-}
-
-func anyFloat(v any) (float64, bool) {
-	switch f := v.(type) {
-	case float64:
-		return f, true
-	case int:
-		return float64(f), true
-	case json.Number:
-		// M-07 sibling: a UseNumber decoder or a jsonb round-trip widens cost_usd
-		// to json.Number; parse it instead of silently zeroing the wire cost.
-		n, err := f.Float64()
-		return n, err == nil
-	default:
-		return 0, false
-	}
 }
 
 // iterSeq2 is the agent.Run result type, aliased so renderTurn's signature stays

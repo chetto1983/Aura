@@ -87,9 +87,10 @@ func (wireDead) Error() string { return "wire dead" }
 
 var errWireDead = wireDead{}
 
-// TestRenderTurn_DivergentFlush drives flushRemainder's divergent branch: the
-// streamed chunks and the final answer disagree on their prefix, so the renderer
-// resets and emits the full final answer (no double-print of the partial stream).
+// TestRenderTurn_DivergentFlush drives agentrender.FlushRemainder's divergent branch
+// through renderRunnerTurn: the streamed chunks and the final answer disagree on their
+// prefix, so the renderer resets and emits the full final answer (no double-print of
+// the partial stream).
 func TestRenderTurn_DivergentFlush(t *testing.T) {
 	seq := func(yield func(*agent.Event, error) bool) {
 		// stream a partial chunk that the final answer does NOT extend
@@ -114,8 +115,8 @@ func TestRenderTurn_DivergentFlush(t *testing.T) {
 }
 
 // TestRenderTurn_ContentStopFallback drives the streamed-chunk path where the final
-// answer EXTENDS the streamed prefix (flushRemainder's prefix branch): only the
-// not-yet-streamed tail is emitted.
+// answer EXTENDS the streamed prefix (agentrender.FlushRemainder's prefix branch):
+// only the not-yet-streamed tail is emitted.
 func TestRenderTurn_ContentStopFallback(t *testing.T) {
 	seq := func(yield func(*agent.Event, error) bool) {
 		if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "Ciao "}}, nil) {
@@ -138,8 +139,8 @@ func TestRenderTurn_ContentStopFallback(t *testing.T) {
 	}
 }
 
-// TestRenderTurn_FinalEqualsStreamed drives flushRemainder's exact-match early
-// return: the streamed chunks already produced the entire final answer, so the
+// TestRenderTurn_FinalEqualsStreamed drives agentrender.FlushRemainder's exact-match
+// early return: the streamed chunks already produced the entire final answer, so the
 // final-Event flush emits nothing more (no double-print).
 func TestRenderTurn_FinalEqualsStreamed(t *testing.T) {
 	seq := func(yield func(*agent.Event, error) bool) {
@@ -174,76 +175,11 @@ func TestRenderTurn_InfraError(t *testing.T) {
 	}
 }
 
-// TestUsageFromStateDelta covers the numeric-widening + nil paths usageFromStateDelta
-// + anyInt/anyFloat must tolerate (in-process ints AND JSON-widened int64/float64).
-func TestUsageFromStateDelta(t *testing.T) {
-	t.Run("nil_map", func(t *testing.T) {
-		if u := usageFromStateDelta(nil); u != (llm.Usage{}) {
-			t.Errorf("nil map -> %+v, want zero Usage", u)
-		}
-	})
-	t.Run("int_and_cost_float", func(t *testing.T) {
-		u := usageFromStateDelta(map[string]any{
-			"prompt_tokens":     int(7),
-			"completion_tokens": int64(3),
-			"cache_hit_tokens":  float64(2),
-			"cost_usd":          float64(0.5),
-		})
-		if u.PromptTokens != 7 || u.CompletionTokens != 3 || u.CachedTokens != 2 {
-			t.Errorf("tokens = %+v, want 7/3/2 across int/int64/float64", u)
-		}
-		if u.Cost == nil || *u.Cost != 0.5 {
-			t.Errorf("Cost = %v, want 0.5", u.Cost)
-		}
-	})
-	t.Run("cost_as_int", func(t *testing.T) {
-		u := usageFromStateDelta(map[string]any{"cost_usd": int(1)})
-		if u.Cost == nil || *u.Cost != 1.0 {
-			t.Errorf("int cost_usd -> %v, want 1.0", u.Cost)
-		}
-	})
-	t.Run("unknown_types_default", func(t *testing.T) {
-		// A string value hits anyInt's default(0) and anyFloat's default(_,false).
-		u := usageFromStateDelta(map[string]any{
-			"prompt_tokens": "nope",
-			"cost_usd":      "nope",
-		})
-		if u.PromptTokens != 0 {
-			t.Errorf("unknown-type prompt_tokens -> %d, want 0", u.PromptTokens)
-		}
-		if u.Cost != nil {
-			t.Errorf("unknown-type cost_usd -> %v, want nil (no fabricated cost)", u.Cost)
-		}
-	})
-	// M-07: a jsonb round-trip (or a UseNumber decoder) widens token counts to
-	// json.Number; anyInt must parse them, not silently zero the usage row. A
-	// non-numeric json.Number falls back to 0 like any other unparseable input.
-	t.Run("json_number_tokens", func(t *testing.T) {
-		u := usageFromStateDelta(map[string]any{
-			"prompt_tokens":     json.Number("11"),
-			"completion_tokens": json.Number("5"),
-			"cache_hit_tokens":  json.Number("nope"),
-		})
-		if u.PromptTokens != 11 || u.CompletionTokens != 5 {
-			t.Errorf("json.Number tokens = %d/%d, want 11/5", u.PromptTokens, u.CompletionTokens)
-		}
-		if u.CachedTokens != 0 {
-			t.Errorf("non-numeric json.Number -> %d, want 0 fallback", u.CachedTokens)
-		}
-	})
-	// M-07 sibling: anyFloat must parse a json.Number cost_usd too, not zero it.
-	// A non-numeric json.Number falls back to no-cost like any unparseable input.
-	t.Run("json_number_cost", func(t *testing.T) {
-		u := usageFromStateDelta(map[string]any{"cost_usd": json.Number("4.2")})
-		if u.Cost == nil || *u.Cost != 4.2 {
-			t.Errorf("json.Number cost_usd -> %v, want 4.2", u.Cost)
-		}
-		bad := usageFromStateDelta(map[string]any{"cost_usd": json.Number("nope")})
-		if bad.Cost != nil {
-			t.Errorf("non-numeric json.Number cost_usd -> %v, want nil fallback", bad.Cost)
-		}
-	})
-}
+// usageFromStateDelta + anyInt/anyFloat were extracted to internal/agentrender in
+// Phase 32-07; their numeric-widening + nil + json.Number union is now owned by
+// internal/agentrender/agentrender_test.go (TestUsageFromStateDelta/TestAnyInt/
+// TestAnyFloat). renderRunnerTurn's use of agentrender.UsageFromStateDelta is still
+// exercised here end-to-end by TestChat_ToolUsingTurn and the TestRenderTurn_* cases.
 
 // TestConfigGet_Success drives configGet's print path (no os.Exit) under a temp
 // HOME, covering getConfigKey for every dotted key.
