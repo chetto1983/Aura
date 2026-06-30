@@ -48,8 +48,15 @@ Requirements PROF-01..06 + QUAL-04 are tightly locked (see `.planning/REQUIREMEN
 ### F-002 destructive-shell semantics fix (PROF-02) — applies to ALL profiles
 - **D-12:** Flip `destructiveShellPatterns()` in `internal/agent/tools/shell_exec_env.go`: **empty `AURA_SHELL_DESTRUCTIVE_PATTERNS` → use built-in defaults** (gate stays ACTIVE), **only explicit `off` disables.** Today empty=disabled, which means copying `.env.example`→`.env` could silently kill the gate. `.env.example` line 61 is already commented out; the test matrix must cover unset / empty / `off` / custom / copied-sample. This is a correctness fix independent of profile (then prod additionally forbids `off` per D-11).
 
+### Resolved post-research (2026-06-30 — Open Q1–Q4 confirmed with user after RESEARCH.md)
+- **D-13 (PROF-03/PROF-06 read path — was Open Q1/A1, highest leverage):** Validate Garage durability via a **new env knob**, NOT by parsing `garage.toml`. Add `AURA_OBJECTSTORE_REPLICATION_FACTOR` (default `1`) → `Config.ObjectStoreReplicationFactor int`, and `Config.GarageRPCSecret string` from `os.Getenv("GARAGE_RPC_SECRET")` (upstream name, CLAUDE.md sidecar exception). This is the **one genuinely net-new config read** the phase needs; it stays inside the config-contract scope fence (declared intent, NOT runtime enforcement). Drift caveat: keeping `docker/garage/garage.toml:5` in sync with the knob is a **deployment follow-on, NOT required for this phase's acceptance** (defer unless trivially templated in install).
+- **D-14 (dev↔local_trusted delta — was Open Q2/A4):** **Collapse to one lenient tier.** `dev` and `local_trusted` share an **identical constraint set** (warn-on-invalid, no gate flips, full-host intact); they differ ONLY by an intent label/banner (e.g. `local_trusted` prints "trusted local mode — full host capability active"). Do NOT maintain two identical rule sets. (Confirms D-09 hypothesis.)
+- **D-15 (hardened gate strictness — was Open Q3/A2/A3):** `single_user_hardened` **additionally forbids permissive-CORS** (`AURA_AGUI_CORS_PERMISSIVE=true`) for consistency with prod (cheap), but **ALLOWS destructive-shell `off`** (appliance-operator flexibility). Only `server_production` forbids destructive `off` (per D-11). [A2 = forbid-CORS under hardened; A3 = allow-off under hardened.]
+- **D-16 (catalogue cut — was Open Q4):** Knob catalogue = **Tier A+B only** — the `internal/config` surface + the gated knobs (CORS, web-auth, sample object-store creds, `GARAGE_RPC_SECRET`, replication factor, destructive-shell, required DB/Neo4j secrets, RunDir, invalid-env int/bool knobs). **Tier C (agent-tools / loop / llm `AURA_*` knobs) is OUT** of this phase's registry.
+- **A5/A6 (reject-set baselines) → planner adopts the researcher's recommended defaults:** `GARAGE_RPC_SECRET` reject baseline = **non-empty required under hardened/prod** (grep `scripts/garage_bootstrap.sh` for any literal sample secret to extend the reject set); default bucket (`aura-assets`) / loopback object-store endpoint under prod = **WARN, not FATAL** (legitimate behind compose DNS).
+
 ### Claude's Discretion
-- Whether to lean on the already-indirect `go-playground/validator/v10` (v10.30.3) struct tags vs. the existing hand-rolled multi-error pattern — see Code Insights. Lib is *available* (zero new direct dep) but the hand-rolled `Validate()`/`GuardWebBind()` idiom is "minimal industrial." Planner/researcher's call; default to the hand-rolled idiom unless tags clearly reduce LOC.
+- Whether to lean on the already-indirect `go-playground/validator/v10` (v10.30.3) struct tags vs. the existing hand-rolled multi-error pattern — see Code Insights. RESEARCH.md recommends **hand-rolled** (rules are profile-conditional + cross-field, so tags add ceremony, not LOC savings). Default to the hand-rolled `Validate()`/`GuardWebBind()` idiom unless tags clearly reduce LOC.
 - Exact `KnobSpec` field shape, profile-constraint representation, and how `config validate` renders the violation list (human table; consider a `--json` mode for CI, but not required by acceptance).
 
 </decisions>
@@ -122,8 +129,8 @@ These came up via the audit's full "policy-first runtime" vision but belong to L
 - **F-026 contract items not already wired as knobs** — TLS termination requirements, health-check endpoints as a hard gate, observability-required validation → future hardening phase. Phase 33 only gates the *already-wired* knobs (CORS, auth, creds, replication, destructive-off, secrets, RunDir).
 - **QUAL-04 double-`Validate` + pool-leak fix and `askuser/store.go:231` int32 guard** are catalogued under QUAL-04 but mapped to **Phase 34** in REQUIREMENTS.md (the env-catalog slice of QUAL-04 is Phase 33; the correctness fixes are Phase 34). Confirm split during planning.
 
-### Open question for the planner
-- Define the precise `dev` ↔ `local_trusted` validation delta (likely diagnostic verbosity / labeling only, since both must preserve today's full-host behavior per success criterion #4). Both warn on invalid env; neither flips gates.
+### Open question for the planner — RESOLVED
+- ~~Define the precise `dev` ↔ `local_trusted` validation delta.~~ **Resolved by D-13..D-16 above** after RESEARCH.md: dev↔local_trusted collapse to one lenient tier differing only by label (D-14).
 
 [No scope-creep ideas surfaced — discussion stayed within phase scope.]
 
