@@ -137,6 +137,7 @@ type Querier interface {
 	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
+	ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	// D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,

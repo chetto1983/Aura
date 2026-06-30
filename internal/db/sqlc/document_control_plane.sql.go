@@ -647,6 +647,57 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 	return items, nil
 }
 
+const listStorageObjects = `-- name: ListStorageObjects :many
+SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at
+FROM aura.storage_objects
+WHERE bucket = $1
+  AND deleted_at IS NULL
+  AND ($2::text = '' OR object_key LIKE $2 || '%')
+ORDER BY object_key ASC
+`
+
+type ListStorageObjectsParams struct {
+	Bucket string `json:"bucket"`
+	Prefix string `json:"prefix"`
+}
+
+func (q *Queries) ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error) {
+	rows, err := q.db.Query(ctx, listStorageObjects, arg.Bucket, arg.Prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraStorageObjects{}
+	for rows.Next() {
+		var i AuraStorageObjects
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.DocumentID,
+			&i.VersionID,
+			&i.AssetID,
+			&i.Bucket,
+			&i.ObjectKey,
+			&i.Kind,
+			&i.Sha1,
+			&i.Sha256,
+			&i.Etag,
+			&i.SizeBytes,
+			&i.ContentType,
+			&i.RetentionClass,
+			&i.CreatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const retryIngestionJob = `-- name: RetryIngestionJob :one
 UPDATE aura.ingestion_jobs
 SET

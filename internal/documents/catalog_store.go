@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -172,6 +173,22 @@ func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityI
 		return Document{}, err
 	}
 	return catalogDocumentFromSQL(row)
+}
+
+// ListStorageObjects returns ledgered object refs for orphan detection.
+func (s *PostgresCatalogStore) ListStorageObjects(ctx context.Context, bucket, prefix string) ([]objectstore.ObjectRef, error) {
+	rows, err := s.q.ListStorageObjects(ctx, sqlc.ListStorageObjectsParams{
+		Bucket: bucket,
+		Prefix: prefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]objectstore.ObjectRef, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, objectstore.ObjectRef{Bucket: row.Bucket, Key: row.ObjectKey})
+	}
+	return out, nil
 }
 
 // RecordAssetVersion creates a logical document, raw storage object, first version, and active-version link.

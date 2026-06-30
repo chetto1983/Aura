@@ -115,6 +115,14 @@ DO UPDATE SET
     content_type = EXCLUDED.content_type
 RETURNING *;
 
+-- name: ListStorageObjects :many
+SELECT *
+FROM aura.storage_objects
+WHERE bucket = $1
+  AND deleted_at IS NULL
+  AND (sqlc.arg(prefix)::text = '' OR object_key LIKE sqlc.arg(prefix) || '%')
+ORDER BY object_key ASC;
+
 -- name: UpdateStorageObjectVersion :one
 UPDATE aura.storage_objects
 SET
