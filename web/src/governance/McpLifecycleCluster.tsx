@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Power, ShieldCheck, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { trapTabKey } from '../a11y/focusTrap';
 import { Spinner } from '../components/Spinner';
 import {
   removeMcpServer,
@@ -216,21 +217,7 @@ function RemoveDialog({
         onCancel();
         return;
       }
-      if (event.key !== 'Tab' || dialog === null) return;
-      const items = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter(
-        (el) => !el.hasAttribute('disabled'),
-      );
-      if (items.length === 0) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (first === undefined || last === undefined) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, dialog);
     }
     document.addEventListener('keydown', onKeyDown);
     return () => {

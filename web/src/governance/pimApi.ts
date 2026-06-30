@@ -9,7 +9,8 @@
 // The wizard supports every provider the sidecar exposes, with two connect flows: Google = web-redirect
 // (pimGoogleStart), Microsoft/Outlook = device-code (pimDeviceStart + pimAuthStatus poll).
 
-import { boolValue, deleteJSON, getJSON, postJSON, stringValue } from './governanceApi';
+import { getJSON } from '../api/json';
+import { boolValue, deleteJSON, postJSON, stringValue } from './governanceApi';
 
 export const GOV_PIM_ACCOUNTS_PATH = '/api/connect/pim/accounts';
 

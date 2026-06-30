@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getJSON, postJSON } from '../api/json';
 
 // useConversations is the CHAT-02 / D-07/D-08 data layer over the plan-25-01 thin
 // REST adapter (/api/conversations…). It mirrors useRuntimeHealth.ts exactly:
@@ -58,17 +59,6 @@ export function displayTitle(conv: Conversation, untitled: string): string {
   return conv.TitleSet && conv.Title.length > 0 ? conv.Title : untitled;
 }
 
-async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as T;
-}
-
 export function autoTitleFromPrompt(prompt: string): string {
   const compact = prompt
     .replace(/\s+/g, ' ')
@@ -81,26 +71,14 @@ export function autoTitleFromPrompt(prompt: string): string {
   return `${(lastSpace >= 32 ? head.slice(0, lastSpace) : head).trimEnd()}...`;
 }
 
-export async function createConversation(initialPrompt?: string): Promise<Conversation> {
+export function createConversation(initialPrompt?: string): Promise<Conversation> {
   const title =
     initialPrompt === undefined || initialPrompt.trim().length === 0
       ? ''
       : autoTitleFromPrompt(initialPrompt);
-  const res = await fetch('/api/conversations', {
-    method: 'POST',
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-    ...(title.length > 0
-      ? {
-          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title }),
-        }
-      : {}),
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as Conversation;
+  // An empty title posts `{}` (the store leaves the row untitled) — a body the canonical
+  // postJSON always serialises, while the backend decoder treats it the same as no body.
+  return postJSON<Conversation>('/api/conversations', title.length > 0 ? { title } : {});
 }
 
 // A 204 No Content POST/DELETE: no body to parse, a non-2xx is a thrown error the

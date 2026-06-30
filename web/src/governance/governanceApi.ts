@@ -1,5 +1,5 @@
 // governanceApi.ts is the Phase-28 data layer over the Plan-02 thin REST adapter
-// (the six GET /api/governance/* reads). It mirrors graphApi.ts's getJSON EXACTLY:
+// (the six GET /api/governance/* reads). It uses the shared canonical getJSON (web/src/api/json.ts):
 // ALWAYS credentials: 'same-origin' (the SPA is served by the same binary that exposes
 // the routes, behind the Phase-24 RequireAuth whole-origin gate), Accept: application/json,
 // and a NON-200 — INCLUDING 401 — THROWS `Error("HTTP <n>")` rather than returning a
@@ -11,6 +11,8 @@
 // getJSON EXACTLY (same-origin, Accept: application/json, a non-200-incl-401 THROWS
 // `Error("HTTP <n>")`), and every `{name}` path segment is encodeURIComponent'd. The MCP
 // probe is a per-server GET keyed by name so each row resolves independently (T-28-03-05).
+
+import { getJSON } from '../api/json';
 
 export const GOV_MCP_PATH = '/api/governance/mcp';
 export const GOV_SKILLS_PATH = '/api/governance/skills';
@@ -109,17 +111,6 @@ export interface SchedulerRun {
 }
 
 export type SkillStage = 'active' | 'pending' | 'archived';
-
-export async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as T;
-}
 
 // --- Phase-29 write layer (mirrors getJSON; never a discriminated union — a non-200,
 // INCLUDING 401/404/409, THROWS `Error("HTTP <n>")` so the mutation surfaces a visible

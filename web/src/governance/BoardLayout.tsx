@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { focusFirstDescendant, trapTabKey } from '../a11y/focusTrap';
 
 // BoardLayout — the master-list + detail shell shared by all three governance boards. Desktop
 // (lg) is a two-column grid: the master list on the left, the detail pane on the right (showing
@@ -54,14 +55,7 @@ export function BoardLayout({
       return;
     }
     const previouslyFocused = restoreFocusRef.current;
-    const focusables = (): HTMLElement[] =>
-      Array.from(
-        sheet.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => !el.hasAttribute('disabled'));
-
-    focusables()[0]?.focus();
+    focusFirstDescendant(sheet);
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
@@ -69,25 +63,7 @@ export function BoardLayout({
         onCloseDetail();
         return;
       }
-      if (event.key !== 'Tab') {
-        return;
-      }
-      const items = focusables();
-      if (items.length === 0) {
-        return;
-      }
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (first === undefined || last === undefined) {
-        return;
-      }
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, sheet);
     }
 
     document.addEventListener('keydown', onKeyDown);
