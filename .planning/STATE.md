@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: planning
-stopped_at: Phase 32 planned — 10 plans in 3 waves, ready to execute
-last_updated: "2026-06-29T20:44:47.945Z"
-last_activity: 2026-06-29 — Phase 32 planned (10 plans, 3 waves); plan-checker VERIFICATION PASSED (0 blockers)
+status: executing
+stopped_at: Phase 32 context gathered
+last_updated: "2026-06-30T05:32:29.567Z"
+last_activity: 2026-06-30
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 13
+  completed_plans: 4
   percent: 9
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 32 — Quality Cleanup (Dead Code + Shared Helpers)
+**Current focus:** Phase 32 — quality-cleanup-dead-code-shared-helpers
 
 ## Current Position
 
-Phase: 32 — Quality Cleanup — Dead Code + Shared Helpers
-Plan: 10 plans (3 waves) — planned + plan-checker verified, Ready to execute
-Status: Phase 32 PLANNED via /gsd-plan-phase — research (RESEARCH.md, HIGH-confidence file:line triage) → VALIDATION.md (Nyquist) → PATTERNS.md → 10 plans in 3 sequential waves (D-14, no worktrees): W1 QUAL-02 dead-code clean-slate (32-01..04), W2 QUAL-03 test-first extractions (32-05..08), W3 QUAL-05 test gaps (32-09..10). plan-checker VERIFICATION PASSED — 0 blockers, 3 advisory warnings, 1 info. Coverage gates: requirements 3/3 (QUAL-02/03/05), decisions 14/14. Research flips honored: RequestID re-stamp is LOAD-BEARING (KEEP+test, not delete); `assets.Status*` → 32-01 operator decision checkpoint (autonomous:false, D-04 sign-off); `memory_integration` CI leg already runs live (D-12 → verify+document, no new leg); transient-error classifiers stay asymmetric (stream STRICT-golden vs tool WIDENED). Prior: Phase 31 CLOSED (UAT 6/6, VERIFICATION passed, threats_open=0, nyquist_compliant=true). Open CodeQL: SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40. Ready to execute Phase 32.
-Last activity: 2026-06-29 — Phase 32 planned (10 plans, 3 waves), verification passed
+Phase: 32 (quality-cleanup-dead-code-shared-helpers) — EXECUTING
+Plan: 2 of 10
+Status: Ready to execute
+Last activity: 2026-06-30
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
@@ -384,6 +384,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 31-02 (F-015/SEC-07): all 4 raw root ./... Go CI gates now source $(bash scripts/go_packages.sh); a self-tested lint (check_ci_go_packages.sh) rejects regressions; shell: bash on both windows-unit steps.
 - [Phase ?]: F-015 lint excludes 'go list' enumeration (the legitimate package-list source) plus comment lines, so scanning scripts/ exits 0 while still rejecting every prohibited go test/build/vet/run + govulncheck ./...
 - [Phase 31]: SEC-08: MCP-local SSRF guard (internal/mcp/ssrf.go) mirrors internal/web classifier; scheme+metadata+link-local barrier unconditional, private-range block gated on AURA_MCP_SSRF_ENFORCE (default off → dev no-op, loopback/sidecars reachable) — Closes the CWE-918 go/request-forgery taint flow at the OpenHTTP seam without breaking loopback httptest + compose-DNS sidecars
+- [Phase ?]: Phase 32-01 D-04: keep-annotate assets.Status (all 12 constants retained + deferred-lifecycle annotation; no wiring, no delete)
 
 ### Pending Todos
 
@@ -428,9 +429,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-29T20:44:47.932Z
+Last session: 2026-06-30T05:32:21.541Z
 Stopped at: Phase 32 context gathered
-Resume file: .planning/phases/32-quality-cleanup-dead-code-shared-helpers/32-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 
