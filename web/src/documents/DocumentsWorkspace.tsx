@@ -14,6 +14,8 @@ import {
   type DocumentVersion,
   type UpdateDocumentInput,
 } from './documentApi';
+import { formatBytes } from './documentFormat';
+import { StorageOrphansPanel } from './StorageOrphansPanel';
 import { Spinner } from '../components/Spinner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
@@ -263,63 +265,64 @@ export default function DocumentsWorkspace() {
         </aside>
 
         <main className="min-h-0 overflow-y-auto">
-          {detailStatus === 'loading' ? (
-            <StatusLine label={t('documents.loadingDetail')} />
-          ) : detailStatus === 'error' ? (
-            <div className="p-4">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6">
+            {detailStatus === 'loading' ? (
+              <StatusLine label={t('documents.loadingDetail')} />
+            ) : detailStatus === 'error' ? (
               <Alert variant="destructive">
                 <AlertDescription>{t('documents.error.detail')}</AlertDescription>
               </Alert>
-            </div>
-          ) : selectedDocument === undefined || detail === undefined ? (
-            <StatusLine label={t('documents.empty')} />
-          ) : (
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6">
-              <DocumentHeader document={detail.document} activeVersion={activeVersion} />
-              <section className="grid gap-3 border-y border-border py-4">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="documents-tags">{t('documents.detail.tags')}</Label>
-                  <Input
-                    id="documents-tags"
-                    value={tagDraft}
-                    onChange={(event) => {
-                      setTagDraft(event.target.value);
-                    }}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" disabled={savingTags} onClick={() => void saveTags()}>
-                    {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
-                    {t('documents.actions.saveTags')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => {
-                      setDeleteOpen(true);
-                    }}
-                  >
-                    <Trash2 aria-hidden="true" />
-                    {t('documents.actions.delete')}
-                  </Button>
-                </div>
-              </section>
-              <section aria-labelledby="document-versions" className="flex flex-col gap-3">
-                <h2 id="document-versions" className="text-[18px] font-semibold text-text">
-                  {t('documents.detail.versions')}
-                </h2>
-                <div className="grid gap-2">
-                  {detail.versions.map((version) => (
-                    <VersionRow
-                      key={version.id}
-                      version={version}
-                      active={version.id === detail.document.active_version_id}
+            ) : selectedDocument === undefined || detail === undefined ? (
+              <StatusLine label={t('documents.empty')} />
+            ) : (
+              <>
+                <DocumentHeader document={detail.document} activeVersion={activeVersion} />
+                <section className="grid gap-3 border-y border-border py-4">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="documents-tags">{t('documents.detail.tags')}</Label>
+                    <Input
+                      id="documents-tags"
+                      value={tagDraft}
+                      onChange={(event) => {
+                        setTagDraft(event.target.value);
+                      }}
                     />
-                  ))}
-                </div>
-              </section>
-            </div>
-          )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" disabled={savingTags} onClick={() => void saveTags()}>
+                      {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
+                      {t('documents.actions.saveTags')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        setDeleteOpen(true);
+                      }}
+                    >
+                      <Trash2 aria-hidden="true" />
+                      {t('documents.actions.delete')}
+                    </Button>
+                  </div>
+                </section>
+                <section aria-labelledby="document-versions" className="flex flex-col gap-3">
+                  <h2 id="document-versions" className="text-[18px] font-semibold text-text">
+                    {t('documents.detail.versions')}
+                  </h2>
+                  <div className="grid gap-2">
+                    {detail.versions.map((version) => (
+                      <VersionRow
+                        key={version.id}
+                        version={version}
+                        active={version.id === detail.document.active_version_id}
+                      />
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
+            <StorageOrphansPanel />
+          </div>
         </main>
       </div>
 
@@ -518,12 +521,4 @@ function parseTags(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
-}
-
-function formatBytes(size: number): string {
-  if (size < 1024) return `${String(size)} B`;
-  const kb = size / 1024;
-  if (kb < 1024)
-    return `${new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(kb)} KB`;
-  return `${new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(kb / 1024)} MB`;
 }

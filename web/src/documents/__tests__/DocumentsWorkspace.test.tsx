@@ -130,4 +130,69 @@ describe('DocumentsWorkspace', () => {
       ).toBe(true);
     });
   });
+
+  it('dry-runs and deletes storage orphans through typed confirmation', async () => {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    const report = {
+      bucket: 'assets',
+      prefix: 'identity/operator-1/',
+      dry_run_token: 'token-1',
+      deleted: 0,
+      orphans: [
+        {
+          Ref: { Bucket: 'assets', Key: 'identity/operator-1/orphan.pdf' },
+          Attrs: { SizeBytes: 4096, ETag: 'etag-1', MIMEType: 'application/pdf' },
+        },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push({ url, init });
+        if (url.startsWith('/api/storage/orphans/cleanup')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ ...report, deleted: 1 }), { status: 200 }),
+          );
+        }
+        if (url.startsWith('/api/storage/orphans')) {
+          return Promise.resolve(new Response(JSON.stringify(report), { status: 200 }));
+        }
+        return Promise.resolve(new Response('[]', { status: 200 }));
+      }),
+    );
+
+    render(<DocumentsWorkspace />);
+
+    fireEvent.change(await screen.findByLabelText('Storage bucket'), {
+      target: { value: 'assets' },
+    });
+    fireEvent.change(screen.getByLabelText('Object prefix'), {
+      target: { value: 'identity/operator-1/' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Dry run' }));
+
+    expect(await screen.findByText('identity/operator-1/orphan.pdf')).toBeTruthy();
+    expect(screen.getByText('4 KB')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Type DELETE ORPHAN OBJECTS to confirm'), {
+      target: { value: 'DELETE ORPHAN OBJECTS' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete orphans' }));
+
+    await waitFor(() => {
+      const cleanup = calls.find((call) => call.url === '/api/storage/orphans/cleanup');
+      expect(cleanup?.init?.method).toBe('POST');
+      expect(cleanup?.init?.body).toBe(
+        JSON.stringify({
+          bucket: 'assets',
+          prefix: 'identity/operator-1/',
+          dry_run_token: 'token-1',
+          confirm: 'DELETE ORPHAN OBJECTS',
+        }),
+      );
+    });
+    expect(await screen.findByText('Deleted 1 orphan object')).toBeTruthy();
+  });
 });
