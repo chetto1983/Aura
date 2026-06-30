@@ -702,6 +702,42 @@ func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobPa
 	return i, err
 }
 
+const softDeleteDocument = `-- name: SoftDeleteDocument :one
+UPDATE aura.documents
+SET
+    status = 'deleted',
+    deleted_at = COALESCE(deleted_at, now()),
+    updated_at = now()
+WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at
+`
+
+type SoftDeleteDocumentParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, softDeleteDocument, arg.ID, arg.IdentityID)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const updateDocument = `-- name: UpdateDocument :one
 UPDATE aura.documents
 SET

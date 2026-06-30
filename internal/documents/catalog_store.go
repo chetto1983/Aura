@@ -154,6 +154,26 @@ func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, docu
 	return DocumentDetail{Document: doc, Versions: versions}, nil
 }
 
+// SoftDeleteDocument marks one logical document deleted for an identity.
+func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
+	pgDocumentID, err := pgUUID("document_id", documentID)
+	if err != nil {
+		return Document{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return Document{}, err
+	}
+	row, err := s.q.SoftDeleteDocument(ctx, sqlc.SoftDeleteDocumentParams{
+		ID:         pgDocumentID,
+		IdentityID: pgIdentityID,
+	})
+	if err != nil {
+		return Document{}, err
+	}
+	return catalogDocumentFromSQL(row)
+}
+
 // RecordAssetVersion creates a logical document, raw storage object, first version, and active-version link.
 func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
 	doc, err := s.CreateDocument(ctx, CreateDocumentRequest{

@@ -58,6 +58,17 @@ WHERE id = $1
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: SoftDeleteDocument :one
+UPDATE aura.documents
+SET
+    status = 'deleted',
+    deleted_at = COALESCE(deleted_at, now()),
+    updated_at = now()
+WHERE id = $1
+  AND identity_id = $2
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: DeleteDocumentTags :exec
 DELETE FROM aura.document_tags
 WHERE document_id = $1;

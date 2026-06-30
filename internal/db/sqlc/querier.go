@@ -169,6 +169,7 @@ type Querier interface {
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
+	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error)

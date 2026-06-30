@@ -169,6 +169,47 @@ func TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(t *testing.T) {
 	}
 }
 
+func TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(t *testing.T) {
+	svc := &CatalogService{Store: &fakeCatalogStore{}}
+
+	if _, err := svc.DeleteDocument(context.Background(), "", "doc-1"); err == nil {
+		t.Fatal("expected missing identity error")
+	}
+	if _, err := svc.DeleteDocument(context.Background(), "identity-1", ""); err == nil {
+		t.Fatal("expected missing document error")
+	}
+}
+
+func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
+	store := &fakeCatalogStore{
+		detail: DocumentDetail{Document: Document{
+			ID:         "10000000-0000-0000-0000-000000000001",
+			IdentityID: "00000000-0000-0000-0000-000000000001",
+			Metadata:   map[string]any{"search_document_id": "doc_search_1"},
+			Status:     DocumentStatusReady,
+		}},
+	}
+	graph := &recordingGraphDeactivator{}
+	svc := &DeleteService{
+		Catalog: &CatalogService{Store: store},
+		Graph:   graph,
+	}
+
+	doc, err := svc.SoftDeleteDocument(context.Background(), "00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Status != DocumentStatusDeleted {
+		t.Fatalf("deleted doc = %#v", doc)
+	}
+	if store.deleteIdentityID != "00000000-0000-0000-0000-000000000001" || store.deleteDocumentID != "10000000-0000-0000-0000-000000000001" {
+		t.Fatalf("delete call identity=%q document=%q", store.deleteIdentityID, store.deleteDocumentID)
+	}
+	if graph.documentID != "doc_search_1" {
+		t.Fatalf("graph deactivated %q", graph.documentID)
+	}
+}
+
 func TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(t *testing.T) {
 	activeVersionID := mustCatalogTestUUID(t, "20000000-0000-0000-0000-000000000001")
 	row := sqlc.AuraDocuments{
@@ -197,11 +238,14 @@ func TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(t *testing.T) {
 }
 
 type fakeCatalogStore struct {
-	createCalled bool
-	createReq    CreateDocumentRequest
-	updateReq    UpdateDocumentRequest
-	listReq      ListDocumentsRequest
-	recordReq    RecordAssetVersionRequest
+	createCalled     bool
+	createReq        CreateDocumentRequest
+	updateReq        UpdateDocumentRequest
+	listReq          ListDocumentsRequest
+	recordReq        RecordAssetVersionRequest
+	detail           DocumentDetail
+	deleteIdentityID string
+	deleteDocumentID string
 }
 
 func (f *fakeCatalogStore) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -238,7 +282,16 @@ func (f *fakeCatalogStore) ListDocuments(_ context.Context, req ListDocumentsReq
 }
 
 func (f *fakeCatalogStore) GetDocument(_ context.Context, identityID, documentID string) (DocumentDetail, error) {
+	if f.detail.Document.ID != "" {
+		return f.detail, nil
+	}
 	return DocumentDetail{Document: Document{ID: documentID, IdentityID: identityID}}, nil
+}
+
+func (f *fakeCatalogStore) SoftDeleteDocument(_ context.Context, identityID, documentID string) (Document, error) {
+	f.deleteIdentityID = identityID
+	f.deleteDocumentID = documentID
+	return Document{ID: documentID, IdentityID: identityID, Status: DocumentStatusDeleted}, nil
 }
 
 func (f *fakeCatalogStore) RecordAssetVersion(_ context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
@@ -270,4 +323,13 @@ func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {
 		t.Fatal(err)
 	}
 	return id
+}
+
+type recordingGraphDeactivator struct {
+	documentID string
+}
+
+func (g *recordingGraphDeactivator) DeactivateDocument(_ context.Context, documentID string) error {
+	g.documentID = documentID
+	return nil
 }
