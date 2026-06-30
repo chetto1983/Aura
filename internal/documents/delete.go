@@ -10,10 +10,16 @@ type DocumentGraphDeactivator interface {
 	DeactivateDocument(ctx context.Context, documentID string) error
 }
 
+// DocumentAssetDeleter removes source assets that advertise a deleted document.
+type DocumentAssetDeleter interface {
+	DeleteDocumentAsset(ctx context.Context, identityID, assetID string) error
+}
+
 // DeleteService coordinates logical document delete with graph lifecycle cleanup.
 type DeleteService struct {
 	Catalog *CatalogService
 	Graph   DocumentGraphDeactivator
+	Assets  DocumentAssetDeleter
 }
 
 // SoftDeleteDocument soft-deletes catalog metadata and deactivates indexed graph nodes.
@@ -35,6 +41,16 @@ func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, docu
 			return deleted, err
 		}
 	}
+	if s.Assets != nil {
+		for _, version := range detail.Versions {
+			if version.AssetID == "" {
+				continue
+			}
+			if err := s.Assets.DeleteDocumentAsset(ctx, identityID, version.AssetID); err != nil {
+				return deleted, err
+			}
+		}
+	}
 	return deleted, nil
 }
 
@@ -42,6 +58,7 @@ func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, docu
 type DeletingCatalog struct {
 	Catalog *CatalogService
 	Graph   DocumentGraphDeactivator
+	Assets  DocumentAssetDeleter
 }
 
 // CreateDocument delegates to the wrapped catalog.
@@ -86,7 +103,7 @@ func (c *DeletingCatalog) DeleteDocument(ctx context.Context, identityID, docume
 	if err != nil {
 		return Document{}, err
 	}
-	return (&DeleteService{Catalog: catalog, Graph: c.Graph}).SoftDeleteDocument(ctx, identityID, documentID)
+	return (&DeleteService{Catalog: catalog, Graph: c.Graph, Assets: c.Assets}).SoftDeleteDocument(ctx, identityID, documentID)
 }
 
 func (c *DeletingCatalog) catalog() (*CatalogService, error) {

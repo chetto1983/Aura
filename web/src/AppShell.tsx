@@ -15,7 +15,9 @@ import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import { fetchOnboardingStatus } from './onboarding/onboardingApi';
 import type { TurnUsage } from './chat/sseAdapter';
+import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
+import type { DocumentItem } from './documents/documentApi';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
 import { Button } from '@/components/ui/button';
 
@@ -116,6 +118,9 @@ export function AppShell() {
   const surfaces = useSurfaceRestore();
   const closeNav = surfaces.closeNav;
   const [resumeNonce, setResumeNonce] = useState(0);
+  const [documentDraftPrompt, setDocumentDraftPrompt] = useState<ComposerDraftPrompt | undefined>(
+    undefined,
+  );
   const [logoutPending, setLogoutPending] = useState(false);
   // The onboarding+provisioning wizard is a full-screen overlay (D-04), opened by an explicit
   // trigger and covering the shell while active — NOT a surface/mode.
@@ -175,6 +180,29 @@ export function AppShell() {
       return conv.ID;
     },
     [activeThreadId, createConversation, navigate],
+  );
+
+  const askDocument = useCallback(
+    (document: DocumentItem) => {
+      const searchDocumentID =
+        typeof document.metadata.search_document_id === 'string'
+          ? document.metadata.search_document_id
+          : '';
+      const text =
+        searchDocumentID === ''
+          ? t('documents.ask.prompt', { title: document.title })
+          : t('documents.ask.promptWithId', {
+              title: document.title,
+              documentId: searchDocumentID,
+            });
+      setDocumentDraftPrompt((current) => ({
+        text,
+        nonce: (current?.nonce ?? 0) + 1,
+      }));
+      setSurface('chat');
+      closeNav();
+    },
+    [closeNav, setSurface, t],
   );
 
   const logout = useCallback(async () => {
@@ -314,7 +342,7 @@ export function AppShell() {
               ) : surface === 'governance' ? (
                 <GovernanceWorkspace />
               ) : surface === 'documents' ? (
-                <DocumentsWorkspace />
+                <DocumentsWorkspace onAskDocument={askDocument} />
               ) : surface === 'settings' ? (
                 <SettingsWorkspace />
               ) : (
@@ -323,6 +351,7 @@ export function AppShell() {
                   onEnsureThread={ensureThread}
                   onUsage={setUsage}
                   resumeNonce={resumeNonce}
+                  draftPrompt={documentDraftPrompt}
                 />
               )}
             </Suspense>

@@ -1,6 +1,13 @@
-import { useAuiState, ComposerPrimitive } from '@assistant-ui/react';
+import { useAui, useAuiState, ComposerPrimitive } from '@assistant-ui/react';
 import { ArrowUp, Mic, Paperclip, Square } from 'lucide-react';
-import { useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import type { AttachmentUploads } from './attachments/useAttachmentUploads';
@@ -16,17 +23,33 @@ import { Button } from '@/components/ui/button';
 
 interface ComposerProps {
   readonly uploads?: AttachmentUploads;
+  readonly draftPrompt?: ComposerDraftPrompt | undefined;
 }
 
-export function Composer({ uploads }: ComposerProps) {
+export interface ComposerDraftPrompt {
+  readonly text: string;
+  readonly nonce: number;
+}
+
+export function Composer({ uploads, draftPrompt }: ComposerProps) {
   const { t } = useTranslation();
+  const aui = useAui();
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const appliedDraftNonce = useRef<number | undefined>(undefined);
   const [isRecording, setIsRecording] = useState(false);
   const sendDisabled = uploads?.hasBlockingUploads === true;
+
+  useEffect(() => {
+    if (draftPrompt === undefined || draftPrompt.nonce === appliedDraftNonce.current) return;
+    appliedDraftNonce.current = draftPrompt.nonce;
+    aui.composer().setText(draftPrompt.text);
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }, [aui, draftPrompt]);
 
   const addFiles = (files: FileList | File[]) => {
     if (files.length > 0) uploads?.addFiles(files);
@@ -150,6 +173,7 @@ export function Composer({ uploads }: ComposerProps) {
           </>
         ) : null}
         <ComposerPrimitive.Input
+          ref={composerInputRef}
           rows={1}
           placeholder={t('chat.composer.placeholder')}
           aria-label={t('chat.composer.placeholder')}

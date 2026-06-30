@@ -2,11 +2,14 @@ package documents
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -71,6 +74,29 @@ func TestCatalogServiceCreateDocumentNormalizesTags(t *testing.T) {
 	}
 	if !reflect.DeepEqual(doc.Tags, wantTags) {
 		t.Fatalf("returned tags = %#v, want %#v", doc.Tags, wantTags)
+	}
+}
+
+func TestPostgresCatalogStoreUsesEmptyTagArrayForNoTags(t *testing.T) {
+	if got := catalogTagsArray(nil); got == nil || len(got) != 0 {
+		t.Fatalf("catalogTagsArray(nil) = %#v, want empty slice", got)
+	}
+}
+
+func TestPostgresCatalogStoreSoftDeletesVersionAssets(t *testing.T) {
+	db := &recordingCatalogDB{}
+	store := &PostgresCatalogStore{db: db}
+	identityID := mustCatalogTestUUID(t, "00000000-0000-0000-0000-000000000001")
+	documentID := mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001")
+
+	if err := store.softDeleteDocumentAssets(context.Background(), identityID, documentID); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(db.execSQL, "UPDATE aura.assets") || !strings.Contains(db.execSQL, "aura.document_versions") {
+		t.Fatalf("asset cleanup SQL = %q", db.execSQL)
+	}
+	if !reflect.DeepEqual(db.args, []any{identityID, documentID}) {
+		t.Fatalf("asset cleanup args = %#v", db.args)
 	}
 }
 
@@ -187,12 +213,17 @@ func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
 			IdentityID: "00000000-0000-0000-0000-000000000001",
 			Metadata:   map[string]any{"search_document_id": "doc_search_1"},
 			Status:     DocumentStatusReady,
-		}},
+		}, Versions: []DocumentVersion{{
+			ID:      "20000000-0000-0000-0000-000000000001",
+			AssetID: "30000000-0000-0000-0000-000000000001",
+		}}},
 	}
 	graph := &recordingGraphDeactivator{}
+	assets := &recordingAssetDeleter{}
 	svc := &DeleteService{
 		Catalog: &CatalogService{Store: store},
 		Graph:   graph,
+		Assets:  assets,
 	}
 
 	doc, err := svc.SoftDeleteDocument(context.Background(), "00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
@@ -207,6 +238,9 @@ func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
 	}
 	if graph.documentID != "doc_search_1" {
 		t.Fatalf("graph deactivated %q", graph.documentID)
+	}
+	if assets.identityID != "00000000-0000-0000-0000-000000000001" || assets.assetID != "30000000-0000-0000-0000-000000000001" {
+		t.Fatalf("asset delete identity=%q asset=%q", assets.identityID, assets.assetID)
 	}
 }
 
@@ -234,6 +268,24 @@ func TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(t *testing.T) {
 	}
 	if doc.Metadata["line"] != "automation" {
 		t.Fatalf("metadata = %#v", doc.Metadata)
+	}
+}
+
+func TestCatalogDocumentFromSQLReturnsEmptyTags(t *testing.T) {
+	row := sqlc.AuraDocuments{
+		ID:         mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001"),
+		IdentityID: mustCatalogTestUUID(t, "00000000-0000-0000-0000-000000000001"),
+		Scope:      "library",
+		Title:      "Servo Manual",
+		Metadata:   []byte(`{}`),
+		Status:     "ready",
+	}
+	doc, err := catalogDocumentFromSQL(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Tags == nil || len(doc.Tags) != 0 {
+		t.Fatalf("document tags = %#v, want empty slice", doc.Tags)
 	}
 }
 
@@ -331,5 +383,35 @@ type recordingGraphDeactivator struct {
 
 func (g *recordingGraphDeactivator) DeactivateDocument(_ context.Context, documentID string) error {
 	g.documentID = documentID
+	return nil
+}
+
+type recordingAssetDeleter struct {
+	identityID string
+	assetID    string
+}
+
+func (a *recordingAssetDeleter) DeleteDocumentAsset(_ context.Context, identityID, assetID string) error {
+	a.identityID = identityID
+	a.assetID = assetID
+	return nil
+}
+
+type recordingCatalogDB struct {
+	execSQL string
+	args    []any
+}
+
+func (db *recordingCatalogDB) Exec(_ context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	db.execSQL = sql
+	db.args = append([]any(nil), args...)
+	return pgconn.NewCommandTag("UPDATE 1"), nil
+}
+
+func (db *recordingCatalogDB) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (db *recordingCatalogDB) QueryRow(context.Context, string, ...interface{}) pgx.Row {
 	return nil
 }

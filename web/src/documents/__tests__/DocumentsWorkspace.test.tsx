@@ -238,6 +238,35 @@ describe('DocumentsWorkspace', () => {
     expect(await screen.findByText('Deleted 1 orphan object')).toBeTruthy();
   });
 
+  it('hands a document to the ask callback from the action menu', async () => {
+    const askDocument = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/documents/doc-1/events') {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        if (url === '/api/documents/doc-1') {
+          return Promise.resolve(new Response(JSON.stringify(DETAIL), { status: 200 }));
+        }
+        if (url.startsWith('/api/documents')) {
+          return Promise.resolve(new Response(JSON.stringify([DOC]), { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+      }),
+    );
+
+    render(<DocumentsWorkspace onAskDocument={askDocument} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Handbook.pdf' }));
+    const menu = await screen.findByRole('menu', { name: 'Actions for Handbook.pdf' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Ask this document' }));
+
+    expect(askDocument).toHaveBeenCalledWith(DOC);
+  });
+
   it('retries a failed document through its active version asset', async () => {
     const failedDoc = { ...DOC, status: 'failed' };
     const failedDetail = {

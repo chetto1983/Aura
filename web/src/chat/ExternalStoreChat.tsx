@@ -10,7 +10,7 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
-import { Composer } from './Composer';
+import { Composer, type ComposerDraftPrompt } from './Composer';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import type { Asset } from './attachments/types';
@@ -139,6 +139,7 @@ export interface ExternalStoreChatProps {
    * inline approval resolves. The initial value is ignored (only changes re-drive).
    */
   readonly resumeNonce?: number;
+  readonly draftPrompt?: ComposerDraftPrompt | undefined;
 }
 
 export function ExternalStoreChat({
@@ -146,6 +147,7 @@ export function ExternalStoreChat({
   onEnsureThread,
   onUsage,
   resumeNonce = 0,
+  draftPrompt,
 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -545,7 +547,7 @@ export function ExternalStoreChat({
             </p>
           ) : null}
 
-          <Composer uploads={uploads} />
+          <Composer uploads={uploads} draftPrompt={draftPrompt} />
         </ThreadPrimitive.Root>
       </SourceExplorerProvider>
     </AssistantRuntimeProvider>

@@ -96,6 +96,33 @@ func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) 
 	return out, nil
 }
 
+// ListForLibrary returns recent non-deleted library assets for one identity.
+func (s *Store) ListForLibrary(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	rows, err := s.q.ListAssetsForLibrary(ctx, sqlc.ListAssetsForLibraryParams{
+		IdentityID: pgIdentityID,
+		Limit:      int32(limit), //nolint:gosec // caller caps this at a small catalog limit.
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Asset, 0, len(rows))
+	for _, row := range rows {
+		asset, err := assetFromSQL(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, asset)
+	}
+	return out, nil
+}
+
 // MarkUploaded records object storage upload completion.
 func (s *Store) MarkUploaded(ctx context.Context, id, identityID string, size int64, etag string) (Asset, error) {
 	pgID, err := pgUUID("asset id", id)

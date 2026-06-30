@@ -108,7 +108,8 @@ func WithContextBlocks(userText string, blocks ...string) string {
 // docs (minus these) read from ListForThread. Both blocks ride the user-turn tail —
 // cache-safe, leaving messages[0]/[1] byte-stable. It is best-effort: an empty
 // identity/thread or a ListForThread error yields no catalog (never an error), and a
-// plain turn with nothing to add returns userText unchanged.
+// plain turn with nothing to add returns userText unchanged. Library-scoped assets are
+// also advertised for the identity so the product library can be searched from chat.
 func (s *Service) BuildTurnContext(ctx context.Context, identityID, threadID string, attachments []Asset, userText string) string {
 	attachmentBlock := BuildAttachmentBlock(attachments)
 	excluded := make(map[string]bool, len(attachments))
@@ -116,12 +117,34 @@ func (s *Service) BuildTurnContext(ctx context.Context, identityID, threadID str
 		excluded[a.ID] = true
 	}
 	var catalogBlock string
-	if s != nil && s.Store != nil && identityID != "" && threadID != "" {
-		if items, err := s.ListForThread(ctx, identityID, threadID); err == nil {
-			catalogBlock = BuildKnowledgeCatalog(items, excluded)
+	if s != nil && s.Store != nil && identityID != "" {
+		items := make([]Asset, 0, maxCatalogDocs)
+		seen := make(map[string]bool)
+		if threadID != "" {
+			if threadItems, err := s.ListForThread(ctx, identityID, threadID); err == nil {
+				items = appendUniqueAssets(items, threadItems, seen)
+			}
 		}
+		if libraryItems, err := s.ListForLibrary(ctx, identityID, maxCatalogDocs); err == nil {
+			items = appendUniqueAssets(items, libraryItems, seen)
+		}
+		catalogBlock = BuildKnowledgeCatalog(items, excluded)
 	}
 	return WithContextBlocks(userText, catalogBlock, attachmentBlock)
+}
+
+func appendUniqueAssets(dst []Asset, src []Asset, seen map[string]bool) []Asset {
+	for _, asset := range src {
+		if seen[asset.ID] {
+			continue
+		}
+		seen[asset.ID] = true
+		dst = append(dst, asset)
+		if len(dst) >= maxCatalogDocs {
+			return dst
+		}
+	}
+	return dst
 }
 
 func sanitizeLine(value string) string {

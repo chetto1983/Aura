@@ -112,6 +112,23 @@ describe('documentApi', () => {
     });
   });
 
+  it('normalizes null document tags from the API', async () => {
+    const body = [
+      {
+        id: 'doc-1',
+        identity_id: 'operator-1',
+        scope: 'library',
+        title: 'Runbook',
+        tags: null,
+        metadata: {},
+        status: 'ready',
+      },
+    ];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))));
+
+    await expect(fetchDocuments()).resolves.toMatchObject([{ id: 'doc-1', tags: [] }]);
+  });
+
   it('retries the asset behind a failed document version', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response('{"ok":true}', { status: 200 })));
     vi.stubGlobal('fetch', fetchMock);

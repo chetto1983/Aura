@@ -62,6 +62,12 @@ export const documentsEn = {
       file: 'Document file',
       progress: 'Uploading {{progress}}%',
     },
+    ask: {
+      prompt:
+        'Answer from "{{title}}". Summarize the key points and cite the document evidence you use.',
+      promptWithId:
+        'Answer from "{{title}}". Summarize the key points and cite the document evidence you use.',
+    },
     events: {
       loading: 'Loading events...',
       empty: 'No events',
@@ -156,6 +162,12 @@ export const documentsIt = {
       body: 'Aggiungi un documento alla libreria ricercabile.',
       file: 'File documento',
       progress: 'Caricamento {{progress}}%',
+    },
+    ask: {
+      prompt:
+        'Rispondi da "{{title}}". Riassumi i punti chiave e cita le evidenze del documento che usi.',
+      promptWithId:
+        'Rispondi da "{{title}}". Riassumi i punti chiave e cita le evidenze del documento che usi.',
     },
     events: {
       loading: 'Caricamento eventi...',

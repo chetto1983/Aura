@@ -20,7 +20,9 @@ class FakeXHR {
     this.url = url;
   }
 
-  setRequestHeader() {}
+  setRequestHeader() {
+    return undefined;
+  }
 
   send(body: BodyInit | null) {
     this.body = body;
@@ -105,5 +107,52 @@ describe('uploadLibraryDocument', () => {
       modality_hint: 'document',
     });
     expect(FakeXHR.instances[0]?.method).toBe('PUT');
+  });
+
+  it('rejects when document processing fails', async () => {
+    vi.stubGlobal('XMLHttpRequest', FakeXHR);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              asset: {
+                id: 'asset-1',
+                status: 'presigned',
+                modality: 'document',
+                file_name: 'Manual.pdf',
+                mime_type: 'application/pdf',
+                declared_size_bytes: 10,
+                size_bytes: 0,
+              },
+              upload: {
+                upload_url: 'https://assets.test/upload',
+                method: 'PUT',
+                required_headers: {},
+                expires_at: '2026-06-30T00:00:00Z',
+              },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: 'asset-1',
+              status: 'failed',
+              modality: 'document',
+              file_name: 'Manual.pdf',
+              mime_type: 'application/pdf',
+              declared_size_bytes: 10,
+              size_bytes: 10,
+              error_message: 'processor failed',
+            }),
+          ),
+        ),
+    );
+
+    const file = new File(['0123456789'], 'Manual.pdf', { type: 'application/pdf' });
+    await expect(uploadLibraryDocument(file)).rejects.toThrow('processor failed');
   });
 });

@@ -466,6 +466,21 @@ func (s *fakeAssetStore) ListForThread(_ context.Context, identityID, threadID s
 	return out, nil
 }
 
+func (s *fakeAssetStore) ListForLibrary(_ context.Context, identityID string, limit int) ([]Asset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Asset
+	for _, asset := range s.assets {
+		if asset.IdentityID == identityID && asset.Scope == ScopeLibrary {
+			out = append(out, asset)
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 func (s *fakeAssetStore) MarkUploaded(_ context.Context, id, identityID string, size int64, etag string) (Asset, error) {
 	return s.update(id, identityID, func(asset *Asset) {
 		asset.Status = StatusUploaded

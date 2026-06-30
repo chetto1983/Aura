@@ -1,8 +1,8 @@
 import { MessageSquareText, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
 import type { DocumentItem } from './documentApi';
+import { Button } from '@/components/ui/button';
 
 interface DocumentActionMenuProps {
   readonly document: DocumentItem | undefined;

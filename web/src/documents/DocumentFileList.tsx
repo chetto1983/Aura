@@ -1,10 +1,6 @@
 import { FileText, Image, MoreHorizontal, PackageOpen } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { cn } from '@/lib/utils';
 import type { DocumentItem, DocumentVersion } from './documentApi';
 import { formatBytes } from './documentFormat';
 import {
@@ -14,6 +10,10 @@ import {
   statusToneFor,
   type DocumentTab,
 } from './documentViewModel';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 
 interface DocumentFileListProps {
   readonly documents: readonly DocumentItem[];
@@ -122,14 +122,14 @@ export function DocumentFileList({
                   <Checkbox
                     aria-label={`Select ${document.title}`}
                     checked={selected}
-                    onCheckedChange={() => onToggleSelected(document.id)}
+                    onCheckedChange={() => { onToggleSelected(document.id); }}
                   />
                 </td>
                 <td className="min-w-0 px-2 py-2">
                   <button
                     type="button"
                     className="flex min-w-0 items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => onOpenDetails(document.id)}
+                    onClick={() => { onOpenDetails(document.id); }}
                   >
                     <span className="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-surface text-accent-text">
                       {kind === 'image' ? (
@@ -165,7 +165,7 @@ export function DocumentFileList({
                     size="icon"
                     variant="ghost"
                     aria-label={`Actions for ${document.title}`}
-                    onClick={() => onOpenActions(document.id)}
+                    onClick={() => { onOpenActions(document.id); }}
                   >
                     <MoreHorizontal aria-hidden="true" />
                   </Button>

@@ -13,14 +13,15 @@ import (
 
 // PostgresCatalogStore persists document catalog metadata through sqlc.
 type PostgresCatalogStore struct {
-	q *sqlc.Queries
+	q  *sqlc.Queries
+	db sqlc.DBTX
 }
 
 var _ CatalogStore = (*PostgresCatalogStore)(nil)
 
 // NewPostgresCatalogStore builds a Postgres-backed document catalog store.
 func NewPostgresCatalogStore(db sqlc.DBTX) *PostgresCatalogStore {
-	return &PostgresCatalogStore{q: sqlc.New(db)}
+	return &PostgresCatalogStore{q: sqlc.New(db), db: db}
 }
 
 // CreateDocument inserts one logical document and mirrors its tags to document_tags.
@@ -37,7 +38,7 @@ func (s *PostgresCatalogStore) CreateDocument(ctx context.Context, req CreateDoc
 		IdentityID: identityID,
 		Scope:      string(req.Scope),
 		Title:      req.Title,
-		Tags:       req.Tags,
+		Tags:       catalogTagsArray(req.Tags),
 		Metadata:   metadata,
 		Status:     string(req.Status),
 	})
@@ -77,7 +78,7 @@ func (s *PostgresCatalogStore) UpdateDocument(ctx context.Context, req UpdateDoc
 		IdentityID:      identityID,
 		Scope:           string(req.Scope),
 		Title:           req.Title,
-		Tags:            req.Tags,
+		Tags:            catalogTagsArray(req.Tags),
 		Metadata:        metadata,
 		ActiveVersionID: activeVersionID,
 		Status:          string(req.Status),
@@ -172,7 +173,14 @@ func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityI
 	if err != nil {
 		return Document{}, err
 	}
-	return catalogDocumentFromSQL(row)
+	doc, err := catalogDocumentFromSQL(row)
+	if err != nil {
+		return Document{}, err
+	}
+	if err := s.softDeleteDocumentAssets(ctx, pgIdentityID, pgDocumentID); err != nil {
+		return doc, err
+	}
+	return doc, nil
 }
 
 // ListStorageObjects returns ledgered object refs for orphan detection.
@@ -295,6 +303,26 @@ func (s *PostgresCatalogStore) replaceDocumentTags(ctx context.Context, document
 	return nil
 }
 
+func (s *PostgresCatalogStore) softDeleteDocumentAssets(ctx context.Context, identityID, documentID pgtype.UUID) error {
+	if s.db == nil {
+		return nil
+	}
+	_, err := s.db.Exec(ctx, `
+UPDATE aura.assets
+SET status = 'deleted',
+    deleted_at = COALESCE(deleted_at, now()),
+    updated_at = now()
+WHERE identity_id = $1
+  AND deleted_at IS NULL
+  AND id IN (
+    SELECT asset_id
+    FROM aura.document_versions
+    WHERE document_id = $2
+      AND asset_id IS NOT NULL
+  )`, identityID, documentID)
+	return err
+}
+
 func catalogDocumentFromSQL(row sqlc.AuraDocuments) (Document, error) {
 	metadata, err := catalogMetadataFromJSON(row.Metadata)
 	if err != nil {
@@ -305,7 +333,7 @@ func catalogDocumentFromSQL(row sqlc.AuraDocuments) (Document, error) {
 		IdentityID:      uuidString(row.IdentityID),
 		Scope:           DocumentScope(row.Scope),
 		Title:           row.Title,
-		Tags:            append([]string(nil), row.Tags...),
+		Tags:            catalogTagsArray(row.Tags),
 		Metadata:        metadata,
 		ActiveVersionID: uuidString(row.ActiveVersionID),
 		Status:          DocumentStatus(row.Status),
@@ -343,6 +371,13 @@ func catalogMetadataJSON(metadata map[string]any) ([]byte, error) {
 		return nil, fmt.Errorf("document metadata: %w", err)
 	}
 	return out, nil
+}
+
+func catalogTagsArray(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
 }
 
 func catalogMetadataFromJSON(data []byte) (map[string]any, error) {

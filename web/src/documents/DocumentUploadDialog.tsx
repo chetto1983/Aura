@@ -2,6 +2,7 @@ import { Upload } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
+import { uploadLibraryDocument } from './documentUpload';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,7 +14,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { uploadLibraryDocument } from './documentUpload';
 
 interface DocumentUploadDialogProps {
   readonly open: boolean;
@@ -61,7 +61,7 @@ export function DocumentUploadDialog({
           <Input
             id="document-upload-file"
             type="file"
-            onChange={(event) => setFile(event.target.files?.[0])}
+            onChange={(event) => { setFile(event.target.files?.[0]); }}
           />
           {uploading ? (
             <div role="status" className="text-[13px] text-text-muted">
@@ -75,7 +75,7 @@ export function DocumentUploadDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => { onOpenChange(false); }}>
             {t('documents.actions.cancel')}
           </Button>
           <Button type="button" disabled={file === undefined || uploading} onClick={() => void upload()}>

@@ -22,6 +22,7 @@ type StoreBackend interface {
 	Create(context.Context, CreateRequest) (Asset, error)
 	GetForIdentity(context.Context, string, string) (Asset, error)
 	ListForThread(context.Context, string, string) ([]Asset, error)
+	ListForLibrary(context.Context, string, int) ([]Asset, error)
 	MarkUploaded(context.Context, string, string, int64, string) (Asset, error)
 	MarkAccepted(context.Context, string, string, int64, string, string) (Asset, error)
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
@@ -162,6 +163,16 @@ func (s *Service) ListForThread(ctx context.Context, identityID, threadID string
 		return nil, fmt.Errorf("asset service is not configured")
 	}
 	return s.Store.ListForThread(ctx, identityID, threadID)
+}
+
+func (s *Service) ListForLibrary(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("asset service is not configured")
+	}
+	if limit <= 0 || limit > maxCatalogDocs {
+		limit = maxCatalogDocs
+	}
+	return s.Store.ListForLibrary(ctx, identityID, limit)
 }
 
 func (s *Service) Promote(ctx context.Context, identityID, assetID string) (Asset, error) {

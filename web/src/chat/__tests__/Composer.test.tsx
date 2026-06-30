@@ -5,7 +5,10 @@ import '../../i18n/i18n';
 import { Composer } from '../Composer';
 import type { AttachmentUploads } from '../attachments/useAttachmentUploads';
 
+const setText = vi.fn();
+
 vi.mock('@assistant-ui/react', () => ({
+  useAui: () => ({ composer: () => ({ setText }) }),
   useAuiState: <T,>(selector: (state: { thread: { isRunning: boolean } }) => T): T =>
     selector({ thread: { isRunning: false } }),
   ComposerPrimitive: {
@@ -29,6 +32,12 @@ function uploads(overrides: Partial<AttachmentUploads> = {}): AttachmentUploads 
 }
 
 describe('Composer attachments', () => {
+  it('prefills a document draft prompt', () => {
+    render(<Composer draftPrompt={{ text: 'Answer from Manual.pdf', nonce: 1 }} />);
+
+    expect(setText).toHaveBeenCalledWith('Answer from Manual.pdf');
+  });
+
   it('file input passes selected files to addFiles', () => {
     const addFiles = vi.fn();
     const { container } = render(<Composer uploads={uploads({ addFiles })} />);

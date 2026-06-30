@@ -39,7 +39,11 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 const defaultFilters = { query: '', tag: '', scope: 'all' as ScopeFilter };
 const listLimit = 50;
 
-export default function DocumentsWorkspace() {
+interface DocumentsWorkspaceProps {
+  readonly onAskDocument?: (document: DocumentItem) => void;
+}
+
+export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspaceProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(defaultFilters.query);
   const [tag, setTag] = useState(defaultFilters.tag);
@@ -207,7 +211,7 @@ export default function DocumentsWorkspace() {
         onQueryChange={setQuery}
         onSearch={searchDocuments}
         onRefresh={searchDocuments}
-        onUpload={() => setUploadOpen(true)}
+        onUpload={() => { setUploadOpen(true); }}
       />
       <DocumentFilterBar
         tab={tab}
@@ -243,11 +247,15 @@ export default function DocumentsWorkspace() {
         <DocumentActionMenu
           document={actionDocument}
           open={actionMenuId !== ''}
-          onClose={() => setActionMenuId('')}
+          onClose={() => { setActionMenuId(''); }}
           onAsk={() => {
             if (actionDocument !== undefined) {
-              setDrawerOpen(true);
-              void openDocument(actionDocument.id);
+              if (onAskDocument !== undefined) {
+                onAskDocument(actionDocument);
+              } else {
+                setDrawerOpen(true);
+                void openDocument(actionDocument.id);
+              }
             }
             setActionMenuId('');
           }}
@@ -285,7 +293,7 @@ export default function DocumentsWorkspace() {
             setDeleteTarget(selectedDocument);
             setDeleteOpen(true);
           }}
-          onClose={() => setDrawerOpen(false)}
+          onClose={() => { setDrawerOpen(false); }}
         />
         <section className="border-t border-border px-4 py-3 sm:px-6">
           <div className="mx-auto w-full max-w-6xl">
@@ -293,7 +301,7 @@ export default function DocumentsWorkspace() {
               type="button"
               variant="ghost"
               aria-expanded={adminOpen}
-              onClick={() => setAdminOpen((open) => !open)}
+              onClick={() => { setAdminOpen((open) => !open); }}
             >
               <Settings2 aria-hidden="true" />
               {t('documents.admin.maintenance')}
@@ -362,11 +370,11 @@ function DeleteDialog({
           <Input
             id="documents-delete-confirm"
             value={confirm}
-            onChange={(event) => onConfirmChange(event.target.value)}
+            onChange={(event) => { onConfirmChange(event.target.value); }}
           />
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => { onOpenChange(false); }}>
             {t('documents.actions.cancel')}
           </Button>
           <Button

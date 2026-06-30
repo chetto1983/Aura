@@ -1,14 +1,14 @@
 import { Save, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import type { DocumentDetail, DocumentItem, DocumentVersion } from './documentApi';
 import { DocumentEventsPanel } from './DocumentEventsPanel';
 import { formatBytes } from './documentFormat';
 import { formatDocumentDate, statusToneFor } from './documentViewModel';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface DocumentDetailsDrawerProps {
   readonly open: boolean;
@@ -76,7 +76,7 @@ export function DocumentDetailsDrawer({
             <Input
               id="documents-tags"
               value={tagDraft}
-              onChange={(event) => onTagDraftChange(event.target.value)}
+              onChange={(event) => { onTagDraftChange(event.target.value); }}
             />
           </div>
           <div className="flex flex-wrap gap-2">

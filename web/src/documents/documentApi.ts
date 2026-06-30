@@ -23,6 +23,14 @@ export interface DocumentItem {
   readonly deleted_at?: string;
 }
 
+type RawDocumentItem = Omit<DocumentItem, 'tags'> & {
+  readonly tags?: readonly string[] | null;
+};
+
+type RawDocumentDetail = Omit<DocumentDetail, 'document'> & {
+  readonly document: RawDocumentItem;
+};
+
 export interface DocumentVersion {
   readonly id: string;
   readonly document_id: string;
@@ -113,6 +121,14 @@ async function readJSON<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+function normalizeDocumentItem(item: RawDocumentItem): DocumentItem {
+  return { ...item, tags: Array.isArray(item.tags) ? item.tags : [] };
+}
+
+function normalizeDocumentDetail(detail: RawDocumentDetail): DocumentDetail {
+  return { ...detail, document: normalizeDocumentItem(detail.document) };
+}
+
 function appendParam(params: URLSearchParams, key: string, value: string | number | undefined) {
   if (value === undefined) return;
   if (typeof value === 'string' && value.trim() === '') return;
@@ -135,7 +151,8 @@ export async function fetchDocuments(params: ListDocumentsParams = {}): Promise<
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
   });
-  return readJSON<DocumentItem[]>(res);
+  const items = await readJSON<RawDocumentItem[]>(res);
+  return items.map(normalizeDocumentItem);
 }
 
 export async function fetchDocumentDetail(id: string): Promise<DocumentDetail> {
@@ -143,7 +160,7 @@ export async function fetchDocumentDetail(id: string): Promise<DocumentDetail> {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
   });
-  return readJSON<DocumentDetail>(res);
+  return normalizeDocumentDetail(await readJSON<RawDocumentDetail>(res));
 }
 
 export async function fetchDocumentEvents(id: string): Promise<IngestionEvent[]> {
@@ -164,7 +181,7 @@ export async function updateDocument(
     credentials: 'same-origin',
     body: JSON.stringify(input),
   });
-  return readJSON<DocumentItem>(res);
+  return normalizeDocumentItem(await readJSON<RawDocumentItem>(res));
 }
 
 export async function deleteDocument(id: string): Promise<DocumentItem> {
@@ -173,7 +190,7 @@ export async function deleteDocument(id: string): Promise<DocumentItem> {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
   });
-  return readJSON<DocumentItem>(res);
+  return normalizeDocumentItem(await readJSON<RawDocumentItem>(res));
 }
 
 export async function retryDocumentAsset(assetId: string): Promise<unknown> {

@@ -28,7 +28,9 @@ export async function uploadLibraryDocument(
 
 async function pollUntilDocumentReady(asset: Asset): Promise<Asset> {
   if (asset.status === 'searchable' || asset.status === 'complete') return asset;
-  if (asset.status === 'failed' || asset.status === 'refused') return asset;
+  if (asset.status === 'failed' || asset.status === 'refused') {
+    throw new Error(asset.error_message ?? `document processing ${asset.status}`);
+  }
   await new Promise((resolve) => window.setTimeout(resolve, 1000));
   return pollUntilDocumentReady(await getAsset(asset.id));
 }
@@ -51,7 +53,7 @@ function uploadToPresignedURL(
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`upload failed: HTTP ${String(xhr.status)}`));
     };
-    xhr.onerror = () => reject(new Error('upload failed'));
+    xhr.onerror = () => { reject(new Error('upload failed')); };
     xhr.send(file);
   });
 }

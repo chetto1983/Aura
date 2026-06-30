@@ -15,8 +15,10 @@ func TestBuildTurnContextComposesAttachmentAndCatalogChannelAgnostic(t *testing.
 	store := newFakeAssetStore()
 	store.assets["att"] = Asset{ID: "att", IdentityID: "u1", ThreadID: "t1", Status: StatusSearchable, DocumentID: "doc-att", FileName: "attached.pdf"}
 	store.assets["other"] = Asset{ID: "other", IdentityID: "u1", ThreadID: "t1", Status: StatusSearchable, DocumentID: "doc-other", FileName: "other.pdf", Summary: "servo specs"}
+	store.assets["library"] = Asset{ID: "library", IdentityID: "u1", Scope: ScopeLibrary, Status: StatusSearchable, DocumentID: "doc-library", FileName: "library.pdf", Summary: "robot course"}
 	store.assets["nope"] = Asset{ID: "nope", IdentityID: "u1", ThreadID: "t1", Status: StatusComplete, DocumentID: ""}
 	store.assets["xthread"] = Asset{ID: "xthread", IdentityID: "u1", ThreadID: "t2", Status: StatusSearchable, DocumentID: "doc-x", FileName: "x.pdf"}
+	store.assets["other-user-library"] = Asset{ID: "other-user-library", IdentityID: "u2", Scope: ScopeLibrary, Status: StatusSearchable, DocumentID: "doc-u2", FileName: "u2.pdf"}
 	svc := &Service{Store: store}
 	ctx := context.Background()
 
@@ -35,13 +37,23 @@ func TestBuildTurnContextComposesAttachmentAndCatalogChannelAgnostic(t *testing.
 	}
 
 	noAttach := svc.BuildTurnContext(ctx, "u1", "t1", nil, "hello")
-	for _, want := range []string{"<knowledge_base", "doc-att", "doc-other", "User message:\nhello"} {
+	for _, want := range []string{"<knowledge_base", "doc-att", "doc-other", "doc-library", "User message:\nhello"} {
 		if !strings.Contains(noAttach, want) {
 			t.Fatalf("BuildTurnContext(no attachment) missing %q:\n%s", want, noAttach)
 		}
 	}
+	if strings.Contains(noAttach, "doc-u2") {
+		t.Fatalf("BuildTurnContext leaked another identity's library doc:\n%s", noAttach)
+	}
 	if strings.Contains(noAttach, "<attachments") {
 		t.Fatalf("no-attachment turn must not render an attachment block:\n%s", noAttach)
+	}
+
+	libraryOnly := svc.BuildTurnContext(ctx, "u1", "", nil, "summarize library")
+	for _, want := range []string{"<knowledge_base", "doc-library", "User message:\nsummarize library"} {
+		if !strings.Contains(libraryOnly, want) {
+			t.Fatalf("BuildTurnContext(library only) missing %q:\n%s", want, libraryOnly)
+		}
 	}
 
 	if got := svc.BuildTurnContext(ctx, "", "", nil, "plain"); got != "plain" {
