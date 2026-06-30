@@ -262,26 +262,32 @@ func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.
 }
 
 type runtimeEmbeddingQueue struct {
-	cfg  *config.Config
-	pool *pgxpool.Pool
+	cfg   *config.Config
+	pool  *pgxpool.Pool
+	store documents.IngestionJobCreator
+	now   func() time.Time
 }
 
 func (q runtimeEmbeddingQueue) Enqueue(ctx context.Context, doc documents.ExtractedDocument) error {
-	go func() {
-		runCtx := context.WithoutCancel(ctx)
-		mcp, err := knowledge.Open(runCtx, &q.cfg.Neo4j)
-		if err != nil {
-			return
+	store := q.store
+	if store == nil {
+		if q.pool == nil {
+			return fmt.Errorf("embedding queue is not configured")
 		}
-		defer func() { _ = mcp.Close() }()
-		worker := &documents.EmbeddingWorker{
-			Jobs:      documents.NewPostgresJobStore(q.pool),
-			Generator: embeddingClient(q.cfg, documentHTTPClient(q.cfg)),
-			Indexer:   &documents.Indexer{Client: mcp},
-		}
-		_ = worker.Process(runCtx, doc)
-	}()
-	return nil
+		store = documents.NewPostgresIngestionJobStore(q.pool)
+	}
+	queue := &documents.DurableEmbeddingQueue{
+		Jobs:  store,
+		Clock: q.clock,
+	}
+	return queue.Enqueue(ctx, doc)
+}
+
+func (q runtimeEmbeddingQueue) clock() time.Time {
+	if q.now != nil {
+		return q.now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 type docsToolSearcher struct {

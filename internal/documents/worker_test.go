@@ -115,6 +115,14 @@ func TestEmbeddingWorkerEnqueueRunsProcess(t *testing.T) {
 	}
 }
 
+func TestEmbeddingWorkerEnqueueReturnsProcessErrors(t *testing.T) {
+	doc := testDocumentWithChunks(t, 1)
+	worker := &EmbeddingWorker{Indexer: &fakeEmbeddingIndexer{}}
+	if err := worker.Enqueue(t.Context(), doc); err == nil {
+		t.Fatal("expected missing generator error")
+	}
+}
+
 func TestEmbeddingWorkerRejectsMissingDependenciesAndEmptyDoc(t *testing.T) {
 	doc := testDocumentWithChunks(t, 1)
 	if err := (&EmbeddingWorker{Indexer: &fakeEmbeddingIndexer{}}).Process(t.Context(), doc); err == nil {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,19 +30,30 @@ type runtimeIngestionWorker struct {
 	once sync.Once
 }
 
-func newRuntimeAssetProcessingWorker(pool *pgxpool.Pool, assets acceptedAssetProcessor, batchSize int) *runtimeIngestionWorker {
+func newRuntimeAssetProcessingWorker(cfg *config.Config, pool *pgxpool.Pool, assets acceptedAssetProcessor, batchSize int) *runtimeIngestionWorker {
 	if pool == nil || assets == nil {
 		return newRuntimeIngestionWorker(nil, 0)
 	}
 	return newRuntimeIngestionWorker(
-		newRuntimeAssetProcessingJobWorker(documents.NewPostgresIngestionJobStore(pool), assets, batchSize),
+		newRuntimeProcessingJobWorker(
+			documents.NewPostgresIngestionJobStore(pool),
+			assets,
+			runtimeDocumentEmbeddingHandler{cfg: cfg, pool: pool},
+			batchSize,
+		),
 		runtimeIngestionPollInterval,
 	)
 }
 
-func newRuntimeAssetProcessingJobWorker(store documents.IngestionJobQueue, assets acceptedAssetProcessor, batchSize int) *documents.IngestionJobWorker {
+func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, assets acceptedAssetProcessor, embedding documents.IngestionJobHandler, batchSize int) *documents.IngestionJobWorker {
 	if batchSize <= 0 {
 		batchSize = 1
+	}
+	handlers := map[string]documents.IngestionJobHandler{
+		assetProcessJobType: runtimeAssetProcessHandler{assets: assets},
+	}
+	if embedding != nil {
+		handlers[documents.IngestionJobTypeDocumentEmbed] = embedding
 	}
 	return &documents.IngestionJobWorker{
 		Store:         store,
@@ -49,9 +61,7 @@ func newRuntimeAssetProcessingJobWorker(store documents.IngestionJobQueue, asset
 		LeaseDuration: 5 * time.Minute,
 		BatchSize:     batchSize,
 		RetryBackoff:  time.Minute,
-		Handlers: map[string]documents.IngestionJobHandler{
-			assetProcessJobType: runtimeAssetProcessHandler{assets: assets},
-		},
+		Handlers:      handlers,
 	}
 }
 

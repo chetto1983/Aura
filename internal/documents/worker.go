@@ -26,12 +26,9 @@ type EmbeddingWorker struct {
 	Backoff    time.Duration
 }
 
-// Enqueue starts background embedding for an extracted document.
+// Enqueue processes embedding through the worker implementation.
 func (w *EmbeddingWorker) Enqueue(ctx context.Context, doc ExtractedDocument) error {
-	go func() {
-		_ = w.Process(context.WithoutCancel(ctx), doc)
-	}()
-	return nil
+	return w.Process(ctx, doc)
 }
 
 // Process embeds and indexes one extracted document synchronously.

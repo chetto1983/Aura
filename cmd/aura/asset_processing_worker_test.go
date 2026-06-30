@@ -25,7 +25,7 @@ func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 		}},
 	}
 	processor := &recordingAssetProcessor{}
-	worker := newRuntimeAssetProcessingJobWorker(store, processor, 3)
+	worker := newRuntimeProcessingJobWorker(store, processor, nil, 3)
 
 	processed, err := worker.ProcessOnce(context.Background())
 	if err != nil {
@@ -39,6 +39,32 @@ func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 	}
 	if store.claimReq.BatchSize != 3 || store.claimReq.WorkerID == "" {
 		t.Fatalf("claim request = %#v", store.claimReq)
+	}
+	if len(store.statuses) != 1 || store.statuses[0].status != "succeeded" {
+		t.Fatalf("status updates = %#v", store.statuses)
+	}
+}
+
+func TestRuntimeProcessingJobWorkerProcessesEmbeddingJob(t *testing.T) {
+	store := &fakeRuntimeIngestionJobQueue{
+		claimed: []documents.IngestionJob{{
+			ID:           "job-1",
+			JobType:      documents.IngestionJobTypeDocumentEmbed,
+			Status:       "running",
+			Stage:        "embedding",
+			AttemptCount: 1,
+			MaxAttempts:  3,
+		}},
+	}
+	handler := &recordingIngestionHandler{}
+	worker := newRuntimeProcessingJobWorker(store, &recordingAssetProcessor{}, handler, 2)
+
+	processed, err := worker.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || handler.called != 1 {
+		t.Fatalf("processed=%d handler.called=%d", processed, handler.called)
 	}
 	if len(store.statuses) != 1 || store.statuses[0].status != "succeeded" {
 		t.Fatalf("status updates = %#v", store.statuses)
@@ -110,4 +136,13 @@ type recordingRuntimeIngestionProcessor struct {
 func (p *recordingRuntimeIngestionProcessor) ProcessOnce(context.Context) (int, error) {
 	p.once.Do(func() { close(p.done) })
 	return 0, nil
+}
+
+type recordingIngestionHandler struct {
+	called int
+}
+
+func (h *recordingIngestionHandler) HandleIngestionJob(context.Context, documents.IngestionJob) error {
+	h.called++
+	return nil
 }

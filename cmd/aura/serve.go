@@ -435,7 +435,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		RunDir:             chat.cfg.RunDir,
 		WarnThresholdBytes: int64(chat.cfg.RunDirWarnThresholdBytes),
 	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
-	assetProcessingWorker := newRuntimeAssetProcessingWorker(chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent)
+	assetProcessingWorker := newRuntimeAssetProcessingWorker(chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent)
 
 	// The channels Registry + the setup-wizard server (:9081) were built above (the
 	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
