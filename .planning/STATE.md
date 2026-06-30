@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
-stopped_at: Completed 32-04-PLAN.md (QUAL-02 AURA_MEMORY_EMBED_* full-stack removal)
-last_updated: "2026-06-30T08:30:00.000Z"
+stopped_at: Phase 32 fully executed (10/10 plans, Waves 1-3); awaiting live-cockpit UAT (32-UAT.md) — run /gsd-verify-work 32 to close
+last_updated: "2026-06-30T12:49:15Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 11
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 32 (quality-cleanup-dead-code-shared-helpers) — EXECUTING
-Plan: 5 of 10
-Status: 32-04 complete (AURA_MEMORY_EMBED_* removed full-stack: Go AllowedKeys + web union/array + en/it i18n + compose/.env docs + dist rebuild); Wave 1 (QUAL-02) done; 32-05 next (Wave 2 leaf extractions)
+Phase: 32 (quality-cleanup-dead-code-shared-helpers) — EXECUTED, AWAITING UAT
+Plan: 10 of 10 (all committed)
+Status: All 10 plans complete & committed (QUAL-02 dead-code, QUAL-03 shared-helper extractions w/ parity tests, QUAL-05 test gaps). Whole-tree `go build` + consolidated `-race` regression GREEN; web gates green. Verifier: 21/21 must-haves PASS, status human_needed — 2 live-cockpit UAT items (focusTrap keyboard a11y + skeleton visuals). Phase stays pending until /gsd-verify-work 32 passes the UAT. Executed sequentially on master (no worktrees, D-14) with explicit-pathspec commits alongside a live parallel Codex session.
 Last activity: 2026-06-30
 
 ### v1.0.0 — shipped & archived (2026-06-29)
