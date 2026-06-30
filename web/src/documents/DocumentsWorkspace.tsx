@@ -14,6 +14,7 @@ import {
   type DocumentVersion,
   type UpdateDocumentInput,
 } from './documentApi';
+import { DocumentEventsPanel } from './DocumentEventsPanel';
 import { formatBytes } from './documentFormat';
 import { StorageOrphansPanel } from './StorageOrphansPanel';
 import { Spinner } from '../components/Spinner';
@@ -319,6 +320,7 @@ export default function DocumentsWorkspace() {
                     ))}
                   </div>
                 </section>
+                <DocumentEventsPanel documentId={detail.document.id} />
               </>
             )}
             <StorageOrphansPanel />

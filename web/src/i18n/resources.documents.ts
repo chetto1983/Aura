@@ -25,6 +25,12 @@ export const documentsEn = {
     detail: {
       tags: 'Document tags',
       versions: 'Versions',
+      events: 'Events',
+    },
+    events: {
+      loading: 'Loading events...',
+      empty: 'No events',
+      error: "Couldn't load document events.",
     },
     storage: {
       title: 'Storage orphans',
@@ -79,6 +85,12 @@ export const documentsIt = {
     detail: {
       tags: 'Tag documento',
       versions: 'Versioni',
+      events: 'Eventi',
+    },
+    events: {
+      loading: 'Caricamento eventi...',
+      empty: 'Nessun evento',
+      error: 'Impossibile caricare gli eventi documento.',
     },
     storage: {
       title: 'Orfani storage',

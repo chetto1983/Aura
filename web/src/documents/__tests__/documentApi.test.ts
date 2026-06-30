@@ -3,6 +3,7 @@ import {
   cleanupStorageOrphans,
   deleteDocument,
   fetchDocumentDetail,
+  fetchDocumentEvents,
   fetchDocuments,
   fetchStorageOrphans,
   updateDocument,
@@ -107,6 +108,32 @@ describe('documentApi', () => {
         dry_run_token: 'token',
         confirm: 'DELETE ORPHAN OBJECTS',
       }),
+    });
+  });
+
+  it('reads document ingestion events from the timeline endpoint', async () => {
+    const body = [
+      {
+        id: 10,
+        entity_type: 'ingestion_job',
+        entity_id: 'job-1',
+        job_id: 'job-1',
+        from_status: 'running',
+        to_status: 'succeeded',
+        event_type: 'ingestion_job.succeeded',
+        message: 'indexed',
+        detail: { stage: 'embedding' },
+      },
+    ];
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify(body), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDocumentEvents('doc/1')).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith('/api/documents/doc%2F1/events', {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
     });
   });
 });

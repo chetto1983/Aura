@@ -45,6 +45,20 @@ export interface DocumentDetail {
   readonly versions: readonly DocumentVersion[];
 }
 
+export interface IngestionEvent {
+  readonly id: number;
+  readonly entity_type: string;
+  readonly entity_id: string;
+  readonly job_id?: string;
+  readonly from_status?: string;
+  readonly to_status?: string;
+  readonly event_type: string;
+  readonly message?: string;
+  readonly detail: Record<string, unknown>;
+  readonly trace_id?: string;
+  readonly created_at?: string;
+}
+
 export interface ListDocumentsParams {
   readonly query?: string;
   readonly tag?: string;
@@ -132,7 +146,18 @@ export async function fetchDocumentDetail(id: string): Promise<DocumentDetail> {
   return readJSON<DocumentDetail>(res);
 }
 
-export async function updateDocument(id: string, input: UpdateDocumentInput): Promise<DocumentItem> {
+export async function fetchDocumentEvents(id: string): Promise<IngestionEvent[]> {
+  const res = await fetch(`/api/documents/${encodeURIComponent(id)}/events`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readJSON<IngestionEvent[]>(res);
+}
+
+export async function updateDocument(
+  id: string,
+  input: UpdateDocumentInput,
+): Promise<DocumentItem> {
   const res = await fetch(`/api/documents/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },

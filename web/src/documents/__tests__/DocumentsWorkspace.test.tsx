@@ -67,6 +67,26 @@ describe('DocumentsWorkspace', () => {
         if (url.startsWith('/api/documents/doc-1') && init?.method === 'DELETE') {
           return Promise.resolve(new Response(JSON.stringify({ ...DOC, status: 'deleted' })));
         }
+        if (url === '/api/documents/doc-1/events') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  id: 10,
+                  entity_type: 'ingestion_job',
+                  entity_id: 'job-1',
+                  job_id: 'job-1',
+                  from_status: 'running',
+                  to_status: 'succeeded',
+                  event_type: 'ingestion_job.succeeded',
+                  message: 'indexed',
+                  detail: { stage: 'embedding' },
+                  created_at: '2026-06-19T10:01:00Z',
+                },
+              ]),
+            ),
+          );
+        }
         if (url === '/api/documents/doc-1') {
           return Promise.resolve(new Response(JSON.stringify(DETAIL)));
         }
@@ -84,6 +104,8 @@ describe('DocumentsWorkspace', () => {
     expect((await screen.findAllByText('sha256-current')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('application/pdf').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2 KB').length).toBeGreaterThan(0);
+    expect(await screen.findByText('ingestion_job.succeeded')).toBeTruthy();
+    expect(screen.getByText('indexed')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Search documents'), {
       target: { value: 'handbook' },
