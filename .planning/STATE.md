@@ -4,13 +4,13 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
 stopped_at: Phase 32 context gathered
-last_updated: "2026-06-30T05:32:29.567Z"
+last_updated: "2026-06-30T07:29:18.489Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 13
-  completed_plans: 4
+  completed_plans: 5
   percent: 9
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 32 (quality-cleanup-dead-code-shared-helpers) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-06-30
 
@@ -198,6 +198,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 31 P01 | ~3min | 3 tasks | 0 files |
 | Phase 31 P02 | ~25min | 2 tasks | 3 files |
 | Phase 31 P03 | ~30min | 2 tasks | 6 files |
+| Phase 32 P02 | ~40min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -385,6 +386,9 @@ Recent decisions affecting current work:
 - [Phase ?]: F-015 lint excludes 'go list' enumeration (the legitimate package-list source) plus comment lines, so scanning scripts/ exits 0 while still rejecting every prohibited go test/build/vet/run + govulncheck ./...
 - [Phase 31]: SEC-08: MCP-local SSRF guard (internal/mcp/ssrf.go) mirrors internal/web classifier; scheme+metadata+link-local barrier unconditional, private-range block gated on AURA_MCP_SSRF_ENFORCE (default off → dev no-op, loopback/sidecars reachable) — Closes the CWE-918 go/request-forgery taint flow at the OpenHTTP seam without breaking loopback httptest + compose-DNS sidecars
 - [Phase ?]: Phase 32-01 D-04: keep-annotate assets.Status (all 12 constants retained + deferred-lifecycle annotation; no wiring, no delete)
+- [Phase 32]: 32-02 T1 KEEP: cmd/aura dry-run RequestID re-stamp is load-bearing (fake InfiniteToolCallAgent never stamps it); pinned by regression test + RED-on-removal, not deleted
+- [Phase 32]: 32-02 T3/T4 SWAP: agui.indexByte to strings.IndexByte and stringList inlined as append([]string{},...); both helpers deleted, non-nil-empty NetworkAllowlist preserved (marshals [] not null)
+- [Phase 32]: 32-02 T8 ACCEPT: truncateRunes 5-line dup kept with cross-reference comments (copies differ by ellipsis); no internal/strutil created (OQ#2 default)
 
 ### Pending Todos
 
@@ -429,7 +433,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-06-30T05:32:21.541Z
+Last session: 2026-06-30T07:28:20.745Z
 Stopped at: Phase 32 context gathered
 Resume file: None
 

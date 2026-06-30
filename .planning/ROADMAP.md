@@ -154,12 +154,12 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 2. Shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — each with a parity test.
 3. Targeted test gaps closed (`web/throttle`, setup `InvalidateToken`-before-SSE ordering, Telegram `answersFromText` keyword fallback, `truncateTailBytes`, Authula `ensureAuthulaSearchPath` DSN parsing).
 
-**Plans:** 1/10 plans executed
+**Plans:** 2/10 plans executed
 
 **Wave 1** *(QUAL-02 dead-code clean-slate)*
 
 - [x] 32-01-PLAN.md — assets.Status{Created,Embedding,Canceled} keep/kill operator escalation (D-02/D-04)
-- [ ] 32-02-PLAN.md — Go stdlib swaps + keeps: RequestID load-bearing test, agui indexByte/stringList, truncateRunes decision
+- [x] 32-02-PLAN.md — Go stdlib swaps + keeps: RequestID load-bearing test, agui indexByte/stringList, truncateRunes decision
 - [ ] 32-03-PLAN.md — Go redundant-code removal: telebot blank import + discarded Build() restructure
 - [ ] 32-04-PLAN.md — AURA_MEMORY_EMBED_* full-stack removal (Go + web + i18n + compose/.env doc + dist)
 
