@@ -78,7 +78,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 32: Quality Cleanup — Dead Code + Shared Helpers** — `QUAL-02/03/05` (quality audit ~64 findings) (completed 2026-06-30)
   - Goal: kill cross-package duplication + dead code BEFORE feature phases build on them (so later work reuses clean shared packages).
   - Success: (1) dead exports/placeholders removed, each confirmed via `deadcode`/`knip`/repo-wide `rg`; (2) shared packages extracted — `internal/neostore`, `internal/envutil`, `internal/agentrender`, agent `CanonicalArgs`/`isTransientNetworkErr`, web single `getJSON`/shared `focusTrap` — with a parity test per extraction; (3) targeted test gaps closed (`web/throttle`, setup ordering, Telegram keyword fallback, `truncateTailBytes`).
-- [ ] **Phase 33: Runtime Profiles + Config Validation** (keystone) — `PROF-01..06`, `QUAL-04`(env catalog) (F-002/007/016/018/026/041)
+- [x] **Phase 33: Runtime Profiles + Config Validation** (keystone) — `PROF-01..06`, `QUAL-04`(env catalog) (F-002/007/016/018/026/041)
   - Goal: 4 validated profiles (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) in `internal/config`; production fails fast on unsafe defaults; all hot-path `AURA_*` knobs catalogued.
   - Success: (1) `aura config validate --profile server_production` exits non-zero listing every unmet requirement; (2) copying `.env.example`→`.env` keeps the destructive-shell gate active; (3) invalid env fails-fast under production, warns under dev; (4) `dev`/`local_trusted` preserve today's full-host behavior unchanged.
 - [ ] **Phase 34: Agent-Loop Correctness + Durable Ledger** — `LOOP-01..11`, `QUAL-04`(double-Validate/pool-leak, int32 guard) (F-003/004/005/009/010/029/030/031/040/045/048)
