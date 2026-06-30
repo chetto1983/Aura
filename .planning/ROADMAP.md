@@ -188,7 +188,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 3. Invalid env fails-fast under production, warns under dev.
 4. `dev`/`local_trusted` preserve today's full-host behavior unchanged.
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 **Wave 1**
 
 - [x] 33-01-PLAN.md — Foundation: split Validate() out of config.go (LOC unblock) + RuntimeProfile enum + Config.Profile/ObjectStoreReplicationFactor/GarageRPCSecret fields (wave 1) → 33-01-SUMMARY.md
@@ -200,7 +200,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 33-04-PLAN.md — ValidateProfile aggregator + bespoke profile gates + profile-aware Validate() + boot warn-diagnostic (wave 3)
+- [x] 33-04-PLAN.md — ValidateProfile aggregator + bespoke profile gates + profile-aware Validate() + boot warn-diagnostic (wave 3) → 33-04-SUMMARY.md
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

@@ -15,10 +15,10 @@
 
 - [ ] **PROF-01**: Operator can select a runtime profile (`dev`, `local_trusted`, `single_user_hardened`, `server_production`) and `aura config validate --profile <p>` reports every unmet requirement and fails non-zero. *(F-026)*
 - [ ] **PROF-02**: Copying `.env.example` to `.env` preserves the default destructive-shell approval gate (empty `AURA_SHELL_DESTRUCTIVE_PATTERNS` means "use defaults", only `off` disables); tests cover unset/empty/`off`/custom/copied-sample. *(F-002)*
-- [ ] **PROF-03**: `server_production` validation fails when object-store/Garage credentials, RPC secret, bucket, or endpoint are sample/default values; passes with supplied secrets. *(F-007)*
+- [x] **PROF-03**: `server_production` validation fails when object-store/Garage credentials, RPC secret, bucket, or endpoint are sample/default values; passes with supplied secrets. *(F-007)*
 - [x] **PROF-04**: Invalid integer/boolean env values fail fast (error) under hardened/production profiles and warn (with diagnostics) under dev — never silently fall back for security/reliability knobs. *(F-016)*
-- [ ] **PROF-05**: `AURA_RUN_DIR` is normalized to an absolute path at config load, or rejected in validation/constructors; sidecars resolve identically across restarts and working directories. *(F-041)*
-- [ ] **PROF-06**: `server_production` validation rejects single-replica object-store topology (Garage `replication_factor = 1`) and documents it as development-only. *(F-018)*
+- [x] **PROF-05**: `AURA_RUN_DIR` is normalized to an absolute path at config load, or rejected in validation/constructors; sidecars resolve identically across restarts and working directories. *(F-041)*
+- [x] **PROF-06**: `server_production` validation rejects single-replica object-store topology (Garage `replication_factor = 1`) and documents it as development-only. *(F-018)*
 
 ### Agent-Loop Correctness, HITL & Persistence (LOOP)
 

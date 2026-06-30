@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 33
 current_phase_name: runtime-profiles-config-validation
 status: executing
-stopped_at: Completed 33-03-PLAN.md
-last_updated: "2026-06-30T21:52:12.000Z"
-last_activity: 2026-06-30
-last_activity_desc: Phase 33 plan 03 (KnobSpec registry single source of truth + generic kind-driven reparsePass + 3 rapid PBT invariants) complete
+stopped_at: Completed 33-04-PLAN.md
+last_updated: "2026-07-01T00:20:00.000Z"
+last_activity: 2026-07-01
+last_activity_desc: Phase 33 plan 04 (ValidateProfile aggregator + 10 bespoke profile gates encoding the D-09..D-16 matrix + profile-aware Validate + bootChatEnv warn-diagnostic; unsafe server_production config yields 7 Fatal violations, -race green) complete
 progress:
   total_phases: 11
   completed_phases: 2
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 18
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 33 (runtime-profiles-config-validation) — EXECUTING
-Plan: 4 of 5
-Status: Executing Phase 33 (33-01, 33-02, 33-03 complete)
-Last activity: 2026-06-30 — 33-03 complete: KnobSpec registry (Tier A+B single source of truth, D-08/QUAL-04) + generic kind-driven `reparsePass` (Fatal under strict tiers, Warn under lenient, PROF-04/F-016/D-07) proven by a truth-table test + 3 `rapid` PBT invariants (strictness/no-false-positive/aggregation-monotonicity) under -race; envutil leaf untouched, no Tier C knobs catalogued
+Plan: 5 of 5
+Status: Executing Phase 33 (33-01, 33-02, 33-03, 33-04 complete)
+Last activity: 2026-07-01 — 33-04 complete: `(*Config).ValidateProfile(p)` aggregates 10 pure tier-gated bespoke gates (each NAMES its `AURA_*` knob, mirrors GuardWebBind) + the generic `reparsePass` into one never-first-fail `[]Violation` encoding the D-09..D-16 matrix EXACTLY (strict via `p.Strict()`; replication+destructive-`off` prod-only — the hardened↔prod differentiator; CORS under both strict tiers per A2). `Validate()` is now profile-aware at the existing boot call site (an unsafe `server_production` config = 7 Fatal violations naming each knob; nil under realistic dev with a Warn-only invalid int); PROF-05 non-absolute `AURA_RUN_DIR` Fatal all tiers; bootChatEnv prints Warn diagnostics + the D-14 `local_trusted` banner. No new gating call site, no agent-tools import, scope fence honored. config -race green
 
 ### v1.0.0 — shipped & archived (2026-06-29)
 
