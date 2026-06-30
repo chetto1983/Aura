@@ -228,18 +228,32 @@ describe('useAttachmentUploads', () => {
       new File(['ogg'], 'voice.ogg', { type: 'audio/ogg' }),
       new File(['pdf'], 'manual.pdf', { type: '' }),
       new File(['docx'], 'manual.docx', { type: '' }),
+      new File(['pptx'], 'deck.pptx', { type: '' }),
       new File(['xlsx'], 'sheet.xlsx', { type: '' }),
       new File(['xlsm'], 'macro.xlsm', { type: '' }),
+      new File(['html'], 'page.html', { type: '' }),
+      new File(['csv'], 'data.csv', { type: '' }),
+      new File(['md'], 'notes.md', { type: '' }),
       new File(['txt'], 'notes.txt', { type: '' }),
+      new File(['json'], 'data.json', { type: '' }),
+      new File(['xml'], 'data.xml', { type: '' }),
+      new File(['epub'], 'book.epub', { type: '' }),
     ];
     const finalAssets = [
       { ...presignedAsset, id: 'image-1', modality: 'image', status: 'complete' },
       { ...presignedAsset, id: 'audio-1', modality: 'audio', status: 'complete' },
       { ...searchableAsset, id: 'pdf-1' },
       { ...searchableAsset, id: 'docx-1' },
+      { ...searchableAsset, id: 'pptx-1' },
       { ...searchableAsset, id: 'xlsx-1' },
       { ...searchableAsset, id: 'xlsm-1' },
-      { ...presignedAsset, id: 'unknown-1', modality: 'unknown', status: 'complete' },
+      { ...searchableAsset, id: 'html-1' },
+      { ...searchableAsset, id: 'csv-1' },
+      { ...searchableAsset, id: 'md-1' },
+      { ...searchableAsset, id: 'txt-1' },
+      { ...searchableAsset, id: 'json-1' },
+      { ...searchableAsset, id: 'xml-1' },
+      { ...searchableAsset, id: 'epub-1' },
     ];
     const fetchMock = vi.fn();
     for (const index of finalAssets.keys()) {
@@ -282,7 +296,14 @@ describe('useAttachmentUploads', () => {
       'document',
       'document',
       'document',
-      'unknown',
+      'document',
+      'document',
+      'document',
+      'document',
+      'document',
+      'document',
+      'document',
+      'document',
     ]);
     expect(presignBodies.at(-1)?.mime_type).toBe('application/octet-stream');
   });

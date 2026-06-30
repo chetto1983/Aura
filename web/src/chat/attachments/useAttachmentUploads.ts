@@ -39,6 +39,22 @@ const browserForbiddenUploadHeaders = new Set([
   'upgrade',
   'via',
 ]);
+const documentExtensions = new Set([
+  '.pdf',
+  '.docx',
+  '.pptx',
+  '.xlsx',
+  '.xlsm',
+  '.html',
+  '.htm',
+  '.csv',
+  '.md',
+  '.markdown',
+  '.txt',
+  '.json',
+  '.xml',
+  '.epub',
+]);
 
 export function useAttachmentUploads(
   threadId: string,
@@ -214,16 +230,15 @@ function inferModality(file: File): AssetModality {
   const name = file.name.toLowerCase();
   if (type.startsWith('image/')) return 'image';
   if (type.startsWith('audio/')) return 'audio';
-  if (
-    type === 'application/pdf' ||
-    name.endsWith('.pdf') ||
-    name.endsWith('.docx') ||
-    name.endsWith('.xlsx') ||
-    name.endsWith('.xlsm')
-  ) {
-    return 'document';
-  }
+  if (type === 'application/pdf' || hasDocumentExtension(name)) return 'document';
   return 'unknown';
+}
+
+function hasDocumentExtension(name: string): boolean {
+  for (const ext of documentExtensions) {
+    if (name.endsWith(ext)) return true;
+  }
+  return false;
 }
 
 function isReadyAsset(asset: Asset): boolean {
