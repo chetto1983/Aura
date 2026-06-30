@@ -30,15 +30,20 @@ type StoreBackend interface {
 	Delete(context.Context, string, string) (Asset, error)
 }
 
+type ProcessingJobQueue interface {
+	EnqueueAssetProcessing(context.Context, Asset) error
+}
+
 var _ StoreBackend = (*Store)(nil)
 
 type Service struct {
-	Store      StoreBackend
-	Objects    objectstore.Store
-	Processors ProcessorSet
-	Limits     Limits
-	Bucket     string
-	PresignTTL time.Duration
+	Store          StoreBackend
+	Objects        objectstore.Store
+	Processors     ProcessorSet
+	ProcessingJobs ProcessingJobQueue
+	Limits         Limits
+	Bucket         string
+	PresignTTL     time.Duration
 }
 
 type PresignRequest struct {
@@ -129,6 +134,10 @@ func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Ass
 	asset, err = s.Store.MarkAccepted(ctx, asset.ID, identityID, attrs.SizeBytes, hash, sniffed)
 	if err != nil {
 		return Asset{}, err
+	}
+	if err := s.enqueueProcessing(ctx, asset); err != nil {
+		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "processing_enqueue_failed", err.Error())
+		return updated, err
 	}
 	go s.process(context.WithoutCancel(ctx), asset)
 	return asset, nil
@@ -251,6 +260,13 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 
 func (s *Service) process(ctx context.Context, asset Asset) {
 	_, _ = s.processAsset(ctx, asset)
+}
+
+func (s *Service) enqueueProcessing(ctx context.Context, asset Asset) error {
+	if s.ProcessingJobs == nil {
+		return nil
+	}
+	return s.ProcessingJobs.EnqueueAssetProcessing(ctx, asset)
 }
 
 func (s *Service) processAsset(ctx context.Context, asset Asset) (Asset, error) {

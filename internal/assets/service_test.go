@@ -107,6 +107,8 @@ func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
 		MaxImageBytes:    100,
 		MaxAudioBytes:    100,
 	})
+	queue := &recordingProcessingQueue{}
+	svc.ProcessingJobs = queue
 	processor := &recordingProcessor{
 		called: make(chan Asset, 1),
 		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "indexed", Metadata: map[string]any{"k": "v"}},
@@ -142,6 +144,9 @@ func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
 	}
 	if accepted.ContentHash != hashes.SHA256 {
 		t.Fatalf("ContentHash = %q, want sha256", accepted.ContentHash)
+	}
+	if queue.asset.ID != accepted.ID || queue.asset.Status != StatusAccepted {
+		t.Fatalf("processing queue saw asset = %#v, want accepted asset %s", queue.asset, accepted.ID)
 	}
 
 	select {
@@ -225,6 +230,16 @@ type recordingProcessor struct {
 func (p *recordingProcessor) ProcessAsset(_ context.Context, asset Asset) (Result, error) {
 	p.called <- asset
 	return p.result, p.err
+}
+
+type recordingProcessingQueue struct {
+	asset Asset
+	err   error
+}
+
+func (q *recordingProcessingQueue) EnqueueAssetProcessing(_ context.Context, asset Asset) error {
+	q.asset = asset
+	return q.err
 }
 
 func newAssetServiceTestRig(t *testing.T, limits Limits) (*Service, *fakeAssetStore) {

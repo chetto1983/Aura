@@ -17,8 +17,9 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 		VersionRecorder: newRuntimeDocumentVersionRecorder(pool, objectStore),
 	}
 	return &assets.Service{
-		Store:   assets.NewStore(pool),
-		Objects: objectStore,
+		Store:          assets.NewStore(pool),
+		Objects:        objectStore,
+		ProcessingJobs: newRuntimeAssetProcessingQueue(pool),
 		Processors: assets.ProcessorSet{
 			Document: docProcessor,
 			// An uploaded image gets BOTH a vision summary (inline chat) AND searchable

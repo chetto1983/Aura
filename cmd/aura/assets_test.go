@@ -102,6 +102,9 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if svc.Limits.MaxDocumentBytes != 123 || svc.Limits.MaxImageBytes != 456 || svc.Limits.MaxAudioBytes != 789 {
 		t.Fatalf("asset service limits = %+v, want configured limits", svc.Limits)
 	}
+	if _, ok := svc.ProcessingJobs.(*runtimeAssetProcessingQueue); !ok {
+		t.Fatalf("asset processing jobs = %T, want *runtimeAssetProcessingQueue", svc.ProcessingJobs)
+	}
 	doc, ok := svc.Processors.Document.(*assetspkg.DocumentProcessor)
 	if !ok {
 		t.Fatalf("document processor = %T, want *assets.DocumentProcessor", svc.Processors.Document)
