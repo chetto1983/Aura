@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
@@ -166,15 +167,19 @@ func (s *Server) handleMCPList(w http.ResponseWriter, _ *http.Request) {
 	for _, st := range statuses {
 		server := doc.MCPServers[st.Name]
 		rows = append(rows, mcpServerRow{
-			Name:             st.Name,
-			Source:           server.Source,
-			Trust:            st.Trust,
-			RiskPolicy:       st.Trust,
-			Runtime:          st.Runtime,
-			StartupState:     st.StartupState,
-			AuthStatus:       st.AuthStatus,
-			Profiles:         mcpProfiles(doc, st.Name),
-			NetworkAllowlist: stringList(server.Runtime.Network),
+			Name:         st.Name,
+			Source:       server.Source,
+			Trust:        st.Trust,
+			RiskPolicy:   st.Trust,
+			Runtime:      st.Runtime,
+			StartupState: st.StartupState,
+			AuthStatus:   st.AuthStatus,
+			Profiles:     mcpProfiles(doc, st.Name),
+			// Pitfall 4 / T-32-02-AL: the []string{} literal (non-nil) is REQUIRED so an
+			// empty allowlist marshals "networkAllowlist":[] not null. Do NOT switch to a
+			// nil-based copy (e.g. append(server.Runtime.Network[:0:0], ...) on a nil input
+			// stays nil). Pinned by TestGovernanceMCPEmptyAllowlistIsArrayNotNull.
+			NetworkAllowlist: append([]string{}, server.Runtime.Network...),
 			EnvKeys:          envChips(server.Env),
 			LastError:        mcp.RedactSecrets(st.LastError),
 		})
@@ -196,12 +201,6 @@ func mcpProfiles(doc mcp.ManagedConfig, server string) []string {
 	return profiles
 }
 
-func stringList(in []string) []string {
-	out := make([]string, 0, len(in))
-	out = append(out, in...)
-	return out
-}
-
 // envChips projects a server's `KEY=VALUE` env slice onto redacted KEY chips. The VALUE is
 // dropped entirely — only the KEY name (split at the first '=') and an IsSecretEnvKey flag
 // reach the wire, so a token/DSN value can never leak (T-28-02-01). A keyless entry is
@@ -210,7 +209,7 @@ func envChips(env []string) []mcpEnvChip {
 	chips := make([]mcpEnvChip, 0, len(env))
 	for _, entry := range env {
 		key := entry
-		if i := indexByte(entry, '='); i >= 0 {
+		if i := strings.IndexByte(entry, '='); i >= 0 {
 			key = entry[:i]
 		}
 		if key == "" {
@@ -219,17 +218,6 @@ func envChips(env []string) []mcpEnvChip {
 		chips = append(chips, mcpEnvChip{Key: key, Redacted: secret.IsSecretEnvKey(key)})
 	}
 	return chips
-}
-
-// indexByte returns the index of the first b in s, or -1. A tiny local helper so the env
-// projection need not pull strings just to split on the first '='.
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
 }
 
 // handleMCPProbe serves GET /api/governance/mcp/{name}/probe (GOV-01): a bounded, per-row
