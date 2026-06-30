@@ -19,6 +19,7 @@ import { DocumentDetailsDrawer } from './DocumentDetailsDrawer';
 import { DocumentFileList } from './DocumentFileList';
 import { DocumentFilterBar, type ScopeFilter, type ViewMode } from './DocumentFilterBar';
 import { DocumentLibraryHeader } from './DocumentLibraryHeader';
+import { DocumentUploadDialog } from './DocumentUploadDialog';
 import { StorageOrphansPanel } from './StorageOrphansPanel';
 import { activeVersionFor, parseDocumentTags, type DocumentTab } from './documentViewModel';
 import { Button } from '@/components/ui/button';
@@ -305,11 +306,13 @@ export default function DocumentsWorkspace() {
           </div>
         </section>
       </main>
-      {uploadOpen ? (
-        <div role="status" className="sr-only">
-          {t('documents.actions.upload')}
-        </div>
-      ) : null}
+      <DocumentUploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={() => {
+          void loadDocuments({ query, tag, scope }, selectedId);
+        }}
+      />
       <DeleteDialog
         open={deleteOpen}
         document={deleteTarget ?? detail?.document}

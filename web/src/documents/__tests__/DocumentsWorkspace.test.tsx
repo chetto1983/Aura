@@ -106,6 +106,11 @@ describe('DocumentsWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Images' })).toBeTruthy();
     expect(await screen.findByRole('row', { name: /Handbook\.pdf.*ready.*2 KB/i })).toBeTruthy();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    const uploadDialog = await screen.findByRole('dialog', { name: 'Upload document' });
+    expect(uploadDialog).toBeTruthy();
+    fireEvent.click(within(uploadDialog).getByRole('button', { name: 'Cancel' }));
+
     fireEvent.click(await screen.findByRole('button', { name: /^Handbook\.pdf/ }));
     const drawer = await screen.findByRole('dialog', { name: 'Handbook.pdf' });
     expect(within(drawer).getByText('Versions')).toBeTruthy();

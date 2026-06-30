@@ -56,6 +56,12 @@ export const documentsEn = {
     admin: {
       maintenance: 'Advanced document maintenance',
     },
+    upload: {
+      title: 'Upload document',
+      body: 'Add a document to the searchable library.',
+      file: 'Document file',
+      progress: 'Uploading {{progress}}%',
+    },
     events: {
       loading: 'Loading events...',
       empty: 'No events',
@@ -144,6 +150,12 @@ export const documentsIt = {
     },
     admin: {
       maintenance: 'Manutenzione documenti avanzata',
+    },
+    upload: {
+      title: 'Carica documento',
+      body: 'Aggiungi un documento alla libreria ricercabile.',
+      file: 'File documento',
+      progress: 'Caricamento {{progress}}%',
     },
     events: {
       loading: 'Caricamento eventi...',
