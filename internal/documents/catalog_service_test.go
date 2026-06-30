@@ -132,6 +132,43 @@ func TestCatalogServiceRejectsInvalidTagsBeforeStore(t *testing.T) {
 	}
 }
 
+func TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(t *testing.T) {
+	store := &fakeCatalogStore{}
+	svc := &CatalogService{Store: store}
+
+	record, err := svc.RecordAssetVersion(context.Background(), RecordAssetVersionRequest{
+		IdentityID:       "00000000-0000-0000-0000-000000000001",
+		AssetID:          "30000000-0000-0000-0000-000000000001",
+		Scope:            DocumentScopeThread,
+		FileName:         " Servo Manual.pdf ",
+		MIMEType:         "application/pdf",
+		SizeBytes:        99,
+		ObjectBucket:     "aura-assets",
+		ObjectKey:        "identity/local/asset/asset-1/original",
+		ObjectETag:       "etag-1",
+		SearchDocumentID: "doc_search_1",
+		JobID:            "job-1",
+		SparseChunks:     7,
+		SHA1:             "sha1",
+		SHA256:           "sha256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.recordReq.Title != "Servo Manual.pdf" {
+		t.Fatalf("record title = %q, want trimmed filename", store.recordReq.Title)
+	}
+	if store.recordReq.DocumentStatus != DocumentStatusReady || store.recordReq.VersionStatus != "ready" {
+		t.Fatalf("record statuses = %q/%q, want ready/ready", store.recordReq.DocumentStatus, store.recordReq.VersionStatus)
+	}
+	if store.recordReq.Metadata["search_document_id"] != "doc_search_1" || store.recordReq.Metadata["document_job_id"] != "job-1" {
+		t.Fatalf("record metadata = %#v", store.recordReq.Metadata)
+	}
+	if record.Version.SHA1 != "sha1" || record.Version.SHA256 != "sha256" {
+		t.Fatalf("record version hashes = %#v", record.Version)
+	}
+}
+
 func TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(t *testing.T) {
 	activeVersionID := mustCatalogTestUUID(t, "20000000-0000-0000-0000-000000000001")
 	row := sqlc.AuraDocuments{
@@ -164,6 +201,7 @@ type fakeCatalogStore struct {
 	createReq    CreateDocumentRequest
 	updateReq    UpdateDocumentRequest
 	listReq      ListDocumentsRequest
+	recordReq    RecordAssetVersionRequest
 }
 
 func (f *fakeCatalogStore) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -201,6 +239,28 @@ func (f *fakeCatalogStore) ListDocuments(_ context.Context, req ListDocumentsReq
 
 func (f *fakeCatalogStore) GetDocument(_ context.Context, identityID, documentID string) (DocumentDetail, error) {
 	return DocumentDetail{Document: Document{ID: documentID, IdentityID: identityID}}, nil
+}
+
+func (f *fakeCatalogStore) RecordAssetVersion(_ context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
+	f.recordReq = req
+	return DocumentVersionRecord{
+		Document: Document{
+			ID:         "10000000-0000-0000-0000-000000000001",
+			IdentityID: req.IdentityID,
+			Scope:      req.Scope,
+			Title:      req.Title,
+			Metadata:   req.Metadata,
+			Status:     req.DocumentStatus,
+		},
+		Version: DocumentVersion{
+			ID:            "20000000-0000-0000-0000-000000000001",
+			DocumentID:    "10000000-0000-0000-0000-000000000001",
+			VersionNumber: 1,
+			Status:        req.VersionStatus,
+			SHA1:          req.SHA1,
+			SHA256:        req.SHA256,
+		},
+	}, nil
 }
 
 func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {

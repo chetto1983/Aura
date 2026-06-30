@@ -116,6 +116,9 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if ingestor.MaxBytes != 123 {
 		t.Fatalf("runtime document ingestor MaxBytes = %d, want asset max document bytes 123", ingestor.MaxBytes)
 	}
+	if _, ok := doc.VersionRecorder.(*runtimeDocumentVersionRecorder); !ok {
+		t.Fatalf("document processor version recorder = %T, want *runtimeDocumentVersionRecorder", doc.VersionRecorder)
+	}
 	imageDoc, ok := svc.Processors.Image.(*assetspkg.ImageDocumentProcessor)
 	if !ok {
 		t.Fatalf("image processor = %T, want *assets.ImageDocumentProcessor", svc.Processors.Image)

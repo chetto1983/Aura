@@ -9,6 +9,9 @@ import (
 const (
 	defaultCatalogListLimit = 50
 	maxCatalogListLimit     = 100
+	defaultStorageKind      = "raw"
+	defaultRetentionClass   = "standard"
+	defaultConfigHash       = "default"
 )
 
 // CatalogStore persists logical documents and related catalog metadata.
@@ -17,6 +20,7 @@ type CatalogStore interface {
 	UpdateDocument(context.Context, UpdateDocumentRequest) (Document, error)
 	ListDocuments(context.Context, ListDocumentsRequest) ([]DocumentSummary, error)
 	GetDocument(ctx context.Context, identityID, documentID string) (DocumentDetail, error)
+	RecordAssetVersion(context.Context, RecordAssetVersionRequest) (DocumentVersionRecord, error)
 }
 
 // CatalogService owns document metadata, tags, and list/detail access.
@@ -75,6 +79,19 @@ func (s *CatalogService) GetDocument(ctx context.Context, identityID, documentID
 		return DocumentDetail{}, fmt.Errorf("document_id is required")
 	}
 	return s.Store.GetDocument(ctx, identityID, documentID)
+}
+
+// RecordAssetVersion records a processed asset as a ready logical document and version.
+func (s *CatalogService) RecordAssetVersion(ctx context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
+	if s.Store == nil {
+		return DocumentVersionRecord{}, fmt.Errorf("document catalog service has no store")
+	}
+	var err error
+	req, err = normalizeRecordAssetVersionRequest(req)
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	return s.Store.RecordAssetVersion(ctx, req)
 }
 
 func normalizeCreateDocumentRequest(req CreateDocumentRequest) (CreateDocumentRequest, error) {
@@ -153,5 +170,72 @@ func normalizeListDocumentsRequest(req ListDocumentsRequest) (ListDocumentsReque
 	if req.Offset < 0 {
 		req.Offset = 0
 	}
+	return req, nil
+}
+
+func normalizeRecordAssetVersionRequest(req RecordAssetVersionRequest) (RecordAssetVersionRequest, error) {
+	if strings.TrimSpace(req.IdentityID) == "" {
+		return RecordAssetVersionRequest{}, fmt.Errorf("identity_id is required")
+	}
+	if strings.TrimSpace(req.AssetID) == "" {
+		return RecordAssetVersionRequest{}, fmt.Errorf("asset_id is required")
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	req.FileName = strings.TrimSpace(req.FileName)
+	if req.Title == "" {
+		req.Title = req.FileName
+	}
+	if req.Title == "" {
+		return RecordAssetVersionRequest{}, fmt.Errorf("document title is required")
+	}
+	if req.Scope == "" {
+		req.Scope = DocumentScopeLibrary
+	}
+	if req.DocumentStatus == "" {
+		req.DocumentStatus = DocumentStatusReady
+	}
+	if req.VersionStatus == "" {
+		req.VersionStatus = "ready"
+	}
+	if strings.TrimSpace(req.MIMEType) == "" {
+		req.MIMEType = "application/octet-stream"
+	}
+	if req.SizeBytes < 0 {
+		return RecordAssetVersionRequest{}, fmt.Errorf("size_bytes must be non-negative")
+	}
+	if strings.TrimSpace(req.ObjectBucket) == "" || strings.TrimSpace(req.ObjectKey) == "" {
+		return RecordAssetVersionRequest{}, fmt.Errorf("object bucket and key are required")
+	}
+	if strings.TrimSpace(req.SHA256) == "" {
+		return RecordAssetVersionRequest{}, fmt.Errorf("sha256 is required")
+	}
+	if req.VersionNumber <= 0 {
+		req.VersionNumber = 1
+	}
+	if req.StorageKind == "" {
+		req.StorageKind = defaultStorageKind
+	}
+	if req.RetentionClass == "" {
+		req.RetentionClass = defaultRetentionClass
+	}
+	if req.ChunkingConfigHash == "" {
+		req.ChunkingConfigHash = defaultConfigHash
+	}
+	if req.PipelineConfigHash == "" {
+		req.PipelineConfigHash = defaultConfigHash
+	}
+	if req.Metadata == nil {
+		req.Metadata = map[string]any{}
+	}
+	if req.SearchDocumentID != "" {
+		req.Metadata["search_document_id"] = req.SearchDocumentID
+	}
+	if req.JobID != "" {
+		req.Metadata["document_job_id"] = req.JobID
+	}
+	if req.SparseChunks > 0 {
+		req.Metadata["sparse_chunks"] = req.SparseChunks
+	}
+	req.Metadata["source_asset_id"] = req.AssetID
 	return req, nil
 }

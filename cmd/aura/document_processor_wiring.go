@@ -12,8 +12,9 @@ import (
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
 	docProcessor := &assets.DocumentProcessor{
-		Objects: objectStore,
-		Ingest:  newRuntimeDocumentIngestor(cfg, pool),
+		Objects:         objectStore,
+		Ingest:          newRuntimeDocumentIngestor(cfg, pool),
+		VersionRecorder: newRuntimeDocumentVersionRecorder(pool, objectStore),
 	}
 	return &assets.Service{
 		Store:   assets.NewStore(pool),

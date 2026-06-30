@@ -19,15 +19,20 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	ingest := &recordingIngestor{
 		job: &documents.Job{ID: "job-1", DocumentID: "doc-1", FileName: "manual.pdf", SparseChunks: 3},
 	}
+	recorder := &recordingVersionRecorder{}
 
-	result, err := (&DocumentProcessor{Objects: objects, Ingest: ingest}).ProcessAsset(context.Background(), Asset{
+	result, err := (&DocumentProcessor{Objects: objects, Ingest: ingest, VersionRecorder: recorder}).ProcessAsset(context.Background(), Asset{
 		ID:           "asset-1",
+		IdentityID:   "00000000-0000-0000-0000-000000000001",
 		SourceKind:   SourceWeb,
+		Scope:        ScopeThread,
 		ObjectBucket: "b",
 		ObjectKey:    "k",
+		ObjectETag:   "etag-1",
 		FileName:     "manual.pdf",
 		MIMEType:     "application/pdf",
 		SizeBytes:    9,
+		ContentHash:  "sha256",
 	})
 	if err != nil {
 		t.Fatalf("ProcessAsset: %v", err)
@@ -53,6 +58,9 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	if _, err := os.Stat(ingest.path); !os.IsNotExist(err) {
 		t.Fatalf("temporary asset path still exists after ProcessAsset: stat err=%v", err)
 	}
+	if recorder.asset.ID != "asset-1" || recorder.job.DocumentID != "doc-1" {
+		t.Fatalf("version recorder saw asset/job = %#v/%#v", recorder.asset, recorder.job)
+	}
 }
 
 type recordingIngestor struct {
@@ -75,4 +83,16 @@ func (r *recordingIngestor) IngestPath(_ context.Context, req documents.IngestRe
 		return nil, r.err
 	}
 	return r.job, nil
+}
+
+type recordingVersionRecorder struct {
+	asset Asset
+	job   documents.Job
+	err   error
+}
+
+func (r *recordingVersionRecorder) RecordDocumentAsset(_ context.Context, asset Asset, job documents.Job) error {
+	r.asset = asset
+	r.job = job
+	return r.err
 }

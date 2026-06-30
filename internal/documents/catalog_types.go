@@ -71,6 +71,12 @@ type DocumentVersion struct {
 	UpdatedAt          time.Time `json:"updated_at,omitempty"`
 }
 
+// DocumentVersionRecord is returned after recording an asset as a logical document version.
+type DocumentVersionRecord struct {
+	Document Document        `json:"document"`
+	Version  DocumentVersion `json:"version"`
+}
+
 // DocumentDetail returns a document with related control-plane records.
 type DocumentDetail struct {
 	Document Document          `json:"document"`
@@ -107,6 +113,33 @@ type ListDocumentsRequest struct {
 	Tag        string
 	Limit      int
 	Offset     int
+}
+
+// RecordAssetVersionRequest records a processed asset as a logical document version.
+type RecordAssetVersionRequest struct {
+	IdentityID         string
+	AssetID            string
+	Scope              DocumentScope
+	Title              string
+	FileName           string
+	MIMEType           string
+	SizeBytes          int64
+	ObjectBucket       string
+	ObjectKey          string
+	ObjectETag         string
+	SearchDocumentID   string
+	JobID              string
+	SparseChunks       int
+	SHA1               string
+	SHA256             string
+	VersionNumber      int
+	DocumentStatus     DocumentStatus
+	VersionStatus      string
+	StorageKind        string
+	RetentionClass     string
+	ChunkingConfigHash string
+	PipelineConfigHash string
+	Metadata           map[string]any
 }
 
 // NormalizeTags canonicalizes operator-supplied document tags for stable

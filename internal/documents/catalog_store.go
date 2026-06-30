@@ -154,6 +154,86 @@ func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, docu
 	return DocumentDetail{Document: doc, Versions: versions}, nil
 }
 
+// RecordAssetVersion creates a logical document, raw storage object, first version, and active-version link.
+func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
+	doc, err := s.CreateDocument(ctx, CreateDocumentRequest{
+		IdentityID: req.IdentityID,
+		Scope:      req.Scope,
+		Title:      req.Title,
+		Metadata:   req.Metadata,
+		Status:     req.DocumentStatus,
+	})
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", req.IdentityID)
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	pgDocumentID, err := pgUUID("document_id", doc.ID)
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	pgAssetID, err := pgOptionalUUID("asset_id", req.AssetID)
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	storageRow, err := s.q.CreateStorageObject(ctx, sqlc.CreateStorageObjectParams{
+		IdentityID:     pgIdentityID,
+		DocumentID:     pgDocumentID,
+		AssetID:        pgAssetID,
+		Bucket:         req.ObjectBucket,
+		ObjectKey:      req.ObjectKey,
+		Kind:           req.StorageKind,
+		Sha1:           req.SHA1,
+		Sha256:         req.SHA256,
+		Etag:           req.ObjectETag,
+		SizeBytes:      req.SizeBytes,
+		ContentType:    req.MIMEType,
+		RetentionClass: req.RetentionClass,
+	})
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	versionRow, err := s.q.CreateDocumentVersion(ctx, sqlc.CreateDocumentVersionParams{
+		DocumentID:         pgDocumentID,
+		AssetID:            pgAssetID,
+		VersionNumber:      int32(req.VersionNumber), //nolint:gosec // normalized positive and starts at 1.
+		Status:             req.VersionStatus,
+		Sha1:               req.SHA1,
+		Sha256:             req.SHA256,
+		ContentType:        req.MIMEType,
+		SizeBytes:          req.SizeBytes,
+		StorageObjectID:    storageRow.ID,
+		ChunkingConfigHash: req.ChunkingConfigHash,
+		PipelineConfigHash: req.PipelineConfigHash,
+	})
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	if _, err := s.q.UpdateStorageObjectVersion(ctx, sqlc.UpdateStorageObjectVersionParams{
+		ID:        storageRow.ID,
+		VersionID: versionRow.ID,
+	}); err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	version := catalogVersionFromSQL(versionRow)
+	doc, err = s.UpdateDocument(ctx, UpdateDocumentRequest{
+		IdentityID:      req.IdentityID,
+		DocumentID:      doc.ID,
+		Scope:           doc.Scope,
+		Title:           doc.Title,
+		Tags:            doc.Tags,
+		Metadata:        doc.Metadata,
+		ActiveVersionID: version.ID,
+		Status:          req.DocumentStatus,
+	})
+	if err != nil {
+		return DocumentVersionRecord{}, err
+	}
+	return DocumentVersionRecord{Document: doc, Version: version}, nil
+}
+
 func (s *PostgresCatalogStore) replaceDocumentTags(ctx context.Context, documentID, actorIdentityID string, tags []string) error {
 	pgDocumentID, err := pgUUID("document_id", documentID)
 	if err != nil {

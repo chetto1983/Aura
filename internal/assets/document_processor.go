@@ -16,9 +16,14 @@ type DocumentIngestor interface {
 	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
 }
 
+type DocumentVersionRecorder interface {
+	RecordDocumentAsset(ctx context.Context, asset Asset, job documents.Job) error
+}
+
 type DocumentProcessor struct {
-	Objects objectstore.Store
-	Ingest  DocumentIngestor
+	Objects         objectstore.Store
+	Ingest          DocumentIngestor
+	VersionRecorder DocumentVersionRecorder
 }
 
 func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
@@ -46,6 +51,11 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 	}, path)
 	if err != nil {
 		return Result{}, err
+	}
+	if p.VersionRecorder != nil {
+		if err := p.VersionRecorder.RecordDocumentAsset(ctx, asset, *job); err != nil {
+			return Result{}, err
+		}
 	}
 	return Result{
 		Status:     StatusSearchable,
