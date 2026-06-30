@@ -25,7 +25,7 @@ func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 		}},
 	}
 	processor := &recordingAssetProcessor{}
-	worker := newRuntimeProcessingJobWorker(store, processor, nil, 3)
+	worker := newRuntimeProcessingJobWorker(store, nil, processor, nil, 3)
 
 	processed, err := worker.ProcessOnce(context.Background())
 	if err != nil {
@@ -57,7 +57,7 @@ func TestRuntimeProcessingJobWorkerProcessesEmbeddingJob(t *testing.T) {
 		}},
 	}
 	handler := &recordingIngestionHandler{}
-	worker := newRuntimeProcessingJobWorker(store, &recordingAssetProcessor{}, handler, 2)
+	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, handler, 2)
 
 	processed, err := worker.ProcessOnce(context.Background())
 	if err != nil {

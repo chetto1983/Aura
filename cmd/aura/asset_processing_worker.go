@@ -37,6 +37,7 @@ func newRuntimeAssetProcessingWorker(cfg *config.Config, pool *pgxpool.Pool, ass
 	return newRuntimeIngestionWorker(
 		newRuntimeProcessingJobWorker(
 			documents.NewPostgresIngestionJobStore(pool),
+			documents.NewPostgresIngestionEventStore(pool),
 			assets,
 			runtimeDocumentEmbeddingHandler{cfg: cfg, pool: pool},
 			batchSize,
@@ -45,7 +46,7 @@ func newRuntimeAssetProcessingWorker(cfg *config.Config, pool *pgxpool.Pool, ass
 	)
 }
 
-func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, assets acceptedAssetProcessor, embedding documents.IngestionJobHandler, batchSize int) *documents.IngestionJobWorker {
+func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, events documents.IngestionEventStore, assets acceptedAssetProcessor, embedding documents.IngestionJobHandler, batchSize int) *documents.IngestionJobWorker {
 	if batchSize <= 0 {
 		batchSize = 1
 	}
@@ -57,6 +58,7 @@ func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, assets acc
 	}
 	return &documents.IngestionJobWorker{
 		Store:         store,
+		Events:        events,
 		WorkerID:      runtimeIngestionWorkerID,
 		LeaseDuration: 5 * time.Minute,
 		BatchSize:     batchSize,

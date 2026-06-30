@@ -40,6 +40,7 @@ func (f IngestionJobHandlerFunc) HandleIngestionJob(ctx context.Context, job Ing
 // IngestionJobWorker claims durable ingestion jobs and dispatches by job type.
 type IngestionJobWorker struct {
 	Store         IngestionJobQueue
+	Events        IngestionEventStore
 	Handlers      map[string]IngestionJobHandler
 	WorkerID      string
 	LeaseDuration time.Duration
@@ -74,23 +75,56 @@ func (w *IngestionJobWorker) ProcessOnce(ctx context.Context) (int, error) {
 func (w *IngestionJobWorker) processJob(ctx context.Context, job IngestionJob) error {
 	handler := w.Handlers[job.JobType]
 	if handler == nil {
-		_, err := w.Store.UpdateStatus(ctx, job.ID, ingestionJobStatusDeadLetter, job.Stage, "handler_missing", fmt.Sprintf("no ingestion handler for job type %q", job.JobType))
-		return err
+		message := fmt.Sprintf("no ingestion handler for job type %q", job.JobType)
+		if _, err := w.Store.UpdateStatus(ctx, job.ID, ingestionJobStatusDeadLetter, job.Stage, "handler_missing", message); err != nil {
+			return err
+		}
+		return w.appendTransitionEvent(ctx, job, ingestionJobStatusDeadLetter, "ingestion_job.dead_letter", "handler_missing", message)
 	}
 	if err := handler.HandleIngestionJob(ctx, job); err != nil {
 		return w.recordHandlerFailure(ctx, job, err)
 	}
-	_, err := w.Store.UpdateStatus(ctx, job.ID, ingestionJobStatusSucceeded, job.Stage, "", "")
-	return err
+	if _, err := w.Store.UpdateStatus(ctx, job.ID, ingestionJobStatusSucceeded, job.Stage, "", ""); err != nil {
+		return err
+	}
+	return w.appendTransitionEvent(ctx, job, ingestionJobStatusSucceeded, "ingestion_job.succeeded", "", "")
 }
 
 func (w *IngestionJobWorker) recordHandlerFailure(ctx context.Context, job IngestionJob, cause error) error {
 	message := cause.Error()
 	if job.MaxAttempts > 0 && job.AttemptCount >= job.MaxAttempts {
-		_, err := w.Store.UpdateStatus(ctx, job.ID, ingestionJobStatusDeadLetter, job.Stage, "handler_failed", message)
+		if _, err := w.Store.UpdateStatus(ctx, job.ID, ingestionJobStatusDeadLetter, job.Stage, "handler_failed", message); err != nil {
+			return err
+		}
+		return w.appendTransitionEvent(ctx, job, ingestionJobStatusDeadLetter, "ingestion_job.dead_letter", "handler_failed", message)
+	}
+	if _, err := w.Store.Retry(ctx, job.ID, job.Stage, "handler_failed", message, w.now().Add(w.retryBackoff())); err != nil {
 		return err
 	}
-	_, err := w.Store.Retry(ctx, job.ID, job.Stage, "handler_failed", message, w.now().Add(w.retryBackoff()))
+	return w.appendTransitionEvent(ctx, job, ingestionJobStatusQueued, "ingestion_job.retry_scheduled", "handler_failed", message)
+}
+
+func (w *IngestionJobWorker) appendTransitionEvent(ctx context.Context, job IngestionJob, toStatus, eventType, code, message string) error {
+	if w.Events == nil {
+		return nil
+	}
+	detail := map[string]any{
+		"job_type": job.JobType,
+		"stage":    job.Stage,
+	}
+	if code != "" {
+		detail["error_code"] = code
+	}
+	_, err := w.Events.Append(ctx, AppendIngestionEventRequest{
+		EntityType: "ingestion_job",
+		EntityID:   job.ID,
+		JobID:      job.ID,
+		FromStatus: job.Status,
+		ToStatus:   toStatus,
+		EventType:  eventType,
+		Message:    message,
+		Detail:     detail,
+	})
 	return err
 }
 

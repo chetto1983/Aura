@@ -57,6 +57,46 @@ func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {
 	}
 }
 
+func TestIngestionJobWorkerAppendsTransitionEvent(t *testing.T) {
+	store := &fakeIngestionJobQueue{
+		claimed: []IngestionJob{{
+			ID:           "10000000-0000-0000-0000-000000000001",
+			JobType:      "asset_process",
+			Status:       "running",
+			Stage:        "accepted",
+			AttemptCount: 1,
+			MaxAttempts:  3,
+		}},
+	}
+	events := &recordingIngestionEventStore{}
+	worker := &IngestionJobWorker{
+		Store:    store,
+		Events:   events,
+		WorkerID: "worker-1",
+		Handlers: map[string]IngestionJobHandler{
+			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error { return nil }),
+		},
+	}
+
+	if _, err := worker.ProcessOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(events.appended) != 1 {
+		t.Fatalf("events = %#v", events.appended)
+	}
+	got := events.appended[0]
+	if got.EntityType != "ingestion_job" || got.EntityID != "10000000-0000-0000-0000-000000000001" ||
+		got.JobID != "10000000-0000-0000-0000-000000000001" {
+		t.Fatalf("event identity = %#v", got)
+	}
+	if got.FromStatus != "running" || got.ToStatus != "succeeded" || got.EventType != "ingestion_job.succeeded" {
+		t.Fatalf("event transition = %#v", got)
+	}
+	if got.Detail["stage"] != "accepted" || got.Detail["job_type"] != "asset_process" {
+		t.Fatalf("event detail = %#v", got.Detail)
+	}
+}
+
 func TestIngestionJobWorkerRetriesHandlerFailure(t *testing.T) {
 	now := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
 	store := &fakeIngestionJobQueue{
@@ -182,4 +222,13 @@ type fakeIngestionJobRetry struct {
 	code          string
 	message       string
 	nextAttemptAt time.Time
+}
+
+type recordingIngestionEventStore struct {
+	appended []AppendIngestionEventRequest
+}
+
+func (s *recordingIngestionEventStore) Append(_ context.Context, req AppendIngestionEventRequest) (IngestionEvent, error) {
+	s.appended = append(s.appended, req)
+	return IngestionEvent{ID: int64(len(s.appended))}, nil
 }
