@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -150,5 +151,75 @@ func TestSideEffectDigest_KeepsLargeShellFailureFooter(t *testing.T) {
 		if !strings.Contains(got, needle) {
 			t.Fatalf("digest missing %q from large failure footer: %q", needle, got)
 		}
+	}
+}
+
+// TestTruncateTailBytes mirrors TestTruncateBytes (the head clamp) for the TAIL
+// keep used by sideEffectDigest: the n<=0 and len(s)<=n early returns, an ASCII
+// tail clamp, the multibyte mid-rune walk-back (the byte budget splits a leading
+// rune so start must advance to the next rune start), and the case where the tail
+// boundary already sits on a rune start. Every output must be valid UTF-8 — a split
+// rune would corrupt the critic prompt the digest feeds.
+func TestTruncateTailBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		s    string
+		n    int
+		want string
+	}{
+		{"n_zero", "abc", 0, ""},
+		{"n_negative", "abc", -1, ""},
+		{"shorter_than_n", "abc", 5, "abc"},
+		{"exact_length", "abc", 3, "abc"}, // len(s)==n returns s, must not index past the end
+		{"ascii_tail", "hello", 3, "llo"},
+		{"multibyte_mid_rune_walkback", "àbc", 3, "bc"}, // start lands on à's 0xA0 cont. byte → advance to 'b'
+		{"multibyte_keeps_whole_rune", "abà", 2, "à"},   // tail boundary on à's rune start → whole rune kept
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateTailBytes(tc.s, tc.n)
+			if got != tc.want {
+				t.Errorf("truncateTailBytes(%q, %d) = %q, want %q", tc.s, tc.n, got, tc.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("truncateTailBytes(%q, %d) = %q is not valid UTF-8 (split rune)", tc.s, tc.n, got)
+			}
+		})
+	}
+}
+
+// TestTruncateBytesKeepingTail covers the composing helper: the n<=0 and len(s)<=n
+// early returns, the n<=len(marker) passthrough to truncateTailBytes (the marker
+// would not fit, so only the tail is kept), and the head+marker+tail composition
+// for both an ASCII and a multibyte string. The multibyte case proves the marker is
+// flanked by rune-clean head/tail clamps so the whole digest stays valid UTF-8.
+func TestTruncateBytesKeepingTail(t *testing.T) {
+	const marker = "\n...[truncated]...\n" // local copy of the function's private const (19 bytes)
+
+	asciiHT := strings.Repeat("a", 30) + strings.Repeat("b", 30) // 60 bytes
+	multiHT := strings.Repeat("à", 20)                           // 40 bytes (2 bytes/rune)
+
+	cases := []struct {
+		name string
+		s    string
+		n    int
+		want string
+	}{
+		{"n_zero", "abcdef", 0, ""},
+		{"len_le_n", "abc", 10, "abc"},
+		{"n_le_marker_passthrough", "0123456789ABCDEF", 10, "6789ABCDEF"}, // 10<=19 → tail-only
+		{"head_marker_tail_ascii", asciiHT, 39, strings.Repeat("a", 10) + marker + strings.Repeat("b", 10)},
+		{"head_marker_tail_multibyte", multiHT, 25, "à" + marker + "à"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateBytesKeepingTail(tc.s, tc.n)
+			if got != tc.want {
+				t.Errorf("truncateBytesKeepingTail(%q, %d) = %q, want %q", tc.s, tc.n, got, tc.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("truncateBytesKeepingTail(%q, %d) = %q is not valid UTF-8 (split rune)", tc.s, tc.n, got)
+			}
+		})
 	}
 }
