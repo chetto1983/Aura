@@ -199,6 +199,24 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		return nil, err
 	}
 
+	// PROF-04 lenient half: under dev/local_trusted the profile-aware Validate above
+	// does not fail on a misconfigured cataloged knob (it is a Warn, not a Fatal), so
+	// surface those diagnostics here. This is a print, NOT a gate — no runtime
+	// enforcement, no new gating call site (scope fence; fatals are already handled by
+	// the profile-aware Validate above). Under the strict tiers boot already failed fast
+	// on any Fatal, so only residual WARNs (e.g. a default prod bucket) reach this loop.
+	for _, v := range cfg.ValidateProfile(cfg.Profile) {
+		if v.Sev == config.Warn {
+			fmt.Fprintf(os.Stderr, "warn: config: %s: %s\n", v.Knob, v.Msg)
+		}
+	}
+	// D-14: local_trusted shares dev's constraint set exactly; this banner is the ONLY
+	// behavioral differentiator (a trusted single-machine deploy with full host
+	// capability active). dev prints no banner.
+	if cfg.Profile == config.ProfileLocalTrusted {
+		fmt.Fprintln(os.Stderr, "trusted local mode — full host capability active")
+	}
+
 	convStore := conversations.New(pool, conversations.Config{
 		RunDir:       cfg.RunDir,
 		TurnCapBytes: cfg.ConversationTurnCapBytes,
