@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react';
 import { AlertCircle, CircleSlash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { SkeletonBlock } from '@/components/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +12,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { Skeleton } from '@/components/ui/skeleton';
 
 export type BoardStatus = 'loading' | 'populated' | 'empty' | 'error' | 'error-auth';
 
@@ -59,9 +59,9 @@ export function BoardStateView({
         className="flex h-full min-h-0 flex-col gap-3 p-4"
       >
         <span className="sr-only">{t('governance.loading')}</span>
-        <Skeleton className="h-12 w-full max-w-xl bg-surface-3" />
-        <Skeleton className="h-12 w-full max-w-lg bg-surface-3" />
-        <Skeleton className="h-12 w-full max-w-2xl bg-surface-3" />
+        <SkeletonBlock className="max-w-xl" height="3rem" radius="md" />
+        <SkeletonBlock className="max-w-lg" height="3rem" radius="md" />
+        <SkeletonBlock className="max-w-2xl" height="3rem" radius="md" />
       </div>
     );
   }

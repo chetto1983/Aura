@@ -19,10 +19,10 @@ function renderState(status: Parameters<typeof BoardStateView>[0]['status']) {
 }
 
 describe('BoardStateView', () => {
-  it('renders loading with shadcn skeleton blocks', () => {
+  it('renders loading with skeleton blocks', () => {
     renderState('loading');
     expect(screen.getByRole('status')).toBeTruthy();
-    expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.skeleton-block').length).toBeGreaterThan(0);
   });
 
   it('renders empty with the shadcn Empty primitive', () => {

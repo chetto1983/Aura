@@ -9,6 +9,7 @@ import {
   useConversationSearch,
   type Conversation,
 } from './useConversations';
+import { SkeletonBlock } from '@/components/skeleton';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -18,7 +19,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 
 // SearchPanel is the CHAT-02 / D-08 FTS surface over GET /api/conversations/search.
 // Each hit projects ConversationID + Seq + Content (the snippet); the store's
@@ -83,8 +83,8 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
 
       {trimmed.length === 0 ? null : isFetching && results.length === 0 ? (
         <div aria-label={t('conversations.search.searching')} className="flex flex-col gap-2">
-          <Skeleton className="h-14 rounded-md" />
-          <Skeleton className="h-14 rounded-md" />
+          <SkeletonBlock height="3.5rem" radius="md" />
+          <SkeletonBlock height="3.5rem" radius="md" />
         </div>
       ) : results.length === 0 ? (
         <Empty className="flex-none border border-dashed border-border bg-surface-2/40 py-6">

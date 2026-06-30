@@ -21,6 +21,7 @@ import {
   useUnarchiveConversation,
   type Conversation,
 } from './useConversations';
+import { SkeletonBlock } from '@/components/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,6 @@ import {
 } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 
 // ConversationSidebar is the CHAT-02 conversation manager that replaces the
 // AppShell left-aside placeholder labels. It lists conversations recent-first
@@ -360,8 +360,8 @@ function ConversationListSkeleton({ label }: { readonly label: string }) {
     <div aria-label={label} className="flex flex-col gap-2">
       {Array.from({ length: 4 }).map((_, index) => (
         <Card key={index} className="gap-2 bg-surface-2/40 p-3">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
+          <SkeletonBlock height="1rem" radius="md" width="75%" />
+          <SkeletonBlock height="0.75rem" radius="md" width="50%" />
         </Card>
       ))}
     </div>
