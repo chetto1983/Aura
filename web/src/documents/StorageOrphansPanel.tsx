@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
+import type { SyntheticEvent } from 'react';
 import { Search, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Spinner } from '../components/Spinner';
 import {
   cleanupStorageOrphans,
   fetchStorageOrphans,
@@ -9,7 +10,6 @@ import {
   type StorageOrphanReport,
 } from './documentApi';
 import { formatBytes } from './documentFormat';
-import { Spinner } from '../components/Spinner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,7 @@ export function StorageOrphansPanel() {
   const [status, setStatus] = useState<PanelStatus>('idle');
   const [cleaning, setCleaning] = useState(false);
 
-  async function dryRun(event: FormEvent<HTMLFormElement>) {
+  async function dryRun(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus('loading');
     setConfirm('');
@@ -82,7 +82,12 @@ export function StorageOrphansPanel() {
         ) : null}
       </div>
 
-      <form onSubmit={dryRun} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+      <form
+        onSubmit={(event) => {
+          void dryRun(event);
+        }}
+        className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end"
+      >
         <div className="grid gap-1.5">
           <Label htmlFor="storage-bucket">{t('documents.storage.bucket')}</Label>
           <Input
@@ -148,7 +153,9 @@ export function StorageOrphansPanel() {
               type="button"
               variant="destructive"
               disabled={!canDelete || cleaning}
-              onClick={() => void cleanup()}
+              onClick={() => {
+                void cleanup();
+              }}
             >
               {cleaning ? <Spinner /> : <Trash2 aria-hidden="true" />}
               {t('documents.storage.delete')}

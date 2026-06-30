@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { SyntheticEvent } from 'react';
 import { FileText, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Spinner } from '../components/Spinner';
 import {
   deleteDocument,
   fetchDocumentDetail,
@@ -18,7 +19,6 @@ import {
 import { DocumentEventsPanel } from './DocumentEventsPanel';
 import { formatBytes } from './documentFormat';
 import { StorageOrphansPanel } from './StorageOrphansPanel';
-import { Spinner } from '../components/Spinner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -110,7 +110,7 @@ export default function DocumentsWorkspace() {
   );
 
   useEffect(() => {
-    void loadDocuments(defaultFilters);
+    void Promise.resolve().then(() => loadDocuments(defaultFilters));
   }, [loadDocuments]);
 
   const selectedDocument = detail?.document ?? documents.find((item) => item.id === selectedId);
@@ -122,7 +122,7 @@ export default function DocumentsWorkspace() {
     );
   }, [detail]);
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
+  function submitSearch(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     void loadDocuments({ query, tag, scope }, selectedId);
   }
@@ -198,7 +198,9 @@ export default function DocumentsWorkspace() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => void loadDocuments({ query, tag, scope }, selectedId)}
+            onClick={() => {
+              void loadDocuments({ query, tag, scope }, selectedId);
+            }}
           >
             <RefreshCw aria-hidden="true" />
             {t('documents.actions.refresh')}
@@ -271,7 +273,9 @@ export default function DocumentsWorkspace() {
                     key={document.id}
                     document={document}
                     selected={document.id === selectedId}
-                    onSelect={() => void selectDocument(document.id)}
+                    onSelect={() => {
+                      void selectDocument(document.id);
+                    }}
                   />
                 ))}
               </div>
@@ -304,7 +308,13 @@ export default function DocumentsWorkspace() {
                     />
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" disabled={savingTags} onClick={() => void saveTags()}>
+                    <Button
+                      type="button"
+                      disabled={savingTags}
+                      onClick={() => {
+                        void saveTags();
+                      }}
+                    >
                       {savingTags ? <Spinner /> : <Save aria-hidden="true" />}
                       {t('documents.actions.saveTags')}
                     </Button>
@@ -313,7 +323,9 @@ export default function DocumentsWorkspace() {
                         type="button"
                         variant="outline"
                         disabled={retrying}
-                        onClick={() => void retryActiveAsset()}
+                        onClick={() => {
+                          void retryActiveAsset();
+                        }}
                       >
                         {retrying ? <Spinner /> : <RefreshCw aria-hidden="true" />}
                         {t('documents.actions.retryProcessing')}
@@ -345,7 +357,7 @@ export default function DocumentsWorkspace() {
                     ))}
                   </div>
                 </section>
-                <DocumentEventsPanel documentId={detail.document.id} />
+                <DocumentEventsPanel key={detail.document.id} documentId={detail.document.id} />
               </>
             )}
             <StorageOrphansPanel />
@@ -360,7 +372,9 @@ export default function DocumentsWorkspace() {
         deleting={deleting}
         onOpenChange={setDeleteOpen}
         onConfirmChange={setDeleteConfirm}
-        onDelete={() => void confirmDelete()}
+        onDelete={() => {
+          void confirmDelete();
+        }}
       />
     </section>
   );
@@ -525,7 +539,13 @@ function DeleteDialog({
           />
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+            }}
+          >
             {t('documents.actions.cancel')}
           </Button>
           <Button

@@ -13,7 +13,6 @@ export function DocumentEventsPanel({ documentId }: { readonly documentId: strin
 
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
     void fetchDocumentEvents(documentId)
       .then((next) => {
         if (cancelled) return;
