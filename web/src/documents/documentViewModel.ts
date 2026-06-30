@@ -1,9 +1,4 @@
-import type {
-  DocumentDetail,
-  DocumentItem,
-  DocumentStatus,
-  DocumentVersion,
-} from './documentApi';
+import type { DocumentDetail, DocumentItem, DocumentStatus, DocumentVersion } from './documentApi';
 
 export type DocumentTab = 'all' | 'documents' | 'images' | 'files' | 'failed' | 'processing';
 export type DocumentKind = 'document' | 'image' | 'file';
@@ -38,7 +33,10 @@ export function documentKindFor(
 ): DocumentKind {
   const mime = version?.content_type.toLowerCase() ?? '';
   if (imageTypes.has(mime) || /\.(png|jpe?g|webp|gif|svg)$/i.test(document.title)) return 'image';
-  if (documentTypes.has(mime) || /\.(pdf|docx?|xlsx?|pptx?|txt|md|csv|html)$/i.test(document.title)) {
+  if (
+    documentTypes.has(mime) ||
+    /\.(pdf|docx?|xlsx?|pptx?|txt|md|csv|html)$/i.test(document.title)
+  ) {
     return 'document';
   }
   return 'file';

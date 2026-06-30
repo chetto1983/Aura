@@ -307,7 +307,7 @@ type ResponseInput struct {
 // yield-after-false guard is honored (never yield again once the consumer returns
 // false).
 func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
-	return r.runTurn(ctx, convID, userMsg, 0)
+	return r.runTurn(ctx, convID, turnInput{visibleUserMsg: userMsg, modelUserMsg: userMsg})
 }
 
 // TurnBranch is the D-09 / CHAT-05 re-run-from-a-point primitive: it drives a fresh
@@ -318,21 +318,21 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 // head; only body turns differ per branch — the CAP-04 cache invariant). leafSeq <= 0
 // falls back to the canonical branch leaf (the same history Turn would load).
 func (r *Runner) TurnBranch(ctx context.Context, convID string, leafSeq int) iter.Seq2[*agent.Event, error] {
-	return r.runTurn(ctx, convID, nil, leafSeq)
+	return r.runTurn(ctx, convID, turnInput{branchLeaf: leafSeq})
 }
 
 // runTurn dispatches a turn under the per-conversation lock (or directly when the lock
 // is already held). branchLeaf > 0 selects the path-aware branch history loader; 0 is
 // the linear full-history default Turn uses.
-func (r *Runner) runTurn(ctx context.Context, convID string, userMsg *string, branchLeaf int) iter.Seq2[*agent.Event, error] {
+func (r *Runner) runTurn(ctx context.Context, convID string, input turnInput) iter.Seq2[*agent.Event, error] {
 	if threadLockHeld(ctx) {
-		return r.turnLocked(ctx, convID, userMsg, branchLeaf)
+		return r.turnLocked(ctx, convID, input)
 	}
 	return func(yield func(*agent.Event, error) bool) {
 		mu := r.lockForThread(convID)
 		mu.Lock()
 		defer mu.Unlock()
-		for ev, err := range r.turnLocked(WithThreadLockHeld(ctx), convID, userMsg, branchLeaf) {
+		for ev, err := range r.turnLocked(WithThreadLockHeld(ctx), convID, input) {
 			if !yield(ev, err) {
 				return
 			}
@@ -356,7 +356,7 @@ func (r *Runner) lockForThread(convID string) *sync.Mutex {
 	return actual.(*sync.Mutex)
 }
 
-func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string, branchLeaf int) iter.Seq2[*agent.Event, error] {
+func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
 		scopedCtx, err := r.scopeContextToConversation(ctx, convID)
 		if err != nil {
@@ -366,12 +366,12 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string,
 		ctx = scopedCtx
 
 		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
-		if userMsg != nil {
-			if err := r.appendUserTurn(ctx, convID, *userMsg); err != nil {
+		if input.visibleUserMsg != nil {
+			if err := r.appendUserTurn(ctx, convID, *input.visibleUserMsg); err != nil {
 				yield(nil, err)
 				return
 			}
-			if answer, ok := fastReplyFor(*userMsg); ok {
+			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
 				ev, err := fastReplyEvent(convID, answer)
 				if err != nil {
 					yield(nil, err)
@@ -395,13 +395,14 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string,
 			yield(nil, err)
 			return
 		}
-		history, err := r.loadTurnHistory(ctx, convID, cfg, branchLeaf)
+		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
+		agentHistory := currentRoundModelHistory(history, input.visibleUserMsg, input.modelUserMsg)
 
-		la, ic, cancelAgent, err := r.buildAgent(ctx, convID, history)
+		la, ic, cancelAgent, err := r.buildAgent(ctx, convID, agentHistory)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -415,8 +416,8 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string,
 		// because the agent emits one pause Event per call but rewrites its history to
 		// a single multi-tool_call assistant message.
 		tr := &turnTracker{convID: convID}
-		if userMsg != nil {
-			tr.userMsg = *userMsg // thread the round's request for the tool-select capture (Open-Q #3)
+		if input.visibleUserMsg != nil {
+			tr.userMsg = *input.visibleUserMsg // thread the round's request for the tool-select capture (Open-Q #3)
 		}
 		// flushPause writes the single combined assistant ask_user tool_call turn (CR-02)
 		// — the message the injected RoleTool answers attach to on resume. It MUST run

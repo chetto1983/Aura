@@ -1,7 +1,7 @@
 package documents
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- compatibility metadata only; SHA-256 remains canonical.
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"

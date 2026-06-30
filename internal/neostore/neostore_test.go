@@ -44,11 +44,13 @@ func TestHashText_DeterministicSHA256Hex(t *testing.T) {
 		long += "x"
 	}
 	for _, in := range []string{"", "a", unicode, long} {
-		if HashText(in) != HashText(in) {
+		first := HashText(in)
+		second := HashText(in)
+		if first != second {
 			t.Errorf("HashText(%q) not deterministic", in)
 		}
-		if len(HashText(in)) != 64 {
-			t.Errorf("HashText(%q) length = %d, want 64 hex chars", in, len(HashText(in)))
+		if len(first) != 64 {
+			t.Errorf("HashText(%q) length = %d, want 64 hex chars", in, len(first))
 		}
 	}
 	if HashText("a") == HashText("b") {

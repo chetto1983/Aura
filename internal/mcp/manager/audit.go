@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // The append-only MCP-audit store copies the canonical Store pattern proved in
@@ -34,13 +33,7 @@ var ErrMCPAuditImmutable = errors.New("mcp_audit is append-only")
 // INSERT + SELECT only — the append-only contract is enforced at the DB, and the
 // Store mirrors it by exposing no mutation method.
 type MCPAuditStore struct {
-	pool *pgxpool.Pool
-	q    *sqlc.Queries
-}
-
-// NewMCPAuditStore builds an MCPAuditStore over an open pool.
-func NewMCPAuditStore(pool *pgxpool.Pool) *MCPAuditStore {
-	return &MCPAuditStore{pool: pool, q: sqlc.New(pool)}
+	q *sqlc.Queries
 }
 
 // MCPAuditRow is the domain projection of one aura.mcp_audit row — plain Go types at

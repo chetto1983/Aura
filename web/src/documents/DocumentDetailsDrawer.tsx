@@ -51,7 +51,13 @@ export function DocumentDetailsDrawer({
             {formatDocumentDate(document.updated_at ?? document.created_at)}
           </p>
         </div>
-        <Button type="button" size="icon" variant="ghost" aria-label={t('documents.actions.close')} onClick={onClose}>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={t('documents.actions.close')}
+          onClick={onClose}
+        >
           <X aria-hidden="true" />
         </Button>
       </header>
@@ -76,7 +82,9 @@ export function DocumentDetailsDrawer({
             <Input
               id="documents-tags"
               value={tagDraft}
-              onChange={(event) => { onTagDraftChange(event.target.value); }}
+              onChange={(event) => {
+                onTagDraftChange(event.target.value);
+              }}
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -91,9 +99,7 @@ export function DocumentDetailsDrawer({
           </div>
         </section>
         <section className="grid gap-3 border-b border-border py-4">
-          <h3 className="text-[14px] font-semibold text-text">
-            {t('documents.detail.versions')}
-          </h3>
+          <h3 className="text-[14px] font-semibold text-text">{t('documents.detail.versions')}</h3>
           {detail?.versions.map((version) => (
             <div
               key={version.id}

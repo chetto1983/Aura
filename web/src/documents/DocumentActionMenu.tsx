@@ -30,7 +30,13 @@ export function DocumentActionMenu({
     <div className="absolute right-6 top-32 z-20 w-56 rounded-md border border-border bg-surface p-1 shadow-popover">
       <div className="flex items-center justify-between px-2 py-1 text-[12px] font-semibold text-text-muted">
         <span className="truncate">{document.title}</span>
-        <Button type="button" size="icon" variant="ghost" aria-label={t('documents.actions.close')} onClick={onClose}>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={t('documents.actions.close')}
+          onClick={onClose}
+        >
           <X aria-hidden="true" />
         </Button>
       </div>

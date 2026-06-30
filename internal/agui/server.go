@@ -284,11 +284,10 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	// Prepend per-turn context blocks (attachments + the thread's searchable-doc catalog)
 	// to the user turn; see buildTurnUserMessage (server_context.go).
-	if msg, code, emsg := s.buildTurnUserMessage(ctx, r, in.ThreadID, req.Aura.AttachmentIDs, userMsg); code != 0 {
+	modelUserMsg, code, emsg := s.buildTurnUserMessage(ctx, r, in.ThreadID, req.Aura.AttachmentIDs, userMsg)
+	if code != 0 {
 		http.Error(w, emsg, code)
 		return
-	} else {
-		userMsg = msg
 	}
 
 	var unlock func()
@@ -317,7 +316,12 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	// ACAO is set centrally by withCORS when CORSPermissive is on (WR-05) so it is present
 	// on the error responses above too, not only this 200 stream.
 
-	turn := s.run.Turn(ctx, in.ThreadID, userMsg)
+	turn := s.run.Turn(ctx, in.ThreadID, modelUserMsg)
+	if userMsg != nil && modelUserMsg != nil && *userMsg != *modelUserMsg {
+		if split, ok := s.run.(modelUserMessageRunner); ok {
+			turn = split.TurnWithModelUserMessage(ctx, in.ThreadID, *userMsg, *modelUserMsg)
+		}
+	}
 	// D-01: the cockpit SSE stream surfaces live REASONING_* delta text (showReasoning
 	// =true). This is a deliberate operator override of the conservative redacted web
 	// default, justified by the whole-origin-private single-operator cockpit (Phase 24

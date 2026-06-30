@@ -298,10 +298,6 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 	return s.processAsset(ctx, asset)
 }
 
-func (s *Service) process(ctx context.Context, asset Asset) {
-	_, _ = s.processAsset(ctx, asset)
-}
-
 func (s *Service) enqueueProcessing(ctx context.Context, asset Asset) error {
 	if s.ProcessingJobs == nil {
 		return nil

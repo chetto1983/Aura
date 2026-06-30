@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
+// StorageOrphanCleanupConfirmation is the exact confirmation phrase for destructive cleanup.
 const StorageOrphanCleanupConfirmation = "DELETE ORPHAN OBJECTS"
 
 // StorageLedger lists object ledger rows recorded by the document control plane.

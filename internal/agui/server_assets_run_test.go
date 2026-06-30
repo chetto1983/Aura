@@ -32,13 +32,16 @@ func TestServerRunPrependsAttachmentBlock(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if run.gotTurnUserMsg == nil {
-		t.Fatal("Runner.Turn userMsg is nil, want attachment block + message")
+	if run.gotVisibleUserMsg == nil || *run.gotVisibleUserMsg != "summarize it" {
+		t.Fatalf("visible userMsg = %v, want original message", run.gotVisibleUserMsg)
 	}
-	got := *run.gotTurnUserMsg
+	if run.gotModelUserMsg == nil {
+		t.Fatal("model userMsg is nil, want attachment block + message")
+	}
+	got := *run.gotModelUserMsg
 	for _, want := range []string{`<attachments trust="untrusted_user_uploads">`, "document_search", `document_id="doc-1"`, "User message:\nsummarize it"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("Turn userMsg missing %q:\n%s", want, got)
+			t.Fatalf("model userMsg missing %q:\n%s", want, got)
 		}
 	}
 }
@@ -66,13 +69,16 @@ func TestServerRunInjectsKnowledgeCatalogWithoutAttachment(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if run.gotTurnUserMsg == nil {
-		t.Fatal("Runner.Turn userMsg is nil, want knowledge catalog + message")
+	if run.gotVisibleUserMsg == nil || *run.gotVisibleUserMsg != "what is the rated torque?" {
+		t.Fatalf("visible userMsg = %v, want original message", run.gotVisibleUserMsg)
 	}
-	got := *run.gotTurnUserMsg
+	if run.gotModelUserMsg == nil {
+		t.Fatal("model userMsg is nil, want knowledge catalog + message")
+	}
+	got := *run.gotModelUserMsg
 	for _, want := range []string{"<knowledge_base", "document_search", "document_id=doc-7", "g220.pdf", "User message:\nwhat is the rated torque?"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("Turn userMsg missing %q:\n%s", want, got)
+			t.Fatalf("model userMsg missing %q:\n%s", want, got)
 		}
 	}
 	if assetSvc.listThreadID != tid {

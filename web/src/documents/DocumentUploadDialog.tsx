@@ -61,7 +61,9 @@ export function DocumentUploadDialog({
           <Input
             id="document-upload-file"
             type="file"
-            onChange={(event) => { setFile(event.target.files?.[0]); }}
+            onChange={(event) => {
+              setFile(event.target.files?.[0]);
+            }}
           />
           {uploading ? (
             <div role="status" className="text-[13px] text-text-muted">
@@ -75,10 +77,20 @@ export function DocumentUploadDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => { onOpenChange(false); }}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+            }}
+          >
             {t('documents.actions.cancel')}
           </Button>
-          <Button type="button" disabled={file === undefined || uploading} onClick={() => void upload()}>
+          <Button
+            type="button"
+            disabled={file === undefined || uploading}
+            onClick={() => void upload()}
+          >
             {uploading ? <Spinner /> : <Upload aria-hidden="true" />}
             {t('documents.actions.upload')}
           </Button>

@@ -17,7 +17,9 @@ const (
 type DocumentScope string
 
 const (
-	DocumentScopeThread  DocumentScope = "thread"
+	// DocumentScopeThread limits a document to one conversation thread.
+	DocumentScopeThread DocumentScope = "thread"
+	// DocumentScopeLibrary makes a document visible across the user's library.
 	DocumentScopeLibrary DocumentScope = "library"
 )
 
@@ -25,14 +27,22 @@ const (
 type DocumentStatus string
 
 const (
-	DocumentStatusDraft      DocumentStatus = "draft"
-	DocumentStatusQueued     DocumentStatus = "queued"
+	// DocumentStatusDraft means the logical document exists before ingestion is queued.
+	DocumentStatusDraft DocumentStatus = "draft"
+	// DocumentStatusQueued means ingestion work has been queued.
+	DocumentStatusQueued DocumentStatus = "queued"
+	// DocumentStatusProcessing means ingestion or indexing is actively running.
 	DocumentStatusProcessing DocumentStatus = "processing"
-	DocumentStatusReady      DocumentStatus = "ready"
-	DocumentStatusFailed     DocumentStatus = "failed"
-	DocumentStatusDeleting   DocumentStatus = "deleting"
-	DocumentStatusDeleted    DocumentStatus = "deleted"
-	DocumentStatusArchived   DocumentStatus = "archived"
+	// DocumentStatusReady means the active document version is searchable.
+	DocumentStatusReady DocumentStatus = "ready"
+	// DocumentStatusFailed means the latest ingestion attempt failed.
+	DocumentStatusFailed DocumentStatus = "failed"
+	// DocumentStatusDeleting means deletion has started but cleanup is still in progress.
+	DocumentStatusDeleting DocumentStatus = "deleting"
+	// DocumentStatusDeleted means the logical document has been soft-deleted.
+	DocumentStatusDeleted DocumentStatus = "deleted"
+	// DocumentStatusArchived means the document is retained but hidden from active views.
+	DocumentStatusArchived DocumentStatus = "archived"
 )
 
 // Document is the domain view of one logical, versioned document.

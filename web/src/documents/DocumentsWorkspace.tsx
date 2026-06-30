@@ -211,7 +211,9 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
         onQueryChange={setQuery}
         onSearch={searchDocuments}
         onRefresh={searchDocuments}
-        onUpload={() => { setUploadOpen(true); }}
+        onUpload={() => {
+          setUploadOpen(true);
+        }}
       />
       <DocumentFilterBar
         tab={tab}
@@ -247,7 +249,9 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
         <DocumentActionMenu
           document={actionDocument}
           open={actionMenuId !== ''}
-          onClose={() => { setActionMenuId(''); }}
+          onClose={() => {
+            setActionMenuId('');
+          }}
           onAsk={() => {
             if (actionDocument !== undefined) {
               if (onAskDocument !== undefined) {
@@ -293,7 +297,9 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
             setDeleteTarget(selectedDocument);
             setDeleteOpen(true);
           }}
-          onClose={() => { setDrawerOpen(false); }}
+          onClose={() => {
+            setDrawerOpen(false);
+          }}
         />
         <section className="border-t border-border px-4 py-3 sm:px-6">
           <div className="mx-auto w-full max-w-6xl">
@@ -301,7 +307,9 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
               type="button"
               variant="ghost"
               aria-expanded={adminOpen}
-              onClick={() => { setAdminOpen((open) => !open); }}
+              onClick={() => {
+                setAdminOpen((open) => !open);
+              }}
             >
               <Settings2 aria-hidden="true" />
               {t('documents.admin.maintenance')}
@@ -370,11 +378,19 @@ function DeleteDialog({
           <Input
             id="documents-delete-confirm"
             value={confirm}
-            onChange={(event) => { onConfirmChange(event.target.value); }}
+            onChange={(event) => {
+              onConfirmChange(event.target.value);
+            }}
           />
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => { onOpenChange(false); }}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+            }}
+          >
             {t('documents.actions.cancel')}
           </Button>
           <Button

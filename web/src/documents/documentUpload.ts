@@ -53,7 +53,9 @@ function uploadToPresignedURL(
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`upload failed: HTTP ${String(xhr.status)}`));
     };
-    xhr.onerror = () => { reject(new Error('upload failed')); };
+    xhr.onerror = () => {
+      reject(new Error('upload failed'));
+    };
     xhr.send(file);
   });
 }

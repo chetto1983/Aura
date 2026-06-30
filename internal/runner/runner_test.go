@@ -196,6 +196,48 @@ func TestTurnScopesToolsToConversationIdentity(t *testing.T) {
 	}
 }
 
+func TestTurnWithModelUserMessagePersistsVisibleTextAndSendsModelContext(t *testing.T) {
+	client := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(textResponseCall("call-1", "done")),
+	)
+	r, conv, _ := newTestRunner(t, client)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	visible := "Quali robot sono elencati?"
+	model := "<knowledge_base trust=\"operator_pinned_context\">\nuse document_search\n</knowledge_base>\n\nUser message:\n" + visible
+	if _, err := drain(r.TurnWithModelUserMessage(ctx, convID, visible, model)); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	hist, err := conv.LoadHistory(ctx, convID)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(hist) == 0 || hist[0].Role != llm.RoleUser {
+		t.Fatalf("history = %+v, want leading user turn", hist)
+	}
+	if hist[0].Content != visible {
+		t.Fatalf("persisted user content = %q, want visible text %q", hist[0].Content, visible)
+	}
+	if strings.Contains(hist[0].Content, "knowledge_base") {
+		t.Fatalf("persisted user content leaked model context: %q", hist[0].Content)
+	}
+
+	req := client.Requests[0]
+	sawModelContext := false
+	for _, msg := range req.Messages {
+		if msg.Role == llm.RoleUser && msg.Content == model {
+			sawModelContext = true
+			break
+		}
+	}
+	if !sawModelContext {
+		t.Fatalf("LLM request did not include model-context user message: %+v", req.Messages)
+	}
+}
+
 func TestTurnRejectsMismatchedContextIdentity(t *testing.T) {
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(textResponseCall("call-1", "should not run")),

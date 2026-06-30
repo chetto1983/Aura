@@ -5,7 +5,15 @@ package manager
 import (
 	"context"
 	"fmt"
+
+	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// NewMCPAuditStore builds an MCPAuditStore over an open pool.
+func NewMCPAuditStore(pool *pgxpool.Pool) *MCPAuditStore {
+	return &MCPAuditStore{q: sqlc.New(pool)}
+}
 
 // InsertMCPAudit appends one audit row via the pool in db_integration builds.
 // Production code uses InsertMCPAuditTx so audit rows participate in the config

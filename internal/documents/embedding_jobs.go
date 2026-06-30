@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// IngestionJobTypeDocumentEmbed identifies durable document embedding jobs.
 const IngestionJobTypeDocumentEmbed = "document_embed"
 
 // IngestionJobCreator persists a new durable ingestion job.

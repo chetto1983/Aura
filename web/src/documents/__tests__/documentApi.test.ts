@@ -124,7 +124,10 @@ describe('documentApi', () => {
         status: 'ready',
       },
     ];
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))),
+    );
 
     await expect(fetchDocuments()).resolves.toMatchObject([{ id: 'doc-1', tags: [] }]);
   });

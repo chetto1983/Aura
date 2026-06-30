@@ -39,7 +39,12 @@ export function DocumentFilterBar({
     <div className="border-b border-border bg-bg px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <Tabs value={tab} onValueChange={(value) => { onTabChange(value as DocumentTab); }}>
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              onTabChange(value as DocumentTab);
+            }}
+          >
             <TabsList className="max-w-full overflow-x-auto">
               {tabs.map((item) => (
                 <TabsTrigger key={item} value={item}>
@@ -54,7 +59,9 @@ export function DocumentFilterBar({
               size="icon"
               variant={viewMode === 'list' ? 'default' : 'outline'}
               aria-label={t('documents.view.list')}
-              onClick={() => { onViewModeChange('list'); }}
+              onClick={() => {
+                onViewModeChange('list');
+              }}
             >
               <List aria-hidden="true" />
             </Button>
@@ -63,7 +70,9 @@ export function DocumentFilterBar({
               size="icon"
               variant={viewMode === 'grid' ? 'default' : 'outline'}
               aria-label={t('documents.view.grid')}
-              onClick={() => { onViewModeChange('grid'); }}
+              onClick={() => {
+                onViewModeChange('grid');
+              }}
             >
               <Grid2X2 aria-hidden="true" />
             </Button>
@@ -75,7 +84,9 @@ export function DocumentFilterBar({
             <Input
               id="documents-tag"
               value={tag}
-              onChange={(event) => { onTagChange(event.target.value); }}
+              onChange={(event) => {
+                onTagChange(event.target.value);
+              }}
             />
           </div>
           <div className="grid gap-1.5">
@@ -83,10 +94,14 @@ export function DocumentFilterBar({
             <NativeSelect
               id="documents-scope"
               value={scope}
-              onChange={(event) => { onScopeChange(event.target.value as ScopeFilter); }}
+              onChange={(event) => {
+                onScopeChange(event.target.value as ScopeFilter);
+              }}
             >
               <NativeSelectOption value="all">{t('documents.scope.all')}</NativeSelectOption>
-              <NativeSelectOption value="library">{t('documents.scope.library')}</NativeSelectOption>
+              <NativeSelectOption value="library">
+                {t('documents.scope.library')}
+              </NativeSelectOption>
               <NativeSelectOption value="thread">{t('documents.scope.thread')}</NativeSelectOption>
             </NativeSelect>
           </div>

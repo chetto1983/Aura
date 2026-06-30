@@ -94,6 +94,8 @@ type scriptedRunner struct {
 	gotBranchLeaf        int     // the leaf TurnBranch was called with (D-09 re-run assertion)
 	turnCalled           bool    // Turn was invoked (continue-after-resume reached the runner)
 	gotTurnUserMsg       *string // the userMsg Turn was called with (nil = continue-after-resume)
+	gotVisibleUserMsg    *string
+	gotModelUserMsg      *string
 	newConversationID    string
 	newConversationErr   error
 	newConversationCalls int
@@ -102,6 +104,23 @@ type scriptedRunner struct {
 func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
 	s.turnCalled = true
 	s.gotTurnUserMsg = userMsg
+	return func(yield func(*agent.Event, error) bool) {
+		for _, ev := range s.events {
+			if !yield(ev, nil) {
+				return
+			}
+		}
+		if s.turnErr != nil {
+			yield(nil, s.turnErr)
+		}
+	}
+}
+
+func (s *scriptedRunner) TurnWithModelUserMessage(_ context.Context, _ string, visibleUserMsg, modelUserMsg string) iter.Seq2[*agent.Event, error] {
+	s.turnCalled = true
+	s.gotTurnUserMsg = &visibleUserMsg
+	s.gotVisibleUserMsg = &visibleUserMsg
+	s.gotModelUserMsg = &modelUserMsg
 	return func(yield func(*agent.Event, error) bool) {
 		for _, ev := range s.events {
 			if !yield(ev, nil) {
