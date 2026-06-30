@@ -2,14 +2,13 @@ package assets
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
@@ -137,8 +136,11 @@ func TestServiceFinalizeMarksAcceptedAndStartsProcessor(t *testing.T) {
 	if accepted.Status != StatusAccepted || accepted.SizeBytes != 9 || accepted.MIMEType != "application/pdf" {
 		t.Fatalf("accepted asset = %#v", accepted)
 	}
-	sum := sha256.Sum256([]byte("%PDF test"))
-	if accepted.ContentHash != hex.EncodeToString(sum[:]) {
+	hashes, err := documents.ContentHashesReader(strings.NewReader("%PDF test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.ContentHash != hashes.SHA256 {
 		t.Fatalf("ContentHash = %q, want sha256", accepted.ContentHash)
 	}
 
