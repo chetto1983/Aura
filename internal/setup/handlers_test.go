@@ -201,3 +201,68 @@ func TestHandleStatus(t *testing.T) {
 		t.Fatal("bot_configured should be true after /setup/token")
 	}
 }
+
+// orderRecordingWriter is an http.ResponseWriter seam that snapshots whether the
+// one-time setup token is still valid at the instant of the FIRST body write. The
+// handleEvents pump must burn the token (InvalidateToken) BEFORE it writes the
+// onboarding_completed SSE frame (handlers.go:146); if the order were swapped the
+// snapshot would flip to true and the assertion below would fail.
+type orderRecordingWriter struct {
+	hdr               http.Header
+	body              bytes.Buffer
+	tokenValid        func() bool
+	validAtFirstWrite *bool
+}
+
+func (w *orderRecordingWriter) Header() http.Header {
+	if w.hdr == nil {
+		w.hdr = make(http.Header)
+	}
+	return w.hdr
+}
+
+func (w *orderRecordingWriter) WriteHeader(int) {}
+
+func (w *orderRecordingWriter) Write(p []byte) (int, error) {
+	if w.validAtFirstWrite == nil {
+		v := w.tokenValid()
+		w.validAtFirstWrite = &v
+	}
+	return w.body.Write(p)
+}
+
+// TestEventsInvalidateTokenBeforeSSEWrite is the ordering regression for
+// handlers.go:146: the SSE pump MUST invalidate the one-time token BEFORE it writes
+// the onboarding_completed frame, so a client that fires a follow-up /setup/* request
+// the instant it reads the event still 401s (the slow-Windows-CI race the comment
+// fixes). Driving handleEvents directly with a recording writer, the seam snapshots
+// token validity at the first body write; a swapped order (writeSSE before
+// InvalidateToken) leaves the token valid at that instant and fails the test.
+func TestEventsInvalidateTokenBeforeSSEWrite(t *testing.T) {
+	srv := NewServer(Deps{
+		Store:        &togglingStore{flipAt: 1}, // consumed on the first poll → one terminal event
+		Probe:        func(_ context.Context, _ string) (string, error) { return "bot", nil },
+		Token:        "tok",
+		IdentityID:   "00000000-0000-0000-0000-000000000001",
+		TokenOut:     io.Discard,
+		QROut:        io.Discard,
+		PollInterval: time.Millisecond, // do not wait 2s for a tick
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/setup/events?onboarding=abc123", nil).WithContext(ctx)
+
+	spy := &orderRecordingWriter{tokenValid: func() bool { return srv.token.Valid("tok") }}
+	srv.handleEvents(spy, req)
+
+	if spy.validAtFirstWrite == nil {
+		t.Fatal("handleEvents never wrote an SSE frame")
+	}
+	if !strings.Contains(spy.body.String(), onboardingCompletedEvent) {
+		t.Fatalf("SSE body %q did not carry the onboarding_completed event", spy.body.String())
+	}
+	if *spy.validAtFirstWrite {
+		t.Fatal("token was still valid at the first SSE write — InvalidateToken must run BEFORE writeSSE (handlers.go:146 regression)")
+	}
+}
