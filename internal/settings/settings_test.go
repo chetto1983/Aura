@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 type fakeLister struct{ rows []sqlc.AuraSettings }
@@ -61,5 +62,57 @@ func TestOverlayEnvAppliesAllowlistOnly(t *testing.T) {
 	}
 	if got := os.Getenv(denied); got != "" {
 		t.Errorf("%s = %q, want unset — non-allowlisted rows must be ignored", denied, got)
+	}
+}
+
+// The two AURA_MEMORY_EMBED_* keys were sidecar-owned compose/.env vars whose
+// cockpit overlay was a silent no-op (the daemon's os.Setenv cannot reach a
+// running sidecar). They were removed from AllowedKeys; the agent-memory sidecar
+// still consumes them from compose/.env at container start.
+func TestMemoryEmbedKeysRemovedFromAllowlist(t *testing.T) {
+	for _, key := range []string{"AURA_MEMORY_EMBED_BASE_URL", "AURA_MEMORY_EMBED_API_KEY"} {
+		if _, ok := AllowedKeys[key]; ok {
+			t.Errorf("%s must NOT be cockpit-overridable — it is a sidecar-owned compose/.env var", key)
+		}
+		if _, ok := Allowed(key); ok {
+			t.Errorf("Allowed(%q) = true, want false after removal", key)
+		}
+	}
+}
+
+// A stale aura.settings row for a now-unlisted key (e.g. one an operator set
+// before removal) must be silently skipped by OverlayEnv — no os.Setenv, no
+// error — so no DB migration is needed to retire the key.
+func TestOverlayEnvSkipsStaleRemovedKey(t *testing.T) {
+	const stale = "AURA_MEMORY_EMBED_BASE_URL"
+	if _, had := os.LookupEnv(stale); had {
+		t.Fatalf("precondition: %s should be unset in the test env", stale)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv(stale) })
+
+	l := fakeLister{rows: []sqlc.AuraSettings{{Key: stale, Value: "https://stale.example/v1"}}}
+	if err := OverlayEnv(t.Context(), l); err != nil {
+		t.Fatalf("OverlayEnv with a stale removed-key row: %v", err)
+	}
+	if _, set := os.LookupEnv(stale); set {
+		t.Errorf("%s was applied to the environment — a stale removed-key row must be ignored", stale)
+	}
+}
+
+// Guard: removing the keys from the settings allowlist does not touch the
+// independent secret.IsSecretEnvKey redaction predicate. The *_API_KEY / *_BASE_URL
+// names still match the canonical marker set (B-09 superset), so any value that
+// ever reaches a child env or exported profile is still redacted.
+func TestSecretRedactionPredicateUnaffected(t *testing.T) {
+	for _, key := range []string{
+		"AURA_MEMORY_EMBED_API_KEY",
+		"AURA_MEMORY_EMBED_BASE_URL",
+		"OPENROUTER_API_KEY",
+		"NEO4J_PASSWORD",
+		"AURA_WEB_AUTH_SECRET",
+	} {
+		if !secret.IsSecretEnvKey(key) {
+			t.Errorf("secret.IsSecretEnvKey(%q) = false, want true (redaction must stay intact)", key)
+		}
 	}
 }

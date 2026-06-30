@@ -58,8 +58,6 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_TTS_MODEL":               {Kind: KindString, Label: "TTS cloud model"},
 	"AURA_STT_CLOUD_MODEL":         {Kind: KindString, Label: "STT cloud model"},
 	"AURA_VISION_CLOUD":            {Kind: KindBool, Label: "Vision uses cloud"},
-	"AURA_MEMORY_EMBED_BASE_URL":   {Kind: KindString, Label: "Memory MCP embedding base URL"},
-	"AURA_MEMORY_EMBED_API_KEY":    {Secret: true, Kind: KindString, Label: "Memory MCP embedding key"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.
