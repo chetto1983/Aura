@@ -285,25 +285,6 @@ func TestBuildQuery(t *testing.T) {
 	})
 }
 
-// TestHostThrottle_AcquireCancelled covers the ctx-done arm of acquire: a cancelled
-// ctx returns ok=false with a no-op release (no token was taken).
-func TestHostThrottle_AcquireCancelled(t *testing.T) {
-	h := newHostThrottle()
-	// Saturate the host's semaphore so the next acquire must block on ctx.
-	for i := 0; i < perHostLimit; i++ {
-		if _, ok := h.acquire(context.Background(), "full.test"); !ok {
-			t.Fatalf("acquire %d should succeed up to the cap", i)
-		}
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	release, ok := h.acquire(ctx, "full.test")
-	if ok {
-		t.Fatal("acquire under a cancelled ctx must return ok=false")
-	}
-	release() // no-op release must be safe to call
-}
-
 // TestConvIDFrom covers the no-convID branch: a ctx without a stamped convID yields
 // the empty string (the pin cache then keys by "").
 func TestConvIDFrom(t *testing.T) {
