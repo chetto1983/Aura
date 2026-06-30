@@ -5,13 +5,23 @@
 // headroom Phase 33 needs and gives the per-profile validation surface (plans 02-05)
 // a home beside the contract types it produces.
 //
-// Validate is behaviour-identical to its former config.go location — this is a pure
-// relocation. The Violation/Severity types are the contract the runtime-profile
-// re-parse pass (config_knobs.go) and the `aura config validate` CLI consume.
+// The Violation/Severity types are the contract the runtime-profile re-parse pass
+// (config_knobs.go) and the `aura config validate` CLI consume. Beside the moved
+// Validate this file holds the small set of pure, total, table-testable bespoke
+// gates (each mirroring GuardWebBind — `config:`-prefixed, NAMING the offending
+// knob, never echoing its VALUE) that encode the D-09..D-16 profile rule matrix:
+// the strict set (single_user_hardened + server_production, via RuntimeProfile.Strict)
+// rejects sample object-store creds, an empty Garage RPC secret, permissive CORS and
+// an absent web-auth secret; server_production additionally rejects a single-replica
+// object store and a disabled destructive-shell gate (the hardened↔prod differentiator,
+// D-11/D-15). The gates REFUSE and NAME — they never silently coerce an operator value
+// to a "safe" one (D-05).
 package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,6 +41,7 @@ const (
 // var (so operator output is actionable), Sev ranks it, and Msg explains the fix.
 // The validation pass aggregates a []Violation — it lists EVERY unmet requirement
 // rather than failing on the first, mirroring Validate's missing-secrets aggregation.
+// Msg never echoes a secret VALUE (T-33-08): it names the knob and states the rule.
 type Violation struct {
 	Knob string
 	Sev  Severity
@@ -57,4 +68,162 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: %w", c.RunDirErr)
 	}
 	return nil
+}
+
+// gateRequiredSecrets flags an empty REQUIRED infrastructure secret (DB DSN +
+// Neo4j password) as Fatal in EVERY tier (O-04): these are required for any
+// daemon/REPL boot regardless of profile, so the profile validator never relaxes
+// them. It names the offending knob and never echoes the (empty) secret VALUE.
+func (c *Config) gateRequiredSecrets() []Violation {
+	var vs []Violation
+	if strings.TrimSpace(c.DB.URL) == "" {
+		vs = append(vs, Violation{Knob: "POSTGRES_PASSWORD (or AURA_DB_URL)", Sev: Fatal, Msg: "required DB secret is unset"})
+	}
+	if strings.TrimSpace(c.Neo4j.Password) == "" {
+		vs = append(vs, Violation{Knob: "NEO4J_PASSWORD", Sev: Fatal, Msg: "required graph secret is unset"})
+	}
+	return vs
+}
+
+// gateRunDir flags a non-absolute AURA_RUN_DIR as Fatal in EVERY tier (F-041/PROF-05):
+// sidecars must resolve against a stable root, not the process cwd. RunDirErr is the
+// load-time failure (cwd unobtainable so filepath.Abs could not normalize); the
+// IsAbs guard is the defensive backstop for a Config that somehow carries a relative
+// RunDir that bypassed absRunDir. Either surfaces as one named Fatal.
+func (c *Config) gateRunDir() []Violation {
+	if c.RunDirErr != nil {
+		return []Violation{{Knob: "AURA_RUN_DIR", Sev: Fatal, Msg: c.RunDirErr.Error()}}
+	}
+	if c.RunDir != "" && !filepath.IsAbs(c.RunDir) {
+		return []Violation{{Knob: "AURA_RUN_DIR", Sev: Fatal, Msg: fmt.Sprintf("must be an absolute path, got %q", c.RunDir)}}
+	}
+	return nil
+}
+
+// gateWebBind reuses the existing WEB-02 GuardWebBind policy (loopback always boots;
+// a non-loopback bind requires web-auth OR a trusted proxy) as a Violation in EVERY
+// tier, naming AURA_AGUI_BIND. Loopback (the default) yields no violation.
+func (c *Config) gateWebBind() []Violation {
+	if err := GuardWebBind(c.AGUIBind, strings.TrimSpace(c.AuthulaSecret) != "", c.WebTrustProxy); err != nil {
+		return []Violation{{Knob: "AURA_AGUI_BIND", Sev: Fatal, Msg: err.Error()}}
+	}
+	return nil
+}
+
+// gateObjectStoreCreds rejects the in-tree SAMPLE object-store credentials under the
+// strict tiers (single_user_hardened + server_production, D-10/D-11/PROF-03/F-007):
+// a deploy that ships the default sentinel keys is a credential-reuse EoP. Lenient
+// tiers (dev/local_trusted) return no violation — full-host parity (D-09). The
+// compare targets are PUBLIC constants (config.go), so == is correct: no secret is
+// involved and constant-time comparison is not required (RESEARCH §Security V6).
+func (c *Config) gateObjectStoreCreds(p RuntimeProfile) []Violation {
+	if !p.Strict() {
+		return nil
+	}
+	var vs []Violation
+	if c.ObjectStoreAccessKey == defaultObjectStoreAccessKey {
+		vs = append(vs, Violation{Knob: "AURA_OBJECTSTORE_ACCESS_KEY", Sev: Fatal, Msg: "sample object-store access key rejected under " + string(p)})
+	}
+	if c.ObjectStoreSecretKey == defaultObjectStoreSecretKey {
+		vs = append(vs, Violation{Knob: "AURA_OBJECTSTORE_SECRET_KEY", Sev: Fatal, Msg: "sample object-store secret key rejected under " + string(p)})
+	}
+	return vs
+}
+
+// gateGarageRPCSecret requires a non-empty GARAGE_RPC_SECRET under the strict tiers
+// (PROF-03/F-007/A5): an empty inter-node RPC secret leaves the object-store cluster
+// unauthenticated. No in-tree sample literal exists (install.sh generates it), so the
+// reject baseline is "empty". Lenient tiers return no violation.
+func (c *Config) gateGarageRPCSecret(p RuntimeProfile) []Violation {
+	if !p.Strict() {
+		return nil
+	}
+	if strings.TrimSpace(c.GarageRPCSecret) == "" {
+		return []Violation{{Knob: "GARAGE_RPC_SECRET", Sev: Fatal, Msg: "inter-node RPC secret must be set under " + string(p)}}
+	}
+	return nil
+}
+
+// gateReplication requires an object-store replication factor of at least 2 under
+// server_production ONLY (PROF-06/F-018): a single replica is non-durable. This is the
+// clean hardened↔prod differentiator (D-11) — single_user_hardened (the single-node
+// appliance tier) ALLOWS replication = 1, so this gate is a no-op outside production.
+func (c *Config) gateReplication(p RuntimeProfile) []Violation {
+	if p != ProfileServerProduction {
+		return nil
+	}
+	if c.ObjectStoreReplicationFactor < 2 {
+		return []Violation{{Knob: "AURA_OBJECTSTORE_REPLICATION_FACTOR", Sev: Fatal, Msg: fmt.Sprintf("must be >= 2 for durability under server_production, got %d", c.ObjectStoreReplicationFactor)}}
+	}
+	return nil
+}
+
+// gateCORS forbids permissive CORS (`Access-Control-Allow-Origin: *`) under BOTH
+// strict tiers (A2/D-15): permissive CORS on an authenticated cockpit surface is a
+// spoofing/EoP vector (F-022). single_user_hardened forbids it too, for consistency
+// with prod (cheap). Lenient tiers return no violation (dev-only permissive CORS).
+func (c *Config) gateCORS(p RuntimeProfile) []Violation {
+	if !p.Strict() {
+		return nil
+	}
+	if c.AGUICORSPermissive {
+		return []Violation{{Knob: "AURA_AGUI_CORS_PERMISSIVE", Sev: Fatal, Msg: "permissive CORS is forbidden under " + string(p)}}
+	}
+	return nil
+}
+
+// gateDestructiveShell forbids an explicitly DISABLED destructive-shell gate under
+// server_production ONLY (D-11/D-15/F-002): single_user_hardened ALLOWS `off`
+// (appliance-operator flexibility, A3). It reads the RAW env value directly — it does
+// NOT import internal/agent/tools (scope fence): the runtime leaf stays profile-agnostic
+// and this validator only inspects the operator's declared knob. Only the literal `off`
+// (case-insensitive) disables the gate; every other value keeps it active.
+func (c *Config) gateDestructiveShell(p RuntimeProfile) []Violation {
+	if p != ProfileServerProduction {
+		return nil
+	}
+	raw := strings.TrimSpace(os.Getenv("AURA_SHELL_DESTRUCTIVE_PATTERNS"))
+	if strings.EqualFold(raw, "off") {
+		return []Violation{{Knob: "AURA_SHELL_DESTRUCTIVE_PATTERNS", Sev: Fatal, Msg: "destructive-shell gate must not be disabled (off) under server_production"}}
+	}
+	return nil
+}
+
+// gateWebAuth requires a web-auth secret (AURA_AUTHULA_SECRET) under the strict tiers
+// (D-10/D-11): a hardened/production cockpit must authenticate. Lenient tiers return
+// no violation (a loopback dev cockpit boots without auth, the compensating control).
+func (c *Config) gateWebAuth(p RuntimeProfile) []Violation {
+	if !p.Strict() {
+		return nil
+	}
+	if strings.TrimSpace(c.AuthulaSecret) == "" {
+		return []Violation{{Knob: "AURA_AUTHULA_SECRET", Sev: Fatal, Msg: "web-auth secret is required under " + string(p)}}
+	}
+	return nil
+}
+
+// gateObjectStoreEndpoint emits non-fatal WARNs under server_production (A6) when the
+// object store still uses the default bucket name or a loopback endpoint: both can be
+// legitimate behind compose DNS, so they are advisory, never Fatal — the operator is
+// told to confirm intent, but a valid prod deploy is not blocked.
+func (c *Config) gateObjectStoreEndpoint(p RuntimeProfile) []Violation {
+	if p != ProfileServerProduction {
+		return nil
+	}
+	var vs []Violation
+	if c.ObjectStoreBucket == "aura-assets" {
+		vs = append(vs, Violation{Knob: "AURA_OBJECTSTORE_BUCKET", Sev: Warn, Msg: "default bucket name in production — confirm it is intentional"})
+	}
+	if isLoopbackEndpoint(c.ObjectStoreEndpoint) {
+		vs = append(vs, Violation{Knob: "AURA_OBJECTSTORE_ENDPOINT", Sev: Warn, Msg: "loopback object-store endpoint in production — confirm it is reachable"})
+	}
+	return vs
+}
+
+// isLoopbackEndpoint reports whether an object-store endpoint URL targets a loopback
+// host. It is a lightweight substring heuristic (the WARN is advisory, not a gate), so
+// it deliberately avoids a full URL parse: any of the loopback literals suffices.
+func isLoopbackEndpoint(endpoint string) bool {
+	e := strings.ToLower(endpoint)
+	return strings.Contains(e, "127.0.0.1") || strings.Contains(e, "localhost") || strings.Contains(e, "::1")
 }

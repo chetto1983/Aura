@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,5 +34,229 @@ func TestConfigValidate(t *testing.T) {
 	c2.DB.URL = ""
 	if err := c2.Validate(); err == nil {
 		t.Fatal("empty DB URL (no POSTGRES_PASSWORD / AURA_DB_URL) must fail validation")
+	}
+}
+
+// hasViolation reports whether vs contains a Violation naming knob at severity sev.
+func hasViolation(vs []Violation, knob string, sev Severity) bool {
+	for _, v := range vs {
+		if v.Knob == knob && v.Sev == sev {
+			return true
+		}
+	}
+	return false
+}
+
+// allProfiles is the full tier set the gate tables iterate; Strict() partitions it
+// into lenient {dev, local_trusted} and strict {single_user_hardened, server_production}.
+var allProfiles = []RuntimeProfile{
+	ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened, ProfileServerProduction,
+}
+
+// TestGateObjectStore locks F-007/PROF-03: the in-tree SAMPLE object-store creds are
+// Fatal under the strict tiers (each naming its knob) and OK under dev/local_trusted;
+// real creds are never flagged.
+func TestGateObjectStore(t *testing.T) {
+	sample := &Config{
+		ObjectStoreAccessKey: defaultObjectStoreAccessKey,
+		ObjectStoreSecretKey: defaultObjectStoreSecretKey,
+	}
+	real := &Config{
+		ObjectStoreAccessKey: "GKrealoperatorkey0000000001",
+		ObjectStoreSecretKey: "realoperatorsecretvalue000000000000000000000000000000000000000000",
+	}
+	for _, p := range allProfiles {
+		t.Run(string(p), func(t *testing.T) {
+			vs := sample.gateObjectStoreCreds(p)
+			if p.Strict() {
+				if !hasViolation(vs, "AURA_OBJECTSTORE_ACCESS_KEY", Fatal) {
+					t.Errorf("sample access key under %s must be Fatal naming AURA_OBJECTSTORE_ACCESS_KEY, got %+v", p, vs)
+				}
+				if !hasViolation(vs, "AURA_OBJECTSTORE_SECRET_KEY", Fatal) {
+					t.Errorf("sample secret key under %s must be Fatal naming AURA_OBJECTSTORE_SECRET_KEY, got %+v", p, vs)
+				}
+			} else if len(vs) != 0 {
+				t.Errorf("lenient tier %s must not flag sample creds, got %+v", p, vs)
+			}
+			if rv := real.gateObjectStoreCreds(p); len(rv) != 0 {
+				t.Errorf("real creds under %s must yield no violation, got %+v", p, rv)
+			}
+		})
+	}
+}
+
+// TestGateGarageRPCSecret locks F-007/A5: an empty GARAGE_RPC_SECRET is Fatal under the
+// strict tiers; a set secret and the lenient tiers yield nothing.
+func TestGateGarageRPCSecret(t *testing.T) {
+	for _, p := range allProfiles {
+		t.Run(string(p), func(t *testing.T) {
+			empty := (&Config{GarageRPCSecret: "  "}).gateGarageRPCSecret(p)
+			if p.Strict() {
+				if !hasViolation(empty, "GARAGE_RPC_SECRET", Fatal) {
+					t.Errorf("empty RPC secret under %s must be Fatal naming GARAGE_RPC_SECRET, got %+v", p, empty)
+				}
+			} else if len(empty) != 0 {
+				t.Errorf("lenient tier %s must not flag an empty RPC secret, got %+v", p, empty)
+			}
+			if set := (&Config{GarageRPCSecret: "deadbeef"}).gateGarageRPCSecret(p); len(set) != 0 {
+				t.Errorf("set RPC secret under %s must yield no violation, got %+v", p, set)
+			}
+		})
+	}
+}
+
+// TestGateReplication is the hardened↔prod differentiator (D-11/PROF-06/F-018):
+// server_production rejects replication < 2; single_user_hardened ALLOWS 1; the
+// lenient tiers never constrain it.
+func TestGateReplication(t *testing.T) {
+	if vs := (&Config{ObjectStoreReplicationFactor: 1}).gateReplication(ProfileServerProduction); !hasViolation(vs, "AURA_OBJECTSTORE_REPLICATION_FACTOR", Fatal) {
+		t.Fatalf("server_production with replication=1 must be Fatal naming AURA_OBJECTSTORE_REPLICATION_FACTOR, got %+v", vs)
+	}
+	if vs := (&Config{ObjectStoreReplicationFactor: 2}).gateReplication(ProfileServerProduction); len(vs) != 0 {
+		t.Errorf("server_production with replication=2 must pass, got %+v", vs)
+	}
+	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened} {
+		if vs := (&Config{ObjectStoreReplicationFactor: 1}).gateReplication(p); len(vs) != 0 {
+			t.Errorf("%s must ALLOW replication=1 (only prod requires >=2), got %+v", p, vs)
+		}
+	}
+}
+
+// TestGateCORS locks A2/D-15/F-022: permissive CORS is Fatal under BOTH strict tiers
+// and OK under the lenient tiers.
+func TestGateCORS(t *testing.T) {
+	for _, p := range allProfiles {
+		t.Run(string(p), func(t *testing.T) {
+			on := (&Config{AGUICORSPermissive: true}).gateCORS(p)
+			if p.Strict() {
+				if !hasViolation(on, "AURA_AGUI_CORS_PERMISSIVE", Fatal) {
+					t.Errorf("permissive CORS under %s must be Fatal naming AURA_AGUI_CORS_PERMISSIVE, got %+v", p, on)
+				}
+			} else if len(on) != 0 {
+				t.Errorf("lenient tier %s must allow permissive CORS, got %+v", p, on)
+			}
+			if off := (&Config{AGUICORSPermissive: false}).gateCORS(p); len(off) != 0 {
+				t.Errorf("restrictive CORS under %s must yield no violation, got %+v", p, off)
+			}
+		})
+	}
+}
+
+// TestGateDestructiveShell locks D-11/D-15/F-002: explicit `off` is Fatal under
+// server_production ONLY (single_user_hardened ALLOWS it, A3); it reads the raw env
+// value (case-insensitive) and never imports the tools leaf.
+func TestGateDestructiveShell(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   RuntimeProfile
+		env       string
+		wantFatal bool
+	}{
+		{name: "prod off lowercase", profile: ProfileServerProduction, env: "off", wantFatal: true},
+		{name: "prod OFF uppercase", profile: ProfileServerProduction, env: "OFF", wantFatal: true},
+		{name: "prod Off padded", profile: ProfileServerProduction, env: "  Off  ", wantFatal: true},
+		{name: "prod custom patterns", profile: ProfileServerProduction, env: "rm -rf /,mkfs", wantFatal: false},
+		{name: "prod empty keeps gate", profile: ProfileServerProduction, env: "", wantFatal: false},
+		{name: "hardened allows off", profile: ProfileSingleUserHardened, env: "off", wantFatal: false},
+		{name: "dev allows off", profile: ProfileDev, env: "off", wantFatal: false},
+		{name: "local_trusted allows off", profile: ProfileLocalTrusted, env: "off", wantFatal: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", tc.env)
+			vs := (&Config{}).gateDestructiveShell(tc.profile)
+			got := hasViolation(vs, "AURA_SHELL_DESTRUCTIVE_PATTERNS", Fatal)
+			if got != tc.wantFatal {
+				t.Errorf("gateDestructiveShell(%s) env=%q: Fatal=%v, want %v (%+v)", tc.profile, tc.env, got, tc.wantFatal, vs)
+			}
+		})
+	}
+}
+
+// TestGateWebAuth locks D-10/D-11: an empty AURA_AUTHULA_SECRET is Fatal under the
+// strict tiers and OK under the lenient ones.
+func TestGateWebAuth(t *testing.T) {
+	for _, p := range allProfiles {
+		t.Run(string(p), func(t *testing.T) {
+			empty := (&Config{AuthulaSecret: ""}).gateWebAuth(p)
+			if p.Strict() {
+				if !hasViolation(empty, "AURA_AUTHULA_SECRET", Fatal) {
+					t.Errorf("empty web-auth secret under %s must be Fatal naming AURA_AUTHULA_SECRET, got %+v", p, empty)
+				}
+			} else if len(empty) != 0 {
+				t.Errorf("lenient tier %s must not require web-auth, got %+v", p, empty)
+			}
+			if set := (&Config{AuthulaSecret: "32byteshexsecretvalueforauthula0"}).gateWebAuth(p); len(set) != 0 {
+				t.Errorf("set web-auth secret under %s must yield no violation, got %+v", p, set)
+			}
+		})
+	}
+}
+
+// TestGateObjectStoreEndpoint locks A6: default bucket + loopback endpoint under
+// server_production are WARN (never Fatal), and only under production.
+func TestGateObjectStoreEndpoint(t *testing.T) {
+	def := &Config{ObjectStoreBucket: "aura-assets", ObjectStoreEndpoint: "http://127.0.0.1:3900"}
+	vs := def.gateObjectStoreEndpoint(ProfileServerProduction)
+	if !hasViolation(vs, "AURA_OBJECTSTORE_BUCKET", Warn) {
+		t.Errorf("default bucket under prod must WARN naming AURA_OBJECTSTORE_BUCKET, got %+v", vs)
+	}
+	if !hasViolation(vs, "AURA_OBJECTSTORE_ENDPOINT", Warn) {
+		t.Errorf("loopback endpoint under prod must WARN naming AURA_OBJECTSTORE_ENDPOINT, got %+v", vs)
+	}
+	for _, v := range vs {
+		if v.Sev == Fatal {
+			t.Errorf("endpoint/bucket defaults must never be Fatal, got %+v", v)
+		}
+	}
+	if custom := (&Config{ObjectStoreBucket: "prod-assets", ObjectStoreEndpoint: "https://garage.prod:3900"}).gateObjectStoreEndpoint(ProfileServerProduction); len(custom) != 0 {
+		t.Errorf("custom bucket+endpoint under prod must yield no violation, got %+v", custom)
+	}
+	if hardened := def.gateObjectStoreEndpoint(ProfileSingleUserHardened); len(hardened) != 0 {
+		t.Errorf("endpoint WARNs are prod-only, hardened must yield nothing, got %+v", hardened)
+	}
+}
+
+// TestGateWebBind locks the reuse of GuardWebBind as a Violation: a non-loopback bind
+// without auth is Fatal naming AURA_AGUI_BIND (all tiers); loopback and authed binds pass.
+func TestGateWebBind(t *testing.T) {
+	if vs := (&Config{AGUIBind: "0.0.0.0:9080"}).gateWebBind(); !hasViolation(vs, "AURA_AGUI_BIND", Fatal) {
+		t.Fatalf("non-loopback bind without auth must be Fatal naming AURA_AGUI_BIND, got %+v", vs)
+	}
+	if vs := (&Config{AGUIBind: "127.0.0.1:9080"}).gateWebBind(); len(vs) != 0 {
+		t.Errorf("loopback bind must pass, got %+v", vs)
+	}
+	if vs := (&Config{AGUIBind: "192.168.1.10:9080", AuthulaSecret: "secret"}).gateWebBind(); len(vs) != 0 {
+		t.Errorf("authed non-loopback bind must pass, got %+v", vs)
+	}
+}
+
+// TestGateRequiredSecrets locks the all-tier required-secret gate (O-04): an empty DB
+// DSN or Neo4j password is Fatal naming its knob; a fully-set Config yields nothing.
+func TestGateRequiredSecrets(t *testing.T) {
+	if vs := (&Config{Neo4j: knowledge.Config{Password: "x"}}).gateRequiredSecrets(); !hasViolation(vs, "POSTGRES_PASSWORD (or AURA_DB_URL)", Fatal) {
+		t.Errorf("empty DB URL must be Fatal naming POSTGRES_PASSWORD, got %+v", vs)
+	}
+	if vs := (&Config{DB: db.Config{URL: "postgres://u:p@h/db"}}).gateRequiredSecrets(); !hasViolation(vs, "NEO4J_PASSWORD", Fatal) {
+		t.Errorf("empty Neo4j password must be Fatal naming NEO4J_PASSWORD, got %+v", vs)
+	}
+	full := &Config{DB: db.Config{URL: "postgres://u:p@h/db"}, Neo4j: knowledge.Config{Password: "x"}}
+	if vs := full.gateRequiredSecrets(); len(vs) != 0 {
+		t.Errorf("fully-set secrets must yield no violation, got %+v", vs)
+	}
+}
+
+// TestGateRunDir locks F-041/PROF-05: a non-absolute RunDir (or a load-time RunDirErr)
+// is Fatal naming AURA_RUN_DIR in every tier; an absolute RunDir passes.
+func TestGateRunDir(t *testing.T) {
+	if vs := (&Config{RunDir: "relative/runs"}).gateRunDir(); !hasViolation(vs, "AURA_RUN_DIR", Fatal) {
+		t.Errorf("non-absolute RunDir must be Fatal naming AURA_RUN_DIR, got %+v", vs)
+	}
+	if vs := (&Config{RunDirErr: fmt.Errorf("AURA_RUN_DIR could not be resolved")}).gateRunDir(); !hasViolation(vs, "AURA_RUN_DIR", Fatal) {
+		t.Errorf("RunDirErr must surface as Fatal naming AURA_RUN_DIR, got %+v", vs)
+	}
+	abs := filepath.Join(t.TempDir(), "runs")
+	if vs := (&Config{RunDir: abs}).gateRunDir(); len(vs) != 0 {
+		t.Errorf("absolute RunDir must pass, got %+v", vs)
 	}
 }
