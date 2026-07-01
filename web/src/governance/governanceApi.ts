@@ -387,6 +387,7 @@ export interface WhatsAppConnectStatus {
   readonly paired: boolean;
   readonly jid: string;
   readonly connected: boolean;
+  readonly qrAvailable: boolean;
 }
 
 export function boolValue(value: unknown): boolean {
@@ -402,6 +403,7 @@ export async function whatsappConnectStatus(): Promise<WhatsAppConnectStatus> {
     paired: boolValue(raw.paired),
     jid: stringValue(raw.jid),
     connected: boolValue(raw.connected),
+    qrAvailable: boolValue(raw.qr_available),
   };
 }
 

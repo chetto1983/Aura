@@ -198,6 +198,34 @@ func TestCatalogWhatsappURLRejectsNonPortEnv(t *testing.T) {
 	}
 }
 
+func TestWhatsAppBridgeBaseURLUsesComposeDNSInContainer(t *testing.T) {
+	t.Setenv("AURA_IN_CONTAINER", "1")
+	t.Setenv("AURA_WHATSAPP_BRIDGE_PORT", "9194")
+
+	if got := WhatsAppBridgeBaseURL(); got != "http://whatsapp:8081" {
+		t.Fatalf("WhatsAppBridgeBaseURL() = %q, want compose service DNS", got)
+	}
+}
+
+func TestWhatsAppBridgeBaseURLHonorsPortEnv(t *testing.T) {
+	t.Setenv("AURA_WHATSAPP_BRIDGE_PORT", "9194")
+
+	if got := WhatsAppBridgeBaseURL(); got != "http://127.0.0.1:9194" {
+		t.Fatalf("WhatsAppBridgeBaseURL() = %q, want configured loopback port", got)
+	}
+}
+
+func TestWhatsAppBridgeBaseURLRejectsNonPortEnv(t *testing.T) {
+	for _, bad := range []string{"8094@evil.example", "0", "65536", "-1", "junk", "80 94"} {
+		t.Run(bad, func(t *testing.T) {
+			t.Setenv("AURA_WHATSAPP_BRIDGE_PORT", bad)
+			if got := WhatsAppBridgeBaseURL(); got != "http://127.0.0.1:8094" {
+				t.Fatalf("port %q produced URL %q, want fallback 8094 loopback", bad, got)
+			}
+		})
+	}
+}
+
 func TestLookupCatalogNotFound(t *testing.T) {
 	entry, ok := LookupCatalog("does-not-exist")
 	if ok {

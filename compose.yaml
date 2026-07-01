@@ -461,7 +461,7 @@ services:
     restart: unless-stopped
     environment:
       WHATSAPP_BRIDGE_PORT: "8081"
-      WHATSAPP_API_BASE_URL: http://127.0.0.1:8081/api
+      WHATSAPP_API_URL: http://127.0.0.1:8081/api
     ports:
       - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080"     # MCP-over-HTTP for the agent
       - "127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081"  # bridge mgmt REST for the cockpit connect proxy

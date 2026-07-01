@@ -21,8 +21,6 @@ import (
 
 const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name>|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>}"
 
-const defaultWhatsAppBridgeURL = "http://127.0.0.1:8080"
-
 func runMCP(args []string) {
 	if err := runMCPCommand(context.Background(), args, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -261,9 +259,13 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		if name == "whatsapp" {
-			cfg, err := mcpmanager.RuntimeLaunchConfig(name, server)
-			if err != nil {
-				return err
+			cfg := mcp.ServerConfig{}
+			if strings.TrimSpace(server.Type) != mcp.ServerTypeStreamableHTTP && strings.TrimSpace(server.URL) == "" {
+				var err error
+				cfg, err = mcpmanager.RuntimeLaunchConfig(name, server)
+				if err != nil {
+					return err
+				}
 			}
 			return writeWhatsAppBridgeHealth(ctx, out, cfg)
 		}
@@ -348,7 +350,7 @@ func loadManagedMCPConfig() (mcp.ManagedConfig, string, error) {
 
 func writeWhatsAppBridgeHealth(ctx context.Context, out io.Writer, cfg mcp.ServerConfig) error {
 	status := probeWhatsAppBridge(ctx, cfg)
-	return writef(out, "whatsapp bridge: %s; connected-state unavailable (bridge exposes no status endpoint)\n", status)
+	return writef(out, "whatsapp bridge: %s\n", status)
 }
 
 func probeWhatsAppBridge(ctx context.Context, cfg mcp.ServerConfig) string {
@@ -370,26 +372,48 @@ func whatsAppBridgeBaseURL() (string, bool) {
 	if v := strings.TrimSpace(os.Getenv("AURA_MCP_WHATSAPP_BRIDGE_URL")); v != "" {
 		return strings.TrimRight(v, "/"), true
 	}
-	return defaultWhatsAppBridgeURL, false
+	return mcpmanager.WhatsAppBridgeBaseURL(), false
 }
 
 func probeWhatsAppBridgeHTTP(ctx context.Context, baseURL string) string {
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	url := strings.TrimRight(baseURL, "/") + "/api/send"
+	url := strings.TrimRight(baseURL, "/") + "/api/status"
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url, nil) //nolint:gosec // operator-owned doctor URL; default is local loopback
 	if err != nil {
 		return fmt.Sprintf("REST %s invalid (%v)", baseURL, err)
 	}
+	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Sprintf("REST %s unreachable (%v)", baseURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusMethodNotAllowed {
-		return fmt.Sprintf("REST %s reachable (GET /api/send -> 405)", baseURL)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Sprintf("REST %s unexpected status (GET /api/status -> %d)", baseURL, resp.StatusCode)
 	}
-	return fmt.Sprintf("REST %s unexpected status (GET /api/send -> %d)", baseURL, resp.StatusCode)
+	var body struct {
+		State       string `json:"state"`
+		Paired      bool   `json:"paired"`
+		QRAvailable bool   `json:"qr_available"`
+		JID         string `json:"jid"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16*1024)).Decode(&body); err != nil {
+		return fmt.Sprintf("REST %s reachable but status payload invalid (%v)", baseURL, err)
+	}
+	state := strings.TrimSpace(body.State)
+	if state == "" {
+		state = "unknown"
+	}
+	parts := []string{
+		"state=" + state,
+		fmt.Sprintf("paired=%t", body.Paired),
+		fmt.Sprintf("qr_available=%t", body.QRAvailable),
+	}
+	if body.JID != "" {
+		parts = append(parts, "jid="+body.JID)
+	}
+	return fmt.Sprintf("REST %s reachable (GET /api/status -> %s)", baseURL, strings.Join(parts, ", "))
 }
 
 var runWhatsAppBridgeWSLProbe = func(ctx context.Context, cfg mcp.ServerConfig) (int, error) {

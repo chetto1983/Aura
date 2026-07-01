@@ -213,6 +213,7 @@ describe('governanceApi same-origin throwing fetch', () => {
       paired: true,
       jid: '123@s.whatsapp.net',
       connected: true,
+      qr_available: false,
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -222,6 +223,7 @@ describe('governanceApi same-origin throwing fetch', () => {
       paired: true,
       jid: '123@s.whatsapp.net',
       connected: true,
+      qrAvailable: false,
     });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/connect/whatsapp/status');
@@ -235,6 +237,7 @@ describe('governanceApi same-origin throwing fetch', () => {
       paired: false,
       jid: '',
       connected: false,
+      qrAvailable: false,
     });
   });
 

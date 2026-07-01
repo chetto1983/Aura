@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 
 // WhatsAppConnect — the inline "Link device" section the MCP server detail renders when the
-// selected server is the WhatsApp one. It polls the connect status (4s); when paired/connected
+// selected server is the WhatsApp one. It polls the connect status (4s); when paired
 // it shows the JID (mono) + an Unlink button (POST logout → invalidate), when waiting_qr it
 // shows the server-rendered QR PNG re-fetched every ~3s (a tick state cache-busts the <img>
 // src), and on a status-query error it shows a graceful bridge-offline note. All copy via the
@@ -32,7 +32,7 @@ export function WhatsAppConnect() {
     retry: false,
   });
 
-  const linked = status.data?.connected === true || status.data?.paired === true;
+  const linked = status.data?.paired === true;
   const waitingQR = status.data !== undefined && !linked;
 
   // Advance the QR cache-bust tick every ~3s ONLY while waiting for a scan. The interval is

@@ -47,13 +47,15 @@ const CONNECTED: WhatsAppConnectStatus = {
   paired: true,
   jid: '393331234567@s.whatsapp.net',
   connected: true,
+  qrAvailable: false,
 };
 
 const WAITING: WhatsAppConnectStatus = {
   state: 'waiting_qr',
   paired: false,
   jid: '',
-  connected: false,
+  connected: true,
+  qrAvailable: true,
 };
 
 describe('isWhatsAppServer', () => {
@@ -98,7 +100,7 @@ describe('WhatsAppConnect', () => {
     });
   });
 
-  it('shows the QR image + scan instructions while waiting for a scan', async () => {
+  it('shows the QR image + scan instructions while waiting for a scan, even when the socket is connected', async () => {
     whatsappConnectStatus.mockResolvedValue(WAITING);
     renderConnect();
 
