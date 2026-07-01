@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -23,6 +24,8 @@ const httpRPCMaxBodyBytes = 8 << 20
 // unresponsive remote endpoint cannot hang shutdown indefinitely; it mirrors the
 // stdio client's closeWaitTimeout budget.
 const httpCloseTimeout = 5 * time.Second
+
+var errHTTPSessionExpired = errors.New("mcp http session expired")
 
 // HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
 // plus optional static headers, bearer token, and an override http.Client.
@@ -95,7 +98,13 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 }
 
 func (c *HTTPClient) initialize(ctx context.Context) error {
-	res, err := c.roundtrip(ctx, "initialize", map[string]any{
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.initializeLocked(ctx)
+}
+
+func (c *HTTPClient) initializeLocked(ctx context.Context) error {
+	res, err := c.roundtripLocked(ctx, "initialize", map[string]any{
 		"protocolVersion": httpProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "aura", "version": "0.7"},
@@ -109,7 +118,7 @@ func (c *HTTPClient) initialize(ctx context.Context) error {
 	if err := json.Unmarshal(res, &initResult); err == nil && strings.TrimSpace(initResult.ProtocolVersion) != "" {
 		c.protocolVersion = initResult.ProtocolVersion
 	}
-	if err := c.notify(ctx, "notifications/initialized"); err != nil {
+	if err := c.notifyLocked(ctx, "notifications/initialized"); err != nil {
 		return fmt.Errorf("mcp %q: initialized notification: %w", c.name, err)
 	}
 	return nil
@@ -191,6 +200,14 @@ func (c *HTTPClient) roundtripLocked(ctx context.Context, method string, params 
 	id := c.nextID.Add(1)
 	payload := rpcReq{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	resp, err := c.post(ctx, payload, method != "initialize")
+	if errors.Is(err, errHTTPSessionExpired) && method != "initialize" {
+		if initErr := c.initializeLocked(ctx); initErr != nil {
+			return nil, fmt.Errorf("session expired (404); reinitialize: %w", initErr)
+		}
+		id = c.nextID.Add(1)
+		payload.ID = id
+		resp, err = c.post(ctx, payload, true)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +222,10 @@ func (c *HTTPClient) roundtripLocked(ctx context.Context, method string, params 
 func (c *HTTPClient) notify(ctx context.Context, method string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.notifyLocked(ctx, method)
+}
+
+func (c *HTTPClient) notifyLocked(ctx context.Context, method string) error {
 	resp, err := c.post(ctx, map[string]any{"jsonrpc": "2.0", "method": method}, true)
 	if err != nil {
 		return err
@@ -237,7 +258,7 @@ func (c *HTTPClient) post(ctx context.Context, payload any, includeProtocol bool
 	if resp.StatusCode == http.StatusNotFound && c.sessionID != "" {
 		defer func() { _ = resp.Body.Close() }()
 		c.sessionID = ""
-		return nil, fmt.Errorf("session expired (404)")
+		return nil, errHTTPSessionExpired
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()

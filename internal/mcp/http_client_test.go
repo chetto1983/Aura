@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -192,6 +193,77 @@ func TestHTTPSession404ResetsSession(t *testing.T) {
 	}
 	if c.sessionID != "" {
 		t.Fatalf("sessionID = %q, want reset", c.sessionID)
+	}
+}
+
+func TestHTTPSessionExpiredReinitializesAndRetriesCallTool(t *testing.T) {
+	var mu sync.Mutex
+	initCount := 0
+	callAttempts := 0
+	callSessions := []string{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		var req rpcReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		switch req.Method {
+		case "initialize":
+			mu.Lock()
+			initCount++
+			sessionID := "expired"
+			if initCount > 1 {
+				sessionID = "fresh"
+			}
+			mu.Unlock()
+			w.Header().Set("Mcp-Session-Id", sessionID)
+			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/call":
+			mu.Lock()
+			callAttempts++
+			attempt := callAttempts
+			callSessions = append(callSessions, r.Header.Get("Mcp-Session-Id"))
+			mu.Unlock()
+			if attempt == 1 {
+				http.NotFound(w, r)
+				return
+			}
+			writeHTTPRPC(t, w, req.ID, map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "ok-after-reinit"}},
+			})
+		default:
+			t.Fatalf("unexpected method %q", req.Method)
+		}
+	}))
+	defer server.Close()
+
+	c, err := OpenHTTP(context.Background(), "retry", HTTPConfig{URL: server.URL})
+	if err != nil {
+		t.Fatalf("OpenHTTP: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	got, err := c.CallTool(context.Background(), "echo", map[string]any{"text": "ping"})
+	if err != nil {
+		t.Fatalf("CallTool after session expiry: %v", err)
+	}
+	if got != "ok-after-reinit" {
+		t.Fatalf("CallTool = %q, want ok-after-reinit", got)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if initCount != 2 {
+		t.Fatalf("initialize count = %d, want 2", initCount)
+	}
+	if strings.Join(callSessions, ",") != "expired,fresh" {
+		t.Fatalf("call sessions = %v, want [expired fresh]", callSessions)
 	}
 }
 
