@@ -162,9 +162,17 @@ func (s *SendFile) checkWorkspace(path string) (string, bool, error) {
 	return pathReal, false, nil
 }
 
+// outsideWorkspaceResult is the TERMINAL deterministic reject for a delivery path
+// that resolves outside the workspace fence (AG-019 / F-009). Cross-workspace
+// egress is deliberately unsupported this phase, so this NEVER advertises an
+// approval route: the earlier form asked the user via an ask_user resume_context
+// that NO resume hook consumed, so the model would ask forever (a dead loop). It
+// instead tells the model the one working self-correction: copy the file into the
+// workspace and deliver the copy (mirrors Codex assess_patch_safety's deterministic
+// Reject over an unwireable ask).
 func outsideWorkspaceResult(path, root string) ToolResult {
-	return errorResult("outside_workspace_requires_approval",
-		fmt.Sprintf("%q is outside workspace %q. Ask the user for approval with ask_user(kind=approval, resume_context={\"type\":\"send_file_outside_workspace\",\"path\":%q}), then deliver a workspace copy or use an operator-approved path.", path, root, path))
+	return errorResult("outside_workspace_unsupported",
+		fmt.Sprintf("%q is outside the delivery workspace %q. Cross-workspace delivery is not supported: copy the file into the workspace (or an operator-approved in-workspace path) and deliver that copy instead.", path, root))
 }
 
 // errorResult builds the inline {error,message} object the model self-corrects on

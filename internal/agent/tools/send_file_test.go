@@ -149,11 +149,19 @@ func TestSendFileRejectsOutsideWorkspace(t *testing.T) {
 	if res.Meta != nil {
 		t.Fatal("outside-workspace path must not produce artifact meta")
 	}
-	if !strings.Contains(res.Preview, "outside_workspace_requires_approval") {
-		t.Fatalf("want outside-workspace approval result, got %q", res.Preview)
+	if !strings.Contains(res.Preview, "outside_workspace_unsupported") {
+		t.Fatalf("want deterministic outside_workspace_unsupported result, got %q", res.Preview)
 	}
-	if !strings.Contains(res.Preview, "ask_user") {
-		t.Fatalf("result must instruct the model to ask_user, got %q", res.Preview)
+	// The dead approval route (F-009) must be gone: no ask_user + resume_context — that
+	// pair advertised an unwireable loop no resume hook consumed. The reject must
+	// instead point the model at the one working fix: copy into the workspace.
+	for _, banned := range []string{"ask_user", "resume_context"} {
+		if strings.Contains(res.Preview, banned) {
+			t.Fatalf("outside-workspace reject must not advertise %q (dead route), got %q", banned, res.Preview)
+		}
+	}
+	if !strings.Contains(res.Preview, "copy") || !strings.Contains(res.Preview, "workspace") {
+		t.Fatalf("reject must instruct copying the file into the workspace, got %q", res.Preview)
 	}
 }
 
@@ -175,7 +183,7 @@ func TestSendFileRejectsSymlinkEscape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if res.Meta != nil || !strings.Contains(res.Preview, "outside_workspace_requires_approval") {
+	if res.Meta != nil || !strings.Contains(res.Preview, "outside_workspace_unsupported") {
 		t.Fatalf("symlink escape must be refused, got meta=%v preview=%q", res.Meta, res.Preview)
 	}
 }
