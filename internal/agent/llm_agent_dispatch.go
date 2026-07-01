@@ -15,16 +15,41 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	calls []llm.ToolCall, usage llm.Usage, yield func(*Event, error) bool,
 ) (done bool, infraErr error) {
 	// Partition: the FIRST text_response is the terminal; the rest are runnable.
+	// terminalCount also tallies any EXTRA text_response calls so a double-terminal
+	// step can be rejected below (a 2nd text_response was silently dropped before).
 	terminalIdx := -1
+	terminalCount := 0
 	runnable := make([]int, 0, len(calls))
 	for i := range calls {
 		if calls[i].Function.Name == terminalTool {
+			terminalCount++
 			if terminalIdx < 0 {
 				terminalIdx = i
 			}
 			continue
 		}
 		runnable = append(runnable, i)
+	}
+
+	// LOOP-01/F-003 (D-01): a terminal text_response is a FINAL answer, and native
+	// tool-use semantics say any tool call present in the step means the turn is NOT
+	// final. So a text_response alongside ANY runnable sibling OR a second
+	// text_response is the untrusted shape F-003 exploited — reject the whole step
+	// before any sibling hook/dedup/Execute runs and force a replan-or-finalize,
+	// reusing the dedup-trip control flow. This is deliberately classification-
+	// INDEPENDENT: the Mutating flag is untrustworthy while skill/task/swarm_spawn
+	// stay unflagged (a Phase-35 classification-hardening gap), so "allow read-only
+	// siblings" is unsafe — the whole mixed step is rejected (not option B).
+	// appendSyntheticToolResults appends a RoleTool for every call id (the terminal
+	// included) so the wire stays valid before the retry/finalize, which also closes
+	// the latent double-terminal drop (D-01b).
+	if terminalIdx >= 0 && (len(runnable) > 0 || terminalCount > 1) {
+		a.appendSyntheticToolResults(calls, "rejected: a terminal text_response cannot be combined with other tool calls or a second text_response; replan with a single final answer")
+		if a.maybeRecover(terminalTool) {
+			return false, nil
+		}
+		a.finalize(ic, spanID, parentSpanID, requestID, "terminal_exclusivity", yield)
+		return true, nil
 	}
 
 	// Hook rewrites and dedup gate (D-14), serial and in order so the ring observes
