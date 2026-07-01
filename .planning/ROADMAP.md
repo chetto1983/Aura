@@ -82,7 +82,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   - Goal: 4 validated profiles (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) in `internal/config`; production fails fast on unsafe defaults; all hot-path `AURA_*` knobs catalogued.
   - Success: (1) `aura config validate --profile server_production` exits non-zero listing every unmet requirement; (2) copying `.env.example`→`.env` keeps the destructive-shell gate active; (3) invalid env fails-fast under production, warns under dev; (4) `dev`/`local_trusted` preserve today's full-host behavior unchanged.
 - [ ] **Phase 34: Agent-Loop Correctness + Durable Ledger** — `LOOP-01..11`, `QUAL-04`(double-Validate/pool-leak, int32 guard) (F-003/004/005/009/010/029/030/031/040/045/048)
-  - Goal: terminal-response exclusivity, atomic HITL resume/pause, fenced sidecars, durable ledger state machine (migration 0025).
+  - Goal: terminal-response exclusivity, atomic HITL resume/pause (single cross-store transaction), fenced sidecars, crash-orphan reconciliation.
   - Success: (1) `text_response` + mutating sibling never executes the sibling; (2) duplicate single/batch resume → exactly one answer/pause, append-failure leaves a repairable state; (3) outside-root/traversal/symlink sidecar reads rejected; (4) mutating tool that panics post-side-effect still arms the completion gate.
 - [ ] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020)
   - Goal: one in-process policy decision on every tool call; fail-closed for mutating tools; durable reservation.
@@ -208,7 +208,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 #### Phase 34: Agent-Loop Correctness + Durable Ledger
 
-**Goal:** Terminal-response exclusivity, atomic HITL resume/pause, fenced sidecars, durable ledger state machine (migration 0025).
+**Goal:** Terminal-response exclusivity, atomic HITL resume/pause (single cross-store transaction), fenced sidecars, crash-orphan reconciliation.
 
 **Requirements:** LOOP-01, LOOP-02, LOOP-03, LOOP-04, LOOP-05, LOOP-06, LOOP-07, LOOP-08, LOOP-09, LOOP-10, LOOP-11, QUAL-04
 
