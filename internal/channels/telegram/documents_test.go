@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// asyncConvertWaitTimeout bounds how long an async-tier test waits for its
+// callback. It is a generous safety net, NOT a latency assertion: the heavy
+// 50MiB round-trip runs a full HTTP upload under the -race detector, and on a
+// contended CI runner a tight 3s deadline intermittently loses the scheduler
+// race (flake). The value only fails the test if the callback never fires.
+const asyncConvertWaitTimeout = 30 * time.Second
+
 // convertHandler asserts the markitdown /convert contract and returns the canned
 // markdown.
 func convertHandler(t *testing.T, hits *atomic.Int32, markdown string, status int) http.HandlerFunc {
@@ -89,7 +96,7 @@ func TestDocumentsAsyncTier(t *testing.T) {
 		if !strings.Contains(md, "big doc markdown") {
 			t.Errorf("async markdown = %q, want the converted text", md)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(asyncConvertWaitTimeout):
 		t.Fatal("async conversion did not complete")
 	}
 
@@ -139,7 +146,7 @@ func TestDocumentTierAllowsExactlyFiftyMiBAsync(t *testing.T) {
 	}
 	select {
 	case <-done:
-	case <-time.After(3 * time.Second):
+	case <-time.After(asyncConvertWaitTimeout):
 		t.Fatal("async exact 50MiB conversion did not finish")
 	}
 }
@@ -207,12 +214,12 @@ func TestDocumentsAsyncTierUsesPerRequestCallbacks(t *testing.T) {
 	var gotFirst, gotSecond string
 	select {
 	case gotFirst = <-first:
-	case <-time.After(3 * time.Second):
+	case <-time.After(asyncConvertWaitTimeout):
 		t.Fatal("first async conversion did not call its callback")
 	}
 	select {
 	case gotSecond = <-second:
-	case <-time.After(3 * time.Second):
+	case <-time.After(asyncConvertWaitTimeout):
 		t.Fatal("second async conversion did not call its callback")
 	}
 	if !strings.HasPrefix(gotFirst, "one.pdf:") {
