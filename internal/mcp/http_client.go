@@ -190,12 +190,6 @@ func (c *HTTPClient) Close() error {
 	return nil
 }
 
-func (c *HTTPClient) roundtrip(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.roundtripLocked(ctx, method, params)
-}
-
 func (c *HTTPClient) roundtripLocked(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	payload := rpcReq{JSONRPC: "2.0", ID: id, Method: method, Params: params}
@@ -217,12 +211,6 @@ func (c *HTTPClient) roundtripLocked(ctx context.Context, method string, params 
 		}
 	}
 	return decodeHTTPRPC(resp.Body, id, resp.Header.Get("Content-Type"))
-}
-
-func (c *HTTPClient) notify(ctx context.Context, method string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.notifyLocked(ctx, method)
 }
 
 func (c *HTTPClient) notifyLocked(ctx context.Context, method string) error {
