@@ -19,6 +19,8 @@
     "src/onboarding/onboardingWizardModel.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
+  "dryRunTimeoutMinutes": 10,
+  "vitest": { "configFile": "vitest.stryker.config.ts" },
   "concurrency": 4,
   "reporters": ["clear-text", "progress"],
   "tempDirName": ".stryker-tmp",

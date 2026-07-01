@@ -549,7 +549,7 @@ func projectMessages(hist []llm.Message) []events.Message {
 		msgs = append(msgs, events.Message{
 			ID:         msgID(i),
 			Role:       types.Role(m.Role),
-			Content:    m.Content,
+			Content:    snapshotContent(m),
 			ToolCallID: m.ToolCallID,
 			ToolCalls:  projectToolCalls(m.ToolCalls),
 		})

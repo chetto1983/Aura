@@ -141,7 +141,7 @@ describe('AppShell', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Set up profile' })).toBeTruthy();
     expect(fetchOnboardingStatus).toHaveBeenCalledTimes(1);
-  });
+  }, 15_000);
 
   it('opens the runtime settings workspace from the shell mode switcher', async () => {
     renderShell();

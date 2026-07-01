@@ -29,6 +29,55 @@ function textFromSnapshotContent(value: unknown): string {
   }
 }
 
+function stripAuraContextEnvelope(text: string): string {
+  const split = splitUserMessageMarker(text);
+  if (split === null) return text;
+  const prefix = text.slice(0, split.index);
+  if (!isAuraContextEnvelope(prefix)) return text;
+  return text.slice(split.index + split.length);
+}
+
+function splitUserMessageMarker(text: string): { index: number; length: number } | null {
+  for (const marker of ['User message:\n', 'User message:\r\n']) {
+    const index = text.indexOf(marker);
+    if (index >= 0) return { index, length: marker.length };
+  }
+  return null;
+}
+
+function isAuraContextEnvelope(prefix: string): boolean {
+  let rest = prefix;
+  let seen = false;
+  for (;;) {
+    rest = rest.replace(/^[\t\n\r ]+/, '');
+    if (rest.startsWith('<knowledge_base trust="operator_pinned_context">')) {
+      const next = consumeAuraContextBlock(rest, '</knowledge_base>');
+      if (next === null) return false;
+      rest = next;
+      seen = true;
+      continue;
+    }
+    if (rest.startsWith('<attachments trust="untrusted_user_uploads">')) {
+      const next = consumeAuraContextBlock(rest, '</attachments>');
+      if (next === null) return false;
+      rest = next;
+      seen = true;
+      continue;
+    }
+    return seen && rest.trim() === '';
+  }
+}
+
+function consumeAuraContextBlock(text: string, closeTag: string): string | null {
+  const end = text.indexOf(closeTag);
+  if (end < 0) return null;
+  return text.slice(end + closeTag.length);
+}
+
+function visibleTextForSnapshotRole(role: string, text: string): string {
+  return role === 'user' ? stripAuraContextEnvelope(text) : text;
+}
+
 function asSnapshotMessages(value: unknown): readonly SnapshotMessage[] {
   if (typeof value !== 'object' || value === null) return [];
   const snapshot = value as MessagesSnapshotFrame;
@@ -103,7 +152,7 @@ export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[]
     const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
     const metadata = metadataFromSnapshotId(id);
     const role = typeof raw.role === 'string' ? raw.role : '';
-    const text = textFromSnapshotContent(raw.content);
+    const text = visibleTextForSnapshotRole(role, textFromSnapshotContent(raw.content));
     if (role === 'system') continue;
     if (role === 'tool') {
       if (typeof raw.toolCallId === 'string' && raw.toolCallId.length > 0) {

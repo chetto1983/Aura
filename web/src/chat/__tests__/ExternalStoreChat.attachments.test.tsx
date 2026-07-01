@@ -97,6 +97,7 @@ describe('ExternalStoreChat attachments', () => {
   });
 
   it('loads thread assets during replay and renders them beside user messages', async () => {
+    const visiblePrompt = 'persisted prompt';
     const fetchMock = vi.fn((url: unknown) => {
       if (url === '/threads/conv-1/messages') {
         return Promise.resolve(
@@ -104,7 +105,16 @@ describe('ExternalStoreChat attachments', () => {
             JSON.stringify({
               type: 'MESSAGES_SNAPSHOT',
               messages: [
-                { id: 'msg-1', role: 'user', content: 'persisted prompt' },
+                {
+                  id: 'msg-1',
+                  role: 'user',
+                  content:
+                    '<knowledge_base trust="operator_pinned_context">\n' +
+                    'These documents the user uploaded earlier are indexed.\n' +
+                    '- [1] document_id=doc-1 filename=manual.pdf\n' +
+                    '</knowledge_base>\n\nUser message:\n' +
+                    visiblePrompt,
+                },
                 { id: 'msg-2', role: 'assistant', content: 'persisted answer' },
               ],
             }),
@@ -144,7 +154,8 @@ describe('ExternalStoreChat attachments', () => {
 
     renderChat(<ExternalStoreChat threadId="conv-1" />);
 
-    expect(await screen.findByText('persisted prompt')).toBeTruthy();
+    expect(await screen.findByText(visiblePrompt)).toBeTruthy();
+    expect(screen.queryByText(/knowledge_base/)).toBeNull();
     expect(await screen.findByText('indexed on replay')).toBeTruthy();
     expect(screen.getAllByText('manual.pdf').length).toBeGreaterThanOrEqual(1);
   });

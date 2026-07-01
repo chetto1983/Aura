@@ -68,6 +68,30 @@ func TestProjectMessagesDisplay(t *testing.T) {
 	}
 }
 
+// TestProjectDisplaySnapshotStripsModelContextFromUserTurns is the replay regression
+// for legacy turns that persisted Aura's model-only context envelope before the
+// visible/model user-message split existed.
+func TestProjectDisplaySnapshotStripsModelContextFromUserTurns(t *testing.T) {
+	visible := "Nel documento Corso Base Robot, quali tipi di robot sono elencati?"
+	modelContext := "<knowledge_base trust=\"operator_pinned_context\">\n" +
+		"These documents the user uploaded earlier are indexed.\n" +
+		"- [1] document_id=doc-1 filename=Corso Base Robot.docx\n" +
+		"</knowledge_base>\n\nUser message:\n" + visible
+	hist := []llm.Message{
+		{Role: llm.RoleUser, Content: modelContext},
+		{Role: llm.RoleAssistant, Content: "robot industriali e robot collaborativi"},
+	}
+
+	snap := projectDisplaySnapshot(hist)
+
+	if got := snap.Messages[0].Content; got != visible {
+		t.Fatalf("visible snapshot user content = %q, want %q", got, visible)
+	}
+	if !strings.Contains(hist[0].Content, "<knowledge_base") {
+		t.Fatalf("projection mutated model history: %q", hist[0].Content)
+	}
+}
+
 // TestProjectMessagesDisplayUnrecognizedNoDisplay (D-06 / D-FALLBACK): a tool turn for
 // a tool with no normalizer (shell_exec) produces NO display on the snapshot — the
 // replay renders the raw card, identical to live.

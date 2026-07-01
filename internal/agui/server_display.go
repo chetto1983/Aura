@@ -1,6 +1,8 @@
 package agui
 
 import (
+	"strings"
+
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 	"github.com/chetto1983/aura/internal/agent/display"
@@ -51,12 +53,73 @@ func projectDisplaySnapshot(hist []llm.Message) displaySnapshotEvent {
 		msgs = append(msgs, displaySnapshotMessage{
 			ID:         msgID(i),
 			Role:       types.Role(m.Role),
-			Content:    m.Content,
+			Content:    snapshotContent(m),
 			ToolCallID: m.ToolCallID,
 			ToolCalls:  projectDisplayToolCalls(m.ToolCalls, displays),
 		})
 	}
 	return displaySnapshotEvent{Type: events.EventTypeMessagesSnapshot, Messages: msgs}
+}
+
+func snapshotContent(m llm.Message) string {
+	if m.Role != llm.RoleUser {
+		return m.Content
+	}
+	return stripAuraContextEnvelope(m.Content)
+}
+
+func stripAuraContextEnvelope(content string) string {
+	marker, markerLen := userMessageMarker(content)
+	if marker < 0 {
+		return content
+	}
+	if !isAuraContextEnvelope(content[:marker]) {
+		return content
+	}
+	return content[marker+markerLen:]
+}
+
+func userMessageMarker(content string) (int, int) {
+	for _, marker := range []string{"User message:\n", "User message:\r\n"} {
+		if idx := strings.Index(content, marker); idx >= 0 {
+			return idx, len(marker)
+		}
+	}
+	return -1, 0
+}
+
+func isAuraContextEnvelope(prefix string) bool {
+	rest := prefix
+	seen := false
+	for {
+		rest = strings.TrimLeft(rest, " \t\r\n")
+		switch {
+		case strings.HasPrefix(rest, `<knowledge_base trust="operator_pinned_context">`):
+			next, ok := consumeAuraContextBlock(rest, "</knowledge_base>")
+			if !ok {
+				return false
+			}
+			rest = next
+			seen = true
+		case strings.HasPrefix(rest, `<attachments trust="untrusted_user_uploads">`):
+			next, ok := consumeAuraContextBlock(rest, "</attachments>")
+			if !ok {
+				return false
+			}
+			rest = next
+			seen = true
+		default:
+			return seen && strings.TrimSpace(rest) == ""
+		}
+	}
+}
+
+func consumeAuraContextBlock(value, closeTag string) (string, bool) {
+	end := strings.Index(value, closeTag)
+	if end < 0 {
+		return "", false
+	}
+	return value[end+len(closeTag):], true
 }
 
 // rederiveDisplays walks the persisted history in order and re-derives a display.Payload

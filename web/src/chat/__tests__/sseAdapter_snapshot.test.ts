@@ -51,6 +51,26 @@ describe('snapshotToThreadMessages — roles', () => {
     });
   });
 
+  it('strips Aura model context envelopes from legacy user snapshots', () => {
+    const visible = 'Nel documento Corso Base Robot, quali tipi di robot sono elencati?';
+    const out = snapshotToThreadMessages(
+      snap([
+        {
+          id: 'msg-1',
+          role: 'user',
+          content:
+            '<knowledge_base trust="operator_pinned_context">\n' +
+            'These documents the user uploaded earlier are indexed.\n' +
+            '- [1] document_id=doc-1 filename=Corso Base Robot.docx\n' +
+            '</knowledge_base>\n\nUser message:\n' +
+            visible,
+        },
+      ]),
+    );
+
+    expect(partsOf(messageAt(out, 0))).toEqual([{ type: 'text', text: visible }]);
+  });
+
   it('omits id + metadata when the id is absent or not the msg-<n> shape', () => {
     const out = snapshotToThreadMessages(snap([{ id: 'weird', role: 'user', content: 'x' }]));
     expect(out[0]?.id).toBe('weird');
