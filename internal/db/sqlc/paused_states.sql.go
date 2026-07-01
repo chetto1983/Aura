@@ -244,7 +244,7 @@ func (q *Queries) ListRecentPausedStates(ctx context.Context, limit int32) ([]Au
 	return items, nil
 }
 
-const markPausedStateResumed = `-- name: MarkPausedStateResumed :exec
+const markPausedStateResumed = `-- name: MarkPausedStateResumed :execrows
 UPDATE aura.paused_states
 SET resumed_at = now(),
     resumed_answer = $2
@@ -257,7 +257,10 @@ type MarkPausedStateResumedParams struct {
 	ResumedAnswer []byte      `json:"resumed_answer"`
 }
 
-func (q *Queries) MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error {
-	_, err := q.db.Exec(ctx, markPausedStateResumed, arg.Token, arg.ResumedAnswer)
-	return err
+func (q *Queries) MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markPausedStateResumed, arg.Token, arg.ResumedAnswer)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

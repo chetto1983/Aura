@@ -138,6 +138,11 @@ type Querier interface {
 	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
+	// D-09 (LOOP-09): every seq whose content spilled to a <seq>.content sidecar
+	// (content_sidecar_path IS NOT NULL) in one conversation. The crash-orphan GC
+	// (orphan_scan.go) reconciles the live .content files against this referenced
+	// set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
+	ListSpilledSeqsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]int32, error)
 	ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
@@ -153,7 +158,7 @@ type Querier interface {
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
-	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
+	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)

@@ -27,6 +27,16 @@ SELECT count(*) AS turn_count
 FROM aura.conversation_turns
 WHERE conversation_id = $1;
 
+-- name: ListSpilledSeqsForConversation :many
+-- D-09 (LOOP-09): every seq whose content spilled to a <seq>.content sidecar
+-- (content_sidecar_path IS NOT NULL) in one conversation. The crash-orphan GC
+-- (orphan_scan.go) reconciles the live .content files against this referenced
+-- set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
+SELECT seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND content_sidecar_path IS NOT NULL;
+
 -- name: SearchConversationTurns :many
 -- LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 -- reuses this EXACT query; only the excerpt rendering differs per channel.

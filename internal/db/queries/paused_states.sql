@@ -45,7 +45,7 @@ FROM aura.paused_states
 ORDER BY created_at DESC, token ASC
 LIMIT $1;
 
--- name: MarkPausedStateResumed :exec
+-- name: MarkPausedStateResumed :execrows
 UPDATE aura.paused_states
 SET resumed_at = now(),
     resumed_answer = $2

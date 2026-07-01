@@ -157,6 +157,37 @@ func (q *Queries) ListBranchLeaves(ctx context.Context, conversationID pgtype.UU
 	return items, nil
 }
 
+const listSpilledSeqsForConversation = `-- name: ListSpilledSeqsForConversation :many
+SELECT seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND content_sidecar_path IS NOT NULL
+`
+
+// D-09 (LOOP-09): every seq whose content spilled to a <seq>.content sidecar
+// (content_sidecar_path IS NOT NULL) in one conversation. The crash-orphan GC
+// (orphan_scan.go) reconciles the live .content files against this referenced
+// set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
+func (q *Queries) ListSpilledSeqsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]int32, error) {
+	rows, err := q.db.Query(ctx, listSpilledSeqsForConversation, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var seq int32
+		if err := rows.Scan(&seq); err != nil {
+			return nil, err
+		}
+		items = append(items, seq)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTurnsByBranchPath = `-- name: ListTurnsByBranchPath :many
 WITH RECURSIVE path AS (
     SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
