@@ -81,10 +81,11 @@ func (t *FSEdit) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	} else {
 		content = strings.Replace(content, a.OldString, a.NewString, 1)
 	}
-	// Atomic temp-file + rename (AG-045): the edit replaces the file in one
-	// rename so a crash mid-write never leaves a truncated file; concurrent edits
-	// remain last-writer-wins (the read→edit→write window is not locked).
-	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
+	// Atomic temp-file + rename (AG-045): the edit replaces the file in one rename so
+	// a crash mid-write never leaves a truncated file; concurrent edits remain
+	// last-writer-wins (the read→edit→write window is not locked). The edited file is
+	// known to exist, so its mode is preserved (F-010); the 0o644 fallback is defensive.
+	if err := atomicWriteFile(path, []byte(content), existingFileMode(path)); err != nil {
 		return ToolResult{}, fmt.Errorf("fs_edit: %w", err)
 	}
 	return NewResult(ctx, fmt.Sprintf("replaced %d occurrence(s) in %s", count, path))

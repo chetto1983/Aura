@@ -108,6 +108,18 @@ func sliceLines(content string, offset, limit int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
+// existingFileMode picks the permission bits for a write target: an existing
+// regular file's current mode, so an overwrite PRESERVES it (a 0o600 secret stays
+// 0o600, an 0o755 script stays 0o755) instead of clobbering it to a hardcoded 0o644
+// (F-010); a brand-new path or a non-regular target defaults to 0o644. Callers pass
+// the result to atomicWriteFile, which chmods the temp file before the rename.
+func existingFileMode(path string) os.FileMode {
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		return info.Mode().Perm()
+	}
+	return 0o644
+}
+
 // atomicWriteFile writes data to a temp file in the same directory then renames it
 // over path, so a reader never observes a partially-written file and a crash
 // mid-write leaves the original intact (AG-045). The temp name carries the
