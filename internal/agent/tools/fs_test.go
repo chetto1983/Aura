@@ -115,6 +115,143 @@ func TestFSWriteAtomicOverwriteAndMode(t *testing.T) {
 	}
 }
 
+// TestFSWritePreservesModeOnOverwrite pins LOOP-07/F-010: overwriting an existing
+// file must keep its permission bits (a 0o600 secret stays 0o600, an 0o755 script
+// stays 0o755) instead of clobbering them to a hardcoded 0o644; a brand-new file is
+// created 0o644. Mode bits are POSIX, so the exact-mode assertions run on the WSL/
+// Linux tier only (CLAUDE.md) — Windows Stat reports 0666.
+func TestFSWritePreservesModeOnOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are POSIX; the WSL/Linux tier is authoritative")
+	}
+	ctx := ctxWith(t, "sess-fs-mode-w", "call-fs")
+	tool := &FSWrite{}
+	tests := []struct {
+		name     string
+		existing os.FileMode // 0 => brand-new path (no pre-existing file)
+		want     os.FileMode
+	}{
+		{name: "overwrite-0600-stays-0600", existing: 0o600, want: 0o600},
+		{name: "overwrite-0755-stays-0755", existing: 0o755, want: 0o755},
+		{name: "new-file-defaults-0644", existing: 0, want: 0o644},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "out.txt")
+			if tt.existing != 0 {
+				if err := os.WriteFile(p, []byte("orig"), tt.existing); err != nil {
+					t.Fatal(err)
+				}
+				// os.WriteFile honors umask; force the intended mode so the fixture is exact.
+				if err := os.Chmod(p, tt.existing); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := tool.Execute(ctx, mustJSON(t, fsWriteArgs{Path: p, Content: "new content"})); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			info, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if perm := info.Mode().Perm(); perm != tt.want {
+				t.Fatalf("mode = %o, want %o", perm, tt.want)
+			}
+			got, _ := os.ReadFile(p)
+			if string(got) != "new content" {
+				t.Fatalf("content = %q, want %q", got, "new content")
+			}
+		})
+	}
+}
+
+// TestFSEditPreservesModeOnOverwrite pins the same mode-preservation for fs_edit:
+// an in-place edit must not silently downgrade a restrictive file's mode.
+func TestFSEditPreservesModeOnOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are POSIX; the WSL/Linux tier is authoritative")
+	}
+	ctx := ctxWith(t, "sess-fs-mode-e", "call-fs")
+	tool := &FSEdit{}
+	for _, mode := range []os.FileMode{0o600, 0o755} {
+		t.Run(mode.String(), func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "f.go")
+			if err := os.WriteFile(p, []byte("port := 8080\n"), mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(p, mode); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tool.Execute(ctx, mustJSON(t, fsEditArgs{Path: p, OldString: "8080", NewString: "9090"})); err != nil {
+				t.Fatalf("edit: %v", err)
+			}
+			info, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if perm := info.Mode().Perm(); perm != mode.Perm() {
+				t.Fatalf("mode = %o, want %o", perm, mode.Perm())
+			}
+			got, _ := os.ReadFile(p)
+			if string(got) != "port := 9090\n" {
+				t.Fatalf("content = %q, want edited", got)
+			}
+		})
+	}
+}
+
+// TestFSWriteAtomicityKeepsOriginalOnFailure pins the atomicity half of F-010: when
+// the temp-create/rename write fails mid-flight, the original target must be left
+// byte-and-mode intact — a crash never truncates the file. It injects the failure by
+// making the parent directory unwritable so os.CreateTemp fails. That guard is POSIX-
+// only and does not bind root, so the test skips on Windows and when running as root.
+func TestFSWriteAtomicityKeepsOriginalOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory-permission fault injection is POSIX-only")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions; cannot inject the failure")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "keep.txt")
+	if err := os.WriteFile(p, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Make the directory read+exec only: the atomic temp-file create must fail, so the
+	// existing target is never replaced. Restore perms via t.Cleanup so t.TempDir()
+	// can remove the tree.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	ctx := ctxWith(t, "sess-fs-atomic-fail", "call-fs")
+	if _, err := (&FSWrite{}).Execute(ctx, mustJSON(t, fsWriteArgs{Path: p, Content: "clobbered"})); err == nil {
+		t.Fatal("write into an unwritable dir must fail, not silently succeed")
+	}
+	// Restore read access to assert the original survived untouched.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Fatalf("original truncated/clobbered by a failed write: got %q", got)
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("original mode changed by a failed write: got %o, want 0600", perm)
+	}
+}
+
 func TestFSEditUniqueAndAmbiguous(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.go")
