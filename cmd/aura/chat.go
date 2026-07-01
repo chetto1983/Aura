@@ -153,15 +153,39 @@ func bootServeChatEnv(ctx context.Context) (*chatEnv, error) {
 }
 
 func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error)) (*chatEnv, error) {
-	var pool *pgxpool.Pool
+	cfg, pool, err := resolveConfigAndPool(ctx, loadConfig, db.Open)
+	if err != nil {
+		return nil, err
+	}
+	return assembleChatEnv(ctx, cfg, pool)
+}
+
+// dbOpener opens a pgx pool from a DB config; it matches db.Open. resolveConfigAndPool
+// takes it as a parameter so its pool lifecycle (close-on-reload-failure) is
+// unit-testable without a live Postgres — db.Open eagerly Pings, so the real opener
+// cannot be driven past pool-open in a test.
+type dbOpener func(ctx context.Context, cfg *db.Config) (*pgxpool.Pool, error)
+
+// resolveConfigAndPool loads the config and opens the DB pool, handing BOTH to
+// assembleChatEnv. It runs the config → (optional settings-overlay) → reload sequence
+// and owns the pool ONLY across a post-overlay reload failure: if the reload fails it
+// closes the freshly-opened pool before returning (no leak). On success it returns the
+// OPEN pool and the caller (assembleChatEnv) takes over its lifecycle. Returning the
+// pool from here also fixes a latent shadow bug: the previous inline form declared the
+// overlay pool with `:=` inside the keyless branch, shadowing the outer var, so an
+// overlay-success boot proceeded on a nil pool.
+func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config, error), open dbOpener) (*config.Config, *pgxpool.Pool, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		if !errors.Is(err, llm.ErrMissingAPIKey) && !isMissingAPIKey(err) {
-			return nil, err
+			return nil, nil, err
 		}
+		// Keyless first load: the required infra secrets may live in the DB settings
+		// overlay. openSettingsOverlayPool returns a nil pool whenever !ok/err, so a
+		// failed overlay path never leaks a live pool.
 		pool, ok, overlayErr := openSettingsOverlayPool(ctx)
 		if overlayErr != nil || !ok {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
 			fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
@@ -169,33 +193,67 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		cfg, err = loadConfig()
 		if err != nil {
 			pool.Close()
-			return nil, err
+			return nil, nil, err
 		}
-	} else {
-		// Fail fast on an empty required infra secret (O-04) before opening any
-		// connection, so a misconfigured deploy errors at boot with a named cause
-		// instead of a late DB auth failure or a silently degraded graph.
-		if err := cfg.Validate(); err != nil {
-			return nil, err
-		}
-		pool, err = db.Open(ctx, &cfg.DB)
-		if err != nil {
-			return nil, fmt.Errorf("db open: %w", err)
-		}
-		if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
-			fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
-		}
-		cfg, err = loadConfig()
-		if err != nil {
-			pool.Close()
-			return nil, err
-		}
+		return cfg, pool, nil
 	}
-	// Fail fast on an empty required infra secret (O-04) before using any
-	// connection, so a misconfigured deploy errors at boot with a named cause
-	// instead of a late DB auth failure or a silently degraded graph.
+	// Fail fast on an empty required infra secret (O-04) BEFORE opening any connection,
+	// so a misconfigured deploy errors at boot with a named cause instead of a late DB
+	// auth failure or a silently degraded graph. This pre-open Validate is the
+	// load-bearing half of the intentional double-Validate: it must run before open()
+	// (assembleChatEnv re-checks the RELOADED config after the overlay).
 	if err := cfg.Validate(); err != nil {
+		return nil, nil, err
+	}
+	pool, err := open(ctx, &cfg.DB)
+	if err != nil {
+		return nil, nil, fmt.Errorf("db open: %w", err)
+	}
+	if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
+		fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
+	}
+	cfg, err = loadConfig()
+	if err != nil {
 		pool.Close()
+		return nil, nil, err
+	}
+	return cfg, pool, nil
+}
+
+// releaseBootResources is the boot close-on-error path (QUAL-04b): it drains any MCP
+// closers THEN closes the pool, mirroring chatEnv.close's shutdown order (the reasoning
+// learner writes through a graph client held in the closers, so it must drain before the
+// pool). Both arguments are nil-safe.
+func releaseBootResources(pool interface{ Close() }, closers []func() error) {
+	_ = closeMCPServers(closers)
+	if pool != nil {
+		pool.Close()
+	}
+}
+
+// assembleChatEnv builds the composition root on an already-open pool. It arms a
+// close-on-error guard FIRST so EVERY error return after this point releases the pool
+// AND drains any MCP closers already opened — a boot failure (a bad command-hook config,
+// a failed MCP mount, a reloaded config that no longer validates) never leaks a pgxpool
+// or an MCP subprocess (QUAL-04b; the real leak was the CommandHookManagerFromEnv failure
+// path, which returned after the pool + registry were built with no cleanup). The guard
+// is disarmed only by the happy-path success flag, after which chatEnv.close owns the
+// lifecycle.
+func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (*chatEnv, error) {
+	var mcpClosers []func() error
+	success := false
+	defer func() {
+		if !success {
+			releaseBootResources(pool, mcpClosers)
+		}
+	}()
+
+	// Fail fast on an empty required infra secret (O-04) on the RELOADED config: the
+	// pre-open Validate in resolveConfigAndPool guarded the initial config before
+	// db.Open; this second Validate re-checks the post-overlay/reloaded config (a
+	// secret the overlay cleared, or a reloaded value that no longer validates). BOTH
+	// Validates are intentional — keep the pre-open one before any db.Open.
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -245,7 +303,7 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB.
 	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore))
 	if err != nil {
-		pool.Close()
+		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 
@@ -316,6 +374,7 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		deps.ToolSelectSaver = toolSelectStore
 	}
 	run := runner.New(deps)
+	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }
 
