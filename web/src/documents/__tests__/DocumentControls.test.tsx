@@ -44,6 +44,7 @@ function renderFileList(overrides: Partial<ComponentProps<typeof DocumentFileLis
     documents: [baseDocument],
     activeVersions: new Map([[baseDocument.id, baseVersion]]),
     tab: 'all',
+    viewMode: 'list',
     selectedIds: new Set(),
     activeId: '',
     loading: false,
@@ -104,6 +105,7 @@ describe('Document library controls', () => {
         documents={[]}
         activeVersions={new Map()}
         tab="all"
+        viewMode="list"
         selectedIds={new Set()}
         activeId=""
         loading
@@ -122,6 +124,7 @@ describe('Document library controls', () => {
         documents={[]}
         activeVersions={new Map()}
         tab="all"
+        viewMode="list"
         selectedIds={new Set()}
         activeId=""
         loading={false}
@@ -142,6 +145,7 @@ describe('Document library controls', () => {
         documents={[]}
         activeVersions={new Map()}
         tab="all"
+        viewMode="list"
         selectedIds={new Set()}
         activeId=""
         loading={false}
@@ -200,6 +204,42 @@ describe('Document library controls', () => {
     expect(onToggleSelected).toHaveBeenCalledWith('doc-image');
     expect(onOpenDetails).toHaveBeenCalledWith('doc-image');
     expect(onOpenActions).toHaveBeenCalledWith('doc-image');
+  });
+
+  it('shows the denormalized list-row size when no detail version is loaded', () => {
+    renderFileList({
+      documents: [
+        { ...baseDocument, active_size_bytes: 18022, active_content_type: 'application/pdf' },
+      ],
+      activeVersions: new Map([[baseDocument.id, undefined]]),
+    });
+
+    const row = screen.getByRole('row', { name: /Robot Guide\.pdf/ });
+    expect(row.textContent).toContain('17.6 KB');
+    expect(row.textContent).not.toContain('-');
+  });
+
+  it('renders a card grid when the grid view is selected', () => {
+    const onOpenDetails = vi.fn();
+    const onOpenActions = vi.fn();
+
+    renderFileList({
+      documents: [{ ...baseDocument, active_size_bytes: 18022 }],
+      activeVersions: new Map([[baseDocument.id, undefined]]),
+      viewMode: 'grid',
+      onOpenDetails,
+      onOpenActions,
+    });
+
+    expect(screen.queryByRole('table')).toBeNull();
+    const card = screen.getByRole('listitem');
+    expect(card.textContent).toContain('Robot Guide.pdf');
+    expect(card.textContent).toContain('17.6 KB');
+
+    fireEvent.click(within(card).getByRole('button', { name: /^Robot Guide\.pdf/ }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Actions for Robot Guide.pdf' }));
+    expect(onOpenDetails).toHaveBeenCalledWith('doc-1');
+    expect(onOpenActions).toHaveBeenCalledWith('doc-1');
   });
 
   it('keeps upload disabled until a file exists and reports success progress', async () => {

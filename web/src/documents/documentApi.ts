@@ -21,6 +21,10 @@ export interface DocumentItem {
   readonly created_at?: string;
   readonly updated_at?: string;
   readonly deleted_at?: string;
+  // Denormalized active-version facts on list rows so each row shows a size + kind
+  // without an N+1 detail fetch (populated by GET /api/documents only).
+  readonly active_size_bytes?: number;
+  readonly active_content_type?: string;
 }
 
 type RawDocumentItem = Omit<DocumentItem, 'tags'> & {

@@ -121,7 +121,60 @@ func (s *PostgresCatalogStore) ListDocuments(ctx context.Context, req ListDocume
 		}
 		out = append(out, doc)
 	}
+	if err := s.attachActiveVersionSizes(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// attachActiveVersionSizes denormalizes each summary's active-version size and
+// content type in ONE batched query (never N+1), so the list view renders a size
+// and kind per row without fetching each document's detail.
+func (s *PostgresCatalogStore) attachActiveVersionSizes(ctx context.Context, summaries []DocumentSummary) error {
+	if s.db == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(summaries))
+	for i := range summaries {
+		if summaries[i].ActiveVersionID != "" {
+			ids = append(ids, summaries[i].ActiveVersionID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.db.Query(ctx, `
+SELECT id::text, size_bytes, content_type
+FROM aura.document_versions
+WHERE id::text = ANY($1)
+  AND deleted_at IS NULL`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type versionFacts struct {
+		size        int64
+		contentType string
+	}
+	byID := make(map[string]versionFacts, len(ids))
+	for rows.Next() {
+		var id, contentType string
+		var size int64
+		if err := rows.Scan(&id, &size, &contentType); err != nil {
+			return err
+		}
+		byID[id] = versionFacts{size: size, contentType: contentType}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range summaries {
+		if facts, ok := byID[summaries[i].ActiveVersionID]; ok {
+			summaries[i].ActiveSizeBytes = facts.size
+			summaries[i].ActiveContentType = facts.contentType
+		}
+	}
+	return nil
 }
 
 // GetDocument returns one document and its immutable version history.

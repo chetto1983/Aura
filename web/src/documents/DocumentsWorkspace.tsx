@@ -230,6 +230,7 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
           documents={documents}
           activeVersions={activeVersions}
           tab={tab}
+          viewMode={viewMode}
           selectedIds={selectedIds}
           activeId={selectedId}
           loading={listStatus === 'loading'}

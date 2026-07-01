@@ -31,7 +31,7 @@ export function documentKindFor(
   document: DocumentItem,
   version: DocumentVersion | undefined,
 ): DocumentKind {
-  const mime = version?.content_type.toLowerCase() ?? '';
+  const mime = (version?.content_type ?? document.active_content_type ?? '').toLowerCase();
   if (imageTypes.has(mime) || /\.(png|jpe?g|webp|gif|svg)$/i.test(document.title)) return 'image';
   if (
     documentTypes.has(mime) ||

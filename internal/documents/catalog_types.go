@@ -58,6 +58,12 @@ type Document struct {
 	CreatedAt       time.Time      `json:"created_at,omitempty"`
 	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 	DeletedAt       time.Time      `json:"deleted_at,omitempty"`
+	// ActiveSizeBytes and ActiveContentType denormalize the active version's
+	// storage facts onto list rows so a document catalog entry is self-sufficient
+	// (size + kind) without an N+1 detail fetch. They are populated only by
+	// ListDocuments; detail/create/update responses leave them zero (omitempty).
+	ActiveSizeBytes   int64  `json:"active_size_bytes,omitempty"`
+	ActiveContentType string `json:"active_content_type,omitempty"`
 }
 
 // DocumentSummary is returned by catalog list calls.

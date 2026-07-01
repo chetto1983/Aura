@@ -244,6 +244,42 @@ func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
 	}
 }
 
+func TestDeleteServiceToleratesCleanupErrors(t *testing.T) {
+	// A real document's assets are already soft-deleted by the catalog step, so the
+	// asset cleanup here returns "already deleted"; likewise graph deactivation may
+	// fail transiently. Neither may fail the operator's delete (regression: the docs
+	// library "delete does nothing" defect where a 404 stuck the confirm dialog).
+	store := &fakeCatalogStore{
+		detail: DocumentDetail{Document: Document{
+			ID:         "10000000-0000-0000-0000-000000000001",
+			IdentityID: "00000000-0000-0000-0000-000000000001",
+			Metadata:   map[string]any{"search_document_id": "doc_search_1"},
+			Status:     DocumentStatusReady,
+		}, Versions: []DocumentVersion{{
+			ID:      "20000000-0000-0000-0000-000000000001",
+			AssetID: "30000000-0000-0000-0000-000000000001",
+		}}},
+	}
+	graph := &recordingGraphDeactivator{err: errors.New("neo4j unavailable")}
+	assets := &recordingAssetDeleter{err: errors.New("asset already deleted")}
+	svc := &DeleteService{Catalog: &CatalogService{Store: store}, Graph: graph, Assets: assets}
+
+	doc, err := svc.SoftDeleteDocument(context.Background(),
+		"00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
+	if err != nil {
+		t.Fatalf("delete must succeed despite cleanup errors: %v", err)
+	}
+	if doc.Status != DocumentStatusDeleted {
+		t.Fatalf("deleted doc = %#v", doc)
+	}
+	if graph.documentID != "doc_search_1" {
+		t.Fatalf("graph deactivation not attempted: %q", graph.documentID)
+	}
+	if assets.assetID != "30000000-0000-0000-0000-000000000001" {
+		t.Fatalf("asset cleanup not attempted: %q", assets.assetID)
+	}
+}
+
 func TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(t *testing.T) {
 	activeVersionID := mustCatalogTestUUID(t, "20000000-0000-0000-0000-000000000001")
 	row := sqlc.AuraDocuments{
@@ -379,22 +415,24 @@ func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {
 
 type recordingGraphDeactivator struct {
 	documentID string
+	err        error
 }
 
 func (g *recordingGraphDeactivator) DeactivateDocument(_ context.Context, documentID string) error {
 	g.documentID = documentID
-	return nil
+	return g.err
 }
 
 type recordingAssetDeleter struct {
 	identityID string
 	assetID    string
+	err        error
 }
 
 func (a *recordingAssetDeleter) DeleteDocumentAsset(_ context.Context, identityID, assetID string) error {
 	a.identityID = identityID
 	a.assetID = assetID
-	return nil
+	return a.err
 }
 
 type recordingCatalogDB struct {
