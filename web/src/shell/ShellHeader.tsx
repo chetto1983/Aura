@@ -17,6 +17,7 @@ export function ShellHeader({
   onApprovalOpen,
   onNavigationOpen,
   onRuntimeOpen,
+  navigationAvailable = true,
   logoutPending,
   onLogout,
 }: {
@@ -27,6 +28,7 @@ export function ShellHeader({
   readonly onApprovalOpen: (id: string) => void;
   readonly onNavigationOpen: () => void;
   readonly onRuntimeOpen: () => void;
+  readonly navigationAvailable?: boolean;
   readonly logoutPending: boolean;
   readonly onLogout: () => void;
 }) {
@@ -35,16 +37,18 @@ export function ShellHeader({
 
   return (
     <header className="shell-header grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-surface px-2 py-2 sm:px-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={onNavigationOpen}
-        aria-label={t('shell.openNavigation')}
-        className="shell-nav-trigger text-text-muted hover:bg-surface-2 hover:text-text lg:hidden"
-      >
-        <PanelLeft data-icon="icon" aria-hidden="true" focusable="false" />
-      </Button>
+      {navigationAvailable ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onNavigationOpen}
+          aria-label={t('shell.openNavigation')}
+          className="shell-nav-trigger text-text-muted hover:bg-surface-2 hover:text-text lg:hidden"
+        >
+          <PanelLeft data-icon="icon" aria-hidden="true" focusable="false" />
+        </Button>
+      ) : null}
       <div className="flex min-w-0 items-center gap-2">
         <img
           src="/logo.png"

@@ -98,6 +98,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { surface, setSurface } = useSurfaceIntent();
+  const showConversationNavigation = surface === 'chat';
   // The Graph Explorer and the Governance boards are focused workspaces with their own panes
   // (canvas/inspector, master/detail), so the shell's right-hand runtime rail is redundant
   // there — drop it on lg so the workspace gets the width back instead of being squeezed into a
@@ -277,9 +278,13 @@ export function AppShell() {
       <ShellHeader
         activeMode={surface}
         approvalsOpen={approvalsOpen}
-        onModeSelect={setSurface}
+        onModeSelect={(next) => {
+          setSurface(next);
+          if (next !== 'chat') surfaces.closeNav();
+        }}
         onNavigationOpen={surfaces.openNav}
         onRuntimeOpen={surfaces.openOverlay}
+        navigationAvailable={showConversationNavigation}
         onApprovalsToggle={() => {
           setApprovalsOpen((v) => !v);
         }}
@@ -302,17 +307,19 @@ export function AppShell() {
           (380px) ≈ 924px < 1024px, so the `lg` flip honours the floor by construction. */}
       <main
         className={`shell-main grid min-h-0 grid-cols-1 ${
-          isFocusedWorkspace
-            ? 'lg:grid-cols-[15rem_minmax(0,1fr)]'
-            : 'lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]'
+          showConversationNavigation
+            ? 'lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]'
+            : 'lg:grid-cols-[minmax(0,1fr)]'
         }`}
       >
-        <aside
-          aria-label={t('shell.navigation')}
-          className="shell-side-nav hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
-        >
-          {navigation}
-        </aside>
+        {showConversationNavigation ? (
+          <aside
+            aria-label={t('shell.navigation')}
+            className="shell-side-nav hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
+          >
+            {navigation}
+          </aside>
+        ) : null}
 
         <section
           aria-label={t('shell.chatRegion')}
@@ -375,14 +382,16 @@ export function AppShell() {
         <RuntimeFooter usage={usage} conversationId={activeThreadId} />
       </BottomDock>
 
-      <Drawer
-        open={surfaces.navOpen}
-        side="left"
-        title={t('shell.navigation')}
-        onClose={surfaces.closeNav}
-      >
-        {navigation}
-      </Drawer>
+      {showConversationNavigation ? (
+        <Drawer
+          open={surfaces.navOpen}
+          side="left"
+          title={t('shell.navigation')}
+          onClose={surfaces.closeNav}
+        >
+          {navigation}
+        </Drawer>
+      ) : null}
       <Drawer
         open={surfaces.overlayOpen}
         side="right"

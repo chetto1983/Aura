@@ -42,6 +42,10 @@ vi.mock('../documents/DocumentsWorkspace', () => ({
   default: () => <div>Document library</div>,
 }));
 
+vi.mock('../graph/GraphExplorer', () => ({
+  default: () => <div data-testid="graph-workspace">Evidence graph</div>,
+}));
+
 // The marketing-hero copy this operator console must NOT ship (ux-spec §350 / SC4).
 const MARKETING_HERO_BLOCKLIST = [
   /get started for free/i,
@@ -68,6 +72,7 @@ function renderShell() {
 
 describe('AppShell', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.mocked(fetchOnboardingStatus).mockReset();
     vi.mocked(fetchOnboardingStatus).mockResolvedValue({
       required: false,
@@ -169,6 +174,26 @@ describe('AppShell', () => {
     await waitFor(() => {
       expect(screen.getByText('Document library')).toBeTruthy();
     });
+  });
+
+  it('keeps the conversation navigation scoped to the chat surface', async () => {
+    const { container } = renderShell();
+
+    expect(screen.getByText('Conversations')).toBeTruthy();
+
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+        name: 'Graph',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('graph-workspace')).toBeTruthy();
+    });
+    expect(screen.queryByText('Conversations')).toBeNull();
+    expect(screen.queryByPlaceholderText('Search conversations')).toBeNull();
+    expect(container.querySelector('.shell-side-nav')).toBeNull();
+    expect(container.querySelector('main')?.className).toContain('lg:grid-cols-[minmax(0,1fr)]');
   });
 
   it('does not fall back to the legacy passphrase logout route', async () => {

@@ -106,7 +106,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   function openActions(title: string): HTMLElement {
     const row = rowFor(title);
     fireEvent.click(within(row).getByRole('button', { name: 'Conversation actions' }));
-    return row;
+    return screen.getByRole('menu', { name: 'Conversation actions' });
   }
 
   it('announces a pending list via a role=status skeleton (loading state)', async () => {
@@ -162,6 +162,17 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     const row = await screen.findByRole('button', { name: 'Latest run' });
     fireEvent.click(row);
     expect(onSelect).toHaveBeenCalledWith('c-recent');
+  });
+
+  it('renders the row actions menu outside the scrollable conversation list', async () => {
+    renderSidebar();
+    await screen.findByText('Latest run');
+    const row = rowFor('Latest run');
+    const menu = openActions('Latest run');
+
+    expect(row.contains(menu)).toBe(false);
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.className).toContain('fixed');
   });
 
   it('inline-renames a conversation → POST /rename', async () => {

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   Archive,
@@ -173,6 +174,12 @@ interface ConversationRowProps {
   readonly onRequestDelete: () => void;
 }
 
+interface MenuPosition {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+}
+
 function ConversationRow({
   conv,
   selected,
@@ -188,6 +195,9 @@ function ConversationRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLLIElement>(null);
+  const actionButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
 
   const archived = isArchived(conv);
   const label = displayTitle(conv, t('conversations.untitled'));
@@ -204,7 +214,9 @@ function ConversationRow({
     if (!menuOpen) return;
 
     function onPointerDown(event: PointerEvent) {
-      if (rowRef.current?.contains(event.target as Node)) return;
+      const target = event.target as Node;
+      if (rowRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
       setMenuOpen(false);
     }
 
@@ -221,6 +233,49 @@ function ConversationRow({
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [menuOpen]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen || editing || typeof window === 'undefined') {
+      setMenuPosition(null);
+      return;
+    }
+
+    function clamp(value: number, min: number, max: number): number {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function syncMenuPosition() {
+      const button = actionButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+      const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+      const gutter = 8;
+      const width = Math.min(224, Math.max(160, viewportWidth - gutter * 2));
+      const height = menuRef.current?.offsetHeight ?? 156;
+      const maxLeft = Math.max(gutter, viewportWidth - width - gutter);
+      const below = rect.bottom + 6;
+      const above = rect.top - height - 6;
+      const top =
+        below + height <= viewportHeight - gutter || above < gutter
+          ? Math.min(below, viewportHeight - height - gutter)
+          : above;
+
+      setMenuPosition({
+        left: clamp(rect.right - width, gutter, maxLeft),
+        top: Math.max(gutter, top),
+        width,
+      });
+    }
+
+    syncMenuPosition();
+    window.addEventListener('resize', syncMenuPosition);
+    window.addEventListener('scroll', syncMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', syncMenuPosition);
+      window.removeEventListener('scroll', syncMenuPosition, true);
+    };
+  }, [editing, menuOpen]);
 
   function startEditing() {
     setMenuOpen(false);
@@ -290,6 +345,7 @@ function ConversationRow({
               </span>
             </Button>
             <Button
+              ref={actionButtonRef}
               type="button"
               variant="ghost"
               size="icon"
@@ -308,48 +364,58 @@ function ConversationRow({
           </>
         )}
 
-        {menuOpen && !editing ? (
-          <div
-            role="menu"
-            aria-label={menuLabel}
-            className="absolute left-0 top-10 z-50 flex w-56 flex-col gap-1 rounded-xl border border-border bg-surface-2 p-1.5 text-[13px] text-text shadow-[var(--shadow-popover)]"
-          >
-            <MenuAction
-              label={t('conversations.actions.rename')}
-              icon={<Pencil data-icon aria-hidden="true" className="size-4" />}
-              onClick={startEditing}
-            />
-            {archived ? (
-              <MenuAction
-                label={t('conversations.actions.unarchive')}
-                icon={<RotateCcw data-icon aria-hidden="true" className="size-4" />}
-                onClick={() => {
-                  setMenuOpen(false);
-                  onUnarchive();
+        {menuOpen && !editing && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                ref={menuRef}
+                role="menu"
+                aria-label={menuLabel}
+                style={{
+                  left: menuPosition?.left ?? 0,
+                  top: menuPosition?.top ?? 0,
+                  width: menuPosition?.width ?? 224,
+                  visibility: menuPosition === null ? 'hidden' : 'visible',
                 }}
-              />
-            ) : (
-              <MenuAction
-                label={t('conversations.actions.archive')}
-                icon={<Archive data-icon aria-hidden="true" className="size-4" />}
-                onClick={() => {
-                  setMenuOpen(false);
-                  onArchive();
-                }}
-              />
-            )}
-            <div className="my-1 h-px bg-border" />
-            <MenuAction
-              label={t('conversations.actions.delete')}
-              icon={<Trash2 data-icon aria-hidden="true" className="size-4" />}
-              onClick={() => {
-                setMenuOpen(false);
-                onRequestDelete();
-              }}
-              danger
-            />
-          </div>
-        ) : null}
+                className="fixed z-[70] flex flex-col gap-1 rounded-xl border border-border bg-surface-2 p-1.5 text-[13px] text-text shadow-[var(--shadow-popover)]"
+              >
+                <MenuAction
+                  label={t('conversations.actions.rename')}
+                  icon={<Pencil data-icon aria-hidden="true" className="size-4" />}
+                  onClick={startEditing}
+                />
+                {archived ? (
+                  <MenuAction
+                    label={t('conversations.actions.unarchive')}
+                    icon={<RotateCcw data-icon aria-hidden="true" className="size-4" />}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onUnarchive();
+                    }}
+                  />
+                ) : (
+                  <MenuAction
+                    label={t('conversations.actions.archive')}
+                    icon={<Archive data-icon aria-hidden="true" className="size-4" />}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onArchive();
+                    }}
+                  />
+                )}
+                <div className="my-1 h-px bg-border" />
+                <MenuAction
+                  label={t('conversations.actions.delete')}
+                  icon={<Trash2 data-icon aria-hidden="true" className="size-4" />}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onRequestDelete();
+                  }}
+                  danger
+                />
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
     </li>
   );
