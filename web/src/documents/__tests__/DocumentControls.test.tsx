@@ -52,11 +52,19 @@ function renderFileList(overrides: Partial<ComponentProps<typeof DocumentFileLis
     onToggleSelected: vi.fn(),
     onOpenDetails: vi.fn(),
     onOpenActions: vi.fn(),
+    onAskDocument: vi.fn(),
+    onEditTags: vi.fn(),
+    onRetry: vi.fn(),
+    onDelete: vi.fn(),
     onRefresh: vi.fn(),
     ...overrides,
   };
   render(<DocumentFileList {...props} />);
   return props;
+}
+
+function openActions(button: HTMLElement) {
+  fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
 }
 
 describe('Document library controls', () => {
@@ -113,6 +121,10 @@ describe('Document library controls', () => {
         onToggleSelected={vi.fn()}
         onOpenDetails={vi.fn()}
         onOpenActions={vi.fn()}
+        onAskDocument={vi.fn()}
+        onEditTags={vi.fn()}
+        onRetry={vi.fn()}
+        onDelete={vi.fn()}
         onRefresh={onRefresh}
       />,
     );
@@ -132,6 +144,10 @@ describe('Document library controls', () => {
         onToggleSelected={vi.fn()}
         onOpenDetails={vi.fn()}
         onOpenActions={vi.fn()}
+        onAskDocument={vi.fn()}
+        onEditTags={vi.fn()}
+        onRetry={vi.fn()}
+        onDelete={vi.fn()}
         onRefresh={onRefresh}
       />,
     );
@@ -153,6 +169,10 @@ describe('Document library controls', () => {
         onToggleSelected={vi.fn()}
         onOpenDetails={vi.fn()}
         onOpenActions={vi.fn()}
+        onAskDocument={vi.fn()}
+        onEditTags={vi.fn()}
+        onRetry={vi.fn()}
+        onDelete={vi.fn()}
         onRefresh={onRefresh}
       />,
     );
@@ -199,7 +219,7 @@ describe('Document library controls', () => {
 
     fireEvent.click(within(row).getByRole('checkbox', { name: 'Select Robot Photo.png' }));
     fireEvent.click(within(row).getByRole('button', { name: /^Robot Photo\.png/ }));
-    fireEvent.click(within(row).getByRole('button', { name: 'Actions for Robot Photo.png' }));
+    openActions(within(row).getByRole('button', { name: 'Actions for Robot Photo.png' }));
 
     expect(onToggleSelected).toHaveBeenCalledWith('doc-image');
     expect(onOpenDetails).toHaveBeenCalledWith('doc-image');
@@ -237,7 +257,7 @@ describe('Document library controls', () => {
     expect(card.textContent).toContain('17.6 KB');
 
     fireEvent.click(within(card).getByRole('button', { name: /^Robot Guide\.pdf/ }));
-    fireEvent.click(within(card).getByRole('button', { name: 'Actions for Robot Guide.pdf' }));
+    openActions(within(card).getByRole('button', { name: 'Actions for Robot Guide.pdf' }));
     expect(onOpenDetails).toHaveBeenCalledWith('doc-1');
     expect(onOpenActions).toHaveBeenCalledWith('doc-1');
   });

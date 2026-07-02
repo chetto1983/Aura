@@ -91,6 +91,134 @@ async function installShellUiRoutes(page: import('@playwright/test').Page) {
   );
 }
 
+async function validateConversationRailResize(
+  page: import('@playwright/test').Page,
+  testInfo: import('@playwright/test').TestInfo,
+) {
+  const resizeHandle = page.getByRole('separator', { name: 'Resize conversation sidebar' });
+  const viewportWidth = page.viewportSize()?.width ?? 0;
+  if (viewportWidth < 1024) {
+    await expect(resizeHandle).toHaveCount(0);
+    await testInfo.attach('mobile-chat-shell-no-resizer.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    return;
+  }
+
+  await expect(resizeHandle).toBeVisible();
+  const navigationRail = page.locator('#chat-navigation');
+  await expect(navigationRail).toBeVisible();
+
+  const before = await navigationRail.boundingBox();
+  const handleBox = await resizeHandle.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handleBox).not.toBeNull();
+  if (before === null || handleBox === null) return;
+
+  await resizeHandle.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect
+    .poll(async () => (await navigationRail.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(before.width + 20);
+  const keyboardWidth = (await navigationRail.boundingBox())?.width ?? before.width;
+
+  const dragBox = await resizeHandle.boundingBox();
+  expect(dragBox).not.toBeNull();
+  if (dragBox === null) return;
+  await page.mouse.move(dragBox.x + dragBox.width / 2, dragBox.y + dragBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dragBox.x + dragBox.width / 2 + 96, dragBox.y + dragBox.height / 2, {
+    steps: 6,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => (await navigationRail.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(before.width + 70);
+  const resizedWidth = (await navigationRail.boundingBox())?.width ?? keyboardWidth;
+
+  await testInfo.attach('desktop-chat-shell-resized.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+
+  await page.reload();
+  await expect(page.getByRole('img', { name: /aura/i })).toBeVisible({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Chat', exact: true }).first().click();
+  await expect(resizeHandle).toBeVisible();
+  await expect
+    .poll(async () => (await navigationRail.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(resizedWidth - 12);
+
+  await testInfo.attach('desktop-chat-shell-resized-after-reload.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+}
+
+async function expectChatComposerDocked(page: import('@playwright/test').Page) {
+  const chatRegion = page.getByRole('region', { name: 'Chat' });
+  const composerInput = page.getByRole('textbox', { name: 'Ask Aura' });
+  await expect(chatRegion).toBeVisible();
+  await expect(composerInput).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const chatBox = await chatRegion.boundingBox();
+      const mainBox = await page.locator('main').boundingBox();
+      const inputBox = await composerInput.boundingBox();
+      if (chatBox === null || mainBox === null || inputBox === null) {
+        return Number.POSITIVE_INFINITY;
+      }
+      const chatMainGap = Math.abs(mainBox.y + mainBox.height - (chatBox.y + chatBox.height));
+      const composerChatGap = chatBox.y + chatBox.height - (inputBox.y + inputBox.height);
+      return Math.max(chatMainGap, composerChatGap);
+    })
+    .toBeLessThan(96);
+}
+
+async function expectDialogCentered(
+  page: import('@playwright/test').Page,
+  dialog: import('@playwright/test').Locator,
+) {
+  await expect
+    .poll(async () =>
+      dialog.evaluate((node) => {
+        const portal = node.parentElement === document.body;
+        const outsideSideNav = node.closest('.shell-side-nav') === null;
+        return portal && outsideSideNav;
+      }),
+    )
+    .toBe(true);
+
+  const box = await dialog.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  if (box === null || viewport === null) return;
+
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  expect(Math.abs(centerX - viewport.width / 2)).toBeLessThan(24);
+  expect(Math.abs(centerY - viewport.height / 2)).toBeLessThan(48);
+  await expect
+    .poll(async () =>
+      dialog.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const topElement = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        return topElement !== null && node.contains(topElement);
+      }),
+    )
+    .toBe(true);
+  await expect
+    .poll(async () => dialog.evaluate((node) => getComputedStyle(node).opacity))
+    .toBe('1');
+}
+
 test.describe('embedded operator shell', () => {
   test('applies dark theme + operator density before paint', async ({ page }) => {
     await gotoAuthenticated(page, '/');
@@ -120,16 +248,20 @@ test.describe('embedded operator shell', () => {
     await expect(page).toHaveURL(/\/login(?:[?#]|$)/);
   });
 
-  test('conversation menu floats above panes and navigation is chat-only', async ({ page }) => {
+  test('conversation menu floats above panes and navigation is chat-only', async ({
+    page,
+  }, testInfo) => {
     await installShellUiRoutes(page);
     await gotoAuthenticated(page, '/');
     await expect(page.getByRole('img', { name: /aura/i })).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: 'Chat', exact: true }).first().click();
+    await expectChatComposerDocked(page);
+    await validateConversationRailResize(page, testInfo);
 
     const openNavigation = page.getByRole('button', { name: 'Open navigation' });
     if (await openNavigation.isVisible()) {
       await openNavigation.click();
-      await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Aura' })).toBeVisible();
     }
 
     const row = page.getByRole('button', { name: 'E2E Shell Chat' });
@@ -152,7 +284,19 @@ test.describe('embedded operator shell', () => {
       )
       .toBe(true);
 
-    const navigationDialog = page.getByRole('dialog', { name: 'Navigation' });
+    await menu.getByRole('menuitem', { name: 'Delete permanently' }).click();
+    const deleteDialog = page.getByRole('dialog', { name: 'Delete conversation?' });
+    await expect(deleteDialog).toBeVisible();
+    await expect(deleteDialog.getByRole('button', { name: 'Keep conversation' })).toBeFocused();
+    await expectDialogCentered(page, deleteDialog);
+    await testInfo.attach('conversation-delete-dialog-centered.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await deleteDialog.getByRole('button', { name: 'Keep conversation' }).click();
+    await expect(deleteDialog).toHaveCount(0);
+
+    const navigationDialog = page.getByRole('dialog', { name: 'Aura' });
     if (await navigationDialog.isVisible()) {
       await navigationDialog.getByRole('button', { name: 'Close panel' }).click();
       await expect(navigationDialog).toHaveCount(0);

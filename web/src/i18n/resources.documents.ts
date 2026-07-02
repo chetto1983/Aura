@@ -3,9 +3,11 @@ export const documentsEn = {
     loading: 'Loading documents...',
     loadingDetail: 'Loading document...',
     title: 'Document library',
+    mobileTitle: 'Library',
     empty: 'No documents',
     filters: {
       search: 'Search documents',
+      searchShort: 'Search',
       tag: 'Tag filter',
       scope: 'Scope',
     },
@@ -104,9 +106,11 @@ export const documentsIt = {
     loading: 'Caricamento documenti...',
     loadingDetail: 'Caricamento documento...',
     title: 'Libreria documenti',
+    mobileTitle: 'Libreria',
     empty: 'Nessun documento',
     filters: {
       search: 'Cerca documenti',
+      searchShort: 'Cerca',
       tag: 'Filtro tag',
       scope: 'Ambito',
     },

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Menu, Plus } from 'lucide-react';
+import { useDefaultLayout } from 'react-resizable-panels';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
@@ -9,7 +10,9 @@ import { SearchPanel } from './conversations/SearchPanel';
 import { RuntimeHealthPanel } from './health/RuntimeHealthPanel';
 import { BottomDock } from './shell/BottomDock';
 import { Drawer } from './shell/Drawer';
+import { MobileAppSidebar } from './shell/MobileAppSidebar';
 import { ShellHeader } from './shell/ShellHeader';
+import type { SurfaceIntent } from './shell/modes';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
@@ -20,6 +23,7 @@ import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
 import { Button } from '@/components/ui/button';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 
 const ExternalStoreChat = lazy(() =>
   import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
@@ -40,6 +44,10 @@ const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 // "Create identity" overlay, never landing in the main bundle.
 const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
 const ProfileOnboardingWizard = lazy(() => import('./onboarding/ProfileOnboardingWizard'));
+
+const CHAT_SHELL_LAYOUT_ID = 'aura-chat-shell-v3';
+const CHAT_SHELL_PANEL_IDS = ['chat-navigation', 'chat-workspace'];
+const CHAT_WORKSPACE_MIN_WIDTH = '380px';
 
 interface LogoutTarget {
   path: string;
@@ -166,6 +174,14 @@ export function AppShell() {
     surfaces.closeNav();
   }
 
+  function selectThreadFromMobileNav(id: string) {
+    setSurface('chat');
+    setSelectedId(id);
+    setUsage(undefined);
+    surfaces.closeNav();
+    void navigate(`/c/${encodeURIComponent(id)}`);
+  }
+
   function redriveRun(conversationId: string) {
     if (conversationId.length === 0) return;
     setResumeNonce((n) => n + 1);
@@ -243,6 +259,12 @@ export function AppShell() {
     isRightOpen: surfaces.overlayOpen,
   });
 
+  const chatShellLayout = useDefaultLayout({
+    id: CHAT_SHELL_LAYOUT_ID,
+    panelIds: CHAT_SHELL_PANEL_IDS,
+    onlySaveAfterUserInteractions: true,
+  });
+
   const navigation = (
     <div className="flex h-full min-h-0 flex-col gap-2 bg-surface px-3 py-3">
       <SearchPanel
@@ -270,9 +292,94 @@ export function AppShell() {
 
   const runtime = <RuntimeHealthPanel />;
 
+  const documentsMobileMenu = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={t('shell.openNavigation')}
+      onClick={surfaces.openNav}
+      className="rounded-full text-text hover:bg-surface-2"
+    >
+      <Menu aria-hidden="true" />
+    </Button>
+  );
+
+  function selectMobileMode(next: SurfaceIntent) {
+    setSurface(next);
+    surfaces.closeNav();
+  }
+
+  const mobileNavigation = (
+    <MobileAppSidebar
+      activeMode={surface}
+      onModeSelect={selectMobileMode}
+      onCreateIdentity={() => {
+        setOnboardingOpen(true);
+        surfaces.closeNav();
+      }}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-2">
+        <SearchPanel
+          onOpen={(id) => {
+            setSurface('chat');
+            selectThread(id);
+          }}
+        />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <ConversationSidebar activeId={activeThreadId} onSelect={selectThreadFromMobileNav} />
+        </div>
+      </div>
+    </MobileAppSidebar>
+  );
+
+  const workspace = (
+    <section aria-label={t('shell.chatRegion')} className="flex h-full min-h-0 flex-col bg-bg">
+      <div className="min-h-0 flex-1">
+        <Suspense
+          fallback={
+            <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
+              {surface === 'graph'
+                ? t('graph.loading')
+                : surface === 'governance'
+                  ? t('governance.loading')
+                  : surface === 'documents'
+                    ? t('documents.loading')
+                    : surface === 'settings'
+                      ? t('settings.loading')
+                      : t('chat.loading')}
+            </div>
+          }
+        >
+          {surface === 'graph' ? (
+            <GraphExplorer threadId={activeThreadId} />
+          ) : surface === 'governance' ? (
+            <GovernanceWorkspace />
+          ) : surface === 'documents' ? (
+            <DocumentsWorkspace mobileMenu={documentsMobileMenu} onAskDocument={askDocument} />
+          ) : surface === 'settings' ? (
+            <SettingsWorkspace />
+          ) : (
+            <ExternalStoreChat
+              threadId={activeThreadId}
+              onEnsureThread={ensureThread}
+              onUsage={setUsage}
+              resumeNonce={resumeNonce}
+              draftPrompt={documentDraftPrompt}
+            />
+          )}
+        </Suspense>
+      </div>
+      {!isFocusedWorkspace ? (
+        <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
+      ) : null}
+    </section>
+  );
+
   return (
     <div
       className="aura-shell grid h-[100svh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
+      data-surface={surface}
       {...edgeSwipe}
     >
       <ShellHeader
@@ -284,7 +391,7 @@ export function AppShell() {
         }}
         onNavigationOpen={surfaces.openNav}
         onRuntimeOpen={surfaces.openOverlay}
-        navigationAvailable={showConversationNavigation}
+        navigationAvailable
         onApprovalsToggle={() => {
           setApprovalsOpen((v) => !v);
         }}
@@ -298,100 +405,67 @@ export function AppShell() {
         }}
       />
 
-      {/* §1.1b content-derived 3-column flip. The rails are 15rem + 19rem = 34rem (544px);
-          the elastic chat track has a HARD --chat-lane-min (380px) lower bound instead of the
-          old `minmax(0,1fr)` 0-floor, so the lane can never render < 380px once 3-col is active.
-          The flip stays at `lg` (1024px): 1024 − 544 rails = 480px chat ≥ 380px, with margin;
-          a narrower flip (e.g. md=768 → 768 − 544 = 224px) would crush the lane below the floor,
-          so it is correctly deferred to `lg`. Window-floor = rails (34rem) + --chat-lane-min
-          (380px) ≈ 924px < 1024px, so the `lg` flip honours the floor by construction. */}
-      <main
-        className={`shell-main grid min-h-0 grid-cols-1 ${
-          showConversationNavigation
-            ? 'lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]'
-            : 'lg:grid-cols-[minmax(0,1fr)]'
-        }`}
-      >
-        {showConversationNavigation ? (
-          <aside
-            aria-label={t('shell.navigation')}
-            className="shell-side-nav hidden min-h-0 border-r border-border bg-surface lg:flex lg:flex-col"
+      {/* Chat keeps the old 15rem/19rem rail defaults, but operators can resize the
+          conversation rail while the middle lane still honors --chat-lane-min. */}
+      {showConversationNavigation ? (
+        <main className="shell-main grid min-h-0 grid-cols-[minmax(0,1fr)_19rem]">
+          <ResizablePanelGroup
+            {...chatShellLayout}
+            id={CHAT_SHELL_LAYOUT_ID}
+            orientation="horizontal"
+            resizeTargetMinimumSize={{ coarse: 32, fine: 12 }}
+            className="shell-main-resizable min-w-0"
           >
-            {navigation}
-          </aside>
-        ) : null}
-
-        <section
-          aria-label={t('shell.chatRegion')}
-          className="flex min-h-[min(45svh,100%)] flex-col bg-bg"
-        >
-          <div className="min-h-0 flex-1">
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  className="grid h-full place-items-center text-sm text-text-muted"
-                >
-                  {surface === 'graph'
-                    ? t('graph.loading')
-                    : surface === 'governance'
-                      ? t('governance.loading')
-                      : surface === 'documents'
-                        ? t('documents.loading')
-                        : surface === 'settings'
-                          ? t('settings.loading')
-                          : t('chat.loading')}
-                </div>
-              }
+            <ResizablePanel
+              id="chat-navigation"
+              defaultSize="15rem"
+              minSize="13rem"
+              maxSize="28rem"
+              groupResizeBehavior="preserve-pixel-size"
+              className="h-full min-h-0"
             >
-              {surface === 'graph' ? (
-                <GraphExplorer threadId={activeThreadId} />
-              ) : surface === 'governance' ? (
-                <GovernanceWorkspace />
-              ) : surface === 'documents' ? (
-                <DocumentsWorkspace onAskDocument={askDocument} />
-              ) : surface === 'settings' ? (
-                <SettingsWorkspace />
-              ) : (
-                <ExternalStoreChat
-                  threadId={activeThreadId}
-                  onEnsureThread={ensureThread}
-                  onUsage={setUsage}
-                  resumeNonce={resumeNonce}
-                  draftPrompt={documentDraftPrompt}
-                />
-              )}
-            </Suspense>
-          </div>
-          {!isFocusedWorkspace ? (
-            <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
-          ) : null}
-        </section>
-
-        <aside
-          aria-label={t('shell.displayWorkspace')}
-          className={`shell-runtime-rail hidden min-h-0 overflow-y-auto border-l border-border bg-surface ${
-            isFocusedWorkspace ? '' : 'lg:block'
-          }`}
-        >
-          {runtime}
-        </aside>
-      </main>
+              <aside
+                aria-label={t('shell.navigation')}
+                className="shell-side-nav flex h-full min-h-0 flex-col border-r border-border bg-surface"
+              >
+                {navigation}
+              </aside>
+            </ResizablePanel>
+            <ResizableHandle
+              id="chat-navigation-resizer"
+              aria-label={t('shell.resizeNavigation')}
+              className="shell-nav-resize-handle"
+              withHandle
+            />
+            <ResizablePanel
+              id="chat-workspace"
+              minSize={CHAT_WORKSPACE_MIN_WIDTH}
+              className="h-full min-h-0"
+            >
+              {workspace}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+          <aside
+            id="runtime-rail"
+            aria-label={t('shell.displayWorkspace')}
+            className="shell-runtime-rail h-full min-h-0 overflow-y-auto border-l border-border bg-surface"
+          >
+            {runtime}
+          </aside>
+        </main>
+      ) : (
+        <main className="shell-main grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)]">
+          {workspace}
+        </main>
+      )}
 
       <BottomDock activeMode={surface} onModeSelect={setSurface}>
         <RuntimeFooter usage={usage} conversationId={activeThreadId} />
       </BottomDock>
 
-      {showConversationNavigation ? (
-        <Drawer
-          open={surfaces.navOpen}
-          side="left"
-          title={t('shell.navigation')}
-          onClose={surfaces.closeNav}
-        >
-          {navigation}
-        </Drawer>
-      ) : null}
+      <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>
+        {mobileNavigation}
+      </Drawer>
       <Drawer
         open={surfaces.overlayOpen}
         side="right"

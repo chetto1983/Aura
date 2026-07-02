@@ -83,16 +83,6 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
   beforeEach(() => {
     log = [];
     vi.stubGlobal('fetch', stubFetch(log));
-    // jsdom HTMLDialogElement lacks showModal/close — polyfill for the confirm.
-    if (typeof HTMLDialogElement !== 'undefined') {
-      HTMLDialogElement.prototype.showModal = function show() {
-        this.open = true;
-      };
-      HTMLDialogElement.prototype.close = function close() {
-        this.open = false;
-        this.dispatchEvent(new Event('close'));
-      };
-    }
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -250,6 +240,10 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     );
     const dialog = await screen.findByRole('dialog');
     expect(screen.getByText('Delete conversation?')).toBeTruthy();
+    expect(rowFor('Latest run').contains(dialog)).toBe(false);
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog.className).toContain('left-[50%]');
+    expect(dialog.className).toContain('top-[50%]');
     expect(log.some((c) => c.method === 'DELETE')).toBe(false);
 
     // Cancel ("Keep conversation") is the default focus, NOT the danger confirm.
@@ -257,7 +251,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
     expect(document.activeElement).toBe(cancel);
 
     // Esc cancels the dialog without deleting.
-    fireEvent(dialog, new Event('cancel', { cancelable: true }));
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });

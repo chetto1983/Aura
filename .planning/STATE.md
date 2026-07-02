@@ -2,14 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: verifying
+current_phase: 34
+current_phase_name: agent-loop-correctness-durable-ledger
+status: executing
 stopped_at: Phase 34 context gathered (research-backed; all 4 gray areas locked minimal-industrial; NO new migration)
-last_updated: "2026-07-01T07:21:48.855Z"
-last_activity: 2026-06-30 — Phase 33 complete, transitioned to Phase 34
+last_updated: "2026-07-01T13:14:08.715Z"
+last_activity: 2026-07-01
+last_activity_desc: Phase 34 execution started
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 18
+  total_plans: 24
   completed_plans: 18
   percent: 27
 ---
@@ -21,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 33 — runtime-profiles-config-validation
+**Current focus:** Phase 34 — agent-loop-correctness-durable-ledger
 
 ## Current Position
 
-Phase: 34 — Agent-Loop Correctness + Durable Ledger
-Plan: Not started
-Status: Phase 33 implementation-complete (33-01..33-05 complete) — verifier next
-Last activity: 2026-06-30 — Phase 33 complete, transitioned to Phase 34
+Phase: 34 (agent-loop-correctness-durable-ledger) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 34
+Last activity: 2026-07-01 — Phase 34 execution started
 
 #### (prior) 33-04 — `(*Config).ValidateProfile(p)` aggregates 10 pure tier-gated bespoke gates (each NAMES its `AURA_*` knob, mirrors GuardWebBind) + the generic `reparsePass` into one never-first-fail `[]Violation` encoding the D-09..D-16 matrix EXACTLY (strict via `p.Strict()`; replication+destructive-`off` prod-only — the hardened↔prod differentiator; CORS under both strict tiers per A2). `Validate()` is now profile-aware at the existing boot call site (an unsafe `server_production` config = 7 Fatal violations naming each knob; nil under realistic dev with a Warn-only invalid int); PROF-05 non-absolute `AURA_RUN_DIR` Fatal all tiers; bootChatEnv prints Warn diagnostics + the D-14 `local_trusted` banner. No new gating call site, no agent-tools import, scope fence honored. config -race green
 

@@ -180,6 +180,37 @@ interface MenuPosition {
   readonly width: number;
 }
 
+function positionMenuForButton(
+  button: HTMLButtonElement | null,
+  menuHeight: number | undefined,
+): MenuPosition | null {
+  if (!button || typeof window === 'undefined') return null;
+
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  const rect = button.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const gutter = 8;
+  const width = Math.min(224, Math.max(160, viewportWidth - gutter * 2));
+  const height = menuHeight ?? 156;
+  const maxLeft = Math.max(gutter, viewportWidth - width - gutter);
+  const below = rect.bottom + 6;
+  const above = rect.top - height - 6;
+  const top =
+    below + height <= viewportHeight - gutter || above < gutter
+      ? Math.min(below, viewportHeight - height - gutter)
+      : above;
+
+  return {
+    left: clamp(rect.right - width, gutter, maxLeft),
+    top: Math.max(gutter, top),
+    width,
+  };
+}
+
 function ConversationRow({
   conv,
   selected,
@@ -218,11 +249,13 @@ function ConversationRow({
       if (rowRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
       setMenuOpen(false);
+      setMenuPosition(null);
     }
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setMenuOpen(false);
+        setMenuPosition(null);
       }
     }
 
@@ -236,42 +269,19 @@ function ConversationRow({
 
   useLayoutEffect(() => {
     if (!menuOpen || editing || typeof window === 'undefined') {
-      setMenuPosition(null);
       return;
     }
 
-    function clamp(value: number, min: number, max: number): number {
-      return Math.min(Math.max(value, min), max);
-    }
-
     function syncMenuPosition() {
-      const button = actionButtonRef.current;
-      if (!button) return;
-      const rect = button.getBoundingClientRect();
-      const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-      const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-      const gutter = 8;
-      const width = Math.min(224, Math.max(160, viewportWidth - gutter * 2));
-      const height = menuRef.current?.offsetHeight ?? 156;
-      const maxLeft = Math.max(gutter, viewportWidth - width - gutter);
-      const below = rect.bottom + 6;
-      const above = rect.top - height - 6;
-      const top =
-        below + height <= viewportHeight - gutter || above < gutter
-          ? Math.min(below, viewportHeight - height - gutter)
-          : above;
-
-      setMenuPosition({
-        left: clamp(rect.right - width, gutter, maxLeft),
-        top: Math.max(gutter, top),
-        width,
-      });
+      const next = positionMenuForButton(actionButtonRef.current, menuRef.current?.offsetHeight);
+      if (next !== null) setMenuPosition(next);
     }
 
-    syncMenuPosition();
+    const frame = window.requestAnimationFrame(syncMenuPosition);
     window.addEventListener('resize', syncMenuPosition);
     window.addEventListener('scroll', syncMenuPosition, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', syncMenuPosition);
       window.removeEventListener('scroll', syncMenuPosition, true);
     };
@@ -279,6 +289,7 @@ function ConversationRow({
 
   function startEditing() {
     setMenuOpen(false);
+    setMenuPosition(null);
     setDraft(label);
     setEditing(true);
   }
@@ -355,6 +366,9 @@ function ConversationRow({
               data-open={menuOpen ? 'true' : undefined}
               title={menuLabel}
               onClick={() => {
+                setMenuPosition(
+                  positionMenuForButton(actionButtonRef.current, menuRef.current?.offsetHeight),
+                );
                 setMenuOpen((open) => !open);
               }}
               className="h-8 min-h-8 w-8 rounded-md text-text-faint opacity-100 hover:bg-surface-3 hover:text-text focus-visible:opacity-100 data-[open=true]:bg-surface-3 data-[open=true]:text-text md:opacity-0 md:group-hover:opacity-100"
@@ -389,6 +403,7 @@ function ConversationRow({
                     icon={<RotateCcw data-icon aria-hidden="true" className="size-4" />}
                     onClick={() => {
                       setMenuOpen(false);
+                      setMenuPosition(null);
                       onUnarchive();
                     }}
                   />
@@ -398,6 +413,7 @@ function ConversationRow({
                     icon={<Archive data-icon aria-hidden="true" className="size-4" />}
                     onClick={() => {
                       setMenuOpen(false);
+                      setMenuPosition(null);
                       onArchive();
                     }}
                   />
@@ -408,6 +424,7 @@ function ConversationRow({
                   icon={<Trash2 data-icon aria-hidden="true" className="size-4" />}
                   onClick={() => {
                     setMenuOpen(false);
+                    setMenuPosition(null);
                     onRequestDelete();
                   }}
                   danger

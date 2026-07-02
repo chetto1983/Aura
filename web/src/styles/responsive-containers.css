@@ -10,6 +10,60 @@
   overflow-wrap: anywhere;
 }
 
+.shell-nav-resize-handle {
+  position: relative;
+  z-index: 20;
+  width: 0.5rem;
+  margin-inline: -0.25rem;
+  touch-action: none;
+  outline: 0;
+}
+
+.shell-nav-resize-handle::before {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(50% - 0.5px);
+  width: 1px;
+  content: '';
+  background: var(--color-border);
+}
+
+.shell-nav-resize-handle:is(:hover, :focus-visible)::before {
+  inset-inline-start: calc(50% - 1px);
+  width: 2px;
+  background: var(--color-accent);
+}
+
+.shell-nav-resize-handle:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+@container aura-shell (max-width: 63.999rem) {
+  .shell-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  #chat-navigation,
+  #chat-navigation-resizer,
+  #runtime-rail {
+    display: none !important;
+  }
+
+  #aura-chat-shell-v3 {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  #chat-workspace {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+  }
+}
+
 @container aura-shell (max-width: 44rem) {
   .shell-header {
     grid-template-columns: auto minmax(0, 1fr) auto !important;
@@ -26,12 +80,32 @@
     display: none !important;
   }
 
-  .shell-main {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
   .shell-mode-tabbar {
     display: flex !important;
+  }
+}
+
+@media (max-width: 44rem) {
+  .aura-shell[data-surface='documents'] {
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .aura-shell[data-surface='documents'] .shell-header,
+  .aura-shell[data-surface='documents'] .shell-bottom-dock {
+    display: none !important;
+  }
+
+  .aura-shell[data-surface='documents'] .shell-main {
+    min-height: 100svh;
+  }
+
+  .aura-shell[data-surface='documents'] .documents-library-header {
+    border-bottom: 0;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  }
+
+  .aura-shell[data-surface='documents'] .documents-filter-bar {
+    padding-top: 0.25rem;
   }
 }
 

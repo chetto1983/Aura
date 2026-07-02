@@ -382,8 +382,8 @@ func TestTurnPersistsAssistantToolCallsBeforeMutatingToolExecutes(t *testing.T) 
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(
 			agenttest.MakeToolCall("call-probe", "pre_exec_probe", `{}`),
-			textResponseCall("call-final", "done"),
 		),
+		agenttest.ToolCallTurn(textResponseCall("call-final", "done")),
 	)
 	r, conv, _ := newTestRunner(t, client)
 	convID := newConvID(t)

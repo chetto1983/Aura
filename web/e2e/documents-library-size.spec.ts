@@ -148,9 +148,57 @@ async function openDocuments(page: Page, projectName: string) {
       : page.getByRole('navigation', { name: /Modes|Modalit/ });
   await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
   await expect(
-    page.getByRole('heading', { name: /Document library|Libreria documenti/ }),
+    page.getByRole('heading', { name: /Document library|Libreria documenti|Library|Libreria/ }),
   ).toBeVisible();
 }
+
+async function expectLocatorInsideViewport(page: Page, selectorName: string) {
+  const locator = page.getByRole('menu', { name: selectorName });
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box, `${selectorName} should have a rendered box`).not.toBeNull();
+  expect(viewport, 'viewport size should be available').not.toBeNull();
+  if (box === null || viewport === null) return;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+}
+
+test('document controls and action menu stay inside the viewport', async ({ page }, testInfo) => {
+  await gotoAuthenticated(page, '/');
+  await mockDocumentApi(page);
+  await openDocuments(page, testInfo.project.name);
+
+  const workspace = page.getByRole('region', {
+    name: /Document library|Libreria documenti/,
+  });
+  const overflow = await workspace.evaluate((node) =>
+    Math.max(0, node.scrollWidth - node.clientWidth),
+  );
+  expect(overflow).toBeLessThanOrEqual(2);
+
+  await expect(
+    page.getByRole('searchbox', { name: /Search documents|Cerca documenti/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('tablist')).toBeVisible();
+  await expect(page.getByRole('button', { name: /List view|Vista elenco/ })).toBeVisible();
+
+  const alphaItem =
+    testInfo.project.name === 'chromium'
+      ? page.getByRole('row').filter({ hasText: ALPHA.title })
+      : page.getByRole('listitem').filter({ hasText: ALPHA.title });
+  await expect(alphaItem).toBeVisible();
+  await alphaItem.getByRole('button', { name: `Actions for ${ALPHA.title}` }).click();
+
+  const menuLabel = `Actions for ${ALPHA.title}`;
+  await expectLocatorInsideViewport(page, menuLabel);
+  const isPortaled = await page
+    .getByRole('menu', { name: menuLabel })
+    .evaluate((node) => node.closest('main') === null);
+  expect(isPortaled).toBe(true);
+});
 
 test('every document row shows its file size, not just the selected row', async ({
   page,
@@ -251,7 +299,7 @@ test('deleting a document removes its row (delete flow completes)', async ({ pag
     .getByRole('menuitem', { name: /Delete document|Elimina documento/ })
     .click();
 
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('alertdialog');
   await dialog.getByRole('textbox').fill('DELETE');
   await dialog.getByRole('button', { name: /Delete permanently|Elimina definitivamente/ }).click();
 

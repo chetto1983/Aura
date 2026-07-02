@@ -48,6 +48,16 @@ const DETAIL = {
   ],
 };
 
+function openActions(button: HTMLElement) {
+  fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+}
+
+function lastElement<T>(items: T[]): T {
+  const item = items.at(-1);
+  if (item === undefined) throw new Error('expected at least one element');
+  return item;
+}
+
 describe('DocumentsWorkspace', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -100,18 +110,20 @@ describe('DocumentsWorkspace', () => {
     render(<DocumentsWorkspace />);
 
     expect(await screen.findByRole('heading', { name: 'Document library' })).toBeTruthy();
-    expect(screen.getByRole('searchbox', { name: 'Search documents' })).toBeTruthy();
+    const searchbox = lastElement(screen.getAllByRole('searchbox', { name: 'Search documents' }));
+    expect(searchbox).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'All' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Images' })).toBeTruthy();
-    expect(await screen.findByRole('row', { name: /Handbook\.pdf.*ready.*2 KB/i })).toBeTruthy();
+    const row = await screen.findByRole('row', { name: /Handbook\.pdf.*ready.*2 KB/i });
+    expect(row).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
     const uploadDialog = await screen.findByRole('dialog', { name: 'Upload document' });
     expect(uploadDialog).toBeTruthy();
     fireEvent.click(within(uploadDialog).getByRole('button', { name: 'Cancel' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: /^Handbook\.pdf/ }));
+    fireEvent.click(within(row).getByRole('button', { name: /^Handbook\.pdf/ }));
     const drawer = await screen.findByRole('dialog', { name: 'Handbook.pdf' });
     expect(within(drawer).getByText('Versions')).toBeTruthy();
     expect(within(drawer).getAllByText('sha256-current').length).toBeGreaterThan(0);
@@ -120,16 +132,18 @@ describe('DocumentsWorkspace', () => {
     expect(await within(drawer).findByText('ingestion_job.succeeded')).toBeTruthy();
     expect(within(drawer).getByText('indexed')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for Handbook.pdf' }));
+    openActions(within(row).getByRole('button', { name: 'Actions for Handbook.pdf' }));
     const menu = await screen.findByRole('menu', { name: 'Actions for Handbook.pdf' });
     expect(within(menu).getByRole('menuitem', { name: 'Edit tags' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Delete document' })).toBeTruthy();
-
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search documents' }), {
-      target: { value: 'handbook' },
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('menu', { name: 'Actions for Handbook.pdf' })).toBeNull();
     });
+
+    fireEvent.change(searchbox, { target: { value: 'handbook' } });
     fireEvent.change(screen.getByLabelText('Tag filter'), { target: { value: 'ops' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    fireEvent.click(lastElement(screen.getAllByRole('button', { name: 'Search' })));
 
     await waitFor(() => {
       expect(calls.some((call) => call.url === '/api/documents?q=handbook&tag=ops&limit=50')).toBe(
@@ -158,7 +172,7 @@ describe('DocumentsWorkspace', () => {
     });
 
     fireEvent.click(within(drawer).getByRole('button', { name: 'Delete document' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete Handbook.pdf' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete Handbook.pdf' });
     fireEvent.change(within(dialog).getByLabelText('Type DELETE to confirm'), {
       target: { value: 'DELETE' },
     });
@@ -260,7 +274,8 @@ describe('DocumentsWorkspace', () => {
 
     render(<DocumentsWorkspace onAskDocument={askDocument} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Handbook.pdf' }));
+    const row = await screen.findByRole('row', { name: /Handbook\.pdf/ });
+    openActions(within(row).getByRole('button', { name: 'Actions for Handbook.pdf' }));
     const menu = await screen.findByRole('menu', { name: 'Actions for Handbook.pdf' });
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Ask this document' }));
 
@@ -298,7 +313,8 @@ describe('DocumentsWorkspace', () => {
 
     render(<DocumentsWorkspace />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Handbook.pdf' }));
+    const row = await screen.findByRole('row', { name: /Handbook\.pdf/ });
+    openActions(within(row).getByRole('button', { name: 'Actions for Handbook.pdf' }));
     const menu = await screen.findByRole('menu', { name: 'Actions for Handbook.pdf' });
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Retry processing' }));
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Settings2, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -14,7 +15,6 @@ import {
   type DocumentVersion,
   type UpdateDocumentInput,
 } from './documentApi';
-import { DocumentActionMenu } from './DocumentActionMenu';
 import { DocumentDetailsDrawer } from './DocumentDetailsDrawer';
 import { DocumentFileList } from './DocumentFileList';
 import { DocumentFilterBar, type ScopeFilter, type ViewMode } from './DocumentFilterBar';
@@ -23,14 +23,7 @@ import { DocumentUploadDialog } from './DocumentUploadDialog';
 import { StorageOrphansPanel } from './StorageOrphansPanel';
 import { activeVersionFor, parseDocumentTags, type DocumentTab } from './documentViewModel';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -40,10 +33,11 @@ const defaultFilters = { query: '', tag: '', scope: 'all' as ScopeFilter };
 const listLimit = 50;
 
 interface DocumentsWorkspaceProps {
+  readonly mobileMenu?: ReactNode;
   readonly onAskDocument?: (document: DocumentItem) => void;
 }
 
-export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspaceProps) {
+export default function DocumentsWorkspace({ mobileMenu, onAskDocument }: DocumentsWorkspaceProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(defaultFilters.query);
   const [tag, setTag] = useState(defaultFilters.tag);
@@ -59,7 +53,6 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
   const [savingTags, setSavingTags] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [actionMenuId, setActionMenuId] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<DocumentItem | undefined>(undefined);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
@@ -126,7 +119,6 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
     return versions;
   }, [activeVersion, detail]);
   const selectedDocument = detail?.document ?? documents.find((item) => item.id === selectedId);
-  const actionDocument = documents.find((item) => item.id === actionMenuId);
 
   function searchDocuments() {
     void loadDocuments({ query, tag, scope }, selectedId);
@@ -208,6 +200,7 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
       <DocumentLibraryHeader
         query={query}
         refreshing={listStatus === 'loading'}
+        mobileMenu={mobileMenu}
         onQueryChange={setQuery}
         onSearch={searchDocuments}
         onRefresh={searchDocuments}
@@ -225,7 +218,7 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
         onScopeChange={setScope}
         onViewModeChange={setViewMode}
       />
-      <main className="relative min-h-0 flex-1 overflow-y-auto">
+      <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <DocumentFileList
           documents={documents}
           activeVersions={activeVersions}
@@ -238,52 +231,32 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
           onToggleSelected={toggleSelected}
           onOpenDetails={(id) => {
             setDrawerOpen(true);
-            setActionMenuId('');
             void openDocument(id);
           }}
           onOpenActions={(id) => {
-            setActionMenuId((current) => (current === id ? '' : id));
             void openDocument(id);
           }}
-          onRefresh={searchDocuments}
-        />
-        <DocumentActionMenu
-          document={actionDocument}
-          open={actionMenuId !== ''}
-          onClose={() => {
-            setActionMenuId('');
-          }}
-          onAsk={() => {
-            if (actionDocument !== undefined) {
-              if (onAskDocument !== undefined) {
-                onAskDocument(actionDocument);
-              } else {
-                setDrawerOpen(true);
-                void openDocument(actionDocument.id);
-              }
-            }
-            setActionMenuId('');
-          }}
-          onEditTags={() => {
-            if (actionDocument !== undefined) {
+          onAskDocument={(document) => {
+            if (onAskDocument !== undefined) {
+              onAskDocument(document);
+            } else {
               setDrawerOpen(true);
-              void openDocument(actionDocument.id);
+              void openDocument(document.id);
             }
-            setActionMenuId('');
           }}
-          onRetry={() => {
-            const id = actionMenuId;
-            setActionMenuId('');
-            void retryDocument(id);
+          onEditTags={(document) => {
+            setDrawerOpen(true);
+            void openDocument(document.id);
           }}
-          onDelete={() => {
-            if (actionDocument !== undefined) {
-              setDeleteTarget(actionDocument);
-              setSelectedId(actionDocument.id);
-              setDeleteOpen(true);
-            }
-            setActionMenuId('');
+          onRetry={(document) => {
+            void retryDocument(document.id);
           }}
+          onDelete={(document) => {
+            setDeleteTarget(document);
+            setSelectedId(document.id);
+            setDeleteOpen(true);
+          }}
+          onRefresh={searchDocuments}
         />
         <DocumentDetailsDrawer
           open={drawerOpen}
@@ -302,7 +275,7 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
             setDrawerOpen(false);
           }}
         />
-        <section className="border-t border-border px-4 py-3 sm:px-6">
+        <section className="hidden border-t border-border px-4 py-3 sm:block sm:px-6">
           <div className="mx-auto w-full max-w-6xl">
             <Button
               type="button"
@@ -337,7 +310,10 @@ export default function DocumentsWorkspace({ onAskDocument }: DocumentsWorkspace
         deleting={deleting}
         onOpenChange={(open) => {
           setDeleteOpen(open);
-          if (!open) setDeleteTarget(undefined);
+          if (!open) {
+            setDeleteTarget(undefined);
+            setDeleteConfirm('');
+          }
         }}
         onConfirmChange={setDeleteConfirm}
         onDelete={() => {
@@ -368,43 +344,29 @@ function DeleteDialog({
   const { t } = useTranslation();
   if (document === undefined) return null;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('documents.delete.title', { title: document.title })}</DialogTitle>
-          <DialogDescription>{t('documents.delete.body')}</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-1.5">
-          <Label htmlFor="documents-delete-confirm">{t('documents.delete.confirmLabel')}</Label>
-          <Input
-            id="documents-delete-confirm"
-            value={confirm}
-            onChange={(event) => {
-              onConfirmChange(event.target.value);
-            }}
-          />
-        </div>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              onOpenChange(false);
-            }}
-          >
-            {t('documents.actions.cancel')}
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={confirm !== 'DELETE' || deleting}
-            onClick={onDelete}
-          >
-            {deleting ? <Spinner /> : <Trash2 aria-hidden="true" />}
-            {t('documents.actions.deletePermanently')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      role="alertdialog"
+      title={t('documents.delete.title', { title: document.title })}
+      description={t('documents.delete.body')}
+      cancelLabel={t('documents.actions.cancel')}
+      confirmLabel={t('documents.actions.deletePermanently')}
+      confirmDisabled={confirm !== 'DELETE'}
+      confirmPending={deleting}
+      confirmIcon={deleting ? <Spinner /> : <Trash2 data-icon aria-hidden="true" />}
+      onConfirm={onDelete}
+    >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="documents-delete-confirm">{t('documents.delete.confirmLabel')}</Label>
+        <Input
+          id="documents-delete-confirm"
+          value={confirm}
+          onChange={(event) => {
+            onConfirmChange(event.target.value);
+          }}
+        />
+      </div>
+    </ConfirmDialog>
   );
 }

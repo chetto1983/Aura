@@ -139,8 +139,9 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	}
 
 	// Terminal: text_response ends the turn after the batch has run (D-13).
-	if terminalIdx >= 0 {
-		return a.runTerminal(ic, spanID, parentSpanID, requestID, calls[terminalIdx], usage, yield), nil
+	if terminalIdx >= 0 && terminalIdx < len(calls) {
+		terminalCall := calls[terminalIdx]
+		return a.runTerminal(ic, spanID, parentSpanID, requestID, terminalCall, usage, yield), nil
 	}
 	return false, nil
 }

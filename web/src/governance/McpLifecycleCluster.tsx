@@ -1,8 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Power, ShieldCheck, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { trapTabKey } from '../a11y/focusTrap';
 import { Spinner } from '../components/Spinner';
 import {
   removeMcpServer,
@@ -11,7 +10,7 @@ import {
   type McpServerRow,
 } from './governanceApi';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -173,6 +172,7 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
 
       {confirmingRemove ? (
         <RemoveDialog
+          open={confirmingRemove}
           name={server.name}
           pending={removeMutation.isPending}
           onConfirm={() => {
@@ -190,70 +190,35 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
 /** A focus-trapped, Escape-dismissable destructive confirmation dialog. The destructive
  * button is NOT default-focused — focus lands on the safe `Keep server` action (NN/g). */
 function RemoveDialog({
+  open,
   name,
   pending,
   onConfirm,
   onCancel,
 }: {
+  readonly open: boolean;
   readonly name: string;
   readonly pending: boolean;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
-  const titleId = useId();
-  const bodyId = useId();
-
-  useEffect(() => {
-    // The safe (Keep server) action is default-focused, NOT the destructive Remove (NN/g).
-    cancelRef.current?.focus();
-    const dialog = dialogRef.current;
-    if (dialog === null) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCancel();
-        return;
-      }
-      trapTabKey(event, dialog);
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [onCancel]);
 
   return (
-    <Card
-      ref={dialogRef}
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onCancel();
+        }
+      }}
       role="alertdialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={bodyId}
-      className="gap-3 border-danger bg-surface-2 px-4 py-3"
-    >
-      <h4 id={titleId} className="font-display text-[20px] font-semibold text-text">
-        {t('governance.mcp.lifecycle.removeTitle', { name })}
-      </h4>
-      <p id={bodyId} className="text-[15.5px] leading-relaxed text-text">
-        {t('governance.mcp.lifecycle.removeBody')}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button ref={cancelRef} type="button" variant="outline" onClick={onCancel}>
-          {t('governance.mcp.lifecycle.removeCancel')}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={pending}
-          onClick={onConfirm}
-          className="border border-danger text-danger hover:bg-danger/10 hover:text-danger"
-        >
-          {t('governance.mcp.lifecycle.removeConfirm')}
-        </Button>
-      </div>
-    </Card>
+      title={t('governance.mcp.lifecycle.removeTitle', { name })}
+      description={t('governance.mcp.lifecycle.removeBody')}
+      cancelLabel={t('governance.mcp.lifecycle.removeCancel')}
+      confirmLabel={t('governance.mcp.lifecycle.removeConfirm')}
+      confirmPending={pending}
+      onConfirm={onConfirm}
+    />
   );
 }

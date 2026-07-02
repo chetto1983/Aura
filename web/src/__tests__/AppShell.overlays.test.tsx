@@ -44,7 +44,7 @@ describe('AppShell §3.1c intent-aware restore + §1.1b chat-lane floor', () => 
     fireEvent.click(screen.getByRole('button', { name: 'Open runtime status' }));
   }
   function navDrawer() {
-    return screen.queryByRole('dialog', { name: 'Navigation' });
+    return screen.queryByRole('dialog', { name: 'Aura' });
   }
   function runtimeDrawer() {
     return screen.queryByRole('dialog', { name: 'Display workspace' });
@@ -73,13 +73,13 @@ describe('AppShell §3.1c intent-aware restore + §1.1b chat-lane floor', () => 
     expect(navDrawer()).not.toBeNull();
   });
 
-  it('the main grid uses the content-derived 3-column breakpoint (rails + --chat-lane-min)', () => {
+  it('the main chat layout exposes the resizable conversation rail and runtime rail', () => {
     const { container } = renderShell();
     const main = container.querySelector('main');
     if (!main) throw new Error('expected a <main> region');
-    // The 3-col grid is gated on the content-derived window-floor breakpoint, not a
-    // guessed prefix. The chat lane carries an explicit ≥380px floor in the grid track.
     expect(main.className).toContain('shell-main');
-    expect(main.className).toContain('lg:grid-cols-[15rem_minmax(var(--chat-lane-min),1fr)_19rem]');
+    expect(container.querySelector('#aura-chat-shell-v3')).not.toBeNull();
+    expect(screen.getByRole('separator', { name: 'Resize conversation sidebar' })).toBeTruthy();
+    expect(screen.getByLabelText('Display workspace')).toBeTruthy();
   });
 });

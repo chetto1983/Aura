@@ -1,96 +1,91 @@
-import { MessageSquareText, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { MessageSquareText, MoreHorizontal, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DocumentItem } from './documentApi';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface DocumentActionMenuProps {
-  readonly document: DocumentItem | undefined;
-  readonly open: boolean;
-  readonly onClose: () => void;
-  readonly onAsk: () => void;
-  readonly onEditTags: () => void;
-  readonly onRetry: () => void;
-  readonly onDelete: () => void;
+  readonly document: DocumentItem;
+  readonly onOpen?: () => void;
+  readonly onAsk: (document: DocumentItem) => void;
+  readonly onEditTags: (document: DocumentItem) => void;
+  readonly onRetry: (document: DocumentItem) => void;
+  readonly onDelete: (document: DocumentItem) => void;
 }
 
 export function DocumentActionMenu({
   document,
-  open,
-  onClose,
+  onOpen,
   onAsk,
   onEditTags,
   onRetry,
   onDelete,
 }: DocumentActionMenuProps) {
   const { t } = useTranslation();
-  if (!open || document === undefined) return null;
   const menuLabel = `Actions for ${document.title}`;
   return (
-    <div className="absolute right-6 top-32 z-20 w-56 rounded-md border border-border bg-surface p-1 shadow-popover">
-      <div className="flex items-center justify-between px-2 py-1 text-[12px] font-semibold text-text-muted">
-        <span className="truncate">{document.title}</span>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label={t('documents.actions.close')}
-          onClick={onClose}
-        >
-          <X aria-hidden="true" />
-        </Button>
-      </div>
-      <div role="menu" aria-label={menuLabel} className="grid gap-1">
-        <MenuButton
-          icon={<MessageSquareText aria-hidden="true" />}
-          label={t('documents.actions.askDocument')}
-          onClick={onAsk}
-        />
-        <MenuButton
-          icon={<Pencil aria-hidden="true" />}
-          label={t('documents.actions.editTags')}
-          onClick={onEditTags}
-        />
-        {document.status === 'failed' ? (
-          <MenuButton
-            icon={<RefreshCw aria-hidden="true" />}
-            label={t('documents.actions.retryProcessing')}
-            onClick={onRetry}
-          />
-        ) : null}
-        <MenuButton
-          danger
-          icon={<Trash2 aria-hidden="true" />}
-          label={t('documents.actions.delete')}
-          onClick={onDelete}
-        />
-      </div>
-    </div>
-  );
-}
-
-function MenuButton({
-  icon,
-  label,
-  danger = false,
-  onClick,
-}: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly danger?: boolean;
-  readonly onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className={`flex min-h-10 items-center gap-2 rounded-sm px-3 text-left text-[14px] outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring ${
-        danger ? 'text-danger' : 'text-text'
-      }`}
-      onClick={onClick}
+    <DropdownMenu
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) onOpen?.();
+      }}
     >
-      {icon}
-      <span>{label}</span>
-    </button>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" size="icon" variant="ghost" aria-label={menuLabel}>
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent aria-label={menuLabel}>
+        <DropdownMenuLabel className="max-w-52 truncate">{document.title}</DropdownMenuLabel>
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            onSelect={() => {
+              onAsk(document);
+            }}
+          >
+            <MessageSquareText aria-hidden="true" />
+            {t('documents.actions.askDocument')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              onEditTags(document);
+            }}
+          >
+            <Pencil aria-hidden="true" />
+            {t('documents.actions.editTags')}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        {document.status === 'failed' ? (
+          <DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                onRetry(document);
+              }}
+            >
+              <RefreshCw aria-hidden="true" />
+              {t('documents.actions.retryProcessing')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => {
+            onDelete(document);
+          }}
+        >
+          <Trash2 aria-hidden="true" />
+          {t('documents.actions.delete')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

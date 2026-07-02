@@ -106,6 +106,12 @@ describe('AppShell', () => {
     expect(container.querySelector('.shell-main')).toBeTruthy();
   });
 
+  it('exposes an accessible conversation rail resizer on the chat surface', () => {
+    renderShell();
+
+    expect(screen.getByRole('separator', { name: 'Resize conversation sidebar' })).toBeTruthy();
+  });
+
   it('switches the cockpit shell to Italian', () => {
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'Italiano' }));
@@ -192,8 +198,33 @@ describe('AppShell', () => {
     });
     expect(screen.queryByText('Conversations')).toBeNull();
     expect(screen.queryByPlaceholderText('Search conversations')).toBeNull();
+    expect(screen.queryByRole('separator', { name: 'Resize conversation sidebar' })).toBeNull();
     expect(container.querySelector('.shell-side-nav')).toBeNull();
     expect(container.querySelector('main')?.className).toContain('lg:grid-cols-[minmax(0,1fr)]');
+  });
+
+  it('opens the real Aura mobile sidebar from non-chat surfaces', async () => {
+    renderShell();
+
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+        name: 'Graph',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('graph-workspace')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Aura' });
+    const nav = within(drawer).getByRole('navigation', { name: 'Modes' });
+    expect(within(nav).getByRole('button', { name: 'Chat' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Documents' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Settings' })).toBeTruthy();
+    expect(within(drawer).queryByText('Projects')).toBeNull();
+    expect(within(drawer).queryByText('Scheduled')).toBeNull();
   });
 
   it('does not fall back to the legacy passphrase logout route', async () => {
