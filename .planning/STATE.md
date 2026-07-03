@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 34
 current_phase_name: agent-loop-correctness-durable-ledger
 status: executing
-stopped_at: 34-05 complete — HITL store tx-seams (interface-first for the 34-06 ResumeCommitter); wave 2 done, wave 3 (34-06) next
-last_updated: "2026-07-03T10:30:00.000Z"
+stopped_at: 34-06 complete — atomic HITL resume/pause via ONE cross-store db.WithTx (ResumeCommitter, no ledger/migration) + Stop goroutine-leak fix; wave 3 done, all 6 Phase-34 plans executed; phase 34 ready for verification
+last_updated: "2026-07-03T11:55:00.000Z"
 last_activity: 2026-07-03
-last_activity_desc: 34-05 complete — askuser InsertTx/MarkResumedTx/MarkResumedBatchTx (sorted-token) + conversations AppendTurnTx + ListRecent int32 guard
+last_activity_desc: 34-06 complete — ResumeCommitter (atomic Pool + split fallback) + atomic SubmitAnswer/SubmitAnswers/flushPause + single-Once Stop waiter (LOOP-02/03/04/11)
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 24
-  completed_plans: 23
+  completed_plans: 24
   percent: 27
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 34 (agent-loop-correctness-durable-ledger) — EXECUTING
-Plan: 5 of 6 (34-05 complete)
+Plan: 6 of 6 (34-06 complete) — all Phase-34 plans executed; ready for verification
 Status: Executing Phase 34
-Last activity: 2026-07-03 — 34-05 complete (LOOP-02/03 store tx-seams, QUAL-04a int32 guard) — wave 2 done; 34-06 (wave 3) next
+Last activity: 2026-07-03 — 34-06 complete (LOOP-02/03/04/11: atomic HITL resume/pause + Stop leak fix) — wave 3 done
+
+#### 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack.
 
 #### (prior) 34-05 — HITL store tx-seams (interface-first for 34-06). `askuser` gains `InsertTx`/`MarkResumedTx`/`MarkResumedBatchTx(q,…)` operating on a caller-supplied `*sqlc.Queries` (open NO tx of their own — the 34-06 pool-owning `ResumeCommitter` supplies it): `MarkResumedTx` uses the regenerated `MarkPausedStateResumed` (`:execrows`) → rows==0 → `ErrPauseNotFound` and the raw `markResumedSQL pool.Exec` const is DELETED; `MarkResumedBatchTx` claims pauses in `sort.Strings` token order so concurrent overlapping batches lock rows in the same order and cannot deadlock (Postgres 40P01 / T-34-B), the loser rechecking `WHERE resumed_at IS NULL` under READ COMMITTED → clean `ErrPauseNotFound`. `Insert`/`MarkResumed` become thin wrappers over their `*Tx` variant bound to the pool's `s.q` (single auto-commit statement, on-wire byte-identical, fail-fast parse-before-DB preserved); `MarkResumedBatch` wraps its `*Tx` in `db.WithTx`. `ListRecent` clamps `int32(limit)` via `math.MaxInt32` with the `<=0 → 50` fallback (QUAL-04a, mirrors `ListPendingAll`). `conversations` gains EXPORTED `AppendTurnTx(ctx,q,p)` — the no-spill tx-inner turn+aggregate body (requires `Seq>0` → `ErrSeqRequired`, NO `cleanupSidecarOnTxError`); `AppendTurn` is byte-unchanged (its Seq>0 branch keeps the pre-built-turn cleanup so it removes exactly the file THIS turn spilled). Unit tiers race-clean; askuser + conversations db_integration tiers green on the live stack (wrappers behavior-preserving). NO migration. LOOP-02/03 close in 34-06; QUAL-04 already `[x]` (04b was 34-03).
 
@@ -218,6 +220,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 33 P33-04 | ~40min | 3 tasks | 4 files |
 | Phase 33 P33-05 | ~20min | 2 tasks | 3 files |
 | Phase 34 P04 | ~60min | 3 tasks | 9 files |
+| Phase 34 P06 | ~2h | 3 tasks | 18 files |
 
 ## Accumulated Context
 

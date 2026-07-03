@@ -23,16 +23,16 @@
 ### Agent-Loop Correctness, HITL & Persistence (LOOP)
 
 - [ ] **LOOP-01**: A terminal `text_response` is mutually exclusive with mutating/runnable sibling tools — such a model step is rejected or replanned before any sibling executes. *(F-003)*
-- [ ] **LOOP-02**: Batch pause resume atomically claims all pauses before injecting answers (single transaction or idempotency keys); concurrent duplicate batch resume yields exactly one answer per pause with no orphan tool turns. *(F-004)*
-- [ ] **LOOP-03**: Single pause resume couples claim + answer append through one transaction or a repairable idempotency ledger; an append failure after claim leaves the pause retryable or creates a recoverable resume-injection record. *(F-029)*
-- [ ] **LOOP-04**: A pause is never exposed without durable, wire-valid assistant tool-call history — pause tool-call turn and pause row persist atomically before the pause is consumable. *(F-030)*
+- [x] **LOOP-02**: Batch pause resume atomically claims all pauses before injecting answers (single transaction or idempotency keys); concurrent duplicate batch resume yields exactly one answer per pause with no orphan tool turns. *(F-004)*
+- [x] **LOOP-03**: Single pause resume couples claim + answer append through one transaction or a repairable idempotency ledger; an append failure after claim leaves the pause retryable or creates a recoverable resume-injection record. *(F-029)*
+- [x] **LOOP-04**: A pause is never exposed without durable, wire-valid assistant tool-call history — pause tool-call turn and pause row persist atomically before the pause is consumable. *(F-030)*
 - [x] **LOOP-05**: Conversation sidecars are loaded only from paths reconstructed from conversation ID + sequence and fenced to the sidecar root; outside-root, traversal, and symlink reads are rejected. *(F-005)*
 - [ ] **LOOP-06**: The advertised outside-workspace `send_file` approval flow is wired to a resume hook (authorizing one path/session/expiry) or the tool returns a deterministic unsupported error — no infinite ask loop. *(F-009)*
 - [ ] **LOOP-07**: `fs_write` uses the atomic write helper (temp + rename), preserving mode/permissions; a mid-write crash never leaves a truncated target. *(F-010)*
 - [ ] **LOOP-08**: A mutating tool that panics after a side effect preserves its mutating classification through panic recovery, so the completion gate / `sideEffected` is armed. *(F-031)*
 - [x] **LOOP-09**: Crash-orphaned sidecars inside live conversation directories are reconciled against committed DB rows (age-grace), without removing referenced sidecars. *(F-040)*
 - [x] **LOOP-10**: Conversation search reaches spilled (sidecar) content — via a searchable preview/index — or the exclusion is explicitly documented and asserted. *(F-048)*
-- [ ] **LOOP-11**: Repeated `Stop` calls on a hung worker do not accumulate blocked waiter goroutines (single lifecycle-owned done channel). *(F-045)*
+- [x] **LOOP-11**: Repeated `Stop` calls on a hung worker do not accumulate blocked waiter goroutines (single lifecycle-owned done channel). *(F-045)*
 
 ### ToolGateway, Policy & Ledger (GATE)
 

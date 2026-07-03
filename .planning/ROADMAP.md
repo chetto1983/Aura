@@ -219,7 +219,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 3. Outside-root/traversal/symlink sidecar reads are rejected.
 4. A mutating tool that panics post-side-effect still arms the completion gate.
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans executed
 
 Plans:
 **Wave 1**
@@ -235,7 +235,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 34-06-PLAN.md — ResumeCommitter + atomic single/batch resume + atomic pause-flush + Stop goroutine-leak fix (LOOP-02/03/04/11) [wave 3]
+- [x] 34-06-PLAN.md — ResumeCommitter + atomic single/batch resume + atomic pause-flush + Stop goroutine-leak fix (LOOP-02/03/04/11) [wave 3] → 34-06-SUMMARY.md
 
 #### Phase 35: ToolGateway + Policy Engine
 
