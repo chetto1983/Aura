@@ -250,12 +250,12 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
-**Plans:** 5 plans in 4 waves
+**Plans:** 5 plans in 4 waves — 2/5 complete
 
 **Wave 1** *(parallel — DB-free foundation)*
 
 - [x] 35-01-PLAN.md — D-02 classifier + Mutating floor (skill/task/swarm_spawn) + boot-guard [GATE-01, GATE-03]
-- [ ] 35-02-PLAN.md — D-04 GATE-02 command-hook fail-closed verify + test strengthening [GATE-02]
+- [x] 35-02-PLAN.md — D-04 GATE-02 command-hook fail-closed verify + test strengthening [GATE-02]
 
 **Wave 2** *(blocked on 35-01)*
 
