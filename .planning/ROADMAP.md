@@ -250,6 +250,25 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
+**Plans:** 5 plans in 4 waves
+
+**Wave 1** *(parallel — DB-free foundation)*
+
+- [ ] 35-01-PLAN.md — D-02 classifier + Mutating floor (skill/task/swarm_spawn) + boot-guard [GATE-01, GATE-03]
+- [ ] 35-02-PLAN.md — D-04 GATE-02 command-hook fail-closed verify + test strengthening [GATE-02]
+
+**Wave 2** *(blocked on 35-01)*
+
+- [ ] 35-03-PLAN.md — Gateway Decide PEP + profile branch + 3-root injection + read-only decision-fact + approve routing (D-01e/D-03) [GATE-01, GATE-03]
+
+**Wave 3** *(blocked on 35-03)*
+
+- [ ] 35-04-PLAN.md — Durable reservation + idempotency: :execrows + replay + Store.Reserve (D-01a/b/c) [GATE-03, GATE-04]
+
+**Wave 4** *(blocked on 35-04)*
+
+- [ ] 35-05-PLAN.md — Crash-orphan reconciler: append-only end{indeterminate}, never re-invoke (D-01d) [GATE-03]
+
 #### Phase 36: Multi-User Identity Isolation + Authula Cutover
 
 **Goal:** Owner-scope every user-facing store/API/job to the authenticated principal; cut over to Authula (no RBAC). Includes per-identity isolation for MCP config, Garage object-store, and skills dirs (see spike `.planning/spikes/`).
