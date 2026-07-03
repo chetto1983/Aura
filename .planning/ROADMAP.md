@@ -250,7 +250,7 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
-**Plans:** 5 plans in 4 waves — 2/5 complete
+**Plans:** 3/5 plans executed
 
 **Wave 1** *(parallel — DB-free foundation)*
 
@@ -259,7 +259,7 @@ Plans:
 
 **Wave 2** *(blocked on 35-01)*
 
-- [ ] 35-03-PLAN.md — Gateway Decide PEP + profile branch + 3-root injection + read-only decision-fact + approve routing (D-01e/D-03) [GATE-01, GATE-03]
+- [x] 35-03-PLAN.md — Gateway Decide PEP + profile branch + 3-root injection + read-only decision-fact + approve routing (D-01e/D-03) [GATE-01, GATE-03]
 
 **Wave 3** *(blocked on 35-03)*
 
