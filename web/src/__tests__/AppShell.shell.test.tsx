@@ -35,7 +35,14 @@ vi.mock('../onboarding/ProfileOnboardingWizard', () => ({
 }));
 
 vi.mock('../settings/SettingsWorkspace', () => ({
-  default: () => <div>Runtime settings</div>,
+  default: ({ onCreateIdentity }: { readonly onCreateIdentity?: () => void }) => (
+    <div>
+      <div>Runtime settings</div>
+      <button type="button" onClick={() => onCreateIdentity?.()}>
+        Create identity
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../documents/DocumentsWorkspace', () => ({
@@ -56,8 +63,8 @@ const MARKETING_HERO_BLOCKLIST = [
   /the future of/i,
 ];
 
-// AppShell now mounts the RuntimeHealthPanel (polls /healthz + /readyz) AND the
-// conversation sidebar/search (GET /api/conversations) + the runtime footer, so the
+// AppShell mounts the header RuntimeStatusChip (polls /readyz), the conversation
+// sidebar/search (GET /api/conversations), and the runtime footer, so the
 // shell needs a QueryClient, a Router (useParams/useNavigate), and a stubbed fetch.
 function renderShell() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -112,7 +119,14 @@ describe('AppShell', () => {
     expect(screen.getByRole('separator', { name: 'Resize conversation sidebar' })).toBeTruthy();
   });
 
-  it('switches the cockpit shell to Italian', () => {
+  it('uses New chat as the sidebar primary action instead of identity creation', () => {
+    renderShell();
+
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create identity' })).toBeNull();
+  });
+
+  it('switches the cockpit shell to Italian', async () => {
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'Italiano' }));
 
@@ -121,7 +135,7 @@ describe('AppShell', () => {
     // The left aside now hosts the conversation manager (replaced the placeholder
     // section labels); its heading is localised.
     expect(screen.getByText('Conversazioni')).toBeTruthy();
-    expect(screen.getByLabelText('Area display')).toBeTruthy();
+    expect(await screen.findByRole('status', { name: 'Stato runtime: Pronto' })).toBeTruthy();
   });
 
   it('ships no marketing-hero copy in the primary viewport', () => {
@@ -139,6 +153,14 @@ describe('AppShell', () => {
     expect(screen.getByText('Cost')).toBeTruthy();
     // The Context label appears in both the footer caption and the gauge label.
     expect(screen.getAllByText('Context').length).toBeGreaterThan(0);
+  });
+
+  it('uses the header readiness status instead of a permanent runtime rail', async () => {
+    const { container } = renderShell();
+
+    expect(await screen.findByRole('status', { name: 'Runtime: Ready' })).toBeTruthy();
+    expect(container.querySelector('#runtime-rail')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open runtime status' })).toBeNull();
   });
 
   it('opens the onboarding wizard when first-run setup is still required', async () => {
@@ -166,6 +188,20 @@ describe('AppShell', () => {
     await waitFor(() => {
       expect(screen.getByText('Runtime settings')).toBeTruthy();
     });
+  });
+
+  it('opens the identity wizard from the settings workspace action', async () => {
+    renderShell();
+
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+        name: 'Settings',
+      }),
+    );
+    await screen.findByText('Runtime settings');
+    fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Create identity' })).toBeTruthy();
   });
 
   it('opens the document library workspace from the shell mode switcher', async () => {

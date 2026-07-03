@@ -41,11 +41,11 @@
 @container aura-shell (max-width: 63.999rem) {
   .shell-main {
     grid-template-columns: minmax(0, 1fr) !important;
+    overflow: hidden;
   }
 
   #chat-navigation,
-  #chat-navigation-resizer,
-  #runtime-rail {
+  #chat-navigation-resizer {
     display: none !important;
   }
 
@@ -75,7 +75,6 @@
 
   .shell-mode-switcher,
   .shell-side-nav,
-  .shell-runtime-rail,
   .shell-header__wide-only {
     display: none !important;
   }
@@ -87,16 +86,15 @@
 
 @media (max-width: 44rem) {
   .aura-shell[data-surface='documents'] {
-    grid-template-rows: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) auto !important;
   }
 
-  .aura-shell[data-surface='documents'] .shell-header,
-  .aura-shell[data-surface='documents'] .shell-bottom-dock {
+  .aura-shell[data-surface='documents'] .shell-header {
     display: none !important;
   }
 
   .aura-shell[data-surface='documents'] .shell-main {
-    min-height: 100svh;
+    min-height: 0;
   }
 
   .aura-shell[data-surface='documents'] .documents-library-header {
@@ -115,6 +113,7 @@
     flex-direction: column;
     grid-template-columns: none !important;
     grid-template-rows: none !important;
+    overflow: hidden !important;
   }
 
   .graph-workspace__mobile-bar {
@@ -147,7 +146,7 @@
   .graph-workspace__canvas {
     grid-column: auto !important;
     grid-row: auto !important;
-    min-height: 46svh !important;
+    min-height: clamp(10rem, 34svh, 18rem) !important;
     flex: 1 1 0% !important;
   }
 
@@ -176,8 +175,9 @@
   .graph-workspace__evidence {
     grid-column: auto !important;
     grid-row: auto !important;
-    max-height: 40svh !important;
-    flex-shrink: 0 !important;
+    min-height: 7rem !important;
+    max-height: none !important;
+    flex: 1 1 0% !important;
   }
 
   .graph-workspace__backdrop {

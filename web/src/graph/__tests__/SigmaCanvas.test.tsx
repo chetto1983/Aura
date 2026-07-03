@@ -48,6 +48,23 @@ const NODES: readonly ClientNode[] = [
   { id: 'n1', caption: 'Alpha', color: '#AECBFA', size: 8, labels: ['Entity'] },
   { id: 'n2', caption: 'Bravo', color: '#81C995', size: 6, labels: ['Document'] },
 ];
+const TECHNICAL_NODES: readonly ClientNode[] = [
+  {
+    id: 'n1',
+    caption: '4:21de867b-135a-43b0-9598-b82a63a99e7d:d:63',
+    color: '#AECBFA',
+    size: 8,
+    labels: ['Chunk'],
+  },
+  { id: 'n2', caption: 'web_search', color: '#81C995', size: 6, labels: ['ToolSelectionExample'] },
+];
+const DENSE_NODES: readonly ClientNode[] = Array.from({ length: 33 }, (_, index) => ({
+  id: `n${String(index)}`,
+  caption: `4:21de867b-135a-43b0-9598-b82a63a99e7d:d:${String(index)}`,
+  color: '#AECBFA',
+  size: 6,
+  labels: ['Chunk'],
+}));
 const EDGES: readonly ClientEdge[] = [{ id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' }];
 const PARALLEL_EDGES: readonly ClientEdge[] = [
   { id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' },
@@ -119,6 +136,43 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     const graph = loadGraph.mock.calls[0]?.[0] as { order: number; size: number };
     expect(graph.order).toBe(2);
     expect(graph.size).toBe(2);
+  });
+
+  it('uses compact canvas labels for technical captions while preserving human labels', () => {
+    render(
+      <SigmaCanvas
+        nodes={TECHNICAL_NODES}
+        edges={EDGES}
+        pinnedPath={new Set()}
+        sigmaKey={0}
+        onNodeClick={vi.fn()}
+      />,
+    );
+
+    const graph = loadGraph.mock.calls[0]?.[0] as {
+      getNodeAttribute: (nodeId: string, key: string) => unknown;
+    };
+    expect(graph.getNodeAttribute('n1', 'label')).toBe('d:63');
+    expect(graph.getNodeAttribute('n1', 'canvasLabel')).toBe('d:63');
+    expect(graph.getNodeAttribute('n2', 'label')).toBe('web_search');
+  });
+
+  it('hides ambient labels for dense overviews but keeps compact labels for focus restore', () => {
+    render(
+      <SigmaCanvas
+        nodes={DENSE_NODES}
+        edges={[]}
+        pinnedPath={new Set()}
+        sigmaKey={0}
+        onNodeClick={vi.fn()}
+      />,
+    );
+
+    const graph = loadGraph.mock.calls[0]?.[0] as {
+      getNodeAttribute: (nodeId: string, key: string) => unknown;
+    };
+    expect(graph.getNodeAttribute('n0', 'label')).toBeNull();
+    expect(graph.getNodeAttribute('n0', 'canvasLabel')).toBe('d:0');
   });
 
   it('registers node events so a canvas click can open the inspector (non-hover path wiring)', () => {

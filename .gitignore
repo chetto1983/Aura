@@ -87,3 +87,4 @@ graphify-out/*
 .planning/graphs/graph.html
 .planning/graphs/.last-build-snapshot.json
 .agents/skills/*
+internal/channels/telegram/testdata/*

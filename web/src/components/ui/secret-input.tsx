@@ -42,7 +42,7 @@ export function SecretInput({
         aria-controls={inputId}
         aria-pressed={revealed}
         aria-label={toggleLabel}
-        className="absolute inset-y-0 right-0 h-auto min-h-[var(--row-h)] w-11 rounded-l-none text-text-muted hover:text-text"
+        className="absolute inset-y-0 right-0 h-auto min-h-[44px] w-[44px] rounded-l-none text-text-muted hover:text-text"
       >
         {revealed ? (
           <EyeOff data-icon="icon" aria-hidden="true" focusable="false" />

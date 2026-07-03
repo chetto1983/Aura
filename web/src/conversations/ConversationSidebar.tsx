@@ -371,7 +371,7 @@ function ConversationRow({
                 );
                 setMenuOpen((open) => !open);
               }}
-              className="h-8 min-h-8 w-8 rounded-md text-text-faint opacity-100 hover:bg-surface-3 hover:text-text focus-visible:opacity-100 data-[open=true]:bg-surface-3 data-[open=true]:text-text md:opacity-0 md:group-hover:opacity-100"
+              className="h-[32px] min-h-[32px] w-[32px] rounded-md text-text-faint opacity-100 hover:bg-surface-3 hover:text-text focus-visible:opacity-100 data-[open=true]:bg-surface-3 data-[open=true]:text-text md:opacity-0 md:group-hover:opacity-100"
             >
               <MoreHorizontal data-icon="icon" aria-hidden="true" focusable="false" />
             </Button>

@@ -57,9 +57,6 @@ export function DocumentLibraryHeader({
               className="min-h-[44px] rounded-full bg-surface-2 pl-11"
             />
           </div>
-          <button type="submit" className="sr-only">
-            {t('documents.actions.search')}
-          </button>
         </form>
         <div className="hidden min-w-0 gap-3 sm:flex sm:items-center sm:justify-between">
           <h1 className="min-w-0 truncate font-display text-[24px] font-semibold text-text sm:text-[28px]">

@@ -25,46 +25,66 @@ interface RunStartedFrame {
 }
 interface TextMessageStartFrame {
   readonly type: 'TEXT_MESSAGE_START';
+  readonly timestamp?: number;
   readonly messageId: string;
 }
 interface TextMessageContentFrame {
   readonly type: 'TEXT_MESSAGE_CONTENT';
+  readonly timestamp?: number;
   readonly messageId: string;
   readonly delta: string;
 }
 interface TextMessageEndFrame {
   readonly type: 'TEXT_MESSAGE_END';
+  readonly timestamp?: number;
   readonly messageId: string;
 }
 interface ReasoningStartFrame {
   readonly type: 'REASONING_START';
+  readonly timestamp?: number;
+  readonly messageId: string;
+}
+interface ReasoningMessageStartFrame {
+  readonly type: 'REASONING_MESSAGE_START';
+  readonly timestamp?: number;
   readonly messageId: string;
 }
 interface ReasoningMessageContentFrame {
   readonly type: 'REASONING_MESSAGE_CONTENT';
+  readonly timestamp?: number;
   readonly messageId: string;
   readonly delta: string;
 }
+interface ReasoningMessageEndFrame {
+  readonly type: 'REASONING_MESSAGE_END';
+  readonly timestamp?: number;
+  readonly messageId: string;
+}
 interface ReasoningEndFrame {
   readonly type: 'REASONING_END';
+  readonly timestamp?: number;
   readonly messageId: string;
 }
 interface ToolCallStartFrame {
   readonly type: 'TOOL_CALL_START';
+  readonly timestamp?: number;
   readonly toolCallId: string;
   readonly toolCallName: string;
 }
 interface ToolCallArgsFrame {
   readonly type: 'TOOL_CALL_ARGS';
+  readonly timestamp?: number;
   readonly toolCallId: string;
   readonly delta: string;
 }
 interface ToolCallEndFrame {
   readonly type: 'TOOL_CALL_END';
+  readonly timestamp?: number;
   readonly toolCallId: string;
 }
 interface ToolCallResultFrame {
   readonly type: 'TOOL_CALL_RESULT';
+  readonly timestamp?: number;
   readonly toolCallId: string;
   readonly content: string;
 }
@@ -90,9 +110,9 @@ interface CustomFrame {
  * The reducer-relevant subset of AG-UI frames. The CUSTOM/aura.display frame
  * (Phase 26) attaches a typed DisplayPayload to a tool part by toolCallId; any
  * OTHER CUSTOM name (e.g. aura.artifact) and the frames the chat lane ignores
- * (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT, REASONING_MESSAGE_START/END) are
- * not modelled — `reduceFrame` returns the state unchanged for any type/name it
- * does not recognise, so unknown frames never corrupt the message.
+ * (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT) are not modelled — `reduceFrame`
+ * returns the state unchanged for any type/name it does not recognise, so unknown
+ * frames never corrupt the message.
  */
 export type AguiFrame =
   | RunStartedFrame
@@ -100,7 +120,9 @@ export type AguiFrame =
   | TextMessageContentFrame
   | TextMessageEndFrame
   | ReasoningStartFrame
+  | ReasoningMessageStartFrame
   | ReasoningMessageContentFrame
+  | ReasoningMessageEndFrame
   | ReasoningEndFrame
   | ToolCallStartFrame
   | ToolCallArgsFrame
@@ -121,6 +143,9 @@ export interface ToolPart {
   readonly toolName: string;
   readonly argsText: string;
   readonly result?: string;
+  /** Epoch-ms timing copied from AG-UI event timestamps when present. */
+  readonly startedAt?: number;
+  readonly finishedAt?: number;
   /** Typed display attached by the CUSTOM/aura.display frame (live) or the
    *  re-derived snapshot tool turn (replay), keyed by toolCallId. */
   readonly display?: DisplayPayload;

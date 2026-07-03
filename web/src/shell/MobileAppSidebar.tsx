@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { FileText, MessageSquareText, Network, Plus, Settings, ShieldCheck } from 'lucide-react';
+import { FileText, MessageSquareText, Network, Settings, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LIVE_MODES, type SurfaceIntent } from './modes';
 import { Button } from '@/components/ui/button';
@@ -15,14 +15,12 @@ const modeIcons = {
 interface MobileAppSidebarProps {
   readonly activeMode: SurfaceIntent;
   readonly onModeSelect: (mode: SurfaceIntent) => void;
-  readonly onCreateIdentity: () => void;
   readonly children: ReactNode;
 }
 
 export function MobileAppSidebar({
   activeMode,
   onModeSelect,
-  onCreateIdentity,
   children,
 }: MobileAppSidebarProps) {
   const { t } = useTranslation();
@@ -48,16 +46,6 @@ export function MobileAppSidebar({
           );
         })}
       </nav>
-
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={onCreateIdentity}
-        className="h-11 min-h-11 justify-start rounded-md px-2 text-[14px] font-medium text-text-muted hover:bg-surface-2 hover:text-text"
-      >
-        <Plus aria-hidden="true" />
-        {t('onboarding.open')}
-      </Button>
 
       <div className="h-px bg-border" />
 

@@ -226,3 +226,61 @@ func parseVerdict(raw string) (judgeVerdict, error) {
 	}
 	return v, nil
 }
+
+func judgeUserMessage(sc scenario, c *turnCapture) string {
+	question := sc.prompts[len(sc.prompts)-1]
+	var b strings.Builder
+	if len(sc.prompts) > 1 {
+		b.WriteString("CONVERSATION CONTEXT (previous user turns):")
+		for i, prompt := range sc.prompts[:len(sc.prompts)-1] {
+			fmt.Fprintf(&b, "\n- user turn %d: %s", i+1, prompt)
+		}
+		b.WriteString("\n\n")
+	}
+	fmt.Fprintf(&b, "USER QUESTION:\n%s", question)
+	if contains(sc.dimensions, dimToolLoop) {
+		fmt.Fprintf(&b, "\n\nOBSERVED EXECUTION (ground truth):\n%s", observedToolExecution(c))
+	}
+	fmt.Fprintf(&b, "\n\nASSISTANT ANSWER:\n%s", c.prose)
+	return b.String()
+}
+
+func observedToolExecution(c *turnCapture) string {
+	if len(c.toolNames) == 0 {
+		return "tool_calls: none"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "tool_calls: %s", strings.Join(c.toolNames, ", "))
+	if len(c.toolCallMS) > 0 {
+		b.WriteString("\ntool_call_ms:")
+		for i, ms := range c.toolCallMS {
+			name := "unknown"
+			if i < len(c.toolNames) {
+				name = c.toolNames[i]
+			}
+			fmt.Fprintf(&b, " %s=%.0f", name, ms)
+		}
+	}
+	if len(c.toolResults) > 0 {
+		b.WriteString("\ntool_results:")
+		for i, result := range c.toolResults {
+			name := "unknown"
+			if i < len(c.toolNames) {
+				name = c.toolNames[i]
+			}
+			fmt.Fprintf(&b, "\n- %s: %s", name, compactJudgeLine(result, 240))
+		}
+	}
+	return b.String()
+}
+
+func compactJudgeLine(s string, limit int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) <= limit {
+		return s
+	}
+	if limit <= 3 {
+		return s[:limit]
+	}
+	return s[:limit-3] + "..."
+}

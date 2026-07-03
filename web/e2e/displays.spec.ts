@@ -17,6 +17,18 @@ import { gotoAuthenticated } from './auth';
 
 const CONV_ID = '77777777-7777-7777-7777-777777777777';
 
+function conversationRecord(): Record<string, unknown> {
+  return {
+    id: CONV_ID,
+    title: 'Displays thread',
+    status: 'active',
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_cached_tokens: 0,
+    total_cost_usd: 0,
+  };
+}
+
 interface ToolCallSnapshot {
   readonly id: string;
   readonly function: { readonly name: string; readonly arguments: string };
@@ -39,18 +51,14 @@ async function installBaseRoutes(page: Page, snapshot: string) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          id: CONV_ID,
-          title: 'Displays thread',
-          status: 'active',
-          total_input_tokens: 0,
-          total_output_tokens: 0,
-          total_cached_tokens: 0,
-          total_cost_usd: 0,
-        }),
+        body: JSON.stringify(conversationRecord()),
       });
     }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([conversationRecord()]),
+    });
   });
   await page.route('**/api/conversations/*/rot-events', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),

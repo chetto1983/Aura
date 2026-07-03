@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { Menu, Plus } from 'lucide-react';
+import { Menu, SquarePen } from 'lucide-react';
 import { useDefaultLayout } from 'react-resizable-panels';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -7,7 +7,6 @@ import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
 import { RuntimeFooter } from './chat/RuntimeFooter';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
 import { SearchPanel } from './conversations/SearchPanel';
-import { RuntimeHealthPanel } from './health/RuntimeHealthPanel';
 import { BottomDock } from './shell/BottomDock';
 import { Drawer } from './shell/Drawer';
 import { MobileAppSidebar } from './shell/MobileAppSidebar';
@@ -107,10 +106,8 @@ export function AppShell() {
   const [searchParams] = useSearchParams();
   const { surface, setSurface } = useSurfaceIntent();
   const showConversationNavigation = surface === 'chat';
-  // The Graph Explorer and the Governance boards are focused workspaces with their own panes
-  // (canvas/inspector, master/detail), so the shell's right-hand runtime rail is redundant
-  // there — drop it on lg so the workspace gets the width back instead of being squeezed into a
-  // narrow middle column. The chat approval cards are also chat-only.
+  // Focused workspaces own their panes (canvas/inspector, master/detail, dense lists).
+  // Runtime readiness stays in the header; chat approval cards remain chat-only.
   const isFocusedWorkspace =
     surface === 'graph' ||
     surface === 'governance' ||
@@ -199,6 +196,25 @@ export function AppShell() {
     [activeThreadId, createConversation, navigate],
   );
 
+  const openCreateIdentity = useCallback(() => {
+    setOnboardingOpen(true);
+    closeNav();
+  }, [closeNav]);
+
+  const startNewConversation = useCallback(async () => {
+    if (createConversation.isPending) return;
+    try {
+      const conv = await createConversation.mutateAsync('');
+      setSurface('chat');
+      setSelectedId(conv.ID);
+      setUsage(undefined);
+      closeNav();
+      void navigate(`/c/${encodeURIComponent(conv.ID)}`);
+    } catch {
+      // The mutation keeps the failure state; the current thread remains selected.
+    }
+  }, [closeNav, createConversation, navigate, setSurface]);
+
   const askDocument = useCallback(
     (document: DocumentItem) => {
       const searchDocumentID =
@@ -248,15 +264,8 @@ export function AppShell() {
 
   const edgeSwipe = useEdgeSwipe({
     onLeftEdge: surfaces.openNav,
-    onRightEdge: surfaces.openOverlay,
     onLeftClose: surfaces.closeNav,
-    // Swipe-dismissing the runtime overlay is the "get this out of my way" intent — it must
-    // NOT restore the remembered nav (§3.1c), so the swipe path passes 'swipe'.
-    onRightClose: () => {
-      surfaces.closeOverlay('swipe');
-    },
     isLeftOpen: surfaces.navOpen,
-    isRightOpen: surfaces.overlayOpen,
   });
 
   const chatShellLayout = useDefaultLayout({
@@ -267,30 +276,29 @@ export function AppShell() {
 
   const navigation = (
     <div className="flex h-full min-h-0 flex-col gap-2 bg-surface px-3 py-3">
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={createConversation.isPending}
+        aria-busy={createConversation.isPending}
+        onClick={() => {
+          void startNewConversation();
+        }}
+        className="h-11 min-h-11 w-full justify-start rounded-lg bg-surface-2 px-3 text-[14px] font-semibold text-text hover:bg-surface-3"
+      >
+        <SquarePen data-icon="inline-start" aria-hidden="true" focusable="false" />
+        {createConversation.isPending ? t('conversations.newPending') : t('conversations.new')}
+      </Button>
       <SearchPanel
         onOpen={(id) => {
           selectThread(id);
         }}
       />
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          setOnboardingOpen(true);
-          surfaces.closeNav();
-        }}
-        className="w-full bg-surface-2 hover:border-border-strong"
-      >
-        <Plus data-icon="inline-start" aria-hidden="true" focusable="false" />
-        {t('onboarding.open')}
-      </Button>
       <div className="min-h-0 flex-1 overflow-hidden">
         <ConversationSidebar activeId={activeThreadId} onSelect={selectThread} />
       </div>
     </div>
   );
-
-  const runtime = <RuntimeHealthPanel />;
 
   const documentsMobileMenu = (
     <Button
@@ -314,12 +322,21 @@ export function AppShell() {
     <MobileAppSidebar
       activeMode={surface}
       onModeSelect={selectMobileMode}
-      onCreateIdentity={() => {
-        setOnboardingOpen(true);
-        surfaces.closeNav();
-      }}
     >
       <div className="flex h-full min-h-0 flex-col gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={createConversation.isPending}
+          aria-busy={createConversation.isPending}
+          onClick={() => {
+            void startNewConversation();
+          }}
+          className="h-11 min-h-11 w-full justify-start rounded-lg bg-surface-2 px-3 text-[14px] font-semibold text-text hover:bg-surface-3"
+        >
+          <SquarePen aria-hidden="true" focusable="false" />
+          {createConversation.isPending ? t('conversations.newPending') : t('conversations.new')}
+        </Button>
         <SearchPanel
           onOpen={(id) => {
             setSurface('chat');
@@ -358,7 +375,7 @@ export function AppShell() {
           ) : surface === 'documents' ? (
             <DocumentsWorkspace mobileMenu={documentsMobileMenu} onAskDocument={askDocument} />
           ) : surface === 'settings' ? (
-            <SettingsWorkspace />
+            <SettingsWorkspace onCreateIdentity={openCreateIdentity} />
           ) : (
             <ExternalStoreChat
               threadId={activeThreadId}
@@ -390,7 +407,6 @@ export function AppShell() {
           if (next !== 'chat') surfaces.closeNav();
         }}
         onNavigationOpen={surfaces.openNav}
-        onRuntimeOpen={surfaces.openOverlay}
         navigationAvailable
         onApprovalsToggle={() => {
           setApprovalsOpen((v) => !v);
@@ -405,10 +421,10 @@ export function AppShell() {
         }}
       />
 
-      {/* Chat keeps the old 15rem/19rem rail defaults, but operators can resize the
-          conversation rail while the middle lane still honors --chat-lane-min. */}
+      {/* Chat keeps the resizable conversation rail while the workspace gets the
+          remaining row width; runtime readiness is summarized in the header. */}
       {showConversationNavigation ? (
-        <main className="shell-main grid min-h-0 grid-cols-[minmax(0,1fr)_19rem]">
+        <main className="shell-main grid min-h-0 grid-cols-1">
           <ResizablePanelGroup
             {...chatShellLayout}
             id={CHAT_SHELL_LAYOUT_ID}
@@ -445,13 +461,6 @@ export function AppShell() {
               {workspace}
             </ResizablePanel>
           </ResizablePanelGroup>
-          <aside
-            id="runtime-rail"
-            aria-label={t('shell.displayWorkspace')}
-            className="shell-runtime-rail h-full min-h-0 overflow-y-auto border-l border-border bg-surface"
-          >
-            {runtime}
-          </aside>
         </main>
       ) : (
         <main className="shell-main grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)]">
@@ -465,18 +474,6 @@ export function AppShell() {
 
       <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>
         {mobileNavigation}
-      </Drawer>
-      <Drawer
-        open={surfaces.overlayOpen}
-        side="right"
-        title={t('shell.displayWorkspace')}
-        onClose={(intent) => {
-          // Drawer-originated closes (button / Esc / backdrop) are always 'explicit' → restore
-          // the remembered nav; the 'swipe' path comes from the edge-swipe handler above.
-          surfaces.closeOverlay(intent ?? 'explicit');
-        }}
-      >
-        {runtime}
       </Drawer>
 
       {/* Full-screen onboarding wizard overlay (D-04) — a lazy chunk covering the shell when

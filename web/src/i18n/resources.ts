@@ -45,6 +45,13 @@ export const resources = {
           displays: 'Displays',
           settings: 'Settings',
         },
+        modesCompact: {
+          chat: 'Chat',
+          graph: 'Graph',
+          governance: 'Gov',
+          documents: 'Docs',
+          settings: 'Settings',
+        },
         modeUnavailable: 'Coming soon',
       },
       chat: {
@@ -95,6 +102,7 @@ export const resources = {
         reasoning: {
           show: 'Show reasoning',
           hide: 'Hide reasoning',
+          pending: 'Thinking...',
         },
         tool: {
           showRaw: 'Show raw result',
@@ -129,6 +137,8 @@ export const resources = {
       ...settingsEn,
       ...onboardingEn,
       conversations: {
+        new: 'New chat',
+        newPending: 'Creating chat...',
         heading: 'Conversations',
         loading: 'Loading conversations...',
         loadError: "Couldn't load conversations. Refresh the list.",
@@ -306,6 +316,13 @@ export const resources = {
           displays: 'Display',
           settings: 'Impostazioni',
         },
+        modesCompact: {
+          chat: 'Chat',
+          graph: 'Grafo',
+          governance: 'Gov',
+          documents: 'Doc',
+          settings: 'Imp.',
+        },
         modeUnavailable: 'In arrivo',
       },
       chat: {
@@ -356,6 +373,7 @@ export const resources = {
         reasoning: {
           show: 'Mostra ragionamento',
           hide: 'Nascondi ragionamento',
+          pending: 'Ragionamento in corso...',
         },
         tool: {
           showRaw: 'Mostra risultato grezzo',
@@ -390,6 +408,8 @@ export const resources = {
       ...settingsIt,
       ...onboardingIt,
       conversations: {
+        new: 'Nuova chat',
+        newPending: 'Creazione chat...',
         heading: 'Conversazioni',
         loading: 'Caricamento conversazioni...',
         loadError: 'Impossibile caricare le conversazioni. Aggiorna la lista.',

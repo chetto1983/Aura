@@ -1,12 +1,9 @@
 :root {
-  /* §1.1b layout invariants — the *content-driven* reason behind the breakpoints. The chat
-     lane (region b) must never render narrower than --chat-lane-min; the desktop 3-col grid
-     track uses minmax(var(--chat-lane-min),1fr) so a wide neighbour can never squeeze the lane
-     below it. --window-floor = rails (15rem sidebar + 19rem panel = 34rem) + --chat-lane-min:
-     the narrowest window at which all three regions can coexist in flow. Below it (and below
-     `lg`) the side regions collapse to overlay drawers/sheets. Consumed by AppShell's <main>. */
+  /* Layout invariants: the chat lane must never render narrower than --chat-lane-min.
+     Runtime readiness is header-only, so the shell floor is the conversation rail plus
+     the chat lane rather than the former three-column runtime-panel layout. */
   --chat-lane-min: 380px;
-  --window-floor: calc(34rem + var(--chat-lane-min));
+  --window-floor: calc(15rem + var(--chat-lane-min));
 }
 
 html {

@@ -19,6 +19,7 @@ package agui
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -158,10 +159,12 @@ const maxLoginBodyBytes = 64 << 10
 // isPublicPath reports whether a request path is reachable WITHOUT a session (D-03):
 // the login page route and its static assets (the shared SPA bundle/styles + PWA +
 // icons, via the PublicAsset predicate wired from webui). GET /healthz is handled
-// separately in RequireAuth (only GET is public). The SPA shell at "/", /readyz,
-// /metrics and /debug/vars stay gated. The static bundle is the SAME code for everyone,
-// so gating it would only break the login render without protecting anything — the
-// session protects the API + rendering an authenticated shell, not the static assets.
+// separately in RequireAuth (only GET is public). GET /readyz is also handled there,
+// but only for same-process loopback health probes; unauthenticated host/browser
+// requests stay gated. The SPA shell at "/", /metrics and /debug/vars stay gated.
+// The static bundle is the SAME code for everyone, so gating it would only break the
+// login render without protecting anything — the session protects the API + rendering
+// an authenticated shell, not the static assets.
 func (d AuthDeps) isPublicPath(p string) bool {
 	if p == d.loginPath() {
 		return true
@@ -179,6 +182,7 @@ func (d AuthDeps) isPublicPath(p string) bool {
 // no-op pass-through (mirrors server.go withCORS), safe because the Plan-01 boot guard
 // only permits an unconfigured secret on a loopback bind. When active it:
 //  1. lets isPublicPath requests + GET /healthz through (login + assets + liveness);
+//     GET /readyz is allowed only for same-process loopback orchestrator probes;
 //  2. reads ONLY r.Cookie(sessionCookieName) — never a client auth/identity header
 //     (T-24-13, golang-security client-header anti-pattern);
 //  3. redirects a browser GET to the login page (302) / 401s an API request on a
@@ -193,8 +197,13 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// GET /healthz stays public for proxy/orchestrator liveness (D-03, Pitfall 4);
-		// /readyz, /metrics, /debug/vars are gated.
+		// GET /readyz is public only to same-process loopback probes so Docker can query
+		// dependency readiness without minting a user session; host/proxy requests stay gated.
 		if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/readyz" && r.Method == http.MethodGet && isLoopbackRemoteAddr(r.RemoteAddr) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -217,6 +226,15 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 		}
 		next.ServeHTTP(w, withPrincipal(r, identityID))
 	})
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // validateSession is the provider dispatch for the cookie-validation core (D-03,

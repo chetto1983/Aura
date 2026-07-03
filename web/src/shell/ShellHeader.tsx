@@ -16,7 +16,6 @@ export function ShellHeader({
   onApprovalsToggle,
   onApprovalOpen,
   onNavigationOpen,
-  onRuntimeOpen,
   navigationAvailable = true,
   logoutPending,
   onLogout,
@@ -27,7 +26,6 @@ export function ShellHeader({
   readonly onApprovalsToggle: () => void;
   readonly onApprovalOpen: (id: string) => void;
   readonly onNavigationOpen: () => void;
-  readonly onRuntimeOpen: () => void;
   readonly navigationAvailable?: boolean;
   readonly logoutPending: boolean;
   readonly onLogout: () => void;
@@ -66,7 +64,7 @@ export function ShellHeader({
       </div>
       <ModeSwitcher active={activeMode} onSelect={onModeSelect} />
       <div className="flex min-w-0 items-center justify-end gap-2">
-        <RuntimeStatusChip onOpen={onRuntimeOpen} />
+        <RuntimeStatusChip />
         <div className="relative">
           <ApprovalBadge expanded={approvalsOpen} onToggle={onApprovalsToggle} />
           {approvalsOpen ? (

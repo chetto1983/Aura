@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useReducer, useState } from 'react';
-import { X } from 'lucide-react';
+import { CheckCircle2, Database, Network, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { fetchGraphSchema, postGraphQuery } from './graphApi';
 import {
@@ -72,6 +72,103 @@ function isCapped(result: GraphResult): boolean {
   return result.nodes.length >= DEFAULT_NODE_CAP || result.edges.length >= DEFAULT_EDGE_CAP;
 }
 
+function EvidenceReadinessBoard({
+  schema,
+  canSeed,
+  onSeed,
+}: {
+  readonly schema: GraphSchema | undefined;
+  readonly canSeed: boolean;
+  readonly onSeed: () => void;
+}) {
+  const { t } = useTranslation();
+  const labels = schema?.labels ?? [];
+  const relTypes = schema?.rel_types ?? [];
+  const visibleLabels = labels.slice(0, 6);
+  const visibleRelTypes = relTypes.slice(0, 5);
+  const hiddenLabelCount = Math.max(0, labels.length - visibleLabels.length);
+  const hiddenRelTypeCount = Math.max(0, relTypes.length - visibleRelTypes.length);
+
+  return (
+    <section
+      aria-label={t('graph.empty.readinessAria')}
+      className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4 text-left sm:p-6"
+    >
+      <div className="grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Badge variant="success" className="gap-1.5">
+              <CheckCircle2 aria-hidden="true" />
+              {t('graph.empty.schemaOnline')}
+            </Badge>
+            <Badge variant="secondary">
+              {t('graph.empty.nodeTypeCount', { count: labels.length })}
+            </Badge>
+            <Badge variant="secondary">
+              {t('graph.empty.connectionTypeCount', { count: relTypes.length })}
+            </Badge>
+          </div>
+          <h2 className="font-display text-[22px] font-semibold text-text">
+            {t('graph.empty.heading')}
+          </h2>
+          <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-text-muted">
+            {t('graph.empty.body')}
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button type="button" onClick={onSeed} disabled={!canSeed} className="min-w-0">
+              <span className="block min-w-0 overflow-wrap-anywhere">
+                {t('graph.cta.seedConversation')}
+              </span>
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid min-w-0 content-start gap-3">
+          <div className="rounded-lg border border-border bg-surface/80 p-3">
+            <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold uppercase text-text-muted">
+              <Database aria-hidden="true" className="size-4 text-accent-text" />
+              {t('graph.empty.nodeTypes')}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {visibleLabels.map((label) => (
+                <Badge
+                  key={label}
+                  variant="secondary"
+                  className="max-w-full overflow-wrap-anywhere"
+                >
+                  {label}
+                </Badge>
+              ))}
+              {hiddenLabelCount > 0 ? <Badge variant="secondary">+{hiddenLabelCount}</Badge> : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-surface/80 p-3">
+            <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold uppercase text-text-muted">
+              <Network aria-hidden="true" className="size-4 text-accent-text" />
+              {t('graph.empty.connectionTypes')}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {visibleRelTypes.map((relType) => (
+                <Badge
+                  key={relType}
+                  variant="secondary"
+                  className="max-w-full overflow-wrap-anywhere"
+                >
+                  {relType}
+                </Badge>
+              ))}
+              {hiddenRelTypeCount > 0 ? (
+                <Badge variant="secondary">+{hiddenRelTypeCount}</Badge>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   const { t } = useTranslation();
   const [intent, dispatch] = useReducer(intentReducer, undefined, initialIntentState);
@@ -134,15 +231,28 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
 
   const onSeed = useCallback(() => {
     const next = intentReducer(intent, { kind: 'setSeed', session: threadId });
+    dispatch({ kind: 'setSeed', session: threadId });
     void runIntent(next);
   }, [intent, threadId, runIntent]);
 
-  const onToggleLabel = useCallback((label: string) => {
-    dispatch({ kind: 'toggleLabel', label });
-  }, []);
-  const onToggleRelType = useCallback((relType: string) => {
-    dispatch({ kind: 'toggleRelType', relType });
-  }, []);
+  const onToggleLabel = useCallback(
+    (label: string) => {
+      const next = intentReducer(intent, { kind: 'toggleLabel', label });
+      const executable = next.op === 'seed' ? { ...next, session: threadId } : next;
+      dispatch({ kind: 'toggleLabel', label });
+      void runIntent(executable);
+    },
+    [intent, runIntent, threadId],
+  );
+  const onToggleRelType = useCallback(
+    (relType: string) => {
+      const next = intentReducer(intent, { kind: 'toggleRelType', relType });
+      const executable = next.op === 'seed' ? { ...next, session: threadId } : next;
+      dispatch({ kind: 'toggleRelType', relType });
+      void runIntent(executable);
+    },
+    [intent, runIntent, threadId],
+  );
 
   const retry = useCallback(() => {
     void runIntent({ ...intent, session: threadId });
@@ -218,17 +328,24 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         </div>
       </div>
     ) : view.status === 'empty' ? (
-      <div className="grid h-full place-items-center p-8 text-center">
-        <div className="flex max-w-sm flex-col items-center gap-3">
-          <span aria-hidden="true" className="text-4xl leading-none text-accent-text opacity-70">
-            ◍
-          </span>
-          <h2 className="font-display text-[22px] font-semibold text-text">
-            {t('graph.empty.heading')}
-          </h2>
-          <p className="text-[15.5px] leading-relaxed text-text-muted">{t('graph.empty.body')}</p>
+      <>
+        <EvidenceReadinessBoard
+          schema={view.schema}
+          canSeed={threadId.length > 0}
+          onSeed={onSeed}
+        />
+        <div hidden className="grid h-full place-items-center p-8 text-center">
+          <div className="flex max-w-sm flex-col items-center gap-3">
+            <span aria-hidden="true" className="text-4xl leading-none text-accent-text opacity-70">
+              ◍
+            </span>
+            <h2 className="font-display text-[22px] font-semibold text-text">
+              {t('graph.empty.heading')}
+            </h2>
+            <p className="text-[15.5px] leading-relaxed text-text-muted">{t('graph.empty.body')}</p>
+          </div>
         </div>
-      </div>
+      </>
     ) : (
       <Suspense
         fallback={
@@ -267,7 +384,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
     <div className="graph-workspace-container h-full min-h-0">
       <div
         data-testid="graph-workspace"
-        className={`graph-workspace relative flex h-full min-h-0 flex-col lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
+        className={`graph-workspace relative flex h-full min-h-0 flex-col overflow-hidden lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
           inspectorOpen
             ? 'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]'
             : 'lg:grid-cols-[18rem_minmax(0,1fr)]'
@@ -280,7 +397,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
             type="button"
             onClick={onSeed}
             disabled={threadId.length === 0}
-            className="h-auto min-h-10 min-w-0 flex-1 px-3 py-1.5 text-[14px]"
+            className="h-auto min-h-[44px] min-w-0 flex-1 px-3 py-2 text-[14px]"
           >
             <span className="block min-w-0 overflow-wrap-anywhere">
               {t('graph.cta.seedConversation')}
@@ -292,7 +409,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
             onClick={() => {
               setFiltersOpen(true);
             }}
-            className="min-h-10 gap-1.5 px-3 py-1.5 text-[14px]"
+            className="min-h-[44px] gap-1.5 px-3 py-2 text-[14px]"
           >
             {t('graph.filter.labels')}
             {activeFilterCount > 0 ? (
@@ -334,7 +451,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
         {/* CANVAS — the dominant element. Mobile: flex-1 with a real min-height. Desktop: center cell. */}
         <section
           aria-label={t('graph.title')}
-          className="graph-workspace__canvas relative min-h-[46svh] flex-1 bg-bg lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:flex-none"
+          className="graph-workspace__canvas relative min-h-0 flex-1 bg-bg lg:col-start-2 lg:row-start-1 lg:flex-none"
         >
           {canvasPane}
         </section>

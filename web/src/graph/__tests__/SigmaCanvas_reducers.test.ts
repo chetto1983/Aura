@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compactCanvasLabel,
   pinnedEdgeReducer,
   pinnedNodeReducer,
   REDUCER_COLORS,
+  shouldRenderAmbientLabels,
   type EdgeDisplay,
   type NodeDisplay,
 } from '../SigmaCanvas_reducers';
@@ -21,6 +23,11 @@ describe('pinnedNodeReducer', () => {
     const out = pinnedNodeReducer('n1', base, new Set(['n1']));
     expect(out.color).toBe(REDUCER_COLORS.PATH_NODE_COLOR);
     expect(out.zIndex).toBe(1);
+  });
+
+  it('restores the compact canvas label for a focused node when ambient labels are hidden', () => {
+    const out = pinnedNodeReducer('n1', { ...base, label: null, canvasLabel: 'd:42' }, new Set(['n1']));
+    expect(out.label).toBe('d:42');
   });
 
   it('dims + drops the label of a node that is off the pinned path', () => {
@@ -48,5 +55,21 @@ describe('pinnedEdgeReducer', () => {
     const out = pinnedEdgeReducer('a', 'c', base, new Set(['a', 'b']));
     expect(out.color).toBe(REDUCER_COLORS.DIM_COLOR);
     expect(out.zIndex).toBe(0);
+  });
+});
+
+describe('canvas label helpers', () => {
+  it('compacts Neo4j element IDs and UUID-heavy captions for the WebGL canvas', () => {
+    expect(compactCanvasLabel('4:21de867b-135a-43b0-9598-b82a63a99e7d:d:63')).toBe('d:63');
+    expect(compactCanvasLabel('21de867b-135a-43b0-9598-b82a63a99e7d')).toBe('21de867b...');
+  });
+
+  it('leaves short human captions alone', () => {
+    expect(compactCanvasLabel('web_search')).toBe('web_search');
+  });
+
+  it('suppresses ambient labels for dense overviews', () => {
+    expect(shouldRenderAmbientLabels(12, 20)).toBe(true);
+    expect(shouldRenderAmbientLabels(75, 64)).toBe(false);
   });
 });

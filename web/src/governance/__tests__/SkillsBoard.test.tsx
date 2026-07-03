@@ -431,8 +431,8 @@ describe('SkillsBoard (GOV-02)', () => {
 
     const archiveButton = screen.getByRole('button', { name: 'Archive skill' });
     expect(archiveButton.getAttribute('data-slot')).toBe('button');
-    expect(archiveButton.className).toContain('h-11');
-    expect(archiveButton.className).toContain('w-11');
+    expect(archiveButton.className).toContain('h-[44px]');
+    expect(archiveButton.className).toContain('w-[44px]');
     expect(archiveButton.className).not.toContain('shadow-[');
     expect(archiveButton.querySelector('svg[data-icon="icon"]')).not.toBeNull();
     expect(screen.getByText('instruction').getAttribute('data-slot')).toBe('badge');

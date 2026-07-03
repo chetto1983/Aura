@@ -95,6 +95,26 @@ func TestValidateSecret(t *testing.T) {
 	}
 }
 
+func TestIsLoopbackRemoteAddr(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		remoteAddr string
+		want       bool
+	}{
+		{"127.0.0.1:51234", true},
+		{"[::1]:51234", true},
+		{"172.18.0.1:51234", false},
+		{"not-an-addr", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.remoteAddr, func(t *testing.T) {
+			if got := isLoopbackRemoteAddr(tc.remoteAddr); got != tc.want {
+				t.Fatalf("isLoopbackRemoteAddr(%q) = %v, want %v", tc.remoteAddr, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestSignVerifyRoundtrip is the property: for any identity id + an issued time within
 // TTL, signSession then verifySession returns the same id and ok==true.
 func TestSignVerifyRoundtrip(t *testing.T) {
@@ -405,7 +425,7 @@ func TestRequireAuth(t *testing.T) {
 			{"PWA service worker public", http.MethodGet, "/registerSW.js", false, true},
 			{"webmanifest public", http.MethodGet, "/manifest.webmanifest", false, true},
 			{"SPA shell gated", http.MethodGet, "/", true, false},
-			{"/readyz gated", http.MethodGet, "/readyz", false, false},
+			{"/readyz gated from non-loopback client", http.MethodGet, "/readyz", false, false},
 			{"/metrics gated", http.MethodGet, "/metrics", false, false},
 			{"/debug/vars gated", http.MethodGet, "/debug/vars", false, false},
 		}
@@ -431,6 +451,28 @@ func TestRequireAuth(t *testing.T) {
 					}
 				}
 			})
+		}
+	})
+
+	t.Run("loopback /readyz health probe bypasses session", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		req.RemoteAddr = "127.0.0.1:51234"
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, req)
+		if !*hit || rec.Code != http.StatusOK {
+			t.Fatalf("loopback /readyz: hit=%v code=%d, want hit=true code=200", *hit, rec.Code)
+		}
+	})
+
+	t.Run("non-loopback /readyz still requires a session", func(t *testing.T) {
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		req.RemoteAddr = "172.18.0.1:51234"
+		rec := httptest.NewRecorder()
+		RequireAuth(next, deps).ServeHTTP(rec, req)
+		if *hit || rec.Code == http.StatusOK {
+			t.Fatalf("non-loopback /readyz reached handler: hit=%v code=%d", *hit, rec.Code)
 		}
 	})
 

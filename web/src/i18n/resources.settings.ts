@@ -9,6 +9,10 @@ export const settingsEn = {
       'Saved changes are in Postgres. Restart Aura to apply them to already-created model clients.',
     saved: 'Runtime settings saved.',
     secretPlaceholder: 'Enter a new value',
+    identity: {
+      heading: 'Identity',
+      body: 'Create operator identities and connect their setup channels from here.',
+    },
     modelRouting: {
       heading: 'Model routing',
       body: 'Choose whether Aura uses a cloud OpenRouter endpoint or a local OpenAI-compatible model server, then set the model and token budget.',
@@ -70,6 +74,10 @@ export const settingsIt = {
       'Modifiche salvate in Postgres. Riavvia Aura per applicarle ai client modello gia creati.',
     saved: 'Impostazioni runtime salvate.',
     secretPlaceholder: 'Inserisci un nuovo valore',
+    identity: {
+      heading: 'Identita',
+      body: 'Crea identita operatore e collega qui i loro canali di setup.',
+    },
     modelRouting: {
       heading: 'Instradamento modello',
       body: 'Scegli se Aura usa OpenRouter cloud o un server locale compatibile OpenAI, poi imposta modello e budget token.',

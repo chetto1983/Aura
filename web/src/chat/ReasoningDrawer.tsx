@@ -11,13 +11,14 @@ import { Button } from '@/components/ui/button';
 // this is the LIVE cockpit stream, not trace storage.
 
 export interface ReasoningDrawerProps {
-  /** The accumulated reasoning text for this assistant turn. */
+  /** The accumulated reasoning text for this assistant reasoning span. */
   readonly text: string;
 }
 
 export function ReasoningDrawer({ text }: ReasoningDrawerProps) {
   const { t } = useTranslation();
   const [shown, setShown] = useState<boolean>(readReasoningPref);
+  const displayText = text.length > 0 ? text : t('chat.reasoning.pending');
 
   const toggle = useCallback(() => {
     setShown((prev) => {
@@ -26,8 +27,6 @@ export function ReasoningDrawer({ text }: ReasoningDrawerProps) {
       return next;
     });
   }, []);
-
-  if (text.length === 0) return null;
 
   return (
     <div className="rounded-[var(--radius-md)] border border-border bg-surface-2">
@@ -52,7 +51,7 @@ export function ReasoningDrawer({ text }: ReasoningDrawerProps) {
           id="reasoning-body"
           className="whitespace-pre-wrap border-t border-border px-3 py-2 text-xs leading-relaxed text-text-muted"
         >
-          {text}
+          {displayText}
         </div>
       ) : null}
     </div>

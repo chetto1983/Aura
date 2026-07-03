@@ -403,6 +403,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     expect(toggle).not.toBeNull();
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(toggle?.className).toMatch(/sm:hidden/);
+    expect(toggle?.className).toMatch(/min-h-\[44px\]/);
     // The full instrument cluster is visible from sm up (the disclosure is mobile-only).
     const full = container.querySelector('.hidden.sm\\:flex, .hidden.sm\\:grid');
     expect(full).not.toBeNull();

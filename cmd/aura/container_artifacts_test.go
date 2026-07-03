@@ -115,6 +115,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"mem_limit:",
 		"cpus:",
 		"healthcheck:",
+		"curl -fsS --max-time 3 http://127.0.0.1:9080/readyz >/dev/null",
 		"garage:",
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",

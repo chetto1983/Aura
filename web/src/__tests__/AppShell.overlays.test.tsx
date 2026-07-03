@@ -1,12 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { AppShell } from '../AppShell';
 
-// AppShell now mounts the RuntimeHealthPanel (polls /healthz + /readyz) AND the
-// conversation sidebar/search (GET /api/conversations) + the runtime footer, so the
-// shell needs a QueryClient, a Router (useParams/useNavigate), and a stubbed fetch.
 function renderShell() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -18,7 +15,7 @@ function renderShell() {
   );
 }
 
-describe('AppShell §3.1c intent-aware restore + §1.1b chat-lane floor', () => {
+describe('AppShell header-only runtime readiness', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
@@ -37,49 +34,29 @@ describe('AppShell §3.1c intent-aware restore + §1.1b chat-lane floor', () => 
     vi.unstubAllGlobals();
   });
 
-  function openNav() {
-    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
-  }
-  function openRuntime() {
-    fireEvent.click(screen.getByRole('button', { name: 'Open runtime status' }));
-  }
-  function navDrawer() {
-    return screen.queryByRole('dialog', { name: 'Aura' });
-  }
-  function runtimeDrawer() {
-    return screen.queryByRole('dialog', { name: 'Display workspace' });
-  }
-
-  it('opening the runtime overlay while the nav drawer is open auto-closes the nav', () => {
-    renderShell();
-    openNav();
-    expect(navDrawer()).not.toBeNull();
-    openRuntime();
-    expect(runtimeDrawer()).not.toBeNull();
-    // One heavy surface at a time: the nav drawer yields.
-    expect(navDrawer()).toBeNull();
-  });
-
-  it('closing the runtime overlay explicitly restores the remembered nav drawer', () => {
-    renderShell();
-    openNav();
-    openRuntime();
-    expect(navDrawer()).toBeNull();
-    // Explicit close via the panel close button → restore the nav.
-    const runtime = runtimeDrawer();
-    if (!runtime) throw new Error('expected the runtime drawer to be open');
-    fireEvent.click(within(runtime).getByRole('button', { name: 'Close panel' }));
-    expect(runtimeDrawer()).toBeNull();
-    expect(navDrawer()).not.toBeNull();
-  });
-
-  it('the main chat layout exposes the resizable conversation rail and runtime rail', () => {
+  it('summarizes runtime readiness in the header without a runtime rail or drawer trigger', async () => {
     const { container } = renderShell();
+
+    expect(await screen.findByRole('status', { name: 'Runtime: Ready' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open runtime status' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Display workspace' })).toBeNull();
+    expect(container.querySelector('#runtime-rail')).toBeNull();
+    expect(container.querySelector('.shell-runtime-rail')).toBeNull();
+
     const main = container.querySelector('main');
     if (!main) throw new Error('expected a <main> region');
     expect(main.className).toContain('shell-main');
+    expect(main.className).toContain('grid-cols-1');
     expect(container.querySelector('#aura-chat-shell-v3')).not.toBeNull();
     expect(screen.getByRole('separator', { name: 'Resize conversation sidebar' })).toBeTruthy();
-    expect(screen.getByLabelText('Display workspace')).toBeTruthy();
+  });
+
+  it('keeps the navigation drawer independent of the removed runtime overlay', () => {
+    renderShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+    expect(screen.getByRole('dialog', { name: 'Aura' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Display workspace' })).toBeNull();
   });
 });

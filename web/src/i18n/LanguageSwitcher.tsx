@@ -29,7 +29,7 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
           onClick={() => {
             void changeAppLanguage(language);
           }}
-          className="h-7 min-h-7 min-w-8 rounded-[calc(var(--radius-md)-2px)] px-2 text-xs font-medium text-text-muted aria-pressed:bg-accent aria-pressed:text-on-accent hover:text-text"
+          className="h-[32px] min-h-[32px] min-w-[32px] rounded-[calc(var(--radius-md)-2px)] px-2 text-xs font-medium text-text-muted aria-pressed:bg-accent aria-pressed:text-on-accent hover:text-text"
         >
           {language.toUpperCase()}
         </Button>

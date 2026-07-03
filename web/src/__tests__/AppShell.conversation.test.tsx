@@ -239,6 +239,72 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
   );
 
   it(
+    'creates and selects a blank conversation from the sidebar New chat action',
+    async () => {
+      const created = {
+        ID: '33333333-3333-3333-3333-333333333333',
+        Title: '',
+        TitleSet: false,
+        IdentityID: 'op',
+        Status: 'active',
+        Model: 'm',
+        TotalInputTokens: 0,
+        TotalOutputTokens: 0,
+        TotalCachedTokens: 0,
+        TotalCostUSD: 0,
+        CreatedAt: '2026-06-17T00:00:00Z',
+      };
+      const calls: string[] = [];
+      let createBody: Record<string, unknown> | undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          const url =
+            typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          const method = init?.method ?? 'GET';
+          calls.push(`${method} ${url}`);
+          if (url === '/api/conversations' && method === 'POST') {
+            if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
+            createBody = JSON.parse(init.body) as Record<string, unknown>;
+            return Promise.resolve(new Response(JSON.stringify(created), { status: 201 }));
+          }
+          if (url.includes('/rot-events')) {
+            return Promise.resolve(new Response('[]', { status: 200 }));
+          }
+          if (/\/api\/conversations\/[^/?]+$/.test(url)) {
+            return Promise.resolve(new Response(JSON.stringify(created), { status: 200 }));
+          }
+          if (url.includes('/api/approvals') || url.includes('/api/conversations')) {
+            return Promise.resolve(new Response('[]', { status: 200 }));
+          }
+          return Promise.resolve(
+            new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
+          );
+        }),
+      );
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={['/']}>
+            <Routes>
+              <Route path="/" element={<AppShell />} />
+              <Route path="/c/:id" element={<AppShell />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'New chat' }));
+
+      await waitFor(() => {
+        expect(createBody).toEqual({});
+      });
+      expect(calls).toContain('POST /api/conversations');
+    },
+    ASYNC_TIMEOUT_MS,
+  );
+
+  it(
     'renders the cross-thread approval badge + list and Open binds the thread (APRV-01/D-04)',
     async () => {
       // The approvals poll returns one pending interrupt in a background thread.

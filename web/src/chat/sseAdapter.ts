@@ -5,6 +5,8 @@ import {
   type AguiFrame,
   type ChatPart,
   type JSONPatchOp,
+  type ReasoningPart,
+  type TextPart,
   type ToolPart,
 } from './sseAdapter_frames';
 
@@ -100,12 +102,17 @@ type AssistantStatus = ThreadMessageLike['status'];
  */
 export interface AssistantTurnState {
   readonly id: string;
+  /** Ordered assistant parts exactly as they arrived on the AG-UI stream. */
+  readonly content: ChatPart[];
   text: string;
   textOpen: boolean;
   reasoning: string;
+  readonly textById: Map<string, number>;
+  readonly reasoningById: Map<string, number>;
   /** ordered tool parts, by first-seen toolCallId. */
   readonly toolOrder: string[];
   readonly tools: Map<string, ToolPart>;
+  readonly toolIndexById: Map<string, number>;
   usage?: TurnUsage;
   error?: string;
   status: AssistantStatus;
@@ -114,21 +121,93 @@ export interface AssistantTurnState {
 export function newAssistantTurn(id: string): AssistantTurnState {
   return {
     id,
+    content: [],
     text: '',
     textOpen: false,
     reasoning: '',
+    textById: new Map(),
+    reasoningById: new Map(),
     toolOrder: [],
     tools: new Map(),
+    toolIndexById: new Map(),
     status: { type: 'running' },
   };
 }
 
-function ensureTool(state: AssistantTurnState, toolCallId: string, toolName: string): ToolPart {
+function frameTimestamp(frame: AguiFrame): number | undefined {
+  const t = (frame as { readonly timestamp?: unknown }).timestamp;
+  return typeof t === 'number' ? t : undefined;
+}
+
+function ensureText(state: AssistantTurnState, messageId: string): TextPart {
+  const existingIndex = state.textById.get(messageId);
+  if (existingIndex !== undefined) {
+    const existing = state.content[existingIndex];
+    if (existing?.type === 'text') return existing;
+  }
+  const part: TextPart = { type: 'text', text: '' };
+  state.textById.set(messageId, state.content.length);
+  state.content.push(part);
+  return part;
+}
+
+function updateText(state: AssistantTurnState, messageId: string, text: string): void {
+  const part = ensureText(state, messageId);
+  const index = state.textById.get(messageId);
+  if (index === undefined) return;
+  state.content[index] = { ...part, text };
+}
+
+function ensureReasoning(state: AssistantTurnState, messageId: string): ReasoningPart {
+  const existingIndex = state.reasoningById.get(messageId);
+  if (existingIndex !== undefined) {
+    const existing = state.content[existingIndex];
+    if (existing?.type === 'reasoning') return existing;
+  }
+  const part: ReasoningPart = { type: 'reasoning', text: '' };
+  state.reasoningById.set(messageId, state.content.length);
+  state.content.push(part);
+  return part;
+}
+
+function updateReasoning(state: AssistantTurnState, messageId: string, text: string): void {
+  const part = ensureReasoning(state, messageId);
+  const index = state.reasoningById.get(messageId);
+  if (index === undefined) return;
+  state.content[index] = { ...part, text };
+}
+
+function writeTool(state: AssistantTurnState, part: ToolPart): ToolPart {
+  state.tools.set(part.toolCallId, part);
+  const index = state.toolIndexById.get(part.toolCallId);
+  if (index !== undefined) state.content[index] = part;
+  return part;
+}
+
+function ensureTool(
+  state: AssistantTurnState,
+  toolCallId: string,
+  toolName: string,
+  startedAt?: number,
+): ToolPart {
   const existing = state.tools.get(toolCallId);
-  if (existing) return existing;
-  const part: ToolPart = { type: 'tool-call', toolCallId, toolName, argsText: '' };
+  if (existing) {
+    if (toolName !== '' && existing.toolName === '') {
+      return writeTool(state, { ...existing, toolName });
+    }
+    return existing;
+  }
+  const part: ToolPart = {
+    type: 'tool-call',
+    toolCallId,
+    toolName,
+    argsText: '',
+    ...(startedAt !== undefined ? { startedAt } : {}),
+  };
   state.tools.set(toolCallId, part);
   state.toolOrder.push(toolCallId);
+  state.toolIndexById.set(toolCallId, state.content.length);
+  state.content.push(part);
   return part;
 }
 
@@ -143,25 +222,44 @@ function ensureTool(state: AssistantTurnState, toolCallId: string, toolName: str
 export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): AssistantTurnState {
   switch (frame.type) {
     case 'TEXT_MESSAGE_START':
+      ensureText(state, frame.messageId);
       state.textOpen = true;
       return state;
-    case 'TEXT_MESSAGE_CONTENT':
+    case 'TEXT_MESSAGE_CONTENT': {
+      const part = ensureText(state, frame.messageId);
+      updateText(state, frame.messageId, part.text + frame.delta);
       state.text += frame.delta;
       state.textOpen = true;
       return state;
+    }
     case 'TEXT_MESSAGE_END':
       state.textOpen = false;
       return state;
-    case 'REASONING_MESSAGE_CONTENT':
+    case 'REASONING_MESSAGE_START':
+      ensureReasoning(state, frame.messageId);
+      return state;
+    case 'REASONING_MESSAGE_CONTENT': {
+      const part = ensureReasoning(state, frame.messageId);
+      updateReasoning(state, frame.messageId, part.text + frame.delta);
       state.reasoning += frame.delta;
       return state;
+    }
+    case 'REASONING_MESSAGE_END':
+      return state;
     case 'TOOL_CALL_START':
-      ensureTool(state, frame.toolCallId, frame.toolCallName);
+      ensureTool(state, frame.toolCallId, frame.toolCallName, frameTimestamp(frame));
       return state;
     case 'TOOL_CALL_ARGS': {
       const part = state.tools.get(frame.toolCallId);
       if (part)
-        state.tools.set(frame.toolCallId, { ...part, argsText: part.argsText + frame.delta });
+        writeTool(state, { ...part, argsText: part.argsText + frame.delta });
+      return state;
+    }
+    case 'TOOL_CALL_END': {
+      const part = state.tools.get(frame.toolCallId);
+      const finishedAt = frameTimestamp(frame);
+      if (part && part.finishedAt === undefined && finishedAt !== undefined)
+        writeTool(state, { ...part, finishedAt });
       return state;
     }
     case 'TOOL_CALL_RESULT': {
@@ -172,7 +270,12 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
         frame.toolCallId,
         state.tools.get(frame.toolCallId)?.toolName ?? '',
       );
-      state.tools.set(frame.toolCallId, { ...part, result: frame.content });
+      const finishedAt = frameTimestamp(frame);
+      writeTool(state, {
+        ...part,
+        result: frame.content,
+        ...(finishedAt !== undefined ? { finishedAt } : {}),
+      });
       return state;
     }
     case 'STATE_DELTA': {
@@ -208,14 +311,13 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       if (frame.name === 'aura.display' && isDisplayPayload(frame.value)) {
         const id = frame.value.tool_call_id;
         const part = ensureTool(state, id, state.tools.get(id)?.toolName ?? '');
-        state.tools.set(id, { ...part, display: frame.value });
+        writeTool(state, { ...part, display: frame.value });
       }
       return state;
     }
     case 'RUN_STARTED':
     case 'REASONING_START':
     case 'REASONING_END':
-    case 'TOOL_CALL_END':
       return state;
   }
 }
@@ -232,18 +334,15 @@ export function messageParts(message: ThreadMessageLike): readonly ChatPart[] {
 
 /**
  * Materialise the accumulated turn into a ThreadMessageLike for the runtime.
- * Part order: reasoning (drawer-bound) → tool cards → text → error. An empty
- * turn still yields a (possibly empty) text part so the message renders.
+ * Part order preserves frame arrival order: reasoning spans, tool cards, and
+ * text appear exactly where the stream first introduced them. An empty turn still
+ * yields a (possibly empty) text part so the message renders.
  */
 export function toThreadMessage(state: AssistantTurnState): ThreadMessageLike {
-  const content: ChatPart[] = [];
-  if (state.reasoning.length > 0) content.push({ type: 'reasoning', text: state.reasoning });
-  for (const id of state.toolOrder) {
-    const part = state.tools.get(id);
-    if (part) content.push(part);
-  }
+  const content: ChatPart[] = [...state.content];
   if (state.text.length > 0 || content.length === 0) {
-    content.push({ type: 'text', text: state.text });
+    const hasText = content.some((part) => part.type === 'text');
+    if (!hasText) content.push({ type: 'text', text: state.text });
   }
   if (state.error !== undefined) {
     content.push({ type: 'text', text: state.error });

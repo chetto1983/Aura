@@ -179,8 +179,11 @@ func runScenario(t *testing.T, ctx context.Context, client llm.Client, cfg llm.C
 	if c.usage.PromptTokens > 0 {
 		m.cacheRatio = float64(c.usage.CachedTokens) / float64(c.usage.PromptTokens)
 	}
+	m.ttftMS = c.firstEventMS
 	m.firstByteMS = c.firstByteMS
+	m.toolLoopMS = toolLoopMS(c)
 	m.totalMS = c.totalMS
+	m.outputTPS = completionTPS(c.usage.CompletionTokens, c.firstByteMS, c.totalMS)
 	m.goroutineDelta = runtime.NumGoroutine() - gBaseline
 	usd, _ := llm.CostUSD(cfg.Prices, cfg.Model, c.usage.PromptTokens, c.usage.CompletionTokens, c.usage.Cost)
 	m.costUSD = usd
@@ -343,7 +346,7 @@ func runJudgeScoring(t *testing.T, ctx context.Context, client llm.Client, model
 	}
 	jctx, jcancel := context.WithTimeout(ctx, 90*time.Second)
 	defer jcancel()
-	v, err := runJudge(jctx, client, model, rubric, sc.prompts[len(sc.prompts)-1], c.prose)
+	v, err := runJudgeUser(jctx, client, model, rubric, judgeUserMessage(sc, c))
 	if err != nil {
 		m.notes = append(m.notes, "judge error: "+err.Error())
 		t.Logf("%s: judge error: %v", sc.id, err)

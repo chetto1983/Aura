@@ -49,6 +49,13 @@ function loadGolden(): GoldenFrames | null {
   return JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as GoldenFrames;
 }
 
+function isExpectedBrowserConsoleNoise(text: string): boolean {
+  return (
+    text === 'Viewport argument key "interactive-widget" not recognized and ignored.' ||
+    text.includes('/api/auth/config due to access control checks.')
+  );
+}
+
 let golden: GoldenFrames | null = null;
 
 test.beforeAll(async ({ request }) => {
@@ -130,6 +137,42 @@ function resumeTurnFrames(g: GoldenFrames): Record<string, unknown>[] {
   ];
 }
 
+function timelineTurnFrames(g: GoldenFrames): Record<string, unknown>[] {
+  return [
+    frame(g, 'RUN_STARTED'),
+    { ...frame(g, 'REASONING_START'), messageId: 'timeline-rsn-1' },
+    { ...frame(g, 'REASONING_MESSAGE_START'), messageId: 'timeline-rsn-1' },
+    {
+      ...frame(g, 'REASONING_MESSAGE_CONTENT'),
+      messageId: 'timeline-rsn-1',
+      delta: 'First timeline reasoning',
+    },
+    { ...frame(g, 'REASONING_MESSAGE_END'), messageId: 'timeline-rsn-1' },
+    { ...frame(g, 'REASONING_END'), messageId: 'timeline-rsn-1' },
+    {
+      ...frame(g, 'TOOL_CALL_START'),
+      toolCallId: 'timeline-call',
+      toolCallName: 'timeline_probe_tool',
+    },
+    { ...frame(g, 'TOOL_CALL_ARGS'), toolCallId: 'timeline-call', delta: '{"query":"latency"}' },
+    { ...frame(g, 'TOOL_CALL_END'), toolCallId: 'timeline-call' },
+    { ...frame(g, 'TOOL_CALL_RESULT'), toolCallId: 'timeline-call', content: 'probe ok' },
+    { ...frame(g, 'REASONING_START'), messageId: 'timeline-rsn-2' },
+    { ...frame(g, 'REASONING_MESSAGE_START'), messageId: 'timeline-rsn-2' },
+    {
+      ...frame(g, 'REASONING_MESSAGE_CONTENT'),
+      messageId: 'timeline-rsn-2',
+      delta: 'Second timeline reasoning',
+    },
+    { ...frame(g, 'REASONING_MESSAGE_END'), messageId: 'timeline-rsn-2' },
+    { ...frame(g, 'REASONING_END'), messageId: 'timeline-rsn-2' },
+    frame(g, 'TEXT_MESSAGE_START'),
+    { ...frame(g, 'TEXT_MESSAGE_CONTENT'), delta: 'Final timeline answer.' },
+    frame(g, 'TEXT_MESSAGE_END'),
+    frame(g, 'RUN_FINISHED(success)'),
+  ];
+}
+
 function sseResponse(route: Route, body: string) {
   return route.fulfill({
     status: 200,
@@ -140,6 +183,26 @@ function sseResponse(route: Route, body: string) {
 
 function messagesSnapshotBody(messages: readonly Record<string, unknown>[]): string {
   return JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages });
+}
+
+function conversationRecord(title: string): Record<string, unknown> {
+  return {
+    id: CONV_ID,
+    title,
+    status: 'active',
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_cached_tokens: 0,
+    total_cost_usd: 0,
+  };
+}
+
+function conversationBody(title: string): string {
+  return JSON.stringify(conversationRecord(title));
+}
+
+function conversationListBody(title: string): string {
+  return JSON.stringify([conversationRecord(title)]);
 }
 
 // installGoldenRoutes wires the deterministic golden replay over the served SPA: the
@@ -153,23 +216,26 @@ async function installGoldenRoutes(
   let pending = false; // flips true after the first turn (the ask_user interrupt is live)
   let resolved = false;
 
+  await page.route(`**/api/conversations/${CONV_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: conversationBody('E2E thread'),
+    }),
+  );
   await page.route('**/api/conversations*', (route) => {
     if (route.request().url().includes(`/api/conversations/${CONV_ID}`)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          id: CONV_ID,
-          title: 'E2E thread',
-          status: 'active',
-          total_input_tokens: 0,
-          total_output_tokens: 0,
-          total_cached_tokens: 0,
-          total_cost_usd: 0,
-        }),
+        body: conversationBody('E2E thread'),
       });
     }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: conversationListBody('E2E thread'),
+    });
   });
 
   await page.route('**/threads/*/messages', (route) =>
@@ -223,7 +289,97 @@ async function installGoldenRoutes(
   });
 }
 
+async function installTimelineRoutes(page: Page, g: GoldenFrames) {
+  await page.route(`**/api/conversations/${CONV_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: conversationBody('Timeline thread'),
+    }),
+  );
+  await page.route('**/api/conversations*', (route) => {
+    if (route.request().url().includes(`/api/conversations/${CONV_ID}`)) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: conversationBody('Timeline thread'),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: conversationListBody('Timeline thread'),
+    });
+  });
+
+  await page.route('**/threads/*/messages', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: messagesSnapshotBody([]),
+    }),
+  );
+  await page.route('**/api/conversations/*/rot-events', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
+  await page.route('**/api/approvals', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
+  await page.route('**/agent/run', (route) =>
+    sseResponse(route, sseFromFrames(timelineTurnFrames(g))),
+  );
+}
+
 test.describe('cockpit chat — core-value loop (E2E)', () => {
+  test('renders reasoning, tools, and answer in chronological stream order', async ({
+    page,
+  }, testInfo) => {
+    const g = golden;
+    if (g === null) throw new Error('golden fixture not loaded');
+    const consoleProblems: string[] = [];
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (msg.type() === 'error' && !isExpectedBrowserConsoleNoise(text)) {
+        consoleProblems.push(text);
+      }
+    });
+    page.on('pageerror', (err) => {
+      consoleProblems.push(err.message);
+    });
+
+    await installTimelineRoutes(page, g);
+    await gotoAuthenticated(page, `/c/${CONV_ID}`);
+
+    const composer = page.getByPlaceholder('Ask Aura');
+    await composer.fill('show the turn timeline');
+    await composer.press('Enter');
+
+    const labels = [
+      'First timeline reasoning',
+      'timeline_probe_tool',
+      'Second timeline reasoning',
+      'Final timeline answer.',
+    ] as const;
+    for (const label of labels) {
+      await expect(page.getByText(label).first()).toBeVisible({ timeout: 15000 });
+    }
+
+    const visibleText = await page.locator('body').innerText();
+    const [firstReasoning, tool, secondReasoning, answer] = labels.map((label) =>
+      visibleText.indexOf(label),
+    ) as [number, number, number, number];
+    expect([firstReasoning, tool, secondReasoning, answer].every((index) => index >= 0)).toBe(true);
+    expect(firstReasoning).toBeLessThan(tool);
+    expect(tool).toBeLessThan(secondReasoning);
+    expect(secondReasoning).toBeLessThan(answer);
+    expect(consoleProblems).toEqual([]);
+
+    await testInfo.attach('chat-timeline-order.png', {
+      body: await page.screenshot({ fullPage: false }),
+      contentType: 'image/png',
+    });
+  });
+
   test('opening an existing conversation renders persisted history', async ({ page }) => {
     const g = golden;
     if (g === null) throw new Error('golden fixture not loaded');

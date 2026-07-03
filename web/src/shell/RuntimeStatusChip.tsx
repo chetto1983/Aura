@@ -1,26 +1,45 @@
 import { useTranslation } from 'react-i18next';
 import { useRuntimeHealth } from '../health/useRuntimeHealth';
-import { Button } from '@/components/ui/button';
 
-export function RuntimeStatusChip({ onOpen }: { readonly onOpen: () => void }) {
+type Tone = 'success' | 'warning' | 'danger';
+
+function toneClass(tone: Tone): string {
+  if (tone === 'success') return 'bg-success';
+  if (tone === 'danger') return 'bg-danger';
+  return 'bg-warning';
+}
+
+export function RuntimeStatusChip() {
   const { t } = useTranslation();
-  const { readyz, readyzError } = useRuntimeHealth();
-  const ready = !readyzError && readyz?.status === 200 && readyz.body.ready;
-  const label = ready ? t('health.status.ready') : t('health.status.degraded');
+  const { readyz, readyzError, isPending } = useRuntimeHealth();
+  const hasResult = readyz !== undefined || readyzError;
+  const label = !hasResult
+    ? t('health.status.unknown')
+    : readyzError || !readyz
+      ? t('health.status.unavailable')
+      : readyz.status === 200 && readyz.body.ready
+        ? t('health.status.ready')
+        : t('health.status.degraded');
+  const tone: Tone = !hasResult
+    ? 'warning'
+    : readyzError || !readyz
+      ? 'danger'
+      : readyz.status === 200 && readyz.body.ready
+        ? 'success'
+        : 'warning';
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      onClick={onOpen}
-      aria-label={t('shell.openRuntime')}
-      className="rounded-[var(--radius-pill)] bg-surface-2 px-3 text-xs font-medium text-text-muted hover:border-border-strong hover:text-text lg:hidden"
+    <div
+      role="status"
+      aria-busy={isPending}
+      aria-label={`${t('health.title')}: ${label}`}
+      className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--radius-pill)] border border-border bg-surface-2 px-2.5 text-xs font-medium text-text-muted sm:px-3"
     >
       <span
         aria-hidden="true"
-        className={`h-2 w-2 rounded-sm ${ready ? 'bg-success' : 'bg-warning'}`}
+        className={`h-2 w-2 shrink-0 rounded-sm ${toneClass(tone)}`}
       />
       <span>{label}</span>
-    </Button>
+    </div>
   );
 }

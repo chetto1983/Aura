@@ -22,7 +22,7 @@ describe('Button', () => {
 
   it.each([
     ['sm', 'min-h-[44px]'],
-    ['icon', 'h-11'],
+    ['icon', 'h-[44px]'],
   ] as const)('renders the %s size at the touch floor', (size, marker) => {
     render(<Button size={size}>i</Button>);
     expect(screen.getByRole('button').className).toContain(marker);
@@ -31,8 +31,8 @@ describe('Button', () => {
   it('renders the icon size at 44×44', () => {
     render(<Button size="icon">i</Button>);
     const cls = screen.getByRole('button').className;
-    expect(cls).toContain('h-11');
-    expect(cls).toContain('w-11');
+    expect(cls).toContain('h-[44px]');
+    expect(cls).toContain('w-[44px]');
   });
 
   it('renders as a child element when asChild', () => {

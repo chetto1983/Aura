@@ -36,7 +36,7 @@ export function ThemeSwitcher({ className = '' }: { readonly className?: string 
           onClick={() => {
             choose(theme);
           }}
-          className="h-7 min-h-7 w-8 rounded-[calc(var(--radius-md)-2px)] text-text-muted aria-pressed:bg-accent aria-pressed:text-on-accent hover:text-text"
+          className="h-[32px] min-h-[32px] w-[32px] rounded-[calc(var(--radius-md)-2px)] text-text-muted aria-pressed:bg-accent aria-pressed:text-on-accent hover:text-text"
         >
           {theme === 'light' ? (
             <Sun data-icon="icon" aria-hidden="true" focusable="false" />

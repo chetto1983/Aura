@@ -5,7 +5,12 @@ import '@react-sigma/core/lib/style.css';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import { useTranslation } from 'react-i18next';
 import type { ClientEdge, ClientNode } from './types';
-import { pinnedEdgeReducer, pinnedNodeReducer } from './SigmaCanvas_reducers';
+import {
+  compactCanvasLabel,
+  pinnedEdgeReducer,
+  pinnedNodeReducer,
+  shouldRenderAmbientLabels,
+} from './SigmaCanvas_reducers';
 
 // SigmaCanvas is the ONLY module in the cockpit that imports the WebGL renderer stack
 // (sigma / @react-sigma/core / graphology / graphology-layout-forceatlas2). jsdom has no
@@ -46,9 +51,11 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
     const dataKey = layoutDataKey(nodes, edges);
     const needsLayout = dataKey !== lastLayoutKey;
     const graph = new Graph({ multi: true });
+    const renderAmbientLabels = shouldRenderAmbientLabels(nodes.length, edges.length);
 
     for (const node of nodes) {
       const cached = POSITION_CACHE.get(node.id);
+      const canvasLabel = compactCanvasLabel(node.caption);
       graph.addNode(node.id, {
         x: cached?.x ?? Math.random() * 100,
         y: cached?.y ?? Math.random() * 100,
@@ -56,7 +63,8 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
         // degreeToSize keeps a small DOM-safe range; the renderer wants chunkier nodes).
         size: Math.max(7, node.size * 1.8),
         color: node.color,
-        label: node.caption,
+        label: renderAmbientLabels ? canvasLabel : null,
+        canvasLabel,
       });
     }
     for (const edge of edges) {

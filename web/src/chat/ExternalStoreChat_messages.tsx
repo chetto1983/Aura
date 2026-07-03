@@ -203,11 +203,17 @@ function AnswerSources() {
  */
 const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result, isError }) => {
   const { openSources } = useSourceExplorer();
-  const part = useAuiState((s) => s.part) as { display?: unknown };
+  const part = useAuiState((s) => s.part) as {
+    display?: unknown;
+    startedAt?: unknown;
+    finishedAt?: unknown;
+  };
   const display: DisplayPayload | undefined = isDisplayPayload(part.display)
     ? part.display
     : undefined;
   const resultText = typeof result === 'string' ? result : undefined;
+  const startedAt = typeof part.startedAt === 'number' ? part.startedAt : undefined;
+  const finishedAt = typeof part.finishedAt === 'number' ? part.finishedAt : undefined;
 
   if (display !== undefined) {
     const onOpenSource = (refId: string) => {
@@ -230,6 +236,8 @@ const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result
       argsText={argsText}
       {...(resultText !== undefined ? { result: resultText } : {})}
       {...(isError !== undefined ? { isError } : {})}
+      {...(startedAt !== undefined ? { startedAt } : {})}
+      {...(finishedAt !== undefined ? { finishedAt } : {})}
     />
   );
 };

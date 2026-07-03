@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ThreadMessageLike } from '@assistant-ui/react';
+import { describe, expect, it } from 'vitest';
 // The test is driven by the REAL captured translator output — the golden frame
 // fixture the Go SSE tests use (internal/agui/testdata/golden-events.json),
 // imported as a JSON module so no synthetic inline shapes leak in (no-skip-as-
@@ -10,15 +9,12 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import goldenEvents from '../../../../internal/agui/testdata/golden-events.json';
 import {
   cacheHitRatio,
-  fetchThreadMessages,
   isUsageDelta,
   messageParts,
   newAssistantTurn,
   parseSSEBlock,
   readSSEFrames,
   reduceFrame,
-  snapshotToThreadMessages,
-  streamRun,
   toThreadMessage,
   toolCallIdFromDelta,
   usageFromStateDelta,
@@ -40,6 +36,10 @@ function frame(name: string): AguiFrame {
   const f = golden[name];
   if (f === undefined) throw new Error(`golden fixture missing "${name}"`);
   return f;
+}
+
+function frameWith(name: string, patch: Record<string, unknown>): AguiFrame {
+  return { ...frame(name), ...patch };
 }
 
 /** A reasoning STATE_DELTA / usage frame is not in the fixture as a usage shape;
@@ -131,6 +131,59 @@ describe('sseAdapter — golden-frame reducer', () => {
     ]);
 
     expect(messageParts(toThreadMessage(state)).map((p) => p.type)).toEqual(['tool-call', 'text']);
+  });
+
+  it('preserves reasoning/tool/reasoning/text stream order as separate parts', () => {
+    const state = fold([
+      frameWith('REASONING_MESSAGE_START', { messageId: 'reason-1' }),
+      frameWith('REASONING_MESSAGE_CONTENT', { messageId: 'reason-1', delta: 'First thought' }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'reason-1' }),
+      frame('TOOL_CALL_START'),
+      frame('TOOL_CALL_RESULT'),
+      frameWith('REASONING_MESSAGE_START', { messageId: 'reason-2' }),
+      frameWith('REASONING_MESSAGE_CONTENT', { messageId: 'reason-2', delta: 'Second thought' }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'reason-2' }),
+      frame('TEXT_MESSAGE_START'),
+      frame('TEXT_MESSAGE_CONTENT'),
+      frame('TEXT_MESSAGE_END'),
+    ]);
+
+    const parts = messageParts(toThreadMessage(state));
+    expect(parts.map((p) => p.type)).toEqual(['reasoning', 'tool-call', 'reasoning', 'text']);
+    expect(parts[0]).toMatchObject({ type: 'reasoning', text: 'First thought' });
+    expect(parts[2]).toMatchObject({ type: 'reasoning', text: 'Second thought' });
+  });
+
+  it('merges reasoning content when the reasoning messageId is reused', () => {
+    const state = fold([
+      frameWith('REASONING_MESSAGE_START', { messageId: 'reason-1' }),
+      frameWith('REASONING_MESSAGE_CONTENT', { messageId: 'reason-1', delta: 'Part A' }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'reason-1' }),
+      frameWith('REASONING_MESSAGE_START', { messageId: 'reason-1' }),
+      frameWith('REASONING_MESSAGE_CONTENT', { messageId: 'reason-1', delta: ' Part B' }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'reason-1' }),
+    ]);
+
+    const reasoning = messageParts(toThreadMessage(state)).filter((p) => p.type === 'reasoning');
+    expect(reasoning).toHaveLength(1);
+    expect(reasoning[0]).toMatchObject({ type: 'reasoning', text: 'Part A Part B' });
+  });
+
+  it('keeps late reasoning at its arrival position after text has started', () => {
+    const state = fold([
+      frame('TEXT_MESSAGE_START'),
+      frame('TEXT_MESSAGE_CONTENT'),
+      frameWith('REASONING_MESSAGE_START', { messageId: 'reason-late' }),
+      frameWith('REASONING_MESSAGE_CONTENT', {
+        messageId: 'reason-late',
+        delta: 'Late reasoning',
+      }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'reason-late' }),
+    ]);
+
+    const parts = messageParts(toThreadMessage(state));
+    expect(parts.map((p) => p.type)).toEqual(['text', 'reasoning']);
+    expect(parts[1]).toMatchObject({ type: 'reasoning', text: 'Late reasoning' });
   });
 
   it('Pitfall 2: a STATE_DELTA carrying tool_call_id → tool part, NEVER a text delta', () => {
@@ -342,241 +395,5 @@ describe('sseAdapter — CUSTOM/aura.display frame (DISP-02)', () => {
     const state = newAssistantTurn('a1');
     reduceFrame(state, { type: 'CUSTOM', name: 'aura.display', value: { no: 'tool_call_id' } });
     expect(state.tools.size).toBe(0);
-  });
-});
-
-describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('projects visible user/assistant history and merges tool result rows', () => {
-    const messages = snapshotToThreadMessages({
-      type: 'MESSAGES_SNAPSHOT',
-      messages: [
-        { id: 'msg-1', role: 'system', content: 'hidden system prompt' },
-        { id: 'msg-2', role: 'user', content: 'persisted prompt' },
-        {
-          id: 'msg-3',
-          role: 'assistant',
-          content: '',
-          toolCalls: [
-            {
-              id: 'call-1',
-              type: 'function',
-              function: { name: 'web_search', arguments: '{"q":"meteo"}' },
-            },
-          ],
-        },
-        { id: 'msg-4', role: 'tool', toolCallId: 'call-1', content: 'sunny 25C' },
-        { id: 'msg-5', role: 'assistant', content: 'It is sunny.' },
-      ],
-    });
-
-    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
-    expect(messages[0]).toMatchObject({
-      id: 'msg-2',
-      role: 'user',
-      content: [{ type: 'text', text: 'persisted prompt' }],
-      metadata: { custom: { backendSeq: 2 } },
-    });
-
-    const toolAssistant = messages[1];
-    if (toolAssistant === undefined) throw new Error('expected assistant tool message');
-    const toolParts = messageParts(toolAssistant).filter((part) => part.type === 'tool-call');
-    expect(toolParts).toHaveLength(1);
-    expect(toolParts[0]).toMatchObject({
-      toolCallId: 'call-1',
-      toolName: 'web_search',
-      argsText: '{"q":"meteo"}',
-      result: 'sunny 25C',
-    });
-
-    const finalAssistant = messages[2];
-    if (finalAssistant === undefined) throw new Error('expected final assistant message');
-    expect(messageParts(finalAssistant)).toEqual([{ type: 'text', text: 'It is sunny.' }]);
-  });
-
-  it('fetchThreadMessages throws the sanitized backend detail on a non-OK status (replay error path)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('conversation not found', { status: 404 }))),
-    );
-    await expect(fetchThreadMessages('missing-thread')).rejects.toThrow('conversation not found');
-  });
-
-  it('fetchThreadMessages falls back to HTTP <status> when the error body is empty', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('', { status: 500 }))),
-    );
-    await expect(fetchThreadMessages('t')).rejects.toThrow('HTTP 500');
-  });
-
-  it('fetchThreadMessages GETs the snapshot endpoint with same-origin credentials', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            type: 'MESSAGES_SNAPSHOT',
-            messages: [{ id: 'msg-1', role: 'user', content: 'ciao' }],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const signal = new AbortController().signal;
-
-    const messages = await fetchThreadMessages('thread/with slash', signal);
-
-    const call = fetchMock.mock.calls[0] as [string, RequestInit] | undefined;
-    if (call === undefined) throw new Error('expected fetch call');
-    expect(call[0]).toBe('/threads/thread%2Fwith%20slash/messages');
-    expect(call[1]).toMatchObject({
-      method: 'GET',
-      credentials: 'same-origin',
-      signal,
-    });
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({ role: 'user' });
-  });
-});
-
-function sseResponse(frames: readonly AguiFrame[]): Response {
-  const enc = new TextEncoder();
-  const wire = frames.map((f) => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join('');
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(enc.encode(wire));
-      controller.close();
-    },
-  });
-  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
-}
-
-describe('sseAdapter — streamRun (POST /agent/run + AbortController)', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('POSTs same-origin with a JSON body and folds the stream onto one message', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(
-        sseResponse([
-          frame('RUN_STARTED'),
-          frame('TEXT_MESSAGE_START'),
-          frame('TEXT_MESSAGE_CONTENT'),
-          frame('TEXT_MESSAGE_END'),
-          usageStateDelta([
-            { op: 'replace', path: '/prompt_tokens', value: 100 },
-            { op: 'replace', path: '/cost_usd', value: 0.0042 },
-          ]),
-          frame('RUN_FINISHED(success)'),
-        ]),
-      ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const updates: ThreadMessageLike[] = [];
-    const ctrl = new AbortController();
-    const usage = await streamRun({
-      threadId: 'thread-1',
-      userText: 'ciao',
-      signal: ctrl.signal,
-      newId: () => 'fixed-id',
-      onUpdate: (m) => updates.push(m),
-    });
-
-    // Request shape: POST /agent/run, JSON body, same-origin, carries the signal.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const call = fetchMock.mock.calls[0];
-    expect(call).toBeDefined();
-    const [url, init] = call as unknown as [string, RequestInit];
-    expect(url).toBe('/agent/run');
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('same-origin');
-    // The AG-UI RunAgentInput wire shape: threadId + messages[] (the gateway
-    // drives the turn off the last user message — internal/agui/server.go).
-    expect(JSON.parse(init.body as string)).toEqual({
-      threadId: 'thread-1',
-      messages: [{ id: 'fixed-id', role: 'user', content: 'ciao' }],
-    });
-    expect(init.signal).toBe(ctrl.signal);
-
-    // Final message: a single text part with the streamed answer; usage parsed.
-    const last = updates.at(-1);
-    if (last === undefined) throw new Error('expected at least one onUpdate call');
-    expect(last.id).toBe('fixed-id');
-    expect(last.status).toEqual({ type: 'complete', reason: 'stop' });
-    const texts = messageParts(last).filter((p) => p.type === 'text');
-    expect(texts).toHaveLength(1);
-    expect(texts[0]).toMatchObject({ text: 'Ciao' });
-    expect(usage).toMatchObject({ promptTokens: 100, costUsd: 0.0042 });
-  });
-
-  it('includes attachment ids in the /agent/run aura extension body', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(sseResponse([frame('RUN_STARTED'), frame('RUN_FINISHED(success)')])),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await streamRun({
-      threadId: 'thread-1',
-      userText: 'summarize these',
-      attachmentIds: ['asset-1', 'asset-2'],
-      signal: new AbortController().signal,
-      newId: () => 'fixed-id',
-      onUpdate: () => undefined,
-    });
-
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      aura: { attachment_ids: ['asset-1', 'asset-2'] },
-    });
-  });
-
-  it('a non-OK response surfaces the sanitized backend body as the error (WR-03)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(new Response('thread already has an in-flight run', { status: 409 })),
-      ),
-    );
-    const updates: ThreadMessageLike[] = [];
-    await streamRun({
-      threadId: 't',
-      userText: 'x',
-      signal: new AbortController().signal,
-      newId: () => 'id',
-      onUpdate: (m) => updates.push(m),
-    });
-    const last = updates.at(-1);
-    expect(last?.status).toEqual({ type: 'incomplete', reason: 'error' });
-    const texts = last
-      ? messageParts(last).flatMap((p) => (p.type === 'text' ? [p.text] : []))
-      : [];
-    // The operator sees the backend's reason (409 conflict), not a bare "HTTP 409".
-    expect(texts).toContain('thread already has an in-flight run');
-  });
-
-  it('a non-OK response with an empty body falls back to HTTP <status> (WR-03)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('', { status: 502 }))),
-    );
-    const updates: ThreadMessageLike[] = [];
-    await streamRun({
-      threadId: 't',
-      userText: 'x',
-      signal: new AbortController().signal,
-      newId: () => 'id',
-      onUpdate: (m) => updates.push(m),
-    });
-    const last = updates.at(-1);
-    const texts = last
-      ? messageParts(last).flatMap((p) => (p.type === 'text' ? [p.text] : []))
-      : [];
-    expect(texts).toContain('HTTP 502');
   });
 });

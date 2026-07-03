@@ -1,6 +1,6 @@
 // Package telegram — this file is the status pane consumer (msg #1, status-pane-B).
-// It maintains a single message edited IN PLACE as the turn progresses: a tool list
-// (🟡 in-flight → ✅/❌ on result), a 💭 reasoning line, and a running-cost footer.
+// It maintains a single message edited IN PLACE as the turn progresses: an ordered
+// activity list (reasoning/tool/answer lifecycle) and a running-cost footer.
 // Edits coalesce to the status throttle (a coalescing editor) so a fast event stream
 // does not exceed the Bot-API edit rate.
 package telegram
@@ -42,11 +42,20 @@ const hitlPauseToolName = "ask_user"
 // It is control text, not user-facing reasoning, so the live pane suppresses it.
 const redactedReasoningSentinel = "[reasoning redacted]"
 
-// toolState tracks one tool call's lifecycle in the pane (ordered by first-seen).
+// toolState tracks one tool call's lifecycle in the pane.
 type toolState struct {
-	name   string
-	glyph  string // running → ok/fail
-	failed bool
+	name     string
+	glyph    string // running → ok/fail
+	failed   bool
+	activity *activityState
+}
+
+// activityState is one chronological status-pane row. Rows are appended on first
+// sight and then updated in place so the pane preserves the turn's event order.
+type activityState struct {
+	glyph string
+	label string
+	state string
 }
 
 // statusPane manages msg #1 for one turn: opened on RUN_STARTED, edited in place as
@@ -63,14 +72,17 @@ type statusPane struct {
 	tools    []*toolState
 	byID     map[string]*toolState
 	hidden   map[string]struct{} // tool_call ids suppressed from the pane (HITL ask_user)
+	activity []*activityState
+	byAct    map[string]*activityState
+	answer   *activityState
 	thinking string
 	cost     string
 	failed   bool
 	done     bool
 
-	// showReasoning surfaces the live CoT in the 💭 line via fifo (a rolling rune-capped
+	// showReasoning surfaces the live CoT in the 💭 block via fifo (a rolling rune-capped
 	// window); started stamps RUN_STARTED for the elapsed-time header. When showReasoning
-	// is false the pane keeps the redacted lifecycle label and fifo stays empty.
+	// is false the activity list keeps the redacted lifecycle rows and fifo stays empty.
 	// fifo accumulates the whole turn's reasoning across all spans (spans separated by
 	// " · "); it is reset only on RunFinished so the user can read thoughts while tools run.
 	showReasoning bool
@@ -97,14 +109,16 @@ func newStatusPane(bot botSender, to tele.Recipient, throttle time.Duration, sho
 		sleep:         time.Sleep,
 		byID:          make(map[string]*toolState),
 		hidden:        make(map[string]struct{}),
+		byAct:         make(map[string]*activityState),
 		showReasoning: showReasoning,
 		fifo:          reasoningfifo.New(fifoRunes),
 	}
 }
 
 // consume drains the status subscriber channel, updating the pane per event family
-// (RUN_STARTED open; TOOL_CALL_* tool list; REASONING_* 💭; STATE_DELTA cost footer;
-// RUN_FINISHED/RUN_ERROR finalize). The channel is closed by the Fanout producer.
+// (RUN_STARTED open; TOOL_CALL_*/REASONING_*/TEXT_MESSAGE_* activity rows;
+// STATE_DELTA cost footer; RUN_FINISHED/RUN_ERROR finalize). The channel is closed
+// by the Fanout producer.
 func (p *statusPane) consume(ctx context.Context, ch <-chan events.Event) {
 	for ev := range ch {
 		if ctx.Err() != nil {
@@ -132,9 +146,14 @@ func (p *statusPane) handle(ev events.Event) {
 		// END without a RESULT (rare) still resolves the spinner to OK.
 		if ts, ok := p.byID[e.ToolCallID]; ok && ts.glyph == glyphRunning {
 			ts.glyph = glyphOK
+			if ts.activity != nil {
+				ts.activity.glyph = glyphOK
+				ts.activity.state = "completato"
+			}
 			p.dirty = true
 		}
 	case *events.ReasoningStartEvent:
+		p.startActivity("reason:"+e.MessageID, glyphThink, "Ragionamento", "in corso")
 		// Accumulate across spans: don't reset. If a prior span already pushed content
 		// into the window, insert a visible separator so spans don't run together.
 		// " · " uses non-whitespace glyphs so collapseWhitespace doesn't eat it.
@@ -154,6 +173,7 @@ func (p *statusPane) handle(ev events.Event) {
 			"chars":      reasoningtrace.RuneLen(e.Delta),
 			"redacted":   !p.showReasoning,
 		})
+		p.startActivity("reason:"+e.MessageID, glyphThink, "Ragionamento", "in corso")
 		if p.thinking == "" {
 			p.thinking = "in corso"
 		}
@@ -162,7 +182,14 @@ func (p *statusPane) handle(ev events.Event) {
 		// Span ended — keep the FIFO content so the user can read the reasoning while
 		// the turn continues (e.g. tools run between spans). Clear happens on RunFinished.
 		p.thinking = "completato"
+		p.updateActivity("reason:"+e.MessageID, glyphThink, "Ragionamento", "completato")
 		p.dirty = true
+	case *events.TextMessageStartEvent:
+		p.startAnswer()
+	case *events.TextMessageContentEvent:
+		p.startAnswer()
+	case *events.TextMessageEndEvent:
+		p.finishAnswer()
 	case *events.StateDeltaEvent:
 		p.applyCost(e.Delta)
 	case *events.RunErrorEvent:
@@ -173,6 +200,7 @@ func (p *statusPane) handle(ev events.Event) {
 		// Turn done: clear the live reasoning window so the final pane always shows
 		// "completato" (the safe label) rather than frozen raw thoughts. msg #2 carries
 		// the actual answer; the status pane is just a lifecycle indicator from here.
+		p.finishAnswer()
 		p.done = true
 		p.fifo.Reset()
 		p.dirty = true
@@ -190,7 +218,8 @@ func (p *statusPane) startTool(id, name string) {
 	if _, ok := p.byID[id]; ok {
 		return
 	}
-	ts := &toolState{name: name, glyph: glyphRunning}
+	activity := p.startActivity("tool:"+id, glyphRunning, name, "in corso")
+	ts := &toolState{name: name, glyph: glyphRunning, activity: activity}
 	p.byID[id] = ts
 	p.tools = append(p.tools, ts)
 	p.dirty = true
@@ -205,16 +234,72 @@ func (p *statusPane) finishTool(id, preview string) {
 	ts, ok := p.byID[id]
 	if !ok {
 		// A RESULT without a START (preview-only) still appears as a resolved row.
-		ts = &toolState{name: id, glyph: glyphRunning}
+		activity := p.startActivity("tool:"+id, glyphRunning, id, "in corso")
+		ts = &toolState{name: id, glyph: glyphRunning, activity: activity}
 		p.byID[id] = ts
 		p.tools = append(p.tools, ts)
 	}
 	if looksLikeToolError(preview) {
 		ts.glyph = glyphFail
 		ts.failed = true
+		if ts.activity != nil {
+			ts.activity.glyph = glyphFail
+			ts.activity.state = "errore"
+		}
 	} else {
 		ts.glyph = glyphOK
+		if ts.activity != nil {
+			ts.activity.glyph = glyphOK
+			ts.activity.state = "completato"
+		}
 	}
+	p.dirty = true
+}
+
+func (p *statusPane) startActivity(key, glyph, label, state string) *activityState {
+	if act, ok := p.byAct[key]; ok {
+		if glyph != "" {
+			act.glyph = glyph
+		}
+		if label != "" {
+			act.label = label
+		}
+		if state != "" {
+			act.state = state
+		}
+		p.dirty = true
+		return act
+	}
+	act := &activityState{glyph: glyph, label: label, state: state}
+	p.byAct[key] = act
+	p.activity = append(p.activity, act)
+	p.dirty = true
+	return act
+}
+
+func (p *statusPane) updateActivity(key, glyph, label, state string) {
+	p.startActivity(key, glyph, label, state)
+}
+
+func (p *statusPane) startAnswer() {
+	if p.answer == nil {
+		p.answer = p.startActivity("answer", glyphRunning, "Risposta", "in scrittura")
+		return
+	}
+	if p.answer.glyph == glyphOK {
+		return
+	}
+	p.answer.glyph = glyphRunning
+	p.answer.state = "in scrittura"
+	p.dirty = true
+}
+
+func (p *statusPane) finishAnswer() {
+	if p.answer == nil {
+		return
+	}
+	p.answer.glyph = glyphOK
+	p.answer.state = "completata"
 	p.dirty = true
 }
 
@@ -310,9 +395,10 @@ func (p *statusPane) render(_ context.Context, final bool) {
 	p.dirty = false
 }
 
-// text renders the pane body: a status header, the tool list, an optional 💭
-// reasoning line, and an optional running-cost footer. Plain text (no MarkdownV2) —
-// the status pane uses glyphs, not entities, so it never risks a parse-entity 400.
+// text renders the pane body: a status header, chronological activity rows, an
+// optional live-reasoning block, and an optional running-cost footer. Plain text
+// (no MarkdownV2) — the status pane uses glyphs, not entities, so it never risks a
+// parse-entity 400.
 func (p *statusPane) text() string {
 	base := p.baseText()
 	cost := p.costText()
@@ -322,11 +408,10 @@ func (p *statusPane) text() string {
 	return base + p.reasoningSection(base, cost) + cost
 }
 
-// reasoningSection renders the 💭 block within the Telegram budget left after the
-// base text and cost footer. When live CoT is enabled and reasoning is in flight it
-// shows the rolling FIFO window (tail-keep, newest thought visible) under a timed
-// header; otherwise the redacted "in corso"/"completato" lifecycle label under the
-// plain header (byte-identical to the pre-CoT default). Empty when nothing to show.
+// reasoningSection renders the optional live 💭 block within the Telegram budget
+// left after the base text and cost footer. The safe redacted lifecycle always lives
+// in the chronological activity rows, so this block is empty unless live CoT is
+// explicitly enabled and currently has displayable content.
 func (p *statusPane) reasoningSection(base, cost string) string {
 	display, header := p.reasoningContent()
 	if display == "" {
@@ -339,18 +424,13 @@ func (p *statusPane) reasoningSection(base, cost string) string {
 	return header + capRunesTail(display, budget)
 }
 
-// reasoningContent picks the 💭 block content + header. With live CoT enabled and a
-// non-empty in-flight window it returns the collapsed rolling text + a timed header;
-// otherwise the safe lifecycle label + the plain header. The window is suppressed once
-// the run is done so the final pane always reads "completato", never a frozen thought.
+// reasoningContent picks the live 💭 block content + header. The window is
+// suppressed once the run is done so the final pane never freezes raw thoughts.
 func (p *statusPane) reasoningContent() (display, header string) {
 	if p.showReasoning && !p.done {
 		if window := collapseWhitespace(p.fifo.String()); window != "" {
 			return window, "\n" + glyphThink + " Ragionamento · " + p.elapsedText() + ":\n"
 		}
-	}
-	if label := safeReasoningState(p.thinking); label != "" {
-		return label, "\n" + glyphThink + " Ragionamento:\n"
 	}
 	return "", ""
 }
@@ -376,11 +456,14 @@ func (p *statusPane) baseText() string {
 	default:
 		b.WriteString("\nStato: in corso")
 	}
-	if len(p.tools) > 0 {
-		b.WriteString("\nStrumenti:")
-		for _, ts := range p.tools {
+	if len(p.activity) > 0 {
+		b.WriteString("\nSequenza:")
+		for _, act := range p.activity {
 			b.WriteString("\n")
-			b.WriteString(ts.glyph + " " + ts.name)
+			b.WriteString(act.glyph + " " + act.label)
+			if act.state != "" {
+				b.WriteString(" - " + act.state)
+			}
 		}
 	}
 	return b.String()
@@ -412,20 +495,6 @@ func (p *statusPane) markup() *tele.ReplyMarkup {
 func looksLikeToolError(preview string) bool {
 	lp := strings.ToLower(strings.TrimSpace(preview))
 	return strings.HasPrefix(lp, "error") || strings.HasPrefix(lp, "❌") || strings.Contains(lp, "\"error\"")
-}
-
-// safeReasoningState maps the internal thinking marker to the redacted lifecycle
-// label shown when live CoT is off — only the two known states surface, never raw
-// provider reasoning.
-func safeReasoningState(s string) string {
-	switch strings.TrimSpace(s) {
-	case "in corso":
-		return "in corso"
-	case "completato":
-		return "completato"
-	default:
-		return ""
-	}
 }
 
 // collapseWhitespace squeezes runs of whitespace to single spaces so a streamed

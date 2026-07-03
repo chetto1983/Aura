@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import type { GraphResult, GraphSchema } from '../types';
 
@@ -59,11 +59,24 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     render(<GraphExplorer threadId="thread-123" />);
 
     // The empty seed result triggers the schema-overview empty-state (never a blank canvas).
-    await waitFor(() => {
-      expect(screen.getByText('No evidence graph yet')).toBeTruthy();
-    });
+    expect(await screen.findByRole('region', { name: 'Evidence readiness' })).toBeTruthy();
     expect(postGraphQuery).toHaveBeenCalled();
     expect(fetchGraphSchema).toHaveBeenCalled();
+  });
+
+  it('renders an evidence readiness board instead of an empty canvas', async () => {
+    postGraphQuery.mockResolvedValue(EMPTY_RESULT);
+    fetchGraphSchema.mockResolvedValue(SCHEMA);
+
+    render(<GraphExplorer threadId="thread-123" />);
+
+    const board = await screen.findByRole('region', { name: 'Evidence readiness' });
+    expect(board.textContent).toContain('Schema online');
+    expect(board.textContent).toContain('2 node types');
+    expect(board.textContent).toContain('1 connection type');
+    expect(board.textContent).toContain('Entity');
+    expect(board.textContent).toContain('MENTIONS');
+    expect(within(board).getByRole('button', { name: 'Explore this conversation' })).toBeTruthy();
   });
 
   it('renders an auth-error state on a 401', async () => {
@@ -91,13 +104,18 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:2:1');
     });
-    expect(screen.getByTestId('graph-workspace').className).toContain('graph-workspace');
-    expect(screen.getByTestId('graph-workspace').parentElement?.className).toContain(
+    const workspace = screen.getByTestId('graph-workspace');
+    expect(workspace.className).toContain('graph-workspace');
+    expect(workspace.className).toContain('overflow-hidden');
+    expect(workspace.parentElement?.className).toContain(
       'graph-workspace-container',
     );
-    expect(screen.getByTestId('graph-workspace').className).toContain(
+    expect(workspace.className).toContain(
       'lg:grid-cols-[18rem_minmax(0,1fr)]',
     );
+    const canvas = workspace.querySelector('.graph-workspace__canvas');
+    expect(canvas?.className).toContain('min-h-0');
+    expect(canvas?.className).not.toContain('min-h-[46svh]');
     expect(screen.getByLabelText('Select a node').className).toContain('hidden');
     expect(screen.getByLabelText('Select a node').className).not.toContain('lg:block');
     // The schema-overview fallback was NOT taken (we had a real result).
@@ -153,9 +171,48 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     // desktop seed panel) — both drive the same onSeed path; click the first.
     const [seedButton] = screen.getAllByRole('button', { name: 'Explore this conversation' });
     if (seedButton === undefined) throw new Error('seed CTA not rendered');
+    expect(seedButton.className).toContain('min-h-[44px]');
+    expect(screen.getByRole('button', { name: 'Node types' }).className).toContain('min-h-[44px]');
     fireEvent.click(seedButton);
     await waitFor(() => {
       expect(postGraphQuery.mock.calls.length).toBeGreaterThan(calls);
+    });
+  });
+
+  it('clicking a left-panel label filter immediately re-runs the graph query', async () => {
+    postGraphQuery.mockResolvedValue(POPULATED_RESULT);
+
+    render(<GraphExplorer threadId="thread-123" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+    });
+
+    const calls = postGraphQuery.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Document' }));
+
+    await waitFor(() => {
+      expect(postGraphQuery.mock.calls.length).toBeGreaterThan(calls);
+    });
+    expect(postGraphQuery.mock.calls.at(-1)?.[0]).toMatchObject({
+      labels: ['Document'],
+      session: 'thread-123',
+    });
+
+    const callsAfterLabel = postGraphQuery.mock.calls.length;
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Document' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'MENTIONS' }));
+
+    await waitFor(() => {
+      expect(postGraphQuery.mock.calls.length).toBeGreaterThan(callsAfterLabel);
+    });
+    expect(postGraphQuery.mock.calls.at(-1)?.[0]).toMatchObject({
+      labels: ['Document'],
+      rel_types: ['MENTIONS'],
+      session: 'thread-123',
     });
   });
 
@@ -167,7 +224,11 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
       expect(screen.getByTestId('sigma-mock')).toBeTruthy();
     });
     // Filter toggle (the dispatch path).
+    const filterCalls = postGraphQuery.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Entity' }));
+    await waitFor(() => {
+      expect(postGraphQuery.mock.calls.length).toBeGreaterThan(filterCalls);
+    });
     expect(screen.getByLabelText('Node types').getAttribute('data-open')).toBe('false');
     // Select a node via the path-strip node list (the non-hover access path) → inspector opens.
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));

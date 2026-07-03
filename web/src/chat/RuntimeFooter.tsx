@@ -124,7 +124,7 @@ export function RuntimeFooter({
           onClick={() => {
             setExpanded((v) => !v);
           }}
-          className="h-auto min-h-[1.5rem] items-baseline gap-3 px-0 py-1 font-mono text-xs text-text-muted hover:bg-transparent sm:hidden"
+          className="h-auto min-h-[44px] items-baseline gap-3 px-0 py-2 font-mono text-xs text-text-muted hover:bg-transparent sm:hidden"
         >
           <span className="text-text">
             {sessionLabel} {announced.sessionCost}

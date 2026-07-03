@@ -184,6 +184,43 @@ func TestStatusPaneKeepsSuccessfulToolDetailOnFinish(t *testing.T) {
 	}
 }
 
+func TestStatusPaneRendersChronologicalActivitySequence(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningEndEvent("rsn1"),
+		events.NewToolCallStartEvent("c1", "web_search"),
+		events.NewToolCallResultEvent("m", "c1", "ok"),
+		events.NewReasoningStartEvent("rsn2"),
+		events.NewReasoningEndEvent("rsn2"),
+		events.NewTextMessageStartEvent("m1"),
+		events.NewTextMessageContentEvent("m1", "Ciao"),
+		events.NewTextMessageEndEvent("m1"),
+	})
+	got := lastText(bot)
+	if !strings.Contains(got, "Sequenza:") {
+		t.Fatalf("activity sequence missing, got %q", got)
+	}
+	if strings.Contains(got, "Strumenti:") {
+		t.Fatalf("status pane must not fall back to category-only tool rendering, got %q", got)
+	}
+	firstReasoning := strings.Index(got, "Ragionamento - completato")
+	tool := strings.Index(got, "web_search - completato")
+	secondReasoning := strings.LastIndex(got, "Ragionamento - completato")
+	answer := strings.Index(got, "Risposta - completata")
+	if firstReasoning < 0 || tool < 0 || secondReasoning < 0 || answer < 0 {
+		t.Fatalf("expected reasoning/tool/reasoning/answer rows, got %q", got)
+	}
+	if firstReasoning == secondReasoning {
+		t.Fatalf("expected two separate reasoning activity rows, got %q", got)
+	}
+	if !(firstReasoning < tool && tool < secondReasoning && secondReasoning < answer) {
+		t.Fatalf("activity rows are not chronological, got %q", got)
+	}
+}
+
 func TestStatusPaneKeepsFailedToolDetailOnFinish(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()

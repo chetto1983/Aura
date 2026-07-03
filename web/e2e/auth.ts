@@ -321,8 +321,8 @@ export async function gotoAuthenticated(page: Page, path: string) {
   await installCompletedProfileFixture(page);
 
   await applyAuthState(page);
-  await page.goto(path, { waitUntil: 'domcontentloaded' });
-  if (isLoginUrl(page.url())) {
+  const firstResponse = await page.goto(path, { waitUntil: 'domcontentloaded' });
+  if (isLoginUrl(page.url()) || firstResponse?.status() === 401) {
     clearAuthState();
     await ensureAuthState(page);
     await page.goto(path, { waitUntil: 'domcontentloaded' });

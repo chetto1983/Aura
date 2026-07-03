@@ -58,6 +58,7 @@ type turnCapture struct {
 	toolResultMS   []float64   // ms-since-start of each tool result, aligned with toolResults
 	terminalReason string      // budget-trip "limit_hit" reason, "" when not tripped
 	terminated     bool        // a terminal budget Event was emitted
+	firstEventMS   float64     // ms to first observable LLM/tool event (tool call, chunk, final, pause)
 	firstByteMS    float64     // ms to first streamed delta (latency metric)
 	totalMS        float64     // ms total turn duration
 	runErr         error       // a real infra error off the iter.Seq2 error slot
@@ -77,7 +78,15 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 	var prose strings.Builder
 	var raw strings.Builder
 	start := time.Now()
+	firstEventSeen := false
 	firstByteSeen := false
+	markFirstEvent := func() {
+		if firstEventSeen {
+			return
+		}
+		c.firstEventMS = float64(time.Since(start).Microseconds()) / 1000.0
+		firstEventSeen = true
+	}
 
 	for ev, runErr := range run() {
 		if runErr != nil {
@@ -99,6 +108,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 		// HITL pause Event: ask_user fired, the agent suspended (LLMResponse==nil). Record
 		// the pause and stop draining — the harness resumes with the synthesized answer.
 		if ev.Actions.AwaitingInput != nil {
+			markFirstEvent()
 			c.paused = true
 			c.awaitingInput = ev.Actions.AwaitingInput
 			c.eventKinds = append(c.eventKinds, kindToolCall) // the ask_user call
@@ -113,6 +123,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 		resp := ev.LLMResponse
 		switch {
 		case len(resp.ToolCalls) > 0 && !agentrender.IsTerminalToolCall(resp.ToolCalls):
+			markFirstEvent()
 			c.eventKinds = append(c.eventKinds, kindToolCall)
 			for i := range resp.ToolCalls {
 				c.toolNames = append(c.toolNames, resp.ToolCalls[i].Function.Name)
@@ -120,6 +131,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 				c.toolCallMS = append(c.toolCallMS, float64(time.Since(start).Microseconds())/1000.0)
 			}
 		case resp.FinishReason != "":
+			markFirstEvent()
 			c.eventKinds = append(c.eventKinds, kindFinal)
 			c.finish = resp.FinishReason
 			agentrender.FlushRemainder(&prose, resp.Content, func(s string) {
@@ -132,11 +144,13 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 			c.totalMS = float64(time.Since(start).Microseconds()) / 1000.0
 			return c
 		case agentrender.IsToolResultPreview(ev):
+			markFirstEvent()
 			c.eventKinds = append(c.eventKinds, kindToolResult)
 			c.toolResults = append(c.toolResults, resp.Content)
 			c.toolResultMS = append(c.toolResultMS, float64(time.Since(start).Microseconds())/1000.0)
 			raw.WriteString(resp.Content) // tool-result previews are part of the raw leak surface
 		case resp.Content != "":
+			markFirstEvent()
 			if !firstByteSeen {
 				c.firstByteMS = float64(time.Since(start).Microseconds()) / 1000.0
 				firstByteSeen = true

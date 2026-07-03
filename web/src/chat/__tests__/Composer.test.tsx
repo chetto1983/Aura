@@ -69,4 +69,10 @@ describe('Composer attachments', () => {
     expect(send).toHaveProperty('disabled', true);
     expect(send.getAttribute('data-slot')).toBe('button');
   });
+
+  it('keeps the text entry target at the 44px mobile floor', () => {
+    render(<Composer />);
+
+    expect(screen.getByLabelText('Ask Aura').className).toContain('min-h-[44px]');
+  });
 });

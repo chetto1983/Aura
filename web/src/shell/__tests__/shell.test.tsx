@@ -200,21 +200,40 @@ describe('shell utilities', () => {
     );
     const mobileNav = screen.getByRole('navigation', { name: 'Modes' });
     expect(mobileNav.className).toContain('shell-mode-tabbar');
-    expect(mobileNav.className).toContain('grid-cols-4');
+    expect(mobileNav.className).toContain('flex');
     expect(mobileNav.className).toContain('overflow-hidden');
     expect(primary.getByRole('button', { name: 'Governance' }).className).toContain('shrink-0');
     expect(mobile.queryByRole('button', { name: 'Tree' })).toBeNull();
     expect(mobile.queryByRole('button', { name: 'Displays' })).toBeNull();
     expect(
-      mobile.getAllByRole('button').every((button) => button.className.includes('min-w-0')),
+      mobile.getAllByRole('button').every((button) => button.className.includes('min-w-[44px]')),
+    ).toBe(true);
+    expect(
+      mobile.getAllByRole('button').every((button) => button.className.includes('min-h-[48px]')),
+    ).toBe(true);
+    expect(
+      mobile.getAllByRole('button').every((button) => button.className.includes('flex-1')),
     ).toBe(true);
     expect(
       mobile
         .getAllByRole('button')
         .every((button) =>
-          button.querySelector('[data-mode-label]')?.className.includes('truncate'),
+          button.querySelector('[data-mode-label]')?.className.includes('text-center'),
         ),
     ).toBe(true);
+    expect(
+      mobile
+        .getAllByRole('button')
+        .every(
+          (button) =>
+            button.querySelector('[data-mode-label]')?.className.includes('truncate') === false,
+        ),
+    ).toBe(true);
+    expect(
+      mobile.getAllByRole('button').every((button) => button.querySelector('[data-mode-icon]')),
+    ).toBe(true);
+    expect(mobile.getByRole('button', { name: 'Governance' }).textContent).toContain('Gov');
+    expect(mobile.getByRole('button', { name: 'Documents' }).textContent).toContain('Docs');
     expect(graphButton.getAttribute('aria-disabled')).toBeNull();
     expect(settingsButton.getAttribute('aria-disabled')).toBeNull();
     expect(mobile.getByRole('button', { name: 'Graph' }).getAttribute('aria-disabled')).toBeNull();

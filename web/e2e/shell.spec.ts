@@ -230,8 +230,11 @@ test.describe('embedded operator shell', () => {
   });
 
   test('shows the Aura brand and no marketing-hero copy', async ({ page }) => {
+    await installShellUiRoutes(page);
     await gotoAuthenticated(page, '/');
-    await expect(page.getByRole('img', { name: /aura/i })).toBeVisible();
+    await expect(page.getByRole('banner').getByText('Aura', { exact: true }).first()).toBeVisible({
+      timeout: 15000,
+    });
     const body = (await page.locator('body').innerText()).toLowerCase();
     for (const phrase of MARKETING_HERO_BLOCKLIST) {
       expect(body).not.toContain(phrase);
@@ -239,10 +242,11 @@ test.describe('embedded operator shell', () => {
   });
 
   test('shows logout in the layout and returns to login', async ({ page }) => {
+    await installShellUiRoutes(page);
     await gotoAuthenticated(page, '/');
 
     const signOut = page.getByRole('button', { name: 'Sign out' });
-    await expect(signOut).toBeVisible();
+    await expect(signOut).toBeVisible({ timeout: 15000 });
     await signOut.click();
 
     await expect(page).toHaveURL(/\/login(?:[?#]|$)/);
@@ -253,7 +257,9 @@ test.describe('embedded operator shell', () => {
   }, testInfo) => {
     await installShellUiRoutes(page);
     await gotoAuthenticated(page, '/');
-    await expect(page.getByRole('img', { name: /aura/i })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('banner').getByText('Aura', { exact: true }).first()).toBeVisible({
+      timeout: 15000,
+    });
     await page.getByRole('button', { name: 'Chat', exact: true }).first().click();
     await expectChatComposerDocked(page);
     await validateConversationRailResize(page, testInfo);

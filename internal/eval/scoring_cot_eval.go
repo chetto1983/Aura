@@ -41,8 +41,11 @@ type scenarioMetrics struct {
 	completionTok  int
 	cachedTok      int
 	cacheRatio     float64
+	ttftMS         float64
 	firstByteMS    float64
+	toolLoopMS     float64
 	totalMS        float64
+	outputTPS      float64
 	teardownMS     float64
 	goroutineDelta int
 	judgeScore     int
@@ -206,6 +209,33 @@ func contains[T comparable](xs []T, v T) bool {
 	return false
 }
 
+func toolLoopMS(c *turnCapture) float64 {
+	if c == nil || len(c.toolCallMS) == 0 || len(c.toolResultMS) == 0 {
+		return 0
+	}
+	start := c.toolCallMS[0]
+	end := c.toolResultMS[len(c.toolResultMS)-1]
+	if end < start {
+		return 0
+	}
+	return end - start
+}
+
+func completionTPS(tokens int, firstByteMS, totalMS float64) float64 {
+	if tokens <= 0 || totalMS <= 0 {
+		return 0
+	}
+	start := firstByteMS
+	if start <= 0 || start >= totalMS {
+		start = 0
+	}
+	seconds := (totalMS - start) / 1000.0
+	if seconds <= 0 {
+		return 0
+	}
+	return float64(tokens) / seconds
+}
+
 // dimResultRecordAdvisory records an advisory cache-ratio observation as a "pass"
 // (it never gates) but contributes to the reported aggregate.
 func dimResultRecordAdvisory(record func(dimension, bool), d dimension, _ float64) {
@@ -326,8 +356,8 @@ func writeReport(t *testing.T, results map[dimension]*dimResult, metrics []scena
 		}
 	}
 	b.WriteString("\n## Per-scenario metrics (§7)\n\n")
-	b.WriteString("| Scenario | Cost USD | tok in/out | cached | cache-ratio | first-byte ms | total ms | judge | teardown ms | gdelta |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Scenario | Cost USD | tok in/out | cached | cache-ratio | ttft ms | first-byte ms | tool-loop ms | total ms | TPS | judge | teardown ms | gdelta |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	sort.Slice(metrics, func(i, j int) bool { return metrics[i].id < metrics[j].id })
 	for _, m := range metrics {
 		judge := "-"
@@ -338,9 +368,9 @@ func writeReport(t *testing.T, results map[dimension]*dimResult, metrics []scena
 		if m.teardownMS > 0 {
 			teardown = fmt.Sprintf("%.0f", m.teardownMS)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %d/%d | %d | %.2f | %.0f | %.0f | %s | %s | %d |\n",
+		fmt.Fprintf(&b, "| %s | %s | %d/%d | %d | %.2f | %.0f | %.0f | %.0f | %.0f | %.1f | %s | %s | %d |\n",
 			m.id, m.costUSD, m.promptTok, m.completionTok, m.cachedTok, m.cacheRatio,
-			m.firstByteMS, m.totalMS, judge, teardown, m.goroutineDelta)
+			m.ttftMS, m.firstByteMS, m.toolLoopMS, m.totalMS, m.outputTPS, judge, teardown, m.goroutineDelta)
 	}
 
 	b.WriteString("\n## Reasoning-judge scores + justifications\n\n")

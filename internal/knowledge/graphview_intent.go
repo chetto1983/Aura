@@ -49,12 +49,12 @@ RETURN
   apoc.convert.toJson(labels(e))     AS s_labels,
   e.type                             AS s_entity_type,
   coalesce(e.name, e.canonical_name) AS s_caption,
-  properties(e)                      AS s_props,
+  apoc.map.removeKey(properties(e), 'embedding') AS s_props,
   elementId(n)                       AS n_id,
   apoc.convert.toJson(labels(n))     AS n_labels,
   n.type                             AS n_entity_type,
   coalesce(n.name, n.canonical_name) AS n_caption,
-  properties(n)                      AS n_props,
+  apoc.map.removeKey(properties(n), 'embedding') AS n_props,
   elementId(r)                       AS r_id,
   type(r)                            AS r_type,
   elementId(startNode(r))            AS r_src,
@@ -71,42 +71,74 @@ RETURN
 
 // compileOverview emits a bounded relationship sample across the live graph. It is
 // the drawable fallback for stores that do not currently write the older
-// Conversation->Message->MENTIONS footprint but do contain memory relationships
-// such as RELATED_TO. Filters are still bound as data; the label filter keeps an
-// edge when either endpoint carries one of the selected labels.
+// Conversation->Message->MENTIONS footprint but do contain evidence relationships
+// such as Document->Chunk, Chunk->Chunk, and User->Preference. Filters are still
+// bound as data; the label filter keeps an edge when either endpoint carries one
+// of the selected labels. A label-filtered branch also returns isolated learning
+// evidence nodes (ReasoningExample/ToolSelectionExample), because those nodes are
+// intentionally stored without relationships and would otherwise look "empty".
 func compileOverview(in GraphIntent) (cypher string, params map[string]any) {
-	cypher = `MATCH (s)-[r]->(n)
-WHERE ($user_id = '' OR EXISTS {
-  MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)
-  WHERE root = s OR root = n
-})
-  AND ($rel_types = [] OR type(r) IN $rel_types)
-  AND ($labels = [] OR any(l IN labels(s) WHERE l IN $labels) OR any(l IN labels(n) WHERE l IN $labels))
-WITH s, r, n LIMIT $edge_cap
+	cypher = `CALL {
+  MATCH (s)-[r]->(n)
+  WHERE ($user_id = '' OR (EXISTS {
+    MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)
+    WHERE root = s OR root = n
+  }) OR (
+    EXISTS { MATCH (:User {identifier:$user_id}) }
+    AND NOT EXISTS {
+      MATCH (other:User)
+      WHERE coalesce(other.identifier, other.id, '') <> $user_id
+    }
+    AND (
+      s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR s:ReasoningExample OR s:ToolSelectionExample OR
+      n:Document OR n:Chunk OR n:Preference OR n:Entity OR n:Source OR n:ReasoningExample OR n:ToolSelectionExample
+    )
+  ))
+    AND ($rel_types = [] OR type(r) IN $rel_types)
+    AND ($labels = [] OR any(l IN labels(s) WHERE l IN $labels) OR any(l IN labels(n) WHERE l IN $labels))
+  WITH s, r, n LIMIT $edge_cap
+  RETURN s, r, n
+  UNION
+  MATCH (s)
+  WHERE $labels <> []
+    AND any(l IN labels(s) WHERE l IN $labels)
+    AND NOT (s)--()
+    AND ($user_id = '' OR (
+      EXISTS { MATCH (:User {identifier:$user_id}) }
+      AND NOT EXISTS {
+        MATCH (other:User)
+        WHERE coalesce(other.identifier, other.id, '') <> $user_id
+      }
+      AND (s:ReasoningExample OR s:ToolSelectionExample)
+    ))
+  WITH s LIMIT $node_cap
+  RETURN s, null AS r, null AS n
+}
 WITH collect({s:s, r:r, n:n}) AS rows
-UNWIND rows AS row
-WITH collect(DISTINCT elementId(row.s)) + collect(DISTINCT elementId(row.n)) AS candidate_ids, rows
+WITH [row IN rows | elementId(row.s)] + [row IN rows WHERE row.n IS NOT NULL | elementId(row.n)] AS candidate_ids, rows
 UNWIND candidate_ids AS candidate_id
-WITH DISTINCT candidate_id, rows LIMIT $node_cap
+WITH DISTINCT candidate_id, rows
+WHERE candidate_id IS NOT NULL
+WITH candidate_id, rows LIMIT $node_cap
 WITH collect(candidate_id) AS node_ids, rows
 UNWIND rows AS row
 WITH row.s AS s, row.r AS r, row.n AS n, node_ids
-WHERE elementId(s) IN node_ids AND elementId(n) IN node_ids
+WHERE elementId(s) IN node_ids AND (n IS NULL OR elementId(n) IN node_ids)
 RETURN
   elementId(s)                       AS s_id,
   apoc.convert.toJson(labels(s))     AS s_labels,
   s.type                             AS s_entity_type,
-  coalesce(s.name, s.canonical_name) AS s_caption,
-  properties(s)                      AS s_props,
-  elementId(n)                       AS n_id,
-  apoc.convert.toJson(labels(n))     AS n_labels,
-  n.type                             AS n_entity_type,
-  coalesce(n.name, n.canonical_name) AS n_caption,
-  properties(n)                      AS n_props,
-  elementId(r)                       AS r_id,
-  type(r)                            AS r_type,
-  elementId(startNode(r))            AS r_src,
-  elementId(endNode(r))              AS r_dst`
+  coalesce(s.name, s.canonical_name, s.tool, s.query) AS s_caption,
+  apoc.map.removeKey(properties(s), 'embedding') AS s_props,
+  CASE WHEN n IS NULL THEN '' ELSE elementId(n) END AS n_id,
+  CASE WHEN n IS NULL THEN '' ELSE apoc.convert.toJson(labels(n)) END AS n_labels,
+  CASE WHEN n IS NULL THEN '' ELSE n.type END AS n_entity_type,
+  CASE WHEN n IS NULL THEN '' ELSE coalesce(n.name, n.canonical_name, n.tool, n.query) END AS n_caption,
+  CASE WHEN n IS NULL THEN {} ELSE apoc.map.removeKey(properties(n), 'embedding') END AS n_props,
+  CASE WHEN r IS NULL THEN '' ELSE elementId(r) END AS r_id,
+  CASE WHEN r IS NULL THEN '' ELSE type(r) END AS r_type,
+  CASE WHEN r IS NULL THEN '' ELSE elementId(startNode(r)) END AS r_src,
+  CASE WHEN r IS NULL THEN '' ELSE elementId(endNode(r)) END AS r_dst`
 	return cypher, map[string]any{
 		"labels":    nonNil(in.Labels),
 		"rel_types": nonNil(in.RelTypes),
@@ -121,9 +153,16 @@ RETURN
 func compileExpand(in GraphIntent) (cypher string, params map[string]any) {
 	cypher = `MATCH (s)
 WHERE elementId(s) = $seed
-  AND ($user_id = '' OR EXISTS {
+  AND ($user_id = '' OR (EXISTS {
     MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)
     WHERE root = s OR (root)--(s)
+  }) OR (
+    EXISTS { MATCH (:User {identifier:$user_id}) }
+    AND NOT EXISTS {
+      MATCH (other:User)
+      WHERE coalesce(other.identifier, other.id, '') <> $user_id
+    }
+    AND (s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR s:User OR s:ReasoningExample OR s:ToolSelectionExample)
   })
 OPTIONAL MATCH (s)-[r]-(n)
 WHERE ($rel_types = [] OR type(r) IN $rel_types)
@@ -133,13 +172,13 @@ RETURN
   elementId(s)                       AS s_id,
   apoc.convert.toJson(labels(s))     AS s_labels,
   s.type                             AS s_entity_type,
-  coalesce(s.name, s.canonical_name) AS s_caption,
-  properties(s)                      AS s_props,
+  coalesce(s.name, s.canonical_name, s.tool, s.query) AS s_caption,
+  apoc.map.removeKey(properties(s), 'embedding') AS s_props,
   elementId(n)                       AS n_id,
   apoc.convert.toJson(labels(n))     AS n_labels,
   n.type                             AS n_entity_type,
-  coalesce(n.name, n.canonical_name) AS n_caption,
-  properties(n)                      AS n_props,
+  coalesce(n.name, n.canonical_name, n.tool, n.query) AS n_caption,
+  apoc.map.removeKey(properties(n), 'embedding') AS n_props,
   elementId(r)                       AS r_id,
   type(r)                            AS r_type,
   elementId(startNode(r))            AS r_src,

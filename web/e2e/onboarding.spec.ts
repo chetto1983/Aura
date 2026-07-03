@@ -43,6 +43,13 @@ async function waitForVisibleCandidate(locator: Locator) {
 }
 
 async function installShellRoutes(page: Page) {
+  await page.route('**/api/settings', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ restart_required: false, settings: [] }),
+    }),
+  );
   await page.route('**/api/conversations*', (route) => {
     if (route.request().url().includes(`/api/conversations/${CONV_ID}`)) {
       return route.fulfill({
@@ -157,19 +164,22 @@ async function installOnboardingRoutes(page: Page, provisionBodies: unknown[]) {
 async function openOnboarding(page: Page) {
   await gotoAuthenticated(page, `/c/${CONV_ID}`);
 
-  const createButtons = page.getByRole('button', { name: 'Create identity' });
+  const settingsButtons = page.getByRole('button', { name: 'Settings' });
   const openNavigation = page.getByRole('button', { name: 'Open navigation' });
   await expect
     .poll(
       async () =>
-        (await hasVisibleCandidate(createButtons)) ||
+        (await hasVisibleCandidate(settingsButtons)) ||
         (await openNavigation.isVisible().catch(() => false)),
       { timeout: 10_000 },
     )
     .toBe(true);
-  if (!(await hasVisibleCandidate(createButtons))) {
+  if (!(await hasVisibleCandidate(settingsButtons))) {
     await openNavigation.click();
   }
+  await waitForVisibleCandidate(settingsButtons);
+  await clickFirstVisible(settingsButtons);
+  const createButtons = page.getByRole('button', { name: 'Create identity' });
   await waitForVisibleCandidate(createButtons);
   await clickFirstVisible(createButtons);
   await expect(page.getByRole('dialog', { name: 'Create identity' })).toBeVisible();

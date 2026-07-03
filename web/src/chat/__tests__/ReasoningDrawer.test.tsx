@@ -14,9 +14,10 @@ describe('ReasoningDrawer (D-01)', () => {
     localStorage.removeItem(PREF_KEY);
   });
 
-  it('renders nothing when there is no reasoning text', () => {
-    const { container } = render(<ReasoningDrawer text="" />);
-    expect(container.firstChild).toBeNull();
+  it('shows a safe lifecycle cue when reasoning has started but no text has streamed yet', () => {
+    render(<ReasoningDrawer text="" />);
+    expect(screen.getByRole('button')).toBeTruthy();
+    expect(screen.getByText('Thinking...')).toBeTruthy();
   });
 
   it('shows the reasoning text by default (builder default = shown)', () => {

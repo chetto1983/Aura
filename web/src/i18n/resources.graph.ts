@@ -14,6 +14,14 @@ export const graphEn = {
     },
     empty: {
       heading: 'No evidence graph yet',
+      readinessAria: 'Evidence readiness',
+      schemaOnline: 'Schema online',
+      nodeTypeCount_one: '{{count}} node type',
+      nodeTypeCount_other: '{{count}} node types',
+      connectionTypeCount_one: '{{count}} connection type',
+      connectionTypeCount_other: '{{count}} connection types',
+      nodeTypes: 'Node types',
+      connectionTypes: 'Connection types',
       body: 'Nothing is linked to this thread yet. The evidence graph fills in as Aura ingests sources and works through conversations — entities, documents, and their connections will appear here.',
     },
     inspector: {
@@ -71,6 +79,14 @@ export const graphIt = {
     },
     empty: {
       heading: 'Ancora nessun grafo delle evidenze',
+      readinessAria: 'Stato evidenze',
+      schemaOnline: 'Schema online',
+      nodeTypeCount_one: '{{count}} tipo di nodo',
+      nodeTypeCount_other: '{{count}} tipi di nodo',
+      connectionTypeCount_one: '{{count}} tipo di connessione',
+      connectionTypeCount_other: '{{count}} tipi di connessione',
+      nodeTypes: 'Tipi di nodo',
+      connectionTypes: 'Tipi di connessione',
       body: 'Niente è ancora collegato a questo thread. Il grafo delle evidenze si popola man mano che Aura acquisisce fonti e lavora sulle conversazioni — entità, documenti e le loro connessioni appariranno qui.',
     },
     inspector: {

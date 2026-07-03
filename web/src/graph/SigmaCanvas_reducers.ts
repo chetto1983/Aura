@@ -13,6 +13,7 @@ const PATH_EDGE_COLOR = '#8AB4F8';
 export interface NodeDisplay {
   color?: string;
   label?: string | null;
+  canvasLabel?: string;
   size?: number;
   zIndex?: number;
   hidden?: boolean;
@@ -40,7 +41,12 @@ export function pinnedNodeReducer(
 ): NodeDisplay {
   if (pinnedPath.size === 0) return data;
   if (pinnedPath.has(nodeId)) {
-    return { ...data, color: PATH_NODE_COLOR, zIndex: 1 };
+    return {
+      ...data,
+      color: PATH_NODE_COLOR,
+      label: data.canvasLabel ?? data.label ?? null,
+      zIndex: 1,
+    };
   }
   return { ...data, color: DIM_COLOR, label: null, zIndex: 0 };
 }
@@ -63,3 +69,34 @@ export function pinnedEdgeReducer(
 }
 
 export const REDUCER_COLORS = { DIM_COLOR, PATH_NODE_COLOR, PATH_EDGE_COLOR } as const;
+
+const UUID_RE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const LONG_HEX_RE = /[0-9a-f]{24,}/i;
+const ELEMENT_ID_RE = /^(\d+):([0-9a-f-]{36}):([A-Za-z]+):(\d+)$/;
+const AMBIENT_LABEL_NODE_LIMIT = 32;
+const AMBIENT_LABEL_EDGE_LIMIT = 48;
+
+export function compactCanvasLabel(caption: string): string {
+  const trimmed = caption.trim();
+  if (trimmed === '') return '';
+
+  const elementId = ELEMENT_ID_RE.exec(trimmed);
+  if (elementId !== null) return `${elementId[3] ?? ''}:${elementId[4] ?? ''}`;
+
+  const uuid = UUID_RE.exec(trimmed);
+  if (uuid !== null) {
+    const suffix = trimmed.slice(Math.max(uuid.index + uuid[0].length, trimmed.length - 6));
+    return suffix === '' ? `${uuid[0].slice(0, 8)}...` : `${uuid[0].slice(0, 8)}...${suffix}`;
+  }
+
+  const longHex = LONG_HEX_RE.exec(trimmed);
+  if (longHex !== null) return `${trimmed.slice(0, 8)}...${trimmed.slice(-6)}`;
+
+  if (trimmed.length > 32) return `${trimmed.slice(0, 24)}...${trimmed.slice(-6)}`;
+  return trimmed;
+}
+
+export function shouldRenderAmbientLabels(nodeCount: number, edgeCount: number): boolean {
+  return nodeCount <= AMBIENT_LABEL_NODE_LIMIT && edgeCount <= AMBIENT_LABEL_EDGE_LIMIT;
+}

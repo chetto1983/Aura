@@ -5,6 +5,7 @@ import '../../i18n/i18n';
 import type { DocumentItem, DocumentVersion } from '../documentApi';
 import { DocumentFileList } from '../DocumentFileList';
 import { DocumentFilterBar } from '../DocumentFilterBar';
+import { DocumentLibraryHeader } from '../DocumentLibraryHeader';
 import { DocumentUploadDialog } from '../DocumentUploadDialog';
 
 const uploadLibraryDocument = vi.hoisted(() => vi.fn());
@@ -70,6 +71,32 @@ function openActions(button: HTMLElement) {
 describe('Document library controls', () => {
   afterEach(() => {
     uploadLibraryDocument.mockReset();
+  });
+
+  it('keeps mobile search as the 44px input instead of a hidden 1px submit target', () => {
+    const onSearch = vi.fn();
+
+    const { container } = render(
+      <DocumentLibraryHeader
+        query=""
+        refreshing={false}
+        onQueryChange={vi.fn()}
+        onSearch={onSearch}
+        onRefresh={vi.fn()}
+        onUpload={vi.fn()}
+      />,
+    );
+
+    const mobileForm = container.querySelector('form.sm\\:hidden');
+    expect(mobileForm).not.toBeNull();
+    expect(mobileForm?.querySelector('button[type="submit"]')).toBeNull();
+    expect(screen.getAllByRole('searchbox', { name: 'Search documents' })[0]?.className).toContain(
+      'min-h-[44px]',
+    );
+
+    if (mobileForm === null) throw new Error('mobile search form missing');
+    fireEvent.submit(mobileForm);
+    expect(onSearch).toHaveBeenCalledTimes(1);
   });
 
   it('routes filter, scope, and view changes through explicit controls', () => {
@@ -216,6 +243,11 @@ describe('Document library controls', () => {
     expect(screen.queryByRole('button', { name: /^Robot Guide\.pdf/ })).toBeNull();
     const row = screen.getByRole('row', { name: /Robot Photo\.png.*ready.*512 B/i });
     expect(row.getAttribute('aria-selected')).toBe('true');
+    expect(
+      screen
+        .getAllByRole('button', { name: /^Robot Photo\.png/ })
+        .some((button) => button.className.includes('min-h-[44px]')),
+    ).toBe(true);
 
     fireEvent.click(within(row).getByRole('checkbox', { name: 'Select Robot Photo.png' }));
     fireEvent.click(within(row).getByRole('button', { name: /^Robot Photo\.png/ }));

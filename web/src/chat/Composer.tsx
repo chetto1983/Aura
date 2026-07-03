@@ -177,7 +177,7 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
           rows={1}
           placeholder={t('chat.composer.placeholder')}
           aria-label={t('chat.composer.placeholder')}
-          className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
         {isRunning ? (
           <Button asChild size="icon" className="rounded-full">
