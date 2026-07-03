@@ -6,8 +6,9 @@
 #   - cmd/aura is CLI glue (flag parsing, os.Exit dispatch) — covered behaviourally
 #     by integration + smoke, not by line-unit tests; folding it into a statement
 #     floor measures the wrong thing (it sits ~20% by nature).
-#   - generated (internal/db/sqlc) and pre-rewrite skeletons (sandbox, swarm,
-#     llm/client.go) are owned by later slices; excluded until rewritten.
+#   - generated (internal/db/sqlc) and the pre-rewrite llm/client.go skeleton
+#     (owned by Slice 1) are excluded until rewritten. (internal/sandbox was
+#     removed and internal/swarm is now measured — neither is filtered here.)
 #   - internal/agent/agenttest is test-support (shared Agent fakes/mocks for
 #     other packages' tests, like sqlc is generated); its own low self-coverage
 #     dilutes the floor without measuring any owned runtime surface (T-04).
@@ -44,7 +45,7 @@ fi
 # dropped from the floor.
 {
   head -1 "${PROFILE}"
-  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/sandbox/|/internal/agent/agenttest/|/internal/llm/client\.go:'
+  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/agenttest/|/internal/llm/client\.go:'
 } > "${PROFILE}.filtered"
 
 ROWS="$(grep -c -v '^mode:' "${PROFILE}.filtered" || true)"

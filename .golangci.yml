@@ -46,7 +46,6 @@ linters:
     paths:
       - "internal/db/sqlc"        # sqlc-generated code is golden; we don't lint it
       - "internal/agent/tools"    # pre-rewrite skeleton — owning slice rewrites
-      - "internal/sandbox"        # pre-rewrite skeleton — Slice 2 owns rewrite
       - "internal/llm/client.go"  # pre-rewrite skeleton — Slice 1 owns rewrite
       - "third_party"             # vendored / generated trees
       - "web/node_modules"        # local frontend dependencies can contain Go examples
@@ -67,7 +66,6 @@ formatters:
     paths:
       - "internal/db/sqlc"
       - "internal/agent/tools"
-      - "internal/sandbox"
       - "internal/llm/client.go"
       - "third_party"
       - "web/node_modules"
