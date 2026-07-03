@@ -314,11 +314,38 @@ async function installCompletedProfileFixture(page: Page) {
   );
 }
 
+// installRuntimeHealthFixture pins the shell's runtime-health poll to a healthy 200. The
+// ShellHeader RuntimeStatusChip (useRuntimeHealth, D-07) polls /healthz + /readyz every 5s
+// from EVERY authenticated page. The E2E stack boots `aura serve` over Postgres + Garage
+// with NO Neo4j, so the LIVE /readyz Neo4j probe returns 503 — a genuine "degraded in this
+// env" signal, not a chat-flow bug — which otherwise leaks a "Failed to load resource: 503"
+// console error and trips chat.spec.ts's consoleProblems assertion. Mocking here (a page
+// route, not the beforeAll `request` liveness probe) keeps the shell hermetic; a spec that
+// wants to exercise the degraded chip can re-route /readyz after gotoAuthenticated (later
+// page.route wins).
+async function installRuntimeHealthFixture(page: Page) {
+  await page.route('**/healthz', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true }),
+    }),
+  );
+  await page.route('**/readyz', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ready: true, deps: { postgres: 'ok', neo4j: 'ok' } }),
+    }),
+  );
+}
+
 export async function gotoAuthenticated(page: Page, path: string) {
   await page.addInitScript(() => {
     window.localStorage.setItem('aura.language', 'en');
   });
   await installCompletedProfileFixture(page);
+  await installRuntimeHealthFixture(page);
 
   await applyAuthState(page);
   const firstResponse = await page.goto(path, { waitUntil: 'domcontentloaded' });
