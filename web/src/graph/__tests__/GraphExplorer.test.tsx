@@ -107,12 +107,8 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     const workspace = screen.getByTestId('graph-workspace');
     expect(workspace.className).toContain('graph-workspace');
     expect(workspace.className).toContain('overflow-hidden');
-    expect(workspace.parentElement?.className).toContain(
-      'graph-workspace-container',
-    );
-    expect(workspace.className).toContain(
-      'lg:grid-cols-[18rem_minmax(0,1fr)]',
-    );
+    expect(workspace.parentElement?.className).toContain('graph-workspace-container');
+    expect(workspace.className).toContain('lg:grid-cols-[18rem_minmax(0,1fr)]');
     const canvas = workspace.querySelector('.graph-workspace__canvas');
     expect(canvas?.className).toContain('min-h-0');
     expect(canvas?.className).not.toContain('min-h-[46svh]');

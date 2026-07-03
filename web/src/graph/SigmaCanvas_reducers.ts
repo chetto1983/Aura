@@ -70,8 +70,7 @@ export function pinnedEdgeReducer(
 
 export const REDUCER_COLORS = { DIM_COLOR, PATH_NODE_COLOR, PATH_EDGE_COLOR } as const;
 
-const UUID_RE =
-  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const LONG_HEX_RE = /[0-9a-f]{24,}/i;
 const ELEMENT_ID_RE = /^(\d+):([0-9a-f-]{36}):([A-Za-z]+):(\d+)$/;
 const AMBIENT_LABEL_NODE_LIMIT = 32;

@@ -121,8 +121,7 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
       within(rowFor('Latest run')).getByRole('button', { name: 'Conversation actions' }),
     ).toBeTruthy();
     expect(
-      within(rowFor('Latest run')).getByRole('button', { name: 'Conversation actions' })
-        .className,
+      within(rowFor('Latest run')).getByRole('button', { name: 'Conversation actions' }).className,
     ).toContain('h-[32px]');
     expect(within(rowFor('Latest run')).queryByRole('button', { name: 'Rename' })).toBeNull();
     // The store returns recent-first; the rendered order preserves it.

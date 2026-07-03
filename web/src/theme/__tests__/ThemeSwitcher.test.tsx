@@ -22,9 +22,7 @@ describe('ThemeSwitcher', () => {
       'button',
     );
     expect(screen.getByRole('button', { name: 'Light theme' }).className).toContain('h-[32px]');
-    expect(screen.getByRole('button', { name: 'Dark theme' }).className).toContain(
-      'min-h-[32px]',
-    );
+    expect(screen.getByRole('button', { name: 'Dark theme' }).className).toContain('min-h-[32px]');
     fireEvent.click(screen.getByRole('button', { name: 'Light theme' }));
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');

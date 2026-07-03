@@ -251,8 +251,7 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       return state;
     case 'TOOL_CALL_ARGS': {
       const part = state.tools.get(frame.toolCallId);
-      if (part)
-        writeTool(state, { ...part, argsText: part.argsText + frame.delta });
+      if (part) writeTool(state, { ...part, argsText: part.argsText + frame.delta });
       return state;
     }
     case 'TOOL_CALL_END': {

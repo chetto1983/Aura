@@ -18,11 +18,7 @@ interface MobileAppSidebarProps {
   readonly children: ReactNode;
 }
 
-export function MobileAppSidebar({
-  activeMode,
-  onModeSelect,
-  children,
-}: MobileAppSidebarProps) {
+export function MobileAppSidebar({ activeMode, onModeSelect, children }: MobileAppSidebarProps) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 bg-bg px-3 py-3 text-text">

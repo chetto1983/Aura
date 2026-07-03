@@ -12,7 +12,9 @@ describe('responsive shell containers', () => {
     expect(css).not.toContain(
       ".aura-shell[data-surface='documents'] .shell-header,\n  .aura-shell[data-surface='documents'] .shell-bottom-dock",
     );
-    expect(css).not.toMatch(/\.aura-shell\[data-surface='documents'\]\s+\.shell-bottom-dock\s*\{\s*display:\s*none/i);
+    expect(css).not.toMatch(
+      /\.aura-shell\[data-surface='documents'\]\s+\.shell-bottom-dock\s*\{\s*display:\s*none/i,
+    );
   });
 
   it('keeps the mobile Graph canvas and evidence strip inside the shell row', () => {

@@ -320,7 +320,9 @@ func (s *Store) readTurnSidecar(conversationID string, seq int) ([]byte, error) 
 	if err != nil {
 		return nil, fmt.Errorf("open run root %q: %w", s.runDir, err)
 	}
-	defer root.Close()
+	defer func() {
+		_ = root.Close()
+	}()
 	// path.Join (forward-slash, relative), NOT filepath.Join — os.Root paths are
 	// always slash-separated relative to the root, never OS-native absolutes.
 	rel := path.Join("conversations", conversationID, fmt.Sprintf("%d.content", seq))

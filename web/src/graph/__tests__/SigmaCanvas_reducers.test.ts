@@ -26,7 +26,11 @@ describe('pinnedNodeReducer', () => {
   });
 
   it('restores the compact canvas label for a focused node when ambient labels are hidden', () => {
-    const out = pinnedNodeReducer('n1', { ...base, label: null, canvasLabel: 'd:42' }, new Set(['n1']));
+    const out = pinnedNodeReducer(
+      'n1',
+      { ...base, label: null, canvasLabel: 'd:42' },
+      new Set(['n1']),
+    );
     expect(out.label).toBe('d:42');
   });
 

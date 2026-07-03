@@ -216,7 +216,7 @@ func TestStatusPaneRendersChronologicalActivitySequence(t *testing.T) {
 	if firstReasoning == secondReasoning {
 		t.Fatalf("expected two separate reasoning activity rows, got %q", got)
 	}
-	if !(firstReasoning < tool && tool < secondReasoning && secondReasoning < answer) {
+	if firstReasoning >= tool || tool >= secondReasoning || secondReasoning >= answer {
 		t.Fatalf("activity rows are not chronological, got %q", got)
 	}
 }

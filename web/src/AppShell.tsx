@@ -319,10 +319,7 @@ export function AppShell() {
   }
 
   const mobileNavigation = (
-    <MobileAppSidebar
-      activeMode={surface}
-      onModeSelect={selectMobileMode}
-    >
+    <MobileAppSidebar activeMode={surface} onModeSelect={selectMobileMode}>
       <div className="flex h-full min-h-0 flex-col gap-2">
         <Button
           type="button"

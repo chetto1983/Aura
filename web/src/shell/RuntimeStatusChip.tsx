@@ -35,10 +35,7 @@ export function RuntimeStatusChip() {
       aria-label={`${t('health.title')}: ${label}`}
       className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--radius-pill)] border border-border bg-surface-2 px-2.5 text-xs font-medium text-text-muted sm:px-3"
     >
-      <span
-        aria-hidden="true"
-        className={`h-2 w-2 shrink-0 rounded-sm ${toneClass(tone)}`}
-      />
+      <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-sm ${toneClass(tone)}`} />
       <span>{label}</span>
     </div>
   );
