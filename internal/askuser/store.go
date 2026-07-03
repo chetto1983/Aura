@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -105,15 +106,17 @@ type InsertParams struct {
 	ProxiedToolCallID  string
 }
 
-// Insert persists one pending pause. Options/ResumeContext are jsonb (nil → SQL
-// NULL). The proxied_* columns carry the D-05 relay ids when the pause proxies a
-// child's needs_user_input report; they stay NULL for direct calls (a nil child
-// id leaves the pgtype.Text Valid:false, an empty tool_call id leaves the
-// pgtype.Text Valid:false). proxied_from_child_id is the flat worker id
-// ("w1".."wN", D-15/D-16) stored verbatim as text — NOT a uuid (CR-01): the swarm
-// report carries no uuid for a model to relay, so parsing one here would fail the
-// documented happy path.
-func (s *Store) Insert(ctx context.Context, p InsertParams) error {
+// InsertTx persists one pending pause using the caller-supplied Queries (bound to the
+// caller's transaction — it opens NO transaction of its own). The 34-06 HITL
+// ResumeCommitter uses it to span a pause write and a resume/answer turn append in one
+// cross-store db.WithTx (D-03). Options/ResumeContext are jsonb (nil → SQL NULL). The
+// proxied_* columns carry the D-05 relay ids when the pause proxies a child's
+// needs_user_input report; they stay NULL for direct calls (a nil child id leaves the
+// pgtype.Text Valid:false, an empty tool_call id leaves the pgtype.Text Valid:false).
+// proxied_from_child_id is the flat worker id ("w1".."wN", D-15/D-16) stored verbatim
+// as text — NOT a uuid (CR-01): the swarm report carries no uuid for a model to relay,
+// so parsing one here would fail the documented happy path.
+func (s *Store) InsertTx(ctx context.Context, q *sqlc.Queries, p InsertParams) error {
 	token, err := parseUUID("token", p.Token)
 	if err != nil {
 		return fmt.Errorf("insert paused state: %w", err)
@@ -138,10 +141,18 @@ func (s *Store) Insert(ctx context.Context, p InsertParams) error {
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  pgtype.Text{String: p.ProxiedToolCallID, Valid: p.ProxiedToolCallID != ""},
 	}
-	if err := s.q.InsertPausedState(ctx, arg); err != nil {
+	if err := q.InsertPausedState(ctx, arg); err != nil {
 		return fmt.Errorf("insert paused state %s: %w", p.Token, err)
 	}
 	return nil
+}
+
+// Insert persists one pending pause. It is a thin wrapper over InsertTx bound to the
+// pool's Queries (s.q): a single INSERT auto-commits, so — matching the pre-34-05
+// behavior exactly — it opens no explicit transaction, and the parse-before-DB guard
+// in InsertTx still short-circuits malformed input before any pool round-trip.
+func (s *Store) Insert(ctx context.Context, p InsertParams) error {
+	return s.InsertTx(ctx, s.q, p)
 }
 
 // GetByToken fetches one pause by token, mapping a missing row to ErrPauseNotFound.
@@ -225,10 +236,14 @@ type Record struct {
 // ListRecent returns the most-recent paused_states rows (pending + resolved) across
 // all conversations, newest first, for the CLI. limit<=0 falls back to 50.
 func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
-	if limit <= 0 {
-		limit = 50
+	// Guard the int32 narrowing (QUAL-04a / D-15a) mirroring ListPendingAll: a
+	// non-positive OR int32-overflowing limit falls back to the 50 default so
+	// int32(limit) can never wrap to a negative LIMIT (CodeQL go/incorrect-integer-conversion).
+	var lim int32 = 50
+	if limit > 0 && limit <= math.MaxInt32 {
+		lim = int32(limit)
 	}
-	rows, err := s.q.ListRecentPausedStates(ctx, int32(limit))
+	rows, err := s.q.ListRecentPausedStates(ctx, lim)
 	if err != nil {
 		return nil, fmt.Errorf("list recent paused states: %w", err)
 	}
@@ -252,10 +267,14 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
 	return out, nil
 }
 
-// MarkResumed resolves one pause with the AM-02 {action, content} answer. An
-// unknown / already-resumed token (zero rows affected) returns ErrPauseNotFound so
-// the caller gets a clear error rather than a silent no-op.
-func (s *Store) MarkResumed(ctx context.Context, token string, ans ResumeAnswer) error {
+// MarkResumedTx resolves one pause with the AM-02 {action, content} answer using the
+// caller-supplied Queries (bound to the caller's transaction — it opens NO transaction
+// of its own). It maps a rows-affected==0 claim (an unknown / already-resumed token —
+// the WHERE resumed_at IS NULL predicate matched no row) to ErrPauseNotFound via the
+// regenerated MarkPausedStateResumed (:execrows). The 34-06 ResumeCommitter calls it to
+// claim a pause in the SAME tx as the resume-answer turn append (D-03), so a claim and
+// its answer commit all-or-nothing.
+func (s *Store) MarkResumedTx(ctx context.Context, q *sqlc.Queries, token string, ans ResumeAnswer) error {
 	id, err := parseUUID("token", token)
 	if err != nil {
 		return fmt.Errorf("mark resumed: %w", err)
@@ -264,65 +283,74 @@ func (s *Store) MarkResumed(ctx context.Context, token string, ans ResumeAnswer)
 	if err != nil {
 		return fmt.Errorf("mark resumed %s: %w", token, err)
 	}
-	tag, err := s.pool.Exec(ctx, markResumedSQL, id, answer)
+	n, err := q.MarkPausedStateResumed(ctx, sqlc.MarkPausedStateResumedParams{Token: id, ResumedAnswer: answer})
 	if err != nil {
 		return fmt.Errorf("mark resumed %s: %w", token, err)
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return fmt.Errorf("mark resumed %s: %w", token, ErrPauseNotFound)
 	}
 	return nil
 }
 
-// markResumedSQL mirrors the sqlc MarkPausedStateResumed query but is issued via
-// pool.Exec so the RowsAffected count drives the ErrPauseNotFound classification
-// (the generated :exec discards the CommandTag).
-const markResumedSQL = `UPDATE aura.paused_states
-SET resumed_at = now(), resumed_answer = $2
-WHERE token = $1 AND resumed_at IS NULL`
+// MarkResumed resolves one pause with the AM-02 {action, content} answer. A thin
+// wrapper over MarkResumedTx bound to the pool's Queries (s.q): a single conditional
+// UPDATE auto-commits, so — matching the pre-34-05 behavior — it opens no explicit
+// transaction, and the parse/encode guards short-circuit malformed input before any
+// pool round-trip. An unknown / already-resumed token returns ErrPauseNotFound.
+func (s *Store) MarkResumed(ctx context.Context, token string, ans ResumeAnswer) error {
+	return s.MarkResumedTx(ctx, s.q, token, ans)
+}
 
-// MarkResumedBatch resolves many pauses atomically (one tx via db.WithTx). Every
-// token must resolve a still-pending row; if any token is unknown/already-resumed
-// the whole batch rolls back with ErrPauseNotFound (no partial resolution).
+// MarkResumedBatchTx resolves many pauses using the caller-supplied Queries (bound to
+// the caller's transaction — it opens NO transaction of its own; the caller's db.WithTx
+// makes it all-or-nothing). It claims the pauses in SORTED token order so two
+// concurrent overlapping batches always lock rows in the same order and cannot deadlock
+// (Postgres 40P01, RESEARCH landmine #2 / T-34-B): the loser blocks on the row lock,
+// re-evaluates the WHERE resumed_at IS NULL predicate under READ COMMITTED against the
+// now-committed row, matches 0 rows, and gets a clean ErrPauseNotFound (→ its tx rolls
+// back). Every token must resolve a still-pending row; the first unknown/already-resumed
+// token aborts the whole batch with ErrPauseNotFound (no partial resolution).
+func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers map[string]ResumeAnswer) error {
+	if len(answers) == 0 {
+		return nil
+	}
+	tokens := make([]string, 0, len(answers))
+	for token := range answers {
+		tokens = append(tokens, token)
+	}
+	sort.Strings(tokens)
+	for _, token := range tokens {
+		id, err := parseUUID("token", token)
+		if err != nil {
+			return fmt.Errorf("mark resumed batch: %w", err)
+		}
+		answer, err := encodeAnswer(answers[token])
+		if err != nil {
+			return fmt.Errorf("mark resumed batch %s: %w", token, err)
+		}
+		n, err := q.MarkPausedStateResumed(ctx, sqlc.MarkPausedStateResumedParams{Token: id, ResumedAnswer: answer})
+		if err != nil {
+			return fmt.Errorf("mark resumed batch %s: %w", token, err)
+		}
+		if n == 0 {
+			return fmt.Errorf("mark resumed batch %s: %w", token, ErrPauseNotFound)
+		}
+	}
+	return nil
+}
+
+// MarkResumedBatch resolves many pauses atomically (one tx via db.WithTx over
+// MarkResumedBatchTx). Every token must resolve a still-pending row; if any token is
+// unknown/already-resumed the whole batch rolls back with ErrPauseNotFound (no partial
+// resolution). An empty map is a no-op that opens no transaction.
 func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeAnswer) error {
 	if len(answers) == 0 {
 		return nil
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-		}
-	}()
-	for token, ans := range answers {
-		id, parseErr := parseUUID("token", token)
-		if parseErr != nil {
-			err = fmt.Errorf("mark resumed batch: %w", parseErr)
-			return err
-		}
-		answer, encodeErr := encodeAnswer(ans)
-		if encodeErr != nil {
-			err = fmt.Errorf("mark resumed batch %s: %w", token, encodeErr)
-			return err
-		}
-		tag, execErr := tx.Exec(ctx, markResumedSQL, id, answer)
-		if execErr != nil {
-			err = fmt.Errorf("mark resumed batch %s: %w", token, execErr)
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			err = fmt.Errorf("mark resumed batch %s: %w", token, ErrPauseNotFound)
-			return err
-		}
-	}
-	if commitErr := tx.Commit(ctx); commitErr != nil {
-		err = commitErr
-		return err
-	}
-	return nil
+	return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		return s.MarkResumedBatchTx(ctx, q, answers)
+	})
 }
 
 // AutoResolveForConversation is the SPEC Req#11 Loop.Stop helper: resolve every

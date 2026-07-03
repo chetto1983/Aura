@@ -4,10 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TestEncodeAnswer_ValidActions accepts the three MCP actions and round-trips the
@@ -199,5 +205,131 @@ func TestStore_EncodeFailWrapMessages(t *testing.T) {
 	}
 	if got := mrErr.Error(); !strings.HasPrefix(got, "mark resumed "+goodTok+":") {
 		t.Fatalf("MarkResumed encode-fail wrap: want prefix %q, got %q", "mark resumed "+goodTok+":", got)
+	}
+}
+
+// recordingDBTX is an in-memory sqlc.DBTX that records the positional args of each
+// Exec/Query so a unit test can assert the order/values the Store passed to the
+// generated queries — without a live Postgres. Exec reports RowsAffected==1 (a claimed
+// row) so the MarkResumedBatchTx loop proceeds through every token; Query returns zero
+// rows so the ListRecent read loop returns cleanly.
+type recordingDBTX struct {
+	execTokens []string // canonical UUIDs captured from MarkPausedStateResumed's $1
+	queryLimit int32    // the int32 LIMIT captured from ListRecentPausedStates' $1
+	queryCalls int
+}
+
+func (r *recordingDBTX) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+	if len(args) > 0 {
+		if u, ok := args[0].(pgtype.UUID); ok {
+			r.execTokens = append(r.execTokens, uuid.UUID(u.Bytes).String())
+		}
+	}
+	return pgconn.NewCommandTag("UPDATE 1"), nil
+}
+
+func (r *recordingDBTX) Query(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
+	r.queryCalls++
+	if len(args) > 0 {
+		if lim, ok := args[0].(int32); ok {
+			r.queryLimit = lim
+		}
+	}
+	return &emptyRows{}, nil
+}
+
+// QueryRow is unused by the methods under test (they use Exec/Query); the nil row is
+// never dereferenced.
+func (r *recordingDBTX) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
+
+// emptyRows is a pgx.Rows that yields no rows (Next→false immediately), letting the
+// sqlc read loop return an empty slice cleanly.
+type emptyRows struct{}
+
+func (emptyRows) Close()                                       {}
+func (emptyRows) Err() error                                   { return nil }
+func (emptyRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (emptyRows) Next() bool                                   { return false }
+func (emptyRows) Scan(...any) error                            { return nil }
+func (emptyRows) Values() ([]any, error)                       { return nil, nil }
+func (emptyRows) RawValues() [][]byte                          { return nil }
+func (emptyRows) Conn() *pgx.Conn                              { return nil }
+
+// TestMarkResumedBatchTx_ClaimsInSortedTokenOrder asserts the batch claims pauses in
+// SORTED token order (RESEARCH landmine #2 / T-34-B) so two concurrent overlapping
+// batches lock rows in the same order and cannot deadlock (Postgres 40P01). The input
+// is a map (random iteration order) and the recording fake captures the actual UPDATE
+// order; a non-sorting implementation would surface a non-sorted order and fail. Eight
+// tokens make an accidental in-order map iteration astronomically unlikely.
+func TestMarkResumedBatchTx_ClaimsInSortedTokenOrder(t *testing.T) {
+	rec := &recordingDBTX{}
+	q := sqlc.New(rec)
+	s := New(nil) // pool unused: the Tx method operates on the supplied Queries only
+
+	tokens := []string{
+		"88888888-8888-8888-8888-888888888888",
+		"22222222-2222-2222-2222-222222222222",
+		"66666666-6666-6666-6666-666666666666",
+		"11111111-1111-1111-1111-111111111111",
+		"55555555-5555-5555-5555-555555555555",
+		"33333333-3333-3333-3333-333333333333",
+		"77777777-7777-7777-7777-777777777777",
+		"44444444-4444-4444-4444-444444444444",
+	}
+	answers := make(map[string]ResumeAnswer, len(tokens))
+	for _, tok := range tokens {
+		answers[tok] = ResumeAnswer{Action: ActionAccept, Content: "ok"}
+	}
+
+	if err := s.MarkResumedBatchTx(context.Background(), q, answers); err != nil {
+		t.Fatalf("MarkResumedBatchTx: %v", err)
+	}
+
+	want := []string{
+		"11111111-1111-1111-1111-111111111111",
+		"22222222-2222-2222-2222-222222222222",
+		"33333333-3333-3333-3333-333333333333",
+		"44444444-4444-4444-4444-444444444444",
+		"55555555-5555-5555-5555-555555555555",
+		"66666666-6666-6666-6666-666666666666",
+		"77777777-7777-7777-7777-777777777777",
+		"88888888-8888-8888-8888-888888888888",
+	}
+	if !reflect.DeepEqual(rec.execTokens, want) {
+		t.Errorf("batch must claim tokens in sorted order (deadlock-free), got %v want %v", rec.execTokens, want)
+	}
+}
+
+// TestListRecent_Int32Guard pins the QUAL-04a int32 narrowing guard: the LIMIT bound to
+// ListRecentPausedStates falls back to 50 for a non-positive OR int32-overflowing input
+// and never wraps to a negative LIMIT. A recording fake captures the int32 actually
+// passed to the generated query.
+func TestListRecent_Int32Guard(t *testing.T) {
+	cases := []struct {
+		name string
+		in   int
+		want int32
+	}{
+		{"zero", 0, 50},
+		{"negative", -5, 50},
+		{"fifty", 50, 50},
+		{"maxint32", math.MaxInt32, math.MaxInt32},
+		{"overflow", int(int64(math.MaxInt32) + 1), 50},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &recordingDBTX{}
+			s := &Store{q: sqlc.New(rec)} // pool unused: ListRecent reads via s.q only
+			if _, err := s.ListRecent(context.Background(), tc.in); err != nil {
+				t.Fatalf("ListRecent(%d): %v", tc.in, err)
+			}
+			if rec.queryCalls != 1 {
+				t.Fatalf("ListRecent(%d): want exactly 1 query, got %d", tc.in, rec.queryCalls)
+			}
+			if rec.queryLimit != tc.want {
+				t.Errorf("ListRecent(%d): bound LIMIT = %d, want %d (int32 guard)", tc.in, rec.queryLimit, tc.want)
+			}
+		})
 	}
 }
