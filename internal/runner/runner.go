@@ -167,10 +167,14 @@ type Runner struct {
 
 	threadLocks sync.Map
 	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
-	// stopOnce guards spawning the SINGLE wg-drain waiter that closes stopDone. Repeated
-	// Stop on a hung title worker then reuses stopDone instead of leaking a fresh waiter
-	// goroutine per call (D-14/LOOP-11/F-045).
-	stopOnce sync.Once
+	// stopMu guards (re)arming the SINGLE wg-drain waiter that closes stopDone. While a
+	// title worker runs, stopDone stays non-nil so repeated Stop reuses ONE waiter — a hung
+	// worker leaves exactly one blocked waiter no matter how often Stop is called
+	// (D-14/LOOP-11/F-045). On a clean drain the waiter resets stopDone to nil so a LATER
+	// Stop re-arms a fresh waiter and actually joins a title worker spawned after that drain
+	// (WR-02: the pre-fix one-shot sync.Once closed stopDone permanently, so every later
+	// Stop returned "drained" while a post-drain worker was still in flight).
+	stopMu   sync.Mutex
 	stopDone chan struct{}
 }
 
@@ -227,7 +231,8 @@ func New(d Deps) *Runner {
 		classifier:      classifier,
 		breaker:         d.Breaker,
 		resumeCommitter: d.ResumeCommitter,
-		stopDone:        make(chan struct{}),
+		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
+		// clean drain resets it to nil so a later Stop re-arms (WR-02).
 	}
 	// Default to the pool-less split committer when the composition root injected none
 	// (D-03): pool-owning callers pass a *PoolResumeCommitter for atomic cross-store

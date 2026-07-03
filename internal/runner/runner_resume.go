@@ -270,24 +270,35 @@ func (r *Runner) evictSessionToolState(convID string) {
 }
 
 // waitWorkers blocks until the auto-title WaitGroup drains or the timeout elapses,
-// returning true on a clean drain. The wg-drain waiter goroutine is spawned AT MOST ONCE
-// for the Runner's lifetime via stopOnce (D-14/LOOP-11/F-045): the old per-call waiter
-// spawned a fresh `go wg.Wait()` on EVERY Stop, so a hung title worker leaked one blocked
-// waiter per call. Now repeated Stop reuses the single stopDone channel, so a hung worker
-// leaves exactly ONE blocked waiter regardless of how many times Stop is called.
+// returning true on a clean drain. The wg-drain waiter is (re)armed under stopMu: while a
+// title worker is still running, stopDone stays non-nil so repeated Stop reuses the SAME
+// waiter — a hung worker leaves exactly ONE blocked waiter regardless of how many times
+// Stop is called (D-14/LOOP-11/F-045: the old per-call `go wg.Wait()` leaked one waiter
+// per Stop). On a clean drain the waiter resets stopDone to nil, so a Stop that runs AFTER
+// a title worker was spawned post-drain re-arms a fresh waiter and actually joins it
+// (WR-02: the pre-fix one-shot sync.Once closed stopDone permanently, so every later Stop
+// read the already-closed channel and returned "drained" while a new worker was in flight).
 //
 // Scope fence: conversations/sweeper.go's Stop has the analogous per-call-waiter pattern,
 // but it is called once at daemon shutdown and F-045 names runner_resume.go only — leave
 // it for a Phase-35 pass, do NOT touch sweeper.go here.
 func (r *Runner) waitWorkers(timeout time.Duration) bool {
-	r.stopOnce.Do(func() {
+	r.stopMu.Lock()
+	if r.stopDone == nil {
+		done := make(chan struct{})
+		r.stopDone = done
 		go func() {
 			r.wg.Wait()
-			close(r.stopDone)
+			r.stopMu.Lock()
+			r.stopDone = nil
+			r.stopMu.Unlock()
+			close(done)
 		}()
-	})
+	}
+	done := r.stopDone
+	r.stopMu.Unlock()
 	select {
-	case <-r.stopDone:
+	case <-done:
 		return true
 	case <-time.After(timeout):
 		return false
