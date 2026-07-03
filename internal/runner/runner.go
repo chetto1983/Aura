@@ -167,6 +167,11 @@ type Runner struct {
 
 	threadLocks sync.Map
 	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
+	// stopOnce guards spawning the SINGLE wg-drain waiter that closes stopDone. Repeated
+	// Stop on a hung title worker then reuses stopDone instead of leaking a fresh waiter
+	// goroutine per call (D-14/LOOP-11/F-045).
+	stopOnce sync.Once
+	stopDone chan struct{}
 }
 
 // New builds a Runner over the supplied dependencies, applying the timeout
@@ -222,6 +227,7 @@ func New(d Deps) *Runner {
 		classifier:      classifier,
 		breaker:         d.Breaker,
 		resumeCommitter: d.ResumeCommitter,
+		stopDone:        make(chan struct{}),
 	}
 	// Default to the pool-less split committer when the composition root injected none
 	// (D-03): pool-owning callers pass a *PoolResumeCommitter for atomic cross-store

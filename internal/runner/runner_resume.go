@@ -270,16 +270,24 @@ func (r *Runner) evictSessionToolState(convID string) {
 }
 
 // waitWorkers blocks until the auto-title WaitGroup drains or the timeout elapses,
-// returning true on a clean drain. A separate goroutine signals completion so the
-// bounded wait never leaks (it closes a channel then returns).
+// returning true on a clean drain. The wg-drain waiter goroutine is spawned AT MOST ONCE
+// for the Runner's lifetime via stopOnce (D-14/LOOP-11/F-045): the old per-call waiter
+// spawned a fresh `go wg.Wait()` on EVERY Stop, so a hung title worker leaked one blocked
+// waiter per call. Now repeated Stop reuses the single stopDone channel, so a hung worker
+// leaves exactly ONE blocked waiter regardless of how many times Stop is called.
+//
+// Scope fence: conversations/sweeper.go's Stop has the analogous per-call-waiter pattern,
+// but it is called once at daemon shutdown and F-045 names runner_resume.go only — leave
+// it for a Phase-35 pass, do NOT touch sweeper.go here.
 func (r *Runner) waitWorkers(timeout time.Duration) bool {
-	done := make(chan struct{})
-	go func() {
-		r.wg.Wait()
-		close(done)
-	}()
+	r.stopOnce.Do(func() {
+		go func() {
+			r.wg.Wait()
+			close(r.stopDone)
+		}()
+	})
 	select {
-	case <-done:
+	case <-r.stopDone:
 		return true
 	case <-time.After(timeout):
 		return false
