@@ -167,6 +167,9 @@ services:
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
       - "127.0.0.1:${AURA_SETUP_PORT:-9081}:9081"
+    networks:
+      - default
+      - aura-web
     volumes:
       - aura-home:/var/lib/aura
       - ${AURA_BACKUP_DIR:-./backups}:/backups
@@ -474,10 +477,10 @@ services:
       retries: 12
       start_period: 30s
 
-  # Local SearXNG backend. Aura talks to this over 127.0.0.1 only via
-  # SEARXNG_URL. SearXNG needs outbound egress to query
-  # upstream engines; loopback publishing keeps the service local without cutting
-  # off metasearch.
+  # Local SearXNG backend. Aura reaches it through Compose DNS on aura-web via
+  # SEARXNG_URL; the host reaches it through loopback for local doctor/smoke probes.
+  # SearXNG needs outbound egress to query upstream engines; loopback publishing
+  # keeps the service local without cutting off metasearch.
   searxng:
     image: searxng/searxng:2026.5.31-7159b8aed
     container_name: aura-searxng

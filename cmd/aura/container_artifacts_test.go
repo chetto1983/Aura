@@ -227,6 +227,18 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 }
 
+func TestAuraServiceCanResolveContainerInternalSearxng(t *testing.T) {
+	root := repoRootForTest(t)
+	compose := readProjectFile(t, root, "compose.yaml")
+	aura := composeServiceBlock(t, compose, "aura")
+	if !strings.Contains(aura, "SEARXNG_URL: http://searxng:8080/search") {
+		t.Fatalf("aura service must keep the container-internal SearXNG URL:\n%s", aura)
+	}
+	if !regexp.MustCompile(`(?m)^    networks:\n      - default\n      - aura-web$`).MatchString(aura) {
+		t.Fatalf("aura service must join default and aura-web networks so SEARXNG_URL resolves:\n%s", aura)
+	}
+}
+
 func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	root := repoRootForTest(t)
 	installer := readProjectFile(t, root, "scripts/install.sh")
@@ -478,4 +490,20 @@ func readProjectFile(t *testing.T, root, rel string) string {
 		t.Fatalf("read %s: %v", rel, err)
 	}
 	return string(b)
+}
+
+func composeServiceBlock(t *testing.T, compose, name string) string {
+	t.Helper()
+	startRe := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(name) + `:\n`)
+	loc := startRe.FindStringIndex(compose)
+	if loc == nil {
+		t.Fatalf("compose service %q not found", name)
+	}
+	rest := compose[loc[1]:]
+	endRe := regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:\n`)
+	end := endRe.FindStringIndex(rest)
+	if end == nil {
+		return compose[loc[0]:]
+	}
+	return compose[loc[0] : loc[1]+end[0]]
 }
