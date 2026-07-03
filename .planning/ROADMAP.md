@@ -84,7 +84,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 34: Agent-Loop Correctness + Durable Ledger** — `LOOP-01..11`, `QUAL-04`(double-Validate/pool-leak, int32 guard) (F-003/004/005/009/010/029/030/031/040/045/048) (completed 2026-07-03)
   - Goal: terminal-response exclusivity, atomic HITL resume/pause (single cross-store transaction), fenced sidecars, crash-orphan reconciliation.
   - Success: (1) `text_response` + mutating sibling never executes the sibling; (2) duplicate single/batch resume → exactly one answer/pause, append-failure leaves a repairable state; (3) outside-root/traversal/symlink sidecar reads rejected; (4) mutating tool that panics post-side-effect still arms the completion gate.
-- [ ] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020) (executed 5/5, 4/4 SC verified; pending gap-closure: approve-resume UX)
+- [ ] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020) (executed 5/5, 4/4 SC verified; gap-closure 35-06 planned: approve-resume UX)
   - Goal: one in-process policy decision on every tool call; fail-closed for mutating tools; durable reservation.
   - Success: (1) no tool executes without a recorded policy decision; (2) a timing-out/crashing command hook denies under hardened/production; (3) a mutating tool is blocked when ledger reservation fails in production; (4) gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 - [ ] **Phase 36: Multi-User Identity Isolation + Authula Cutover** — `MUSR-01..06`, `QUAL`(Authula DSN test) (F-012/028/032/039/050)
@@ -250,7 +250,7 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
-**Plans:** 5/5 plans complete
+**Plans:** 6 plans (5 complete + 1 gap-closure)
 
 **Wave 1** *(parallel — DB-free foundation)*
 
@@ -268,6 +268,10 @@ Plans:
 **Wave 4** *(blocked on 35-04)*
 
 - [x] 35-05-PLAN.md — Crash-orphan reconciler: append-only end{indeterminate}, never re-invoke (D-01d) [GATE-03]
+
+**Wave 5** *(gap closure — blocked on 35-03/35-04)*
+
+- [ ] 35-06-PLAN.md — Gap: interactive `approve` pause/resume UX end-to-end — GatewayApprovals ledger + WouldApprovePause surfacing (llm_agent_pause.go) + newGatewayResumeHook re-enters Decide (D-03 point 2) [GATE-01]
 
 #### Phase 36: Multi-User Identity Isolation + Authula Cutover
 
