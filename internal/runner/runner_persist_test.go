@@ -9,15 +9,15 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 )
 
-// TestPersistPause_ForwardsProxiedIDs pins the D-05 layer-3 plumb: persistPause
-// (the SOLE paused_states writer) must read ProxiedFromChildID/ProxiedToolCallID
-// off the *agent.AwaitingInput and forward them into askuser.InsertParams. The
-// fixture uses the REAL flat worker id "w2" the swarm report carries and the model
-// is told to relay — not a synthetic uuid that masked the CR-01 failure. A
-// non-empty child id is passed as a non-nil *string; the tool_call id passes
-// through verbatim.
+// TestPersistPause_ForwardsProxiedIDs pins the D-05 layer-3 plumb: persistPause must read
+// ProxiedFromChildID/ProxiedToolCallID off the *agent.AwaitingInput and forward them into
+// the ACCUMULATED askuser.InsertParams (post-34-06 persistPause no longer inserts — the
+// row is written by flushPause's CommitPause; here we assert the tracker payload). The
+// fixture uses the REAL flat worker id "w2" the swarm report carries and the model is told
+// to relay — not a synthetic uuid that masked the CR-01 failure. A non-empty child id is
+// passed as a non-nil *string; the tool_call id passes through verbatim.
 func TestPersistPause_ForwardsProxiedIDs(t *testing.T) {
-	r, _, pause := newTestRunner(t, agenttest.NewFakeClient())
+	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
 	convID := newConvID(t)
 	tr := &turnTracker{convID: convID}
 
@@ -32,7 +32,10 @@ func TestPersistPause_ForwardsProxiedIDs(t *testing.T) {
 		t.Fatalf("persistPause: %v", err)
 	}
 
-	got := pause.lastInsert
+	if len(tr.pauseInserts) != 1 {
+		t.Fatalf("persistPause must accumulate exactly 1 pause InsertParams, got %d", len(tr.pauseInserts))
+	}
+	got := tr.pauseInserts[0]
 	if got.ProxiedFromChildID == nil || *got.ProxiedFromChildID != "w2" {
 		t.Errorf("ProxiedFromChildID not forwarded: %v", got.ProxiedFromChildID)
 	}
@@ -45,7 +48,7 @@ func TestPersistPause_ForwardsProxiedIDs(t *testing.T) {
 // direct (non-proxied) pause forwards a nil child id (→ SQL NULL) and an empty
 // tool_call id, so existing direct pauses persist unchanged.
 func TestPersistPause_DirectPauseLeavesProxiedNil(t *testing.T) {
-	r, _, pause := newTestRunner(t, agenttest.NewFakeClient())
+	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
 	convID := newConvID(t)
 	tr := &turnTracker{convID: convID}
 
@@ -54,7 +57,10 @@ func TestPersistPause_DirectPauseLeavesProxiedNil(t *testing.T) {
 		t.Fatalf("persistPause: %v", err)
 	}
 
-	got := pause.lastInsert
+	if len(tr.pauseInserts) != 1 {
+		t.Fatalf("persistPause must accumulate exactly 1 pause InsertParams, got %d", len(tr.pauseInserts))
+	}
+	got := tr.pauseInserts[0]
 	if got.ProxiedFromChildID != nil {
 		t.Errorf("a direct pause must forward a nil child id (SQL NULL), got %v", *got.ProxiedFromChildID)
 	}
@@ -64,7 +70,7 @@ func TestPersistPause_DirectPauseLeavesProxiedNil(t *testing.T) {
 }
 
 func TestPersistPause_ForwardsResumeContext(t *testing.T) {
-	r, _, pause := newTestRunner(t, agenttest.NewFakeClient())
+	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
 	convID := newConvID(t)
 	tr := &turnTracker{convID: convID}
 
@@ -79,8 +85,11 @@ func TestPersistPause_ForwardsResumeContext(t *testing.T) {
 		t.Fatalf("persistPause: %v", err)
 	}
 
-	if string(pause.lastInsert.ResumeContext) != string(resumeContext) {
-		t.Fatalf("ResumeContext not forwarded: got %s want %s", pause.lastInsert.ResumeContext, resumeContext)
+	if len(tr.pauseInserts) != 1 {
+		t.Fatalf("persistPause must accumulate exactly 1 pause InsertParams, got %d", len(tr.pauseInserts))
+	}
+	if string(tr.pauseInserts[0].ResumeContext) != string(resumeContext) {
+		t.Fatalf("ResumeContext not forwarded: got %s want %s", tr.pauseInserts[0].ResumeContext, resumeContext)
 	}
 }
 

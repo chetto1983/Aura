@@ -35,6 +35,10 @@ type turnTracker struct {
 	userMsg string
 	paused  bool
 	pauses  []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+	// pauseInserts are the round's paused_states rows (each with its minted token),
+	// accumulated by persistPause; flushPause writes them + the single assistant ask_user
+	// tool_call turn in ONE cross-store tx so a pause is exposed only after durable history (D-05).
+	pauseInserts []askuser.InsertParams
 
 	// pendingToolCalls holds the current runnable tool batch until the first result
 	// arrives, when the runner can persist one assistant turn carrying the whole
@@ -296,18 +300,23 @@ func (r *Runner) cacheMetricParams(convID string, seq int, u llm.Usage, cost flo
 	return p, nil
 }
 
-// persistPause writes the paused_states row for one ask_user pause (SOLE writer,
-// T-04-19) and accumulates the pause payload in the tracker. The assistant
-// ask_user tool_call turn is NOT written here: when a round emits >=2 ask_user
-// calls the agent collapses them into ONE assistant message (pauseToolCalls), so
-// writing a separate assistant turn per Event would yield a wire-invalid
-// interleaving on resume (CR-02). The combined assistant turn is flushed once at
-// round end by flushPause.
+// persistPause mints the pause token and accumulates its paused_states InsertParams in
+// the tracker; it NO LONGER writes the row (D-05/F-030). Deferring the insert to
+// flushPause lets the assistant ask_user tool_call turn + all N pause rows commit in ONE
+// cross-store tx, so a pause is exposed (ListPendingAll/PendingFor) only AFTER its
+// wire-valid history is durable — never an orphan tool answer on resume. The token is
+// minted here but never leaves the tracker before the flush insert, and the pause Event
+// (agent.AwaitingInput) carries no token, so a consumer learns tokens only via post-flush
+// store reads (A1); moving the insert therefore surfaces no token early. The combined
+// assistant turn (from tr.pauses) is likewise flushed once at round end (CR-02): a round
+// with >=2 ask_user calls collapses to ONE assistant message, so a per-Event assistant
+// turn would be wire-invalid.
 func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.AwaitingInput) error {
 	tr.paused = true
 	tr.pauses = append(tr.pauses, ai)
 
-	// Write the paused_states row (SOLE writer). A fresh token keys the pending.
+	// A fresh token keys the pending. Minted here so persistPause stays the token source
+	// (RESEARCH gotcha #7); the row itself is written by flushPause's CommitPause.
 	token, err := uuid.NewV7()
 	if err != nil {
 		return fmt.Errorf("mint pause token: %w", err)
@@ -322,7 +331,7 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 	if ai.ProxiedFromChildID != "" {
 		proxiedChild = &ai.ProxiedFromChildID
 	}
-	if err := r.pause.Insert(ctx, askuser.InsertParams{
+	tr.pauseInserts = append(tr.pauseInserts, askuser.InsertParams{
 		Token:              token.String(),
 		ConversationID:     tr.convID,
 		Kind:               ai.Kind,
@@ -333,18 +342,19 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 		ResumeContext:      ai.ResumeContext,
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  ai.ProxiedToolCallID,
-	}); err != nil {
-		return fmt.Errorf("insert paused state: %w", err)
-	}
+	})
 	return nil
 }
 
-// flushPause writes the SINGLE assistant ask_user tool_call turn carrying ALL the
-// round's ask_user calls (D-A1-07 wire-correctness: the resume request must carry
-// every original ask_user call so each injected RoleTool answer matches a real
-// tool_call_id, never a duplicate, and the assistant-with-N-tool_calls message is
-// immediately followed by its N tool answers). It runs once at round end, after
-// la.Run drains, so the combined turn mirrors the agent's single-message rewrite.
+// flushPause commits the round's pause exposure atomically (D-05/F-030): the SINGLE
+// assistant ask_user tool_call turn (carrying ALL the round's calls — D-A1-07
+// wire-correctness: the resume request must carry every original ask_user call so each
+// injected RoleTool answer matches a real tool_call_id) + all N paused_states rows in ONE
+// cross-store tx via the committer. The assistant turn goes in FIRST, so a pause is
+// consumable (ListPendingAll/PendingFor) only AFTER its wire-valid history is durable; a
+// tx failure leaves NEITHER, never an orphan tool answer on resume (the infinite-pause
+// loop this closes). It runs once at round end, after la.Run drains, so the combined turn
+// mirrors the agent's single-message rewrite.
 func (r *Runner) flushPause(ctx context.Context, tr *turnTracker) error {
 	if len(tr.pauses) == 0 {
 		return nil
@@ -353,11 +363,12 @@ func (r *Runner) flushPause(ctx context.Context, tr *turnTracker) error {
 	if err != nil {
 		return err
 	}
-	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+	assistantTurn := conversations.AppendTurnParams{
 		ConversationID: tr.convID,
 		Role:           llm.RoleAssistant,
 		ToolCalls:      toolCalls,
-	}); err != nil {
+	}
+	if err := r.resumeCommitter.CommitPause(ctx, assistantTurn, tr.pauseInserts); err != nil {
 		return fmt.Errorf("persist pause assistant turn: %w", err)
 	}
 	return nil

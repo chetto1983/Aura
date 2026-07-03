@@ -75,19 +75,16 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 		return r.cancelConversation(ctx, pending.ConversationID)
 	}
 
-	// Claim the pause FIRST (M-02): MarkResumed's RowsAffected==0 gate returns
-	// ErrPauseNotFound for an unknown or already-resumed token, so a duplicate resume
-	// is rejected BEFORE any answer turn is injected. The old order injected first,
-	// letting a retry append a SECOND answer turn for the same tool_call (two tool
-	// results for one tool_call → a wire-invalid rehydrated round). Inject + hook run
-	// only once the claim succeeds. Residual: a MarkResumed-then-injectAnswer DB
-	// failure (rare) leaves the pause claimed without an answer; the deeper fix is one
-	// cross-store transaction (deferred — see audit M-02).
-	if err := r.pause.MarkResumed(ctx, token, toResumeAnswer(resp)); err != nil {
+	// Claim the pause AND append its answer turn in ONE cross-store tx (D-03/LOOP-03).
+	// MarkResumed's RowsAffected==0 gate returns ErrPauseNotFound for an unknown or
+	// already-resumed token, so a duplicate resume claims nothing and injects nothing; an
+	// AppendTurn failure after the claim rolls the whole tx back, leaving resumed_at IS
+	// NULL so the user can retry. The WHERE resumed_at IS NULL conditional update IS the
+	// idempotency key (D-06), so the old claimed-without-answer residual is now
+	// structurally impossible — no more split MarkResumed → injectAnswer.
+	claim := ResumeClaim{Token: token, Answer: toResumeAnswer(resp), Turn: r.answerTurn(pending, resp)}
+	if err := r.resumeCommitter.CommitResume(ctx, claim); err != nil {
 		return 0, fmt.Errorf("submit answer: %w", err)
-	}
-	if err := r.injectAnswer(ctx, pending, resp); err != nil {
-		return 0, err
 	}
 	if err := r.applyResumeHook(ctx, pending, resp); err != nil {
 		return 0, fmt.Errorf("submit answer: %w", err)
@@ -95,15 +92,17 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 	return r.remainingPending(ctx, pending.ConversationID)
 }
 
-// SubmitAnswers resolves MANY pending pauses atomically (one MarkResumedBatch) and
-// injects each as a RoleTool answer. Cancel actions short-circuit to the Stop
-// auto-resolve path for the whole conversation. Returns the remaining count.
+// SubmitAnswers resolves MANY pending pauses in ONE cross-store tx (D-04/LOOP-02): it
+// claims ALL pauses (sorted-token, deadlock-free) then appends ALL answers, replacing the
+// pre-34-06 inject-first bug (which appended every answer BEFORE the batch claim). Cancel
+// actions short-circuit to the Stop auto-resolve path for the whole conversation. Returns
+// the remaining count.
 func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseInput) (int, error) {
 	if len(answers) == 0 {
 		return 0, nil
 	}
 	// Resolve each token up-front so we know the conversation + tool_call_id for the
-	// injection, and detect a cancel.
+	// answer turn, and detect a cancel.
 	pendings := make(map[string]askuser.Pending, len(answers))
 	var convID string
 	for token := range answers {
@@ -118,16 +117,14 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 		}
 	}
 
+	// Claim-all-then-append-all in one tx: a duplicate/concurrent batch serializes on the
+	// conditional update and the whole tx rolls back → exactly one answer per pause, no
+	// orphan RoleTool turns; the loser gets ErrPauseNotFound (D-04/D-06).
+	claims := make([]ResumeClaim, 0, len(answers))
 	for token, resp := range answers {
-		if err := r.injectAnswer(ctx, pendings[token], resp); err != nil {
-			return 0, err
-		}
+		claims = append(claims, ResumeClaim{Token: token, Answer: toResumeAnswer(resp), Turn: r.answerTurn(pendings[token], resp)})
 	}
-	batch := make(map[string]askuser.ResumeAnswer, len(answers))
-	for token, resp := range answers {
-		batch[token] = toResumeAnswer(resp)
-	}
-	if err := r.pause.MarkResumedBatch(ctx, batch); err != nil {
+	if err := r.resumeCommitter.CommitResumeBatch(ctx, claims); err != nil {
 		return 0, fmt.Errorf("submit answers: %w", err)
 	}
 	for token, resp := range answers {
@@ -145,20 +142,29 @@ func (r *Runner) applyResumeHook(ctx context.Context, pending askuser.Pending, r
 	return r.resumeHook(ctx, pending, resp)
 }
 
-// injectAnswer appends the RoleTool answer turn keyed by the original tool_call_id
-// (SC-4 wire-correctness). decline injects the "user declined" marker; accept
-// injects the supplied content.
-func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp ResponseInput) error {
+// answerTurn builds the RoleTool answer turn keyed by the pause's original tool_call_id
+// (SC-4 wire-correctness): decline injects the "user declined" marker; accept/cancel
+// inject the supplied content. Seq is left 0 — the committer reserves it under the
+// conversation row-lock inside its tx (the split fallback lets AppendTurn allocate it).
+func (r *Runner) answerTurn(pending askuser.Pending, resp ResponseInput) conversations.AppendTurnParams {
 	content := resp.Content
 	if resp.Action == askuser.ActionDecline {
 		content = declinedContent
 	}
-	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+	return conversations.AppendTurnParams{
 		ConversationID: pending.ConversationID,
 		Role:           llm.RoleTool,
 		ToolCallID:     pending.ToolCallID,
 		Content:        content,
-	}); err != nil {
+	}
+}
+
+// injectAnswer appends the RoleTool answer turn directly (NOT through the committer). It
+// serves only the cancel path (injectCancelledAnswers): each still-open ask_user
+// tool_call is answered so the rehydrated history stays wire-valid before
+// AutoResolveForConversation resolves the paused_states rows.
+func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp ResponseInput) error {
+	if err := r.Conv.AppendTurn(ctx, r.answerTurn(pending, resp)); err != nil {
 		return fmt.Errorf("inject resume answer: %w", err)
 	}
 	return nil

@@ -340,7 +340,12 @@ func TestPendingFor_ReturnsFIFO(t *testing.T) {
 	}
 }
 
-// TestSubmitAnswers_InjectError surfaces an AppendTurn failure during batch inject.
+// TestSubmitAnswers_InjectError surfaces an AppendTurn failure during the batch append.
+// The default committer here is the pool-less NON-ATOMIC split fallback, so this asserts
+// only that the failure is not swallowed. ATOMIC retryability (an append failure AFTER the
+// claim rolls the whole cross-store tx back → resumed_at IS NULL → retry works) is a
+// property of the pool-owning committer and is proven against live Postgres in
+// runner_resume_single_atomic_integration_test.go (LOOP-03/F-029).
 func TestSubmitAnswers_InjectError(t *testing.T) {
 	client := agenttest.NewFakeClient(agenttest.ToolCallTurn(askUserCall("call-1", "Q?", "clarification")))
 	r, conv, pause := newTestRunner(t, client)
@@ -354,10 +359,7 @@ func TestSubmitAnswers_InjectError(t *testing.T) {
 	conv.appendEr = errFake
 	answers := map[string]ResponseInput{pending[0].Token: {Action: "accept", Content: "x"}}
 	if _, err := r.SubmitAnswers(ctx, answers); err == nil {
-		t.Fatal("expected an inject error from the batch path")
-	}
-	if got := pause.unresolvedCount(convID); got != 1 {
-		t.Fatalf("failed injection must leave pending pause retryable, unresolved=%d want 1", got)
+		t.Fatal("expected an append error from the batch path")
 	}
 }
 

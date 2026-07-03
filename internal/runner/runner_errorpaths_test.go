@@ -195,12 +195,17 @@ func TestPersistAssistantAnswer_AppendError(t *testing.T) {
 }
 
 // TestFlushPause_AppendError surfaces the AppendTurn failure while writing the combined
-// ask_user assistant turn.
+// ask_user assistant turn through the committer (D-05). tr carries a matching pauseInsert
+// so the committer reaches the assistant-turn append (persistPause populates both in
+// lock-step).
 func TestFlushPause_AppendError(t *testing.T) {
 	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient())
 	conv.appendEr = errFake
-	tr := &turnTracker{convID: newConvID(t), pauses: []*agent.AwaitingInput{
+	convID := newConvID(t)
+	tr := &turnTracker{convID: convID, pauses: []*agent.AwaitingInput{
 		{ToolCallID: "c1", Question: "q?", Kind: "clarification"},
+	}, pauseInserts: []askuser.InsertParams{
+		{Token: newConvID(t), ConversationID: convID, Kind: "clarification", Question: "q?", ToolCallID: "c1"},
 	}}
 	if err := r.flushPause(context.Background(), tr); err == nil {
 		t.Fatal("expected the flushPause AppendTurn error to surface")
@@ -332,15 +337,21 @@ func TestRemainingPending_ListError(t *testing.T) {
 	}
 }
 
-// --- persistPause Insert error ---
+// --- pause Insert error now surfaces at flushPause (D-05) ---
 
-func TestPersistPause_InsertError(t *testing.T) {
+// TestFlushPause_PauseInsertError pins the moved-insert contract: persistPause is a pure
+// accumulator (no DB I/O), so the paused_states Insert failure surfaces at flushPause's
+// CommitPause — a pause is never exposed without its durable assistant history.
+func TestFlushPause_PauseInsertError(t *testing.T) {
 	r, _, pause := newTestRunner(t, agenttest.NewFakeClient())
 	pause.insertEr = errFake
 	tr := &turnTracker{convID: newConvID(t)}
 	ai := &agent.AwaitingInput{Question: "q?", Kind: "clarification", ToolCallID: "c1"}
-	if err := r.persistPause(context.Background(), tr, ai); err == nil {
-		t.Fatal("expected the paused_states Insert error to surface")
+	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+		t.Fatalf("persistPause must not do I/O now (D-05 accumulate-only), got %v", err)
+	}
+	if err := r.flushPause(context.Background(), tr); err == nil {
+		t.Fatal("expected the paused_states Insert error to surface at flushPause")
 	}
 }
 
