@@ -23,8 +23,9 @@ import (
 // host-direct no-op preserving today's full-host experience (SC-4).
 //
 // The mutating-Allow outcomes (the not-GateRecommended auto-allow branch here AND
-// routeApprove's post-resume Verdict{Allow, OperatorID}) funnel through ONE code path
-// so plan 35-04 can convert exactly that funnel to the single store.Reserve call.
+// routeApprove's post-resume Verdict{Allow, OperatorID}) converge on ONE synchronous
+// store.Reserve call (reserve.go) before Allow is returned — exactly one durable
+// reservation start per executed call (GATE-03/04, D-03 point 2).
 func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey) (Verdict, *tools.ErrAwaitingUserInput, error) {
 	if g == nil || !g.profile.Strict() {
 		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil, nil
@@ -37,13 +38,21 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		g.recordDecisionFact(ctx, spec, key, tier)
 		return Verdict{Decision: Allow, Tier: tier}, nil, nil
 	}
+	// Mutating funnel. A GateRecommended call is routed to approve FIRST; a non-Allow
+	// outcome (Deny / Approve pause) returns immediately. Both the not-GateRecommended
+	// auto-allow AND routeApprove's post-resume Verdict{Allow, OperatorID} then converge on
+	// the SAME single reserve call — exactly ONE reservation start row per executed call,
+	// the operator_id (when present) folded into that one start's Meta (GATE-03/04 /
+	// D-03 point 2). This is the unified reserve invariant.
+	operatorID := ""
 	if scoring.GateRecommended(tier) {
-		return g.routeApprove(ctx, spec, tier, key)
+		v, pause, err := g.routeApprove(ctx, spec, tier, key)
+		if err != nil || v.Decision != Allow {
+			return v, pause, err
+		}
+		operatorID = v.OperatorID
 	}
-	// Mutating-Allow funnel (not GateRecommended): auto-allow + decision-fact. The single
-	// store.Reserve call in 35-04 replaces this decision-fact.
-	g.recordDecisionFact(ctx, spec, key, tier)
-	return Verdict{Decision: Allow, Tier: tier}, nil, nil
+	return g.reserve(ctx, spec, rawArgs, key, tier, operatorID)
 }
 
 // recordDecisionFact durably records an Allow decision-fact as a `start` row (verdict

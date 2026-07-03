@@ -64,6 +64,12 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		case gateway.Approve:
 			return tools.ToolResult{}, pause
 		}
+		// GATE-04: a non-nil Replay means the reservation slot was already held (rows==0) —
+		// the tool ran on a prior (duplicate/retried) dispatch. Return the recorded outcome
+		// WITHOUT calling tool.Execute, so the mutating side effect stays at-most-once.
+		if verdict.Replay != nil {
+			return *verdict.Replay, nil
+		}
 	}
 
 	var res tools.ToolResult

@@ -9,17 +9,24 @@ package gateway
 import (
 	"context"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
 // reservationStore is the narrow append-only ledger seam the Gateway records
-// decision-facts through. *toolinvocations.Store satisfies it. Plan 35-04 widens
-// this seam with Reserve/GetEnd for the synchronous reservation; this plan needs
-// only Insert (the read-only decision-fact and the degraded_deny terminal fact).
+// decision-facts and reservations through. *toolinvocations.Store satisfies it.
+//   - Insert: the read-only decision-fact and the degraded_deny terminal fact.
+//   - Reserve: the synchronous fatal-on-failure pre-execution reservation whose
+//     rows-affected count is the GATE-04 idempotency key (rows==1 acquire / rows==0
+//     replay / err deny).
+//   - GetEnd: the replay fetch for a rows==0 duplicate (Reserve already calls it, but
+//     the seam exposes it so the reconciler/tests can query an end fact directly).
 type reservationStore interface {
 	Insert(ctx context.Context, e toolinvocations.Event) error
+	Reserve(ctx context.Context, start toolinvocations.Event) (acquired bool, replay *toolinvocations.Event, err error)
+	GetEnd(ctx context.Context, conversationID, requestID, toolCallID string) (*toolinvocations.Event, error)
 }
 
 // Decision is the gateway's verdict on a single tool dispatch.
@@ -45,6 +52,11 @@ type Verdict struct {
 	Tier       scoring.RiskTier
 	Reason     string
 	OperatorID string
+	// Replay is non-nil ONLY when Reserve found the (conv,req,toolCall) slot already
+	// held (rows==0): it carries the recorded outcome so execTool returns it WITHOUT
+	// re-invoking tool.Execute (GATE-04 idempotency — a duplicate/retried mutating call,
+	// approved or auto-allowed, applies its side effect exactly once).
+	Replay *tools.ToolResult
 }
 
 // ReservationKey is the ledger triple the decision-fact is keyed on. It is ALWAYS

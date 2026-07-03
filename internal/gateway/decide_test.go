@@ -12,12 +12,20 @@ import (
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
-// fakeStore captures every decision-fact Insert so the unit tier can assert both the
-// SC-4 no-write invariant and the D-01e/D-03 recorded facts without the live PG stack.
+// fakeStore captures every decision-fact Insert AND every Reserve so the unit tier can
+// assert the SC-4 no-write invariant, the D-01e/D-03 recorded facts, and the reservation
+// funnel (rows==1 acquire / rows==0 replay / err deny) without the live PG stack.
 type fakeStore struct {
 	mu       sync.Mutex
 	inserted []toolinvocations.Event
-	err      error
+	reserved []toolinvocations.Event
+	err      error // Insert error
+
+	// Reserve knobs: reserveErr forces the fail-closed deny path; notAcquired forces the
+	// rows==0 replay path returning replayEnd (nil ⇒ crash-orphaned in-flight).
+	reserveErr error
+	notAcquired bool
+	replayEnd  *toolinvocations.Event
 }
 
 func (f *fakeStore) Insert(_ context.Context, e toolinvocations.Event) error {
@@ -30,11 +38,38 @@ func (f *fakeStore) Insert(_ context.Context, e toolinvocations.Event) error {
 	return nil
 }
 
+func (f *fakeStore) Reserve(_ context.Context, start toolinvocations.Event) (bool, *toolinvocations.Event, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.reserveErr != nil {
+		return false, nil, f.reserveErr
+	}
+	f.reserved = append(f.reserved, start)
+	if f.notAcquired {
+		return false, f.replayEnd, nil
+	}
+	return true, nil, nil
+}
+
+func (f *fakeStore) GetEnd(_ context.Context, _, _, _ string) (*toolinvocations.Event, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.replayEnd, nil
+}
+
 func (f *fakeStore) calls() []toolinvocations.Event {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]toolinvocations.Event, len(f.inserted))
 	copy(out, f.inserted)
+	return out
+}
+
+func (f *fakeStore) reserves() []toolinvocations.Event {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]toolinvocations.Event, len(f.reserved))
+	copy(out, f.reserved)
 	return out
 }
 
@@ -115,9 +150,10 @@ func TestDecideReadOnlyDecisionFact(t *testing.T) {
 	}
 }
 
-// TestDecideMutatingAutoAllowFact proves the mutating-Allow funnel: a mutating but
-// NOT-GateRecommended action (skill restore → Normal) auto-allows and records a
-// decision-fact (the funnel 35-04 converts to the single Reserve).
+// TestDecideMutatingAutoAllowFact proves the unified reserve funnel: a mutating but
+// NOT-GateRecommended action (skill restore → Normal) auto-allows through the SINGLE
+// store.Reserve call (rows==1 acquire) — exactly one reservation start row, NO separate
+// decision-fact Insert. The reservation start carries the verdict in Meta.
 func TestDecideMutatingAutoAllowFact(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
@@ -133,9 +169,18 @@ func TestDecideMutatingAutoAllowFact(t *testing.T) {
 	if pause != nil {
 		t.Fatal("normal mutating must not pause")
 	}
-	rows := store.calls()
-	if len(rows) != 1 || rows[0].Event != toolinvocations.EventStart {
-		t.Fatalf("want 1 start decision-fact, got %+v", rows)
+	if v.Replay != nil {
+		t.Fatal("rows==1 acquire must not carry a replay")
+	}
+	reserved := store.reserves()
+	if len(reserved) != 1 || reserved[0].Event != toolinvocations.EventStart {
+		t.Fatalf("want 1 reservation start, got %+v", reserved)
+	}
+	if reserved[0].Meta["reservation"] != true {
+		t.Fatalf("reservation start meta = %v, want reservation:true", reserved[0].Meta)
+	}
+	if got := len(store.calls()); got != 0 {
+		t.Fatalf("mutating auto-allow wrote %d decision-fact Inserts, want 0 (reserve is the only durable write)", got)
 	}
 }
 
