@@ -42,3 +42,41 @@ func TestCommandHookFailPolicy(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandHookFailPolicy_OnlyExplicitFailOpenOpens pins the anti-silent-allow
+// invariant at the policy-resolution layer (F-006): the ONLY inputs that resolve
+// to FailOpen are an explicit, case-insensitive, whitespace-trimmed "fail_open".
+// Every other string — empty, canonical fail_closed, unknown, or malformed —
+// MUST resolve to FailClosed, and any non-canonical input MUST also surface an
+// error so a caller that ignored the returned policy still cannot silently allow.
+// This guards against a future edit that widened the fail-open set.
+func TestCommandHookFailPolicy_OnlyExplicitFailOpenOpens(t *testing.T) {
+	opensFailOpen := []string{"fail_open", "FAIL_OPEN", "Fail_Open", "  fail_open  ", "\tfail_open\n"}
+	for _, raw := range opensFailOpen {
+		got, err := commandHookFailPolicy(raw)
+		if err != nil || got != FailOpen {
+			t.Fatalf("commandHookFailPolicy(%q) = (%v, %v), want (FailOpen, nil)", raw, got, err)
+		}
+	}
+
+	// Neither canonical closers nor adversarial/malformed strings may open.
+	staysFailClosed := []string{
+		"", "   ", "fail_closed", "FAIL_CLOSED", "  fail_closed  ",
+		"failopen", "fail-open", "fail open", "open", "allow", "true", "1", "yes",
+		"fail_sideways", "{}", "null", "fail_ope", "xfail_open", "fail_open_x",
+	}
+	for _, raw := range staysFailClosed {
+		got, err := commandHookFailPolicy(raw)
+		if got != FailClosed {
+			t.Fatalf("commandHookFailPolicy(%q) = %v, want FailClosed (never silent-allow)", raw, got)
+		}
+		norm := strings.TrimSpace(strings.ToLower(raw))
+		canonical := norm == "" || norm == "fail_closed"
+		if !canonical && err == nil {
+			t.Fatalf("commandHookFailPolicy(%q) err = nil, want unknown-policy error (no silent fallthrough)", raw)
+		}
+		if canonical && err != nil {
+			t.Fatalf("commandHookFailPolicy(%q) err = %v, want nil for a canonical closer", raw, err)
+		}
+	}
+}

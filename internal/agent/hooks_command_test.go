@@ -214,6 +214,15 @@ func TestCommandHookHelperProcess(t *testing.T) {
 	case "deny_then_crash":
 		writeHookDecision(agent.CommandHookDecision{Decision: "deny", Message: "crashed but denied"})
 		os.Exit(7)
+	case "allow_then_crash":
+		// A hook that tries to ALLOW then exits non-zero must NOT silently allow:
+		// run() ignores a crashed allow and returns an error (GATE-02 fail-closed).
+		writeHookDecision(agent.CommandHookDecision{Decision: "allow"})
+		os.Exit(7)
+	case "crash_no_decision":
+		// Non-zero exit with unparseable stdout (no allow/deny decision) → deny.
+		fmt.Fprint(os.Stdout, "this is not a valid decision")
+		os.Exit(7)
 	case "oversized_model_rewrite":
 		req := *event.Request
 		req.Messages = make([]llm.Message, 0, 5000)
