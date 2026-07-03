@@ -391,40 +391,48 @@ func TestLoadHistory_FakeInlineTurns(t *testing.T) {
 }
 
 // TestLoadHistory_FakeSidecarRehydrate proves loadTurns reads spilled content from
-// disk when a row carries a content_sidecar_path.
+// disk at the RECONSTRUCTED path (runDir/conversations/<convID>/<seq>.content), not
+// the DB column value: the column carries a deliberately WRONG path here and the
+// rehydrated content still comes from the reconstructed file (LOOP-05 / D-08 — the
+// column is a did-spill flag only).
 func TestLoadHistory_FakeSidecarRehydrate(t *testing.T) {
 	t.Parallel()
-	_, conv := mustUUID(t)
+	convID, conv := mustUUID(t)
 	dir := t.TempDir()
-	sidecar := filepath.Join(dir, "3.content")
+	sidecar := filepath.Join(dir, "conversations", convID, "3.content")
+	if err := os.MkdirAll(filepath.Dir(sidecar), 0o750); err != nil {
+		t.Fatalf("mkdir sidecar dir: %v", err)
+	}
 	if err := os.WriteFile(sidecar, []byte("spilled body"), 0o600); err != nil {
 		t.Fatalf("write sidecar: %v", err)
 	}
 	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
 		turnRowValues(conv, 1, "user", "small", "", "", nil),
-		turnRowValues(conv, 3, "assistant", "", sidecar, "", nil),
+		// A poisoned column path that must be IGNORED — the reader reconstructs the path.
+		turnRowValues(conv, 3, "assistant", "", "/nonexistent/poison.content", "", nil),
 	}}}
 	s := &Store{q: sqlc.New(fake), runDir: dir, turnCapBytes: 65536}
-	msgs, err := s.LoadHistory(context.Background(), uuid.Must(uuid.NewV7()).String())
+	msgs, err := s.LoadHistory(context.Background(), convID)
 	if err != nil {
 		t.Fatalf("LoadHistory: %v", err)
 	}
 	if len(msgs) != 2 || msgs[1].Content != "spilled body" {
-		t.Errorf("sidecar content must be rehydrated: %+v", msgs)
+		t.Errorf("sidecar content must be rehydrated from the reconstructed path: %+v", msgs)
 	}
 }
 
-// TestLoadHistory_FakeSidecarMissing surfaces the read error when a row points at a
-// sidecar that is gone.
+// TestLoadHistory_FakeSidecarMissing surfaces a HARD read error when a turn is
+// marked spilled (non-empty content_sidecar_path flag) but the reconstructed
+// sidecar file is absent — never a silent empty (LOOP-05 / D-08).
 func TestLoadHistory_FakeSidecarMissing(t *testing.T) {
 	t.Parallel()
-	_, conv := mustUUID(t)
-	missing := filepath.Join(t.TempDir(), "999.content")
+	convID, conv := mustUUID(t)
 	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
-		turnRowValues(conv, 1, "assistant", "", missing, "", nil),
+		// Non-empty column = did-spill flag; no file exists at the reconstructed path.
+		turnRowValues(conv, 1, "assistant", "", "did-spill", "", nil),
 	}}}
 	s := &Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536}
-	if _, err := s.LoadHistory(context.Background(), uuid.Must(uuid.NewV7()).String()); err == nil {
+	if _, err := s.LoadHistory(context.Background(), convID); err == nil {
 		t.Error("LoadHistory(missing sidecar): want read error")
 	}
 }

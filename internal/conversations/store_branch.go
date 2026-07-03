@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -84,10 +83,13 @@ func (s *Store) loadBranchTurns(ctx context.Context, conversationID string, leaf
 	for _, r := range rows {
 		t := turnFromRow(branchPathRowAsSeqRow(r))
 		if t.ContentSidecarPath != "" {
-			data, rerr := os.ReadFile(t.ContentSidecarPath)
+			// Reconstruct-don't-trust: the DB path is a did-spill flag; the fenced
+			// os.Root read is reconstructed from (runDir, convID, seq) — shared with
+			// loadTurns so both loaders converge on one model (LOOP-05 / D-08).
+			data, rerr := s.readTurnSidecar(conversationID, t.Seq)
 			if rerr != nil {
-				return nil, fmt.Errorf("load branch turns %s seq %d: read sidecar %q: %w",
-					conversationID, t.Seq, t.ContentSidecarPath, rerr)
+				return nil, fmt.Errorf("load branch turns %s seq %d: read sidecar: %w",
+					conversationID, t.Seq, rerr)
 			}
 			t.Content = string(data)
 		}

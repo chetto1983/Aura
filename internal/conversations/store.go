@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -283,16 +284,47 @@ func (s *Store) loadTurns(ctx context.Context, conversationID string) ([]Turn, e
 	for _, r := range rows {
 		t := turnFromRow(r)
 		if t.ContentSidecarPath != "" {
-			data, rerr := os.ReadFile(t.ContentSidecarPath)
+			data, rerr := s.readTurnSidecar(conversationID, t.Seq)
 			if rerr != nil {
-				return nil, fmt.Errorf("load turns %s seq %d: read sidecar %q: %w",
-					conversationID, t.Seq, t.ContentSidecarPath, rerr)
+				return nil, fmt.Errorf("load turns %s seq %d: read sidecar: %w",
+					conversationID, t.Seq, rerr)
 			}
 			t.Content = string(data)
 		}
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// readTurnSidecar reads a spilled turn's content through an os.Root fenced to the
+// run dir (LOOP-05 / F-005 / D-08). The DB content_sidecar_path column is a
+// did-spill FLAG only: the on-disk path is RECONSTRUCTED from (runDir, convID, seq)
+// — identical to what maybeSpill wrote — so a poisoned column value cannot redirect
+// the read anywhere, and os.Root refuses to follow a symlink swapped at the
+// <seq>.content leaf out of runDir (ASVS V12 path traversal). It mirrors the
+// reconstruct-don't-trust fence in agent/tools/read_tool_output.go and adds the
+// symlink-leaf neutralization that plain os.Open lacks. Both loadTurns and
+// loadBranchTurns call it (DRY). A missing sidecar for a spilled turn stays a HARD
+// error the callers wrap — never a silent empty.
+func (s *Store) readTurnSidecar(conversationID string, seq int) ([]byte, error) {
+	// os.Root.ReadFile takes a RELATIVE path and rejects an absolute one; a relative
+	// runDir would resolve the sidecar against the process cwd. Assert an absolute
+	// runDir first (mirror read_tool_output.go), then join under the opened root.
+	if !filepath.IsAbs(s.runDir) {
+		return nil, fmt.Errorf("sidecar runDir %q is not absolute", s.runDir)
+	}
+	if err := validateID("conversation_id", conversationID); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(s.runDir)
+	if err != nil {
+		return nil, fmt.Errorf("open run root %q: %w", s.runDir, err)
+	}
+	defer root.Close()
+	// path.Join (forward-slash, relative), NOT filepath.Join — os.Root paths are
+	// always slash-separated relative to the root, never OS-native absolutes.
+	rel := path.Join("conversations", conversationID, fmt.Sprintf("%d.content", seq))
+	return root.ReadFile(rel)
 }
 
 // SearchResult is one FTS hit (the app-side excerpt is the CLI/channel's job).
