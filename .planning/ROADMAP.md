@@ -219,7 +219,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 3. Outside-root/traversal/symlink sidecar reads are rejected.
 4. A mutating tool that panics post-side-effect still arms the completion gate.
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -231,7 +231,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 34-04-PLAN.md — os.Root sidecar fence (LOOP-05), crash-orphan .content GC (LOOP-09), spilled-search assertion (LOOP-10) [wave 2]
-- [ ] 34-05-PLAN.md — HITL store tx-seams: askuser MarkResumed/Insert Tx + conversations AppendTurnTx + int32 guard (LOOP-02/03, QUAL-04) [wave 2]
+- [x] 34-05-PLAN.md — HITL store tx-seams: askuser MarkResumed/Insert Tx + conversations AppendTurnTx + int32 guard (LOOP-02/03 seams, QUAL-04a) [wave 2] → 34-05-SUMMARY.md
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

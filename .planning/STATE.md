@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 34
 current_phase_name: agent-loop-correctness-durable-ledger
 status: executing
-stopped_at: Phase 34 context gathered (research-backed; all 4 gray areas locked minimal-industrial; NO new migration)
-last_updated: "2026-07-03T08:00:00.000Z"
+stopped_at: 34-05 complete — HITL store tx-seams (interface-first for the 34-06 ResumeCommitter); wave 2 done, wave 3 (34-06) next
+last_updated: "2026-07-03T10:30:00.000Z"
 last_activity: 2026-07-03
-last_activity_desc: 34-04 complete — sidecar os.Root fence + crash-orphan reconcile + spilled-search exclusion
+last_activity_desc: 34-05 complete — askuser InsertTx/MarkResumedTx/MarkResumedBatchTx (sorted-token) + conversations AppendTurnTx + ListRecent int32 guard
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 24
-  completed_plans: 22
+  completed_plans: 23
   percent: 27
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 34 (agent-loop-correctness-durable-ledger) — EXECUTING
-Plan: 4 of 6 (34-04 complete)
+Plan: 5 of 6 (34-05 complete)
 Status: Executing Phase 34
-Last activity: 2026-07-03 — 34-04 complete (LOOP-05 sidecar fence, LOOP-09 reconcile, LOOP-10 search exclusion)
+Last activity: 2026-07-03 — 34-05 complete (LOOP-02/03 store tx-seams, QUAL-04a int32 guard) — wave 2 done; 34-06 (wave 3) next
+
+#### (prior) 34-05 — HITL store tx-seams (interface-first for 34-06). `askuser` gains `InsertTx`/`MarkResumedTx`/`MarkResumedBatchTx(q,…)` operating on a caller-supplied `*sqlc.Queries` (open NO tx of their own — the 34-06 pool-owning `ResumeCommitter` supplies it): `MarkResumedTx` uses the regenerated `MarkPausedStateResumed` (`:execrows`) → rows==0 → `ErrPauseNotFound` and the raw `markResumedSQL pool.Exec` const is DELETED; `MarkResumedBatchTx` claims pauses in `sort.Strings` token order so concurrent overlapping batches lock rows in the same order and cannot deadlock (Postgres 40P01 / T-34-B), the loser rechecking `WHERE resumed_at IS NULL` under READ COMMITTED → clean `ErrPauseNotFound`. `Insert`/`MarkResumed` become thin wrappers over their `*Tx` variant bound to the pool's `s.q` (single auto-commit statement, on-wire byte-identical, fail-fast parse-before-DB preserved); `MarkResumedBatch` wraps its `*Tx` in `db.WithTx`. `ListRecent` clamps `int32(limit)` via `math.MaxInt32` with the `<=0 → 50` fallback (QUAL-04a, mirrors `ListPendingAll`). `conversations` gains EXPORTED `AppendTurnTx(ctx,q,p)` — the no-spill tx-inner turn+aggregate body (requires `Seq>0` → `ErrSeqRequired`, NO `cleanupSidecarOnTxError`); `AppendTurn` is byte-unchanged (its Seq>0 branch keeps the pre-built-turn cleanup so it removes exactly the file THIS turn spilled). Unit tiers race-clean; askuser + conversations db_integration tiers green on the live stack (wrappers behavior-preserving). NO migration. LOOP-02/03 close in 34-06; QUAL-04 already `[x]` (04b was 34-03).
 
 #### (prior) 34-04 — LOOP-05/09/10 security core (conversations). BOTH sidecar loaders (`loadTurns`, `loadBranchTurns`) drop `os.ReadFile(t.ContentSidecarPath)` for one shared `readTurnSidecar(convID,seq)` that asserts `filepath.IsAbs(runDir)` + `validateID` then reads `os.OpenRoot(runDir).ReadFile(path.Join("conversations",convID,"<seq>.content"))` — Aura's first `os.Root` use (Go 1.26.4); the DB column is a did-spill flag only, a poisoned path / `..` / symlink-leaf is refused, a missing spilled sidecar is still a HARD error (D-08). `reconcileLiveConversationSidecars` runs per LIVE dir inside `scanConversationOrphans` (boot scan + interval Sweeper both inherit it): removes only `<seq>.content` that is UNREFERENCED (vs `ListSpilledSeqsForConversation`, 34-01) AND older than `sidecarOrphanGrace=tmpTTL(24h)`; strict `.content` suffix + Lstat guard keep `<spillID>.result` sidecars + symlinks safe; a referenced-seq DB error aborts rather than delete against an unknown set (D-09). Spilled-content search exclusion documented on `maybeSpill`+`SearchConversationTurns` and asserted by a live-pg_trgm test; locked trigram SQL byte-unchanged (D-10). No migration. Both tiers green on the live stack.
 
