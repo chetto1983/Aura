@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 34
-current_phase_name: agent-loop-correctness-durable-ledger
+current_phase: 35
+current_phase_name: ToolGateway + Policy Engine
 status: executing
-stopped_at: 34-06 complete — atomic HITL resume/pause via ONE cross-store db.WithTx (ResumeCommitter, no ledger/migration) + Stop goroutine-leak fix; wave 3 done, all 6 Phase-34 plans executed; phase 34 ready for verification
-last_updated: "2026-07-03T11:55:00.000Z"
+stopped_at: Phase 34 context gathered (research-backed; all 4 gray areas locked minimal-industrial; NO new migration)
+last_updated: "2026-07-03T10:26:53.518Z"
 last_activity: 2026-07-03
-last_activity_desc: 34-06 complete — ResumeCommitter (atomic Pool + split fallback) + atomic SubmitAnswer/SubmitAnswers/flushPause + single-Once Stop waiter (LOOP-02/03/04/11)
+last_activity_desc: Phase 34 complete, transitioned to Phase 35
 progress:
   total_phases: 11
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 24
   completed_plans: 24
-  percent: 27
+  percent: 36
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 34 (agent-loop-correctness-durable-ledger) — EXECUTING
-Plan: 6 of 6 (34-06 complete) — all Phase-34 plans executed; ready for verification
+Phase: 35 — ToolGateway + Policy Engine
+Plan: Not started
 Status: Executing Phase 34
-Last activity: 2026-07-03 — 34-06 complete (LOOP-02/03/04/11: atomic HITL resume/pause + Stop leak fix) — wave 3 done
+Last activity: 2026-07-03 — Phase 34 complete, transitioned to Phase 35
 
 #### 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack.
 
@@ -56,7 +56,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 130
+- Total plans completed: 136
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -88,6 +88,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 31 | 3 | - | - |
 | 32 | 10 | - | - |
 | 33 | 5 | - | - |
+| 34 | 6 | - | - |
 
 **Recent Trend:**
 
