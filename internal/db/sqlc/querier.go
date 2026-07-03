@@ -72,6 +72,7 @@ type Querier interface {
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
 	GetTelegramAccountByTelegramID(ctx context.Context, telegramUserID int64) (AuraTelegramAccounts, error)
 	GetTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
+	GetToolInvocationEnd(ctx context.Context, arg GetToolInvocationEndParams) (AuraToolInvocations, error)
 	// D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the
 	// diverging turn's parent_seq (the new sibling chains off the SAME parent so it replaces
 	// the diverging turn rather than appending after it). Returns pgx.ErrNoRows when the seq
@@ -100,7 +101,7 @@ type Querier interface {
 	InsertSkillAudit(ctx context.Context, arg InsertSkillAuditParams) (AuraSkillAudit, error)
 	InsertTelegramAccount(ctx context.Context, arg InsertTelegramAccountParams) (AuraTelegramAccounts, error)
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
-	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) error
+	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
@@ -129,6 +130,7 @@ type Querier interface {
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
+	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)

@@ -11,7 +11,53 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const insertToolInvocation = `-- name: InsertToolInvocation :exec
+const getToolInvocationEnd = `-- name: GetToolInvocationEnd :one
+SELECT id, conversation_id, request_id, tool_call_id, tool_name, event_kind, seq, ts,
+       started_at, ended_at, duration_ms,
+       args_raw, args_bytes,
+       status, error, result_preview, preview_bytes, result_bytes, result_truncated,
+       result_sidecar_path, exit_code, meta
+FROM aura.tool_invocations
+WHERE conversation_id = $1 AND request_id = $2 AND tool_call_id = $3 AND event_kind = 'end'
+`
+
+type GetToolInvocationEndParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	RequestID      pgtype.UUID `json:"request_id"`
+	ToolCallID     string      `json:"tool_call_id"`
+}
+
+func (q *Queries) GetToolInvocationEnd(ctx context.Context, arg GetToolInvocationEndParams) (AuraToolInvocations, error) {
+	row := q.db.QueryRow(ctx, getToolInvocationEnd, arg.ConversationID, arg.RequestID, arg.ToolCallID)
+	var i AuraToolInvocations
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.RequestID,
+		&i.ToolCallID,
+		&i.ToolName,
+		&i.EventKind,
+		&i.Seq,
+		&i.Ts,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.DurationMs,
+		&i.ArgsRaw,
+		&i.ArgsBytes,
+		&i.Status,
+		&i.Error,
+		&i.ResultPreview,
+		&i.PreviewBytes,
+		&i.ResultBytes,
+		&i.ResultTruncated,
+		&i.ResultSidecarPath,
+		&i.ExitCode,
+		&i.Meta,
+	)
+	return i, err
+}
+
+const insertToolInvocation = `-- name: InsertToolInvocation :execrows
 INSERT INTO aura.tool_invocations (
     conversation_id, request_id, tool_call_id, tool_name, event_kind, seq, ts,
     started_at, ended_at, duration_ms,
@@ -52,8 +98,8 @@ type InsertToolInvocationParams struct {
 	Meta              []byte             `json:"meta"`
 }
 
-func (q *Queries) InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) error {
-	_, err := q.db.Exec(ctx, insertToolInvocation,
+func (q *Queries) InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertToolInvocation,
 		arg.ConversationID,
 		arg.RequestID,
 		arg.ToolCallID,
@@ -76,7 +122,72 @@ func (q *Queries) InsertToolInvocation(ctx context.Context, arg InsertToolInvoca
 		arg.ExitCode,
 		arg.Meta,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const listInFlightToolInvocationsBefore = `-- name: ListInFlightToolInvocationsBefore :many
+SELECT s.id, s.conversation_id, s.request_id, s.tool_call_id, s.tool_name, s.event_kind, s.seq, s.ts,
+       s.started_at, s.ended_at, s.duration_ms,
+       s.args_raw, s.args_bytes,
+       s.status, s.error, s.result_preview, s.preview_bytes, s.result_bytes, s.result_truncated,
+       s.result_sidecar_path, s.exit_code, s.meta
+FROM aura.tool_invocations s
+WHERE s.event_kind = 'start'
+  AND s.started_at < $1
+  AND NOT EXISTS (
+      SELECT 1 FROM aura.tool_invocations e
+      WHERE e.conversation_id = s.conversation_id
+        AND e.request_id = s.request_id
+        AND e.tool_call_id = s.tool_call_id
+        AND e.event_kind = 'end'
+  )
+ORDER BY s.started_at ASC, s.id ASC
+`
+
+func (q *Queries) ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error) {
+	rows, err := q.db.Query(ctx, listInFlightToolInvocationsBefore, startedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraToolInvocations{}
+	for rows.Next() {
+		var i AuraToolInvocations
+		if err := rows.Scan(
+			&i.ID,
+			&i.ConversationID,
+			&i.RequestID,
+			&i.ToolCallID,
+			&i.ToolName,
+			&i.EventKind,
+			&i.Seq,
+			&i.Ts,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.DurationMs,
+			&i.ArgsRaw,
+			&i.ArgsBytes,
+			&i.Status,
+			&i.Error,
+			&i.ResultPreview,
+			&i.PreviewBytes,
+			&i.ResultBytes,
+			&i.ResultTruncated,
+			&i.ResultSidecarPath,
+			&i.ExitCode,
+			&i.Meta,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listToolInvocationsByConversation = `-- name: ListToolInvocationsByConversation :many

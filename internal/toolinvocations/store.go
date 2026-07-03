@@ -63,7 +63,11 @@ func (s *Store) Insert(ctx context.Context, e Event) error {
 	if err != nil {
 		return fmt.Errorf("insert tool invocation: %w", err)
 	}
-	if err := s.q.InsertToolInvocation(ctx, p); err != nil {
+	// InsertToolInvocation is :execrows (returns the affected count); Insert stays
+	// fire-and-append and deliberately ignores the count — a rows==0 ON CONFLICT
+	// no-op is a benign duplicate here. Reserve (store_reserve.go) is the caller
+	// that CARES about the count as the GATE-04 idempotency key.
+	if _, err := s.q.InsertToolInvocation(ctx, p); err != nil {
 		return fmt.Errorf("insert tool invocation %s/%s/%s: %w", e.ConversationID, e.RequestID, e.ToolCallID, err)
 	}
 	return nil
