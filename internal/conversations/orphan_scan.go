@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -17,6 +19,13 @@ import (
 // tmpTTL is the age past which $AURA_RUN_DIR/tmp/* entries are swept at boot (SPEC
 // Req#12). A scratch artifact older than this is assumed abandoned.
 const tmpTTL = 24 * time.Hour
+
+// sidecarOrphanGrace mirrors tmpTTL (D-09 / LOOP-09 / F-040): a <seq>.content file
+// whose turn never committed — a crash between the sidecar write and the DB commit —
+// is reconciled away only once it is older than this AND unreferenced by any
+// committed row. The grace window keeps an in-flight spill (written seconds ago,
+// commit still pending) safe from a concurrent scan.
+const sidecarOrphanGrace = tmpTTL
 
 // defaultRunDirWarnThreshold is the audit-only size-WARN threshold when the caller
 // passes 0 (SPEC default 1 GiB). Over this, boot logs a WARN — it NEVER auto-purges.
@@ -100,9 +109,97 @@ func scanConversationOrphans(ctx context.Context, q *sqlc.Queries, runDir string
 		}
 		if !exists {
 			removeOrphan(full)
+			continue
+		}
+		// A LIVE dir: reconcile crash-orphaned <seq>.content files inside it (F-040).
+		// Whole-orphan removal above never reaches these — a crash between the sidecar
+		// write and the DB commit leaves an unreferenced sidecar in a dir that stays.
+		if err := reconcileLiveConversationSidecars(ctx, q, full, name); err != nil {
+			return fmt.Errorf("scan orphans: reconcile %q: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// reconcileLiveConversationSidecars removes crash-orphaned <seq>.content files from a
+// LIVE conversation dir (D-09 / LOOP-09 / F-040): a <seq>.content whose seq is NOT in
+// the committed referenced set AND whose mtime predates the grace cutoff. It matches
+// STRICTLY the .content suffix — co-located <spillID>.result tool-output sidecars
+// (sessionID == conversationID) and any stray file survive — and never follows or
+// removes a symlink (Lstat guard, like the whole-dir scan). The referenced set comes
+// from the committed rows (ListSpilledSeqsForConversation), never a directory-only
+// heuristic; a DB failure ABORTS the reconcile rather than risk deleting a referenced
+// sidecar against an unknown/partial set. Per-entry rm/lstat failures are WARN-logged
+// and recovered next scan (the same posture as removeOrphan).
+func reconcileLiveConversationSidecars(ctx context.Context, q *sqlc.Queries, dir, conversationID string) error {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return nil // validateID already passed upstream; a non-uuid here cannot be a live row
+	}
+	seqs, err := q.ListSpilledSeqsForConversation(ctx, id)
+	if err != nil {
+		return fmt.Errorf("list spilled seqs %s: %w", conversationID, err)
+	}
+	referenced := make(map[int]struct{}, len(seqs))
+	for _, s := range seqs {
+		referenced[int(s)] = struct{}{}
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		slog.Warn("sidecar reconcile: read live dir failed (retry next scan)", "path", dir, "err", err)
+		return nil
+	}
+	cutoff := time.Now().Add(-sidecarOrphanGrace)
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".content") {
+			continue // .result tool sidecars + any stray file are out of scope
+		}
+		full := filepath.Join(dir, name)
+		info, lerr := os.Lstat(full)
+		if lerr != nil {
+			slog.Warn("sidecar reconcile: lstat failed", "path", full, "err", lerr)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			continue // never follow/remove a symlink at a .content leaf; skip non-regular
+		}
+		seq, ok := parseContentSeq(name)
+		if !ok {
+			continue // not a clean <seq>.content name — leave it
+		}
+		if _, refd := referenced[seq]; refd {
+			continue // a committed turn owns this sidecar (survives regardless of age)
+		}
+		if info.ModTime().After(cutoff) {
+			continue // within the grace window — an in-flight spill may still commit
+		}
+		if rmErr := os.Remove(full); rmErr != nil {
+			slog.Warn("sidecar reconcile: remove failed (retry next scan)", "path", full, "err", rmErr)
+			continue
+		}
+		slog.Info("sidecar reconcile: removed crash-orphaned turn sidecar", "path", full, "seq", seq)
+	}
+	return nil
+}
+
+// parseContentSeq extracts the leading <seq> from a "<seq>.content" filename,
+// reporting false for any name that is not exactly that shape — so a <spillID>.result
+// tool sidecar or a malformed name is never mistaken for a turn sidecar.
+func parseContentSeq(name string) (int, bool) {
+	base, ok := strings.CutSuffix(name, ".content")
+	if !ok || base == "" {
+		return 0, false
+	}
+	seq, err := strconv.Atoi(base)
+	if err != nil || seq <= 0 {
+		return 0, false
+	}
+	return seq, true
 }
 
 // conversationExists reports whether a conversations row exists for the id. A

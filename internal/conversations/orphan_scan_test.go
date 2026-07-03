@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 func mkConvDir(t *testing.T, runDir, id string) string {
@@ -140,6 +142,98 @@ func TestScanOrphans_SweepsTmp(t *testing.T) {
 	}
 	if _, err := os.Stat(fresh); err != nil {
 		t.Errorf("fresh tmp entry must survive: %v", err)
+	}
+}
+
+// TestScanOrphans_ReconcilesCrashOrphanContentSidecars: inside a LIVE conversation
+// dir the boot scan reconciles ONLY an unreferenced+aged <seq>.content (a crash
+// between the sidecar write and the DB commit). A referenced .content (even aged), an
+// unreferenced+young .content, a co-located <spillID>.result tool sidecar, and a
+// symlink at a .content leaf all survive (D-09 / LOOP-09 / F-040). The referenced set
+// comes from the real ListSpilledSeqsForConversation query, not a directory heuristic.
+func TestScanOrphans_ReconcilesCrashOrphanContentSidecars(t *testing.T) {
+	pool := migratedPool(t)
+	runDir := t.TempDir()
+	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 64}) // tiny cap → force a spill
+	ctx := context.Background()
+
+	convID := newConversation(t, s)
+	dir := filepath.Join(runDir, "conversations", convID)
+
+	// A genuinely referenced spilled turn: committed row + <seq>.content on disk.
+	if err := s.AppendTurn(ctx, AppendTurnParams{
+		ConversationID: convID, Seq: 1, Role: llm.RoleAssistant, Content: strings.Repeat("z", 200),
+	}); err != nil {
+		t.Fatalf("AppendTurn spill: %v", err)
+	}
+	referenced := filepath.Join(dir, "1.content")
+	if _, err := os.Stat(referenced); err != nil {
+		t.Fatalf("referenced sidecar must exist post-append: %v", err)
+	}
+
+	aged := time.Now().Add(-sidecarOrphanGrace - time.Hour)
+	// Referenced but AGED — referencing must beat age.
+	if err := os.Chtimes(referenced, aged, aged); err != nil {
+		t.Fatalf("chtimes referenced: %v", err)
+	}
+
+	orphanAged := filepath.Join(dir, "100.content") // unreferenced + aged → removed
+	if err := os.WriteFile(orphanAged, []byte("crash orphan"), 0o600); err != nil {
+		t.Fatalf("write orphanAged: %v", err)
+	}
+	if err := os.Chtimes(orphanAged, aged, aged); err != nil {
+		t.Fatalf("chtimes orphanAged: %v", err)
+	}
+
+	orphanYoung := filepath.Join(dir, "101.content") // unreferenced + young → survives (grace)
+	if err := os.WriteFile(orphanYoung, []byte("in flight"), 0o600); err != nil {
+		t.Fatalf("write orphanYoung: %v", err)
+	}
+
+	toolResult := filepath.Join(dir, "toolcall-xyz.result") // .result → survives (strict .content)
+	if err := os.WriteFile(toolResult, []byte("tool output"), 0o600); err != nil {
+		t.Fatalf("write toolResult: %v", err)
+	}
+	if err := os.Chtimes(toolResult, aged, aged); err != nil { // aged .result still survives
+		t.Fatalf("chtimes toolResult: %v", err)
+	}
+
+	// A symlink named like a .content leaf, target OUTSIDE runDir → never followed/removed.
+	external := t.TempDir()
+	sentinel := filepath.Join(external, "SENTINEL")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+	symlink := filepath.Join(dir, "200.content")
+	symlinkMade := true
+	if err := os.Symlink(sentinel, symlink); err != nil {
+		symlinkMade = false
+		t.Logf("symlinks unavailable, skipping symlink assertion: %v", err)
+	}
+
+	if err := ScanOrphans(ctx, pool, ScanParams{RunDir: runDir}); err != nil {
+		t.Fatalf("ScanOrphans: %v", err)
+	}
+
+	if _, err := os.Stat(orphanAged); !os.IsNotExist(err) {
+		t.Errorf("unreferenced+aged .content must be reconciled away, stat err=%v", err)
+	}
+	if _, err := os.Stat(referenced); err != nil {
+		t.Errorf("referenced .content must survive regardless of age: %v", err)
+	}
+	if _, err := os.Stat(orphanYoung); err != nil {
+		t.Errorf("unreferenced+young .content must survive (grace): %v", err)
+	}
+	if _, err := os.Stat(toolResult); err != nil {
+		t.Errorf(".result tool sidecar must survive the strict .content match: %v", err)
+	}
+	if symlinkMade {
+		if _, err := os.Lstat(symlink); err != nil {
+			t.Errorf("symlink leaf must survive (never removed): %v", err)
+		}
+		if _, err := os.Stat(sentinel); err != nil {
+			t.Errorf("symlink target must survive (never followed): %v", err)
+		}
 	}
 }
 

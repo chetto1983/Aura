@@ -246,6 +246,9 @@ func TestScanConversationOrphans_Fake(t *testing.T) {
 }
 
 // TestScanConversationOrphans_KeepsLive proves a dir whose id HAS a DB row survives.
+// A live dir now also runs the crash-orphan .content reconcile (F-040): the fake
+// scripts an empty ListSpilledSeqsForConversation (Query) alongside the existence
+// row (QueryRow), and the empty live dir reconciles to nothing removed.
 func TestScanConversationOrphans_KeepsLive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -259,14 +262,106 @@ func TestScanConversationOrphans_KeepsLive(t *testing.T) {
 
 	_, idU := mustUUID(t)
 	_, identU := mustUUID(t)
-	q := sqlc.New(&fakeDBTX{queryRowVal: &fakeRow{
-		values: conversationRowValues(idU, identU, StatusActive, "m", true, "t"),
-	}})
+	q := sqlc.New(&fakeDBTX{
+		queryRowVal: &fakeRow{values: conversationRowValues(idU, identU, StatusActive, "m", true, "t")},
+		queryRows:   &fakeRows{}, // reconcile: no referenced spilled seqs
+	})
 	if err := scanConversationOrphans(ctx, q, runDir); err != nil {
 		t.Fatalf("scanConversationOrphans: %v", err)
 	}
 	if _, err := os.Stat(liveDir); err != nil {
 		t.Errorf("live conversation dir must survive: %v", err)
+	}
+}
+
+// TestParseContentSeq_StrictShape covers the strict <seq>.content grammar: a clean
+// positive seq parses; a .result, a non-numeric base, an empty/zero/negative seq, and
+// a bare ".content" are all rejected so they can never be treated as turn sidecars.
+func TestParseContentSeq_StrictShape(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		wantSeq int
+		wantOK  bool
+	}{
+		{"1.content", 1, true},
+		{"42.content", 42, true},
+		{"abc123.result", 0, false},
+		{"deadbeef.result", 0, false},
+		{"notanumber.content", 0, false},
+		{".content", 0, false},
+		{"0.content", 0, false},
+		{"-3.content", 0, false},
+		{"3.content.bak", 0, false},
+		{"3", 0, false},
+	}
+	for _, c := range cases {
+		seq, ok := parseContentSeq(c.name)
+		if ok != c.wantOK || seq != c.wantSeq {
+			t.Errorf("parseContentSeq(%q) = (%d,%v), want (%d,%v)", c.name, seq, ok, c.wantSeq, c.wantOK)
+		}
+	}
+}
+
+// TestReconcileLiveConversationSidecars_Fake drives the reconcile over a real dir with
+// a faked referenced-seq set {1}: an unreferenced+aged .content is removed; a
+// referenced .content (even aged), an unreferenced+young .content, a .result tool
+// sidecar, and a symlink at a .content leaf all survive.
+func TestReconcileLiveConversationSidecars_Fake(t *testing.T) {
+	t.Parallel()
+	convID := uuid.Must(uuid.NewV7()).String()
+	dir := t.TempDir()
+	aged := time.Now().Add(-sidecarOrphanGrace - time.Hour)
+
+	referenced := filepath.Join(dir, "1.content")     // referenced → survives regardless of age
+	orphanAged := filepath.Join(dir, "100.content")   // unref + aged → removed
+	orphanYoung := filepath.Join(dir, "101.content")  // unref + young → survives (grace)
+	toolResult := filepath.Join(dir, "abc123.result") // .result → survives (strict .content)
+	for _, p := range []string{referenced, orphanAged, orphanYoung, toolResult} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %q: %v", p, err)
+		}
+	}
+	for _, p := range []string{referenced, orphanAged, toolResult} {
+		if err := os.Chtimes(p, aged, aged); err != nil {
+			t.Fatalf("chtimes %q: %v", p, err)
+		}
+	}
+	symlink := filepath.Join(dir, "200.content")
+	symlinkMade := os.Symlink(filepath.Join(t.TempDir(), "external"), symlink) == nil
+
+	// Fake ListSpilledSeqsForConversation → referenced seq {1}.
+	q := sqlc.New(&fakeDBTX{queryRows: &fakeRows{rows: [][]any{{int32(1)}}}})
+	if err := reconcileLiveConversationSidecars(context.Background(), q, dir, convID); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if _, err := os.Stat(orphanAged); !os.IsNotExist(err) {
+		t.Errorf("unreferenced+aged .content must be removed, stat err=%v", err)
+	}
+	for _, p := range []string{referenced, orphanYoung, toolResult} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("must survive reconcile: %q: %v", p, err)
+		}
+	}
+	if symlinkMade {
+		if _, err := os.Lstat(symlink); err != nil {
+			t.Errorf("symlink at a .content leaf must survive (never removed): %v", err)
+		}
+	}
+}
+
+// TestReconcileLiveConversationSidecars_DBErrorAborts proves a referenced-seq query
+// failure ABORTS the reconcile (returns the error) rather than deleting against an
+// unknown set — the safety property that prevents dropping referenced sidecars.
+func TestReconcileLiveConversationSidecars_DBErrorAborts(t *testing.T) {
+	t.Parallel()
+	convID := uuid.Must(uuid.NewV7()).String()
+	dir := t.TempDir()
+	boom := errors.New("referenced-seq query failed")
+	q := sqlc.New(&fakeDBTX{queryErr: boom})
+	if err := reconcileLiveConversationSidecars(context.Background(), q, dir, convID); !errors.Is(err, boom) {
+		t.Errorf("DB failure must abort the reconcile: %v", err)
 	}
 }
 
