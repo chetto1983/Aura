@@ -17,6 +17,24 @@ export interface SettingsList {
   readonly restart_required: boolean;
 }
 
+export interface TelegramAvailability {
+  readonly configured: boolean;
+  readonly available: boolean;
+  readonly botUsername?: string;
+  readonly requiresRestart: boolean;
+  readonly error?: string;
+}
+
+export interface TelegramLink {
+  readonly sessionToken: string;
+  readonly deepLink?: string;
+  readonly qrSvg?: string;
+}
+
+export interface TelegramLinkStatus {
+  readonly linked: boolean;
+}
+
 async function readJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
     throw new Error(`HTTP ${String(res.status)}`);
@@ -53,4 +71,32 @@ export async function deleteSetting(key: string): Promise<{
     credentials: 'same-origin',
   });
   return readJSON(res);
+}
+
+export async function checkTelegramAvailability(token?: string): Promise<TelegramAvailability> {
+  const body = token === undefined || token.trim() === '' ? {} : { token };
+  const res = await fetch('/api/settings/telegram/check', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  });
+  return readJSON<TelegramAvailability>(res);
+}
+
+export async function createTelegramLink(): Promise<TelegramLink> {
+  const res = await fetch('/api/settings/telegram/link', {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readJSON<TelegramLink>(res);
+}
+
+export async function fetchTelegramLinkStatus(sessionToken: string): Promise<TelegramLinkStatus> {
+  const res = await fetch(`/api/settings/telegram/${encodeURIComponent(sessionToken)}/status`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readJSON<TelegramLinkStatus>(res);
 }

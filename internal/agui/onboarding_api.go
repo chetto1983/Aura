@@ -126,6 +126,15 @@ type OnboardingTelegramStatus struct {
 	Linked bool `json:"linked"`
 }
 
+// OnboardingTelegramLink is the current-identity Telegram recovery link contract used
+// outside the full onboarding wizard, for example from Settings when the operator
+// skipped Telegram setup the first time.
+type OnboardingTelegramLink struct {
+	SessionToken string `json:"sessionToken"`
+	DeepLink     string `json:"deepLink,omitempty"`
+	QRSVG        string `json:"qrSvg,omitempty"`
+}
+
 // OnboardingStatus reports whether the signed-in operator still needs to finish
 // the profile onboarding flow.
 type OnboardingStatus struct {
@@ -327,12 +336,12 @@ func handleOnboardingSessionRequest[Resp any](
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	status, err := s.onboarding.TelegramStatus(r.Context(), requester, token)
+	resp, err := call(r.Context(), requester, token)
 	if err != nil {
 		s.writeOnboardingError(w, err)
 		return
 	}
-	writeJSON(w, status)
+	writeJSON(w, resp)
 }
 
 // validateOnboardingStep enforces the step body contract before it reaches the service: a

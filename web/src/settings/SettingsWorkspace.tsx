@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { UserPlus } from 'lucide-react';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
+import { TelegramSettingsPanel } from './TelegramSettingsPanel';
 import { Button } from '@/components/ui/button';
 
 interface SettingsWorkspaceProps {
@@ -37,6 +38,7 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
             </Button>
           </div>
         </section>
+        <TelegramSettingsPanel />
         <ModelSettingsPanel />
       </div>
     </div>

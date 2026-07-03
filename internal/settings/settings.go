@@ -58,6 +58,7 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_TTS_MODEL":               {Kind: KindString, Label: "TTS cloud model"},
 	"AURA_STT_CLOUD_MODEL":         {Kind: KindString, Label: "STT cloud model"},
 	"AURA_VISION_CLOUD":            {Kind: KindBool, Label: "Vision uses cloud"},
+	"TELEGRAM_BOT_TOKEN":           {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.

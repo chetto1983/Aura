@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -50,6 +52,7 @@ func settingItemByKey(t *testing.T, body []byte, key string) settingItemDTO {
 func TestHandleListSettingsRedactsSecrets(t *testing.T) {
 	s := &Server{settings: &fakeSettingsStore{rows: []sqlc.AuraSettings{
 		{Key: "OPENROUTER_API_KEY", Value: "sk-super-secret", IsSecret: true},
+		{Key: "TELEGRAM_BOT_TOKEN", Value: "123456:telegram-secret", IsSecret: true},
 		{Key: "AURA_RERANK_MODEL", Value: "cohere/rerank-4-fast"},
 	}}}
 	rr := httptest.NewRecorder()
@@ -63,6 +66,13 @@ func TestHandleListSettingsRedactsSecrets(t *testing.T) {
 	}
 	if !secret.Secret || !secret.HasValue || !secret.Overridden {
 		t.Errorf("secret item = %+v, want secret+has_value+overridden", secret)
+	}
+	telegramSecret := settingItemByKey(t, rr.Body.Bytes(), "TELEGRAM_BOT_TOKEN")
+	if telegramSecret.Value != "" {
+		t.Errorf("telegram token leaked on read: %q", telegramSecret.Value)
+	}
+	if !telegramSecret.Secret || !telegramSecret.HasValue || !telegramSecret.Overridden {
+		t.Errorf("telegram token item = %+v, want secret+has_value+overridden", telegramSecret)
 	}
 	plain := settingItemByKey(t, rr.Body.Bytes(), "AURA_RERANK_MODEL")
 	if plain.Value != "cohere/rerank-4-fast" {
@@ -137,6 +147,117 @@ func TestHandlePutSetting(t *testing.T) {
 			t.Errorf("upserted = %v, want the new value", store.upserted)
 		}
 	})
+}
+
+func TestHandleCheckTelegramAvailability(t *testing.T) {
+	const secret = "123456:telegram-secret"
+	var probedToken string
+	store := &fakeSettingsStore{rows: []sqlc.AuraSettings{
+		{Key: "TELEGRAM_BOT_TOKEN", Value: secret, IsSecret: true},
+	}}
+	s := &Server{
+		settings: store,
+		telegramProbe: func(_ context.Context, token string) (string, error) {
+			probedToken = token
+			return "AuraBot", nil
+		},
+	}
+
+	rr := httptest.NewRecorder()
+	s.handleCheckTelegramAvailability(rr, httptest.NewRequest(http.MethodPost, "/api/settings/telegram/check", strings.NewReader(`{}`)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if probedToken != secret {
+		t.Fatalf("probe token = %q, want stored secret", probedToken)
+	}
+	if strings.Contains(rr.Body.String(), secret) {
+		t.Fatalf("availability response leaked the token: %s", rr.Body.String())
+	}
+	var got telegramAvailabilityDTO
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.Configured || !got.Available || got.BotUsername != "AuraBot" {
+		t.Fatalf("availability = %+v, want configured+available AuraBot", got)
+	}
+}
+
+func TestHandleCheckTelegramAvailabilityDoesNotLeakProbeError(t *testing.T) {
+	const secret = "987:secret-token"
+	s := &Server{
+		telegramProbe: func(_ context.Context, token string) (string, error) {
+			return "", errors.New("telegram rejected token " + token)
+		},
+	}
+
+	rr := httptest.NewRecorder()
+	body := strings.NewReader(`{"token":"` + secret + `"}`)
+	s.handleCheckTelegramAvailability(rr, httptest.NewRequest(http.MethodPost, "/api/settings/telegram/check", body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if strings.Contains(rr.Body.String(), secret) {
+		t.Fatalf("availability error leaked the token: %s", rr.Body.String())
+	}
+	var got telegramAvailabilityDTO
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Available || got.Error != "bot token validation failed" {
+		t.Fatalf("availability = %+v, want fixed validation failure", got)
+	}
+}
+
+func TestHandleCreateSettingsTelegramLink(t *testing.T) {
+	fake := &fakeOnboarding{linkResp: OnboardingTelegramLink{
+		SessionToken: "sess-1",
+		DeepLink:     "https://t.me/AuraBot?start=onb-1",
+		QRSVG:        "<svg/>",
+	}}
+	s := &Server{onboarding: fake}
+	r := httptest.NewRequest(http.MethodPost, "/api/settings/telegram/link", nil)
+	r = withPrincipal(r, "operator-1")
+	rr := httptest.NewRecorder()
+
+	s.handleCreateSettingsTelegramLink(rr, r)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if fake.gotRequester != "operator-1" {
+		t.Fatalf("CreateTelegramLink requester = %q, want operator-1", fake.gotRequester)
+	}
+	var got OnboardingTelegramLink
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.SessionToken != "sess-1" || got.DeepLink == "" || got.QRSVG == "" {
+		t.Fatalf("telegram link response = %+v", got)
+	}
+}
+
+func TestHandleSettingsTelegramStatus(t *testing.T) {
+	fake := &fakeOnboarding{statusResp: OnboardingTelegramStatus{Linked: true}}
+	s := &Server{onboarding: fake}
+	r := httptest.NewRequest(http.MethodGet, "/api/settings/telegram/sess-1/status", nil)
+	r.SetPathValue("sessionToken", "sess-1")
+	r = withPrincipal(r, "operator-1")
+	rr := httptest.NewRecorder()
+
+	s.handleSettingsTelegramStatus(rr, r)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if fake.gotRequester != "operator-1" || fake.gotToken != "sess-1" {
+		t.Fatalf("TelegramStatus requester=%q token=%q, want operator-1/sess-1", fake.gotRequester, fake.gotToken)
+	}
+	var got OnboardingTelegramStatus
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.Linked {
+		t.Fatal("linked = false, want true")
+	}
 }
 
 func TestHandleDeleteSetting(t *testing.T) {

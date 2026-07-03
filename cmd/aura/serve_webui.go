@@ -258,6 +258,12 @@ const (
 	connectPIMAuthCancelRoute     = "POST /api/connect/pim/accounts/{id}/auth/cancel"
 )
 
+const (
+	settingsTelegramCheckRoute  = "POST /api/settings/telegram/check"
+	settingsTelegramLinkRoute   = "POST /api/settings/telegram/link"
+	settingsTelegramStatusRoute = "GET /api/settings/telegram/{sessionToken}/status"
+)
+
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
 // (start + provision) are gated on (ONBD-01a / D-04, parity with agentRunCapability). The
 // seeded `local` identity holds the '*' wildcard so it passes; the name becomes load-
@@ -448,6 +454,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle("GET /api/settings", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle("PUT /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("DELETE /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(settingsTelegramCheckRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(settingsTelegramLinkRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(settingsTelegramStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The cockpit "Connect" WhatsApp device-linking routes delegate to the AG-UI handler
 	// (routes on Server.Mux) behind RequireCapability(governance.write) — operator
 	// write-class actions (logout drops the session, a QR scan links a device), so they

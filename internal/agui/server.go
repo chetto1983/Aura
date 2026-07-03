@@ -98,6 +98,7 @@ type Server struct {
 	governance       GovernanceProviders
 	governanceWrite  GovernanceWriteProviders
 	settings         settingsStore
+	telegramProbe    TelegramBotProbe
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource
 	bootstrap        BootstrapService

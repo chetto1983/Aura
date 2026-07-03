@@ -37,7 +37,6 @@ import (
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
-	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
 )
@@ -350,7 +349,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// SetGraphView best-effort precedent). The reads inherit RequireAuth from the parent
 	// mux; no capability gate (read-only).
 	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store))
-	aguiServer.SetSettingsStore(settings.NewStore(chat.pool))
+	wireSettingsProviders(aguiServer, chat.pool)
 	// Wire the Phase-29 MCP WRITE provider (MCPW-01/02/03): install/env-edit/trust/enable/
 	// disable/remove, each atomic with its mcp_audit row (WriteConfigWithAudit) and re-probed
 	// for the live tool count. Built best-effort over the shared pool + the managed-config

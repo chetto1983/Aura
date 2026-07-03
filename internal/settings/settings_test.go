@@ -31,6 +31,9 @@ func TestAllowed(t *testing.T) {
 	if _, ok := Allowed("AURA_RERANK_MODEL"); !ok {
 		t.Error("AURA_RERANK_MODEL should be allowed")
 	}
+	if m, ok := Allowed("TELEGRAM_BOT_TOKEN"); !ok || !m.Secret {
+		t.Errorf("TELEGRAM_BOT_TOKEN should be allowed + secret, got ok=%v meta=%+v", ok, m)
+	}
 	if _, ok := Allowed("POSTGRES_PASSWORD"); ok {
 		t.Error("POSTGRES_PASSWORD must NOT be settings-overridable")
 	}
@@ -144,6 +147,21 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	rerankBase, rerankKey, rerankModel := cfg.RerankRoute()
 	if rerankBase != "https://settings-rerank.example" || rerankKey != "sk-settings-overlay" || rerankModel != "settings/rerank-model" {
 		t.Errorf("RerankRoute() = (%q, %q, %q), want overlaid base/key/model", rerankBase, rerankKey, rerankModel)
+	}
+}
+
+func TestOverlayEnvAppliesTelegramBotToken(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+
+	l := fakeLister{rows: []sqlc.AuraSettings{
+		{Key: "TELEGRAM_BOT_TOKEN", Value: "123456:settings-telegram-token"},
+	}}
+	if err := OverlayEnv(t.Context(), l); err != nil {
+		t.Fatalf("OverlayEnv: %v", err)
+	}
+
+	if got := os.Getenv("TELEGRAM_BOT_TOKEN"); got != "123456:settings-telegram-token" {
+		t.Errorf("TELEGRAM_BOT_TOKEN = %q, want overlaid Settings token", got)
 	}
 }
 

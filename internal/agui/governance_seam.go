@@ -92,6 +92,10 @@ type OnboardingService interface {
 	// user scanned the deep-link and linked Telegram) via a REST poll over PendingConsumed
 	// (ONBD-01b / R6).
 	TelegramStatus(ctx context.Context, requesterIdentityID, token string) (OnboardingTelegramStatus, error)
+	// CreateTelegramLink mints a current-identity Telegram deep-link + QR without
+	// running the full profile interview again. It returns a session token that can be
+	// polled through TelegramStatus.
+	CreateTelegramLink(ctx context.Context, requesterIdentityID string) (OnboardingTelegramLink, error)
 	// StartProfileSession starts the same profile interview for the already-authenticated
 	// requester. It is current-user setup, not identity provisioning, so it does not
 	// expose capability grants or require identity.create.

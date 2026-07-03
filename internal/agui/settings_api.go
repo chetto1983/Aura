@@ -22,6 +22,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -41,14 +42,25 @@ type settingsStore interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// TelegramBotProbe validates a Telegram Bot API token and returns the bot username.
+// The token is a secret and must never be logged or echoed by the probe caller.
+type TelegramBotProbe func(ctx context.Context, token string) (username string, err error)
+
 // SetSettingsStore wires the aura.settings store the Settings routes use. Set by
 // the daemon composition root (serve) after NewServer; until set, the routes
 // answer 503 so a stack without a pool degrades gracefully (the SetCalendarMCP
 // precedent).
 func (s *Server) SetSettingsStore(store settingsStore) { s.settings = store }
 
+// SetTelegramBotProbe wires the live getMe validator used by the Settings Telegram
+// recovery panel. Until set, the availability check answers 503.
+func (s *Server) SetTelegramBotProbe(probe TelegramBotProbe) { s.telegramProbe = probe }
+
 func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings", s.handleListSettings)
+	mux.HandleFunc("POST /api/settings/telegram/check", s.handleCheckTelegramAvailability)
+	mux.HandleFunc("POST /api/settings/telegram/link", s.handleCreateSettingsTelegramLink)
+	mux.HandleFunc("GET /api/settings/telegram/{sessionToken}/status", s.handleSettingsTelegramStatus)
 	mux.HandleFunc("PUT /api/settings/{key}", s.handlePutSetting)
 	mux.HandleFunc("DELETE /api/settings/{key}", s.handleDeleteSetting)
 }
@@ -186,6 +198,105 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONStatus(w, http.StatusOK, map[string]any{"key": key, "deleted": true, "restart_required": true})
+}
+
+type telegramAvailabilityRequest struct {
+	Token string `json:"token,omitempty"`
+}
+
+type telegramAvailabilityDTO struct {
+	Configured      bool   `json:"configured"`
+	Available       bool   `json:"available"`
+	BotUsername     string `json:"botUsername,omitempty"`
+	RequiresRestart bool   `json:"requiresRestart"`
+	Error           string `json:"error,omitempty"`
+}
+
+func (s *Server) handleCheckTelegramAvailability(w http.ResponseWriter, r *http.Request) {
+	if s.telegramProbe == nil {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "telegram validation not configured"})
+		return
+	}
+	raw, ok := readCappedBody(w, r)
+	if !ok {
+		return
+	}
+	var req telegramAvailabilityRequest
+	if strings.TrimSpace(string(raw)) != "" {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+			return
+		}
+	}
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		var err error
+		token, err = s.effectiveSettingValue(r.Context(), "TELEGRAM_BOT_TOKEN")
+		if err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
+			return
+		}
+	}
+	if token == "" {
+		writeJSON(w, telegramAvailabilityDTO{Configured: false, Available: false})
+		return
+	}
+	username, err := s.telegramProbe(r.Context(), token)
+	requiresRestart := token != os.Getenv("TELEGRAM_BOT_TOKEN")
+	if err != nil {
+		writeJSON(w, telegramAvailabilityDTO{
+			Configured:      true,
+			Available:       false,
+			RequiresRestart: requiresRestart,
+			Error:           "bot token validation failed",
+		})
+		return
+	}
+	writeJSON(w, telegramAvailabilityDTO{
+		Configured:      true,
+		Available:       true,
+		BotUsername:     username,
+		RequiresRestart: requiresRestart,
+	})
+}
+
+func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string, error) {
+	if s.settings != nil {
+		rows, err := s.settings.List(ctx)
+		if err != nil {
+			return "", err
+		}
+		for _, row := range rows {
+			if row.Key == key {
+				return strings.TrimSpace(row.Value), nil
+			}
+		}
+	}
+	return strings.TrimSpace(os.Getenv(key)), nil
+}
+
+func (s *Server) handleCreateSettingsTelegramLink(w http.ResponseWriter, r *http.Request) {
+	if s.onboarding == nil {
+		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
+		return
+	}
+	requester, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	link, err := s.onboarding.CreateTelegramLink(r.Context(), requester)
+	if err != nil {
+		s.writeOnboardingError(w, err)
+		return
+	}
+	writeJSON(w, link)
+}
+
+func (s *Server) handleSettingsTelegramStatus(w http.ResponseWriter, r *http.Request) {
+	handleOnboardingSessionRequest(s, w, r, func(ctx context.Context, requester, token string) (OnboardingTelegramStatus, error) {
+		return s.onboarding.TelegramStatus(ctx, requester, token)
+	})
 }
 
 // validateSettingValue rejects a value that does not parse for its Kind (an int

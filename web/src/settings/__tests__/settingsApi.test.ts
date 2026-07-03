@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { deleteSetting, fetchSettings, putSetting } from '../settingsApi';
+import {
+  checkTelegramAvailability,
+  createTelegramLink,
+  deleteSetting,
+  fetchSettings,
+  fetchTelegramLinkStatus,
+  putSetting,
+} from '../settingsApi';
 
 describe('settingsApi', () => {
   afterEach(() => {
@@ -48,6 +55,49 @@ describe('settingsApi', () => {
     });
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/settings/AURA_MODEL_CONTEXT_WINDOW', {
       method: 'DELETE',
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+  });
+
+  it('checks Telegram availability and mints a QR link with same-origin credentials', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/status')) {
+        return Promise.resolve(new Response('{"linked":true}', { status: 200 }));
+      }
+      if (url.endsWith('/link')) {
+        return Promise.resolve(
+          new Response(
+            '{"sessionToken":"sess-1","deepLink":"https://t.me/AuraBot?start=x","qrSvg":"<svg/>"}',
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response('{"configured":true,"available":true,"botUsername":"AuraBot"}', {
+          status: 200,
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await checkTelegramAvailability('123:secret');
+    await createTelegramLink();
+    await fetchTelegramLinkStatus('sess-1');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/settings/telegram/check', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ token: '123:secret' }),
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/settings/telegram/link', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/settings/telegram/sess-1/status', {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
     });

@@ -13,6 +13,32 @@ export const settingsEn = {
       heading: 'Identity',
       body: 'Create operator identities and connect their setup channels from here.',
     },
+    telegram: {
+      heading: 'Telegram',
+      body: 'Add or validate the Telegram bot token, then mint a QR link for this signed-in identity if onboarding was skipped.',
+      loading: 'Loading Telegram settings...',
+      error: "Couldn't load Telegram settings. Check the server and try again.",
+      notConfigured: 'Telegram bot token is not configured.',
+      available: 'Bot available: @{{username}}',
+      unavailable: 'Telegram bot is not available with that token.',
+      requiresRestart:
+        'Restart Aura after saving a new token before the Telegram bot can receive scans.',
+      saved: 'Telegram token saved. Restart Aura to start the bot with it.',
+      qrHeading: 'Link this identity',
+      qrBody:
+        'Create a one-hour Telegram QR for the current signed-in identity, then scan it from Telegram.',
+      qrAlt: 'Telegram setup QR code',
+      qrCaption: 'Scan to link Telegram',
+      linked: 'Telegram linked.',
+      waiting: 'Waiting for scan.',
+      actionError: 'Telegram setup failed. Check the token, restart state, and try again.',
+      actions: {
+        check: 'Check availability',
+        save: 'Save Telegram token',
+        createQr: 'Create Telegram QR',
+        checkLink: 'Check link status',
+      },
+    },
     modelRouting: {
       heading: 'Model routing',
       body: 'Choose whether Aura uses a cloud OpenRouter endpoint or a local OpenAI-compatible model server, then set the model and token budget.',
@@ -45,6 +71,7 @@ export const settingsEn = {
       sttCloudModel: 'Speech-to-text cloud model',
       ttsModel: 'Text-to-speech model',
       visionCloud: 'Vision uses cloud',
+      telegramBotToken: 'Telegram bot token',
       enabled: 'Enabled',
     },
     status: {
@@ -78,6 +105,32 @@ export const settingsIt = {
       heading: 'Identita',
       body: 'Crea identita operatore e collega qui i loro canali di setup.',
     },
+    telegram: {
+      heading: 'Telegram',
+      body: 'Aggiungi o valida il token del bot Telegram, poi crea un QR per questa identita se il collegamento e stato saltato durante onboarding.',
+      loading: 'Caricamento impostazioni Telegram...',
+      error: 'Impossibile caricare le impostazioni Telegram. Controlla il server e riprova.',
+      notConfigured: 'Token bot Telegram non configurato.',
+      available: 'Bot disponibile: @{{username}}',
+      unavailable: 'Bot Telegram non disponibile con quel token.',
+      requiresRestart:
+        'Riavvia Aura dopo aver salvato un nuovo token prima che il bot Telegram riceva le scansioni.',
+      saved: 'Token Telegram salvato. Riavvia Aura per avviare il bot con questo token.',
+      qrHeading: 'Collega questa identita',
+      qrBody:
+        'Crea un QR Telegram valido un ora per l identita autenticata, poi scansionalo da Telegram.',
+      qrAlt: 'Codice QR setup Telegram',
+      qrCaption: 'Scansiona per collegare Telegram',
+      linked: 'Telegram collegato.',
+      waiting: 'In attesa della scansione.',
+      actionError: 'Setup Telegram non riuscito. Controlla token e stato del riavvio, poi riprova.',
+      actions: {
+        check: 'Controlla disponibilita',
+        save: 'Salva token Telegram',
+        createQr: 'Crea QR Telegram',
+        checkLink: 'Controlla stato link',
+      },
+    },
     modelRouting: {
       heading: 'Instradamento modello',
       body: 'Scegli se Aura usa OpenRouter cloud o un server locale compatibile OpenAI, poi imposta modello e budget token.',
@@ -110,6 +163,7 @@ export const settingsIt = {
       sttCloudModel: 'Modello cloud speech-to-text',
       ttsModel: 'Modello text-to-speech',
       visionCloud: 'Visione usa cloud',
+      telegramBotToken: 'Token bot Telegram',
       enabled: 'Attivo',
     },
     status: {

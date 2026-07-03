@@ -303,6 +303,35 @@ func (s *onboardingService) TelegramStatus(ctx context.Context, requesterIdentit
 	return OnboardingTelegramStatus{Linked: linked}, nil
 }
 
+// CreateTelegramLink mints a one-hour Telegram link for the already-authenticated
+// identity and stores a tiny poll session so Settings can check PendingConsumed without
+// re-running the full profile onboarding interview.
+func (s *onboardingService) CreateTelegramLink(ctx context.Context, requesterIdentityID string) (OnboardingTelegramLink, error) {
+	if requesterIdentityID == "" {
+		return OnboardingTelegramLink{}, errOnboardingForbidden
+	}
+	onboardingToken, deepLink, qrSVG, err := s.mintTelegramLink(ctx, requesterIdentityID)
+	if err != nil {
+		return OnboardingTelegramLink{}, err
+	}
+	entry := &sessionEntry{
+		creatorIdentityID: requesterIdentityID,
+		onboardingToken:   onboardingToken,
+		// This is not an interview session. Marking it provisioned makes step,
+		// provision, and profile-complete reject the token while TelegramStatus can
+		// still poll the pending Telegram row.
+		provisioned: true,
+	}
+	sessionToken, err := s.sessions.put(entry)
+	if err != nil {
+		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+			slog.Error("onboarding: COMP_C (delete telegram pending) after settings session failure failed", "step", "compensate")
+		}
+		return OnboardingTelegramLink{}, err
+	}
+	return OnboardingTelegramLink{SessionToken: sessionToken, DeepLink: deepLink, QRSVG: qrSVG}, nil
+}
+
 // CompleteProfile persists the current authenticated identity's profile interview and
 // mints the required Telegram recovery link for that already-created operator. A
 // confirmed draft writes Agent.md; an explicit skip writes metadata so the shell does not

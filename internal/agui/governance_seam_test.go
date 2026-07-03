@@ -53,6 +53,8 @@ type fakeOnboarding struct {
 	provErr      error
 	statusResp   OnboardingTelegramStatus
 	statusErr    error
+	linkResp     OnboardingTelegramLink
+	linkErr      error
 	profileStart OnboardingStart
 	profileErr   error
 	profileDone  OnboardingProfileComplete
@@ -79,6 +81,11 @@ func (f *fakeOnboarding) TelegramStatus(_ context.Context, requester, token stri
 	f.gotRequester = requester
 	f.gotToken = token
 	return f.statusResp, f.statusErr
+}
+
+func (f *fakeOnboarding) CreateTelegramLink(_ context.Context, requester string) (OnboardingTelegramLink, error) {
+	f.gotRequester = requester
+	return f.linkResp, f.linkErr
 }
 
 func (f *fakeOnboarding) StartProfileSession(context.Context, string) (OnboardingStart, error) {

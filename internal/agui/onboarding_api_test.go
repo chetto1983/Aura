@@ -266,6 +266,50 @@ func TestProfileOnboardingCompleteWritesSkippedMetadata(t *testing.T) {
 	}
 }
 
+func TestCreateTelegramLinkMintsCurrentIdentityRecoveryQR(t *testing.T) {
+	tg := &fakeTelegram{}
+	svc := newOnboardingService(OnboardingDeps{
+		Capabilities: fakeCaps{grants: []string{"agent.run"}},
+		Extractor:    &countingExtractor{},
+		Profiles:     &recordingProfileWriter{},
+		Telegram:     tg,
+		BotUsername:  "AuraBot",
+	})
+
+	link, err := svc.CreateTelegramLink(context.Background(), "operator-1")
+	if err != nil {
+		t.Fatalf("CreateTelegramLink: %v", err)
+	}
+	if link.SessionToken == "" {
+		t.Fatal("CreateTelegramLink returned no poll session token")
+	}
+	if !strings.HasPrefix(link.DeepLink, "https://t.me/AuraBot?start=") || strings.TrimSpace(link.QRSVG) == "" {
+		t.Fatalf("CreateTelegramLink = deepLink:%q qr:%t, want deep-link and QR", link.DeepLink, strings.TrimSpace(link.QRSVG) != "")
+	}
+	if tg.mintedCount() != 1 {
+		t.Fatalf("telegram pending tokens = %d, want 1", tg.mintedCount())
+	}
+
+	status, err := svc.TelegramStatus(context.Background(), "operator-1", link.SessionToken)
+	if err != nil {
+		t.Fatalf("TelegramStatus before consume: %v", err)
+	}
+	if status.Linked {
+		t.Fatal("TelegramStatus before consume = linked, want false")
+	}
+	tg.consumed = true
+	status, err = svc.TelegramStatus(context.Background(), "operator-1", link.SessionToken)
+	if err != nil {
+		t.Fatalf("TelegramStatus after consume: %v", err)
+	}
+	if !status.Linked {
+		t.Fatal("TelegramStatus after consume = false, want linked")
+	}
+	if _, err := svc.TelegramStatus(context.Background(), "operator-2", link.SessionToken); !errors.Is(err, errOnboardingForbidden) {
+		t.Fatalf("mismatched requester status err = %v, want forbidden", err)
+	}
+}
+
 // TestOnboardingStepEmptyAnswer proves an empty answer is recorded without error and
 // without an LLM extraction (the session no-ops on empty).
 func TestOnboardingStepEmptyAnswer(t *testing.T) {
