@@ -254,7 +254,7 @@ Plans:
 
 **Wave 1** *(parallel — DB-free foundation)*
 
-- [ ] 35-01-PLAN.md — D-02 classifier + Mutating floor (skill/task/swarm_spawn) + boot-guard [GATE-01, GATE-03]
+- [x] 35-01-PLAN.md — D-02 classifier + Mutating floor (skill/task/swarm_spawn) + boot-guard [GATE-01, GATE-03]
 - [ ] 35-02-PLAN.md — D-04 GATE-02 command-hook fail-closed verify + test strengthening [GATE-02]
 
 **Wave 2** *(blocked on 35-01)*

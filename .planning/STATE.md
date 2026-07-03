@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 35
-current_phase_name: ToolGateway + Policy Engine
+current_phase_name: toolgateway-policy-engine
 status: executing
-stopped_at: Phase 35 context gathered
-last_updated: "2026-07-03T15:36:05.291Z"
+stopped_at: Completed 35-01-PLAN.md
+last_updated: "2026-07-03T00:00:00.000Z"
 last_activity: 2026-07-03
-last_activity_desc: Phase 34 complete, transitioned to Phase 35
+last_activity_desc: Completed plan 35-01 (classifier + Mutating floor + boot-guard)
 progress:
   total_phases: 11
   completed_phases: 4
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 29
+  completed_plans: 25
   percent: 36
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 34 — agent-loop-correctness-durable-ledger
+**Current focus:** Phase 35 — toolgateway-policy-engine
 
 ## Current Position
 
-Phase: 35 — ToolGateway + Policy Engine
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-03 — Phase 34 complete, transitioned to Phase 35
+Phase: 35 (toolgateway-policy-engine) — EXECUTING
+Plan: 2 of 5
+Status: Executing Phase 35
+Last activity: 2026-07-03 — Completed plan 35-01 (classifier substrate + Mutating floor + boot-guard)
 
 #### 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack.
 
@@ -222,8 +222,13 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 33 P33-05 | ~20min | 2 tasks | 3 files |
 | Phase 34 P04 | ~60min | 3 tasks | 9 files |
 | Phase 34 P06 | ~2h | 3 tasks | 18 files |
+| Phase 35 P35-01 | ~25min | 3 tasks | 9 files |
 
 ## Accumulated Context
+
+### Phase 35 Execution
+
+- **35-01 closed (2026-07-03): D-02 classification substrate — the `Mutating` fail-closed floor on the three action-multiplexed tools + the pure `classify(spec, rawArgs) → scoring.RiskTier` monotone saturate-upward de-escalator + the boot-time fail-loud wiring guard.** DB-free foundation of GATE-01 (classification) and GATE-03 (fail-closed floor). Tasks 1-2 were salvaged from a crash-interrupted run (already committed on master: `63442cfa` set `Mutating:true` + the new optional `Multiplexed bool` hint on `skill`/`task`/`swarm_spawn` Specs; `d9da5fac` added `internal/gateway/classify.go`). Task 3 (`348fab6b`, `feat`): `internal/gateway/guard.go` `ValidateClassifiable(reg)` panics at boot on a `Mutating+Multiplexed` tool absent from `multiplexedClassifiers` (RESEARCH Pitfall 2 — a new multiplexed action can no longer silently under-gate; mirrors the `tools.Registry.Register` duplicate-name panic idiom), wired into serve boot later in 35-03. Tests: `classify_test.go` behavior table over all **9 skill + 4 task** actions + `swarm_spawn` flat-Risky + non-multiplexed Mutating-bit fallback; a **schema-driven exhaustiveness** test derives the covered-action set off the live tool `action` enums so a future-added action without a mapping fails; `TestClassifyReadsNotScored` anti-landmine proof (a skill read is Safe ONLY because it is allow-listed — it asserts `ComputeSkillTier("list")==Risky` to pin why reads must NOT be scored, D-02c). `classify_property_test.go` (`pgregory.net/rapid`): the saturate-upward invariant — a non-enumerated action never returns `Safe` (always `Risky`), and a truncated/unparseable arg blob never returns `Safe` for skill/task/swarm_spawn. **Verification:** `internal/scoring` byte-unchanged (`git diff --stat` empty); all touched files ≤600 LOC (max 201); `go build`/`go vet` clean; `go test -race ./internal/gateway/ ./internal/agent/tools/` green in WSL (CGO_ENABLED=1). `golangci-lint` not runnable (binary absent from this WSL — not in the plan's verify block, out of scope). No deviations. Summary `.planning/phases/35-toolgateway-policy-engine/35-01-SUMMARY.md`. Next = 35-02 (GATE-02 command-hook fail-closed) / 35-03 (Gateway Decide PEP consuming `classify` + the boot-guard).
 
 ### Phase 33 Execution
 
