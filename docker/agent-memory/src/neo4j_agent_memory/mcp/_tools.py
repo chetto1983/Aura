@@ -193,9 +193,6 @@ def _register_core_tools(mcp: FastMCP) -> None:
             aliases: Alternative names for the entity.
             metadata: Additional metadata.
         """
-        if user_identifier is not None:
-            return _scoped_unsupported("memory_add_entity")
-
         integration = get_integration(ctx)
         result = await integration.add_entity(
             name=name,
@@ -204,6 +201,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             description=description,
             aliases=aliases,
             metadata=metadata,
+            user_identifier=user_identifier,
         )
         return json.dumps(result, default=str)
 
@@ -266,9 +264,6 @@ def _register_core_tools(mcp: FastMCP) -> None:
             valid_until: ISO date string for when this fact expires.
             metadata: Additional metadata (e.g., scope, stack_tags, temporality).
         """
-        if user_identifier is not None:
-            return _scoped_unsupported("memory_add_fact")
-
         integration = get_integration(ctx)
         result = await integration.add_fact(
             subject=subject,
@@ -278,6 +273,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             valid_from=valid_from,
             valid_until=valid_until,
             metadata=metadata,
+            user_identifier=user_identifier,
         )
         return json.dumps(result, default=str)
 
@@ -478,18 +474,20 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             limit: Maximum facts to return.
             threshold: Similarity threshold for semantic search.
         """
-        if user_identifier is not None:
-            return _scoped_unsupported("memory_get_facts")
-
         client = get_client(ctx)
         try:
             if subject:
-                facts = await client.long_term.get_facts_about(subject, limit=limit)
+                facts = await client.long_term.get_facts_about(
+                    subject,
+                    limit=limit,
+                    user_identifier=user_identifier,
+                )
             elif query:
                 facts = await client.long_term.search_facts(
                     query,
                     limit=limit,
                     threshold=threshold,
+                    user_identifier=user_identifier,
                 )
             else:
                 return json.dumps({"error": "Provide subject or query."})
@@ -583,21 +581,26 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             description: Optional description of the relationship.
             confidence: Confidence score 0.0-1.0 (default: 1.0).
         """
-        if user_identifier is not None:
-            return _scoped_unsupported("memory_create_relationship")
-
         client = get_client(ctx)
 
         try:
             # Resolve source entity
-            source_entities = await client.long_term.search_entities(query=source_name, limit=1)
+            source_entities = await client.long_term.search_entities(
+                query=source_name,
+                limit=1,
+                user_identifier=user_identifier,
+            )
             if not source_entities:
                 return json.dumps(
                     {"error": f"Source entity '{source_name}' not found in knowledge graph."}
                 )
 
             # Resolve target entity
-            target_entities = await client.long_term.search_entities(query=target_name, limit=1)
+            target_entities = await client.long_term.search_entities(
+                query=target_name,
+                limit=1,
+                user_identifier=user_identifier,
+            )
             if not target_entities:
                 return json.dumps(
                     {"error": f"Target entity '{target_name}' not found in knowledge graph."}
@@ -1094,11 +1097,12 @@ async def _get_entity_neighbors(
     max_hops = min(max(max_hops, 1), 3)
     query = f"""
     MATCH (e:Entity {{id: $entity_id}})-[r*1..{max_hops}]-(neighbor:Entity)
+    OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[ue:HAS_ENTITY]->(neighbor)
     OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(neighbor)
     OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(neighbor)
     OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(neighbor)
     WHERE neighbor.id <> $entity_id
-      AND ($user_identifier IS NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
+      AND ($user_identifier IS NULL OR ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
     WITH DISTINCT neighbor, r
     RETURN neighbor.id AS id,
            neighbor.name AS name,

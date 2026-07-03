@@ -316,10 +316,11 @@ LIMIT 1
 
 ENTITY_IN_USER_SCOPE = """
 MATCH (e:Entity {id: $entity_id})
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[ue:HAS_ENTITY]->(e)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(e)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(e)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(e)
-RETURN count(DISTINCT m) + count(DISTINCT p) + count(DISTINCT rs) AS scope_count
+RETURN count(DISTINCT ue) + count(DISTINCT m) + count(DISTINCT p) + count(DISTINCT rs) AS scope_count
 """
 
 SEARCH_ENTITIES_BY_EMBEDDING = """
@@ -333,14 +334,23 @@ ORDER BY score DESC
 SEARCH_ENTITIES_BY_EMBEDDING_SCOPED = """
 CALL db.index.vector.queryNodes('entity_embedding_idx', $candidate_limit, $embedding)
 YIELD node, score
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[ue:HAS_ENTITY]->(node)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(node)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(node)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(node)
 WHERE score >= $threshold
-  AND (m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
+  AND (ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
 RETURN node AS e, score
 ORDER BY score DESC
 LIMIT $limit
+"""
+
+LINK_USER_TO_ENTITY = """
+MERGE (u:User {identifier: $user_identifier})
+ON CREATE SET u.id = $user_identifier, u.created_at = datetime()
+WITH u
+MATCH (e:Entity {id: $entity_id})
+MERGE (u)-[:HAS_ENTITY]->(e)
 """
 
 SEARCH_ENTITIES_BY_TYPE = """
@@ -435,6 +445,14 @@ CREATE (f:Fact {
 RETURN f
 """
 
+LINK_USER_TO_FACT = """
+MERGE (u:User {identifier: $user_identifier})
+ON CREATE SET u.id = $user_identifier, u.created_at = datetime()
+WITH u
+MATCH (f:Fact {id: $fact_id})
+MERGE (u)-[:HAS_FACT]->(f)
+"""
+
 CREATE_ENTITY_RELATIONSHIP = """
 MATCH (e1:Entity {id: $source_id})
 MATCH (e2:Entity {id: $target_id})
@@ -457,12 +475,30 @@ ORDER BY f.confidence DESC, f.created_at DESC
 LIMIT $limit
 """
 
+GET_FACTS_BY_SUBJECT_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(f:Fact)
+WHERE f.subject = $subject
+RETURN f
+ORDER BY f.confidence DESC, f.created_at DESC
+LIMIT $limit
+"""
+
 SEARCH_FACTS_BY_EMBEDDING = """
 CALL db.index.vector.queryNodes('fact_embedding_idx', $limit, $embedding)
 YIELD node, score
 WHERE score >= $threshold
 RETURN node AS f, score
 ORDER BY score DESC
+"""
+
+SEARCH_FACTS_BY_EMBEDDING_SCOPED = """
+CALL db.index.vector.queryNodes('fact_embedding_idx', $candidate_limit, $embedding)
+YIELD node, score
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(node)
+WHERE score >= $threshold
+RETURN node AS f, score
+ORDER BY score DESC
+LIMIT $limit
 """
 
 FIND_DUPLICATE_FACTS = """

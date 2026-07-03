@@ -441,6 +441,7 @@ class MemoryIntegration:
         description: str | None = None,
         aliases: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Create or update an entity with POLE+O typing.
 
@@ -453,6 +454,7 @@ class MemoryIntegration:
             description: Entity description.
             aliases: Alternative names.
             metadata: Additional metadata.
+            user_identifier: Optional user scope.
 
         Returns:
             Dict with entity info and deduplication result.
@@ -466,6 +468,7 @@ class MemoryIntegration:
                 aliases=aliases,
                 metadata=metadata,
                 generate_embedding=True,
+                user_identifier=user_identifier,
             )
             result: dict[str, Any] = {
                 "stored": True,
@@ -539,6 +542,7 @@ class MemoryIntegration:
         valid_from: str | None = None,
         valid_until: str | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Store a subject-predicate-object fact triple.
 
@@ -550,6 +554,7 @@ class MemoryIntegration:
             valid_from: ISO date string for temporal validity start.
             valid_until: ISO date string for temporal validity end.
             metadata: Additional metadata.
+            user_identifier: Optional user scope.
 
         Returns:
             Dict with stored fact info.
@@ -564,6 +569,7 @@ class MemoryIntegration:
                 valid_until=valid_until,
                 generate_embedding=True,
                 metadata=metadata,
+                user_identifier=user_identifier,
             )
             return {
                 "stored": True,

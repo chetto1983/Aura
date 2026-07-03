@@ -12,6 +12,7 @@ package mcptools
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -35,6 +36,70 @@ func reapIdleHTTPConns(t *testing.T) {
 		// Give the netpoller a beat to unpark the reaped readLoop/writeLoop.
 		time.Sleep(200 * time.Millisecond)
 	})
+}
+
+func TestMemoryLiveScopedGraphToolsAcceptUserIdentifier(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	cli, err := mcp.OpenServer(ctx, "memory-scoped-graph-probe", liveMemoryServer(endpoint))
+	if err != nil {
+		t.Fatalf("open streamable-http memory MCP at %s: %v", endpoint, err)
+	}
+	defer func() { _ = cli.Close() }()
+
+	uid := fmt.Sprintf("codex-live-%d", time.Now().UnixNano())
+	subject := "Codex Live Subject " + uid
+	entityName := "Codex Live Place " + uid
+
+	entityText, err := cli.CallTool(ctx, "memory_add_entity", map[string]any{
+		"name":            entityName,
+		"entity_type":     "LOCATION",
+		"user_identifier": uid,
+	})
+	if err != nil {
+		t.Fatalf("memory_add_entity: %v", err)
+	}
+	if strings.Contains(entityText, "disabled for user-scoped sessions") || !strings.Contains(entityText, `"stored": true`) {
+		t.Fatalf("memory_add_entity returned unexpected result: %s", entityText)
+	}
+
+	factText, err := cli.CallTool(ctx, "memory_add_fact", map[string]any{
+		"subject":         subject,
+		"predicate":       "has_marker",
+		"object_value":    "ok",
+		"user_identifier": uid,
+	})
+	if err != nil {
+		t.Fatalf("memory_add_fact: %v", err)
+	}
+	if strings.Contains(factText, "disabled for user-scoped sessions") || !strings.Contains(factText, `"stored": true`) {
+		t.Fatalf("memory_add_fact returned unexpected result: %s", factText)
+	}
+
+	factsText, err := cli.CallTool(ctx, "memory_get_facts", map[string]any{
+		"subject":         subject,
+		"user_identifier": uid,
+	})
+	if err != nil {
+		t.Fatalf("memory_get_facts: %v", err)
+	}
+	if strings.Contains(factsText, "disabled for user-scoped sessions") || !strings.Contains(factsText, `"fact_count": 1`) {
+		t.Fatalf("memory_get_facts did not return the scoped fact: %s", factsText)
+	}
+
+	otherText, err := cli.CallTool(ctx, "memory_get_facts", map[string]any{
+		"subject":         subject,
+		"user_identifier": uid + "-other",
+	})
+	if err != nil {
+		t.Fatalf("memory_get_facts other user: %v", err)
+	}
+	if !strings.Contains(otherText, `"fact_count": 0`) {
+		t.Fatalf("memory_get_facts leaked scoped fact to another user: %s", otherText)
+	}
 }
 
 // memoryEndpointOrGate resolves the live sidecar URL from AURA_AGENT_MEMORY_MCP_URL

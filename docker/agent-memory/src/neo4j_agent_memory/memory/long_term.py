@@ -192,6 +192,17 @@ def _deduplication_scope(metadata: dict[str, Any] | None) -> str | None:
     return json.dumps(scoped, sort_keys=True, separators=(",", ":"))
 
 
+def _metadata_with_user_scope(
+    metadata: dict[str, Any] | None,
+    user_identifier: str | None,
+) -> dict[str, Any] | None:
+    if user_identifier is None:
+        return metadata
+    scoped = dict(metadata or {})
+    scoped["user_identifier"] = user_identifier
+    return scoped
+
+
 def _node_metadata(data: dict[str, Any]) -> dict[str, Any]:
     return _deserialize_metadata(data.get("metadata"))
 
@@ -473,6 +484,7 @@ class LongTermMemory(BaseMemory[Entity]):
         enrich: bool = True,
         coordinates: tuple[float, float] | None = None,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> tuple[Entity, DeduplicationResult]:
         """
         Add an entity with optional resolution and deduplication.
@@ -491,6 +503,8 @@ class LongTermMemory(BaseMemory[Entity]):
             enrich: Whether to queue for background enrichment
             coordinates: Optional (latitude, longitude) tuple to set directly
             metadata: Optional metadata
+            user_identifier: Optional user scope. When provided, writes a
+                ``(:User)-[:HAS_ENTITY]->(:Entity)`` edge.
 
         Returns:
             Tuple of (entity, deduplication_result). If entity was auto-merged,
@@ -515,6 +529,8 @@ class LongTermMemory(BaseMemory[Entity]):
             resolved = await self._resolver.resolve(name, parsed_type, existing_entities=existing)
             canonical_name = resolved.canonical_name
             confidence = resolved.confidence
+
+        metadata = _metadata_with_user_scope(metadata, user_identifier)
 
         # Generate embedding
         embedding = None
@@ -541,6 +557,10 @@ class LongTermMemory(BaseMemory[Entity]):
                     if name not in existing_entity.aliases and name != existing_entity.name:
                         await self._add_alias_to_entity(dedup_result.matched_entity_id, name)
                         existing_entity.aliases.append(name)
+                    if user_identifier is not None:
+                        await self._link_user_to_entity(
+                            user_identifier, str(existing_entity.id)
+                        )
                     return existing_entity, dedup_result
 
         # Geocode if this is a LOCATION entity
@@ -601,6 +621,8 @@ class LongTermMemory(BaseMemory[Entity]):
                 "location": location_point,  # Neo4j Point for LOCATION entities
             },
         )
+        if user_identifier is not None:
+            await self._link_user_to_entity(user_identifier, str(entity.id))
 
         # If flagged for review, create SAME_AS relationship
         if dedup_result.action == "flagged" and dedup_result.matched_entity_id:
@@ -626,6 +648,16 @@ class LongTermMemory(BaseMemory[Entity]):
             )
 
         return entity, dedup_result
+
+    async def _link_user_to_entity(self, user_identifier: str, entity_id: str) -> None:
+        """Idempotently write ``(:User)-[:HAS_ENTITY]->(:Entity)``."""
+        await self._client.execute_write(
+            queries.LINK_USER_TO_ENTITY,
+            {
+                "user_identifier": user_identifier,
+                "entity_id": entity_id,
+            },
+        )
 
     async def add_preference(
         self,
@@ -911,6 +943,7 @@ class LongTermMemory(BaseMemory[Entity]):
         valid_until: datetime | None = None,
         generate_embedding: bool = True,
         metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
     ) -> Fact:
         """
         Add a declarative fact with deduplication.
@@ -928,10 +961,13 @@ class LongTermMemory(BaseMemory[Entity]):
             valid_until: End of validity
             generate_embedding: Whether to generate embedding
             metadata: Optional metadata
+            user_identifier: Optional user scope. When provided, writes a
+                ``(:User)-[:HAS_FACT]->(:Fact)`` edge and scopes deduplication.
 
         Returns:
             The created or existing fact
         """
+        metadata = _metadata_with_user_scope(metadata, user_identifier)
         deduplication_scope = _deduplication_scope(metadata)
 
         # Generate embedding
@@ -968,6 +1004,8 @@ class LongTermMemory(BaseMemory[Entity]):
                     )
                     existing = self._parse_fact(existing_data)
                     existing.metadata["deduplicated"] = True
+                    if user_identifier is not None:
+                        await self._link_user_to_fact(user_identifier, str(existing.id))
                     return existing
             except Exception:
                 pass  # Vector index may not exist yet; proceed with creation
@@ -1001,8 +1039,20 @@ class LongTermMemory(BaseMemory[Entity]):
                 "deduplication_scope": deduplication_scope or "global",
             },
         )
+        if user_identifier is not None:
+            await self._link_user_to_fact(user_identifier, str(fact.id))
 
         return fact
+
+    async def _link_user_to_fact(self, user_identifier: str, fact_id: str) -> None:
+        """Idempotently write ``(:User)-[:HAS_FACT]->(:Fact)``."""
+        await self._client.execute_write(
+            queries.LINK_USER_TO_FACT,
+            {
+                "user_identifier": user_identifier,
+                "fact_id": fact_id,
+            },
+        )
 
     async def add_relationship(
         self,
@@ -2145,6 +2195,7 @@ class LongTermMemory(BaseMemory[Entity]):
         subject: str,
         *,
         limit: int = 100,
+        user_identifier: str | None = None,
     ) -> list[Fact]:
         """
         Get all facts about a subject.
@@ -2152,13 +2203,20 @@ class LongTermMemory(BaseMemory[Entity]):
         Args:
             subject: The fact subject
             limit: Maximum results
+            user_identifier: Optional user scope
 
         Returns:
             List of facts about the subject
         """
         results = await self._client.execute_read(
-            queries.GET_FACTS_BY_SUBJECT,
-            {"subject": subject, "limit": limit},
+            queries.GET_FACTS_BY_SUBJECT_SCOPED
+            if user_identifier
+            else queries.GET_FACTS_BY_SUBJECT,
+            {
+                "subject": subject,
+                "limit": limit,
+                "user_identifier": user_identifier,
+            },
         )
         return [self._parse_fact(dict(r["f"])) for r in results]
 
@@ -2168,6 +2226,7 @@ class LongTermMemory(BaseMemory[Entity]):
         *,
         limit: int = 10,
         threshold: float = 0.7,
+        user_identifier: str | None = None,
     ) -> list[Fact]:
         """
         Search for facts by semantic similarity.
@@ -2176,6 +2235,7 @@ class LongTermMemory(BaseMemory[Entity]):
             query: Search query
             limit: Maximum results
             threshold: Minimum similarity threshold
+            user_identifier: Optional user scope
 
         Returns:
             List of matching facts
@@ -2186,11 +2246,15 @@ class LongTermMemory(BaseMemory[Entity]):
         query_embedding = await self._embedder.embed(query)
 
         results = await self._client.execute_read(
-            queries.SEARCH_FACTS_BY_EMBEDDING,
+            queries.SEARCH_FACTS_BY_EMBEDDING_SCOPED
+            if user_identifier
+            else queries.SEARCH_FACTS_BY_EMBEDDING,
             {
                 "embedding": query_embedding,
                 "limit": limit,
+                "candidate_limit": max(limit * 5, limit),
                 "threshold": threshold,
+                "user_identifier": user_identifier,
             },
         )
 

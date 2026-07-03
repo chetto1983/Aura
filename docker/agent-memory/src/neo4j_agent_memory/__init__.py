@@ -1226,16 +1226,18 @@ class MemoryClient:
                 results = await self._client.execute_read(
                     """
                     MATCH (e:Entity)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[ue:HAS_ENTITY]->(e)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(e)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(e)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(e)
-                    WHERE $user_identifier IS NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL
+                    WHERE $user_identifier IS NULL OR ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL
                     WITH e LIMIT $limit
                     OPTIONAL MATCH (e)-[r0:RELATED_TO]-(e20:Entity)
+                    OPTIONAL MATCH (:User {identifier: $user_identifier})-[ue2:HAS_ENTITY]->(e20)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m2:Message)-[:MENTIONS]->(e20)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p2:Preference)-[:APPLIES_TO]->(e20)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs2:ReasoningStep)-[:TOUCHED]->(e20)
-                    WITH e, r0, e20, count(DISTINCT m2) + count(DISTINCT p2) + count(DISTINCT rs2) AS neighbor_scope_count
+                    WITH e, r0, e20, count(DISTINCT ue2) + count(DISTINCT m2) + count(DISTINCT p2) + count(DISTINCT rs2) AS neighbor_scope_count
                     WITH e,
                          CASE WHEN $user_identifier IS NULL OR e20 IS NULL OR neighbor_scope_count > 0 THEN r0 ELSE null END AS r,
                          CASE WHEN $user_identifier IS NULL OR e20 IS NULL OR neighbor_scope_count > 0 THEN e20 ELSE null END AS e2
