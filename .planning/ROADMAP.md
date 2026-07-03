@@ -250,7 +250,7 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 **Wave 1** *(parallel — DB-free foundation)*
 
@@ -263,7 +263,7 @@ Plans:
 
 **Wave 3** *(blocked on 35-03)*
 
-- [ ] 35-04-PLAN.md — Durable reservation + idempotency: :execrows + replay + Store.Reserve (D-01a/b/c) [GATE-03, GATE-04]
+- [x] 35-04-PLAN.md — Durable reservation + idempotency: :execrows + replay + Store.Reserve (D-01a/b/c) [GATE-03, GATE-04]
 
 **Wave 4** *(blocked on 35-04)*
 

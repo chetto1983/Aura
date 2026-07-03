@@ -38,8 +38,8 @@
 
 - [ ] **GATE-01**: Every tool call (host shell/fs, MCP-bridged, sandbox, swarm) passes through one in-process policy decision (`allow`/`deny`/`approve`) recorded durably; no tool executes without a recorded policy decision. Table-driven over `internal/scoring` risk tiers; fail-OPEN under `dev`/`local_trusted`, fail-CLOSED for mutating tools under hardened/production. *(F-001 gateway, F-020)*
 - [ ] **GATE-02**: Configured command hooks default to fail-CLOSED (or require an explicit `AURA_COMMAND_HOOK_FAIL_POLICY`); timeout/crash/non-zero hook behavior matches the configured policy and cannot silently allow a denied command. *(F-006)*
-- [ ] **GATE-03**: Mutating tools require a successful durable pre-execution ledger reservation (started → succeeded/failed) under hardened/production; a failed reservation blocks the mutating tool; read-only tools degrade per policy. *(F-011, F-020)*
-- [ ] **GATE-04**: Mutating tools carry an idempotency key (ConversationID + RequestID + ToolCallID); retries do not double-apply side effects, and the durable state machine supports recovery. *(F-020)*
+- [x] **GATE-03**: Mutating tools require a successful durable pre-execution ledger reservation (started → succeeded/failed) under hardened/production; a failed reservation blocks the mutating tool; read-only tools degrade per policy. *(F-011, F-020)*
+- [x] **GATE-04**: Mutating tools carry an idempotency key (ConversationID + RequestID + ToolCallID); retries do not double-apply side effects, and the durable state machine supports recovery. *(F-020)*
 
 ### Multi-User Identity Isolation & Auth (MUSR)
 

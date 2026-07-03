@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 35
 current_phase_name: toolgateway-policy-engine
 status: executing
-stopped_at: Completed 35-03-PLAN.md
-last_updated: "2026-07-03T21:05:00.000Z"
+stopped_at: Completed 35-04-PLAN.md
+last_updated: "2026-07-03T21:40:00.000Z"
 last_activity: 2026-07-03
-last_activity_desc: Completed plan 35-03 (GATE-01 Gateway.Decide PEP interposed in execTool at all 3 composition roots)
+last_activity_desc: "Completed plan 35-04 (GATE-03/04 durable reservation + idempotency: :execrows + Store.Reserve + the unified mutating-Allow funnel + live replay proof)"
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 29
-  completed_plans: 27
+  completed_plans: 28
   percent: 36
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 35 (toolgateway-policy-engine) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
-Last activity: 2026-07-03 — Completed plan 35-03 (GATE-01 Gateway.Decide PEP: profile branch + read-only decision-fact + approve routing, injected at runner/swarm/cron)
+Last activity: 2026-07-03 — Completed plan 35-04 (GATE-03/04 durable reservation + idempotency)
+
+#### 35-04 — Durable reservation + idempotency (GATE-03/04, D-01a/b/c). The append-only `aura.tool_invocations` ledger is promoted (ZERO migration) into a synchronous, fatal-on-failure pre-execution reservation. `InsertToolInvocation` flips `:exec`→`:execrows` (KEEPS `ON CONFLICT DO NOTHING`) so the rows-affected conditional-write IS the GATE-04 idempotency key; added `GetToolInvocationEnd :one` (replay) + `ListInFlightToolInvocationsBefore :many` (start∧¬end anti-join for the 35-05 reconciler); sqlc regenerated (pinned v1.31.1). `Store.Reserve` (rows==1 acquire / rows==0 → `GetEnd` replay / INSERT error → wrapped) + `Store.GetEnd` (pgx.ErrNoRows→nil = valid reserved-but-not-finished) + `Store.ListInFlightBefore`; `Insert` ignores the new count. NEW `internal/gateway/reserve.go`: the ONE reserve call every mutating-Allow converges on — decide.go's not-GateRecommended auto-allow AND routeApprove's post-resume `Verdict{Allow, OperatorID}` — before `Decide` returns Allow; the operator_id rides that SINGLE start's Meta (the executed marker), NO competing Insert (D-03 point 2). `execTool` returns `Verdict.Replay` (a `*tools.ToolResult` built from the recorded end) WITHOUT calling `tool.Execute` (GATE-04); a failed reservation → `Verdict{Deny, "reservation failed"}` → Execute never called, even post-approval (GATE-03 fail-closed). Replay tolerates a GC'd sidecar (capped preview + `result expired`, Pitfall 6); a rows==0 with no end yet replays an in-flight marker (at-most-once holds). Reserve is synchronous+fatal BESIDE the async `persistToolInvocationLedger` (which becomes a harmless rows==0 no-op via the same UNIQUE key). NO migration, `internal/scoring` + append-only triggers + status CHECK untouched; verdict/operator_id ride `meta jsonb`. Live db_integration `-race` proof tier (WSL, real stack): `ReserveBeforeExecute` (order), `ReservationFailBlocks` (Execute==0), `IdempotentReplay` (Execute==1), `ApprovedCallReservedAndIdempotent` (approved-resume reserved+idempotent, exactly one start w/ operator_id in Meta + one end, no third row), `ReplayMissingSidecar` — all ran live (not skipped). GATE-03 + GATE-04 marked complete.
 
 #### 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack.
 
@@ -223,6 +225,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 34 P04 | ~60min | 3 tasks | 9 files |
 | Phase 34 P06 | ~2h | 3 tasks | 18 files |
 | Phase 35 P35-01 | ~25min | 3 tasks | 9 files |
+| Phase 35 P04 | ~55min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -434,6 +437,8 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-05 (PROF-01): `aura config validate [--profile <p>] [--json]` is a THIN presenter over `(*Config).ValidateProfile` — `configValidate(args)` → testable `runConfigValidate(args, io.Writer) int`. `--profile` overrides `AURA_PROFILE` for the run via `config.ParseProfile` (D-02, total: unknown→dev); fail-closed exit 1 on any `config.Fatal`, 2 on flag-parse error, 0 otherwise. **Renderer is value-free by construction** — `renderViolations` takes only `[]config.Violation` (never the Config/env), so no secret VALUE is ever in scope to leak (T-33-10, stronger than per-value REDACTED). No validation rule reimplemented in cmd/aura (thin-presenter grep == 0). e2e -race green: server_production exits 1 naming all 7 offending knobs, dev exits 0, `--json` → `[]config.Violation`, secrets redacted. No deviations. Commits `5ef3ab37` (feat) / `2e0c8d51` (test).
 - [Phase 35]: 35-02 (D-04/GATE-02): command-hook fail-closed is VERIFY-ONLY — `commandHookFailPolicy` already defaults empty/unset→FailClosed and only an explicit case-insensitive/trimmed `fail_open` opens; no production change, no new env knob (D-04). Strengthened the test matrix through the real `HookManager` gate (`newCommandHookManager`→`CommandHookManagerFromEnv`, `gateTool` mirroring `llm_agent_dispatch.go`, `spyTool` proving Execute never runs): timeout / crashed-allow / unparseable-crash all DENY under default policy and the gated tool never executes (no silent-allow path); a crashed before_model rewrite is rejected through the manager (AG-030). Task 2 added the deliberate CONTRAST — an explicit `fail_open` hook fault is CONTAINED by `hookFault` → tool ALLOWS — and pins BOTH `hookFault` branches (FailClosed abort / FailOpen contain) with one faulting fixture (F-006 regression guard). Task 1 (commit `1db95377`) was salvaged from a crash-interrupted run; task 2 (`0e410ffe`) reused the ~71-line salvaged patch verbatim after reconciling it against the real task-1 helpers. `internal/agent` -race green in WSL (22.6s). git diff limited to `_test.go`.
 - [Phase 33]: 33-01: Validate() MOVED first (config.go 557->534 LOC) to clear the whole-tree 600-LOC file-size hook before any field add (RESEARCH Pitfall 3); Severity(Warn/Fatal)+Violation{Knob,Sev,Msg} contract types pre-placed in config_validate.go for plans 02-05. RuntimeProfile string enum {dev,local_trusted,single_user_hardened,server_production} (D-01) + total ParseProfile (unknown/empty->dev, D-03, never panics — T-33-01) + .Strict() lenient{dev,local_trusted}/strict{hardened,prod} tier helper (D-07/D-14). Config.Profile/ObjectStoreReplicationFactor(default 1, D-13/PROF-06)/GarageRPCSecret(upstream GARAGE_RPC_SECRET, D-13/PROF-03) populated in loadBase; clearPostgresEnv extended with the 4 new knobs. NAMING-COLLISION GUARD held: internal/profile / Config.ProfileDir / AURA_PROFILE_DIR / config_profile_test.go untouched (RESEARCH Pitfall 1). GarageRPCSecret config-read only, never logged (T-33-02); NO per-profile runtime enforcement (scope fence, plan 04+). TDD: tests written first, RED observed via WSL, then GREEN; config.go 550 LOC; full internal/config -race green. Commits 2734f43c/0d439f16/39f8dbf1.
+- [Phase ?]: 35-04: InsertToolInvocation :execrows — rows-affected conditional-write IS the GATE-04 idempotency key (rows==1 acquire / rows==0 replay / err deny)
+- [Phase ?]: 35-04: every mutating-Allow (auto-allow AND approved-resume) converges on ONE store.Reserve before Execute; operator_id rides the single start Meta, no competing Insert (D-03 point 2)
 
 ### Pending Todos
 
@@ -478,7 +483,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-03T21:05:00.000Z
+Last session: 2026-07-03T19:32:56.976Z
 Stopped at: Completed 35-03-PLAN.md (GATE-01 Gateway.Decide PEP interposed at all 3 composition roots)
 Resume file: .planning/phases/35-toolgateway-policy-engine/35-04-PLAN.md
 
