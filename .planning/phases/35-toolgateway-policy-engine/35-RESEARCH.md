@@ -355,7 +355,13 @@ Three `NewLlmAgent` sites need the `Gateway` injected [VERIFIED]:
 
 **If this table looks short:** the domain is pre-locked; these are the residual *implementation* assumptions, not domain uncertainty.
 
-## Open Questions
+## Open Questions (RESOLVED at planning — 2026-07-03)
+
+> **Resolutions (folded into the plans):**
+> 1. **Headless reservation key → FULL ENFORCEMENT (user decision).** Reservation keys on the ORIGINATING conversation UUID (`swarm.RunConfig.ConvID` / cron `OriginConversationID`) + child `request_id`/`tool_call_id`, plumbed via a new `LedgerConversationID` to all 3 composition roots (35-03 Task 3). Both the GATE-01 decision-fact and the GATE-03 reservation land durably; flat sessions never key the ledger.
+> 2. **`request_id` threading → extend `tools.WithToolCallContext`** (smaller signature touch) — 35-03 Task 1.
+> 3. **`ask_user` → EXEMPT** from the gateway (structural + defensive short-circuit; the second `Execute` site is `ask_user`-only) — 35-03.
+> 4. **Grace-window → named `reservationOrphanGrace` (30m) with the `effectiveGrace = max(grace, maxToolExecWindow + margin)` invariant** so a still-running tool can never be reconciled as an orphan (35-05).
 
 1. **Headless reservation key (the top blocker).** Swarm children (`<conv>-swarm-w<i>`) and cron `agent_job:<runID>` run with flat non-UUID sessions and never write to `tool_invocations` today (CV-8), yet the gateway is injected there and GATE-01 says swarm tools pass the policy decision.
    - *What we know:* the ledger `conversation_id` is a UUID FK; the main runner path is a real UUID; the async ledger write is absent on headless paths.

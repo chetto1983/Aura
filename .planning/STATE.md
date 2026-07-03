@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
+current_phase: 35
+current_phase_name: ToolGateway + Policy Engine
 status: executing
 stopped_at: Phase 35 context gathered
-last_updated: "2026-07-03T13:24:17.276Z"
-last_activity: 2026-07-03 — Phase 34 complete, transitioned to Phase 35
+last_updated: "2026-07-03T15:36:05.291Z"
+last_activity: 2026-07-03
+last_activity_desc: Phase 34 complete, transitioned to Phase 35
 progress:
   total_phases: 11
   completed_phases: 4
@@ -27,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 Phase: 35 — ToolGateway + Policy Engine
 Plan: Not started
-Status: Executing Phase 34
+Status: Ready to execute
 Last activity: 2026-07-03 — Phase 34 complete, transitioned to Phase 35
 
 #### 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack.
