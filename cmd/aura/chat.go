@@ -349,6 +349,9 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		Identity:        idStore,
 		CacheMetrics:    cacheStore,
 		ToolInvocations: toolInvocationStore,
+		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
+		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
+		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
 		Client:          client,
 		Registry:        reg,
 		LLM:             cfg.LLM,

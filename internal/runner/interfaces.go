@@ -79,6 +79,40 @@ type PauseStore interface {
 	AutoResolveForConversation(ctx context.Context, conversationID string) error
 }
 
+// ResumeClaim binds one pause's claim (token + AM-02 answer) to the RoleTool answer
+// turn it appends, so the ResumeCommitter can resolve and inject a pause in ONE
+// cross-store tx (D-03). Turn.Seq is left 0 by the caller: the atomic Pool impl
+// reserves the seq under the conversation row-lock inside its tx; the pool-less split
+// fallback lets conversations.Store.AppendTurn allocate it.
+type ResumeClaim struct {
+	Token  string
+	Answer askuser.ResumeAnswer
+	Turn   conversations.AppendTurnParams
+}
+
+// ResumeCommitter is the narrow cross-store HITL-durability seam the Runner consumes
+// (D-03/D-05). It owns BOTH the resume path (claim a pause + append its answer turn)
+// AND the pause-exposure path (append the assistant ask_user tool_call turn + insert
+// its paused_states rows), each as ONE db.WithTx so a claim and its answer — or an
+// assistant turn and its pauses — commit all-or-nothing. The pool-owning
+// *PoolResumeCommitter (resume_committer.go) satisfies it in production; the pool-less
+// splitResumeCommitter is the non-atomic compatibility fallback runner.New defaults to.
+type ResumeCommitter interface {
+	// CommitResume claims ONE pause (MarkResumed's rows==0 gate → askuser.ErrPauseNotFound
+	// for an unknown/already-resumed token) then appends its RoleTool answer turn, in one
+	// tx. A failed claim appends nothing; a failed append rolls the claim back (the pause
+	// stays pending and is retryable — LOOP-03/F-029).
+	CommitResume(ctx context.Context, claim ResumeClaim) error
+	// CommitResumeBatch claims ALL pauses (sorted-token, deadlock-free) then appends every
+	// answer turn, in one tx. Any rows==0 claim rolls the whole tx back → exactly one
+	// answer per pause, no orphan RoleTool turns (LOOP-02/F-004).
+	CommitResumeBatch(ctx context.Context, claims []ResumeClaim) error
+	// CommitPause writes the assistant ask_user tool_call turn + all N paused_states rows
+	// in one tx, so a pause becomes consumable only AFTER its wire-valid assistant history
+	// is durable (LOOP-04/F-030).
+	CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams) error
+}
+
 // CacheMetricStore is the narrow aura.cache_metrics surface the Runner consumes
 // (D-A2-02). *cachemetrics.Store satisfies it implicitly. The Runner writes ONE
 // append-only metric row per completed assistant turn from the already-computed

@@ -68,6 +68,11 @@ type Deps struct {
 	Identity        IdentityStore
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
+	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
+	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
+	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
+	// pool-less splitResumeCommitter (unit tests, cache_audit) with no code change.
+	ResumeCommitter ResumeCommitter
 	Client          llm.Client
 	Registry        *tools.Registry
 	LLM             llm.Config
@@ -138,6 +143,7 @@ type Runner struct {
 	identity        IdentityStore
 	cacheMetrics    CacheMetricStore
 	toolInvocations ToolInvocationStore
+	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -215,6 +221,13 @@ func New(d Deps) *Runner {
 		alwaysBlock:     d.AlwaysBlock,
 		classifier:      classifier,
 		breaker:         d.Breaker,
+		resumeCommitter: d.ResumeCommitter,
+	}
+	// Default to the pool-less split committer when the composition root injected none
+	// (D-03): pool-owning callers pass a *PoolResumeCommitter for atomic cross-store
+	// resume/pause; unit tests + cache_audit get the non-atomic fallback for free.
+	if r.resumeCommitter == nil {
+		r.resumeCommitter = newSplitResumeCommitter(d.Conv, d.Pause)
 	}
 	// One process-lifetime breaker shared by every per-turn agent (B-05). A provider
 	// outage trips it once and short-circuits subsequent turns until cooldown — the
@@ -235,56 +248,6 @@ func New(d Deps) *Runner {
 		r.toolSelectLearner = tsl
 	}
 	return r
-}
-
-// embedHealthCheckTimeout bounds the best-effort boot probe of the embed sidecar.
-// It is short — the probe is a non-fatal liveness log, never a gate on boot.
-const embedHealthCheckTimeout = 3 * time.Second
-
-// wireToolSearchEmbedder wires the granite embedder into the registered tool_search
-// hook so free-text tool_search ranks deferred tools by embedding cosine (08.2-03).
-// The embed sidecar is a HARD dependency for tool_search: with it down, tool_search
-// Execute returns an explicit model-visible error (Req-6) — but boot is NOT failed
-// (Open-Q #2: an MCP-free `aura chat` must not be coupled to embed availability). A
-// non-fatal health-check probes the sidecar once and logs an unreachable :8081 so the
-// operator sees the dependency, then continues. nil embedder => tool_search has no
-// ranker and its free-text path errors per call; the select: path still works.
-func wireToolSearchEmbedder(reg *tools.Registry, embedder prompt.Embedder) {
-	if reg == nil {
-		return
-	}
-	t, ok := reg.Get("tool_search")
-	if !ok {
-		return
-	}
-	ts, ok := t.(*tools.ToolSearch)
-	if !ok {
-		return
-	}
-	ts.Embed = embedder
-	if embedder == nil {
-		slog.Warn("tool_search semantic ranking disabled: no embedder wired (embed sidecar)")
-		return
-	}
-	// Boot health-check: probe the embed sidecar (granite :8081) once. Log-only —
-	// never fatal, never blocks boot.
-	ctx, cancel := context.WithTimeout(context.Background(), embedHealthCheckTimeout)
-	defer cancel()
-	if _, err := embedder.Embed(ctx, []string{"healthcheck"}); err != nil {
-		slog.Warn("embed sidecar unreachable at boot: tool_search free-text ranking will error until it recovers (granite :8081)",
-			"error", err)
-	}
-}
-
-// CloseLearner stops the async self-improvement workers (reasoning + tool-selection),
-// if any. The composition root calls it at process shutdown (nil-safe).
-func (r *Runner) CloseLearner() {
-	if r != nil {
-		r.learner.Close()
-		if r.toolSelectLearner != nil {
-			r.toolSelectLearner.Close()
-		}
-	}
 }
 
 // ResponseInput is the CLI/caller-facing resume payload (the MCP three-action model,
