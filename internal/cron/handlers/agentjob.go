@@ -77,7 +77,7 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 	var summary strings.Builder
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
-		worker := newAgentWorker(h.Deps, job.RunID, prior)
+		worker := newAgentWorker(h.Deps, job.RunID, job.OriginConversationID, prior)
 		content, pause, runErr := drain(runCtx, worker, budget)
 		if runErr != nil {
 			return summary.String(), fmt.Errorf("agent_job run: %w", runErr)

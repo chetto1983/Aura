@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -38,19 +39,23 @@ type SwarmContextValue struct {
 	Client   llm.Client
 	LLMCfg   llm.Config
 	ConvID   string
+	// Gateway is the parent's Phase-35 policy PEP, relayed to each swarm worker so a
+	// headless child dispatch is enforced too (Open Q1 full enforcement). nil is a no-op.
+	Gateway *gateway.Gateway
 }
 
 // WithSwarmContext returns a ctx carrying the parent deps the swarm_spawn runner
 // adapter reads. The agent's runTool calls this before dispatching each tool so a
 // swarm_spawn call can resolve the live parent budget/registry/client/config. It
 // mirrors tools.WithToolCallContext.
-func WithSwarmContext(ctx context.Context, budget *Budget, registry *tools.Registry, client llm.Client, llmCfg llm.Config, convID string) context.Context {
+func WithSwarmContext(ctx context.Context, budget *Budget, registry *tools.Registry, client llm.Client, llmCfg llm.Config, convID string, gw *gateway.Gateway) context.Context {
 	return context.WithValue(ctx, swarmCtxKey{}, SwarmContextValue{
 		Budget:   budget,
 		Registry: registry,
 		Client:   client,
 		LLMCfg:   llmCfg,
 		ConvID:   convID,
+		Gateway:  gw,
 	})
 }
 

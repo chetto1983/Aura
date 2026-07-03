@@ -49,6 +49,7 @@ func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResu
 		Cfg:            a.Cfg,
 		ConvID:         sc.ConvID,
 		Depth:          a.Depth,
+		Gateway:        sc.Gateway, // relay the parent's PEP to each worker (Open Q1 full enforcement)
 	}
 
 	out, err := Run(ctx, rc, goals)

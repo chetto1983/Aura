@@ -44,7 +44,7 @@ func TestRunnerAdapterDrivesEngine(t *testing.T) {
 	rc := testRunConfig(t, r, 25)
 
 	ctx := agent.WithSwarmContext(withToolCtx(context.Background(), t),
-		rc.ParentBudget, rc.ParentRegistry, rc.Client, rc.LLM, rc.ConvID)
+		rc.ParentBudget, rc.ParentRegistry, rc.Client, rc.LLM, rc.ConvID, rc.Gateway)
 	a := NewRunnerAdapter(rc.Cfg)
 
 	res, err := a.Run(ctx, []string{"alpha task", "bravo task"})

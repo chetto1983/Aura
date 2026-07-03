@@ -543,7 +543,7 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	// their own span off the shared turn ctx — otel spans are safe to start in parallel.
 	spanCtx, span := startToolSpan(ctx, call.Function.Name, run.Mutating)
 	toolCtx := tools.WithToolCallContext(spanCtx, a.sessionID, call.ID, a.runDir, a.previewCap)
-	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID)
+	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID, a.gateway)
 	if d := budget.NodeTimeout(); d > 0 {
 		var cancel context.CancelFunc
 		toolCtx, cancel = context.WithTimeout(toolCtx, d)

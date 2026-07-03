@@ -533,6 +533,9 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// Real artifact jobs measure 150-360s live; the 120s handler fallback starved
 		// them mid-LLM-call (#53/D-42). Env-tunable: AURA_AGENT_JOB_MAX_DURATION_SEC.
 		MaxDuration: time.Duration(chat.cfg.AgentJobMaxDurationSec) * time.Second,
+		// The same policy PEP the interactive runner uses (GATE-01): a headless agent_job
+		// has no responder, so a mutating GateRecommended call degrades to deny-with-guidance.
+		Gateway: chat.gateway,
 	}
 	real := map[cron.TaskKind]handlers.Handler{
 		cron.KindReminder:       handlers.ReminderHandler{},
@@ -591,9 +594,10 @@ func (a handlerAdapter) Meta() cron.HandlerMeta {
 // Run projects the cron.Job onto handlers.Job and delegates to the real handler.
 func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 	return a.inner.Run(ctx, handlers.Job{
-		Payload:     job.Payload,
-		StepBudget:  job.StepBudget,
-		RunID:       job.RunID,
-		MissedSince: job.MissedSince,
+		Payload:              job.Payload,
+		StepBudget:           job.StepBudget,
+		RunID:                job.RunID,
+		MissedSince:          job.MissedSince,
+		OriginConversationID: job.OriginConversationID,
 	})
 }

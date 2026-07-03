@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -36,6 +37,10 @@ type RunConfig struct {
 	Cfg            config.Config
 	ConvID         string
 	Depth          int
+	// Gateway is the parent's Phase-35 policy PEP, injected into each worker so a
+	// headless swarm-child dispatch is enforced and keyed on the ORIGINATING
+	// conversation UUID (ConvID), never the flat worker session (Open Q1). nil is a no-op.
+	Gateway *gateway.Gateway
 }
 
 // Run fans goals out as LlmAgent workers in budget-bounded leak-safe waves, isolates
@@ -171,7 +176,11 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		PreviewCap: rc.Cfg.ToolPreviewCap,
 		RunDir:     rc.Cfg.RunDir,
 		SessionID:  fmt.Sprintf("%s-swarm-%s", rc.ConvID, childID), // FLAT — no slash (Pitfall 4)
-		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal)}},
+		// The gateway ledger key is the ORIGINATING conversation UUID (rc.ConvID), NOT the
+		// flat worker SessionID above — uuid.Parse fails on the flat session (Open Q1).
+		LedgerConversationID: rc.ConvID,
+		Gateway:              rc.Gateway,
+		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal)}},
 	})
 
 	slog.Info("swarm.child.spawned", "child", childID, "goal_index", idx)

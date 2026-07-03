@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoninglearn"
@@ -109,6 +110,12 @@ type Deps struct {
 	// HookManager is the optional agent extension surface. nil keeps the agent's
 	// hook calls as no-ops; production may inject command hooks here.
 	HookManager *agent.HookManager
+	// Gateway is the Phase-35 policy PEP (GATE-01) injected into every per-turn agent.
+	// The runner is the INTERACTIVE composition root, so it marks its turn ctx with a
+	// live responder (gateway.WithResponder) — under a strict profile a mutating
+	// GateRecommended call routes to an approval pause here, never a headless deny. nil
+	// is an Allow no-op (dev-parity).
+	Gateway *gateway.Gateway
 	// ToolSelectSaver persists oracle-confirmed (query -> tool) examples for the
 	// tool-selection active-learning loop (D-06/D-07) to :ToolSelectionExample. nil =>
 	// the loop is off (the tool_search ranker runs without the learned stage-2 boost).
@@ -164,6 +171,7 @@ type Runner struct {
 	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
 	learner           *reasoninglearn.Learner     // async reasoning self-improvement worker; nil unless ReasoningLearning is on
 	toolSelectLearner toolSelectObserver          // async tool-selection self-improvement worker (Open-Q #3); nil unless a saver is wired
+	gateway           *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
 
 	threadLocks sync.Map
 	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
@@ -230,6 +238,7 @@ func New(d Deps) *Runner {
 		alwaysBlock:     d.AlwaysBlock,
 		classifier:      classifier,
 		breaker:         d.Breaker,
+		gateway:         d.Gateway,
 		resumeCommitter: d.ResumeCommitter,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
@@ -536,6 +545,10 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		return nil, agent.InvocationContext{}, nil, fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
 	}
 	boundedCtx, cancel := bud.WithDeadline(ctx)
+	// The runner is the INTERACTIVE composition root: mark the turn ctx with a live
+	// responder so a strict-profile mutating approval routes to an in-session pause here
+	// (D-03), never to the headless deny-with-guidance branch cron/swarm take.
+	boundedCtx = gateway.WithResponder(boundedCtx)
 	seed := stripLeadingSystem(history)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:      r.client,
@@ -549,6 +562,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		Classifier:  r.classifier, // shared, anchors built once
 		Breaker:     r.breaker,    // shared process-lifetime breaker (B-05)
 		HookManager: r.hookManager,
+		Gateway:     r.gateway, // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

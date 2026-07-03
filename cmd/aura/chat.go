@@ -33,6 +33,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
@@ -60,6 +61,7 @@ type chatEnv struct {
 	run         *runner.Runner
 	client      llm.Client
 	reg         *tools.Registry
+	gateway     *gateway.Gateway
 	assets      *assets.Service
 	toolHandles runtimeToolHandles
 	mcpClosers  []func() error
@@ -283,6 +285,9 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	idStore := identity.New(pool)
 	cacheStore := cachemetrics.New(pool)
 	toolInvocationStore := toolinvocations.New(pool)
+	// The single in-process policy PEP (GATE-01), constructed ONCE and injected at the
+	// three NewLlmAgent roots (runner below, swarm via ctx-relay, cron agent_job).
+	gw := gateway.New(cfg.Profile, toolInvocationStore)
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.
@@ -306,6 +311,10 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
+
+	// Fail-loud boot wiring guard (D-02d): a mutating multiplexed tool the classifier
+	// cannot tier panics here rather than silently under-gating a live turn.
+	gateway.ValidateClassifiable(reg)
 
 	// Reasoning-tier self-improvement (spike 053) is one opt-in feature behind
 	// AURA_LLM_REASONING_LEARNING: only when it is on do we open a graph client
@@ -362,6 +371,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		AlwaysBlock:     alwaysBlockProvider(cfg),
 		ResumeHook:      chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals)),
 		HookManager:     hookManager,
+		Gateway:         gw,
 		// Local embedding-based reasoning-tier classifier (granite sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.
@@ -378,7 +388,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

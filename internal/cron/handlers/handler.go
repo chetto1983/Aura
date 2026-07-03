@@ -17,6 +17,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -57,6 +58,11 @@ type Job struct {
 	// slipped fire. The backup handler emits the SC#3 missed-past-the-window alert
 	// from it; a zero value means this is a normal on-time run.
 	MissedSince time.Time
+	// OriginConversationID is the conversation UUID the task was scheduled from (may be
+	// empty for a task with no origin). It is the gateway ledger key for a headless
+	// agent_job so a mutating denial is durably recorded on a real conversation UUID
+	// (Open Q1) — the flat "agent_job:<runID>" session never keys the ledger.
+	OriginConversationID string
 }
 
 // Handler is the per-kind unit of work (Slice 0.9: Handler ~ a small Run seam, not
@@ -86,6 +92,11 @@ type AgentDeps struct {
 	// MaxDuration bounds the whole agent_job wall-clock (D-11 swarm-child analog); 0
 	// disables the soft wall budget (the Budget's own wallclock still applies).
 	MaxDuration time.Duration
+	// Gateway is the Phase-35 policy PEP the ephemeral agent_job agent runs under. A
+	// headless job has no interactive responder, so a mutating GateRecommended call
+	// degrades to deny-with-guidance and leaves a durable decision-fact keyed on the
+	// originating conversation UUID (Open Q1). nil is an Allow no-op.
+	Gateway *gateway.Gateway
 }
 
 // childRegistry is the agent_job's tool registry: the full parent registry MINUS
@@ -100,7 +111,7 @@ func childRegistry(parent *tools.Registry) *tools.Registry {
 // SessionID (amendment #23: agent_job:<runID>, no DB-backed history). prior carries
 // any resume turns (the ask_user auto-reject inject-and-continue, D-25); on the first
 // turn it is just the goal user turn.
-func newAgentWorker(deps AgentDeps, runID string, prior []llm.Message) *agent.LlmAgent {
+func newAgentWorker(deps AgentDeps, runID, ledgerConvID string, prior []llm.Message) *agent.LlmAgent {
 	// The workspace announced in the tail hint mirrors runner.New: shell_exec and
 	// the fs tools with an empty WorkspaceRoot resolve against the process cwd, so
 	// the hint must name exactly that when no explicit workspace is configured.
@@ -117,7 +128,11 @@ func newAgentWorker(deps AgentDeps, runID string, prior []llm.Message) *agent.Ll
 		PreviewCap: deps.PreviewCap,
 		RunDir:     deps.RunDir,
 		SessionID:  "agent_job:" + runID,
-		Workspace:  ws,
-		UserTurns:  prior,
+		// The gateway ledger key is the ORIGINATING conversation UUID, NOT the flat
+		// "agent_job:<runID>" SessionID above (uuid.Parse fails on it) (Open Q1).
+		LedgerConversationID: ledgerConvID,
+		Gateway:              deps.Gateway,
+		Workspace:            ws,
+		UserTurns:            prior,
 	})
 }

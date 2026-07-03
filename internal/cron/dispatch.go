@@ -42,6 +42,10 @@ type Job struct {
 	// slipped fire. A handler (backup) uses it to decide whether to emit the SC#3
 	// missed-past-the-window alert; it is the zero value for a normal tick run.
 	MissedSince time.Time
+	// OriginConversationID is the conversation UUID the task was scheduled from (may be
+	// empty). The adapter relays it to handlers.Job so a headless agent_job's gateway
+	// decision-fact keys on a real conversation UUID, never the flat run session (Open Q1).
+	OriginConversationID string
 }
 
 // Handler is the per-kind unit of work the dispatcher routes to. Run returns the
@@ -144,7 +148,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
 		return err
 	}
 
-	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince}
+	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince, OriginConversationID: task.OriginConversationID}
 	summary, runErr := h.Run(ctx, job)
 
 	status := "completed"
