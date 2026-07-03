@@ -12,6 +12,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ErrSeqRequired is returned by AppendTurnTx when the caller does not supply a positive
+// Seq. The tx-inner body never allocates a seq (that stays in AppendTurn's seq-allocated
+// branch); the 34-06 ResumeCommitter must pass the seq it reserved.
+var ErrSeqRequired = errors.New("conversations: append turn requires a positive Seq")
+
 // AppendTurnParams carries one new turn plus its token/cost delta. Cost is the
 // USD figure to fold into the running total_cost_usd aggregate (RESEARCH OQ4 —
 // aggregated in SQL inside the same tx). A Seq <= 0 asks the Store to allocate the
@@ -81,6 +86,29 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
 	return nil
+}
+
+// AppendTurnTx is the no-spill, tx-inner half of AppendTurn, EXPORTED so the 34-06
+// runner-package ResumeCommitter can span a pause claim (askuser.MarkResumedTx) and the
+// resume/answer turn append in ONE cross-store db.WithTx (D-03). It folds the turn +
+// aggregate writes with insertTurnAndAggregates using the caller-supplied Queries (bound
+// to the caller's transaction) — it opens NO transaction of its own. It requires a
+// caller-provided Seq > 0 (ErrSeqRequired otherwise): the tx-inner path does not
+// allocate a seq, which stays in AppendTurn's seq-allocated branch. It assumes the
+// content never spills — resume/pause turns are always < turnCapBytes (A3), so
+// appendTurnWrites returns inline content with no sidecar file — and therefore carries
+// NO cleanupSidecarOnTxError/spill logic; the general large-content spill+rollback path
+// stays in AppendTurn (whose Seq>0 branch keeps its pre-built-turn cleanup so it can
+// remove exactly the file THIS turn spilled).
+func (s *Store) AppendTurnTx(ctx context.Context, q *sqlc.Queries, p AppendTurnParams) error {
+	if p.Seq <= 0 {
+		return fmt.Errorf("append turn tx %s: %w", p.ConversationID, ErrSeqRequired)
+	}
+	turn, agg, err := s.appendTurnWrites(p)
+	if err != nil {
+		return err
+	}
+	return insertTurnAndAggregates(ctx, q, turn, agg)
 }
 
 // AppendAssistantTurnWithCacheMetric writes a terminal assistant turn, folds its
