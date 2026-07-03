@@ -1,0 +1,13 @@
+# Mini-PC cloud-appliance override — shrinks Neo4j for an 8 GB, all-cloud host.
+# See docs/deployment/mini-pc-cloud-appliance.md. Layer it LAST, and do NOT combine
+# with compose.gpu.yaml / compose.llm.yaml (those are workstation-only):
+#   docker compose -f compose.yaml -f compose.cloud.yaml up -d aura caddy
+#
+# Everything else in the cloud profile is .env-driven (embed image/NGL, vision,
+# LLM base/model) — this file only overrides Neo4j's hardcoded memory settings.
+services:
+  neo4j:
+    environment:
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
