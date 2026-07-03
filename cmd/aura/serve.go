@@ -34,6 +34,8 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/envutil"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -51,7 +53,29 @@ const aguiShutdownTimeout = 10 * time.Second
 // unauthenticated loopback endpoint (T-12-09).
 const aguiReadHeaderTimeout = 10 * time.Second
 
+// reconcileTickInterval is the cadence of the crash-orphan reconciler in the daemon
+// (D-01d / GATE-04 recovery): often enough to close a crash-orphaned reservation within
+// a bounded window, sparse enough that the start∧¬end anti-join is negligible load. It
+// is a fixed default (no new env knob this phase); the boot one-shot fires immediately
+// at start, so a daemon that just came up after a crash reconciles before the first tick.
+const reconcileTickInterval = 10 * time.Minute
+
 const serveUsage = "usage: aura serve [--no-telegram | --only=cli]"
+
+// resolveMaxToolExecWindow returns the upper bound on a single run's tool-execution
+// lifetime — max(AURA_LOOP_NODE_TIMEOUT_SEC, AURA_LOOP_MAX_WALLCLOCK_SEC), defaults 0 /
+// 300s (mirroring agent.defaultBudgetWallclockSec). It feeds the reconciler's
+// effectiveGrace so the grace strictly exceeds the run lifetime even if an operator
+// raises either knob (the WARNING-4 collision-impossibility invariant). A simple
+// getenv-with-default is deliberate here — the Budget owns the fail-fast parse.
+func resolveMaxToolExecWindow() time.Duration {
+	nodeTimeout := time.Duration(envutil.IntDefault("AURA_LOOP_NODE_TIMEOUT_SEC", 0)) * time.Second
+	wallclock := time.Duration(envutil.IntDefault("AURA_LOOP_MAX_WALLCLOCK_SEC", 300)) * time.Second
+	if nodeTimeout > wallclock {
+		return nodeTimeout
+	}
+	return wallclock
+}
 
 // serveEnv is the booted daemon: the shared chat composition root plus the cron
 // Store + Scheduler the tick loop runs. close() reverse-releases everything the boot
@@ -77,6 +101,12 @@ type serveEnv struct {
 	// assetProcessingWorker claims durable asset_process ingestion jobs and runs the
 	// shared asset processor pipeline. runServe Start/Stops it with the daemon.
 	assetProcessingWorker *runtimeIngestionWorker
+
+	// reconciler is the crash-orphan reconciler (D-01d / GATE-03 durability + GATE-04
+	// recovery): it closes a start∧¬end reservation left by a crash by appending a
+	// terminal indeterminate `end` fact, never re-invoking a mutating orphan. Its
+	// lifecycle mirrors the sweeper's (Start at boot, Stop in drainShutdown, goleak-clean).
+	reconciler *gateway.Reconciler
 
 	// authulaProvider is the active embedded Authula web-auth framework.
 	// onboardingAuthulaProvider is kept as a distinct slot so cleanup stays correct if a
@@ -181,6 +211,10 @@ func runServe(args []string) {
 	// drain joins it. A disabled interval launches no goroutine. Stopped in drainShutdown.
 	env.sweeper.Start(ctx)
 	env.assetProcessingWorker.Start(ctx)
+	// Crash-orphan reconciler (D-01d): launched on the work ctx like the sweeper so a
+	// SIGTERM does not abort an in-flight anti-join mid-sweep; the drain joins it. A boot
+	// one-shot fires immediately, then it ticks; a disabled/nil store launches no goroutine.
+	env.reconciler.Start(ctx)
 
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
 	// Start blocks until signalCtx is cancelled (SIGINT/SIGTERM) or it returns an
@@ -437,6 +471,16 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
 	assetProcessingWorker := newRuntimeAssetProcessingWorker(chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent)
 
+	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash
+	// between reserve and Execute by APPENDING a terminal indeterminate `end` fact — it
+	// NEVER re-invokes a mutating orphan (the side effect may already have fired). It runs
+	// over the SAME ledger store the gateway reserves through, with the resolved
+	// maxToolExecWindow so effectiveGrace strictly exceeds any single run's tool-execution
+	// lifetime (the WARNING-4 collision-impossibility invariant). Under dev/local_trusted
+	// no reservations are written, so it is a harmless no-op; it stays lifecycle-clean
+	// either way (Start at boot, Stop in drainShutdown).
+	reconciler := gateway.NewReconciler(chat.toolInvocations, reconcileTickInterval, resolveMaxToolExecWindow())
+
 	// The channels Registry + the setup-wizard server (:9081) were built above (the
 	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
 	// cron.ChannelDeliverer; runServe StartAll/StopAll them (Phase 13, UX-02/03).
@@ -449,6 +493,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,
 		assetProcessingWorker:     assetProcessingWorker,
+		reconciler:                reconciler,
 		authulaProvider:           authulaProvider,
 		onboardingAuthulaProvider: onboardingAuthulaProvider,
 	}, nil

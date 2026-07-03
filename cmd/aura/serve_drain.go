@@ -93,6 +93,12 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 	if env.assetProcessingWorker != nil {
 		env.assetProcessingWorker.Stop()
 	}
+	// Stop the crash-orphan reconciler under its own bounded join (D-01d): an in-flight
+	// reconcile tick runs to completion, a hung anti-join cannot wedge shutdown. Idempotent
+	// when the worker was disabled (a nil store / non-positive interval launched no goroutine).
+	if env.reconciler != nil {
+		env.reconciler.Stop()
+	}
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
 	defer cancel()

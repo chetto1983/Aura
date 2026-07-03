@@ -53,18 +53,19 @@ const chatUsage = "usage: aura chat {list|new|resume [<id>]|archive <id>|unarchi
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg         *config.Config
-	pool        *pgxpool.Pool
-	conv        *conversations.Store
-	pause       *askuser.Store
-	identity    *identity.Store
-	run         *runner.Runner
-	client      llm.Client
-	reg         *tools.Registry
-	gateway     *gateway.Gateway
-	assets      *assets.Service
-	toolHandles runtimeToolHandles
-	mcpClosers  []func() error
+	cfg             *config.Config
+	pool            *pgxpool.Pool
+	conv            *conversations.Store
+	pause           *askuser.Store
+	identity        *identity.Store
+	run             *runner.Runner
+	client          llm.Client
+	reg             *tools.Registry
+	gateway         *gateway.Gateway
+	toolInvocations *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	assets          *assets.Service
+	toolHandles     runtimeToolHandles
+	mcpClosers      []func() error
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
@@ -388,7 +389,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
