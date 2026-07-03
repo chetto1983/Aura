@@ -278,6 +278,13 @@ func (t *SkillTool) requireWriteName(raw json.RawMessage, action string) (string
 // skillApprovalPriority orders a skill-approval pause ahead of routine clarifications
 // when several pauses are pending: a Destructive (delete) gate outranks a Risky one.
 func skillApprovalPriority(tier scoring.RiskTier) int {
+	return ApprovalPriority(tier)
+}
+
+// ApprovalPriority is the shared security-approval FIFO priority (single source of
+// truth, reused by the gateway PEP's routeApprove so the gateway does NOT re-derive
+// it): a Destructive gate outranks a Risky one, both ahead of routine clarifications.
+func ApprovalPriority(tier scoring.RiskTier) int {
 	if tier == scoring.Destructive {
 		return 80
 	}
