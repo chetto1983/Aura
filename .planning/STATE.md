@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 35
 current_phase_name: toolgateway-policy-engine
-status: executing
-stopped_at: Completed 35-04-PLAN.md
-last_updated: "2026-07-03T21:40:00.000Z"
+status: verifying
+stopped_at: Completed 35-05-PLAN.md
+last_updated: "2026-07-03T22:05:00.000Z"
 last_activity: 2026-07-03
-last_activity_desc: "Completed plan 35-04 (GATE-03/04 durable reservation + idempotency: :execrows + Store.Reserve + the unified mutating-Allow funnel + live replay proof)"
+last_activity_desc: "Completed plan 35-05 (D-01d crash-orphan reconciler: append-only end{indeterminate}, effectiveGrace>run-lifetime + pre-append re-check, never re-invoke; Phase 35 complete)"
 progress:
   total_phases: 11
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 29
-  completed_plans: 28
-  percent: 36
+  completed_plans: 29
+  percent: 45
 ---
 
 # Project State
@@ -30,8 +30,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 Phase: 35 (toolgateway-policy-engine) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-07-03 — Completed plan 35-04 (GATE-03/04 durable reservation + idempotency)
+Status: Phase 35 complete (5/5) — ready for verification
+Last activity: 2026-07-03 — Completed plan 35-05 (D-01d crash-orphan reconciler; GATE-03/04 recovery-complete)
+
+#### 35-05 — Crash-orphan reconciler (D-01d / GATE-03 durability + GATE-04 recovery). NEW `internal/gateway/reconcile.go`: a `Reconciler` mirroring `conversations.Sweeper` VERBATIM (boot one-shot + interval tick, `once`-guarded stop, bounded `wg` join, goleak-clean). `reconcileOrphans` lists `Store.ListInFlightBefore(now - effectiveGrace)` (the 35-04 start∧¬end anti-join), RE-CHECKS `Store.GetEnd` immediately before appending (skip if a real end landed since the snapshot), then APPENDS an `end{status='error', meta{indeterminate:true, reconciled:true}}` keyed on the orphan's {conv,req,toolCall} triple — APPEND-only (append-only triggers reject UPDATE/DELETE, D-01d), status stays `'error'` because the CHECK is `IN ('ok','error')` (indeterminate rides meta, Pitfall 4), and NO second `Execute` anywhere (a mutating orphan's side effect may already have fired → never re-invoke, Pitfall 5 — the reconciler has no tool seam by construction). The candidate set is provenance-agnostic: an approved-resume and an auto-allow share ONE start∧¬end shape (35-04 unified reserve), so no approve-path special-casing. **Collision-impossibility invariant (checker WARNING 4):** `effectiveGrace(w) = max(reservationOrphanGrace=30m, w + reservationOrphanMargin=5m)` where `w = maxToolExecWindow = max(AURA_LOOP_NODE_TIMEOUT_SEC, AURA_LOOP_MAX_WALLCLOCK_SEC)` (defaults 0/300s); `effectiveGrace(w) > w` for every config, so a start∧¬end older than the effective grace is a PROVABLE crash-orphan whose real `end` can never race the synthetic end into `ON CONFLICT DO NOTHING` (35-04 semantics unchanged) — a legitimately slow-but-within-lifetime tool's real outcome is never overwritten. Serve wiring: exposed `*toolinvocations.Store` on `chatEnv`; constructed the Reconciler beside `conversations.Sweeper` in `cmd/aura/serve.go`, `Start(ctx)` at boot + `Stop()` in `drainShutdown` (bounded, idempotent, nil/disabled-safe) — NOT `runner.go` (the plan frontmatter's listed file, but the Sweeper lifecycle it mandates mirroring lives in the serve root, and `runner.New` is shared by the one-shot `aura chat`). Refactor-on-touch: split the cron-dispatch block into `cmd/aura/serve_dispatch.go` to hold serve.go ≤600 (648→555). NO migration, NO new query, NO new env knob (fixed `reconcileTickInterval=10min` + the boot one-shot). Live db_integration `-race -p 1` proof tier (WSL, real stack): `AppendsIndeterminateEndForOrphan` (append not update, start row intact, indeterminate not ok), `InGraceOrphanUntouchedThenSlowToolRealEndWins` (no discard), `RechecksBeforeAppendLiveRealEndWins` (raced end preserved), `StartStopGoleakLive`, plus unit `EffectiveGraceExceedsRunLifetime` — all ran live (not skipped). Phase 35 GATE-01..04 complete end-to-end.
 
 #### 35-04 — Durable reservation + idempotency (GATE-03/04, D-01a/b/c). The append-only `aura.tool_invocations` ledger is promoted (ZERO migration) into a synchronous, fatal-on-failure pre-execution reservation. `InsertToolInvocation` flips `:exec`→`:execrows` (KEEPS `ON CONFLICT DO NOTHING`) so the rows-affected conditional-write IS the GATE-04 idempotency key; added `GetToolInvocationEnd :one` (replay) + `ListInFlightToolInvocationsBefore :many` (start∧¬end anti-join for the 35-05 reconciler); sqlc regenerated (pinned v1.31.1). `Store.Reserve` (rows==1 acquire / rows==0 → `GetEnd` replay / INSERT error → wrapped) + `Store.GetEnd` (pgx.ErrNoRows→nil = valid reserved-but-not-finished) + `Store.ListInFlightBefore`; `Insert` ignores the new count. NEW `internal/gateway/reserve.go`: the ONE reserve call every mutating-Allow converges on — decide.go's not-GateRecommended auto-allow AND routeApprove's post-resume `Verdict{Allow, OperatorID}` — before `Decide` returns Allow; the operator_id rides that SINGLE start's Meta (the executed marker), NO competing Insert (D-03 point 2). `execTool` returns `Verdict.Replay` (a `*tools.ToolResult` built from the recorded end) WITHOUT calling `tool.Execute` (GATE-04); a failed reservation → `Verdict{Deny, "reservation failed"}` → Execute never called, even post-approval (GATE-03 fail-closed). Replay tolerates a GC'd sidecar (capped preview + `result expired`, Pitfall 6); a rows==0 with no end yet replays an in-flight marker (at-most-once holds). Reserve is synchronous+fatal BESIDE the async `persistToolInvocationLedger` (which becomes a harmless rows==0 no-op via the same UNIQUE key). NO migration, `internal/scoring` + append-only triggers + status CHECK untouched; verdict/operator_id ride `meta jsonb`. Live db_integration `-race` proof tier (WSL, real stack): `ReserveBeforeExecute` (order), `ReservationFailBlocks` (Execute==0), `IdempotentReplay` (Execute==1), `ApprovedCallReservedAndIdempotent` (approved-resume reserved+idempotent, exactly one start w/ operator_id in Meta + one end, no third row), `ReplayMissingSidecar` — all ran live (not skipped). GATE-03 + GATE-04 marked complete.
 
@@ -226,6 +228,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 34 P06 | ~2h | 3 tasks | 18 files |
 | Phase 35 P35-01 | ~25min | 3 tasks | 9 files |
 | Phase 35 P04 | ~55min | 3 tasks | 13 files |
+| Phase 35 P05 | 40min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -439,6 +442,7 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-01: Validate() MOVED first (config.go 557->534 LOC) to clear the whole-tree 600-LOC file-size hook before any field add (RESEARCH Pitfall 3); Severity(Warn/Fatal)+Violation{Knob,Sev,Msg} contract types pre-placed in config_validate.go for plans 02-05. RuntimeProfile string enum {dev,local_trusted,single_user_hardened,server_production} (D-01) + total ParseProfile (unknown/empty->dev, D-03, never panics — T-33-01) + .Strict() lenient{dev,local_trusted}/strict{hardened,prod} tier helper (D-07/D-14). Config.Profile/ObjectStoreReplicationFactor(default 1, D-13/PROF-06)/GarageRPCSecret(upstream GARAGE_RPC_SECRET, D-13/PROF-03) populated in loadBase; clearPostgresEnv extended with the 4 new knobs. NAMING-COLLISION GUARD held: internal/profile / Config.ProfileDir / AURA_PROFILE_DIR / config_profile_test.go untouched (RESEARCH Pitfall 1). GarageRPCSecret config-read only, never logged (T-33-02); NO per-profile runtime enforcement (scope fence, plan 04+). TDD: tests written first, RED observed via WSL, then GREEN; config.go 550 LOC; full internal/config -race green. Commits 2734f43c/0d439f16/39f8dbf1.
 - [Phase ?]: 35-04: InsertToolInvocation :execrows — rows-affected conditional-write IS the GATE-04 idempotency key (rows==1 acquire / rows==0 replay / err deny)
 - [Phase ?]: 35-04: every mutating-Allow (auto-allow AND approved-resume) converges on ONE store.Reserve before Execute; operator_id rides the single start Meta, no competing Insert (D-03 point 2)
+- [Phase ?]: 35-05: crash-orphan reconciler appends end{error,indeterminate}, never re-invokes a mutating orphan; effectiveGrace=max(30m, runLifetime+5m) > run-lifetime plus a pre-append GetEnd re-check make the slow-tool collision impossible; lifecycle mirrors conversations.Sweeper, wired into the serve daemon (not runner.go)
 
 ### Pending Todos
 
@@ -483,7 +487,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-03T19:32:56.976Z
+Last session: 2026-07-03T19:54:16.498Z
 Stopped at: Completed 35-03-PLAN.md (GATE-01 Gateway.Decide PEP interposed at all 3 composition roots)
 Resume file: .planning/phases/35-toolgateway-policy-engine/35-04-PLAN.md
 
