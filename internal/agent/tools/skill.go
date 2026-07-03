@@ -131,6 +131,12 @@ func (t *SkillTool) Spec() Spec {
 		Description: t.manifestDescription(),
 		Parameters:  json.RawMessage(skillParamsSchemaHonest),
 		Deferred:    false,
+		// D-02/D-02d: the skill verb multiplexes read + authoring + snippet-lifecycle
+		// actions behind one `action` enum, so it is the fail-closed Mutating floor and
+		// carries the Multiplexed hint the gateway boot-guard reads. The classifier
+		// de-escalates the enumerated reads; everything else stays mutating.
+		Mutating:    true,
+		Multiplexed: true,
 	}
 }
 

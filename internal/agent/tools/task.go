@@ -133,6 +133,11 @@ func (t *TaskTool) Spec() Spec {
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
 		Deferred:   false,
+		// D-02/D-02d: the task verb multiplexes schedule/list/cancel/run_now behind one
+		// `action` enum, so it is the fail-closed Mutating floor and carries the
+		// Multiplexed hint the gateway boot-guard reads.
+		Mutating:    true,
+		Multiplexed: true,
 	}
 }
 

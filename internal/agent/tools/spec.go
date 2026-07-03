@@ -43,6 +43,13 @@ type Spec struct {
 	// design: shell_exec is Mutating even though `ls` does not mutate, because the
 	// agent cannot know statically whether a command writes.
 	Mutating bool
+	// Multiplexed marks a tool that fronts several sub-actions behind one
+	// `action`-style discriminator (skill/task/swarm_spawn). It is a descriptor
+	// HINT for the policy gateway, NOT policy itself: the gateway's boot-guard uses
+	// it to require that every Mutating multiplexed tool resolves to a concrete risk
+	// tier, so a newly-added multiplexed action can never silently under-gate. Like
+	// Mutating it is runtime-only and never wire-encoded (not LLM-visible).
+	Multiplexed bool
 }
 
 // TrustLevel classifies whether a tool result came from host/operator-trusted

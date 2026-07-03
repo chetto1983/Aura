@@ -80,3 +80,33 @@ func TestValidate_EmptyRegistry(t *testing.T) {
 		t.Fatal("Validate() passed an empty registry")
 	}
 }
+
+// TestMultiplexedToolsMutatingFloor pins the D-02/D-02d fail-closed floor: the three
+// action-multiplexed tools each report Spec().Mutating == true (so the policy gateway
+// reserves them) AND Spec().Multiplexed == true (so its boot-guard requires a concrete
+// tier for them). Kills the mutant that drops either flag on any of the three.
+func TestMultiplexedToolsMutatingFloor(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		spec Spec
+	}{
+		{"skill", (&SkillTool{}).Spec()},
+		{"task", (&TaskTool{}).Spec()},
+		{"swarm_spawn", (&SwarmSpawn{}).Spec()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !tc.spec.Mutating {
+				t.Errorf("%s Spec().Mutating = false, want true (fail-closed floor)", tc.name)
+			}
+			if !tc.spec.Multiplexed {
+				t.Errorf("%s Spec().Multiplexed = false, want true (boot-guard hint)", tc.name)
+			}
+		})
+	}
+	// swarm_spawn must stay Deferred:true even after the Mutating/Multiplexed flip (D-01).
+	if !(&SwarmSpawn{}).Spec().Deferred {
+		t.Error("swarm_spawn Spec().Deferred = false, want true (deferred-tool contract preserved)")
+	}
+}
