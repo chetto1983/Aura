@@ -49,6 +49,34 @@ func toolCallCtx(ctx context.Context) (toolCallContext, bool) {
 	return v, ok
 }
 
+// requestIDCtxKey carries the per-turn request_id (UUIDv7) down to execTool so the
+// gateway PEP can build its originating-conversation-keyed ReservationKey. It is set
+// ONCE at the top of the agent run loop (WithRequestID); WithToolCallContext — built
+// per tool inside runTool, where the request_id is not in scope — deliberately does not.
+type requestIDCtxKey struct{}
+
+// WithRequestID returns a ctx carrying the per-turn request_id. The agent sets it once
+// per turn so the gateway ReservationKey (conversation + request + tool_call) is
+// buildable in execTool without threading the id through every dispatch signature.
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDCtxKey{}, requestID)
+}
+
+// RequestIDFromContext returns the per-turn request_id set by WithRequestID, or "".
+func RequestIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(requestIDCtxKey{}).(string)
+	return v
+}
+
+// ToolCallIDFromContext returns the tool_call_id set by WithToolCallContext, or "".
+func ToolCallIDFromContext(ctx context.Context) string {
+	tc, ok := toolCallCtx(ctx)
+	if !ok {
+		return ""
+	}
+	return tc.toolCallID
+}
+
 // validateID rejects any id outside the sidecar grammar before it is joined into
 // a path. The run_dir + "conversations/" prefix is fixed and never
 // model-controlled; the model/agent-supplied segments are opaque-id shaped.

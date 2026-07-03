@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/gateway"
 )
 
 // Tool-execution retry seam (parity item P2 — the "error hook"). A non-mutating
@@ -35,7 +36,36 @@ var toolRetryBaseDelay = 200 * time.Millisecond
 // linear backoff. It returns the last result/error once the tool succeeds, the
 // error is non-transient, the attempt budget is spent, the tool is mutating, or the
 // parent ctx is done.
+//
+// GATE-01: the gateway.Decide PEP is interposed at the TOP, BEFORE the retry loop, so
+// every non-ask_user dispatch crosses exactly one policy decision before tool.Execute.
+// A Deny returns *gateway.ErrDenied (the tool never executes); an Approve returns the
+// gateway's *tools.ErrAwaitingUserInput (the mutating action is withheld pending an
+// operator decision; a resume RE-ENTERS execTool → Decide). A nil gateway is an Allow
+// no-op (dev-parity). ask_user is EXEMPT: it is the approval primitive, so gating it
+// risks approve→ask_user→Decide→approve recursion — it structurally never reaches
+// execTool (llm_agent_pause.go pre-executes ask_user), and this defensive short-circuit
+// keeps it that way even if the dispatch path changes (D-03/CV-1).
 func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool, args json.RawMessage) (tools.ToolResult, error) {
+	spec := tool.Spec()
+	if spec.Name != askUserToolName {
+		key := gateway.ReservationKey{
+			ConversationID: a.ledgerConvID,
+			RequestID:      tools.RequestIDFromContext(ctx),
+			ToolCallID:     tools.ToolCallIDFromContext(ctx),
+		}
+		verdict, pause, derr := a.gateway.Decide(ctx, spec, args, key)
+		if derr != nil {
+			return tools.ToolResult{}, derr
+		}
+		switch verdict.Decision {
+		case gateway.Deny:
+			return tools.ToolResult{}, &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}
+		case gateway.Approve:
+			return tools.ToolResult{}, pause
+		}
+	}
+
 	var res tools.ToolResult
 	var err error
 	for attempt := 0; ; attempt++ {

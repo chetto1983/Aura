@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
@@ -49,6 +50,15 @@ type LlmAgent struct {
 	workspace   string
 	builder     *prompt.PromptBuilder
 	hooks       *HookManager
+
+	// gateway is the optional Phase-35 policy PEP (GATE-01): execTool calls its Decide
+	// before tool.Execute. nil is an Allow no-op (dev-parity for tests/standalone).
+	gateway *gateway.Gateway
+	// ledgerConvID is the ORIGINATING conversation UUID the gateway ReservationKey is
+	// keyed on. It defaults to sessionID (the main runner path, where session_id ==
+	// conversation_id UUID); headless swarm/cron roots set it to the originating
+	// conversation UUID so a flat session never keys the ledger (Open Q1).
+	ledgerConvID string
 
 	history []llm.Message
 
@@ -124,6 +134,14 @@ type LlmAgentConfig struct {
 	Breaker *llm.Breaker
 	// HookManager is the optional Phase-21 extension surface. nil is a no-op.
 	HookManager *HookManager
+	// Gateway is the optional Phase-35 policy PEP (GATE-01). nil is an Allow no-op
+	// (dev-parity). The composition roots inject the one process-wide *gateway.Gateway.
+	Gateway *gateway.Gateway
+	// LedgerConversationID is the ORIGINATING conversation UUID the gateway keys its
+	// decision-fact ledger on. Empty defaults to SessionID in NewLlmAgent — correct for
+	// the main runner path (session_id == conversation_id UUID); the headless swarm/cron
+	// roots pass the originating conversation UUID so a flat session never keys the ledger.
+	LedgerConversationID string
 }
 
 // Run drives the budget-gated tool-dispatch loop (Req#9/#10). Termination paths:
@@ -141,6 +159,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	// span ends on EVERY Run return path through the deferred endTurnSpan over this
 	// closure; turnReason carries the terminal outcome stamped at End.
 	turnCtx, turnSpan := startTurnSpan(ic.Ctx, requestID, a.sessionID)
+	// Thread the per-turn request_id onto the ctx so execTool can build the gateway
+	// ReservationKey (conversation + request + tool_call) without a signature change on
+	// the dispatch chain (Open Q2 — the smaller signature touch).
+	turnCtx = tools.WithRequestID(turnCtx, requestID)
 	ic = ic.WithContext(turnCtx)
 
 	return func(yield func(*Event, error) bool) {

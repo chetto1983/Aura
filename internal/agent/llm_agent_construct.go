@@ -22,22 +22,31 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 	if desc == "" {
 		desc = "Aura's autonomous tool-dispatch agent"
 	}
+	// The gateway ledger key defaults to sessionID (the main runner path, where
+	// session_id == conversation_id UUID); headless swarm/cron roots pass the
+	// originating conversation UUID explicitly so a flat session never keys the ledger.
+	ledgerConvID := cfg.LedgerConversationID
+	if ledgerConvID == "" {
+		ledgerConvID = cfg.SessionID
+	}
 	return &LlmAgent{
-		name:        name,
-		description: desc,
-		client:      cfg.Client,
-		cfg:         cfg.LLM,
-		registry:    cfg.Registry,
-		previewCap:  cfg.PreviewCap,
-		runDir:      cfg.RunDir,
-		sessionID:   cfg.SessionID,
-		workspace:   cfg.Workspace,
-		builder:     prompt.NewPromptBuilder(),
-		hooks:       cfg.HookManager,
-		history:     hist,
-		breaker:     resolveBreaker(cfg),
-		classifier:  resolveClassifier(cfg),
-		sources:     display.NewRegistry(),
+		name:         name,
+		description:  desc,
+		client:       cfg.Client,
+		cfg:          cfg.LLM,
+		registry:     cfg.Registry,
+		previewCap:   cfg.PreviewCap,
+		runDir:       cfg.RunDir,
+		sessionID:    cfg.SessionID,
+		workspace:    cfg.Workspace,
+		builder:      prompt.NewPromptBuilder(),
+		hooks:        cfg.HookManager,
+		gateway:      cfg.Gateway,
+		ledgerConvID: ledgerConvID,
+		history:      hist,
+		breaker:      resolveBreaker(cfg),
+		classifier:   resolveClassifier(cfg),
+		sources:      display.NewRegistry(),
 	}
 }
 
