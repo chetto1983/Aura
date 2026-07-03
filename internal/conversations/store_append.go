@@ -17,6 +17,16 @@ import (
 // branch); the 34-06 ResumeCommitter must pass the seq it reserved.
 var ErrSeqRequired = errors.New("conversations: append turn requires a positive Seq")
 
+// ErrContentSpillUnsupported is returned by AppendTurnTx when the turn content would
+// exceed turnCapBytes and spill to a sidecar file. AppendTurnTx is the no-spill tx-inner
+// half of AppendTurn and carries NO cleanupSidecarOnTxError wrapper, so a sidecar spilled
+// inside the caller's cross-store tx would be ORPHANED on rollback (only the delayed boot
+// scan reconciles it). Rather than ASSUME "resume/pause turns are always < turnCapBytes"
+// (A3), AppendTurnTx CHECKS it and rejects a would-be spill BEFORE any file is written, so
+// the caller's tx rolls back cleanly with no orphan (WR-01). The caller must keep
+// resume/pause turns under the cap.
+var ErrContentSpillUnsupported = errors.New("conversations: append turn tx content exceeds the spill cap (resume/pause turns must stay under turnCapBytes)")
+
 // AppendTurnParams carries one new turn plus its token/cost delta. Cost is the
 // USD figure to fold into the running total_cost_usd aggregate (RESEARCH OQ4 —
 // aggregated in SQL inside the same tx). A Seq <= 0 asks the Store to allocate the
@@ -94,15 +104,24 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 // aggregate writes with insertTurnAndAggregates using the caller-supplied Queries (bound
 // to the caller's transaction) — it opens NO transaction of its own. It requires a
 // caller-provided Seq > 0 (ErrSeqRequired otherwise): the tx-inner path does not
-// allocate a seq, which stays in AppendTurn's seq-allocated branch. It assumes the
-// content never spills — resume/pause turns are always < turnCapBytes (A3), so
-// appendTurnWrites returns inline content with no sidecar file — and therefore carries
-// NO cleanupSidecarOnTxError/spill logic; the general large-content spill+rollback path
-// stays in AppendTurn (whose Seq>0 branch keeps its pre-built-turn cleanup so it can
-// remove exactly the file THIS turn spilled).
+// allocate a seq, which stays in AppendTurn's seq-allocated branch.
+//
+// It carries NO cleanupSidecarOnTxError/spill logic, so a sidecar spilled inside the
+// caller's tx would be ORPHANED on rollback. Rather than ASSUME "resume/pause turns are
+// always < turnCapBytes" (A3), it ENFORCES that as a checked contract: content that would
+// spill is rejected with ErrContentSpillUnsupported BEFORE appendTurnWrites writes any
+// file, so the caller's tx rolls back cleanly with no orphaned sidecar (WR-01). The
+// general large-content spill+rollback path stays in AppendTurn (whose Seq>0 branch keeps
+// its pre-built-turn cleanup so it can remove exactly the file THIS turn spilled).
 func (s *Store) AppendTurnTx(ctx context.Context, q *sqlc.Queries, p AppendTurnParams) error {
 	if p.Seq <= 0 {
 		return fmt.Errorf("append turn tx %s: %w", p.ConversationID, ErrSeqRequired)
+	}
+	// Reject a would-be spill BEFORE appendTurnWrites so maybeSpill never writes a sidecar
+	// this no-cleanup tx path could orphan on rollback (WR-01). The length test mirrors
+	// maybeSpill exactly (postgresTextSafe applied, compared against turnCapBytes).
+	if len(postgresTextSafe(p.Content)) > s.turnCapBytes {
+		return fmt.Errorf("append turn tx %s seq %d: %w", p.ConversationID, p.Seq, ErrContentSpillUnsupported)
 	}
 	turn, agg, err := s.appendTurnWrites(p)
 	if err != nil {

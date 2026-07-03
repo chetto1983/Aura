@@ -12,6 +12,9 @@ package conversations
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -76,5 +79,40 @@ func TestAppendTurnTx_BadConversationID(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("AppendTurnTx(bad conversation id): want error, got nil")
+	}
+}
+
+// TestAppendTurnTx_RejectsSpill: content over turnCapBytes would spill to a sidecar the
+// no-cleanup tx path could orphan on rollback, so AppendTurnTx rejects it with
+// ErrContentSpillUnsupported BEFORE writing any file (WR-01). A tiny cap keeps the fixture
+// cheap; the assertion also proves no sidecar was written under runDir.
+func TestAppendTurnTx_RejectsSpill(t *testing.T) {
+	t.Parallel()
+	runDir := t.TempDir()
+	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: runDir, turnCapBytes: 8}
+	convID := uuid.Must(uuid.NewV7()).String()
+	err := s.AppendTurnTx(context.Background(), sqlc.New(&fakeDBTX{}), AppendTurnParams{
+		ConversationID: convID, Seq: 5, Role: "tool", Content: strings.Repeat("x", 9),
+	})
+	if !errors.Is(err, ErrContentSpillUnsupported) {
+		t.Fatalf("AppendTurnTx(over-cap content): want ErrContentSpillUnsupported, got %v", err)
+	}
+	// The reject fires before maybeSpill, so no sidecar file exists anywhere under runDir.
+	convDir := filepath.Join(runDir, "conversations", convID)
+	if entries, statErr := os.ReadDir(convDir); statErr == nil && len(entries) > 0 {
+		t.Fatalf("AppendTurnTx rejected the spill but wrote %d sidecar file(s) under %s", len(entries), convDir)
+	}
+}
+
+// TestAppendTurnTx_InlineAtCap: content exactly at turnCapBytes stays inline (no spill, no
+// reject) — the boundary the WR-01 guard shares with maybeSpill (len <= cap is inline).
+func TestAppendTurnTx_InlineAtCap(t *testing.T) {
+	t.Parallel()
+	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 8}
+	convID := uuid.Must(uuid.NewV7()).String()
+	if err := s.AppendTurnTx(context.Background(), sqlc.New(&fakeDBTX{}), AppendTurnParams{
+		ConversationID: convID, Seq: 5, Role: "tool", Content: strings.Repeat("x", 8),
+	}); err != nil {
+		t.Fatalf("AppendTurnTx(at-cap content): want inline success, got %v", err)
 	}
 }

@@ -23,8 +23,10 @@ import (
 // exposes every query needed to claim a pause AND append its answer turn atomically
 // (D-02) — no ledger, no second durability mechanism. It cannot be unit-faked (db.WithTx
 // calls pool.Begin on a concrete pool), so its atomicity is proven by the db_integration
-// tier. Resume/pause turns are always < turnCapBytes (A3), so AppendTurnTx never spills
-// and this tx carries NO cleanupSidecarOnTxError composition.
+// tier. This tx carries NO cleanupSidecarOnTxError composition: AppendTurnTx ENFORCES the
+// A3 invariant (resume/pause turns < turnCapBytes) by rejecting a would-be spill with
+// conversations.ErrContentSpillUnsupported before any sidecar is written, so an over-cap
+// answer rolls the whole tx back cleanly instead of orphaning a file (WR-01).
 type PoolResumeCommitter struct {
 	pool  *pgxpool.Pool
 	conv  *conversations.Store
