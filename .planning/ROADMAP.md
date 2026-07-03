@@ -219,18 +219,18 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 3. Outside-root/traversal/symlink sidecar reads are rejected.
 4. A mutating tool that panics post-side-effect still arms the completion gate.
 
-**Plans:** 6 plans (3 waves)
+**Plans:** 4/6 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 34-01-PLAN.md — sqlc regen (MarkPausedStateResumed :execrows + ListSpilledSeqsForConversation) + ROADMAP D-07 goal reconciliation [wave 1]
-- [ ] 34-02-PLAN.md — terminal text_response exclusivity (LOOP-01) + mutating-panic regression test (LOOP-08) [wave 1]
-- [ ] 34-03-PLAN.md — send_file deterministic reject (LOOP-06), fs_write/fs_edit mode preservation (LOOP-07), boot pool-leak/double-Validate (QUAL-04) [wave 1]
+- [x] 34-01-PLAN.md — sqlc regen (MarkPausedStateResumed :execrows + ListSpilledSeqsForConversation) + ROADMAP D-07 goal reconciliation [wave 1]
+- [x] 34-02-PLAN.md — terminal text_response exclusivity (LOOP-01) + mutating-panic regression test (LOOP-08) [wave 1]
+- [x] 34-03-PLAN.md — send_file deterministic reject (LOOP-06), fs_write/fs_edit mode preservation (LOOP-07), boot pool-leak/double-Validate (QUAL-04) [wave 1]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 34-04-PLAN.md — os.Root sidecar fence (LOOP-05), crash-orphan .content GC (LOOP-09), spilled-search assertion (LOOP-10) [wave 2]
+- [x] 34-04-PLAN.md — os.Root sidecar fence (LOOP-05), crash-orphan .content GC (LOOP-09), spilled-search assertion (LOOP-10) [wave 2]
 - [ ] 34-05-PLAN.md — HITL store tx-seams: askuser MarkResumed/Insert Tx + conversations AppendTurnTx + int32 guard (LOOP-02/03, QUAL-04) [wave 2]
 
 **Wave 3** *(blocked on Wave 2 completion)*

@@ -6,14 +6,14 @@ current_phase: 34
 current_phase_name: agent-loop-correctness-durable-ledger
 status: executing
 stopped_at: Phase 34 context gathered (research-backed; all 4 gray areas locked minimal-industrial; NO new migration)
-last_updated: "2026-07-01T13:14:08.715Z"
-last_activity: 2026-07-01
-last_activity_desc: Phase 34 execution started
+last_updated: "2026-07-03T08:00:00.000Z"
+last_activity: 2026-07-03
+last_activity_desc: 34-04 complete — sidecar os.Root fence + crash-orphan reconcile + spilled-search exclusion
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 24
-  completed_plans: 18
+  completed_plans: 22
   percent: 27
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 34 (agent-loop-correctness-durable-ledger) — EXECUTING
-Plan: 1 of 6
+Plan: 4 of 6 (34-04 complete)
 Status: Executing Phase 34
-Last activity: 2026-07-01 — Phase 34 execution started
+Last activity: 2026-07-03 — 34-04 complete (LOOP-05 sidecar fence, LOOP-09 reconcile, LOOP-10 search exclusion)
+
+#### (prior) 34-04 — LOOP-05/09/10 security core (conversations). BOTH sidecar loaders (`loadTurns`, `loadBranchTurns`) drop `os.ReadFile(t.ContentSidecarPath)` for one shared `readTurnSidecar(convID,seq)` that asserts `filepath.IsAbs(runDir)` + `validateID` then reads `os.OpenRoot(runDir).ReadFile(path.Join("conversations",convID,"<seq>.content"))` — Aura's first `os.Root` use (Go 1.26.4); the DB column is a did-spill flag only, a poisoned path / `..` / symlink-leaf is refused, a missing spilled sidecar is still a HARD error (D-08). `reconcileLiveConversationSidecars` runs per LIVE dir inside `scanConversationOrphans` (boot scan + interval Sweeper both inherit it): removes only `<seq>.content` that is UNREFERENCED (vs `ListSpilledSeqsForConversation`, 34-01) AND older than `sidecarOrphanGrace=tmpTTL(24h)`; strict `.content` suffix + Lstat guard keep `<spillID>.result` sidecars + symlinks safe; a referenced-seq DB error aborts rather than delete against an unknown set (D-09). Spilled-content search exclusion documented on `maybeSpill`+`SearchConversationTurns` and asserted by a live-pg_trgm test; locked trigram SQL byte-unchanged (D-10). No migration. Both tiers green on the live stack.
 
 #### (prior) 33-04 — `(*Config).ValidateProfile(p)` aggregates 10 pure tier-gated bespoke gates (each NAMES its `AURA_*` knob, mirrors GuardWebBind) + the generic `reparsePass` into one never-first-fail `[]Violation` encoding the D-09..D-16 matrix EXACTLY (strict via `p.Strict()`; replication+destructive-`off` prod-only — the hardened↔prod differentiator; CORS under both strict tiers per A2). `Validate()` is now profile-aware at the existing boot call site (an unsafe `server_production` config = 7 Fatal violations naming each knob; nil under realistic dev with a Warn-only invalid int); PROF-05 non-absolute `AURA_RUN_DIR` Fatal all tiers; bootChatEnv prints Warn diagnostics + the D-14 `local_trusted` banner. No new gating call site, no agent-tools import, scope fence honored. config -race green
 
@@ -213,6 +215,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 33 P33-03 | ~22min | 2 tasks | 2 files |
 | Phase 33 P33-04 | ~40min | 3 tasks | 4 files |
 | Phase 33 P33-05 | ~20min | 2 tasks | 3 files |
+| Phase 34 P04 | ~60min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
