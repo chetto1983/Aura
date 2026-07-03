@@ -90,6 +90,14 @@ func turnToMessage(t Turn) (llm.Message, error) {
 // cap writes the FULL bytes to a sidecar file and stores content=NULL + the path
 // (SPEC Req#7). The sidecar layout mirrors tools/result.go
 // ($AURA_RUN_DIR/conversations/<id>/<seq>.content), validated against traversal.
+//
+// LOOP-10 / D-10: a spilled turn stores content=NULL, so it is EXCLUDED from the
+// locked trigram SearchConversationTurns (content % $1 never matches a NULL). This
+// is intentional, not a gap: pg_trgm similarity() is length-normalized, so a >cap
+// (≥64 KiB) body scores ~0 and would never clear the 0.3 threshold even if content
+// were repopulated — building search infra for spilled turns buys ~nothing. The
+// upgrade path (a short-preview column, length-compatible with %) is deferred to a
+// future migration if spill telemetry ever shows frequent large searchable turns.
 func (s *Store) maybeSpill(conversationID string, seq int, content string) (pgtype.Text, pgtype.Text, error) {
 	if len(content) <= s.turnCapBytes {
 		return pgtype.Text{String: content, Valid: true}, pgtype.Text{}, nil

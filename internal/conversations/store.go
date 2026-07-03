@@ -339,6 +339,15 @@ type SearchResult struct {
 // D-A5-03): content % $1 ORDER BY similarity(content,$1) DESC LIMIT $2. The query
 // SQL is the contract Telegram /search (Phase 13) reuses byte-for-byte; this
 // wrapper only projects pgtype at the boundary. The SQL is never rewritten here.
+//
+// LOOP-10 / D-10 boundary: spilled turns (content over the cap) store content=NULL
+// and are therefore EXCLUDED from this search by construction — `content % $1` never
+// matches a NULL. This is a documented+asserted boundary (see maybeSpill and the
+// SearchSpill db_integration test), not an oversight: pg_trgm similarity() is
+// length-normalized, so a >cap (≥64 KiB) body scores ~0 and would never clear the
+// 0.3 threshold even if content were repopulated. The deferred upgrade path is a
+// short-preview column (length-compatible with %) at a future migration, never a
+// rewrite of this locked query.
 func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	rows, err := s.q.SearchConversationTurns(ctx, sqlc.SearchConversationTurnsParams{
 		Similarity: query,
