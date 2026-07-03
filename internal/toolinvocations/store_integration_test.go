@@ -237,3 +237,165 @@ func TestLedgerAppendOnly(t *testing.T) {
 		t.Fatalf("ledger row tampered or removed: want 1 row with tool_name shell_exec, got %d", len(rows))
 	}
 }
+
+// TestReserveIdempotencyKey proves the GATE-04 idempotency key against the real UNIQUE
+// index: the first Reserve of a (conv,req,toolCall) start acquires (rows==1); a second
+// Reserve of the SAME key does not (rows==0) and, once an end fact exists, replays it.
+func TestReserveIdempotencyKey(t *testing.T) {
+	pool := migratedPool(t)
+	store := New(pool)
+	ctx := context.Background()
+
+	convID := seedConversation(t, pool)
+	requestID := uuid.Must(uuid.NewV7()).String()
+	const toolCallID = "call-reserve-1"
+
+	start := Event{
+		ConversationID: convID,
+		RequestID:      requestID,
+		ToolCallID:     toolCallID,
+		ToolName:       "shell_exec",
+		Event:          EventStart,
+		Seq:            1,
+		StartedAt:      time.Now().UTC(),
+		Meta:           map[string]any{"reservation": true},
+	}
+
+	acquired, replay, err := store.Reserve(ctx, start)
+	if err != nil {
+		t.Fatalf("first Reserve: %v", err)
+	}
+	if !acquired || replay != nil {
+		t.Fatalf("first Reserve = (acquired=%v, replay=%v), want (true, nil)", acquired, replay)
+	}
+
+	// Second Reserve of the same key: slot held, but no end yet → rows==0, replay nil.
+	acquired, replay, err = store.Reserve(ctx, start)
+	if err != nil {
+		t.Fatalf("second Reserve (in-flight): %v", err)
+	}
+	if acquired || replay != nil {
+		t.Fatalf("second Reserve (in-flight) = (acquired=%v, replay=%v), want (false, nil)", acquired, replay)
+	}
+
+	// Record the end fact, then a third Reserve replays it.
+	end := Event{
+		ConversationID: convID,
+		RequestID:      requestID,
+		ToolCallID:     toolCallID,
+		ToolName:       "shell_exec",
+		Event:          EventEnd,
+		Seq:            2,
+		StartedAt:      start.StartedAt,
+		EndedAt:        time.Now().UTC(),
+		DurationMS:     5,
+		Status:         "ok",
+		ResultPreview:  "reserved-output",
+		PreviewBytes:   15,
+		ResultBytes:    15,
+	}
+	if err := store.Insert(ctx, end); err != nil {
+		t.Fatalf("Insert end: %v", err)
+	}
+
+	acquired, replay, err = store.Reserve(ctx, start)
+	if err != nil {
+		t.Fatalf("third Reserve (replay): %v", err)
+	}
+	if acquired {
+		t.Fatal("third Reserve acquired a held slot, want replay")
+	}
+	if replay == nil || replay.ResultPreview != "reserved-output" {
+		t.Fatalf("third Reserve replay = %+v, want the recorded end", replay)
+	}
+}
+
+// TestGetEndAbsent proves GetEnd maps a missing end row to (nil, nil) — a valid replay
+// state (reserved-but-not-finished), never an error.
+func TestGetEndAbsent(t *testing.T) {
+	pool := migratedPool(t)
+	store := New(pool)
+	ctx := context.Background()
+
+	convID := seedConversation(t, pool)
+	end, err := store.GetEnd(ctx, convID, uuid.Must(uuid.NewV7()).String(), "call-absent")
+	if err != nil {
+		t.Fatalf("GetEnd for a missing end must not error: %v", err)
+	}
+	if end != nil {
+		t.Fatalf("GetEnd = %+v, want nil (no end recorded)", end)
+	}
+}
+
+// TestListInFlightBefore proves the reconciler anti-join: a start∧¬end older than the
+// cutoff is returned; a completed (start+end) call and a start newer than the cutoff are not.
+func TestListInFlightBefore(t *testing.T) {
+	pool := migratedPool(t)
+	store := New(pool)
+	ctx := context.Background()
+
+	convID := seedConversation(t, pool)
+	old := time.Now().UTC().Add(-time.Hour)
+	recent := time.Now().UTC()
+
+	// (a) an old in-flight start (no end) — SHOULD appear.
+	inflightReq := uuid.Must(uuid.NewV7()).String()
+	if err := store.Insert(ctx, Event{
+		ConversationID: convID, RequestID: inflightReq, ToolCallID: "call-inflight",
+		ToolName: "shell_exec", Event: EventStart, Seq: 1, StartedAt: old,
+	}); err != nil {
+		t.Fatalf("insert in-flight start: %v", err)
+	}
+
+	// (b) an old COMPLETED call (start+end) — should NOT appear.
+	doneReq := uuid.Must(uuid.NewV7()).String()
+	if err := store.Insert(ctx, Event{
+		ConversationID: convID, RequestID: doneReq, ToolCallID: "call-done",
+		ToolName: "shell_exec", Event: EventStart, Seq: 1, StartedAt: old,
+	}); err != nil {
+		t.Fatalf("insert done start: %v", err)
+	}
+	if err := store.Insert(ctx, Event{
+		ConversationID: convID, RequestID: doneReq, ToolCallID: "call-done",
+		ToolName: "shell_exec", Event: EventEnd, Seq: 2, StartedAt: old,
+		EndedAt: old.Add(time.Second), DurationMS: 1000, Status: "ok",
+	}); err != nil {
+		t.Fatalf("insert done end: %v", err)
+	}
+
+	// (c) a RECENT in-flight start (after the cutoff) — should NOT appear.
+	recentReq := uuid.Must(uuid.NewV7()).String()
+	if err := store.Insert(ctx, Event{
+		ConversationID: convID, RequestID: recentReq, ToolCallID: "call-recent",
+		ToolName: "shell_exec", Event: EventStart, Seq: 1, StartedAt: recent,
+	}); err != nil {
+		t.Fatalf("insert recent start: %v", err)
+	}
+
+	cutoff := time.Now().UTC().Add(-30 * time.Minute)
+	inflight, err := store.ListInFlightBefore(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("ListInFlightBefore: %v", err)
+	}
+
+	var sawInflight, sawDone, sawRecent bool
+	for _, e := range inflight {
+		switch e.ToolCallID {
+		case "call-inflight":
+			sawInflight = true
+		case "call-done":
+			sawDone = true
+		case "call-recent":
+			sawRecent = true
+		}
+	}
+	if !sawInflight {
+		t.Error("old start∧¬end (call-inflight) must be listed as a crash-orphan candidate")
+	}
+	if sawDone {
+		t.Error("completed call (call-done) must NOT be listed (it has an end)")
+	}
+	if sawRecent {
+		t.Error("recent start (call-recent) must NOT be listed (younger than the cutoff)")
+	}
+}
