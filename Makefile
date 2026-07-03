@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage quality quality-full test test-race file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -22,7 +22,8 @@ help:
 	@echo "make deadcode      — deadcode -test ./... (unreachable Go code scan)"
 	@echo "make vet           — go vet ./..."
 	@echo "make vuln          — govulncheck ./... (supply-chain CVE scan)"
-	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs stack)"
+	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs stack + mcp-neo4j-cypher on PATH)"
+	@echo "make coverage-docker — like coverage, but mcp-neo4j-cypher runs in a container (no host install; needs stack up)"
 	@echo "make test          — go test ./... (unit tier, no build tags)"
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
@@ -76,6 +77,12 @@ vuln:
 # (or run inside the CI knowledge job that already has the stack).
 coverage:
 	bash scripts/coverage_gate.sh
+
+# Same owned-surface floor as `coverage`, but mcp-neo4j-cypher runs in a container
+# (docker/mcp-neo4j-cypher) via the AURA_MCP_NEO4J_CYPHER_BIN shim — nothing installed
+# on the host. Needs the stack up (`make neo4j-up`) + creds in .env.
+coverage-docker:
+	bash scripts/coverage_docker.sh
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
 quality: vet file-size lint deadcode test-race vuln
