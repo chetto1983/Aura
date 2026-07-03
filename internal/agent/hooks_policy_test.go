@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -114,5 +115,75 @@ func TestHookDefaultPolicyStaysFailClosed(t *testing.T) {
 	_, err := m.BeforeModel(context.Background(), &llm.Request{})
 	if err == nil {
 		t.Fatal("BeforeModel with default policy err = nil, want fail_closed default")
+	}
+}
+
+// TestCommandHookFailOpen_ContainedAllowsTool is the deliberate CONTRAST to the
+// default-deny matrix in hooks_command_hardening_test.go: a command hook
+// registered with an EXPLICIT fail_open policy that faults (here it times out)
+// has its fault CONTAINED by hookFault — the gate allows and the tool runs. This
+// proves the fail_open knob is real. It does NOT prove that a denied command is
+// silently allowed: only an explicit opt-in reaches this branch; the default
+// (unset) policy denies (see TestCommandHookDefaultPolicyNeverSilentAllows).
+func TestCommandHookFailOpen_ContainedAllowsTool(t *testing.T) {
+	m := newCommandHookManager(t, "sleep", "fail_open", 1) // explicit opt-in
+	executed := false
+
+	err := gateTool(m, agenttest.MakeToolCall("c1", "echo", `{}`), spyTool{executed: &executed})
+	if err != nil {
+		t.Fatalf("explicit fail_open: gate err = %v, want contained (allow)", err)
+	}
+	if !executed {
+		t.Fatal("explicit fail_open contained the fault but the tool did not run; want allow")
+	}
+}
+
+// TestCommandHookFailPolicy_BothBranchesDenyVsContain exercises BOTH sides of
+// HookManager.hookFault with a real faulting command hook: the default (unset)
+// policy DENIES the turn (FailClosed) while an explicit fail_open CONTAINS the
+// same fault (FailOpen). Pinning both branches with one fixture guards the
+// fail-closed default against a regression that widened containment (F-006).
+func TestCommandHookFailPolicy_BothBranchesDenyVsContain(t *testing.T) {
+	call := agenttest.MakeToolCall("c1", "echo", `{}`)
+
+	closedExecuted := false
+	closed := newCommandHookManager(t, "sleep", "", 1) // default → FailClosed
+	if err := gateTool(closed, call, spyTool{executed: &closedExecuted}); err == nil || closedExecuted {
+		t.Fatalf("default policy: err=%v executed=%v, want deny + tool-not-run", err, closedExecuted)
+	}
+
+	openExecuted := false
+	open := newCommandHookManager(t, "sleep", "fail_open", 1) // explicit → FailOpen
+	if err := gateTool(open, call, spyTool{executed: &openExecuted}); err != nil || !openExecuted {
+		t.Fatalf("fail_open policy: err=%v executed=%v, want contain + tool-run", err, openExecuted)
+	}
+}
+
+// TestCommandHookDefaultPolicyNeverSilentAllows is the dedicated no-silent-allow
+// assertion GATE-02 calls for: across the fault matrix (timeout / crashed-allow /
+// unparseable-crash) the DEFAULT policy denies the turn AND the gated tool never
+// executes. There is no default-policy code path that lets a denied command run.
+func TestCommandHookDefaultPolicyNeverSilentAllows(t *testing.T) {
+	faults := []struct {
+		name      string
+		mode      string
+		timeoutMS int
+	}{
+		{"timeout", "sleep", 1},
+		{"crashed_allow", "allow_then_crash", 2000},
+		{"unparseable_crash", "crash_no_decision", 2000},
+	}
+	for _, f := range faults {
+		t.Run(f.name, func(t *testing.T) {
+			m := newCommandHookManager(t, f.mode, "", f.timeoutMS)
+			executed := false
+			err := gateTool(m, agenttest.MakeToolCall("c1", "echo", `{}`), spyTool{executed: &executed})
+			if err == nil {
+				t.Fatalf("default policy fault %q: gate err = nil, want DENY", f.mode)
+			}
+			if executed {
+				t.Fatalf("default policy fault %q: tool executed; a denied command was silently allowed", f.mode)
+			}
+		})
 	}
 }
