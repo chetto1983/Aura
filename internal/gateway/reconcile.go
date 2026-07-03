@@ -37,12 +37,6 @@ const reservationOrphanGrace = 30 * time.Minute
 // invariant below).
 const reservationOrphanMargin = 5 * time.Minute
 
-// defaultReconcileInterval is the tick cadence the serve composition root wires when
-// it does not override it: often enough that a crash-orphan is closed within a bounded
-// window, sparse enough that the anti-join is negligible load. A non-positive interval
-// DISABLES the worker (Start launches no goroutine), mirroring the sweeper.
-const defaultReconcileInterval = 10 * time.Minute
-
 // inFlightReconcileStore is the narrow read+append seam the Reconciler needs.
 // *toolinvocations.Store satisfies it. The reconciler NEVER updates or deletes — it
 // only lists start∧¬end candidates, re-checks for a real end, and appends a synthetic

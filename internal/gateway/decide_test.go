@@ -23,9 +23,9 @@ type fakeStore struct {
 
 	// Reserve knobs: reserveErr forces the fail-closed deny path; notAcquired forces the
 	// rows==0 replay path returning replayEnd (nil ⇒ crash-orphaned in-flight).
-	reserveErr error
+	reserveErr  error
 	notAcquired bool
-	replayEnd  *toolinvocations.Event
+	replayEnd   *toolinvocations.Event
 }
 
 func (f *fakeStore) Insert(_ context.Context, e toolinvocations.Event) error {
