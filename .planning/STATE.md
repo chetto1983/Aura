@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 35
-current_phase_name: toolgateway-policy-engine
-status: executing
-stopped_at: 35-07 executed (CR-01 consent-binding closed + WR-01/02/03 + IN-01/02); phase awaits re-verification + code-review to flip GATE-01/GATE-02
-last_updated: "2026-07-04T18:30:00Z"
+current_phase: 36
+current_phase_name: Multi-User Identity Isolation + Authula Cutover
+status: verifying
+stopped_at: Phase 35 COMPLETE (7/7 plans; 35-07 closed CR-01, re-verified PASSED 11/11, code-review CLEAN, GATE-01..04 flipped); transitioned to Phase 36
+last_updated: "2026-07-04T16:58:22.505Z"
 last_activity: 2026-07-04
-last_activity_desc: 35-07 gap-closure executed — CR-01 confused-deputy/informed-consent bypass closed (challenge+question binding ported from shell_exec); unit -race + live db_integration green
+last_activity_desc: Phase 35 complete, transitioned to Phase 36
 progress:
   total_phases: 11
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 31
   completed_plans: 31
-  percent: 36
+  percent: 45
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 35 — toolgateway-policy-engine
+**Current focus:** Phase 36 — Multi-User Identity Isolation + Authula Cutover (Phase 35 complete)
 
 ## Current Position
 
-Phase: 35 (toolgateway-policy-engine) — EXECUTING
-Plan: 7 of 7 executed (35-07 gap-closure complete)
-Status: 35-07 shipped the CR-01 informed-consent binding; phase awaits re-verification + code-review before GATE-01/GATE-02 flip
-Last activity: 2026-07-04 — 35-07 gap-closure executed (CR-01/WR-01/WR-02/WR-03/IN-01/IN-02)
+Phase: 36 — Multi-User Identity Isolation + Authula Cutover
+Plan: Not started
+Status: Phase 35 COMPLETE — 35-07 closed CR-01 (informed-consent binding), re-verified PASSED 11/11, code-review CLEAN, GATE-01..04 flipped [x]
+Last activity: 2026-07-04 — Phase 35 complete, transitioned to Phase 36
 
 #### 35-07 — CR-01 informed-consent binding: port shell_exec's challenge/question guard into GatewayApprovals (gap-closure, GATE-01). Closes the BLOCKING code-review Critical (35-REVIEW CR-01): 35-06 dropped shell_exec's server-side challenge/question binding, so `newGatewayResumeHook` recorded an operator accept straight from the **model-relayed** `resume_context` with no proof the gateway issued the approval and no check that the operator-visible `pending.Question` matched the gateway-generated one — an adversarial model could relay the REAL `resume_context` (matching `args_sha256`) with a benign/false question so the operator approves *"Save your meeting notes?"* and unknowingly authorizes `swarm_spawn{goals:["destroy prod"]}` (confused-deputy). Made the "byte-for-byte analog of shell_exec" claim TRUE: `GatewayApprovals` now holds a `pending map[string]gatewayChallenge{question}` + `Challenge(convID,tool,fp,question)` (records the gateway-generated question keyed on the AUTHENTICATED `(conversation_id, tool, args_sha256)` at issue) + `ApproveChallenge(convID,tool,fp,question,r) error` (moves pending→approved ONLY on existence + `question==challenge.question`, else typed not-found/question-mismatch error) — the byte-for-byte analog of `ShellApprovals.ApproveChallenge`; `Evict` sweeps BOTH maps; dead `Peek` removed (IN-01). `routeApprove` reordered deny-before-Consume (`ProfileServerProduction || !responderPresent` hard-deny BEFORE the cross-turn `Consume`, so a recorded/fabricated approval can NEVER be consumed on a headless/production run — WR-01), records `approvals.Challenge(key.ConversationID, spec.Name, fp, question)` on issue, and computes the fingerprint+question ONCE, threading them into `Challenge`+`gatewayApprovalRequiredResult`+`gatewayApprovalContext` (IN-02, single `gatewayArgsFingerprint` site). `Gateway.ApproveChallenge` (new host-side recorder) + `RecordResolvedApproval` (now a low-level test-seed seam) both REFUSE under `ProfileServerProduction` (WR-01 defense-in-depth). `newGatewayResumeHook` now calls `g.ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question, …)` — the AUTHENTICATED server-stored conversation id (WR-02: no cross-conversation transfer) + the operator-visible question binding (CR-01) — dropping the model-relayed `rc.ConversationID`. NEW `TestGatewayResumeHookRejectsMismatchedQuestion` (WR-03 adversarial: real `resume_context` + benign question → hook errors, records nothing, re-drive stays Approve/withheld) + `TestGatewayApprovalsApproveChallengeQuestionMismatch` + `TestRouteApproveProductionDeniesEvenWithLedgerApproval` (injected ledger approval NOT consumed under production, reserves==0) + `TestGatewayApproveChallengeRefusedUnderProduction`. Prohibitions held: `internal/agui/approvals_api.go`, `internal/runner/runner_resume.go`, `internal/gateway/decide.go`, `internal/gateway/reserve.go`, `internal/agent/llm_agent_pause.go`, `internal/agent/llm_agent_retry.go` byte-UNCHANGED (git diff); NO new migration/route/env; ledger key still excludes `tool_call_id`. ZERO REGRESSION: the cooperative `TestGatewayApprovalRoundTrip` still executes once; `TestAskUserOnlyPauseConstraint` green; the live `db_integration` reserve/idempotency tier green. DEVIATION (Rule 1, 8th file): the WR-01 reorder makes a headless (no-responder) re-drive DENY, so `TestGatewayApprovalResumeReentersAndReservesOnce` (in `gateway_integration_test.go`) was corrected to re-drive with `WithResponder(...)` — modeling the real interactive resume the runner marks (runner.go:551); without it the test asserted the now-forbidden headless-consume behavior. Proven: unit `-race` (gateway/agent/cmd-aura/runner all green) + live `db_integration -race -p 1` (`GatewayApprovalResume|GatewayApprovalDecline|ApprovedCallReservedAndIdempotent` + full tier, all PASS on the real Postgres stack, not skipped). Gateway coverage 89.4% (db_integration, > 85% floor). Commits e2c9f6c1 (ledger half + IN-01), f257d9f4 (PEP half + WR-01 + IN-02), e75f5bf6 (host binding + WR-02 + WR-03 + integration-test correction). GATE-01 consent property holds end-to-end; ready for the GATE-01/GATE-02 `[x]` flip pending phase re-verification + code-review.
 
@@ -64,7 +64,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 136
+- Total plans completed: 143
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -97,6 +97,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 32 | 10 | - | - |
 | 33 | 5 | - | - |
 | 34 | 6 | - | - |
+| 35 | 7 | - | - |
 
 **Recent Trend:**
 
