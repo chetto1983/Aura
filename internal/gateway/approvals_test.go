@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -22,54 +23,100 @@ func TestGatewayApprovalsLedgerOneShot(t *testing.T) {
 	}
 }
 
-// TestGatewayApprovalsPeekNonDestructive proves Peek reports presence WITHOUT consuming.
-func TestGatewayApprovalsPeekNonDestructive(t *testing.T) {
+// TestGatewayApprovalsChallengeApproveConsume proves the shell-parity happy path (CR-01):
+// a server-recorded Challenge + a question-MATCHED ApproveChallenge moves the entry to
+// approved, which Consume then yields exactly once (one-shot). This is the cooperative
+// round-trip in miniature — the operator was shown the SAME question the gateway generated.
+func TestGatewayApprovalsChallengeApproveConsume(t *testing.T) {
 	led := NewGatewayApprovals()
-	conv, tool, fp := "conv-1", "skill", "fp-xyz"
-	if led.Peek(conv, tool, fp) {
-		t.Fatal("Peek on an empty ledger must be false")
+	conv, tool, fp, q := "conv-1", "swarm_spawn", "fp-abc", "Approve swarm_spawn (risk=risky)? args: goals"
+	led.Challenge(conv, tool, fp, q)
+
+	if err := led.ApproveChallenge(conv, tool, fp, q, ResolvedApproval{Approved: true, OperatorID: "op-7"}); err != nil {
+		t.Fatalf("ApproveChallenge(matching question): %v", err)
 	}
-	led.Approve(conv, tool, fp, ResolvedApproval{Approved: true})
-	if !led.Peek(conv, tool, fp) {
-		t.Fatal("Peek must see a recorded approval")
+	r, ok := led.Consume(conv, tool, fp)
+	if !ok || !r.Approved || r.OperatorID != "op-7" {
+		t.Fatalf("Consume = (%+v, %v), want approved op-7 true", r, ok)
 	}
-	if !led.Peek(conv, tool, fp) {
-		t.Fatal("Peek must be non-destructive (a second Peek still sees it)")
-	}
-	if _, ok := led.Consume(conv, tool, fp); !ok {
-		t.Fatal("Consume after Peek must still find the un-consumed approval")
+	if _, ok := led.Consume(conv, tool, fp); ok {
+		t.Fatal("second Consume must return ok=false (one-shot)")
 	}
 }
 
-// TestGatewayApprovalsEvictPrefixSweep proves Evict drops every entry under a
-// conversation prefix and leaves other conversations untouched (R-41 parity).
+// TestGatewayApprovalsApproveChallengeQuestionMismatch is the CR-01/WR-03 ledger-half core:
+// a recorded challenge with the REAL question cannot be approved by a DIFFERENT (benign,
+// model-relayed) question — ApproveChallenge returns a question-mismatch error and records
+// NOTHING, so a subsequent Consume finds no approval. The confused-deputy relay is refused.
+func TestGatewayApprovalsApproveChallengeQuestionMismatch(t *testing.T) {
+	led := NewGatewayApprovals()
+	conv, tool, fp := "conv-1", "swarm_spawn", "fp-abc"
+	led.Challenge(conv, tool, fp, "Approve swarm_spawn (risk=risky)? args: goals")
+
+	err := led.ApproveChallenge(conv, tool, fp, "Save your meeting notes?", ResolvedApproval{Approved: true})
+	if err == nil {
+		t.Fatal("a mismatched/benign question must be rejected")
+	}
+	if !strings.Contains(err.Error(), "question mismatch") {
+		t.Fatalf("error = %v, want a question-mismatch error", err)
+	}
+	if _, ok := led.Consume(conv, tool, fp); ok {
+		t.Fatal("a mismatched-question ApproveChallenge must record nothing (fail-closed)")
+	}
+}
+
+// TestGatewayApprovalsApproveChallengeNotFound proves ApproveChallenge with NO prior
+// Challenge is refused (existence check) — the model cannot fabricate an approval for a
+// (conv, tool, fp) the gateway never issued a challenge for, even with the correct fp.
+func TestGatewayApprovalsApproveChallengeNotFound(t *testing.T) {
+	led := NewGatewayApprovals()
+	err := led.ApproveChallenge("conv-1", "swarm_spawn", "fp-none", "any", ResolvedApproval{Approved: true})
+	if err == nil {
+		t.Fatal("ApproveChallenge with no prior challenge must return an error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %v, want a not-found error", err)
+	}
+	if _, ok := led.Consume("conv-1", "swarm_spawn", "fp-none"); ok {
+		t.Fatal("no approval must be recorded when the challenge is absent")
+	}
+}
+
+// TestGatewayApprovalsEvictPrefixSweep proves Evict drops every entry under a conversation
+// prefix across BOTH maps — a resolved-but-unconsumed approval AND an issued-but-unresolved
+// pending challenge — and leaves other conversations untouched (R-41 / shell parity).
 func TestGatewayApprovalsEvictPrefixSweep(t *testing.T) {
 	led := NewGatewayApprovals()
-	led.Approve("conv-A", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true})
-	led.Approve("conv-A", "skill", "fp-2", ResolvedApproval{Approved: true})
-	led.Approve("conv-B", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true})
+	led.Approve("conv-A", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // approved map
+	led.Challenge("conv-A", "skill", "fp-2", "Q-A")                                // pending map
+	led.Approve("conv-B", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // must survive
 
 	led.Evict("conv-A")
 
-	if led.Peek("conv-A", "swarm_spawn", "fp-1") || led.Peek("conv-A", "skill", "fp-2") {
-		t.Fatal("Evict must drop every entry under the conversation prefix")
+	if _, ok := led.Consume("conv-A", "swarm_spawn", "fp-1"); ok {
+		t.Fatal("Evict must drop the resolved approval under the conversation prefix")
 	}
-	if !led.Peek("conv-B", "swarm_spawn", "fp-1") {
+	if err := led.ApproveChallenge("conv-A", "skill", "fp-2", "Q-A", ResolvedApproval{Approved: true}); err == nil {
+		t.Fatal("Evict must drop the pending challenge under the conversation prefix")
+	}
+	if _, ok := led.Consume("conv-B", "swarm_spawn", "fp-1"); !ok {
 		t.Fatal("Evict must not touch a different conversation")
 	}
 	led.Evict("conv-unknown") // no-op, must not panic
 }
 
 // TestGatewayApprovalsNilSafe proves every method is nil-receiver-safe (mirrors
-// ShellApprovals: a nil ledger is an inert no-op, never a panic).
+// ShellApprovals: a nil ledger is an inert no-op, never a panic; ApproveChallenge on a nil
+// ledger returns a not-found error rather than recording).
 func TestGatewayApprovalsNilSafe(t *testing.T) {
 	var led *GatewayApprovals
 	led.Approve("c", "t", "f", ResolvedApproval{Approved: true})
 	if _, ok := led.Consume("c", "t", "f"); ok {
 		t.Fatal("nil ledger Consume must be false")
 	}
-	if led.Peek("c", "t", "f") {
-		t.Fatal("nil ledger Peek must be false")
+	led.Challenge("c", "t", "f", "q") // must not panic
+	if err := led.ApproveChallenge("c", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
+		t.Fatal("nil ledger ApproveChallenge must return an error (challenge not found)")
 	}
 	led.Evict("c") // must not panic
 }
@@ -89,6 +136,11 @@ func TestGatewayApprovalsEmptyArgsRejected(t *testing.T) {
 	}
 	if _, ok := led.Consume("c", "t", ""); ok {
 		t.Fatal("empty fingerprint must not record")
+	}
+	// An empty coordinate must not record a challenge either (guard parity with Approve).
+	led.Challenge("", "t", "f", "q")
+	if err := led.ApproveChallenge("", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
+		t.Fatal("empty convID ApproveChallenge must error (no challenge recorded)")
 	}
 }
 
