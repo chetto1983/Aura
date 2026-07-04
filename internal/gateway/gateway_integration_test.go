@@ -440,3 +440,120 @@ func TestReplayMissingSidecar(t *testing.T) {
 		t.Fatalf("Execute count = %d, want 1 (replay, not re-execute)", spy.count)
 	}
 }
+
+// swarmSpawnArgs classifies to Risky (GateRecommended) so it drives the approval path.
+var swarmSpawnArgs = json.RawMessage(`{"goals":["build the thing"]}`)
+
+// TestGatewayApprovalResumeReentersAndReservesOnce proves D-03 point 2 through the
+// PRODUCTION carrier (the ledger the resume hook writes, NOT a hand-set WithResolvedApproval
+// ctx): an operator approval recorded via RecordResolvedApproval lets the resumed re-drive
+// re-enter Decide -> routeApprove.Consume -> Verdict{Allow, OperatorID} -> the SINGLE 35-04
+// reservation, executing exactly once with operator_id in that one start's Meta and NO
+// competing executed row. A retry (re-recorded, same triple) replays idempotently (rows==0
+// -> Verdict.Replay) with no second Execute — the reservation, not the ledger, guarantees
+// exactly-once (the ledger is one-shot on Consume).
+func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
+	pool := migratedPool(t)
+	store := toolinvocations.New(pool)
+	g := New(config.ProfileSingleUserHardened, store)
+	convID := seedConversation(t, pool)
+
+	mutatingSpec := tools.Spec{Name: "swarm_spawn", Mutating: true}
+	fp := gatewayArgsFingerprint(swarmSpawnArgs)
+	key := newKey(convID, "call-resume-1")
+
+	// The host-side resume hook recorded the operator's accept (the production carrier).
+	g.RecordResolvedApproval(convID, "swarm_spawn", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
+
+	startAtExec := -1
+	spy := &spyTool{
+		spec:   mutatingSpec,
+		result: tools.ToolResult{Preview: "swarm-launched"},
+		onExec: func() { startAtExec = startRowCount(t, pool, key) },
+	}
+
+	// (1) The resumed re-drive re-enters Decide via the ledger → Allow → reserve → Execute once.
+	_, v, err := gatedExec(context.Background(), g, spy, swarmSpawnArgs, key)
+	if err != nil || v.Decision != Allow {
+		t.Fatalf("resumed re-drive = (%+v, %v), want allow via the ledger", v, err)
+	}
+	if v.OperatorID != "op-1" {
+		t.Fatalf("resumed verdict operator id = %q, want op-1", v.OperatorID)
+	}
+	if spy.count != 1 || startAtExec != 1 {
+		t.Fatalf("resumed call: Execute count = %d, start rows at Execute = %d; want 1/1", spy.count, startAtExec)
+	}
+
+	// The async observer records the real end fact for the executed call.
+	insertEnd(t, store, key, "swarm-launched", "")
+
+	// (2) A retry of the SAME triple (re-recorded approval) replays: rows==0 → Verdict.Replay,
+	// Execute NOT called again (the reservation is the exactly-once guarantee).
+	g.RecordResolvedApproval(convID, "swarm_spawn", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
+	res, rv, rerr := gatedExec(context.Background(), g, spy, swarmSpawnArgs, key)
+	if rerr != nil {
+		t.Fatalf("resumed retry err: %v", rerr)
+	}
+	if rv.Replay == nil || spy.count != 1 {
+		t.Fatalf("resumed retry: replay=%v Execute count=%d, want replay + count 1", rv.Replay, spy.count)
+	}
+	if res.Preview != "swarm-launched" {
+		t.Fatalf("replay preview = %q, want the recorded end", res.Preview)
+	}
+
+	// Ledger shape: exactly ONE start (operator_id in Meta) + ONE end for the triple, NO
+	// competing executed row (the operator_id rides the single reservation start — D-03 point 2).
+	starts, ends := tripleEvents(t, store, key)
+	if len(starts) != 1 {
+		t.Fatalf("triple has %d start rows, want exactly 1 (no competing executed Insert)", len(starts))
+	}
+	if len(ends) != 1 {
+		t.Fatalf("triple has %d end rows, want exactly 1", len(ends))
+	}
+	if starts[0].Meta["operator_id"] != "op-1" || starts[0].Meta["approved"] != true {
+		t.Fatalf("start meta = %v, want operator_id/op-1 + approved:true", starts[0].Meta)
+	}
+}
+
+// TestGatewayApprovalDeclineStaysFailClosed proves fail-closed on every non-accept outcome:
+// with NO ledger entry (a decline records nothing), a hardened+responder mutating
+// GateRecommended call returns Approve + a non-nil ApprovalRequest (WITHHELD, Execute==0);
+// under server_production it Denies (Execute==0) and records the degraded_deny fact.
+func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
+	pool := migratedPool(t)
+	store := toolinvocations.New(pool)
+	convID := seedConversation(t, pool)
+	mutatingSpec := tools.Spec{Name: "swarm_spawn", Mutating: true}
+
+	// (a) hardened + responder, NO ledger approval → Approve + ApprovalRequest, WITHHELD.
+	hardened := New(config.ProfileSingleUserHardened, store)
+	spy := &spyTool{spec: mutatingSpec, result: tools.ToolResult{Preview: "should-not-run"}}
+	res, v, err := gatedExec(WithResponder(context.Background()), hardened, spy, swarmSpawnArgs, newKey(convID, "call-decline-1"))
+	if err != nil {
+		t.Fatalf("withheld approve must not error: %v", err)
+	}
+	if v.Decision != Approve || v.ApprovalRequest == nil {
+		t.Fatalf("no-ledger hardened verdict = %+v, want approve + approval request (withheld)", v)
+	}
+	if !strings.Contains(res.Preview, "gateway_approval_required") {
+		t.Fatalf("withheld result preview = %q, want the gateway_approval_required relay", res.Preview)
+	}
+	if spy.count != 0 {
+		t.Fatalf("withheld call Execute count = %d, want 0 (fail-closed)", spy.count)
+	}
+
+	// (b) server_production → Deny (even with a responder), Execute==0.
+	prod := New(config.ProfileServerProduction, store)
+	prodSpy := &spyTool{spec: mutatingSpec}
+	_, pv, perr := gatedExec(WithResponder(context.Background()), prod, prodSpy, swarmSpawnArgs, newKey(convID, "call-decline-2"))
+	if pv.Decision != Deny {
+		t.Fatalf("production verdict = %q, want deny", pv.Decision)
+	}
+	var denied *ErrDenied
+	if !errors.As(perr, &denied) {
+		t.Fatalf("production err = %v, want *ErrDenied", perr)
+	}
+	if prodSpy.count != 0 {
+		t.Fatalf("production Execute count = %d, want 0 (fail-closed)", prodSpy.count)
+	}
+}

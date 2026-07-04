@@ -255,18 +255,20 @@ func (r *Runner) Stop(ctx context.Context, convID string) error {
 // long-running `serve` daemon does not leak it as conversations come and go (audit
 // R-41 / AP-16). It ranges the tool registry and calls Evict(convID) on every tool
 // implementing tools.SessionEvictor (todo_write's list, shell_exec's tracked cwd,
-// the shell-approval ledger). sessionID == conversationID per D-26. Each Evict is
-// idempotent and self-locked, so this is safe to call on a conversation with no
-// tracked state.
+// the shell-approval ledger), THEN evicts the gateway approval ledger — which lives
+// OUTSIDE the tool registry, so the registry-ranging loop cannot reach it (Phase-35
+// R-41 parity with ShellApprovals.Evict). sessionID == conversationID per D-26. Each
+// Evict is idempotent, self-locked, and nil-safe, so this is safe on a conversation
+// with no tracked state.
 func (r *Runner) evictSessionToolState(convID string) {
-	if r.registry == nil {
-		return
-	}
-	for _, t := range r.registry.All() {
-		if ev, ok := t.(tools.SessionEvictor); ok {
-			ev.Evict(convID)
+	if r.registry != nil {
+		for _, t := range r.registry.All() {
+			if ev, ok := t.(tools.SessionEvictor); ok {
+				ev.Evict(convID)
+			}
 		}
 	}
+	r.gateway.EvictSession(convID) // nil-Gateway-safe; the ledger is outside the registry
 }
 
 // waitWorkers blocks until the auto-title WaitGroup drains or the timeout elapses,

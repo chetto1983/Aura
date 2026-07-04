@@ -26,6 +26,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
@@ -360,6 +361,51 @@ func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
 			return fmt.Errorf("shell resume context: missing command_sha256")
 		}
 		return approvals.ApproveChallenge(pending.ConversationID, rc.CommandSHA256, pending.Question)
+	}
+}
+
+// newGatewayResumeHook is the production ResumeHook that records an operator's accept of
+// a relayed gateway_approval ask_user pause into the gateway's cross-turn approval ledger
+// — the byte-for-byte analog of newShellResumeHook, and the SOLE production writer of
+// GatewayApprovals (D-03c: the model relaying via ask_user does NOT grant approval). It
+// runs host-side after the authenticated approval-center resolve (SubmitAnswers ->
+// applyResumeHook). Only an accept on a gateway_approval pending records anything; a
+// decline/cancel records NOTHING, so the re-emit re-issues the approval-required result
+// or denies (fail-closed). OperatorID is "local" — single_user_hardened has exactly one
+// principal (the owner); multi-identity operator attribution is deferred to Phase 36 (D-03b).
+func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
+	if g == nil {
+		return nil
+	}
+	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
+		if pending.Kind != tools.KindApproval || resp.Action != askuser.ActionAccept || len(pending.ResumeContext) == 0 {
+			return nil
+		}
+		var rc struct {
+			Type           string `json:"type"`
+			Tool           string `json:"tool"`
+			ConversationID string `json:"conversation_id"`
+			ArgsSHA256     string `json:"args_sha256"`
+		}
+		if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
+			return fmt.Errorf("gateway resume context: %w", err)
+		}
+		if rc.Type != "gateway_approval" {
+			return nil
+		}
+		if rc.Tool == "" || rc.ArgsSHA256 == "" {
+			return fmt.Errorf("gateway resume context: missing tool or args_sha256")
+		}
+		// The ledger key must match what routeApprove recomputes on the resumed re-emit:
+		// (key.ConversationID, tool, argsFingerprint). rc.ConversationID IS key.ConversationID
+		// (the gateway stamped it); fall back to the pending's conversation for robustness.
+		convID := rc.ConversationID
+		if convID == "" {
+			convID = pending.ConversationID
+		}
+		g.RecordResolvedApproval(convID, rc.Tool, rc.ArgsSHA256,
+			gateway.ResolvedApproval{Approved: true, OperatorID: "local"})
+		return nil
 	}
 }
 

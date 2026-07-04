@@ -324,9 +324,11 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		EvictAfter:      cfg.ContextToolEvictAfterTurns,
 		ContextBlock:    profileContextProvider(cfg),
 		AlwaysBlock:     alwaysBlockProvider(cfg),
-		ResumeHook:      chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals)),
-		HookManager:     hookManager,
-		Gateway:         gw,
+		// The gateway resume hook records an operator's accept of a relayed gateway_approval
+		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
+		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw)),
+		HookManager: hookManager,
+		Gateway:     gw,
 		// Local embedding-based reasoning-tier classifier (granite sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.
