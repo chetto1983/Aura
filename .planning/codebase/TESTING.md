@@ -1,321 +1,220 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-05-28
+**Analysis Date:** 2026-07-04
 
-> **Skeleton state.** The repo has zero `*_test.go` files today (the rewrite is mid-flight). Test discipline is therefore PRESCRIPTIVE, sourced from `/home/user/Aura/prd.md` §Test discipline (line 1393) + §Test discipline rigorosa (line 1447) + §Slice Q&A discipline gate sequences (line 1490). Read those sections in full before writing the first test of any slice.
+Two independent test suites: Go (`internal/`, stdlib `testing` only — **no testify**, no mocking framework) and TypeScript/React (`web/`, Vitest + Testing Library + Playwright). Both suites enforce an **85% coverage floor** (CLAUDE.md "COVERAGE FLOOR 85%" overrides the PRD's ≥75%/≥60% split figures) plus mutation-testing spot checks (≥70% killed).
 
-## Test framework
+## Test Framework
 
-- **Runner:** Go standard `testing` package (Go 1.23). No alternative framework (no testify-as-default, no ginkgo).
-- **Module:** `github.com/chetto1983/aura` (`/home/user/Aura/go.mod`).
-- **Required external libs** (added per-slice as needed):
-  - `go.uber.org/goleak` — goroutine-leak verification. Mandatory for slices 1, 3, 6, 8, 9, 11, 13 (PRD §Test discipline rigorosa #3).
-  - `pgregory.net/rapid` OR `github.com/leanovate/gopter` — property-based testing. Mandatory for slices 3 (swarm backpressure), 4 (PromptBuilder invariants), 8 (AG-UI translator coverage).
-  - Go 1.24+ `synctest` (when project moves to 1.24) OR explicit channel sync for deterministic timing. No `time.Sleep` for synchronization.
-  - `go-mutesting` (manual, not CI) for mutation-testing spot-check ≥70% killed on slice-critical files.
+**Go:**
+- Runner: stdlib `testing` (Go 1.26.4). 573 `_test.go` files vs. 437 non-test `.go` files under `internal/`.
+- Property-based: `pgregory.net/rapid` v1.3.0 — used in 14 files (`internal/agent/workflow/loop_property_test.go`, `internal/gateway/classify_property_test.go`, `internal/mcp/manager/envedit_property_test.go`, `internal/swarm/swarm_property_test.go`, `internal/scoring/scoring_test.go`, etc.).
+- Goroutine leak detection: `go.uber.org/goleak` v1.3.0, wired via `TestMain` in packages that spawn goroutines (`internal/activelearn/main_test.go` and ~20 other `main_test.go` files across `internal/agent`, `internal/agent/mcptools`, `internal/agent/tools`, `internal/conversations`, etc.).
+- No `stretchr/testify` — zero occurrences in `go.mod` or `internal/`. All assertions are hand-written `if got != want { t.Fatalf(...) }` / `t.Errorf(...)`.
 
-### Run commands
+**Frontend (`web/`):**
+- Runner: Vitest (`web/vitest.config.ts`), environment `jsdom`, globals enabled.
+- Assertion/render library: `@testing-library/react` (`render`, `screen`, `fireEvent`, `waitFor`, `within`), Vitest's own `expect`/`vi` mocking API.
+- E2E: Playwright (`web/playwright.config.ts`, `web/e2e/`).
+- Mutation testing: Stryker (`web/stryker.conf.json`, `npm run mutation`, break threshold 70%).
 
+**Run Commands:**
 ```bash
-go test ./...                                # full unit suite
-go test -race ./...                          # mandatory; must be green
-go test -tags=db_integration ./...           # integration runner: db_integration
-go test -tags=sandbox_integration ./...      # integration runner: sandbox_integration
-go test -tags=multimodal_integration ./...   # integration runner: multimodal_integration
-go test -tags=onboarding_integration ./...   # integration runner: onboarding_integration
-go test -tags=neo4j_integration ./...        # integration runner: neo4j_integration
-go test -coverprofile=cover.out ./internal/<package>/
-go tool cover -func=cover.out                # check threshold
-go test ./internal/<package>/ -run TestXxx_Behavior_When_Condition -v
+# Go
+go test ./...                                    # unit tier (no build tags)
+go test -race ./...                              # unit tier with race detector
+go test -tags "db_integration neo4j_integration" -p 1 -covermode=atomic \
+  -coverprofile=cover_gate.out ./internal/...     # full integration + coverage (make coverage)
+go test -run TestName ./...
+go test -fuzz=FuzzName ./...
+
+# Frontend (web/)
+npm run test          # vitest run --coverage
+npm run test:e2e       # playwright test
+npm run mutation       # stryker run
+
+# Makefile wrappers
+make quality           # vet + file-size + lint + deadcode + test-race + vuln (no containers)
+make quality-full      # quality + coverage (needs stack up via `make neo4j-migrate`)
+make web-quality       # web-lint + web-test + web-mutation
 ```
 
-## Test discipline (PRD §1393) — "no asilo nido"
+## Test File Organization
 
-A test that exercises the agent loop against a real model is valid **if and only if the prompt sounds like something a real user would write**. Forbidden in E2E prompts:
+**Go location:** always co-located with the source file in the same package directory (white-box `package foo`) or, less commonly, the black-box `package foo_test` (seen for property tests, e.g. `internal/agent/workflow/loop_property_test.go` uses `package workflow_test`).
 
-- Naming a registry tool (`execute`, `text_response`, `swarm.spawn`, `web_fetch`, …)
-- Naming a skill or overlay
-- Naming an internal Go function/module
-- The word "tool" itself, except in natural meta-questions ("which tool would you use for X?" is fine; "use the execute tool to…" is asilo)
-
-**Why.** A prompt that names the tool by-name only tests the dispatcher — already covered by registry unit tests. A natural prompt tests the whole pipeline: system prompt → manifest visibility → model picks the right tool → tool executes → final reply is sensible. Pipeline breakage (poisoned manifest, system prompt hiding the tool, ambiguous schema description) is only caught by natural prompts.
-
-### Bad vs good — table from PRD §Test discipline
-
-| Test type | Bad (asilo) | Good (real) |
+**Naming:**
+| Suffix | Meaning | Example |
 |---|---|---|
-| LLM client (Slice 1) | `"say hello using text_response"` | `"ciao, dimmi 2+2 in tre parole"` |
-| Sandbox tool (Slice 2) | `"use the execute tool to print 4"` | `"quanto fa 2 alla 64 meno 1?"` |
-| Swarm (Slice 3) | `"spawn a worker with goal=foo"` | `"trovami in parallelo PIL Italia 2023, capitale Australia, autore Promessi Sposi"` |
-| Cache (Slice 4) | `"trigger ephemeral cache_control on system"` | turn-by-turn REPL on a conversational topic (poem, recipe, translation) |
+| `_test.go` | unit test, no build tag, runs in default `go test ./...` | `internal/agent/agent_test.go` |
+| `_internal_test.go` | white-box test alongside an existing black-box `_test.go` for the same file | `internal/agent/llm_agent_breaker_internal_test.go` |
+| `_integration_test.go` | build tag `db_integration` (or similar), needs live Postgres/Neo4j | `internal/conversations/store_branch_test.go`, `internal/channels/telegram/store_integration_test.go` |
+| `_property_test.go` | `pgregory.net/rapid` property-based test | `internal/swarm/swarm_property_test.go` |
+| `_fuzz_test.go` | Go native fuzz target (`func Fuzz...`) | `internal/agent/agent_fuzz_test.go`, `internal/skills/validator_fuzz_test.go` |
+| `_bench_test.go` | benchmark | `internal/agent/budget_bench_test.go` |
+| `_live_test.go` / `_live_e2e_test.go` | MANUAL paid-gate test against a real external API (OpenRouter); never a CI job | `internal/agent/live_finalize_test.go`, `internal/llm/openai_compat/adaptive_reasoning_live_e2e_test.go` |
+| `main_test.go` | package-level `TestMain` wiring `goleak.VerifyTestMain` | `internal/activelearn/main_test.go` |
 
-**Exceptions** (PRD §1425): internal unit tests that do NOT go through a model — SSE fixture parser tests, `Coordinator` unit tests, `PromptBuilder` invariant tests — are NOT bound by this rule. They test the Go primitive directly.
+**Frontend location:** `__tests__/` subdirectory inside each feature folder, mirroring the component name: `web/src/approvals/__tests__/ApprovalList.test.tsx`, `web/src/chat/displays/__tests__/ChartDisplay.test.tsx`. 121 `.test.{ts,tsx}` files total; zero `.spec.*` files (naming is `.test.` exclusively).
 
-### Assert artifact, not reply
+## Test Structure
 
-PRD §1430-1445:
-
-- For `execute`: assert the subprocess actually ran (log/event), not just that the reply contains `"4"`.
-- For `swarm`: assert `Coordinator.children` has 3 entries, not just that the reply mentions "PIL".
-- For parallelism (swarm): `wallClock(3 parallel workers) < 1.5 × wallClock(1 worker)`, otherwise the model serialized.
-- For cache (provider side-effect): `usage.prompt_cache_hit_tokens > 0` from turn 2 onward.
-- **Failure mode to avoid:** test passes because the reply *contains the expected string* while behind the scenes the tool was never called (model hallucinated). **Mitigation:** hook in `tools.Registry` that logs every `Execute` with `tool_name + args_hash + duration`. Tests assert `(reply matches expected) AND (tool was invoked)`. Never only the first.
-
-## Test discipline rigorosa (PRD §1447) — 10 hard requirements
-
-Every committed `*_test.go` MUST satisfy:
-
-1. **Naming:** `TestXxx_Behavior_When_Condition` (descriptive). Forbidden: `TestFoo1`, `TestFoo2`, `TestSomething`. Examples:
-   - `TestLoopTurn_AppendsToolResult_When_ToolCallReturnsString`
-   - `TestLoopRunCancel_NoGoroutineLeak`
-   - `TestSpawn_ReturnsError_When_DepthExceedsMax`
-   - `TestSkillCreate_RollsBackFSMove_When_AuditInsertFails`
-2. **Setup/teardown:** no shared state across tests except under `_integration` build tags with DB transactions rolled back. `go test -race ./...` green on every touched package.
-3. **Goroutine leak check:** `goleak.VerifyNone(t)` in `TestMain` (package-wide) or `defer goleak.VerifyNone(t)` per goroutine-spawning test. Slices 1, 3, 6, 8, 9, 11, 13 require this explicitly in acceptance.
-4. **Realistic fixtures:** `testdata/*.{json,csv,md,sse,sql,html,pdf}` with content extracted from real cases and pseudonymized. Forbidden: `{"foo":"bar"}` placeholders.
-5. **Property-based where indicated** — slice-scoped: Slice 3 (swarm bus backpressure), Slice 4 (PromptBuilder invariants), Slice 8 (AG-UI translator coverage of ~25 event types). Use `pgregory.net/rapid` or `github.com/leanovate/gopter`.
-6. **Build tags for integration:** `//go:build db_integration`, `//go:build sandbox_integration`, `//go:build multimodal_integration`, `//go:build onboarding_integration`, `//go:build neo4j_integration`. Separate CI runner; no flaky-on-mainstream-CI.
-7. **No `time.Sleep` for synchronization.** Use Go 1.24+ `synctest` or channel sync. Wait conditions take an explicit 5s timeout + fail-loud (never infinite).
-8. **Coverage threshold per package:** ≥ 75% unit (`go test -cover ./internal/...`), ≥ 60% integration. CI fails below threshold (no silent skip).
-9. **Mutation testing spot-check:** one `go-mutesting` invocation per slice on a core file (e.g. `llm_agent.go`, `coordinator.go`, `pipeline.go`). Minimum 70% killed. Run manually, not in CI. Result documented in commit message or issue.
-10. **Failure-driven test (TDD reverse):** every bug fixed during implementation gets a regression test reproducing the bug BEFORE the fix lands. The test fails on the broken code, passes on the fix.
-
-### Per-slice concrete examples (PRD table, lines 1464-1481)
-
-| Slice | Test "asilo" to REJECT | Rigorous test EXPECTED |
-|---|---|---|
-| **1 (LLM client)** | `assert reply == "4"` | Fixture SSE multi-chunk delta-merge + tool-call accumulator + ctx-cancel premature close + `goleak.VerifyNone` |
-| **2a (Sandbox stateless)** | `aura exec python "print(2)" → 2` | Subprocess wall-time + memory + stdout truncation 1 MiB + EPERM on `socket()` syscall + seccomp profile load verification |
-| **2b (Sandbox session)** | Single session reuse | 3 concurrent sessions, hard-cap enforce, TTL reap deterministic via `synctest`, workspace quota enforce, network allowlist `nft list` iptables verify |
-| **3 (Swarm)** | `coordinator.Spawn(2) → 2 children` | Wall-clock parallelism `<` 1.5× single (race-detector enforced), 10 children interactive-paused simultaneously without data race, multi-pause FIFO priority sort verify |
-| **4 (KV cache)** | `messages[0] == messages[0]` | `usage.prompt_cache_hit_tokens > 0` from turn 2, byte-exact hash comparison, property-based on manifest ordering |
-| **5 (Web tools)** | `web_fetch("google.com") returns html` | SSRF protection (loopback denied, allowlist enforced), redirect-chain max 5, content-type sniffing, robots.txt respect |
-| **6 (Scheduler)** | `task.fire after 10s` | `FOR UPDATE SKIP LOCKED` concurrency with 5 workers, crash-recovery `unknown_recovery` row, `ReschedulesOnRecovery` selective re-fire |
-| **7c (Skill mutation)** | `skill_create writes file` | Tx rollback on INSERT fail (FS-move reversed), audit row immutable (UPDATE/DELETE rejected via trigger), `approval_source` constraint coherence |
-| **8 (AG-UI)** | `event.type == "TEXT_MESSAGE_CONTENT"` | AG-UI Dojo conformance suite full run, property-based on all ~25 event types, backpressure SSE channel cap 64 + drop with `RUN_ERROR` |
-| **9b (Telegram)** | `bot.send("hello")` | Throttle 1500ms/500ms/1000ms enforce with `synctest`, 429 exponential backoff up to 30s, golden fixture per AG-UI event type → Telegram message |
-| **10 (Onboarding)** | Interview 1 question | `LoopAgent max_iter=8` cap enforce, escalation event terminate, fact extraction recall on conv corpus (precision ≥ 0.7), audit `profile_audit` row with `paused_state_token` |
-| **11b (Ingest)** | `ingest.file(pdf) returns ok` | `content_hash` idempotent, mem0 two-phase conflict dedup (95% recall on duplicate entities), entity-type taxonomy coverage 100% |
-| **11d (Retrieval)** | `memory.search returns 5 chunks` | Hybrid fusion score correctness vs baseline (BM25-only, vector-only, graph-only), re-ranker quality NDCG@5 ≥ 0.8 on corpus eval |
-| **13b (vLLM + LMCache)** | `vllm responds` | KV cache hit ratio > 30% turn 2–5 on long-context (>4K-token prompt), failover offline detection switch within 90s, cost tracker rolling-24h accuracy |
-
-### Smoke tests are allowed (and complementary)
-
-PRD §1483-1486:
-
-- 1–3 smoke tests per slice that run in < 5s, no rigor on edge cases.
-- `compile + go vet + go build` always green pre-commit.
-- Smoke does NOT replace rigorous tests — it complements them.
-
-## Test file organization
-
-### Location
-
-- **Co-located with code under test:** `internal/<pkg>/<unit>_test.go` next to `internal/<pkg>/<unit>.go`.
-- **Integration tests live in the same package** but gated by build tag at the top of the file:
-
-  ```go
-  //go:build db_integration
-
-  package conversations
-  ```
-
-  Examples expected from PRD file targets:
-  - `/home/user/Aura/internal/db/db_test.go` — build tag `db_integration` (Slice 0.5)
-  - `/home/user/Aura/internal/knowledge/client_test.go` — build tag `neo4j_integration` (Slice 0.7)
-  - `/home/user/Aura/internal/sandbox/docker_test.go` — build tag `sandbox_integration` (Slice 2a)
-  - `/home/user/Aura/internal/sandbox/sessions_test.go` — build tag `sandbox_integration` (Slice 2b)
-  - `/home/user/Aura/internal/swarm/coordinator_test.go` — Slice 3, goroutine-leak + bus backpressure
-  - `/home/user/Aura/internal/llm/prompt_test.go` — Slice 4, 5-turn invariants
-  - `/home/user/Aura/internal/llm/openai_compat/client_test.go` — Slice 1, SSE fixtures
-  - `/home/user/Aura/internal/identity/store_test.go` — build tag `db_integration` (Slice 1.7)
-  - `/home/user/Aura/internal/conversations/store_test.go` — build tag `db_integration` (Slice 1.8)
-  - `/home/user/Aura/internal/cron/scheduler_test.go` — build tag `db_integration` (Slice 6)
-  - `/home/user/Aura/internal/agui/translator_test.go` — property-based (Slice 8)
-  - `/home/user/Aura/internal/skills/installer_test.go` — fixture HTTP + path traversal (Slice 7d)
-
-### Fixtures
-
-- **Location:** `internal/<pkg>/testdata/` (Go's standard, ignored by build).
-- **Format-by-domain examples** (PRD §Test discipline rigorosa #4):
-  - SSE streams: `testdata/sse/<scenario>.sse` (text-only stream, tool-call multi-chunk delta-merge, error 429 no-retry, premature close ctx-cancel, Anthropic ephemeral `cache_control` passthrough)
-  - SQL seed data: `testdata/sql/<scenario>.sql`
-  - HTML/PDF: pseudonymized real documents for ingest tests
-  - Cypher migrations test fixtures: programmatic Cypher inline in tests (NOT `.cypher` file fixtures — PRD §Slice 0.7 OQ #3 explicitly rejects them as premature optimization)
-- **Realistic content mandatory.** No `{"foo":"bar"}`.
-
-## Test structure (pattern)
-
+**Go table-driven pattern** (idiomatic, used throughout, e.g. `internal/agent/llm_agent_retry_test.go`):
 ```go
-// internal/swarm/coordinator_test.go (Slice 3, prescriptive)
-package swarm
-
-import (
-    "context"
-    "testing"
-    "time"
-
-    "go.uber.org/goleak"
-)
-
-func TestMain(m *testing.M) {
-    goleak.VerifyTestMain(m)
+tests := []struct {
+    name string
+    err  error
+    want bool
+}{
+    {"wrapped-deadline", errors.Join(errors.New("fetch"), context.DeadlineExceeded), true},
+    {"permanent", errors.New("validation"), false},
 }
-
-func TestSpawn_ReturnsError_When_DepthExceedsMax(t *testing.T) {
-    t.Parallel()
-    c := NewLiveCoordinator(/* deps */)
-    _, err := c.Spawn(context.Background(), Spawn{Depth: MaxSpawnDepth + 1})
-    if err == nil || !strings.Contains(err.Error(), "spawn depth exceeded") {
-        t.Fatalf("expected spawn-depth error, got %v", err)
-    }
-}
-
-func TestJoin_Unblocks_When_ChildEmitsEscalateEvent(t *testing.T) {
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    // setup: spawn 1 child, drive it via channel sync (no time.Sleep), assert Join returns the synthesized report
+for _, tt := range tests {
+    t.Run(tt.name, func(t *testing.T) { ... })
 }
 ```
+
+**Build-tag integration test header convention** — every integration file opens with a comment documenting exact migration/env prerequisites and the run command, e.g. (`internal/askuser/store_test.go`):
+```go
+//go:build db_integration
+
+// Integration tests for internal/askuser. Requires a running Postgres with the
+// Phase-4 migrations applied through 0005 ...
+//	make db-up && aura db migrate
+//	AURA_DB_URL + AURA_DB_MIGRATE_URL + POSTGRES_PASSWORD set in env
+//
+// Run via (FIFO determinism wants -count=10):
+//	go test -tags db_integration -race ./internal/askuser -count=10
+//
+// No-skip-as-green: envOrSkip t.Fatals under $CI when the DSN is unset.
+package askuser
+```
+
+**No-skip-as-green discipline (mandatory, CLAUDE.md):** every integration package defines a local `envOrSkip(t, key)` helper (duplicated per-package, not a shared library — see `internal/askuser/store_test.go`, `internal/runner/integration_helpers_test.go`, `internal/channels/telegram/store_integration_test.go`, `internal/webauth/authula_integration_test.go`, `internal/web/searxng_integration_test.go`, `internal/toolselectstore/store_e2e_test.go`):
+```go
+func envOrSkip(t *testing.T, key string) string {
+    t.Helper()
+    v := os.Getenv(key)
+    if v == "" {
+        if os.Getenv("CI") != "" {
+            t.Fatalf("integration test requires %s, but it is unset under CI — "+
+                "a skipped integration test must not pass as green; wire it in ci.yml", key)
+        }
+        t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
+    }
+    return v
+}
+```
+Under CI (`$CI` set), a missing required env var is a hard `t.Fatal`, not a skip — this prevents a container-less CI job from silently reporting a falsely-green integration suite. Locally (no `$CI`), it degrades to `t.Skip`. `_live_test.go`/`_live_e2e_test.go` files use a different, explicit skip message tagged "MANUAL paid gate, NOT a CI job" when `OPENROUTER_API_KEY` is unset — these are intentionally never wired into CI.
+
+**Setup/teardown:** `t.Cleanup(func() { ... })` for restoring package-level test knobs (`withFastBackoff` in `internal/agent/llm_agent_retry_test.go` saves/restores `toolRetryBaseDelay`); `defer cancel()` for context timeouts in integration helpers (`migratedPool` uses a 30s `context.WithTimeout`).
 
 ## Mocking
 
-- **Standard library + interfaces.** No mocking framework as default. Stub via small struct that implements the interface (see the existing `stubClient` in `/home/user/Aura/cmd/aura/main.go:74-90` — canned `<-chan llm.Chunk` for the agent-loop skeleton).
-- **HTTP/SSE wire layer:** drive against `testdata/*.sse` fixtures replayed by an in-process reader. Slice 1 acceptance lists the required scenarios explicitly: text-only stream, tool-call multi-chunk delta-merge, 429 no-retry bubble-up, premature close ctx-cancel, Anthropic ephemeral cache_control passthrough.
-- **Sandbox sidecar:** integration tests under `//go:build sandbox_integration` hit a real sidecar; skipped silently when unreachable. Unit-level Stub `/home/user/Aura/internal/sandbox/sandbox.go:28-36` returns `"not yet implemented"` and is wired only for the agent-loop smoke.
-- **Swarm Coordinator:** `Stub` in `/home/user/Aura/internal/swarm/swarm.go:32-42` used in agent-loop smoke; `LiveCoordinator` is the unit under test in `coordinator_test.go`.
-- **Time:** prefer `synctest` (Go 1.24+) when the project upgrades; until then, deterministic channel sync with explicit `select { case <-ch: ... case <-time.After(5*time.Second): t.Fatal("timeout waiting for X") }`.
+**No mocking framework** — hand-written fakes/stubs implementing the real interface, kept in a shared test-support package `internal/agent/agenttest/` (excluded from the coverage floor as pure test infrastructure, like generated code):
 
-### What to mock
+```go
+// internal/agent/agenttest/fakeclient.go
+type FakeClient struct {
+    mu       sync.Mutex
+    Turns    []FakeTurn   // scripted, consumed in order
+    Requests []llm.Request // captured for message-history assertions
+    next     int
+}
 
-- External HTTP endpoints (LLM provider, web tools, Telegram API).
-- Process boundaries (sandbox sidecar, embedding sidecar).
-- Time (channel sync, never `time.Sleep`).
+type FakeTurn struct {
+    Chunks []llm.Chunk
+    Err    error
+}
 
-### What NOT to mock
+var _ llm.Client = (*FakeClient)(nil)
 
-- The Postgres driver (use real Postgres under `db_integration` build tag).
-- The Neo4j driver (use real Neo4j under `neo4j_integration` build tag).
-- The agent loop itself (unit-test it directly).
-- Sentinel errors (`ErrAwaitingUserInput` must be the real type — assert byte-identical sentinel passthrough through `ActionRouter.Dispatch`).
+func NewFakeClient(turns ...FakeTurn) *FakeClient {
+    return &FakeClient{Turns: turns}
+}
+```
+The channel `FakeClient.Stream` returns is pre-buffered and pre-closed — "goleak-clean by construction," per its doc comment; this is the standard idiom for avoiding goroutine leaks in fakes.
+
+**Leaf/local stubs** are also written inline in the test file itself when only one test needs them (not promoted to `agenttest`), e.g. `stubAgent` in `internal/agent/agent_test.go` (minimal `Agent` implementation to exercise `InvocationContext`), or `flakyTool`/`timeoutErr` in `internal/agent/llm_agent_retry_test.go` (fails N times then succeeds, to drive retry-loop assertions).
+
+**What to mock:** external boundaries only — `llm.Client` (network LLM calls), tool `Execute` (external side effects). Database and Neo4j code paths are NOT mocked; they're exercised via real containers under `db_integration`/`neo4j_integration` build tags.
+
+**What NOT to mock:** internal domain logic, the agent loop itself, config parsing — these run against real code paths with fakes only at the true I/O boundary.
+
+**Frontend mocking:** `vi.fn()` / `vi.mock()` (Vitest's built-in mock API), notably partial-module mocking that preserves the rest of a module:
+```ts
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...actual, useNavigate: () => navigateMock };
+});
+```
+(`web/src/approvals/__tests__/ApprovalList.test.tsx`) Network calls are stubbed via `vi.stubGlobal('fetch', ...)` returning a scripted `Response`.
+
+## Fixtures and Factories
+
+**Go:** small in-file factory functions returning domain structs with sensible defaults plus field overrides, e.g. `pgTimestamp(ts time.Time) pgtype.Timestamptz` and a shared `const localID = "00000000-0000-0000-0000-000000000001"` (the seeded `local` identity from migration 0004, used as an FK parent for throwaway test rows) in `internal/askuser/store_test.go`. Golden/fixture files live under `scripts/fixtures/` (`cache_invariant/`, `neo4j-smoke/`) and `internal/agui/testdata/` (captured real AG-UI SSE frames, shared with the frontend's chat-reducer test via `vitest.config.ts`'s `server.fs.allow: ['..']`).
+
+**Frontend:** factory-function pattern for test fixtures with partial overrides:
+```ts
+function approval(over: Partial<Approval> & Pick<Approval, 'token' | 'conversation_id'>): Approval {
+  return { kind: 'clarification', question: 'Pick a city', priority: 0, ...over };
+}
+```
+(`web/src/approvals/__tests__/ApprovalList.test.tsx`)
 
 ## Coverage
 
-- **Unit:** ≥ 75% per package. Enforced by CI (no silent skip).
-- **Integration:** ≥ 60% per package.
-- **Mutation testing:** spot-check ≥ 70% killed on slice-critical files (manual, per slice). Documented in commit body.
+**Requirements:** ≥85% owned-surface floor, both stacks (CLAUDE.md overrides the PRD's ≥75%/≥60% split). Current measured: **90.3%** Go (`internal/*`, full tag matrix, re-measured 2026-06-13 at HEAD 882df109).
 
+**Go gate:** `scripts/coverage_gate.sh` (invoked via `make coverage` / `make quality-full`). Key mechanics:
+- Runs `go test -tags "db_integration neo4j_integration" -p 1 -covermode=atomic -coverprofile=cover_gate.out ./internal/...` — **`-p 1` is mandatory** (serial package execution) because integration tiers across `internal/*` share one Postgres cluster; parallel execution races on `CREATE ROLE`/advisory locks.
+- Filters out generated/test-support rows before computing the percentage: `internal/db/sqlc/`, `internal/agent/agenttest/`, `internal/llm/client.go` (pre-rewrite skeleton).
+- `cmd/aura` is excluded entirely from the floor (CLI glue, covered behaviorally by integration/smoke, not unit tests).
+- Env override: `AURA_COVERAGE_MIN` (default 85), `AURA_COVERAGE_TAGS` (default `"db_integration neo4j_integration"`).
+- A Docker-shimmed variant `make coverage-docker` runs `mcp-neo4j-cypher` in a container instead of requiring a host install.
+
+**Frontend gate:** `web/vitest.config.ts` `coverage.thresholds` — `{ statements: 85, branches: 85, functions: 85, lines: 85 }` via the `v8` provider; the suite **fails** below floor (not just reports). Excludes `src/**/*.{test,spec}.{ts,tsx}`, `src/test/**`, and `src/main.tsx` (bootstrap entry, proven by Playwright E2E instead).
+
+**View Coverage:**
 ```bash
-go test -coverprofile=cover.out ./internal/<package>/
-go tool cover -func=cover.out                    # check function-level threshold
-go tool cover -html=cover.out                    # local HTML report
+go tool cover -html=cover_gate.out          # Go
+go tool cover -func=cover_gate.out | tail -1
+cd web && npm run test                      # writes web/coverage/ (v8 html+json)
 ```
 
-## Test types
+**Mutation testing:** ≥70% killed required on critical files (spot-check, not full-repo). Go: `go-mutesting` (WSL-only — only fork supporting go1.26; `GOFLAGS=-tags=db_integration` for container-gated code). Frontend: Stryker, `break: 70` in `web/stryker.conf.json`, run via `npm run mutation` / `make web-mutation`.
 
-### Unit
+## Test Types
 
-- Scope: one Go package, mocks only at external boundaries (HTTP, process, time).
-- Speed: < 5s per package.
-- No build tag.
+**Unit Tests:** fast, no external deps, deterministic — the default `go test ./...` tier and default `npm run test` tier.
 
-### Integration
+**Integration Tests:** Go build tags `db_integration` / `neo4j_integration`, require the live Postgres + Neo4j + `mcp-neo4j-cypher` stack (`make db-up`, `make neo4j-migrate`). Frontend integration is largely folded into component tests using `@testing-library/react` against a real-ish DOM (jsdom), not a separate tier.
 
-- Scope: package + real backing service (Postgres, Neo4j, sandbox sidecar, embedding sidecar, multimodal sidecar).
-- Gated by build tag.
-- DB transactions rolled back per test (no cross-test pollution).
-- Skip-on-no-container documented but the test still exists.
+**E2E Tests:** Playwright (`web/e2e/`), drives a real `aura serve` process — `web/playwright.config.ts` forwards ~25 explicit env vars (`AURA_DB_URL`, `POSTGRES_*`, `NEO4J_*`, `AURA_OBJECTSTORE_*`, `OPENROUTER_API_KEY`, etc.) into the spawned `webServer` process since Playwright does not inherit the runner's env by default.
 
-### Property-based (PRD §Test discipline rigorosa #5)
+**Fuzz Tests:** native Go fuzzing (`go test -fuzz=FuzzName`) in 4 files: `internal/agent/agent_fuzz_test.go`, `internal/canonicaljson/canonicaljson_test.go`, `internal/channels/telegram/mdv2_test.go`, `internal/skills/validator_fuzz_test.go`.
 
-- Scope: invariants that must hold over a generated input space.
-- Slice-scoped to 3 (swarm), 4 (KV cache PromptBuilder), 8 (AG-UI translator).
-- Use `pgregory.net/rapid` or `github.com/leanovate/gopter`.
+**Property-Based Tests:** `pgregory.net/rapid` for invariant-style assertions across a range of generated inputs, e.g. asserting an escalate Event is always yielded before a loop returns regardless of `n`/`maxIter` combination (`internal/agent/workflow/loop_property_test.go`).
 
-### Smoke / E2E
+## Common Patterns
 
-- Scope: agent loop end-to-end against a real model + real tools.
-- Prompt MUST be natural (no asilo nido). See §Bad vs good table above.
-- Assert artifact (tool was invoked, side-effect observable) AND reply, not reply alone.
+**Goroutine-leak-safe fakes** (design pattern, not just a test utility): return pre-closed, pre-buffered channels so a consumer that ranges to completion never blocks and no background goroutine is spawned — see `FakeClient.Stream` in `internal/agent/agenttest/fakeclient.go`.
 
-## Common patterns
-
-### Async / channel sync
-
-```go
-done := make(chan struct{})
-go func() {
-    // exercise the unit
-    close(done)
-}()
-select {
-case <-done:
-case <-time.After(5 * time.Second):
-    t.Fatal("timeout waiting for completion")
-}
-```
-
-### Goroutine leak verification
-
+**Goroutine leak detection at package level:**
 ```go
 func TestMain(m *testing.M) {
     goleak.VerifyTestMain(m)
 }
-
-// or per-test:
-func TestThingThatSpawnsGoroutines(t *testing.T) {
-    defer goleak.VerifyNone(t)
-    // ...
-}
 ```
+with a doc comment explaining exactly which goroutine must be reaped and by what mechanism (see `internal/activelearn/main_test.go`).
 
-### Cancellation testing
+**Retry/backoff test isolation:** package-level tunable vars (`toolRetryBaseDelay`) are swapped to near-zero durations for the test and restored via `t.Cleanup`, avoiding real sleeps in unit tests while exercising the real retry loop.
 
-```go
-ctx, cancel := context.WithCancel(context.Background())
-cancel() // pre-cancel
-_, err := unit.Operation(ctx, ...)
-if !errors.Is(err, context.Canceled) {
-    t.Fatalf("expected context.Canceled, got %v", err)
-}
-```
+**Error testing:** table-driven with an `error`-typed field and `errors.Is`/`errors.As`/string-marker checks against the classifier function under test (`internal/agent/llm_agent_retry_test.go` — `retryableStreamOpenError`, `retryableToolError`).
 
-### Sentinel error passthrough (ActionRouter contract)
-
-```go
-func TestDispatch_PropagatesErrAwaitingUserInput_Unchanged(t *testing.T) {
-    sentinel := &ErrAwaitingUserInput{Question: "approve?", Kind: "approval"}
-    r := NewActionRouter("task", map[string]ActionHandler{
-        "schedule": func(_ context.Context, _ json.RawMessage) (ToolResult, error) {
-            return ToolResult{}, sentinel
-        },
-    })
-    _, err := r.Dispatch(ctx, []byte(`{"action":"schedule"}`))
-    var got *ErrAwaitingUserInput
-    if !errors.As(err, &got) || got != sentinel {
-        t.Fatalf("expected byte-identical sentinel, got %v", err)
-    }
-}
-```
-
-### Race detector
-
-`go test -race ./...` is mandatory on every touched package. Critical for Slice 3 (10 children interactive-paused simultaneously), Slice 6 (5 scheduler workers `FOR UPDATE SKIP LOCKED`), Slice 7c (Coordinator.ResumeChild + Spawn + Join sharing `sync.RWMutex` on `children` map — PRD line 1288).
-
-## Gate 3 — Definition of Done checklist for tests
-
-Source: `/home/user/Aura/prd.md` §Slice Q&A discipline Gate 3 (line 1532+):
-
-- [ ] All §Acceptance bullets ticked, each verified by a concrete test.
-- [ ] Smoke E2E end-to-end green on a clean state.
-- [ ] Integration tests passing under their build tags. Skip-on-no-container documented but the test exists.
-- [ ] Regression suite green (`go test ./...` full run, including build tags).
-- [ ] Coverage threshold reached (≥ 75% unit, ≥ 60% integration) on the new package. Output from `go tool cover -func=cover.out` documented.
-- [ ] Mutation testing spot-check (slice-critical): one core file under `go-mutesting`, score killed ≥ 70%. Documented in commit message.
-- [ ] No goroutine leak: `goleak.VerifyNone(t)` green on every goroutine-spawning test.
-- [ ] No data race: `go test -race` green on every touched package.
-- [ ] No "asilo nido" tests — every E2E test re-read against the §Test discipline rigorosa example table; rewrite if it does not survive scrutiny.
+**Windows-specific test skips:** the sandboxed shell-tool tests explicitly skip POSIX-only behavior when running under the `cmd.exe` fallback shell (not a CI/env gate, a platform-capability gate): `t.Skip("cmd.exe fallback: interleave fixture is POSIX-only")` (`internal/agent/tools/shell_exec_test.go`, `shell_bg_test.go`).
 
 ---
 
-*Testing analysis: 2026-05-28*
+*Testing analysis: 2026-07-04*

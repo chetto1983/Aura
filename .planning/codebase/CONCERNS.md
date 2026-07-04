@@ -1,498 +1,178 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-05-28
+**Analysis Date:** 2026-07-04
 
-> Aura is a **tabula-rasa rewrite** as of 2026-05-27. The on-disk repository is a ~633 LOC Go skeleton plus a 4401-line PRD (`prd.md`) that specifies 16+ slices. Concerns split into two distinct sources:
-> 1. **Current skeleton gaps** — what is stubbed today, blocking the next step.
-> 2. **PRD-anticipated concerns** — open questions, pre-merge benchmarks, security/perf design constraints, fragile areas the rewrite explicitly knows about.
->
-> Pre-rewrite tech debt (`pre-rewrite-2026-05-27` git tag) is intentionally *not* the working tree; it is referenced only for "patterns we are deliberately not repeating."
+**Sources of record:** This document synthesizes and re-verifies against current code:
+- `docs/audit/` — 2026-06-21 industrial security/production-readiness audit (51 findings, `F-001`..`F-052`, score 4.6/10)
+- `docs/audit/quality/` — 2026-06-29 maintainability/architecture audit (~64 findings, `QA-A/B/C/D-*`)
+- `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md` — the v2.0.0 "Industrial Hardening & Multi-User Production" milestone that tracks every finding to a phase (31–41)
 
----
-
-## Current Implementation Gaps (what's stubbed / missing)
-
-The four-component scope (agent loop / KV cache / sandbox / swarm) is wired with stubs that compile but do nothing meaningful end-to-end.
-
-### LLM client — stub returns canned text
-
-- File: `cmd/aura/main.go` (lines 74-90), `internal/llm/client.go`
-- Issue: `stubClient.Stream` emits one hardcoded `text_response` tool call with literal text `"hello from tabula-rasa stub..."`. No SSE parser, no OpenAI-compat wire, no provider routing.
-- Impact: `aura chat hello` runs but only echoes the stub. No real model interaction. Blocks all other slices that need an LLM.
-- Fix approach: Slice 1 — implement `internal/llm/openai_compat/client.go` (~280 LOC), SSE parser, tool-call delta-merge by `index`, `goleak.VerifyNone` discipline on ctx-cancel (per `prd.md:571`).
-
-### Agent loop — minimal terminal logic, no Slice 0.9 abstraction
-
-- File: `internal/agent/loop.go` (131 LOC)
-- Status: `Loop.Turn` implements MaxSteps + tool dispatch + `text_response` terminator. Single `runTool` returns `(string, error)` — no `ToolResult` pattern yet.
-- Issue: `Tool.Execute` returns plain `string` (see `internal/agent/tools/spec.go:32`). Slice 1 must change signature to `(ToolResult, error)` with preview+sidecar; touching this file later forces refactor of `text_response.go`, `search.go`, `tool_search`.
-- Missing: `Agent` interface + `iter.Seq2[*Event, error]` streaming (Slice 0.9), `LlmAgent` rename, `Loop.Cancel`, `PausedState` machinery (Slice 1.5), `MaxSteps` documentation embedded in system prompt for cache stability.
-- Impact: Every downstream slice (1, 1.5, 3, 6, 8, 10) re-touches this file. Refactor-on-touch will be heavy.
-
-### Sandbox — stub returns errors
-
-- File: `internal/sandbox/sandbox.go` (36 LOC)
-- Status: `Stub.RunPython` / `Stub.RunShell` return `"sandbox.Runner not yet implemented — see sandbox slice"`.
-- Impact: `execute` tool not registered yet in `cmd/aura/main.go::buildRegistry`. No Python/shell snippet execution possible.
-- Fix approach: Slice 2a (Docker sidecar, seccomp default-deny, ulimit, `network_mode: none`, tmpfs) → Slice 2b (session-bound + workspace mount + DNS-resolved iptables allowlist).
-
-### Swarm — stub returns errors
-
-- File: `internal/swarm/swarm.go` (42 LOC)
-- Status: `Stub.Spawn`, `Stub.Talk`, `Stub.Join` all return "not yet implemented." `MaxSpawnDepth=3` constant declared.
-- Missing: shared bus channel, DM-by-ID routing, tier→model mapping (`chat|reasoning|worker`), `RejectingResponder` default for swarm children (so child `ask_user` auto-rejects with `<auto-rejected: child loop has no human responder>`), `SpawnInteractive` for explicit pause propagation, `Coordinator.ResumeChild` (mutex-protected children map per audit round 2 P0).
-- Impact: No parallelism, no agent_job sub-loop spawning (blocks Slice 6 `agent_job` handler).
-
-### LLM Client interface — type defined, no impl
-
-- File: `internal/llm/client.go` (78 LOC)
-- Status: `Client` interface + `Message`/`ToolCall`/`ToolDef`/`Chunk`/`Request` types defined. Cache-friendliness disclaimer in doc comment (lines 70-72). No concrete impl yet.
-- Missing: provider headers injection (OpenRouter `HTTP-Referer` + `X-Title`), connect/total timeout config (10s dial / 120s total per `prd.md:627`), zero-allocation contract on `req.Messages` mutation, `ToolsCacheControl` field for Anthropic (Slice 4 OQ3).
-
-### No persistence layer
-
-- Missing entirely: `internal/db/` (Postgres + sqlc + pgx + golang-migrate). No `aura` schema, no migrations.
-- Missing entirely: `internal/db/migrations/neo4j/` (Cypher migrations). No `aura-neo4j` container, no MCP `mcp-neo4j-cypher` config.
-- Blocks: Slice 1.5 (`aura.paused_states`), Slice 1.7 (`aura.identities` + `aura.capability_grants`), Slice 1.8 (`aura.conversations` + `aura.conversation_turns`), Slice 6, Slice 7c audit, every memory slice.
-- 14 Postgres migrations + 2 Neo4j Cypher migrations expected (0001-0014).
-
-### No tests anywhere
-
-- Zero `*_test.go` files in the tree. No `TestMain` with `goleak.VerifyNone`. No `testdata/`. No build tags `db_integration` / `sandbox_integration` / `multimodal_integration` / `onboarding_integration`.
-- Impact: Hard requirements from `prd.md:1447` (Test discipline rigorosa, 10 hard reqs incl. coverage ≥75% unit / ≥60% integration) are not yet meetable. Slice 1 must land `TestMain` + first fixtures.
-
-### Tool registry — only 2 tools
-
-- File: `cmd/aura/main.go::buildRegistry` (lines 48-53)
-- Registered: `TextResponse` (non-deferred) + `ToolSearch` (non-deferred hook).
-- Missing: `execute` (Slice 2 sandbox), `swarm.spawn`/`swarm.talk`/`swarm.join` (Slice 3), `ask_user` (Slice 1.5), `read_tool_output` (Slice 1 builtin), `web_search`/`web_fetch` (Slice 5), `task.*` (Slice 6), `skill.*` (Slice 7), `ingest.*` (Slice 11), `memory.search` (Slice 11d).
-
-### CLI subcommands stubbed
-
-- File: `cmd/aura/main.go::main` (lines 36-37)
-- Status: `aura shell` and `aura serve` print `"TODO: implemented by the agent-loop and CLI slices"`.
-- Impact: No long-lived runtime, no REPL. Channel framework (Slice 9) and AG-UI gateway (Slice 8) ungrounded.
+**Milestone status as of this analysis:** Phases 31–35 are **complete** (stabilization, quality cleanup, runtime profiles, agent-loop correctness/durable ledger, ToolGateway policy engine — the last closed today, 2026-07-04, including gap-closure `35-07` for code-review Critical `CR-01`). Phases 36–41 are **not started**. The concerns below are organized so that anything already closed by Phase 31–35 is marked `[RESOLVED]` and anything still open cites its target phase — do not re-open or re-fix `[RESOLVED]` items without checking `git log` first, and do not duplicate work already scoped into Phase 36–41 without checking `.planning/phases/`.
 
 ---
 
-## Open Questions Pre-Merge (~28 totali distributed by slice)
+## Tech Debt
 
-Each item: `[slice] question — current default | decision-priority`. *CRITICA* = blocking, must close before slice can land. *Default-OK* = decision provisionally chosen, can ratify at DoR gate.
+**Full-host tool authority is the core unresolved architectural gap (Phase 37 — not started):**
+- Issue: `shell_exec` and filesystem tools (`fs_read`, `fs_write`, `fs_edit`, `fs_grep`, `fs_glob`) execute with the operator's full host privileges. There is no per-identity capability boundary — the `ToolGateway` shipped in Phase 35 centralizes *policy decisions* (approve/deny/reserve) but does not sandbox the tool's actual execution environment.
+- Files: `internal/agent/tools/shell_exec.go` (596 LOC, near the 600-LOC cap), `internal/agent/tools/fs.go`, `internal/gateway/` (the Phase-35 policy engine)
+- Impact: prompt injection, a compromised upstream document, or a model error can cause host-wide reads/writes/deletes/process launches under `dev`/`local_trusted`. This is an accepted, documented product decision for the single-trusted-operator profile (see `.planning/ROADMAP.md` "Locked decision (a): capability is contained (per-user sandbox), never removed" — the terminal is never stripped) but is an open gap for `server_production`.
+- Fix approach: Phase 37 (`SBX-01..05`) — per-identity full-capability Docker sandbox routed by `SandboxRouter.Resolve(identityctx)`, `--network none` default egress, Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable in config.
 
-### Slice 0.9 — Agent runtime abstraction (3 OQ)
+**Copy-pasted helpers across packages — mostly resolved, watch for regressions:**
+- Issue: the 2026-06-29 quality audit found ~10 duplicated helpers (store helpers `hashText`/`asString`/`asFloats` ×3, `GraphClient` ×2, env-var helpers ×3, agent `canonArgs`/`canonicalArgs`, `isTransientToolErr`/`retryableStreamOpenError`, web `getJSON` ×3, focus-trap). **[RESOLVED — Phase 32]**: verified current code — `internal/canonicaljson.CanonicalArgs` is the single call site from both `internal/agent/workflow/loop.go` and the LLM-agent dispatch path; `internal/neostore`, `internal/envutil`, `internal/agentrender` packages now exist as the extraction targets.
+- Residual risk: this is a "drift hazard" pattern (a fix in one copy doesn't reach siblings) — when adding new store/env helpers, check `internal/neostore` and `internal/envutil` first before writing a new one; do not reintroduce a fourth `decode*Body` variant (see Security Considerations, `F-052`) or a second MCP trust-normalization path (`F-027`, Phase 38).
 
-1. **`InvocationContext.Branch` shape** — string vs nested struct. Default: free-form string. Default-OK.
-2. **`Actions.StateDelta` merge semantics** — shallow vs deep merge. Default: deep merge via `jsonpatch` (RFC 6902). Default-OK.
-3. **`ParallelAgent` backpressure** — synchronous ackChan vs buffered N. Default: synchronous (rubato da adk-go). Default-OK.
+**Uncatalogued `AURA_*` env knobs read ad-hoc in hot paths — partially resolved:**
+- Issue: several `AURA_LOOP_MAX_PARALLEL_TOOLS`, `AURA_FS_*`, `AURA_SHELL_*` knobs were read via bare `os.Getenv` at call time instead of through `internal/config`, making them invisible to `aura config validate` and undiscoverable ops tuning.
+- Files: `internal/config/config.go` (now has a `KnobSpec` registry — Phase 33), `internal/agent/tools/*` (call sites)
+- Status: Phase 33 shipped the `KnobSpec` registry (single source of truth, Tier A+B knobs) and `aura config validate [--profile] [--json]`. Confirm any *new* `AURA_*` knob added after 2026-06-29 is registered in the `KnobSpec` table, not read ad-hoc — this is a recurring pattern that will regress if not enforced at review time.
 
-### Slice 2 — Sandbox (3 OQ, lower-criticality after audit 2026-05-28)
-
-1. **Sidecar implementation language** — Python stdlib vs Go single-binary. Default: Python stdlib. Default-OK.
-2. **DNS cache TTL allowlist** — `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` DNS resolve cache. Default: 5 min. **Pre-merge validation needed**: `pypi.org` rotates A records — does cache invalidate legitimate calls? (`prd.md:1146`). Pre-merge benchmark.
-3. **Sandbox session vs swarm Coordinator child** — riusare il container session della parent conversation o creare nuovo per child. Default: stesso session, isola solo se RISKY tier. Default-OK.
-
-### Slice 4 — KV cache builder (3 OQ)
-
-1. **Cache stats persistence** — in-memory vs flush to file. Default: in-memory. Default-OK.
-2. **Tools cache-control breakpoint** — separate `Request.ToolsCacheControl` field for Anthropic. Default: yes (add field). Default-OK.
-3. **Threshold cache_hit_rate per CI** — fail under X%? Default: no — assert byte-identity invariant, not percentage (provider-dependent, flaky). Default-OK.
-
-### Slice 7 — Skills (1 OQ aperta)
-
-1. **Skill versioning** — out of scope, audit log allows manual rollback. Default-OK.
-   - (OQs 1, 2, 3, 5 closed pre-merge; only versioning aperta.)
-
-### Slice 7e — Snippets + pattern analysis (4 OQ, differite post-benchmark)
-
-1. **Synth LLM call cost** — ~$1.5/mese tier=reasoning. Default: accept. Default-OK.
-2. **Cross-identity snippet sharing** — privato per `identity_id` vs library globale. Default: privato. Default-OK.
-3. **Snippet versioning on update** — versioning implicito via `content_hash` in `skill_audit`. Default-OK.
-4. **Workspace files cleanup** — scope conversation, cascade su `aura chat delete`. Default-OK.
-
-### Slice 8 — AG-UI gateway (4 OQ post-benchmark)
-
-1. **Endpoint path canonical** — `/agent/run`. Default-OK.
-2. **WebSocket transport** — SSE only Slice 8; WebSocket future. Default-OK.
-3. **Cost streaming via STATE_DELTA** — JSONPatch per turn. Default-OK.
-4. **CLI default mode (in-process vs via-agui)** — **Decisione differita post-benchmark**: measure HTTP loopback latency ~50-150 ms. Pre-merge benchmark needed before Slice 9 closes.
-
-### Slice 9c — Multimodal (2 OQ pre-merge)
-
-1. **Variant Gemma 4 finale** — E2B vs E4B vs 26B MoE vs 31B. **Pre-merge benchmark CRITICO** su corpus IT/EN: STT accuracy + image description + latency + RAM. Default baseline E4B Q4_0 (~3 GB RAM).
-2. **Vision fallback markitdown OCR** — necessary or not. Pre-merge benchmark decides. If Gemma quality basta → solo vision sidecar; else → markitdown OCR fallback if Gemma down.
-
-### Slice 10 — Onboarding + Agent.md (4 OQ)
-
-1. **`AURA_PROFILE_CERTAINTY_N=3`** — pre-merge calibrate su corpus di test. Default: 3, env override. Pre-merge benchmark light.
-2. **Conflicting facts handling** — keep current + log conflict; if 3+ conflict → ask_user. Default-OK.
-3. **Schema versioning Agent.md** — `metadata.json.schema_version` int + migrations. Default-OK.
-4. **Privacy / `/forget --all` GDPR** — out of scope, future multi-user. Default-OK.
-
-### Slice 11 — Memory (6 OQ)
-
-1. **Chunk size 512 vs 1024 tokens** — **Pre-merge benchmark** su corpus tipo (papers + libri + note). 512 più precise per Q&A; 1024 più context per summarization. Pre-merge benchmark CRITICO.
-2. **Entity type taxonomy** — fissa (Person/Org/Location/Concept/Event/Topic) vs dynamic. Default: fissa. Default-OK.
-3. **Re-ranker cost** — ~$0.001/query × 100/giorno = $3/mese. Default: accept. Default-OK.
-4. **Memify prune threshold** — 90gg + < 3 mention. Default-OK, configurable.
-5. **Agent insight injection top-K** — top-3 → +500 token/turn; relevance > 0.7 threshold. Default-OK.
-6. **Multi-user refactor cost** — stimato +800 LOC se atterra post-Slice 11. Default: accept single-user MVP. Default-OK.
-
-### Slice 13 — Local LLM fallback (5 OQ, una CRITICA)
-
-1. **⚠️ CRITICA — GPU vs CPU** (`prd.md:3651-3660`): mini-PC target ha GPU dedicata?
-   - SE GPU → Slice 13 vLLM+LMCache OK.
-   - SE CPU-only → vLLM CPU mode è **5-10x peggio di llama.cpp CPU** per stesso modello. Activate path **13-bis** (riusa `aura-llama-multimodal` Slice 9c per chat fallback, no LMCache).
-   - **Pre-merge benchmark CRITICO**: vLLM Gemma 3 12B Q5 latency p50/p95 + tokens/sec vs llama.cpp Gemma 4 E4B Q4 baseline, prompt 1000-token. **SE < 5 tok/sec → switch a 13-bis** (`prd.md:3833`).
-2. **Modello fallback** — Gemma 3 12B vs Llama 3.1 8B vs Qwen 2.5 7B. **Pre-merge benchmark** su corpus IT (utente italiana) + EN code. Quality/size trade-off.
-3. **LMCache config tuning** — `chunk_size` 256 vs 512 per `max_model_len 8192`. Post-merge test, no block.
-4. **Cost threshold default** — `$1/day` per single-user MVP. Default-OK.
-5. **STATE_DELTA reactive on offline-switch** — Notifier proactive Telegram message. Default: SÌ via Notifier alert. Default-OK.
-
-### Slice 0.9, 1.7, 5, 6 — minor OQs (all closed or default-OK)
-
-- Slice 5 (Web tools): SearXNG self-hosted vs cloud (default self-hosted), `go-readability` mantenuto (default yes).
-- Slice 6: Notifier default impl (stdout printf default), `agent_job_runs` retention (forever, escape hatch CLI `task runs purge`).
+**Two files sit near the 600-LOC no-god-class cap** (not violations, but the next touch should watch the ceiling):
+- `internal/agui/server.go` — 598 LOC
+- `internal/agent/tools/shell_exec.go` — 596 LOC
+- `internal/db/sqlc/document_control_plane.sql.go` (1037 LOC) and `internal/db/sqlc/assets.sql.go` (722 LOC) are sqlc-generated and excluded from the cap/coverage floor per `CLAUDE.md`.
+- Fix approach: on next edit to either near-cap file, split by concern (`<name>_<concern>.go`) before adding new logic — do not wait for the pre-commit `file-size` hook to turn red (it blocked all commits once already, in Phase 31, when `serve_webui.go` hit 628 LOC).
 
 ---
 
-## Pre-Merge Benchmarks Required
+## Known Bugs (historical — now fixed; listed for regression awareness)
 
-Five benchmarks gate slice merges. Each is a **DoR ✅ checkbox** per `prd.md:1501`.
+The following were confirmed **[RESOLVED]** via commit history (`F-002`, `F-006`, `F-010`, `F-031`, `F-035`, `F-038`, `F-041` closed in the "Audit Tier A remediation" PR and Phases 33–35). They are listed so future work does not reintroduce the same footgun:
 
-### Slice 13b — CRITICAL: vLLM CPU vs GPU
+- **`.env.example` disabling destructive-shell approval** (`F-002`): `AURA_SHELL_DESTRUCTIVE_PATTERNS=` used to mean "gate disabled" when copied verbatim from the sample. Fixed in Phase 33 (`33-02`): unset OR empty now means "use defaults"; only an explicit case-insensitive `off` disables the gate. File: `internal/agent/tools/shell_exec_env.go` (`destructiveShellPatterns`). **Do not** reintroduce empty-means-disabled semantics on any similar gate.
+- **Command hooks failing open** (`F-006`): default policy is now fail-closed. File: `internal/agent/hooks_command.go` (507 LOC, also near-cap — watch on next touch).
+- **`fs_write` non-atomic writes** (`F-010`): now temp-file + rename.
+- **Mutating flag lost across tool-panic recovery** (`F-031`): panic recovery now preserves the `Mutating` classification — relevant to `internal/agent/llm_agent_parallel.go`.
+- **MCP HTTP transport `Close` could hang** (`F-035`): now bounded with a timeout.
+- **MCP trust endpoint accepted empty body as `trusted_local`** (`F-038`): now requires explicit class + non-empty reason.
+- **Relative `AURA_RUN_DIR`** (`F-041`): now normalized to absolute at config load.
+- **Terminal `text_response` racing mutating siblings** (`F-003`) and **HITL resume/pause non-atomicity** (`F-004`/`F-029`): closed in Phase 34 (`ResumeCommitter`, single cross-store transaction, `os.Root` sidecar fence).
+- **No policy decision recorded before tool execution** (`F-001` gateway half, `F-011`, `F-020`): closed in Phase 35 — every tool call now passes through `internal/gateway`'s `Decide` PEP with a durable reservation; a resume-path confused-deputy bug (code-review `CR-01`, approval could be granted without matching the operator-visible question) was found and closed same-day in gap-closure plan `35-07`.
 
-- **Decisione**: vLLM Gemma 3 12B Q5 latency p50/p95 + tokens/sec on 1000-token prompt vs llama.cpp Gemma 4 E4B Q4 baseline.
-- **Action threshold**: SE vLLM CPU < 5 tokens/sec → **scrap Slice 13b, activate Slice 13-bis** (riusa `aura-llama-multimodal` Slice 9c per chat fallback, no new sidecar, no LMCache, save ~5 GB RAM).
-- **Mini-PC scenario impact**: GPU scenario = +1 GB RAM + 7 GB VRAM; CPU scenario = +7 GB RAM (tight su 16 GB, OK su 32 GB); 13-bis scenario = zero new sidecar.
-- File: `prd.md:3651-3660`, `prd.md:3833`, `prd.md:3918`.
+**Currently open, tracked to a not-yet-started phase — do not treat as "someone else's problem" if touching adjacent code:**
 
-### Slice 11b — Chunk size 512 vs 1024 tokens
-
-- **Corpus**: papers + libri + note.
-- **Metric**: Q&A precision (favors 512) vs summarization context (favors 1024).
-- **Default**: 512 (`AURA_MEMORY_CHUNK_SIZE_TOKENS=512`, `AURA_MEMORY_CHUNK_OVERLAP_TOKENS=64`).
-- File: `prd.md:3461`.
-
-### Slice 9c — Gemma 4 variant selection
-
-- **Variants to benchmark**: E2B (small), E4B (default baseline), 26B MoE (heavier), 31B (largest).
-- **Metric**: STT accuracy IT/EN + image description quality + latency + RAM consumption (~3 GB E4B baseline).
-- **Decision impact**: variant influences `MULTIMODAL_MODEL` env + compose service resource limits.
-- File: `prd.md:2495`, `prd.md:2723`.
-
-### Slice 11d — Re-ranker cost-quality trade-off
-
-- **Cost stima**: `$0.001/query × 100/giorno = $3/mese` LLM tier=worker.
-- **Latency**: 200-500 ms per query at retrieval time.
-- **Metric**: NDCG@5 ≥ 0.8 on eval corpus vs no-rerank baseline.
-- **Decision**: accept default (single-user MVP) or off-by-default with per-conv flag.
-- File: `prd.md:3463`.
-
-### Slice 8 — CLI default mode
-
-- **Latency to measure**: HTTP loopback roundtrip in-process vs via-agui (~50-150 ms expected).
-- **Decision**: default in-process (zero overhead) confirmed pre-merge; `--via-agui` opt-in.
-- File: `prd.md:2394`.
+- **Multi-user data leakage across identities** (`F-028`, Phase 36 `MUSR-01/02`, **OPEN**): conversation and approval APIs list/mutate largely unscoped stores rather than filtering by the authenticated principal; new Web conversations are created under the seeded `local` identity rather than `identityctx.IdentityID(ctx)`. Files: `internal/agui/conversations_api.go`, `internal/agui/approvals_api.go`, `internal/runner/runner_conversation.go` (`NewConversation`, `NewConversationWithID`).
+- **Background shell jobs are predictable and unscoped** (`F-032`, `F-012`, Phase 36 `MUSR-03/04`, **OPEN**): sequential shell IDs, no TTL, no owner/session binding — one session can currently poll/kill another session's background job. Files: `internal/agent/tools/shell_bg.go` (499 LOC).
+- **Conversation delete doesn't evict all session tool state** (`F-039`, Phase 36 `MUSR-05`, **OPEN**).
+- **Mixed `url`+`command` MCP entries can bypass local-command trust blocking** (`F-027`, Phase 38 `MCPH-01`, **OPEN**, also the quality-audit `QA-C-03` trust-norm duplication — do not merge casually, security-relevant): trust classification treats any non-empty URL as remote-HTTP trust while type normalization can still open a `url`+`command` entry as stdio. Files: `internal/mcp/manager/runtime.go` (`normalizedTrustForServer`, `RunnableManagedServers`), `internal/mcp/managed_config.go` (`normalizedServerType`), `internal/agent/mcptools/mount.go` (`MountManagedServer`), `internal/mcp/transport.go` (`OpenServer`).
+- **Docker MCP network allowlist is advisory, not enforced** (`F-036`, Phase 37 `SBX-04`, **OPEN**): a configured egress allowlist is not actually firewalled/proxied.
+- **CI/release uses mutable action/tool references** (`F-051`, Phase 40 `SEC-05`, **OPEN**): no SBOM published yet (`syft`/`cyclonedx-gomod` absent from `.github/workflows/`); confirmed `govulncheck` **is** wired into `ci.yml`/`codeql.yml` already, but Actions pinning-to-SHA and SBOM publication are still missing.
+- **Privileged JSON routes accept trailing/unknown-field bodies** (`F-052`, Phase 40 `SEC-06`, **OPEN**, also `QA-C-01` — 4 duplicated `decode*Body` helpers, unify during the same phase): `/agent/run`, approvals-resolve, onboarding, assets, governance-write routes lack strict decoding (size cap, content-type check, `DisallowUnknownFields`, single-decode EOF check).
 
 ---
 
-## Security Concerns
+## Security Considerations
 
-### Sandbox seccomp default-deny (Slice 2a)
+**Trust model mismatch for shared/remote deployment (the audit's headline finding, `F-001`):**
+- Risk: `shell_exec` and filesystem tools intentionally run with full host authority and no workspace boundary. This is a deliberate, documented product decision for the single-trusted-operator use case (`dev`/`local_trusted` profiles), not an oversight — but it is the primary blocker for `server_production`.
+- Files: `internal/agent/tools/shell_exec.go`, `internal/agent/tools/fs.go`
+- Current mitigation: Phase 33 shipped 4 runtime profiles (`dev`/`local_trusted`/`single_user_hardened`/`server_production`) with `aura config validate --profile server_production` failing fast on unsafe defaults; Phase 35's `ToolGateway` adds a policy-decision + durable-reservation layer that is a no-op (fail-open, host-direct) under `dev`/`local_trusted` but enforces fail-closed for mutating tools under hardened/production profiles.
+- Recommendation (Phase 37, not started): per-identity full-capability Docker sandbox so the agent still experiences a full host but the real host is never exposed; `--network none` default egress with enforced (not advisory) allowlisting.
 
-- Status: not implemented yet — current `Stub` returns errors.
-- Requirement: Linux seccomp profile default-deny, ulimit `nofile=64`, `cpus=1.0`, `mem=512m`, `network_mode: none`, tmpfs `/tmp`, read-only rootfs.
-- Audit test: `aura exec python "import socket; socket.socket().connect(...)"` must fail with **EPERM on `socket()` syscall** (not deeper — verify seccomp catches at syscall, not at higher level). File: `prd.md:1164`.
-- Failure mode: if seccomp profile not loaded, sandbox executes arbitrary network code. Sanity-check post-impl via `nft list` for iptables + seccomp profile load verification.
+**CodeQL open alert — weak sensitive-data hashing (`SEC-09`, Phase 40, OPEN):**
+- Risk: `internal/agui/recovery_hash.go` uses a hash for identity-recovery material that CodeQL flags as `go/weak-sensitive-data-hashing` (not a cryptographically strong salted KDF).
+- File: `internal/agui/recovery_hash.go`
+- Recommendation: replace with Argon2id/bcrypt per the `golang-security` skill's "MD5/SHA1 for passwords" anti-pattern guidance; this is the one CodeQL-surfaced finding not already in the `F-001..F-052` set.
 
-### Risk-Based Governance (Slice 6 + 7, cross-cutting)
+**Permissive/wildcard CORS not yet profile-gated (`F-022`, Phase 40 `SEC-02`, OPEN):**
+- Risk: permissive CORS should be refused when auth is disabled outside an explicit dev profile; not yet enforced.
 
-- Pattern: **Hybrid C — System computes tier, agent decides** (`prd.md:3981`).
-- 4 tiers: `SAFE` / `NORMAL` / `RISKY` / `DESTRUCTIVE`.
-- Mapping hard-coded in `internal/scoring/` (~100 LOC):
-  - `reminder | backup_postgres | backup_neo4j` → SAFE
-  - `agent_job` → NORMAL (DESTRUCTIVE if payload regex `\b(rm|delete|drop|purge|truncate)\b`)
-  - `skill.create | skill.update | skill.install` → RISKY
-  - `skill.delete` → DESTRUCTIVE
-- Modifiers bump tier UP (saturate at DESTRUCTIVE): `every_minute|every_hour`, `silent:true`, `tier=reasoning` for agent_job, frequency increase > 10x.
-- Anti-elevation razionale (`prd.md:4125`): 5 attack vectors covered (cron-costoso-non-rischioso, skill-prompt-injection, cron-irreversible, frequency-escalation, silent-cumulative-damage).
-- Risk: if `internal/scoring/` mapping is wrong (false-negative), DESTRUCTIVE action proceeds silently. Audit log + Notifier IMMEDIATE alert + pending_approval state are the structural mitigations.
+**Integration validation console can bind non-loopback (`F-047`, Phase 40 `SEC-03`, OPEN).**
 
-### Skill injection blocklist (Slice 7)
+**Reasoning-trace / tool-output secret redaction not yet first-class (`F-021`, Phase 40 `SEC-01`, OPEN):**
+- Risk: full reasoning-trace mode has no production warning/fail-fast, retention config, or optional encrypted sink; secret-like values are not yet guaranteed redacted before persistence.
+- Relates: `internal/reasoningtrace/`, `internal/reasoningstore/`.
 
-- Env: `AURA_SKILL_INJECTION_BLOCKLIST` (built-in patterns).
-- Patterns: ChatML, Anthropic, Llama, Llama-3, DeepSeek, Gemma, Qwen literal blocklist (`prd.md:1962`).
-- Cap: `AURA_SKILL_BODY_CAP_BYTES=32768` (32 KiB write-time refuse) — body > 32 KiB is "quasi certamente garbage o prompt-injection payload nascosto" (`prd.md:4164`).
-- Single chokepoint: `internal/skills/paths.go::SanitizeName`. Static-analysis test asserts writer/deleter/installer all use it (`prd.md:1961`).
+**MCP lifecycle hardening incomplete (`F-013/033/034/037/046`, Phase 38, OPEN):**
+- No bounded per-server mount timeout (a hung MCP helper can wedge registry construction); stdio frames are not capped in size; CLI MCP mutations (`add`/`trust`/`enable`/`disable`/`remove`) do not all route through the audited atomic writer (`mcp_audit`); a dead/typoed HTTP MCP endpoint can report healthy-by-config rather than probing.
+- Files: `internal/mcp/manager/`, `internal/agent/mcptools/mount.go`, `cmd/aura/mcp.go` (503 LOC).
 
-### Audit immutability via DB trigger
+**Object-store single-replica topology (`F-019` ops part, Phase 41 `OPS-01`, OPEN):**
+- `AURA_OBJECTSTORE_REPLICATION_FACTOR` defaults to `1` (`internal/config/config.go:136,416`) — an explicit, declared-intent default (Phase 33 `D-13`/`PROF-06`), not silently unsafe, but production topology validation and documentation is still open.
 
-- Tables: `aura.skill_audit` (Slice 7c) + `aura.profile_audit` (Slice 10) + `aura.ingest_audit` (Slice 11).
-- Function: `raise_audit_immutable()` + trigger `BEFORE UPDATE OR DELETE` rejects mutation (`prd.md:1931`).
-- Constraint coherence (cross-slice symmetric):
-  - `approval_source='ask_user'` ⇔ `paused_state_token IS NOT NULL AND gate_taken=true`
-  - `approval_source='cli'` ⇔ `paused_state_token IS NULL AND gate_taken=true`
-  - `approval_source='auto'` ⇔ `paused_state_token IS NULL AND gate_recommended=false`
-- Risk if not enforced: agent or operator could rewrite audit history, masking RISKY/DESTRUCTIVE gate-skips.
-
-### Capability grants — scaffolding only
-
-- Status: Slice 1.7 scaffolds single-user `identity='local'` with wildcard `capability='*'`. Multi-user disabled.
-- Risk: hardcoded wildcard is a known stub; production multi-user requires refactor (Slice 11 OQ6 estimates +800 LOC). Documented and accepted pre-merge.
-
-### Telegram setup wizard — NO auth
-
-- File: `prd.md:4216-4219`.
-- `AURA_SETUP_BIND=127.0.0.1:9081` default loopback (safe).
-- Override `AURA_SETUP_BIND=0.0.0.0:9081` for LAN setup — **no auth on the endpoint**. Headless container scenario only. Documented out-of-scope future slice; risk acknowledged.
-
-### SSRF defense in web_fetch (Slice 5)
-
-- DNS-rebinding protection: `safeDialContext` resolves host → validates IP against blocklist → dials explicitly on resolved IP, **does NOT re-lookup** between resolve and dial (`prd.md:1617`).
-- Redirect interception (audit round 1 P0): `http.Client.CheckRedirect` custom re-validates every Location header against blocklist (`prd.md:1618`). Failure mode: `https://safe.example.com/r` → `http://169.254.169.254/` (AWS metadata) must reject at redirect step, NOT at first dial.
-- Status: not implemented (skeleton has no `internal/web/`).
-
-### Forensics symmetry across slices
-
-- All audit tables must include identical columns: `approval_source` + `paused_state_token` (FK to `aura.paused_states.token` ON DELETE SET NULL) + `computed_risk_tier` + `gate_recommended` + `gate_taken`.
-- Tables affected: `skill_audit`, `profile_audit`, `agent_job_runs`, `ingest_audit`.
-- Failure mode: if a table lacks one column, cross-slice forensics queries break ("which RISKY actions had gate_taken=false in the last 24h?"). Audit round 2 P0 (`prd.md:1709`).
+**No prompt-injection / tool-policy-bypass regression suite yet (`F-019` security part, Phase 40 `SEC-04`, OPEN):**
+- There is no automated suite asserting injected shell/file/network/MCP requests are denied under `server_production`. The `ToolGateway` (Phase 35) provides the enforcement point; the adversarial regression coverage against it is not yet built.
 
 ---
 
-## Performance Considerations
+## Performance Bottlenecks
 
-### KV cache discipline (Slice 4 — foundational)
+**Sandbox-per-identity is an explicitly accepted latency/throughput trade-off, not yet built:**
+- The `.planning/ROADMAP.md` "won't do" table documents that gVisor/Kata/microVM defaults cost "+10–125% on IO-heavy shell/build work" and are deliberately opt-in (`server_production` runtime only), and that sandbox warm pools were rejected as "trade idle compute for latency — counter-productive on one 16-core box." When Phase 37 lands, benchmark shell/fs-heavy workloads under the sandboxed path before assuming parity with today's host-direct path.
 
-- Invariant: `Messages[0]` MUST be byte-identical across turns. System prompt baked at `NewLoop` time (`internal/agent/loop.go:42`).
-- Manifest stable ordering: alphabetical by Name in `internal/agent/tools/manifest.go:37`. Per doc comment lines 19-21: "any reshuffle invalidates the provider-side prompt cache."
-- Risk metric: `usage.prompt_cache_hit_tokens` from DeepSeek auto-cache (OpenAI-compat extension). Test asserts hit-rate > 0.7 from turn 2 onward (`prd.md:1384`).
-- Cost amplifier: providers charge cached tokens at 10-90% of input rate. A poisoned cache silently 10x's the spend.
-- Threshold: NOT enforced in CI (provider-flaky); only invariant byte-identity enforced (Slice 4 OQ4).
+**`AURA_*` knobs read via `os.Getenv` at call time (residual from the quality audit):**
+- Minor per-call `os.Getenv` cost in hot paths (tool dispatch); low-impact but the `KnobSpec` registry (Phase 33) is the fix — confirm any new hot-path knob is added there, not re-introduced as a bare `os.Getenv`.
 
-### LMCache disk-tier 50 GB (Slice 13b, GPU scenario)
-
-- Path: `LMCACHE_LOCAL_DISK_PATH=/var/cache/lmcache`.
-- Max size: `LMCACHE_MAX_LOCAL_DISK_GB=50`.
-- Chunk size: 256 tokens (tunable for long-context).
-- Acceptance: KV cache hit ratio > 30% turn 2-5 on long-context (>4K token prompt) (`prd.md:1481`).
-- Risk: requires NVMe; HDD spinning rust will not meet TTFT reduction promises.
-
-### Mini-PC RAM peak
-
-- File: `prd.md:3933-3936`.
-- Scenario baseline (no Slice 13): ~7 GB on 32 GB target (Neo4j heap ~1.5-2 GB + embed sidecar ~600 MB + Postgres + Go runtime + multimodal sidecar ~3 GB).
-- Scenario vLLM CPU (Slice 13b): **~14 GB** (tight on 16 GB, OK on 32 GB).
-- Scenario vLLM GPU: +1 GB RAM overhead + 7 GB VRAM on dedicated GPU.
-- Scenario 13-bis (CPU-only fallback): invariato, riusa Gemma 4 E4B already in RAM.
-
-### Re-ranker LLM cost
-
-- Tier: `worker` (cheapest).
-- Cost: ~$0.001/query.
-- Latency: 200-500 ms added to retrieval.
-- Volume: 100 queries/day expected single-user → $3/month. Acceptable.
-- Knob: `AURA_MEMORY_RERANK_TOP_K_IN=20`, `AURA_MEMORY_RERANK_TOP_K_OUT=5` (`prd.md:4297-4298`).
-
-### Background goroutines (concurrent timers)
-
-All run in `aura serve` process. Total ~50 MB heap aggregate per Slice 11 budget (`prd.md:3470`).
-
-| Interval | Goroutine | Slice | Env |
-|---|---|---|---|
-| 24h | Memify post-processing (prune/strengthen/derive) | 11e | `AURA_MEMORY_MEMIFY_INTERVAL_HR=24` |
-| 24h | Leiden community detection | 11c | `AURA_MEMORY_COMMUNITY_INTERVAL_HR=24` |
-| 24h | Skill TTL sweep (90-day idle archive) | 7e | `AURA_SKILL_TTL_SWEEP_INTERVAL_HR=24` |
-| 60min | Skill pattern analyzer (cluster autosuggest) | 7e | `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN=60` |
-| 60min | Memory insight analyzer (cross-conv pattern) | 11e | `AURA_MEMORY_INSIGHT_INTERVAL_MIN=60` |
-| 30s | Offline detector (TCP probe to `AURA_LLM_BASE_URL`) | 13 | `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC=30` |
-| 30s | Cron scheduler tick loop (DueTasks dispatch) | 6 | — |
-| 1h | Pending-skills stale cleanup (24h TTL) | 7c | — |
-
-Risk: goroutine leak guard required everywhere (`goleak.VerifyNone(t)` in TestMain, per `prd.md:1455` hard req #3). Ctx-cancel propagation required end-to-end (HTTP connection close on Ctrl+C, `prd.md:571`).
-
-### Context budget formula
-
-- File: `prd.md:4187-4195`.
-- `hard_cap = Model.ContextWindow - max(MaxOutputTokens, AURA_CONTEXT_MAX_OUTPUT_TOKENS=20000) - AURA_CONTEXT_RESERVE_TOKENS=13000`
-- `warn_cap = hard_cap * 0.75`
-- DeepSeek-V4 1M context: ~967K hard / 725K warn.
-- OpenAI/Anthropic 200K: ~167K hard / 125K warn.
-- Above warn: log WARN. Above hard: explicit `Loop.Turn` error (use `chat_compact` tool or `aura chat new`).
-- Microcompact L1: `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS=10` — tool results older than N turns replaced with `[evicted, re-fetch via read_tool_output(X)]` pointer (no LLM call).
-
-### Telegram throttle (Slice 9b)
-
-- 2 panes per turn: status pane (1500 ms throttle), content pane (500 ms throttle).
-- Hard chat rate: 1000 ms per chat_id queue (respects Telegram 1 msg/sec hard limit).
-- 429 backoff: parse `retry_after` header, exponential up to 30s.
-- Risk: under-throttle → bot banned per Telegram rate limits.
+**Discarded `Build()` call when `adaptiveTierOK`** — noted as a quick-win in the quality audit (`internal/agent/llm_agent.go:235`), saves one `RenderToolDefs()` per turn. Verify current status before re-flagging; this was a Wave-1 "quick win" candidate in the 2026-06-29 audit and may already be folded into Phase 32's cleanup — check `internal/agent/llm_agent.go` before re-filing.
 
 ---
 
-## Fragile Areas (anticipated)
+## Fragile Areas
 
-### vLLM multimodal Gemma 4 support TBD
+**MCP transport/trust classification (`F-027`/`QA-C-03`, Phase 38, OPEN):**
+- Files: `internal/mcp/manager/runtime.go`, `internal/mcp/managed_config.go`, `internal/agent/mcptools/mount.go`, `internal/mcp/transport.go`
+- Why fragile: trust normalization and transport-type normalization are two independent code paths that can disagree on the same config entry (`url`+`command` both present). A change to one classifier without the other silently reopens `F-027`.
+- Safe modification: per the quality audit, do NOT merge/simplify this casually — any change needs full trust tests verifying every call site's inference matches, and should land inside Phase 38 with the explicit `MCPH-01` canonical-classifier requirement, not as an incidental refactor.
 
-- Open question Slice 13b (`prd.md:3835`).
-- vLLM v1+ multimodal support varies per model. Gemma 4 E4B audio+image native support in vLLM may regress between releases.
-- Mitigation: 13-bis fallback path (llama.cpp E4B Q4 via `aura-llama-multimodal` sidecar) is a frozen escape hatch.
+**`bootChatEnvWithConfig` double-`Validate` / potential pool leak (`QA-A-03`, tracked as `QUAL-04`, marked [RESOLVED] in REQUIREMENTS.md — re-verify before assuming closed):**
+- File: boot path in `cmd/aura/` (config load + pool open sequence)
+- The 2026-06-29 audit flagged this as "risky/uncertain — verify before acting" because the failing-overlay-after-pool-open repro was missing at audit time. `.planning/REQUIREMENTS.md` marks `QUAL-04` (Phase 33/34) complete, but because this specific sub-item needed an integration-test repro to confirm the fix actually prevents the leak, confirm a passing `bootChatEnvWithConfig`-path integration test exists before relying on this being fully closed.
 
-### iptables OUTPUT rules from DNS resolve (Slice 2b)
-
-- Mechanism: parse `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` CSV → DNS resolve hosts at container exec hook → generate `iptables` rules per resolved IP (`prd.md:1198`).
-- DNS cache: 5 minutes. Risk: `pypi.org` has multiple A records that rotate; cache may invalidate legitimate calls after 5 min (Slice 2b OQ DNS TTL).
-- Mitigation: re-resolve on cache miss; manual override `AURA_SANDBOX_NETWORK_ALLOW_IPS` (not yet specified) as escape hatch.
-
-### Crash recovery agent_job runs (Slice 6 boot query)
-
-- Boot query (`prd.md:1712-1722`):
-  ```sql
-  UPDATE aura.agent_job_runs
-     SET exit_status='unknown_recovery', finished_at=now(), recovered_at=now()
-   WHERE finished_at IS NULL
-  ```
-- Decision: **never auto-re-execute a job with committed side-effects**. `ReschedulesOnRecovery()==true` (reminder, idempotent) → re-fired via `UPDATE next_run_at=now()`. `ReschedulesOnRecovery()==false` (agent_job, side-effecting) → limbo audit-only.
-- Risk: an `agent_job` that crashed mid-write leaves partial state. `unknown_recovery` flag forces operator review.
-
-### Multi-pause FIFO priority sort (Slice 1.5 #4)
-
-- Scenario: parent has N children spawned via `SpawnInteractive`, each pauses simultaneously → parent's `PausedState[]` queue grows.
-- Sort: priority + FIFO across children + cross-conversation parallel pauses (`prd.md:1287`).
-- Mutex contract: `children map[string]*childState` mutex-protected via `sync.RWMutex` (audit round 2 P0). `ResumeChild + Spawn + Join` all share the RWMutex. Test: N=10 children paused/resumed without data race.
-- Risk: if mutex contract broken, N concurrent interactive pauses race on map. Failure mode: deadlock or panic on map write.
-
-### LMCache + vLLM integration version compat
-
-- LMCache 8.4k stars, Apache 2.0, prod in GCP/GMI/CoreWeave (`prd.md:3630`).
-- vLLM `--kv-transfer-config '{"kv_connector":"LMCacheConnectorV1", "kv_role":"kv_both"}'` integration.
-- Risk: vLLM API breaking changes across releases. Pin to `vllm/vllm-openai:latest` is risky; pin to specific tag pre-merge.
-
-### Skill loader cache TTL
-
-- Pre-rewrite: 1s TTL on loader cache (preserved in Slice 7a, `prd.md:1963`).
-- Risk: editing SKILL.md externally while `aura serve` running may take up to 1s to reflect. Manual `Loader.Invalidate()` on `skill.update` resume handler mitigates.
-
-### markitdown sidecar tiered conversion (Slice 9c)
-
-- Tiered: ≤5 MB sync (HTTP 30s timeout), 5-50 MB async background goroutine + "📄 Convertendo..." placeholder + edit-to-done, >50 MB refuse.
-- Risk: 50 MB hard cap is Telegram limit; if Telegram raises it, async tier becomes the new hard limit.
-
-### OpenRouter pass-through caveats (Slice 4)
-
-- DeepSeek auto-cache preserved via OpenRouter `usage.prompt_cache_hit_tokens` (OpenAI-compat extension, `prd.md:1367`).
-- Anthropic `cache_control: ephemeral` does NOT apply (DeepSeek doesn't support it).
-- Risk: provider-side OpenRouter changes the wire format → cache parser break. Mitigation: optional field handling (`prd.md:1367`).
+**Command-hook and shell-exec files sit near the 600-LOC cap while also being security-critical** (`internal/agent/hooks_command.go` 507 LOC, `internal/agent/tools/shell_exec.go` 596 LOC): any future addition to either (e.g., new hook types, new shell guardrails) should split proactively rather than pushing past the cap under time pressure.
 
 ---
 
-## Pre-Rewrite Tech Debt Awareness (acknowledged, addressed)
+## Scaling Limits
 
-The `pre-rewrite-2026-05-27` git tag preserves the prior implementation. The rewrite explicitly addresses these patterns so they do not re-emerge.
+**Single-user / single-trusted-operator is still the load-bearing assumption for shell/fs/MCP/object-store, despite Phase 36 targeting multi-user isolation:**
+- Current capacity: one operator identity is the only fully-supported trust boundary; `MUSR-01..06` (Phase 36, OPEN) is the work item that generalizes conversations, approvals, background shell jobs, and MCP/Garage/skills directories to per-identity scoping.
+- Limit: today, a second provisioned identity (`B`) can observe/mutate identity `A`'s conversations, approvals, and background shell jobs (`F-028`, `F-032`).
+- Scaling path: Phase 36 (Authula cutover + owner-scoped stores) then Phase 37 (per-identity sandbox) then Phase 38 (per-identity MCP trust).
 
-### God classes split per ≤600 LOC rule
+**Neo4j Community Edition backup is offline-only:**
+- `compose.yaml` runs Neo4j Community + APOC + GDS; Community edition only supports offline `neo4j-admin database dump`/`load` (no online/hot backup). This is explicitly documented as a caveat to carry into the Phase 41 DR-drill work (`OPS-01`), not yet drilled with measured RPO/RTO.
 
-All split in the tabula-rasa.
-
-| Pre-rewrite file | LOC | Status in rewrite |
-|---|---|---|
-| `internal/agent/tools/registry/search.go` | 562 | Split (Slice 5: `internal/web/fetcher.go` + `internal/web/searcher.go`) |
-| `internal/cron/scheduler.go` | 587 | Split (Slice 6: scheduler tick + `internal/cron/handlers/<kind>.go` per kind) |
-| `internal/cron/store.go` | **594 GOD CLASS** | Split per Upsert/Cancel/Delete/DueTasks/MarkFired/RecordManualRun/RecordAgentJobResult |
-| `internal/agent/tools/registry/skill.go` | 347 | Split (Slice 7a: filesystem/parser/cache/loader 4-way + writer/installer/audit separate files) |
-| `internal/web/direct_fetch.go` | 474 | Split (Slice 5: `fetcher.go` + `parser.go` + `safe_dial.go`) |
-| `internal/cron/dispatch.go + dispatch_handlers.go` | 244+246 | Split via `Agent` interface (Slice 0.9): each `Handler` = `internal/cron/handlers/<kind>.go` |
-
-### Dispatch switch redundancy
-
-- Pre-rewrite: 5 `dispatchXxx` private functions + 2 inline arms in `Dispatch` switch (no strategy pattern, verified `pre-rewrite-2026-05-27` tag round 1 reality check, `prd.md:1688`).
-- Rewrite: unified via `Agent` interface Slice 0.9. Adding a new `TaskKind` = adding 1 file with `Agent` impl, no dispatch switch (`prd.md:1706`).
-
-### 4 separate runtimes → 1 unified runtime
-
-- Pre-rewrite: `Loop`, `Scheduler.Handler`, `Swarm.Coordinator`, `Skill.execute` all had divergent shapes.
-- Rewrite (Slice 0.9): 1 `Agent` interface, `iter.Seq2[*Event, error]` streaming, 4+ impls (`LlmAgent` Slice 1, `ParallelAgent` Slice 3, `Handler` = `Agent` Slice 6, `LoopAgent[InterviewStepAgent]` Slice 10).
-- Saving: **−400 LOC net** (−680 LOC across slices + 280 LOC for Slice 0.9 itself, `prd.md:513`).
-
-### No TODO comments orphan
-
-- Per CLAUDE.md "NO COMMENTS UNLESS WHY IS NON-OBVIOUS." All TODOs live in `prd.md` slice sections, not in `.go` source (`prd.md:4379`).
-- Current skeleton compliance: `cmd/aura/main.go:37` has `"TODO: implemented by the agent-loop and CLI slices"` as printed string (not a comment) — acceptable as stub-marker.
+**No load/chaos testing harness yet (`F-019` load/chaos part, Phase 41 `OPS-04/05`, OPEN):**
+- No k6/vegeta load harness, no toxiproxy chaos suite (DB outage, MCP timeout storm, object-store outage, process-kill-during-write), no capability-evaluation CI report yet. Current confidence in behavior under contention/failure is based on unit/integration tests and manual review, not a runnable degradation-behavior suite.
 
 ---
 
-## Operational Concerns
+## Dependencies at Risk
 
-### 14 Postgres migrations + 2 Neo4j Cypher migrations
+**Go 1.26.4 / Node ecosystem (React 19.2.7, Vite 8.0.16, TypeScript 6.0.3):** current, no stale major-version risk detected at this pass. `govulncheck` is wired into CI (`ci.yml`, `codeql.yml`) so known Go CVEs are gated; no CVE-scanning gap was found for the Go module graph. The gap is **SBOM publication** (`F-051`, Phase 40 `SEC-05`) and **Action/tool-version SHA pinning** — both open.
 
-- Order critical, every migration needs paired `down.sql`.
-- Numbering (rinumerated per `prd.md:4354`):
-  - `0001_init` (identity schema baseline)
-  - `0005_conversations` (NEW per Slice 1.8 — was 0006_skill_audit in earlier plan)
-  - `0006_scheduler` (Slice 6, was 0005)
-  - `0007_skill_audit` (Slice 7, was 0006)
-  - `0008_telegram` (Slice 9a)
-  - `0010_sandbox_sessions` (Slice 2b)
-  - `0011_ingest_audit` (Slice 11b)
-  - `0013_local_llm` (Slice 13)
-- Neo4j: `internal/db/migrations/neo4j/0001_init.cql` + `0002_memory_schema.cql` (Slice 11a, vector index 768d + fulltext index + Leiden community labels).
-- Idempotency required: re-running a migration is a no-op (`prd.md:1507`).
+**`mcp-neo4j-cypher`** is the sole LLM interface to the Neo4j graph (no native Go driver adapter is used in production paths per `CLAUDE.md`); an upstream break in that MCP server has no fallback path documented yet.
 
-### 60+ env vars catalogati in Caps & Limits indice
+---
 
-- File: `prd.md:4237-4312` (full table).
-- Categories: `cap` / `operative` / `path` / `secret`.
-- Defaults must be sane per single-user MVP. Production deployment requires reviewing `AURA_RISK_ALERT_THRESHOLD` (default `risky`), `AURA_LLM_LOCAL_FALLBACK_COST_USD_DAY` (default `$1.0`), `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS` (default 5).
-- Naming convention: `AURA_<DOMAIN>_<UNIT>` with `_BYTES` / `_SEC` / `_MS` unit suffix. Library/sidecar envs (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `MULTIMODAL_*`, `LLAMA_*`, `LMCACHE_*`) keep canonical naming for compat (`prd.md:4313`).
+## Missing Critical Features
 
-### 13 sub-slice atomicity (per slice splits)
+**Multi-user identity isolation** (Phase 36, `MUSR-01..06`, OPEN) — blocks any deployment beyond a single trusted operator.
 
-- Order critical, smoke green prerequisite for the next.
-- Slices with sub-slices:
-  - **2** → 2a (Docker sidecar stateless), 2b (session-bound + workspace + allowlist)
-  - **6** → 6a (reminder + cron infra), 6b (agent_job + ActionRouter)
-  - **7** → 7a (loader), 7b (catalog), 7c (mutation governance), 7d (installer), 7e (snippets + pattern + TTL)
-  - **9** → 9a (channel framework + setup), 9b (Telegram impl), 9c (multimodal)
-  - **11** → 11a (schema), 11b (ingestion), 11c (community), 11d (retrieval+rerank), 11e (agent journal + Memify)
-  - **13** → 13a (router + offline + cost), 13b (vLLM + LMCache)
-- Each sub-slice = atomic commit. No multi-sub-slice batching.
+**Per-identity sandbox** (Phase 37, `SBX-01..05`, OPEN) — blocks `server_production` for the full-host tool surface.
 
-### CI build tags
+**Production observability pack** (Phase 39, `OBS-01..06`, OPEN):
+- `/readyz` and `/healthz` already exist (`cmd/aura/serve.go`, `internal/agui/server.go`) and `/readyz` already reflects required-backend health (`serveReadinessProbes`) — this is *better* than the 2026-06-21 audit's original `F-008`/`F-017` description, which predates this implementation. Still open: whether listener startup/runtime failure is unconditionally fatal (vs. only reflected in `/readyz`), the OTel **metrics** path (only traces are wired today per `F-023`), Prometheus alert rules/Grafana dashboards in-repo, and sidecar/trace retention as a first-class operation.
 
-- `db_integration`, `sandbox_integration`, `multimodal_integration`, `onboarding_integration`.
-- Separate CI runner per tag (no flaky-on-CI mainstream, `prd.md:1458`).
-- Risk: tests behind build tags silently rot if CI runners not configured.
+**Load/chaos/capability-eval harness** (Phase 41, `OPS-04/05`, OPEN) — no automated adversarial or degradation-behavior suite yet; production-readiness claims beyond unit/integration testing are not yet backed by a runnable evaluation report.
 
-### Git push discipline
-
-- CLAUDE.md: never `git push` (or any remote-mutating command) unless explicitly requested in current turn. A previous approval does not carry over.
-- Risk: aggressive AI agent that auto-pushes could publish secrets, broken state. Discipline enforced via human approval gate per turn.
-
-### No feature flags
-
-- Per CLAUDE.md / `prd.md:4377`: if a slice removes a stub, the stub is removed. No toggle. No re-export shims. No TODO in source.
-- Implication: every refactor is destructive. Pre-rewrite tag is the only escape hatch.
+**Backup/DR drill with measured RPO/RTO** (Phase 41, `OPS-01`, OPEN) — backup exists (`pg_dump` + `neo4j-admin database dump`) but is not drilled/measured.
 
 ---
 
 ## Test Coverage Gaps
 
-Zero tests in current skeleton. The following are required by `prd.md:1447` and not yet meetable:
+**Owned-surface coverage is currently strong (90.3% per `CLAUDE.md`, re-measured 2026-06-13) but two structural gaps remain:**
 
-- **Coverage threshold per package**: ≥75% unit, ≥60% integration. Fail CI under threshold.
-- **Goroutine leak check**: `goleak.VerifyNone(t)` in TestMain on slices 1, 3, 6, 8, 9, 11, 13.
-- **Property-based**: `gopter` or `rapid` for PromptBuilder invariants (Slice 4), AG-UI translator event types (Slice 8), swarm backpressure (Slice 3).
-- **Mutation testing spot-check**: `go-mutesting` killed score ≥ 70% on core files (`llm_agent.go`, `coordinator.go`, `pipeline.go`).
-- **No `time.Sleep` non-determinism**: use Go 1.24+ `synctest` or channel sync. Wait with 5s timeout + fail-loud.
-- **Fixture realistic**: `testdata/*.{json,csv,md,sse,sql,html,pdf}` realistic content (no `{"foo":"bar"}` placeholder).
-- **Failure-driven test**: every bug fixed during implementation gets a reproducing test **before** the fix (TDD reverse, `prd.md:1462`).
+**Windows/POSIX test-parity gap:** a meaningful set of behaviors are tested only on POSIX/WSL and explicitly `t.Skip` on Windows (verified current in this pass): `internal/agent/tools/shell_bg_test.go` (cmd.exe fallback lacks `sleep`/`;` semantics), `internal/agent/tools/shell_exec_test.go` (interleave, cwd-tracking, heredocs), `internal/agent/tools/fs_test.go` (POSIX permission-bit assertions), `internal/agent/tools/send_file_test.go` (Windows symlink privilege requirement), `internal/agent/tools/result_test.go` (0600-mode assertion). This is intentional platform-gating (not a no-skip-as-green violation — these are unconditional `t.Skip`, not env-gated CI skips) but means Windows CI runs do not exercise these code paths; `CLAUDE.md` designates WSL as "the full primary dev environment" for this reason.
 
-Anti-patterns to reject (per `prd.md:1466-1481`):
-- `assert reply == "4"` (test passes if model hallucinates the answer without invoking the tool).
-- `aura exec python "print(2)" → 2` (no syscall verification, no goroutine leak check).
-- `coordinator.Spawn(2) → 2 children` (no wall-clock parallelism timing assertion).
-- `messages[0] == messages[0]` (no `usage.prompt_cache_hit_tokens > 0` assertion).
+**GPU/live-tier deferred verification (documented, not hidden):** several tiers compile-check on the CI runner but require a GPU host or live external service to actually execute — `rerank_integration`, `document_ingest_live`, `graphrag_live`, `retrieval_eval` (Phase 30), the `memory_integration` MCP-sidecar tier, and paid-LLM-gated tiers (`live_finalize`, `cot_live_e2e`, scheduler E2E) that `t.Fatal` under `$CI` when their required env is unset (enforcing no-skip-as-green) but otherwise skip locally. These are tracked as a known, accepted "deferred verification tier" pattern per `.planning/STATE.md`, carried from v1.0.0 and expected to recur through Phase 41 pending an adequate GPU host (DGX Spark).
+
+**No prompt-injection / adversarial regression suite** (`F-019`/`SEC-04`, Phase 40, OPEN) — see Missing Critical Features above; this is a coverage gap specifically for *security* behavior under the `ToolGateway`, distinct from ordinary unit/integration coverage.
+
+**Askuser `int32` narrowing guard** (`QA-B-08`) — **[RESOLVED]**: verified current code has explicit overflow guards at `internal/askuser/store.go` (`ListRecent`/`ListPendingAll`-style limit clamping with inline comments referencing `QUAL-04a`/`D-15a` and the CodeQL `go/incorrect-integer-conversion` candidate). No action needed; flagged here only so a future audit doesn't re-open it without checking the current source.
 
 ---
 
-*Concerns audit: 2026-05-28*
+*Concerns audit: 2026-07-04*
