@@ -250,7 +250,7 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
-**Plans:** 6 plans (5 complete + 1 gap-closure)
+**Plans:** 7 plans (5 complete + 2 gap-closure)
 
 **Wave 1** *(parallel — DB-free foundation)*
 
@@ -272,6 +272,10 @@ Plans:
 **Wave 5** *(gap closure — blocked on 35-03/35-04)*
 
 - [x] 35-06-PLAN.md — Gap: interactive `approve` pause/resume UX — GatewayApprovals cross-turn ledger + shell_exec-style approval-required ToolResult surfaced through execTool (NO pre-dispatch intercept — the real call+args stay in history) + newGatewayResumeHook re-enters Decide (D-03 point 2); proven by TestGatewayApprovalRoundTrip + live db_integration — 2026-07-04. ⚠ code-review CR-01: the resume path is NOT consent-bound (dropped shell_exec's ApproveChallenge question-match) → confused-deputy; GATE-01 held open pending a follow-up gap-closure (35-REVIEW.md)
+
+**Wave 6** *(gap closure — CR-01 consent-binding; standalone, the code it fixes is already shipped)*
+
+- [ ] 35-07-PLAN.md — Gap: port shell_exec's ApproveChallenge challenge/question binding into GatewayApprovals + routeApprove records the server-generated question keyed on the authenticated (conv,tool,args_sha256) + newGatewayResumeHook verifies existence+question-match on the authenticated pending.ConversationID (CR-01 confused-deputy / informed-consent fix); deny-before-Consume reorder & refuse-record under server_production (WR-01); authenticated conversation id (WR-02); adversarial mismatched-question test (WR-03); fold single-fp (IN-02) & remove dead Peek (IN-01) [GATE-01]
 
 #### Phase 36: Multi-User Identity Isolation + Authula Cutover
 
