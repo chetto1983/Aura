@@ -84,7 +84,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 34: Agent-Loop Correctness + Durable Ledger** — `LOOP-01..11`, `QUAL-04`(double-Validate/pool-leak, int32 guard) (F-003/004/005/009/010/029/030/031/040/045/048) (completed 2026-07-03)
   - Goal: terminal-response exclusivity, atomic HITL resume/pause (single cross-store transaction), fenced sidecars, crash-orphan reconciliation.
   - Success: (1) `text_response` + mutating sibling never executes the sibling; (2) duplicate single/batch resume → exactly one answer/pause, append-failure leaves a repairable state; (3) outside-root/traversal/symlink sidecar reads rejected; (4) mutating tool that panics post-side-effect still arms the completion gate.
-- [ ] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020) (executed 6/6; gap-closure 35-06 shipped 2026-07-04: interactive approve-resume UX closed end-to-end — round-trip + live db_integration proven; awaiting phase re-verification to flip GATE-01/02)
+- [ ] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020) (executed 6/6; gap-closure 35-06 shipped the approve pause/resume UX 2026-07-04, but the post-exec code-review gate found a BLOCKING Critical CR-01 — confused-deputy/informed-consent bypass in the approval path, see 35-REVIEW.md — so the phase is PENDING and GATE-01 stays unflipped until a follow-up gap-closure ports shell_exec's ApproveChallenge; GATE-02/03/04 unaffected)
   - Goal: one in-process policy decision on every tool call; fail-closed for mutating tools; durable reservation.
   - Success: (1) no tool executes without a recorded policy decision; (2) a timing-out/crashing command hook denies under hardened/production; (3) a mutating tool is blocked when ledger reservation fails in production; (4) gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 - [ ] **Phase 36: Multi-User Identity Isolation + Authula Cutover** — `MUSR-01..06`, `QUAL`(Authula DSN test) (F-012/028/032/039/050)
@@ -271,7 +271,7 @@ Plans:
 
 **Wave 5** *(gap closure — blocked on 35-03/35-04)*
 
-- [x] 35-06-PLAN.md — Gap: interactive `approve` pause/resume UX end-to-end — GatewayApprovals cross-turn ledger + shell_exec-style approval-required ToolResult surfaced through execTool (NO pre-dispatch intercept — the real call+args stay in history) + newGatewayResumeHook re-enters Decide (D-03 point 2); proven by TestGatewayApprovalRoundTrip + live db_integration [GATE-01] — 2026-07-04
+- [x] 35-06-PLAN.md — Gap: interactive `approve` pause/resume UX — GatewayApprovals cross-turn ledger + shell_exec-style approval-required ToolResult surfaced through execTool (NO pre-dispatch intercept — the real call+args stay in history) + newGatewayResumeHook re-enters Decide (D-03 point 2); proven by TestGatewayApprovalRoundTrip + live db_integration — 2026-07-04. ⚠ code-review CR-01: the resume path is NOT consent-bound (dropped shell_exec's ApproveChallenge question-match) → confused-deputy; GATE-01 held open pending a follow-up gap-closure (35-REVIEW.md)
 
 #### Phase 36: Multi-User Identity Isolation + Authula Cutover
 
