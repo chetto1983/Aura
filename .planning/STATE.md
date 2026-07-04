@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 35
 current_phase_name: toolgateway-policy-engine
-status: verifying
+status: executing
 stopped_at: Completed 35-05-PLAN.md
-last_updated: "2026-07-03T22:05:00.000Z"
-last_activity: 2026-07-03
-last_activity_desc: "Completed plan 35-05 (D-01d crash-orphan reconciler: append-only end{indeterminate}, effectiveGrace>run-lifetime + pre-append re-check, never re-invoke; Phase 35 complete)"
+last_updated: "2026-07-04T11:36:03.419Z"
+last_activity: 2026-07-04
+last_activity_desc: Phase 35 execution started
 progress:
   total_phases: 11
-  completed_phases: 5
-  total_plans: 29
+  completed_phases: 4
+  total_plans: 30
   completed_plans: 29
-  percent: 45
+  percent: 36
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 35 (toolgateway-policy-engine) — EXECUTING
-Plan: 5 of 5
-Status: Phase 35 executed (5/5); verification 4/4 SC met, item-2 (chat.go LOC) fixed (246b5607), approve-resume UX routed to gap-closure — phase PENDING
-Last activity: 2026-07-03 — Verification complete (human_needed); user chose gap-closure for the approve-resume UX dead-end
+Plan: 1 of 6
+Status: Executing Phase 35
+Last activity: 2026-07-04 — Phase 35 execution started
 
 #### 35-05 — Crash-orphan reconciler (D-01d / GATE-03 durability + GATE-04 recovery). NEW `internal/gateway/reconcile.go`: a `Reconciler` mirroring `conversations.Sweeper` VERBATIM (boot one-shot + interval tick, `once`-guarded stop, bounded `wg` join, goleak-clean). `reconcileOrphans` lists `Store.ListInFlightBefore(now - effectiveGrace)` (the 35-04 start∧¬end anti-join), RE-CHECKS `Store.GetEnd` immediately before appending (skip if a real end landed since the snapshot), then APPENDS an `end{status='error', meta{indeterminate:true, reconciled:true}}` keyed on the orphan's {conv,req,toolCall} triple — APPEND-only (append-only triggers reject UPDATE/DELETE, D-01d), status stays `'error'` because the CHECK is `IN ('ok','error')` (indeterminate rides meta, Pitfall 4), and NO second `Execute` anywhere (a mutating orphan's side effect may already have fired → never re-invoke, Pitfall 5 — the reconciler has no tool seam by construction). The candidate set is provenance-agnostic: an approved-resume and an auto-allow share ONE start∧¬end shape (35-04 unified reserve), so no approve-path special-casing. **Collision-impossibility invariant (checker WARNING 4):** `effectiveGrace(w) = max(reservationOrphanGrace=30m, w + reservationOrphanMargin=5m)` where `w = maxToolExecWindow = max(AURA_LOOP_NODE_TIMEOUT_SEC, AURA_LOOP_MAX_WALLCLOCK_SEC)` (defaults 0/300s); `effectiveGrace(w) > w` for every config, so a start∧¬end older than the effective grace is a PROVABLE crash-orphan whose real `end` can never race the synthetic end into `ON CONFLICT DO NOTHING` (35-04 semantics unchanged) — a legitimately slow-but-within-lifetime tool's real outcome is never overwritten. Serve wiring: exposed `*toolinvocations.Store` on `chatEnv`; constructed the Reconciler beside `conversations.Sweeper` in `cmd/aura/serve.go`, `Start(ctx)` at boot + `Stop()` in `drainShutdown` (bounded, idempotent, nil/disabled-safe) — NOT `runner.go` (the plan frontmatter's listed file, but the Sweeper lifecycle it mandates mirroring lives in the serve root, and `runner.New` is shared by the one-shot `aura chat`). Refactor-on-touch: split the cron-dispatch block into `cmd/aura/serve_dispatch.go` to hold serve.go ≤600 (648→555). NO migration, NO new query, NO new env knob (fixed `reconcileTickInterval=10min` + the boot one-shot). Live db_integration `-race -p 1` proof tier (WSL, real stack): `AppendsIndeterminateEndForOrphan` (append not update, start row intact, indeterminate not ok), `InGraceOrphanUntouchedThenSlowToolRealEndWins` (no discard), `RechecksBeforeAppendLiveRealEndWins` (raced end preserved), `StartStopGoleakLive`, plus unit `EffectiveGraceExceedsRunLifetime` — all ran live (not skipped). Phase 35 GATE-01..04 complete end-to-end.
 
