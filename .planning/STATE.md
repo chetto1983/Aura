@@ -4,11 +4,11 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 35
 current_phase_name: toolgateway-policy-engine
-status: executing
-stopped_at: Completed 35-06-PLAN.md
-last_updated: "2026-07-04T12:26:24Z"
+status: verifying
+stopped_at: 35-06 executed; code-review gate found BLOCKING Critical CR-01 — phase PENDING
+last_updated: "2026-07-04T13:07:35Z"
 last_activity: 2026-07-04
-last_activity_desc: Completed 35-06 gap-closure (interactive approve-resume UX end-to-end)
+last_activity_desc: "35-06 executed + re-verified (mechanics 6/6, all tiers green live), but the execute:post code-review gate found a BLOCKING Critical (CR-01: confused-deputy / informed-consent bypass in the gateway approval path) — phase NOT closed, GATE-01 NOT flipped; needs a gap-closure to port shell_exec's ApproveChallenge"
 progress:
   total_phases: 11
   completed_phases: 4
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 35 (toolgateway-policy-engine) — EXECUTING
-Plan: 6 of 6 (gap-closure 35-06 complete; awaiting phase re-verification)
-Status: Executing Phase 35
-Last activity: 2026-07-04 — Completed 35-06 gap-closure (interactive approve-resume UX end-to-end)
+Phase: 35 (toolgateway-policy-engine) — PENDING (gap-closure loop; code-review-blocked)
+Plan: 6 of 6 executed; re-verification passed the code mechanics (6/6) but the execute:post code-review gate found a BLOCKING Critical
+Status: PHASE NOT CLOSED. GATE-01 NOT flipped. 35-06 shipped the interactive approve pause/resume UX (no longer a dead-end), but 35-REVIEW.md found CR-01 — a confused-deputy / informed-consent bypass: the gateway approval path dropped shell_exec's server-side challenge/question binding, so an adversarial/injected model can show the operator a benign question ("Save your meeting notes?") while the real fingerprinted call (swarm_spawn{goals:["destroy prod"]}) executes on accept. Confirmed TRUE POSITIVE by orchestrator re-trace. + WR-01 (Consume-before-production-deny), WR-02 (model-relayed conversation_id trusted), WR-03 (no adversarial-question test). Next: `/gsd-plan-phase 35 --gaps` (see 35-VERIFICATION.md gaps_remaining + 35-REVIEW.md) to port shell_exec's ApproveChallenge, then `/gsd-execute-phase 35 --gaps-only`.
+Last activity: 2026-07-04 — 35-06 executed + re-verified; code-review gate found BLOCKING Critical CR-01 (approval consent-binding gap)
 
 #### 35-06 — Interactive `approve` pause/resume UX end-to-end (gap-closure, D-03 point 2 / GATE-01). Closed the ONE escalated Phase-35 gap (35-VERIFICATION item 1: a mutating GateRecommended call under `single_user_hardened` rendered as a permanent `error: awaiting user input`) by mirroring `internal/agent/tools/shell_approval.go` EXACTLY, hoisted ABOVE `tool.Execute`. NEW `internal/gateway/approvals.go`: `GatewayApprovals` — a session-scoped, in-memory, one-shot approval ledger (Approve/Consume/Peek/Evict, nil-safe) keyed on `(conversation_id, tool, gatewayArgsFingerprint)` where `gatewayArgsFingerprint = hex(sha256(canonicaljson.CanonicalArgs(args)))` (cosmetic-insensitive, semantic-strict) — the cross-turn carrier a ctx value cannot span (resolve-Turn and re-drive-Turn are separate calls). `gateway.Decide`/`routeApprove`/`reserve` now return `(Verdict, error)` (the dead `*tools.ErrAwaitingUserInput` middle return REMOVED — the gateway no longer mints a pause; refactor-on-touch also folded reserve.go). On a no-ledger-hit hardened+responder call, `routeApprove` returns `Verdict{Approve, ApprovalRequest:&<ToolResult>}` — the shell_exec-style `gatewayApprovalRequiredResult` (gateway_approval + args_sha256 + a secret-safe descriptive question rendering arg KEYS only + the exact resume_context). `execTool` returns it as a NORMAL result (no error, `tool.Execute` WITHHELD, count 0), so `runTool` persists the REAL `swarm_spawn(goals=[…])` call+args — the resume rehydrates the verbatim call and re-emits it, `routeApprove` Consumes the ledger (recorded by the SOLE production writer `newGatewayResumeHook`, OperatorID="local", D-03c: the model relaying via ask_user cannot self-approve), returns `Verdict{Allow, OperatorID}`, takes the SINGLE 35-04 reservation (operator_id in Meta, no competing Insert), and executes exactly once. This structurally eliminates the round-trip gap the prior pre-dispatch pause sentinel could never cross (`assistantAskUserToolCalls` rewrote the persisted turn to ask_user with only a hash). `llm_agent_pause.go` UNCHANGED (ask_user stays the sole name-gated pause; `TestAskUserOnlyPauseConstraint` green); `internal/agui/approvals_api.go` verified UNCHANGED (a gateway_approval Kind=approval pending flows through GET /api/approvals + POST /resolve → SubmitAnswers → applyResumeHook identically to shell_exec_approval; the descriptive question renders non-blank). `runner_resume.go` evicts the gateway ledger (R-41, outside the tool registry). NO migration, table, route, or env knob; NO Phase-36 identity. Proven by unit `-race` (gateway/agent/cmd-aura/runner all green), the MANDATORY full persist→LoadManagedHistory→re-Turn `TestGatewayApprovalRoundTrip` (fingerprint match + execute-once, the model copying question+resume_context VERBATIM from the observed envelope-wrapped/HTML-escaped result), and live `db_integration` (`TestGatewayApprovalResumeReentersAndReservesOnce` — one start w/ operator_id in Meta + one end, no competing row, idempotent replay; `TestGatewayApprovalDeclineStaysFailClosed`; + regression `ApprovedCallReservedAndIdempotent`) — all ran live on the real Postgres stack, not skipped. GATE-01 approve path closed end-to-end; ready for the REQUIREMENTS.md GATE-01/GATE-02 `[x]` flip pending phase re-verification.
 
