@@ -84,7 +84,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 34: Agent-Loop Correctness + Durable Ledger** — `LOOP-01..11`, `QUAL-04`(double-Validate/pool-leak, int32 guard) (F-003/004/005/009/010/029/030/031/040/045/048) (completed 2026-07-03)
   - Goal: terminal-response exclusivity, atomic HITL resume/pause (single cross-store transaction), fenced sidecars, crash-orphan reconciliation.
   - Success: (1) `text_response` + mutating sibling never executes the sibling; (2) duplicate single/batch resume → exactly one answer/pause, append-failure leaves a repairable state; (3) outside-root/traversal/symlink sidecar reads rejected; (4) mutating tool that panics post-side-effect still arms the completion gate.
-- [ ] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020) (executed 6/6; gap-closure 35-06 shipped the approve pause/resume UX 2026-07-04, but the post-exec code-review gate found a BLOCKING Critical CR-01 — confused-deputy/informed-consent bypass in the approval path, see 35-REVIEW.md — so the phase is PENDING and GATE-01 stays unflipped until a follow-up gap-closure ports shell_exec's ApproveChallenge; GATE-02/03/04 unaffected)
+- [x] **Phase 35: ToolGateway + Policy Engine** — `GATE-01..04` (F-001 gateway, F-006/011/020) (executed 7/7; gap-closure 35-07 CLOSED the BLOCKING code-review Critical CR-01 by porting shell_exec's ApproveChallenge challenge/question binding into GatewayApprovals — the resume hook now records an approval ONLY when the gateway issued a server-side challenge for the authenticated (conv,tool,args_sha256) AND the operator-visible question matches, closing the confused-deputy bypass; WR-01/02/03 + IN-01/02 folded, unit -race + live db_integration green, 2026-07-04; phase PENDING only on re-verification + code-review re-run before GATE-01/GATE-02 flip; GATE-03/04 unaffected) (completed 2026-07-04)
   - Goal: one in-process policy decision on every tool call; fail-closed for mutating tools; durable reservation.
   - Success: (1) no tool executes without a recorded policy decision; (2) a timing-out/crashing command hook denies under hardened/production; (3) a mutating tool is blocked when ledger reservation fails in production; (4) gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 - [ ] **Phase 36: Multi-User Identity Isolation + Authula Cutover** — `MUSR-01..06`, `QUAL`(Authula DSN test) (F-012/028/032/039/050)
@@ -250,7 +250,7 @@ Plans:
 3. A mutating tool is blocked when ledger reservation fails in production.
 4. The gateway is a no-op (fail-open, host-direct) under dev/local_trusted.
 
-**Plans:** 7 plans (5 complete + 2 gap-closure)
+**Plans:** 7/7 plans complete
 
 **Wave 1** *(parallel — DB-free foundation)*
 
@@ -275,7 +275,7 @@ Plans:
 
 **Wave 6** *(gap closure — CR-01 consent-binding; standalone, the code it fixes is already shipped)*
 
-- [ ] 35-07-PLAN.md — Gap: port shell_exec's ApproveChallenge challenge/question binding into GatewayApprovals + routeApprove records the server-generated question keyed on the authenticated (conv,tool,args_sha256) + newGatewayResumeHook verifies existence+question-match on the authenticated pending.ConversationID (CR-01 confused-deputy / informed-consent fix); deny-before-Consume reorder & refuse-record under server_production (WR-01); authenticated conversation id (WR-02); adversarial mismatched-question test (WR-03); fold single-fp (IN-02) & remove dead Peek (IN-01) [GATE-01]
+- [x] 35-07-PLAN.md — Gap: ported shell_exec's ApproveChallenge challenge/question binding into GatewayApprovals + routeApprove records the server-generated question keyed on the authenticated (conv,tool,args_sha256) + newGatewayResumeHook verifies existence+question-match on the authenticated pending.ConversationID (CR-01 confused-deputy / informed-consent fix); deny-before-Consume reorder & refuse-record under server_production (WR-01); authenticated conversation id (WR-02); adversarial mismatched-question test (WR-03); folded single-fp (IN-02) & removed dead Peek (IN-01) — 2026-07-04. Unit -race (gateway/agent/cmd-aura/runner) + live db_integration reserve/idempotency tier green; gateway coverage 89.4% (>85%); the 6 prohibition files byte-unchanged; cooperative TestGatewayApprovalRoundTrip + TestAskUserOnlyPauseConstraint still green. CR-01 consent property holds end-to-end; GATE-01/GATE-02 flip pending phase re-verification + code-review [GATE-01]
 
 #### Phase 36: Multi-User Identity Isolation + Authula Cutover
 
