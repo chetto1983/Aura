@@ -1,288 +1,115 @@
 ---
 phase: 35-toolgateway-policy-engine
-reviewed: 2026-07-04T00:00:00Z
-depth: standard
-files_reviewed: 17
+reviewed: 2026-07-04T18:40:00Z
+depth: deep
+files_reviewed: 8
 files_reviewed_list:
   - internal/gateway/approvals.go
-  - internal/gateway/approvals_test.go
   - internal/gateway/approve.go
-  - internal/gateway/approve_test.go
-  - internal/gateway/decide.go
-  - internal/gateway/decide_test.go
   - internal/gateway/gateway.go
-  - internal/gateway/reserve.go
-  - internal/gateway/reserve_test.go
-  - internal/gateway/gateway_integration_test.go
-  - internal/agent/llm_agent_retry.go
-  - internal/agent/llm_agent_retry_gateway_test.go
-  - internal/runner/runner_resume.go
   - cmd/aura/serve_adapters.go
-  - cmd/aura/chat_boot.go
+  - internal/gateway/approvals_test.go
+  - internal/gateway/approve_test.go
   - cmd/aura/gateway_resume_hook_test.go
-  - cmd/aura/gateway_approval_roundtrip_test.go
+  - internal/gateway/gateway_integration_test.go
 findings:
-  critical: 1
-  warning: 3
-  info: 2
-  total: 6
-status: issues_found
+  critical: 0
+  warning: 0
+  info: 0
+  total: 0
+resolved:
+  - "WR-01 (GatewayApprovals.Approve did not clear a same-key pending challenge) — fixed in 63922e54, mirroring ShellApprovals.Approve, with a discriminating regression test."
+status: clean
 ---
 
 # Phase 35: Code Review Report
 
-**Reviewed:** 2026-07-04T00:00:00Z
-**Depth:** standard
-**Files Reviewed:** 17
-**Status:** issues_found
+**Reviewed:** 2026-07-04T18:40:00Z
+**Depth:** deep
+**Files Reviewed:** 8
+**Status:** clean — CR-01 confirmed closed; the one Warning found in the delta was fixed in-cycle (commit `63922e54`)
 
 ## Summary
 
-This gap-closure (35-06) adds the interactive `approve` verdict for mutating `GateRecommended`
-tool calls under `single_user_hardened`: a shell_exec-style approval-required tool RESULT, a
-cross-turn `GatewayApprovals` ledger, the host-side `newGatewayResumeHook` writer, and the
-`routeApprove` Consume-on-resume path.
+This is a RE-REVIEW of the 35-07 gap-closure (commits `e2c9f6c1`, `f257d9f4`, `e75f5bf6`, diff base `e2c9f6c1~1`) written to close **CR-01** (the gateway interactive-approval confused-deputy / informed-consent bypass) and fold WR-01/WR-02/WR-03/IN-01/IN-02 from the prior standard-depth review. The mandate was to independently confirm CR-01 is genuinely closed and hunt for any NEW defect the fix introduced — not to re-trust the prior review's own trace.
 
-Most of the security boundary is sound and well-tested:
+**Verdict: CR-01 is genuinely closed.** Independent verification performed (not just re-reading the diff):
 
-- **Responder signal is host-side.** `WithResponder` is set only by the interactive Runner
-  (`internal/runner/runner.go:551`); the model cannot mint it from args/ctx. Verified across
-  `TestApproveIsHostSideOnly`, `TestApproveHeadlessDenies`, `TestApproveProductionDenies`.
-- **Consume is one-shot and race-safe.** `GatewayApprovals.Consume` deletes under `sync.Mutex`
-  (`approvals.go:66-79`); no double-consume window. `New()` always builds a fresh ledger; every
-  method is nil-receiver-safe.
-- **Fingerprint binding is correct.** `sha256(canonicaljson.CanonicalArgs(args))` absorbs cosmetic
-  JSON diffs but keeps `1` vs `1.0` and value changes distinct (`canonicaljson.go`), and the key
-  excludes the mutable `tool_call_id`. A tampered re-emit misses the Consume → fail-closed.
-- **Single-reservation invariant holds.** The approved re-emit takes exactly one 35-04 reservation
-  with `operator_id` folded into that one start's Meta; no competing Insert (`reserve.go:57-80`,
-  proven by the live-PG `TestApprovedCallReservedAndIdempotent` / `TestGatewayApprovalResumeReentersAndReservesOnce`).
+- **Line-by-line diff against the claimed mirror.** `GatewayApprovals.ApproveChallenge` (`approvals.go:130-150`) was diffed against `ShellApprovals.ApproveChallenge` (`internal/agent/tools/shell_approval.go:105-125`): both perform the identical two-guard sequence under the identical single-mutex critical section — existence check on the `pending` map, then byte-exact `question != challenge.question` check, then write-approved-and-delete-pending. No guard is dropped in the gateway version.
+- **Challenge-on-issue confirmed.** `routeApprove` (`approve.go:114-130`) now computes `fp` and `question` exactly once, records `g.approvals.Challenge(key.ConversationID, spec.Name, fp, question)` **before** returning the approval-required result, and threads the SAME `fp`/`question` into both the challenge record and the model-facing preview (IN-02 confirmed fixed — single `gatewayArgsFingerprint` call site, verified by reading and by `grep`).
+- **Production writer traced end-to-end.** `newGatewayResumeHook` (`serve_adapters.go:381-411`) now calls `g.ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question, ...)` instead of the old unguarded `RecordResolvedApproval`. Traced `pending.ConversationID` to its origin: `internal/runner/runner_persist.go:334-345` (`persistPause`) sets `ConversationID: tr.convID` — the Runner's own authenticated turn id — never anything model-supplied. The model-relayed `rc.ConversationID` field was removed from the parsed struct entirely (not just deprioritized), closing WR-02 structurally rather than by convention.
+- **Adversarial test actually exercises the boundary.** `TestGatewayResumeHookRejectsMismatchedQuestion` (`gateway_resume_hook_test.go:143-161`) drives a REAL challenge via a real `Decide` call, relays the authentic `resume_context` (fp matches) with a swapped, benign question, and asserts the hook errors, records nothing, and the re-drive stays `Approve`. This is exactly the WR-03 gap the prior review flagged as unexercised. Confirmed passing live (see Validation below), and the pre-existing cooperative round-trip test (`cmd/aura/gateway_approval_roundtrip_test.go`, unmodified by this delta, verbatim-relay path) still passes — the fix does not regress the honest-relay case.
+- **WR-01 ordering verified, not just asserted.** `routeApprove` (`approve.go:99-117`) now evaluates `g.profile == config.ProfileServerProduction || !responderPresent(ctx)` **before** the cross-turn `Consume`. `TestRouteApproveProductionDeniesEvenWithLedgerApproval` injects an approval directly into the ledger (bypassing all record guards) and proves it is never consumed under `server_production` (`reserves() == 0`). Defense-in-depth is real, not cosmetic: both `RecordResolvedApproval` (`gateway.go:126-131`) and the new `Gateway.ApproveChallenge` (`gateway.go:141-149`) independently refuse to record under `ProfileServerProduction`.
+- **Concurrency audit (explicit focus area).** The new `pending map[string]gatewayChallenge` is guarded by the SAME single `sync.Mutex` as `approved`; every method (`Approve`, `Consume`, `Challenge`, `ApproveChallenge`, `Evict`) takes the lock, does its work, and returns — none calls another lock-taking method internally, so there is no reentrant-lock deadlock and no lock-ordering hazard. `Challenge`-then-`ApproveChallenge` has no TOCTOU window: the existence check, the question check, and the approved/pending map mutation all happen inside one critical section per call. `Evict` now sweeps **both** maps (verified by `TestGatewayApprovalsEvictPrefixSweep`) — session end (`runner_resume.go:271`, unchanged, calls `r.gateway.EvictSession(convID)`) bounds ledger growth for abandoned/declined challenges, matching the shell ledger's identical tradeoff.
+- **Map-key collision (explicit focus area).** `gatewayApprovalKey` (`convID + "\x00" + toolName + "\x00" + fp`) is unchanged by this delta and was not newly introduced as a risk: `convID` is always a host-minted UUID (never attacker-supplied), so an embedded-NUL delimiter collision is not attacker-reachable through this path. Pre-existing, out of this diff's blast radius.
+- **Scope discipline confirmed.** The 6 files the fix explicitly promised to leave untouched (`internal/agui/approvals_api.go`, `internal/runner/runner_resume.go`, `internal/gateway/decide.go`, `internal/gateway/reserve.go`, `internal/agent/llm_agent_pause.go`, `internal/agent/llm_agent_retry.go`) were independently `git diff`'d against the pre-35-07 tree — all six are byte-identical. No prohibited file was touched.
+- **No test was weakened.** The only non-additive test change is `gateway_integration_test.go`'s two `context.Background()` → `WithResponder(context.Background())` edits on the resumed re-drive. This is a required correction, not a loosened assertion: it was made necessary by the WR-01 reorder (a headless re-drive now correctly denies before reaching `Consume`), and `runner.go:551` confirms every interactive turn the real Runner drives — including a resume `Turn(convID, nil)` — is unconditionally marked `WithResponder`, so the edit accurately models production. The asserted invariants (`Allow`, `operator_id` in the single reservation `Meta`, idempotent replay) are unchanged.
+- **Live verification, not just reading.** Ran `go build ./...`, `go vet ./...`, and the same with `-tags db_integration` (all clean, zero output) and `go test -count=1 -v` across `internal/gateway`, `internal/agent` (+ subpackages), `internal/runner`, and `cmd/aura` — all green, including every adversarial/challenge/production-refusal test enumerated above (not a cached result).
 
-**However, the review found one BLOCKER on the authorization path.** The code repeatedly claims
-`newGatewayResumeHook` is "the byte-for-byte analog of `newShellResumeHook`" — but it is **not**:
-it drops the shell path's server-side challenge binding and its operator-question verification. As
-a result the *content* of the approval (the tool + args being authorized, and the prompt the
-operator sees) is fully model-controlled and unverified. The model cannot self-approve without an
-operator click, but it can make that click authorize an action entirely different from what the
-operator was shown — a confused-deputy / informed-consent bypass. Two related WARNINGs (deny-check
-ordering, model-relayed conversation id) compound it.
+**One WARNING-level finding surfaced** (an incomplete port from the shell precedent, currently inert in production — see below). No Critical issues, and no other new Warning/Info issues were found in the 35-07 delta.
 
-## Narrative Findings (AI reviewer)
+## Warnings
 
-### Critical
+### WR-01 [RESOLVED in `63922e54`]: `GatewayApprovals.Approve` did not clear a same-key pending challenge — an incomplete port of `ShellApprovals.Approve`
 
-#### CR-01: Gateway approval has no challenge/question binding — the model can get an operator to approve a benign-looking prompt while authorizing a different destructive action
+> **Resolution:** Fixed in-cycle as prescribed — `Approve` now computes the key once, sets `approved`, and `delete(a.pending, key)` (byte-for-byte parity with `ShellApprovals.Approve`, shell_approval.go:56-58), with the doc comment corrected. A discriminating regression test (`TestGatewayApprovalsApproveClearsSameKeyPendingChallenge`) asserts a post-`Approve` `ApproveChallenge` for the same key finds nothing. `go vet ./...`, build, gateway unit + `-race` (WSL) all green.
 
-**File:** `cmd/aura/serve_adapters.go:376-410` (missing binding), `internal/gateway/approvals.go:28-31` (no pending-challenge map), `internal/gateway/approve.go:109-116` (issues approval-required without recording a challenge)
+**File:** `internal/gateway/approvals.go:73-83`
 
-**Issue:**
-`newGatewayResumeHook` records an approval straight from the **model-relayed** `resume_context`,
-with no check that the gateway ever issued that approval and no check that the operator-visible
-question matches the gateway-generated one:
+**Issue:** The package header and multiple doc comments assert `GatewayApprovals` "mirrors ShellApprovals' shape exactly" and that `Approve` is "the parity analog of ShellApprovals.Approve" (`gateway.go:119-120`). That claim is not quite true for this one method. Shell's version clears a stale pending challenge for the same key when a raw approval is recorded:
 
 ```go
-// serve_adapters.go:396-407
-if rc.Tool == "" || rc.ArgsSHA256 == "" {
-    return fmt.Errorf("gateway resume context: missing tool or args_sha256")
-}
-convID := rc.ConversationID
-if convID == "" { convID = pending.ConversationID }
-g.RecordResolvedApproval(convID, rc.Tool, rc.ArgsSHA256,
-    gateway.ResolvedApproval{Approved: true, OperatorID: "local"})   // records model-supplied (tool, fp); pending.Question never inspected
-```
-
-The shell path it claims to mirror does **both** missing checks. `newShellResumeHook`
-(`serve_adapters.go:363`) calls `approvals.ApproveChallenge(pending.ConversationID, rc.CommandSHA256, pending.Question)`,
-and `ShellApprovals.ApproveChallenge` (`internal/agent/tools/shell_approval.go:105-125`) rejects
-the accept unless (a) a **server-recorded pending challenge** exists for that digest (created by
-`CreateChallenge` only for a command the model actually surfaced) and (b) `question == challenge.Question`
-(the operator-visible prompt equals the server-generated prompt). `GatewayApprovals` has **no
-`pending` map at all** (`approvals.go:28-31`) and the hook never looks at `pending.Question`, so
-neither guard exists.
-
-Because the operator interface renders only the model-supplied `pending.Question`
-(`internal/agui/approvals_api.go:86`; the `approvalItem` projection at `:56-64` does not even expose
-the `resume_context`), the operator has no trusted view of what they are approving.
-
-**Concrete failure scenario (verified against the code path end-to-end):**
-1. Model in `conv-X` emits `swarm_spawn {"goals":["destroy prod"]}`. `routeApprove`
-   (`approve.go:109-116`) returns the approval-required result whose preview carries the real
-   `question` ("Approve swarm_spawn (risk=risky)? … args: goals") and `resume_context`
-   `{type:gateway_approval, tool:swarm_spawn, conversation_id:conv-X, args_sha256:FP}`.
-2. The model reads `FP` from that result and calls
-   `ask_user {kind:"approval", question:"Save your meeting notes?", resume_context:{…same tool + FP…}}`
-   — real `resume_context`, but a **benign, false question**.
-3. `detectPause` (`llm_agent_pause.go:100-105`) stores `pending.Question="Save your meeting notes?"`
-   and `pending.ResumeContext=<model's>`. The approval center shows "Save your meeting notes?"
-   (`approvals_api.go:86`). The operator accepts.
-4. `SubmitAnswers → applyResumeHook → newGatewayResumeHook` records
-   `Approve(conv-X, swarm_spawn, FP)` with **no** question check.
-5. Resume `Turn(conv-X, nil)`: the model re-emits `swarm_spawn {"goals":["destroy prod"]}`;
-   `routeApprove` Consumes the approval (`approve.go:99-102`) → `Allow` → reserve → **Execute**.
-
-The operator consented to "Save your meeting notes?" and unknowingly authorized a destructive
-swarm. The interactive-approval gate — whose sole purpose is informed operator consent under
-`single_user_hardened` — is defeated. (The model can even fabricate a `resume_context` for a tool
-it never surfaced, since there is no pending-challenge existence check; it just needs the correct
-`args_sha256`, which the approval-required result hands it for free.)
-
-The phase's own `35-VERIFICATION.md` asserts "No model self-approval" is proven by
-`TestApproveIsHostSideOnly`, but that test only checks that model *args* cannot flip the verdict; no
-test drives the `ask_user` relay with a mismatched question (the round-trip client at
-`gateway_approval_roundtrip_test.go:161-178` copies question + resume_context verbatim), so this
-path is entirely unexercised (see WR-03).
-
-**Fix:** Port the shell challenge mechanism the code claims to already mirror. Add a pending-challenge
-map to `GatewayApprovals`; have `routeApprove` record the gateway-generated question keyed on the
-**authenticated** `(key.ConversationID, spec.Name, fp)` when it issues the approval-required result;
-and make the hook verify existence + question-match before recording:
-
-```go
-// approvals.go — new pending map + record + verify-on-approve
-type gatewayChallenge struct{ question string }
-
-func (a *GatewayApprovals) Challenge(convID, tool, fp, question string) {
-    if a == nil || convID == "" || tool == "" || fp == "" { return }
-    a.mu.Lock(); defer a.mu.Unlock()
-    if a.pending == nil { a.pending = map[string]gatewayChallenge{} }
-    a.pending[gatewayApprovalKey(convID, tool, fp)] = gatewayChallenge{question: question}
-}
-
-// ApproveChallenge records the ResolvedApproval ONLY if a server-issued challenge exists
-// AND the operator-visible question matches it (mirrors ShellApprovals.ApproveChallenge).
-func (a *GatewayApprovals) ApproveChallenge(convID, tool, fp, question string, r ResolvedApproval) error {
-    if a == nil || convID == "" || tool == "" || fp == "" {
-        return fmt.Errorf("gateway approval challenge %q not found", fp)
-    }
-    a.mu.Lock(); defer a.mu.Unlock()
-    key := gatewayApprovalKey(convID, tool, fp)
-    ch, ok := a.pending[key]
-    if !ok { return fmt.Errorf("gateway approval challenge %q not found", fp) }
-    if question != ch.question { return fmt.Errorf("gateway approval challenge %q question mismatch", fp) }
-    if a.approved == nil { a.approved = map[string]ResolvedApproval{} }
-    a.approved[key] = r
-    delete(a.pending, key)
-    return nil
+// internal/agent/tools/shell_approval.go:47-59
+func (a *ShellApprovals) Approve(sessionID, digest string) {
+	...
+	key := shellApprovalKey(sessionID, digest)
+	a.approved[key] = struct{}{}
+	delete(a.pending, key)   // <-- clears any stale pending entry
 }
 ```
 
-`routeApprove` records the challenge right before returning the approval-required result:
+The gateway version does not:
 
 ```go
-// approve.go, in the single_user_hardened branch
-result := gatewayApprovalRequiredResult(spec, tier, rawArgs, key)
-g.approvals.Challenge(key.ConversationID, spec.Name, gatewayArgsFingerprint(rawArgs),
-    gatewayApprovalQuestion(spec, tier, rawArgs))
-return Verdict{Decision: Approve, Tier: tier, ApprovalRequest: &result}, nil
-```
-
-and `newGatewayResumeHook` calls `ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question, …)`
-instead of `RecordResolvedApproval` (also resolving WR-02 by using the authenticated
-`pending.ConversationID`). Extend `Evict` to sweep the `pending` map too (shell parity,
-`shell_approval.go:190-200`), and add a negative test that a swapped/benign question is rejected.
-
-### Warnings
-
-#### WR-01: `Consume` runs before the `server_production` / no-responder fail-closed check, so a recorded (or CR-01-fabricated) approval overrides the hard-deny
-
-**File:** `internal/gateway/approve.go:99-108`
-
-**Issue:** `routeApprove` Consumes the cross-turn ledger *before* the profile/responder gate:
-
-```go
-fp := gatewayArgsFingerprint(rawArgs)
-if r, ok := g.approvals.Consume(key.ConversationID, spec.Name, fp); ok && r.Approved {
-    return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil   // (1) consume first
-}
-if g.profile == config.ProfileServerProduction || !responderPresent(ctx) {       // (2) deny gate second
-    g.recordDegradedDeny(ctx, spec, key, tier)
-    return Verdict{Decision: Deny, ...}, nil
+// internal/gateway/approvals.go:73-83
+func (a *GatewayApprovals) Approve(convID, toolName, argsFingerprint string, r ResolvedApproval) {
+	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.approved == nil {
+		a.approved = map[string]ResolvedApproval{}
+	}
+	a.approved[gatewayApprovalKey(convID, toolName, argsFingerprint)] = r
+	// no delete(a.pending, key) here
 }
 ```
 
-The only thing preventing an approval from existing under `server_production` is that the gateway
-never issues an approval-required result there — but `newGatewayResumeHook` is **not** profile-gated
-(`serve_adapters.go:376-409` records on any accept regardless of profile), and via CR-01 the model
-can induce a `gateway_approval` pause without the gateway issuing one. If any such approval reaches
-the ledger, the `server_production`/headless hard-deny (D-03a/b) is bypassed because Consume returns
-`Allow` first. The fail-closed guarantee should not depend on a single upstream property.
+Today this is inert: `grep -rn "RecordResolvedApproval" --include=*.go` (the only caller of `Approve`) turns up exactly one production definition site (`gateway.go`) and three `_test.go` call sites — `Approve`/`RecordResolvedApproval` has no production caller post-35-07 (`gateway.go:119-125` documents it as "a LOW-LEVEL test-seed seam ... NOT the faithful production writer any more"). Because the only thing that matters for `Consume` is the `approved` map entry, leaving a stale `pending` entry behind has no exploitable consequence under the current call graph: a later legitimate `Challenge()` for the same key just overwrites it, and a later `ApproveChallenge()` for the same key would at worst redundantly re-confirm an already-granted approval.
 
-**Fix:** Gate the Consume behind the same profile/responder check (a production/headless run must
-never consume a cross-turn approval), or refuse to *record* approvals under
-`ProfileServerProduction` in `RecordResolvedApproval`/`ApproveChallenge`. Prefer both (defense in
-depth). Add a test: an approval recorded, then a `server_production` Decide must still Deny with
-`Execute==0`.
+The risk is latent rather than active: the method is explicitly *retained* (not deleted) as a test seam, the file's own comments claim exact parity with a mirror that does clean up this map, and a future change that re-purposes `Approve`/`RecordResolvedApproval` as a production path (or adds a new caller without re-reading this gap) would inherit a pending-map entry that never gets cleared by that path — silently diverging from the shell precedent this whole ledger is supposed to track byte-for-byte.
 
-#### WR-02: The ledger key trusts the model-relayed `conversation_id` over the authenticated `pending.ConversationID`
-
-**File:** `cmd/aura/serve_adapters.go:402-407`
-
-**Issue:**
+**Fix:** Add the same cleanup shell does, for actual parity and to remove the latent trap:
 
 ```go
-convID := rc.ConversationID          // from the model's relayed resume_context
-if convID == "" { convID = pending.ConversationID }
-g.RecordResolvedApproval(convID, rc.Tool, rc.ArgsSHA256, …)
+func (a *GatewayApprovals) Approve(convID, toolName, argsFingerprint string, r ResolvedApproval) {
+	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.approved == nil {
+		a.approved = map[string]ResolvedApproval{}
+	}
+	key := gatewayApprovalKey(convID, toolName, argsFingerprint)
+	a.approved[key] = r
+	delete(a.pending, key)
+}
 ```
-
-`rc.ConversationID` comes from the model's `ask_user` `resume_context`; `pending.ConversationID` is
-the server-stored conversation of the pause (set at pause creation, not model-forgeable). Trusting
-the model value first lets the model record an approval under a **different** conversation than the
-one the operator resolved in. Because the cross-thread approval center aggregates pending pauses
-from all conversations (`approvals_api.go:66-93`), an operator accept surfaced from `conv-A` could
-authorize an action re-emitted in `conv-B` — a cross-conversation approval transfer that compounds
-CR-01. There is no benefit to preferring the model-supplied id: it is only ever expected to equal
-`pending.ConversationID`.
-
-**Fix:** Use `pending.ConversationID` unconditionally (drop the `rc.ConversationID` primary), or
-verify `rc.ConversationID == pending.ConversationID` and return an error on mismatch. The comment
-at `:399-401` already asserts they are equal — enforce it instead of trusting the model.
-
-#### WR-03: No test exercises the adversarial `ask_user` relay (mismatched/benign question) — the security property is unverified
-
-**File:** `cmd/aura/gateway_approval_roundtrip_test.go:161-201`, `internal/gateway/approve_test.go:176-190`
-
-**Issue:** Every approval test drives a cooperative "model": the round-trip client copies the
-gateway question + `resume_context` **verbatim** (`scriptRoundTripTurn` / `extractApprovalRelay`),
-and `TestApproveIsHostSideOnly` only tamper-tests *tool args*, not the relay. The property that
-actually matters for this security-critical gate — "the operator cannot be shown a question that
-differs from the action being authorized" — is never asserted, which is why CR-01 shipped green and
-`35-VERIFICATION.md` over-claims "No model self-approval." Per the `golang-testing` discipline,
-an authorization boundary needs an explicit negative/adversarial case.
-
-**Fix:** Add a test where the relayed `ask_user` carries the real `resume_context` but a **different**
-question, and assert the resume hook records nothing and the re-drive stays `Approve` (withheld).
-After the CR-01 fix, this test should pass; today it would demonstrate the bypass.
-
-### Info
-
-#### IN-01: `GatewayApprovals.Peek` is dead production code (used only by tests)
-
-**File:** `internal/gateway/approvals.go:81-91`
-
-**Issue:** `Peek` is a public method with no production caller (only `approvals_test.go` references
-it; grep confirms no non-test use). `ShellApprovals` — the pattern this file mirrors — has no `Peek`.
-Under the project's "dead-code removal on touch" rule (CLAUDE.md), a newly-added unused export
-should not ship.
-
-**Fix:** Remove `Peek`, or if it is only a test affordance, move the presence check into the test
-package. If the CR-01 fix reuses it internally, keep it and add the production caller.
-
-#### IN-02: `gatewayArgsFingerprint(rawArgs)` is computed twice per approval-required result
-
-**File:** `internal/gateway/approve.go:127` and `:187` (via `gatewayApprovalContext`)
-
-**Issue:** `gatewayApprovalRequiredResult` computes `fp := gatewayArgsFingerprint(rawArgs)` at
-`:127`, then calls `gatewayApprovalContext` which recomputes the identical `sha256` at `:187`. The
-values cannot diverge (pure function, same input), so this is a minor DRY/redundant-hash nit, not a
-correctness issue.
-
-**Fix:** Pass the already-computed `fp` into `gatewayApprovalContext` (and, once CR-01 is
-implemented, reuse the same `fp` for the `Challenge` record) so the fingerprint has a single
-computation site.
 
 ---
 
-_Reviewed: 2026-07-04T00:00:00Z_
+_Reviewed: 2026-07-04T18:40:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_Depth: deep_
