@@ -68,8 +68,10 @@ func gatewayArgsFingerprint(rawArgs json.RawMessage) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Approve records an operator's ResolvedApproval for (convID, toolName, argsFingerprint).
-// An empty coordinate is a no-op (mirrors ShellApprovals' guards); nil-receiver-safe.
+// Approve records an operator's ResolvedApproval for (convID, toolName, argsFingerprint)
+// and clears any same-key pending challenge (mirrors ShellApprovals.Approve exactly, so a
+// stale issued-but-unresolved challenge can never linger under a now-approved key). An empty
+// coordinate is a no-op (mirrors ShellApprovals' guards); nil-receiver-safe.
 func (a *GatewayApprovals) Approve(convID, toolName, argsFingerprint string, r ResolvedApproval) {
 	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
 		return
@@ -79,7 +81,9 @@ func (a *GatewayApprovals) Approve(convID, toolName, argsFingerprint string, r R
 	if a.approved == nil {
 		a.approved = map[string]ResolvedApproval{}
 	}
-	a.approved[gatewayApprovalKey(convID, toolName, argsFingerprint)] = r
+	key := gatewayApprovalKey(convID, toolName, argsFingerprint)
+	a.approved[key] = r
+	delete(a.pending, key)
 }
 
 // Consume returns the stored ResolvedApproval and deletes it (one-shot): a second

@@ -44,6 +44,28 @@ func TestGatewayApprovalsChallengeApproveConsume(t *testing.T) {
 	}
 }
 
+// TestGatewayApprovalsApproveClearsSameKeyPendingChallenge proves Approve clears a same-key
+// pending challenge (shell parity — ShellApprovals.Approve deletes pending). Without the
+// clear a stale challenge would survive a direct Approve, so a later question-matched
+// ApproveChallenge could re-approve the key. Approve is a test-seed seam today (production
+// records via ApproveChallenge), so this guards the invariant against a future production reuse.
+func TestGatewayApprovalsApproveClearsSameKeyPendingChallenge(t *testing.T) {
+	led := NewGatewayApprovals()
+	conv, tool, fp, q := "conv-1", "swarm_spawn", "fp-abc", "Approve swarm_spawn (risk=risky)? args: goals"
+	led.Challenge(conv, tool, fp, q)
+	led.Approve(conv, tool, fp, ResolvedApproval{Approved: true, OperatorID: "op-7"})
+
+	// The pending challenge must be gone: a question-matched ApproveChallenge now finds
+	// nothing (Approve cleared it), so it cannot re-approve the key.
+	if err := led.ApproveChallenge(conv, tool, fp, q, ResolvedApproval{Approved: true}); err == nil {
+		t.Fatal("Approve must clear the same-key pending challenge (shell parity)")
+	}
+	// The direct Approve is still consumable exactly once.
+	if _, ok := led.Consume(conv, tool, fp); !ok {
+		t.Fatal("the direct Approve must still be consumable after clearing the challenge")
+	}
+}
+
 // TestGatewayApprovalsApproveChallengeQuestionMismatch is the CR-01/WR-03 ledger-half core:
 // a recorded challenge with the REAL question cannot be approved by a DIFFERENT (benign,
 // model-relayed) question — ApproveChallenge returns a question-mismatch error and records
