@@ -1,0 +1,12 @@
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: aura-spike082-box
+spec:
+  podTemplate:
+    spec:
+      containers:
+      - name: box
+        image: alpine:3.20
+        command: ["sh", "-c", "echo AURA-SPIKE-082-READY > /tmp/marker && sleep 3600"]
+      restartPolicy: Never
