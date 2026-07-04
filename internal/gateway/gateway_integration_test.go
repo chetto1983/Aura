@@ -473,7 +473,11 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	}
 
 	// (1) The resumed re-drive re-enters Decide via the ledger → Allow → reserve → Execute once.
-	_, v, err := gatedExec(context.Background(), g, spy, swarmSpawnArgs, key)
+	// The resume is an INTERACTIVE turn: the runner marks its ctx with a live responder
+	// (runner.go:551 gateway.WithResponder), so the WR-01 deny-before-Consume gate
+	// (ProfileServerProduction || !responderPresent) is not tripped and the cross-turn Consume
+	// runs. A headless (no-responder) re-drive would correctly deny here (WR-01).
+	_, v, err := gatedExec(WithResponder(context.Background()), g, spy, swarmSpawnArgs, key)
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("resumed re-drive = (%+v, %v), want allow via the ledger", v, err)
 	}
@@ -490,7 +494,7 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	// (2) A retry of the SAME triple (re-recorded approval) replays: rows==0 → Verdict.Replay,
 	// Execute NOT called again (the reservation is the exactly-once guarantee).
 	g.RecordResolvedApproval(convID, "swarm_spawn", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	res, rv, rerr := gatedExec(context.Background(), g, spy, swarmSpawnArgs, key)
+	res, rv, rerr := gatedExec(WithResponder(context.Background()), g, spy, swarmSpawnArgs, key)
 	if rerr != nil {
 		t.Fatalf("resumed retry err: %v", rerr)
 	}

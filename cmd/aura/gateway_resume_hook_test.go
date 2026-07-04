@@ -134,6 +134,32 @@ func TestGatewayResumeHookRejectsMalformedContext(t *testing.T) {
 	}
 }
 
+// TestGatewayResumeHookRejectsMismatchedQuestion is the WR-03 adversarial negative that
+// machine-checks CR-01: an ask_user relay carrying the REAL resume_context (matching fp)
+// but a DIFFERENT, benign question must be REJECTED. The hook returns a question-mismatch
+// error, records NOTHING, and the re-drive stays Approve (the tool is withheld — the
+// operator could not be tricked into authorizing an action they were never shown). Before
+// the CR-01 fix this drove the confused-deputy bypass (the accept was recorded blindly).
+func TestGatewayResumeHookRejectsMismatchedQuestion(t *testing.T) {
+	gw := gateway.New(config.ProfileSingleUserHardened, nil)
+	hook := newGatewayResumeHook(gw)
+	// Seed a REAL challenge (the gateway records it on issue) + the authentic resume_context.
+	pending, spec, args, key := gatewayApprovalPending(t, gw, "conv-adv")
+	// The model relays the REAL resume_context (fp still matches) but a benign, false question.
+	pending.Question = "Save your meeting notes?"
+
+	err := hook(context.Background(), pending, runner.ResponseInput{Action: askuser.ActionAccept})
+	if err == nil {
+		t.Fatal("a mismatched/benign relayed question must be rejected (CR-01)")
+	}
+	if !strings.Contains(err.Error(), "question mismatch") {
+		t.Fatalf("error = %v, want a question-mismatch error", err)
+	}
+	if v := reDecideAllows(t, gw, spec, args, key); v.Decision != gateway.Approve {
+		t.Fatalf("re-drive = %q, want approve (nothing recorded — the tool stays withheld)", v.Decision)
+	}
+}
+
 // TestGatewayResumeHookNilGateway proves a nil gateway yields a nil hook (chainResumeHooks
 // filters it out), mirroring newShellResumeHook.
 func TestGatewayResumeHookNilGateway(t *testing.T) {

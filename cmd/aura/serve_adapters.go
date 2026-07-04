@@ -364,15 +364,20 @@ func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
 	}
 }
 
-// newGatewayResumeHook is the production ResumeHook that records an operator's accept of
-// a relayed gateway_approval ask_user pause into the gateway's cross-turn approval ledger
-// — the byte-for-byte analog of newShellResumeHook, and the SOLE production writer of
-// GatewayApprovals (D-03c: the model relaying via ask_user does NOT grant approval). It
-// runs host-side after the authenticated approval-center resolve (SubmitAnswers ->
-// applyResumeHook). Only an accept on a gateway_approval pending records anything; a
-// decline/cancel records NOTHING, so the re-emit re-issues the approval-required result
-// or denies (fail-closed). OperatorID is "local" — single_user_hardened has exactly one
-// principal (the owner); multi-identity operator attribution is deferred to Phase 36 (D-03b).
+// newGatewayResumeHook is the production ResumeHook that records an operator's accept of a
+// relayed gateway_approval ask_user pause into the gateway's cross-turn approval ledger —
+// the byte-for-byte analog of newShellResumeHook (challenge + question gated), and the SOLE
+// production writer of GatewayApprovals (D-03c: the model relaying via ask_user does NOT
+// grant approval). It runs host-side after the authenticated approval-center resolve
+// (SubmitAnswers -> applyResumeHook). It records ONLY IF routeApprove issued a challenge for
+// this digest AND the operator-visible pending.Question matches the gateway-generated one
+// (g.ApproveChallenge) — so a model relaying a benign/false question records NOTHING and the
+// re-drive stays withheld (CR-01 informed-consent binding). It keys on the AUTHENTICATED
+// pending.ConversationID (server-stored at pause creation), never the model-relayed
+// resume_context id, so an accept surfaced from conv-A cannot authorize a re-emit in conv-B
+// (WR-02). A decline/cancel/wrong-type records NOTHING (fail-closed). OperatorID is "local"
+// — single_user_hardened has exactly one principal (the owner); multi-identity operator
+// attribution is deferred to Phase 36 (D-03b).
 func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 	if g == nil {
 		return nil
@@ -382,10 +387,9 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 			return nil
 		}
 		var rc struct {
-			Type           string `json:"type"`
-			Tool           string `json:"tool"`
-			ConversationID string `json:"conversation_id"`
-			ArgsSHA256     string `json:"args_sha256"`
+			Type       string `json:"type"`
+			Tool       string `json:"tool"`
+			ArgsSHA256 string `json:"args_sha256"`
 		}
 		if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
 			return fmt.Errorf("gateway resume context: %w", err)
@@ -396,16 +400,14 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 		if rc.Tool == "" || rc.ArgsSHA256 == "" {
 			return fmt.Errorf("gateway resume context: missing tool or args_sha256")
 		}
-		// The ledger key must match what routeApprove recomputes on the resumed re-emit:
-		// (key.ConversationID, tool, argsFingerprint). rc.ConversationID IS key.ConversationID
-		// (the gateway stamped it); fall back to the pending's conversation for robustness.
-		convID := rc.ConversationID
-		if convID == "" {
-			convID = pending.ConversationID
-		}
-		g.RecordResolvedApproval(convID, rc.Tool, rc.ArgsSHA256,
+		// Record ONLY IF the gateway issued a challenge for this (authenticated conversation,
+		// tool, digest) AND the operator-visible pending.Question equals the gateway-generated
+		// one (ApproveChallenge — the CR-01 informed-consent binding, mirroring
+		// newShellResumeHook). The authenticated pending.ConversationID is the key (WR-02),
+		// never the model-relayed resume_context id. A mismatched/benign question or a missing
+		// challenge → error, nothing recorded → the re-drive re-issues the approval (withheld).
+		return g.ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question,
 			gateway.ResolvedApproval{Approved: true, OperatorID: "local"})
-		return nil
 	}
 }
 
