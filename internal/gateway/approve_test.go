@@ -189,6 +189,89 @@ func TestApproveIsHostSideOnly(t *testing.T) {
 	}
 }
 
+// TestApproveHardenedRecordsChallengeOnIssue proves the CR-01 record-on-issue half: when
+// routeApprove issues the approval-required result it ALSO records a server-side pending
+// challenge for the AUTHENTICATED (conversation, tool, fp) whose question EQUALS the
+// preview's question (mirroring shell_exec_approval_test.go:33-39). The resume hook later
+// requires this exact challenge + a matching operator-visible question to record approval.
+func TestApproveHardenedRecordsChallengeOnIssue(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background())
+	args := mustDecideArgs(t, map[string]any{"goals": []string{"build x"}})
+
+	v, err := g.Decide(ctx, mutatingRiskySpec(), args, testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Decision != Approve || v.ApprovalRequest == nil {
+		t.Fatalf("verdict = %+v, want approve + approval request", v)
+	}
+	var preview map[string]any
+	if err := json.Unmarshal([]byte(v.ApprovalRequest.Preview), &preview); err != nil {
+		t.Fatalf("preview not json: %v", err)
+	}
+	fp, _ := preview["args_sha256"].(string)
+	wantQ, _ := preview["question"].(string)
+	gotQ, ok := pendingQuestion(g.approvals, testKey().ConversationID, mutatingRiskySpec().Name, fp)
+	if !ok {
+		t.Fatal("approve must record a pending challenge on issue (CR-01)")
+	}
+	if wantQ == "" || gotQ != wantQ {
+		t.Fatalf("challenge question = %q, want the preview question %q", gotQ, wantQ)
+	}
+}
+
+// TestRouteApproveProductionDeniesEvenWithLedgerApproval proves WR-01's deny-before-Consume
+// ordering: even an adversarially-injected ledger approval is NOT consumed under production
+// — the server_production hard-deny fires BEFORE the cross-turn Consume, so the call Denies
+// with ZERO reservations (a recorded/fabricated approval can never elevate a headless run).
+func TestRouteApproveProductionDeniesEvenWithLedgerApproval(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileServerProduction, store)
+	args := mustDecideArgs(t, map[string]any{"goals": []string{"build x"}})
+	// Inject an approval directly into the ledger (bypassing the record guards) to isolate
+	// the deny-before-Consume ORDERING: if the deny gate ran after Consume, this would Allow.
+	g.approvals.Approve(testKey().ConversationID, mutatingRiskySpec().Name,
+		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "x"})
+
+	v, err := g.Decide(WithResponder(context.Background()), mutatingRiskySpec(), args, testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Decision != Deny {
+		t.Fatalf("decision = %q, want deny (production hard-deny precedes Consume)", v.Decision)
+	}
+	if got := len(store.reserves()); got != 0 {
+		t.Fatalf("production-denied call reserved %d rows, want 0 (injected approval NOT consumed)", got)
+	}
+}
+
+// TestGatewayApproveChallengeRefusedUnderProduction proves WR-01's defense-in-depth record
+// guard: Gateway.ApproveChallenge refuses under server_production (returns an error and
+// records nothing), so a production run cannot even seed the ledger by any path.
+func TestGatewayApproveChallengeRefusedUnderProduction(t *testing.T) {
+	g := New(config.ProfileServerProduction, &fakeStore{})
+	conv, tool, fp := testKey().ConversationID, mutatingRiskySpec().Name, "fp-prod"
+	g.approvals.Challenge(conv, tool, fp, "q")
+
+	if err := g.ApproveChallenge(conv, tool, fp, "q", ResolvedApproval{Approved: true}); err == nil {
+		t.Fatal("g.ApproveChallenge under server_production must refuse (return an error)")
+	}
+	if _, ok := g.approvals.Consume(conv, tool, fp); ok {
+		t.Fatal("a production-refused ApproveChallenge must record nothing")
+	}
+}
+
+// pendingQuestion reads the recorded challenge question for the key (in-package test
+// accessor to the unexported pending map, under the ledger mutex for -race safety).
+func pendingQuestion(a *GatewayApprovals, convID, tool, fp string) (string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ch, ok := a.pending[gatewayApprovalKey(convID, tool, fp)]
+	return ch.question, ok
+}
+
 // assertDegradedDenyFact asserts the fake store captured exactly one degraded_deny
 // terminal decision-fact: an END row (event_kind='end', status='error'), reason=no_approver
 // in Meta, keyed on the ORIGINATING conversation UUID (D-03 point 1 / GATE-01).

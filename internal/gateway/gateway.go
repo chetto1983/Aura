@@ -8,6 +8,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
@@ -115,17 +116,36 @@ func New(profile config.RuntimeProfile, store reservationStore) *Gateway {
 	return &Gateway{profile: profile, store: store, approvals: NewGatewayApprovals()}
 }
 
-// RecordResolvedApproval records an operator's resolved gateway approval into the
-// cross-turn ledger, keyed on (convID, toolName, argsFingerprint). It is the seam the
-// host-side newGatewayResumeHook writes through after the authenticated approval-center
-// resolve — the SOLE production writer (D-03c: the model relaying via ask_user does NOT
-// grant approval). A nil Gateway is a no-op (dev-parity); GatewayApprovals is
-// nil-receiver-safe, so a struct-built Gateway without a ledger is inert, not a panic.
+// RecordResolvedApproval is a LOW-LEVEL test-seed seam that records a resolved approval
+// straight into the cross-turn ledger, keyed on (convID, toolName, argsFingerprint) —
+// the parity analog of ShellApprovals.Approve. It bypasses the challenge/question binding,
+// so it is NOT the faithful production writer any more: the host-side newGatewayResumeHook
+// records through the challenge-gated ApproveChallenge (below). A nil Gateway is a no-op
+// (dev-parity); it REFUSES under ProfileServerProduction (WR-01 defense-in-depth: a
+// production run records no approval by any path); GatewayApprovals is nil-receiver-safe.
 func (g *Gateway) RecordResolvedApproval(convID, toolName, argsFingerprint string, r ResolvedApproval) {
-	if g == nil {
+	if g == nil || g.profile == config.ProfileServerProduction {
 		return
 	}
 	g.approvals.Approve(convID, toolName, argsFingerprint, r)
+}
+
+// ApproveChallenge is the host-side, challenge-gated recorder newGatewayResumeHook calls to
+// record an operator's accept: it REFUSES under ProfileServerProduction (WR-01
+// defense-in-depth — a production run records no approval by any path) then delegates to
+// GatewayApprovals.ApproveChallenge, which moves pending→approved ONLY when routeApprove
+// previously issued a challenge for (convID, toolName, argsFingerprint) AND the
+// operator-visible question matches the gateway-generated one (CR-01 informed-consent). It
+// is the faithful production analog of ShellApprovals.ApproveChallenge; the model relaying
+// via ask_user does NOT grant approval (D-03c). A nil Gateway is a no-op returning nil.
+func (g *Gateway) ApproveChallenge(convID, toolName, argsFingerprint, question string, r ResolvedApproval) error {
+	if g == nil {
+		return nil
+	}
+	if g.profile == config.ProfileServerProduction {
+		return fmt.Errorf("gateway approval refused under server_production")
+	}
+	return g.approvals.ApproveChallenge(convID, toolName, argsFingerprint, question, r)
 }
 
 // EvictSession drops a conversation's resolved-but-unconsumed approvals (R-41 parity
