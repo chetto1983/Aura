@@ -94,15 +94,15 @@ func TestDecideDevNoOp(t *testing.T) {
 	for _, profile := range []config.RuntimeProfile{config.ProfileDev, config.ProfileLocalTrusted} {
 		store := &fakeStore{}
 		g := New(profile, store)
-		v, pause, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
+		v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
 		if err != nil {
 			t.Fatalf("%s: Decide err: %v", profile, err)
 		}
 		if v.Decision != Allow {
 			t.Fatalf("%s: decision = %q, want allow", profile, v.Decision)
 		}
-		if pause != nil {
-			t.Fatalf("%s: unexpected pause", profile)
+		if v.ApprovalRequest != nil {
+			t.Fatalf("%s: unexpected approval request", profile)
 		}
 		if got := len(store.calls()); got != 0 {
 			t.Fatalf("%s: wrote %d rows, want 0 (SC-4 no-op)", profile, got)
@@ -111,7 +111,7 @@ func TestDecideDevNoOp(t *testing.T) {
 
 	// A nil *Gateway is an Allow no-op too (dev-parity for tests/standalone).
 	var g *Gateway
-	v, _, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("nil gateway: got (%v, %v), want allow/nil", v.Decision, err)
 	}
@@ -124,15 +124,15 @@ func TestDecideReadOnlyDecisionFact(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, pause, err := g.Decide(context.Background(), readOnlySpec(), nil, testKey())
+	v, err := g.Decide(context.Background(), readOnlySpec(), nil, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
 	if v.Decision != Allow || v.Tier != scoring.Safe {
 		t.Fatalf("verdict = %+v, want allow/safe", v)
 	}
-	if pause != nil {
-		t.Fatal("read-only must not pause")
+	if v.ApprovalRequest != nil {
+		t.Fatal("read-only must not request approval")
 	}
 	rows := store.calls()
 	if len(rows) != 1 {
@@ -159,15 +159,15 @@ func TestDecideMutatingAutoAllowFact(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, store)
 
 	args := mustDecideArgs(t, map[string]string{"action": "restore"})
-	v, pause, err := g.Decide(context.Background(), skillSpec(), args, testKey())
+	v, err := g.Decide(context.Background(), skillSpec(), args, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
 	if v.Decision != Allow || v.Tier != scoring.Normal {
 		t.Fatalf("verdict = %+v, want allow/normal", v)
 	}
-	if pause != nil {
-		t.Fatal("normal mutating must not pause")
+	if v.ApprovalRequest != nil {
+		t.Fatal("normal mutating must not request approval")
 	}
 	if v.Replay != nil {
 		t.Fatal("rows==1 acquire must not carry a replay")

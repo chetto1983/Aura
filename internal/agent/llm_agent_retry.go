@@ -40,12 +40,15 @@ var toolRetryBaseDelay = 200 * time.Millisecond
 // GATE-01: the gateway.Decide PEP is interposed at the TOP, BEFORE the retry loop, so
 // every non-ask_user dispatch crosses exactly one policy decision before tool.Execute.
 // A Deny returns *gateway.ErrDenied (the tool never executes); an Approve returns the
-// gateway's *tools.ErrAwaitingUserInput (the mutating action is withheld pending an
-// operator decision; a resume RE-ENTERS execTool → Decide). A nil gateway is an Allow
-// no-op (dev-parity). ask_user is EXEMPT: it is the approval primitive, so gating it
-// risks approve→ask_user→Decide→approve recursion — it structurally never reaches
-// execTool (llm_agent_pause.go pre-executes ask_user), and this defensive short-circuit
-// keeps it that way even if the dispatch path changes (D-03/CV-1).
+// gateway's shell_exec-style approval-required ToolResult as a NORMAL result (no error,
+// tool.Execute NOT called — the mutating action is withheld). Because it is a normal
+// result, runTool persists the REAL tool_call + args + the approval message, so the model
+// relays the request via ask_user and retries the EXACT call after the operator accepts;
+// a resume RE-ENTERS execTool → Decide → Consume → Allow. A nil gateway is an Allow no-op
+// (dev-parity). ask_user is EXEMPT: it is the approval primitive, so gating it risks
+// approve→ask_user→Decide→approve recursion — it structurally never reaches execTool
+// (llm_agent_pause.go pre-executes ask_user), and this defensive short-circuit keeps it
+// that way even if the dispatch path changes (D-03/CV-1).
 func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool, args json.RawMessage) (tools.ToolResult, error) {
 	spec := tool.Spec()
 	if spec.Name != askUserToolName {
@@ -54,7 +57,7 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			RequestID:      tools.RequestIDFromContext(ctx),
 			ToolCallID:     tools.ToolCallIDFromContext(ctx),
 		}
-		verdict, pause, derr := a.gateway.Decide(ctx, spec, args, key)
+		verdict, derr := a.gateway.Decide(ctx, spec, args, key)
 		if derr != nil {
 			return tools.ToolResult{}, derr
 		}
@@ -62,7 +65,15 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		case gateway.Deny:
 			return tools.ToolResult{}, &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}
 		case gateway.Approve:
-			return tools.ToolResult{}, pause
+			// The mutating action is WITHHELD: return the approval-required tool RESULT
+			// (no error, tool.Execute not called). runTool persists the real call+args +
+			// this message so the model relays it via ask_user and retries after approval
+			// (the resume re-enters here → Consume → Allow). A nil ApprovalRequest (contract
+			// violation) degrades to an empty result rather than a panic.
+			if verdict.ApprovalRequest != nil {
+				return *verdict.ApprovalRequest, nil
+			}
+			return tools.ToolResult{}, nil
 		}
 		// GATE-04: a non-nil Replay means the reservation slot was already held (rows==0) —
 		// the tool ran on a prior (duplicate/retried) dispatch. Return the recorded outcome

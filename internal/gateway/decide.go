@@ -17,18 +17,19 @@ import (
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
-// Decide is the policy-enforcement point. It returns a Verdict plus, on Approve, the
-// pause sentinel the caller surfaces (nil otherwise). A nil *Gateway and any non-Strict
-// profile short-circuit to Allow with NO store write — the dev/local_trusted
-// host-direct no-op preserving today's full-host experience (SC-4).
+// Decide is the policy-enforcement point. It returns a Verdict; on Approve the Verdict
+// carries an ApprovalRequest tool result (the caller returns it as a normal tool result,
+// tool.Execute withheld) — the gateway no longer mints a pause sentinel. A nil *Gateway
+// and any non-Strict profile short-circuit to Allow with NO store write — the
+// dev/local_trusted host-direct no-op preserving today's full-host experience (SC-4).
 //
 // The mutating-Allow outcomes (the not-GateRecommended auto-allow branch here AND
 // routeApprove's post-resume Verdict{Allow, OperatorID}) converge on ONE synchronous
 // store.Reserve call (reserve.go) before Allow is returned — exactly one durable
 // reservation start per executed call (GATE-03/04, D-03 point 2).
-func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey) (Verdict, *tools.ErrAwaitingUserInput, error) {
+func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
 	if g == nil || !g.profile.Strict() {
-		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil, nil
+		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil
 	}
 	tier := classify(spec, rawArgs)
 	if !spec.Mutating {
@@ -36,19 +37,19 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		// ONLY — no reserve→execute→append machinery. The fact is a start row (see
 		// recordDecisionFact), never an end row.
 		g.recordDecisionFact(ctx, spec, key, tier)
-		return Verdict{Decision: Allow, Tier: tier}, nil, nil
+		return Verdict{Decision: Allow, Tier: tier}, nil
 	}
 	// Mutating funnel. A GateRecommended call is routed to approve FIRST; a non-Allow
-	// outcome (Deny / Approve pause) returns immediately. Both the not-GateRecommended
-	// auto-allow AND routeApprove's post-resume Verdict{Allow, OperatorID} then converge on
-	// the SAME single reserve call — exactly ONE reservation start row per executed call,
-	// the operator_id (when present) folded into that one start's Meta (GATE-03/04 /
-	// D-03 point 2). This is the unified reserve invariant.
+	// outcome (Deny / Approve with an ApprovalRequest) returns immediately. Both the
+	// not-GateRecommended auto-allow AND routeApprove's post-resume Verdict{Allow,
+	// OperatorID} then converge on the SAME single reserve call — exactly ONE reservation
+	// start row per executed call, the operator_id (when present) folded into that one
+	// start's Meta (GATE-03/04 / D-03 point 2). This is the unified reserve invariant.
 	operatorID := ""
 	if scoring.GateRecommended(tier) {
-		v, pause, err := g.routeApprove(ctx, spec, tier, key)
+		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key)
 		if err != nil || v.Decision != Allow {
-			return v, pause, err
+			return v, err
 		}
 		operatorID = v.OperatorID
 	}

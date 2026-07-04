@@ -38,8 +38,11 @@ const (
 	Allow Decision = "allow"
 	// Deny blocks the dispatch: execTool returns *ErrDenied instead of executing.
 	Deny Decision = "deny"
-	// Approve suspends the dispatch pending an interactive operator decision; the
-	// gateway pairs it with a *tools.ErrAwaitingUserInput pause sentinel.
+	// Approve withholds the mutating dispatch pending an interactive operator decision;
+	// the gateway pairs it with Verdict.ApprovalRequest — a normal tool RESULT (mirroring
+	// shell_exec) the caller returns WITHOUT calling tool.Execute. It is NOT a pause
+	// sentinel: the gateway no longer mints a pause (D-03 point 2); the model relays the
+	// request via ask_user and retries the exact call after the operator accepts.
 	Approve Decision = "approve"
 )
 
@@ -57,6 +60,14 @@ type Verdict struct {
 	// re-invoking tool.Execute (GATE-04 idempotency — a duplicate/retried mutating call,
 	// approved or auto-allowed, applies its side effect exactly once).
 	Replay *tools.ToolResult
+	// ApprovalRequest is non-nil ONLY when Decision==Approve: it is the shell_exec-style
+	// approval-required tool RESULT (mirroring shellApprovalRequiredResult) that execTool
+	// returns as a NORMAL result (no error, tool.Execute withheld). Its Preview instructs
+	// the model to relay the request via ask_user (kind=approval, resume_context carrying
+	// args_sha256) and to retry the exact call after the operator accepts — keeping the
+	// REAL tool name + args in persisted history so the resume re-emits an args-matching
+	// call (D-03 point 2; the round-trip the pre-dispatch intercept could not achieve).
+	ApprovalRequest *tools.ToolResult
 }
 
 // ReservationKey is the ledger triple the decision-fact is keyed on. It is ALWAYS
@@ -86,17 +97,45 @@ func (e *ErrDenied) Error() string {
 }
 
 // Gateway is the single in-process policy-enforcement point (GATE-01). It holds the
-// resolved runtime profile + the append-only ledger seam; the agent stays DB-free by
-// delegating to it (mirroring how LlmAgent holds *HookManager). A nil *Gateway is an
-// Allow no-op — dev-parity for tests/standalone construction.
+// resolved runtime profile, the append-only ledger seam, and the cross-turn approval
+// ledger; the agent stays DB-free by delegating to it (mirroring how LlmAgent holds
+// *HookManager). A nil *Gateway is an Allow no-op — dev-parity for tests/standalone
+// construction.
 type Gateway struct {
-	profile config.RuntimeProfile
-	store   reservationStore
+	profile   config.RuntimeProfile
+	store     reservationStore
+	approvals *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
 }
 
 // New builds a Gateway over the resolved runtime profile and the append-only tool
 // invocation ledger. The composition root constructs exactly one and injects it at
-// the three NewLlmAgent roots (runner, swarm, cron).
+// the three NewLlmAgent roots (runner, swarm, cron). It always owns a fresh
+// GatewayApprovals so the resume hook has a session ledger to write through.
 func New(profile config.RuntimeProfile, store reservationStore) *Gateway {
-	return &Gateway{profile: profile, store: store}
+	return &Gateway{profile: profile, store: store, approvals: NewGatewayApprovals()}
+}
+
+// RecordResolvedApproval records an operator's resolved gateway approval into the
+// cross-turn ledger, keyed on (convID, toolName, argsFingerprint). It is the seam the
+// host-side newGatewayResumeHook writes through after the authenticated approval-center
+// resolve — the SOLE production writer (D-03c: the model relaying via ask_user does NOT
+// grant approval). A nil Gateway is a no-op (dev-parity); GatewayApprovals is
+// nil-receiver-safe, so a struct-built Gateway without a ledger is inert, not a panic.
+func (g *Gateway) RecordResolvedApproval(convID, toolName, argsFingerprint string, r ResolvedApproval) {
+	if g == nil {
+		return
+	}
+	g.approvals.Approve(convID, toolName, argsFingerprint, r)
+}
+
+// EvictSession drops a conversation's resolved-but-unconsumed approvals (R-41 parity
+// with ShellApprovals.Evict) so a long-running serve daemon does not retain them across
+// conversations. The gateway ledger lives OUTSIDE the tool registry, so the runner's
+// registry-ranging SessionEvictor loop cannot reach it — this explicit call is required.
+// A nil Gateway is a no-op.
+func (g *Gateway) EvictSession(convID string) {
+	if g == nil {
+		return
+	}
+	g.approvals.Evict(convID)
 }

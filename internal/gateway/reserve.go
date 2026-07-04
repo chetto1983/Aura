@@ -34,21 +34,21 @@ const resultExpiredMarker = "\n\n[result expired: full output no longer retained
 //
 // operatorID is "" for the auto-allow origin and set for the approved-resume origin; it is
 // folded into the single start Meta so both origins produce the SAME single start∧¬end shape.
-func (g *Gateway) reserve(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey, tier scoring.RiskTier, operatorID string) (Verdict, *tools.ErrAwaitingUserInput, error) {
+func (g *Gateway) reserve(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey, tier scoring.RiskTier, operatorID string) (Verdict, error) {
 	if g.store == nil {
 		// A strict Gateway constructed without a ledger (standalone/tests): allow without
 		// a reservation. The dev/local_trusted no-op already short-circuits before here.
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil, nil
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil
 	}
 	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID))
 	if err != nil {
-		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}, nil, nil
+		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}, nil
 	}
 	if acquired {
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil, nil
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil
 	}
 	res := replayResult(replay)
-	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Replay: &res}, nil, nil
+	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Replay: &res}, nil
 }
 
 // reservationStart builds the append-only `start` Event for the reservation. The verdict

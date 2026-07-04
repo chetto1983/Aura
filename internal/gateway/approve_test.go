@@ -10,39 +10,96 @@ import (
 )
 
 // TestApproveHardenedInteractive proves D-03: single_user_hardened with a
-// positively-known responder emits Verdict{Approve} + an ErrAwaitingUserInput{approval}
-// carrying a {"type":"gateway_approval",...} ResumeContext, and writes NO row (the
-// approve is a pending decision, not a terminal fact).
+// positively-known responder and NO ledger hit returns Verdict{Approve} carrying an
+// ApprovalRequest tool RESULT (mirroring shellApprovalRequiredResult) — a
+// gateway_approval preview with args_sha256, a descriptive question, and the exact
+// resume_context the model relays via ask_user. It writes NO row and takes NO
+// reservation (the mutating action is WITHHELD until an approval is recorded).
 func TestApproveHardenedInteractive(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 	ctx := WithResponder(context.Background())
 
-	v, pause, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
 	if v.Decision != Approve {
 		t.Fatalf("decision = %q, want approve", v.Decision)
 	}
-	if pause == nil {
-		t.Fatal("approve must carry a pause sentinel")
+	if v.ApprovalRequest == nil {
+		t.Fatal("approve must carry an ApprovalRequest tool result (mirroring shell_exec)")
 	}
-	if pause.Kind != "approval" {
-		t.Fatalf("pause kind = %q, want approval", pause.Kind)
+	var preview map[string]any
+	if err := json.Unmarshal([]byte(v.ApprovalRequest.Preview), &preview); err != nil {
+		t.Fatalf("approval-required preview not json: %v", err)
 	}
-	if pause.Priority == 0 {
-		t.Fatal("approval priority must be reused from tools.ApprovalPriority, not 0")
+	if preview["error"] != "gateway_approval_required" {
+		t.Fatalf("preview error = %v, want gateway_approval_required", preview["error"])
 	}
-	var rc map[string]any
-	if err := json.Unmarshal(pause.ResumeContext, &rc); err != nil {
-		t.Fatalf("resume context not json: %v", err)
+	if s, _ := preview["args_sha256"].(string); s == "" {
+		t.Fatal("preview must carry a non-empty args_sha256")
+	}
+	if q, _ := preview["question"].(string); q == "" {
+		t.Fatal("preview must carry a non-empty descriptive question")
+	}
+	rc, ok := preview["resume_context"].(map[string]any)
+	if !ok {
+		t.Fatalf("resume_context missing/not an object: %v", preview["resume_context"])
 	}
 	if rc["type"] != "gateway_approval" {
 		t.Fatalf("resume context type = %v, want gateway_approval", rc["type"])
 	}
+	if rc["args_sha256"] != preview["args_sha256"] {
+		t.Fatal("resume_context args_sha256 must match the top-level fingerprint")
+	}
 	if got := len(store.calls()); got != 0 {
-		t.Fatalf("approve wrote %d rows, want 0", got)
+		t.Fatalf("approve wrote %d Insert rows, want 0", got)
+	}
+	if got := len(store.reserves()); got != 0 {
+		t.Fatalf("approve reserved %d rows, want 0 (withheld until an approval is recorded)", got)
+	}
+}
+
+// TestApproveHardenedLedgerReEntry proves D-03 point 2's PRODUCTION carrier: after the
+// resume hook records the operator's approval via RecordResolvedApproval (the cross-turn
+// ledger, NOT a hand-set ctx), a re-drive with the SAME args re-enters routeApprove,
+// Consumes the one-shot approval keyed on the recomputed fingerprint, and returns
+// Verdict{Allow, OperatorID} through the SINGLE reservation — with NO competing Insert.
+func TestApproveHardenedLedgerReEntry(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background())
+	args := mustDecideArgs(t, map[string]any{"goals": []string{"build x"}})
+
+	g.RecordResolvedApproval(testKey().ConversationID, mutatingRiskySpec().Name,
+		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-led"})
+
+	v, err := g.Decide(ctx, mutatingRiskySpec(), args, testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Decision != Allow || v.OperatorID != "op-led" {
+		t.Fatalf("verdict = %+v, want allow/op-led (ledger re-entry)", v)
+	}
+	if v.ApprovalRequest != nil {
+		t.Fatal("a ledger-approved re-emit must not re-request approval")
+	}
+	reserved := store.reserves()
+	if len(reserved) != 1 || reserved[0].Meta["operator_id"] != "op-led" {
+		t.Fatalf("want exactly 1 reservation start with operator_id in Meta, got %+v", reserved)
+	}
+	if got := len(store.calls()); got != 0 {
+		t.Fatalf("ledger re-entry wrote %d competing Inserts, want 0", got)
+	}
+	// The approval is one-shot: a second re-drive with the same args finds no ledger hit
+	// and re-issues the approval-required result (fail-closed).
+	v2, err := g.Decide(ctx, mutatingRiskySpec(), args, testKey())
+	if err != nil {
+		t.Fatalf("second Decide err: %v", err)
+	}
+	if v2.Decision != Approve || v2.ApprovalRequest == nil {
+		t.Fatalf("second re-drive = %+v, want approve + approval request (one-shot consumed)", v2)
 	}
 }
 
@@ -54,15 +111,15 @@ func TestApproveProductionDenies(t *testing.T) {
 	g := New(config.ProfileServerProduction, store)
 	ctx := WithResponder(context.Background()) // even with a responder, production denies
 
-	v, pause, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
 	if v.Decision != Deny {
 		t.Fatalf("decision = %q, want deny", v.Decision)
 	}
-	if pause != nil {
-		t.Fatal("production must not pause in place")
+	if v.ApprovalRequest != nil {
+		t.Fatal("production must not return an approval request")
 	}
 	assertDegradedDenyFact(t, store)
 }
@@ -73,15 +130,15 @@ func TestApproveHeadlessDenies(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, pause, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
 	if v.Decision != Deny {
 		t.Fatalf("decision = %q, want deny (no responder → default DENY)", v.Decision)
 	}
-	if pause != nil {
-		t.Fatal("headless must not pause in place")
+	if v.ApprovalRequest != nil {
+		t.Fatal("headless must not return an approval request")
 	}
 	assertDegradedDenyFact(t, store)
 }
@@ -95,7 +152,7 @@ func TestApprovePostResumeAllow(t *testing.T) {
 	ctx := WithResolvedApproval(WithResponder(context.Background()),
 		ResolvedApproval{Approved: true, OperatorID: "op-1"})
 
-	v, pause, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -105,11 +162,11 @@ func TestApprovePostResumeAllow(t *testing.T) {
 	if v.OperatorID != "op-1" {
 		t.Fatalf("operator id = %q, want op-1", v.OperatorID)
 	}
-	if pause != nil {
-		t.Fatal("post-resume approved must not re-pause")
+	if v.ApprovalRequest != nil {
+		t.Fatal("post-resume approved must not re-request approval")
 	}
 	if got := len(store.calls()); got != 0 {
-		t.Fatalf("post-resume approved wrote %d rows, want 0 (marker rides the reservation start)", got)
+		t.Fatalf("post-resume approved wrote %d Insert rows, want 0 (marker rides the reservation start)", got)
 	}
 }
 
@@ -123,12 +180,12 @@ func TestApproveIsHostSideOnly(t *testing.T) {
 	// A crafted "approve"-shaped arg blob must not flip the verdict: only the host's
 	// WithResponder marker (absent here) can reach the interactive branch.
 	modelArgs := mustDecideArgs(t, map[string]any{"decision": "approve", "approved": true})
-	v, pause, _ := g.Decide(context.Background(), mutatingRiskySpec(), modelArgs, testKey())
+	v, _ := g.Decide(context.Background(), mutatingRiskySpec(), modelArgs, testKey())
 	if v.Decision == Approve || v.Decision == Allow {
 		t.Fatalf("model self-approval leaked: decision = %q", v.Decision)
 	}
-	if pause != nil {
-		t.Fatal("model-only ctx must not pause for approval")
+	if v.ApprovalRequest != nil {
+		t.Fatal("model-only ctx (no responder) must not return an approval request")
 	}
 }
 

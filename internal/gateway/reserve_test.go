@@ -17,9 +17,9 @@ func TestReserveAcquire(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, pause, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Risky, "")
-	if err != nil || pause != nil {
-		t.Fatalf("reserve returned (pause=%v, err=%v), want (nil, nil)", pause, err)
+	v, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Risky, "")
+	if err != nil {
+		t.Fatalf("reserve returned err=%v, want nil", err)
 	}
 	if v.Decision != Allow || v.Replay != nil {
 		t.Fatalf("verdict = %+v, want allow with no replay", v)
@@ -39,7 +39,7 @@ func TestReserveFoldsOperatorID(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, _, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Destructive, "op-9")
+	v, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Destructive, "op-9")
 	if err != nil {
 		t.Fatalf("reserve err: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestReserveReplayOnConflict(t *testing.T) {
 	}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, _, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Risky, "")
+	v, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Risky, "")
 	if err != nil {
 		t.Fatalf("reserve err: %v", err)
 	}
@@ -86,12 +86,9 @@ func TestReserveFailClosed(t *testing.T) {
 	store := &fakeStore{reserveErr: errors.New("insert boom")}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, pause, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Risky, "op-1")
+	v, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Risky, "op-1")
 	if err != nil {
 		t.Fatalf("reserve must map the store error to a Deny verdict, not return err: %v", err)
-	}
-	if pause != nil {
-		t.Fatal("fail-closed deny must not pause")
 	}
 	if v.Decision != Deny || v.Reason != "reservation failed" {
 		t.Fatalf("verdict = %+v, want deny/reservation failed", v)

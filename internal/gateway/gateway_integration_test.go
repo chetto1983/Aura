@@ -62,9 +62,10 @@ func (s *spyTool) Execute(_ context.Context, _ json.RawMessage) (tools.ToolResul
 }
 
 // gatedExec mirrors execTool's ordering exactly (llm_agent_retry.go): Decide first, then
-// Deny→typed error / Approve→pause / Replay→recorded outcome (no Execute) / Allow→Execute.
+// Deny→typed error / Approve→the approval-required tool RESULT (no Execute) / Replay→
+// recorded outcome (no Execute) / Allow→Execute.
 func gatedExec(ctx context.Context, g *Gateway, tool tools.Tool, args json.RawMessage, key ReservationKey) (tools.ToolResult, Verdict, error) {
-	v, pause, derr := g.Decide(ctx, tool.Spec(), args, key)
+	v, derr := g.Decide(ctx, tool.Spec(), args, key)
 	if derr != nil {
 		return tools.ToolResult{}, v, derr
 	}
@@ -72,7 +73,10 @@ func gatedExec(ctx context.Context, g *Gateway, tool tools.Tool, args json.RawMe
 	case Deny:
 		return tools.ToolResult{}, v, &ErrDenied{Reason: v.Reason, Tier: v.Tier}
 	case Approve:
-		return tools.ToolResult{}, v, pause
+		if v.ApprovalRequest != nil {
+			return *v.ApprovalRequest, v, nil
+		}
+		return tools.ToolResult{}, v, nil
 	}
 	if v.Replay != nil {
 		return *v.Replay, v, nil

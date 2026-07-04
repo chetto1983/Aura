@@ -7,7 +7,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -63,44 +67,116 @@ func resolvedApproval(ctx context.Context) (ResolvedApproval, bool) {
 	return r, ok
 }
 
-// routeApprove routes a mutating GateRecommended call by responder presence (D-03).
+// routeApprove routes a mutating GateRecommended call by responder presence (D-03),
+// mirroring shell_exec's requireShellApproval but hoisted ABOVE tool.Execute.
 //
-//   - A resume carrying the operator's resolution → Verdict{Allow, OperatorID}, NO row
-//     (the executed marker rides 35-04's single reservation start Meta — D-03 point 2).
+//   - A same-ctx resume carrying the operator's resolution → Verdict{Allow, OperatorID},
+//     NO row (the executed marker rides 35-04's single reservation start Meta — the
+//     in-process unit-test seam / same-Turn fast path).
+//   - A CROSS-TURN ledger hit (the production carrier: newGatewayResumeHook recorded the
+//     operator's accept on a prior Turn) → Verdict{Allow, OperatorID} via a one-shot
+//     Consume keyed on the re-computed args fingerprint. NO Insert here (D-03 point 2).
 //   - server_production OR no positively-known responder → deny-with-guidance, plus a
 //     durable degraded_deny(reason=no_approver) terminal `end` decision-fact (D-03a/b,
 //     D-03 point 1 / GATE-01). It NEVER pauses in place.
-//   - single_user_hardened + a live responder → Verdict{Approve} + the shipped
-//     *ErrAwaitingUserInput pause carrying a {"type":"gateway_approval",...} ResumeContext.
-func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scoring.RiskTier, key ReservationKey) (Verdict, *tools.ErrAwaitingUserInput, error) {
+//   - single_user_hardened + a live responder + no ledger hit → Verdict{Approve,
+//     ApprovalRequest} — the shell_exec-style approval-required tool RESULT (no pause
+//     sentinel). execTool returns it as a normal result; the model relays it via ask_user.
+func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
 	if r, ok := resolvedApproval(ctx); ok && r.Approved {
-		// D-03 point 2: the operator approved on a prior turn; the resume re-entered
-		// Decide. Return Allow+OperatorID and write NOTHING — a bare executed(operator_id)
-		// Insert here would compete for the (conv,req,toolCall,event_kind) slot the real
-		// reservation start/end needs, silently discarding the tool's outcome and blinding
-		// the 35-05 reconciler. The marker rides the single reservation start Meta (35-04).
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil, nil
+		// Same-ctx fast path (unit seam): the operator's resolution was placed on THIS ctx.
+		// Return Allow+OperatorID and write NOTHING — a bare executed(operator_id) Insert
+		// would compete for the (conv,req,toolCall,event_kind) slot the real reservation
+		// start/end needs, discarding the tool's outcome and blinding the 35-05 reconciler.
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil
+	}
+	// Cross-turn ledger re-entry (D-03 point 2, the production path): the operator resolved
+	// the relayed ask_user on a PRIOR Turn and newGatewayResumeHook recorded the
+	// ResolvedApproval. The resumed re-emit re-enters here, Consumes the one-shot approval
+	// keyed on the re-computed args fingerprint (a tampered re-emit → different fingerprint
+	// → no hit → fail-closed), and returns Allow+OperatorID so decide.go's funnel takes the
+	// SINGLE 35-04 reservation with operator_id in Meta — never a competing Insert.
+	fp := gatewayArgsFingerprint(rawArgs)
+	if r, ok := g.approvals.Consume(key.ConversationID, spec.Name, fp); ok && r.Approved {
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil
 	}
 	// D-03b: production identity is unverified pre-Phase-36, so it is never interactive;
 	// D-03a: a headless run has no positively-known responder → default DENY.
 	if g.profile == config.ProfileServerProduction || !responderPresent(ctx) {
 		g.recordDegradedDeny(ctx, spec, key, tier)
-		return Verdict{Decision: Deny, Tier: tier, Reason: "no interactive approver — action declined"}, nil, nil
+		return Verdict{Decision: Deny, Tier: tier, Reason: "no interactive approver — action declined"}, nil
 	}
-	// single_user_hardened + a live responder → emit the shipped pause sentinel. Reuse
-	// tools.ApprovalPriority (the skill-approval FIFO priority) — do NOT re-derive it.
-	pause := &tools.ErrAwaitingUserInput{
-		Kind:          tools.KindApproval,
-		Priority:      tools.ApprovalPriority(tier),
-		ResumeContext: gatewayApprovalContext(spec, tier, key),
+	// single_user_hardened + a live responder + no ledger hit → return the shell_exec-style
+	// approval-required tool RESULT (mirroring shellApprovalRequiredResult). execTool returns
+	// it as a NORMAL result (no error, tool.Execute withheld); the model relays it via
+	// ask_user (llm_agent_pause.go UNCHANGED) and retries the exact call after the operator
+	// accepts. This keeps the REAL tool name + args in persisted history so the resumed model
+	// re-emits an args-matching call — the round-trip a pre-dispatch intercept could not do.
+	result := gatewayApprovalRequiredResult(spec, tier, rawArgs, key)
+	return Verdict{Decision: Approve, Tier: tier, ApprovalRequest: &result}, nil
+}
+
+// gatewayApprovalRequiredResult builds the byte-for-byte analog of
+// shellApprovalRequiredResult: a JSON payload (Preview) instructing the model to relay
+// the approval via ask_user. It carries error="gateway_approval_required", the tool, the
+// tier, args_sha256 (the fingerprint the resume must reproduce), a descriptive question,
+// the exact resume_context object (including args_sha256), and a message telling the model
+// to call ask_user with kind="approval", the same question, the tier-ordered priority, and
+// the same resume_context, then "retry the exact call only after the user accepts."
+func gatewayApprovalRequiredResult(spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey) tools.ToolResult {
+	fp := gatewayArgsFingerprint(rawArgs)
+	question := gatewayApprovalQuestion(spec, tier, rawArgs)
+	resumeContext := gatewayApprovalContext(spec, tier, rawArgs, key)
+	payload := map[string]any{
+		"error":          "gateway_approval_required",
+		"tool":           spec.Name,
+		"tier":           string(tier),
+		"args_sha256":    fp,
+		"question":       question,
+		"resume_context": resumeContext,
+		"message": "This mutating action requires operator approval and has been WITHHELD. " +
+			"Call ask_user with kind=\"approval\", question exactly equal to the question field, " +
+			"priority=" + strconv.Itoa(tools.ApprovalPriority(tier)) + ", and resume_context exactly equal " +
+			"to the resume_context field. Retry the exact call only after the user accepts.",
 	}
-	return Verdict{Decision: Approve, Tier: tier}, pause, nil
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte(`{"error":"gateway_approval_required"}`)
+	}
+	return tools.ToolResult{Preview: string(raw), Bytes: len(raw)}
+}
+
+// gatewayApprovalQuestion renders a descriptive, secret-safe approval prompt (mirroring
+// shellApprovalQuestion) the model copies verbatim into ask_user's question so
+// approvals_api.go's handleListApprovals renders a meaningful (non-blank) pending. It
+// surfaces the tool name + tier + the SORTED top-level argument KEYS (never their values),
+// so a secret-bearing argument value is never leaked into the question or the pending list.
+func gatewayApprovalQuestion(spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage) string {
+	return fmt.Sprintf(
+		"Approve %s (risk=%s)?\nThis mutating action is WITHHELD until you accept.\nargs: %s",
+		spec.Name, tier, argKeySummary(rawArgs))
+}
+
+// argKeySummary renders the sorted top-level argument keys (NOT values — secret-safe) so
+// the operator sees the shape of the withheld action without any secret value surfacing.
+func argKeySummary(rawArgs json.RawMessage) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(rawArgs, &obj); err != nil || len(obj) == 0 {
+		return "(none)"
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
 }
 
 // gatewayApprovalContext builds the {"type":"gateway_approval",...} ResumeContext the
 // host-side approval handler reads. It carries NO secret — only the tool + tier + the
-// originating-conversation-keyed triple, so a resume can re-enter Decide for THIS call.
-func gatewayApprovalContext(spec tools.Spec, tier scoring.RiskTier, key ReservationKey) json.RawMessage {
+// originating-conversation-keyed triple + args_sha256 (the fingerprint the resume hook
+// records and routeApprove Consumes), so a resume can re-enter Decide for THIS exact call.
+func gatewayApprovalContext(spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey) json.RawMessage {
 	b, err := json.Marshal(map[string]any{
 		"type":            gatewayApprovalType,
 		"tool":            spec.Name,
@@ -108,6 +184,7 @@ func gatewayApprovalContext(spec tools.Spec, tier scoring.RiskTier, key Reservat
 		"conversation_id": key.ConversationID,
 		"request_id":      key.RequestID,
 		"tool_call_id":    key.ToolCallID,
+		"args_sha256":     gatewayArgsFingerprint(rawArgs),
 	})
 	if err != nil {
 		return nil
