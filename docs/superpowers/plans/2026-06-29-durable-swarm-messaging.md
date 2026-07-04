@@ -8,6 +8,19 @@
 
 **Tech Stack:** Go 1.26, pgx v5, sqlc, golang-migrate, Postgres, AG-UI Go SDK, Aura's existing tool registry and hand-rolled CLI.
 
+> **Amended 2026-07-04** (design review vs codebase + industry survey of Temporal/DBOS/River/Hatchet/pgmq/A2A):
+>
+> 1. Migration renumbered **0025 → 0026** (`0025_document_control_plane` already shipped).
+> 2. New **Task 7b**: gateway risk-tier entry for `agent_message_send` — without it the tool classifies `Risky` and every send pauses for human approval.
+> 3. `ValidateSendInput` now takes `*SendInput` and normalizes defaults in place (the by-value version silently dropped `Kind`/`Direction` defaults, then the insert hit the CHECK constraint).
+> 4. `jsonParam` split into `jsonObjectParam`/`jsonArrayParam` with `{}`/`[]` fallbacks (nil `[]byte` sends SQL NULL into NOT NULL jsonb columns; defaults do not apply to explicit NULLs).
+> 5. `SendMessage` recovers from concurrent-duplicate `23505` unique violations by refetching the winner (`Reused: true`) instead of surfacing a raw constraint error.
+> 6. Claim predicate and partial index widened to reclaim expired **`running`** leases (a worker crash after `MarkRunning` previously stranded the task forever).
+> 7. Completion/failure/retry are **fenced** on `attempt_count` (zombie worker past its lease cannot clobber a reclaimed task); store maps `ErrNoRows` to typed `ErrLeaseLost`/`ErrRetryExhausted`.
+> 8. Worker actually uses the retry machinery: transient errors reschedule with exponential backoff + full jitter, exhaustion transitions to `failed`; a heartbeat goroutine extends the lease during long LLM calls.
+> 9. Task status vocabulary aligned with A2A: added `rejected`; `waiting_input` documented as non-attempt-consuming.
+> 10. Slice-2 backlog recorded in Scope Guard (rescuer/sweeper, retention + autovacuum, queue observability, step-level checkpointing decision, NOTIFY caveats).
+
 ---
 
 ## Scope Guard
@@ -29,17 +42,26 @@ Excluded from this plan:
 
 - Replacing `swarm_spawn`.
 - Strict local-LLM enforcement.
-- Full ToolGateway policy.
+- Full ToolGateway policy (Task 7b adds only the single fixed-tier entry for `agent_message_send`).
 - Full real Telegram delivery rewrite. The contract is tested with a Telegram-shaped fake adapter.
+
+Deferred to slice 2 (recorded here so they do not silently evaporate — each is industry table stakes, see 2026-07-04 amendment):
+
+- **Rescuer/sweeper** for stuck tasks past their horizon, single-flight under an advisory lock (Graphile pattern); pairs with worker-level liveness.
+- **Row hygiene**: prune/archive terminal task/message rows on retention (River defaults ~24h) + aggressive per-table autovacuum settings — PG queues die by MVCC bloat, not by load.
+- **Queue observability**: queue depth, oldest-claimable-age (the real SLO metric), attempt histograms, dead-letter count — SQL-queryable, surfaced via CLI/metrics.
+- **Step-level checkpointing decision**: whether worker resume consults the append-only message log (causation chain) to skip completed steps instead of re-running the whole task (DBOS `operation_outputs` / Temporal history analog). Must be decided explicitly in the spec, not inherited.
+- **Wakeup path**: if LISTEN/NOTIFY is ever added, notify only on empty→non-empty transitions or from a single notifier — `NOTIFY` takes a global AccessExclusiveLock at commit and serializes all commits at scale (Recall.ai postmortem). Poll-with-jitter remains the correctness mechanism.
+- **`waiting_input` wiring**: the paused state exists in the schema; the transition (A2A `input-required` semantics, does NOT consume `attempt_count`, woken transactionally by the arriving reply) lands with the worker/channel slice.
 
 ## File Map
 
 Create:
 
-- `internal/db/migrations/0025_swarm_messaging.up.sql`
-- `internal/db/migrations/0025_swarm_messaging.down.sql`
+- `internal/db/migrations/0026_swarm_messaging.up.sql`
+- `internal/db/migrations/0026_swarm_messaging.down.sql`
 - `internal/db/queries/swarm_messaging.sql`
-- `internal/db/migrate_0025_swarm_messaging_integration_test.go`
+- `internal/db/migrate_0026_swarm_messaging_integration_test.go`
 - `internal/swarm/messaging/types.go`
 - `internal/swarm/messaging/validation.go`
 - `internal/swarm/messaging/service.go`
@@ -66,6 +88,8 @@ Modify:
 - `internal/agent/event.go`
 - `internal/agent/llm_agent_events.go`
 - `internal/agui/translator.go`
+- `internal/gateway/classify.go`
+- `internal/gateway/classify_test.go`
 - `cmd/aura/main.go`
 - `cmd/aura/main_test.go`
 
@@ -79,15 +103,15 @@ Do not modify:
 
 **Files:**
 
-- Create: `internal/db/migrations/0025_swarm_messaging.up.sql`
-- Create: `internal/db/migrations/0025_swarm_messaging.down.sql`
+- Create: `internal/db/migrations/0026_swarm_messaging.up.sql`
+- Create: `internal/db/migrations/0026_swarm_messaging.down.sql`
 - Create: `internal/db/queries/swarm_messaging.sql`
-- Create: `internal/db/migrate_0025_swarm_messaging_integration_test.go`
+- Create: `internal/db/migrate_0026_swarm_messaging_integration_test.go`
 - Modify: `internal/db/sqlc/*.go`
 
 - [ ] **Step 1: Write the failing migration integration test**
 
-Create `internal/db/migrate_0025_swarm_messaging_integration_test.go`:
+Create `internal/db/migrate_0026_swarm_messaging_integration_test.go`:
 
 ```go
 //go:build db_integration
@@ -101,7 +125,7 @@ import (
 	"time"
 )
 
-func TestMigration0025SwarmMessagingSchema(t *testing.T) {
+func TestMigration0026SwarmMessagingSchema(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -133,7 +157,7 @@ func TestMigration0025SwarmMessagingSchema(t *testing.T) {
 	}
 
 	if os.Getenv("CI") != "" {
-		t.Log("migration 0025 schema verified under CI")
+		t.Log("migration 0026 schema verified under CI")
 	}
 }
 ```
@@ -143,7 +167,7 @@ func TestMigration0025SwarmMessagingSchema(t *testing.T) {
 Run:
 
 ```powershell
-go test -tags db_integration ./internal/db -run TestMigration0025SwarmMessagingSchema -count=1
+go test -tags db_integration ./internal/db -run TestMigration0026SwarmMessagingSchema -count=1
 ```
 
 Expected before the migration exists:
@@ -154,7 +178,7 @@ FAIL: aura.swarm_channel_threads was not created
 
 - [ ] **Step 3: Add the migration up file**
 
-Create `internal/db/migrations/0025_swarm_messaging.up.sql` with this schema:
+Create `internal/db/migrations/0026_swarm_messaging.up.sql` with this schema:
 
 ```sql
 CREATE TABLE aura.swarm_channel_threads (
@@ -197,16 +221,20 @@ CREATE TABLE aura.swarm_tasks (
     updated_at        timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT swarm_tasks_from_agent_nonempty CHECK (btrim(from_agent) <> ''),
     CONSTRAINT swarm_tasks_to_agent_nonempty CHECK (btrim(to_agent) <> ''),
+    -- Vocabulary aligned with the A2A task lifecycle: waiting_input is the non-terminal
+    -- input-required pause (never consumes attempts); rejected = agent declined before working.
     CONSTRAINT swarm_tasks_status_valid CHECK (status IN (
         'pending', 'leased', 'running', 'waiting_input', 'completed',
-        'failed', 'cancelled', 'expired'
+        'failed', 'cancelled', 'expired', 'rejected'
     )),
     CONSTRAINT swarm_tasks_attempts_nonnegative CHECK (attempt_count >= 0 AND max_attempts >= 1)
 );
 
+-- 'running' is included so expired-lease reclaim (worker died after MarkRunning)
+-- stays on the same index-ordered scan as the pending claim.
 CREATE INDEX swarm_tasks_claim_idx
     ON aura.swarm_tasks (priority DESC, available_at ASC, created_at ASC)
-    WHERE status IN ('pending', 'leased');
+    WHERE status IN ('pending', 'leased', 'running');
 
 CREATE INDEX swarm_tasks_channel_idx ON aura.swarm_tasks (channel_thread_id, created_at DESC);
 CREATE INDEX swarm_tasks_parent_idx ON aura.swarm_tasks (parent_task_id);
@@ -280,7 +308,7 @@ COMMENT ON TABLE aura.swarm_artifacts IS 'Metadata references for large swarm pa
 
 - [ ] **Step 4: Add the migration down file**
 
-Create `internal/db/migrations/0025_swarm_messaging.down.sql`:
+Create `internal/db/migrations/0026_swarm_messaging.down.sql`:
 
 ```sql
 DROP TABLE IF EXISTS aura.swarm_artifacts;
@@ -373,7 +401,7 @@ WITH next_task AS (
     WHERE available_at <= now()
       AND (
           status = 'pending'
-          OR (status = 'leased' AND locked_until IS NOT NULL AND locked_until < now())
+          OR (status IN ('leased', 'running') AND locked_until IS NOT NULL AND locked_until < now())
       )
     ORDER BY priority DESC, available_at ASC, created_at ASC
     LIMIT 1
@@ -394,20 +422,22 @@ RETURNING t.id, t.run_id, t.parent_task_id, t.channel_thread_id, t.request_id,
 -- name: MarkSwarmTaskRunning :one
 UPDATE aura.swarm_tasks
 SET status = 'running', updated_at = now()
-WHERE id = $1 AND locked_by = $2
+WHERE id = $1 AND locked_by = $2 AND attempt_count = $3
 RETURNING id, run_id, parent_task_id, channel_thread_id, request_id,
           from_agent, to_agent, status, priority, attempt_count, max_attempts,
           available_at, locked_by, locked_until, timeout_at, budget_snapshot,
           last_error, created_at, updated_at;
 
 -- name: CompleteSwarmTask :one
+-- attempt_count is the fencing token: a zombie worker whose lease expired and whose
+-- task was reclaimed (attempt bumped) matches zero rows instead of clobbering the retry.
 UPDATE aura.swarm_tasks
 SET status = 'completed',
     locked_by = NULL,
     locked_until = NULL,
     last_error = NULL,
     updated_at = now()
-WHERE id = $1 AND locked_by = $2
+WHERE id = $1 AND locked_by = $2 AND attempt_count = $3
 RETURNING id, run_id, parent_task_id, channel_thread_id, request_id,
           from_agent, to_agent, status, priority, attempt_count, max_attempts,
           available_at, locked_by, locked_until, timeout_at, budget_snapshot,
@@ -418,28 +448,38 @@ UPDATE aura.swarm_tasks
 SET status = 'failed',
     locked_by = NULL,
     locked_until = NULL,
-    last_error = $3,
+    last_error = $4,
     updated_at = now()
-WHERE id = $1 AND locked_by = $2
+WHERE id = $1 AND locked_by = $2 AND attempt_count = $3
 RETURNING id, run_id, parent_task_id, channel_thread_id, request_id,
           from_agent, to_agent, status, priority, attempt_count, max_attempts,
           available_at, locked_by, locked_until, timeout_at, budget_snapshot,
           last_error, created_at, updated_at;
 
 -- name: RetrySwarmTask :one
+-- Fenced on attempt_count like Complete/Fail; the attempt_count + 1 < max_attempts
+-- guard means zero rows also signals exhaustion (store disambiguates via GetSwarmTask).
 UPDATE aura.swarm_tasks
 SET status = 'pending',
     locked_by = NULL,
     locked_until = NULL,
     attempt_count = attempt_count + 1,
-    available_at = $3,
-    last_error = $4,
+    available_at = $4,
+    last_error = $5,
     updated_at = now()
-WHERE id = $1 AND locked_by = $2 AND attempt_count + 1 < max_attempts
+WHERE id = $1 AND locked_by = $2 AND attempt_count = $3 AND attempt_count + 1 < max_attempts
 RETURNING id, run_id, parent_task_id, channel_thread_id, request_id,
           from_agent, to_agent, status, priority, attempt_count, max_attempts,
           available_at, locked_by, locked_until, timeout_at, budget_snapshot,
           last_error, created_at, updated_at;
+
+-- name: ExtendSwarmTaskLease :one
+-- Heartbeat: the worker extends its lease while a long step (LLM call) runs, so the
+-- lease itself can stay short and crash recovery fast (Temporal heartbeat pattern).
+UPDATE aura.swarm_tasks
+SET locked_until = $3, updated_at = now()
+WHERE id = $1 AND locked_by = $2 AND status IN ('leased', 'running')
+RETURNING id;
 
 -- name: ListRecentSwarmTasks :many
 SELECT id, run_id, parent_task_id, channel_thread_id, request_id,
@@ -478,7 +518,7 @@ no output on success
 Run:
 
 ```powershell
-go test -tags db_integration ./internal/db -run TestMigration0025SwarmMessagingSchema -count=1
+go test -tags db_integration ./internal/db -run TestMigration0026SwarmMessagingSchema -count=1
 ```
 
 Expected:
@@ -490,7 +530,7 @@ ok   github.com/chetto1983/aura/internal/db
 - [ ] **Step 8: Commit**
 
 ```powershell
-git add internal/db/migrations/0025_swarm_messaging.*.sql internal/db/queries/swarm_messaging.sql internal/db/sqlc internal/db/migrate_0025_swarm_messaging_integration_test.go
+git add internal/db/migrations/0026_swarm_messaging.*.sql internal/db/queries/swarm_messaging.sql internal/db/sqlc internal/db/migrate_0026_swarm_messaging_integration_test.go
 git commit -m "feat: add durable swarm messaging schema"
 ```
 
@@ -520,7 +560,7 @@ func TestValidateSendInputRejectsTelegramFieldsInContent(t *testing.T) {
 	in := validSendInput()
 	in.Content = map[string]any{"telegram_chat_id": "123"}
 
-	err := ValidateSendInput(in)
+	err := ValidateSendInput(&in)
 	if err == nil || !strings.Contains(err.Error(), "channel-specific") {
 		t.Fatalf("ValidateSendInput err = %v, want channel-specific rejection", err)
 	}
@@ -530,7 +570,7 @@ func TestValidateSendInputRequiresIdempotencyKey(t *testing.T) {
 	in := validSendInput()
 	in.IdempotencyKey = ""
 
-	err := ValidateSendInput(in)
+	err := ValidateSendInput(&in)
 	if err == nil || !strings.Contains(err.Error(), "idempotency_key") {
 		t.Fatalf("ValidateSendInput err = %v, want idempotency_key rejection", err)
 	}
@@ -541,8 +581,21 @@ func TestValidateSendInputAcceptsChannelThreadReference(t *testing.T) {
 	id := uuid.Must(uuid.NewV7())
 	in.ChannelThreadID = &id
 
-	if err := ValidateSendInput(in); err != nil {
+	if err := ValidateSendInput(&in); err != nil {
 		t.Fatalf("ValidateSendInput: %v", err)
+	}
+}
+
+func TestValidateSendInputNormalizesDefaults(t *testing.T) {
+	in := validSendInput()
+	in.Kind = ""
+	in.Direction = ""
+
+	if err := ValidateSendInput(&in); err != nil {
+		t.Fatalf("ValidateSendInput: %v", err)
+	}
+	if in.Kind != MessageKindTask || in.Direction != MessageDirectionRequest {
+		t.Fatalf("normalized kind/direction = %q/%q, want task/request", in.Kind, in.Direction)
 	}
 }
 
@@ -580,6 +633,7 @@ Create `internal/swarm/messaging/types.go`:
 package messaging
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -588,15 +642,28 @@ import (
 type TaskStatus string
 
 const (
-	TaskStatusPending      TaskStatus = "pending"
-	TaskStatusLeased      TaskStatus = "leased"
-	TaskStatusRunning     TaskStatus = "running"
+	TaskStatusPending TaskStatus = "pending"
+	TaskStatusLeased  TaskStatus = "leased"
+	TaskStatusRunning TaskStatus = "running"
+	// TaskStatusWaitingInput is the A2A input-required pause: non-terminal, never
+	// consumes attempt_count, woken transactionally by the arriving reply.
 	TaskStatusWaitingInput TaskStatus = "waiting_input"
 	TaskStatusCompleted    TaskStatus = "completed"
 	TaskStatusFailed       TaskStatus = "failed"
 	TaskStatusCancelled    TaskStatus = "cancelled"
 	TaskStatusExpired      TaskStatus = "expired"
+	// TaskStatusRejected mirrors A2A rejected: the target agent declined before working.
+	TaskStatusRejected TaskStatus = "rejected"
 )
+
+// ErrLeaseLost is returned by fenced store mutations (complete/fail/retry/mark-running)
+// when the worker no longer owns the task: its lease expired and the task was reclaimed,
+// so the attempt_count/locked_by fence matched zero rows. The worker must drop the task.
+var ErrLeaseLost = errors.New("swarm messaging: lease lost")
+
+// ErrRetryExhausted is returned by RetryTask when attempt_count+1 would reach
+// max_attempts; the caller transitions the task to failed (dead-letter) instead.
+var ErrRetryExhausted = errors.New("swarm messaging: retry attempts exhausted")
 
 type MessageDirection string
 
@@ -724,7 +791,10 @@ var forbiddenContentKeys = map[string]struct{}{
 	"password":         {},
 }
 
-func ValidateSendInput(in SendInput) error {
+// ValidateSendInput validates AND normalizes: it takes a pointer so the Kind/Direction
+// defaults it assigns propagate to the caller's value — a by-value copy would pass
+// validation and then fail the swarm_messages_kind_valid CHECK at insert time.
+func ValidateSendInput(in *SendInput) error {
 	if strings.TrimSpace(in.FromAgent) == "" {
 		return fmt.Errorf("from_agent is required")
 	}
@@ -826,6 +896,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -952,6 +1023,7 @@ import (
 	"github.com/chetto1983/aura/internal/swarm/messaging"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -975,8 +1047,8 @@ func (s *Store) FindOrCreateChannelThread(ctx context.Context, in messaging.Chan
 		ChannelInstance:  in.ChannelInstance,
 		ExternalThreadID: in.ExternalThreadID,
 		ExternalActorRef: textParam(in.ExternalActorRef),
-		ReplyRoute:       jsonParam(in.ReplyRoute),
-		Metadata:         jsonParam(in.Metadata),
+		ReplyRoute:       jsonObjectParam(in.ReplyRoute),
+		Metadata:         jsonObjectParam(in.Metadata),
 	})
 	if err != nil {
 		return messaging.ChannelThread{}, fmt.Errorf("upsert swarm channel thread: %w", err)
@@ -985,7 +1057,7 @@ func (s *Store) FindOrCreateChannelThread(ctx context.Context, in messaging.Chan
 }
 
 func (s *Store) SendMessage(ctx context.Context, in messaging.SendInput) (messaging.SendResult, error) {
-	if err := messaging.ValidateSendInput(in); err != nil {
+	if err := messaging.ValidateSendInput(&in); err != nil {
 		return messaging.SendResult{}, err
 	}
 	var out messaging.SendResult
@@ -1018,7 +1090,7 @@ func (s *Store) SendMessage(ctx context.Context, in messaging.SendInput) (messag
 			MaxAttempts:     maxAttempts(in.MaxAttempts),
 			AvailableAt:     timestamptz(time.Now().UTC()),
 			TimeoutAt:       timestamptzPtr(in.TimeoutAt),
-			BudgetSnapshot:  jsonParam(in.BudgetSnapshot),
+			BudgetSnapshot:  jsonObjectParam(in.BudgetSnapshot),
 		})
 		if err != nil {
 			return fmt.Errorf("insert swarm task: %w", err)
@@ -1034,9 +1106,9 @@ func (s *Store) SendMessage(ctx context.Context, in messaging.SendInput) (messag
 			CorrelationID:    uuidParam(correlationID),
 			CausationID:      uuidParamPtr(in.CausationID),
 			IdempotencyKey:   in.IdempotencyKey,
-			Content:          jsonParam(in.Content),
-			ArtifactRefs:     jsonParam(in.ArtifactRefs),
-			DeliveryMetadata: jsonParam(nil),
+			Content:          jsonObjectParam(in.Content),
+			ArtifactRefs:     jsonArrayParam(in.ArtifactRefs),
+			DeliveryMetadata: jsonObjectParam(nil),
 		})
 		if err != nil {
 			return fmt.Errorf("insert swarm message: %w", err)
@@ -1044,7 +1116,33 @@ func (s *Store) SendMessage(ctx context.Context, in messaging.SendInput) (messag
 		out = messaging.SendResult{Task: taskFromRow(task), Message: messageFromRow(msg)}
 		return nil
 	})
+	if isUniqueViolation(err) {
+		// Idempotency race: a concurrent send with the same key committed first and
+		// this whole tx (task row included) rolled back. Return the winner as reused
+		// instead of surfacing a raw 23505.
+		return s.reusedSend(ctx, in)
+	}
 	return out, err
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func (s *Store) reusedSend(ctx context.Context, in messaging.SendInput) (messaging.SendResult, error) {
+	existing, found, err := findExistingMessage(ctx, s.q, in)
+	if err != nil {
+		return messaging.SendResult{}, fmt.Errorf("refetch after idempotency race: %w", err)
+	}
+	if !found {
+		return messaging.SendResult{}, fmt.Errorf("idempotency race: unique violation but no existing message")
+	}
+	task, err := s.q.GetSwarmTask(ctx, existing.TaskID)
+	if err != nil {
+		return messaging.SendResult{}, fmt.Errorf("get task after idempotency race: %w", err)
+	}
+	return messaging.SendResult{Task: taskFromRow(task), Message: messageFromRow(existing), Reused: true}, nil
 }
 
 func findExistingMessage(ctx context.Context, q *sqlc.Queries, in messaging.SendInput) (sqlc.AuraSwarmMessages, bool, error) {
@@ -1090,13 +1188,27 @@ func timestamptzPtr(t *time.Time) pgtype.Timestamptz {
 	}
 	return timestamptz(*t)
 }
-func jsonParam(v any) []byte {
-	if v == nil {
-		return nil
+// jsonObjectParam/jsonArrayParam never return nil: a nil []byte reaches Postgres as
+// SQL NULL, and column DEFAULTs do NOT apply to explicit NULLs — the NOT NULL jsonb
+// columns (reply_route, metadata, budget_snapshot, content, artifact_refs,
+// delivery_metadata) would reject the insert.
+func jsonObjectParam(v map[string]any) []byte {
+	if len(v) == 0 {
+		return []byte(`{}`)
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return []byte(`{}`)
+	}
+	return b
+}
+func jsonArrayParam(v []map[string]any) []byte {
+	if len(v) == 0 {
+		return []byte(`[]`)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return []byte(`[]`)
 	}
 	return b
 }
@@ -1291,12 +1403,53 @@ func TestRetryTaskReschedulesWithBackoff(t *testing.T) {
 		t.Fatalf("ClaimNextTask: task=%+v ok=%v err=%v", claimed, ok, err)
 	}
 	next := time.Now().Add(2 * time.Minute).UTC()
-	retried, err := s.RetryTask(ctx, sent.Task.ID, "worker-retry", next, "transient")
+	retried, err := s.RetryTask(ctx, sent.Task.ID, "worker-retry", claimed.AttemptCount, next, "transient")
 	if err != nil {
 		t.Fatalf("RetryTask: %v", err)
 	}
 	if retried.Status != messaging.TaskStatusPending || retried.AttemptCount != 1 {
 		t.Fatalf("retried task = %+v, want pending attempt_count=1", retried)
+	}
+}
+
+func TestClaimReclaimsExpiredRunningLeaseAndFencesZombie(t *testing.T) {
+	ctx := context.Background()
+	pool := migratedPool(t)
+	s := New(pool)
+	sent, err := s.SendMessage(ctx, messaging.SendInput{
+		FromAgent:      "planner",
+		ToAgent:        "researcher",
+		Kind:           messaging.MessageKindTask,
+		Direction:      messaging.MessageDirectionRequest,
+		IdempotencyKey: "reclaim-" + uuid.Must(uuid.NewV7()).String(),
+		Content:        map[string]any{"brief": "reclaim me"},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	claimed, ok, err := s.ClaimNextTask(ctx, "worker-dead", time.Now().Add(time.Minute))
+	if err != nil || !ok {
+		t.Fatalf("ClaimNextTask: ok=%v err=%v", ok, err)
+	}
+	if _, err := s.MarkRunning(ctx, claimed.ID, "worker-dead", claimed.AttemptCount); err != nil {
+		t.Fatalf("MarkRunning: %v", err)
+	}
+
+	// Simulate a worker crash after MarkRunning: expire the lease in place.
+	if _, err := pool.Exec(ctx,
+		`UPDATE aura.swarm_tasks SET locked_until = now() - interval '1 second' WHERE id = $1`,
+		claimed.ID.String()); err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+
+	reclaimed, ok, err := s.ClaimNextTask(ctx, "worker-new", time.Now().Add(time.Minute))
+	if err != nil || !ok || reclaimed.ID != sent.Task.ID {
+		t.Fatalf("reclaim = %+v ok=%v err=%v, want task %s", reclaimed, ok, err, sent.Task.ID)
+	}
+
+	// The zombie's completion must be fenced out, not clobber the reclaimed task.
+	if _, err := s.CompleteTask(ctx, sent.Task.ID, "worker-dead", claimed.AttemptCount); !errors.Is(err, messaging.ErrLeaseLost) {
+		t.Fatalf("zombie CompleteTask err = %v, want ErrLeaseLost", err)
 	}
 }
 ```
@@ -1334,47 +1487,88 @@ func (s *Store) ClaimNextTask(ctx context.Context, workerID string, lockedUntil 
 	return taskFromRow(row), true, nil
 }
 
-func (s *Store) MarkRunning(ctx context.Context, taskID uuid.UUID, workerID string) (messaging.Task, error) {
+// The attempt parameter on the mutations below is the fencing token (Kleppmann):
+// pass the AttemptCount of the task as claimed. A zombie worker whose lease expired
+// and whose task was retried/reclaimed matches zero rows → messaging.ErrLeaseLost.
+
+func (s *Store) MarkRunning(ctx context.Context, taskID uuid.UUID, workerID string, attempt int32) (messaging.Task, error) {
 	row, err := s.q.MarkSwarmTaskRunning(ctx, sqlc.MarkSwarmTaskRunningParams{
-		ID:       uuidParam(taskID),
-		LockedBy: textParam(workerID),
+		ID:           uuidParam(taskID),
+		LockedBy:     textParam(workerID),
+		AttemptCount: attempt,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return messaging.Task{}, messaging.ErrLeaseLost
+	}
 	if err != nil {
 		return messaging.Task{}, fmt.Errorf("mark swarm task running: %w", err)
 	}
 	return taskFromRow(row), nil
 }
 
-func (s *Store) CompleteTask(ctx context.Context, taskID uuid.UUID, workerID string) (messaging.Task, error) {
-	row, err := s.q.CompleteSwarmTask(ctx, sqlc.CompleteSwarmTaskParams{
-		ID:       uuidParam(taskID),
-		LockedBy: textParam(workerID),
+func (s *Store) ExtendLease(ctx context.Context, taskID uuid.UUID, workerID string, lockedUntil time.Time) error {
+	_, err := s.q.ExtendSwarmTaskLease(ctx, sqlc.ExtendSwarmTaskLeaseParams{
+		ID:          uuidParam(taskID),
+		LockedBy:    textParam(workerID),
+		LockedUntil: timestamptz(lockedUntil),
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return messaging.ErrLeaseLost
+	}
+	if err != nil {
+		return fmt.Errorf("extend swarm task lease: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CompleteTask(ctx context.Context, taskID uuid.UUID, workerID string, attempt int32) (messaging.Task, error) {
+	row, err := s.q.CompleteSwarmTask(ctx, sqlc.CompleteSwarmTaskParams{
+		ID:           uuidParam(taskID),
+		LockedBy:     textParam(workerID),
+		AttemptCount: attempt,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return messaging.Task{}, messaging.ErrLeaseLost
+	}
 	if err != nil {
 		return messaging.Task{}, fmt.Errorf("complete swarm task: %w", err)
 	}
 	return taskFromRow(row), nil
 }
 
-func (s *Store) FailTask(ctx context.Context, taskID uuid.UUID, workerID, reason string) (messaging.Task, error) {
+func (s *Store) FailTask(ctx context.Context, taskID uuid.UUID, workerID string, attempt int32, reason string) (messaging.Task, error) {
 	row, err := s.q.FailSwarmTask(ctx, sqlc.FailSwarmTaskParams{
-		ID:        uuidParam(taskID),
-		LockedBy:  textParam(workerID),
-		LastError: textParam(reason),
+		ID:           uuidParam(taskID),
+		LockedBy:     textParam(workerID),
+		AttemptCount: attempt,
+		LastError:    textParam(reason),
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return messaging.Task{}, messaging.ErrLeaseLost
+	}
 	if err != nil {
 		return messaging.Task{}, fmt.Errorf("fail swarm task: %w", err)
 	}
 	return taskFromRow(row), nil
 }
 
-func (s *Store) RetryTask(ctx context.Context, taskID uuid.UUID, workerID string, availableAt time.Time, reason string) (messaging.Task, error) {
+func (s *Store) RetryTask(ctx context.Context, taskID uuid.UUID, workerID string, attempt int32, availableAt time.Time, reason string) (messaging.Task, error) {
 	row, err := s.q.RetrySwarmTask(ctx, sqlc.RetrySwarmTaskParams{
-		ID:          uuidParam(taskID),
-		LockedBy:    textParam(workerID),
-		AvailableAt: timestamptz(availableAt),
-		LastError:   textParam(reason),
+		ID:           uuidParam(taskID),
+		LockedBy:     textParam(workerID),
+		AttemptCount: attempt,
+		AvailableAt:  timestamptz(availableAt),
+		LastError:    textParam(reason),
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Zero rows is ambiguous: fence lost OR attempts exhausted. Disambiguate so
+		// the worker can dead-letter on exhaustion instead of dropping the task.
+		task, getErr := s.q.GetSwarmTask(ctx, uuidParam(taskID))
+		if getErr == nil && task.LockedBy.String == workerID && task.AttemptCount+1 >= task.MaxAttempts {
+			return messaging.Task{}, messaging.ErrRetryExhausted
+		}
+		return messaging.Task{}, messaging.ErrLeaseLost
+	}
 	if err != nil {
 		return messaging.Task{}, fmt.Errorf("retry swarm task: %w", err)
 	}
@@ -1489,6 +1683,7 @@ package messaging
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -1499,26 +1694,44 @@ type fakeWorkerStore struct {
 	task      Task
 	claimed   bool
 	completed bool
+	retried   bool
+	failed    bool
+	retryErr  error
 }
 
 func (f *fakeWorkerStore) ClaimNextTask(context.Context, string, time.Time) (Task, bool, error) {
 	return f.task, f.claimed, nil
 }
-func (f *fakeWorkerStore) MarkRunning(context.Context, uuid.UUID, string) (Task, error) { return f.task, nil }
-func (f *fakeWorkerStore) CompleteTask(context.Context, uuid.UUID, string) (Task, error) {
+func (f *fakeWorkerStore) MarkRunning(context.Context, uuid.UUID, string, int32) (Task, error) {
+	return f.task, nil
+}
+func (f *fakeWorkerStore) ExtendLease(context.Context, uuid.UUID, string, time.Time) error {
+	return nil
+}
+func (f *fakeWorkerStore) CompleteTask(context.Context, uuid.UUID, string, int32) (Task, error) {
 	f.completed = true
 	f.task.Status = TaskStatusCompleted
 	return f.task, nil
 }
-func (f *fakeWorkerStore) FailTask(context.Context, uuid.UUID, string, string) (Task, error) { return f.task, nil }
-func (f *fakeWorkerStore) RetryTask(context.Context, uuid.UUID, string, time.Time, string) (Task, error) {
+func (f *fakeWorkerStore) FailTask(context.Context, uuid.UUID, string, int32, string) (Task, error) {
+	f.failed = true
 	return f.task, nil
+}
+func (f *fakeWorkerStore) RetryTask(context.Context, uuid.UUID, string, int32, time.Time, string) (Task, error) {
+	f.retried = true
+	return f.task, f.retryErr
 }
 
 type fakeTaskRunner struct{}
 
 func (fakeTaskRunner) RunTask(context.Context, Task) (WorkerResult, error) {
 	return WorkerResult{Status: TaskStatusCompleted}, nil
+}
+
+type failingTaskRunner struct{ err error }
+
+func (r failingTaskRunner) RunTask(context.Context, Task) (WorkerResult, error) {
+	return WorkerResult{}, r.err
 }
 
 func TestWorkerRunOnceCompletesClaimedTask(t *testing.T) {
@@ -1531,6 +1744,32 @@ func TestWorkerRunOnceCompletesClaimedTask(t *testing.T) {
 	}
 	if !worked || !st.completed {
 		t.Fatalf("worked=%v completed=%v, want true/true", worked, st.completed)
+	}
+}
+
+func TestWorkerRunOnceRetriesTransientRunnerError(t *testing.T) {
+	st := &fakeWorkerStore{claimed: true, task: Task{ID: uuid.Must(uuid.NewV7()), Status: TaskStatusLeased}}
+	w := Worker{Store: st, Runner: failingTaskRunner{err: errors.New("llm timeout")}, WorkerID: "worker-1", LeaseDuration: time.Minute}
+
+	worked, err := w.RunOnce(context.Background())
+	if err != nil || !worked {
+		t.Fatalf("RunOnce worked=%v err=%v", worked, err)
+	}
+	if !st.retried || st.failed {
+		t.Fatalf("retried=%v failed=%v, want retry-with-backoff and no dead-letter", st.retried, st.failed)
+	}
+}
+
+func TestWorkerRunOnceDeadLettersOnExhaustion(t *testing.T) {
+	st := &fakeWorkerStore{claimed: true, retryErr: ErrRetryExhausted,
+		task: Task{ID: uuid.Must(uuid.NewV7()), Status: TaskStatusLeased}}
+	w := Worker{Store: st, Runner: failingTaskRunner{err: errors.New("llm timeout")}, WorkerID: "worker-1", LeaseDuration: time.Minute}
+
+	if _, err := w.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if !st.failed {
+		t.Fatal("exhausted retries must transition the task to failed (dead-letter)")
 	}
 }
 ```
@@ -1573,7 +1812,7 @@ func NewService(store Sender) *Service {
 }
 
 func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
-	if err := ValidateSendInput(in); err != nil {
+	if err := ValidateSendInput(&in); err != nil {
 		return SendResult{}, err
 	}
 	return s.store.SendMessage(ctx, in)
@@ -1606,6 +1845,8 @@ package messaging
 
 import (
 	"context"
+	"errors"
+	"math/rand/v2"
 	"time"
 
 	"github.com/google/uuid"
@@ -1613,54 +1854,135 @@ import (
 
 type WorkerStore interface {
 	ClaimNextTask(context.Context, string, time.Time) (Task, bool, error)
-	MarkRunning(context.Context, uuid.UUID, string) (Task, error)
-	CompleteTask(context.Context, uuid.UUID, string) (Task, error)
-	FailTask(context.Context, uuid.UUID, string, string) (Task, error)
-	RetryTask(context.Context, uuid.UUID, string, time.Time, string) (Task, error)
+	MarkRunning(ctx context.Context, id uuid.UUID, workerID string, attempt int32) (Task, error)
+	ExtendLease(ctx context.Context, id uuid.UUID, workerID string, lockedUntil time.Time) error
+	CompleteTask(ctx context.Context, id uuid.UUID, workerID string, attempt int32) (Task, error)
+	FailTask(ctx context.Context, id uuid.UUID, workerID string, attempt int32, reason string) (Task, error)
+	RetryTask(ctx context.Context, id uuid.UUID, workerID string, attempt int32, availableAt time.Time, reason string) (Task, error)
 }
 
 type TaskRunner interface {
 	RunTask(context.Context, Task) (WorkerResult, error)
 }
 
+// WorkerResult reports the runner's verdict. A returned error from RunTask means
+// TRANSIENT (worker retries with backoff); a permanent failure is reported as
+// WorkerResult{Status: TaskStatusFailed} — that distinction is the retry contract.
 type WorkerResult struct {
 	Status TaskStatus
 	Error  string
 }
 
 type Worker struct {
-	Store         WorkerStore
-	Runner        TaskRunner
-	WorkerID      string
-	LeaseDuration time.Duration
+	Store    WorkerStore
+	Runner   TaskRunner
+	WorkerID string
+	// LeaseDuration stays SHORT (default 1m) because the heartbeat extends it; a
+	// short lease is the crash-recovery latency, not the max task duration.
+	LeaseDuration     time.Duration
+	HeartbeatInterval time.Duration // default LeaseDuration/3
+	RetryBaseDelay    time.Duration // default 5s; grows exponentially with full jitter
 }
 
 func (w Worker) RunOnce(ctx context.Context) (bool, error) {
-	lease := w.LeaseDuration
-	if lease <= 0 {
-		lease = time.Minute
-	}
-	task, ok, err := w.Store.ClaimNextTask(ctx, w.WorkerID, time.Now().Add(lease))
+	task, ok, err := w.Store.ClaimNextTask(ctx, w.WorkerID, time.Now().Add(w.lease()))
 	if err != nil || !ok {
 		return false, err
 	}
-	if _, err := w.Store.MarkRunning(ctx, task.ID, w.WorkerID); err != nil {
+	if _, err := w.Store.MarkRunning(ctx, task.ID, w.WorkerID, task.AttemptCount); err != nil {
+		if errors.Is(err, ErrLeaseLost) {
+			return true, nil
+		}
 		return true, err
 	}
+	stop := w.startHeartbeat(ctx, task)
 	result, err := w.Runner.RunTask(ctx, task)
+	stop()
 	if err != nil {
-		_, failErr := w.Store.FailTask(ctx, task.ID, w.WorkerID, err.Error())
-		return true, failErr
+		return true, w.retryOrFail(ctx, task, err.Error())
 	}
 	switch result.Status {
 	case TaskStatusCompleted:
-		_, err = w.Store.CompleteTask(ctx, task.ID, w.WorkerID)
+		_, err = w.Store.CompleteTask(ctx, task.ID, w.WorkerID, task.AttemptCount)
 	case TaskStatusFailed:
-		_, err = w.Store.FailTask(ctx, task.ID, w.WorkerID, result.Error)
+		_, err = w.Store.FailTask(ctx, task.ID, w.WorkerID, task.AttemptCount, result.Error)
 	default:
-		_, err = w.Store.FailTask(ctx, task.ID, w.WorkerID, "unsupported worker result status: "+string(result.Status))
+		_, err = w.Store.FailTask(ctx, task.ID, w.WorkerID, task.AttemptCount, "unsupported worker result status: "+string(result.Status))
+	}
+	if errors.Is(err, ErrLeaseLost) {
+		// At-least-once: the task was reclaimed and its new run owns the outcome.
+		return true, nil
 	}
 	return true, err
+}
+
+// retryOrFail reschedules a transient failure with exponential backoff + full jitter
+// (AWS pattern — prevents retry storms against the LLM provider) and dead-letters the
+// task to failed once attempts are exhausted.
+func (w Worker) retryOrFail(ctx context.Context, task Task, reason string) error {
+	delay := backoffWithJitter(w.retryBase(), task.AttemptCount)
+	_, err := w.Store.RetryTask(ctx, task.ID, w.WorkerID, task.AttemptCount, time.Now().Add(delay).UTC(), reason)
+	switch {
+	case errors.Is(err, ErrRetryExhausted):
+		_, failErr := w.Store.FailTask(ctx, task.ID, w.WorkerID, task.AttemptCount, "retries exhausted: "+reason)
+		return failErr
+	case errors.Is(err, ErrLeaseLost):
+		return nil
+	default:
+		return err
+	}
+}
+
+// startHeartbeat extends the lease every HeartbeatInterval while the runner works.
+// The returned stop func must be called (and returns only after the goroutine exits)
+// before recording the task outcome.
+func (w Worker) startHeartbeat(ctx context.Context, task Task) (stop func()) {
+	interval := w.HeartbeatInterval
+	if interval <= 0 {
+		interval = w.lease() / 3
+	}
+	hbCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-ticker.C:
+				_ = w.Store.ExtendLease(hbCtx, task.ID, w.WorkerID, time.Now().Add(w.lease()))
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+func (w Worker) lease() time.Duration {
+	if w.LeaseDuration <= 0 {
+		return time.Minute
+	}
+	return w.LeaseDuration
+}
+
+func (w Worker) retryBase() time.Duration {
+	if w.RetryBaseDelay <= 0 {
+		return 5 * time.Second
+	}
+	return w.RetryBaseDelay
+}
+
+func backoffWithJitter(base time.Duration, attempt int32) time.Duration {
+	d := base << uint(min(attempt, 10))
+	const maxDelay = 10 * time.Minute
+	if d > maxDelay {
+		d = maxDelay
+	}
+	return base/2 + time.Duration(rand.Int64N(int64(d)))
 }
 ```
 
@@ -2079,6 +2401,104 @@ git add internal/swarm/messaging/adapter.go internal/swarm/messaging/adapter_tes
 git commit -m "feat: wire agent message tool"
 ```
 
+## Task 7b: Gateway Risk Tier For `agent_message_send`
+
+**Why this task exists (2026-07-04 amendment):** the policy gateway classifies any Mutating tool without a dedicated entry as `scoring.Risky`, and `GateRecommended(Risky)` routes the call to approve-by-responder (`internal/gateway/decide.go`). Without this task every agent-to-agent send pauses for human approval, which defeats an autonomous swarm substrate. `agent_message_send` only writes internal `aura.swarm_*` rows with a validated channel-agnostic payload (secrets blocklisted), so it pins to `scoring.Normal` — the same tier as the snippet-lifecycle skill writes. Escalating a *specific* send stays possible later via a per-content classifier; the tier decision is recorded here for review.
+
+**Files:**
+
+- Modify: `internal/gateway/classify.go`
+- Modify: `internal/gateway/classify_test.go`
+
+- [ ] **Step 1: Write the failing classifier test**
+
+Add to `internal/gateway/classify_test.go` (follow the file's existing table/test style):
+
+```go
+func TestClassifyAgentMessageSendIsNormal(t *testing.T) {
+	spec := tools.Spec{Name: "agent_message_send", Mutating: true}
+	if got := classify(spec, json.RawMessage(`{"to_agent":"researcher"}`)); got != scoring.Normal {
+		t.Fatalf("classify(agent_message_send) = %v, want scoring.Normal", got)
+	}
+}
+
+func TestClassifyUnknownMutatingToolStaysRisky(t *testing.T) {
+	spec := tools.Spec{Name: "some_future_tool", Mutating: true}
+	if got := classify(spec, nil); got != scoring.Risky {
+		t.Fatalf("classify(unknown mutating) = %v, want scoring.Risky floor", got)
+	}
+}
+```
+
+- [ ] **Step 2: Run the failing test**
+
+Run:
+
+```powershell
+go test ./internal/gateway -run TestClassifyAgentMessageSend -count=1
+```
+
+Expected:
+
+```text
+FAIL: classify(agent_message_send) = risky, want scoring.Normal
+```
+
+- [ ] **Step 3: Add the fixed-tier table**
+
+In `internal/gateway/classify.go`, add beside `multiplexedClassifiers`:
+
+```go
+// fixedTierTools pins non-multiplexed Mutating tools whose risk is statically known
+// to a FIXED tier below the Risky floor. agent_message_send writes only internal
+// aura.swarm_* rows (channel-agnostic payload, secrets blocklisted at validation):
+// Normal, like the snippet-lifecycle skill writes. Without this entry the generic
+// Mutating branch saturates it to Risky and every agent-to-agent send would require
+// human approval. The boot-guard does not cover this table (it is not multiplexed);
+// the classifier tests pin it instead.
+var fixedTierTools = map[string]scoring.RiskTier{
+	"agent_message_send": scoring.Normal,
+}
+```
+
+And extend `classify` between the multiplexed dispatch and the Mutating fallback:
+
+```go
+func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
+	if fn, ok := multiplexedClassifiers[spec.Name]; ok {
+		return fn(rawArgs)
+	}
+	if tier, ok := fixedTierTools[spec.Name]; ok {
+		return tier
+	}
+	if spec.Mutating {
+		return scoring.Risky
+	}
+	return scoring.Safe
+}
+```
+
+- [ ] **Step 4: Run gateway tests**
+
+Run:
+
+```powershell
+go test ./internal/gateway -count=1
+```
+
+Expected:
+
+```text
+ok   github.com/chetto1983/aura/internal/gateway
+```
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add internal/gateway/classify.go internal/gateway/classify_test.go
+git commit -m "feat: pin agent_message_send gateway tier to normal"
+```
+
 ## Task 8: AG-UI Swarm Custom Events
 
 **Files:**
@@ -2456,7 +2876,8 @@ git commit -m "feat: inspect swarm messages from cli"
 Run:
 
 ```powershell
-go test ./internal/swarm/messaging ./internal/agent/tools ./internal/agent ./internal/agui ./cmd/aura -count=1
+go test ./internal/swarm/messaging ./internal/agent/tools ./internal/agent ./internal/agui ./internal/gateway ./cmd/aura -count=1
+go test -race ./internal/swarm/messaging -count=1
 ```
 
 Expected:
@@ -2466,8 +2887,11 @@ ok   github.com/chetto1983/aura/internal/swarm/messaging
 ok   github.com/chetto1983/aura/internal/agent/tools
 ok   github.com/chetto1983/aura/internal/agent
 ok   github.com/chetto1983/aura/internal/agui
+ok   github.com/chetto1983/aura/internal/gateway
 ok   github.com/chetto1983/aura/cmd/aura
 ```
+
+(the `-race` pass covers the heartbeat goroutine in `Worker.RunOnce`)
 
 - [ ] **Step 2: Run Postgres integration tests**
 
@@ -2544,7 +2968,10 @@ git commit -m "docs: describe durable swarm messaging"
 
 - Keep every new source file under the 600 LOC cap.
 - Use `uuid.NewV7()` for new IDs, matching recent Aura patterns.
-- Keep `agent_message_send` deferred and mutating.
+- Keep `agent_message_send` deferred and mutating; its gateway tier is pinned `Normal` in Task 7b — re-run the tier discussion before ever removing that entry.
+- **Never hold a DB transaction across an LLM call or task execution** — claim-and-commit, then work. Long transactions pin the xmin horizon and rot the queue table (MVCC bloat).
+- `waiting_input` is a pause, not a failure: transitions into it must never consume `attempt_count` (A2A input-required semantics); wiring lands in slice 2.
+- The fencing contract: whoever mutates a claimed task passes the `attempt_count` it claimed; `ErrLeaseLost` means drop the task silently (the reclaimed run owns it), `ErrRetryExhausted` means dead-letter to `failed`.
 - Keep `swarm_spawn` registered and behaviorally unchanged.
 - Keep Telegram details in channel-thread metadata and adapter code, never in agent message content.
 - Do not store bot tokens, API keys, passwords, reset codes, or raw channel secrets in swarm rows.

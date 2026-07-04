@@ -1,6 +1,6 @@
 /goal
 
-Fully complete and validate Phase 28 across desktop and mobile until the project reaches a verified quality score of 9.5/10 or higher.
+Fully complete and validate Phase 35 across desktop and mobile until the project reaches a verified quality score of 9.5/10 or higher.
 
 Act as an autonomous senior full-stack engineer and QA engineer. Install whatever dependencies, browsers, drivers, test tools, or packages are required. Rebuild containers, restart services, and fix code/configuration/test issues as needed.
 
@@ -8,13 +8,13 @@ Important safety rule:
 Only stop, restart, or kill processes and containers that clearly belong to this project or are blocking this project. Never kill unrelated system processes. Ask for confirmation only for destructive actions, credentials, production changes, or data deletion.
 
 Tasks:
-- Inspect the repository and understand the Phase 28 goal.
+- Inspect the repository and understand the Phase 35 goal.
 - Prepare the environment.
 - Update/rebuild containers as needed.
 - Run the app locally.
 - Use Playwright for full E2E validation.
-- Validate all Phase 28 flows on desktop.
-- Validate all Phase 28 flows on mobile using realistic device profiles.
+- Validate all Phase 35 flows on desktop.
+- Validate all Phase 35 flows on mobile using realistic device profiles.
 - Fix every discovered issue.
 - Re-run tests until they pass consistently.
 - Capture evidence where useful: screenshots, traces, logs, videos.
@@ -22,7 +22,7 @@ Tasks:
 - Do not rely on visual assumptions; verify behavior through real tests.
 
 Definition of done:
-- Phase 28 works end-to-end.
+- Phase 35 works end-to-end.
 - Desktop validation passes.
 - Mobile validation passes.
 - Playwright tests pass reliably.

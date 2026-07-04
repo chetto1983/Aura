@@ -1,8 +1,17 @@
 # Aura Durable Swarm Messaging Design
 
 Date: 2026-06-29
-Status: Draft - awaiting user review, then implementation planning.
+Status: Amended 2026-07-04 — design review + industrial survey (Temporal/DBOS/River/Hatchet/pgmq/A2A); plan updated in lockstep.
 Author: Codex, brainstorming session with Davide
+
+> **Amendment summary (2026-07-04):** the substrate is explicitly **at-least-once** with
+> fenced completion (attempt-count token), short leases kept alive by **worker heartbeats**,
+> reclaim of expired `running` leases, transient-vs-permanent retry contract with
+> exponential backoff + full jitter and a dead-letter terminal state, task states aligned
+> with the A2A lifecycle (`rejected` added; `waiting_input` never consumes attempts), an
+> explicit policy-gateway tier (`Normal`) for `agent_message_send`, and a recorded slice-2
+> backlog (rescuer, retention/vacuum hygiene, queue observability, step-level checkpointing
+> decision). Migration slot is **0026** (0025 was taken by `document_control_plane`).
 
 ## Purpose
 
@@ -37,6 +46,30 @@ substrate remains provider-neutral so local models can plug in later.
 - Keep real Telegram wiring optional in the first slice if the existing adapter
   path is not clean enough. The schema and tests must still prove the channel
   contract.
+- Delivery semantics are **at-least-once**, never "exactly-once". Exactly-once is
+  achievable only for DB-local effects by committing the effect and its record in one
+  transaction (the DBOS trick); everything else relies on idempotency keys. Completion,
+  failure, and retry are **fenced** on the claimed `attempt_count` plus `locked_by`, so a
+  zombie worker whose lease expired and whose task was reclaimed matches zero rows
+  (Kleppmann fencing-token pattern) and receives a typed `ErrLeaseLost`.
+- Leases stay **short** (default 1m — the crash-recovery latency, not the max task
+  duration) and are extended by a **heartbeat** goroutine while the runner works
+  (Temporal heartbeat pattern). A fixed long lease is wrong in both directions: it delays
+  crash recovery and still cannot bound an LLM call.
+- The retry contract distinguishes **transient** (runner returns an error → reschedule
+  with exponential backoff + full jitter, AWS pattern, preventing retry storms against
+  the LLM provider) from **permanent** (runner returns `Status: failed` → terminal).
+  Exhausted attempts dead-letter to `failed`; the row is never deleted and never retried
+  silently.
+- Task states align with the **A2A task lifecycle**: `rejected` (agent declines before
+  working) is a first-class terminal state, and `waiting_input` is a non-terminal pause
+  that never consumes `attempt_count` and is woken transactionally by the arriving reply.
+- `agent_message_send` gets an explicit **policy-gateway tier**: pinned `scoring.Normal`
+  via a fixed-tier table in `internal/gateway/classify.go`. Without the entry the generic
+  Mutating branch saturates to `Risky` and every agent-to-agent send would pause for
+  human approval, defeating the autonomous substrate. The tool writes only internal
+  `aura.swarm_*` rows with a validated, secrets-blocklisted payload — comparable to the
+  snippet-lifecycle skill writes already tiered Normal.
 
 ## Validation
 
@@ -72,11 +105,41 @@ External primary sources support the mechanics:
   (https://www.postgresql.org/docs/current/sql-select.html).
 - PostgreSQL `NOTIFY` for non-durable wakeups
   (https://www.postgresql.org/docs/current/sql-notify.html).
-- A2A's task/message/artifact vocabulary (https://github.com/a2aproject/A2A).
+- A2A's task/message/artifact vocabulary (https://github.com/a2aproject/A2A) and its
+  task state machine (https://a2a-protocol.org/latest/specification/).
 - Temporal workflow message passing for durable command/message semantics
-  (https://docs.temporal.io/encyclopedia/workflow-message-passing).
+  (https://docs.temporal.io/encyclopedia/workflow-message-passing) and heartbeats for
+  long activities (https://docs.temporal.io/encyclopedia/detecting-activity-failures).
 - OpenTelemetry messaging spans for observability naming
   (https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/).
+
+Industrial survey added by the 2026-07-04 amendment — systems that validate (and
+sharpen) this design's pattern:
+
+- **DBOS** — Postgres-as-truth durable execution as a library, `SKIP LOCKED` queues,
+  exactly-once for DB-local steps via step+checkpoint in one transaction
+  (https://docs.dbos.dev/architecture). The closest production analog to this substrate.
+- **River** (Go) — transactional enqueue, rescuer/cleaner maintenance services, snooze
+  as a non-attempt-consuming wait (https://riverqueue.com/docs/maintenance-services);
+  MVCC bloat history behind the design (https://brandur.org/postgres-queues).
+- **Hatchet** — dequeue cost must be O(claimed batch), never O(queue depth); window-
+  function fairness anti-scales into an unrecoverable state
+  (https://hatchet.run/blog/multi-tenant-queues).
+- **pgmq** — visibility-timeout semantics equivalent to this design's `locked_until`
+  (https://github.com/pgmq/pgmq).
+- **Recall.ai postmortem** — `NOTIFY` takes a global AccessExclusiveLock at commit and
+  serializes all commits at scale; poll-as-correctness, notify-as-latency-only
+  (https://www.recall.ai/blog/postgres-listen-notify-does-not-scale).
+- **Kleppmann** — fencing tokens for zombie lease holders
+  (https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html).
+- **AWS Builders' Library** — exponential backoff with full jitter
+  (https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/).
+- **Anthropic multi-agent research system** — resume-from-error over restart-from-
+  scratch, checkpoints, rainbow deploys, compounding-error framing
+  (https://www.anthropic.com/engineering/multi-agent-research-system).
+- **Diagrid critique of coarse checkpointing** — task-level-only durability re-runs
+  completed side effects; step-level journaling is the fix (slice-2 decision)
+  (https://www.diagrid.io/blog/checkpoints-are-not-durable-execution-why-langgraph-crewai-google-adk-and-others-fall-short-for-production-agent-workflows).
 
 ## Current Context
 
@@ -238,7 +301,10 @@ Tracks one durable unit of delegated work.
 - `updated_at timestamptz not null default now()`
 
 Valid statuses are `pending`, `leased`, `running`, `waiting_input`, `completed`,
-`failed`, `cancelled`, and `expired`.
+`failed`, `cancelled`, `expired`, and `rejected` (A2A alignment: the target agent
+declined before working). `waiting_input` is the A2A `input-required` pause: non-terminal,
+it never consumes `attempt_count`, and it is woken transactionally by the arriving reply
+— never by a timer race. The migration ships as `0026_swarm_messaging`.
 
 ### `aura.swarm_messages`
 
@@ -262,7 +328,10 @@ Stores the append-only internal message log.
 The store enforces one active message per idempotency scope:
 `(channel_thread_id, from_agent, to_agent, idempotency_key)`, with a separate
 scope for agent-internal sends where `channel_thread_id` is absent. A repeated
-send returns the existing message/task instead of creating another task.
+send returns the existing message/task instead of creating another task. Two
+**concurrent** sends with the same key are also handled: the loser's transaction
+rolls back on the unique index (23505) and the store refetches the winner's rows,
+returning them as a reused send — never a raw constraint error.
 
 Valid `direction` values are `request`, `response`, and `system`. Valid `kind`
 values are intentionally small in the first slice: `task`, `reply`, `status`,
@@ -305,14 +374,30 @@ payloads into the message row.
 ## Failure Handling
 
 `agent_message_send` requires or derives an idempotency key. Duplicate sends in
-the same scope return the existing task/message result.
+the same scope return the existing task/message result (including under
+concurrency, via 23505 recovery).
 
-Workers claim rows by lease. A claim sets `locked_by` and `locked_until`. A live
-worker may renew the lease. An expired lease makes the task claimable again.
+Workers claim rows by lease. A claim sets `locked_by` and `locked_until`. While
+the runner works, a **heartbeat** goroutine extends the lease every interval
+(default lease/3), so the lease itself stays short and crash recovery fast. An
+expired lease makes the task claimable again **whether it is `leased` or
+`running`** — a worker that dies after marking the task running must not strand
+it; the claim predicate and its partial index cover both states.
 
-Retryable failures increment `attempt_count`, write a structured error, and set
-`available_at` with backoff. Permanent failures set `status = failed` and keep
-the reason. Expired tasks set `status = expired` when their timeout passes.
+Every post-claim mutation (mark-running, complete, fail, retry, lease extension)
+is **fenced**: it matches `locked_by` plus the `attempt_count` the worker claimed.
+A zombie worker that lost its lease gets `ErrLeaseLost` and drops the task —
+the reclaimed run owns the outcome. This is the at-least-once contract: the
+substrate guarantees no lost tasks and no clobbered outcomes, and callers make
+side effects idempotent.
+
+Transient failures (runner error) reschedule via `RetryTask`: increment
+`attempt_count`, write a structured error, and set `available_at` with
+exponential backoff plus **full jitter** so a provider outage does not produce a
+synchronized retry storm. Permanent failures (runner verdict) and exhausted
+attempts (`ErrRetryExhausted`) set `status = failed` — the dead-letter terminal
+state, kept inspectable, never silently retried or deleted. Expired tasks set
+`status = expired` when their timeout passes.
 
 Agents do not deliver directly to Telegram, AG-UI, CLI, or future channels.
 They append internal response messages. The channel router handles delivery and
@@ -320,7 +405,15 @@ can record channel delivery failures without corrupting the internal task result
 
 ## Safety And Privacy
 
-The first slice must capture enough metadata for future ToolGateway policy:
+The policy gateway already exists (35-06): `agent_message_send` is classified via a
+fixed-tier entry pinning it to `scoring.Normal` (auto-allow with a recorded decision
+fact). The tier rests on three invariants that must hold for the entry to stay valid:
+the tool writes only internal `aura.swarm_*` rows, the payload is channel-agnostic
+(Telegram/CLI/AG-UI fields rejected at validation), and secrets are blocklisted from
+content. If any invariant weakens — e.g. sends gain direct external delivery — the
+tier discussion must be re-run before shipping.
+
+The first slice must also capture enough metadata for future per-content policy:
 actor, source channel, target agent, requested capability, request ID, run ID,
 task ID, message ID, idempotency key, and provenance.
 
@@ -346,14 +439,15 @@ Add OTel spans around:
 
 Add metrics for:
 
-- pending tasks
+- pending tasks (queue depth)
+- **oldest-claimable-age** (the real queue SLO metric — depth alone hides starvation)
 - leased and running tasks
 - completed tasks
-- failed tasks
-- retry count
-- expired leases
+- failed tasks (dead-letter count — alert on growth)
+- retry count and attempt histograms
+- expired leases and heartbeat-extension failures
 - channel delivery failures
-- idempotency hits
+- idempotency hits (including 23505 race recoveries)
 
 Logs should include request ID, run ID, task ID, message ID, idempotency key,
 channel kind, and target agent. Logs must redact secrets.
@@ -400,11 +494,19 @@ normal claim paths.
 ## Acceptance Criteria
 
 - Sending the same logical message twice with the same idempotency key creates
-  one task/message pair and returns the existing IDs on retry.
+  one task/message pair and returns the existing IDs on retry — including under
+  concurrent duplicate sends (23505 race returns the winner as reused).
 - Two concurrent workers cannot claim the same pending task.
-- A leased task becomes claimable after lease expiry.
-- Retryable failure reschedules the task with backoff.
+- A leased **or running** task becomes claimable after lease expiry, and the
+  original (zombie) worker's completion is fenced out with `ErrLeaseLost` instead
+  of clobbering the reclaimed run.
+- The worker heartbeat extends a live task's lease, so a task running longer than
+  the base lease is not reclaimed while its worker is healthy.
+- Transient failure reschedules the task with exponential backoff + jitter;
+  exhausted attempts transition to `failed` (dead-letter), never retry-forever.
 - Permanent failure is durable and inspectable through the CLI.
+- `agent_message_send` classifies `scoring.Normal` at the gateway (auto-allow);
+  an unknown mutating tool still saturates to `Risky`.
 - CLI, AG-UI, and Telegram-shaped fake adapters all use the same channel-thread
   contract.
 - Agents never receive Telegram-specific schema fields.
@@ -414,10 +516,35 @@ normal claim paths.
 
 ## Follow-On Work
 
+Slice-2 backlog (2026-07-04 amendment — each item is industrial table stakes; recorded
+here so they do not silently evaporate):
+
+- **Rescuer/sweeper**: reclaim-or-dead-letter tasks stuck past their horizon, run
+  single-flight under an advisory lock (Graphile sweeper pattern); pairs with
+  worker-level liveness distinct from task heartbeats.
+- **Row hygiene**: prune/archive terminal task/message rows on retention (River
+  defaults ~24h) plus aggressive per-table autovacuum — Postgres queues die of MVCC
+  bloat, not load. Never hold a transaction across an LLM call.
+- **Queue observability wiring**: the metrics listed above surfaced via CLI and the
+  metrics pipeline; alert on dead-letter growth and oldest-claimable-age.
+- **Step-level checkpointing decision**: whether worker resume consults the
+  append-only message log (causation chain) to skip completed steps instead of
+  re-running the whole task (DBOS `operation_outputs` analog). Explicit design
+  decision, not an accident of implementation.
+- **`waiting_input` wiring**: the A2A input-required pause — transition set by
+  `ask_user`-style needs, woken transactionally by the arriving reply, zero attempts
+  consumed.
+- **Wakeup path**: if LISTEN/NOTIFY is added, notify only on empty→non-empty
+  transitions or from a single notifier (global commit-serialization hazard);
+  poll-with-jitter stays the correctness mechanism.
+
+Original follow-on items:
+
 - Build `swarm_collaborate` or a higher-level orchestrator on top of the durable
   substrate.
 - Wire the real Telegram adapter if it is not included in the first slice.
-- Add ToolGateway policy decisions before `agent_message_send` executes.
+- Add per-content ToolGateway policy for `agent_message_send` (the fixed Normal tier
+  ships in slice 1; content-sensitive escalation is future work).
 - Add local LLM sidecars and strict local-only enforcement once hardware and
   model strategy are ready.
 - Consider an event-sourced task log only if messages plus task state are not
