@@ -2,8 +2,17 @@ package skills
 
 import (
 	"context"
-	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/profile"
 )
+
+// localSkillIdentity is the CLI / no-principal identity whose skills stay in the base
+// dirs (backward-compatible single-user layout, D-21/D-25).
+const localSkillIdentity = "local"
 
 // SkillRootBase carries the base (single-user / default) storage dirs the per-identity
 // resolver roots under. SkillsDir is $AURA_SKILLS_DIR (the shared read-only built-in
@@ -26,11 +35,59 @@ type IdentitySkillRoots struct {
 	LoaderRoots     []string
 }
 
-// errIdentityRootStub is the RED-phase stub sentinel, removed once the resolver lands.
-var errIdentityRootStub = errors.New("not implemented")
+// isLocalSkillIdentity reports whether identity is the local / no-principal case that
+// resolves the base dirs directly (backward compatible single-user layout).
+func isLocalSkillIdentity(identity string) bool {
+	s := strings.TrimSpace(identity)
+	return s == "" || s == localSkillIdentity
+}
+
+// defaultPyScriptsDir is the home-derived base for per-identity snippet storage
+// (~/.aura/pyscripts), mirroring config.auraHomeDir with a tmp fallback when the home
+// dir is unavailable.
+func defaultPyScriptsDir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".aura", "pyscripts")
+	}
+	return filepath.Join(os.TempDir(), "aura", "pyscripts")
+}
 
 // NewSkillToolForIdentity resolves the per-identity skills + pyscripts storage roots
-// from ctx (identityctx). Storage rooting only — snippet execution isolation is Phase 37.
+// from ctx (identityctx), reusing the profile traversal-safe containment guard. Built-ins
+// stay shared read-only under SharedSkillsDir (never copied per identity); a user's own
+// skills live under $AURA_SKILLS_DIR/{id} and snippets under ~/.aura/pyscripts/{id}. The
+// local / no-principal identity resolves the base dirs unchanged (backward compatible).
+// This is STORAGE rooting only — snippet execution isolation is Phase 37.
 func NewSkillToolForIdentity(ctx context.Context, base SkillRootBase) (IdentitySkillRoots, error) {
-	return IdentitySkillRoots{}, errIdentityRootStub
+	pyBase := strings.TrimSpace(base.PyScriptsDir)
+	if pyBase == "" {
+		pyBase = defaultPyScriptsDir()
+	}
+	identity := identityctx.IdentityID(ctx)
+
+	if isLocalSkillIdentity(identity) {
+		return IdentitySkillRoots{
+			Identity:        localSkillIdentity,
+			SharedSkillsDir: base.SkillsDir,
+			UserSkillsDir:   base.SkillsDir,
+			PyScriptsDir:    pyBase,
+			LoaderRoots:     []string{base.SkillsDir},
+		}, nil
+	}
+
+	userDir, err := profile.RootIdentityDir(base.SkillsDir, identity)
+	if err != nil {
+		return IdentitySkillRoots{}, err
+	}
+	pyDir, err := profile.RootIdentityDir(pyBase, identity)
+	if err != nil {
+		return IdentitySkillRoots{}, err
+	}
+	return IdentitySkillRoots{
+		Identity:        identity,
+		SharedSkillsDir: base.SkillsDir,
+		UserSkillsDir:   userDir,
+		PyScriptsDir:    pyDir,
+		LoaderRoots:     []string{base.SkillsDir, userDir},
+	}, nil
 }
