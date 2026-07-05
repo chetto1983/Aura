@@ -5,8 +5,8 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 36
 current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: verifying
-stopped_at: Phase 35 COMPLETE (7/7 plans; 35-07 closed CR-01, re-verified PASSED 11/11, code-review CLEAN, GATE-01..04 flipped); transitioned to Phase 36
-last_updated: "2026-07-04T16:58:22.505Z"
+stopped_at: Phase 36 context gathered
+last_updated: "2026-07-05T08:34:18.528Z"
 last_activity: 2026-07-04
 last_activity_desc: Phase 35 complete, transitioned to Phase 36
 progress:
@@ -492,9 +492,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-03T19:54:16.498Z
-Stopped at: Completed 35-03-PLAN.md (GATE-01 Gateway.Decide PEP interposed at all 3 composition roots)
-Resume file: .planning/phases/35-toolgateway-policy-engine/35-04-PLAN.md
+Last session: 2026-07-05T08:34:18.509Z
+Stopped at: Phase 36 context gathered
+Resume file: .planning/phases/36-multi-user-identity-isolation-authula-cutover/36-CONTEXT.md
 
 ## Operator Next Steps
 
