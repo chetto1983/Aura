@@ -164,6 +164,7 @@ type statefulAuthula struct {
 	mu             sync.Mutex
 	users          map[string]string // userID -> email
 	emails         map[string]string // email -> userID
+	enforced       []string          // userIDs the D-15 first-login policy was applied to
 	failCreateUser bool
 	failCreateAcct bool
 	nextID         int
@@ -199,6 +200,13 @@ func (a *statefulAuthula) CreateAccount(_ context.Context, _, _, _ string) error
 	if a.failCreateAcct {
 		return errors.New("injected: authula create account")
 	}
+	return nil
+}
+
+func (a *statefulAuthula) EnforceFirstLogin(_ context.Context, userID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.enforced = append(a.enforced, userID)
 	return nil
 }
 

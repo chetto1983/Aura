@@ -70,6 +70,39 @@ func (a authulaCoreAdapter) CreateAccount(ctx context.Context, userID, email, pa
 	return err
 }
 
+// firstLoginMetaMustChangePassword / firstLoginMetaTOTPRequired are the Authula user-
+// metadata markers the D-15 first-login gate reads: the admin-set initial password is
+// single-use (force a change) and TOTP must be enrolled before real access. They live in
+// the user Metadata jsonb (no schema change, no SMTP). The login-time enforcement that
+// reads them is wired at the cutover (plan 12); provisioning SETS them here.
+const (
+	firstLoginMetaMustChangePassword = "aura_must_change_password"
+	firstLoginMetaTOTPRequired       = "aura_totp_enrollment_required"
+)
+
+// EnforceFirstLogin sets the D-15 first-login markers on the freshly-created Authula user
+// (force password change + TOTP enrollment) via UserService metadata. Idempotent: it
+// re-reads the user and overwrites the two boolean markers, so a journaled saga re-run is
+// safe. No SMTP, no recovery-link swap (Authula is embedded).
+func (a authulaCoreAdapter) EnforceFirstLogin(ctx context.Context, userID string) error {
+	u, err := a.core.UserService.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return fmt.Errorf("enforce first-login: authula user %q not found", userID)
+	}
+	if u.Metadata == nil {
+		u.Metadata = map[string]any{}
+	}
+	u.Metadata[firstLoginMetaMustChangePassword] = true
+	u.Metadata[firstLoginMetaTOTPRequired] = true
+	if _, err := a.core.UserService.Update(ctx, u); err != nil {
+		return fmt.Errorf("enforce first-login: update authula user: %w", err)
+	}
+	return nil
+}
+
 func (a authulaCoreAdapter) DeleteUser(ctx context.Context, userID string) error {
 	return a.core.UserService.Delete(ctx, userID)
 }

@@ -227,6 +227,14 @@ type onboardingService struct {
 	telegram TelegramMint
 	botName  string
 	recovery RecoverySetupWriter
+
+	// Phase-36 resource legs + journaling (onboarding_provision_resources.go /
+	// saga_journal.go): the forward-recovery journal, the per-identity Garage bucket/key
+	// leg, and the per-identity filesystem-roots leg. All OPTIONAL (nil disables that leg /
+	// journaling) so the pre-cutover + interview-only + unit-test paths are unchanged.
+	journal     SagaJournal
+	objectStore ObjectStoreProvisioner
+	filesystem  FilesystemProvisioner
 }
 
 // OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
@@ -243,6 +251,12 @@ type OnboardingDeps struct {
 	Telegram     TelegramMint
 	BotUsername  string
 	Recovery     RecoverySetupWriter
+	// Phase-36 provisioning saga extensions (all optional): the forward-recovery journal
+	// (D-14/D-27), the per-identity Garage bucket/key leg (D-08), and the per-identity
+	// filesystem-roots leg (D-20/D-21).
+	Journal     SagaJournal
+	ObjectStore ObjectStoreProvisioner
+	Filesystem  FilesystemProvisioner
 }
 
 // NewOnboardingService assembles the OnboardingService over the supplied narrow ports.
@@ -256,15 +270,18 @@ func NewOnboardingService(d OnboardingDeps) OnboardingService {
 // newOnboardingService assembles the concrete service over the supplied narrow ports.
 func newOnboardingService(d OnboardingDeps) *onboardingService {
 	return &onboardingService{
-		sessions:  newSessionStore(d.TTL),
-		caps:      d.Capabilities,
-		extractor: d.Extractor,
-		profiles:  d.Profiles,
-		authula:   d.Authula,
-		auraLeg:   d.AuraLeg,
-		telegram:  d.Telegram,
-		botName:   d.BotUsername,
-		recovery:  d.Recovery,
+		sessions:    newSessionStore(d.TTL),
+		caps:        d.Capabilities,
+		extractor:   d.Extractor,
+		profiles:    d.Profiles,
+		authula:     d.Authula,
+		auraLeg:     d.AuraLeg,
+		telegram:    d.Telegram,
+		botName:     d.BotUsername,
+		recovery:    d.Recovery,
+		journal:     d.Journal,
+		objectStore: d.ObjectStore,
+		filesystem:  d.Filesystem,
 	}
 }
 

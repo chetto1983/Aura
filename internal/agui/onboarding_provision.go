@@ -78,6 +78,11 @@ type AuthulaCore interface {
 	// CreateAccount attaches the hashed password as the email-provider account (Leg B
 	// step 2).
 	CreateAccount(ctx context.Context, userID, email, passwordHash string) error
+	// EnforceFirstLogin marks the created user so the admin-set initial password is
+	// single-use: first login FORCES a password change and requires TOTP enrollment
+	// (D-15), via Authula user metadata — no SMTP, no recovery-link swap. Idempotent, so a
+	// journaled re-run is safe. Called at Leg B step 3 (after CreateAccount).
+	EnforceFirstLogin(ctx context.Context, userID string) error
 	// DeleteUser is COMP_B: it removes the Authula user (the account cascades). Used to
 	// compensate a failed Leg A/C.
 	DeleteUser(ctx context.Context, userID string) error
@@ -182,6 +187,13 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		compB()
 		return OnboardingProvisionResponse{}, provisionFail("authula create account", err)
 	}
+	// B3 (D-15): the admin-set initial password is single-use — mark the user so first
+	// login FORCES a password change and requires TOTP enrollment (Authula user metadata,
+	// no SMTP). A failure here has no aura writes yet, so it only compensates the user.
+	if err := s.authula.EnforceFirstLogin(ctx, user.ID); err != nil {
+		compB()
+		return OnboardingProvisionResponse{}, provisionFail("authula first-login policy", err)
+	}
 
 	// ---- 2. LEG A (aura.* — ONE internally-atomic db.WithTx) ----
 	identityID, err := s.auraLeg.CreateIdentityWithGrants(ctx, AuraLegParams{
@@ -197,6 +209,11 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		}
 		return OnboardingProvisionResponse{}, provisionFail("aura identity write", err)
 	}
+
+	// Journal the post-identity steps for forward recovery (D-14/D-27). Leg A committed its
+	// own tx (identity + grants + link) above, so its step is already durable — mark it done.
+	run := newSagaRun(ctx, s.journal, sagaKindProvision, identityID)
+	run.done(ctx, sagaStepIdentity)
 
 	// ---- 3. RECOVERY SETUP (required before Telegram mint) ----
 	answerHash, answerVersion, err := (RecoveryHasher{}).HashAnswer(in.SecurityAnswer)
@@ -214,16 +231,31 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		compB()
 		return OnboardingProvisionResponse{}, provisionFail("recovery write", err)
 	}
+	run.done(ctx, sagaStepRecovery)
+
+	// ---- 3b. RESOURCE LEGS: Garage bucket/key (D-08) + per-identity filesystem roots
+	// (D-20/D-21) — eager, journaled, idempotent. They self-compensate on their OWN
+	// failure; compResources reverses BOTH if a LATER leg (Telegram/audit) fails. Unwired
+	// ports skip their leg (pre-cutover / interview-only deployment). ----
+	compResources, err := s.provisionResourceLegs(ctx, run, identityID)
+	if err != nil {
+		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+			slog.Error("onboarding: COMP_A (delete identity) after resource-leg failure failed", "step", "compensate")
+		}
+		compB()
+		return OnboardingProvisionResponse{}, err
+	}
 
 	// ---- 4. LEG C (Telegram token mint) ----
 	onboardingToken := ""
 	if in.LinkTelegram {
 		onboardingToken = uuid.NewString()
 		if err := s.telegram.InsertPending(ctx, onboardingToken, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
-			// C failed → undo A (identity + grants + link cascade) then B.
+			// C failed → undo the resources + A (identity + grants + link cascade) then B.
 			if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
 				slog.Error("onboarding: COMP_C (delete telegram pending) after mint failure failed", "step", "compensate")
 			}
+			compResources()
 			if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 				slog.Error("onboarding: COMP_A (delete identity) failed", "step", "compensate")
 			}
@@ -231,6 +263,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 			return OnboardingProvisionResponse{}, provisionFail("telegram mint", err)
 		}
 	}
+	run.done(ctx, sagaStepTelegram)
 
 	// ---- 5. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
 	if err := s.auraLeg.WriteAuditRow(ctx, AuraLegParams{
@@ -244,12 +277,14 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
 			slog.Error("onboarding: COMP_C (delete telegram pending) after audit failure failed", "step", "compensate")
 		}
+		compResources()
 		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 			slog.Error("onboarding: COMP_A (delete identity) after audit failure failed", "step", "compensate")
 		}
 		compB()
 		return OnboardingProvisionResponse{}, provisionFail("identity audit write", err)
 	}
+	run.done(ctx, sagaStepAudit)
 
 	// ---- 6. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
 	// Record the minted onboarding token on the live session entry so the telegram-status

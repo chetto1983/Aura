@@ -53,20 +53,36 @@ func (l *IdentityLinker) ResolveIdentityID(ctx context.Context, authulaUserID st
 	return identityID, nil
 }
 
-// LinkOperator idempotently binds an Authula user-id to an Aura identity UUID. It is the
-// enrollment-time call (spec M1) that pins the operator user to the `local` identity.
-// Re-linking the same pair is a no-op; re-pointing an existing authula_user_id updates
-// the bound identity (ON CONFLICT on the UNIQUE authula_user_id).
-func (l *IdentityLinker) LinkOperator(ctx context.Context, identityID, authulaUserID string) error {
+// linkUserSQL upserts the authula-user → identity binding. It is the single statement
+// both LinkUser and LinkOperator share (ON CONFLICT on the UNIQUE authula_user_id, so a
+// re-link is idempotent and re-pointing an existing authula_user_id updates the bound
+// identity). The composition-root provisioning Leg A binds the SAME statement inside its
+// tx so the link commits atomically with the identity + grants.
+const linkUserSQL = `
+	INSERT INTO aura.identity_auth_links (identity_id, authula_user_id)
+	VALUES ($1::uuid, $2)
+	ON CONFLICT (authula_user_id) DO UPDATE SET identity_id = EXCLUDED.identity_id`
+
+// LinkUser idempotently binds ANY provisioned user's Authula user-id to their Aura
+// identity UUID (Phase 36 MUSR-06 / D-11). It generalizes LinkOperator: the table's
+// UNIQUE is on authula_user_id (not identity_id), so it is 1:N-ready and a provisioned
+// second user links without disturbing the operator's pinned `local` link. Re-linking
+// the same pair is a no-op.
+func (l *IdentityLinker) LinkUser(ctx context.Context, identityID, authulaUserID string) error {
 	if l == nil || l.pool == nil {
 		return errors.New("webauth: identity linker has no pool")
 	}
-	const q = `
-		INSERT INTO aura.identity_auth_links (identity_id, authula_user_id)
-		VALUES ($1::uuid, $2)
-		ON CONFLICT (authula_user_id) DO UPDATE SET identity_id = EXCLUDED.identity_id`
-	if _, err := l.pool.Exec(ctx, q, identityID, authulaUserID); err != nil {
-		return fmt.Errorf("link operator: %w", err)
+	if _, err := l.pool.Exec(ctx, linkUserSQL, identityID, authulaUserID); err != nil {
+		return fmt.Errorf("link user: %w", err)
 	}
 	return nil
+}
+
+// LinkOperator idempotently binds an Authula user-id to an Aura identity UUID. It is the
+// enrollment-time call (spec M1) that pins the operator user to the `local` identity. It
+// delegates to LinkUser (same statement) — retained as a named entry point so the
+// enrollment call site (spec M1) reads intent-first and D-11 keeps the local link path
+// distinct from the general multi-user LinkUser.
+func (l *IdentityLinker) LinkOperator(ctx context.Context, identityID, authulaUserID string) error {
+	return l.LinkUser(ctx, identityID, authulaUserID)
 }
