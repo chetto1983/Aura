@@ -124,7 +124,7 @@ Derived from the maintainability/architecture audit `docs/audit/quality/` (4-sli
 
 - **RBAC-01**: Real role/permission model (admin vs user) — explicitly OUT of v2.0.0 (identity isolation only).
 - **RBAC-02**: OAuth multi-provider / multi-tenant SaaS login.
-- **RBAC-03**: Per-identity Postgres row-level security.
+- **RBAC-03**: ~~Per-identity Postgres row-level security~~ — **AMENDED 2026-07-05 (Phase 36):** pulled forward into Phase 36 as *identity isolation*, NOT as part of the RBAC role model. Owner-`id` RLS + app-level `*ForIdentity` (defense-in-depth), kernel/storage-enforced per CONTEXT D-07/D-08 and the spike "storage-enforced, not app-enforced" non-negotiable (a forgotten `WHERE identity_id` must not leak). The RBAC *role model* itself (RBAC-01/02) remains deferred post-v2.0.0. See MUSR-01 and `.planning/phases/36-multi-user-identity-isolation-authula-cutover/36-CONTEXT.md` §D-07.
 
 ### DGX-Spark Fleet
 
