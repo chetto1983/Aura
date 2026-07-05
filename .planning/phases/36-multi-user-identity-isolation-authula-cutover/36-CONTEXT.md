@@ -44,7 +44,7 @@ skills-dir *storage* rooting only.
   This is why Casbin can safely be deferred (see Deferred).
 
 ### Isolation surface split (Phase 36 vs 37)
-- **D-05:** Class-(c) **per-user PIM/WhatsApp sidecar instances** (each user needs their own
+- **D-05 [deferred]:** Class-(c) **per-user PIM/WhatsApp sidecar instances** (each user needs their own
   calendar/whatsapp instance + OAuth/pairing onboarding — spike 084) are **DEFERRED to Phase
   37+**; they pair with the per-identity box (idle-suspend together). Phase 36 ships the
   storage/kernel-enforced core only.

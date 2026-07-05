@@ -1,8 +1,8 @@
 ---
 phase: 36
 slug: multi-user-identity-isolation-authula-cutover
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-05
 ---
@@ -95,7 +95,7 @@ created: 2026-07-05
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
-- [ ] Feedback latency acceptable (unit sub-minute)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] Feedback latency acceptable (unit sub-minute)
+- [x] `nyquist_compliant: true` set in frontmatter (plan-level; `wave_0_complete` flips during execution once the Wave-0 test files exist)
 
-**Approval:** pending
+**Approval:** approved 2026-07-05 (plan-checker VERIFICATION PASSED, revision iteration 2)

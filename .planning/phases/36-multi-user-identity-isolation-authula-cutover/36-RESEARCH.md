@@ -448,22 +448,26 @@ type bgShell struct {
 | A5 | The `document_search` tool + ingest path can be threaded with `identityctx` without a signature break to the MCP transport | Pattern 2 | LOW — the KnowledgeClient params map already carries arbitrary keys; add `user_identifier` |
 | A6 | Per-identity Garage `secretAccessKey` is stored in a new `aura.*` table (Claude's Discretion overlaps saga-journal discretion) | Pattern 3 | LOW — storage-shape choice; encrypt-at-rest either way |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **RBAC-03 vs D-07 conflict (needs a PRD/REQUIREMENTS amendment decision).**
+   - **RESOLVED (plan 36-02):** emitted the REQUIREMENTS.md RBAC-03 amendment note (RLS-for-identity-isolation IN; RLS-for-roles OUT), citing D-07/A4.
    - What we know: REQUIREMENTS.md §Non-Goals lists **RBAC-03: "Per-identity Postgres row-level security"** as explicitly OUT of v2.0.0. CONTEXT.md **D-07** (2026-07-05, this phase's discuss gate) LOCKS RLS in.
    - What's unclear: whether this needs a formal PRD-amendment commit (CLAUDE.md: "Deviazioni dal PRD richiedono PRD-amendment commit prima dell'implementazione").
    - Recommendation: Honor D-07 (it is the later, phase-specific decision, and it reframes RLS as **identity-isolation defense-in-depth, NOT RBAC roles** — so the *intent* of RBAC-03's exclusion, "no role model," is preserved). **Flag for the planner to emit a REQUIREMENTS/PRD-amendment note** reclassifying RBAC-03 (RLS-for-isolation is in; RLS-for-roles remains out).
 
 2. **`paused_states` (approvals) owner-scoping: add `identity_id` column vs policy-via-join.**
+   - **RESOLVED (plan 36-02):** migration 0027 adds `paused_states.identity_id` + backfill from `conversations.identity_id`.
    - What we know: MUSR-01 explicitly names approvals; `aura.paused_states` has only `conversation_id` (FK to conversations), no `identity_id`.
    - Recommendation: add an `identity_id` column (migration + backfill from `conversations.identity_id`) for a clean `*ForIdentity` + direct RLS policy; the subquery-via-conversation policy is a fallback if a column add is undesirable.
 
 3. **Capability name: `settings.model.write` (new) vs reuse `governance.write` (existing).**
+   - **RESOLVED (plans 36-01/36-10):** reuse the existing `governance.write` capability (no net-new `settings.model.write`).
    - What we know: `serve_webui.go` ALREADY gates `PUT/DELETE /api/settings/{key}` with `governance.write` and `GET /api/settings` with `governance.read`. D-03 mentions `settings.model.write`; Claude's Discretion allows reusing `governance.write`.
    - Recommendation: **Reuse `governance.write`** (already wired + load-bearing) unless the operator wants a finer-grained settings cap; adding `settings.model.write` is net-new work for no isolation gain. Planner's call.
 
 4. **Per-identity Garage secret-key storage: new `aura.*` table vs SOPS.**
+   - **RESOLVED (plan 36-02):** migration 0030 `aura.identity_object_store` (secret encrypted-at-rest).
    - Recommendation: a small `aura.identity_object_store(identity_id, bucket, access_key, secret_key_enc)` table, encrypted at rest, same trust boundary as `.env`. Overlaps the saga-journal discretion — could co-locate.
 
 ## Environment Availability

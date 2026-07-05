@@ -290,6 +290,35 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
+**Plans:** 12 plans
+
+**Wave 1** *(foundation — parallel)*
+
+- [ ] 36-01-PLAN.md — Break-glass CLI (`aura identity recover`) + local admin-cap seed (MUSR-06 shipped first)
+- [ ] 36-02-PLAN.md — Isolation schema migrations (paused_states.identity_id, saga journal, soft-delete, object-store key table, audit indexes) + AURA_MUSR_ISOLATION flag + RBAC-03 amendment note
+- [ ] 36-03-PLAN.md — Background jobs owner-binding + 1h TTL reaper (MUSR-03/04)
+- [ ] 36-07-PLAN.md — Per-identity MCP config + skills/pyscripts filesystem rooting (D-20/D-21)
+
+**Wave 2** *(kernel + isolation planes — blocked on Wave 1)*
+
+- [ ] 36-04-PLAN.md — WithIdentityTx RLS carrier + ENABLE-RLS migration + owner-scoped conversations/approvals (404/403) + MUSR-02 owner + RLS backstop
+- [ ] 36-05-PLAN.md — Documents plane fail-closed (six EXISTS queries + HAS_DOCUMENT ingest edge; spike-085 fix)
+- [ ] 36-06-PLAN.md — Garage Admin API v2 client + bucket-per-identity + per-identity credential resolver
+- [ ] 36-10-PLAN.md — Frontend capability-gating + admin grant/revoke control + admin audit UI + audit API + dist rebuild (D-03/D-26/D-28)
+
+**Wave 3** *(sagas + lifecycle — blocked on Wave 2)*
+
+- [ ] 36-08-PLAN.md — Provisioning saga (Garage/FS legs + journal) + first-login (D-15) + de-provisioning saga + LinkUser
+- [ ] 36-09-PLAN.md — Runner conversation-delete lifecycle + composite (identity,session) keying (MUSR-05/D-23)
+
+**Wave 4** *(routing + token gate — blocked on Wave 3)*
+
+- [ ] 36-11-PLAN.md — Telegram multi-user routing + no-long-lived-token-in-URL static gate (MUSR-06)
+
+**Wave 5** *(acceptance gate — blocked on Wave 4)*
+
+- [ ] 36-12-PLAN.md — Documents backfill + flag-flip rollout runbook + CI (Garage+Authula) + two-identity live cross-deny E2E (D-29 acceptance gate)
+
 #### Phase 37: Per-User Full-Capability Sandbox
 
 **Goal:** Resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; the host is never exposed.
