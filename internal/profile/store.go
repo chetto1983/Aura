@@ -206,9 +206,8 @@ func normalizeMetadata(m Metadata, now time.Time) Metadata {
 // one path-traversal guard for per-identity filesystem rooting (D-20/D-21). An empty or
 // malformed identity, or one that escapes root, yields ErrInvalidIdentity.
 func RootIdentityDir(root, identity string) (string, error) {
-	if !identityPattern.MatchString(identity) || strings.Contains(identity, "..") ||
-		strings.ContainsAny(identity, `/\`) {
-		return "", fmt.Errorf("%w: %q must match %s and contain no traversal", ErrInvalidIdentity, identity, identityPattern.String())
+	if err := ValidateIdentity(identity); err != nil {
+		return "", err
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -226,6 +225,21 @@ func RootIdentityDir(root, identity string) (string, error) {
 		return "", fmt.Errorf("%w: %q escapes identity root", ErrInvalidIdentity, identity)
 	}
 	return dir, nil
+}
+
+// ValidateIdentity reports whether identity is a safe per-identity namespace key:
+// it must match identityPattern (charset + length) and contain no ".." or path
+// separator. It is the single traversal/charset guard reused wherever an identity
+// is mapped to a namespaced resource — a filesystem root (RootIdentityDir) or an
+// object-store bucket name (internal/objectstore/garageadmin) — so injection and
+// traversal are rejected in exactly one place. An empty or malformed identity
+// yields ErrInvalidIdentity.
+func ValidateIdentity(identity string) error {
+	if !identityPattern.MatchString(identity) || strings.Contains(identity, "..") ||
+		strings.ContainsAny(identity, `/\`) {
+		return fmt.Errorf("%w: %q must match %s and contain no traversal", ErrInvalidIdentity, identity, identityPattern.String())
+	}
+	return nil
 }
 
 func (s *Store) profileDir(identity string) (string, error) {
