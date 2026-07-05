@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 36
 current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: executing
-stopped_at: Completed 36-01-PLAN.md (break-glass recover + local admin caps seed)
-last_updated: "2026-07-05T18:14:08Z"
+stopped_at: Completed 36-02-PLAN.md
+last_updated: "2026-07-05T18:38:09.002Z"
 last_activity: 2026-07-05
-last_activity_desc: "36-01 complete: break-glass `aura identity recover` + migration 0026"
+last_activity_desc: 36-02 complete (additive migrations 0027-0031 + AURA_MUSR_ISOLATION rollout flag)
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 43
-  completed_plans: 32
+  completed_plans: 33
   percent: 45
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — EXECUTING
-Plan: 2 of 12 (36-01 complete)
-Status: Executing Phase 36
-Last activity: 2026-07-05 — 36-01 complete (break-glass recover CLI + migration 0026 local admin caps)
+Plan: 3 of 12 (36-01, 36-02 complete)
+Status: Ready to execute
+Last activity: 2026-07-05 — 36-02 complete (additive identity-isolation schema foundation + AURA_MUSR_ISOLATION rollout flag)
+
+#### 36-02 — Additive identity-isolation schema foundation + `AURA_MUSR_ISOLATION` rollout flag (MUSR-01/03/06 advanced, NOT closed). Five ADDITIVE forward-only migration pairs sequenced cleanly above the 0026 floor (no renumber/collision): **0027** `ALTER TABLE aura.paused_states ADD COLUMN identity_id uuid` (OQ2 — a stored, backfilled, NULLABLE owner column chosen over a per-read `conversation_id` subquery for a clean plan-04 `*ForIdentity`/RLS predicate) + backfill `UPDATE ... FROM aura.conversations` (the 0005 uuid+FK promotion makes the join total) + `paused_states_identity_idx`; write-path population deferred to plan 05. **0028** `CREATE TABLE aura.provisioning_saga (saga_id, identity_id, kind CHECK provision|deprovision, step, status CHECK pending|done|failed, updated_at, PK(saga_id,step))` — MUTABLE (0023 `GRANT SELECT,INSERT,UPDATE` shape, NOT the append-only trigger shape) so a step transitions pending→done/failed for forward recovery (D-14/D-27); **NO FK on identity_id** (mirrors 0014 `pending_notifications`) so a de-provision saga survives the identity deletion it executes. **0029** `ALTER TABLE aura.identities ADD COLUMN deactivated_at + purge_after timestamptz` (D-27 soft-delete grace window; deleted_at precedent 0020:33). **0030** `CREATE TABLE aura.identity_object_store (identity_id PK REFERENCES identities ON DELETE CASCADE, bucket, access_key, secret_key_enc bytea, created_at)` — the per-identity Garage S3 secret is **encrypted-at-rest bytea ciphertext, never plaintext** (T-36-02-I, D-08/OQ4); documented KEK source = existing `AURA_AUTHULA_SECRET` (32-byte hex), AEAD impl = plan 06; `GRANT SELECT,INSERT,DELETE`. **0031** `(actor_identity_id, created_at DESC)` on `mcp_audit` + `(identity_id, created_at DESC)` on `skill_audit` for the D-28 admin per-user reads; `identity_audit` (already has `new_identity_id` idx) and `tool_invocations` (conversation-keyed, no identity column) intentionally untouched — both exclusions documented in the migration. Every up has a matching down. **Config:** `config.Config.MUSRIsolation bool` read via `envutil.BoolDefault("AURA_MUSR_ISOLATION", false)` — the **D-13 documents-retrieval scoped-vs-unscoped query-PATH selector** (flag ON = fail-closed EXISTS enforcement; OFF = pre-existing unscoped fallback) that **plan 05 consumes and plan 12 flips**; DEFAULT OFF is load-bearing (keeps plan 12's deploy-flag-off step safe). Catalogued in the `config_knobs.go` KnobSpec registry (KindBool); **NOT routed through `internal/settings` OverlayEnv AllowedKeys** (T-36-02-T, verified 0 matches in settings.go). `TestMUSRIsolationDefaultOff` (unset→false, set→true) green. **NO RLS ENABLE/policy this plan** — deferred to plan 04 co-located with its safe `WithIdentityTx` read-path (enabling RLS now fail-closes pooled non-tx reads, RESEARCH Pitfall 1). REQUIREMENTS.md RBAC-03 note augmented with 36-RESEARCH OQ1/A4 (RLS-for-isolation IN, RLS-for-roles OUT; no role model). Commits `79ba36a4` (0027-0030), `10ee788f` (0031 + flag + KnobSpec + test + RBAC-03 note). DEVIATION (Rule 2, in-scope): added `NOT NULL` to the saga columns the plan's DDL sketch left unspecified (a NULL saga_id/status defeats forward-recovery; matches the 0004/0020/0023 convention). ENV CONSTRAINT: `.env.example` (in `files_modified`) could NOT be edited — the workspace permission settings hard-deny `.env*` across Read/Grep/Bash; the flag is fully catalogued in `config_knobs.go` (the registry named as the ".env.example / doc generation" source) so no info is lost — a follow-up with `.env*` access should add the one-line entry. NO-SKIP-AS-GREEN: `go build ./...` + `go vet ./internal/db/ ./internal/config/` + untagged `go test ./internal/db/ ./internal/config/` all green on this Windows host; the `db_integration` migration apply/reverse round-trip was NOT run here (no live stack) and is honestly reported `unknown` — it must run in WSL/CI before phase close. MUSR-01/03/06 stay `[ ]` (phase-spanning: RLS=plan 04, documents scoping=plan 05, Garage keys=plan 06, saga=plan 08, audit UI=plan 10, rollout flip=plan 12); `requirements mark-complete` intentionally NOT run.
 
 #### 36-01 — MUSR-06 "break-glass first": host-only `aura identity recover` + migration 0026 local admin-caps seed. Migration `0026_local_admin_caps.{up,down}.sql` idempotently seeds the `local` identity (UUID …001) with three EXPLICIT admin capability grants — `governance.write` + `identity.create` + `agent.run` — mirroring the `0004_identity` seed shape (`ON CONFLICT DO NOTHING`); the down migration deletes exactly those three rows and leaves the system-managed `*` wildcard (0004) intact. Per 36-RESEARCH OQ3 the D-02/D-03 model-settings capability is realized as the EXISTING `governance.write` (NO net-new `settings.model.write`), so admin-gated routes later resolve on named caps, not solely `*`. NEW `cmd/aura/recovery.go`: `aura identity recover <name>` is the host-only break-glass path (D-16) — it resolves the identity via `GetIdentityByName`, then `mintBreakGlassToken` reuses the shipped 0023 token infra EXACTLY (there is no new token scheme): because `aura.password_reset_tokens.challenge_id` is a NOT NULL FK to `password_reset_challenges (id, identity_id)`, it creates + consumes a throwaway host-minted challenge (random discarded `code_hash`) and inserts a hashed token (`agui.HashLookupToken` sha256, `expires_at`, `max_attempts` reused from `serve_password_reset.go`'s online 10-minute mint), then appends a NEUTRAL append-only `identity_recovery_audit` row (`break_glass_token_minted`, no secrets) — all inside ONE atomic tx. The one-time PLAINTEXT token is printed to stdout ONLY (never slog); host access is the sole ownership proof and NO server route mints an admin bypass. Impl lives in recovery.go so `identity.go` stays 137 LOC (only the `recover` dispatch case + usage added). NO Casbin imported (the indirect spike deps stay unwired). Tests: 3 Windows-runnable unit tests (`recovery_test.go` — TTL short-lived pinned to 10m + challenge/token param builders reuse the online 5/3 max_attempts + expiry shape + hashed-not-plaintext) all green; 2 `db_integration` round-trips written + compile-clean (`migrate_0026_integration_test.go` seed→down→re-up→`*`-survives; `recovery_integration_test.go` end-to-end mint validates via `resolveResetTokenHash` + audit row + fail-closed unknown identity) that gate in WSL/CI under no-skip-as-green (NOT run on this Windows host — status honestly `unknown`). `go build ./...` + `go vet ./...` + `go vet -tags db_integration` all clean; `go test ./cmd/aura/` green. Commits `1cd90d0a` (migration 0026), `89ef6337` (recover subcommand). DEVIATIONS (2, both inside the declared file scope): (1) Rule-2 added the atomic break-glass audit write (a privileged reset must be audited); (2) resolved the plan's loose "~1h const" TTL to the actual reused 10-minute shape (shorter/safer). NOTE for verifier: `must_haves` truth 3 (grant/revoke writes an audited capability change) is NOT delivered here — grant/revoke were untouched (out of the 2-task scope; `internal/identity/store.go` is deliberately absent from `files_modified`) and today emit only a stdout confirmation with no DB capability-audit ledger; that belongs to the D-26/D-28 admin-audit work in a later Phase-36 plan. MUSR-06 stays `[ ]` (phase-spanning: Authula default cutover + capability-per-route + no-token-in-URL E2E close at 36-12), so it is NOT marked complete.
 
@@ -238,6 +240,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 35 P04 | ~55min | 3 tasks | 13 files |
 | Phase 35 P05 | 40min | 3 tasks | 7 files |
 | Phase 36 P36-01 | 11min | 2 tasks | 7 files |
+| Phase 36 P02 | ~25min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -452,6 +455,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 35-04: InsertToolInvocation :execrows — rows-affected conditional-write IS the GATE-04 idempotency key (rows==1 acquire / rows==0 replay / err deny)
 - [Phase ?]: 35-04: every mutating-Allow (auto-allow AND approved-resume) converges on ONE store.Reserve before Execute; operator_id rides the single start Meta, no competing Insert (D-03 point 2)
 - [Phase ?]: 35-05: crash-orphan reconciler appends end{error,indeterminate}, never re-invokes a mutating orphan; effectiveGrace=max(30m, runLifetime+5m) > run-lifetime plus a pre-append GetEnd re-check make the slow-tool collision impossible; lifecycle mirrors conversations.Sweeper, wired into the serve daemon (not runner.go)
+- [Phase 36]: 36-02: schema foundation only (migrations 0027-0031 + AURA_MUSR_ISOLATION default-OFF); no RLS this plan — RLS ENABLE+policy deferred to plan 04 with its safe WithIdentityTx read-path (RESEARCH Pitfall 1: RLS fail-closes pooled non-tx reads) — Additive schema + one config field; enforcement wired later so MUSR-01/03/06 stay open
+- [Phase 36]: 36-02: provisioning_saga.identity_id carries NO FK (mirrors 0014 pending_notifications) so a de-provision saga survives the identity deletion it executes; identity_object_store secret_key_enc is encrypted-at-rest bytea keyed off AURA_AUTHULA_SECRET (AEAD impl = plan 06) — Forward-recovery journal must outlive its subject; secret never plaintext (T-36-02-I)
 
 ### Pending Todos
 
@@ -496,9 +501,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-05T08:34:18.509Z
-Stopped at: Phase 36 context gathered
-Resume file: .planning/phases/36-multi-user-identity-isolation-authula-cutover/36-CONTEXT.md
+Last session: 2026-07-05T18:37:57.006Z
+Stopped at: Completed 36-02-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
