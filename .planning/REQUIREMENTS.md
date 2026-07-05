@@ -45,8 +45,8 @@
 
 - [ ] **MUSR-01**: Conversation and approval stores expose owner-scoped methods; AG-UI/API list/get/search/mutate surfaces filter by the authenticated principal — identity B can never list, get, delete, archive, or resolve identity A's data (404/403). Proven by a two-identity live E2E. *(F-028)*
 - [ ] **MUSR-02**: New Web conversations are created under `identityctx.IdentityID(ctx)` (with `local` only as the CLI/no-principal fallback); a B-created conversation is owned by B and runs successfully. *(F-028)*
-- [ ] **MUSR-03**: Background shell jobs use random unguessable IDs bound to session/actor; poll and kill require a matching session/actor (or an explicit admin capability). Session B cannot poll or kill session A's job. *(F-032)*
-- [ ] **MUSR-04**: Background shell jobs have a default TTL + owner/session/task IDs + age metrics; TTL expiry records status and terminates the process group. *(F-012)*
+- [x] **MUSR-03**: Background shell jobs use random unguessable IDs bound to session/actor; poll and kill require a matching session/actor (or an explicit admin capability). Session B cannot poll or kill session A's job. *(F-032)*
+- [x] **MUSR-04**: Background shell jobs have a default TTL + owner/session/task IDs + age metrics; TTL expiry records status and terminates the process group. *(F-012)*
 - [ ] **MUSR-05**: All conversation deletion (AG-UI, Telegram `/clear`, CLI) routes through a runner lifecycle method that cancels active work, expires pending pauses, evicts session tools, and handles background jobs before deleting persistence. *(F-039)*
 - [ ] **MUSR-06**: Authula becomes the default auth provider (cutover from passphrase) with provisioning + break-glass shipped first; capability-per-route enforced; long-lived tokens are never accepted in URLs/query strings (headers/secure cookies only; query tokens reserved for short-lived setup bootstrap). *(F-050)*
 

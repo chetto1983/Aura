@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 36
 current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: executing
-stopped_at: Completed 36-02-PLAN.md
-last_updated: "2026-07-05T18:38:09.002Z"
+stopped_at: Completed 36-03-PLAN.md
+last_updated: "2026-07-05T19:22:53.865Z"
 last_activity: 2026-07-05
-last_activity_desc: 36-02 complete (additive migrations 0027-0031 + AURA_MUSR_ISOLATION rollout flag)
+last_activity_desc: 36-03 complete (background-job owner-binding + crypto IDs + 1h TTL reaper — MUSR-03/04 closed)
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 43
-  completed_plans: 33
+  completed_plans: 34
   percent: 45
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — EXECUTING
-Plan: 3 of 12 (36-01, 36-02 complete)
+Plan: 4 of 12 (36-01, 36-02, 36-03 complete)
 Status: Ready to execute
-Last activity: 2026-07-05 — 36-02 complete (additive identity-isolation schema foundation + AURA_MUSR_ISOLATION rollout flag)
+Last activity: 2026-07-05 — 36-03 complete (background-job owner-binding + crypto IDs + 1h TTL reaper; MUSR-03/04 closed)
+
+#### 36-03 — Background-job owner-binding + crypto IDs + 1h TTL reaper (MUSR-03/04 CLOSED). Closed the guessable-ID / no-owner / no-TTL gap in `internal/agent/tools/shell_bg.go`. **MUSR-03:** `newBackgroundShellID` mints 128-bit `crypto/rand` hex IDs (fail-closed on RNG error — no guessable fallback), replacing the sequential `sh_%d` (`b.seq++`, trivially guessable → cross-session takeover, T-36-03-E/T); every `bgShell` binds `(ownerID, sessionID)` at start from `identityctx.IdentityID(ctx)` + the tool-call session key (empty principal → the seeded `local` UUID `…001`, D-25 CLI fallback). `start` gained a `callerCtx` param (owner source) — sole prod caller `shell_exec.go` + 6 test call sites updated; the process-lifetime ctx stays a fresh `context.Background()` so the job outlives the turn. **Authority (D-06/D-18):** `bgShell.authorize` + `authorizeCaller` gate `shell_poll`/`shell_kill` on owner-match OR admin cap — a foreign non-admin poll returns the not-found shape (D-06 read=404, hides existence), a foreign non-admin kill is refused (D-06 mutate=403). The admin exemption consults `HasCapability(governance.write)` (reused, RESEARCH OQ — no net-new `settings.model.write`) via a **nil-safe `capabilityChecker` seam** on `ShellPoll`/`ShellKill` (D-A2-02 accept-interfaces); **nil at the current composition root → owner-only / fail-closed** (foreign denied even without the admin escape hatch), a zero-rework store-swap deferred to 36-10/36-12. **MUSR-04:** every job carries a default 1h TTL (`AURA_SHELL_BG_TTL`, Go-duration overridable; invalid/absent → 1h always-on safety bound); `sweepExpired` terminates the whole process group (`cancel` → `cmd.Cancel = killProcessGroup`) + records status `"expired"` (preserved through `finish()`), swept BOTH opportunistically on every `start` AND from a bounded, **goleak-safe** background ticker (`StartReaper`, interval ttl/4 clamped [1s,1m]) that never self-starts in the constructor, is wired once at serve boot on the work ctx, and is joined by `Shutdown`'s once-guarded `stopReaper` fold. `shell_poll` now exposes an `age_ms` metric (now − startedAt) on the Meta + footer. **Refactor-on-touch (Pitfall 7):** split the 499-LOC `shell_bg.go` into `shell_bg.go` (421) + `shell_bg_owner.go` (232) + `shell_bg_ttl.go` (150), all ≤600. Commits `3a4ffc9d` (Task 1 IDs+owner+authority), `f7949e6e` (Task 2 TTL+age+reaper). DEVIATIONS: (Rule 3) `start` ctx-param ripple to `shell_exec.go` + 6 test sites; (Rule 2) `StartReaper` wired into `cmd/aura/serve.go` (a reaper that never starts is dead code — the only file beyond the plan's `files_modified`); + `TestShellPollRedactsModelPreview` fixture given owner fields for the new contract (redaction assertion unchanged). NO-SKIP-AS-GREEN: `go build ./...` + `go vet` + untagged `go test ./internal/agent/tools/` + goleak all green on Windows; **`-race` NOT run (no CGO/gcc on this host) — must run in WSL/CI before phase close** (D5 coverage flags it). MUSR-03/04 marked `[x]` (mechanism + stated requirement delivered + unit-proven); the phase-level two-identity live E2E (success-criterion 2) is exercised at 36-12, and 36-10 should wire `ShellPoll.Caps`/`ShellKill.Caps` to activate the D-18 admin cross-session recovery path.
 
 #### 36-02 — Additive identity-isolation schema foundation + `AURA_MUSR_ISOLATION` rollout flag (MUSR-01/03/06 advanced, NOT closed). Five ADDITIVE forward-only migration pairs sequenced cleanly above the 0026 floor (no renumber/collision): **0027** `ALTER TABLE aura.paused_states ADD COLUMN identity_id uuid` (OQ2 — a stored, backfilled, NULLABLE owner column chosen over a per-read `conversation_id` subquery for a clean plan-04 `*ForIdentity`/RLS predicate) + backfill `UPDATE ... FROM aura.conversations` (the 0005 uuid+FK promotion makes the join total) + `paused_states_identity_idx`; write-path population deferred to plan 05. **0028** `CREATE TABLE aura.provisioning_saga (saga_id, identity_id, kind CHECK provision|deprovision, step, status CHECK pending|done|failed, updated_at, PK(saga_id,step))` — MUTABLE (0023 `GRANT SELECT,INSERT,UPDATE` shape, NOT the append-only trigger shape) so a step transitions pending→done/failed for forward recovery (D-14/D-27); **NO FK on identity_id** (mirrors 0014 `pending_notifications`) so a de-provision saga survives the identity deletion it executes. **0029** `ALTER TABLE aura.identities ADD COLUMN deactivated_at + purge_after timestamptz` (D-27 soft-delete grace window; deleted_at precedent 0020:33). **0030** `CREATE TABLE aura.identity_object_store (identity_id PK REFERENCES identities ON DELETE CASCADE, bucket, access_key, secret_key_enc bytea, created_at)` — the per-identity Garage S3 secret is **encrypted-at-rest bytea ciphertext, never plaintext** (T-36-02-I, D-08/OQ4); documented KEK source = existing `AURA_AUTHULA_SECRET` (32-byte hex), AEAD impl = plan 06; `GRANT SELECT,INSERT,DELETE`. **0031** `(actor_identity_id, created_at DESC)` on `mcp_audit` + `(identity_id, created_at DESC)` on `skill_audit` for the D-28 admin per-user reads; `identity_audit` (already has `new_identity_id` idx) and `tool_invocations` (conversation-keyed, no identity column) intentionally untouched — both exclusions documented in the migration. Every up has a matching down. **Config:** `config.Config.MUSRIsolation bool` read via `envutil.BoolDefault("AURA_MUSR_ISOLATION", false)` — the **D-13 documents-retrieval scoped-vs-unscoped query-PATH selector** (flag ON = fail-closed EXISTS enforcement; OFF = pre-existing unscoped fallback) that **plan 05 consumes and plan 12 flips**; DEFAULT OFF is load-bearing (keeps plan 12's deploy-flag-off step safe). Catalogued in the `config_knobs.go` KnobSpec registry (KindBool); **NOT routed through `internal/settings` OverlayEnv AllowedKeys** (T-36-02-T, verified 0 matches in settings.go). `TestMUSRIsolationDefaultOff` (unset→false, set→true) green. **NO RLS ENABLE/policy this plan** — deferred to plan 04 co-located with its safe `WithIdentityTx` read-path (enabling RLS now fail-closes pooled non-tx reads, RESEARCH Pitfall 1). REQUIREMENTS.md RBAC-03 note augmented with 36-RESEARCH OQ1/A4 (RLS-for-isolation IN, RLS-for-roles OUT; no role model). Commits `79ba36a4` (0027-0030), `10ee788f` (0031 + flag + KnobSpec + test + RBAC-03 note). DEVIATION (Rule 2, in-scope): added `NOT NULL` to the saga columns the plan's DDL sketch left unspecified (a NULL saga_id/status defeats forward-recovery; matches the 0004/0020/0023 convention). ENV CONSTRAINT: `.env.example` (in `files_modified`) could NOT be edited — the workspace permission settings hard-deny `.env*` across Read/Grep/Bash; the flag is fully catalogued in `config_knobs.go` (the registry named as the ".env.example / doc generation" source) so no info is lost — a follow-up with `.env*` access should add the one-line entry. NO-SKIP-AS-GREEN: `go build ./...` + `go vet ./internal/db/ ./internal/config/` + untagged `go test ./internal/db/ ./internal/config/` all green on this Windows host; the `db_integration` migration apply/reverse round-trip was NOT run here (no live stack) and is honestly reported `unknown` — it must run in WSL/CI before phase close. MUSR-01/03/06 stay `[ ]` (phase-spanning: RLS=plan 04, documents scoping=plan 05, Garage keys=plan 06, saga=plan 08, audit UI=plan 10, rollout flip=plan 12); `requirements mark-complete` intentionally NOT run.
 
@@ -241,6 +243,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 35 P05 | 40min | 3 tasks | 7 files |
 | Phase 36 P36-01 | 11min | 2 tasks | 7 files |
 | Phase 36 P02 | ~25min | 2 tasks | 14 files |
+| Phase 36 P3 | 35min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -457,6 +460,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 35-05: crash-orphan reconciler appends end{error,indeterminate}, never re-invokes a mutating orphan; effectiveGrace=max(30m, runLifetime+5m) > run-lifetime plus a pre-append GetEnd re-check make the slow-tool collision impossible; lifecycle mirrors conversations.Sweeper, wired into the serve daemon (not runner.go)
 - [Phase 36]: 36-02: schema foundation only (migrations 0027-0031 + AURA_MUSR_ISOLATION default-OFF); no RLS this plan — RLS ENABLE+policy deferred to plan 04 with its safe WithIdentityTx read-path (RESEARCH Pitfall 1: RLS fail-closes pooled non-tx reads) — Additive schema + one config field; enforcement wired later so MUSR-01/03/06 stay open
 - [Phase 36]: 36-02: provisioning_saga.identity_id carries NO FK (mirrors 0014 pending_notifications) so a de-provision saga survives the identity deletion it executes; identity_object_store secret_key_enc is encrypted-at-rest bytea keyed off AURA_AUTHULA_SECRET (AEAD impl = plan 06) — Forward-recovery journal must outlive its subject; secret never plaintext (T-36-02-I)
+- [Phase ?]: 36-03: background job IDs are crypto/rand 128-bit hex (no sh_%d); jobs owner-bound by (identity,session) at start; poll foreign=404 / kill foreign=403 (D-06); default 1h TTL terminates the process group + records 'expired' (MUSR-03/04)
+- [Phase ?]: 36-03: D-18 admin poll/kill exemption reuses governance.write via a nil-safe capabilityChecker seam — fail-closed owner-only at the current composition root; production identity-store wiring deferred to 36-10/36-12
+- [Phase ?]: 36-03: go test -race ./internal/agent/tools/ NOT run (no CGO on Windows dev host) — must run in WSL/CI before phase close (no-skip-as-green)
 
 ### Pending Todos
 
@@ -501,7 +507,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-05T18:37:57.006Z
+Last session: 2026-07-05T19:19:46.996Z
 Stopped at: Completed 36-02-PLAN.md
 Resume file: None
 
