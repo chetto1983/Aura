@@ -67,7 +67,11 @@ func (s *Service) GraphRAG(ctx context.Context, req SearchRequest) (GraphRAGResu
 	stages.RerankMS = t2.Sub(t1).Milliseconds()
 	winners := topHits(ranked, effectiveLimit(req.Limit))
 
-	neighbours := s.expandNeighbors(ctx, graphExpandQuery, winners)
+	graphQuery := graphExpandQuery
+	if s.MUSRIsolation {
+		graphQuery = graphExpandQueryScoped
+	}
+	neighbours := s.expandNeighbors(ctx, graphQuery, req.IdentityID, winners)
 	t3 := s.nowMono()
 	stages.ExpandMS = t3.Sub(t2).Milliseconds()
 
@@ -102,6 +106,31 @@ MATCH (c)-[:NEXT_CHUNK|HAS_CHUNK]-(n:Chunk)
 WHERE NOT n.id IN $winner_ids
   AND coalesce(n.active, true) = true
   AND n.deleted_at IS NULL
+WITH DISTINCT n
+RETURN
+  n.document_id AS document_id,
+  coalesce(n.file_name, "") AS file_name,
+  n.id AS chunk_id,
+  n.text AS text,
+  n.locator_json AS locator_json,
+  n.heading_path AS heading_path,
+  0.0 AS score
+LIMIT $expand_limit
+`
+
+// graphExpandQueryScoped is the identity-scoped variant of graphExpandQuery (Phase 36 D-13,
+// defense-in-depth on the connected-node expand). A neighbour n survives only when the caller
+// owns n's document via the UNCONDITIONAL `$identity <> "" AND EXISTS {...}` — an empty
+// identity fails closed and a foreign-owned connected chunk is never surfaced as context. No
+// `= "" OR` fallthrough (Pitfall 5).
+const graphExpandQueryScoped = `
+MATCH (c:Chunk) WHERE c.id IN $winner_ids
+MATCH (c)-[:NEXT_CHUNK|HAS_CHUNK]-(n:Chunk)
+WHERE NOT n.id IN $winner_ids
+  AND coalesce(n.active, true) = true
+  AND n.deleted_at IS NULL
+  AND $identity <> ""
+  AND EXISTS { (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document {id: n.document_id}) }
 WITH DISTINCT n
 RETURN
   n.document_id AS document_id,

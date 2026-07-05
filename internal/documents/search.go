@@ -16,12 +16,23 @@ const (
 // Searcher runs sparse full-text search against indexed document chunks.
 type Searcher struct {
 	Client KnowledgeClient
+	// MUSRIsolation selects the retrieval query path (Phase 36 D-13). When true, Search
+	// runs the identity-scoped variant carrying an unconditional EXISTS ownership filter
+	// (fail closed on foreign/empty identity); when false, it runs the pre-existing
+	// unscoped query (operator-sees-all). Set from config.MUSRIsolation at construction.
+	MUSRIsolation bool
 }
 
 // Search returns ranked chunk hits for a document search request.
 func (s *Searcher) Search(ctx context.Context, req SearchRequest) ([]SearchHit, error) {
 	if s.Client == nil {
 		return nil, fmt.Errorf("document searcher has no knowledge client")
+	}
+	// Belt-and-suspenders fail-closed guard (D-09.2): with isolation on, an empty
+	// principal owns nothing, so short-circuit before the graph round-trip. The scoped
+	// query's `$identity <> ""` predicate enforces the same invariant graph-side.
+	if s.MUSRIsolation && req.IdentityID == "" {
+		return nil, nil
 	}
 	query := sanitizeFulltextQuery(req.Query)
 	if query == "" {
@@ -35,11 +46,16 @@ func (s *Searcher) Search(ctx context.Context, req SearchRequest) ([]SearchHit, 
 		limit = maxSearchLimit
 	}
 	if req.DocumentID != "" {
-		return s.scopedSearch(ctx, query, req.DocumentID, limit)
+		return s.scopedSearch(ctx, query, req, limit)
 	}
-	rows, err := s.Client.Read(ctx, sparseSearchQuery, map[string]any{
+	sparseQuery := sparseSearchQuery
+	if s.MUSRIsolation {
+		sparseQuery = sparseSearchQueryScoped
+	}
+	rows, err := s.Client.Read(ctx, sparseQuery, map[string]any{
 		"query":           query,
 		"document_id":     "",
+		"identity":        req.IdentityID,
 		"limit":           limit,
 		"candidate_limit": limit * 3,
 	})
@@ -57,9 +73,14 @@ func (s *Searcher) Search(ctx context.Context, req SearchRequest) ([]SearchHit, 
 // be restricted to a node set, so relevance is the count of distinct query terms present;
 // the reranker reorders these seeds. It is the sparse twin of docScopedVectorSeedQuery —
 // together they keep a scoped document reachable on both the dense and the fallback path.
-func (s *Searcher) scopedSearch(ctx context.Context, query, documentID string, limit int) ([]SearchHit, error) {
-	rows, err := s.Client.Read(ctx, docScopedSparseQuery, map[string]any{
-		"document_id": documentID,
+func (s *Searcher) scopedSearch(ctx context.Context, query string, req SearchRequest, limit int) ([]SearchHit, error) {
+	scopedQuery := docScopedSparseQuery
+	if s.MUSRIsolation {
+		scopedQuery = docScopedSparseQueryScoped
+	}
+	rows, err := s.Client.Read(ctx, scopedQuery, map[string]any{
+		"document_id": req.DocumentID,
+		"identity":    req.IdentityID,
 		"terms":       strings.Fields(strings.ToLower(query)),
 		"limit":       limit,
 	})
@@ -184,6 +205,34 @@ ORDER BY score DESC
 LIMIT $limit
 `
 
+// sparseSearchQueryScoped is the identity-scoped variant of sparseSearchQuery (Phase 36
+// D-13, selected when MUSRIsolation is on). The fulltext index can't be node-restricted,
+// so the ownership predicate is applied AFTER the YIELD: the UNCONDITIONAL
+// `$identity <> "" AND EXISTS {...}` means an empty identity matches no :User (fail closed)
+// and a foreign identity that does not own node.document_id is dropped. It is NOT written as a
+// disjoined empty-identity fallthrough (an `EXISTS {...}` OR-ed with `$identity = ""`) — that
+// would re-introduce the spike-085 leak (Pitfall 5). The projection matches sparseSearchQuery
+// so hitsFromRows is identical.
+const sparseSearchQueryScoped = `
+CALL db.index.fulltext.queryNodes('chunk_text', $query, {limit: $candidate_limit})
+YIELD node, score
+WHERE ($document_id = "" OR node.document_id = $document_id)
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
+  AND $identity <> ""
+  AND EXISTS { (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document {id: node.document_id}) }
+RETURN
+  node.document_id AS document_id,
+  coalesce(node.file_name, "") AS file_name,
+  node.id AS chunk_id,
+  node.text AS text,
+  node.locator_json AS locator_json,
+  node.heading_path AS heading_path,
+  score AS score
+ORDER BY score DESC
+LIMIT $limit
+`
+
 // docScopedSparseQuery is the scoped sparse seed (spike 075): with a document_id supplied
 // it ranks that document's OWN chunks by query-term overlap (a native metadata pre-filter
 // on the indexed document_id), so a small or freshly-uploaded document's chunks are always
@@ -196,6 +245,31 @@ MATCH (node:Chunk {document_id: $document_id})
 WHERE node.text IS NOT NULL
   AND coalesce(node.active, true) = true
   AND node.deleted_at IS NULL
+WITH node, size([term IN $terms WHERE toLower(node.text) CONTAINS term]) AS score
+WHERE score > 0
+RETURN
+  node.document_id AS document_id,
+  coalesce(node.file_name, "") AS file_name,
+  node.id AS chunk_id,
+  node.text AS text,
+  node.locator_json AS locator_json,
+  node.heading_path AS heading_path,
+  score AS score
+ORDER BY score DESC
+LIMIT $limit
+`
+
+// docScopedSparseQueryScoped is the identity-scoped variant of docScopedSparseQuery (Phase
+// 36 D-13). It is a MATCH pre-filter (not a fulltext YIELD), so the UNCONDITIONAL ownership
+// predicate rides the initial WHERE: an empty identity fails closed via `$identity <> ""`
+// and a foreign identity is dropped by the EXISTS. No `= "" OR` fallthrough (Pitfall 5).
+const docScopedSparseQueryScoped = `
+MATCH (node:Chunk {document_id: $document_id})
+WHERE node.text IS NOT NULL
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
+  AND $identity <> ""
+  AND EXISTS { (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document {id: node.document_id}) }
 WITH node, size([term IN $terms WHERE toLower(node.text) CONTAINS term]) AS score
 WHERE score > 0
 RETURN

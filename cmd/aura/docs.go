@@ -216,10 +216,11 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 	baseURL := documentsBaseURL(cfg)
 	httpClient := documentHTTPClient(cfg)
 	svc := &documents.Service{
-		Jobs:      documents.NewPostgresJobStore(pool),
-		Extractor: &documents.ExtractClient{BaseURL: baseURL, Client: httpClient},
-		Indexer:   &documents.Indexer{Client: mcp},
-		Searcher:  &documents.Searcher{Client: mcp},
+		Jobs:          documents.NewPostgresJobStore(pool),
+		Extractor:     &documents.ExtractClient{BaseURL: baseURL, Client: httpClient},
+		Indexer:       &documents.Indexer{Client: mcp},
+		Searcher:      &documents.Searcher{Client: mcp, MUSRIsolation: cfg.MUSRIsolation},
+		MUSRIsolation: cfg.MUSRIsolation,
 	}
 	return svc, func() {
 		_ = mcp.Close()
@@ -312,7 +313,7 @@ func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequ
 	// OpenRouter endpoint + the single OPENROUTER_API_KEY; unset → local sidecar.
 	rerankBase, rerankKey, rerankModel := s.cfg.RerankRoute()
 	svc := &documents.Service{
-		Searcher:      &documents.Searcher{Client: mcp},
+		Searcher:      &documents.Searcher{Client: mcp, MUSRIsolation: s.cfg.MUSRIsolation},
 		Knowledge:     mcp,
 		QueryEmbedder: embeddingClient(s.cfg, documentHTTPClient(s.cfg)),
 		Reranker: &rerank.RerankClient{
@@ -320,6 +321,11 @@ func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequ
 			Model:   rerankModel,
 			APIKey:  rerankKey,
 		},
+		// D-13 path selector: on ⇒ the six scoped queries fail closed on foreign/empty
+		// identity; off (default) ⇒ the pre-existing unscoped path. Both the Service and
+		// its Searcher carry the flag so dense, sparse-fallback, and expand seeds scope
+		// together. The document_search tool supplies req.IdentityID from identityctx.
+		MUSRIsolation: s.cfg.MUSRIsolation,
 	}
 	return svc.Retrieve(ctx, req)
 }

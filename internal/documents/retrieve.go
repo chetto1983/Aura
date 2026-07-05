@@ -47,13 +47,19 @@ func (s *Service) Retrieve(ctx context.Context, req SearchRequest) ([]SearchHit,
 	}
 	ranked := s.rerankSeeds(ctx, req.Query, seeds)
 	winners := topHits(ranked, effectiveLimit(req.Limit))
-	return s.expandWinners(ctx, winners), nil
+	return s.expandWinners(ctx, req, winners), nil
 }
 
 // seedHits produces the candidate pool. It prefers the dense vector index when the
 // query can be embedded and falls back to the sparse fulltext Search on any embed or
 // vector-query failure (NO hard fail) — both paths are the pre-rerank RRF/vector order.
 func (s *Service) seedHits(ctx context.Context, req SearchRequest) ([]SearchHit, error) {
+	// Belt-and-suspenders fail-closed guard (D-09.2): with isolation on, an empty
+	// principal owns nothing, so no dense/sparse seed can be reachable — short-circuit
+	// before any graph round-trip. The scoped queries enforce the same graph-side.
+	if s.MUSRIsolation && req.IdentityID == "" {
+		return nil, nil
+	}
 	if vector, ok := s.queryVector(ctx, req.Query); ok {
 		if hits, err := s.vectorSeed(ctx, vector, req); err == nil && len(hits) > 0 {
 			return hits, nil
@@ -85,19 +91,34 @@ func (s *Service) queryVector(ctx context.Context, query string) ([]float64, boo
 // never crowded out of the global top-k against a large corpus (spike 075 — the global
 // queryNodes(k)-THEN-filter returned 0 for a generic query when the answer was in the doc).
 func (s *Service) vectorSeed(ctx context.Context, vector []float64, req SearchRequest) ([]SearchHit, error) {
-	query := vectorSeedQuery
-	if req.DocumentID != "" {
-		query = docScopedVectorSeedQuery
-	}
+	query := s.selectVectorSeedQuery(req.DocumentID != "")
 	rows, err := s.Knowledge.Read(ctx, query, map[string]any{
 		"query_vector":    vector,
 		"candidate_limit": seedCandidateLimit,
 		"document_id":     req.DocumentID,
+		"identity":        req.IdentityID,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return hitsFromRows(rows)
+}
+
+// selectVectorSeedQuery picks the dense seed query across the two orthogonal axes: the
+// spike-075 document pre-filter (docScoped when a document_id is supplied) and the Phase-36
+// identity isolation flag (the *Scoped variant when MUSRIsolation is on). Isolation on ⇒ the
+// variant carrying the unconditional EXISTS ownership filter; off ⇒ the pre-existing query.
+func (s *Service) selectVectorSeedQuery(perDocument bool) string {
+	switch {
+	case perDocument && s.MUSRIsolation:
+		return docScopedVectorSeedQueryScoped
+	case perDocument:
+		return docScopedVectorSeedQuery
+	case s.MUSRIsolation:
+		return vectorSeedQueryScoped
+	default:
+		return vectorSeedQuery
+	}
 }
 
 // rerankSeeds reorders seeds by rerank relevance, then applies the non-monotonic guard
@@ -136,8 +157,12 @@ func (s *Service) rerankScores(ctx context.Context, query string, seeds []Search
 // winners as one flat list (winners first in reranked order, unique neighbours
 // appended). It is the Retrieve-shaped view of expandNeighbors; GraphRAG keeps the
 // winners and neighbours apart instead.
-func (s *Service) expandWinners(ctx context.Context, winners []SearchHit) []SearchHit {
-	neighbors := s.expandNeighbors(ctx, neighborExpandQuery, winners)
+func (s *Service) expandWinners(ctx context.Context, req SearchRequest, winners []SearchHit) []SearchHit {
+	query := neighborExpandQuery
+	if s.MUSRIsolation {
+		query = neighborExpandQueryScoped
+	}
+	neighbors := s.expandNeighbors(ctx, query, req.IdentityID, winners)
 	if len(neighbors) == 0 {
 		return winners
 	}
@@ -153,7 +178,7 @@ func (s *Service) expandWinners(ctx context.Context, winners []SearchHit) []Sear
 // the read is capped at neighborsPerWinner per winner (T-30-11: 1-hop + neighbour
 // cap bound the fan-out). Expansion is best-effort context: a missing graph client
 // or any graph/decode error yields no neighbours (the answer is in the winners).
-func (s *Service) expandNeighbors(ctx context.Context, query string, winners []SearchHit) []SearchHit {
+func (s *Service) expandNeighbors(ctx context.Context, query, identity string, winners []SearchHit) []SearchHit {
 	if s.Knowledge == nil || len(winners) == 0 {
 		return nil
 	}
@@ -166,6 +191,7 @@ func (s *Service) expandNeighbors(ctx context.Context, query string, winners []S
 	rows, err := s.Knowledge.Read(ctx, query, map[string]any{
 		"winner_ids":   ids,
 		"expand_limit": len(ids) * neighborsPerWinner,
+		"identity":     identity,
 	})
 	if err != nil {
 		return nil
@@ -223,6 +249,30 @@ RETURN
 ORDER BY score DESC
 `
 
+// vectorSeedQueryScoped is the identity-scoped variant of vectorSeedQuery (Phase 36 D-13).
+// The HNSW index can't be node-restricted, so the ownership predicate is post-YIELD: the
+// UNCONDITIONAL `$identity <> "" AND EXISTS {...}` fails closed on an empty identity and
+// drops any chunk whose document the caller does not own. No `= "" OR` fallthrough (Pitfall
+// 5). Projection matches vectorSeedQuery so the shared hitsFromRows decodes both.
+const vectorSeedQueryScoped = `
+CALL db.index.vector.queryNodes('chunk_embedding', $candidate_limit, $query_vector)
+YIELD node, score
+WHERE ($document_id = "" OR node.document_id = $document_id)
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
+  AND $identity <> ""
+  AND EXISTS { (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document {id: node.document_id}) }
+RETURN
+  node.document_id AS document_id,
+  coalesce(node.file_name, "") AS file_name,
+  node.id AS chunk_id,
+  node.text AS text,
+  node.locator_json AS locator_json,
+  node.heading_path AS heading_path,
+  score AS score
+ORDER BY score DESC
+`
+
 // docScopedVectorSeedQuery is the scoped-retrieval seed: with a document_id supplied it
 // ranks that document's OWN chunks by cosine (a native metadata pre-filter via the indexed
 // document_id property), so a small or freshly-uploaded document is never crowded out of the
@@ -248,6 +298,30 @@ ORDER BY score DESC
 LIMIT $candidate_limit
 `
 
+// docScopedVectorSeedQueryScoped is the identity-scoped variant of docScopedVectorSeedQuery
+// (Phase 36 D-13). A MATCH pre-filter, so the UNCONDITIONAL ownership predicate rides the
+// initial WHERE: empty identity fails closed via `$identity <> ""`, foreign identity dropped
+// by the EXISTS. No `= "" OR` fallthrough (Pitfall 5).
+const docScopedVectorSeedQueryScoped = `
+MATCH (node:Chunk {document_id: $document_id})
+WHERE node.embedding IS NOT NULL
+  AND coalesce(node.active, true) = true
+  AND node.deleted_at IS NULL
+  AND $identity <> ""
+  AND EXISTS { (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document {id: node.document_id}) }
+WITH node, vector.similarity.cosine(node.embedding, $query_vector) AS score
+RETURN
+  node.document_id AS document_id,
+  coalesce(node.file_name, "") AS file_name,
+  node.id AS chunk_id,
+  node.text AS text,
+  node.locator_json AS locator_json,
+  node.heading_path AS heading_path,
+  score AS score
+ORDER BY score DESC
+LIMIT $candidate_limit
+`
+
 // neighborExpandQuery attaches 1-hop reading-order context: for the reranked winners it
 // returns their :NEXT_CHUNK neighbours (both directions), excluding the winners
 // themselves, bounded by $expand_limit. :HAS_CHUNK is a Document->Chunk edge (see
@@ -258,6 +332,31 @@ MATCH (c)-[:NEXT_CHUNK]-(n:Chunk)
 WHERE NOT n.id IN $winner_ids
   AND coalesce(n.active, true) = true
   AND n.deleted_at IS NULL
+WITH DISTINCT n
+RETURN
+  n.document_id AS document_id,
+  coalesce(n.file_name, "") AS file_name,
+  n.id AS chunk_id,
+  n.text AS text,
+  n.locator_json AS locator_json,
+  n.heading_path AS heading_path,
+  0.0 AS score
+LIMIT $expand_limit
+`
+
+// neighborExpandQueryScoped is the identity-scoped variant of neighborExpandQuery (Phase 36
+// D-13, defense-in-depth on the 1-hop expand). The neighbour n is kept only when the caller
+// owns n's document: the UNCONDITIONAL `$identity <> "" AND EXISTS {...}` fails closed on an
+// empty identity and never attaches a foreign-owned neighbour as context. No `= "" OR`
+// fallthrough (Pitfall 5).
+const neighborExpandQueryScoped = `
+MATCH (c:Chunk) WHERE c.id IN $winner_ids
+MATCH (c)-[:NEXT_CHUNK]-(n:Chunk)
+WHERE NOT n.id IN $winner_ids
+  AND coalesce(n.active, true) = true
+  AND n.deleted_at IS NULL
+  AND $identity <> ""
+  AND EXISTS { (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document {id: n.document_id}) }
 WITH DISTINCT n
 RETURN
   n.document_id AS document_id,

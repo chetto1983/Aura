@@ -59,6 +59,14 @@ type Service struct {
 	// from Clock, which stamps UTC wall-clock document times (UTC strips the monotonic
 	// reading, so Clock must never be used to measure a duration).
 	timeSource func() time.Time
+
+	// MUSRIsolation selects the retrieval query path for the vector seed and 1-hop
+	// expand stages (Phase 36 D-13): on = identity-scoped variants with an unconditional
+	// EXISTS ownership filter (fail closed); off = the pre-existing unscoped queries. It
+	// must be set consistently with the injected Searcher's flag (both from
+	// config.MUSRIsolation) so every seed path — dense, sparse fallback, and expand — is
+	// scoped together. The empty-identity guard in seedHits fails closed before any query.
+	MUSRIsolation bool
 }
 
 // IngestPath ingests a local document file and returns once sparse search is ready.
