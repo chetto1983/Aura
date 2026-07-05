@@ -388,6 +388,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// mux; no capability gate (read-only).
 	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store))
 	wireSettingsProviders(aguiServer, chat.pool)
+	// Wire the Phase-36 (MUSR-01 / D-26/D-28) admin/user-distinction stores: the per-user
+	// audit read (over the identity-keyed mcp_audit/skill_audit/tool_invocations ledgers)
+	// and the capability-management + roster seam (the SAME *identity.Store the auth
+	// boundary + CLI use). Without these, GET /api/me + the /api/admin/* routes answer 503.
+	aguiServer.SetAuditStore(agui.NewPgAuditStore(chat.pool))
+	aguiServer.SetIdentityAdmin(chat.identity)
 	// Wire the Phase-29 MCP WRITE provider (MCPW-01/02/03): install/env-edit/trust/enable/
 	// disable/remove, each atomic with its mcp_audit row (WriteConfigWithAudit) and re-probed
 	// for the live tool count. Built best-effort over the shared pool + the managed-config

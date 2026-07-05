@@ -489,6 +489,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(onboardingProvisionRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	mux.Handle(onboardingStepRoute, aguiHandler)
 	mux.Handle(onboardingTgStatusRoute, aguiHandler)
+	// The Phase-36 (MUSR-01 / D-03/D-26/D-28) admin/user-distinction mounts live in
+	// serve_webui_musr.go to keep this file under the 600-LOC ceiling: GET /api/me
+	// (self-scoped, RequireAuth only) + the /api/admin/* surface behind
+	// RequireCapability(governance.write).
+	registerMUSRRoutes(mux, aguiHandler, auth)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the

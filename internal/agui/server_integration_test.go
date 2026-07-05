@@ -35,9 +35,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// localIdentityID is the seeded single-user identity that owns new conversations
-// (Slice 1.7 scaffolding) — pre-seeded by the identity migration.
-const localIdentityID = "00000000-0000-0000-0000-000000000001"
+// localIdentityID (the seeded single-user identity owning new conversations, pre-seeded by
+// the identity migration) is defined as a package const in auth.go (Phase 36) — the former
+// duplicate declaration here collided with it in the db_integration build, breaking the
+// whole tier's compile; removed on touch so the tests share the one production const.
 
 func envOrSkip(t *testing.T, key string) string {
 	t.Helper()

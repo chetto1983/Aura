@@ -102,6 +102,8 @@ type Server struct {
 	governance       GovernanceProviders
 	governanceWrite  GovernanceWriteProviders
 	settings         settingsStore
+	audit            auditReader
+	idAdmin          identityAdmin
 	telegramProbe    TelegramBotProbe
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource
@@ -202,6 +204,12 @@ func (s *Server) Mux() http.Handler {
 	// handlers; the parent-mux mount (RequireCapability(governance.read) on GET,
 	// governance.write on PUT/DELETE) lives in cmd/aura/serve_webui.go.
 	s.registerSettingsRoutes(mux)
+	// MUSR-01 admin/user distinction (Phase 36 plan 10, D-03/D-26/D-28): GET /api/me
+	// (self-scoped capabilities the SPA reads to hide admin surfaces) + the
+	// /api/admin/{identities,audit} + capability grant/revoke surface. Colocated with
+	// their handlers; the parent-mux mount (RequireAuth on /api/me, RequireCapability(
+	// governance.write) on the admin routes) lives in cmd/aura/serve_webui_musr.go.
+	s.registerAuditRoutes(mux)
 	// ONBD-01/02 onboarding wizard routes (Phase 28 plan 28-05): POST /api/onboarding/start
 	// + /{token}/step + /{token}/provision + GET /{token}/telegram-status. Colocated with
 	// their handlers; the parent-mux mount (RequireCapability(identity.create) on start +
