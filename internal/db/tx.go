@@ -37,3 +37,41 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlc.Queries) erro
 	}()
 	return fn(sqlc.New(tx))
 }
+
+// WithIdentityTx is the Phase-36 RLS carrier (D-07): it mirrors WithTx but sets the
+// per-request RLS session var `app.current_identity` to identityID BEFORE running fn,
+// so the owner-isolation policies on aura.conversations / aura.conversation_turns /
+// aura.paused_states (migration 0032) filter every statement in the tx to the caller's
+// rows. `set_config(..., is_local => true)` scopes the setting to THIS transaction only
+// (it resets at COMMIT/ROLLBACK), so it is safe under pgxpool connection reuse — a bare
+// `SET` would leak the identity onto the pooled connection and the next borrower (the
+// T-36-04-E elevation-of-privilege prohibition). An empty identityID sets the var to ”
+// (which the NULLIF-guarded policy treats as "no identity context" → the legacy
+// unscoped path), so a caller with no principal is never silently upgraded.
+//
+// This is the single choke point every owner-scoped web read/mutate routes through, so a
+// forgotten *ForIdentity WHERE clause still returns 0 foreign rows (the D-07 backstop the
+// app-level filter is layered on top of, not a replacement for).
+func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(*sqlc.Queries) error) (err error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback(ctx)
+			panic(p)
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return
+		}
+		err = tx.Commit(ctx)
+	}()
+	// is_local => true scopes the setting to this tx (resets at COMMIT/ROLLBACK) — never
+	// a bare SET, which would persist on the pooled connection and leak to the next borrower.
+	if _, err = tx.Exec(ctx, `SELECT set_config('app.current_identity', $1, true)`, identityID); err != nil {
+		return err
+	}
+	return fn(sqlc.New(tx))
+}
