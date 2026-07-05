@@ -198,27 +198,38 @@ func normalizeMetadata(m Metadata, now time.Time) Metadata {
 	return m
 }
 
-func (s *Store) profileDir(identity string) (string, error) {
+// RootIdentityDir joins root and identity behind the traversal-safe containment guard
+// (identityPattern charset + ".."/slash reject + filepath.Rel "escapes root" assertion)
+// and returns the absolute per-identity directory WITHOUT creating it. It is the shared
+// rooting primitive the mcp and skills packages reuse for their per-identity roots
+// (~/.aura/mcp/{id}, $AURA_SKILLS_DIR/{id}, ~/.aura/pyscripts/{id}), so there is exactly
+// one path-traversal guard for per-identity filesystem rooting (D-20/D-21). An empty or
+// malformed identity, or one that escapes root, yields ErrInvalidIdentity.
+func RootIdentityDir(root, identity string) (string, error) {
 	if !identityPattern.MatchString(identity) || strings.Contains(identity, "..") ||
 		strings.ContainsAny(identity, `/\`) {
 		return "", fmt.Errorf("%w: %q must match %s and contain no traversal", ErrInvalidIdentity, identity, identityPattern.String())
 	}
-	root, err := filepath.Abs(s.root)
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return "", fmt.Errorf("resolve profile root: %w", err)
+		return "", fmt.Errorf("resolve identity root: %w", err)
 	}
-	dir, err := filepath.Abs(filepath.Join(root, identity))
+	dir, err := filepath.Abs(filepath.Join(absRoot, identity))
 	if err != nil {
-		return "", fmt.Errorf("resolve profile dir: %w", err)
+		return "", fmt.Errorf("resolve identity dir: %w", err)
 	}
-	rel, err := filepath.Rel(root, dir)
+	rel, err := filepath.Rel(absRoot, dir)
 	if err != nil {
-		return "", fmt.Errorf("check profile containment: %w", err)
+		return "", fmt.Errorf("check identity containment: %w", err)
 	}
 	if rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("%w: %q escapes profile root", ErrInvalidIdentity, identity)
+		return "", fmt.Errorf("%w: %q escapes identity root", ErrInvalidIdentity, identity)
 	}
 	return dir, nil
+}
+
+func (s *Store) profileDir(identity string) (string, error) {
+	return RootIdentityDir(s.root, identity)
 }
 
 func atomicWrite(path string, data []byte) error {

@@ -166,13 +166,13 @@ func BuiltInCatalog() []CatalogEntry {
 			// default-on (D-08); the URL has no launch Command (HTTP recipe).
 			Name:       "memory",
 			Summary:    "neo4j-labs agent-memory (POLE+O + reasoning traces) over streamable-HTTP",
-			Source:     "recipe:memory",
+			Source:     mcp.SourceRecipeMemory,
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",
 			Server: mcp.ManagedServer{
 				Type:   mcp.ServerTypeStreamableHTTP,
 				URL:    memoryRecipeURL(),
-				Source: "recipe:memory",
+				Source: mcp.SourceRecipeMemory,
 				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 			},
 		},
