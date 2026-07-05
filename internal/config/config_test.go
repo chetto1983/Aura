@@ -50,7 +50,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_WHATSAPP_BRIDGE_URL",
 		"AURA_RERANK_BASE_URL",
 		"AURA_PROFILE", "AURA_OBJECTSTORE_REPLICATION_FACTOR", "GARAGE_RPC_SECRET",
-		"AURA_SHELL_DESTRUCTIVE_PATTERNS",
+		"AURA_SHELL_DESTRUCTIVE_PATTERNS", "AURA_MUSR_ISOLATION",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -531,6 +531,24 @@ func TestWebEnvOverrides(t *testing.T) {
 	}
 	if cfg.WebUserAgent != "Aura/1.0 custom" {
 		t.Errorf("WebUserAgent override not applied: %q", cfg.WebUserAgent)
+	}
+}
+
+// TestMUSRIsolationDefaultOff locks the D-13 rollout switch: unset ⇒ false so plan
+// 12's "deploy flag-off" step is safe (the documents-retrieval scoped-vs-unscoped path
+// selector defaults to the unscoped fallback, no enforcement); set-true ⇒ true so plan
+// 12 can flip it after the backfill. Read straight from AURA_MUSR_ISOLATION as a
+// dedicated config field (never through the internal/settings OverlayEnv allowlist).
+func TestMUSRIsolationDefaultOff(t *testing.T) {
+	clearPostgresEnv(t)
+
+	if cfg := LoadDB(); cfg.MUSRIsolation {
+		t.Error("MUSRIsolation default = true, want false (D-13 deploy flag-off is load-bearing)")
+	}
+
+	t.Setenv("AURA_MUSR_ISOLATION", "true")
+	if cfg := LoadDB(); !cfg.MUSRIsolation {
+		t.Error("MUSRIsolation override = false, want true when AURA_MUSR_ISOLATION=true")
 	}
 }
 

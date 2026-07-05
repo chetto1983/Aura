@@ -230,6 +230,18 @@ type Config struct {
 	// cloud backend uses — no per-backend key (see RerankRoute, D-28 vision parity).
 	RerankBaseURL string // AURA_RERANK_BASE_URL — local rerank sidecar base, default http://127.0.0.1:8085
 	RerankModel   string // AURA_RERANK_MODEL — set to a cloud model (cohere/rerank-4-fast) to swap to OpenRouter; empty = local sidecar
+
+	// Phase 36 multi-user identity-isolation rollout switch (D-13). MUSRIsolation is
+	// the documents-retrieval scoped-vs-unscoped query-PATH selector that plan 05
+	// consumes: ON = fail-closed EXISTS enforcement (a document read is scoped to the
+	// owning identity), OFF = the pre-existing unscoped fallback. It is the D-13
+	// reversible-rollout knob — plan 12 flips it ON after the backfill. It is NOT a mere
+	// empty-identity guard. DEFAULT false is load-bearing: it keeps plan 12's "deploy
+	// flag-off" step safe (unscoped path active, no enforcement yet). Read as a dedicated
+	// config field straight from AURA_MUSR_ISOLATION — deliberately NOT routed through the
+	// internal/settings OverlayEnv allowlist (which excludes security/connection env), so
+	// a model-driven settings write can never toggle isolation enforcement.
+	MUSRIsolation bool // AURA_MUSR_ISOLATION — documents-retrieval scoped-vs-unscoped path selector (D-13), default false
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -468,6 +480,10 @@ func loadBase() *Config {
 
 		RerankBaseURL: envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
 		RerankModel:   os.Getenv("AURA_RERANK_MODEL"),
+
+		// Phase 36 identity-isolation rollout switch (D-13). Default OFF so plan 12's
+		// deploy-flag-off step is safe; plan 05 is the documents-retrieval consumer.
+		MUSRIsolation: envutil.BoolDefault("AURA_MUSR_ISOLATION", false),
 	}
 }
 
