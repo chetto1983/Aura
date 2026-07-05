@@ -1,5 +1,6 @@
-// identity subcommand dispatcher for `aura identity {list|get|grant|revoke}`
-// (CORE-03 Req#6). Hand-rolled switch tree mirroring runDB (cmd/aura/db.go),
+// identity subcommand dispatcher for `aura identity {list|get|grant|revoke|recover}`
+// (CORE-03 Req#6; `recover` is the Phase-36 MUSR-06/D-16 break-glass path in
+// recovery.go). Hand-rolled switch tree mirroring runDB (cmd/aura/db.go),
 // NOT cobra.
 //
 // DEVIATION (04-RESEARCH OPEN QUESTION 1 / Assumption A2): CONTEXT D-A3-05 says
@@ -25,7 +26,7 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 )
 
-const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>}"
+const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>}"
 
 func runIdentity(args []string) {
 	if len(args) < 1 {
@@ -54,6 +55,8 @@ func runIdentity(args []string) {
 		identityGrant(ctx, store, args[1:])
 	case "revoke":
 		identityRevoke(ctx, store, args[1:])
+	case "recover":
+		identityRecover(ctx, store, pool, args[1:])
 	default:
 		fmt.Fprintln(os.Stderr, identityUsage)
 		os.Exit(1)
