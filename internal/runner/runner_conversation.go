@@ -7,6 +7,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -44,15 +45,20 @@ func (r *Runner) NewConversationWithID(ctx context.Context, conversationID strin
 	return conversationID, nil
 }
 
+// defaultConversationOwner resolves the owner of a NEW conversation (MUSR-02). The
+// authenticated principal on ctx — threaded from agui.withPrincipal →
+// identityctx.WithIdentityID — is the owner: a Web conversation created by B is owned by B,
+// validated via GetIdentityByID so a stale/bogus principal fails loudly instead of minting
+// an orphan row. This replaces the pre-Phase-36 "prefer the FIRST user identity" scan,
+// which mis-attributed B's conversation to A once more than one user existed. With no
+// principal (the CLI / no-auth path, D-25) `local` owns the conversation.
 func (r *Runner) defaultConversationOwner(ctx context.Context) (identity.Identity, error) {
-	ids, err := r.identity.ListIdentities(ctx)
-	if err != nil {
-		return identity.Identity{}, err
-	}
-	for _, id := range ids {
-		if id.Kind == "user" && id.ID != "" {
-			return id, nil
+	if principal := identityctx.IdentityID(ctx); principal != "" {
+		owner, err := r.identity.GetIdentityByID(ctx, principal)
+		if err != nil {
+			return identity.Identity{}, fmt.Errorf("resolve principal owner %s: %w", principal, err)
 		}
+		return owner, nil
 	}
 	id, err := r.identity.GetIdentityByName(ctx, localIdentityName)
 	if err != nil {

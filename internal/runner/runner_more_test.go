@@ -9,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -264,27 +265,46 @@ func TestNewConversation_MintsID(t *testing.T) {
 	}
 }
 
-func TestNewConversationPrefersUserIdentityOverLegacyLocal(t *testing.T) {
-	conv := newFakeConvStore()
-	pause := newFakePauseStore()
-	ids := newFakeIdentityStore()
-	ids.byName["operator"] = identity.Identity{
-		ID:   "11111111-1111-1111-1111-111111111111",
-		Name: "operator",
-		Kind: "user",
-	}
-	r := New(Deps{Conv: conv, Pause: pause, Identity: ids, Client: agenttest.NewFakeClient(), LLM: llm.Config{Model: "m"}})
-	const convID = "22222222-2222-2222-2222-222222222222"
+// TestNewConversationOwnedByPrincipal proves MUSR-02: a new conversation is owned by the
+// AUTHENTICATED PRINCIPAL carried on ctx (identityctx.WithIdentityID, threaded from
+// agui.withPrincipal), and falls back to `local` only when no principal is present. This
+// REPLACES the pre-Phase-36 TestNewConversationPrefersUserIdentityOverLegacyLocal, which
+// asserted a "prefer the first user identity" scan — the cross-identity ownership bug this
+// closes (with two users A and B, B's new conversation would be mis-owned by A).
+func TestNewConversationOwnedByPrincipal(t *testing.T) {
+	const operatorID = "11111111-1111-1111-1111-111111111111"
+	const localID = "00000000-0000-0000-0000-000000000001"
 
-	if _, err := r.NewConversationWithID(context.Background(), convID); err != nil {
-		t.Fatalf("new conversation: %v", err)
+	conv := newFakeConvStore()
+	ids := newFakeIdentityStore()
+	ids.byName["operator"] = identity.Identity{ID: operatorID, Name: "operator", Kind: "user"}
+	r := New(Deps{Conv: conv, Pause: newFakePauseStore(), Identity: ids, Client: agenttest.NewFakeClient(), LLM: llm.Config{Model: "m"}})
+
+	// With a principal on ctx: that principal owns the conversation (B owns B's thread).
+	const principalConv = "22222222-2222-2222-2222-222222222222"
+	principalCtx := identityctx.WithIdentityID(context.Background(), operatorID)
+	if _, err := r.NewConversationWithID(principalCtx, principalConv); err != nil {
+		t.Fatalf("new conversation (principal): %v", err)
 	}
-	got, err := conv.Get(context.Background(), convID)
+	got, err := conv.Get(context.Background(), principalConv)
 	if err != nil {
 		t.Fatalf("get conversation: %v", err)
 	}
-	if got.IdentityID != "11111111-1111-1111-1111-111111111111" {
-		t.Fatalf("conversation owner = %q, want user identity", got.IdentityID)
+	if got.IdentityID != operatorID {
+		t.Fatalf("principal conversation owner = %q, want the principal %q", got.IdentityID, operatorID)
+	}
+
+	// With NO principal: `local` owns the conversation (CLI / no-auth fallback, D-25).
+	const localConv = "44444444-4444-4444-4444-444444444444"
+	if _, err := r.NewConversationWithID(context.Background(), localConv); err != nil {
+		t.Fatalf("new conversation (no principal): %v", err)
+	}
+	gotLocal, err := conv.Get(context.Background(), localConv)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if gotLocal.IdentityID != localID {
+		t.Fatalf("no-principal conversation owner = %q, want local %q", gotLocal.IdentityID, localID)
 	}
 }
 
