@@ -290,7 +290,7 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 4/12 plans executed
+**Plans:** 5/12 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
@@ -301,7 +301,7 @@ Plans:
 
 **Wave 2** *(kernel + isolation planes — blocked on Wave 1)*
 
-- [ ] 36-04-PLAN.md — WithIdentityTx RLS carrier + ENABLE-RLS migration + owner-scoped conversations/approvals (404/403) + MUSR-02 owner + RLS backstop
+- [x] 36-04-PLAN.md — WithIdentityTx RLS carrier + ENABLE-RLS migration + owner-scoped conversations/approvals (404/403) + MUSR-02 owner + RLS backstop
 - [ ] 36-05-PLAN.md — Documents plane fail-closed (six EXISTS queries + HAS_DOCUMENT ingest edge; spike-085 fix)
 - [ ] 36-06-PLAN.md — Garage Admin API v2 client + bucket-per-identity + per-identity credential resolver
 - [ ] 36-10-PLAN.md — Frontend capability-gating + admin grant/revoke control + admin audit UI + audit API + dist rebuild (D-03/D-26/D-28)
