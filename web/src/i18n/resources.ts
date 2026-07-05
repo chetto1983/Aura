@@ -1,3 +1,4 @@
+import { adminEn, adminIt } from './resources.admin';
 import { displayEn, displayIt } from './resources.display';
 import { documentsEn, documentsIt } from './resources.documents';
 import { governanceEn, governanceIt } from './resources.governance';
@@ -135,6 +136,7 @@ export const resources = {
       ...governanceEn,
       ...graphEn,
       ...settingsEn,
+      ...adminEn,
       ...onboardingEn,
       conversations: {
         new: 'New chat',
@@ -406,6 +408,7 @@ export const resources = {
       ...governanceIt,
       ...graphIt,
       ...settingsIt,
+      ...adminIt,
       ...onboardingIt,
       conversations: {
         new: 'Nuova chat',

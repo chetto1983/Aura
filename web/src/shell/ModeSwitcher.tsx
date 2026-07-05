@@ -5,9 +5,13 @@ import { Button } from '@/components/ui/button';
 export function ModeSwitcher({
   active,
   onSelect,
+  modes = MODES,
 }: {
   readonly active: SurfaceIntent;
   readonly onSelect: (mode: SurfaceIntent) => void;
+  // The visible mode list (MUSR-01 capability-gated by AppShell); defaults to the full set so
+  // callers that do not gate (and the shell unit tests) keep the complete switcher.
+  readonly modes?: readonly SurfaceIntent[] | undefined;
 }) {
   const { t } = useTranslation();
   return (
@@ -15,7 +19,7 @@ export function ModeSwitcher({
       aria-label={t('shell.primaryNav')}
       className="shell-mode-switcher hidden min-w-0 max-w-full items-center gap-1 overflow-x-auto overscroll-x-contain pb-1 text-text-muted md:flex"
     >
-      {MODES.map((mode) => {
+      {modes.map((mode) => {
         const disabled = !isLiveSurfaceIntent(mode);
         return (
           <Button

@@ -16,14 +16,21 @@ interface MobileAppSidebarProps {
   readonly activeMode: SurfaceIntent;
   readonly onModeSelect: (mode: SurfaceIntent) => void;
   readonly children: ReactNode;
+  // Visible live modes (MUSR-01 capability-gated by AppShell); defaults to the full live set.
+  readonly modes?: readonly (typeof LIVE_MODES)[number][];
 }
 
-export function MobileAppSidebar({ activeMode, onModeSelect, children }: MobileAppSidebarProps) {
+export function MobileAppSidebar({
+  activeMode,
+  onModeSelect,
+  children,
+  modes = LIVE_MODES,
+}: MobileAppSidebarProps) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 bg-bg px-3 py-3 text-text">
       <nav aria-label={t('shell.mobileModes')} className="grid gap-1">
-        {LIVE_MODES.map((mode) => {
+        {modes.map((mode) => {
           const Icon = modeIcons[mode];
           return (
             <Button

@@ -91,6 +91,15 @@ describe('AppShell', () => {
       vi.fn((input: RequestInfo | URL) => {
         const url =
           typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        // The signed-in operator is the seeded `local` admin ('*' wildcard), so the admin
+        // surfaces (Settings/Governance) stay in the nav (MUSR-01 / D-03).
+        if (url.includes('/api/me')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ identity_id: 'local', capabilities: ['*'] }), {
+              status: 200,
+            }),
+          );
+        }
         // The conversation list / rot-events read as a JSON array; health as an object.
         if (url.includes('/api/conversations')) {
           return Promise.resolve(new Response('[]', { status: 200 }));
@@ -179,8 +188,9 @@ describe('AppShell', () => {
   it('opens the runtime settings workspace from the shell mode switcher', async () => {
     renderShell();
 
+    // Settings is admin-gated and appears once /api/me resolves the operator's '*' grant.
     fireEvent.click(
-      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+      await within(screen.getByRole('navigation', { name: 'Primary' })).findByRole('button', {
         name: 'Settings',
       }),
     );
@@ -193,8 +203,9 @@ describe('AppShell', () => {
   it('opens the identity wizard from the settings workspace action', async () => {
     renderShell();
 
+    // Settings is admin-gated and appears once /api/me resolves the operator's '*' grant.
     fireEvent.click(
-      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
+      await within(screen.getByRole('navigation', { name: 'Primary' })).findByRole('button', {
         name: 'Settings',
       }),
     );
@@ -202,6 +213,38 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
 
     expect(await screen.findByRole('dialog', { name: 'Create identity' })).toBeTruthy();
+  });
+
+  it('hides the admin surfaces from the nav for a non-admin identity (MUSR-01 / D-03)', async () => {
+    // A provisioned user holds only agent.run — not governance.write — so Settings + Governance
+    // are dropped from the switcher while chat and the read surfaces remain.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('/api/me')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ identity_id: 'u2', capabilities: ['agent.run'] }), {
+              status: 200,
+            }),
+          );
+        }
+        if (url.includes('/api/conversations')) {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        return Promise.resolve(
+          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
+        );
+      }),
+    );
+    renderShell();
+    const nav = await screen.findByRole('navigation', { name: 'Primary' });
+    await waitFor(() => {
+      expect(within(nav).queryByRole('button', { name: 'Settings' })).toBeNull();
+    });
+    expect(within(nav).queryByRole('button', { name: 'Governance' })).toBeNull();
+    expect(within(nav).getByRole('button', { name: 'Chat' })).toBeTruthy();
   });
 
   it('opens the document library workspace from the shell mode switcher', async () => {

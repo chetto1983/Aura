@@ -19,6 +19,7 @@ export function ShellHeader({
   navigationAvailable = true,
   logoutPending,
   onLogout,
+  modes,
 }: {
   readonly activeMode: SurfaceIntent;
   readonly approvalsOpen: boolean;
@@ -29,6 +30,8 @@ export function ShellHeader({
   readonly navigationAvailable?: boolean;
   readonly logoutPending: boolean;
   readonly onLogout: () => void;
+  // Visible mode list (MUSR-01 capability-gated by AppShell); undefined keeps the full set.
+  readonly modes?: readonly SurfaceIntent[];
 }) {
   const { t } = useTranslation();
   const logoutLabel = t('shell.logout');
@@ -62,7 +65,7 @@ export function ShellHeader({
           </p>
         </div>
       </div>
-      <ModeSwitcher active={activeMode} onSelect={onModeSelect} />
+      <ModeSwitcher active={activeMode} onSelect={onModeSelect} modes={modes} />
       <div className="flex min-w-0 items-center justify-end gap-2">
         <RuntimeStatusChip />
         <div className="relative">

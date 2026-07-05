@@ -12,9 +12,11 @@ import { Drawer } from './shell/Drawer';
 import { MobileAppSidebar } from './shell/MobileAppSidebar';
 import { ShellHeader } from './shell/ShellHeader';
 import type { SurfaceIntent } from './shell/modes';
+import { LIVE_MODES, MODES, isAdminMode, visibleModes } from './shell/modes';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
+import { useCapabilities } from './admin/useAdmin';
 import { fetchOnboardingStatus } from './onboarding/onboardingApi';
 import type { TurnUsage } from './chat/sseAdapter';
 import type { ComposerDraftPrompt } from './chat/Composer';
@@ -105,6 +107,19 @@ export function AppShell() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { surface, setSurface } = useSurfaceIntent();
+  // MUSR-01 (D-03): hide the admin-only surfaces (Settings + Governance) from the nav when the
+  // signed-in identity lacks governance.write. The filtering is cosmetic — the routes are
+  // gated server-side by RequireCapability — but keeps a non-admin session from ever landing
+  // on a control it cannot use. A non-admin whose restored/deep-linked surface is admin-only
+  // is bounced back to chat once capabilities resolve (fail-closed while loading).
+  const { isAdmin, isLoading: capabilitiesLoading } = useCapabilities();
+  const desktopModes = visibleModes(MODES, isAdmin);
+  const liveModes = visibleModes(LIVE_MODES, isAdmin);
+  useEffect(() => {
+    if (!capabilitiesLoading && !isAdmin && isAdminMode(surface)) {
+      setSurface('chat');
+    }
+  }, [capabilitiesLoading, isAdmin, surface, setSurface]);
   const showConversationNavigation = surface === 'chat';
   // Focused workspaces own their panes (canvas/inspector, master/detail, dense lists).
   // Runtime readiness stays in the header; chat approval cards remain chat-only.
@@ -319,7 +334,7 @@ export function AppShell() {
   }
 
   const mobileNavigation = (
-    <MobileAppSidebar activeMode={surface} onModeSelect={selectMobileMode}>
+    <MobileAppSidebar activeMode={surface} onModeSelect={selectMobileMode} modes={liveModes}>
       <div className="flex h-full min-h-0 flex-col gap-2">
         <Button
           type="button"
@@ -399,6 +414,7 @@ export function AppShell() {
       <ShellHeader
         activeMode={surface}
         approvalsOpen={approvalsOpen}
+        modes={desktopModes}
         onModeSelect={(next) => {
           setSurface(next);
           if (next !== 'chat') surfaces.closeNav();
@@ -465,7 +481,7 @@ export function AppShell() {
         </main>
       )}
 
-      <BottomDock activeMode={surface} onModeSelect={setSurface}>
+      <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
         <RuntimeFooter usage={usage} conversationId={activeThreadId} />
       </BottomDock>
 

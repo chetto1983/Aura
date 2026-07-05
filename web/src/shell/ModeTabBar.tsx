@@ -14,9 +14,12 @@ const modeIcons = {
 export function ModeTabBar({
   active,
   onSelect,
+  modes = LIVE_MODES,
 }: {
   readonly active: SurfaceIntent;
   readonly onSelect: (mode: SurfaceIntent) => void;
+  // Visible live modes (MUSR-01 capability-gated by AppShell); defaults to the full live set.
+  readonly modes?: readonly (typeof LIVE_MODES)[number][] | undefined;
 }) {
   const { t } = useTranslation();
   return (
@@ -24,7 +27,7 @@ export function ModeTabBar({
       aria-label={t('shell.mobileModes')}
       className="shell-mode-tabbar flex min-w-0 overflow-hidden border-t border-border bg-surface md:hidden"
     >
-      {LIVE_MODES.map((mode) => {
+      {modes.map((mode) => {
         const Icon = modeIcons[mode];
         const fullLabel = t(`shell.modes.${mode}`);
         const compactLabel = t(`shell.modesCompact.${mode}`);
