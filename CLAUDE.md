@@ -153,6 +153,7 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
 ## Behavioral rules (apply to every change)
 
 - **NEVER SUPPOSE.** Read code before editing. If uncertain about API contract, stop and ask.
+- **NOT MY WORK.** If Bug or gap found fix on touch. Never Skip.
 - **READ BEFORE EDIT.** Re-read a file you haven't touched in the last 5 messages.
 - **3-STRIKE RULE.** Same failing approach max 3 times. On strike 3, stop and ask (or escalate via PRD-amendment, vedi PRD §Q&A escalation).
 - **NEVER MODIFY TESTS TO MAKE THEM PASS** unless the test itself is broken. Fix the code or rewrite the test with explicit justification in commit message.
