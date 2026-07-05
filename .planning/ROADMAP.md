@@ -290,14 +290,14 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 3/12 plans executed
+**Plans:** 4/12 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
 - [x] 36-01-PLAN.md — Break-glass CLI (`aura identity recover`) + local admin-cap seed (MUSR-06 shipped first)
 - [x] 36-02-PLAN.md — Isolation schema migrations (paused_states.identity_id, saga journal, soft-delete, object-store key table, audit indexes) + AURA_MUSR_ISOLATION flag + RBAC-03 amendment note
 - [x] 36-03-PLAN.md — Background jobs owner-binding + 1h TTL reaper (MUSR-03/04)
-- [ ] 36-07-PLAN.md — Per-identity MCP config + skills/pyscripts filesystem rooting (D-20/D-21)
+- [x] 36-07-PLAN.md — Per-identity MCP config + skills/pyscripts filesystem rooting (D-20/D-21)
 
 **Wave 2** *(kernel + isolation planes — blocked on Wave 1)*
 

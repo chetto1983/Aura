@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 36
 current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: executing
-stopped_at: Completed 36-03-PLAN.md
-last_updated: "2026-07-05T19:22:53.865Z"
+stopped_at: Completed 36-07-PLAN.md
+last_updated: "2026-07-05T19:55:26.000Z"
 last_activity: 2026-07-05
-last_activity_desc: 36-03 complete (background-job owner-binding + crypto IDs + 1h TTL reaper — MUSR-03/04 closed)
+last_activity_desc: 36-07 complete (per-identity MCP config + skills/pyscripts filesystem rooting — Wave 1 done; MUSR-01 filesystem plane advanced, stays open)
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 43
-  completed_plans: 34
+  completed_plans: 35
   percent: 45
 ---
 
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — EXECUTING
-Plan: 4 of 12 (36-01, 36-02, 36-03 complete)
-Status: Ready to execute
-Last activity: 2026-07-05 — 36-03 complete (background-job owner-binding + crypto IDs + 1h TTL reaper; MUSR-03/04 closed)
+Plan: Wave 1 complete — 36-01, 36-02, 36-03, 36-07 done (4 of 12); Wave 2 next (36-04/05/06/10)
+Status: 36-07 complete
+Last activity: 2026-07-05 — 36-07 complete (per-identity MCP config + skills/pyscripts filesystem rooting; D-20/D-21; MUSR-01 filesystem plane advanced, phase-spanning so stays open)
+
+#### 36-07 — Per-identity MCP config + skills/pyscripts filesystem rooting (D-20/D-21; MUSR-01 filesystem plane advanced, NOT closed). Wave-1 storage-rooting slice — **STORAGE only; snippet/skill EXECUTION isolation is Phase 37** (the box). **Shared guard (D-20/D-21):** extracted `profile.RootIdentityDir(root, identity)` from the existing `profileDir` (`internal/profile/store.go`) — the identityPattern charset + `..`/slash reject + `filepath.Rel` "escapes root" containment assertion — as the single traversal-safe per-identity rooting primitive both mcp and skills reuse (no duplication; `profileDir` now delegates, `ErrInvalidIdentity` sentinel preserved so the profile edge tests stay green). **MCP (`internal/mcp/managed_config_identity.go`, package `mcp`):** `MountForIdentity(id)` layers a per-identity `~/.aura/mcp/{id}/servers.json` overlay (`IdentityMCPConfig{Preferences map[name]IdentityServerPref{Enabled,Trust}}`, its own light JSON — NOT a full ManagedConfig, so it dodges `validateManagedServers`' command/url requirement) over the **read-only** shared catalog (`ManagedConfigPath`); class-(a) enable/trust is applied by value-copy per server so the shared map is never mutated. **Class-(b) refusal (D-19, T-36-07-E):** the shared agent-memory server is identified name-independently by `IsSharedAdminGoverned` = `Source == SourceRecipeMemory` ("recipe:memory"); `MountForIdentity` ignores any overlay pref for it (admin-governed from shared, defense-in-depth) and `SetEnabledForIdentity`/`SetTrustForIdentity` return `ErrSharedAdminGoverned` for it (+ `ErrUnknownServer` for a name absent from the shared catalog). Empty principal → `local` fallback (D-25). **Skills (`internal/skills/identity_root.go`, package `skills`):** `NewSkillToolForIdentity(ctx, SkillRootBase)` (exported form of the plan's `newSkillToolForIdentity`) resolves `$AURA_SKILLS_DIR/{id}` user skills + `~/.aura/pyscripts/{id}` snippets via the same guard; **built-ins stay shared read-only** (base dir, never copied per-identity) with `LoaderRoots = [sharedBase, perIdentityUser]` (user override shadows built-in); **`local`/no-principal resolves the base dirs unchanged** (backward compatible — the depth-1 loader scan means a `{id}` subdir under base carries no top-level SKILL.md, so cross-identity user skills never leak through the shared base root — proven by a two-identity loader isolation test). **DEVIATION (Rule 2, 1 file beyond `files_modified`):** `internal/mcp/manager/catalog.go` memory recipe `Source` now references `mcp.SourceRecipeMemory` (was the literal `"recipe:memory"`, value-identical) — the class-(b) isolation marker and the recipe stamp are now a single source of truth, so a future rename can't silently break the refusal (catalog_test asserts the same value → green). TDD: RED (`test(36-07)`) → GREEN (`feat(36-07)`) per task; 11 new tests (7 mcp + 4 skills) cover traversal-reject, contained-path, class-(a) overlay-without-touching-shared, class-(b) refusal + overlay-ignored, unknown-server, shared-builtins-isolate-users, local-backward-compat. Commits `e74c0b6f`/`124840a1` (Task 1 MCP+guard), `4cd5a13e`/`3ec72d52` (Task 2 skills). NO new packages/migrations/env (RESEARCH package-legitimacy audit honored). NO-SKIP-AS-GREEN: `go build ./...` + `go vet ./...` (repo-wide, clean) + untagged `go test ./internal/mcp/ ./internal/skills/ ./internal/profile/ ./internal/mcp/manager/` all green on this Windows host; **`-race` NOT run (CGO disabled — no gcc on this host) — must run in WSL/CI before phase close** (D5 coverage flags it). MUSR-01 stays `[ ]` (phase-spanning: RLS=plan 04, documents scoping=plan 05, Garage keys=plan 06, provisioning saga that CREATES these roots per identity=plan 08, audit UI=plan 10, rollout flip=plan 12); wiring `MountForIdentity`/`NewSkillToolForIdentity` into the live manager mount + `cmd/aura` skill-tool constructor is a later plan (this plan establishes + unit-proves the rooting primitives). `requirements mark-complete` intentionally NOT run.
 
 #### 36-03 — Background-job owner-binding + crypto IDs + 1h TTL reaper (MUSR-03/04 CLOSED). Closed the guessable-ID / no-owner / no-TTL gap in `internal/agent/tools/shell_bg.go`. **MUSR-03:** `newBackgroundShellID` mints 128-bit `crypto/rand` hex IDs (fail-closed on RNG error — no guessable fallback), replacing the sequential `sh_%d` (`b.seq++`, trivially guessable → cross-session takeover, T-36-03-E/T); every `bgShell` binds `(ownerID, sessionID)` at start from `identityctx.IdentityID(ctx)` + the tool-call session key (empty principal → the seeded `local` UUID `…001`, D-25 CLI fallback). `start` gained a `callerCtx` param (owner source) — sole prod caller `shell_exec.go` + 6 test call sites updated; the process-lifetime ctx stays a fresh `context.Background()` so the job outlives the turn. **Authority (D-06/D-18):** `bgShell.authorize` + `authorizeCaller` gate `shell_poll`/`shell_kill` on owner-match OR admin cap — a foreign non-admin poll returns the not-found shape (D-06 read=404, hides existence), a foreign non-admin kill is refused (D-06 mutate=403). The admin exemption consults `HasCapability(governance.write)` (reused, RESEARCH OQ — no net-new `settings.model.write`) via a **nil-safe `capabilityChecker` seam** on `ShellPoll`/`ShellKill` (D-A2-02 accept-interfaces); **nil at the current composition root → owner-only / fail-closed** (foreign denied even without the admin escape hatch), a zero-rework store-swap deferred to 36-10/36-12. **MUSR-04:** every job carries a default 1h TTL (`AURA_SHELL_BG_TTL`, Go-duration overridable; invalid/absent → 1h always-on safety bound); `sweepExpired` terminates the whole process group (`cancel` → `cmd.Cancel = killProcessGroup`) + records status `"expired"` (preserved through `finish()`), swept BOTH opportunistically on every `start` AND from a bounded, **goleak-safe** background ticker (`StartReaper`, interval ttl/4 clamped [1s,1m]) that never self-starts in the constructor, is wired once at serve boot on the work ctx, and is joined by `Shutdown`'s once-guarded `stopReaper` fold. `shell_poll` now exposes an `age_ms` metric (now − startedAt) on the Meta + footer. **Refactor-on-touch (Pitfall 7):** split the 499-LOC `shell_bg.go` into `shell_bg.go` (421) + `shell_bg_owner.go` (232) + `shell_bg_ttl.go` (150), all ≤600. Commits `3a4ffc9d` (Task 1 IDs+owner+authority), `f7949e6e` (Task 2 TTL+age+reaper). DEVIATIONS: (Rule 3) `start` ctx-param ripple to `shell_exec.go` + 6 test sites; (Rule 2) `StartReaper` wired into `cmd/aura/serve.go` (a reaper that never starts is dead code — the only file beyond the plan's `files_modified`); + `TestShellPollRedactsModelPreview` fixture given owner fields for the new contract (redaction assertion unchanged). NO-SKIP-AS-GREEN: `go build ./...` + `go vet` + untagged `go test ./internal/agent/tools/` + goleak all green on Windows; **`-race` NOT run (no CGO/gcc on this host) — must run in WSL/CI before phase close** (D5 coverage flags it). MUSR-03/04 marked `[x]` (mechanism + stated requirement delivered + unit-proven); the phase-level two-identity live E2E (success-criterion 2) is exercised at 36-12, and 36-10 should wire `ShellPoll.Caps`/`ShellKill.Caps` to activate the D-18 admin cross-session recovery path.
 
@@ -104,7 +106,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 33 | 5 | - | - |
 | 34 | 6 | - | - |
 | 35 | 7 | - | - |
-| 36 | 1 | - | - |
+| 36 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -244,6 +246,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 36 P36-01 | 11min | 2 tasks | 7 files |
 | Phase 36 P02 | ~25min | 2 tasks | 14 files |
 | Phase 36 P3 | 35min | 2 tasks | 9 files |
+| Phase 36 P36-07 | ~35min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -507,8 +510,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-05T19:19:46.996Z
-Stopped at: Completed 36-02-PLAN.md
+Last session: 2026-07-05T19:55:26.000Z
+Stopped at: Completed 36-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
