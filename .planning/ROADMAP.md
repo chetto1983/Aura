@@ -294,7 +294,7 @@ Plans:
 
 **Wave 1** *(foundation — parallel)*
 
-- [ ] 36-01-PLAN.md — Break-glass CLI (`aura identity recover`) + local admin-cap seed (MUSR-06 shipped first)
+- [x] 36-01-PLAN.md — Break-glass CLI (`aura identity recover`) + local admin-cap seed (MUSR-06 shipped first)
 - [ ] 36-02-PLAN.md — Isolation schema migrations (paused_states.identity_id, saga journal, soft-delete, object-store key table, audit indexes) + AURA_MUSR_ISOLATION flag + RBAC-03 amendment note
 - [ ] 36-03-PLAN.md — Background jobs owner-binding + 1h TTL reaper (MUSR-03/04)
 - [ ] 36-07-PLAN.md — Per-identity MCP config + skills/pyscripts filesystem rooting (D-20/D-21)

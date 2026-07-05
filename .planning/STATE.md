@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 36
 current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: executing
-stopped_at: Phase 36 context gathered
-last_updated: "2026-07-05T10:09:17.456Z"
-last_activity: 2026-07-04
-last_activity_desc: Phase 35 complete, transitioned to Phase 36
+stopped_at: Completed 36-01-PLAN.md (break-glass recover + local admin caps seed)
+last_updated: "2026-07-05T18:14:08Z"
+last_activity: 2026-07-05
+last_activity_desc: "36-01 complete: break-glass `aura identity recover` + migration 0026"
 progress:
   total_phases: 11
   completed_phases: 5
-  total_plans: 31
-  completed_plans: 31
+  total_plans: 43
+  completed_plans: 32
   percent: 45
 ---
 
@@ -24,14 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 36 — Multi-User Identity Isolation + Authula Cutover (Phase 35 complete)
+**Current focus:** Phase 36 — Multi-User Identity Isolation + Authula Cutover
 
 ## Current Position
 
-Phase: 36 — Multi-User Identity Isolation + Authula Cutover
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-04 — Phase 35 complete, transitioned to Phase 36
+Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — EXECUTING
+Plan: 2 of 12 (36-01 complete)
+Status: Executing Phase 36
+Last activity: 2026-07-05 — 36-01 complete (break-glass recover CLI + migration 0026 local admin caps)
+
+#### 36-01 — MUSR-06 "break-glass first": host-only `aura identity recover` + migration 0026 local admin-caps seed. Migration `0026_local_admin_caps.{up,down}.sql` idempotently seeds the `local` identity (UUID …001) with three EXPLICIT admin capability grants — `governance.write` + `identity.create` + `agent.run` — mirroring the `0004_identity` seed shape (`ON CONFLICT DO NOTHING`); the down migration deletes exactly those three rows and leaves the system-managed `*` wildcard (0004) intact. Per 36-RESEARCH OQ3 the D-02/D-03 model-settings capability is realized as the EXISTING `governance.write` (NO net-new `settings.model.write`), so admin-gated routes later resolve on named caps, not solely `*`. NEW `cmd/aura/recovery.go`: `aura identity recover <name>` is the host-only break-glass path (D-16) — it resolves the identity via `GetIdentityByName`, then `mintBreakGlassToken` reuses the shipped 0023 token infra EXACTLY (there is no new token scheme): because `aura.password_reset_tokens.challenge_id` is a NOT NULL FK to `password_reset_challenges (id, identity_id)`, it creates + consumes a throwaway host-minted challenge (random discarded `code_hash`) and inserts a hashed token (`agui.HashLookupToken` sha256, `expires_at`, `max_attempts` reused from `serve_password_reset.go`'s online 10-minute mint), then appends a NEUTRAL append-only `identity_recovery_audit` row (`break_glass_token_minted`, no secrets) — all inside ONE atomic tx. The one-time PLAINTEXT token is printed to stdout ONLY (never slog); host access is the sole ownership proof and NO server route mints an admin bypass. Impl lives in recovery.go so `identity.go` stays 137 LOC (only the `recover` dispatch case + usage added). NO Casbin imported (the indirect spike deps stay unwired). Tests: 3 Windows-runnable unit tests (`recovery_test.go` — TTL short-lived pinned to 10m + challenge/token param builders reuse the online 5/3 max_attempts + expiry shape + hashed-not-plaintext) all green; 2 `db_integration` round-trips written + compile-clean (`migrate_0026_integration_test.go` seed→down→re-up→`*`-survives; `recovery_integration_test.go` end-to-end mint validates via `resolveResetTokenHash` + audit row + fail-closed unknown identity) that gate in WSL/CI under no-skip-as-green (NOT run on this Windows host — status honestly `unknown`). `go build ./...` + `go vet ./...` + `go vet -tags db_integration` all clean; `go test ./cmd/aura/` green. Commits `1cd90d0a` (migration 0026), `89ef6337` (recover subcommand). DEVIATIONS (2, both inside the declared file scope): (1) Rule-2 added the atomic break-glass audit write (a privileged reset must be audited); (2) resolved the plan's loose "~1h const" TTL to the actual reused 10-minute shape (shorter/safer). NOTE for verifier: `must_haves` truth 3 (grant/revoke writes an audited capability change) is NOT delivered here — grant/revoke were untouched (out of the 2-task scope; `internal/identity/store.go` is deliberately absent from `files_modified`) and today emit only a stdout confirmation with no DB capability-audit ledger; that belongs to the D-26/D-28 admin-audit work in a later Phase-36 plan. MUSR-06 stays `[ ]` (phase-spanning: Authula default cutover + capability-per-route + no-token-in-URL E2E close at 36-12), so it is NOT marked complete.
 
 #### 35-07 — CR-01 informed-consent binding: port shell_exec's challenge/question guard into GatewayApprovals (gap-closure, GATE-01). Closes the BLOCKING code-review Critical (35-REVIEW CR-01): 35-06 dropped shell_exec's server-side challenge/question binding, so `newGatewayResumeHook` recorded an operator accept straight from the **model-relayed** `resume_context` with no proof the gateway issued the approval and no check that the operator-visible `pending.Question` matched the gateway-generated one — an adversarial model could relay the REAL `resume_context` (matching `args_sha256`) with a benign/false question so the operator approves *"Save your meeting notes?"* and unknowingly authorizes `swarm_spawn{goals:["destroy prod"]}` (confused-deputy). Made the "byte-for-byte analog of shell_exec" claim TRUE: `GatewayApprovals` now holds a `pending map[string]gatewayChallenge{question}` + `Challenge(convID,tool,fp,question)` (records the gateway-generated question keyed on the AUTHENTICATED `(conversation_id, tool, args_sha256)` at issue) + `ApproveChallenge(convID,tool,fp,question,r) error` (moves pending→approved ONLY on existence + `question==challenge.question`, else typed not-found/question-mismatch error) — the byte-for-byte analog of `ShellApprovals.ApproveChallenge`; `Evict` sweeps BOTH maps; dead `Peek` removed (IN-01). `routeApprove` reordered deny-before-Consume (`ProfileServerProduction || !responderPresent` hard-deny BEFORE the cross-turn `Consume`, so a recorded/fabricated approval can NEVER be consumed on a headless/production run — WR-01), records `approvals.Challenge(key.ConversationID, spec.Name, fp, question)` on issue, and computes the fingerprint+question ONCE, threading them into `Challenge`+`gatewayApprovalRequiredResult`+`gatewayApprovalContext` (IN-02, single `gatewayArgsFingerprint` site). `Gateway.ApproveChallenge` (new host-side recorder) + `RecordResolvedApproval` (now a low-level test-seed seam) both REFUSE under `ProfileServerProduction` (WR-01 defense-in-depth). `newGatewayResumeHook` now calls `g.ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question, …)` — the AUTHENTICATED server-stored conversation id (WR-02: no cross-conversation transfer) + the operator-visible question binding (CR-01) — dropping the model-relayed `rc.ConversationID`. NEW `TestGatewayResumeHookRejectsMismatchedQuestion` (WR-03 adversarial: real `resume_context` + benign question → hook errors, records nothing, re-drive stays Approve/withheld) + `TestGatewayApprovalsApproveChallengeQuestionMismatch` + `TestRouteApproveProductionDeniesEvenWithLedgerApproval` (injected ledger approval NOT consumed under production, reserves==0) + `TestGatewayApproveChallengeRefusedUnderProduction`. Prohibitions held: `internal/agui/approvals_api.go`, `internal/runner/runner_resume.go`, `internal/gateway/decide.go`, `internal/gateway/reserve.go`, `internal/agent/llm_agent_pause.go`, `internal/agent/llm_agent_retry.go` byte-UNCHANGED (git diff); NO new migration/route/env; ledger key still excludes `tool_call_id`. ZERO REGRESSION: the cooperative `TestGatewayApprovalRoundTrip` still executes once; `TestAskUserOnlyPauseConstraint` green; the live `db_integration` reserve/idempotency tier green. DEVIATION (Rule 1, 8th file): the WR-01 reorder makes a headless (no-responder) re-drive DENY, so `TestGatewayApprovalResumeReentersAndReservesOnce` (in `gateway_integration_test.go`) was corrected to re-drive with `WithResponder(...)` — modeling the real interactive resume the runner marks (runner.go:551); without it the test asserted the now-forbidden headless-consume behavior. Proven: unit `-race` (gateway/agent/cmd-aura/runner all green) + live `db_integration -race -p 1` (`GatewayApprovalResume|GatewayApprovalDecline|ApprovedCallReservedAndIdempotent` + full tier, all PASS on the real Postgres stack, not skipped). Gateway coverage 89.4% (db_integration, > 85% floor). Commits e2c9f6c1 (ledger half + IN-01), f257d9f4 (PEP half + WR-01 + IN-02), e75f5bf6 (host binding + WR-02 + WR-03 + integration-test correction). GATE-01 consent property holds end-to-end; ready for the GATE-01/GATE-02 `[x]` flip pending phase re-verification + code-review.
 
@@ -64,7 +66,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 143
+- Total plans completed: 144
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -98,6 +100,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 33 | 5 | - | - |
 | 34 | 6 | - | - |
 | 35 | 7 | - | - |
+| 36 | 1 | - | - |
 
 **Recent Trend:**
 
@@ -234,6 +237,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 35 P35-01 | ~25min | 3 tasks | 9 files |
 | Phase 35 P04 | ~55min | 3 tasks | 13 files |
 | Phase 35 P05 | 40min | 3 tasks | 7 files |
+| Phase 36 P36-01 | 11min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
