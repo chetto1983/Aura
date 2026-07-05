@@ -28,7 +28,8 @@ Spike sessions wrapped: 2026-06-04 (001-002), 2026-06-05 (003-010 session 2,
 020-029 + 030 session 6); 2026-06-08 (031 s7, 032-035 s8, 036-039 s9, 040-042 s10),
 2026-06-12 (043a-047 s11-12, 048-050 s13, 052-058 s14), 2026-06-14 (059-062 s15),
 2026-06-16 (063-066 s16), 2026-06-20 (067-069 s17-18), 2026-06-21 (070-074 s19),
-2026-06-28 (075-077 s20), 2026-06-29 (078-081 s21), 2026-07-04 (082-085 s22).
+2026-06-28 (075-077 s20), 2026-06-29 (078-081 s21), 2026-07-04 (082-085 s22),
+2026-07-05 (086-089 s23 — Casbin authz + org-roles, the deferred forward bet).
 </context>
 
 <requirements>
@@ -121,6 +122,15 @@ The session-7→20 areas each carry their own non-negotiables in `references/<ar
   filesystem rooting like `Agent.md`, execution in the box. Sandbox `Backend` seam speaks the **E2B protocol**
   (agent-sandbox/agent-sandbox is an E2B gateway on the CRD project); `Resolve`=direct `Sandbox` create
   (NOT `SandboxClaim`), idle=`OperatingMode:Suspended`. Session-22 (082-085) closed all four session-21 tiers live.
+- **Casbin authz + org-roles (Phase-deferred, session 23 / 086-089 — PRD-amendment required):**
+  engine = **casbin/v2** (v2.135.0, the stable line — NOT v3; operator "most stable fit"); adapter =
+  **pckhoi/casbin-pgx-adapter/v3** (native pgx, `WithConnectionPool`+`WithSchema("aura")`+`WithSkipTableCreate`
+  → golang-migrate owns `aura.casbin_rule`, adapter runs zero DDL). ONE RBAC-with-domains superset model backs
+  `HasCapability` as a ZERO-REWORK swap (`HasCapability(id,cap)`→`(id,dom,cap)`; the `RequireCapability` gateway is
+  unchanged, only the backend call swaps) AND delivers SMB org-roles (per-dept manager/employee/viewer, domain-scoped
+  hierarchy, cross-domain isolation). Management API (grant/revoke = `Add/RemoveGroupingPolicy`) is instantly live
+  in-process (Watcher only for multi-replica) and MUST reuse `identity.ValidateCapabilityName` (the `*`+grammar guard
+  is NOT in the model). pckhoi filter sharp edge: trim trailing empty `Filter` columns. See references/casbin-authz.md.
 </requirements>
 
 <findings_index>
@@ -146,6 +156,7 @@ The session-7→20 areas each carry their own non-negotiables in `references/<ar
 | Graph-DB eval | references/graph-db-eval.md | **STAY with Neo4j** (maturity/risk, NOT perf — real-data parity ~1.0×); AGE rejected (9 gaps + GDS Leiden/PageRank blocker), ArcadeDB strongest fallback behind a deeper-PoC gate; embeddings are **384d** (Granite-97m), not 768d |
 | Retrieval rerank + RAG (Phase 15/30) | references/retrieval-rerank-rag.md | Rerank worth it (kills TOC/lexical FPs) but **GPU-mandatory** (Qwen3-Reranker-0.6B Q4 @333ms; CPU 23s dead); v1.0.0 RAG Items 1/2/3 + native `document_id` pre-filter all VALIDATED + **IMPLEMENTED 2026-06-28** |
 | Multi-user per-identity isolation (Phase 36-37) | references/multiuser-per-identity-isolation.md | Per-identity full-cap box over Docker (F-001); Garage **bucket-per-identity** (F-007); **4 isolation planes all proven live** (082-085): box+Garage+memory together (083), 3rd-class per-identity PIM instance w/ isolated OAuth key-rings (084), and the documents plane's **identity-blind leak + `:User`-ownership fix** (085) mirroring the memory MCP's `9a4ca594` scoping. agent-sandbox contract corrected against real source + live kind run (082): `Resolve`≠`SandboxClaim`, idle=`OperatingMode:Suspended`, **Backend seam = E2B protocol** (agent-sandbox/agent-sandbox is an E2B gateway on top of the CRD project); DockerBackend now, K8s→DGX. One `:User{identifier}`=identityctx unifies all four planes |
+| Casbin authz + org-roles (deferred phase) | references/casbin-authz.md | **casbin/v2 + pckhoi/casbin-pgx-adapter** (most stable fit; v3 detour reverted). Backs `HasCapability` as a ZERO-REWORK swap (086: 15/15 vs the SQL oracle, same interface + `RequireCapability` gateway unchanged, 089). golang-migrate owns `aura.casbin_rule` via `WithSkipTableCreate`, shares Aura's pgxpool, per-tenant filtered load (087a WINS live vs Blank-Xu sql-adapter 087b). ONE RBAC-with-domains superset model delivers per-dept manager/employee/viewer + domain-scoped hierarchy + cross-domain isolation (088). Runtime grant/revoke instantly live in-process; management API MUST reuse `identity.ValidateCapabilityName` (the `*`+grammar guard is not in the model). **PRD-amendment required before implementation.** |
 
 ## Source Files
 
@@ -243,4 +254,9 @@ SKILL.md, the CONNECT proxy, and bridge-patch.diff are preserved under `sources/
 - 083-two-identity-e2e-tenancy
 - 084-per-identity-pim-sidecar
 - 085-document-ingest-tenancy
+- 086-casbin-hascapability-backing
+- 087a-casbin-adapter-pgx-native
+- 087b-casbin-adapter-sql-stdlib
+- 088-casbin-rbac-domains-orgroles
+- 089-casbin-nethttp-management-api
 </metadata>
