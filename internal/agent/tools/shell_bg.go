@@ -22,7 +22,8 @@ import (
 // must not block a turn or die at the 120s synchronous timeout.
 //
 // Job identity + authority live in shell_bg_owner.go (crypto-random IDs +
-// (identity,session) owner + poll/kill authority, MUSR-03).
+// (identity,session) owner + poll/kill authority, MUSR-03); the default-1h TTL
+// reaper lives in shell_bg_ttl.go (MUSR-04).
 
 // BackgroundShells is the process-scoped registry of running/finished background
 // shells. ONE instance is shared by shell_exec, shell_poll, and shell_kill at
@@ -34,11 +35,29 @@ type BackgroundShells struct {
 	bufCap int
 	max    int
 	shells map[string]*bgShell
+
+	// TTL reaper lifecycle (shell_bg_ttl.go). ttl is the default per-job budget; the
+	// reaper goroutine (StartReaper) sweeps expired jobs and is joined by Shutdown.
+	ttl            time.Duration
+	reaperInterval time.Duration
+	reaperStop     chan struct{}
+	reaperOnce     sync.Once
+	reaperWG       sync.WaitGroup
 }
 
-// NewBackgroundShells builds an empty registry to share across the shell tools.
+// NewBackgroundShells builds an empty registry to share across the shell tools. The
+// TTL reaper is NOT started here (goleak parity — the constructor spawns no
+// goroutine); the composition root calls StartReaper on the daemon work ctx.
 func NewBackgroundShells() *BackgroundShells {
-	return &BackgroundShells{bufCap: shellBackgroundBufCap(), max: shellBackgroundMax(), shells: map[string]*bgShell{}}
+	ttl := shellBackgroundTTL()
+	return &BackgroundShells{
+		bufCap:         shellBackgroundBufCap(),
+		max:            shellBackgroundMax(),
+		shells:         map[string]*bgShell{},
+		ttl:            ttl,
+		reaperInterval: reaperIntervalFor(ttl),
+		reaperStop:     make(chan struct{}),
+	}
 }
 
 // bgShell is one detached process. Its combined stdout+stderr accumulate in buf;
@@ -49,6 +68,7 @@ type bgShell struct {
 	ownerID   string // identityctx.IdentityID at start (or localOwnerID for the no-principal CLI)
 	sessionID string // conversation/session key at start (D-23), "" for bare-ctx callers
 	startedAt time.Time
+	ttl       time.Duration // per-job budget; 0 disables TTL expiry (MUSR-04)
 	cancel    context.CancelFunc
 
 	mu       sync.Mutex
@@ -59,6 +79,7 @@ type bgShell struct {
 	reported int64
 	done     bool
 	killed   bool
+	expired  bool // TTL reaper terminated it (status "expired", MUSR-04)
 	exitCode *int
 }
 
@@ -93,13 +114,18 @@ func (s *bgShell) trimLocked() {
 func (s *bgShell) finish(waitErr error) {
 	s.mu.Lock()
 	s.done = true
-	if s.killed {
+	switch {
+	case s.expired, s.killed:
+		// TTL-expired / explicitly-killed jobs carry no exit code — we terminated the
+		// process, it did not exit on its own. expired keeps its "expired" status.
 		s.exitCode = nil
-	} else if ec, ok := exitCode(waitErr); ok {
-		s.exitCode = &ec
-	} else if waitErr == nil {
-		zero := 0
-		s.exitCode = &zero
+	default:
+		if ec, ok := exitCode(waitErr); ok {
+			s.exitCode = &ec
+		} else if waitErr == nil {
+			zero := 0
+			s.exitCode = &zero
+		}
 	}
 	s.mu.Unlock()
 }
@@ -115,7 +141,7 @@ func (s *bgShell) finishPanic(recovered any) {
 }
 
 // snapshot returns the output produced since the last poll (advancing readOff) and
-// the current status line: running | exited:<code> | killed.
+// the current status line: running | exited:<code> | killed | expired.
 func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,6 +159,8 @@ func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 		s.readOff = 0
 	}
 	switch {
+	case s.expired:
+		status = "expired"
 	case s.killed:
 		status = "killed"
 	case !s.done:
@@ -163,6 +191,7 @@ func (b *BackgroundShells) start(callerCtx context.Context, command, dir string,
 		ownerID:   ownerFromContext(callerCtx),
 		sessionID: shellSessionKey(callerCtx),
 		startedAt: time.Now(),
+		ttl:       b.ttl,
 		cancel:    cancel,
 		bufCap:    b.bufCap,
 	}
@@ -178,6 +207,9 @@ func (b *BackgroundShells) start(callerCtx context.Context, command, dir string,
 		b.shells = map[string]*bgShell{}
 	}
 	b.pruneFinishedLocked()
+	// Reap any job past its TTL opportunistically on every start, so an idle daemon
+	// still bounds a runaway even if StartReaper was never wired (MUSR-04 defense-in-depth).
+	b.sweepExpiredLocked(time.Now())
 	if b.max > 0 && b.runningCountLocked() >= b.max {
 		b.mu.Unlock()
 		cancel()
@@ -275,6 +307,8 @@ func (b *BackgroundShells) Shutdown(ctx context.Context) error {
 	if b == nil {
 		return nil
 	}
+	// Stop the TTL reaper first so it cannot race the group-terminate below.
+	b.stopReaper()
 	b.mu.Lock()
 	shells := make([]*bgShell, 0, len(b.shells))
 	for _, sh := range b.shells {

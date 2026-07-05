@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/identityctx"
 )
@@ -154,6 +155,7 @@ func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		filter = re
 	}
 	chunk, status := sh.snapshot(filter)
+	ageMS := sh.age(time.Now()).Milliseconds() // MUSR-04 age metric (now - startedAt)
 	// AG-015: reclaim OTHER finished shells on this poll (not the one being polled —
 	// the model may re-poll it for a final read), so a long-lived daemon does not
 	// accumulate finished-but-unpolled buffers until the next start.
@@ -163,13 +165,13 @@ func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		body = "[no new output]"
 	}
 	body = redactModelPreview(body)
-	footer, _ := json.Marshal(map[string]string{"shell_id": a.ShellID, "status": status})
+	footer, _ := json.Marshal(map[string]any{"shell_id": a.ShellID, "status": status, "age_ms": ageMS})
 	rendered := body + "\n[aura_shell_bg " + string(footer) + "]"
 	res, err := NewResult(ctx, rendered)
 	if err != nil {
 		return ToolResult{}, err
 	}
-	res.Meta = &ToolResultMeta{"shell_id": a.ShellID, "status": status}
+	res.Meta = &ToolResultMeta{"shell_id": a.ShellID, "status": status, "age_ms": ageMS}
 	return res, nil
 }
 
