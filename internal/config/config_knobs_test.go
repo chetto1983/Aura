@@ -14,7 +14,7 @@ import (
 // TestKnobRegistry round-trips the QUAL-04 promise (D-08): the registry is the
 // single source of truth for the hot-path AURA_* knobs. It asserts the structural
 // invariants that keep the slice honest — no duplicate Name, every enum row carries
-// a non-empty Enum (and non-enum rows carry none), exactly the four secret knobs are
+// a non-empty Enum (and non-enum rows carry none), exactly the five secret knobs are
 // flagged Secret, the AURA_PROFILE enum row spells the four runtime profiles, the two
 // representative reliability/gate knobs are present with the right kind, and no Tier C
 // (agent-tools/loop/llm) knob leaked in (D-16).
@@ -46,11 +46,12 @@ func TestKnobRegistry(t *testing.T) {
 		}
 	}
 
-	// Exactly the four secret knobs are flagged Secret (drives plan-05 redaction).
+	// Exactly the five secret knobs are flagged Secret (drives plan-05 redaction).
 	wantSecret := map[string]bool{
 		"AURA_OBJECTSTORE_ACCESS_KEY": true,
 		"AURA_OBJECTSTORE_SECRET_KEY": true,
 		"GARAGE_RPC_SECRET":           true,
+		"AURA_GARAGE_ADMIN_TOKEN":     true,
 		"AURA_AUTHULA_SECRET":         true,
 	}
 	gotSecret := map[string]bool{}

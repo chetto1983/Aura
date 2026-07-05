@@ -9,3 +9,12 @@ rpc_public_addr = "garage:3901"
 [s3_api]
 s3_region = "garage"
 api_bind_addr = "[::]:3900"
+
+[admin]
+# Admin API v2 (Phase 36 D-08): per-identity bucket + scoped-key provisioning.
+# Bound on the INTERNAL compose network ONLY — deliberately NOT host-published
+# (Pitfall 3: a host-reachable admin port is a privilege-escalation surface). The
+# bearer admin_token is injected via the GARAGE_ADMIN_TOKEN environment variable
+# (see compose.yaml), mirroring how rpc_secret is supplied via GARAGE_RPC_SECRET
+# rather than committed here in plaintext.
+api_bind_addr = "[::]:3903"

@@ -132,6 +132,11 @@ services:
       AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:?AURA_OBJECTSTORE_ACCESS_KEY required in .env}
       AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:?AURA_OBJECTSTORE_SECRET_KEY required in .env}
       AURA_OBJECTSTORE_PATH_STYLE: ${AURA_OBJECTSTORE_PATH_STYLE:-true}
+      # Garage Admin API v2 (Phase 36 D-08): the daemon's provisioning saga reaches the
+      # internal-only admin endpoint over the compose network (never the host) with the
+      # bearer token. Endpoint targets the in-compose service DNS name garage:3903.
+      AURA_GARAGE_ADMIN_ENDPOINT: ${AURA_GARAGE_ADMIN_ENDPOINT:-http://garage:3903}
+      AURA_GARAGE_ADMIN_TOKEN: ${AURA_GARAGE_ADMIN_TOKEN:?AURA_GARAGE_ADMIN_TOKEN required in .env}
       AURA_ASSET_MAX_DOCUMENT_BYTES: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
       AURA_ASSET_MAX_IMAGE_BYTES: ${AURA_ASSET_MAX_IMAGE_BYTES:-26214400}
       AURA_ASSET_MAX_AUDIO_BYTES: ${AURA_ASSET_MAX_AUDIO_BYTES:-104857600}
@@ -292,6 +297,11 @@ services:
     restart: unless-stopped
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
+      # Admin API v2 bearer token (Phase 36 D-08). Supplied via env like GARAGE_RPC_SECRET
+      # so it is never committed to garage.toml. The [admin] block binds :3903 on the
+      # INTERNAL compose network only — there is deliberately NO 3903 host publish below
+      # (Pitfall 3: a host-reachable admin port is a privilege-escalation surface).
+      GARAGE_ADMIN_TOKEN: ${AURA_GARAGE_ADMIN_TOKEN:?AURA_GARAGE_ADMIN_TOKEN required in .env}
     ports:
       - "127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900"
     volumes:

@@ -67,6 +67,8 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_OBJECTSTORE_ACCESS_KEY", Kind: KindString, Default: defaultObjectStoreAccessKey, Secret: true},
 		{Name: "AURA_OBJECTSTORE_SECRET_KEY", Kind: KindString, Default: defaultObjectStoreSecretKey, Secret: true},
 		{Name: "GARAGE_RPC_SECRET", Kind: KindString, Default: "", Secret: true},
+		{Name: "AURA_GARAGE_ADMIN_TOKEN", Kind: KindString, Default: "", Secret: true},
+		{Name: "AURA_GARAGE_ADMIN_ENDPOINT", Kind: KindString, Default: "http://garage:3903"},
 		{Name: "AURA_AUTHULA_SECRET", Kind: KindString, Default: "", Secret: true},
 		{Name: "AURA_OBJECTSTORE_BUCKET", Kind: KindString, Default: "aura-assets"},
 		{Name: "AURA_OBJECTSTORE_ENDPOINT", Kind: KindString, Default: "http://127.0.0.1:3900"},

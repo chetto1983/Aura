@@ -242,6 +242,15 @@ type Config struct {
 	// internal/settings OverlayEnv allowlist (which excludes security/connection env), so
 	// a model-driven settings write can never toggle isolation enforcement.
 	MUSRIsolation bool // AURA_MUSR_ISOLATION — documents-retrieval scoped-vs-unscoped path selector (D-13), default false
+
+	// Phase 36 (plan 06) Garage Admin API v2 (D-08). The provisioning saga (plan 08)
+	// calls the INTERNAL-only admin API to create a per-identity bucket + scoped key.
+	// Endpoint defaults to the in-compose garage:3903 service DNS; the token is a bearer
+	// secret over the internal network only — NEVER host-published (Pitfall 3). An empty
+	// token is NOT boot-fatal here (the saga is a later plan and the admin client fails
+	// closed at call time), so DB/migration paths keep working without Garage reachable.
+	GarageAdminEndpoint string // AURA_GARAGE_ADMIN_ENDPOINT — internal Garage Admin API v2 base, default http://garage:3903
+	GarageAdminToken    string // AURA_GARAGE_ADMIN_TOKEN — bearer token for the internal admin API (Pitfall 3)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -484,6 +493,11 @@ func loadBase() *Config {
 		// Phase 36 identity-isolation rollout switch (D-13). Default OFF so plan 12's
 		// deploy-flag-off step is safe; plan 05 is the documents-retrieval consumer.
 		MUSRIsolation: envutil.BoolDefault("AURA_MUSR_ISOLATION", false),
+
+		// Phase 36 (plan 06) Garage Admin API v2 (D-08). Endpoint defaults to the
+		// in-compose garage:3903; the token is read raw (empty is non-fatal here).
+		GarageAdminEndpoint: envDefault("AURA_GARAGE_ADMIN_ENDPOINT", "http://garage:3903"),
+		GarageAdminToken:    os.Getenv("AURA_GARAGE_ADMIN_TOKEN"),
 	}
 }
 

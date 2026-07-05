@@ -249,6 +249,8 @@ ensure_objectstore_env_secrets() {
   ensure_generated_env_secret AURA_OBJECTSTORE_ACCESS_KEY 12 GK
   ensure_generated_env_secret AURA_OBJECTSTORE_SECRET_KEY 32
   ensure_generated_env_secret GARAGE_RPC_SECRET 32
+  # Phase 36 D-08: bearer token for the internal-only Garage Admin API v2 (:3903).
+  ensure_generated_env_secret AURA_GARAGE_ADMIN_TOKEN 32
 }
 
 ensure_internal_env_secrets() {
@@ -292,6 +294,7 @@ write_env_if_missing() {
   objectstore_access_key="GK$(openssl rand -hex 12)"
   objectstore_secret_key="$(openssl rand -hex 32)"
   garage_rpc_secret="$(openssl rand -hex 32)"
+  garage_admin_token="$(openssl rand -hex 32)"
   authula_secret="$(openssl rand -hex 32)"
   pim_admin_token="$(openssl rand -hex 32)"
   searxng_secret="$(openssl rand -hex 32)"
@@ -334,6 +337,7 @@ AURA_RERANK_NGL=99
 AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
 AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}
 GARAGE_RPC_SECRET=${garage_rpc_secret}
+AURA_GARAGE_ADMIN_TOKEN=${garage_admin_token}
 
 OPENROUTER_API_KEY=${openrouter_key}
 EOF
