@@ -151,12 +151,12 @@ func TestBackgroundShellsCapRunningJobs(t *testing.T) {
 	}
 	t.Setenv("AURA_SHELL_BG_MAX", "1")
 	bg := NewBackgroundShells()
-	id, err := bg.start("sleep 2", "", mergeEnv(nil))
+	id, err := bg.start(context.Background(), "sleep 2", "", mergeEnv(nil))
 	if err != nil {
 		t.Fatalf("start first: %v", err)
 	}
 	defer func() { _ = bg.kill(id) }()
-	if _, err := bg.start("sleep 2", "", mergeEnv(nil)); err == nil {
+	if _, err := bg.start(context.Background(), "sleep 2", "", mergeEnv(nil)); err == nil {
 		t.Fatal("want cap error for second running background shell")
 	} else if !strings.Contains(err.Error(), "cap") || !strings.Contains(err.Error(), "1") {
 		t.Fatalf("cap error = %v, want mention cap 1", err)
@@ -166,7 +166,7 @@ func TestBackgroundShellsCapRunningJobs(t *testing.T) {
 func TestBackgroundShellsPrunesFinishedBeforeCap(t *testing.T) {
 	t.Setenv("AURA_SHELL_BG_MAX", "1")
 	bg := NewBackgroundShells()
-	id, err := bg.start("echo done", "", mergeEnv(nil))
+	id, err := bg.start(context.Background(), "echo done", "", mergeEnv(nil))
 	if err != nil {
 		t.Fatalf("start first: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestBackgroundShellsPrunesFinishedBeforeCap(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := bg.start("echo second", "", mergeEnv(nil)); err != nil {
+	if _, err := bg.start(context.Background(), "echo second", "", mergeEnv(nil)); err != nil {
 		t.Fatalf("finished shell should be pruned before cap check: %v", err)
 	}
 }
@@ -192,7 +192,7 @@ func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
 		t.Skip("cmd.exe fallback has no sleep; shutdown fixture needs a long-running command")
 	}
 	bg := NewBackgroundShells()
-	id, err := bg.start("sleep 30", "", mergeEnv(nil))
+	id, err := bg.start(context.Background(), "sleep 30", "", mergeEnv(nil))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -274,11 +274,13 @@ func TestBackgroundShellBufferCapsAndDropsConsumed(t *testing.T) {
 }
 
 func TestShellPollRedactsModelPreview(t *testing.T) {
-	bg := &BackgroundShells{shells: map[string]*bgShell{"sh_1": &bgShell{bufCap: 1024}}}
-	if _, err := bg.shells["sh_1"].Write([]byte("token=supersecretvalue123\n")); err != nil {
+	// The job is owned by (local, "sess-bg-redact") so the same-session poll below is
+	// authorized (MUSR-03); the id key is an arbitrary registry key, not a minted one.
+	bg := &BackgroundShells{shells: map[string]*bgShell{"job-redact": {bufCap: 1024, ownerID: localOwnerID, sessionID: "sess-bg-redact"}}}
+	if _, err := bg.shells["job-redact"].Write([]byte("token=supersecretvalue123\n")); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	body, _ := pollOnce(ctxWith(t, "sess-bg-redact", "call-bg-redact"), t, &ShellPoll{Shells: bg}, "sh_1", "")
+	body, _ := pollOnce(ctxWith(t, "sess-bg-redact", "call-bg-redact"), t, &ShellPoll{Shells: bg}, "job-redact", "")
 	if strings.Contains(body, "supersecretvalue123") {
 		t.Fatalf("shell_poll leaked secret output: %q", body)
 	}

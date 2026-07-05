@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +20,9 @@ import (
 // shell_poll returns only the NEW output since the last poll plus the run status;
 // shell_kill terminates it. For long jobs (builds, downloads, dev servers) that
 // must not block a turn or die at the 120s synchronous timeout.
+//
+// Job identity + authority live in shell_bg_owner.go (crypto-random IDs +
+// (identity,session) owner + poll/kill authority, MUSR-03).
 
 // BackgroundShells is the process-scoped registry of running/finished background
 // shells. ONE instance is shared by shell_exec, shell_poll, and shell_kill at
@@ -29,7 +31,6 @@ import (
 // once at boot). Concurrency-safe.
 type BackgroundShells struct {
 	mu     sync.Mutex
-	seq    int
 	bufCap int
 	max    int
 	shells map[string]*bgShell
@@ -45,6 +46,8 @@ func NewBackgroundShells() *BackgroundShells {
 // the new bytes. cancel kills the process (shell_kill / shutdown).
 type bgShell struct {
 	id        string
+	ownerID   string // identityctx.IdentityID at start (or localOwnerID for the no-principal CLI)
+	sessionID string // conversation/session key at start (D-23), "" for bare-ctx callers
 	startedAt time.Time
 	cancel    context.CancelFunc
 
@@ -144,7 +147,10 @@ func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 
 // start launches command DETACHED from the per-call ctx (which dies the moment
 // Execute returns) so the job outlives the turn; kill is via the stored cancel.
-func (b *BackgroundShells) start(command, dir string, env []string) (string, error) {
+// callerCtx carries the owner principal (identityctx) + session key bound onto the
+// job for the poll/kill authority check (MUSR-03); it is NOT the process lifetime
+// ctx (that is a fresh background ctx so the job survives the turn).
+func (b *BackgroundShells) start(callerCtx context.Context, command, dir string, env []string) (string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	name, args := shellInvocation(command)
 	cmd := exec.CommandContext(ctx, name, args...)
@@ -153,9 +159,20 @@ func (b *BackgroundShells) start(command, dir string, env []string) (string, err
 	setProcessGroup(cmd)
 	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
-	sh := &bgShell{startedAt: time.Now(), cancel: cancel, bufCap: b.bufCap}
+	sh := &bgShell{
+		ownerID:   ownerFromContext(callerCtx),
+		sessionID: shellSessionKey(callerCtx),
+		startedAt: time.Now(),
+		cancel:    cancel,
+		bufCap:    b.bufCap,
+	}
 	cmd.Stdout = sh
 	cmd.Stderr = sh
+	id, err := newBackgroundShellID()
+	if err != nil {
+		cancel()
+		return "", err
+	}
 	b.mu.Lock()
 	if b.shells == nil {
 		b.shells = map[string]*bgShell{}
@@ -166,8 +183,6 @@ func (b *BackgroundShells) start(command, dir string, env []string) (string, err
 		cancel()
 		return "", fmt.Errorf("background shell cap reached (%d); poll or kill an existing shell", b.max)
 	}
-	b.seq++
-	id := fmt.Sprintf("sh_%d", b.seq)
 	sh.id = id
 	b.shells[id] = sh
 	b.mu.Unlock()
@@ -313,7 +328,8 @@ func (b *BackgroundShells) get(id string) (*bgShell, bool) {
 }
 
 // kill terminates a running shell; killing an already-finished shell is a no-op
-// success (idempotent).
+// success (idempotent). Caller authority is enforced upstream in ShellKill.Execute
+// (shell_bg_owner.go) — this low-level primitive assumes the caller is entitled.
 func (b *BackgroundShells) kill(id string) error {
 	sh, ok := b.get(id)
 	if !ok {
@@ -339,90 +355,6 @@ func filterLines(s string, re *regexp.Regexp) string {
 		}
 	}
 	return strings.Join(kept, "\n")
-}
-
-// ShellPoll reads new output from a background shell_exec job — Claude Code's
-// BashOutput. Non-mutating: it only reads accumulated output + status.
-type ShellPoll struct {
-	Shells *BackgroundShells
-}
-
-type shellPollArgs struct {
-	ShellID string `json:"shell_id"`
-	Filter  string `json:"filter"`
-}
-
-func (p *ShellPoll) Spec() Spec {
-	return Spec{
-		Name:    "shell_poll",
-		Summary: "Read new output from a background shell_exec job.",
-		Description: "Retrieve output from a running or finished background shell started by shell_exec with \"background\": true. " +
-			"Returns ONLY the output produced since your last poll, plus a final [aura_shell_bg {...}] footer with the shell_id and status (running | exited:<code> | killed). " +
-			"Pass an optional regex 'filter' to keep only matching lines. Poll again to follow a long job; stop it with shell_kill.",
-		Parameters: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "shell_id": {"type": "string", "description": "The id returned by the background shell_exec call."},
-    "filter": {"type": "string", "description": "Optional regular expression; only output lines matching it are returned."}
-  },
-  "required": ["shell_id"]
-}`),
-		Deferred: true,
-	}
-}
-
-// Evict forwards a conversation-end signal to the shared background-shell
-// registry, reclaiming finished shells (SessionEvictor, AG-015). ShellPoll is a
-// registry tool, so the Runner's evict loop reaches the process-scoped registry
-// through it; the prune is by completion, not by session.
-func (p *ShellPoll) Evict(sessionID string) {
-	if p == nil || p.Shells == nil {
-		return
-	}
-	p.Shells.Evict(sessionID)
-}
-
-func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	if p.Shells == nil {
-		return ToolResult{}, fmt.Errorf("shell_poll: background shells are not available in this context")
-	}
-	var a shellPollArgs
-	if err := json.Unmarshal(raw, &a); err != nil {
-		return ToolResult{}, fmt.Errorf("shell_poll args: %w", err)
-	}
-	if strings.TrimSpace(a.ShellID) == "" {
-		return ToolResult{}, fmt.Errorf("shell_poll: shell_id is required")
-	}
-	sh, ok := p.Shells.get(a.ShellID)
-	if !ok {
-		return ToolResult{}, fmt.Errorf("shell_poll: unknown shell_id %q", a.ShellID)
-	}
-	var filter *regexp.Regexp
-	if strings.TrimSpace(a.Filter) != "" {
-		re, err := regexp.Compile(a.Filter)
-		if err != nil {
-			return ToolResult{}, fmt.Errorf("shell_poll: invalid filter regex: %w", err)
-		}
-		filter = re
-	}
-	chunk, status := sh.snapshot(filter)
-	// AG-015: reclaim OTHER finished shells on this poll (not the one being polled —
-	// the model may re-poll it for a final read), so a long-lived daemon does not
-	// accumulate finished-but-unpolled buffers until the next start.
-	p.Shells.pruneFinishedExcept(a.ShellID)
-	body := chunk
-	if strings.TrimSpace(body) == "" {
-		body = "[no new output]"
-	}
-	body = redactModelPreview(body)
-	footer, _ := json.Marshal(map[string]string{"shell_id": a.ShellID, "status": status})
-	rendered := body + "\n[aura_shell_bg " + string(footer) + "]"
-	res, err := NewResult(ctx, rendered)
-	if err != nil {
-		return ToolResult{}, err
-	}
-	res.Meta = &ToolResultMeta{"shell_id": a.ShellID, "status": status}
-	return res, nil
 }
 
 const (
@@ -452,48 +384,4 @@ func shellBackgroundMax() int {
 		return 8
 	}
 	return n
-}
-
-// ShellKill terminates a background shell_exec job — Claude Code's KillBash.
-type ShellKill struct {
-	Shells *BackgroundShells
-}
-
-type shellKillArgs struct {
-	ShellID string `json:"shell_id"`
-}
-
-func (k *ShellKill) Spec() Spec {
-	return Spec{
-		Name:    "shell_kill",
-		Summary: "Terminate a background shell_exec job.",
-		Description: "Kill a running background shell started by shell_exec (Claude Code's KillBash). " +
-			"Takes the shell_id; returns success even if the job already finished (idempotent).",
-		Parameters: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "shell_id": {"type": "string", "description": "The id of the background shell to terminate."}
-  },
-  "required": ["shell_id"]
-}`),
-		Deferred: true,
-		Mutating: true,
-	}
-}
-
-func (k *ShellKill) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	if k.Shells == nil {
-		return ToolResult{}, fmt.Errorf("shell_kill: background shells are not available in this context")
-	}
-	var a shellKillArgs
-	if err := json.Unmarshal(raw, &a); err != nil {
-		return ToolResult{}, fmt.Errorf("shell_kill args: %w", err)
-	}
-	if strings.TrimSpace(a.ShellID) == "" {
-		return ToolResult{}, fmt.Errorf("shell_kill: shell_id is required")
-	}
-	if err := k.Shells.kill(a.ShellID); err != nil {
-		return ToolResult{}, err
-	}
-	return NewResult(ctx, fmt.Sprintf("shell %s terminated", a.ShellID))
 }

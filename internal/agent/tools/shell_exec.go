@@ -138,7 +138,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		if s.Background == nil {
 			return ToolResult{}, fmt.Errorf("shell_exec: background mode is not available in this context")
 		}
-		id, err := s.Background.start(commandForGate, workdir, mergeEnv(a.Env))
+		id, err := s.Background.start(ctx, commandForGate, workdir, mergeEnv(a.Env))
 		if err != nil {
 			return ToolResult{}, err
 		}
