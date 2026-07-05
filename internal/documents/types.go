@@ -28,6 +28,10 @@ type IngestRequest struct {
 	FileName     string
 	MIMEType     string
 	SizeBytes    int64
+	// IdentityID is the owning Aura identity. It threads to ExtractedDocument so the
+	// indexer can MERGE a (:User)-[:HAS_DOCUMENT]->(:Document) ownership edge on ingest
+	// (Phase 36 MUSR-01). Empty for un-scoped/legacy operator ingests.
+	IdentityID string
 }
 
 // Job is the API-facing view of a persisted document ingestion job.
@@ -76,6 +80,10 @@ type ExtractedDocument struct {
 	Title       string
 	Chunks      []Chunk
 	CreatedAt   time.Time
+	// IdentityID is the owning Aura identity, carried from IngestRequest. The indexer
+	// MERGEs a (:User {identifier: IdentityID})-[:HAS_DOCUMENT]->(:Document) ownership
+	// edge on upsert so isolation-scoped retrieval can fail closed (Phase 36 MUSR-01).
+	IdentityID string
 }
 
 // Chunk is one searchable text unit derived from an extracted document.
@@ -136,6 +144,11 @@ type SearchRequest struct {
 	Query      string
 	DocumentID string
 	Limit      int
+	// IdentityID is the authenticated principal the retrieval is scoped to. When the
+	// MUSRIsolation flag is on, the six scoped query variants carry an unconditional
+	// EXISTS ownership filter keyed on this id, so a foreign or empty identity fails
+	// closed (Phase 36 MUSR-01, D-13). Ignored when the flag is off (unscoped fallback).
+	IdentityID string
 }
 
 // SearchHit is one ranked result from document search.

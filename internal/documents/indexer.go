@@ -33,7 +33,10 @@ func (i *Indexer) UpsertSparse(ctx context.Context, doc ExtractedDocument) (int,
 	if len(doc.Chunks) == 0 {
 		return 0, fmt.Errorf("document has no chunks")
 	}
-	if _, err := i.Client.Write(ctx, documentUpsertQuery, map[string]any{"document": documentParams(doc)}); err != nil {
+	if _, err := i.Client.Write(ctx, documentUpsertQuery, map[string]any{
+		"document": documentParams(doc),
+		"identity": doc.IdentityID,
+	}); err != nil {
 		return 0, fmt.Errorf("upsert document: %w", err)
 	}
 
@@ -216,6 +219,14 @@ func countFromRows(rows []map[string]any, fallback int) int {
 	return fallback
 }
 
+// documentUpsertQuery upserts the :Document node AND, atomically in the same write,
+// MERGEs the (:User {identifier: $identity})-[:HAS_DOCUMENT]->(:Document) ownership edge
+// that identity-scoped retrieval fails closed against (Phase 36 MUSR-01, D-09). The edge
+// is attached on EVERY ingest regardless of the AURA_MUSR_ISOLATION flag — the flag gates
+// read enforcement only, so the graph is owner-ready before the plan-12 flip (no re-ingest).
+// The `WITH u` fence between the User MERGE and the re-MATCH of the Document is mandatory
+// (spike-085 gotcha #a: a MERGE directly followed by a MATCH errors at runtime); the shape
+// mirrors the shipped memory LINK_USER_TO_ENTITY (queries.py) verbatim.
 const documentUpsertQuery = `
 MERGE (d:Document {id: $document.id})
 SET
@@ -233,6 +244,12 @@ SET
   d.deleted_at = NULL,
   d.updated_at = datetime(),
   d.created_at = coalesce(d.created_at, datetime())
+WITH d
+MERGE (u:User {identifier: $identity})
+  ON CREATE SET u.id = $identity, u.created_at = datetime()
+WITH u
+MATCH (d:Document {id: $document.id})
+MERGE (u)-[:HAS_DOCUMENT]->(d)
 RETURN d.id AS document_id
 `
 

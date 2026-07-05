@@ -109,6 +109,7 @@ func BuildExtractedDocument(req IngestRequest, contentHash string, resp *Extract
 		Title:       resp.Title,
 		Chunks:      make([]Chunk, 0, len(resp.Chunks)),
 		CreatedAt:   createdAt,
+		IdentityID:  req.IdentityID,
 	}
 	for i, chunk := range resp.Chunks {
 		text := NormalizeText(chunk.Text)

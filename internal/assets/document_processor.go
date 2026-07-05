@@ -48,6 +48,9 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 		FileName:     asset.FileName,
 		MIMEType:     asset.MIMEType,
 		SizeBytes:    asset.SizeBytes,
+		// Owner identity threads to the (:User)-[:HAS_DOCUMENT]->(:Document) edge the
+		// indexer MERGEs on ingest (Phase 36 MUSR-01). Assets already carry it.
+		IdentityID: asset.IdentityID,
 	}, path)
 	if err != nil {
 		return Result{}, err
