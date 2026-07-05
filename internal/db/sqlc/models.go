@@ -257,6 +257,10 @@ type AuraIdentities struct {
 	Name      string             `json:"name"`
 	Kind      string             `json:"kind"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Soft-delete marker (Phase 36, D-27): non-NULL once the identity is deactivated. Login is refused and work is paused; rows are retained until purge_after.
+	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
+	// End of the soft-delete grace window (Phase 36, D-27): after this instant the plan-08 de-provisioning saga may hard-delete the identity and cascade its owned data.
+	PurgeAfter pgtype.Timestamptz `json:"purge_after"`
 }
 
 // Append-only identity-provisioning audit ledger (Phase 28, ONBD-01a). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 1/6). One immutable row per successful onboarding provision, written inside the provisioning db.WithTx.
@@ -275,6 +279,15 @@ type AuraIdentityAuthLinks struct {
 	IdentityID    pgtype.UUID        `json:"identity_id"`
 	AuthulaUserID string             `json:"authula_user_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+// Per-identity Garage/S3 credential store (Phase 36, D-08/OQ4). secret_key_enc is the S3 secret as encrypted-at-rest bytea ciphertext (wrapping key derived from AURA_AUTHULA_SECRET, same trust boundary as .env); the AEAD is implemented by the plan-06 persistence layer. Deleting the identity cascades its key.
+type AuraIdentityObjectStore struct {
+	IdentityID   pgtype.UUID        `json:"identity_id"`
+	Bucket       string             `json:"bucket"`
+	AccessKey    string             `json:"access_key"`
+	SecretKeyEnc []byte             `json:"secret_key_enc"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 // Per-identity recovery question and hashed answer for Telegram password reset. Raw answers are never stored.
@@ -395,6 +408,8 @@ type AuraPausedStates struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	ResumedAt          pgtype.Timestamptz `json:"resumed_at"`
 	ResumedAnswer      []byte             `json:"resumed_answer"`
+	// Owning identity (Phase 36, OQ2): a first-class column backfilled from the parent aura.conversations.identity_id so the plan-04 kernel-isolation / RLS owner filter keys on the row, not a subquery. NULLABLE until the plan-05 write path populates it.
+	IdentityID pgtype.UUID `json:"identity_id"`
 }
 
 // Durable scheduler notification queue (Phase 19 H6/H7): quiet-hours deferred notifications and failed self-send retry state.
@@ -411,6 +426,16 @@ type AuraPendingNotifications struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	// Stable owning identity snapshot (Phase 20, Fork 1): the channel-independent delivery key for the deferred/failed sweep route-back. Plain text, no FK — survives a deleted origin conversation. NULL for legacy/CLI rows → falls back to notify_route.
 	IdentityID pgtype.Text `json:"identity_id"`
+}
+
+// Resumable provisioning/de-provisioning saga journal (Phase 36, D-14/D-27). MUTABLE: step status transitions pending -> done/failed for forward recovery. identity_id has NO FK so a de-provision saga survives the identity deletion it is executing.
+type AuraProvisioningSaga struct {
+	SagaID     pgtype.UUID        `json:"saga_id"`
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Kind       string             `json:"kind"`
+	Step       string             `json:"step"`
+	Status     string             `json:"status"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Scheduler task definitions (Slice 6 / Phase 10, amendment #46). Grammar triad at|every|cron with per-task IANA tz; next_run_at is UTC, recomputed in-zone (D-06/D-07).

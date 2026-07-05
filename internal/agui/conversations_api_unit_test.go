@@ -66,6 +66,34 @@ func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) 
 
 func (e *errConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, e.err }
 
+// Phase 36 owner-scoped surface — the error fake returns its injected err (or (0,err)
+// for the rows-affected mutates) so the handler's error/404 projections stay unit-coverable.
+// e.err is always non-nil in the suites that use this fake, so the affected==0 (403/404
+// existence-probe) branch is never reached here; that split is covered by dedicated fakes.
+func (e *errConvStore) GetForIdentity(context.Context, string, string) (conversations.Conversation, error) {
+	return conversations.Conversation{}, e.err
+}
+
+func (e *errConvStore) ListForIdentity(context.Context, string, bool) ([]conversations.Conversation, error) {
+	return nil, e.err
+}
+
+func (e *errConvStore) SearchConversationTurnsForIdentity(context.Context, string, string, int) ([]conversations.SearchResult, error) {
+	return nil, e.err
+}
+
+func (e *errConvStore) DeleteForIdentity(context.Context, string, string) (int64, error) {
+	return 0, e.err
+}
+
+func (e *errConvStore) UpdateStatusForIdentity(context.Context, string, string, string) (int64, error) {
+	return 0, e.err
+}
+
+func (e *errConvStore) RenameForIdentity(context.Context, string, string, string) (int64, error) {
+	return 0, e.err
+}
+
 func convAPIServer(t *testing.T, store ConversationStore) *httptest.Server {
 	t.Helper()
 	s := NewServer(&scriptedRunner{}, store, ServerConfig{})

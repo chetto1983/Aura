@@ -36,6 +36,17 @@ type ConversationStore interface {
 	SetTitleIfNull(ctx context.Context, conversationID, title string) error
 	Delete(ctx context.Context, conversationID string) error
 	ListContextRotEvents(ctx context.Context, conversationID string) ([]conversations.RotEvent, error)
+	// Phase 36 (MUSR-01 / D-06) owner-scoped surface: the AG-UI handlers route every
+	// authenticated read/mutate through these so the principal (identityctx) is the sole
+	// owner key and RLS backstops a forgotten filter. The four mutating variants return
+	// rows-affected (0 = the caller does not own the id → 403 vs 404). *conversations.Store
+	// satisfies these implicitly.
+	GetForIdentity(ctx context.Context, conversationID, identityID string) (conversations.Conversation, error)
+	ListForIdentity(ctx context.Context, identityID string, includeArchived bool) ([]conversations.Conversation, error)
+	SearchConversationTurnsForIdentity(ctx context.Context, query, identityID string, limit int) ([]conversations.SearchResult, error)
+	DeleteForIdentity(ctx context.Context, conversationID, identityID string) (int64, error)
+	UpdateStatusForIdentity(ctx context.Context, conversationID, identityID, status string) (int64, error)
+	RenameForIdentity(ctx context.Context, conversationID, identityID, title string) (int64, error)
 	// D-09 / CHAT-05 branch surface (plan 25-07). ListBranches enumerates the navigable
 	// branch leaves; ForkBranch writes a new sibling branch (edit-a-user-turn /
 	// regenerate) chained off the diverging turn's parent and returns the new leaf seq.

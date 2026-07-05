@@ -14,7 +14,7 @@ import (
 const createIdentity = `-- name: CreateIdentity :one
 INSERT INTO aura.identities (id, name, kind)
 VALUES ($1, $2, $3)
-RETURNING id, name, kind, created_at
+RETURNING id, name, kind, created_at, deactivated_at, purge_after
 `
 
 type CreateIdentityParams struct {
@@ -31,6 +31,8 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 		&i.Name,
 		&i.Kind,
 		&i.CreatedAt,
+		&i.DeactivatedAt,
+		&i.PurgeAfter,
 	)
 	return i, err
 }
@@ -46,7 +48,7 @@ func (q *Queries) DeleteIdentity(ctx context.Context, name string) error {
 }
 
 const getIdentityByID = `-- name: GetIdentityByID :one
-SELECT id, name, kind, created_at
+SELECT id, name, kind, created_at, deactivated_at, purge_after
 FROM aura.identities
 WHERE id = $1
 `
@@ -59,12 +61,14 @@ func (q *Queries) GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIden
 		&i.Name,
 		&i.Kind,
 		&i.CreatedAt,
+		&i.DeactivatedAt,
+		&i.PurgeAfter,
 	)
 	return i, err
 }
 
 const getIdentityByName = `-- name: GetIdentityByName :one
-SELECT id, name, kind, created_at
+SELECT id, name, kind, created_at, deactivated_at, purge_after
 FROM aura.identities
 WHERE name = $1
 `
@@ -77,12 +81,14 @@ func (q *Queries) GetIdentityByName(ctx context.Context, name string) (AuraIdent
 		&i.Name,
 		&i.Kind,
 		&i.CreatedAt,
+		&i.DeactivatedAt,
+		&i.PurgeAfter,
 	)
 	return i, err
 }
 
 const listIdentities = `-- name: ListIdentities :many
-SELECT id, name, kind, created_at
+SELECT id, name, kind, created_at, deactivated_at, purge_after
 FROM aura.identities
 ORDER BY created_at ASC, name ASC
 `
@@ -101,6 +107,8 @@ func (q *Queries) ListIdentities(ctx context.Context) ([]AuraIdentities, error) 
 			&i.Name,
 			&i.Kind,
 			&i.CreatedAt,
+			&i.DeactivatedAt,
+			&i.PurgeAfter,
 		); err != nil {
 			return nil, err
 		}

@@ -61,6 +61,27 @@ func (q *Queries) DeleteConversation(ctx context.Context, id pgtype.UUID) error 
 	return err
 }
 
+const deleteConversationForIdentity = `-- name: DeleteConversationForIdentity :execrows
+DELETE FROM aura.conversations
+WHERE id = $1
+  AND identity_id = $2
+`
+
+type DeleteConversationForIdentityParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
+// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
+func (q *Queries) DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteConversationForIdentity, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getConversation = `-- name: GetConversation :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
@@ -71,6 +92,43 @@ WHERE id = $1
 
 func (q *Queries) GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error) {
 	row := q.db.QueryRow(ctx, getConversation, id)
+	var i AuraConversations
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.IdentityID,
+		&i.CreatedAt,
+		&i.LastActiveAt,
+		&i.Status,
+		&i.Model,
+		&i.TotalInputTokens,
+		&i.TotalOutputTokens,
+		&i.TotalCachedTokens,
+		&i.TotalCostUsd,
+		&i.Metadata,
+	)
+	return i, err
+}
+
+const getConversationForIdentity = `-- name: GetConversationForIdentity :one
+SELECT id, title, identity_id, created_at, last_active_at, status, model,
+       total_input_tokens, total_output_tokens, total_cached_tokens,
+       total_cost_usd, metadata
+FROM aura.conversations
+WHERE id = $1
+  AND identity_id = $2
+`
+
+type GetConversationForIdentityParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
+// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
+// Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
+func (q *Queries) GetConversationForIdentity(ctx context.Context, arg GetConversationForIdentityParams) (AuraConversations, error) {
+	row := q.db.QueryRow(ctx, getConversationForIdentity, arg.ID, arg.IdentityID)
 	var i AuraConversations
 	err := row.Scan(
 		&i.ID,
@@ -132,6 +190,57 @@ func (q *Queries) ListConversations(ctx context.Context, includeArchived bool) (
 	return items, nil
 }
 
+const listConversationsForIdentity = `-- name: ListConversationsForIdentity :many
+SELECT id, title, identity_id, created_at, last_active_at, status, model,
+       total_input_tokens, total_output_tokens, total_cached_tokens,
+       total_cost_usd, metadata
+FROM aura.conversations
+WHERE identity_id = $1
+  AND status <> 'deleted'
+  AND ($2::boolean OR status = 'active')
+ORDER BY last_active_at DESC
+`
+
+type ListConversationsForIdentityParams struct {
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	IncludeArchived bool        `json:"include_archived"`
+}
+
+// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
+// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
+func (q *Queries) ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error) {
+	rows, err := q.db.Query(ctx, listConversationsForIdentity, arg.IdentityID, arg.IncludeArchived)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraConversations{}
+	for rows.Next() {
+		var i AuraConversations
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.IdentityID,
+			&i.CreatedAt,
+			&i.LastActiveAt,
+			&i.Status,
+			&i.Model,
+			&i.TotalInputTokens,
+			&i.TotalOutputTokens,
+			&i.TotalCachedTokens,
+			&i.TotalCostUsd,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const renameConversation = `-- name: RenameConversation :exec
 UPDATE aura.conversations
 SET title = $2
@@ -146,6 +255,28 @@ type RenameConversationParams struct {
 func (q *Queries) RenameConversation(ctx context.Context, arg RenameConversationParams) error {
 	_, err := q.db.Exec(ctx, renameConversation, arg.ID, arg.Title)
 	return err
+}
+
+const renameConversationForIdentity = `-- name: RenameConversationForIdentity :execrows
+UPDATE aura.conversations
+SET title = $1
+WHERE id = $2
+  AND identity_id = $3
+`
+
+type RenameConversationForIdentityParams struct {
+	Title      pgtype.Text `json:"title"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
+func (q *Queries) RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameConversationForIdentity, arg.Title, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setConversationTitleIfNull = `-- name: SetConversationTitleIfNull :exec
@@ -209,4 +340,28 @@ type UpdateConversationStatusParams struct {
 func (q *Queries) UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error {
 	_, err := q.db.Exec(ctx, updateConversationStatus, arg.ID, arg.Status)
 	return err
+}
+
+const updateConversationStatusForIdentity = `-- name: UpdateConversationStatusForIdentity :execrows
+UPDATE aura.conversations
+SET status = $1,
+    last_active_at = now()
+WHERE id = $2
+  AND identity_id = $3
+`
+
+type UpdateConversationStatusForIdentityParams struct {
+	Status     string      `json:"status"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
+// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
+func (q *Queries) UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateConversationStatusForIdentity, arg.Status, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

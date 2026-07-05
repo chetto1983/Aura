@@ -351,6 +351,17 @@ type SearchResult struct {
 // short-preview column (length-compatible with %) at a future migration, never a
 // rewrite of this locked query.
 func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	return s.searchTurns(ctx, query, limit, "")
+}
+
+// searchTurns is the shared FTS body behind SearchConversationTurns (unscoped) and
+// SearchConversationTurnsForIdentity (Phase 36 owner-scoped). The LOCKED sqlc query is
+// NEVER rewritten — ownerFilter is applied Go-side alongside the existing deleted-status
+// skip (a hit whose conversation is not owned by ownerFilter is dropped so an FTS query
+// can never surface another identity's turn content, MUSR-01). ownerFilter == "" keeps
+// the pre-Phase-36 unscoped behavior. The per-hit conversation is cached (status + owner
+// both read from the one projection) so a repeated conversation costs a single Get.
+func (s *Store) searchTurns(ctx context.Context, query string, limit int, ownerFilter string) ([]SearchResult, error) {
 	rows, err := s.q.SearchConversationTurns(ctx, sqlc.SearchConversationTurnsParams{
 		Similarity: query,
 		Limit:      normalizeSearchLimit(limit),
@@ -359,19 +370,22 @@ func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit
 		return nil, fmt.Errorf("search conversation turns: %w", err)
 	}
 	out := make([]SearchResult, 0, len(rows))
-	statusByConversation := make(map[string]string)
+	convByID := make(map[string]Conversation)
 	for _, r := range rows {
 		convID := uuid.UUID(r.ConversationID.Bytes).String()
-		status, ok := statusByConversation[convID]
+		conv, ok := convByID[convID]
 		if !ok {
-			conv, gErr := s.Get(ctx, convID)
+			loaded, gErr := s.Get(ctx, convID)
 			if gErr != nil {
-				return nil, fmt.Errorf("search conversation turns: load conversation %s status: %w", convID, gErr)
+				return nil, fmt.Errorf("search conversation turns: load conversation %s: %w", convID, gErr)
 			}
-			status = conv.Status
-			statusByConversation[convID] = status
+			conv = loaded
+			convByID[convID] = loaded
 		}
-		if status == StatusDeleted {
+		if conv.Status == StatusDeleted {
+			continue
+		}
+		if ownerFilter != "" && conv.IdentityID != ownerFilter {
 			continue
 		}
 		out = append(out, SearchResult{
@@ -412,6 +426,16 @@ func (s *Store) Delete(ctx context.Context, conversationID string) error {
 	if err := s.q.DeleteConversation(ctx, id); err != nil {
 		return fmt.Errorf("delete conversation %s: %w", conversationID, err)
 	}
+	return s.purgeConversationArtifacts(conversationID)
+}
+
+// purgeConversationArtifacts tears down the per-conversation on-disk tree AFTER the DB
+// row is deleted: the os.Root no-follow cascade when a Cleaner is wired (2b), else the
+// os.RemoveAll fallback. Shared by Delete and DeleteForIdentity (Phase 36) so both hard
+// deletes reclaim the sidecar dir identically. A filesystem failure is a WARN-level
+// degradation the caller may surface — the boot orphan scan reconciles a leftover dir,
+// NEVER a rolled-back delete (the DB row is already gone).
+func (s *Store) purgeConversationArtifacts(conversationID string) error {
 	if s.cleaner != nil {
 		// validateID here too: the cleaner's own guard duplicates it, but rejecting
 		// a traversal-shaped id before handing it across the seam keeps the contract

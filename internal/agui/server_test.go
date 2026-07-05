@@ -83,6 +83,34 @@ func (f *fakeConvStore) ListContextRotEvents(context.Context, string) ([]convers
 	return nil, nil
 }
 
+// Phase 36 owner-scoped surface. GetForIdentity mirrors Get (the fake models no ownership)
+// so handleRun/handleMessages — which now resolve the thread via GetForIdentity — still find
+// a known thread and 404 an unknown one. The rest are no-op success shims (rows-affected==1)
+// exercised only for interface satisfaction here.
+func (f *fakeConvStore) GetForIdentity(ctx context.Context, id, _ string) (conversations.Conversation, error) {
+	return f.Get(ctx, id)
+}
+
+func (f *fakeConvStore) ListForIdentity(context.Context, string, bool) ([]conversations.Conversation, error) {
+	return nil, nil
+}
+
+func (f *fakeConvStore) SearchConversationTurnsForIdentity(context.Context, string, string, int) ([]conversations.SearchResult, error) {
+	return nil, nil
+}
+
+func (f *fakeConvStore) DeleteForIdentity(context.Context, string, string) (int64, error) {
+	return 1, nil
+}
+
+func (f *fakeConvStore) UpdateStatusForIdentity(context.Context, string, string, string) (int64, error) {
+	return 1, nil
+}
+
+func (f *fakeConvStore) RenameForIdentity(context.Context, string, string, string) (int64, error) {
+	return 1, nil
+}
+
 // scriptedRunner is a fake Runner whose Turn replays a fixed *agent.Event slice and
 // whose SubmitAnswers records the resume map it was given. turnErr injects a turn-level
 // error (drives the RUN_ERROR path) for the redaction test.

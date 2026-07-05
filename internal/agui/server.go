@@ -5,19 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"expvar"
-	"fmt"
 	"iter"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
-	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -77,6 +74,13 @@ type threadTryLocker interface {
 // the daemon composition root sets it via SetApprovalStore).
 type ApprovalStore interface {
 	ListPendingAll(ctx context.Context, limit int) ([]askuser.Pending, error)
+	// Phase 36 (MUSR-01 / D-06) owner-scoped surface: ListPendingAllForIdentity is the
+	// principal-scoped approval queue; GetByTokenForIdentity is the ownership gate the
+	// resolve handler consults (a hit ⇒ owned, proceed; a miss ⇒ probe GetByToken for the
+	// 403-vs-404 split). *askuser.Store satisfies these implicitly.
+	ListPendingAllForIdentity(ctx context.Context, identityID string, limit int) ([]askuser.Pending, error)
+	GetByTokenForIdentity(ctx context.Context, token, identityID string) (askuser.Pending, error)
+	GetByToken(ctx context.Context, token string) (askuser.Pending, error)
 }
 
 // Server is the minimal AG-UI HTTP gateway (Slice 8b): POST /agent/run streams a
@@ -270,7 +274,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "thread not found", http.StatusNotFound)
 		return
 	}
-	if _, err := s.conv.Get(ctx, in.ThreadID); err != nil {
+	// Owner-scoped thread resolution (MUSR-01 / D-06): a thread the caller does not own is
+	// 404 (hide existence) — B can neither read nor DRIVE a turn on A's conversation.
+	if _, err := s.conv.GetForIdentity(ctx, in.ThreadID, scopedIdentityID(ctx)); err != nil {
 		if errors.Is(err, conversations.ErrConversationNotFound) {
 			http.Error(w, "thread not found", http.StatusNotFound)
 			return
@@ -349,7 +355,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "thread not found", http.StatusNotFound)
 		return
 	}
-	if _, err := s.conv.Get(ctx, id); err != nil {
+	// Owner-scoped thread resolution (MUSR-01 / D-06): a foreign/absent thread is 404 before
+	// the history read, so a MESSAGES_SNAPSHOT never leaks another identity's conversation.
+	if _, err := s.conv.GetForIdentity(ctx, id, scopedIdentityID(ctx)); err != nil {
 		if errors.Is(err, conversations.ErrConversationNotFound) {
 			http.Error(w, "thread not found", http.StatusNotFound)
 			return
@@ -480,119 +488,4 @@ func (s *Server) bufferCap() int {
 		return s.cfg.BufferCap
 	}
 	return fanoutBuffer
-}
-
-// resumeAnswers maps the AG-UI protocol-native Resume[] onto the Runner's three-action
-// resume model: a resolved interrupt accepts (carrying any payload string as the answer),
-// a cancelled interrupt cancels. The InterruptID is the pause token the Runner keys on.
-func resumeAnswers(entries []types.ResumeEntry) map[string]runner.ResponseInput {
-	out := make(map[string]runner.ResponseInput, len(entries))
-	for _, e := range entries {
-		action := askuser.ActionAccept
-		if e.Status == types.ResumeStatusCancelled {
-			action = askuser.ActionCancel
-		}
-		out[e.InterruptID] = runner.ResponseInput{Action: action, Content: payloadString(e.Payload)}
-	}
-	return out
-}
-
-// payloadString renders a resume payload as the answer content: a string payload is
-// used verbatim; any other shape is JSON-encoded so structured answers survive. A nil
-// payload yields the empty string.
-func payloadString(payload any) string {
-	switch v := payload.(type) {
-	case nil:
-		return ""
-	case string:
-		return v
-	default:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return ""
-		}
-		return string(b)
-	}
-}
-
-// lastUserMessage extracts the final user message from the RunAgentInput history to
-// drive the turn (OQ3). It returns nil when there is no user message (a resume-only
-// run continues over the rehydrated history without a fresh user turn).
-func lastUserMessage(msgs []types.Message) (*string, error) {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if string(msgs[i].Role) != llm.RoleUser {
-			continue
-		}
-		if content, ok := msgs[i].Content.(string); ok {
-			if content != "" {
-				return &content, nil
-			}
-			continue
-		}
-		if msgs[i].Content != nil {
-			// The runner currently accepts only text. Reject structured multimodal
-			// user content explicitly instead of silently replaying old history.
-			return nil, errUnsupportedUserMessageContent
-		}
-	}
-	return nil, nil
-}
-
-// projectMessages projects the persisted llm.Message history onto the AG-UI
-// events.Message shape for the MESSAGES_SNAPSHOT body. The id is a stable
-// 1-based index; the role string is converted to the SDK Role type. An assistant
-// turn's ToolCalls are projected too (WR-04) — a combined ask_user pause turn carries
-// an empty Content and its entire payload in ToolCalls, so dropping them would lose
-// the pending call when a client rehydrates a paused thread.
-func projectMessages(hist []llm.Message) []events.Message {
-	msgs := make([]events.Message, 0, len(hist))
-	for i, m := range hist {
-		msgs = append(msgs, events.Message{
-			ID:         msgID(i),
-			Role:       types.Role(m.Role),
-			Content:    snapshotContent(m),
-			ToolCallID: m.ToolCallID,
-			ToolCalls:  projectToolCalls(m.ToolCalls),
-		})
-	}
-	return msgs
-}
-
-// msgID is the stable 1-based snapshot message id, shared by the plain projection and
-// the D-06 display-aware projection so both number messages identically.
-func msgID(i int) string { return fmt.Sprintf("msg-%d", i+1) }
-
-// projectToolCalls maps the persisted llm.ToolCall slice onto the SDK types.ToolCall
-// shape (id/type + nested function name/arguments). Returns nil for an empty input so
-// the omitempty `toolCalls` key is absent on non-tool turns.
-func projectToolCalls(calls []llm.ToolCall) []types.ToolCall {
-	if len(calls) == 0 {
-		return nil
-	}
-	out := make([]types.ToolCall, 0, len(calls))
-	for _, c := range calls {
-		out = append(out, types.ToolCall{
-			ID:   c.ID,
-			Type: c.Type,
-			Function: types.FunctionCall{
-				Name:      c.Function.Name,
-				Arguments: c.Function.Arguments,
-			},
-		})
-	}
-	return out
-}
-
-// redactEvent is the server-side belt-and-suspenders for T-12-10: the pure translator
-// forwards a runner error as a RUN_ERROR event carrying the raw err.Error() string. The
-// server sanitizes that message in-flight (before it reaches the wire) so a tool/infra
-// error embedding a DSN/key never leaks, without reaching into the boundary-tested
-// translator. Non-RUN_ERROR events pass through unchanged.
-func redactEvent(ev events.Event) events.Event {
-	re, ok := ev.(*events.RunErrorEvent)
-	if !ok {
-		return ev
-	}
-	re.Message = SanitizeString(re.Message)
-	return re
 }

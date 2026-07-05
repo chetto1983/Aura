@@ -316,6 +316,24 @@ func principalFrom(ctx context.Context) string {
 	return id
 }
 
+// localIdentityID is the seeded `local` identity (migration 0004) the owner-scoped web
+// surfaces (Phase 36) fall back to when no authenticated principal is on the context: the
+// loopback-dev pass-through (SecretConfigured=false, RequireAuth is a no-op) and any other
+// no-principal path (D-25). In production (Authula) RequireAuth always stamps the principal
+// via withPrincipal, so this fallback is dev-only and never silently scopes a real
+// authenticated request to `local`.
+const localIdentityID = "00000000-0000-0000-0000-000000000001"
+
+// scopedIdentityID resolves the owner key for an owner-scoped store call (Phase 36 MUSR-01):
+// the authenticated principal when present, else the `local` fallback so the operator is
+// never self-locked-out of their own conversations/approvals by the RLS owner policy.
+func scopedIdentityID(ctx context.Context) string {
+	if id := principalFrom(ctx); id != "" {
+		return id
+	}
+	return localIdentityID
+}
+
 // wantsHTML reports whether the request is a browser navigation (an Accept header that
 // prefers text/html) rather than an API/XHR call. RequireAuth redirects a browser GET
 // to the login page but 401s an API request, so a fetch() gets a clean status instead

@@ -29,9 +29,11 @@ func newFakeStore(db sqlc.DBTX) *Store {
 	return &Store{q: sqlc.New(db)}
 }
 
-// idRow builds the four positional scan values for one aura.identities row, in the exact
-// order + type the generated GetIdentity*/ListIdentities loops scan into
-// (&ID pgtype.UUID, &Name string, &Kind string, &CreatedAt pgtype.Timestamptz).
+// idRow builds the positional scan values for one aura.identities row, in the exact order
+// + type the generated GetIdentity*/ListIdentities loops scan into (&ID pgtype.UUID,
+// &Name string, &Kind string, &CreatedAt pgtype.Timestamptz, &DeactivatedAt, &PurgeAfter —
+// the last two are the 0029 soft-delete columns the Phase-36 queries now select; NULL for a
+// live identity, ignored by the Identity domain projection).
 func idRow(t *testing.T, id, name, kind string) []any {
 	t.Helper()
 	u, err := uuid.Parse(id)
@@ -43,6 +45,8 @@ func idRow(t *testing.T, id, name, kind string) []any {
 		name,
 		kind,
 		pgtype.Timestamptz{Time: time.Unix(0, 0), Valid: true},
+		pgtype.Timestamptz{}, // deactivated_at (NULL — live identity)
+		pgtype.Timestamptz{}, // purge_after (NULL — live identity)
 	}
 }
 

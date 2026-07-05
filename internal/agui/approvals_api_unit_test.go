@@ -36,6 +36,22 @@ func (f *fakeApprovalStore) ListPendingAll(_ context.Context, _ int) ([]askuser.
 	return f.pendings, f.err
 }
 
+// Phase 36 owner-scoped surface. ListPendingAllForIdentity mirrors ListPendingAll (the fake
+// models no ownership) so the list-projection/error branches stay covered. GetByToken*
+// satisfy the resolve ownership-gate interface; the resolve suites wire approvals=nil (the
+// gate is skipped), so these are not exercised here — the real gate is db_integration.
+func (f *fakeApprovalStore) ListPendingAllForIdentity(_ context.Context, _ string, _ int) ([]askuser.Pending, error) {
+	return f.pendings, f.err
+}
+
+func (f *fakeApprovalStore) GetByTokenForIdentity(_ context.Context, _, _ string) (askuser.Pending, error) {
+	return askuser.Pending{}, nil
+}
+
+func (f *fakeApprovalStore) GetByToken(_ context.Context, _ string) (askuser.Pending, error) {
+	return askuser.Pending{}, nil
+}
+
 // newResolveTestServer builds a server over the scripted runner (optionally also a
 // fake approval store) and returns the httptest server.
 func newResolveTestServer(t *testing.T, run Runner, approvals ApprovalStore) *httptest.Server {

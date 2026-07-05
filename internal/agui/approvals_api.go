@@ -72,7 +72,9 @@ func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := parseApprovalsLimit(r.URL.Query().Get("limit"))
-	pendings, err := s.approvals.ListPendingAll(r.Context(), limit)
+	// Owner-scoped cross-thread pending read (MUSR-01 / APRV-01): only the principal's own
+	// pending approvals. The `local` fallback keeps the loopback-dev operator's queue intact.
+	pendings, err := s.approvals.ListPendingAllForIdentity(r.Context(), scopedIdentityID(r.Context()), limit)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
@@ -127,6 +129,27 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "action must be accept, decline, or cancel", http.StatusBadRequest)
 		return
+	}
+	// Owner gate (MUSR-01 / D-06): resolve only the caller's own approval. The atomic
+	// resume itself stays the Runner's job (SubmitAnswers → MarkResumedTx, never forked);
+	// this gate authorizes it. A miss on the scoped read means the token is not the caller's:
+	// probe unscoped existence to split 403 (a known-foreign token, a mutate on someone
+	// else's approval) from 404 (unknown/already-resolved). Skipped only when the approval
+	// store is unwired (tests); the daemon always wires it via SetApprovalStore.
+	if s.approvals != nil {
+		identity := scopedIdentityID(r.Context())
+		if _, err := s.approvals.GetByTokenForIdentity(r.Context(), token, identity); err != nil {
+			if errors.Is(err, askuser.ErrPauseNotFound) {
+				if _, probeErr := s.approvals.GetByToken(r.Context(), token); probeErr == nil {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+				http.Error(w, "approval not found or already resolved", http.StatusNotFound)
+				return
+			}
+			http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+			return
+		}
 	}
 	answers := map[string]runner.ResponseInput{
 		token: {Action: action, Content: body.Content},

@@ -1,20 +1,20 @@
 -- name: CreateIdentity :one
 INSERT INTO aura.identities (id, name, kind)
 VALUES ($1, $2, $3)
-RETURNING id, name, kind, created_at;
+RETURNING id, name, kind, created_at, deactivated_at, purge_after;
 
 -- name: GetIdentityByName :one
-SELECT id, name, kind, created_at
+SELECT id, name, kind, created_at, deactivated_at, purge_after
 FROM aura.identities
 WHERE name = $1;
 
 -- name: GetIdentityByID :one
-SELECT id, name, kind, created_at
+SELECT id, name, kind, created_at, deactivated_at, purge_after
 FROM aura.identities
 WHERE id = $1;
 
 -- name: ListIdentities :many
-SELECT id, name, kind, created_at
+SELECT id, name, kind, created_at, deactivated_at, purge_after
 FROM aura.identities
 ORDER BY created_at ASC, name ASC;
 

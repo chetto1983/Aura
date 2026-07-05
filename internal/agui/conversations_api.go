@@ -95,6 +95,19 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 	http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 }
 
+// writeForeignMutateStatus resolves a not-owned mutate (a *ForIdentity mutate that affected
+// 0 rows) to the D-06 wire status: 403 when the id exists (a known-foreign resource the
+// caller may not mutate) else 404. The existence check is the UNSCOPED base Get — the pool
+// path is permissive-on-unset, so it observes a foreign row — used ONLY to choose the
+// status code, never to return another identity's data.
+func (s *Server) writeForeignMutateStatus(w http.ResponseWriter, r *http.Request, id string) {
+	if _, err := s.conv.Get(r.Context(), id); err == nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	http.Error(w, "conversation not found", http.StatusNotFound)
+}
+
 type createConversationBody struct {
 	Title string `json:"title"`
 }
@@ -146,11 +159,13 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 	writeJSONStatus(w, http.StatusCreated, conv)
 }
 
-// handleListConversations returns Store.List(ctx, includeArchived). ?archived=true
-// adds the archived rows (deleted rows are always excluded by the query).
+// handleListConversations returns the authenticated principal's conversations
+// (ListForIdentity — MUSR-01, owner-scoped through WithIdentityTx). ?archived=true adds
+// the archived rows (deleted rows are always excluded by the query). The `local` fallback
+// keeps the loopback-dev operator seeing their own threads (no self-lockout).
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
 	includeArchived := r.URL.Query().Get("archived") == "true"
-	rows, err := s.conv.List(r.Context(), includeArchived)
+	rows, err := s.conv.ListForIdentity(r.Context(), scopedIdentityID(r.Context()), includeArchived)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
@@ -166,7 +181,9 @@ func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	conv, err := s.conv.Get(r.Context(), id)
+	// Owner-scoped read (MUSR-01 / D-06): a foreign or absent id both map to 404 via
+	// ErrConversationNotFound — a read hides the existence of another identity's thread.
+	conv, err := s.conv.GetForIdentity(r.Context(), id, scopedIdentityID(r.Context()))
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -185,7 +202,9 @@ func (s *Server) handleSearchConversations(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	limit := parseLimit(r.URL.Query().Get("limit"))
-	hits, err := s.conv.SearchConversationTurns(r.Context(), q, limit)
+	// Owner-scoped FTS (MUSR-01): hits are filtered to the principal's conversations so a
+	// search never surfaces another identity's turn content.
+	hits, err := s.conv.SearchConversationTurnsForIdentity(r.Context(), q, scopedIdentityID(r.Context()), limit)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
@@ -200,6 +219,11 @@ func (s *Server) handleSearchConversations(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleConversationRotEvents(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
+		return
+	}
+	// Owner gate (MUSR-01 / D-06): a foreign/absent id 404s before the unscoped read.
+	if _, err := s.conv.GetForIdentity(r.Context(), id, scopedIdentityID(r.Context())); err != nil {
+		writeStoreErr(w, err)
 		return
 	}
 	events, err := s.conv.ListContextRotEvents(r.Context(), id)
@@ -232,8 +256,15 @@ func (s *Server) handleRenameConversation(w http.ResponseWriter, r *http.Request
 		http.Error(w, "title must not be empty", http.StatusBadRequest)
 		return
 	}
-	if err := s.conv.Rename(r.Context(), id, body.Title); err != nil {
+	// Owner-scoped mutate (MUSR-01 / D-06): rename only the caller's own conversation;
+	// rows-affected==0 is a foreign (403) or absent (404) id.
+	affected, err := s.conv.RenameForIdentity(r.Context(), id, scopedIdentityID(r.Context()), body.Title)
+	if err != nil {
 		writeStoreErr(w, err)
+		return
+	}
+	if affected == 0 {
+		s.writeForeignMutateStatus(w, r, id)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -250,8 +281,14 @@ func (s *Server) handleArchiveConversation(w http.ResponseWriter, r *http.Reques
 	if strings.HasSuffix(r.URL.Path, "/unarchive") {
 		status = conversations.StatusActive
 	}
-	if err := s.conv.UpdateStatus(r.Context(), id, status); err != nil {
+	// Owner-scoped mutate (MUSR-01 / D-06): archive/unarchive only the caller's own thread.
+	affected, err := s.conv.UpdateStatusForIdentity(r.Context(), id, scopedIdentityID(r.Context()), status)
+	if err != nil {
 		writeStoreErr(w, err)
+		return
+	}
+	if affected == 0 {
+		s.writeForeignMutateStatus(w, r, id)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -264,8 +301,15 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if err := s.conv.Delete(r.Context(), id); err != nil {
+	// Owner-scoped hard delete (MUSR-01 / D-06): delete only the caller's own conversation;
+	// rows-affected==0 is a foreign (403) or absent (404) id.
+	affected, err := s.conv.DeleteForIdentity(r.Context(), id, scopedIdentityID(r.Context()))
+	if err != nil {
 		writeStoreErr(w, err)
+		return
+	}
+	if affected == 0 {
+		s.writeForeignMutateStatus(w, r, id)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

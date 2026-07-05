@@ -45,6 +45,9 @@ type Querier interface {
 	CreateStorageObject(ctx context.Context, arg CreateStorageObjectParams) (AuraStorageObjects, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
+	// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
+	// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
+	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
 	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
@@ -58,6 +61,10 @@ type Querier interface {
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
+	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
+	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
+	// Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
+	GetConversationForIdentity(ctx context.Context, arg GetConversationForIdentityParams) (AuraConversations, error)
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
@@ -66,6 +73,11 @@ type Querier interface {
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
+	// Owner-scoped single-pause read (Phase 36 MUSR-01 / D-06): the same projection as
+	// GetPausedStateByToken with an identity_id owner predicate. A miss (unknown token OR a
+	// token owned by another identity) is the caller's 404/403 signal. Run through
+	// db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
+	GetPausedStateByTokenForIdentity(ctx context.Context, arg GetPausedStateByTokenForIdentityParams) (AuraPausedStates, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
@@ -112,6 +124,9 @@ type Querier interface {
 	// be non-deterministic. LIMIT $1 caps the scan (a single operator's pending set is
 	// tiny; no new index is warranted — RESEARCH A4).
 	ListAllPendingPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
+	// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
+	// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
+	ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLibraryParams) ([]AuraAssets, error)
 	ListAssetsForThread(ctx context.Context, arg ListAssetsForThreadParams) ([]AuraAssets, error)
@@ -125,6 +140,9 @@ type Querier interface {
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
+	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
+	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
+	ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error)
 	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
 	ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
@@ -167,6 +185,8 @@ type Querier interface {
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
+	// Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
+	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
@@ -187,6 +207,9 @@ type Querier interface {
 	UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUploadedParams) (AuraAssets, error)
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
+	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
+	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
+	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
 	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error)
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)

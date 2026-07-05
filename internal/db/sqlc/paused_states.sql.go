@@ -43,7 +43,7 @@ func (q *Queries) CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.
 const getPausedStateByToken = `-- name: GetPausedStateByToken :one
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer
+       created_at, resumed_at, resumed_answer, identity_id
 FROM aura.paused_states
 WHERE token = $1
 `
@@ -65,6 +65,47 @@ func (q *Queries) GetPausedStateByToken(ctx context.Context, token pgtype.UUID) 
 		&i.CreatedAt,
 		&i.ResumedAt,
 		&i.ResumedAnswer,
+		&i.IdentityID,
+	)
+	return i, err
+}
+
+const getPausedStateByTokenForIdentity = `-- name: GetPausedStateByTokenForIdentity :one
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer, identity_id
+FROM aura.paused_states
+WHERE token = $1
+  AND identity_id = $2
+`
+
+type GetPausedStateByTokenForIdentityParams struct {
+	Token      pgtype.UUID `json:"token"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Owner-scoped single-pause read (Phase 36 MUSR-01 / D-06): the same projection as
+// GetPausedStateByToken with an identity_id owner predicate. A miss (unknown token OR a
+// token owned by another identity) is the caller's 404/403 signal. Run through
+// db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
+func (q *Queries) GetPausedStateByTokenForIdentity(ctx context.Context, arg GetPausedStateByTokenForIdentityParams) (AuraPausedStates, error) {
+	row := q.db.QueryRow(ctx, getPausedStateByTokenForIdentity, arg.Token, arg.IdentityID)
+	var i AuraPausedStates
+	err := row.Scan(
+		&i.Token,
+		&i.ConversationID,
+		&i.Kind,
+		&i.Question,
+		&i.Options,
+		&i.Priority,
+		&i.ResumeContext,
+		&i.ToolCallID,
+		&i.ProxiedFromChildID,
+		&i.ProxiedToolCallID,
+		&i.CreatedAt,
+		&i.ResumedAt,
+		&i.ResumedAnswer,
+		&i.IdentityID,
 	)
 	return i, err
 }
@@ -108,7 +149,7 @@ func (q *Queries) InsertPausedState(ctx context.Context, arg InsertPausedStatePa
 const listAllPendingPausedStates = `-- name: ListAllPendingPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer
+       created_at, resumed_at, resumed_answer, identity_id
 FROM aura.paused_states
 WHERE resumed_at IS NULL
 ORDER BY priority DESC, created_at ASC, token ASC
@@ -146,6 +187,60 @@ func (q *Queries) ListAllPendingPausedStates(ctx context.Context, limit int32) (
 			&i.CreatedAt,
 			&i.ResumedAt,
 			&i.ResumedAnswer,
+			&i.IdentityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllPendingPausedStatesForIdentity = `-- name: ListAllPendingPausedStatesForIdentity :many
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer, identity_id
+FROM aura.paused_states
+WHERE resumed_at IS NULL
+  AND identity_id = $1
+ORDER BY priority DESC, created_at ASC, token ASC
+LIMIT $2
+`
+
+type ListAllPendingPausedStatesForIdentityParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Limit      int32       `json:"limit"`
+}
+
+// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
+// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
+func (q *Queries) ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error) {
+	rows, err := q.db.Query(ctx, listAllPendingPausedStatesForIdentity, arg.IdentityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraPausedStates{}
+	for rows.Next() {
+		var i AuraPausedStates
+		if err := rows.Scan(
+			&i.Token,
+			&i.ConversationID,
+			&i.Kind,
+			&i.Question,
+			&i.Options,
+			&i.Priority,
+			&i.ResumeContext,
+			&i.ToolCallID,
+			&i.ProxiedFromChildID,
+			&i.ProxiedToolCallID,
+			&i.CreatedAt,
+			&i.ResumedAt,
+			&i.ResumedAnswer,
+			&i.IdentityID,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +255,7 @@ func (q *Queries) ListAllPendingPausedStates(ctx context.Context, limit int32) (
 const listPendingPausedStates = `-- name: ListPendingPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer
+       created_at, resumed_at, resumed_answer, identity_id
 FROM aura.paused_states
 WHERE conversation_id = $1
   AND resumed_at IS NULL
@@ -190,6 +285,7 @@ func (q *Queries) ListPendingPausedStates(ctx context.Context, conversationID pg
 			&i.CreatedAt,
 			&i.ResumedAt,
 			&i.ResumedAnswer,
+			&i.IdentityID,
 		); err != nil {
 			return nil, err
 		}
@@ -204,7 +300,7 @@ func (q *Queries) ListPendingPausedStates(ctx context.Context, conversationID pg
 const listRecentPausedStates = `-- name: ListRecentPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer
+       created_at, resumed_at, resumed_answer, identity_id
 FROM aura.paused_states
 ORDER BY created_at DESC, token ASC
 LIMIT $1
@@ -233,6 +329,7 @@ func (q *Queries) ListRecentPausedStates(ctx context.Context, limit int32) ([]Au
 			&i.CreatedAt,
 			&i.ResumedAt,
 			&i.ResumedAnswer,
+			&i.IdentityID,
 		); err != nil {
 			return nil, err
 		}
