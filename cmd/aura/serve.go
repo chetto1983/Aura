@@ -268,6 +268,21 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		return nil, err
 	}
 
+	// VERIF-7 / D-18: wire the background-shell poll/kill admin-capability seam to the live
+	// identity store now that it exists. buildBaseRegistryWithHandles retained the ShellPoll/
+	// ShellKill pointers with a nil .Caps (owner-only fail-closed on the pool-free manifest
+	// paths); at serve boot chat.identity (*identity.Store) is available, so setting .Caps
+	// makes the admin cross-session recovery exemption reachable (adminShellCapability =
+	// governance.write, which the seeded local admin holds via 0026) while a foreign non-admin
+	// poll/kill stays denied. chat.identity satisfies the tools capabilityChecker seam via
+	// HasCapability; the nil-pointer guard keeps a store-less path owner-only.
+	if chat.toolHandles.ShellPoll != nil {
+		chat.toolHandles.ShellPoll.Caps = chat.identity
+	}
+	if chat.toolHandles.ShellKill != nil {
+		chat.toolHandles.ShellKill.Caps = chat.identity
+	}
+
 	store := cron.New(chat.pool)
 	objectStore, err := buildObjectStore(ctx, chat.cfg)
 	if err != nil {

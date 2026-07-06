@@ -113,6 +113,12 @@ func buildRegistry() *tools.Registry {
 type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
+	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
+	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
+	// nil Caps (owner-only fail-closed), and serve.go sets Caps = the identity store once it
+	// exists, making the admin cross-session poll/kill recovery exemption reachable.
+	ShellPoll *tools.ShellPoll
+	ShellKill *tools.ShellKill
 }
 
 // buildBaseRegistry is the shared composition root for every boot path. ts is the
@@ -157,9 +163,16 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools
 	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: handles.BackgroundShells, Approvals: handles.ShellApprovals})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
 	// output from, and terminate, a background shell_exec job. Deferred — the model
-	// tool_searches for them once it holds a background shell_id to follow.
-	reg.Register(&tools.ShellPoll{Shells: handles.BackgroundShells})
-	reg.Register(&tools.ShellKill{Shells: handles.BackgroundShells})
+	// tool_searches for them once it holds a background shell_id to follow. The pointers
+	// are retained on handles (VERIF-7) so serve boot can wire .Caps to the live capability
+	// store (D-18 admin cross-session recovery); .Caps stays nil here so the pool-free
+	// manifest paths keep the owner-only fail-closed default.
+	sp := &tools.ShellPoll{Shells: handles.BackgroundShells}
+	sk := &tools.ShellKill{Shells: handles.BackgroundShells}
+	handles.ShellPoll = sp
+	handles.ShellKill = sk
+	reg.Register(sp)
+	reg.Register(sk)
 	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
 	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
 	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside
