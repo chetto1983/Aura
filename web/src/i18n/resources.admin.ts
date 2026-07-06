@@ -81,7 +81,7 @@ export const adminIt = {
     audit: {
       kicker: 'Audit',
       heading: 'Attività',
-      body: 'Attività recenti di MCP, skill e tool per l\'identità selezionata, dalla più recente.',
+      body: "Attività recenti di MCP, skill e tool per l'identità selezionata, dalla più recente.",
       loading: 'Caricamento attività...',
       error: 'Impossibile caricare le attività. Riprova.',
       empty: 'Ancora nessuna attività registrata per questa identità.',

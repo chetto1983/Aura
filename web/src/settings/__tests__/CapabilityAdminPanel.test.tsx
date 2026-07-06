@@ -106,7 +106,9 @@ describe('CapabilityAdminPanel', () => {
       vi.fn((input: RequestInfo | URL) => {
         if (urlOf(input).includes('/api/me')) {
           return Promise.resolve(
-            new Response(JSON.stringify({ identity_id: 'x', capabilities: ['*'] }), { status: 200 }),
+            new Response(JSON.stringify({ identity_id: 'x', capabilities: ['*'] }), {
+              status: 200,
+            }),
           );
         }
         return Promise.resolve(new Response('boom', { status: 500 }));

@@ -50,15 +50,23 @@ describe('adminApi fetchers', () => {
       'fetch',
       vi.fn(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ identities: [{ id: 'a', name: 'A', kind: 'user', capabilities: [] }] }), {
-            status: 200,
-          }),
+          new Response(
+            JSON.stringify({
+              identities: [{ id: 'a', name: 'A', kind: 'user', capabilities: [] }],
+            }),
+            {
+              status: 200,
+            },
+          ),
         ),
       ),
     );
     await expect(fetchAdminIdentities()).resolves.toHaveLength(1);
 
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))),
+    );
     await expect(fetchAdminIdentities()).resolves.toEqual([]);
   });
 
@@ -100,7 +108,10 @@ describe('adminApi fetchers', () => {
     expect(seen?.url).toBe('/api/admin/identities/id-1/capabilities/governance.write');
     expect(seen?.method).toBe('DELETE');
 
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('nope', { status: 403 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('nope', { status: 403 }))),
+    );
     await expect(revokeCapability('id-1', 'x')).rejects.toThrow('HTTP 403');
   });
 

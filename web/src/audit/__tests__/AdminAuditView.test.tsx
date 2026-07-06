@@ -59,8 +59,20 @@ describe('AdminAuditView', () => {
   it('renders the activity feed for the default identity with source badges', async () => {
     stub(() => ({
       events: [
-        { source: 'mcp', action: 'install', target: 'aura-memory', detail: '', created_at: '2026-07-05T10:00:00Z' },
-        { source: 'skill', action: 'create', target: 'my-skill', detail: 'model', created_at: '2026-07-05T09:00:00Z' },
+        {
+          source: 'mcp',
+          action: 'install',
+          target: 'aura-memory',
+          detail: '',
+          created_at: '2026-07-05T10:00:00Z',
+        },
+        {
+          source: 'skill',
+          action: 'create',
+          target: 'my-skill',
+          detail: 'model',
+          created_at: '2026-07-05T09:00:00Z',
+        },
       ],
       limit: 25,
       offset: 0,
@@ -75,9 +87,7 @@ describe('AdminAuditView', () => {
   it('shows the empty state when an identity has no activity', async () => {
     stub(() => ({ events: [], limit: 25, offset: 0 }));
     renderView();
-    expect(
-      await screen.findByText('No recorded activity for this identity yet.'),
-    ).toBeTruthy();
+    expect(await screen.findByText('No recorded activity for this identity yet.')).toBeTruthy();
   });
 
   it('pages forward with Next and requests the next offset', async () => {
@@ -100,16 +110,12 @@ describe('AdminAuditView', () => {
     const spy = stub(() => ({ events: [], limit: 25, offset: 0 }));
     renderView();
     await screen.findByText('No recorded activity for this identity yet.');
-    const before = spy.mock.calls.filter((c) =>
-      urlOf(c[0]).includes('/api/admin/audit'),
-    ).length;
+    const before = spy.mock.calls.filter((c) => urlOf(c[0]).includes('/api/admin/audit')).length;
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     await waitFor(() => {
-      const after = spy.mock.calls.filter((c) =>
-        urlOf(c[0]).includes('/api/admin/audit'),
-      ).length;
+      const after = spy.mock.calls.filter((c) => urlOf(c[0]).includes('/api/admin/audit')).length;
       expect(after).toBeGreaterThan(before);
     });
   });

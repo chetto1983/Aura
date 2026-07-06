@@ -233,9 +233,7 @@ describe('AppShell', () => {
         if (url.includes('/api/conversations')) {
           return Promise.resolve(new Response('[]', { status: 200 }));
         }
-        return Promise.resolve(
-          new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }),
-        );
+        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
       }),
     );
     renderShell();

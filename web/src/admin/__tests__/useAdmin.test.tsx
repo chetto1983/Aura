@@ -65,7 +65,10 @@ describe('useCapabilities', () => {
   });
 
   it('fails closed (not admin) when /api/me errors', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('no', { status: 500 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('no', { status: 500 }))),
+    );
     const { result } = renderHook(() => useCapabilities(), { wrapper: wrapper() });
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
@@ -81,7 +84,9 @@ describe('admin roster + mutations', () => {
       vi.fn(() =>
         Promise.resolve(
           new Response(
-            JSON.stringify({ identities: [{ id: 'a', name: 'A', kind: 'user', capabilities: ['agent.run'] }] }),
+            JSON.stringify({
+              identities: [{ id: 'a', name: 'A', kind: 'user', capabilities: ['agent.run'] }],
+            }),
             { status: 200 },
           ),
         ),
