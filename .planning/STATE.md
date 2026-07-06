@@ -2,18 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 36
-current_phase_name: Multi-User Identity Isolation + Authula Cutover
-status: gaps_found
-stopped_at: "Phase 36 verification: gaps_found (7 gaps) + code-review issues_found (1 Critical, 3 High) — pending gap-closure before phase can complete"
-last_updated: "2026-07-06T04:11:31.046Z"
-last_activity: 2026-07-06
-last_activity_desc: 36-12 complete (D-12 backfill + D-13 runbook + musr-e2e CI job + five-tag two-identity acceptance E2E; branch-route isolation hole fixed; MUSR-01/02/06 [x]; live tiers compile-clean, MUST run green in WSL/CI)
+status: executing
+stopped_at: Completed 36-13-PLAN.md
+last_updated: "2026-07-06T07:05:20.000Z"
+last_activity: 2026-07-06 -- 36-13 gap-closure complete (VERIF-1 migrate-0026 anchor + VERIF-6 CI token gate)
 progress:
   total_phases: 11
   completed_phases: 5
-  total_plans: 43
-  completed_plans: 43
+  total_plans: 49
+  completed_plans: 44
   percent: 45
 ---
 
@@ -28,10 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — EXECUTION COMPLETE (12/12 plans) but VERIFICATION = gaps_found; phase NOT complete
-Plan: All 12 plans executed (Waves 1-5). Verification (36-VERIFICATION.md) found 7 gaps; security code-review (36-REVIEW.md) found 1 Critical + 3 High isolation/authz defects
-Status: gaps_found — pending gap-closure (/gsd-plan-phase 36 --gaps) + WSL/CI live-tier run; do NOT mark phase complete or push until closed
-Last activity: 2026-07-06 — 36-12 complete (D-12 backfill + D-13 runbook + musr-e2e CI job + five-tag two-identity acceptance E2E; branch-route isolation hole fixed; MUSR-01/02/06 [x]; live tiers compile-clean, MUST run green in WSL/CI)
+Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — EXECUTING (gap-closure)
+Plan: 13 of 18 complete (gap-closure Wave 1; 36-14..36-18 remain)
+Status: Executing Phase 36 gap-closure — 36-13 done; next 36-14 (daemon provisioning wiring + migration 0033 + deactivation auth-gate)
+Last activity: 2026-07-06 -- 36-13 gap-closure complete (VERIF-1 migrate-0026 anchor + VERIF-6 CI token gate)
+
+#### 36-13 — CI-correctness gap-closure: version-anchor the migration-0026 reversibility test (VERIF-1) + wire `check-no-url-tokens.sh` into CI as a blocking gate (VERIF-6). Wave-1 gap-closure slice; removes the one CONFIRMED-broken test and adds the missing MUSR-06 regression gate so 36-18's push can go green. **Task 1 (`653dfdd3`, test):** `internal/db/migrate_0026_integration_test.go` — golang-migrate's `MigrateSteps(n)` is a RELATIVE step from the CURRENT head, so the old bare `-1`/`+1` straddle reversed whatever the latest migration was (0032 owner-RLS with 32 migrations present), NOT 0026 — CONFIRMED failing on GitHub Actions run 28753262579 ("governance.write present=true, want present=false"). Fix: capture `head := currentMigrationVersion(...)`, then POSITION down to exactly v26 (`stepDownToV26 := 26 - head`, a non-positive delta reversing 0027..HEAD but leaving 0026 applied) BEFORE the straddle, so `-1` now reverses 26→25 (0026's OWN down: the three explicit admin caps governance.write/identity.create/agent.run drop, the 0004 `*` wildcard survives) and `+1` re-applies 25→26 (idempotent restore). Tail rewritten: the FIRST post-round-trip `Migrate` re-applies exactly `head-26` migrations (asserted), a SECOND `Migrate` returns 0 (the reversibility/no-pending invariant). Fresh-DB drill, `EnsureRoles`, pools, `localCapabilitySet0026`, `requireCap0026`, the `//go:build db_integration` tag + `envOrSkip(t,"POSTGRES_PASSWORD")` (t.Fatal under $CI) all kept byte-identical; no migration/prod code touched. Delta hoisted into a named var so the `26 - head` positioning is gofmt-clean AND greppable-before-straddle (lines 99→105/115). **Task 2 (`9796c326`, chore):** `.github/workflows/ci.yml` — added ONE blocking step "No long-lived token in URLs (MUSR-06)" `run: bash scripts/check-no-url-tokens.sh` in the build-and-lint job, immediately AFTER the "File-size cap (600 LOC)" step, mirroring the sibling static-gate shape; NO `continue-on-error`/`|| true` so a token-in-URL regression fails the pipeline (closes the 36-11→36-12 handoff commitment the verifier flagged as never honored). **VERIFICATION (all real):** gofmt/`go build`/`go vet` clean under `-tags db_integration`; the positioning `26 - head` (line 99) precedes the bare `-1` (105)/`+1` (115) straddle; **LIVE WSL `db_integration TestMigration0026LocalAdminCapsRoundTrip` PASS (1.04s)** against the live head≥32 Postgres — the confirmed-broken test is now green; `bash scripts/check-no-url-tokens.sh` exit 0 + `--self-test` exit 0; `ci.yml` parses as valid YAML (python yaml.safe_load). Pre-commit hooks (gofmt/vet/file-size) green on both commits. NO new packages/migrations/env (threat register T-36-13-SC: zero installs; go.mod/go.sum/package.json byte-unchanged). DEVIATIONS: none — plan executed exactly as written (the delta-hoist is a gofmt-clean realization of the plan's `26 - head` positioning, not a scope change).
 
 #### 36-12 — Documents backfill + flag-flip rollout runbook + CI live stack (Garage-admin+Authula) + two-identity cross-deny live E2E (D-29 acceptance gate). **Wave-5 keystone — closes the phase.** **Task 1 (`26c2cae8`, feat):** `internal/documents/backfill.go` `Backfiller.Run` MERGEs `(:User {identifier})-[:HAS_DOCUMENT]->(:Document)` in two idempotent passes — **Op 1** attributes each Postgres-mapped doc to its real owner (`LoadDocumentOwners` unions `aura.assets.document_id` + `aura.documents.metadata->>'search_document_id'`, keyed by `identity_id::text`), MATCHing (never MERGEing) the `:Document` so a stale row can't resurrect a purged doc; **Op 2** nets every still-unowned `:Document` (CLI/pre-36-05 legacy) to the operator — the D-12 no-orphan guarantee. The operator identifier is the seeded local **UUID (…001)**, matching what ingest (`asset.IdentityID`) + retrieval (`identityctx.IdentityID`) use — attaching under the literal `'local'` would orphan the operator's docs post-flip. `cmd/aura/documents_backfill.go` = the `aura documents backfill [--operator]` subcommand (wired in `main.go`, factory/owners seam for units). `docs/runbooks/musr-rollout.md` = the enforced **deploy(off)→backfill→verify→flip(on)** order: flag-off runs plan-05's unscoped fallback (safe, no enforcement), the flip is the ONLY, REVERSIBLE enforcement switch and MUST follow the backfill. Tests: `neo4j_integration TestDocumentsBackfill` (Op1/Op2/idempotency/operator-sees-own) + cmd/aura dispatch units. **Task 2 (`7221787e`, chore):** `.github/workflows/ci.yml` `musr-e2e` job brings up Postgres+Neo4j+Garage(Admin API v2)+embedded Authula, exports composed DSNs (`AURA_DB_URL`/`AURA_DB_MIGRATE_URL`, not just `POSTGRES_*`) + `AURA_GARAGE_ADMIN_ENDPOINT`/`TOKEN` + Authula secrets + `AURA_MUSR_ISOLATION=true`, runs the five-tag matrix under `CI=true` (envOrSkip t.Fatal → no-skip-as-green); always-compile floor + a Garage-admin loopback reachability pre-check. `docker/garage/garage.ci.toml` (admin `:3903`, separate from prod so CI can publish the port without touching prod's internal-only posture) + `.github/compose.ci-musr.yaml` (mounts the CI toml + publishes 3903 to loopback). `grep -c testcontainers` == 0. **Task 3 (`13ffa4e6`, test):** `cmd/aura/two_identity_e2e_test.go` (+`_harness_test.go`), five-tag (`db_integration neo4j_integration garage_integration authula_integration musr_e2e`) acceptance gate, runs with `AURA_MUSR_ISOLATION=on`: real HTTP **GET 404** for B on A's thread (agui `NewServer`+`RequireAuth`+`SessionValidator` header seam + reusable `identityCheckerAdapter`); owner-store gate (404-read/403-mutate-0-rows/list) + the **RLS kernel backstop** (raw read under B's identity var → 0 of A's rows); approvals cross-deny (trigger-stamped owner); documents flag-on scoped search (B empty, A own); Garage per-identity buckets (A's object unreadable with B's scoped key) + the **request-time resolver selection** (B→B's creds, A→A's — carry-forward #4 resolver leg); MUSR-02 (B-created conv owned by B + runs); MUSR-06 (`TestProvisionLoginIsolatedRun`: provision→isolated-run + working break-glass mint). Compiles under all five tags + every subset. **DEVIATIONS:** (Rule 2 security fix-on-touch, `9bb0a9c5`) owner-scoped the D-09 branch routes — `internal/agui/conversations_branch_api.go` left `GET /branches` + `POST /edit` (fork+re-run) + `/branches/{seq}/select` UNSCOPED, so B could fork+re-run/enumerate A's conversation (T-cross-deny); added `ownBranchConvOr404` (GetForIdentity+scopedIdentityID→404) at the top of each handler mirroring `handleConversationRotEvents`, + regression tests (`errConvStore` gained `ownsGate` for the two pre-existing branch input/fork tests). (Rule 3) added `.github/compose.ci-musr.yaml` beyond the plan's file list (the host-run tier needs the internal-only admin port on loopback; prod publish is forbidden Pitfall 3). (Design correction) backfill operator identifier = UUID not `'local'` (documented). **RESIDUAL BOOT-WIRING GAPS recorded for the verifier** (all fail-closed-secure today, large/architectural, out of the 3-task scope): [36-08] serve-root ObjectStore/Filesystem/SagaJournal adapters + purge scheduler + D-15 login reader + deactivation admin action NOT wired (mechanism dormant in prod); [36-03] `ShellPoll/ShellKill.Caps` nil → owner-only fail-closed (D-18 admin cross-session recovery inactive); [36-06/08] asset service consumes the SHARED `objectstore.Store` not the per-identity resolver (objects land in the shared bucket; access still isolated at the Postgres owner-scoping layer). NO new packages/migrations/env. NO-SKIP-AS-GREEN: `go build ./...` + `go vet` + untagged `go test ./cmd/aura/ ./internal/documents/ ./internal/agui/` green here; the five-tag E2E + `neo4j_integration TestDocumentsBackfill` compile-clean but the **live run + `-race` were NOT run on this Windows host (no stack/CGO) — honestly `unknown`, MUST run green in WSL/CI (the `musr-e2e` job) before phase close.** MUSR-01/02/06 marked `[x]` (mechanism + acceptance E2E delivered + unit/HTTP-proven; the live E2E gate is the documented WSL/CI must-run, matching the 36-03 MUSR-03/04 precedent).
 
@@ -485,6 +484,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 36-03: background job IDs are crypto/rand 128-bit hex (no sh_%d); jobs owner-bound by (identity,session) at start; poll foreign=404 / kill foreign=403 (D-06); default 1h TTL terminates the process group + records 'expired' (MUSR-03/04)
 - [Phase ?]: 36-03: D-18 admin poll/kill exemption reuses governance.write via a nil-safe capabilityChecker seam — fail-closed owner-only at the current composition root; production identity-store wiring deferred to 36-10/36-12
 - [Phase ?]: 36-03: go test -race ./internal/agent/tools/ NOT run (no CGO on Windows dev host) — must run in WSL/CI before phase close (no-skip-as-green)
+- [Phase 36]: 36-13: a migration round-trip test MUST version-anchor its ±1 straddle (position to the target version first via `MigrateSteps(26 - head)`), never a bare relative ±1 from HEAD — golang-migrate `Steps(n)` is relative, so a bare -1 reverses the newest migration, not the one under test (VERIF-1, run 28753262579). LIVE-verified in WSL (not inferred): TestMigration0026LocalAdminCapsRoundTrip PASS 1.04s at head≥32
+- [Phase 36]: 36-13: `scripts/check-no-url-tokens.sh` (MUSR-06) is now an ENFORCED blocking CI step in build-and-lint (no continue-on-error/|| true) — a session/auth-token-in-URL regression fails the pipeline (VERIF-6, closes the 36-11→36-12 handoff)
 
 ### Pending Todos
 
@@ -529,8 +530,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-06T00:07:04.944Z
-Stopped at: Completed 36-07-PLAN.md
+Last session: 2026-07-06T07:05:20.000Z
+Stopped at: Completed 36-13-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

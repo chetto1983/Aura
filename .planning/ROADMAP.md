@@ -290,7 +290,7 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 12/12 plans executed
+**Plans:** 13/18 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
@@ -321,7 +321,7 @@ Plans:
 
 **Gap Closure** *(VERIFICATION gaps_found + REVIEW 1 Critical/3 High — planned 2026-07-06; 6 plans, 3 waves)*
 
-- [ ] 36-13-PLAN.md — CI correctness + static gates: version-anchor the migration-0026 reversibility test (VERIF-1) + wire check-no-url-tokens.sh into CI (VERIF-6). Wave 1.
+- [x] 36-13-PLAN.md — CI correctness + static gates: version-anchor the migration-0026 reversibility test (VERIF-1) + wire check-no-url-tokens.sh into CI (VERIF-6). Wave 1. — done 2026-07-06: positioned the ±1 straddle at v26 (`stepDownToV26 := 26 - head` reverses 0027..HEAD, then -1/+1 isolates 0026's OWN down/up so caps drop then restore while `*` survives); LIVE db_integration `TestMigration0026LocalAdminCapsRoundTrip` PASS (1.04s, head≥32) — the confirmed-broken run-28753262579 test now green; added the blocking "No long-lived token in URLs (MUSR-06)" step after the file-size cap in the build-and-lint job (gate + --self-test exit 0, ci.yml valid YAML). Commits `653dfdd3` (test) + `9796c326` (chore). Test-only + workflow-only; no production code, no new deps.
 - [ ] 36-14-PLAN.md — Daemon provisioning/de-provisioning wiring + migration 0033 (scheduler kind CHECK admits 'identity_purge') + deactivation auth-gate (VERIF-3/HI-01 + HI-02). Wave 1.
 - [ ] 36-15-PLAN.md — Per-identity object-store consumption on the asset path (VERIF-4/HI-01). Wave 2 (depends 36-14).
 - [ ] 36-16-PLAN.md — Documents default-closed + config-validate + local-fallback (CR-01/VERIF-5 + ME-01/LO-03; ME-02/LO-01 recorded). Wave 2 (depends 36-14).
