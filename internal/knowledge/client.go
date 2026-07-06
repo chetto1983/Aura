@@ -201,6 +201,9 @@ func (c *Client) Cypher(ctx context.Context, query string, params map[string]any
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.stdin == nil {
+		return nil, fmt.Errorf("cypher on closed knowledge client")
+	}
 
 	enc, err := json.Marshal(c.buildRequest(query, params, write))
 	if err != nil {

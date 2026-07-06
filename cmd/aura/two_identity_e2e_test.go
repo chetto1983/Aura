@@ -193,15 +193,17 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		if err != nil {
 			t.Fatalf("knowledge.Open: %v", err)
 		}
-		defer func() { _ = mcp.Close() }()
-
 		docID := "musr-doc-" + uuid.NewString()
 		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-		t.Cleanup(func() {
+		// Delete the test's Neo4j nodes, THEN close — a t.Cleanup runs AFTER the deferred
+		// Close (cleanup callbacks fire after deferred calls), so it would Write to a closed
+		// client (nil stdin) and SIGSEGV. One defer keeps deletes-before-close ordered.
+		defer func() {
 			c := context.Background()
 			_, _ = mcp.Write(c, "MATCH (d:Document {id:$id}) OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c) DETACH DELETE d,c", map[string]any{"id": docID})
 			_, _ = mcp.Write(c, "MATCH (u:User {identifier:$id}) DETACH DELETE u", map[string]any{"id": idA})
-		})
+			_ = mcp.Close()
+		}()
 		doc := documents.ExtractedDocument{
 			ID: docID, SourceID: "src-" + docID, SourceKind: "musr", FileName: "a.txt",
 			MIMEType: "text/plain", ContentHash: "h-" + docID, Title: "A private", IdentityID: idA,
