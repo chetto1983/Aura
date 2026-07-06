@@ -64,31 +64,45 @@ func TestSearch_Live(t *testing.T) {
 	queries := []SearchParams{
 		{Query: "Neo4j HNSW vector index", MaxResults: 5},
 		{Query: "SearXNG", Domains: []string{"wikipedia.org"}, MaxResults: 5},
+		{Query: "wikipedia", MaxResults: 5}, // high-recall insurance: any upstream engine returns something
 	}
+	// SearXNG proxies public upstream engines (Google/Bing/DuckDuckGo/...) which
+	// intermittently rate-limit or block a CI datacenter IP and then return zero
+	// results for a query set that succeeds a moment later. Retry the whole smoke
+	// set with a short backoff so a transient upstream throttle does not red the
+	// matrix. This is NOT skip-as-green: every attempt is a real live call, and a
+	// genuine contract break (settings.yml json format dropped, deadline wrong)
+	// returns zero/err on EVERY attempt and still fails deterministically.
+	const attempts = 3
 	var lastErr error
-	for _, q := range queries {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		results, err := c.Search(ctx, q)
-		cancel()
-		if err != nil {
-			lastErr = err
-			continue
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 3 * time.Second)
 		}
-		if len(results) == 0 {
-			lastErr = nil
-			continue
-		}
-		for i, r := range results {
-			if r.Title == "" || r.URL == "" {
-				t.Fatalf("result %d missing title/url for query %q: %+v", i, q.Query, r)
+		for _, q := range queries {
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			results, err := c.Search(ctx, q)
+			cancel()
+			if err != nil {
+				lastErr = err
+				continue
 			}
+			if len(results) == 0 {
+				lastErr = nil
+				continue
+			}
+			for i, r := range results {
+				if r.Title == "" || r.URL == "" {
+					t.Fatalf("result %d missing title/url for query %q: %+v", i, q.Query, r)
+				}
+			}
+			return // ranked results with populated title+url — SC#1 satisfied
 		}
-		return
 	}
 	if lastErr != nil {
-		t.Fatalf("live Search failed (is the SearXNG container up + on the public internet?): %v", lastErr)
+		t.Fatalf("live Search failed after %d attempts (is the SearXNG container up + on the public internet?): %v", attempts, lastErr)
 	}
-	t.Fatal("live Search returned zero results for all smoke queries - check SearXNG upstream engines and the JSON format contract (settings.yml formats)")
+	t.Fatalf("live Search returned zero results for all smoke queries across %d attempts - check SearXNG upstream engines and the JSON format contract (settings.yml formats)", attempts)
 }
 
 // TestFetch_Live exercises SC#2 against a real public page: web.Fetch returns
