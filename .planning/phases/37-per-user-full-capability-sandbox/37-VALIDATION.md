@@ -55,7 +55,8 @@ created: 2026-07-06
 | TBD | TBD | TBD | SBX-04 | T-37-lateral/metadata | Default floor: box reaches public internet, CANNOT reach RFC1918/metadata/bridge | integration (native-Linux) | `go test -tags=docker_integration ./internal/sandbox/usersandbox/ -run TestEgress_FloorDropsInternal` | ❌ W0 | ⬜ pending |
 | TBD | TBD | TBD | SBX-04 | T-37-egress-bypass | Tightened allowlist: allowed host resolves, disallowed host DROPPED | integration (native-Linux, runc) | `go test -tags=docker_integration ./internal/sandbox/usersandbox/ -run TestEgress_FQDNAllowlist` | ❌ W0 | ⬜ pending |
 | TBD | TBD | TBD | SBX-04 | — | `runtime: runsc` selectable under server_production (spec accepts) | unit | `go test ./internal/sandbox/usersandbox/ -run TestSpec_RunscOnlyServerProduction` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | SBX-05 | — | ADR file exists with the required decisions | manual/doc | reviewer checks `docs/adr/` | ❌ W0 | ⬜ pending |
+| 1 | 37-08 | 4 | SBX-05 | — | ADR file exists with the required decisions (D-15 + 3 residuals) | manual/doc | `test -f docs/adr/0037-per-identity-docker-sandbox.md && grep -qi container-per-identity docs/adr/0037-per-identity-docker-sandbox.md` | ✅ `docs/adr/0037-per-identity-docker-sandbox.md` | ✅ green |
+| 2 | 37-08 | 4 | SBX-05 | T-37-08-STARVE/FALSEBENCH | D-14 soak: 10–20 boxes fit 32GB + headroom, Resolve/Resume p95, cgroup caps prevent starvation | integration (real-32GB-host) | `AURA_SANDBOX_SOAK_REALHOST=1 go test -tags docker_integration ./internal/sandbox/usersandbox/ -run TestSoak` | ✅ `internal/sandbox/usersandbox/bench_soak_test.go` | ⬜ pending (Manual-Only) |
 | TBD | TBD | TBD | GATE-01/D-09 | T-37-fail-open | Strict + box-create failure → fail-CLOSED ToolResult, never host | unit | `go test ./internal/agent/tools/ -run TestShellExec_FailClosedNoHostFallback` | ❌ W0 | ⬜ pending |
 | TBD | TBD | TBD | — | — | No goroutine leak on box lifecycle / reaper | integration | `goleak` in package `TestMain` | ❌ W0 | ⬜ pending |
 
@@ -79,9 +80,44 @@ created: 2026-07-06
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| D-14 concurrency soak — 10–20 concurrent per-identity boxes fit the 32GB envelope with headroom; Resolve p95 <~2s; Resume-from-suspend p95 <~1s; cgroup caps (2 CPU / 2GB / 512 pids start) prevent starvation | SBX-05 success-criterion 5 | Dev WSL Docker is capped at 15.47 GiB — insufficient; needs the real 32GB host | Run the soak harness (`bench_soak_test.go` or `cmd/` tool) on the 32GB host; record RAM envelope + p95 latencies + no-starvation into this table as the Gate-3 evidence |
+| D-14 concurrency soak — 10–20 concurrent per-identity boxes fit the 32GB envelope with headroom; Resolve p95 <~2s; Resume-from-suspend p95 <~1s; cgroup caps (2 CPU / 2GB / 512 pids start) prevent starvation | SBX-05 success-criterion 5 | Dev WSL Docker is capped at 15.47 GiB — insufficient; needs the real 32GB host | See **D-14 concurrency-soak run instructions** below; record the results table as the Gate-3 evidence |
 | Egress enforcement DROP (floor + FQDN) | SBX-04 | Docker's dev NAT/userland-proxy can mask enforcement; must run on native Linux | Run `TestEgress_*` on a native-Linux runner (CI Linux), never WSL/Docker-Desktop NAT |
 | gVisor `runsc` tier smoke | SBX-04/D-12 | Requires `runsc` runtime installed + note that FQDN-allowlist (nat table) is runc-only (research #934) | Bring up a box with `runtime: runsc` under server_production; confirm exec works and the filter-table floor still drops internal |
+
+### D-14 concurrency-soak run instructions (Gate-3 evidence)
+
+**Harness:** `internal/sandbox/usersandbox/bench_soak_test.go` → `TestSoak_ConcurrentIdentities`
+(`//go:build docker_integration`). It resolves N per-identity boxes concurrently, then
+suspends+resumes them, samples aggregate RAM against the 32 GB envelope, and runs a starvation
+probe (a CPU-hog box must not starve a co-tenant under the cgroup caps).
+
+**Gating (T-37-08-FALSEBENCH):** the pass/fail assertions run ONLY with
+`AURA_SANDBOX_SOAK_REALHOST=1`. Without it (dev WSL / ordinary CI) the test SKIPS with a
+real-host-only message — the 15.47 GiB WSL cap cannot validate the 10–20-box envelope, so a run
+there would be a false pass/fail. This is a **sanctioned skip** (the benchmark is deliberately
+excluded from the CI functional tier).
+
+**Run on the real 32 GB host (native Linux, dockerd reachable):**
+
+```bash
+# Build/pull the fat box image first (default AURA_SANDBOX_TEST_IMAGE is busybox:stable — set
+# it to the real aura-sandbox image for a faithful RAM footprint).
+export AURA_SANDBOX_SOAK_REALHOST=1
+export AURA_SANDBOX_TEST_IMAGE=aura-sandbox:latest   # or the digest-pinned registry ref
+export AURA_SANDBOX_SOAK_N=15                         # 10–20 envelope; default 10
+#   optional overrides (defaults mirror config.SandboxConfig D-14 starts):
+#   AURA_SANDBOX_CPU_LIMIT=2  AURA_SANDBOX_MEMORY_LIMIT=2147483648  AURA_SANDBOX_PIDS_LIMIT=512
+#   AURA_SANDBOX_SOAK_HEADROOM_BYTES=2147483648  (min free RAM required after N boxes are live)
+go test -tags docker_integration ./internal/sandbox/usersandbox/ -run TestSoak -count=1 -v
+```
+
+The harness prints a `D-14 concurrency-soak (Gate-3 evidence)` block; transcribe it into the
+results table below. **Pass = all four rows green** (fits 32 GB with headroom + no starvation —
+not a scale SLA, D-14).
+
+| Run date | Host (MemTotal) | N | Per-box caps | Aggregate footprint | Free RAM after N | Resolve p95 (<~2s) | Resume p95 (<~1s) | Starvation-free (co-tenant p95 <2s) | Verdict |
+|----------|-----------------|---|--------------|---------------------|------------------|--------------------|-------------------|-------------------------------------|---------|
+| _pending 32GB-host run_ | ~32 GiB | 10–20 | 2 CPU / 2 GiB / 512 pids | _fill_ | _fill (≥ headroom)_ | _fill_ | _fill_ | _fill_ | ⬜ pending |
 
 ---
 
