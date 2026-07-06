@@ -44,6 +44,9 @@ type Identity struct {
 	ID   string
 	Name string
 	Kind string
+	// Deactivated is the D-27 soft-delete marker (deactivated_at IS NOT NULL). A
+	// deactivated principal is denied at RequireAuth (HI-02) even with a valid session.
+	Deactivated bool
 }
 
 // AuthDeps carries everything RequireAuth + the capability gate need, threaded from

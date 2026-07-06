@@ -62,6 +62,10 @@ type Identity struct {
 	ID   string
 	Name string
 	Kind string
+	// Deactivated mirrors the 0029 deactivated_at column (non-NULL ⇒ true). It is surfaced
+	// for the HI-02 auth-boundary deny; the GetIdentityBy* queries keep NO deactivated_at
+	// filter (the deprovision saga + admin roster still see deactivated rows).
+	Deactivated bool
 }
 
 // fromRow converts a generated row to the domain projection.
