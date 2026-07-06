@@ -14,7 +14,14 @@ import (
 // Req#3): a leaked stream goroutine or an un-cancelled signal notifier would trip
 // here. goleak verifies AFTER all tests complete.
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// The two-identity E2E's S3/garage-admin/Authula HTTP clients keep pooled idle
+	// keep-alive connections (net/http.Transport persistConn read/write loops, created
+	// by (*Transport).dialConn). goleak reports these as leaked at teardown even though
+	// they are pooled and reaped on idle-timeout — the canonical http.Transport ignore.
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreTopFunction("net/http.(*persistConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*persistConn).writeLoop"),
+	)
 }
 
 func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
