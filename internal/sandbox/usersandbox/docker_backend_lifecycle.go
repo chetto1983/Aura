@@ -61,29 +61,49 @@ func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandl
 	if err := b.materializeInputs(ctx, h); err != nil {
 		return BoxHandle{}, fmt.Errorf("resolve: materialize inputs: %w", err)
 	}
+
+	// Launch the always-on egress sidecar sharing the box netns (SBX-04, D-07), AFTER the box
+	// is live so the "container:<box>" netns target exists. It is a no-op when egress is
+	// disabled (no WithEgress). A create/resume that cannot enforce the tenancy floor fails
+	// Resolve CLOSED — a networked box must never run without its egress boundary.
+	if err := b.launchEgress(ctx, spec, h); err != nil {
+		return BoxHandle{}, fmt.Errorf("resolve: launch egress sidecar: %w", err)
+	}
 	return h, nil
 }
 
 // Suspend stops the box but RETAINS the container and its volume (OperatingMode:Suspended,
-// D-08) so a later Resolve/Resume is fast and lossless.
+// D-08) so a later Resolve/Resume is fast and lossless. The egress sidecar is stopped in
+// lockstep (retained, not removed) so it never outlives the box netns as an orphan.
 func (b *DockerBackend) Suspend(ctx context.Context, h BoxHandle) error {
+	if err := b.suspendEgress(ctx, h.IdentityID); err != nil {
+		return fmt.Errorf("suspend box: %w", err)
+	}
 	if _, err := b.cli.ContainerStop(ctx, h.ContainerID, client.ContainerStopOptions{}); err != nil {
 		return fmt.Errorf("suspend box: %w", err)
 	}
 	return nil
 }
 
-// Resume restarts a Suspended box against its retained volume (same container).
+// Resume restarts a Suspended box against its retained volume (same container), then restarts
+// the retained egress sidecar so the box comes back WITH its tenancy floor re-applied.
 func (b *DockerBackend) Resume(ctx context.Context, h BoxHandle) error {
 	if _, err := b.cli.ContainerStart(ctx, h.ContainerID, client.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("resume box: %w", err)
+	}
+	if err := b.resumeEgress(ctx, h.IdentityID); err != nil {
 		return fmt.Errorf("resume box: %w", err)
 	}
 	return nil
 }
 
 // Stop destroys the box AND its per-identity volume (ShutdownPolicy:Delete, D-08) — only on
-// explicit deprovision. The shared aura-uv-cache volume is deliberately left intact.
+// explicit deprovision. The egress sidecar is removed first (no orphan), then the box, then
+// the per-identity volume. The shared aura-uv-cache volume is deliberately left intact.
 func (b *DockerBackend) Stop(ctx context.Context, h BoxHandle) error {
+	if err := b.teardownEgress(ctx, h.IdentityID); err != nil {
+		return fmt.Errorf("stop: remove egress sidecar: %w", err)
+	}
 	if _, err := b.cli.ContainerRemove(ctx, h.ContainerID, client.ContainerRemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("stop: remove box: %w", err)
 	}
