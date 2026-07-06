@@ -89,6 +89,11 @@ services:
       AURA_LLM_MAX_TOKENS: ${AURA_LLM_MAX_TOKENS:-4096}
       AURA_LLM_ADAPTIVE_REASONING: ${AURA_LLM_ADAPTIVE_REASONING:-true}
       AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}
+      # Phase 36 D-13: documents-plane identity isolation flip (was unplumbed to the
+      # container, so the flag was unreachable in the deployed binary). Default off
+      # (unscoped fallback); set AURA_MUSR_ISOLATION=true in .env AFTER
+      # `aura documents backfill` to enforce per-identity scoping (docs/runbooks/musr-rollout.md).
+      AURA_MUSR_ISOLATION: ${AURA_MUSR_ISOLATION:-false}
       AURA_LLM_TOTAL_TIMEOUT_SEC: ${AURA_LLM_TOTAL_TIMEOUT_SEC:-120}
       AURA_LLM_CONNECT_TIMEOUT_SEC: ${AURA_LLM_CONNECT_TIMEOUT_SEC:-10}
       AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}
