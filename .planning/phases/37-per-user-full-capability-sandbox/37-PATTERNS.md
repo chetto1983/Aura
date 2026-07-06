@@ -29,7 +29,7 @@
 | `internal/agent/tools/shell_bg.go` + `shell_bg_owner.go` (mod) | tool/controller | streaming | self (Open Q4 — most invasive; `*exec.Cmd` → box exec handle) | self-analog |
 | `internal/agent/tools/fs_read.go` (mod) | tool/controller | file-I/O | self + router gate | self-analog |
 | `internal/agent/tools/fs_write.go` (mod) | tool/controller | file-I/O | self + router gate | self-analog |
-| `internal/agent/tools/skill_read.go` (mod — snippet `action=use`) | tool/controller | request-response | self (`renderSnippetUse` HostPath→SandboxPath under strict) | self-analog |
+| `internal/agent/tools/skill_read.go` + `skill.go` + `internal/skilladapters/skilladapters.go` (mod — snippet `action=use`) | tool/controller | request-response | self — CORRECTION: `Snippet` does NOT yet return `SandboxPath` (returns only hostPath); 37-07 extends it, adapter sources `SandboxPath` from `skills.SnippetSandboxPath`, `renderSnippetUse` picks the path by `SandboxRouter.Strict()` for the rendered `shell_exec` (NO `backend.Exec`) | self-analog |
 | `cmd/aura/main.go` (mod) | config (composition root) | — | `cmd/aura/main.go:163` tool registration | self-analog |
 | `cmd/aura/serve_provisioning.go` + `serve_dispatch.go` (mod) | config (seed + register) | — | `seedIdentityPurgeSweep` + `serve_dispatch.go:57` handler map | **exact** |
 | `go.mod` (mod) | config (deps) | — | `go.mod:143-144` moby indirect entries | self-analog |
