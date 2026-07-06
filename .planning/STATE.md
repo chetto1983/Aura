@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 36
-current_phase_name: Multi-User Identity Isolation + Authula Cutover
+current_phase: 37
+current_phase_name: per-user-full-capability-sandbox
 status: executing
 stopped_at: Phase 37 context gathered
-last_updated: "2026-07-06T18:03:37.301Z"
+last_updated: "2026-07-06T21:56:56.240Z"
 last_activity: 2026-07-06
-last_activity_desc: "36-18 terminal acceptance gate: pushed the never-CI-run back half + gap-closure, drove the full GitHub Actions matrix green (fixing 7 live-matrix regressions no Windows compile could surface: Garage S3 ContentLength/checksum, goleak IgnoreAnyFunction matcher, SearXNG contract-vs-uptime test, agui coverage, CI env, quality-snapshot staleness x3), executed the D-12 backfill-then-flip rollout, and re-verified complete"
+last_activity_desc: Phase 37 execution started
 progress:
-  total_phases: 11
+  total_phases: 12
   completed_phases: 6
-  total_plans: 49
+  total_plans: 58
   completed_plans: 49
-  percent: 55
+  percent: 50
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 36 — Multi-User Identity Isolation + Authula Cutover
+**Current focus:** Phase 37 — per-user-full-capability-sandbox
 
 ## Current Position
 
-Phase: 36 (Multi-User Identity Isolation + Authula Cutover) — **COMPLETE** (re-verification PASSED)
-Plan: 36-18 done — Phase 36 CLOSED (all 18 plans complete; 36-13..36-18 gap-closure + acceptance)
-Status: **Phase 36 COMPLETE.** Re-verification `passed` (4/4 ROADMAP success criteria, 6/6 MUSR-01..06, all 7 prior gaps closed, both human_verification items resolved) against CI run 28799334452 = 20/20 GREEN on HEAD 207200c8 (musr-e2e five-tag two-identity cross-deny E2E ran live 268s under -race; no-skip-as-green). AURA_MUSR_ISOLATION rollout ACTIVATED (backfill 0-doc no-op → flag true, live in container + .env). Loop-prevention: quality-snapshot freshness now gated at pre-push (lefthook). Next: Phase 37 (Per-User Full-Capability Sandbox, SBX-01..05).
-Last activity: 2026-07-06 -- 36-18 terminal acceptance gate: pushed the never-CI-run back half + gap-closure, drove the full GitHub Actions matrix green (fixing 7 live-matrix regressions no Windows compile could surface: Garage S3 ContentLength/checksum, goleak IgnoreAnyFunction matcher, SearXNG contract-vs-uptime test, agui coverage, CI env, quality-snapshot staleness x3), executed the D-12 backfill-then-flip rollout, and re-verified complete
+Phase: 37 (per-user-full-capability-sandbox) — EXECUTING
+Plan: 1 of 9
+Status: Executing Phase 37
+Last activity: 2026-07-06 — Phase 37 execution started
 
 #### 36-18 — Terminal acceptance gate: full CI matrix green on the pushed HEAD + AURA_MUSR_ISOLATION rollout (VERIF-2 + human_verification #1/#2). **Wave-3 terminal — CLOSES Phase 36.** The never-CI-run back half (36-05/06/08..12) + gap-closure (36-13..17) was pushed and driven GREEN on the live GitHub Actions matrix: **CI run 28799334452 = 20/20 success on HEAD `207200c8`**, with the five-tag `musr-e2e` two-identity cross-deny E2E (`TestTwoIdentityCrossDeny` + `TestProvisionLoginIsolatedRun`) run **live 268s under -race** (no-skip-as-green — a skip is sub-second). **Seven live-matrix regressions no Windows compile could surface were fixed-forward** (the acceptance gate doing its job on never-CI-tested code): (1) `AURA_GARAGE_ADMIN_TOKEN` unset in ci.yml/skills.yml; (2) Garage **S3 400 InvalidDigest** — AWS SDK v2 default `RequestChecksumCalculation` + a `ContentLength:0` on a non-empty body (`internal/objectstore/s3.go`: checksum WhenRequired + conditional ContentLength, verified with a live Garage round-trip); (3) knowledge **Cypher use-after-Close SIGSEGV** (nil-stdin guard); (4) `internal/agui` coverage <85% → 86.7% (+7 test files, 2 db_integration fixes); (5) **MUSR goleak** — `IgnoreAnyFunction("net/http.(*persistConn).readLoop"/"writeLoop")` (the leaked S3/garage/Authula keep-alive read pumps park in `bufio.Peek`→`persistConn.Read`, so the top frame is `internal/poll.runtime_pollWait` and `readLoop` is a MIDDLE frame — `IgnoreTopFunction` structurally could not match); (6) **Web tools SearXNG** — reframed `TestSearch_Live` to assert the Aura↔SearXNG contract (reachable + `formats:[json]`; `Search` returns `([],nil)` ONLY on a valid 2xx JSON decode, so nil-err PROVES the contract held) and tolerate provable upstream-empty (CI datacenter IP rate-limited by Google/Bing) with a loud warning, while still hard-failing on a real break — NOT skip-as-green; (7) **quality-snapshot staleness** (amendment #20) fired three times (compose.yaml→Sandbox, internal/web→Web tools, skills.yml→Skills) → 6 rows re-attested 2026-07-06 (metric-neutral) + **gated at pre-push** (`scripts/quality_snapshot_prepush.sh` + `lefthook.yml`) so it can never CI-loop again. **Rollout = ACTIVATE-NOW (human_verification #2):** `aura documents backfill` in-container → `{owners_sourced:0, orphans_attached_to_operator:0, edges_from_map:0}` (0-doc no-op, D-12 no-orphan satisfied), then `AURA_MUSR_ISOLATION=true` flipped in `.env` + confirmed live in the running `aura` container — documents-plane isolation LIVE. **Re-verification `passed`:** 4/4 ROADMAP success criteria, 6/6 MUSR-01..06, all 7 prior gaps independently confirmed closed at HEAD, both human_verification items resolved. MUSR-01/MUSR-06 (phase-spanning) marked complete. 15 atomic commits (`e25c4a34`..`207200c8`), all with real hooks; go.mod/go.sum byte-unchanged; no new migration in this plan (0033 landed in 36-14).
 
