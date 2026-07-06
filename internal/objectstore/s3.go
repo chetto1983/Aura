@@ -122,13 +122,20 @@ func (s *S3Store) ConfigureBrowserUploadCORS(ctx context.Context, bucket string)
 }
 
 func (s *S3Store) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
-	out, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(ref.Bucket),
-		Key:           aws.String(ref.Key),
-		Body:          body,
-		ContentType:   aws.String(opts.MIMEType),
-		ContentLength: aws.Int64(opts.Size),
-	})
+	in := &s3.PutObjectInput{
+		Bucket:      aws.String(ref.Bucket),
+		Key:         aws.String(ref.Key),
+		Body:        body,
+		ContentType: aws.String(opts.MIMEType),
+	}
+	// Only declare ContentLength when the size is actually known. A zero here for a
+	// non-empty body makes the SDK sign x-amz-content-sha256 over the real bytes while
+	// sending Content-Length: 0 → Garage rejects with 400 InvalidDigest. Omitting it lets
+	// the SDK derive the length + payload hash from a seekable body.
+	if opts.Size > 0 {
+		in.ContentLength = aws.Int64(opts.Size)
+	}
+	out, err := s.client.PutObject(ctx, in)
 	if err != nil {
 		return Attrs{}, err
 	}
