@@ -8,7 +8,13 @@ import (
 )
 
 const (
-	activationRequiredMsg   = "Questa istanza di Aura non e collegata al tuo account Telegram. Apri il link di attivazione dal pannello di setup e poi riprova."
+	// activationRequiredMsg is the reject-unlinked reply (D-24): an unknown chat-id
+	// runs NO agent and is pointed to the WEB-initiated linking flow — the operator
+	// opens Settings -> Telegram in the web cockpit (POST /api/settings/telegram/link),
+	// which mints a one-time code, and sends it here with /start to bind this chat to
+	// their identity. No long-lived token is ever pasted into a URL (MUSR-06): the code
+	// rides the <=1h ?start= setup-bootstrap deep-link.
+	activationRequiredMsg   = "Questa istanza di Aura non e collegata al tuo account Telegram. Per l'attivazione apri Impostazioni Telegram nel pannello web, genera un codice monouso e invialo qui con /start."
 	activationRequiredToast = "Account Telegram non collegato"
 )
 
@@ -77,6 +83,14 @@ func (t *Telegram) requireLinkedCallback(ctx context.Context, c tele.Context, cb
 	return false
 }
 
+// telegramUserIsLinked is the D-24 fail-closed per-user gate: it returns true ONLY for
+// a chat-id with a provisioned telegram_accounts row (GetAccountByTelegramID resolves →
+// account.IdentityID). A missing resolver, an absent sender, or an unlinked chat-id all
+// fail CLOSED (no agent run) — every dispatch entry point (onText/onVoice/onPhoto/
+// onDocument/onReply/onCallback) calls this before spawning a turn, so an unknown or
+// unprovisioned user never falls through to another identity's context or the local
+// admin. A linked user's turn is then scoped to THEIR identity in startTurn
+// (scopeTurnToIdentity, D-23).
 func (t *Telegram) telegramUserIsLinked(ctx context.Context, telegramUserID int64) bool {
 	accounts := t.accountsForDispatch()
 	if accounts == nil {

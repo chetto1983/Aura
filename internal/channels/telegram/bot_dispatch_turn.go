@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/identityctx"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -70,6 +71,17 @@ func (t *Telegram) startTurn(
 		slog.Warn("telegram: inbound message but no turn driver wired", "chat", chatID)
 		return
 	}
+	// D-23/D-24 per-user routing: scope the whole turn to the linked user's Aura
+	// identity so every downstream store/tool/sidecar isolates to THEM (never the
+	// local admin or a sibling user, T-36-11-I2). startTurn is the SINGLE choke point
+	// every inbound-turn spawn passes through — a fresh message (runTurnWithAssets),
+	// the async document-convert callback (bot_dispatch.go), and a HITL-resume
+	// continuation (bot_dispatch_hitl.go) — so scoping here holds for all of them
+	// without per-path duplication. An unresolved id leaves ctx unscoped; the
+	// reject-unlinked gate (bot_dispatch_auth.go) already blocked an unlinked chat, so
+	// a scoped turn only ever runs for a linked user (fail closed).
+	daemonCtx = t.scopeTurnToIdentity(daemonCtx, chatID)
+
 	turnCtx, cancel := context.WithCancel(daemonCtx)
 	if !t.cmds.registerTurn(chatID, cancel) {
 		cancel()
@@ -98,6 +110,27 @@ func (t *Telegram) startTurn(
 		defer stop()
 		t.handleTurn(turnCtx, sender, chatID, userMsg, inboundWasVoice)
 	}()
+}
+
+// scopeTurnToIdentity wraps ctx with the linked user's Aura identity id (D-23/D-24),
+// resolved from the chat's telegram user id through the SAME account seam the
+// reject-unlinked gate uses. Aura's Telegram is a personal DM channel — the chat id IS
+// the sender's telegram user id, the identity the gate validated, and the key
+// convID(chatID) already threads through the whole channel — so a per-chat lookup
+// yields exactly the turn's owner. It is best-effort: with no resolver or an
+// unresolved/unlinked chat it returns ctx unchanged (WithIdentityID no-ops on ""),
+// leaving the upstream gate as the fail-closed guarantee that an unlinked chat never
+// drives an agent run.
+func (t *Telegram) scopeTurnToIdentity(ctx context.Context, chatID int64) context.Context {
+	accounts := t.accountsForDispatch()
+	if accounts == nil {
+		return ctx
+	}
+	account, err := accounts.GetAccountByTelegramID(ctx, chatID)
+	if err != nil {
+		return ctx
+	}
+	return identityctx.WithIdentityID(ctx, account.IdentityID)
 }
 
 func (t *Telegram) sendBusy(sender botSender, chatID int64) {

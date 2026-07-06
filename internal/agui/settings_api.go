@@ -275,6 +275,14 @@ func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string,
 	return strings.TrimSpace(os.Getenv(key)), nil
 }
 
+// handleCreateSettingsTelegramLink mints the one-time Telegram linking code for the
+// AUTHENTICATED caller (D-02: a normal self-scoped USER action, each user links their
+// own Telegram to their OWN identity — NEVER operator-pinned). It is the web half of the
+// D-24 web-initiated linking flow: CreateTelegramLink scopes to `requester` (the bound
+// principal, never the seeded local admin), and the returned deep-link carries the code
+// ONLY on the <=1h `?start=` setup-bootstrap URL — no long-lived session token ever
+// crosses a URL/query string (MUSR-06). The bot then binds this sender's chat-id to
+// `requester`'s identity when the code arrives via /start (telegram onboarding consume).
 func (s *Server) handleCreateSettingsTelegramLink(w http.ResponseWriter, r *http.Request) {
 	if s.onboarding == nil {
 		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
