@@ -32,6 +32,11 @@ pre-commit:
 pre-push:
   parallel: true
   commands:
+    # Quality-snapshot freshness gate (amendment #20) over the exact pushed range, so
+    # a stale quality row is caught here rather than after a ~20-min CI matrix. Fix by
+    # re-attesting the flagged row's date in docs/aura-quality-snapshot.md, then push.
+    quality-snapshot:
+      run: bash scripts/quality_snapshot_prepush.sh
     lint:
       run: bash -c 'golangci-lint run $(bash scripts/go_packages.sh)'
     build:
