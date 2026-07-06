@@ -225,6 +225,9 @@ func sagaService(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegr
 		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: recovery,
+		// Isolation ON so the saga-body tests clear the CR-01 provision-time refusal gate
+		// (errIsolationDisabled); the gate itself is covered in onboarding_provision_isolation_test.go.
+		MUSRIsolation: true,
 	})
 	start, err := svc.StartSession(context.Background(), "creator-1")
 	if err != nil {

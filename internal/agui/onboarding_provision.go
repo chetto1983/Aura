@@ -122,6 +122,13 @@ type TelegramMint interface {
 // interview-only deployment). The handler renders it as a sanitized 502.
 var errProvisioningUnavailable = errors.New("onboarding: provisioning backend not configured")
 
+// errIsolationDisabled is returned when provisioning is attempted while the documents-plane
+// isolation flag (AURA_MUSR_ISOLATION) is off (CR-01/VERIF-5). The onboarding saga only ever
+// creates ADDITIONAL, non-local identities; with isolation off the documents plane is
+// unscoped, so a 2nd principal would read the operator's documents. Refusing here makes
+// arming that leak (adding a 2nd principal with the flag off) impossible.
+var errIsolationDisabled = errors.New("onboarding: enable AURA_MUSR_ISOLATION before provisioning additional users (documents plane is unscoped while off)")
+
 // Provision runs the ordered cross-store saga at the wizard's final "Create" confirm
 // (ONBD-01a/01b / RESEARCH §Hard Problem 1). It is the ONLY place the cross-store writes
 // happen, so an abandoned wizard (session expired before this call) leaves ZERO rows. On
@@ -144,6 +151,15 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	creator := entry.creatorIdentityID
 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
+	// CR-01/VERIF-5: refuse to arm the documents-plane leak. The saga only ever creates an
+	// ADDITIONAL, non-local identity (the operator/local is bootstrap-seeded, migration
+	// 0004), so requiring isolation on is correct — with the flag off the six scoped Cypher
+	// queries fall back to the unscoped variants and the new principal would read the
+	// operator's documents. Placed before the first cross-store write (and before the Authula
+	// lookup) so adding a 2nd principal can never arm the leak.
+	if !s.musrIsolation {
+		return OnboardingProvisionResponse{}, errIsolationDisabled
+	}
 	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
 		slog.Warn("onboarding: provisioning backend not configured",
 			"authula", s.authula != nil,

@@ -235,6 +235,15 @@ type onboardingService struct {
 	journal     SagaJournal
 	objectStore ObjectStoreProvisioner
 	filesystem  FilesystemProvisioner
+
+	// musrIsolation couples provisioning to the documents-plane isolation flag
+	// (AURA_MUSR_ISOLATION, CR-01/VERIF-5). The saga ONLY ever creates ADDITIONAL,
+	// non-local identities (the operator/local is bootstrap-seeded, migration 0004); with
+	// isolation off the six scoped Cypher queries fall back to the unscoped variants, so a
+	// 2nd principal would read the operator's documents. When false, Provision refuses
+	// (errIsolationDisabled) BEFORE any cross-store write — adding a 2nd principal can never
+	// arm the leak.
+	musrIsolation bool
 }
 
 // OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
@@ -257,6 +266,10 @@ type OnboardingDeps struct {
 	Journal     SagaJournal
 	ObjectStore ObjectStoreProvisioner
 	Filesystem  FilesystemProvisioner
+	// MUSRIsolation is the documents-plane isolation flag (AURA_MUSR_ISOLATION, CR-01).
+	// Provision REFUSES while it is false so the leak can never be armed by adding a 2nd
+	// principal. The composition root wires it from config.MUSRIsolation.
+	MUSRIsolation bool
 }
 
 // NewOnboardingService assembles the OnboardingService over the supplied narrow ports.
@@ -270,18 +283,19 @@ func NewOnboardingService(d OnboardingDeps) OnboardingService {
 // newOnboardingService assembles the concrete service over the supplied narrow ports.
 func newOnboardingService(d OnboardingDeps) *onboardingService {
 	return &onboardingService{
-		sessions:    newSessionStore(d.TTL),
-		caps:        d.Capabilities,
-		extractor:   d.Extractor,
-		profiles:    d.Profiles,
-		authula:     d.Authula,
-		auraLeg:     d.AuraLeg,
-		telegram:    d.Telegram,
-		botName:     d.BotUsername,
-		recovery:    d.Recovery,
-		journal:     d.Journal,
-		objectStore: d.ObjectStore,
-		filesystem:  d.Filesystem,
+		sessions:      newSessionStore(d.TTL),
+		caps:          d.Capabilities,
+		extractor:     d.Extractor,
+		profiles:      d.Profiles,
+		authula:       d.Authula,
+		auraLeg:       d.AuraLeg,
+		telegram:      d.Telegram,
+		botName:       d.BotUsername,
+		recovery:      d.Recovery,
+		journal:       d.Journal,
+		objectStore:   d.ObjectStore,
+		filesystem:    d.Filesystem,
+		musrIsolation: d.MUSRIsolation,
 	}
 }
 
