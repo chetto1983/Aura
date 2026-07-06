@@ -63,6 +63,9 @@ jobs:
       AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
       AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
       GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
+      # Phase 36 D-08: compose.yaml makes AURA_GARAGE_ADMIN_TOKEN :?-required on the aura +
+      # garage services; any `docker compose` parse needs it even though this job uses postgres.
+      AURA_GARAGE_ADMIN_TOKEN: ci-not-a-secret
       # The host export dir the writer materializes ACTIVE snippets into; the SC#4
       # by-path exec runs them from here on the host (D-17).
       AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
