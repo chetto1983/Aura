@@ -37,6 +37,12 @@ type TaskKind string
 // it is system-seeded (seedIdentityPurgeSweep), never model-schedulable. Its literal MUST
 // equal handlers.KindIdentityPurge ("identity_purge") — the cron store writes the row, the
 // dispatcher routes the same string to handlers.IdentityPurgeHandler.
+//
+// KindSandboxReap (Phase 37 D-08) is the idle-suspend reaper sweep — the 0034 migration
+// widened the scheduler_tasks.kind CHECK to admit it. Like identity_purge it is system-seeded
+// (seedSandboxReapSweep, plan 37-05), never model-schedulable. Its literal MUST equal
+// handlers.KindSandboxReap ("sandbox_reap") — the cron store writes the row, the dispatcher
+// routes the same string to handlers.SandboxReapHandler.
 const (
 	KindReminder       TaskKind = "reminder"
 	KindAgentJob       TaskKind = "agent_job"
@@ -44,6 +50,7 @@ const (
 	KindBackupNeo4j    TaskKind = "backup_neo4j"
 	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
 	KindIdentityPurge  TaskKind = "identity_purge"
+	KindSandboxReap    TaskKind = "sandbox_reap"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical

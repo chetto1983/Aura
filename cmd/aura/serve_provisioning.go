@@ -399,3 +399,52 @@ func seedIdentityPurgeSweep(ctx context.Context, store *cron.Store) error {
 	slog.Info("aura serve: seeded identity purge sweep", "schedule", fmt.Sprintf("every %dm", identityPurgeSweepMinutes))
 	return nil
 }
+
+// seedSandboxReapSweep idempotently seeds the D-08 idle-suspend reaper sweep (plan 37-05),
+// mirroring seedIdentityPurgeSweep: it scans the active tasks for an existing sandbox_reap and
+// inserts one only if absent. The INSERT succeeds against the 0034-widened scheduler_tasks.kind
+// CHECK. The cadence is DERIVED from the idle-TTL config knob (idleTTLSec, the D-08 tunable) —
+// not a new hardcoded const — so a shorter TTL sweeps proportionally more often. A seed failure
+// is non-fatal (logged by the caller); the daemon still runs.
+func seedSandboxReapSweep(ctx context.Context, store *cron.Store, idleTTLSec int) error {
+	tasks, err := store.ListActiveTasks(ctx)
+	if err != nil {
+		return fmt.Errorf("list active tasks: %w", err)
+	}
+	for _, t := range tasks {
+		if t.Kind == cron.KindSandboxReap {
+			return nil // already seeded — idempotent
+		}
+	}
+	everyMinutes := sandboxReapSweepMinutes(idleTTLSec)
+	spec, err := cron.ParseSchedule(string(cron.KindEvery), "", everyMinutes, time.Time{}, "Europe/Rome")
+	if err != nil {
+		return fmt.Errorf("parse sandbox reap sweep schedule: %w", err)
+	}
+	next, err := cron.NextRunAt(spec, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("compute next run: %w", err)
+	}
+	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
+		Kind:      cron.KindSandboxReap,
+		Spec:      spec,
+		NextRunAt: next,
+	}); err != nil {
+		return fmt.Errorf("create sandbox_reap task: %w", err)
+	}
+	slog.Info("aura serve: seeded sandbox reap sweep", "schedule", fmt.Sprintf("every %dm", everyMinutes))
+	return nil
+}
+
+// sandboxReapSweepMinutes derives the reap-sweep cadence (in minutes) from the idle-TTL seconds
+// knob (D-08): roughly one sweep per TTL window, floored at 1 minute so a sub-minute TTL still
+// yields a valid every-schedule. A box therefore suspends within about one TTL of going idle
+// (auto-resumed transparently on its next tool call), and the cadence tracks the operator's knob
+// rather than a second hardcoded const.
+func sandboxReapSweepMinutes(idleTTLSec int) int {
+	m := idleTTLSec / 60
+	if m < 1 {
+		return 1
+	}
+	return m
+}

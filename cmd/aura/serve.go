@@ -314,6 +314,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedIdentityPurgeSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed identity purge sweep", "err", err)
 	}
+	// Seed the D-08 idle-suspend sandbox reap sweep (plan 37-05) idempotently — only when no
+	// sandbox_reap task already exists. The 0034-widened kind CHECK admits the row; the cadence
+	// tracks AURA_SANDBOX_IDLE_TTL_SEC. Safe even when the router is nil (disabled no-op reaper).
+	if err := seedSandboxReapSweep(ctx, store, chat.cfg.Sandbox.IdleTTLSec); err != nil {
+		slog.Warn("aura serve: seed sandbox reap sweep", "err", err)
+	}
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain

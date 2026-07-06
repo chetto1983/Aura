@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/chetto1983/aura/internal/toolselectstore"
@@ -50,6 +51,11 @@ type chatEnv struct {
 	assets          *assets.Service
 	toolHandles     runtimeToolHandles
 	mcpClosers      []func() error
+	// sandboxRouter is the per-identity box routing seam (Phase 37, plan 37-05). It is nil
+	// under a non-strict profile or a Docker-unavailable host — a safe host-direct no-op
+	// everywhere (Route/Strict/SuspendIdle all nil-guard). buildDispatch registers it as the
+	// KindSandboxReap reaper; plan 37-07 wires it onto the box-capable tools.
+	sandboxRouter *usersandbox.SandboxRouter
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
