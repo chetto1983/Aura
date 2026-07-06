@@ -139,3 +139,64 @@ func TestBuildDispatchRegistersIdentityPurge(t *testing.T) {
 		t.Fatal("identity purge handler Run: empty summary, want a no-op purge count")
 	}
 }
+
+// TestBuildDispatchRegistersSandboxReap asserts buildDispatch builds with the sandbox_reap entry
+// present and that a non-strict (dev) profile leaves the router nil — the handler is then the
+// disabled no-op (nil reaper), a safe boot. It mirrors TestBuildDispatchRegistersIdentityPurge:
+// cron.Dispatch's handler map is unexported, so the exact entry is proven via the identical
+// construction expression buildDispatch uses.
+func TestBuildDispatchRegistersSandboxReap(t *testing.T) {
+	chat := &chatEnv{
+		pool: nil, // buildDispatch is nil-pool-safe
+		cfg: &config.Config{
+			SkillsDir:         t.TempDir(),
+			SkillExportDir:    t.TempDir(),
+			ProfileDir:        t.TempDir(),
+			RunDir:            t.TempDir(),
+			ObjectStoreBucket: "aura-assets",
+			// Profile is the zero value (non-strict) → buildSandboxRouter returns nil.
+		},
+	}
+	dispatch := buildDispatch(chat, cron.New(nil), nil)
+	if dispatch == nil {
+		t.Fatal("buildDispatch: want non-nil *cron.Dispatch")
+	}
+	if chat.sandboxRouter != nil {
+		t.Fatal("buildSandboxRouter: want nil router under a non-strict profile (host-direct no-op)")
+	}
+
+	// The exact entry buildDispatch registers under cron.KindSandboxReap when the router is nil:
+	// a nil reaper interface, which the handler treats as the disabled no-op.
+	var reaper handlers.SandboxReaper
+	entry := handlers.SandboxReapHandler{Reaper: reaper}
+	if string(entry.Meta().Kind) != string(cron.KindSandboxReap) {
+		t.Fatalf("sandbox reap handler kind = %q, want %q", entry.Meta().Kind, cron.KindSandboxReap)
+	}
+	summary, err := entry.Run(context.Background(), handlers.Job{})
+	if err != nil {
+		t.Fatalf("sandbox reap handler Run: unexpected error %v", err)
+	}
+	if summary == "" {
+		t.Fatal("sandbox reap handler Run: empty summary, want a disabled/no-op message")
+	}
+}
+
+// TestSandboxReapSweepMinutes proves the reap cadence is derived from the idle-TTL knob (not a
+// hardcoded const) and floored at 1 minute for a sub-minute TTL.
+func TestSandboxReapSweepMinutes(t *testing.T) {
+	cases := []struct {
+		idleTTLSec int
+		want       int
+	}{
+		{idleTTLSec: 1800, want: 30}, // 30-min default TTL → 30-min sweep
+		{idleTTLSec: 60, want: 1},
+		{idleTTLSec: 59, want: 1}, // sub-minute floors at 1
+		{idleTTLSec: 0, want: 1},
+		{idleTTLSec: 3600, want: 60},
+	}
+	for _, tc := range cases {
+		if got := sandboxReapSweepMinutes(tc.idleTTLSec); got != tc.want {
+			t.Errorf("sandboxReapSweepMinutes(%d) = %d, want %d", tc.idleTTLSec, got, tc.want)
+		}
+	}
+}

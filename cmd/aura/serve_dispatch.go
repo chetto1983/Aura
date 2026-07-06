@@ -8,13 +8,22 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
+	"github.com/moby/moby/client"
+
 	"github.com/chetto1983/aura/internal/channels"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
 )
+
+// nanoCPUsPerCPU converts a whole-CPU count (cfg.Sandbox.CPULimit) to moby's NanoCPUs cgroup
+// unit (1 CPU = 1e9 nano-CPUs, D-14).
+const nanoCPUsPerCPU = 1_000_000_000
 
 // var _ asserts at the composition root that *channels.Registry satisfies the
 // cron-local ChannelDeliverer seam (via its 20-01 DeliverToIdentity method) — the
@@ -29,6 +38,17 @@ var _ cron.ChannelDeliverer = (*channels.Registry)(nil)
 // agent_job handler runs the parent registry minus swarm_spawn (childRegistry, owned
 // by the handlers package) over the live LLM client.
 func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cron.Dispatch {
+	// Build the per-identity box router (Phase 37, plan 37-05). It is nil under a non-strict
+	// profile or a Docker-unavailable host — a safe host-direct no-op everywhere — and is
+	// retained on chat so plan 37-07 can wire it onto the box-capable tools.
+	chat.sandboxRouter = buildSandboxRouter(chat)
+	// A genuinely-nil SandboxReaper interface (not a typed-nil *SandboxRouter) yields the
+	// handler's "disabled (no reaper)" no-op — exactly the identity_purge nil-Purger note.
+	var sandboxReaper handlers.SandboxReaper
+	if chat.sandboxRouter != nil {
+		sandboxReaper = chat.sandboxRouter
+	}
+
 	agentDeps := handlers.AgentDeps{
 		Client:     chat.client,
 		LLM:        chat.cfg.LLM,
@@ -55,6 +75,11 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// satisfies handlers.IdentityPurger via PurgeExpired. A nil-pool build yields a
 		// no-op Purger, so this registration is always safe.
 		cron.KindIdentityPurge: handlers.IdentityPurgeHandler{Purger: buildDeprovisioner(chat)},
+		// The D-08 idle-suspend reaper (plan 37-05): the live *usersandbox.SandboxRouter
+		// satisfies handlers.SandboxReaper via SuspendIdle. A nil router (non-strict profile
+		// or Docker-unavailable) leaves sandboxReaper a nil interface, so the handler is the
+		// disabled no-op — always safe, exactly like the identity_purge registration.
+		cron.KindSandboxReap: handlers.SandboxReapHandler{Reaper: sandboxReaper},
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {
@@ -109,4 +134,35 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 		MissedSince:          job.MissedSince,
 		OriginConversationID: job.OriginConversationID,
 	})
+}
+
+// buildSandboxRouter constructs the per-identity box router at the serve composition root,
+// sourced entirely from cfg.Sandbox (37-01). It returns NIL — a safe host-direct no-op
+// everywhere (Route/Strict/SuspendIdle all nil-guard) — under a non-strict profile (the box is
+// interposed ONLY under single_user_hardened / server_production, SC-4) or when a Docker client
+// cannot be constructed (a Docker-unavailable host must never fail serve boot). The tools are
+// NOT wired onto the router here — that is plan 37-07; this only builds the backend + router so
+// the reaper can be registered and 37-07 has a router handle to interpose.
+func buildSandboxRouter(chat *chatEnv) *usersandbox.SandboxRouter {
+	if chat == nil || chat.cfg == nil || !chat.cfg.Profile.Strict() {
+		return nil // non-strict: host-direct everywhere, no box runtime needed (SC-4)
+	}
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		slog.Warn("aura serve: docker client unavailable — sandbox routing disabled (host-direct)", "err", err)
+		return nil
+	}
+	backend := usersandbox.NewDockerBackend(cli, chat.cfg.Sandbox.Image, limitsFrom(chat.cfg.Sandbox))
+	return usersandbox.NewSandboxRouter(backend, chat.cfg.Profile, chat.cfg.Sandbox)
+}
+
+// limitsFrom maps the AURA_SANDBOX_* cgroup knobs (config) into usersandbox.Resources: the
+// CPU-count cap becomes NanoCPUs, memory + pids pass through (D-14). It is the DockerBackend's
+// construction-time fallback cap set; a routed Route always supplies a full spec via specFor.
+func limitsFrom(sc config.SandboxConfig) usersandbox.Resources {
+	return usersandbox.Resources{
+		NanoCPUs:    int64(sc.CPULimit) * nanoCPUsPerCPU,
+		MemoryBytes: sc.MemoryLimit,
+		PidsLimit:   sc.PidsLimit,
+	}
 }
