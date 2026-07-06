@@ -10,7 +10,7 @@
 
 > **Amended 2026-07-04** (design review vs codebase + industry survey of Temporal/DBOS/River/Hatchet/pgmq/A2A):
 >
-> 1. Migration renumbered **0025 → 0026** (`0025_document_control_plane` already shipped).
+> 1. Migration renumbered **00** → **00** (`0025_document_control_plane` already shipped).
 > 2. New **Task 7b**: gateway risk-tier entry for `agent_message_send` — without it the tool classifies `Risky` and every send pauses for human approval.
 > 3. `ValidateSendInput` now takes `*SendInput` and normalizes defaults in place (the by-value version silently dropped `Kind`/`Direction` defaults, then the insert hit the CHECK constraint).
 > 4. `jsonParam` split into `jsonObjectParam`/`jsonArrayParam` with `{}`/`[]` fallbacks (nil `[]byte` sends SQL NULL into NOT NULL jsonb columns; defaults do not apply to explicit NULLs).
@@ -58,10 +58,10 @@ Deferred to slice 2 (recorded here so they do not silently evaporate — each is
 
 Create:
 
-- `internal/db/migrations/0026_swarm_messaging.up.sql`
-- `internal/db/migrations/0026_swarm_messaging.down.sql`
+- `internal/db/migrations/00**_swarm_messaging.up.sql`
+- `internal/db/migrations/00**_swarm_messaging.down.sql`
 - `internal/db/queries/swarm_messaging.sql`
-- `internal/db/migrate_0026_swarm_messaging_integration_test.go`
+- `internal/db/migrate_00**_swarm_messaging_integration_test.go`
 - `internal/swarm/messaging/types.go`
 - `internal/swarm/messaging/validation.go`
 - `internal/swarm/messaging/service.go`
@@ -103,15 +103,15 @@ Do not modify:
 
 **Files:**
 
-- Create: `internal/db/migrations/0026_swarm_messaging.up.sql`
-- Create: `internal/db/migrations/0026_swarm_messaging.down.sql`
+- Create: `internal/db/migrations/00**_swarm_messaging.up.sql`
+- Create: `internal/db/migrations/00**_swarm_messaging.down.sql`
 - Create: `internal/db/queries/swarm_messaging.sql`
-- Create: `internal/db/migrate_0026_swarm_messaging_integration_test.go`
+- Create: `internal/db/migrate_00**_swarm_messaging_integration_test.go`
 - Modify: `internal/db/sqlc/*.go`
 
 - [ ] **Step 1: Write the failing migration integration test**
 
-Create `internal/db/migrate_0026_swarm_messaging_integration_test.go`:
+Create `internal/db/migrate_00**_swarm_messaging_integration_test.go`:
 
 ```go
 //go:build db_integration
@@ -125,7 +125,7 @@ import (
 	"time"
 )
 
-func TestMigration0026SwarmMessagingSchema(t *testing.T) {
+func TestMigration00**SwarmMessagingSchema(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -157,7 +157,7 @@ func TestMigration0026SwarmMessagingSchema(t *testing.T) {
 	}
 
 	if os.Getenv("CI") != "" {
-		t.Log("migration 0026 schema verified under CI")
+		t.Log("migration 00** schema verified under CI")
 	}
 }
 ```
@@ -167,7 +167,7 @@ func TestMigration0026SwarmMessagingSchema(t *testing.T) {
 Run:
 
 ```powershell
-go test -tags db_integration ./internal/db -run TestMigration0026SwarmMessagingSchema -count=1
+go test -tags db_integration ./internal/db -run TestMigration00**SwarmMessagingSchema -count=1
 ```
 
 Expected before the migration exists:
@@ -178,7 +178,7 @@ FAIL: aura.swarm_channel_threads was not created
 
 - [ ] **Step 3: Add the migration up file**
 
-Create `internal/db/migrations/0026_swarm_messaging.up.sql` with this schema:
+Create `internal/db/migrations/00**_swarm_messaging.up.sql` with this schema:
 
 ```sql
 CREATE TABLE aura.swarm_channel_threads (
@@ -308,7 +308,7 @@ COMMENT ON TABLE aura.swarm_artifacts IS 'Metadata references for large swarm pa
 
 - [ ] **Step 4: Add the migration down file**
 
-Create `internal/db/migrations/0026_swarm_messaging.down.sql`:
+Create `internal/db/migrations/00**_swarm_messaging.down.sql`:
 
 ```sql
 DROP TABLE IF EXISTS aura.swarm_artifacts;
@@ -518,7 +518,7 @@ no output on success
 Run:
 
 ```powershell
-go test -tags db_integration ./internal/db -run TestMigration0026SwarmMessagingSchema -count=1
+go test -tags db_integration ./internal/db -run TestMigration00**SwarmMessagingSchema -count=1
 ```
 
 Expected:
@@ -530,7 +530,7 @@ ok   github.com/chetto1983/aura/internal/db
 - [ ] **Step 8: Commit**
 
 ```powershell
-git add internal/db/migrations/0026_swarm_messaging.*.sql internal/db/queries/swarm_messaging.sql internal/db/sqlc internal/db/migrate_0026_swarm_messaging_integration_test.go
+git add internal/db/migrations/00**_swarm_messaging.*.sql internal/db/queries/swarm_messaging.sql internal/db/sqlc internal/db/migrate_00**_swarm_messaging_integration_test.go
 git commit -m "feat: add durable swarm messaging schema"
 ```
 
