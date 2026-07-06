@@ -51,6 +51,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 			Sweeper: &snippetSweeperAdapter{w: newSkillWriter(chat.cfg, chat.pool)},
 			TTL:     time.Duration(chat.cfg.SkillSnippetTTLDays) * 24 * time.Hour,
 		},
+		// The D-27 grace-window purge sweep (VERIF-3/HI-01): the live *agui.Deprovisioner
+		// satisfies handlers.IdentityPurger via PurgeExpired. A nil-pool build yields a
+		// no-op Purger, so this registration is always safe.
+		cron.KindIdentityPurge: handlers.IdentityPurgeHandler{Purger: buildDeprovisioner(chat)},
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {

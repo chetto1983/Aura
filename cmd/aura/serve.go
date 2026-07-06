@@ -294,6 +294,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedSkillTTLSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed skill TTL sweep", "err", err)
 	}
+	// Seed the D-27 grace-window identity purge sweep (VERIF-3/HI-01) idempotently — only
+	// when no identity_purge task already exists. The 0033-widened kind CHECK admits the row.
+	if err := seedIdentityPurgeSweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed identity purge sweep", "err", err)
+	}
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain

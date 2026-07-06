@@ -253,6 +253,14 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 		deps.AuraLeg = auraLegAdapter{pool: chat.pool}
 		deps.Telegram = telegramMintAdapter{store: telegram.New(chat.pool), pool: chat.pool}
 		deps.Recovery = recoverySetupAdapter{pool: chat.pool}
+		// Wire the eager per-identity resource legs (VERIF-3/HI-01): Garage bucket+key +
+		// per-identity dirs + saga journal. Nil (pre-cutover / no Garage admin config) →
+		// provisionResourceLegs nil-skips each leg, so admin-create still succeeds and just
+		// provisions no resources (backward compatible).
+		objProv, fsProv, jrnl := buildProvisioningPorts(chat)
+		deps.ObjectStore = objProv
+		deps.Filesystem = fsProv
+		deps.Journal = jrnl
 	}
 	if authulaProvider != nil {
 		if core := authulaProvider.CoreServices(); core != nil {
