@@ -31,12 +31,19 @@ type TaskKind string
 // (D-16) is the Phase-11 system-seeded TTL sweep — the 0010 migration widened the
 // scheduler_tasks.kind CHECK to admit it. It is NOT model-schedulable (the task tool's
 // kind enum is unchanged); only serve.go seeds it daily.
+//
+// KindIdentityPurge (Phase 36 D-27) is the grace-window soft-delete purge sweep — the
+// 0033 migration widened the scheduler_tasks.kind CHECK to admit it. Like skill_ttl_sweep
+// it is system-seeded (seedIdentityPurgeSweep), never model-schedulable. Its literal MUST
+// equal handlers.KindIdentityPurge ("identity_purge") — the cron store writes the row, the
+// dispatcher routes the same string to handlers.IdentityPurgeHandler.
 const (
 	KindReminder       TaskKind = "reminder"
 	KindAgentJob       TaskKind = "agent_job"
 	KindBackupPostgres TaskKind = "backup_postgres"
 	KindBackupNeo4j    TaskKind = "backup_neo4j"
 	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
+	KindIdentityPurge  TaskKind = "identity_purge"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical
