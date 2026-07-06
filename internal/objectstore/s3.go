@@ -97,6 +97,12 @@ func (s *S3Store) PresignPut(ctx context.Context, req PresignPutRequest) (Presig
 func newS3Client(awsCfg aws.Config, endpoint string, pathStyle bool) *s3.Client {
 	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.UsePathStyle = pathStyle
+		// AWS SDK Go v2 (s3 >=1.66) defaults checksum calculation to "when_supported",
+		// which streams PutObject with an aws-chunked CRC32 trailer + STREAMING content
+		// hash that Garage rejects (400 InvalidDigest: x-amz-content-sha256 mismatch).
+		// Restrict to "when_required" so uploads use a plain signed payload Garage accepts.
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 		o.EndpointResolverV2 = s3EndpointResolver{
 			endpoint: endpoint,
 			next:     s3.NewDefaultEndpointResolverV2(),
