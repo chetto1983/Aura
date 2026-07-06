@@ -6,9 +6,9 @@ current_phase: 36
 current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: gaps_found
 stopped_at: "Phase 36 verification: gaps_found (7 gaps) + code-review issues_found (1 Critical, 3 High) — pending gap-closure before phase can complete"
-last_updated: "2026-07-06T04:30:00.000Z"
+last_updated: "2026-07-06T04:11:31.046Z"
 last_activity: 2026-07-06
-last_activity_desc: 36-12 complete — the phase keystone (backfill + rollout + CI live-stack + two-identity acceptance gate). Idempotent Neo4j :User-HAS_DOCUMENT backfill (`aura documents backfill`, Op1 Postgres-map + Op2 operator orphan-net, MERGE-idempotent, operator identifier = UUID …001 not literal 'local') BEFORE the flag flip (D-12); deploy(off)->backfill->verify->flip(on) reversible runbook (D-13); CI musr-e2e job (Postgres+Neo4j+Garage-admin+Authula, composed DSNs + AURA_GARAGE_ADMIN_* + AURA_MUSR_ISOLATION=true, five tags, no-skip-as-green, no testcontainers); five-tag two-identity cross-deny E2E (HTTP 404/store-403/RLS-backstop/approvals/documents-flag-on/Garage per-identity + resolver selection/MUSR-02 B-owns+runs/MUSR-06 break-glass). Fix-on-touch: owner-scoped the D-09 branch routes (closed a 36-04 carry-forward isolation hole where B could fork+re-run A's conversation). MUSR-01/02/06 marked [x] (mechanism + acceptance E2E delivered). Live tiers (neo4j_integration backfill + the five-tag musr_e2e) compile-clean but NOT run here (no stack/CGO) — MUST run green in WSL/CI. Residual boot-wiring gaps recorded for the verifier (36-08 serve adapters/purge scheduler/D-15 reader, 36-03 shell Caps, 36-06/08 per-identity S3 consumption — all fail-closed-secure today).
+last_activity_desc: 36-12 complete (D-12 backfill + D-13 runbook + musr-e2e CI job + five-tag two-identity acceptance E2E; branch-route isolation hole fixed; MUSR-01/02/06 [x]; live tiers compile-clean, MUST run green in WSL/CI)
 progress:
   total_phases: 11
   completed_phases: 5
