@@ -10,7 +10,7 @@
 
 > **Amended 2026-07-04** (design review vs codebase + industry survey of Temporal/DBOS/River/Hatchet/pgmq/A2A):
 >
-> 1. Migration renumbered **00** → **00** (`0025_document_control_plane` already shipped).
+> 1. Migration renumbered **00** → **00** .
 > 2. New **Task 7b**: gateway risk-tier entry for `agent_message_send` — without it the tool classifies `Risky` and every send pauses for human approval.
 > 3. `ValidateSendInput` now takes `*SendInput` and normalizes defaults in place (the by-value version silently dropped `Kind`/`Direction` defaults, then the insert hit the CHECK constraint).
 > 4. `jsonParam` split into `jsonObjectParam`/`jsonArrayParam` with `{}`/`[]` fallbacks (nil `[]byte` sends SQL NULL into NOT NULL jsonb columns; defaults do not apply to explicit NULLs).
