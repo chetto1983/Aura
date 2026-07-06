@@ -70,8 +70,9 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("full Migrate up on fresh db: %v", err)
 	}
-	if headVersion := currentMigrationVersion(t, ctx, freshAdmin); headVersion < 26 {
-		t.Fatalf("full Migrate up reached version %d, want at least 26", headVersion)
+	head := currentMigrationVersion(t, ctx, freshAdmin)
+	if head < 26 {
+		t.Fatalf("full Migrate up reached version %d, want at least 26", head)
 	}
 
 	app, err := Open(ctx, &Config{URL: dsn("aura_app", freshDB)})
@@ -90,7 +91,17 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 		requireCap0026(t, caps, c, true)
 	}
 
-	// Step DOWN 0026: the three explicit caps are removed; `*` survives.
+	// Position DOWN to exactly version 26 before the ±1 straddle. golang-migrate's
+	// Steps(n) is RELATIVE to the current head, so a bare -1 from HEAD would reverse the
+	// NEWEST migration (0032 owner-RLS today), not 0026. Stepping this non-positive delta
+	// reverses 0027..HEAD but leaves 0026 applied, so the straddle below isolates
+	// migration 0026's OWN down/up regardless of how many migrations now sit above it.
+	stepDownToV26 := 26 - head
+	if err := MigrateSteps(ctx, migrateURL, stepDownToV26); err != nil {
+		t.Fatalf("MigrateSteps(%d) position down to v26: %v", stepDownToV26, err)
+	}
+
+	// Step DOWN 0026 (26 -> 25): the three explicit caps are removed; `*` survives.
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
 		t.Fatalf("MigrateSteps(-1) down 0026: %v", err)
 	}
@@ -100,7 +111,7 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 		requireCap0026(t, caps, c, false)
 	}
 
-	// Step UP 0026 again: the three explicit caps are restored idempotently.
+	// Step UP 0026 again (25 -> 26): the three explicit caps are restored idempotently.
 	if err := MigrateSteps(ctx, migrateURL, 1); err != nil {
 		t.Fatalf("MigrateSteps(+1) re-up 0026: %v", err)
 	}
@@ -110,7 +121,16 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 		requireCap0026(t, caps, c, true)
 	}
 
-	// The seed is reversible with no lingering pending migration.
+	// Restore to HEAD: re-applying 0027..HEAD brings back exactly head-26 migrations.
+	reapplied, err := Migrate(ctx, migrateURL)
+	if err != nil {
+		t.Fatalf("post-round-trip Migrate back to HEAD: %v", err)
+	}
+	if want := head - 26; reapplied != want {
+		t.Errorf("post-round-trip Migrate re-applied %d migrations, want %d (0027..HEAD)", reapplied, want)
+	}
+
+	// A second Migrate must be a no-op — the 0026 round-trip left no lingering pending.
 	n, err := Migrate(ctx, migrateURL)
 	if err != nil {
 		t.Fatalf("post-round-trip no-op Migrate: %v", err)
