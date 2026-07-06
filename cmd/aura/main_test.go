@@ -18,9 +18,14 @@ func TestMain(m *testing.M) {
 	// keep-alive connections (net/http.Transport persistConn read/write loops, created
 	// by (*Transport).dialConn). goleak reports these as leaked at teardown even though
 	// they are pooled and reaped on idle-timeout — the canonical http.Transport ignore.
+	//
+	// It MUST be IgnoreAnyFunction, not IgnoreTopFunction: a blocked readLoop's TOP
+	// frame is internal/poll.runtime_pollWait (it parks in bufio.Peek→persistConn.Read),
+	// so persistConn.readLoop is a MIDDLE frame — IgnoreTopFunction("...readLoop") never
+	// matches. IgnoreAnyFunction matches the frame anywhere in the stack.
 	goleak.VerifyTestMain(m,
-		goleak.IgnoreTopFunction("net/http.(*persistConn).readLoop"),
-		goleak.IgnoreTopFunction("net/http.(*persistConn).writeLoop"),
+		goleak.IgnoreAnyFunction("net/http.(*persistConn).readLoop"),
+		goleak.IgnoreAnyFunction("net/http.(*persistConn).writeLoop"),
 	)
 }
 
