@@ -191,6 +191,11 @@ None during planned work.
 - The asset read/write path now enforces D-08 bucket-per-identity isolation at request time; the mechanism is unit- + compile-proven.
 - **36-18 must run** the live `garage_integration db_integration` cross-deny test (musr-e2e CI job / WSL with :3903 published) + the full-matrix coverage ≥85% + push, and then close MUSR-01.
 
+## Self-Check: PASSED
+
+- Files verified present: `internal/assets/object_resolver.go`, `object_resolver_unit_test.go`, `object_resolver_test.go`, `36-15-SUMMARY.md`.
+- Commits verified present: `406a1e75` (Task 1), `248e5676` (Task 2), `8f561f5a` (docs).
+
 ---
 *Phase: 36-multi-user-identity-isolation-authula-cutover*
 *Completed: 2026-07-06*
