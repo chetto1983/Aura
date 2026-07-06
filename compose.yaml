@@ -79,7 +79,10 @@ services:
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
       # RET-01/02: two-stage retrieval rerank stage. Points at the GPU aura-rerank
       # sidecar; client fails soft to RRF/vector order when absent (no hard dep).
-      AURA_RERANK_BASE_URL: ${AURA_RERANK_BASE_URL:-http://aura-rerank:8085}
+      # Hard-coded to the compose-DNS sidecar (like AURA_EMBED_BASE_URL above): the
+      # host-oriented .env value (127.0.0.1:8085, for the host-run `aura` CLI) must
+      # NOT leak into the container, where loopback does not reach the sidecar.
+      AURA_RERANK_BASE_URL: http://aura-rerank:8085
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
       AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-localhost:4317}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
