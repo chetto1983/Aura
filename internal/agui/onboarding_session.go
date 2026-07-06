@@ -226,7 +226,12 @@ type onboardingService struct {
 	auraLeg  AuraLegWriter
 	telegram TelegramMint
 	botName  string
-	recovery RecoverySetupWriter
+	// botNameResolver, when set, resolves the CURRENT bot username from the effective
+	// TELEGRAM_BOT_TOKEN (settings store → env, via getMe) so an operator who saves a token
+	// mid-session gets a working deep-link WITHOUT a daemon restart (the sentinel/refresh
+	// pattern). A nil resolver or an empty result falls back to the boot-frozen botName.
+	botNameResolver func(context.Context) string
+	recovery        RecoverySetupWriter
 
 	// Phase-36 resource legs + journaling (onboarding_provision_resources.go /
 	// saga_journal.go): the forward-recovery journal, the per-identity Garage bucket/key
@@ -259,7 +264,11 @@ type OnboardingDeps struct {
 	AuraLeg      AuraLegWriter
 	Telegram     TelegramMint
 	BotUsername  string
-	Recovery     RecoverySetupWriter
+	// BotUsernameResolver resolves the CURRENT bot username live (settings-store token →
+	// getMe), so a token saved mid-session yields a working deep-link without a restart. When
+	// nil or returning "", the service falls back to the boot-resolved BotUsername.
+	BotUsernameResolver func(context.Context) string
+	Recovery            RecoverySetupWriter
 	// Phase-36 provisioning saga extensions (all optional): the forward-recovery journal
 	// (D-14/D-27), the per-identity Garage bucket/key leg (D-08), and the per-identity
 	// filesystem-roots leg (D-20/D-21).
@@ -283,19 +292,20 @@ func NewOnboardingService(d OnboardingDeps) OnboardingService {
 // newOnboardingService assembles the concrete service over the supplied narrow ports.
 func newOnboardingService(d OnboardingDeps) *onboardingService {
 	return &onboardingService{
-		sessions:      newSessionStore(d.TTL),
-		caps:          d.Capabilities,
-		extractor:     d.Extractor,
-		profiles:      d.Profiles,
-		authula:       d.Authula,
-		auraLeg:       d.AuraLeg,
-		telegram:      d.Telegram,
-		botName:       d.BotUsername,
-		recovery:      d.Recovery,
-		journal:       d.Journal,
-		objectStore:   d.ObjectStore,
-		filesystem:    d.Filesystem,
-		musrIsolation: d.MUSRIsolation,
+		sessions:        newSessionStore(d.TTL),
+		caps:            d.Capabilities,
+		extractor:       d.Extractor,
+		profiles:        d.Profiles,
+		authula:         d.Authula,
+		auraLeg:         d.AuraLeg,
+		telegram:        d.Telegram,
+		botName:         d.BotUsername,
+		botNameResolver: d.BotUsernameResolver,
+		recovery:        d.Recovery,
+		journal:         d.Journal,
+		objectStore:     d.ObjectStore,
+		filesystem:      d.Filesystem,
+		musrIsolation:   d.MUSRIsolation,
 	}
 }
 

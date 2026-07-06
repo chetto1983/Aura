@@ -6,6 +6,7 @@ import { ModelSettingsPanel } from '../settings/ModelSettingsPanel';
 import { InterviewStep } from './InterviewStep';
 import { OnboardingCenteredState, OnboardingDialog } from './OnboardingDialog';
 import { TelegramLinkStep } from './TelegramLinkStep';
+import { TelegramTokenStep } from './TelegramTokenStep';
 import { isAuthError } from './onboardingWizardModel';
 import {
   completeProfileOnboarding,
@@ -23,7 +24,15 @@ export interface ProfileOnboardingWizardProps {
 
 type StartStatus = 'starting' | 'ready' | 'error' | 'error-auth';
 type CompletionStatus = 'idle' | 'saving' | 'completed' | 'skipped' | 'error';
-type ProfileStepKey = 'identity' | 'work' | 'projects' | 'social' | 'style' | 'draft' | 'runtime';
+type ProfileStepKey =
+  | 'identity'
+  | 'work'
+  | 'projects'
+  | 'social'
+  | 'style'
+  | 'draft'
+  | 'runtime'
+  | 'telegram';
 
 const profileStepOrder = [
   'identity',
@@ -33,6 +42,7 @@ const profileStepOrder = [
   'style',
   'draft',
   'runtime',
+  'telegram',
 ] as const;
 const profileStepSet = new Set<string>(profileStepOrder);
 
@@ -128,6 +138,7 @@ export default function ProfileOnboardingWizard({ onClose }: ProfileOnboardingWi
   );
   const [beginNonce, setBeginNonce] = useState(0);
   const [runtimeSetupOpen, setRuntimeSetupOpen] = useState(false);
+  const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +151,7 @@ export default function ProfileOnboardingWizard({ onClose }: ProfileOnboardingWi
         setCompletionStatus('idle');
         setCompletionResult(undefined);
         setRuntimeSetupOpen(false);
+        setTelegramSetupOpen(false);
         setStartStatus('ready');
       } catch (err) {
         if (cancelled) return;
@@ -189,7 +201,11 @@ export default function ProfileOnboardingWizard({ onClose }: ProfileOnboardingWi
     onError: handleStepError,
   });
 
-  const activeStep: ProfileStepKey = runtimeSetupOpen ? 'runtime' : profileStepKey(interview);
+  const activeStep: ProfileStepKey = telegramSetupOpen
+    ? 'telegram'
+    : runtimeSetupOpen
+      ? 'runtime'
+      : profileStepKey(interview);
   const activeIndex = profileStepIndex(activeStep);
   const displayedInterview =
     interview === undefined ? undefined : localizedProfileStep(interview, t);
@@ -302,11 +318,15 @@ export default function ProfileOnboardingWizard({ onClose }: ProfileOnboardingWi
           ) : null}
 
           {displayedInterview !== undefined ? (
-            runtimeSetupOpen ? (
+            telegramSetupOpen ? (
+              <TelegramTokenStep onDone={() => void finishProfile()} />
+            ) : runtimeSetupOpen ? (
               <ModelSettingsPanel
                 saveLabel={t('onboarding.profile.runtime.save')}
                 skipLabel={t('onboarding.profile.runtime.skip')}
-                onComplete={() => finishProfile()}
+                onComplete={() => {
+                  setTelegramSetupOpen(true);
+                }}
               />
             ) : (
               <InterviewStep

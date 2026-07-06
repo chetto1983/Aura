@@ -126,6 +126,10 @@ export const onboardingEn = {
           label: 'Model and token setup',
           help: 'Choose cloud or local model routing, token budgets, and sidecar backends before Aura starts regular work.',
         },
+        telegram: {
+          label: 'Telegram integration',
+          help: 'Connect the Telegram bot Aura uses for the recovery link and chat channel, then scan the pairing QR.',
+        },
       },
       prompts: {
         identity:
@@ -141,6 +145,23 @@ export const onboardingEn = {
       runtime: {
         save: 'Save and continue',
         skip: 'Skip runtime setup',
+      },
+      telegram: {
+        checking: 'Checking Telegram configuration…',
+        intro:
+          'Paste the bot token from @BotFather. Aura validates it live and uses this single bot for the whole instance.',
+        tokenLabel: 'Telegram bot token',
+        tokenPlaceholder: '123456789:AA…',
+        verify: 'Verify token',
+        verifying: 'Verifying…',
+        valid: 'Valid — bot @{{bot}}',
+        invalid: 'That token was rejected by Telegram. Check it and try again.',
+        saving: 'Saving…',
+        activateNote:
+          'Token saved. Restart Aura to activate the bot channel so the pairing scan completes.',
+        alreadyConfigured: 'Telegram bot @{{bot}} is already configured.',
+        continue: 'Continue',
+        errorSave: "Couldn't save the token. Try again.",
       },
       skipSetup: 'Skip profile setup',
       saving: 'Saving profile...',
@@ -268,6 +289,10 @@ export const onboardingIt = {
           label: 'Configurazione modello e token',
           help: 'Scegli modello cloud o locale, budget token e backend sidecar prima del lavoro regolare.',
         },
+        telegram: {
+          label: 'Integrazione Telegram',
+          help: 'Collega il bot Telegram che Aura usa per il link di recupero e il canale chat, poi scansiona il QR di abbinamento.',
+        },
       },
       prompts: {
         identity:
@@ -283,6 +308,23 @@ export const onboardingIt = {
       runtime: {
         save: 'Salva e continua',
         skip: 'Salta configurazione runtime',
+      },
+      telegram: {
+        checking: 'Verifica configurazione Telegram…',
+        intro:
+          'Incolla il token del bot da @BotFather. Aura lo valida in tempo reale e usa questo unico bot per tutta l’istanza.',
+        tokenLabel: 'Token bot Telegram',
+        tokenPlaceholder: '123456789:AA…',
+        verify: 'Verifica token',
+        verifying: 'Verifica…',
+        valid: 'Valido — bot @{{bot}}',
+        invalid: 'Token rifiutato da Telegram. Controllalo e riprova.',
+        saving: 'Salvataggio…',
+        activateNote:
+          'Token salvato. Riavvia Aura per attivare il canale bot e completare la scansione di abbinamento.',
+        alreadyConfigured: 'Il bot Telegram @{{bot}} è già configurato.',
+        continue: 'Continua',
+        errorSave: 'Impossibile salvare il token. Riprova.',
       },
       skipSetup: 'Salta configurazione profilo',
       saving: 'Salvataggio profilo...',

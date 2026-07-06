@@ -160,12 +160,12 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	if !s.musrIsolation {
 		return OnboardingProvisionResponse{}, errIsolationDisabled
 	}
-	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || strings.TrimSpace(s.botName) == "" || s.recovery == nil {
+	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || s.resolveBotName(ctx) == "" || s.recovery == nil {
 		slog.Warn("onboarding: provisioning backend not configured",
 			"authula", s.authula != nil,
 			"aura_leg", s.auraLeg != nil,
 			"telegram", s.telegram != nil,
-			"bot_username", strings.TrimSpace(s.botName) != "",
+			"bot_username", s.resolveBotName(ctx) != "",
 			"recovery", s.recovery != nil,
 		)
 		return OnboardingProvisionResponse{}, errProvisioningUnavailable
@@ -315,8 +315,8 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	s.persistProfile(entry, identityID)
 
 	resp := OnboardingProvisionResponse{IdentityID: identityID}
-	if in.LinkTelegram && s.botName != "" {
-		deepLink := fmt.Sprintf("https://t.me/%s?start=%s", s.botName, onboardingToken)
+	if botName := s.resolveBotName(ctx); in.LinkTelegram && botName != "" {
+		deepLink := fmt.Sprintf("https://t.me/%s?start=%s", botName, onboardingToken)
 		resp.DeepLink = deepLink
 		if svg, qerr := renderQRSVG(deepLink); qerr == nil {
 			resp.QRSVG = svg
@@ -461,11 +461,25 @@ func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdenti
 	}
 }
 
+// resolveBotName returns the CURRENT Telegram bot username. A wired live resolver
+// (botNameResolver — the effective settings-store token getMe'd on demand) wins when it
+// yields a non-empty name, so an operator who saves a valid token mid-session gets a
+// working deep-link WITHOUT a daemon restart; otherwise the boot-frozen snapshot is used.
+func (s *onboardingService) resolveBotName(ctx context.Context) string {
+	if s.botNameResolver != nil {
+		if name := strings.TrimSpace(s.botNameResolver(ctx)); name != "" {
+			return name
+		}
+	}
+	return strings.TrimSpace(s.botName)
+}
+
 func (s *onboardingService) mintTelegramLink(ctx context.Context, identityID string) (token, deepLink, qrSVG string, err error) {
-	if s.telegram == nil || strings.TrimSpace(s.botName) == "" {
+	botName := s.resolveBotName(ctx)
+	if s.telegram == nil || botName == "" {
 		slog.Warn("onboarding: telegram link backend not configured",
 			"telegram", s.telegram != nil,
-			"bot_username", strings.TrimSpace(s.botName) != "",
+			"bot_username", botName != "",
 		)
 		return "", "", "", errProvisioningUnavailable
 	}
@@ -476,7 +490,7 @@ func (s *onboardingService) mintTelegramLink(ctx context.Context, identityID str
 		}
 		return "", "", "", provisionFail("telegram mint", err)
 	}
-	deepLink = fmt.Sprintf("https://t.me/%s?start=%s", strings.TrimSpace(s.botName), token)
+	deepLink = fmt.Sprintf("https://t.me/%s?start=%s", botName, token)
 	if svg, qerr := renderQRSVG(deepLink); qerr == nil {
 		qrSVG = svg
 	} else {

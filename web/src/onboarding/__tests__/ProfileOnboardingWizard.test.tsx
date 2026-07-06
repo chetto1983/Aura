@@ -58,8 +58,23 @@ describe('ProfileOnboardingWizard', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(
+      vi.fn((url: unknown) => {
+        // The Telegram step probes the stored token via /api/settings/telegram/check; return an
+        // already-configured bot so the wizard auto-surfaces "already configured" → Continue.
+        if (String(url).includes('/api/settings/telegram/check')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                configured: true,
+                available: true,
+                botUsername: 'AuraBot',
+                requiresRestart: false,
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
           new Response(
             JSON.stringify({
               restart_required: false,
@@ -95,8 +110,8 @@ describe('ProfileOnboardingWizard', () => {
             }),
             { status: 200 },
           ),
-        ),
-      ),
+        );
+      }),
     );
   });
 
@@ -112,7 +127,7 @@ describe('ProfileOnboardingWizard', () => {
       expect(screen.getByText('Finish setting up Aura')).toBeTruthy();
     });
     expect(screen.getByRole('dialog', { name: 'Set up your profile' })).toBeTruthy();
-    expect(screen.getAllByText('Step 1 of 7').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Step 1 of 8').length).toBeGreaterThan(0);
     expect(screen.getByText(/Tell Aura what to call you, your role, team or company/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Skip profile setup' })).toBeTruthy();
     expect(screen.queryByText('New operator credentials')).toBeNull();
@@ -149,6 +164,14 @@ describe('ProfileOnboardingWizard', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Model routing' })).toBeTruthy();
+    });
+    expect(completeProfileOnboarding).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // The model step now advances to the Telegram integration step; the stored bot is already
+    // configured, so it auto-surfaces and its Continue triggers profile completion.
+    await waitFor(() => {
+      expect(screen.getByText(/Telegram bot @AuraBot is already configured/)).toBeTruthy();
     });
     expect(completeProfileOnboarding).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));

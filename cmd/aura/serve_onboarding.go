@@ -269,6 +269,9 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 		}
 	}
 	deps.BotUsername = resolveBotUsername(ctx, telegram.LoadConfig().BotToken)
+	// Live resolver (ONBD Telegram step): a token saved mid-session via Settings yields a
+	// working deep-link without a daemon restart. Falls back to deps.BotUsername when empty.
+	deps.BotUsernameResolver = newBotUsernameResolver(chat.pool)
 	// CR-01/VERIF-5: couple provisioning to the documents-plane isolation flag. When off, the
 	// saga REFUSES to create a 2nd identity (agui errIsolationDisabled) so the leak can never
 	// be armed by adding a principal; here we also emit a LOUD boot WARN if the daemon already
