@@ -94,12 +94,18 @@ func (b *DockerBackend) Stop(ctx context.Context, h BoxHandle) error {
 }
 
 // materializeInputs copies the identity's skills / Agent.md / pyscripts into the box volume
-// at create and resume (D-10). PLACEHOLDER (37-04 Task 1): the tar-stream MaterializeIn
-// helper it delegates to lands in materialize.go in Task 2, which replaces this body. Until
-// then it is a no-op so the Resolve call site compiles and is exercised by the round-trip
-// smoke.
-func (b *DockerBackend) materializeInputs(_ context.Context, _ BoxHandle) error {
-	return nil
+// at create and resume (D-10) by delegating to the MaterializeIn tar-stream helper. With no
+// SourceResolver wired (or no sources for the identity) it is a no-op and Resolve still
+// succeeds; otherwise a materialize error propagates so Resolve fails closed.
+func (b *DockerBackend) materializeInputs(ctx context.Context, h BoxHandle) error {
+	if b.sources == nil {
+		return nil
+	}
+	srcs := b.sources(h.IdentityID)
+	if len(srcs) == 0 {
+		return nil
+	}
+	return MaterializeIn(ctx, b.cli, h, srcs)
 }
 
 // ensureVolume creates a named volume, idempotently: Docker's volume create returns the
