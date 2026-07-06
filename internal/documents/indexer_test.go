@@ -55,6 +55,38 @@ func TestIndexerSetsDocumentSearchableAfterChunkWrites(t *testing.T) {
 	}
 }
 
+// TestIndexerNormalizesEmptyIdentityToOperator locks LO-03: an empty ingest identity is
+// attributed to the operator (local UUID …001) before the ownership MERGE — never
+// (:User {identifier:""}), which would orphan the doc from everyone post-flip — while a real
+// identity is threaded verbatim. writeCalls[0] is the document/ownership upsert.
+func TestIndexerNormalizesEmptyIdentityToOperator(t *testing.T) {
+	t.Run("empty identity attributes to operator", func(t *testing.T) {
+		fake := &fakeKnowledgeClient{}
+		indexer := &Indexer{Client: fake}
+		doc := testDocumentWithChunks(t, 1)
+		doc.IdentityID = ""
+		if _, err := indexer.UpsertSparse(t.Context(), doc); err != nil {
+			t.Fatal(err)
+		}
+		if got := fake.writeCalls[0].params["identity"]; got != OperatorIdentity {
+			t.Fatalf("empty-identity ingest identity param = %#v, want operator %q", got, OperatorIdentity)
+		}
+	})
+	t.Run("real identity threaded verbatim", func(t *testing.T) {
+		const principal = "00000000-0000-0000-0000-0000000000ab"
+		fake := &fakeKnowledgeClient{}
+		indexer := &Indexer{Client: fake}
+		doc := testDocumentWithChunks(t, 1)
+		doc.IdentityID = principal
+		if _, err := indexer.UpsertSparse(t.Context(), doc); err != nil {
+			t.Fatal(err)
+		}
+		if got := fake.writeCalls[0].params["identity"]; got != principal {
+			t.Fatalf("real-identity ingest identity param = %#v, want %q", got, principal)
+		}
+	})
+}
+
 func TestIndexerStopsOnWriteFailure(t *testing.T) {
 	fake := &fakeKnowledgeClient{failWriteAt: 2, failErr: errors.New("boom")}
 	indexer := &Indexer{Client: fake, BatchSize: 2}

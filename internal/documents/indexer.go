@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 const defaultSparseBatchSize = 250
@@ -33,9 +34,18 @@ func (i *Indexer) UpsertSparse(ctx context.Context, doc ExtractedDocument) (int,
 	if len(doc.Chunks) == 0 {
 		return 0, fmt.Errorf("document has no chunks")
 	}
+	// LO-03: normalize an empty ingest identity to the operator (local UUID …001) before the
+	// ownership MERGE — an empty-identity ingest (a CLI/legacy path that never threads the
+	// `local` UUID) would otherwise MERGE (:User {identifier:""}), orphaning the doc from
+	// everyone post-flip (scoped retrieval fails closed on `$identity <> ""`). Attributing it
+	// to the operator keeps it reachable, matching the retrieval/backfill owner convention.
+	identity := doc.IdentityID
+	if strings.TrimSpace(identity) == "" {
+		identity = OperatorIdentity
+	}
 	if _, err := i.Client.Write(ctx, documentUpsertQuery, map[string]any{
 		"document": documentParams(doc),
-		"identity": doc.IdentityID,
+		"identity": identity,
 	}); err != nil {
 		return 0, fmt.Errorf("upsert document: %w", err)
 	}

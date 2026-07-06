@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/documents"
-	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // DocumentSearchBackend retrieves cited document chunks for the document_search
@@ -82,10 +81,14 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 		Query:      args.Query,
 		DocumentID: strings.TrimSpace(args.DocumentID),
 		Limit:      args.Limit,
-		// Scope retrieval to the authenticated principal. When AURA_MUSR_ISOLATION is on,
-		// the documents plane fails closed on a foreign/empty identity (Phase 36 MUSR-01);
-		// when off, this id is ignored and the pre-existing unscoped path runs (D-13).
-		IdentityID: identityctx.IdentityID(ctx),
+		// Scope retrieval to the authenticated principal, mapping an empty CLI/no-principal
+		// ctx to the seeded `local` UUID (…001) via ownerFromContext — parity with
+		// shell_bg/runner (ME-01). The operator's own documents are owned by the `local`
+		// UUID (documents/backfill.go), so with AURA_MUSR_ISOLATION on the CLI operator still
+		// retrieves them instead of failing closed to zero results, while a web principal
+		// stays scoped to itself. When the flag is off, this id is ignored and the
+		// pre-existing unscoped path runs (D-13).
+		IdentityID: ownerFromContext(ctx),
 	})
 	if err != nil {
 		return ToolResult{}, err

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 func TestDocumentSearchToolValidatesQuery(t *testing.T) {
@@ -60,6 +61,35 @@ func TestDocumentSearchToolPropagatesSearchError(t *testing.T) {
 func toolTestContext(t *testing.T) context.Context {
 	t.Helper()
 	return WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096)
+}
+
+// TestDocumentSearchToolThreadsOwnerIdentity locks ME-01: the tool maps an empty
+// CLI/no-principal ctx to the seeded `local` UUID (…001) via ownerFromContext — so the
+// operator's own local-owned documents stay reachable with AURA_MUSR_ISOLATION on — and
+// threads an authenticated web principal verbatim.
+func TestDocumentSearchToolThreadsOwnerIdentity(t *testing.T) {
+	t.Run("empty principal resolves to local UUID", func(t *testing.T) {
+		backend := &fakeDocumentSearchBackend{}
+		tool := &DocumentSearch{Searcher: backend}
+		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"query":"hello"}`)); err != nil {
+			t.Fatal(err)
+		}
+		if backend.req.IdentityID != localOwnerID {
+			t.Fatalf("empty-principal search IdentityID = %q, want local UUID %q", backend.req.IdentityID, localOwnerID)
+		}
+	})
+	t.Run("web principal threaded verbatim", func(t *testing.T) {
+		const principal = "00000000-0000-0000-0000-0000000000ab"
+		backend := &fakeDocumentSearchBackend{}
+		tool := &DocumentSearch{Searcher: backend}
+		ctx := identityctx.WithIdentityID(toolTestContext(t), principal)
+		if _, err := tool.Execute(ctx, json.RawMessage(`{"query":"hello"}`)); err != nil {
+			t.Fatal(err)
+		}
+		if backend.req.IdentityID != principal {
+			t.Fatalf("web-principal search IdentityID = %q, want %q", backend.req.IdentityID, principal)
+		}
+	})
 }
 
 // TestDocumentSearchToolNoRerankerMatchesSearchOrder wires a REAL documents.Service
