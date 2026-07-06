@@ -90,10 +90,9 @@ func TestBuildDeprovisionerWiresPurger(t *testing.T) {
 		t.Fatal("buildDeprovisioner: want non-nil *Deprovisioner")
 	}
 	// The Purger seam the dispatch handler consumes MUST be satisfied by the Deprovisioner.
-	var purger handlers.IdentityPurger = dep
-	if purger == nil {
-		t.Fatal("Deprovisioner does not satisfy handlers.IdentityPurger")
-	}
+	// This is a compile-time interface-satisfaction assertion: a concrete *Deprovisioner is
+	// never nil here, so a runtime nil-check would be dead code (staticcheck SA4023).
+	var _ handlers.IdentityPurger = dep
 	// A nil-pool build yields a no-op Purger (nil Deactivator → PurgeExpired returns 0,nil).
 	nilPoolDep := buildDeprovisioner(&chatEnv{cfg: &config.Config{}})
 	n, err := nilPoolDep.PurgeExpired(context.Background(), time.Now().UTC())
