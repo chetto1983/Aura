@@ -250,7 +250,12 @@ func msgContext(bot tele.API, msg *tele.Message) tele.Context {
 }
 
 func chatMsg(chatID int64) *tele.Message {
-	return &tele.Message{Chat: &tele.Chat{ID: chatID}}
+	// Aura's Telegram is a personal-DM appliance: every real inbound update is a private
+	// chat (msg.Chat.ID == msg.Sender.ID). The dispatch gate enforces that invariant
+	// (requireLinkedMessage/requireLinkedCallback reject non-private chats, HI-03), so the
+	// shared test message models a private DM; a test that needs a non-private chat builds
+	// one explicitly.
+	return &tele.Message{Chat: &tele.Chat{ID: chatID, Type: tele.ChatPrivate}}
 }
 
 // TestOnTextCommandInterceptNoTurn proves a /command is intercepted BEFORE the LLM:
