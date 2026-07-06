@@ -290,7 +290,7 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 11/12 plans executed
+**Plans:** 12/12 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
@@ -317,7 +317,7 @@ Plans:
 
 **Wave 5** *(acceptance gate — blocked on Wave 4)*
 
-- [ ] 36-12-PLAN.md — Documents backfill + flag-flip rollout runbook + CI (Garage+Authula) + two-identity live cross-deny E2E (D-29 acceptance gate)
+- [x] 36-12-PLAN.md — Documents backfill + flag-flip rollout runbook + CI (Garage+Authula) + two-identity live cross-deny E2E (D-29 acceptance gate) — idempotent Op1/Op2 owner-edge backfill (operator=UUID …001); deploy(off)→backfill→verify→flip(on) reversible runbook; musr-e2e CI job (composed DSNs + AURA_GARAGE_ADMIN_* + AURA_MUSR_ISOLATION=true, five tags, no-skip-as-green); five-tag E2E (HTTP 404/store-403/RLS/approvals/docs/Garage+resolver/MUSR-02/MUSR-06); + fixed the D-09 branch-route isolation hole; MUSR-01/02/06 [x]; live tiers compile-clean, pending WSL/CI
 
 #### Phase 37: Per-User Full-Capability Sandbox
 
