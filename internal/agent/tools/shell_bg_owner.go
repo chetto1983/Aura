@@ -85,6 +85,41 @@ func authorizeCaller(ctx context.Context, caps capabilityChecker, sh *bgShell) b
 	return sh.authorize(callerIdentity, callerSession, hasAdmin)
 }
 
+// TerminateSession kills every RUNNING background shell owned by (ownerID, sessionID) and
+// drops it from the registry — the conversation-delete leg (MUSR-05 step 4). It is
+// owner-scoped by the (identity, session) binding each job captured at start, so a job a
+// co-tenant started under the same session id (different owner) is never touched. Killing an
+// already-finished job is skipped (it is pruned by completion). Idempotent + nil-safe.
+func (b *BackgroundShells) TerminateSession(ownerID, sessionID string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	var kill []*bgShell
+	for id, sh := range b.shells {
+		if sh.ownerID != ownerID || sh.sessionID != sessionID {
+			continue
+		}
+		sh.mu.Lock()
+		running := !sh.done
+		if running {
+			sh.killed = true
+			sh.exitCode = nil
+		}
+		sh.mu.Unlock()
+		if running {
+			kill = append(kill, sh)
+		}
+		delete(b.shells, id)
+	}
+	b.mu.Unlock()
+	// cancel() outside the registry lock: it may block on the process group teardown, and the
+	// job's reaper goroutine takes sh.mu — never hold b.mu across it (deadlock-free).
+	for _, sh := range kill {
+		sh.cancel()
+	}
+}
+
 // ShellPoll reads new output from a background shell_exec job — Claude Code's
 // BashOutput. Non-mutating: it only reads accumulated output + status.
 type ShellPoll struct {
@@ -127,6 +162,17 @@ func (p *ShellPoll) Evict(sessionID string) {
 		return
 	}
 	p.Shells.Evict(sessionID)
+}
+
+// TerminateSession forwards the conversation-delete signal (MUSR-05 step 4) to the shared
+// background-shell registry, killing this (identity, session)'s running jobs. ShellPoll is a
+// registry tool, so the Runner's delete lifecycle reaches the process-scoped registry through
+// it (SessionJobTerminator, the owner-scoped analog of the Evict SessionEvictor path).
+func (p *ShellPoll) TerminateSession(ownerID, sessionID string) {
+	if p == nil || p.Shells == nil {
+		return
+	}
+	p.Shells.TerminateSession(ownerID, sessionID)
 }
 
 func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {

@@ -34,6 +34,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
@@ -86,7 +87,7 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Assets:             chat.assets,
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),
-		Clear:              chat.conv,
+		Clear:              telegramClearAdapter{run: chat.run},
 		Prices:             chat.cfg.LLM.Prices,
 		Model:              chat.cfg.LLM.Model,
 		Resume:             chat.run,
@@ -178,6 +179,22 @@ func clampInt64ToInt(v int64) int {
 // channel, which the translator emits as a RUN_ERROR; the Telegram renderer now
 // surfaces that sanitized reason to the user (renderer.go RunErrorEvent case),
 // exactly as any other Turn error.
+// telegramClearAdapter routes the Telegram /clear hard-delete through the runner's single
+// conversation-delete lifecycle (MUSR-05 / D-22) instead of a raw store delete, so /clear
+// tears down the same live session state (pending pauses, session tools, background jobs) the
+// AG-UI and CLI deletes do — no second deletion path bypasses the lifecycle. The owner
+// identity is read from ctx (identityctx); the Telegram per-identity routing not yet threading
+// a principal (deferred to the phase-12 cutover) resolves to `local`, matching the current
+// chat ownership, and upgrades to the linked identity automatically once ctx carries it — no
+// rework here. A not-owned/absent id (rows-affected==0) is a benign no-op: the /clear reply is
+// idempotent and the next inbound message lazily re-creates the conversation.
+type telegramClearAdapter struct{ run *runner.Runner }
+
+func (a telegramClearAdapter) Delete(ctx context.Context, convID string) error {
+	_, err := a.run.DeleteConversationLifecycle(ctx, identityctx.IdentityID(ctx), convID)
+	return err
+}
+
 func ensuringTurn(run *runner.Runner) func(context.Context, string, *string) iter.Seq2[*agent.Event, error] {
 	return func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
 		return func(yield func(*agent.Event, error) bool) {

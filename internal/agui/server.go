@@ -58,10 +58,16 @@ type Runner interface {
 	// round over the SELECTED branch path (leafSeq) with no fresh user message — the
 	// branch's turns were already persisted by ForkBranch. *runner.Runner satisfies it.
 	TurnBranch(ctx context.Context, convID string, leafSeq int) iter.Seq2[*agent.Event, error]
+	// DeleteConversationLifecycle is the single owner-scoped conversation-delete entry point
+	// (MUSR-05 / D-22): it cancels active work, expires pauses, evicts session tools,
+	// terminates background jobs, THEN deletes persistence — returning rows-affected (0 = not
+	// owned → 403/404) so the DELETE route never performs a raw store delete. *runner.Runner
+	// satisfies it.
+	DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error)
 }
 
 type threadTryLocker interface {
-	TryLockThread(threadID string) (func(), bool)
+	TryLockThread(ctx context.Context, threadID string) (func(), bool)
 }
 
 // ApprovalStore is the narrow cross-thread HITL-read surface the approval center
@@ -308,7 +314,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	var unlock func()
 	if locker, ok := s.run.(threadTryLocker); ok {
 		var locked bool
-		unlock, locked = locker.TryLockThread(in.ThreadID)
+		unlock, locked = locker.TryLockThread(ctx, in.ThreadID)
 		if !locked {
 			http.Error(w, runner.ErrThreadBusy.Error(), http.StatusConflict)
 			return

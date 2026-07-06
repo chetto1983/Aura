@@ -169,7 +169,7 @@ func (s *Server) rerunBranch(w http.ResponseWriter, r *http.Request, convID stri
 	var unlock func()
 	if locker, ok := s.run.(threadTryLocker); ok {
 		var locked bool
-		unlock, locked = locker.TryLockThread(convID)
+		unlock, locked = locker.TryLockThread(ctx, convID)
 		if !locked {
 			http.Error(w, runner.ErrThreadBusy.Error(), http.StatusConflict)
 			return

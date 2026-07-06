@@ -127,6 +127,11 @@ type scriptedRunner struct {
 	newConversationID    string
 	newConversationErr   error
 	newConversationCalls int
+	// conv is the optional owner-scoped store the delete lifecycle delegates to (mirrors the
+	// real Runner delegating to r.Conv); deleteLifecycleCalls counts the routed deletes so a
+	// test can prove the DELETE route went through the lifecycle, not a raw store delete.
+	conv                 ConversationStore
+	deleteLifecycleCalls int
 }
 
 func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
@@ -178,6 +183,25 @@ func (s *scriptedRunner) NewConversation(context.Context) (string, error) {
 		return s.newConversationID, nil
 	}
 	return goodID, nil
+}
+
+// DeleteConversationLifecycle models the runner's single delete lifecycle for the handler
+// tests. The real Runner delegates the owner gate + persistence delete to its conversation
+// store (r.Conv.GetForIdentity/DeleteForIdentity); this fake does the same over an optional
+// conv store so the owner-scoping DELETE assertions (403/404/204) exercise the store's
+// ownership logic. With no conv wired it reports a plain owned delete (1, nil).
+func (s *scriptedRunner) DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error) {
+	s.deleteLifecycleCalls++
+	if s.conv == nil {
+		return 1, nil
+	}
+	if _, err := s.conv.GetForIdentity(ctx, convID, identityID); err != nil {
+		if errors.Is(err, conversations.ErrConversationNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return s.conv.DeleteForIdentity(ctx, convID, identityID)
 }
 
 // textTurn is the canonical happy-path turn: one streamed assistant chunk + a final

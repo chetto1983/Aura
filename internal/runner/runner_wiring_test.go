@@ -67,17 +67,17 @@ func TestTryLockThread(t *testing.T) {
 	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
 	convID := newConvID(t)
 
-	unlock, ok := r.TryLockThread(convID)
+	unlock, ok := r.TryLockThread(context.Background(), convID)
 	if !ok || unlock == nil {
 		t.Fatal("first TryLockThread must succeed")
 	}
 	// A second attempt while held must fail without blocking.
-	if _, ok2 := r.TryLockThread(convID); ok2 {
+	if _, ok2 := r.TryLockThread(context.Background(), convID); ok2 {
 		t.Fatal("a second TryLockThread on a held thread must report ok=false")
 	}
 	unlock()
 	// After release the lock is acquirable again.
-	unlock2, ok3 := r.TryLockThread(convID)
+	unlock2, ok3 := r.TryLockThread(context.Background(), convID)
 	if !ok3 {
 		t.Fatal("TryLockThread must succeed after release")
 	}
@@ -93,7 +93,7 @@ func TestTurn_WithThreadLockHeld_SkipsReLock(t *testing.T) {
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 
-	unlock, ok := r.TryLockThread(convID)
+	unlock, ok := r.TryLockThread(context.Background(), convID)
 	if !ok {
 		t.Fatal("could not acquire the thread lock")
 	}

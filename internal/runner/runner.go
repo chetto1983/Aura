@@ -173,7 +173,12 @@ type Runner struct {
 	toolSelectLearner toolSelectObserver          // async tool-selection self-improvement worker (Open-Q #3); nil unless a saver is wired
 	gateway           *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
 
-	threadLocks sync.Map
+	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
+	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
+	// serializes concurrent turns on one conversation; sessions holds each live turn's
+	// ctx-cancel so the delete lifecycle can abort exactly the owner's in-flight turn.
+	threadLocks sync.Map       // sessionKey -> *sync.Mutex
+	sessions    sync.Map       // sessionKey -> context.CancelFunc (in-flight turn)
 	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 	// stopMu guards (re)arming the SINGLE wg-drain waiter that closes stopDone. While a
 	// title worker runs, stopDone stays non-nil so repeated Stop reuses ONE waiter — a hung
@@ -312,7 +317,7 @@ func (r *Runner) runTurn(ctx context.Context, convID string, input turnInput) it
 		return r.turnLocked(ctx, convID, input)
 	}
 	return func(yield func(*agent.Event, error) bool) {
-		mu := r.lockForThread(convID)
+		mu := r.lockForThread(ctx, convID)
 		mu.Lock()
 		defer mu.Unlock()
 		for ev, err := range r.turnLocked(WithThreadLockHeld(ctx), convID, input) {
@@ -323,21 +328,9 @@ func (r *Runner) runTurn(ctx context.Context, convID string, input turnInput) it
 	}
 }
 
-// TryLockThread attempts to acquire the per-conversation run lock without
-// blocking. HTTP transports use it to return 409 instead of queueing an SSE run
-// behind an already-active request.
-func (r *Runner) TryLockThread(convID string) (func(), bool) {
-	mu := r.lockForThread(convID)
-	if !mu.TryLock() {
-		return nil, false
-	}
-	return mu.Unlock, true
-}
-
-func (r *Runner) lockForThread(convID string) *sync.Mutex {
-	actual, _ := r.threadLocks.LoadOrStore(convID, &sync.Mutex{})
-	return actual.(*sync.Mutex)
-}
+// The per-conversation run lock (TryLockThread / lockForThread) and the live-turn cancel
+// registry (trackSession / cancelSession) live in runner_session.go — both keyed by the
+// composite (identity, session) sessionKey (D-23).
 
 func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
@@ -391,6 +384,12 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			return
 		}
 		defer cancelAgent()
+		// Register the live turn's ctx-cancel under the (identity, session) key so a
+		// concurrent conversation-delete can abort THIS owner's in-flight turn (MUSR-05
+		// step 1 / D-23). ctx is owner-scoped here (scopeContextToConversation set it), so
+		// the key matches the one the delete lifecycle derives from the resolved owner id.
+		untrackSession := r.trackSession(ctx, convID, cancelAgent)
+		defer untrackSession()
 
 		// Drive one fresh agent round, persisting each emitted turn and observing the
 		// pause Event(s). tracker accumulates what to persist + whether we paused; on a

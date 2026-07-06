@@ -49,6 +49,13 @@ type ConversationStore interface {
 	LoadManagedHistoryForBranch(ctx context.Context, conversationID string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 	Delete(ctx context.Context, conversationID string) error
+	// GetForIdentity + DeleteForIdentity are the Phase-36 owner-scoped surface (MUSR-01 /
+	// D-06) the delete lifecycle (runner_delete.go) routes through: the owner gate resolves a
+	// foreign/absent id to ErrConversationNotFound BEFORE any teardown, and the hard delete
+	// returns rows-affected (0 = not owned → the surface maps 403/404). *conversations.Store
+	// satisfies both (store_identity.go).
+	GetForIdentity(ctx context.Context, conversationID, identityID string) (conversations.Conversation, error)
+	DeleteForIdentity(ctx context.Context, conversationID, identityID string) (int64, error)
 }
 
 // ContextBlockProvider renders identity-aware context for messages[1]. The Runner

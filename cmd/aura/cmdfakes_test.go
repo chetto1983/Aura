@@ -172,6 +172,30 @@ func (f *cmdConvFake) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// GetForIdentity + DeleteForIdentity: the Phase-36 owner-scoped surface the delete lifecycle
+// routes through, modeled over the stored IdentityID (foreign/absent → NotFound / 0 rows).
+func (f *cmdConvFake) GetForIdentity(_ context.Context, id, identityID string) (conversations.Conversation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.convs[id]
+	if !ok || c.IdentityID != identityID {
+		return conversations.Conversation{}, conversations.ErrConversationNotFound
+	}
+	return *c, nil
+}
+
+func (f *cmdConvFake) DeleteForIdentity(_ context.Context, id, identityID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.convs[id]
+	if !ok || c.IdentityID != identityID {
+		return 0, nil
+	}
+	delete(f.convs, id)
+	delete(f.turns, id)
+	return 1, nil
+}
+
 // cmdPauseFake is an in-memory runner.PauseStore for the REPL tests.
 type cmdPauseFake struct {
 	mu      sync.Mutex

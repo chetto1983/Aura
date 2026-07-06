@@ -294,16 +294,21 @@ func (s *Server) handleArchiveConversation(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleDeleteConversation calls Store.Delete(ctx, id) — the D-07 hard delete (the
-// confirm dialog lives in the UI) — and returns 204.
+// handleDeleteConversation routes the D-07 hard delete through the runner's single
+// conversation-delete lifecycle (MUSR-05 / D-22): cancel active work → expire pauses → evict
+// session tools → terminate background jobs → THEN the owner-scoped persistence delete. The
+// route MUST NOT call a raw store delete (that would skip the teardown and leak live session
+// state). rows-affected==0 is a foreign (403) or absent (404) id (D-06).
 func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
 		return
 	}
-	// Owner-scoped hard delete (MUSR-01 / D-06): delete only the caller's own conversation;
-	// rows-affected==0 is a foreign (403) or absent (404) id.
-	affected, err := s.conv.DeleteForIdentity(r.Context(), id, scopedIdentityID(r.Context()))
+	if s.run == nil {
+		http.Error(w, "conversation deleter unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	affected, err := s.run.DeleteConversationLifecycle(r.Context(), scopedIdentityID(r.Context()), id)
 	if err != nil {
 		writeStoreErr(w, err)
 		return

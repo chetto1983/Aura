@@ -1,0 +1,100 @@
+package runner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/conversations"
+)
+
+// runner_delete.go is the single conversation-delete lifecycle entry point (MUSR-05 / D-22).
+// ALL conversation deletion — AG-UI DELETE, Telegram /clear, the CLI — routes through
+// DeleteConversationLifecycle so exactly one ordered teardown owns it: cancel active work →
+// expire pending pauses → evict session tools → terminate background jobs → THEN delete
+// persistence. No surface performs a raw store delete; that would skip the teardown and leak
+// live session state (tracked tool cwd, todo lists, a running shell) into a long-lived
+// `serve` daemon after its conversation is gone.
+
+// DeleteConversationLifecycle tears down and deletes one conversation, owner-scoped (D-06).
+// It returns rows-affected (0 = the caller does not own the id — the surface maps that to 403
+// for a known-foreign id or 404 for an absent one, exactly as DeleteForIdentity) and a
+// non-nil error only for a real failure.
+//
+// The ownership gate runs FIRST, BEFORE any destructive step: a foreign or absent id
+// short-circuits with (0, nil) so a caller can never grief another identity by expiring its
+// pauses, evicting its session tools, or killing its background jobs via a delete it is not
+// allowed to perform. Only once ownership is confirmed does the ordered teardown run.
+//
+// Ordering (MUSR-05 / D-22), each keyed to the (identity, session) so it never reaches a
+// co-tenant:
+//  1. cancel active work   — fire the in-flight turn's ctx-cancel for (identity, session)
+//  2. expire pending pauses — askuser auto-resolve (best-effort; the cascade delete backstops it)
+//  3. evict session tools   — SessionEvictor.Evict + the gateway approval ledger
+//  4. terminate bg jobs     — the plan-03 owner-scoped kill of this session's live shells
+//  5. delete persistence    — the owner-scoped DeleteConversationForIdentity (+ sidecar purge)
+func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error) {
+	owner := resolveOwnerIdentity(identityID)
+
+	// Owner gate (D-06): resolve the conversation owner-scoped. A foreign/absent id is
+	// ErrConversationNotFound → (0, nil), so the surface's 403/404 split runs and NO teardown
+	// touches another identity's live state.
+	if _, err := r.Conv.GetForIdentity(ctx, convID, owner); err != nil {
+		if errors.Is(err, conversations.ErrConversationNotFound) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("delete lifecycle: owner gate: %w", err)
+	}
+
+	// 1. Cancel active work: abort the owner's in-flight turn for this session (a no-op when
+	// idle). Its ctx cancels, so the round unwinds before the row it appends to is deleted.
+	r.cancelSession(owner, convID)
+
+	// 2. Expire pending pauses (askuser auto-resolve). Best-effort: the paused_states rows
+	// FK-cascade with the conversation on delete, so a transient failure here is a WARN, never
+	// a blocked delete — the mandated lifecycle step still runs first.
+	if err := r.pause.AutoResolveForConversation(ctx, convID); err != nil {
+		slog.Warn("delete lifecycle: expire pauses failed (cascade delete will reconcile)",
+			"conv", convID, "err", err)
+	}
+
+	// 3. Evict session tool state (todo list, tracked shell cwd, shell-approval + gateway
+	// ledgers) BEFORE the persistence delete, so a finished conversation leaves nothing behind
+	// in the daemon (R-41 / AP-16). sessionID == conversationID (D-26).
+	r.evictSessionToolState(convID)
+
+	// 4. Terminate the (identity, session)'s live background jobs (plan-03 owner-scoped kill),
+	// so a detached shell started in this conversation does not outlive its deletion.
+	r.terminateSessionJobs(owner, convID)
+
+	// 5. Delete persistence, owner-scoped (rows-affected drives the surface's 403/404/204).
+	return r.Conv.DeleteForIdentity(ctx, convID, owner)
+}
+
+// resolveOwnerIdentity maps an empty identity id — the CLI / no-principal path (D-25) — to
+// the seeded `local` id so the owner-scoped delete and the (identity, session) key both
+// resolve deterministically (matching sessionIdentity's bare-ctx fallback).
+func resolveOwnerIdentity(identityID string) string {
+	if identityID == "" {
+		return localSessionIdentity
+	}
+	return identityID
+}
+
+// terminateSessionJobs terminates the live background jobs owned by (identityID, convID)
+// during a conversation delete (MUSR-05 step 4). It ranges the tool registry for the
+// owner-scoped session-job terminator (ShellPoll over the shared BackgroundShells): the
+// plan-03 (identity, session) owner binding means only THIS identity's jobs for THIS session
+// are killed, never a co-tenant's that happens to share a session id. Idempotent + nil-safe.
+func (r *Runner) terminateSessionJobs(identityID, convID string) {
+	if r.registry == nil {
+		return
+	}
+	for _, t := range r.registry.All() {
+		if term, ok := t.(tools.SessionJobTerminator); ok {
+			term.TerminateSession(identityID, convID)
+		}
+	}
+}

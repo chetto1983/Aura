@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -14,7 +15,7 @@ type guardedScriptedRunner struct {
 	busy bool
 }
 
-func (g *guardedScriptedRunner) TryLockThread(_ string) (func(), bool) {
+func (g *guardedScriptedRunner) TryLockThread(_ context.Context, _ string) (func(), bool) {
 	if g.busy {
 		return nil, false
 	}

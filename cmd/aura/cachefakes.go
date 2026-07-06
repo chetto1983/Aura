@@ -227,6 +227,31 @@ func (m *memConvStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// GetForIdentity + DeleteForIdentity are the Phase-36 owner-scoped surface the delete
+// lifecycle routes through. The audit fixtures are single-owner, so ownership is modeled by
+// the stored IdentityID: a mismatch is ErrConversationNotFound (gate) / 0 rows (delete).
+func (m *memConvStore) GetForIdentity(_ context.Context, id, identityID string) (conversations.Conversation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.convs[id]
+	if !ok || c.IdentityID != identityID {
+		return conversations.Conversation{}, conversations.ErrConversationNotFound
+	}
+	return *c, nil
+}
+
+func (m *memConvStore) DeleteForIdentity(_ context.Context, id, identityID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.convs[id]
+	if !ok || c.IdentityID != identityID {
+		return 0, nil
+	}
+	delete(m.convs, id)
+	delete(m.turns, id)
+	return 1, nil
+}
+
 // memPauseStore is an in-memory paused_states stand-in. The audit fixtures never
 // pause, but Runner.Stop calls AutoResolveForConversation, so the full surface is
 // implemented as harmless no-ops over an in-memory map.

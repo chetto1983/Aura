@@ -96,7 +96,10 @@ func (e *errConvStore) RenameForIdentity(context.Context, string, string, string
 
 func convAPIServer(t *testing.T, store ConversationStore) *httptest.Server {
 	t.Helper()
-	s := NewServer(&scriptedRunner{}, store, ServerConfig{})
+	// The DELETE route now goes through the runner's delete lifecycle (MUSR-05); wire the
+	// scriptedRunner's conv to the SAME store so its delegating lifecycle exercises the
+	// store's owner gate (the 403/404/204 assertions in owner_scoping_test.go).
+	s := NewServer(&scriptedRunner{conv: store}, store, ServerConfig{})
 	srv := httptest.NewServer(s.Mux())
 	t.Cleanup(srv.Close)
 	return srv

@@ -300,6 +300,33 @@ func (f *fakeConvStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// GetForIdentity models the Phase-36 owner gate: a conversation is visible only to its owner
+// (identityID == the stored IdentityID); a foreign or absent id is ErrConversationNotFound
+// (D-06 read = 404). The delete lifecycle's ownership gate exercises this.
+func (f *fakeConvStore) GetForIdentity(_ context.Context, id, identityID string) (conversations.Conversation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.convs[id]
+	if !ok || c.IdentityID != identityID {
+		return conversations.Conversation{}, conversations.ErrConversationNotFound
+	}
+	return *c, nil
+}
+
+// DeleteForIdentity models the owner-scoped hard delete: it removes + returns 1 only when
+// identityID owns the id, else 0 rows (the not-owned signal the surface maps to 403/404).
+func (f *fakeConvStore) DeleteForIdentity(_ context.Context, id, identityID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.convs[id]
+	if !ok || c.IdentityID != identityID {
+		return 0, nil
+	}
+	delete(f.convs, id)
+	delete(f.turns, id)
+	return 1, nil
+}
+
 // fakePauseStore is a hand-written in-memory PauseStore (D-A2-02 fakes). It keeps
 // pending rows per conversation and resolves them in FIFO order.
 type fakePauseStore struct {

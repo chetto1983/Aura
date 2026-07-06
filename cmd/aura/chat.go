@@ -160,8 +160,18 @@ func chatDelete(args []string) {
 	ctx := context.Background()
 	env := bootChat(ctx)
 	defer env.close()
-	if err := env.conv.Delete(ctx, args[0]); err != nil {
+	// Route through the runner's single delete lifecycle (MUSR-05 / D-22): cancel active
+	// work → expire pauses → evict session tools → terminate background jobs → THEN the
+	// owner-scoped persistence delete. The CLI runs as `local` (D-25), so an empty identity
+	// resolves to the seeded local owner; rows-affected==0 means the id is not owned by local
+	// (a foreign/absent conversation), reported as not-found rather than a false "deleted".
+	affected, err := env.run.DeleteConversationLifecycle(ctx, "", args[0])
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if affected == 0 {
+		fmt.Fprintf(os.Stderr, "conversation not found: %s\n", args[0])
 		os.Exit(1)
 	}
 	fmt.Printf("ok: deleted %s\n", args[0])
