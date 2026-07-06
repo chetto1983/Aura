@@ -219,11 +219,14 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 			deps.redirectToLogin(w, r)
 			return
 		}
-		// The bound identity must still exist — a deleted identity invalidates the
-		// session even with a valid MAC / Authula token (D-02 principal binding). This
-		// re-check is provider-agnostic: it runs for BOTH the passphrase and Authula
-		// paths so a deleted operator identity always 401s the next request (AC-11).
-		if _, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil {
+		// The bound identity must still exist AND not be soft-deleted — a deleted OR
+		// deactivated identity invalidates the session even with a valid MAC / Authula
+		// token (D-02 principal binding, HI-02). This re-check is provider-agnostic: it
+		// runs for BOTH the passphrase and Authula paths so a deleted operator identity
+		// always 401s the next request (AC-11), and a soft-deleted principal cannot
+		// re-authenticate during the D-27 de-provisioning grace window even though its
+		// row still exists for the deprovision saga + admin roster.
+		if id, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil || id.Deactivated {
 			deps.redirectToLogin(w, r)
 			return
 		}

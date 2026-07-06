@@ -68,9 +68,16 @@ type Identity struct {
 	Deactivated bool
 }
 
-// fromRow converts a generated row to the domain projection.
+// fromRow converts a generated row to the domain projection. DeactivatedAt is a
+// pgtype.Timestamptz (0029): Valid == true means deactivated_at IS NOT NULL, i.e. the
+// identity is soft-deleted (the HI-02 auth gate denies it).
 func fromRow(r sqlc.AuraIdentities) Identity {
-	return Identity{ID: uuid.UUID(r.ID.Bytes).String(), Name: r.Name, Kind: r.Kind}
+	return Identity{
+		ID:          uuid.UUID(r.ID.Bytes).String(),
+		Name:        r.Name,
+		Kind:        r.Kind,
+		Deactivated: r.DeactivatedAt.Valid,
+	}
 }
 
 // ListIdentities returns every identity ordered by creation then name.

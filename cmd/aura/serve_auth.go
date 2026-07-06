@@ -43,7 +43,7 @@ func (a identityCheckerAdapter) GetIdentityByID(ctx context.Context, id string) 
 	if err != nil {
 		return agui.Identity{}, err
 	}
-	return agui.Identity{ID: idn.ID, Name: idn.Name, Kind: idn.Kind}, nil
+	return agui.Identity{ID: idn.ID, Name: idn.Name, Kind: idn.Kind, Deactivated: idn.Deactivated}, nil
 }
 
 func (a identityCheckerAdapter) HasCapability(ctx context.Context, id, capability string) (bool, error) {
