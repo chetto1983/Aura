@@ -67,7 +67,17 @@ func telegramUserIDFromCallback(cb *tele.Callback) int64 {
 	return 0
 }
 
+// requireLinkedMessage is the fail-closed inbound-message gate. It enforces the
+// personal-DM appliance invariant FIRST — a non-private chat (group/supergroup/channel) is
+// rejected up front (HI-03): with private-only, msg.Chat.ID == msg.Sender.ID, so the gate's
+// sender-id key and startTurn's chat-id scope key are provably the same id. That closes the
+// group-chat divergence where a linked sender passed the gate but the chat-id scope missed
+// and the turn ran as the seeded local admin. It then requires a linked account.
 func (t *Telegram) requireLinkedMessage(ctx context.Context, c tele.Context, msg *tele.Message) bool {
+	if msg == nil || msg.Chat == nil || msg.Chat.Type != tele.ChatPrivate {
+		t.reply(c, activationRequiredMsg)
+		return false
+	}
 	if t.telegramUserIsLinked(ctx, telegramUserIDFromMessage(msg)) {
 		return true
 	}
@@ -75,7 +85,14 @@ func (t *Telegram) requireLinkedMessage(ctx context.Context, c tele.Context, msg
 	return false
 }
 
+// requireLinkedCallback mirrors requireLinkedMessage for inline-button callbacks: a
+// non-private chat is rejected with the activation toast BEFORE the linked-account check,
+// so a callback originating outside a private DM never resolves or resumes a pause (HI-03).
 func (t *Telegram) requireLinkedCallback(ctx context.Context, c tele.Context, cb *tele.Callback) bool {
+	if cb == nil || cb.Message == nil || cb.Message.Chat == nil || cb.Message.Chat.Type != tele.ChatPrivate {
+		_ = c.Respond(&tele.CallbackResponse{Text: activationRequiredToast})
+		return false
+	}
 	if t.telegramUserIsLinked(ctx, telegramUserIDFromCallback(cb)) {
 		return true
 	}

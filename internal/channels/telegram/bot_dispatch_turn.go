@@ -77,10 +77,19 @@ func (t *Telegram) startTurn(
 	// every inbound-turn spawn passes through — a fresh message (runTurnWithAssets),
 	// the async document-convert callback (bot_dispatch.go), and a HITL-resume
 	// continuation (bot_dispatch_hitl.go) — so scoping here holds for all of them
-	// without per-path duplication. An unresolved id leaves ctx unscoped; the
-	// reject-unlinked gate (bot_dispatch_auth.go) already blocked an unlinked chat, so
-	// a scoped turn only ever runs for a linked user (fail closed).
-	daemonCtx = t.scopeTurnToIdentity(daemonCtx, chatID)
+	// without per-path duplication.
+	//
+	// FAIL CLOSED (HI-03): if the id does not resolve, DROP the turn rather than run it
+	// on an unscoped ctx. An unscoped ctx would let every downstream resolver apply its
+	// `local` (admin) fallback, so a group-chat / divergent-key update would impersonate
+	// the operator. This is NOT the onBusy path (that is "a previous request is still
+	// running"); a refused-because-unscoped turn simply does not start.
+	scoped, ok := t.scopeTurnToIdentity(daemonCtx, chatID)
+	if !ok {
+		slog.Warn("telegram: unscoped turn refused (no linked identity)", "chat", chatID)
+		return
+	}
+	daemonCtx = scoped
 
 	turnCtx, cancel := context.WithCancel(daemonCtx)
 	if !t.cmds.registerTurn(chatID, cancel) {
@@ -114,23 +123,24 @@ func (t *Telegram) startTurn(
 
 // scopeTurnToIdentity wraps ctx with the linked user's Aura identity id (D-23/D-24),
 // resolved from the chat's telegram user id through the SAME account seam the
-// reject-unlinked gate uses. Aura's Telegram is a personal DM channel — the chat id IS
-// the sender's telegram user id, the identity the gate validated, and the key
-// convID(chatID) already threads through the whole channel — so a per-chat lookup
-// yields exactly the turn's owner. It is best-effort: with no resolver or an
-// unresolved/unlinked chat it returns ctx unchanged (WithIdentityID no-ops on ""),
-// leaving the upstream gate as the fail-closed guarantee that an unlinked chat never
-// drives an agent run.
-func (t *Telegram) scopeTurnToIdentity(ctx context.Context, chatID int64) context.Context {
+// reject-unlinked gate uses. Aura's Telegram is a personal DM channel — the private-chat
+// gate (requireLinkedMessage) enforces msg.Chat.ID == msg.Sender.ID, so the gate's
+// sender-id key and this per-chat scope key are provably the same id.
+//
+// It FAILS CLOSED (HI-03): on a nil resolver OR a GetAccountByTelegramID miss it returns
+// (ctx, false) so startTurn DROPS the turn — an unresolved principal is NEVER left on an
+// unscoped ctx, which every downstream resolver would silently upgrade to its `local`
+// (admin) fallback. Only a resolved account returns (scoped ctx, true).
+func (t *Telegram) scopeTurnToIdentity(ctx context.Context, chatID int64) (context.Context, bool) {
 	accounts := t.accountsForDispatch()
 	if accounts == nil {
-		return ctx
+		return ctx, false
 	}
 	account, err := accounts.GetAccountByTelegramID(ctx, chatID)
 	if err != nil {
-		return ctx
+		return ctx, false
 	}
-	return identityctx.WithIdentityID(ctx, account.IdentityID)
+	return identityctx.WithIdentityID(ctx, account.IdentityID), true
 }
 
 func (t *Telegram) sendBusy(sender botSender, chatID int64) {
