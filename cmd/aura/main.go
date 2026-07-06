@@ -67,6 +67,8 @@ func main() {
 		runObjectStore(os.Args[2:])
 	case "docs":
 		runDocs(os.Args[2:])
+	case "documents":
+		runDocuments(os.Args[2:])
 	case "identity":
 		runIdentity(os.Args[2:])
 	case "profile":
@@ -100,7 +102,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|version}")
 }
 
 func buildRegistry() *tools.Registry {
