@@ -93,6 +93,9 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036)
   - Goal: resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; host never exposed.
   - Success: (1) under `server_production` shell/fs target the per-identity sandbox, real host filesystem unreachable; (2) Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable (test-asserted); (3) cross-identity leakage impossible + idle-TTL lifecycle works; (4) configured egress allowlist cannot reach a disallowed host (default egress = full-internet-minus-internal per D-06, not `--network none`); (5) ADR records container-per-identity (K8s/gVisor-default → DGX) + pre-merge concurrency benchmark on 32GB.
+- [ ] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
+  - Goal: agent-generated files (`send_file`) reach the web cockpit as an authenticated same-origin download (Garage-backed identity-scoped asset), never a raw container/host path.
+  - Success: (1) `send_file` stores bytes in the identity's Garage store + creates a thread-scoped owned `assets.Asset`, and the `aura.artifact` event carries `asset_id`/`filename`/`size_bytes`/`mime_type`; (2) `GET /api/assets/{id}/download` streams from Garage with `Content-Disposition: attachment`, ownership-checked, `RequireAuth`-gated, non-owner → 404/403; (3) web chat consumes `aura.artifact` and renders a download button, no raw path in the browser; (4) Telegram delivery unregressed, CLI/no-identity degrades to today's host-path behavior.
 - [ ] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
   - Goal: one canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
   - Success: (1) mixed url+command / empty-remote-trust blocked and never call stdio open; (2) hung mount drops within deadline, oversized stdio frame aborts without large alloc, shutdown leaves no child processes; (3) CLI mutations append `mcp_audit` (or production-disallowed), empty trust body → 400; (4) dead HTTP MCP endpoint reports OK=false.
@@ -368,6 +371,23 @@ Plans:
 
 - [ ] 37-09-PLAN.md — shell_bg background routing into the box (Open Q4, most invasive)
 
+#### Phase 37A: Web Artifact Delivery Lane
+
+**Goal:** Agent-generated files delivered by `send_file` reach the web cockpit as an authenticated same-origin download backed by a Garage object + identity-scoped `assets.Asset` — never a raw container/host path. Closes the gap where the web chat drops `aura.artifact` events (Telegram already consumes them via `internal/channels/telegram/artifact.go`).
+
+**Requirements:** WEBART-01, WEBART-02, WEBART-03, WEBART-04
+
+**Depends on:** Phase 37 (plan 37-07 stages box→host artifacts via `CopyArtifactsOut`; the resolved host path is this lane's Garage-ingest input — sequence after 37-07).
+
+**Success Criteria**:
+
+1. `send_file` stores bytes in the authenticated identity's Garage store (per-identity `AssetKey`) and creates a thread-scoped owned `assets.Asset` (mirrors `assets.Service.IngestTelegramFile`); no raw path is the delivery handle.
+2. The `aura.artifact` event carries `asset_id` + `filename` + `size_bytes` + `mime_type` on the existing `/agent/run` SSE stream; Telegram delivery is unregressed.
+3. `GET /api/assets/{id}/download` streams from Garage with `Content-Disposition: attachment`, enforces identity ownership (`GetForIdentity`), inherits `RequireAuth`; a non-owner → 404/403; no unauthenticated download surface added.
+4. The web chat consumes `aura.artifact` in `sseAdapter.ts` and renders an authenticated download button (`/api/assets/{id}/download`); the browser never receives a raw container/host path. CLI / no-identity degrades to today's host-path behavior.
+
+**Design forks for discuss-phase:** (a) `assets.source_kind` CHECK allows only `web|telegram|cli` → add an `agent` value (migration) or reuse `cli`; (b) thread-id reaches the tool ctx only via `agent.SwarmContext(ctx).ConvID` (a smell for a non-swarm concern) → consider a dedicated `threadctx`; (c) download-button UI: reuse the existing `local_artifact` display card (already renders + carries `size_bytes`) vs a new dedicated file part on the delivery event.
+
 #### Phase 38: MCP Governance Hardening
 
 **Goal:** One canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
@@ -427,4 +447,4 @@ Plans:
 | --------- | ------ | ----- | ------ | --------- |
 | v0.0.0 Substrate | 0–21 (24 phases) | 144/144 | ✅ Shipped | 2026-06-15 |
 | v1.0.0 Aura Deep Search Web Cockpit | 22–30 (9 phases) | 45/45 | ✅ Shipped | 2026-06-29 |
-| v2.0.0 Industrial Hardening & Multi-User Production | 31–41 (11 phases) | 0/— | 🔨 In planning | — |
+| v2.0.0 Industrial Hardening & Multi-User Production | 31–41 (12 phases, incl. 37A) | 0/— | 🔨 In planning | — |

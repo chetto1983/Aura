@@ -58,6 +58,15 @@
 - [ ] **SBX-04**: Sandbox egress defaults to `--network none`; an allowlist, when set, is *enforced* (proxy/nftables), not advisory — a configured allowlist cannot reach a disallowed host (integration test). `runtime: runsc` (gVisor) is selectable as a `server_production` policy. *(F-036)*
 - [ ] **SBX-05**: An ADR records the decision: container-per-identity over Docker for the mini-PC; K8s + `kubernetes-sigs/agent-sandbox` + gVisor-as-default reserved for the DGX-Spark multi-node tier; the sandbox config mirrors the agent-sandbox template/claim shape for forward compatibility. *(F-025 partial)*
 
+### Web Artifact Delivery Lane (WEBART)
+
+Agent-generated files (e.g. a DOCX the model builds inside the sandbox) must reach the web cockpit as an authenticated same-origin download, never a raw container/host path. Today `send_file` emits a host-path `aura.artifact` event that Telegram consumes (`internal/channels/telegram/artifact.go`) but the web chat drops (`web/src/chat/sseAdapter.ts` ignores `aura.artifact`). **Depends on Phase 37 / plan 37-07** (box→host `CopyArtifactsOut` staging): the resolved host path is the Garage-ingest input, so this lane sequences after 37-07's `send_file.go` change. *(product gap surfaced in-session — no audit F-finding)*
+
+- [ ] **WEBART-01**: When `send_file` delivers a generated file, Aura stores the bytes in the authenticated identity's Garage object store (via `objectstore.Store`, per-identity `AssetKey`) and creates a thread-scoped `assets.Asset` row owned by that identity (mirroring `assets.Service.IngestTelegramFile`); no raw container/host path is used as the delivery handle.
+- [ ] **WEBART-02**: The `aura.artifact` event carries `asset_id`, `filename`, `size_bytes`, and `mime_type` (not a filesystem path) on the existing `/agent/run` AG-UI SSE stream; Telegram delivery keeps working (regression test).
+- [ ] **WEBART-03**: `GET /api/assets/{id}/download` streams the asset from Garage with `Content-Disposition: attachment`, enforcing identity ownership via `assets.Store.GetForIdentity` and inheriting `RequireAuth` (registered in `registerAssetRoutes`); a non-owner request returns 404/403 and no unauthenticated download surface is added.
+- [ ] **WEBART-04**: The web chat consumes `aura.artifact` in `sseAdapter.ts` and renders an authenticated download button targeting `/api/assets/{id}/download`; the browser never receives a raw container/host path. Graceful degradation: CLI / no-authenticated-identity retains today's host-path behavior and a nil asset service does not break delivery.
+
 ### MCP Governance Hardening (MCPH)
 
 - [ ] **MCPH-01**: A single canonical transport classifier governs validation, trust normalization, runtime eligibility, mounting, and opening; mixed `url`+`command` entries are rejected unless an explicit type disambiguates and the trust class matches. *(F-027)*
@@ -160,6 +169,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | GATE | GATE-01..04 | F-001(gw), F-006, F-011, F-020 | Phase 35 |
 | MUSR | MUSR-01..06 (+QUAL Authula DSN) | F-012, F-028, F-032, F-039, F-050 | Phase 36 |
 | SBX | SBX-01..05 | F-001(sbx), F-036 | Phase 37 |
+| WEBART | WEBART-01..04 | (product gap — agent-generated artifact web-delivery, surfaced in-session; no F-finding) | Phase 37A |
 | MCPH | MCPH-01..09 (+QUAL-03 trust-norm) | F-013, F-014, F-027, F-033, F-034, F-035, F-037, F-038, F-046 | Phase 38 |
 | OBS | OBS-01..06 | F-008, F-017, F-023, F-024, F-049 (+F-020 idempotency) | Phase 39 |
 | SEC | SEC-01..06, SEC-09 (+QUAL decode-body) | F-019(sec), F-021, F-022, F-047, F-051, F-052, CodeQL weak-hash | Phase 40 |
@@ -169,7 +179,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 **Coverage:**
 
-- v2.0.0 requirements: 59 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5)
+- v2.0.0 requirements: 63 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — WEBART is a product-gap requirement (no audit F-finding; findings-mapped count unchanged)
 - Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
 - CodeQL-surfaced findings (outside the F-series): 2 / 2 — SEC-08 SSRF (`internal/mcp/http_client.go`) → Phase 31, SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40 ✓
 - Quality/maintainability audit: `docs/audit/quality/` (4-slice, ~64 findings) → QUAL-01..05 + routed to security phases ✓
