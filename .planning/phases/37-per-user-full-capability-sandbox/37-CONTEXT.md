@@ -84,7 +84,7 @@ instances; per-identity quotas; microVM/Firecracker isolation; K8s + agent-sandb
   **never host-bound**. `/workspace` = persistent per-identity named volume + a **tmpfs RW scratch** for
   ephemera. Artifacts written to `/workspace` are **copied back out** (docker cp) for Telegram
   `sendDocument` delivery.
-- **D-11 (operator directive: "we already have web tools, don't double-think"):** Tools routed **INTO
+- **D-11 (operator directive — "we already have web tools, don't double-think"):** Tools routed **INTO
   the box**: `shell_exec`, `shell_bg`, `fs_read`, `fs_write`, and **skill-snippet execution**.
   `web_fetch` / `web_search` **stay host-side** — Aura already SSRF-guards them; do **not** duplicate the
   guard or force box-network on for a web tool.
