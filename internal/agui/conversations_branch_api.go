@@ -51,12 +51,28 @@ type branchItem struct {
 	ParentSeq int    `json:"parent_seq"`
 }
 
+// ownBranchConvOr404 gates a branch route to the authenticated owner (MUSR-01 / D-06):
+// a foreign or absent conversation id both 404 via ErrConversationNotFound — hiding the
+// existence of another identity's thread. It mirrors the read gate in conversations_api.go
+// (handleConversationRotEvents) and MUST run before any ListBranches/ForkBranch/TurnBranch
+// call so identity B can neither enumerate nor fork+re-run identity A's conversation.
+func (s *Server) ownBranchConvOr404(w http.ResponseWriter, r *http.Request, id string) bool {
+	if _, err := s.conv.GetForIdentity(r.Context(), id, scopedIdentityID(r.Context())); err != nil {
+		writeStoreErr(w, err)
+		return false
+	}
+	return true
+}
+
 // handleListBranches returns the conversation's navigable branch set (ListBranches). A
 // non-branched conversation reports exactly one branch (its canonical leaf), so the
 // picker stays hidden until an edit/regenerate forks a sibling.
 func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
+		return
+	}
+	if !s.ownBranchConvOr404(w, r, id) {
 		return
 	}
 	branches, err := s.conv.ListBranches(r.Context(), id)
@@ -96,6 +112,11 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Owner gate BEFORE the durable ForkBranch: a foreign identity must not fork+re-run
+	// another's thread (MUSR-01 / D-06 — 404 hides existence).
+	if !s.ownBranchConvOr404(w, r, id) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
 	var body editBranchBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -131,6 +152,9 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSelectBranch(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
+		return
+	}
+	if !s.ownBranchConvOr404(w, r, id) {
 		return
 	}
 	leaf, ok := parseBranchSeq(w, r)

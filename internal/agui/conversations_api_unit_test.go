@@ -20,7 +20,14 @@ import (
 // of the CHAT-02 handlers without a live DB (the route→method MAPPING is asserted in
 // the db_integration suite; THIS covers the error projections). A nil err makes a
 // method a happy no-op.
-type errConvStore struct{ err error }
+type errConvStore struct {
+	err error
+	// ownsGate makes GetForIdentity return a conversation (caller owns it) so the Phase-36
+	// branch owner-gate passes and the input-validation / fork-error paths under test run.
+	// Default false preserves the "GetForIdentity returns err" behavior the not-found
+	// projection suites rely on.
+	ownsGate bool
+}
 
 func (e *errConvStore) Create(context.Context, conversations.CreateParams) (conversations.Conversation, error) {
 	return conversations.Conversation{}, e.err
@@ -70,7 +77,10 @@ func (e *errConvStore) CanonicalBranchLeaf(context.Context, string) (int, error)
 // for the rows-affected mutates) so the handler's error/404 projections stay unit-coverable.
 // e.err is always non-nil in the suites that use this fake, so the affected==0 (403/404
 // existence-probe) branch is never reached here; that split is covered by dedicated fakes.
-func (e *errConvStore) GetForIdentity(context.Context, string, string) (conversations.Conversation, error) {
+func (e *errConvStore) GetForIdentity(_ context.Context, id, _ string) (conversations.Conversation, error) {
+	if e.ownsGate {
+		return conversations.Conversation{ID: id}, nil
+	}
 	return conversations.Conversation{}, e.err
 }
 
@@ -217,7 +227,10 @@ func TestBranchAPI_StoreError500AndRedaction(t *testing.T) {
 // a non-numeric branch seq → 404, and an empty/zero diverge_seq → 400 — all before any
 // store round-trip (T-25-26).
 func TestBranchAPI_MalformedAndBadInput(t *testing.T) {
-	srv := convAPIServer(t, &errConvStore{err: errors.New("must-not-be-called")})
+	// ownsGate: the caller owns the conversation so the owner-gate passes; the branch
+	// STORE methods (ListBranches/ForkBranch) still must-not-be-called — the input guards
+	// reject before any branch round-trip.
+	srv := convAPIServer(t, &errConvStore{err: errors.New("must-not-be-called"), ownsGate: true})
 
 	if code, _ := req(t, srv, http.MethodGet, "/api/conversations/not-a-uuid/branches", ""); code != http.StatusNotFound {
 		t.Errorf("non-UUID id /branches status = %d, want 404", code)
@@ -236,7 +249,9 @@ func TestBranchAPI_MalformedAndBadInput(t *testing.T) {
 // TestBranchAPI_ForkTurnNotFound404 proves ForkBranch's ErrTurnNotFound maps to 404 (not
 // 500) — a clean "turn not found" when editing a non-existent seq.
 func TestBranchAPI_ForkTurnNotFound404(t *testing.T) {
-	srv := convAPIServer(t, &errConvStore{err: conversations.ErrTurnNotFound})
+	// ownsGate: the caller owns the conversation (owner-gate passes) so ForkBranch runs and
+	// its ErrTurnNotFound is the error under test (not the gate's).
+	srv := convAPIServer(t, &errConvStore{err: conversations.ErrTurnNotFound, ownsGate: true})
 	code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/edit", `{"diverge_seq":99,"content":"x"}`)
 	if code != http.StatusNotFound {
 		t.Errorf("fork unknown turn status = %d, want 404", code)
