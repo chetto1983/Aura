@@ -345,13 +345,13 @@ Plans:
 4. A configured egress allowlist cannot reach a disallowed host; the default egress posture is full public internet minus the tenancy boundary (DROP RFC1918 + `169.254.169.254` cloud-metadata + the shared-services Docker bridge), not `--network none` (SBX-04 amended per D-06).
 5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
 
-**Plans:** 9 plans
+**Plans:** 3/9 plans executed
 
 **Wave 1**
 
-- [ ] 37-01-PLAN.md — Foundation & Gate-1: SBX-04 egress amendment (D-06) + fat box image (D-12/D-13) + moby dep promotion
-- [ ] 37-02-PLAN.md — SBX-02 unrepresentability: SandboxSpec + translator + Backend E2B contract + docker_integration skip-helper
-- [ ] 37-03-PLAN.md — Idle-suspend reaper scaffold: sandbox_reap handler + migration 0034 (exact identity_purge/0033 template)
+- [x] 37-01-PLAN.md — Foundation & Gate-1: SBX-04 egress amendment (D-06) + fat box image (D-12/D-13) + moby dep promotion
+- [x] 37-02-PLAN.md — SBX-02 unrepresentability: SandboxSpec + translator + Backend E2B contract + docker_integration skip-helper
+- [x] 37-03-PLAN.md — Idle-suspend reaper scaffold: sandbox_reap handler + migration 0034 (exact identity_purge/0033 template)
 
 **Wave 2** *(blocked on 37-01, 37-02)*
 
