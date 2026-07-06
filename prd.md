@@ -1289,6 +1289,8 @@ Nessuno dei due prompt nomina `execute`. Se il modello non lo invoca, è bug del
 - [ ] Test integration workspace: `execute python "open('/workspace/a.txt','w').write('hello')"` → file persiste su host `$AURA_RUN_DIR/conversations/<id>/workspace/a.txt`.
 - [ ] Test integration network: con `AURA_SANDBOX_NETWORK_ALLOW_HOSTS=pypi.org` → `pip install requests` SUCCEEDS, `urllib.request.urlopen('https://example.com')` FAILS con DNS/conn refused.
 
+> **⚠️ Phase 37 SBX-04 egress amendment (2026-07-06, D-04/D-05/D-06).** The Slice-2 sandbox egress default described here (`--network none` in the `compose.yaml` `aura-sandbox` row below, plus the `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` host-side proxy) is **superseded for the Phase-37 per-identity full-capability sandbox** (`internal/sandbox/usersandbox`). The Phase-37 egress default is **full public internet minus the tenancy boundary**: allow all public egress, DROP only RFC1918 private ranges + `169.254.169.254` cloud-metadata + the shared-services Docker bridge (Claude-Code parity — do not nanny the agent's outbound work). A tightened allowlist, *when an operator sets one*, is **enforced via nftables, not advisory**, and `runtime: runsc` (gVisor) stays selectable under `server_production`. **gVisor⊥nat note:** the always-on filter-table floor is gVisor-compatible, but the OpenSandbox FQDN-allowlist (nat-redirect) mode is **runc-only and mutually exclusive with gVisor `runsc`** (issue #934). See `.planning/REQUIREMENTS.md` SBX-04 (amended) and Phase-37 CONTEXT D-04/D-05/D-06. The Slice-2 `read_only`/non-root posture is likewise superseded by the fat-box posture (D-12).
+
 **File targets — Slice 2a** (≤ 600 LOC Go + Dockerfile/compose/seccomp materials):
 | Path | LOC | Note |
 |---|---|---|
