@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
+current_phase: 36
+current_phase_name: Multi-User Identity Isolation + Authula Cutover
 status: executing
-stopped_at: Completed 36-18-PLAN.md — Phase 36 COMPLETE
-last_updated: "2026-07-06T15:10:00.000Z"
-last_activity: 2026-07-06 -- 36-18 terminal acceptance: full CI matrix GREEN (run 28799334452, 20/20 on HEAD 207200c8; musr-e2e two-identity E2E ran live 268s -race) + AURA_MUSR_ISOLATION rollout ACTIVATED (0-doc backfill no-op → flag true) + re-verification PASSED (4/4 ROADMAP, 6/6 MUSR, all 7 gaps closed). Phase 36 CLOSED.
+stopped_at: Phase 37 context gathered
+last_updated: "2026-07-06T18:03:37.301Z"
+last_activity: 2026-07-06
+last_activity_desc: "36-18 terminal acceptance gate: pushed the never-CI-run back half + gap-closure, drove the full GitHub Actions matrix green (fixing 7 live-matrix regressions no Windows compile could surface: Garage S3 ContentLength/checksum, goleak IgnoreAnyFunction matcher, SearXNG contract-vs-uptime test, agui coverage, CI env, quality-snapshot staleness x3), executed the D-12 backfill-then-flip rollout, and re-verified complete"
 progress:
   total_phases: 11
   completed_phases: 6
@@ -540,9 +543,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-06T12:00:00.000Z
-Stopped at: Completed 36-17-PLAN.md
-Resume file: None
+Last session: 2026-07-06T18:03:37.284Z
+Stopped at: Phase 37 context gathered
+Resume file: .planning/phases/37-per-user-full-capability-sandbox/37-CONTEXT.md
 
 ## Operator Next Steps
 
