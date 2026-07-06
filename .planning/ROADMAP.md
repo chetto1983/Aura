@@ -290,7 +290,7 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 15/18 plans executed
+**Plans:** 17/18 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
@@ -325,7 +325,7 @@ Plans:
 - [x] 36-14-PLAN.md — Daemon provisioning/de-provisioning wiring + migration 0033 (scheduler kind CHECK admits 'identity_purge') + deactivation auth-gate (VERIF-3/HI-01 + HI-02). Wave 1.
 - [x] 36-15-PLAN.md — Per-identity object-store consumption on the asset path (VERIF-4/HI-01). Wave 2 (depends 36-14). — done 2026-07-06: routed the asset Service (Presign/Finalize/IngestTelegramFile/Delete/hashAndSniff) + the audio/document/image processors through `objectstore.IdentityStore.Resolve(ctx)` via a new `resolveObjects` seam with explicit local/`ErrNoRows`→shared fallback (never a foreign bucket, F-007); `buildAssetService` wires the resolver + a caching per-identity `S3Store` factory (sync.Map/access-key) when pool+`AURA_AUTHULA_SECRET` present — `NewIdentityStore` now has a non-test asset-path consumer. Commits `406a1e75`+`248e5676`. `go build`/`vet` clean; tagged compile green; untagged assets+cmd/aura green; WSL `-race` exit 0. DEVIATIONS: (Rule 1) processor passes the REAL shared bucket to `resolveObjects` not `asset.ObjectBucket` (the literal pseudocode would 403 every per-identity read via the global key); (Rule 2) service stamps the owner into ctx (background durable-worker path carries no principal); (Rule 2) added untagged `object_resolver_unit_test.go`. Live `garage_integration && db_integration` cross-deny test CI-gated at 36-18 (admin :3903 unreachable, curl exit 7). MUSR-01 stays `[ ]` (phase-spanning; closes at 36-18).
 - [x] 36-16-PLAN.md — Documents default-closed + config-validate + local-fallback (CR-01/VERIF-5 + ME-01/LO-03; ME-02/LO-01 recorded). Wave 2 (depends 36-14).
-- [ ] 36-17-PLAN.md — Telegram fail-closed scoping + shell admin-cap wiring + blank-principal regression (HI-03 + VERIF-7 + LO-02). Wave 2 (depends 36-14).
+- [x] 36-17-PLAN.md — Telegram fail-closed scoping + shell admin-cap wiring + blank-principal regression (HI-03 + VERIF-7 + LO-02). Wave 2 (depends 36-14).
 - [ ] 36-18-PLAN.md — Push + full CI matrix green + live-stack acceptance + AURA_MUSR_ISOLATION rollout decision (VERIF-2 + human_verification #1/#2). Wave 3 terminal, autonomous:false.
 
 #### Phase 37: Per-User Full-Capability Sandbox
