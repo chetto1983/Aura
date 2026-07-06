@@ -342,6 +342,32 @@ Plans:
 4. A configured egress allowlist cannot reach a disallowed host (default `--network none`).
 5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
 
+**Plans:** 9 plans
+
+**Wave 1**
+
+- [ ] 37-01-PLAN.md — Foundation & Gate-1: SBX-04 egress amendment (D-06) + fat box image (D-12/D-13) + moby dep promotion
+- [ ] 37-02-PLAN.md — SBX-02 unrepresentability: SandboxSpec + translator + Backend E2B contract + docker_integration skip-helper
+- [ ] 37-03-PLAN.md — Idle-suspend reaper scaffold: sandbox_reap handler + migration 0034 (exact identity_purge/0033 template)
+
+**Wave 2** *(blocked on 37-01, 37-02)*
+
+- [ ] 37-04-PLAN.md — DockerBackend over moby v0.4.1 + named-volume lifecycle + materialize + cross-identity deny (SBX-03)
+
+**Wave 3** *(blocked on 37-04 / 37-03)*
+
+- [ ] 37-05-PLAN.md — SandboxRouter (Strict no-op + fail-CLOSED) + reap impl + reaper serve-wiring (SBX-01/SBX-03/GATE-01)
+- [ ] 37-06-PLAN.md — Egress sidecar: filter-table floor + OpenSandbox FQDN allowlist + native-Linux enforcement (SBX-04)
+
+**Wave 4** *(blocked on 37-05 / 37-06)*
+
+- [ ] 37-07-PLAN.md — Route shell_exec/fs_read/fs_write/skill into the box, fail-CLOSED (not web_*) (SBX-01)
+- [ ] 37-08-PLAN.md — SBX-05 ADR + compose daemon-Docker access (Open Q5) + D-14 32GB concurrency benchmark
+
+**Wave 5** *(blocked on 37-07)*
+
+- [ ] 37-09-PLAN.md — shell_bg background routing into the box (Open Q4, most invasive)
+
 #### Phase 38: MCP Governance Hardening
 
 **Goal:** One canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
