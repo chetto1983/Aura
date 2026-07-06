@@ -21,6 +21,9 @@ env:
   AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
   AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
   GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
+  # Phase 36 D-08: compose.yaml makes AURA_GARAGE_ADMIN_TOKEN :?-required on both the aura
+  # and garage services, so every compose-touching job needs it set (only musr-e2e did).
+  AURA_GARAGE_ADMIN_TOKEN: ci-not-a-secret
   AURA_CI_NODE_VERSION: "24.x"
 
 # Cancel in-flight runs of the same ref when a new push lands (saves runner minutes
