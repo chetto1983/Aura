@@ -251,6 +251,13 @@ type Config struct {
 	// closed at call time), so DB/migration paths keep working without Garage reachable.
 	GarageAdminEndpoint string // AURA_GARAGE_ADMIN_ENDPOINT — internal Garage Admin API v2 base, default http://garage:3903
 	GarageAdminToken    string // AURA_GARAGE_ADMIN_TOKEN — bearer token for the internal admin API (Pitfall 3)
+
+	// Phase 37 per-identity full-capability sandbox operator surface (SBX foundation). The
+	// AURA_SANDBOX_* box knobs (idle-TTL, cgroup caps, egress allowlist, image ref) 37-05/37-06
+	// read into usersandbox.specFor / buildEgressSidecar. Defined + cataloged + parse-tested
+	// here (37-01); NOT yet wired into any router/spec. Sub-struct composition keeps config.go
+	// ≤600 LOC — see config_sandbox.go.
+	Sandbox SandboxConfig
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -498,6 +505,9 @@ func loadBase() *Config {
 		// in-compose garage:3903; the token is read raw (empty is non-fatal here).
 		GarageAdminEndpoint: envDefault("AURA_GARAGE_ADMIN_ENDPOINT", "http://garage:3903"),
 		GarageAdminToken:    os.Getenv("AURA_GARAGE_ADMIN_TOKEN"),
+
+		// Phase 37 per-identity sandbox operator surface (SBX foundation). See config_sandbox.go.
+		Sandbox: loadSandboxConfig(),
 	}
 }
 

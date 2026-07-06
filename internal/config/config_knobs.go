@@ -118,6 +118,19 @@ func knobRegistry() []KnobSpec {
 		// `aura config validate` flags a malformed value under a strict tier; it is a
 		// dedicated config field, NOT a mutable internal/settings OverlayEnv knob.
 		{Name: "AURA_MUSR_ISOLATION", Kind: KindBool, Default: "false"},
+
+		// Phase 37 per-identity sandbox operator surface (SBX foundation, config_sandbox.go).
+		// The numeric caps + TTL are KindInt so the reparse pass FLAGS a malformed value Fatal
+		// under a strict tier (T-37-01-CFG) — a KindString registration would get NO reparse
+		// check and could silently fall back into an unsafe cap/TTL under server_production.
+		// AURA_SANDBOX_IDLE_TTL_SEC is int-seconds, mirroring AURA_RUN_DIR_SWEEP_INTERVAL_SEC.
+		// Image + egress-allowlist are free-form strings (no numeric parse to validate).
+		{Name: "AURA_SANDBOX_IDLE_TTL_SEC", Kind: KindInt, Default: "1800"},
+		{Name: "AURA_SANDBOX_CPU_LIMIT", Kind: KindInt, Default: "2"},
+		{Name: "AURA_SANDBOX_MEMORY_LIMIT", Kind: KindInt, Default: "2147483648"},
+		{Name: "AURA_SANDBOX_PIDS_LIMIT", Kind: KindInt, Default: "512"},
+		{Name: "AURA_SANDBOX_EGRESS_ALLOWLIST", Kind: KindString, Default: ""},
+		{Name: "AURA_SANDBOX_IMAGE", Kind: KindString, Default: "aura-sandbox:latest"},
 	}
 }
 
