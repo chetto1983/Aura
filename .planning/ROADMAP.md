@@ -290,7 +290,7 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 9/12 plans executed
+**Plans:** 10/12 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
@@ -309,7 +309,7 @@ Plans:
 **Wave 3** *(sagas + lifecycle — blocked on Wave 2)*
 
 - [x] 36-08-PLAN.md — Provisioning saga (Garage/FS legs + journal) + first-login (D-15) + de-provisioning saga + LinkUser
-- [ ] 36-09-PLAN.md — Runner conversation-delete lifecycle + composite (identity,session) keying (MUSR-05/D-23)
+- [x] 36-09-PLAN.md — Runner conversation-delete lifecycle + composite (identity,session) keying (MUSR-05/D-23)
 
 **Wave 4** *(routing + token gate — blocked on Wave 3)*
 
