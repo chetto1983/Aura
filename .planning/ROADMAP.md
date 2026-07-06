@@ -290,7 +290,7 @@ Plans:
 3. Conversation delete evicts all session tool state.
 4. Authula is the default with provisioning + break-glass; no token in URLs.
 
-**Plans:** 10/12 plans executed
+**Plans:** 11/12 plans executed
 
 **Wave 1** *(foundation — parallel)*
 
@@ -313,7 +313,7 @@ Plans:
 
 **Wave 4** *(routing + token gate — blocked on Wave 3)*
 
-- [ ] 36-11-PLAN.md — Telegram multi-user routing + no-long-lived-token-in-URL static gate (MUSR-06)
+- [x] 36-11-PLAN.md — Telegram multi-user routing + no-long-lived-token-in-URL static gate (MUSR-06) — per-user turn identityctx scoping at the single startTurn choke point (fresh/async-doc/HITL-resume all covered); reject-unlinked→web-linking documented; `scripts/check-no-url-tokens.sh` static gate (self-tested, CI-wireable, ≤1h ?start=/setup ?token= carve-out); -race + two-identity live E2E pending WSL/CI
 
 **Wave 5** *(acceptance gate — blocked on Wave 4)*
 
