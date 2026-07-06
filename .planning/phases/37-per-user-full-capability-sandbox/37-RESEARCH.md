@@ -455,26 +455,31 @@ func (h SandboxReapHandler) Run(ctx context.Context, _ Job) (string, error) {
 
 **If this table looks long:** these are the honest unknowns a spike-validated *model* still leaves at the *code* layer — flag each for the plan; none is a kill risk.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **gVisor tier vs OpenSandbox FQDN allowlist — which wins under `server_production`?**
    - What we know: the nat-redirect FQDN mode ⊥ gVisor (Pitfall 2); the filter-floor works under both.
    - What's unclear: does any deployment actually want *both* runsc *and* a tightened FQDN allowlist simultaneously?
    - Recommendation: Ship the filter-floor as always-on (both runtimes); document FQDN-allowlist mode as runc-only; record the mutual-exclusion in the SBX-05 ADR. Let the operator pick per-deployment.
+   - **Resolved (37-06):** the filter-floor is always-on under both runtimes and FQDN-allowlist mode is runc-only — the floor/FQDN split is implemented in 37-06 (buildEgressSidecar + TestEgress_RunscRejectsFQDN); the mutual-exclusion is recorded in the SBX-05 ADR (37-08).
 
 2. **Is OpenSandbox egress adoptable as a plain Docker sidecar (non-K8s)?**
    - What we know: it's netns-based, Apache-2.0, `docker build components/egress/` works, env-configured; but the docs assume pods/Service-CIDR.
    - What's unclear: whether it runs correctly with `--network container:<box>` outside K8s without the OpenSandbox control plane.
    - Recommendation: Wave-0 spike the OpenSandbox-egress-as-Docker-sidecar round-trip; keep a bespoke `nft` filter-floor sidecar as the proven fallback (honors D-03's "search first" while de-risking).
+   - **Resolved (37-06):** the mandatory `nft` filter-floor is BESPOKE regardless — core SBX-04 does NOT depend on OpenSandbox, so it is not at risk. ONLY the optional FQDN-allowlist feature adopts OpenSandbox's egress component; if standalone `--network container:<box>` adoption fails outside K8s, 37-06's explicit fallback is a bespoke-`nft` FQDN filter, so SBX-04 ships either way.
 
 3. **E2B `envd` subset — exec + files only?**
    - What we know (spike 082): the E2B gateway's terminal/files endpoints talk to an in-box `envd` daemon. Aura's `DockerBackend` uses the Docker exec/cp API directly today, not `envd`.
    - What's unclear: whether adopting the E2B protocol *wholesale* (for DGX forward-compat) needs `envd` in the box now.
    - Recommendation: For Phase 37, `DockerBackend.Exec`/`cp` uses the Docker API (no `envd`); the E2B *verbs* are the Go interface shape (D-01), not the wire protocol. Defer `envd` to the DGX tier.
+   - **Resolved (37-04):** `DockerBackend.Exec`/`cp` uses the Docker exec/cp API directly (no in-box `envd`); the E2B verbs are the Go interface shape only. `envd`/the E2B wire protocol is deferred to the DGX tier.
 
 4. **`shell_bg` (background jobs) inside the box** (Pattern 5) — the current registry holds a host `*exec.Cmd` with a process group; a box exec-stream needs a different handle + poll/kill mapping to `ExecInspect`/box signal. Scope as its own plan slice; it's the most invasive of the five tools.
+   - **Resolved (37-09):** `shell_bg` inside the box is scoped as its own plan slice (37-09, wave 5) — the box exec-stream handle + poll/kill->`ExecInspect`/box-signal mapping, kept separate from the four synchronous tools (37-07).
 
 5. **How does the aura daemon reach `dockerd` under `server_production`?** (Pitfall 4) — host socket vs socket-proxy vs TCP-with-TLS. Recommendation: host socket into the aura service only, hardened via `tecnativa/docker-socket-proxy` to the lifecycle API subset; record as the ADR's accepted residual.
+   - **Resolved (37-08):** the aura->`dockerd` reach (host socket hardened via `tecnativa/docker-socket-proxy` to the lifecycle API subset) is recorded as the accepted residual in the SBX-05 ADR (37-08).
 
 ## Environment Availability
 

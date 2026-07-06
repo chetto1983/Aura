@@ -92,7 +92,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   - Success: (1) two-identity live E2E — B cannot list/get/delete/archive/resolve A's data (404/403), B-created chat owned by B and runs; (2) session B cannot poll/kill session A's shell, jobs expire by TTL; (3) conversation delete evicts all session tool state; (4) Authula default with provisioning + break-glass, no token in URLs.
 - [ ] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036)
   - Goal: resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; host never exposed.
-  - Success: (1) under `server_production` shell/fs target the per-identity sandbox, real host filesystem unreachable; (2) Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable (test-asserted); (3) cross-identity leakage impossible + idle-TTL lifecycle works; (4) configured egress allowlist cannot reach a disallowed host (default `--network none`); (5) ADR records container-per-identity (K8s/gVisor-default → DGX) + pre-merge concurrency benchmark on 32GB.
+  - Success: (1) under `server_production` shell/fs target the per-identity sandbox, real host filesystem unreachable; (2) Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable (test-asserted); (3) cross-identity leakage impossible + idle-TTL lifecycle works; (4) configured egress allowlist cannot reach a disallowed host (default egress = full-internet-minus-internal per D-06, not `--network none`); (5) ADR records container-per-identity (K8s/gVisor-default → DGX) + pre-merge concurrency benchmark on 32GB.
 - [ ] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
   - Goal: one canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
   - Success: (1) mixed url+command / empty-remote-trust blocked and never call stdio open; (2) hung mount drops within deadline, oversized stdio frame aborts without large alloc, shutdown leaves no child processes; (3) CLI mutations append `mcp_audit` (or production-disallowed), empty trust body → 400; (4) dead HTTP MCP endpoint reports OK=false.
@@ -339,7 +339,7 @@ Plans:
 1. Under `server_production`, shell/fs target the per-identity sandbox and the real host filesystem is unreachable.
 2. Docker-socket/`--privileged`/`--network host`/bind-mounts are unrepresentable (test-asserted).
 3. Cross-identity leakage is impossible and the idle-TTL lifecycle works.
-4. A configured egress allowlist cannot reach a disallowed host (default `--network none`).
+4. A configured egress allowlist cannot reach a disallowed host; the default egress posture is full public internet minus the tenancy boundary (DROP RFC1918 + `169.254.169.254` cloud-metadata + the shared-services Docker bridge), not `--network none` (SBX-04 amended per D-06).
 5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
 
 **Plans:** 9 plans
