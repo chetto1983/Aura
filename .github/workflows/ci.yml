@@ -66,6 +66,9 @@ jobs:
       - name: File-size cap (600 LOC)
         run: bash scripts/check-file-size.sh
 
+      - name: No long-lived token in URLs (MUSR-06)
+        run: bash scripts/check-no-url-tokens.sh
+
       - name: AG-UI boundary gate (D-17, SC2)
         run: bash scripts/agui_boundary_check.sh
 
