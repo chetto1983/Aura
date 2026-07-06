@@ -302,6 +302,165 @@ jobs:
           AURA_SCHEDULER_TICK_SECONDS: "3"
         run: bash scripts/scheduler_chaos.sh
 
+  musr-e2e:
+    name: MUSR two-identity cross-deny E2E (Postgres + Neo4j + Garage-admin + Authula)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # guards against a hung neo4j plugin / embed model warm-up
+    # Phase 36 D-29 acceptance gate. Brings up the FULL live stack (Postgres + Neo4j +
+    # Garage with the Admin API v2 published to loopback + the embedded Authula provider)
+    # and runs the two-identity cross-deny E2E with AURA_MUSR_ISOLATION=on (post-flip
+    # enforcement): identity B is denied on every plane (Postgres/Neo4j/Garage/jobs), a
+    # B-created chat is owned by B and runs, provision→login→isolated-run + break-glass work.
+    # This reuses the SAME build-tag docker-compose live-stack harness every other tier uses
+    # (D-29) — no throwaway per-test container framework. NO-SKIP-AS-GREEN: CI=true + the
+    # exported env arm envOrSkip's
+    # t.Fatal, so a missing DSN/token fails the job rather than passing a skipped tier green.
+    env:
+      CI: "true"
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      # Composed role DSNs the db_integration harness reads directly (envOrSkip) — the
+      # composed URLs, NOT just the POSTGRES_* primitives (CLAUDE.md no-skip-as-green).
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-test-password
+      AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
+      AURA_NEO4J_DATABASE: neo4j
+      AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
+      AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
+      AURA_EMBED_BASE_URL: http://127.0.0.1:8081
+      AURA_EMBED_DIMENSIONS: "768"
+      # The post-flip enforcement state the acceptance gate runs under (D-13): scoped
+      # fail-closed retrieval is active, so B's document_search is empty and A sees own.
+      AURA_MUSR_ISOLATION: "true"
+      # Embedded Authula provider (no separate container — it runs in-process against the
+      # 0019 Postgres schema). The E2E's authula_integration leg provisions A + B and
+      # exercises login; the secret + seeded operator satisfy its envOrSkip.
+      AURA_WEB_AUTH_PROVIDER: authula
+      AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+      AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
+      AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
+      AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
+      # Garage Admin API v2 (D-08) — published to loopback by .github/compose.ci-musr.yaml
+      # so the host-run garage_integration + musr_e2e tiers reach it. GARAGE_ADMIN_TOKEN is
+      # the container-side env compose reads; AURA_GARAGE_ADMIN_TOKEN is what the client reads.
+      GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
+      GARAGE_ADMIN_TOKEN: ci-garage-admin-token
+      AURA_GARAGE_ADMIN_ENDPOINT: http://127.0.0.1:3903
+      AURA_GARAGE_ADMIN_TOKEN: ci-garage-admin-token
+      # Garage S3 data plane (per-identity object put/get through the resolver).
+      AURA_OBJECTSTORE_BACKEND: garage
+      AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
+      AURA_OBJECTSTORE_PUBLIC_ENDPOINT: http://127.0.0.1:3900
+      AURA_OBJECTSTORE_REGION: garage
+      AURA_OBJECTSTORE_BUCKET: aura-assets
+      AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
+      AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      AURA_OBJECTSTORE_PATH_STYLE: "true"
+      # Layer the CI-musr override (garage.ci.toml + 3903 publish) + the plugin/model cache
+      # override on top of the base compose. The whole file is interpolated on every up, so
+      # the required-secret vars above must be present (they are).
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-musr.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+      AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-ci-cache/neo4j-plugins
+      AURA_SMOKE_P95_MS: "2000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile the musr_e2e tier (always — no-skip-as-green floor)
+        # The tagged E2E ALWAYS compiles here (the cheap always-green floor proving the
+        # 5-tag file never rots), even before the stack is up.
+        run: go vet -tags 'db_integration neo4j_integration garage_integration authula_integration musr_e2e' ./cmd/aura/
+
+      - name: Install mcp-neo4j-cypher (LLM graph interface, spawned by the client)
+        run: |
+          pipx install mcp-neo4j-cypher==0.6.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Restore llama.cpp embedding model cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/aura-ci-cache/llama.cpp
+          key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
+
+      - name: Restore Neo4j plugin cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/aura-ci-cache/neo4j-plugins
+          key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
+
+      - name: Prepare cached Docker bind dirs
+        run: |
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_CI_NEO4J_PLUGINS_DIR"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+
+      - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
+        run: make neo4j-migrate
+
+      - name: Bring up Garage (Admin API v2 on loopback) + assign layout
+        run: |
+          docker compose up -d garage
+
+          garage() { docker compose exec -T garage /garage "$@"; }
+
+          for i in $(seq 1 30); do
+            if garage status >/tmp/garage-status.txt 2>&1; then
+              cat /tmp/garage-status.txt
+              break
+            fi
+            cat /tmp/garage-status.txt || true
+            sleep 2
+          done
+
+          # A fresh single-node cluster has no layout; the Admin API's CreateBucket needs one.
+          node_id="$(garage status | awk '/NO ROLE ASSIGNED|pending\.\.\./ { print $1; exit }')"
+          if [ -n "$node_id" ]; then
+            garage layout assign -z dc1 -c 1G "$node_id" >/dev/null
+            version="$(garage layout show | awk '/garage layout apply --version/ { print $NF; exit }')"
+            if [ -n "$version" ]; then
+              garage layout apply --version "$version" >/dev/null
+            fi
+          fi
+
+      - name: Verify the Garage Admin API is reachable on loopback
+        # Proves the ci-musr override actually published :3903 before the tier runs, so a
+        # broken override fails HERE with a clear message rather than as a cryptic tier skip.
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $AURA_GARAGE_ADMIN_TOKEN" \
+            "$AURA_GARAGE_ADMIN_ENDPOINT/v2/GetClusterStatus" || echo 000)"
+          echo "admin /v2/GetClusterStatus -> $code"
+          case "$code" in 200|204) : ;; *) echo "Garage Admin API not reachable on $AURA_GARAGE_ADMIN_ENDPOINT" >&2; exit 1 ;; esac
+
+      - name: Seed Authula operator (embedded provider, 0019 schema)
+        run: go run ./scripts/authula_seed_e2e.go
+
+      - name: Two-identity cross-deny E2E (flag-on enforcement, full live stack)
+        # THE D-29 / MUSR-01 acceptance gate. -p 1 serializes the shared Postgres/Neo4j
+        # writes; -race matches every other live tier. The five tags select the E2E file;
+        # -run pins the two acceptance tests (other cmd/aura tagged tests are filtered out).
+        run: |
+          go test -race -count=1 -p 1 \
+            -tags 'db_integration neo4j_integration garage_integration authula_integration musr_e2e' \
+            -run 'TestTwoIdentityCrossDeny|TestProvisionLoginIsolatedRun' \
+            ./cmd/aura/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   sqlc-golden:
     name: sqlc generate is in sync
     runs-on: ubuntu-latest

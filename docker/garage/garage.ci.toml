@@ -1,0 +1,20 @@
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "garage:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+# CI-only Garage config (Phase 36 D-29). Identical admin posture to docker/garage/garage.toml
+# (Admin API v2 bound on :3903), kept as a SEPARATE file so the CI live-stack job can publish
+# the admin port to the runner's loopback (the host-run musr_e2e tier reaches it) WITHOUT ever
+# touching the production config's deliberately-unpublished, internal-only admin bind (Pitfall
+# 3 / T-36-06-E). The bearer admin_token is injected via GARAGE_ADMIN_TOKEN (compose env),
+# never committed here — mirroring rpc_secret / GARAGE_RPC_SECRET.
+api_bind_addr = "[::]:3903"

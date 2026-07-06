@@ -1,0 +1,17 @@
+# CI-only compose override for the MUSR two-identity live-stack job (Phase 36 D-29).
+#
+# The musr_e2e tier runs on the GitHub runner HOST (not inside a container), so it needs the
+# Garage Admin API v2 (:3903) reachable on loopback — production compose deliberately does NOT
+# publish 3903 (internal-only, Pitfall 3 / T-36-06-E). This override, layered on top of
+# compose.yaml via COMPOSE_FILE, does two things and ONLY for CI:
+#   1. swaps in docker/garage/garage.ci.toml (the CI admin config, same posture as prod),
+#   2. publishes 3903 to 127.0.0.1 so the host-run garage_integration + musr_e2e tiers reach
+#      the admin API through AURA_GARAGE_ADMIN_ENDPOINT=http://127.0.0.1:3903.
+#
+# It touches nothing else — Postgres/Neo4j/S3 host publishes come from compose.yaml unchanged.
+services:
+  garage:
+    ports:
+      - "127.0.0.1:3903:3903"
+    volumes:
+      - ./docker/garage/garage.ci.toml:/etc/garage.toml:ro
