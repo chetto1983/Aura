@@ -319,6 +319,15 @@ Plans:
 
 - [x] 36-12-PLAN.md — Documents backfill + flag-flip rollout runbook + CI (Garage+Authula) + two-identity live cross-deny E2E (D-29 acceptance gate) — idempotent Op1/Op2 owner-edge backfill (operator=UUID …001); deploy(off)→backfill→verify→flip(on) reversible runbook; musr-e2e CI job (composed DSNs + AURA_GARAGE_ADMIN_* + AURA_MUSR_ISOLATION=true, five tags, no-skip-as-green); five-tag E2E (HTTP 404/store-403/RLS/approvals/docs/Garage+resolver/MUSR-02/MUSR-06); + fixed the D-09 branch-route isolation hole; MUSR-01/02/06 [x]; live tiers compile-clean, pending WSL/CI
 
+**Gap Closure** *(VERIFICATION gaps_found + REVIEW 1 Critical/3 High — planned 2026-07-06; 6 plans, 3 waves)*
+
+- [ ] 36-13-PLAN.md — CI correctness + static gates: version-anchor the migration-0026 reversibility test (VERIF-1) + wire check-no-url-tokens.sh into CI (VERIF-6). Wave 1.
+- [ ] 36-14-PLAN.md — Daemon provisioning/de-provisioning wiring + migration 0033 (scheduler kind CHECK admits 'identity_purge') + deactivation auth-gate (VERIF-3/HI-01 + HI-02). Wave 1.
+- [ ] 36-15-PLAN.md — Per-identity object-store consumption on the asset path (VERIF-4/HI-01). Wave 2 (depends 36-14).
+- [ ] 36-16-PLAN.md — Documents default-closed + config-validate + local-fallback (CR-01/VERIF-5 + ME-01/LO-03; ME-02/LO-01 recorded). Wave 2 (depends 36-14).
+- [ ] 36-17-PLAN.md — Telegram fail-closed scoping + shell admin-cap wiring + blank-principal regression (HI-03 + VERIF-7 + LO-02). Wave 2 (depends 36-14).
+- [ ] 36-18-PLAN.md — Push + full CI matrix green + live-stack acceptance + AURA_MUSR_ISOLATION rollout decision (VERIF-2 + human_verification #1/#2). Wave 3 terminal, autonomous:false.
+
 #### Phase 37: Per-User Full-Capability Sandbox
 
 **Goal:** Resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; the host is never exposed.
