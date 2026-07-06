@@ -33,7 +33,7 @@ import (
 // httptest server serving its Mux (which carries the /api/conversations/ subtree).
 func newConvAPIServer(t *testing.T, store ConversationStore) *httptest.Server {
 	t.Helper()
-	s := NewServer(&scriptedRunner{}, store, ServerConfig{})
+	s := NewServer(&scriptedRunner{conv: store}, store, ServerConfig{})
 	srv := httptest.NewServer(s.Mux())
 	t.Cleanup(srv.Close)
 	return srv

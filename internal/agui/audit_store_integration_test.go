@@ -48,7 +48,7 @@ func TestPgAuditStoreListActivityForIdentity(t *testing.T) {
 	for _, id := range []string{idA, idB} {
 		if _, err := pool.Exec(ctx,
 			"INSERT INTO aura.identities (id, name, kind) VALUES ($1, $2, 'user')",
-			id, "audit-"+id[:8]); err != nil {
+			id, "audit-"+id); err != nil {
 			t.Fatalf("seed identity %s: %v", id, err)
 		}
 	}
