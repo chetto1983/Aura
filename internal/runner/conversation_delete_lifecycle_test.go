@@ -132,7 +132,7 @@ func seedOwnedConversation(t *testing.T, r *Runner, owner, convID string) {
 	if !ok {
 		t.Fatalf("expected a recordingConvStore, got %T", r.Conv)
 	}
-	if _, err := rc.fakeConvStore.Create(context.Background(), conversations.CreateParams{
+	if _, err := rc.Create(context.Background(), conversations.CreateParams{
 		ID: convID, IdentityID: owner, Model: "test-model",
 	}); err != nil {
 		t.Fatalf("seed conversation: %v", err)
