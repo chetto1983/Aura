@@ -75,6 +75,8 @@ var ErrRunscRequiresServerProduction = errors.New("usersandbox: runsc runtime re
 // ErrRunscRequiresServerProduction. Every host-exposure escape is already unrepresentable
 // (no field exists), so there is nothing else to validate for containment.
 func NewSandboxSpec(spec SandboxSpec, profile config.RuntimeProfile) (SandboxSpec, error) {
-	// STUB (RED): the Runsc-gate is not yet enforced — see GREEN.
+	if spec.Runtime == Runsc && profile != config.ProfileServerProduction {
+		return SandboxSpec{}, ErrRunscRequiresServerProduction
+	}
 	return spec, nil
 }
