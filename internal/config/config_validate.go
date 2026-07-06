@@ -94,6 +94,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateCORS(p)...)
 	vs = append(vs, c.gateDestructiveShell(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
+	vs = append(vs, c.gateMUSRIsolation(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
 	return vs
 }
@@ -226,6 +227,23 @@ func (c *Config) gateWebAuth(p RuntimeProfile) []Violation {
 	}
 	if strings.TrimSpace(c.AuthulaSecret) == "" {
 		return []Violation{{Knob: "AURA_AUTHULA_SECRET", Sev: Fatal, Msg: "web-auth secret is required under " + string(p)}}
+	}
+	return nil
+}
+
+// gateMUSRIsolation requires multi-user identity isolation (AURA_MUSR_ISOLATION) to be
+// enabled under server_production ONLY (CR-01/VERIF-5, the hardened↔prod differentiator —
+// mirrors gateReplication). The flag is the SOLE switch for the six fail-closed scoped
+// documents-plane (Neo4j) queries; with it off, a 2nd provisioned identity reads every
+// other identity's document chunks. single_user_hardened (the single-node appliance tier)
+// and the lenient tiers do not require it — they are single-principal. It names the knob
+// and never echoes a VALUE.
+func (c *Config) gateMUSRIsolation(p RuntimeProfile) []Violation {
+	if p != ProfileServerProduction {
+		return nil
+	}
+	if !c.MUSRIsolation {
+		return []Violation{{Knob: "AURA_MUSR_ISOLATION", Sev: Fatal, Msg: "multi-user identity isolation must be enabled (true) under server_production — a 2nd identity reads other identities' documents when off"}}
 	}
 	return nil
 }

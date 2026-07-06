@@ -202,6 +202,23 @@ func TestGateWebAuth(t *testing.T) {
 	}
 }
 
+// TestGateMUSRIsolation is the CR-01/VERIF-5 gate (the hardened↔prod differentiator):
+// server_production REQUIRES AURA_MUSR_ISOLATION on (a 2nd identity reads other identities'
+// documents when off); single_user_hardened + the lenient tiers never constrain it.
+func TestGateMUSRIsolation(t *testing.T) {
+	if vs := (&Config{MUSRIsolation: false}).gateMUSRIsolation(ProfileServerProduction); !hasViolation(vs, "AURA_MUSR_ISOLATION", Fatal) {
+		t.Fatalf("server_production with isolation off must be Fatal naming AURA_MUSR_ISOLATION, got %+v", vs)
+	}
+	if vs := (&Config{MUSRIsolation: true}).gateMUSRIsolation(ProfileServerProduction); len(vs) != 0 {
+		t.Errorf("server_production with isolation on must pass, got %+v", vs)
+	}
+	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened} {
+		if vs := (&Config{MUSRIsolation: false}).gateMUSRIsolation(p); len(vs) != 0 {
+			t.Errorf("%s must not require isolation (only server_production does), got %+v", p, vs)
+		}
+	}
+}
+
 // TestGateObjectStoreEndpoint locks A6: default bucket + loopback endpoint under
 // server_production are WARN (never Fatal), and only under production.
 func TestGateObjectStoreEndpoint(t *testing.T) {
@@ -305,7 +322,7 @@ func TestValidateProfile(t *testing.T) {
 		wantKnobs := []string{
 			"AURA_OBJECTSTORE_ACCESS_KEY", "AURA_OBJECTSTORE_SECRET_KEY", "GARAGE_RPC_SECRET",
 			"AURA_AGUI_CORS_PERMISSIVE", "AURA_OBJECTSTORE_REPLICATION_FACTOR",
-			"AURA_AUTHULA_SECRET", "AURA_SHELL_DESTRUCTIVE_PATTERNS",
+			"AURA_AUTHULA_SECRET", "AURA_SHELL_DESTRUCTIVE_PATTERNS", "AURA_MUSR_ISOLATION",
 		}
 		for _, k := range wantKnobs {
 			if !hasViolation(fatals, k, Fatal) {
@@ -356,6 +373,7 @@ func TestValidateProfile(t *testing.T) {
 			AGUICORSPermissive:           false,
 			ObjectStoreReplicationFactor: 3,
 			AuthulaSecret:                "32byteshexsecretvalueforauthula0",
+			MUSRIsolation:                true,
 			ObjectStoreBucket:            "prod-assets",
 			ObjectStoreEndpoint:          "https://garage.prod:3900",
 		}
