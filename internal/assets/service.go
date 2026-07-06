@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/google/uuid"
 )
@@ -38,13 +39,24 @@ type ProcessingJobQueue interface {
 var _ StoreBackend = (*Store)(nil)
 
 type Service struct {
-	Store          StoreBackend
-	Objects        objectstore.Store
-	Processors     ProcessorSet
-	ProcessingJobs ProcessingJobQueue
-	Limits         Limits
-	Bucket         string
-	PresignTTL     time.Duration
+	Store   StoreBackend
+	Objects objectstore.Store
+	// IdentityObjects + PerIdentityStore route each object op through the per-identity
+	// credential resolver (D-08): an identity's bytes land in ITS OWN bucket under ITS OWN
+	// key. Both nil → the shared Objects store handles every op (backward compat).
+	IdentityObjects  ObjectResolver
+	PerIdentityStore StoreFactory
+	Processors       ProcessorSet
+	ProcessingJobs   ProcessingJobQueue
+	Limits           Limits
+	Bucket           string
+	PresignTTL       time.Duration
+}
+
+// objectsFor resolves the object Store + bucket for the identity carried on ctx (the caller
+// stamps the asset owner). A nil resolver/factory → the shared store+bucket.
+func (s *Service) objectsFor(ctx context.Context) (objectstore.Store, string, error) {
+	return resolveObjects(ctx, s.IdentityObjects, s.PerIdentityStore, s.Objects, s.Bucket)
 }
 
 type PresignRequest struct {
@@ -83,6 +95,10 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 	if scope != ScopeThread && scope != ScopeLibrary {
 		return PresignResponse{}, fmt.Errorf("unsupported asset scope %q", scope)
 	}
+	objects, bucket, err := s.objectsFor(identityctx.WithIdentityID(ctx, req.IdentityID))
+	if err != nil {
+		return PresignResponse{}, err
+	}
 	assetID := newAssetID()
 	key := objectstore.AssetKey(req.IdentityID, assetID)
 	asset, err := s.Store.Create(ctx, CreateRequest{
@@ -94,15 +110,15 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 		FileName:          name,
 		MIMEType:          mimeType,
 		DeclaredSizeBytes: req.DeclaredSizeBytes,
-		ObjectBucket:      s.Bucket,
+		ObjectBucket:      bucket,
 		ObjectKey:         key,
 		Metadata:          map[string]any{},
 	})
 	if err != nil {
 		return PresignResponse{}, err
 	}
-	upload, err := s.Objects.PresignPut(ctx, objectstore.PresignPutRequest{
-		Ref:       objectstore.ObjectRef{Bucket: s.Bucket, Key: key},
+	upload, err := objects.PresignPut(ctx, objectstore.PresignPutRequest{
+		Ref:       objectstore.ObjectRef{Bucket: bucket, Key: key},
 		MIMEType:  asset.MIMEType,
 		Size:      req.DeclaredSizeBytes,
 		ExpiresIn: s.ttl(),
@@ -121,22 +137,26 @@ func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Ass
 	if err != nil {
 		return Asset{}, err
 	}
+	objects, _, err := s.objectsFor(identityctx.WithIdentityID(ctx, identityID))
+	if err != nil {
+		return Asset{}, err
+	}
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
-	attrs, err := s.Objects.Head(ctx, ref)
+	attrs, err := objects.Head(ctx, ref)
 	if err != nil {
 		_, _ = s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "object_missing", "uploaded object was not found")
 		return Asset{}, err
 	}
 	if err = s.Limits.Validate(asset.Modality, asset.FileName, attrs.SizeBytes); err != nil {
 		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusRefused, "asset_refused", err.Error())
-		_ = s.Objects.Delete(context.WithoutCancel(ctx), ref)
+		_ = objects.Delete(context.WithoutCancel(ctx), ref)
 		return updated, err
 	}
 	asset, err = s.Store.MarkUploaded(ctx, asset.ID, identityID, attrs.SizeBytes, attrs.ETag)
 	if err != nil {
 		return Asset{}, err
 	}
-	hash, sniffed, err := s.hashAndSniff(ctx, ref, asset.FileName)
+	hash, sniffed, err := s.hashAndSniff(ctx, objects, ref, asset.FileName)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -191,7 +211,11 @@ func (s *Service) Delete(ctx context.Context, identityID, assetID string) (Asset
 		return Asset{}, err
 	}
 	if s.Objects != nil && asset.ObjectBucket != "" && asset.ObjectKey != "" {
-		_ = s.Objects.Delete(context.WithoutCancel(ctx), objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
+		// Best-effort object cleanup on the OWNER's resolved store (a resolution fault must
+		// not fail the record delete — the row is already gone and the object is orphaned-safe).
+		if objects, _, rErr := s.objectsFor(identityctx.WithIdentityID(ctx, identityID)); rErr == nil {
+			_ = objects.Delete(context.WithoutCancel(ctx), objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
+		}
 	}
 	return asset, nil
 }
@@ -246,6 +270,10 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 	if err := s.Limits.Validate(modality, name, req.SizeBytes); err != nil {
 		return Asset{}, err
 	}
+	objects, bucket, err := s.objectsFor(identityctx.WithIdentityID(ctx, req.IdentityID))
+	if err != nil {
+		return Asset{}, err
+	}
 	assetID := newAssetID()
 	key := objectstore.AssetKey(req.IdentityID, assetID)
 	sourceRef, err := telegramSourceRef(req)
@@ -262,15 +290,15 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 		FileName:          name,
 		MIMEType:          mimeType,
 		DeclaredSizeBytes: req.SizeBytes,
-		ObjectBucket:      s.Bucket,
+		ObjectBucket:      bucket,
 		ObjectKey:         key,
 		Metadata:          map[string]any{},
 	})
 	if err != nil {
 		return Asset{}, err
 	}
-	ref := objectstore.ObjectRef{Bucket: s.Bucket, Key: key}
-	attrs, err := s.Objects.Put(ctx, ref, req.Reader, objectstore.PutOptions{
+	ref := objectstore.ObjectRef{Bucket: bucket, Key: key}
+	attrs, err := objects.Put(ctx, ref, req.Reader, objectstore.PutOptions{
 		MIMEType: mimeType,
 		Size:     req.SizeBytes,
 	})
@@ -280,14 +308,14 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 	}
 	if err = s.Limits.Validate(modality, name, attrs.SizeBytes); err != nil {
 		updated, _ := s.Store.SetStatus(ctx, asset.ID, req.IdentityID, StatusRefused, "asset_refused", err.Error())
-		_ = s.Objects.Delete(context.WithoutCancel(ctx), ref)
+		_ = objects.Delete(context.WithoutCancel(ctx), ref)
 		return updated, err
 	}
 	asset, err = s.Store.MarkUploaded(ctx, asset.ID, req.IdentityID, attrs.SizeBytes, attrs.ETag)
 	if err != nil {
 		return Asset{}, err
 	}
-	hash, sniffed, err := s.hashAndSniff(ctx, ref, asset.FileName)
+	hash, sniffed, err := s.hashAndSniff(ctx, objects, ref, asset.FileName)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -345,8 +373,8 @@ func telegramSourceRef(req TelegramIngestRequest) (string, error) {
 	return string(b), nil
 }
 
-func (s *Service) hashAndSniff(ctx context.Context, ref objectstore.ObjectRef, fileName string) (string, string, error) {
-	rc, attrs, err := s.Objects.Get(ctx, ref)
+func (s *Service) hashAndSniff(ctx context.Context, objects objectstore.Store, ref objectstore.ObjectRef, fileName string) (string, string, error) {
+	rc, attrs, err := objects.Get(ctx, ref)
 	if err != nil {
 		return "", "", err
 	}

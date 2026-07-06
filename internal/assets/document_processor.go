@@ -24,14 +24,21 @@ type DocumentProcessor struct {
 	Objects         objectstore.Store
 	Ingest          DocumentIngestor
 	VersionRecorder DocumentVersionRecorder
+	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
+	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
+	PerIdentityObjects *ObjectResolverBundle
 }
 
 func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
 	if p.Objects == nil || p.Ingest == nil {
 		return Result{}, fmt.Errorf("document processor is not configured")
 	}
+	objects, err := p.PerIdentityObjects.storeForAsset(ctx, p.Objects, asset)
+	if err != nil {
+		return Result{}, err
+	}
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
-	rc, _, err := p.Objects.Get(ctx, ref)
+	rc, _, err := objects.Get(ctx, ref)
 	if err != nil {
 		return Result{}, err
 	}

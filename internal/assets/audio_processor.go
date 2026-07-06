@@ -17,6 +17,9 @@ import (
 type AudioProcessor struct {
 	Objects objectstore.Store
 	STT     *multimodal.STTClient
+	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
+	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
+	PerIdentityObjects *ObjectResolverBundle
 }
 
 // NewAudioProcessor builds an audio processor over the shared STT client.
@@ -28,8 +31,12 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if p == nil || p.Objects == nil || p.STT == nil {
 		return Result{}, fmt.Errorf("audio processor is not configured")
 	}
+	objects, err := p.PerIdentityObjects.storeForAsset(ctx, p.Objects, asset)
+	if err != nil {
+		return Result{}, err
+	}
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
-	rc, _, err := p.Objects.Get(ctx, ref)
+	rc, _, err := objects.Get(ctx, ref)
 	if err != nil {
 		return Result{}, err
 	}

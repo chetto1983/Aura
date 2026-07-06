@@ -27,6 +27,9 @@ const assetVisionPrompt = "Describe this image."
 type ImageProcessor struct {
 	Objects objectstore.Store
 	Vision  *multimodal.VisionClient
+	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
+	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
+	PerIdentityObjects *ObjectResolverBundle
 }
 
 // NewImageProcessor builds an image processor over the shared vision client.
@@ -38,8 +41,12 @@ func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if p == nil || p.Objects == nil || p.Vision == nil {
 		return Result{}, fmt.Errorf("image processor is not configured")
 	}
+	objects, err := p.PerIdentityObjects.storeForAsset(ctx, p.Objects, asset)
+	if err != nil {
+		return Result{}, err
+	}
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
-	rc, attrs, err := p.Objects.Get(ctx, ref)
+	rc, attrs, err := objects.Get(ctx, ref)
 	if err != nil {
 		return Result{}, err
 	}
