@@ -90,7 +90,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 36: Multi-User Identity Isolation + Authula Cutover** — `MUSR-01..06`, `QUAL`(Authula DSN test) (F-012/028/032/039/050)
   - Goal: owner-scope every user-facing store/API/job to the authenticated principal; cut over to Authula (no RBAC). Includes per-identity isolation for MCP config, Garage object-store, and skills dirs (see spike `.planning/spikes/`).
   - Success: (1) two-identity live E2E — B cannot list/get/delete/archive/resolve A's data (404/403), B-created chat owned by B and runs; (2) session B cannot poll/kill session A's shell, jobs expire by TTL; (3) conversation delete evicts all session tool state; (4) Authula default with provisioning + break-glass, no token in URLs.
-- [ ] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036)
+- [x] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036) (completed 2026-07-07)
   - Goal: resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; host never exposed.
   - Success: (1) under `server_production` shell/fs target the per-identity sandbox, real host filesystem unreachable; (2) Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable (test-asserted); (3) cross-identity leakage impossible + idle-TTL lifecycle works; (4) configured egress allowlist cannot reach a disallowed host (default egress = full-internet-minus-internal per D-06, not `--network none`); (5) ADR records container-per-identity (K8s/gVisor-default → DGX) + pre-merge concurrency benchmark on 32GB.
 - [ ] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
@@ -345,7 +345,7 @@ Plans:
 4. A configured egress allowlist cannot reach a disallowed host; the default egress posture is full public internet minus the tenancy boundary (DROP RFC1918 + `169.254.169.254` cloud-metadata + the shared-services Docker bridge), not `--network none` (SBX-04 amended per D-06).
 5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
 
-**Plans:** 8/9 plans executed
+**Plans:** 9/9 plans complete
 
 **Wave 1**
 
@@ -369,7 +369,7 @@ Plans:
 
 **Wave 5** *(blocked on 37-07)*
 
-- [ ] 37-09-PLAN.md — shell_bg background routing into the box (Open Q4, most invasive)
+- [x] 37-09-PLAN.md — shell_bg background routing into the box (Open Q4, most invasive)
 
 #### Phase 37A: Web Artifact Delivery Lane
 
