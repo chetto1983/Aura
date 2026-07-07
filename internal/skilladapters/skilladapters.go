@@ -65,22 +65,27 @@ func (a *Loader) ManifestDescription() string {
 	return skills.RenderManifest(a.loader.List(), a.manCap)
 }
 
-// Snippet resolves an active snippet skill into its HOST by-path invocation (D-01
-// host-primary): the docs instructions (the SKILL.md body) + the host export-dir
-// path the model runs through shell_exec + the interpreter. The host path is
-// resolved under the SAME export dir the Writer materializes into so it points at
-// the real materialized file. ok=false for an absent or non-snippet skill (action=use
-// then falls back to the instruction-skill authority-frame path).
-func (a *Loader) Snippet(name string) (instructions, hostPath, interpreter string, ok bool) {
+// Snippet resolves an active snippet skill into BOTH by-path invocations: the HOST export-dir path
+// (D-01 host-primary, under the SAME export dir the Writer materializes into) AND the IN-BOX
+// SandboxPath (skills.SnippetSandboxPath — /skills/<name>/<name>.<ext>, the SAME root MaterializeIn
+// lands the snippet at under a strict profile, D-10), plus the docs instructions (SKILL.md body)
+// and the interpreter. action=use renders the sandbox path under Strict(), the host path otherwise.
+// ok=false for an absent or non-snippet skill (action=use then falls back to the instruction
+// authority-frame path).
+func (a *Loader) Snippet(name string) (instructions, hostPath, sandboxPath, interpreter string, ok bool) {
 	s, found := a.loader.Get(name)
 	if !found || s.Type != skills.TypeSnippet {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	path, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
+	hp, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
 	if perr != nil {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	return s.Body, path, interp, true
+	sp, _, serr := skills.SnippetInvocation(s.Name, s.Language)
+	if serr != nil {
+		return "", "", "", "", false
+	}
+	return s.Body, hp, sp, interp, true
 }
 
 // Writer bridges a live *skills.Writer onto the tools.skillWriter seam the skill

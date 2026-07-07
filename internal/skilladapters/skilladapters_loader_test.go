@@ -159,7 +159,7 @@ func TestLoaderSnippetResolvesHostInvocation(t *testing.T) {
 		writeSkillFile(t, root, "fetcher", snippetMD("fetcher", "Fetch a URL.", "python", "Run the fetcher."))
 	})
 
-	instructions, hostPath, interpreter, ok := a.Snippet("fetcher")
+	instructions, hostPath, sandboxPath, interpreter, ok := a.Snippet("fetcher")
 	if !ok {
 		t.Fatal("Snippet(fetcher) ok = false, want true for an active python snippet")
 	}
@@ -174,6 +174,10 @@ func TestLoaderSnippetResolvesHostInvocation(t *testing.T) {
 	if hostPath != wantPath {
 		t.Errorf("hostPath = %q, want %q", hostPath, wantPath)
 	}
+	// Sandbox path is the in-box /skills root MaterializeIn lands the snippet at (D-10).
+	if sandboxPath != "/skills/fetcher/fetcher.py" {
+		t.Errorf("sandboxPath = %q, want /skills/fetcher/fetcher.py", sandboxPath)
+	}
 }
 
 func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
@@ -184,32 +188,38 @@ func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
 		writeSkillFile(t, root, "builder", snippetMD("builder", "Build it.", "js", "Run the builder."))
 	})
 
-	_, shPath, shInterp, ok := a.Snippet("cleaner")
+	_, shPath, shSandbox, shInterp, ok := a.Snippet("cleaner")
 	if !ok || shInterp != "sh" {
 		t.Fatalf("Snippet(cleaner) ok=%v interp=%q, want ok + sh", ok, shInterp)
 	}
 	if shPath != filepath.Join(exportDir, "cleaner", "cleaner.sh") {
 		t.Errorf("shell host path = %q", shPath)
 	}
+	if shSandbox != "/skills/cleaner/cleaner.sh" {
+		t.Errorf("shell sandbox path = %q", shSandbox)
+	}
 
-	_, jsPath, jsInterp, ok := a.Snippet("builder")
+	_, jsPath, jsSandbox, jsInterp, ok := a.Snippet("builder")
 	if !ok || jsInterp != "node" {
 		t.Fatalf("Snippet(builder) ok=%v interp=%q, want ok + node", ok, jsInterp)
 	}
 	if jsPath != filepath.Join(exportDir, "builder", "builder.js") {
 		t.Errorf("js host path = %q", jsPath)
 	}
+	if jsSandbox != "/skills/builder/builder.js" {
+		t.Errorf("js sandbox path = %q", jsSandbox)
+	}
 }
 
 func TestLoaderSnippetAbsentSkill(t *testing.T) {
 	t.Parallel()
 	a := newLoaderAdapter(t, 0, t.TempDir(), nil)
-	instructions, hostPath, interpreter, ok := a.Snippet("ghost")
+	instructions, hostPath, sandboxPath, interpreter, ok := a.Snippet("ghost")
 	if ok {
 		t.Error("Snippet(ghost) ok = true, want false for an absent skill")
 	}
-	if instructions != "" || hostPath != "" || interpreter != "" {
-		t.Errorf("absent snippet should return all-empty, got (%q,%q,%q)", instructions, hostPath, interpreter)
+	if instructions != "" || hostPath != "" || sandboxPath != "" || interpreter != "" {
+		t.Errorf("absent snippet should return all-empty, got (%q,%q,%q,%q)", instructions, hostPath, sandboxPath, interpreter)
 	}
 }
 
@@ -220,7 +230,7 @@ func TestLoaderSnippetNonSnippetSkill(t *testing.T) {
 		// instruction authority-frame path).
 		writeSkillFile(t, root, "guide", instructionMD("guide", "A guide.", "Just instructions."))
 	})
-	_, _, _, ok := a.Snippet("guide")
+	_, _, _, _, ok := a.Snippet("guide")
 	if ok {
 		t.Error("Snippet(guide) ok = true, want false for a non-snippet skill")
 	}
@@ -233,11 +243,11 @@ func TestLoaderSnippetInvalidLanguageFails(t *testing.T) {
 	a := newLoaderAdapter(t, 0, t.TempDir(), func(root string) {
 		writeSkillFile(t, root, "weird", snippetMD("weird", "Weird lang.", "ruby", "Run weird."))
 	})
-	instructions, hostPath, interpreter, ok := a.Snippet("weird")
+	instructions, hostPath, sandboxPath, interpreter, ok := a.Snippet("weird")
 	if ok {
 		t.Error("Snippet(weird) ok = true, want false for an unsupported language")
 	}
-	if instructions != "" || hostPath != "" || interpreter != "" {
-		t.Errorf("invalid-language snippet should return all-empty, got (%q,%q,%q)", instructions, hostPath, interpreter)
+	if instructions != "" || hostPath != "" || sandboxPath != "" || interpreter != "" {
+		t.Errorf("invalid-language snippet should return all-empty, got (%q,%q,%q,%q)", instructions, hostPath, sandboxPath, interpreter)
 	}
 }

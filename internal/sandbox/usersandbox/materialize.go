@@ -15,6 +15,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
@@ -66,6 +67,61 @@ func CopyArtifactsOut(ctx context.Context, cli *client.Client, h BoxHandle, boxP
 		return nil, fmt.Errorf("copy artifacts out %q: %w", boxPath, err)
 	}
 	return res.Content, nil
+}
+
+// CopyArtifactsOut is the DockerBackend method form CopyArtifactOut (router_tools.go) resolves
+// structurally so the routed send_file stages a box artifact out via THIS backend's own client.
+func (b *DockerBackend) CopyArtifactsOut(ctx context.Context, h BoxHandle, boxPath string) (io.ReadCloser, error) {
+	return CopyArtifactsOut(ctx, b.cli, h, boxPath)
+}
+
+// CopyFileIn tar-streams content INTO the box at boxPath via CopyToContainer — the host→box
+// copy-in the routed fs_write uses (the tar path sidesteps the ARG_MAX + quoting/binary limits an
+// in-box `printf`/heredoc write would hit for large content). The daemon MkdirAll's the parents,
+// so a deep boxPath (e.g. /workspace/a/b/c.txt) needs no pre-existing directory.
+func CopyFileIn(ctx context.Context, cli *client.Client, h BoxHandle, boxPath string, content []byte, mode int64) error {
+	stream, err := tarSingleFile(boxPath, content, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := cli.CopyToContainer(ctx, h.ContainerID, client.CopyToContainerOptions{
+		DestinationPath: "/",
+		Content:         stream,
+	}); err != nil {
+		return fmt.Errorf("copy file in %q: %w", boxPath, err)
+	}
+	return nil
+}
+
+// CopyFileIn is the DockerBackend method form WriteFile (router_tools.go) resolves structurally.
+func (b *DockerBackend) CopyFileIn(ctx context.Context, h BoxHandle, boxPath string, content []byte, mode int64) error {
+	return CopyFileIn(ctx, b.cli, h, boxPath, content, mode)
+}
+
+// tarSingleFile builds a one-entry tar of content rooted at boxPath's "/"-relative name (extracted
+// at "/" by CopyToContainer). The path is POSIX-cleaned; a traversal-shaped or empty path is
+// rejected (no escape above the box root).
+func tarSingleFile(boxPath string, content []byte, mode int64) (io.Reader, error) {
+	name := strings.TrimPrefix(pathpkg.Clean("/"+strings.TrimSpace(boxPath)), "/")
+	if name == "" || name == ".." || strings.HasPrefix(name, "../") {
+		return nil, fmt.Errorf("invalid box path %q", boxPath)
+	}
+	if mode == 0 {
+		mode = 0o644
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	hdr := &tar.Header{Name: name, Mode: mode, Size: int64(len(content)), Typeflag: tar.TypeReg}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(content); err != nil {
+		return nil, err
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return &buf, nil
 }
 
 // tarDir builds an in-memory tar of hostDir's tree with every entry rooted at dest (leading/

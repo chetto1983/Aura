@@ -86,12 +86,13 @@ func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolRe
 	return NewResult(ctx, body)
 }
 
-// actionUse applies a skill (D-08). For a SNIPPET (type:snippet) it returns the docs
-// instructions + the HOST export-dir path + the interpreter so the model runs it BY
-// PATH via the host shell_exec (D-01 host-primary — an approved snippet is a vetted
-// artifact; sandbox_exec stays the named escalation for untrusted code). For an
-// instruction skill it returns the body wrapped in the authority frame. The body is
-// delivered via NewResult so a large skill pages through the sidecar (>preview cap).
+// actionUse applies a skill (D-08). For a SNIPPET (type:snippet) it renders the docs instructions +
+// a by-path invocation + the interpreter so the model runs it via shell_exec. Under a STRICT
+// profile it renders the IN-BOX SandboxPath (the routed shell_exec then runs the snippet the box
+// materialized at /skills/<name>/..., D-10); otherwise it renders the HOST export-dir path (D-01
+// host-primary). action=use EXECUTES NOTHING itself (no backend.Exec) — it only chooses which path
+// the subsequent shell_exec runs. For an instruction skill it returns the body wrapped in the
+// authority frame. The body is delivered via NewResult so a large skill pages through the sidecar.
 func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	if t.Loader == nil {
 		return ToolResult{}, fmt.Errorf("skill use: no skill loader configured")
@@ -104,8 +105,12 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	if name == "" {
 		return ToolResult{}, fmt.Errorf("skill use: name is required")
 	}
-	if instructions, hostPath, interpreter, ok := t.Loader.Snippet(name); ok {
-		return NewResult(ctx, renderSnippetUse(instructions, hostPath, interpreter))
+	if instructions, hostPath, sandboxPath, interpreter, ok := t.Loader.Snippet(name); ok {
+		path := hostPath
+		if t.SandboxRouter.Strict() {
+			path = sandboxPath
+		}
+		return NewResult(ctx, renderSnippetUse(instructions, path, interpreter))
 	}
 	body, ok := t.Loader.Body(name)
 	if !ok {
