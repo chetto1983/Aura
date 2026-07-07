@@ -96,7 +96,11 @@ K8s and does not flip gVisor on by default for the mini-PC.
 - The Aura daemon needs Docker API access to spawn boxes — a privileged surface (see Residual A).
 - `runc` (the appliance default) is a weaker boundary than a microVM or gVisor-by-default; the
   compensating controls are the SBX-02 structural containment, the per-identity volume, and the
-  always-on egress floor (SBX-04). gVisor is available opt-in for operators who want more.
+  always-on egress floor (SBX-04). The egress floor is wired at the composition root: the
+  config-sourced egress image (`AURA_SANDBOX_EGRESS_IMAGE` → `cfg.Sandbox.EgressImage` →
+  `usersandbox.WithEgress`) makes `buildSandboxRouter` launch the per-box sidecar on every
+  strict-profile box (landed in 37-10), and box creation is fail-CLOSED when that image is
+  unavailable. gVisor is available opt-in for operators who want more.
 - Concurrency does not scale past what one 32 GB host holds — this is a **single-appliance
   posture**, not a multi-tenant SaaS. The DGX tier is where horizontal scale lives. The D-14 soak
   proves the 10–20-box envelope fits 32 GB with headroom (Gate-3 evidence; see 37-VALIDATION.md).
@@ -142,7 +146,11 @@ The egress boundary (SBX-04, D-07) is a per-box sidecar that shares the box netw
 - **The always-on filter-table floor** (`table ip aura_egress`, `policy accept` + explicit
   `drop` for RFC1918 + the `169.254.169.254` metadata IP + the shared-services bridge). It is
   **filter-table only, no nat**, so it is byte-identical under `runc` and gVisor `runsc` — it is
-  the tenancy boundary under *both* runtimes.
+  the tenancy boundary under *both* runtimes. The floor is wired at the **composition root**:
+  `buildSandboxRouter` launches the sidecar via `usersandbox.WithEgress(cfg.Sandbox.EgressImage)`
+  (config knob `AURA_SANDBOX_EGRESS_IMAGE`, default non-empty `aura-egress:latest` = floor-on by
+  default, 37-10). Box creation is **fail-CLOSED** when that egress image is unavailable — a strict
+  box refuses to come up rather than run un-floored.
 - **The opt-in FQDN allowlist** (OpenSandbox, DNS + nftables **nat** redirect) for operators who
   want to tighten egress to a named host set. Because it uses the **nat table**, it is
   **`runc`-only**: gVisor's `runsc` netstack does not run the host nat redirect the allowlist
@@ -161,8 +169,11 @@ tenancy boundary**: the box reaches the public internet (so `uv`/`npm`/`gh` "jus
 `deps:` frontmatter is load-bearing — D-13), while the floor **drops** RFC1918, the cloud
 metadata IP, and the shared-services bridge. This ADR records that the *default* posture is
 permissive-outbound-with-a-floor, not deny-all; the tightened FQDN allowlist (Residual B) is the
-opt-in stricter tier. See SBX-04 and 37-01-SUMMARY.md for the amendment commit (the PRD-first
-Gate-1 record).
+opt-in stricter tier. The floor is delivered live at the composition root — `buildSandboxRouter`
+sources the sidecar image from `cfg.Sandbox.EgressImage` (`AURA_SANDBOX_EGRESS_IMAGE`, non-empty by
+default) and passes it to `usersandbox.WithEgress`, landed in 37-10 — and is fail-CLOSED when that
+image is absent (box creation refuses rather than running un-floored). See SBX-04 and
+37-01-SUMMARY.md for the amendment commit (the PRD-first Gate-1 record).
 
 ---
 

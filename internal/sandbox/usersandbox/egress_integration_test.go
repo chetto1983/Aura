@@ -8,6 +8,12 @@
 // non-masquerading bridge — Docker Desktop/WSL vpnkit NATs around any nftables rule
 // (37-RESEARCH Pitfall 3) — so skipUnlessEnforcingBridge makes them informational-only
 // locally and MANDATORY (t.Fatal on a non-Linux daemon) under $CI (no-skip-as-green).
+//
+// These backend-level tests prove the floor DROPs against a hand-built DockerBackend; the
+// COMPOSITION-ROOT end-to-end proof (the floor is launched via cmd/aura's buildSandboxRouter ->
+// Route, the production path) is cmd/aura's TestBuildSandboxRouter_LaunchesEgressFloor (SBX-04,
+// plan 37-10) — the two together prove both that the floor enforces and that the shipped binary
+// reaches it.
 
 package usersandbox
 

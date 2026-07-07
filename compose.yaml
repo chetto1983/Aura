@@ -192,10 +192,14 @@ services:
       # subset. A minimal single-user install MAY instead mount the socket straight into this
       # service — the accepted raw-socket fallback (ADR 0037 Residual A).
       DOCKER_HOST: ${AURA_SANDBOX_DOCKER_HOST:-}
-      # Box + egress image refs (D-13). AURA_SANDBOX_IMAGE is LIVE — config.SandboxConfig reads it
-      # into the box spec. AURA_SANDBOX_EGRESS_IMAGE is the digest-pin point for the per-box egress
-      # sidecar (docker/aura-egress/Dockerfile, SBX-04); operators SHOULD override both with
-      # digest-pinned registry refs in production.
+      # Box + egress image refs (D-13). BOTH are LIVE — config.SandboxConfig reads them. AURA_SANDBOX_IMAGE
+      # sources the box spec. AURA_SANDBOX_EGRESS_IMAGE sources config.SandboxConfig.EgressImage, which
+      # buildSandboxRouter passes to usersandbox.WithEgress (37-10) — so the per-box egress sidecar (the
+      # SBX-04 tenancy floor: DROP RFC1918 + 169.254.169.254 metadata + the shared-services bridge) is
+      # created on every box under a strict profile. The default aura-egress:latest keeps the floor ON by
+      # default (SC#4); operators SHOULD override both with digest-pinned registry refs in production.
+      # Fail-CLOSED consequence: a strict host WITHOUT this egress image built/available refuses box
+      # creation (ensureImage pull-fail -> Resolve error -> the tool denies) rather than running un-floored.
       AURA_SANDBOX_IMAGE: ${AURA_SANDBOX_IMAGE:-aura-sandbox:latest}
       AURA_SANDBOX_EGRESS_IMAGE: ${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest}
     ports:

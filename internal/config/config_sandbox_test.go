@@ -12,11 +12,12 @@ import (
 // fallback into an unsafe value). Lives in its own file so config_test.go stays under the
 // 600-LOC cap (CLAUDE.md NO GOD CLASS).
 func TestLoad_SandboxConfig(t *testing.T) {
-	// The six AURA_SANDBOX_* knobs; the default subtest neutralizes any ambient host value so
+	// The seven AURA_SANDBOX_* knobs; the default subtest neutralizes any ambient host value so
 	// the fallback assertions are deterministic regardless of the shell that runs the suite.
 	sandboxEnvKeys := []string{
 		"AURA_SANDBOX_IDLE_TTL_SEC", "AURA_SANDBOX_CPU_LIMIT", "AURA_SANDBOX_MEMORY_LIMIT",
 		"AURA_SANDBOX_PIDS_LIMIT", "AURA_SANDBOX_EGRESS_ALLOWLIST", "AURA_SANDBOX_IMAGE",
+		"AURA_SANDBOX_EGRESS_IMAGE",
 	}
 
 	t.Run("defaults on unset", func(t *testing.T) {
@@ -47,6 +48,13 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		if s.Image != "aura-sandbox:latest" {
 			t.Errorf("Image default: want aura-sandbox:latest, got %q", s.Image)
 		}
+		// The egress-image default is deliberately NON-EMPTY so the SBX-04 tenancy floor is ON by
+		// default under a strict profile (SC#4/D-06): buildSandboxRouter passes it to WithEgress.
+		// An empty default would wire WithEgress yet leave the floor OFF — the exact posture the
+		// non-empty default forbids.
+		if s.EgressImage != "aura-egress:latest" {
+			t.Errorf("EgressImage default: want aura-egress:latest (non-empty = floor-on, SC#4), got %q", s.EgressImage)
+		}
 	})
 
 	t.Run("env overrides parse into typed fields", func(t *testing.T) {
@@ -57,6 +65,7 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		t.Setenv("AURA_SANDBOX_PIDS_LIMIT", "1024")
 		t.Setenv("AURA_SANDBOX_EGRESS_ALLOWLIST", "pypi.org, *.githubusercontent.com ,")
 		t.Setenv("AURA_SANDBOX_IMAGE", "registry.example.test/aura-sandbox@sha256:abc")
+		t.Setenv("AURA_SANDBOX_EGRESS_IMAGE", "registry.example.test/aura-egress@sha256:def")
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("Load returned error: %v", err)
@@ -81,6 +90,9 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		}
 		if s.Image != "registry.example.test/aura-sandbox@sha256:abc" {
 			t.Errorf("Image override: want the digest-pinned registry ref, got %q", s.Image)
+		}
+		if s.EgressImage != "registry.example.test/aura-egress@sha256:def" {
+			t.Errorf("EgressImage override: want the digest-pinned registry ref, got %q", s.EgressImage)
 		}
 	})
 

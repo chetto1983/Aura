@@ -141,9 +141,12 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 // cfg.Sandbox (37-01). It returns NIL — a safe host-direct no-op everywhere (Route/Strict/
 // SuspendIdle all nil-guard) — under a non-strict profile (the box is interposed ONLY under
 // single_user_hardened / server_production, SC-4) or when a Docker client cannot be constructed (a
-// Docker-unavailable host must never fail boot). The DockerBackend is wired WITH the per-identity
-// materialize sources (skills / Agent.md / pyscripts) so a routed shell_exec finds a snippet the
-// box materialized at /skills/<name>/... (D-10, plan 37-07).
+// Docker-unavailable host must never fail boot). Under a strict profile the box gets the always-on
+// egress floor (SBX-04): newSandboxBackend wires usersandbox.WithEgress from cfg.Sandbox.EgressImage,
+// so every routed box carries the DROP-RFC1918/metadata/bridge tenancy sidecar. Because the config
+// default is NON-EMPTY (aura-egress:latest, SC#4) the floor is on-by-default, and box creation is
+// fail-CLOSED when that image is unavailable (ensureImage pull-fail -> Resolve error -> Route
+// routed=true,err -> the tool DENIES) — a strict-profile box never comes up un-floored.
 func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
 	if cfg == nil || !cfg.Profile.Strict() {
 		return nil // non-strict: host-direct everywhere, no box runtime needed (SC-4)
@@ -153,9 +156,21 @@ func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
 		slog.Warn("aura: docker client unavailable — sandbox routing disabled (host-direct)", "err", err)
 		return nil
 	}
-	backend := usersandbox.NewDockerBackend(cli, cfg.Sandbox.Image, limitsFrom(cfg.Sandbox),
-		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg)))
-	return usersandbox.NewSandboxRouter(backend, cfg.Profile, cfg.Sandbox)
+	return usersandbox.NewSandboxRouter(newSandboxBackend(cli, cfg), cfg.Profile, cfg.Sandbox)
+}
+
+// newSandboxBackend builds the production DockerBackend from cfg: the box image + cgroup caps, the
+// per-identity materialize sources (skills / Agent.md / pyscripts, so a routed shell_exec finds a
+// snippet the box materialized at /skills/<name>/... — D-10, plan 37-07), AND the always-on egress
+// sidecar (SBX-04, D-07) via WithEgress sourced from cfg.Sandbox.EgressImage. It is split from
+// buildSandboxRouter so the WithEgress wiring is regression-testable without a Docker daemon (the DockerBackend never
+// dials at construction, so a nil client is safe): a docker-free cmd/aura test asserts EgressImage()
+// echoes cfg.Sandbox.EgressImage. WithEgress("") is a guarded no-op, but the config default is
+// non-empty so under a strict profile the floor is always wired.
+func newSandboxBackend(cli *client.Client, cfg *config.Config) *usersandbox.DockerBackend {
+	return usersandbox.NewDockerBackend(cli, cfg.Sandbox.Image, limitsFrom(cfg.Sandbox),
+		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg)),
+		usersandbox.WithEgress(cfg.Sandbox.EgressImage))
 }
 
 // sandboxMaterializeSources resolves the per-identity host dirs docker-cp'd INTO the box at

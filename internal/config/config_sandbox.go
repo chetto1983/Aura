@@ -24,6 +24,16 @@ import (
 // (docker/aura-sandbox/Dockerfile builds `aura-sandbox`) is the dev default.
 const defaultSandboxImage = "aura-sandbox:latest"
 
+// defaultSandboxEgressImage is the aura-egress sidecar image ref default (SBX-04, D-06). It is
+// deliberately NON-EMPTY so the always-on tenancy floor is ON BY DEFAULT under the strict
+// profiles (ROADMAP Success Criterion #4): buildSandboxRouter passes it to usersandbox.WithEgress,
+// so every strict-profile box gets the DROP-RFC1918/metadata/bridge floor without an opt-in. An
+// EMPTY value would leave the floor OFF (WithEgress("") is a guarded no-op), which is NOT the
+// default — a strict host must fail-CLOSED (refuse box creation) when this image is unavailable,
+// never run un-floored. Operators SHOULD override with a digest-pinned registry ref in production
+// (docker/aura-egress/Dockerfile builds `aura-egress`).
+const defaultSandboxEgressImage = "aura-egress:latest"
+
 // Sandbox lifecycle + cgroup-cap defaults (D-08 idle-TTL, D-14 caps — tunable starting
 // points, not a scale SLA).
 const (
@@ -62,6 +72,13 @@ type SandboxConfig struct {
 	// Image is the box image ref (D-13). Default is the local build tag; production SHOULD
 	// override with a digest-pinned registry ref.
 	Image string // AURA_SANDBOX_IMAGE — box image reference, default aura-sandbox:latest
+
+	// EgressImage is the aura-egress sidecar image ref buildSandboxRouter passes to
+	// usersandbox.WithEgress (SBX-04, D-06). An EMPTY value disables the sidecar (WithEgress("")
+	// is a guarded no-op), so the default is NON-EMPTY — the tenancy floor is ON by default under
+	// the strict profiles (SC#4). A strict host without this image built/available fails-CLOSED
+	// (box creation refuses), never runs un-floored.
+	EgressImage string // AURA_SANDBOX_EGRESS_IMAGE — egress sidecar image, default aura-egress:latest (non-empty = floor-on)
 }
 
 // loadSandboxConfig reads the AURA_SANDBOX_* surface with non-fatal fallbacks, wired into
@@ -76,6 +93,7 @@ func loadSandboxConfig() SandboxConfig {
 		PidsLimit:       int64Default("AURA_SANDBOX_PIDS_LIMIT", defaultSandboxPidsLimit),
 		EgressAllowlist: envSliceDefault("AURA_SANDBOX_EGRESS_ALLOWLIST", nil),
 		Image:           envDefault("AURA_SANDBOX_IMAGE", defaultSandboxImage),
+		EgressImage:     envDefault("AURA_SANDBOX_EGRESS_IMAGE", defaultSandboxEgressImage),
 	}
 }
 

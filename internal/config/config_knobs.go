@@ -124,13 +124,16 @@ func knobRegistry() []KnobSpec {
 		// under a strict tier (T-37-01-CFG) — a KindString registration would get NO reparse
 		// check and could silently fall back into an unsafe cap/TTL under server_production.
 		// AURA_SANDBOX_IDLE_TTL_SEC is int-seconds, mirroring AURA_RUN_DIR_SWEEP_INTERVAL_SEC.
-		// Image + egress-allowlist are free-form strings (no numeric parse to validate).
+		// Image + egress-image + egress-allowlist are free-form strings (no numeric parse to
+		// validate). AURA_SANDBOX_EGRESS_IMAGE defaults NON-EMPTY (aura-egress:latest) so the
+		// SBX-04 tenancy floor is on-by-default under a strict tier (SC#4) — it is NOT Secret.
 		{Name: "AURA_SANDBOX_IDLE_TTL_SEC", Kind: KindInt, Default: "1800"},
 		{Name: "AURA_SANDBOX_CPU_LIMIT", Kind: KindInt, Default: "2"},
 		{Name: "AURA_SANDBOX_MEMORY_LIMIT", Kind: KindInt, Default: "2147483648"},
 		{Name: "AURA_SANDBOX_PIDS_LIMIT", Kind: KindInt, Default: "512"},
 		{Name: "AURA_SANDBOX_EGRESS_ALLOWLIST", Kind: KindString, Default: ""},
 		{Name: "AURA_SANDBOX_IMAGE", Kind: KindString, Default: "aura-sandbox:latest"},
+		{Name: "AURA_SANDBOX_EGRESS_IMAGE", Kind: KindString, Default: "aura-egress:latest"},
 	}
 }
 

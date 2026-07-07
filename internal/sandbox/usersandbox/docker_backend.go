@@ -88,6 +88,12 @@ func NewDockerBackend(cli *client.Client, imageRef string, limits Resources, opt
 	return b
 }
 
+// EgressImage returns the wired aura-egress sidecar image ref (empty == sidecar disabled). It
+// exposes the applied WithEgress option so the composition root's wiring is regression-testable
+// without a daemon — a docker-free cmd/aura test asserts newSandboxBackend echoes
+// cfg.Sandbox.EgressImage here — without leaking any other backend state.
+func (b *DockerBackend) EgressImage() string { return b.egressImage }
+
 // boxName is the deterministic container + workspace-volume name for an identity.
 func boxName(identityID string) string { return boxNamePrefix + identityID }
 
