@@ -5,10 +5,10 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37
 current_phase_name: per-user-full-capability-sandbox
 status: executing
-stopped_at: "Phase 37 executed (9/9 plans merged, unit/build/vet green); verification gaps_found — 1 BLOCKER (SBX-04 egress sidecar unwired at composition root) + WSL/CI live tier deferred"
-last_updated: "2026-07-07T00:30:00.000Z"
+stopped_at: Phase 37 executed (9/9 plans merged, unit/build/vet green); verification gaps_found — 1 BLOCKER (SBX-04 egress sidecar unwired at composition root) + WSL/CI live tier deferred
+last_updated: "2026-07-07T06:41:50.845Z"
 last_activity: 2026-07-07
-last_activity_desc: "Phase 37 all 9 plans executed via wave-based worktree parallelism + merged to master; whole-module build/vet/test green (62 pkgs, 0 fail); gsd-verifier returned gaps_found 4/5 — SBX-04 egress floor is built+unit-tested but never wired into buildSandboxRouter (no AURA_SANDBOX_EGRESS_IMAGE consumer) so it is inert in the shipped binary; 4 human_verification items (live docker/db/neo4j -race, egress DROP re-verify post-fix, D-14 32GB soak, gVisor runsc smoke). Phase NOT closed."
+last_activity_desc: Phase 37 executed + verified (gaps_found)
 progress:
   total_phases: 12
   completed_phases: 6
