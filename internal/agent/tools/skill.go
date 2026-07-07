@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 // SkillTool is the ONE non-deferred skills verb the model sees (D-01/D-05). A
@@ -42,6 +44,13 @@ type SkillTool struct {
 	// proposed there fires an immediate operator alert. Nil in the interactive REPL.
 	Alerter skillAlerter
 
+	// SandboxRouter is the per-identity box routing seam (plan 37-07). It is named distinctly
+	// from the unexported `router *ActionRouter` below (W6 naming collision): action=use consults
+	// its Strict() to render a snippet's IN-BOX SandboxPath (strict) vs its HostPath (lenient) in
+	// the shell_exec frame. action=use itself executes NOTHING — the subsequent ROUTED shell_exec
+	// runs the materialized snippet inside the box. Nil ⇒ never strict ⇒ HostPath (host-primary).
+	SandboxRouter *usersandbox.SandboxRouter
+
 	routerOnce sync.Once
 	router     *ActionRouter
 }
@@ -68,13 +77,14 @@ type skillLoader interface {
 	// ManifestDescription renders the byte-stable, alphabetical manifest block that
 	// becomes this tool's Description (with the BM25-overflow tail past the cap).
 	ManifestDescription() string
-	// Snippet resolves an ACTIVE snippet skill into its HOST by-path invocation
-	// (D-01 host-primary): the docs instructions, the host export-dir path the model
-	// runs through shell_exec, and the interpreter. The host path is resolved in the
-	// cmd/aura adapter from AURA_SKILL_EXPORT_DIR via skills.SnippetHostPath. ok=false
-	// when the named skill is absent or not a snippet (action=use then falls back to
-	// the instruction-skill authority-frame path).
-	Snippet(name string) (instructions, hostPath, interpreter string, ok bool)
+	// Snippet resolves an ACTIVE snippet skill into BOTH by-path invocations: the HOST export-dir
+	// path (D-01 host-primary, resolved from AURA_SKILL_EXPORT_DIR via skills.SnippetHostPath) AND
+	// the IN-BOX sandboxPath (skills.SnippetSandboxPath — /skills/<name>/<name>.<ext>, the SAME root
+	// MaterializeIn lands the snippet at, D-10), plus the docs instructions and the interpreter.
+	// action=use renders the sandboxPath under a strict profile (the routed shell_exec finds the
+	// materialized snippet there) and the hostPath otherwise. ok=false when the named skill is
+	// absent or not a snippet (action=use then falls back to the instruction authority-frame path).
+	Snippet(name string) (instructions, hostPath, sandboxPath, interpreter string, ok bool)
 }
 
 // skillArgs is the wire shape of the skill tool arguments. Only `action` is

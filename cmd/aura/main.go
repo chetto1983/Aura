@@ -33,6 +33,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/joho/godotenv"
@@ -127,11 +128,16 @@ type runtimeToolHandles struct {
 // (`aura tools`, buildRegistry) pass nil — the tool still registers (its Spec needs no
 // store) so the manifest lists it, and an Execute without a store would error loudly.
 func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
-	reg, _ := buildBaseRegistryWithHandles(cfg, ts)
+	reg, _ := buildBaseRegistryWithHandles(cfg, ts, nil)
 	return reg
 }
 
-func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools.Registry, runtimeToolHandles) {
+// buildBaseRegistryWithHandles threads sandboxRouter onto the box-capable tools (shell_exec /
+// fs_read / fs_write / send_file / skill) so under a strict profile they execute INSIDE the
+// per-identity box (plan 37-07); a nil router (the pool-free `aura tools`/manifest paths, and
+// dev/local_trusted) keeps every tool host-direct byte-for-byte. web_fetch / web_search are
+// deliberately NEVER routed (D-11 — they stay host-side, already SSRF-guarded).
+func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles) {
 	handles := runtimeToolHandles{
 		BackgroundShells: tools.NewBackgroundShells(),
 		ShellApprovals:   tools.NewShellApprovals(),
@@ -149,8 +155,10 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools
 	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
 	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
 	// a read-only tool whose write actions error loudly.
-	reg.Register(newSkillTool(cfg, taskStorePool(ts)))
+	reg.Register(newSkillTool(cfg, taskStorePool(ts), sandboxRouter))
 	webEngine := web.NewClient(cfg)
+	// web_fetch / web_search are DELIBERATELY NOT routed into the box (D-11): they stay host-side,
+	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	reg.Register(&tools.DocumentSearch{Searcher: docsToolSearcher{cfg: cfg}})
@@ -160,7 +168,7 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools
 	if wd, err := os.Getwd(); err == nil {
 		workspace = wd
 	}
-	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: handles.BackgroundShells, Approvals: handles.ShellApprovals})
+	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: handles.BackgroundShells, Approvals: handles.ShellApprovals, Router: sandboxRouter})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
 	// output from, and terminate, a background shell_exec job. Deferred — the model
 	// tool_searches for them once it holds a background shell_id to follow. The pointers
@@ -177,15 +185,15 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools
 	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
 	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside
 	// SkillsDir so the gated skill-authoring flow cannot be bypassed.
-	reg.Register(&tools.FSRead{})
-	reg.Register(&tools.FSWrite{SkillsDir: cfg.SkillsDir})
+	reg.Register(&tools.FSRead{Router: sandboxRouter})
+	reg.Register(&tools.FSWrite{SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
 	reg.Register(&tools.FSEdit{SkillsDir: cfg.SkillsDir})
 	reg.Register(&tools.FSGrep{})
 	reg.Register(&tools.FSGlob{})
 	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
 	// the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
-	reg.Register(&tools.SendFile{WorkspaceRoot: workspace})
+	reg.Register(&tools.SendFile{WorkspaceRoot: workspace, Router: sandboxRouter})
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
 	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
 	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it
@@ -203,11 +211,11 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools
 	return reg, handles
 }
 
-func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore) (*tools.Registry, runtimeToolHandles, []func() error, error) {
+func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles, []func() error, error) {
 	if cfg.MCPServersErr != nil {
 		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
 	}
-	reg, handles := buildBaseRegistryWithHandles(cfg, ts)
+	reg, handles := buildBaseRegistryWithHandles(cfg, ts, sandboxRouter)
 	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
 		return reg, handles, nil, nil
 	}
@@ -291,7 +299,8 @@ func closeMCPServers(closers []func() error) error {
 }
 
 func printTools() {
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil)
+	// Pool-free manifest path: a nil router keeps every tool host-direct (the manifest never routes).
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		os.Exit(1)

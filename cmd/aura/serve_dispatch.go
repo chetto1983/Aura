@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -38,10 +39,10 @@ var _ cron.ChannelDeliverer = (*channels.Registry)(nil)
 // agent_job handler runs the parent registry minus swarm_spawn (childRegistry, owned
 // by the handlers package) over the live LLM client.
 func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cron.Dispatch {
-	// Build the per-identity box router (Phase 37, plan 37-05). It is nil under a non-strict
-	// profile or a Docker-unavailable host — a safe host-direct no-op everywhere — and is
-	// retained on chat so plan 37-07 can wire it onto the box-capable tools.
-	chat.sandboxRouter = buildSandboxRouter(chat)
+	// The per-identity box router (Phase 37) is built ONCE at composition (assembleChatEnv) and
+	// retained on chat so the SAME instance backs both the box-capable tools (plan 37-07 wiring)
+	// AND this reaper registration — never two routers with divergent box-handle maps. It is nil
+	// under a non-strict profile or a Docker-unavailable host (a safe host-direct no-op everywhere).
 	// A genuinely-nil SandboxReaper interface (not a typed-nil *SandboxRouter) yields the
 	// handler's "disabled (no reaper)" no-op — exactly the identity_purge nil-Purger note.
 	var sandboxReaper handlers.SandboxReaper
@@ -136,24 +137,39 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 	})
 }
 
-// buildSandboxRouter constructs the per-identity box router at the serve composition root,
-// sourced entirely from cfg.Sandbox (37-01). It returns NIL — a safe host-direct no-op
-// everywhere (Route/Strict/SuspendIdle all nil-guard) — under a non-strict profile (the box is
-// interposed ONLY under single_user_hardened / server_production, SC-4) or when a Docker client
-// cannot be constructed (a Docker-unavailable host must never fail serve boot). The tools are
-// NOT wired onto the router here — that is plan 37-07; this only builds the backend + router so
-// the reaper can be registered and 37-07 has a router handle to interpose.
-func buildSandboxRouter(chat *chatEnv) *usersandbox.SandboxRouter {
-	if chat == nil || chat.cfg == nil || !chat.cfg.Profile.Strict() {
+// buildSandboxRouter constructs the per-identity box router at composition, sourced entirely from
+// cfg.Sandbox (37-01). It returns NIL — a safe host-direct no-op everywhere (Route/Strict/
+// SuspendIdle all nil-guard) — under a non-strict profile (the box is interposed ONLY under
+// single_user_hardened / server_production, SC-4) or when a Docker client cannot be constructed (a
+// Docker-unavailable host must never fail boot). The DockerBackend is wired WITH the per-identity
+// materialize sources (skills / Agent.md / pyscripts) so a routed shell_exec finds a snippet the
+// box materialized at /skills/<name>/... (D-10, plan 37-07).
+func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
+	if cfg == nil || !cfg.Profile.Strict() {
 		return nil // non-strict: host-direct everywhere, no box runtime needed (SC-4)
 	}
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		slog.Warn("aura serve: docker client unavailable — sandbox routing disabled (host-direct)", "err", err)
+		slog.Warn("aura: docker client unavailable — sandbox routing disabled (host-direct)", "err", err)
 		return nil
 	}
-	backend := usersandbox.NewDockerBackend(cli, chat.cfg.Sandbox.Image, limitsFrom(chat.cfg.Sandbox))
-	return usersandbox.NewSandboxRouter(backend, chat.cfg.Profile, chat.cfg.Sandbox)
+	backend := usersandbox.NewDockerBackend(cli, cfg.Sandbox.Image, limitsFrom(cfg.Sandbox),
+		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg)))
+	return usersandbox.NewSandboxRouter(backend, cfg.Profile, cfg.Sandbox)
+}
+
+// sandboxMaterializeSources resolves the per-identity host dirs docker-cp'd INTO the box at
+// resolve (D-10): the skills export dir (landing at /skills — the SnippetSandboxPath root the
+// routed shell_exec runs snippets from). Agent.md / pyscripts roots are per-identity and land with
+// their own dedicated wiring; the skills export dir is the one the snippet-exec E2E depends on.
+func sandboxMaterializeSources(cfg *config.Config) usersandbox.SourceResolver {
+	exportDir := cfg.SkillExportDir
+	return func(string) []usersandbox.MaterializeSource {
+		if strings.TrimSpace(exportDir) == "" {
+			return nil
+		}
+		return []usersandbox.MaterializeSource{{HostDir: exportDir, Dest: "/skills"}}
+	}
 }
 
 // limitsFrom maps the AURA_SANDBOX_* cgroup knobs (config) into usersandbox.Resources: the

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 // SendFile is the channel-agnostic artifact delivery tool (D-05): the model calls
@@ -32,6 +34,10 @@ type SendFile struct {
 	// must NOT silently grant unrestricted host-file delivery. The composition root
 	// sets it true for non-CLI runners; CLI keeps it false (legacy behavior).
 	RequireWorkspace bool
+	// Router, non-nil under a strict profile, makes send_file box-aware: a box /workspace artifact
+	// is CopyArtifactsOut-staged to a host-readable path (D-10) and re-fenced there before delivery.
+	// Nil keeps the host-file delivery path byte-for-byte.
+	Router *usersandbox.SandboxRouter
 }
 
 // maxSendFileBytes is the upload ceiling enforced before a descriptor is emitted
@@ -76,7 +82,7 @@ func (s *SendFile) Spec() Spec {
 // loop's toolResultEvent lifts the Meta artifact onto Actions.ArtifactDelta. A
 // too-large or unreadable path returns an inline error result (NOT a Go error)
 // the model self-corrects on, with NO artifact Meta.
-func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, error) {
+func (s *SendFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	var a sendFileArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("send_file args: %w", err)
@@ -84,6 +90,16 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 	path := strings.TrimSpace(a.Path)
 	if path == "" {
 		return errorResult("file_unreadable", "no path was provided; pass the absolute path of the file to deliver"), nil
+	}
+
+	// Route decision (plan 37-07): routed ⇒ the requested path is a BOX path — stage it out of the
+	// box before delivery; routed+err ⇒ fail-CLOSED deny.
+	boxHandle, routed, routeErr := s.Router.Route(ctx)
+	if routed && routeErr != nil {
+		return sandboxUnavailableResult("send_file", routeErr), nil
+	}
+	if routed {
+		return s.deliverFromBox(ctx, boxHandle, path, a.Caption)
 	}
 
 	if strings.TrimSpace(s.WorkspaceRoot) == "" && s.RequireWorkspace {
@@ -97,25 +113,30 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 	if !ok {
 		return outsideWorkspaceResult(resolved, s.WorkspaceRoot), nil
 	}
-	path = resolved
+	return emitDelivery(resolved, a.Caption), nil
+}
 
+// emitDelivery is the shared delivery tail (host path AND the routed staged copy): it stats the
+// (already workspace-fenced) file, gates the size, and emits the channel-agnostic artifact
+// descriptor. A too-large or unreadable path returns an inline {error,message} the model
+// self-corrects on, NEVER a Go error / artifact Meta.
+func emitDelivery(path, caption string) ToolResult {
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorResult("file_unreadable", fmt.Sprintf("cannot read %q: %v", path, err)), nil
+		return errorResult("file_unreadable", fmt.Sprintf("cannot read %q: %v", path, err))
 	}
 	if info.IsDir() {
-		return errorResult("file_unreadable", fmt.Sprintf("%q is a directory, not a file", path)), nil
+		return errorResult("file_unreadable", fmt.Sprintf("%q is a directory, not a file", path))
 	}
 	if info.Size() > maxSendFileBytes {
 		return errorResult("file_too_large", fmt.Sprintf(
 			"%q is %d bytes; the upload limit is %d bytes (50 MB). Deliver a smaller file or a link instead",
-			path, info.Size(), int64(maxSendFileBytes))), nil
+			path, info.Size(), int64(maxSendFileBytes)))
 	}
-
 	descriptor := map[string]any{
 		"path":     path,
 		"filename": filepath.Base(path),
-		"caption":  asciiCaption(a.Caption),
+		"caption":  asciiCaption(caption),
 	}
 	meta := ToolResultMeta{"artifact": descriptor}
 	preview := fmt.Sprintf("queued %s for delivery", filepath.Base(path))
@@ -123,13 +144,21 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 		Preview: preview,
 		Bytes:   len(preview),
 		Meta:    &meta,
-	}, nil
+	}
 }
 
 func (s *SendFile) checkWorkspace(path string) (string, bool, error) {
-	root := strings.TrimSpace(s.WorkspaceRoot)
+	return fenceWithinRoot(s.WorkspaceRoot, s.RequireWorkspace, path)
+}
+
+// fenceWithinRoot is the symlink-resolving workspace fence used BOTH by the host delivery path
+// (rooted at s.WorkspaceRoot) and the routed staged-copy path (rooted at the staging dir). An empty
+// root with requireWorkspace fails closed (AG-019); otherwise it resolves symlinks on both root and
+// path and confirms path stays inside root (no ".." escape).
+func fenceWithinRoot(root string, requireWorkspace bool, path string) (string, bool, error) {
+	root = strings.TrimSpace(root)
 	if root == "" {
-		if s.RequireWorkspace {
+		if requireWorkspace {
 			// Fail closed (AG-019): a non-CLI context without a configured workspace
 			// must not deliver arbitrary host files.
 			return path, false, nil

@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/secret"
 )
 
@@ -38,6 +39,12 @@ type ShellExec struct {
 	// Approvals is the one-shot ledger for commands matching
 	// AURA_SHELL_DESTRUCTIVE_PATTERNS. Nil fails closed for configured matches.
 	Approvals *ShellApprovals
+
+	// Router is the per-identity box routing seam (SBX-01, plan 37-07). Nil (dev/local_trusted,
+	// the CLI/manifest paths) keeps the host os/exec path byte-for-byte; under a strict profile
+	// Route returns a live box handle and Execute runs the command INSIDE the box via
+	// Router.Exec (never host), failing CLOSED on a box error (D-09/GATE-01).
+	Router *usersandbox.SandboxRouter
 
 	// mu guards cwd: the per-session PERSISTENT working directory (Claude-Code
 	// Bash-tool parity — a `cd` in one call carries into the next). Keyed by the
@@ -117,13 +124,26 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	// for destructive matching, approval digesting, and execution.
 	commandForGate := strings.ReplaceAll(a.Command, "\r\n", "\n")
 	workdir := s.workdir(ctx, a.Cwd)
+
+	// Route decision (SBX-01, plan 37-07). routed=false ⇒ the host os/exec path below runs
+	// unchanged (dev/local_trusted, SC-4); routed=true+err ⇒ fail-CLOSED deny (never host,
+	// D-09/GATE-01); routed=true ⇒ the command runs INSIDE the box (executeInBox).
+	boxHandle, routed, routeErr := s.Router.Route(ctx)
+	if routed && routeErr != nil {
+		return sandboxUnavailableResult("shell_exec", routeErr), nil
+	}
+
 	// AG-018: validate an explicitly model-supplied cwd up front so a bad directory
-	// is a clean, self-correctable error rather than an opaque shell exec failure.
-	if explicit := strings.TrimSpace(a.Cwd); explicit != "" {
-		if info, statErr := os.Stat(explicit); statErr != nil {
-			return ToolResult{}, fmt.Errorf("shell_exec: cwd %q is not accessible: %w", explicit, statErr)
-		} else if !info.IsDir() {
-			return ToolResult{}, fmt.Errorf("shell_exec: cwd %q is not a directory", explicit)
+	// is a clean, self-correctable error rather than an opaque shell exec failure. HOST ONLY —
+	// on the routed branch a `/workspace/...` cwd is a BOX path, not a host path, so host-stat'ing
+	// it would falsely fail; the box exec surfaces its own bad-dir error instead.
+	if !routed {
+		if explicit := strings.TrimSpace(a.Cwd); explicit != "" {
+			if info, statErr := os.Stat(explicit); statErr != nil {
+				return ToolResult{}, fmt.Errorf("shell_exec: cwd %q is not accessible: %w", explicit, statErr)
+			} else if !info.IsDir() {
+				return ToolResult{}, fmt.Errorf("shell_exec: cwd %q is not a directory", explicit)
+			}
 		}
 	}
 	approvalRequired, err := s.requireShellApproval(ctx, commandForGate, workdir)
@@ -149,6 +169,12 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		}
 		res.Meta = &ToolResultMeta{"shell_id": id, "background": true}
 		return res, nil
+	}
+
+	// Routed: run the command INSIDE the per-identity box (never host). Background box jobs are
+	// out of scope here (37-09) — a non-background routed call goes to executeInBox.
+	if routed {
+		return s.executeInBox(ctx, boxHandle, commandForGate, a.Cwd, a.Env, a.TimeoutMs)
 	}
 
 	timeout := effectiveShellTimeout(s.DefaultTimeout, a.TimeoutMs)
@@ -313,57 +339,6 @@ func (c *shellOutputCapture) stderrString() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.stderr.String()
-}
-
-// cwdMarker fences the shell's final $PWD on the last stdout line so Execute can
-// track cwd across calls. extractCwdMarker strips it before the model sees output.
-const cwdMarker = "__AURA_CWD__"
-
-// wrapForCwdTracking groups the user command, preserves its exit code, and prints
-// the final working directory behind the marker. `pwd -W` (Git Bash) yields a
-// Windows-valid path so the next call's cmd.Dir works; plain pwd is the POSIX
-// fallback (a non-Windows-valid form is skipped by the workdir Stat guard).
-func wrapForCwdTracking(command string) string {
-	return "{\n" + command + "\n}\n__aura_ec=$?\nprintf '\\n%s %s\\n' '" + cwdMarker + "' \"$(pwd -W 2>/dev/null || pwd)\"\nexit $__aura_ec"
-}
-
-// extractCwdMarker splits the marker line back out of stdout: returns the cleaned
-// output (the marker's injected leading newline removed) and the captured dir
-// ("" when the marker never printed).
-func extractCwdMarker(stdout string) (clean, dir string) {
-	idx := strings.LastIndex(stdout, cwdMarker+" ")
-	if idx < 0 {
-		return stdout, ""
-	}
-	tail := stdout[idx+len(cwdMarker)+1:]
-	if nl := strings.IndexByte(tail, '\n'); nl >= 0 {
-		tail = tail[:nl]
-	}
-	clean = stdout[:idx]
-	clean = strings.TrimSuffix(clean, "\n") // the printf-injected separator, not user output
-	return clean, strings.TrimSpace(tail)
-}
-
-func removeCwdMarkerLine(output string) (clean, dir string) {
-	idx := strings.LastIndex(output, cwdMarker+" ")
-	if idx < 0 {
-		return output, ""
-	}
-	lineStart := idx
-	for lineStart > 0 && output[lineStart-1] != '\n' {
-		lineStart--
-	}
-	lineEnd := idx + len(cwdMarker) + 1
-	for lineEnd < len(output) && output[lineEnd] != '\n' {
-		lineEnd++
-	}
-	dir = strings.TrimSpace(output[idx+len(cwdMarker)+1 : lineEnd])
-	if lineEnd < len(output) && output[lineEnd] == '\n' {
-		lineEnd++
-	}
-	clean = output[:lineStart] + output[lineEnd:]
-	clean = strings.TrimSuffix(clean, "\n")
-	return clean, dir
 }
 
 // shellIsCmdFallback reports whether the resolved shell is the degraded cmd.exe

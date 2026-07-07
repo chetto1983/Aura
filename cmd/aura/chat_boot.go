@@ -265,9 +265,16 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		fmt.Fprintln(os.Stderr, "warn: tiktoken init:", err)
 	}
 
+	// The per-identity box router (Phase 37) is built ONCE here so the SAME instance backs both the
+	// box-capable tools (routed below at registry construction, plan 37-07) AND the idle-suspend
+	// reaper (buildDispatch reads chat.sandboxRouter). Nil under a non-strict profile or a
+	// Docker-unavailable host — a safe host-direct no-op everywhere (SC-4).
+	sandboxRouter := buildSandboxRouter(cfg)
+
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both
-	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB.
-	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore))
+	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB. sandboxRouter
+	// threads onto shell_exec/fs_read/fs_write/send_file/skill (NOT web_*, D-11).
+	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore), sandboxRouter)
 	if err != nil {
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
@@ -351,7 +358,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
