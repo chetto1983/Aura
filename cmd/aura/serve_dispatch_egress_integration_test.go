@@ -162,6 +162,21 @@ func egressITCapAdd(t *testing.T, cli *client.Client, ref string) []string {
 	return ins.Container.HostConfig.CapAdd
 }
 
+// hasCap reports whether caps contains want, tolerant of Docker's capability normalization:
+// the daemon returns caps in the canonical "CAP_NET_ADMIN" form on inspect even when the
+// container was created with the short "NET_ADMIN" name (moby v0.4.1 / Docker 29+). Comparing
+// the CAP_-stripped forms keeps the D-07 security assertion (NET_ADMIN on the sidecar) exact
+// while robust to the daemon's string form.
+func hasCap(caps []string, want string) bool {
+	want = strings.TrimPrefix(want, "CAP_")
+	for _, c := range caps {
+		if strings.TrimPrefix(c, "CAP_") == want {
+			return true
+		}
+	}
+	return false
+}
+
 // TestBuildSandboxRouter_LaunchesEgressFloor proves SBX-04 is closed AT THE COMPOSITION ROOT: a box
 // created via the production buildSandboxRouter -> Route path carries its aura-egress sidecar
 // (NET_ADMIN on the sidecar, box netns shared), reaches the public internet (D-04) but is DROPPED
@@ -219,7 +234,7 @@ func TestBuildSandboxRouter_LaunchesEgressFloor(t *testing.T) {
 		t.Fatalf("box must carry no added capabilities, got CapAdd=%v", caps)
 	}
 	sidecar := "aura-egress-" + id
-	if caps := egressITCapAdd(t, cli, sidecar); !containsString(caps, "NET_ADMIN") {
+	if caps := egressITCapAdd(t, cli, sidecar); !hasCap(caps, "NET_ADMIN") {
 		t.Fatalf("sidecar %q must carry NET_ADMIN, got CapAdd=%v", sidecar, caps)
 	}
 	sins, err := cli.ContainerInspect(context.Background(), sidecar, client.ContainerInspectOptions{})

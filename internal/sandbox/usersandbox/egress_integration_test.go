@@ -121,7 +121,7 @@ func TestEgress_FloorDropsInternal(t *testing.T) {
 		t.Fatalf("box must carry no added capabilities, got CapAdd=%v", caps)
 	}
 	sidecar := egressName(id)
-	if caps := inspectCapAdd(t, cli, sidecar); !containsStr(caps, capNetAdmin) {
+	if caps := inspectCapAdd(t, cli, sidecar); !hasCap(caps, capNetAdmin) {
 		t.Fatalf("sidecar must carry %s, got CapAdd=%v", capNetAdmin, caps)
 	}
 	sins, err := cli.ContainerInspect(ctx, sidecar, client.ContainerInspectOptions{})
@@ -203,9 +203,15 @@ func TestEgress_FQDNAllowlist(t *testing.T) {
 }
 
 // containsStr reports whether s is in xs.
-func containsStr(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
+// hasCap reports whether caps contains want, tolerant of Docker's capability normalization:
+// the daemon returns caps in the canonical "CAP_NET_ADMIN" form on inspect even when the
+// container was created with the short "NET_ADMIN" name (moby v0.4.1 / Docker 29+). Comparing
+// the CAP_-stripped forms keeps the D-07 security assertion (NET_ADMIN on the sidecar) exact
+// while robust to the daemon's string form.
+func hasCap(caps []string, want string) bool {
+	want = strings.TrimPrefix(want, "CAP_")
+	for _, c := range caps {
+		if strings.TrimPrefix(c, "CAP_") == want {
 			return true
 		}
 	}
