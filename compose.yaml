@@ -177,6 +177,27 @@ services:
       AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}
       AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}
       AURA_PROFILE_CERTAINTY_N: ${AURA_PROFILE_CERTAINTY_N:-3}
+      # ↓↓ Phase 37 (SBX-05, ADR 0037) — per-identity full-capability sandbox ↓↓
+      # The daemon spawns one box (aura-box-<identity>) per identity DIRECTLY over the Docker
+      # Engine API (moby client, client.FromEnv reads DOCKER_HOST). This is a NO-OP under
+      # dev/local_trusted: buildSandboxRouter is Strict()-gated, so under any non-strict profile
+      # the router is nil and the Docker client is NEVER constructed — DOCKER_HOST is unused.
+      #
+      # Docker API access (T-37-08-SOCKET, Open Q5): default EMPTY so the dev stack grants the
+      # daemon NO socket. In production the operator brings up the socket-proxy sidecar
+      # (`docker compose --profile sandbox up -d`) and points the daemon at it:
+      #   AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375
+      # The raw /var/run/docker.sock is mounted into the PROXY ONLY (never into aura, never into a
+      # box — SBX-02); the proxy exposes only the container/exec/volume/network/image lifecycle
+      # subset. A minimal single-user install MAY instead mount the socket straight into this
+      # service — the accepted raw-socket fallback (ADR 0037 Residual A).
+      DOCKER_HOST: ${AURA_SANDBOX_DOCKER_HOST:-}
+      # Box + egress image refs (D-13). AURA_SANDBOX_IMAGE is LIVE — config.SandboxConfig reads it
+      # into the box spec. AURA_SANDBOX_EGRESS_IMAGE is the digest-pin point for the per-box egress
+      # sidecar (docker/aura-egress/Dockerfile, SBX-04); operators SHOULD override both with
+      # digest-pinned registry refs in production.
+      AURA_SANDBOX_IMAGE: ${AURA_SANDBOX_IMAGE:-aura-sandbox:latest}
+      AURA_SANDBOX_EGRESS_IMAGE: ${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest}
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
       - "127.0.0.1:${AURA_SETUP_PORT:-9081}:9081"
@@ -254,6 +275,43 @@ services:
     volumes:
       - ./docker/garage/garage.toml:/etc/garage.toml:ro
       - garage-data:/var/lib/garage
+
+  # ↓↓ Phase 37 (SBX-05, ADR 0037) — narrowed Docker API access for the sandbox daemon ↓↓
+  # tecnativa/docker-socket-proxy fronts /var/run/docker.sock so the aura daemon can spawn
+  # per-identity boxes WITHOUT holding raw root-equivalent socket access (T-37-08-SOCKET,
+  # Open Q5). The raw socket is mounted READ-ONLY into THIS proxy only — never into the aura
+  # service, never into a box (SBX-02). The proxy enables only the container/exec/volume/
+  # network/image lifecycle subset the DockerBackend needs and denies everything else (no
+  # swarm, no secrets, no daemon auth). It binds :2375 on the INTERNAL compose network only —
+  # there is deliberately NO host publish (a host-reachable Docker proxy is a privilege-
+  # escalation surface). Gated behind `profiles: [sandbox]`, so the DEFAULT `docker compose up`
+  # neither starts it nor changes the dev stack — enable with `docker compose --profile sandbox
+  # up -d` under a strict profile and set AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375.
+  docker-socket-proxy:
+    image: ${AURA_DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.3.0}
+    container_name: aura-docker-socket-proxy
+    profiles: [sandbox]
+    restart: unless-stopped
+    environment:
+      # Read scopes the DockerBackend needs to inspect boxes/images/volumes/networks.
+      CONTAINERS: "1"
+      IMAGES: "1"
+      VOLUMES: "1"
+      NETWORKS: "1"
+      EXEC: "1"
+      # POST allows the write verbs (create/start/stop/remove/exec) the box lifecycle uses.
+      POST: "1"
+      # Everything else stays default-deny (no swarm, secrets, configs, plugins, daemon auth).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
 
   caddy:
     image: caddy:2
