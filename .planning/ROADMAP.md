@@ -345,7 +345,7 @@ Plans:
 4. A configured egress allowlist cannot reach a disallowed host; the default egress posture is full public internet minus the tenancy boundary (DROP RFC1918 + `169.254.169.254` cloud-metadata + the shared-services Docker bridge), not `--network none` (SBX-04 amended per D-06).
 5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
 
-**Plans:** 9/9 plans complete
+**Plans:** 10/10 plans complete (37-01..37-09 + 37-10 gap closure)
 
 **Wave 1**
 
@@ -370,6 +370,10 @@ Plans:
 **Wave 5** *(blocked on 37-07)*
 
 - [x] 37-09-PLAN.md — shell_bg background routing into the box (Open Q4, most invasive)
+
+**Wave 6** *(gap closure — verification BLOCKER)*
+
+- [x] 37-10-PLAN.md — Wire the always-on egress floor into `buildSandboxRouter` (SBX-04): `AURA_SANDBOX_EGRESS_IMAGE` → `cfg.Sandbox.EgressImage` → `usersandbox.WithEgress`, non-empty default (floor-on, SC#4), fail-CLOSED when the image is absent; docker-free wiring guard + composition-root live-DROP re-test (WSL/CI)
 
 #### Phase 37A: Web Artifact Delivery Lane
 
