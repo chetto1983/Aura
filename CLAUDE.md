@@ -167,7 +167,7 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
 - **NO TEST BASY SITTING.** Tests must follow PRD §Test discipline rigorosa: realistic fixtures, goleak, race detector, property-based dove indicato, build tags integration, coverage threshold, mutation testing spot-check. Cita la tabella esempi per slice.
 - **NO SKIP-AS-GREEN IN CI.** Integration/smoke tests must actually run in the pipeline — a `t.Skip` that fires under `$CI` is a falsely-green job exercising nothing. (1) CI jobs export the exact env the tests read (composed DSNs `AURA_DB_URL`/`AURA_DB_MIGRATE_URL`, not just the `POSTGRES_*` primitives `config.Load` composes for the CLI). (2) Skip-helpers (`envOrSkip` and inline `t.Skip`) call `t.Fatal` when a required var is unset and `$CI` is set; locally they still skip. A sub-second "integration" runtime is a skip tell — verify execution, not just PASS.
 - **COVERAGE FLOOR 85%.** No phase/slice closes below 85% measured coverage across the full tag matrix (unit + integration + smoke). This overrides the PRD's ≥75% unit / ≥60% integration. A bare unit-only number under 85% is not an acceptable closing metric — report the combined figure.
--**DEFINITION OF DONE** Phase/Job are complete when is fully validate E2E at score >9.8 on real scenario.
+- **DEFINITION OF DONE** Phase/Job are complete when is fully validate E2E at score >9.8 on real scenario.
 - **AUDIT** refer to \docs\audit for audit finding and improvement on codebase test and observability
 
 ## Tool design — deferred-tool pattern (mandatory)
