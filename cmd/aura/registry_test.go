@@ -75,7 +75,7 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 		},
 	}
 
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("buildRegistryWithMCP: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 		},
 	}
 
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("buildRegistryWithMCP: %v", err)
 	}
