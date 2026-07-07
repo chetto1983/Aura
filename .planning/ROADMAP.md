@@ -345,7 +345,7 @@ Plans:
 4. A configured egress allowlist cannot reach a disallowed host; the default egress posture is full public internet minus the tenancy boundary (DROP RFC1918 + `169.254.169.254` cloud-metadata + the shared-services Docker bridge), not `--network none` (SBX-04 amended per D-06).
 5. An ADR records container-per-identity (K8s/gVisor-default → DGX) + a pre-merge concurrency benchmark on 32GB.
 
-**Plans:** 6/9 plans executed
+**Plans:** 8/9 plans executed
 
 **Wave 1**
 
@@ -364,8 +364,8 @@ Plans:
 
 **Wave 4** *(blocked on 37-05 / 37-06)*
 
-- [ ] 37-07-PLAN.md — Route shell_exec/fs_read/fs_write/skill into the box, fail-CLOSED (not web_*) (SBX-01)
-- [ ] 37-08-PLAN.md — SBX-05 ADR + compose daemon-Docker access (Open Q5) + D-14 32GB concurrency benchmark
+- [x] 37-07-PLAN.md — Route shell_exec/fs_read/fs_write/skill into the box, fail-CLOSED (not web_*) (SBX-01)
+- [x] 37-08-PLAN.md — SBX-05 ADR + compose daemon-Docker access (Open Q5) + D-14 32GB concurrency benchmark
 
 **Wave 5** *(blocked on 37-07)*
 
