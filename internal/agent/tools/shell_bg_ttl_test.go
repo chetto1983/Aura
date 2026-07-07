@@ -109,7 +109,7 @@ func TestBackgroundJobTTLDefaultAndOverride(t *testing.T) {
 // ticker and terminates an expired job; stopReaper joins it (goleak, via TestMain).
 func TestBackgroundJobReaperTicksAndReaps(t *testing.T) {
 	t.Setenv("AURA_SHELL_BG_TTL", "4s") // reaperInterval = 1s (ttl/4, clamped)
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	reaped := make(chan struct{}, 1)
 	bg.mu.Lock()
 	bg.shells["job-runaway"] = &bgShell{
