@@ -58,7 +58,7 @@ func TestBackgroundJobID(t *testing.T) {
 	// Two real starts must bind distinct crypto ids (not sh_1/sh_2). echo exists on
 	// both the POSIX shell and the cmd fallback; Shutdown joins the reapers (goleak).
 	t.Run("start binds crypto ids", func(t *testing.T) {
-		bg := NewBackgroundShells()
+		bg := NewBackgroundShells(nil)
 		ctx := ctxWith(t, "sess-id", "call-id")
 		id1, err := bg.start(ctx, "echo one", "", mergeEnv(nil))
 		if err != nil {

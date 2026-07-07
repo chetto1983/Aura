@@ -123,7 +123,7 @@ func TestToolSearch_DescriptionChangeReEmbeds(t *testing.T) {
 // AG-015: finished background shells are reclaimed on Evict (session end), not
 // only on the next start.
 func TestBackgroundShells_EvictReclaimsFinished(t *testing.T) {
-	b := NewBackgroundShells()
+	b := NewBackgroundShells(nil)
 	id, err := b.start(context.Background(), "exit 0", t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("start: %v", err)

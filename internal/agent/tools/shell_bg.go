@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/panicobs"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 // Background shell support (parity P4) mirrors Claude Code's
@@ -36,6 +38,12 @@ type BackgroundShells struct {
 	max    int
 	shells map[string]*bgShell
 
+	// Router is the per-identity box routing seam (SBX-01, plan 37-09). Nil (dev/local_trusted,
+	// the CLI/manifest paths) keeps every background job on the host *exec.Cmd path; under a strict
+	// profile shell_exec routes and calls startBox, which runs the job INSIDE the box via
+	// Router.ExecStream (a streamed box exec), never a host process.
+	Router *usersandbox.SandboxRouter
+
 	// TTL reaper lifecycle (shell_bg_ttl.go). ttl is the default per-job budget; the
 	// reaper goroutine (StartReaper) sweeps expired jobs and is joined by Shutdown.
 	ttl            time.Duration
@@ -45,12 +53,14 @@ type BackgroundShells struct {
 	reaperWG       sync.WaitGroup
 }
 
-// NewBackgroundShells builds an empty registry to share across the shell tools. The
-// TTL reaper is NOT started here (goleak parity — the constructor spawns no
-// goroutine); the composition root calls StartReaper on the daemon work ctx.
-func NewBackgroundShells() *BackgroundShells {
+// NewBackgroundShells builds an empty registry to share across the shell tools, wired with the
+// per-identity box router (nil under dev/local_trusted and the pool-free manifest paths — every
+// job stays host-direct then). The TTL reaper is NOT started here (goleak parity — the constructor
+// spawns no goroutine); the composition root calls StartReaper on the daemon work ctx.
+func NewBackgroundShells(router *usersandbox.SandboxRouter) *BackgroundShells {
 	ttl := shellBackgroundTTL()
 	return &BackgroundShells{
+		Router:         router,
 		bufCap:         shellBackgroundBufCap(),
 		max:            shellBackgroundMax(),
 		shells:         map[string]*bgShell{},
@@ -71,7 +81,12 @@ type bgShell struct {
 	ttl       time.Duration // per-job budget; 0 disables TTL expiry (MUSR-04)
 	cancel    context.CancelFunc
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// box is the streamed box-exec handle when this job runs INSIDE the per-identity box (strict,
+	// 37-09); nil for a host *exec.Cmd job (lenient / nil router). Guarded by mu because startBox
+	// sets it after the shell is already registered. This is the "registry holds a box-exec handle,
+	// not a host *exec.Cmd" invariant made concrete.
+	box      *usersandbox.ExecStreamHandle
 	buf      []byte
 	readOff  int
 	bufCap   int
@@ -120,15 +135,28 @@ func (s *bgShell) finish(waitErr error) {
 		// process, it did not exit on its own. expired keeps its "expired" status.
 		s.exitCode = nil
 	default:
-		if ec, ok := exitCode(waitErr); ok {
-			s.exitCode = &ec
-		} else if waitErr == nil {
-			zero := 0
-			s.exitCode = &zero
+		var boxExit *bgBoxExit
+		switch {
+		case errors.As(waitErr, &boxExit):
+			// A box streamed exec reports its exit via ExecInspect, not a host *exec.ExitError.
+			s.exitCode = &boxExit.code
+		default:
+			if ec, ok := exitCode(waitErr); ok {
+				s.exitCode = &ec
+			} else if waitErr == nil {
+				zero := 0
+				s.exitCode = &zero
+			}
 		}
 	}
 	s.mu.Unlock()
 }
+
+// bgBoxExit carries a box streamed-exec exit code (from ExecInspect) so the shared reaper's
+// finish() records it the same way it records a host *exec.ExitError code.
+type bgBoxExit struct{ code int }
+
+func (e *bgBoxExit) Error() string { return fmt.Sprintf("box exec exited with code %d", e.code) }
 
 func (s *bgShell) finishPanic(recovered any) {
 	msg := fmt.Sprintf("panic: %v", recovered)
@@ -187,37 +215,19 @@ func (b *BackgroundShells) start(callerCtx context.Context, command, dir string,
 	setProcessGroup(cmd)
 	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
-	sh := &bgShell{
-		ownerID:   ownerFromContext(callerCtx),
-		sessionID: shellSessionKey(callerCtx),
-		startedAt: time.Now(),
-		ttl:       b.ttl,
-		cancel:    cancel,
-		bufCap:    b.bufCap,
-	}
-	cmd.Stdout = sh
-	cmd.Stderr = sh
 	id, err := newBackgroundShellID()
 	if err != nil {
 		cancel()
 		return "", err
 	}
-	b.mu.Lock()
-	if b.shells == nil {
-		b.shells = map[string]*bgShell{}
-	}
-	b.pruneFinishedLocked()
-	// Reap any job past its TTL opportunistically on every start, so an idle daemon
-	// still bounds a runaway even if StartReaper was never wired (MUSR-04 defense-in-depth).
-	b.sweepExpiredLocked(time.Now())
-	if b.max > 0 && b.runningCountLocked() >= b.max {
-		b.mu.Unlock()
+	sh := b.newShell(callerCtx, id)
+	sh.cancel = cancel
+	cmd.Stdout = sh
+	cmd.Stderr = sh
+	if err := b.register(id, sh); err != nil {
 		cancel()
-		return "", fmt.Errorf("background shell cap reached (%d); poll or kill an existing shell", b.max)
+		return "", err
 	}
-	sh.id = id
-	b.shells[id] = sh
-	b.mu.Unlock()
 	if err := cmd.Start(); err != nil {
 		cancel()
 		sh.mu.Lock()
@@ -225,13 +235,110 @@ func (b *BackgroundShells) start(callerCtx context.Context, command, dir string,
 		sh.killed = true
 		sh.exitCode = nil
 		sh.mu.Unlock()
-		b.mu.Lock()
-		delete(b.shells, id)
-		b.mu.Unlock()
+		b.remove(id)
 		return "", fmt.Errorf("background start: %w", err)
 	}
 	go runBackgroundShellReaper(sh, cmd.Wait, cancel)
 	return id, nil
+}
+
+// startBox is the ROUTED (strict-profile) analog of start: the background job runs INSIDE the
+// per-identity box via a streamed box exec (Router.ExecStream), never a host process. The
+// owner/authority binding, TTL, cap, and random-id machinery are shared with start byte-for-byte
+// (newShell + register) — only the process handle behind bgShell changes (host *exec.Cmd → box
+// exec-stream). A box start failure returns an error the caller maps to the fail-CLOSED deny
+// (D-09/GATE-01); no host process is ever spawned on this path.
+func (b *BackgroundShells) startBox(callerCtx context.Context, h usersandbox.BoxHandle, command, dir string, env []string) (string, error) {
+	id, err := newBackgroundShellID()
+	if err != nil {
+		return "", err
+	}
+	sh := b.newShell(callerCtx, id)
+	// Until the box handle exists, cancel forwards to the (yet-nil) handle under sh.mu, so a
+	// concurrent kill/sweep/Shutdown that fires during ExecStream cannot nil-panic and is honored
+	// once the handle is set below.
+	sh.cancel = func() {
+		sh.mu.Lock()
+		hd := sh.box
+		sh.mu.Unlock()
+		if hd != nil {
+			hd.Kill()
+		}
+	}
+	if err := b.register(id, sh); err != nil {
+		return "", err
+	}
+	hnd, err := b.Router.ExecStream(callerCtx, h, usersandbox.ExecRequest{
+		Command: command,
+		Dir:     dir,
+		Env:     env,
+	}, sh)
+	if err != nil {
+		b.remove(id)
+		return "", fmt.Errorf("background box start: %w", err)
+	}
+	sh.mu.Lock()
+	sh.box = hnd
+	terminated := sh.killed || sh.expired
+	sh.mu.Unlock()
+	if terminated {
+		// A kill/sweep raced the box start (its cancel saw a nil handle) — honor it now (no leak).
+		hnd.Kill()
+	}
+	go runBackgroundShellReaper(sh, boxWait(hnd), hnd.Kill)
+	return id, nil
+}
+
+// newShell builds a bgShell with the owner/authority binding (identity + session captured at
+// start, MUSR-03), the per-job TTL, and the output buffer cap. It is shared by the host start and
+// the routed startBox so the authority model is IDENTICAL on both paths; only cancel and the
+// process handle differ.
+func (b *BackgroundShells) newShell(callerCtx context.Context, id string) *bgShell {
+	return &bgShell{
+		id:        id,
+		ownerID:   ownerFromContext(callerCtx),
+		sessionID: shellSessionKey(callerCtx),
+		startedAt: time.Now(),
+		ttl:       b.ttl,
+		bufCap:    b.bufCap,
+	}
+}
+
+// register prunes finished jobs, opportunistically sweeps expired ones (MUSR-04 defense-in-depth
+// even when StartReaper was never wired), enforces the concurrency cap, and inserts sh — all under
+// one lock so the cap is atomic. On cap it registers nothing and returns the cap error.
+func (b *BackgroundShells) register(id string, sh *bgShell) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shells == nil {
+		b.shells = map[string]*bgShell{}
+	}
+	b.pruneFinishedLocked()
+	b.sweepExpiredLocked(time.Now())
+	if b.max > 0 && b.runningCountLocked() >= b.max {
+		return fmt.Errorf("background shell cap reached (%d); poll or kill an existing shell", b.max)
+	}
+	b.shells[id] = sh
+	return nil
+}
+
+// remove drops a shell from the registry (a failed start's cleanup). Concurrency-safe.
+func (b *BackgroundShells) remove(id string) {
+	b.mu.Lock()
+	delete(b.shells, id)
+	b.mu.Unlock()
+}
+
+// boxWait adapts a box exec-stream handle to the reaper's wait func: it blocks for the box exit
+// code and returns it as a *bgBoxExit (finish extracts the code); an infra failure surfaces as-is.
+func boxWait(h *usersandbox.ExecStreamHandle) func() error {
+	return func() error {
+		code, err := h.Wait()
+		if err != nil {
+			return err
+		}
+		return &bgBoxExit{code: code}
+	}
 }
 
 func runBackgroundShellReaper(sh *bgShell, wait func() error, cancel context.CancelFunc) {

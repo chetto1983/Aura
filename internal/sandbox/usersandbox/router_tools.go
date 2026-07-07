@@ -60,6 +60,26 @@ func (r *SandboxRouter) WriteFile(ctx context.Context, h BoxHandle, boxPath stri
 	return w.CopyFileIn(ctx, h, boxPath, content, 0o644)
 }
 
+// backgroundExecStreamer is the optional streamed/detached background-exec capability shell_bg's
+// routed branch needs (37-09). DockerBackend satisfies it (docker_backend_exec.go); it is
+// deliberately NOT on the core Backend interface — D-02 keeps that seam at exactly 5 verbs so the
+// DGX agent-sandbox E2B impl stays a valid Backend, and the streaming verb is surfaced structurally
+// here instead of widening the interface.
+type backgroundExecStreamer interface {
+	ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, out io.Writer) (*ExecStreamHandle, error)
+}
+
+// ExecStream starts a streamed/detached background exec inside the box (shell_bg). It resolves the
+// streaming capability structurally; a backend without it returns an error the tool turns into a
+// fail-CLOSED deny (never a host background process).
+func (r *SandboxRouter) ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, out io.Writer) (*ExecStreamHandle, error) {
+	s, ok := backendAs[backgroundExecStreamer](r)
+	if !ok {
+		return nil, fmt.Errorf("sandbox backend does not support background exec streaming")
+	}
+	return s.ExecStream(ctx, h, req, out)
+}
+
 // backendAs resolves an optional capability interface off the router's backend, nil-safe.
 func backendAs[T any](r *SandboxRouter) (T, bool) {
 	var zero T

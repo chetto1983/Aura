@@ -139,7 +139,10 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 // deliberately NEVER routed (D-11 — they stay host-side, already SSRF-guarded).
 func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles) {
 	handles := runtimeToolHandles{
-		BackgroundShells: tools.NewBackgroundShells(),
+		// The background registry carries the SAME sandboxRouter the synchronous tools do (37-09):
+		// under a strict profile shell_exec routes background jobs into the box via startBox; a nil
+		// router (pool-free manifest paths, dev/local_trusted) keeps every job host-direct.
+		BackgroundShells: tools.NewBackgroundShells(sandboxRouter),
 		ShellApprovals:   tools.NewShellApprovals(),
 	}
 	reg := tools.NewRegistry()

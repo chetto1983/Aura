@@ -57,7 +57,7 @@ func drain(ctx context.Context, t *testing.T, poll *ShellPoll, id, filter string
 }
 
 func TestBackgroundShell_StartPollComplete(t *testing.T) {
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	sh := &ShellExec{Background: bg}
 	ctx := ctxWith(t, "sess-bg", "call-bg")
 
@@ -92,7 +92,7 @@ func TestBackgroundShell_Filter(t *testing.T) {
 	if shellIsCmdFallback() {
 		t.Skip("cmd.exe fallback does not honor ';' command separation")
 	}
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	sh := &ShellExec{Background: bg}
 	ctx := ctxWith(t, "sess-bgf", "call-bgf")
 
@@ -115,7 +115,7 @@ func TestBackgroundShell_Kill(t *testing.T) {
 	if shellIsCmdFallback() {
 		t.Skip("cmd.exe fallback has no sleep; kill needs a POSIX shell")
 	}
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	sh := &ShellExec{Background: bg}
 	ctx := ctxWith(t, "sess-bgk", "call-bgk")
 
@@ -150,7 +150,7 @@ func TestBackgroundShellsCapRunningJobs(t *testing.T) {
 		t.Skip("cmd.exe fallback has no sleep; cap fixture needs a long-running command")
 	}
 	t.Setenv("AURA_SHELL_BG_MAX", "1")
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	id, err := bg.start(context.Background(), "sleep 2", "", mergeEnv(nil))
 	if err != nil {
 		t.Fatalf("start first: %v", err)
@@ -165,7 +165,7 @@ func TestBackgroundShellsCapRunningJobs(t *testing.T) {
 
 func TestBackgroundShellsPrunesFinishedBeforeCap(t *testing.T) {
 	t.Setenv("AURA_SHELL_BG_MAX", "1")
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	id, err := bg.start(context.Background(), "echo done", "", mergeEnv(nil))
 	if err != nil {
 		t.Fatalf("start first: %v", err)
@@ -191,7 +191,7 @@ func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
 	if shellIsCmdFallback() {
 		t.Skip("cmd.exe fallback has no sleep; shutdown fixture needs a long-running command")
 	}
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	id, err := bg.start(context.Background(), "sleep 30", "", mergeEnv(nil))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -295,7 +295,7 @@ func TestBackgroundShell_Errors(t *testing.T) {
 	if _, err := (&ShellExec{}).Execute(ctx, bgArgs(t, "echo x")); err == nil {
 		t.Fatal("expected an error when the Background registry is nil")
 	}
-	bg := NewBackgroundShells()
+	bg := NewBackgroundShells(nil)
 	if _, err := (&ShellPoll{Shells: bg}).Execute(ctx, mustJSON(t, map[string]string{"shell_id": "nope"})); err == nil {
 		t.Fatal("expected an unknown shell_id error from shell_poll")
 	}

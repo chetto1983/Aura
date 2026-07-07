@@ -158,9 +158,23 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		if s.Background == nil {
 			return ToolResult{}, fmt.Errorf("shell_exec: background mode is not available in this context")
 		}
-		id, err := s.Background.start(ctx, commandForGate, workdir, mergeEnv(a.Env))
-		if err != nil {
-			return ToolResult{}, err
+		// Routed (strict): the background job runs INSIDE the per-identity box via a streamed box
+		// exec (37-09), mirroring executeInBox's box dir/env; a box start failure denies fail-CLOSED
+		// (D-09/GATE-01), never a host process. routed=false keeps the host *exec.Cmd path unchanged.
+		var (
+			id  string
+			err error
+		)
+		if routed {
+			id, err = s.Background.startBox(ctx, boxHandle, commandForGate, s.boxWorkdir(ctx, a.Cwd), boxEnv(a.Env))
+			if err != nil {
+				return sandboxUnavailableResult("shell_exec", err), nil
+			}
+		} else {
+			id, err = s.Background.start(ctx, commandForGate, workdir, mergeEnv(a.Env))
+			if err != nil {
+				return ToolResult{}, err
+			}
 		}
 		rendered := fmt.Sprintf("Started in the background as %s. Read its output with shell_poll (shell_id=%q); stop it with shell_kill.\n[aura_shell_bg {\"shell_id\":%q,\"status\":\"running\"}]", id, id, id)
 		res, err := NewResult(ctx, rendered)

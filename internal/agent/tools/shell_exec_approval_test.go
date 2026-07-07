@@ -44,7 +44,7 @@ func TestShellExecDestructivePatternRequiresApproval(t *testing.T) {
 
 func TestShellExecDestructiveBackgroundRequiresApproval(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\becho\s+danger\b`)
-	tool := &ShellExec{Approvals: NewShellApprovals(), Background: NewBackgroundShells()}
+	tool := &ShellExec{Approvals: NewShellApprovals(), Background: NewBackgroundShells(nil)}
 	ctx := ctxWith(t, "sess-shell-bg-gate", "call-shell-bg-gate")
 
 	res, err := tool.Execute(ctx, mustJSON(t, map[string]any{
