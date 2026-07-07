@@ -119,6 +119,30 @@ not a scale SLA, D-14).
 | Run date | Host (MemTotal) | N | Per-box caps | Aggregate footprint | Free RAM after N | Resolve p95 (<~2s) | Resume p95 (<~1s) | Starvation-free (co-tenant p95 <2s) | Verdict |
 |----------|-----------------|---|--------------|---------------------|------------------|--------------------|-------------------|-------------------------------------|---------|
 | _pending 32GB-host run_ | ~32 GiB | 10–20 | 2 CPU / 2 GiB / 512 pids | _fill_ | _fill (≥ headroom)_ | _fill_ | _fill_ | _fill_ | ⬜ pending |
+| 2026-07-07 (WSL, **informational** — 9 GiB < 32 GiB, T-37-08-FALSEBENCH) | 9.71 GiB | 8 | 2 CPU / 2 GiB / 512 pids | ~0 GiB (busybox) | 4.98 GiB (≥ 1 GiB) | **865 ms** | **361 ms** | **89 ms → starvation-free=true** | ✅ mechanism (32 GB envelope verdict still appliance-only) |
+
+---
+
+## Live UAT Results — 2026-07-07 (WSL Ubuntu, Docker 29.6.1, go 1.26.4 + gcc 15.2, `-race`)
+
+Run autonomously after the 37-10 gap closure with the stack up. Environment: WSL2 **Docker Desktop**
+engine (`docker info` → Name=docker-desktop, vpnkit), 9.71 GiB RAM, no gVisor `runsc`.
+
+| Tier | Requirement | Result | Evidence |
+|------|-------------|--------|----------|
+| `usersandbox` docker_integration `-race` suite | SBX-01/03 | ✅ **LIVE PASS** | RoundTrip, Lifecycle (Suspend/Resume/Delete), VolumeCrossIdentityDeny, MaterializesInputs, Reap (IdleSuspendAutoResume), all Route*/Spec*/Translate — real containers, race-clean (10.6 s) |
+| npm `docx` + `xlsx` skills in box | SBX-01 (skill exec) | ✅ **LIVE PASS** | aura-sandbox box (Node 24.18 / npm 11.16 / py 3.11); `npm install docx xlsx` on-demand; generated a valid 8776-B `.docx` (`word/document.xml`) + 16215-B `.xlsx` (`xl/workbook.xml`, live `SUM()` formula, round-tripped) |
+| D-14 concurrency soak (9 GB, N=8) | SBX-05 | ✅ **mechanism** (informational) | Resolve p95 865 ms (<2 s), Resume p95 361 ms (<1 s), starvation-free=true; 32 GB / N=10–20 envelope verdict still appliance-only (T-37-08-FALSEBENCH) |
+| Composition-root egress DROP | SBX-04 | ⚠️ **Pitfall-3 gated** | Sidecar launched via `buildSandboxRouter` with NET_ADMIN + shared netns (confirmed live); RFC1918 DROP confirmed indirectly — the box's RFC1918 DNS (`192.168.65.7`) was dropped by the floor. Full "reach-public-AND-drop-internal" needs a native-Linux non-masquerading dockerd (Docker Desktop's DNS is *itself* RFC1918). Latent cap-assertion bug (`CAP_` prefix) FIXED (commit `abc578b5`). |
+| Tool-routing tests (`agent/tools`) | SBX-01 | ⚠️ **gVisor-gated** | server_production → `runsc`; runsc not installed. Tool→box execution proven live via **runc** (usersandbox Route tests + the docx/xlsx skill). Observation: these tests hard-fail without runsc instead of gating on availability (pre-existing robustness gap, not 37-10). |
+| gVisor `runsc` smoke | SBX-04/D-12 | ❌ **not runnable** | runsc not installed on the Docker Desktop WSL2 engine |
+
+**Net:** SBX-02 (unit) + **SBX-03 (lifecycle / cross-identity / reap) are now LIVE-verified**; SBX-01 core
+routing + real skill execution is live-verified (runc); the SBX-04 composition-root wiring + sidecar launch +
+RFC1918-drop are live-evidenced. **Three tiers remain genuinely infra-gated (NOT code gaps):** full egress
+DROP (native-Linux non-masquerading dockerd), gVisor `runsc`, and the 32 GB soak envelope. The actionable
+follow-up is **WR-01** — a native-Linux `docker_integration` CI job (there is none today), which would run all
+three under `$CI` fail-closed.
 
 ---
 

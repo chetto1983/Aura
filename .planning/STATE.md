@@ -5,10 +5,10 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37
 current_phase_name: per-user-full-capability-sandbox
 status: executing
-stopped_at: "37-10 SBX-04 egress-wiring gap closure landed (bdebc5c9): buildSandboxRouter now wires usersandbox.WithEgress(cfg.Sandbox.EgressImage), non-empty default aura-egress:latest (floor-on, SC#4), fail-CLOSED when the image is absent. Local gates green (vet/build both tiers, config+cmd/aura+usersandbox untagged, docker_integration compiles); -race + live composition-root DROP carried to WSL/CI. Next: re-verify SBX-04 closed."
-last_updated: "2026-07-07T07:17:02.000Z"
+stopped_at: "37-10 SBX-04 egress-wiring BLOCKER CLOSED (bdebc5c9) + code-review CLEAN + LIVE UAT run on WSL Docker (2026-07-07). buildSandboxRouter wires usersandbox.WithEgress(cfg.Sandbox.EgressImage), non-empty default aura-egress:latest, fail-CLOSED. LIVE-VERIFIED (WSL, -race, real containers): usersandbox docker_integration suite PASS (RoundTrip/Lifecycle/VolumeCrossIdentityDeny/Materialize/Reap — SBX-01/03), real npm docx+xlsx skills PASS in an aura-sandbox box, D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free; 9GB informational). SBX-03 flipped to [x] (fully live-verified). Fixed a latent docker_integration cap-assertion bug (CAP_ prefix, abc578b5). 3 tiers remain genuinely INFRA-GATED (not code gaps): full egress DROP needs native-Linux non-masquerading dockerd (Docker Desktop DNS is itself RFC1918 — Pitfall 3), gVisor runsc smoke needs runsc installed, 32GB soak envelope needs the appliance. Actionable follow-up: WR-01 (a native-Linux docker_integration CI job — none exists). Next: run the 3 infra-gated tiers on the appliance/native-Linux CI (/gsd-verify-work 37 close), + /gsd-secure-phase 37 (no SECURITY.md)."
+last_updated: "2026-07-07T11:45:00.000Z"
 last_activity: 2026-07-07
-last_activity_desc: 37-10 SBX-04 egress-wiring gap closure executed
+last_activity_desc: 37-10 + live UAT on WSL Docker (SBX-01/03 live, docx/xlsx skills, soak; 3 tiers infra-gated)
 progress:
   total_phases: 12
   completed_phases: 6
@@ -28,8 +28,9 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 37 (per-user-full-capability-sandbox) — EXECUTED, gap closure 37-10 landed (SBX-04 BLOCKER wired), pending re-verify
-Plan: 10 of 10 complete (37-01..37-09 merged; 37-10 gap closure committed on master, sequential — bdebc5c9)
+Phase: 37 (per-user-full-capability-sandbox) — EXECUTED + 37-10 BLOCKER CLOSED + LIVE UAT run (WSL Docker, 2026-07-07); 3 tiers infra-gated
+Plan: 10 of 10 complete (37-01..37-09 merged; 37-10 gap closure + cap-assertion fix on master — bdebc5c9, abc578b5)
+Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: **37-10 closed the SBX-04 composition-root BLOCKER.** `buildSandboxRouter` now constructs the production `DockerBackend` via `newSandboxBackend`, which wires `usersandbox.WithEgress(cfg.Sandbox.EgressImage)`; `config.SandboxConfig.EgressImage` sources `AURA_SANDBOX_EGRESS_IMAGE` with a NON-EMPTY default (`aura-egress:latest`) so the DROP-RFC1918/metadata/bridge floor is ON by default under strict profiles (SC#4/D-06), and box creation is fail-CLOSED when the egress image is absent. Cataloged in the KnobSpec registry; `DockerBackend.EgressImage()` accessor added; docker-free `cmd/aura` wiring guard (`TestBuildSandboxRouterWiresEgress`) green on every CI run; composition-root live-DROP re-test (`TestBuildSandboxRouter_LaunchesEgressFloor`, `//go:build docker_integration`) compiles + gates fail-closed (CI t.Fatal on non-linux, no-skip-as-green). compose.yaml + ADR 0037 truthed-up. **Repo-wide `AURA_SANDBOX_EGRESS_IMAGE` in `*.go` inverted 0 → 10 matches (BLOCKER symptom closed).** go.mod/go.sum byte-unchanged. Local gates green; **`-race` + the live composition-root DROP carried forward to WSL/CI (37-VALIDATION.md Manual-Only, Dimension 8 SBX-04) — honestly deferred, not passed** (this Windows host has no dockerd + CGO_ENABLED=0). Next: `/gsd-verify-work 37` to confirm SBX-04 closed + run the WSL/CI live tiers; also open `/gsd-secure-phase 37` + the D-14 32GB soak. Reports: `37-VERIFICATION.md`, `37-VALIDATION.md`.
 Last activity: 2026-07-07 — 37-10 SBX-04 egress-wiring gap closure executed
 
