@@ -429,11 +429,11 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
-**Plans:** 8 plans in 6 waves
+**Plans:** 1/8 plans executed
 
 **Wave 1** *(PRD-first gate — blocks all code, D-19)*
 
-- [ ] 37B-01-PLAN.md — PRD-amendment: WEBART-05..08 group + Artefatti sidebar surface + preview deps (docx-preview Apache-2.0, SheetJS CE via CDN) + null-origin HTML sandbox policy + D-14/D-15 persistence
+- [x] 37B-01-PLAN.md — PRD-amendment: WEBART-05..08 group + Artefatti sidebar surface + preview deps (docx-preview Apache-2.0, SheetJS CE via CDN) + null-origin HTML sandbox policy + D-14/D-15 persistence
 
 **Wave 2** *(parallel — both depend on 37B-01, zero file overlap)*
 

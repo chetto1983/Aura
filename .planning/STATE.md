@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 37A
-current_phase_name: web-artifact-delivery-lane
-status: complete
+current_phase: 37B
+current_phase_name: web-artifact-sidebar
+status: executing
 stopped_at: Phase 37B context gathered
-last_updated: "2026-07-08T18:12:55.731Z"
+last_updated: "2026-07-08T20:46:15.918Z"
 last_activity: 2026-07-08
-last_activity_desc: "37A-04 web artifact-consume + download button executed (executor cut off pre-SUMMARY at session limit; orchestrator closed out after independent gate re-run: tsc/lint/1051 tests/dist-fresh/go-build all green)"
+last_activity_desc: Phase 37B execution started
 progress:
-  total_phases: 17
+  total_phases: 18
   completed_phases: 8
-  total_plans: 63
-  completed_plans: 63
-  percent: 47
+  total_plans: 71
+  completed_plans: 64
+  percent: 44
 ---
 
 # Project State
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 37A — web-artifact-delivery-lane
+**Current focus:** Phase 37B — web-artifact-sidebar
 
 ## Current Position
 
-Phase: 37A (web-artifact-delivery-lane) — COMPLETE & VERIFIED (closed 2026-07-08)
-Plan: 4 of 4 — all plans complete (37A-01/02/03/04); WEBART-01..04 delivered
+Phase: 37B (web-artifact-sidebar) — EXECUTING
+Plan: 2 of 8
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: All 4 plans executed — ready for phase verification (/gsd-verify-work or verifier)
-Last activity: 2026-07-08 — 37A-04 web artifact-consume + download button executed (executor cut off pre-SUMMARY at session limit; orchestrator closed out after independent gate re-run: tsc/lint/1051 tests/dist-fresh/go-build all green)
+Status: Ready to execute
+Last activity: 2026-07-08 — Phase 37B execution started
 
 #### 37-10 — SBX-04 egress-wiring gap closure: wire the always-on egress floor into `buildSandboxRouter` (composition-root BLOCKER). Gap-closure slice (sequential on master, ONE atomic fix commit `bdebc5c9` per the plan's one-slice-one-commit directive). **Closes the Phase-37 verification BLOCKER**: the egress sidecar (`egress.go` filter-table floor DROPping RFC1918 + `169.254.169.254` metadata + the shared-services bridge) was built, unit-tested, and launched by `DockerBackend.Resolve/Suspend/Resume/Stop` — but INERT in the shipped binary because `launchEgress` is a no-op when `egressImage==""` and the ONLY production constructor (`buildSandboxRouter`) built the backend with `WithMaterializeSources` only, NEVER calling `WithEgress`; `config.SandboxConfig` had no field to source an egress image and ZERO Go code read `AURA_SANDBOX_EGRESS_IMAGE` (compose set it as an unconsumed container env). Net pre-fix: every per-identity box under `single_user_hardened`/`server_production` ran with NO network containment. **Task 1 (config triplet):** `config.SandboxConfig.EgressImage` + `defaultSandboxEgressImage = "aura-egress:latest"` const + the `envDefault("AURA_SANDBOX_EGRESS_IMAGE", …)` loader line (verbatim shape of the `Image`/`AURA_SANDBOX_IMAGE` triplet), the `{Name:"AURA_SANDBOX_EGRESS_IMAGE", Kind:KindString, Default:"aura-egress:latest"}` KnobSpec row, and `TestLoad_SandboxConfig` extended (non-empty default + digest-pinned override) — the "zero Go code reads it" half closed. **Task 2 (composition-root wiring):** extracted `newSandboxBackend(cli, cfg)` which adds exactly one `usersandbox.WithEgress(cfg.Sandbox.EgressImage)` to the opts; `buildSandboxRouter` calls it; `DockerBackend.EgressImage()` read-only accessor exposes the applied option; docker-free `TestBuildSandboxRouterWiresEgress` (proves the wiring + non-empty default floor-on + non-strict→nil, no daemon) + `//go:build docker_integration` `TestBuildSandboxRouter_LaunchesEgressFloor` (composition-root live DROP via `buildSandboxRouter`→`Route`, CI `t.Fatal` on non-linux daemon — no-skip-as-green). The 37-04 hand-built lifecycle tests stay box-only (untouched); the backend-level `egress_integration_test.go` header now cross-references the cmd/aura proof. **Task 3 (docs truth-up):** compose.yaml + ADR 0037 (Negative bullet + Residual B/C) now describe the now-live, config-sourced, fail-CLOSED floor wiring. **Locked decision (plan):** the default MUST be non-empty (SC#4 floor-on-by-default; an empty default would wire `WithEgress` yet leave the floor OFF); fail-CLOSED when the image is absent (ensureImage pull-fail → Resolve error → Route routed=true,err → the tool denies). DEVIATIONS: none — plan executed exactly as written (the doc-comment reword to keep the `WithEgress(cfg.Sandbox.EgressImage)` grep-count at 1 realizes the plan's "comment prose does not match the call expression" acceptance note). NO new packages/migrations/env-beyond-the-catalogued-knob; **go.mod/go.sum byte-unchanged**; repo-wide `AURA_SANDBOX_EGRESS_IMAGE` in `*.go` inverted **0 → 10 matches** (BLOCKER symptom closed). **NO-SKIP-AS-GREEN:** `go vet ./...` + `go build ./...` + `go build -tags docker_integration ./...` clean; untagged `go test ./internal/config/ ./cmd/aura/ ./internal/sandbox/usersandbox/` green on this Windows host; `go vet -tags docker_integration ./cmd/aura/ ./internal/sandbox/usersandbox/` clean (the new tagged test compiles). **`-race` NOT runnable here (CGO_ENABLED=0, no gcc) + the live composition-root docker_integration DROP NOT run (no dockerd on Windows) — honestly carried forward to WSL/CI (37-VALIDATION.md Manual-Only, Dimension 8 SBX-04), NOT passed.** SBX-04 marked `[x]` (mechanism wired + docker-free regression-proven; the live DROP is the documented WSL/CI Gate-3 must-run, matching the phase's WSL/CI-deferral precedent). Commit `bdebc5c9` (fix, 10 files, +394/-16, all hooks green — gofmt/vet/file-size, no --no-verify).
 
@@ -283,6 +283,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 36 P36-05 | 15min | 3 tasks | 11 files |
 | Phase 36 P36-06 | ~22min | 3 tasks | 14 files |
 | Phase 36 P08 | ~50 min | 3 tasks | 15 files |
+| Phase 37B P01 | 6min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -510,6 +511,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 36-03: go test -race ./internal/agent/tools/ NOT run (no CGO on Windows dev host) — must run in WSL/CI before phase close (no-skip-as-green)
 - [Phase 36]: 36-13: a migration round-trip test MUST version-anchor its ±1 straddle (position to the target version first via `MigrateSteps(26 - head)`), never a bare relative ±1 from HEAD — golang-migrate `Steps(n)` is relative, so a bare -1 reverses the newest migration, not the one under test (VERIF-1, run 28753262579). LIVE-verified in WSL (not inferred): TestMigration0026LocalAdminCapsRoundTrip PASS 1.04s at head≥32
 - [Phase 36]: 36-13: `scripts/check-no-url-tokens.sh` (MUSR-06) is now an ENFORCED blocking CI step in build-and-lint (no continue-on-error/|| true) — a session/auth-token-in-URL regression fails the pipeline (VERIF-6, closes the 36-11→36-12 handoff)
+- [Phase 37B]: 37B PRD-amendment #78 (D-19 gate, lands before any 37B code): Artefatti web sidebar + WEBART-05..08 recorded in prd.md — docx-preview Apache-2.0 (not MIT); SheetJS xlsx from cdn.sheetjs.com >=0.20.2 (not CVE-ridden npm 0.18.5, CVE-2023-30533 + CVE-2024-22363); null-origin HTML sandbox allow-scripts w/o allow-same-origin; D-14 threadId-keyed durable query + D-15 source_kind split-fold saved-conversation download persistence.
 
 ### Pending Todos
 
@@ -554,7 +556,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-08T18:12:55.710Z
+Last session: 2026-07-08T20:43:51.029Z
 Stopped at: Phase 37B context gathered
 Resume file: .planning/phases/37B-web-artifact-sidebar/37B-CONTEXT.md
 
