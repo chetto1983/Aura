@@ -208,6 +208,9 @@ export const displayEn = {
       loading: 'Loading preview…',
       error: "Couldn't load this preview.",
       downloadFallback: 'Download file',
+      download: 'Download {{name}}',
+      description: 'Preview of {{name}}. Use the download button to save the original file.',
+      unsupported: "This file type can't be previewed safely — download it to open.",
     },
   },
 } as const;
@@ -412,6 +415,11 @@ export const displayIt = {
       loading: 'Caricamento anteprima…',
       error: "Impossibile caricare l'anteprima.",
       downloadFallback: 'Scarica il file',
+      download: 'Scarica {{name}}',
+      description:
+        'Anteprima di {{name}}. Usa il pulsante di download per salvare il file originale.',
+      unsupported:
+        'Questo tipo di file non può essere mostrato in anteprima — scaricalo per aprirlo.',
     },
   },
 } as const;
