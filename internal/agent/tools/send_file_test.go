@@ -296,7 +296,8 @@ func TestSendFileRejectsDirectory(t *testing.T) {
 	}
 }
 
-// TestSendFileMissingPath: an empty path arg is a self-correctable error result.
+// TestSendFileMissingPath: an empty path arg is a self-correctable error result,
+// carrying the clearer guidance that names the canonical key + its aliases.
 func TestSendFileMissingPath(t *testing.T) {
 	ctx := ctxWith(t, "sess-sf-empty", "call-sf")
 	res, err := (&SendFile{}).Execute(ctx, json.RawMessage(`{"caption":"x"}`))
@@ -309,4 +310,42 @@ func TestSendFileMissingPath(t *testing.T) {
 	if !strings.Contains(res.Preview, "file_unreadable") {
 		t.Fatalf("missing-path result must carry file_unreadable, got: %q", res.Preview)
 	}
+	for _, want := range []string{"no file path was provided", "file_path", "file"} {
+		if !strings.Contains(res.Preview, want) {
+			t.Fatalf("missing-path message must mention %q, got: %q", want, res.Preview)
+		}
+	}
+}
+
+// TestSendFileArgAliases pins the defense-in-depth alias decoding: the file path is
+// accepted under the canonical `path` OR any of the aliases an LLM commonly reaches
+// for (file_path, file, filepath, absolute_path). All resolve to sendFileArgs.Path.
+func TestSendFileArgAliases(t *testing.T) {
+	for _, key := range []string{"path", "file_path", "file", "filepath", "absolute_path"} {
+		t.Run(key, func(t *testing.T) {
+			var a sendFileArgs
+			raw := json.RawMessage(`{"` + key + `":"/x","caption":"c"}`)
+			if err := json.Unmarshal(raw, &a); err != nil {
+				t.Fatalf("Unmarshal %s: %v", key, err)
+			}
+			if a.Path != "/x" {
+				t.Fatalf("alias %q resolved Path = %q, want /x", key, a.Path)
+			}
+			if a.Caption != "c" {
+				t.Fatalf("alias %q dropped caption, got %q", key, a.Caption)
+			}
+		})
+	}
+
+	// Precedence: canonical path wins over any alias when both are present.
+	t.Run("path_precedence", func(t *testing.T) {
+		var a sendFileArgs
+		raw := json.RawMessage(`{"path":"/canon","file_path":"/alias","file":"/other"}`)
+		if err := json.Unmarshal(raw, &a); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		if a.Path != "/canon" {
+			t.Fatalf("precedence Path = %q, want /canon (canonical wins)", a.Path)
+		}
+	})
 }

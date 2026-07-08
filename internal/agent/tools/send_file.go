@@ -58,11 +58,40 @@ type sendFileArgs struct {
 	Caption string `json:"caption"`
 }
 
+// UnmarshalJSON accepts the file path under the canonical `path` key OR any alias an
+// LLM commonly reaches for — `file_path` (Claude Code's convention), `file`,
+// `filepath`, `absolute_path` — as defense-in-depth against a model that fills a
+// plausible-but-wrong key (the empty-schema footgun surfaced send_file being called
+// with {"file":...} instead of {"path":...}). The first non-empty (trimmed) value
+// wins, precedence path > file_path > file > filepath > absolute_path. Mirrors the
+// UnmarshalJSON precedent in ask_user.go (Option).
+func (a *sendFileArgs) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Path         string `json:"path"`
+		FilePath     string `json:"file_path"`
+		File         string `json:"file"`
+		Filepath     string `json:"filepath"`
+		AbsolutePath string `json:"absolute_path"`
+		Caption      string `json:"caption"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, cand := range []string{raw.Path, raw.FilePath, raw.File, raw.Filepath, raw.AbsolutePath} {
+		if strings.TrimSpace(cand) != "" {
+			a.Path = cand
+			break
+		}
+	}
+	a.Caption = raw.Caption
+	return nil
+}
+
 func (s *SendFile) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "Absolute path to a readable file on the host to deliver to the user, e.g. \"/abs/results.xlsx\"."},
+    "path": {"type": "string", "description": "Absolute path to a readable file on the host to deliver to the user, e.g. \"/abs/results.xlsx\". Aliases also accepted: file_path, file."},
     "caption": {"type": "string", "description": "Optional short caption shown alongside the file."}
   },
   "required": ["path"]
@@ -96,7 +125,7 @@ func (s *SendFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	}
 	path := strings.TrimSpace(a.Path)
 	if path == "" {
-		return errorResult("file_unreadable", "no path was provided; pass the absolute path of the file to deliver"), nil
+		return errorResult("file_unreadable", "no file path was provided; pass the absolute path of the file under \"path\" (aliases accepted: file_path, file)"), nil
 	}
 
 	// Route decision (plan 37-07): routed ⇒ the requested path is a BOX path — stage it out of the
