@@ -429,7 +429,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
-**Plans:** 5/8 plans executed
+**Plans:** 7/8 plans executed
 
 **Wave 1** *(PRD-first gate — blocks all code, D-19)*
 
@@ -451,7 +451,7 @@ Plans:
 
 **Wave 5** *(depends on 37B-05/06)*
 
-- [ ] 37B-07-PLAN.md — AppShell integration: third ResizablePanel (dynamic panelIds, no key bump) + header toggle + mobile right Drawer + onArtifact handler (invalidate + one-time auto-open)
+- [x] 37B-07-PLAN.md — AppShell integration: third ResizablePanel (dynamic panelIds, no key bump) + header toggle + mobile right Drawer + onArtifact handler (invalidate + one-time auto-open)
 
 **Wave 6** *(depends on 37B-07)*
 
