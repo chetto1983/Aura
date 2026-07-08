@@ -75,7 +75,7 @@ describe('selectAgentArtifacts (pure projection)', () => {
 
   it('tolerates missing created_at without throwing', () => {
     const out = selectAgentArtifacts([
-      asset({ id: 'no-date', created_at: undefined }),
+      asset({ id: 'no-date' }), // no created_at → sorts after a dated row
       asset({ id: 'dated', created_at: '2026-02-01T00:00:00Z' }),
     ]);
     expect(out.map((a) => a.id)).toEqual(['dated', 'no-date']);
