@@ -107,7 +107,7 @@ func TestBuildDeprovisionerWiresPurger(t *testing.T) {
 // TestBuildDispatchRegistersIdentityPurge asserts buildDispatch builds with the new
 // identity_purge entry present. cron.Dispatch's handler map is unexported (package cron),
 // so the exact map entry is proven via the identical construction expression buildDispatch
-// uses — handlers.IdentityPurgeHandler{Purger: buildDeprovisioner(chat)} — whose Meta().Kind
+// uses — handlers.NewIdentityPurgeHandler(buildDeprovisioner(chat)) — whose Meta().Kind
 // is the registered key and whose Run is a wired no-op. buildDispatch itself is exercised to
 // prove the entry compiles into the live map without panicking.
 func TestBuildDispatchRegistersIdentityPurge(t *testing.T) {
@@ -127,7 +127,7 @@ func TestBuildDispatchRegistersIdentityPurge(t *testing.T) {
 	}
 
 	// The exact entry buildDispatch registers under cron.KindIdentityPurge.
-	entry := handlers.IdentityPurgeHandler{Purger: buildDeprovisioner(chat)}
+	entry := handlers.NewIdentityPurgeHandler(buildDeprovisioner(chat))
 	if string(entry.Meta().Kind) != string(cron.KindIdentityPurge) {
 		t.Fatalf("identity purge handler kind = %q, want %q", entry.Meta().Kind, cron.KindIdentityPurge)
 	}
@@ -168,7 +168,7 @@ func TestBuildDispatchRegistersSandboxReap(t *testing.T) {
 	// The exact entry buildDispatch registers under cron.KindSandboxReap when the router is nil:
 	// a nil reaper interface, which the handler treats as the disabled no-op.
 	var reaper handlers.SandboxReaper
-	entry := handlers.SandboxReapHandler{Reaper: reaper}
+	entry := handlers.NewSandboxReapHandler(reaper)
 	if string(entry.Meta().Kind) != string(cron.KindSandboxReap) {
 		t.Fatalf("sandbox reap handler kind = %q, want %q", entry.Meta().Kind, cron.KindSandboxReap)
 	}

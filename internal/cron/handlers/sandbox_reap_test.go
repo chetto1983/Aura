@@ -26,7 +26,7 @@ func (f *fakeReaper) SuspendIdle(_ context.Context, now time.Time) (int, error) 
 // TestSandboxReapMeta asserts the handler's static contract: the right kind, a 5-minute
 // budget, no reschedule-on-recovery (the reap sweep is idempotent).
 func TestSandboxReapMeta(t *testing.T) {
-	m := SandboxReapHandler{}.Meta()
+	m := NewSandboxReapHandler(nil).Meta()
 	if m.Kind != KindSandboxReap {
 		t.Fatalf("kind = %q, want %q", m.Kind, KindSandboxReap)
 	}
@@ -42,7 +42,7 @@ func TestSandboxReapMeta(t *testing.T) {
 // reports the suspended count.
 func TestSandboxReapRunSuspends(t *testing.T) {
 	r := &fakeReaper{suspended: 3}
-	h := SandboxReapHandler{Reaper: r}
+	h := NewSandboxReapHandler(r)
 
 	summary, err := h.Run(context.Background(), Job{})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestSandboxReapRunSuspends(t *testing.T) {
 
 // TestSandboxReapDisabled asserts a nil reaper is a no-op success (harmlessly disabled).
 func TestSandboxReapDisabled(t *testing.T) {
-	summary, err := SandboxReapHandler{Reaper: nil}.Run(context.Background(), Job{})
+	summary, err := NewSandboxReapHandler(nil).Run(context.Background(), Job{})
 	if err != nil {
 		t.Fatalf("disabled Run: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSandboxReapDisabled(t *testing.T) {
 // notifies it).
 func TestSandboxReapRunError(t *testing.T) {
 	r := &fakeReaper{err: errors.New("boom")}
-	if _, err := (SandboxReapHandler{Reaper: r}).Run(context.Background(), Job{}); err == nil {
+	if _, err := NewSandboxReapHandler(r).Run(context.Background(), Job{}); err == nil {
 		t.Fatal("want terminal error from a failing suspend")
 	}
 }

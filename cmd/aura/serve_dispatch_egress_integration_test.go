@@ -187,7 +187,7 @@ func TestBuildSandboxRouter_LaunchesEgressFloor(t *testing.T) {
 	egressITDockerdOrGate(t)
 	egressITEnforcingBridgeOrGate(t)
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		t.Fatalf("docker client: %v", err)
 	}

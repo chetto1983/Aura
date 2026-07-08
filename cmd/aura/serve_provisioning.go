@@ -46,8 +46,8 @@ const localSeededIdentityID = "00000000-0000-0000-0000-000000000001"
 
 // identityPurgeSweepMinutes is the cadence of the seeded grace-window purge sweep. The
 // per-sweep work is a small indexed scan + a handful of idempotent deletes, so 15 minutes
-// is a tight-enough grace-window resolution without churn (the 5-minute handler budget in
-// handlers.IdentityPurgeHandler bounds a single sweep).
+// is a tight-enough grace-window resolution without churn (the 5-minute handler budget from
+// handlers.NewIdentityPurgeHandler bounds a single sweep).
 const identityPurgeSweepMinutes = 15
 
 var (

@@ -75,12 +75,12 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// The D-27 grace-window purge sweep (VERIF-3/HI-01): the live *agui.Deprovisioner
 		// satisfies handlers.IdentityPurger via PurgeExpired. A nil-pool build yields a
 		// no-op Purger, so this registration is always safe.
-		cron.KindIdentityPurge: handlers.IdentityPurgeHandler{Purger: buildDeprovisioner(chat)},
+		cron.KindIdentityPurge: handlers.NewIdentityPurgeHandler(buildDeprovisioner(chat)),
 		// The D-08 idle-suspend reaper (plan 37-05): the live *usersandbox.SandboxRouter
 		// satisfies handlers.SandboxReaper via SuspendIdle. A nil router (non-strict profile
 		// or Docker-unavailable) leaves sandboxReaper a nil interface, so the handler is the
 		// disabled no-op — always safe, exactly like the identity_purge registration.
-		cron.KindSandboxReap: handlers.SandboxReapHandler{Reaper: sandboxReaper},
+		cron.KindSandboxReap: handlers.NewSandboxReapHandler(sandboxReaper),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {
@@ -151,7 +151,7 @@ func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
 	if cfg == nil || !cfg.Profile.Strict() {
 		return nil // non-strict: host-direct everywhere, no box runtime needed (SC-4)
 	}
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv) // moby v0.4.1 New negotiates the API version by default (downgrades for older daemons).
 	if err != nil {
 		slog.Warn("aura: docker client unavailable — sandbox routing disabled (host-direct)", "err", err)
 		return nil

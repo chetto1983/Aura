@@ -167,7 +167,7 @@ func tarDir(hostDir, dest string) (io.Reader, error) {
 		if d.IsDir() {
 			return nil
 		}
-		f, err := os.Open(path)
+		f, err := os.Open(path) //nolint:gosec // G304: path is a materialize source under a fixed per-identity host root (skills/Agent.md/pyscripts), produced by the backend's WalkDir — not user input.
 		if err != nil {
 			return err
 		}

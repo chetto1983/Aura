@@ -44,7 +44,7 @@ func testLimits() Resources {
 // negotiation. It is the first real client binding in the repo.
 func newTestDockerClient(t *testing.T) *client.Client {
 	t.Helper()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		t.Fatalf("docker client: %v", err)
 	}

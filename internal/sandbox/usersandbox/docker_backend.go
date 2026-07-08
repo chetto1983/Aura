@@ -60,7 +60,7 @@ type DockerBackend struct {
 }
 
 // Option configures a DockerBackend at construction (functional-options, mirroring the moby
-// client's own NewClientWithOpts) so the documented 3-arg NewDockerBackend call stays valid.
+// client's own New) so the documented 3-arg NewDockerBackend call stays valid.
 type Option func(*DockerBackend)
 
 // WithMaterializeSources wires the per-identity source resolver Resolve consults to

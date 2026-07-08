@@ -36,13 +36,13 @@ type TaskKind string
 // 0033 migration widened the scheduler_tasks.kind CHECK to admit it. Like skill_ttl_sweep
 // it is system-seeded (seedIdentityPurgeSweep), never model-schedulable. Its literal MUST
 // equal handlers.KindIdentityPurge ("identity_purge") — the cron store writes the row, the
-// dispatcher routes the same string to handlers.IdentityPurgeHandler.
+// dispatcher routes the same string to the handler handlers.NewIdentityPurgeHandler builds.
 //
 // KindSandboxReap (Phase 37 D-08) is the idle-suspend reaper sweep — the 0034 migration
 // widened the scheduler_tasks.kind CHECK to admit it. Like identity_purge it is system-seeded
 // (seedSandboxReapSweep, plan 37-05), never model-schedulable. Its literal MUST equal
 // handlers.KindSandboxReap ("sandbox_reap") — the cron store writes the row, the dispatcher
-// routes the same string to handlers.SandboxReapHandler.
+// routes the same string to the handler handlers.NewSandboxReapHandler builds.
 const (
 	KindReminder       TaskKind = "reminder"
 	KindAgentJob       TaskKind = "agent_job"

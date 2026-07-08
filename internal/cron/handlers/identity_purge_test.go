@@ -26,7 +26,7 @@ func (f *fakePurger) PurgeExpired(_ context.Context, now time.Time) (int, error)
 // TestIdentityPurgeMeta asserts the handler's static contract: the right kind, a 5-minute
 // budget, no reschedule-on-recovery (the purge saga is idempotent + resumable).
 func TestIdentityPurgeMeta(t *testing.T) {
-	m := IdentityPurgeHandler{}.Meta()
+	m := NewIdentityPurgeHandler(nil).Meta()
 	if m.Kind != KindIdentityPurge {
 		t.Fatalf("kind = %q, want %q", m.Kind, KindIdentityPurge)
 	}
@@ -42,7 +42,7 @@ func TestIdentityPurgeMeta(t *testing.T) {
 // reports the purged count.
 func TestIdentityPurgeRunPurges(t *testing.T) {
 	p := &fakePurger{purged: 3}
-	h := IdentityPurgeHandler{Purger: p}
+	h := NewIdentityPurgeHandler(p)
 
 	summary, err := h.Run(context.Background(), Job{})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestIdentityPurgeRunPurges(t *testing.T) {
 
 // TestIdentityPurgeDisabled asserts a nil purger is a no-op success (harmlessly disabled).
 func TestIdentityPurgeDisabled(t *testing.T) {
-	summary, err := IdentityPurgeHandler{Purger: nil}.Run(context.Background(), Job{})
+	summary, err := NewIdentityPurgeHandler(nil).Run(context.Background(), Job{})
 	if err != nil {
 		t.Fatalf("disabled Run: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestIdentityPurgeDisabled(t *testing.T) {
 // notifies it).
 func TestIdentityPurgeRunError(t *testing.T) {
 	p := &fakePurger{err: errors.New("boom")}
-	if _, err := (IdentityPurgeHandler{Purger: p}).Run(context.Background(), Job{}); err == nil {
+	if _, err := NewIdentityPurgeHandler(p).Run(context.Background(), Job{}); err == nil {
 		t.Fatal("want terminal error from a failing purge")
 	}
 }

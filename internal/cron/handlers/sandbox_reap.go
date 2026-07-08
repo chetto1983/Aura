@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
 
@@ -26,36 +25,16 @@ type SandboxReaper interface {
 	SuspendIdle(ctx context.Context, now time.Time) (suspended int, err error)
 }
 
-// SandboxReapHandler is the idle-suspend reap sweep (D-08). It scans for per-identity boxes
-// whose idle TTL has elapsed and suspends each. A missed sweep does NOT reschedule (the sweep
-// is idempotent — the next tick re-evaluates the same idle set).
-type SandboxReapHandler struct {
-	Reaper SandboxReaper
-	// now is injectable for tests; nil → time.Now().UTC().
-	now func() time.Time
-}
-
-// Meta declares the sweep contract: a 5-minute budget, no reschedule-on-recovery (the reap
-// sweep is idempotent, so re-running the same idle set is safe).
-func (SandboxReapHandler) Meta() HandlerMeta {
-	return HandlerMeta{Kind: KindSandboxReap, MaxDuration: sandboxReapMaxDuration, ReschedulesOnRecovery: false}
-}
-
-// Run suspends every box past its idle TTL and returns a count summary. A nil reaper is a
-// no-op success (the sweep is harmlessly disabled, not an error). A scan/suspend error is
-// terminal for this run (the dispatcher records + notifies it); already-suspended boxes stay
-// suspended and the next tick resumes the rest.
-func (h SandboxReapHandler) Run(ctx context.Context, _ Job) (string, error) {
-	if h.Reaper == nil {
-		return "sandbox reap: disabled (no reaper)", nil
+// NewSandboxReapHandler builds the idle-suspend reap sweep (D-08) over reaper: it scans for
+// per-identity boxes past their idle TTL and suspends each, reporting the count. A nil reaper
+// yields the disabled no-op sweep (harmlessly off, not an error) — exactly the identity_purge
+// nil-Purger posture. The missed sweep never reschedules (it is idempotent — the next tick
+// re-evaluates the same idle set).
+func NewSandboxReapHandler(reaper SandboxReaper) Handler {
+	var seam sweepFn
+	if reaper != nil {
+		seam = reaper.SuspendIdle
 	}
-	now := time.Now().UTC()
-	if h.now != nil {
-		now = h.now()
-	}
-	suspended, err := h.Reaper.SuspendIdle(ctx, now)
-	if err != nil {
-		return "", fmt.Errorf("sandbox reap: %w", err)
-	}
-	return fmt.Sprintf("sandbox reap ok: suspended %d idle box(es)", suspended), nil
+	return newCountingSweep(KindSandboxReap, sandboxReapMaxDuration, seam,
+		"sandbox reap: disabled (no reaper)", "sandbox reap", "sandbox reap ok: suspended %d idle box(es)")
 }

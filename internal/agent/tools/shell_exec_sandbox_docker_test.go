@@ -65,7 +65,7 @@ func dockerTestImage() string {
 
 func newDockerRouter(t *testing.T, sources usersandbox.SourceResolver) *usersandbox.SandboxRouter {
 	t.Helper()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		t.Fatalf("docker client: %v", err)
 	}
