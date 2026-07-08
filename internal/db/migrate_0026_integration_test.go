@@ -140,6 +140,96 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestMigration0026RetireSafe_LocalAbsent proves the permanent fix: 0026 applies CLEANLY when
+// the seeded local identity has been retired (Phase 36 cutover deletes it — serve_auth.go). A
+// bare INSERT would FK-violate on capability_grants.identity_id and dirty the tracker, blocking
+// every later migration; the WHERE EXISTS guard makes it a correct no-op instead (the retire flow
+// already migrated local's caps onto the real user).
+func TestMigration0026RetireSafe_LocalAbsent(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	host := os.Getenv("PGHOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := os.Getenv("PGPORT")
+	if port == "" {
+		port = "5432"
+	}
+	if err := EnsureRoles(ctx, bootstrapURL(t), pwd); err != nil {
+		t.Fatalf("EnsureRoles: %v", err)
+	}
+
+	const freshDB = "aura_migrate0026_retire_drill"
+	dsn := func(role, db string) string {
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, db)
+	}
+	admin, err := Open(ctx, &Config{URL: dsn("aura", "aura")})
+	if err != nil {
+		t.Fatalf("open admin pool: %v", err)
+	}
+	defer admin.Close()
+	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
+		t.Fatalf("pre-drop fresh db: %v", err)
+	}
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
+		t.Fatalf("create fresh db: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
+	})
+	if _, err := admin.Exec(ctx, "GRANT CREATE ON DATABASE "+freshDB+" TO aura_migrate"); err != nil {
+		t.Fatalf("grant create on fresh db: %v", err)
+	}
+	freshAdmin, err := Open(ctx, &Config{URL: dsn("aura", freshDB)})
+	if err != nil {
+		t.Fatalf("open fresh-db admin pool: %v", err)
+	}
+	defer freshAdmin.Close()
+	if _, err := freshAdmin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
+		t.Fatalf("grant create on public schema: %v", err)
+	}
+
+	// Migrate to HEAD, then position DOWN to exactly v25 (below 0026).
+	migrateURL := dsn("aura_migrate", freshDB)
+	if _, err := Migrate(ctx, migrateURL); err != nil {
+		t.Fatalf("full Migrate up: %v", err)
+	}
+	head := currentMigrationVersion(t, ctx, freshAdmin)
+	if err := MigrateSteps(ctx, migrateURL, 25-head); err != nil {
+		t.Fatalf("MigrateSteps(%d) position down to v25: %v", 25-head, err)
+	}
+
+	// Simulate the Phase 36 retire: local's caps migrate away and the local row is deleted.
+	const localID = "00000000-0000-0000-0000-000000000001"
+	if _, err := freshAdmin.Exec(ctx, `DELETE FROM aura.capability_grants WHERE identity_id = $1::uuid`, localID); err != nil {
+		t.Fatalf("delete local caps: %v", err)
+	}
+	if _, err := freshAdmin.Exec(ctx, `DELETE FROM aura.identities WHERE id = $1::uuid`, localID); err != nil {
+		t.Fatalf("delete local identity: %v", err)
+	}
+
+	// The crux: 0026 must step UP cleanly with local ABSENT — no FK violation, no dirty tracker.
+	if err := MigrateSteps(ctx, migrateURL, 1); err != nil {
+		t.Fatalf("0026 must be retire-safe with local absent, got: %v", err)
+	}
+	if v := currentMigrationVersion(t, ctx, freshAdmin); v != 26 {
+		t.Fatalf("version = %d after retire-safe 0026, want 26 (clean, not dirty)", v)
+	}
+
+	// And it seeded nothing for the absent local identity (retire already moved those caps).
+	app, err := Open(ctx, &Config{URL: dsn("aura_app", freshDB)})
+	if err != nil {
+		t.Fatalf("open app pool: %v", err)
+	}
+	defer app.Close()
+	if caps := localCapabilitySet0026(t, ctx, app, localID); len(caps) != 0 {
+		t.Fatalf("retire-safe 0026 seeded %v for an absent local identity, want nothing", caps)
+	}
+}
+
 func localCapabilitySet0026(t *testing.T, ctx context.Context, pool *pgxpool.Pool, identityID string) map[string]bool {
 	t.Helper()
 	id := pgtype.UUID{Bytes: uuid.MustParse(identityID), Valid: true}
