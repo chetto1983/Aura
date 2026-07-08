@@ -429,7 +429,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
-**Plans:** 1/8 plans executed
+**Plans:** 2/8 plans executed
 
 **Wave 1** *(PRD-first gate — blocks all code, D-19)*
 
@@ -438,7 +438,7 @@ Plans:
 **Wave 2** *(parallel — both depend on 37B-01, zero file overlap)*
 
 - [ ] 37B-02-PLAN.md — Supply-chain: legitimacy checkpoint + install docx-preview/jszip + xlsx from CDN (CVE-safe) + widen Asset.source_kind union to add 'agent'
-- [ ] 37B-03-PLAN.md — Pure foundation: artifactMeta (previewKind SVG-gated + category label/icon + shared formatSize) + downloadAll (sequential/throttled) + artifacts.* i18n (en+it) + Stryker targets
+- [x] 37B-03-PLAN.md — Pure foundation: artifactMeta (previewKind SVG-gated + category label/icon + shared formatSize) + downloadAll (sequential/throttled) + artifacts.* i18n (en+it) + Stryker targets
 
 **Wave 3** *(parallel — depend on foundation, zero file overlap)*
 

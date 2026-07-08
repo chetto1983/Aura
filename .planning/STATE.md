@@ -5,16 +5,16 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37B
 current_phase_name: web-artifact-sidebar
 status: executing
-stopped_at: Phase 37B context gathered
-last_updated: "2026-07-08T20:46:15.918Z"
+stopped_at: Completed 37B-03-PLAN.md (pure artifact foundation)
+last_updated: "2026-07-08T21:31:49.448Z"
 last_activity: 2026-07-08
 last_activity_desc: Phase 37B execution started
 progress:
-  total_phases: 18
+  total_phases: 17
   completed_phases: 8
   total_plans: 71
-  completed_plans: 64
-  percent: 44
+  completed_plans: 65
+  percent: 47
 ---
 
 # Project State
@@ -284,6 +284,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 36 P36-06 | ~22min | 3 tasks | 14 files |
 | Phase 36 P08 | ~50 min | 3 tasks | 15 files |
 | Phase 37B P01 | 6min | 1 tasks | 1 files |
+| Phase 37B P03 | 25min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -511,6 +512,8 @@ Recent decisions affecting current work:
 - [Phase 36]: 36-13: a migration round-trip test MUST version-anchor its ±1 straddle (position to the target version first via `MigrateSteps(26 - head)`), never a bare relative ±1 from HEAD — golang-migrate `Steps(n)` is relative, so a bare -1 reverses the newest migration, not the one under test (VERIF-1, run 28753262579). LIVE-verified in WSL (not inferred): TestMigration0026LocalAdminCapsRoundTrip PASS 1.04s at head≥32
 - [Phase 36]: 36-13: `scripts/check-no-url-tokens.sh` (MUSR-06) is now an ENFORCED blocking CI step in build-and-lint (no continue-on-error/|| true) — a session/auth-token-in-URL regression fails the pipeline (VERIF-6, closes the 36-11→36-12 handoff)
 - [Phase 37B]: 37B PRD-amendment #78 (D-19 gate, lands before any 37B code): Artefatti web sidebar + WEBART-05..08 recorded in prd.md — docx-preview Apache-2.0 (not MIT); SheetJS xlsx from cdn.sheetjs.com >=0.20.2 (not CVE-ridden npm 0.18.5, CVE-2023-30533 + CVE-2024-22363); null-origin HTML sandbox allow-scripts w/o allow-same-origin; D-14 threadId-keyed durable query + D-15 source_kind split-fold saved-conversation download persistence.
+- [Phase 37B]: 37B-03: previewKind gates image/svg+xml to download BEFORE image/* (T-37B-05 XSS chokepoint); artifactMeta + downloadAll pure + 100% + Stryker-registered
+- [Phase 37B]: 37B-03: shell.resizeArtifacts went to resources.ts (not resources.display.ts) to avoid clobbering the shell namespace via ...displayEn spread; Stryker mutate targets live in stryker.config.json not vitest.stryker.config.ts
 
 ### Pending Todos
 
@@ -555,9 +558,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-08T20:43:51.029Z
-Stopped at: Phase 37B context gathered
-Resume file: .planning/phases/37B-web-artifact-sidebar/37B-CONTEXT.md
+Last session: 2026-07-08T21:31:49.235Z
+Stopped at: Completed 37B-03-PLAN.md (pure artifact foundation)
+Resume file: None
 
 ## Operator Next Steps
 
