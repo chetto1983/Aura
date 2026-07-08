@@ -392,6 +392,18 @@ Plans:
 
 **Design forks for discuss-phase:** (a) `assets.source_kind` CHECK allows only `web|telegram|cli` → add an `agent` value (migration) or reuse `cli`; (b) thread-id reaches the tool ctx only via `agent.SwarmContext(ctx).ConvID` (a smell for a non-swarm concern) → consider a dedicated `threadctx`; (c) download-button UI: reuse the existing `local_artifact` display card (already renders + carries `size_bytes`) vs a new dedicated file part on the delivery event.
 
+**Plans:** 4 plans (3 waves)
+
+**Wave 1**
+- [ ] 37A-01-PLAN.md — Backend foundation: migration 0035 (+agent source_kind) + SourceAgent/AgentIngestRequest, IngestAgentFile + OpenForIdentity service methods, RFC-6266 contentDisposition helper
+
+**Wave 2** *(parallel — both depend on 37A-01, zero file overlap)*
+- [ ] 37A-02-PLAN.md — Ingest lane: AssetDeliverer seam + ctx-aware emitDelivery descriptor enrichment (both tails) + degrade matrix + composition-root wiring + Telegram non-regression
+- [ ] 37A-03-PLAN.md — Download route: GET /api/assets/{id}/download (owner-scoped stream, attachment + octet-stream + nosniff, 404 non-owner, ctx-scoped io.Copy + goleak)
+
+**Wave 3** *(depends on 37A-02 + 37A-03)*
+- [ ] 37A-04-PLAN.md — Web consume: sseAdapter aura.artifact → local_artifact card by tool_call_id + LocalArtifactDisplay download button + internal/webui/dist rebuild
+
 #### Phase 37B: Web Artifact Sidebar (INSERTED)
 
 **Goal:** Gli artifact prodotti in un thread sono aggregati in un pannello laterale destro "Artefatti" nel cockpit web (parità con Telegram + l'UI di Claude): elenco dei file del thread con download per-file e "Scarica tutto", anteprime, e nessun path host/container mai esposto al browser. Costruito sopra l'`asset_id` + `GET /api/assets/{id}/download` di Phase 37A. Prima delle tre aree di parità cockpit-web emerse dall'audit voice/artifact/skill (le altre due — voice web TTS/STT cloud-only, composer skill-picker "/" — sono Phase 37C/37D).
