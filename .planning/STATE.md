@@ -6,15 +6,15 @@ current_phase: 37
 current_phase_name: per-user-full-capability-sandbox
 status: executing
 stopped_at: "37-10 SBX-04 egress-wiring BLOCKER CLOSED (bdebc5c9) + code-review CLEAN + LIVE UAT run on WSL Docker (2026-07-07). buildSandboxRouter wires usersandbox.WithEgress(cfg.Sandbox.EgressImage), non-empty default aura-egress:latest, fail-CLOSED. LIVE-VERIFIED (WSL, -race, real containers): usersandbox docker_integration suite PASS (RoundTrip/Lifecycle/VolumeCrossIdentityDeny/Materialize/Reap — SBX-01/03), real npm docx+xlsx skills PASS in an aura-sandbox box, D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free; 9GB informational). SBX-03 flipped to [x] (fully live-verified). Fixed a latent docker_integration cap-assertion bug (CAP_ prefix, abc578b5). 3 tiers remain genuinely INFRA-GATED (not code gaps): full egress DROP needs native-Linux non-masquerading dockerd (Docker Desktop DNS is itself RFC1918 — Pitfall 3), gVisor runsc smoke needs runsc installed, 32GB soak envelope needs the appliance. Actionable follow-up: WR-01 (a native-Linux docker_integration CI job — none exists). Next: run the 3 infra-gated tiers on the appliance/native-Linux CI (/gsd-verify-work 37 close), + /gsd-secure-phase 37 (no SECURITY.md)."
-last_updated: "2026-07-07T11:45:00.000Z"
+last_updated: "2026-07-08T09:02:38.105Z"
 last_activity: 2026-07-07
-last_activity_desc: 37-10 + live UAT on WSL Docker (SBX-01/03 live, docx/xlsx skills, soak; 3 tiers infra-gated)
+last_activity_desc: 37-10 SBX-04 egress-wiring gap closure executed
 progress:
-  total_phases: 12
-  completed_phases: 6
+  total_phases: 17
+  completed_phases: 7
   total_plans: 59
-  completed_plans: 50
-  percent: 50
+  completed_plans: 59
+  percent: 41
 ---
 
 # Project State
@@ -346,6 +346,11 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 - Phase 20 added (2026-06-11): scheduler hardening full implementation. Driver: the reminder-agnostic-channel bug found live during Phase 19 19-11 sign-off (a reminder set via the Telegram bot fired but routed to whatsapp/stdout, never back to Telegram) — Davide flagged it a bug and directed a generic fix ("send to the channel that scheduled it; easy to add new channels without reinventing the wheel"). Execution-ready design already exists at `.planning/spikes/reminder-agnostic-channel.md` (identity-keyed `channels.Deliverer` seam + `Registry.DeliverToIdentity` fan-out + Telegram impl + `dispatch.deliverToOrigin`). Ground-truth 2026-06-11 confirmed the scaffolding is already in place (scheduler_tasks.origin_conversation_id since migration 0009; cron.Task carries IdentityID+OriginConversationID; GetTelegramAccountByIdentity SQL+sqlc both exist) — the gaps are population (CreateTaskInput has no origin field; actionSchedule ignores the ctx sessionID) + the delivery seam. Step 1 (~8 files, NO migration) fully ships the headline reminder loop because reminders bypass quiet-hours deferral (dispatch.go:202 `task.Kind != KindReminder`) → never hit the pending/sweep path; Step 2 migration 0014 (pending_notifications.origin_conversation_id) is only for agent_job/advisory deferred notifications. Open design forks for discuss/plan: route precedence (explicit `notify` vs origin-channel default), identity resolution (schedule-time task.IdentityID vs delivery-time IdentityForConversation seam), owns-but-fails/double-delivery. Next = /gsd-spec-phase 20 (or /gsd-discuss-phase 20).
 - Phase 14 closed (2026-06-14): onboarding enriched to 5-step LLM-extraction interview + 8-section Agent.md; live operator sign-off recorded (Davide /onboard → Conferma → onboarding_completed:true). Spec/plan under docs/superpowers/.
 - Phase 22 added (2026-06-15): bug fix. Natural input is the fresh `internal/agent` production-readiness audit (`docs/audit/`, cycle 2026-06-15 @ HEAD 136325dc): 1 P0 + 12 P1 + 26 P2 + 24 P3, score 6.5/10. Headline P0 = no `recover()` in any spawned goroutine (verified repo-wide) → one panicking tool crashes the whole multi-channel `serve` daemon (AG-001). P1 cluster: dedup concurrent-map-write race (AG-002), command-hook TOCTOU + full-env secret exposure + no fail-soft (AG-003/004), MCP reconnect livelock + `=0`-timeout hang (AG-005/006), no capability gate on mutating MCP tools (AG-007), reasoning-router latency cliff (AG-008), plaintext PII in reasoning trace (AG-009), DB-password DSN leak into shell children (AG-010), ungated skill self-activation (AG-011, =prior B-04), no SLO metrics / no structured logs (AG-012/013, =prior O-02/O-01). Full backlog + proposed patches in `docs/audit/{bug-report,action-plan,proposed-patches}.md`. Scope to be defined at /gsd-spec-phase 22. Next = /gsd-plan-phase 22 (or /gsd-spec-phase 22 to scope which findings this phase covers).
+- Phase 37B inserted after Phase 37A: Web Artifact Sidebar — pannello Artefatti nel cockpit web (audit parita voice/artifact/skill) (URGENT)
+- Phase 37C inserted after Phase 37B: Web Voice Lane — TTS output + STT dictation (cloud-only), cockpit-web voice parity (URGENT)
+- Phase 37D inserted after Phase 37C: Composer Skill & Command Picker (slash /) (URGENT)
+- Phase 37E inserted after Phase 37D: Composer Model & Reasoning-Effort Selector (URGENT)
+- Phase 37F inserted after Phase 37E: Conversation & Artifact Sharing / Export (URGENT)
 
 ### Decisions
 

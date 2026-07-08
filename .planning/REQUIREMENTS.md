@@ -66,6 +66,44 @@ Agent-generated files (e.g. a DOCX the model builds inside the sandbox) must rea
 - [ ] **WEBART-02**: The `aura.artifact` event carries `asset_id`, `filename`, `size_bytes`, and `mime_type` (not a filesystem path) on the existing `/agent/run` AG-UI SSE stream; Telegram delivery keeps working (regression test).
 - [ ] **WEBART-03**: `GET /api/assets/{id}/download` streams the asset from Garage with `Content-Disposition: attachment`, enforcing identity ownership via `assets.Store.GetForIdentity` and inheriting `RequireAuth` (registered in `registerAssetRoutes`); a non-owner request returns 404/403 and no unauthenticated download surface is added.
 - [ ] **WEBART-04**: The web chat consumes `aura.artifact` in `sseAdapter.ts` and renders an authenticated download button targeting `/api/assets/{id}/download`; the browser never receives a raw container/host path. Graceful degradation: CLI / no-authenticated-identity retains today's host-path behavior and a nil asset service does not break delivery.
+- [ ] **WEBART-05**: The web cockpit renders a right-side "Artefatti" panel in the `AppShell` chat shell (`ResizablePanelGroup`) that lists every asset delivered via `aura.artifact` in the active thread (filename, `size_bytes`, `mime_type`, type icon), newest-first, with a graceful empty-state; on mobile/tablet it collapses into a drawer/overlay like the navigation without breaking the layout. *(Phase 37B — cockpit-web parity vs Telegram/Claude UI, surfaced in the voice/artifact/skill audit)*
+- [ ] **WEBART-06**: Each artifact row exposes a download action targeting `GET /api/assets/{id}/download` (identity-scoped, `Content-Disposition: attachment`, per WEBART-03), and a "Scarica tutto" control downloads the thread's assets sequentially (client-side; no server-side zip endpoint unless evidenced); no raw container/host path ever reaches the browser. *(Phase 37B)*
+- [ ] **WEBART-07**: The panel is a single derived view merging the thread asset list (`GET /api/assets?thread_id=`) with live `aura.artifact` events from `sseAdapter.ts` (no new source of truth); ownership is enforced by `assets.Store.GetForIdentity` — a non-owner request returns 404/403 and no unauthenticated surface is added. *(Phase 37B)*
+- [ ] **WEBART-08**: Non-regression: the inline `local_artifact` display chip keeps rendering and CLI / no-authenticated-identity degrades to today's host-path behavior. Coverage: React unit tests (panel render + download-all) + a Playwright e2e (artifact appears in the panel + download) + web coverage ≥85%. *(Phase 37B)*
+
+### Web Voice Lane (WEBVOICE)
+
+Cockpit-web voice parity with Telegram, cloud-only (OpenRouter STT/TTS; no local sidecar — RAM constraint). Reuses the shipped `internal/multimodal` clients. *(product gap — voice/artifact/skill audit)*
+
+- [ ] **WEBVOICE-01**: Each assistant message exposes a speaker control that synthesizes its text via a new authenticated `POST /api/tts` (identity-scoped, streaming opus/mp3) over `multimodal.TTSClient`, played by an in-page `<audio>`; a per-conversation "voice mode" preference enables auto-speak (parity with Telegram `ShouldSpeak`). *(Phase 37C)*
+- [ ] **WEBVOICE-02**: The Composer Mic becomes dictation — record → transcribe via the existing STT pipeline → insert the transcript into the input box (editable before send), instead of attaching a voice note; on failure it falls back to today's attachment behavior. *(Phase 37C)*
+- [ ] **WEBVOICE-03**: Cloud-only — TTS/STT run on OpenRouter with no local sidecar; when the cloud models are unconfigured the UI degrades gracefully (speaker hidden / mic in attachment mode) with no errors. *(Phase 37C)*
+- [ ] **WEBVOICE-04**: No regression of the audio-attachment path; `RequireAuth` on the TTS endpoint; React unit tests (speaker + dictation) + e2e; web + owned-surface Go coverage ≥85%. *(Phase 37C)*
+
+### Composer Skill & Command Picker (WEBSKILL)
+
+A slash "/" menu in the Composer (parity with Claude's skill/command picker) to invoke/attach a skill inline, instead of only the admin Governance board. *(product gap — voice/artifact/skill audit)*
+
+- [ ] **WEBSKILL-01**: Typing "/" at the start of a Composer line opens a keyboard-filterable menu listing the skills available to the authenticated identity (via the governance skills API, identity-scoped) with ↑/↓/Enter/Esc and a per-row description. *(Phase 37D)*
+- [ ] **WEBSKILL-02**: Selecting an entry injects the skill into the turn per the existing runtime contract; no new source of truth for skills (reuses the governance API). *(Phase 37D)*
+- [ ] **WEBSKILL-03**: Accessible (ARIA combobox/listbox), preserves Composer paste/drop/Enter-to-send, degrades to a no-op when the skills API is empty/unreachable; unit + e2e; coverage ≥85%. *(Phase 37D)*
+
+### Composer Model & Reasoning-Effort Selector (WEBMODEL)
+
+Per-turn model + reasoning-effort selection in the Composer (parity with Claude's "Opus 4.8 · Alto"), bounded by the configured backends. *(product gap — voice/artifact/skill audit)*
+
+- [ ] **WEBMODEL-01**: The Composer exposes a model selector (populated from the configured backends, settings-scoped) + an effort selector; the choice is persisted per-conversation. *(Phase 37E)*
+- [ ] **WEBMODEL-02**: `/agent/run` accepts an optional (model, effort) override validated server-side against the configured-backend allowlist (a non-allowed value → 400, never an arbitrary model); absent → today's settings-based default (no regression). *(Phase 37E)*
+- [ ] **WEBMODEL-03**: No bypass of model governance (the override picks among ALREADY-allowed models, never adds one); unit + e2e; coverage ≥85%. Architectural check: confirm the LLM/OpenRouter contract supports a per-request override before planning. *(Phase 37E)*
+
+### Conversation & Artifact Sharing / Export (WEBSHARE)
+
+Share/export a conversation or artifact (parity with Claude's "Condividi"/link), respecting Aura's identity isolation — never an unauthenticated public surface by default. *(product gap — voice/artifact/skill audit)*
+
+- [ ] **WEBSHARE-01**: The owner can export a conversation (Markdown/JSON of the thread) downloaded via an identity-scoped endpoint (`GetForIdentity`, `Content-Disposition: attachment`). *(Phase 37F)*
+- [ ] **WEBSHARE-02**: Sharing is either (a) revocable + capability-gated toward Aura identities, or (b) — if public is chosen — an explicitly opt-in expiring opaque token with a warning, never default; the owner can revoke. *(Phase 37F)*
+- [ ] **WEBSHARE-03**: No host/container path and no other identity's data reach a recipient; the share act is audited. *(Phase 37F)*
+- [ ] **WEBSHARE-04**: Unit + e2e + a cross-identity deny test on the shared link; coverage ≥85%. *(Phase 37F)*
 
 ### MCP Governance Hardening (MCPH)
 
@@ -170,6 +208,11 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | MUSR | MUSR-01..06 (+QUAL Authula DSN) | F-012, F-028, F-032, F-039, F-050 | Phase 36 |
 | SBX | SBX-01..05 | F-001(sbx), F-036 | Phase 37 |
 | WEBART | WEBART-01..04 | (product gap — agent-generated artifact web-delivery, surfaced in-session; no F-finding) | Phase 37A |
+| WEBART | WEBART-05..08 | (product gap — cockpit-web "Artefatti" sidebar parity vs Telegram/Claude UI; voice/artifact/skill audit) | Phase 37B |
+| WEBVOICE | WEBVOICE-01..04 | (product gap — cockpit-web voice parity vs Telegram/Claude; voice/artifact/skill audit) | Phase 37C |
+| WEBSKILL | WEBSKILL-01..03 | (product gap — composer skill/command "/" picker vs Claude; audit) | Phase 37D |
+| WEBMODEL | WEBMODEL-01..03 | (product gap — composer model + reasoning-effort selector vs Claude; audit) | Phase 37E |
+| WEBSHARE | WEBSHARE-01..04 | (product gap — conversation/artifact sharing + export vs Claude; audit) | Phase 37F |
 | MCPH | MCPH-01..09 (+QUAL-03 trust-norm) | F-013, F-014, F-027, F-033, F-034, F-035, F-037, F-038, F-046 | Phase 38 |
 | OBS | OBS-01..06 | F-008, F-017, F-023, F-024, F-049 (+F-020 idempotency) | Phase 39 |
 | SEC | SEC-01..06, SEC-09 (+QUAL decode-body) | F-019(sec), F-021, F-022, F-047, F-051, F-052, CodeQL weak-hash | Phase 40 |
@@ -179,7 +222,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 **Coverage:**
 
-- v2.0.0 requirements: 63 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — WEBART is a product-gap requirement (no audit F-finding; findings-mapped count unchanged)
+- v2.0.0 requirements: 81 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 8, WEBVOICE 4, WEBSKILL 3, WEBMODEL 3, WEBSHARE 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — the WEB* groups are product-gap requirements (no audit F-finding; findings-mapped count unchanged), the cockpit-web parity cluster from the voice/artifact/skill audit: WEBART 37A/37B artifacts, WEBVOICE 37C voice, WEBSKILL 37D skill-picker, WEBMODEL 37E model+effort selector, WEBSHARE 37F sharing/export
 - Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
 - CodeQL-surfaced findings (outside the F-series): 2 / 2 — SEC-08 SSRF (`internal/mcp/http_client.go`) → Phase 31, SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40 ✓
 - Quality/maintainability audit: `docs/audit/quality/` (4-slice, ~64 findings) → QUAL-01..05 + routed to security phases ✓

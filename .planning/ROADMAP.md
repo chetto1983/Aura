@@ -392,6 +392,99 @@ Plans:
 
 **Design forks for discuss-phase:** (a) `assets.source_kind` CHECK allows only `web|telegram|cli` → add an `agent` value (migration) or reuse `cli`; (b) thread-id reaches the tool ctx only via `agent.SwarmContext(ctx).ConvID` (a smell for a non-swarm concern) → consider a dedicated `threadctx`; (c) download-button UI: reuse the existing `local_artifact` display card (already renders + carries `size_bytes`) vs a new dedicated file part on the delivery event.
 
+#### Phase 37B: Web Artifact Sidebar (INSERTED)
+
+**Goal:** Gli artifact prodotti in un thread sono aggregati in un pannello laterale destro "Artefatti" nel cockpit web (parità con Telegram + l'UI di Claude): elenco dei file del thread con download per-file e "Scarica tutto", anteprime, e nessun path host/container mai esposto al browser. Costruito sopra l'`asset_id` + `GET /api/assets/{id}/download` di Phase 37A. Prima delle tre aree di parità cockpit-web emerse dall'audit voice/artifact/skill (le altre due — voice web TTS/STT cloud-only, composer skill-picker "/" — sono Phase 37C/37D).
+
+**Requirements:** WEBART-05, WEBART-06, WEBART-07, WEBART-08
+
+**Depends on:** Phase 37A (WEBART-01..04 forniscono l'`asset_id` sull'evento `aura.artifact` + l'endpoint autenticato `GET /api/assets/{id}/download` identity-scoped; questo pannello aggrega quegli `asset_id` e ne fa lo streaming — nessuna nuova sorgente di verità).
+
+**Success Criteria**:
+
+1. Un pannello laterale destro "Artefatti" nella shell chat (`AppShell` `ResizablePanelGroup`) elenca ogni asset consegnato via `aura.artifact` nel thread attivo (filename + size + mime + icona), ordinato per recenza; empty-state graceful; su mobile/tablet collassa in drawer/overlay come la navigation, senza rompere il layout.
+2. Ogni riga ha un download che colpisce `GET /api/assets/{id}/download` (identity-scoped, `Content-Disposition: attachment`); un "Scarica tutto" scarica in sequenza gli asset del thread. Nessun path host/container raggiunge mai il browser.
+3. Il pannello riusa `GET /api/assets?thread_id=` + gli eventi live `aura.artifact` da `sseAdapter` (merge, non un nuovo store); l'ownership è garantita da `GetForIdentity` — un non-owner → 404/403, nessuna superficie non autenticata aggiunta.
+4. Parità non regressiva: la chip inline `local_artifact` continua a renderizzare; CLI / no-identity degrada al comportamento host-path odierno. Test: unit React (render pannello + download-all) + e2e Playwright (artifact compare nel pannello + download) + coverage web ≥85%.
+
+**Design forks for discuss-phase:** (a) sorgente del pannello — solo `GET /api/assets?thread_id=` (refetch) vs. merge con lo stream live `aura.artifact` (immediato ma stateful); (b) posizione — terzo `ResizablePanel` persistente a destra su desktop che diventa drawer su mobile, vs. overlay on-demand toggolato dall'header; (c) "Scarica tutto" — N richieste sequenziali client-side (preferito, YAGNI) vs. un nuovo endpoint zip server-side (evitare finché non c'è evidenza di necessità).
+
+**PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
+
+#### Phase 37C: Web Voice Lane (INSERTED)
+
+**Goal:** Parità voce con Telegram nel cockpit web: (a) **output vocale** — la risposta dell'agente è riproducibile come audio (pulsante speaker per messaggio + preferenza "voice mode" auto-speak); (b) **input vocale** — il Mic del Composer diventa dettatura in-place (transcript nel box input, editabile, non un attachment). Cloud-only via OpenRouter (`AURA_STT_CLOUD_MODEL`/`AURA_TTS_MODEL`), nessun sidecar locale (vincolo RAM). Riusa `multimodal.TTSClient`/`STTClient` già completi. Seconda delle aree di parità cockpit-web dall'audit voice/artifact/skill.
+
+**Requirements:** WEBVOICE-01, WEBVOICE-02, WEBVOICE-03, WEBVOICE-04
+
+**Depends on:** Phase 36 (identity/auth), il client `internal/multimodal` (già shippato), la asset/STT pipeline (già shippata).
+
+**Success Criteria**:
+
+1. Ogni messaggio assistant ha un pulsante speaker che sintetizza il testo via un nuovo endpoint autenticato `POST /api/tts` (identity-scoped, streaming opus/mp3) sopra `multimodal.TTSClient`, riprodotto da un `<audio>` in-page; una preferenza per-conversazione "voice mode" abilita l'auto-speak (parità `ShouldSpeak`).
+2. Il Mic del Composer produce una **dettatura**: registra → trascrive via l'STT esistente → inserisce il transcript nel box input (editabile prima dell'invio), invece di allegare una nota vocale. Fallback: su errore, ripiega sul comportamento attachment odierno.
+3. Cloud-only: TTS/STT girano su OpenRouter senza sidecar locale; con i model cloud non configurati la UI degrada (speaker nascosto / mic in modalità attachment) senza errori.
+4. Nessuna regressione dell'attachment audio; `RequireAuth` sull'endpoint TTS; unit React (speaker + dettatura) + e2e; coverage ≥85% web / owned-surface Go.
+
+**Design forks for discuss-phase:** (a) trasporto TTS — nuovo `POST /api/tts` che risponde audio vs. evento SSE `aura.audio` sul run stream; (b) auto-speak — pref per-conversazione (settings) vs. toggle effimero nell'header chat; (c) dettatura — Web Speech API browser (gratis, qualità variabile) vs. il pipeline STT server (coerente con Telegram, preferito).
+
+**PRD-first:** richiede PRD-amendment (WEBVOICE-01..04 + superficie voce web non documentata).
+
+#### Phase 37D: Composer Skill & Command Picker (INSERTED)
+
+**Goal:** Un menu slash "/" nel Composer (parità col picker skill/comandi di Claude) che elenca le skill disponibili all'identità + comandi rapidi, filtrabili da tastiera, per invocare/allegare una skill inline nel turn — invece di gestirle solo nella board Governance admin. Terza area di parità cockpit-web dall'audit.
+
+**Requirements:** WEBSKILL-01, WEBSKILL-02, WEBSKILL-03
+
+**Depends on:** Phase 28 (governance skills API), il registry skill (già shippato).
+
+**Success Criteria**:
+
+1. Digitando "/" a inizio riga nel Composer si apre un menu che elenca le skill disponibili all'identità autenticata (via la governance skills API, identity-scoped), con filtro incrementale (↑/↓/Enter/Esc) e descrizione per riga.
+2. Selezionando una voce, la skill è iniettata nel turn secondo il contratto runtime esistente; nessuna nuova sorgente di verità sulle skill (riusa l'API governance).
+3. Accessibile (ARIA combobox/listbox), preserva paste/drop/Enter-invio del Composer, degrada a no-op se la skills API è vuota/non raggiungibile; unit + e2e; coverage ≥85%.
+
+**Design forks for discuss-phase:** (a) sorgente lista — `GET /api/governance/skills` (esiste) vs. un endpoint per-identity più snello; (b) semantica selezione — allega la skill come contesto del turn vs. la invoca come tool esplicito; (c) ambito — solo skill vs. skill + comandi rapidi (new-chat, clear).
+
+**PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
+
+#### Phase 37E: Composer Model & Reasoning-Effort Selector (INSERTED)
+
+**Goal:** Un selettore modello + livello di reasoning-effort nel Composer (parità con "Opus 4.8 · Alto" di Claude): l'utente sceglie per-turn il modello (tra quelli configurati) e l'effort, invece del solo modello server-fisso.
+
+**Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
+
+**Depends on:** SETTINGS-01/02 (model backend config), il runner/agent (`/agent/run`).
+
+**Success Criteria**:
+
+1. Il Composer espone un selettore modello (popolato dai backend configurati, settings-scoped) + un selettore effort; la scelta è persistita per-conversazione.
+2. `/agent/run` accetta un override opzionale (model + effort) validato server-side contro l'allowlist dei backend configurati (valore non ammesso → 400, mai un modello arbitrario); assente → il default settings-based odierno (nessuna regressione).
+3. Nessun bypass della governance model (l'override sceglie tra i modelli GIÀ ammessi, non ne aggiunge); unit + e2e; coverage ≥85%.
+
+**Design forks for discuss-phase:** (a) sorgente lista modelli — deriva dai KnobSpec/settings esistenti vs. un nuovo `GET /api/models`; (b) scope override — per-conversazione persistito vs. per-turn effimero; (c) effort — mappatura a un parametro provider vs. una preferenza Aura interna. **Verifica architetturale:** confermare che il contratto LLM/OpenRouter di Aura supporti l'override per-richiesta prima del plan.
+
+**PRD-first:** richiede PRD-amendment (WEBMODEL-01..03) — tocca il contratto `/agent/run` e la governance model.
+
+#### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
+
+**Goal:** Condivisione/export di una conversazione o di un artifact (parità con "Condividi" + link di Claude), rispettando l'isolamento identità di Aura: export file o link condiviso autenticato, MAI una superficie pubblica non autenticata by-default.
+
+**Requirements:** WEBSHARE-01, WEBSHARE-02, WEBSHARE-03, WEBSHARE-04
+
+**Depends on:** Phase 36 (identity isolation), Phase 37A/37B (asset/download lane).
+
+**Success Criteria**:
+
+1. Da una conversazione l'owner può generare un export (Markdown/JSON del thread) scaricato via endpoint identity-scoped (`GetForIdentity`, `Content-Disposition: attachment`).
+2. Condivisione: un link è o (a) revocabile + capability-gated verso identità Aura, o (b) — SE si sceglie il pubblico — un token opaco a scadenza esplicitamente opt-in con avviso, mai default; l'owner può revocare.
+3. Nessun path host/container e nessun dato di un'altra identità raggiungono un destinatario; l'atto di condivisione è audited.
+4. Unit + e2e + un test di cross-identity deny sul link condiviso; coverage ≥85%.
+
+**Design forks for discuss-phase:** (a) scope — solo export file (semplice, nessuna nuova superficie auth) vs. link interno-identità vs. link pubblico a token (max parità, max rischio); (b) granularità — intera conversazione vs. singolo artifact/messaggio; (c) storage link — riusa `assets`/Garage vs. una nuova tabella `shared_links`. **Nota sicurezza:** un link pubblico è un buco potenziale nell'isolamento MUSR — default fail-closed, opt-in esplicito, revoca obbligatoria (probabile ADR).
+
+**PRD-first:** richiede PRD-amendment (WEBSHARE-01..04) + probabile ADR (condivisione vs. isolamento identità).
+
 #### Phase 38: MCP Governance Hardening
 
 **Goal:** One canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
