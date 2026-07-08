@@ -20,8 +20,8 @@ autonomous: true
 requirements: [WEBART-05, WEBART-08]
 must_haves:
   truths:
-    - "PreviewModal is a Radix Dialog sized ~90vw/90vh with header = filename + download anchor + close, and dispatches to a lazy per-MIME renderer via previewKind"
-    - "useBlobPreview fetches same-origin, re-labels the Blob with the SSE mime_type, and revokes the objectURL + aborts on unmount"
+    - "PreviewModal is a Radix Dialog sized ~90vw/90vh with header = filename + download anchor + close, and dispatches to a lazy per-MIME renderer via previewKind (D-09)"
+    - "useBlobPreview fetches same-origin, re-labels the Blob with the SSE mime_type, and revokes the objectURL + aborts on unmount (D-06)"
     - "HtmlPreview renders a null-origin iframe: sandbox='allow-scripts' with NO allow-same-origin, fed by srcDoc (fetched text), never src=download URL"
     - "docx-preview + SheetJS are imported ONLY inside their lazy renderer chunks (never the main bundle)"
     - "xlsx table renders inside an empty-sandbox iframe (sheet name escaped); pptx/svg/unknown render a download-only card"
@@ -82,6 +82,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 1: useBlobPreview hook — same-origin fetch, Blob relabel, objectURL lifecycle</name>
+  <files>web/src/chat/artifacts/useBlobPreview.ts, web/src/chat/artifacts/useBlobPreview.test.ts</files>
   <behavior>
     - fetch is called with credentials:'same-origin' and the abort signal
     - on a non-ok response the hook exposes an error (no url)
@@ -111,6 +112,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 2: Six lazy per-MIME renderers (image/pdf/text/html/docx/xlsx)</name>
+  <files>web/src/chat/artifacts/renderers/ImagePreview.tsx, web/src/chat/artifacts/renderers/PdfPreview.tsx, web/src/chat/artifacts/renderers/TextPreview.tsx, web/src/chat/artifacts/renderers/HtmlPreview.tsx, web/src/chat/artifacts/renderers/DocxPreview.tsx, web/src/chat/artifacts/renderers/XlsxPreview.tsx, web/src/chat/artifacts/renderers/renderers.test.tsx</files>
   <behavior>
     - ImagePreview renders <img src={objectURL}> from useBlobPreview
     - PdfPreview renders <iframe src={objectURL}> (native PDF)
@@ -143,6 +145,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 3: PreviewModal — Radix Dialog dispatch to lazy renderers</name>
+  <files>web/src/chat/artifacts/PreviewModal.tsx, web/src/chat/artifacts/PreviewModal.test.tsx</files>
   <behavior>
     - When active is set, a Dialog opens sized 90vw/90vh with the filename in the header + a download anchor to /api/assets/{id}/download + close
     - previewKind(mime, filename) selects the renderer; 'download' kinds (pptx/svg/unknown) render a download-only card, NOT a renderer
@@ -207,3 +210,4 @@ This plan produces:
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-04-SUMMARY.md` when done.
 </output>
+</content>

@@ -60,6 +60,7 @@ This plan produces:
 
 <task type="auto">
   <name>Task 1: Playwright e2e — artifact appears in the Artefatti panel + download</name>
+  <files>web/e2e/artifacts.spec.ts</files>
   <read_first>
     - web/e2e/replay.spec.ts — the `sseFromFrames` golden-replay + `page.route` SSE-mock harness to mirror (no live agent turn).
     - web/e2e/assets.spec.ts — the asset fixtures + `/api/assets` route mocking + download assertion conventions.
@@ -82,6 +83,7 @@ This plan produces:
 
 <task type="auto">
   <name>Task 2: Full coverage gate + Stryker spot-check + rebuild internal/webui/dist</name>
+  <files>internal/webui/dist</files>
   <read_first>
     - web/vitest.config.ts:22,28-33 — the `src/**` include + the 85% thresholds (the gate this must clear).
     - web/vitest.stryker.config.ts — the mutation target list (artifactMeta + downloadAll added in plan 03).
@@ -136,3 +138,4 @@ This plan produces:
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-08-SUMMARY.md` when done.
 </output>
+</content>

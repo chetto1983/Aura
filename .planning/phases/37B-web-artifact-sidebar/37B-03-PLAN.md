@@ -71,6 +71,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 1: artifactMeta.ts — previewKind + category label/icon + extracted formatSize</name>
+  <files>web/src/chat/artifacts/artifactMeta.ts, web/src/chat/artifacts/artifactMeta.test.ts, web/src/chat/displays/LocalArtifactDisplay.tsx</files>
   <behavior>
     - previewKind('image/svg+xml', 'x.svg') === 'download'  (SVG gated FIRST)
     - previewKind('image/png', 'x.png') === 'image'
@@ -106,6 +107,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 2: downloadAll.ts — sequential throttled downloader (mutation target)</name>
+  <files>web/src/chat/artifacts/downloadAll.ts, web/src/chat/artifacts/downloadAll.test.ts</files>
   <behavior>
     - downloadAll([a1,a2,a3]) triggers 3 `HTMLAnchorElement.click()` calls, each href `/api/assets/{id}/download`, download={file_name}
     - a degraded asset (status !== 'accepted') is skipped and NOT clicked
@@ -134,6 +136,7 @@ This plan produces:
 
 <task type="auto">
   <name>Task 3: artifacts.* i18n keys (en+it) + register pure modules with Stryker</name>
+  <files>web/src/i18n/resources.display.ts, web/vitest.stryker.config.ts</files>
   <read_first>
     - web/src/i18n/resources.display.ts — the en+it resource structure to extend (match the existing `display.artifact.*` nesting).
     - web/src/i18n/__tests__/resources.parity.test.ts — the parity test that enforces en/it key symmetry (will fail if a key is added to only one locale).
@@ -185,3 +188,4 @@ This plan produces:
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-03-SUMMARY.md` when done.
 </output>
+</content>

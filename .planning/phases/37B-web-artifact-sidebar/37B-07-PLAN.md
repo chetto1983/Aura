@@ -12,9 +12,9 @@ requirements: [WEBART-05, WEBART-07, WEBART-08]
 must_haves:
   truths:
     - "a header doc-icon toggle shows/hides the Artefatti panel; open/closed state is persisted"
-    - "on desktop (≥lg) the panel is a third ResizablePanel (id='chat-artifacts') with its own ResizableHandle, mounted after chat-workspace, only inside the showConversationNavigation branch; panelIds is driven dynamically so the 2-panel and 3-panel layouts persist under distinct keys (no layout-key bump)"
-    - "below lg the panel content renders in a Drawer side='right' routed through useSurfaceRestore's overlay slot, opened by the same toggle"
-    - "onArtifact invalidates ['assets', threadId] and auto-opens the panel exactly once per thread (ref-guarded, reset on thread change)"
+    - "on desktop (≥lg) the panel is a third ResizablePanel (id='chat-artifacts') with its own ResizableHandle, mounted after chat-workspace, only inside the showConversationNavigation branch; panelIds is driven dynamically so the 2-panel and 3-panel layouts persist under distinct keys (no layout-key bump) (D-02)"
+    - "below lg the panel content renders in a Drawer side='right' routed through useSurfaceRestore's overlay slot, opened by the same toggle (D-04)"
+    - "onArtifact invalidates ['assets', threadId] and auto-opens the panel exactly once per thread (ref-guarded, reset on thread change) (D-11)"
     - "the existing persisted 2-panel nav layout is untouched when the panel is closed"
   artifacts:
     - path: "web/src/AppShell.tsx"
@@ -70,6 +70,7 @@ This plan produces (all in `web/src/AppShell.tsx`):
 
 <task type="auto" tdd="true">
   <name>Task 1: Third ResizablePanel + header toggle + mobile right Drawer</name>
+  <files>web/src/AppShell.tsx, web/src/AppShell.artifacts.test.tsx</files>
   <behavior>
     - closed by default: chat is full-width, panelIds = ['chat-navigation','chat-workspace']; the persisted 2-panel layout key is untouched
     - toggling open: panelIds = [...base, 'chat-artifacts']; a third ResizablePanel + its handle mount after chat-workspace
@@ -101,6 +102,7 @@ This plan produces (all in `web/src/AppShell.tsx`):
 
 <task type="auto" tdd="true">
   <name>Task 2: onArtifact handler — invalidate query + one-time auto-open</name>
+  <files>web/src/AppShell.tsx, web/src/AppShell.artifacts.test.tsx</files>
   <behavior>
     - passing onArtifact to ExternalStoreChat: when fired, it invalidates ['assets', activeThreadId] (refetch pulls the new asset)
     - the FIRST artifact in a thread auto-opens the panel exactly once; after the user closes it, subsequent artifacts do NOT reopen it
@@ -160,3 +162,4 @@ This plan produces (all in `web/src/AppShell.tsx`):
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-07-SUMMARY.md` when done.
 </output>
+</content>

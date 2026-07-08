@@ -450,11 +450,11 @@ export function previewKind(mime: string, filename: string): PreviewKind {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Panel contents: agent-only vs all thread files?** *Know:* `listThreadAssets` returns uploads (web/telegram/cli) **and** deliverables (agent). *Unclear:* whether "Artefatti" = agent deliverables only or every file in the thread. *Recommendation:* **agent-only** (matches the reference screenshot + D-15's source_kind split); trivially changed in the `select` filter if the operator wants all.
-2. **Assistant-turn correlation for D-15 chip.** *Know:* an `Asset` carries `thread_id`+`created_at` but **no** message/`tool_call_id`. *Unclear:* which assistant turn a rehydrated agent asset belongs to. *Recommendation:* positional fold (mirror `attachAssetsToUserMessages`'s heuristic) — imprecise but parity-adequate; the panel (D-14) is the authoritative durable surface, so chip precision is non-critical.
-3. **Degraded rows in the panel.** *Know:* a fully path-only degraded delivery (37A D-02) creates **no** Asset row → it never appears in the panel (only the inline chip shows its degraded card). *Unclear:* whether D-18's "disabled delivery-unavailable row" is reachable for agent assets (they're `MarkAccepted` on success or absent). *Recommendation:* render the degraded row defensively for any `status !== 'accepted'`, but expect it to be rare; the primary degraded surface stays the inline chip.
+1. **Panel contents: agent-only vs all thread files?** RESOLVED — adopted agent-only; plan 06 `useThreadArtifacts` applies the `source_kind==='agent'` select filter. *Know:* `listThreadAssets` returns uploads (web/telegram/cli) **and** deliverables (agent). *Unclear:* whether "Artefatti" = agent deliverables only or every file in the thread. *Recommendation:* **agent-only** (matches the reference screenshot + D-15's source_kind split); trivially changed in the `select` filter if the operator wants all.
+2. **Assistant-turn correlation for D-15 chip.** RESOLVED — adopted the positional fold; plan 05 `foldAgentOntoAssistant` mirrors `attachAssetsToUserMessages` onto assistant turns. *Know:* an `Asset` carries `thread_id`+`created_at` but **no** message/`tool_call_id`. *Unclear:* which assistant turn a rehydrated agent asset belongs to. *Recommendation:* positional fold (mirror `attachAssetsToUserMessages`'s heuristic) — imprecise but parity-adequate; the panel (D-14) is the authoritative durable surface, so chip precision is non-critical.
+3. **Degraded rows in the panel.** RESOLVED — render defensively; plan 06 `ArtifactRow` includes the `status !== 'accepted'` degraded branch. *Know:* a fully path-only degraded delivery (37A D-02) creates **no** Asset row → it never appears in the panel (only the inline chip shows its degraded card). *Unclear:* whether D-18's "disabled delivery-unavailable row" is reachable for agent assets (they're `MarkAccepted` on success or absent). *Recommendation:* render the degraded row defensively for any `status !== 'accepted'`, but expect it to be rare; the primary degraded surface stays the inline chip.
 
 ---
 

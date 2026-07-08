@@ -62,6 +62,7 @@ This plan produces:
 
 <task type="checkpoint:human-verify" gate="blocking-human">
   <name>Task 1: Package legitimacy gate — verify docx-preview, jszip, and the xlsx CDN tarball</name>
+  <files>web/package.json, web/package-lock.json</files>
   <what-built>
     Nothing yet — this checkpoint gates the installs in Task 2. The two direct deps (`docx-preview`, `xlsx`) originate from CONTEXT.md discussion, not an authoritative session lookup, so they are treated as [ASSUMED] and verified before install. RESEARCH ran slopcheck 0.6.1 → 3 OK, but the `xlsx` CDN-tarball shape (a URL dependency in package.json) is an unusual supply-chain form a reviewer should consciously approve.
   </what-built>
@@ -75,6 +76,7 @@ This plan produces:
 
 <task type="auto">
   <name>Task 2: Install docx-preview + xlsx (CDN) and widen the source_kind union</name>
+  <files>web/package.json, web/package-lock.json, web/src/chat/attachments/types.ts</files>
   <read_first>
     - web/package.json — current dependency block + npm engines; add the two deps in the existing style.
     - web/src/chat/attachments/types.ts:19 — the `Asset.source_kind` union to widen (PATTERNS "MODIFY — widen the union").
@@ -127,3 +129,4 @@ This plan produces:
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-02-SUMMARY.md` when done.
 </output>
+</content>

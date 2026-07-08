@@ -15,10 +15,10 @@ autonomous: true
 requirements: [WEBART-05, WEBART-06, WEBART-07]
 must_haves:
   truths:
-    - "useThreadArtifacts(threadId) is a useQuery(['assets', threadId]) over listThreadAssets whose select filters source_kind==='agent' (dropping deleted/canceled) and sorts newest-first client-side"
-    - "ArtifactRow renders icon + name + 'Categoria · EXT' + a trailing download anchor to /api/assets/{id}/download; row body click opens the preview; degraded rows render a disabled delivery-unavailable note"
-    - "ArtifactsPanel renders rows newest-first, a header ('Artefatti' + 'Scarica tutto'), a graceful empty-state, and mounts the lazy PreviewModal for the active row"
-    - "'Scarica tutto' calls downloadAll with N/M progress, disabled during the run, skipping degraded"
+    - "useThreadArtifacts(threadId) is a useQuery(['assets', threadId]) over listThreadAssets whose select filters source_kind==='agent' (dropping deleted/canceled) and sorts newest-first client-side (D-10)"
+    - "ArtifactRow renders icon + name + 'Categoria · EXT' + a trailing download anchor to /api/assets/{id}/download; row body click opens the preview; degraded rows render a disabled delivery-unavailable note (D-05, D-12)"
+    - "ArtifactsPanel renders rows newest-first, a header ('Artefatti' + 'Scarica tutto'), a graceful empty-state, and mounts the lazy PreviewModal for the active row (D-17)"
+    - "'Scarica tutto' calls downloadAll with N/M progress, disabled during the run, skipping degraded (D-13)"
     - "no host/container path, object_key, or object_bucket ever appears in the DOM — only id"
   artifacts:
     - path: "web/src/chat/artifacts/useThreadArtifacts.ts"
@@ -76,6 +76,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 1: useThreadArtifacts — derived agent-filtered newest-first query</name>
+  <files>web/src/chat/artifacts/useThreadArtifacts.ts, web/src/chat/artifacts/useThreadArtifacts.test.ts</files>
   <behavior>
     - queryKey is ['assets', threadId]; queryFn reuses listThreadAssets(threadId, signal) verbatim
     - enabled only when threadId.length > 0
@@ -104,6 +105,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 2: ArtifactRow — icon + name + category·EXT + download + preview + degraded</name>
+  <files>web/src/chat/artifacts/ArtifactRow.tsx, web/src/chat/artifacts/ArtifactRow.test.tsx</files>
   <behavior>
     - renders the category icon (from artifactMeta.categoryIcon), the file name, the "Categoria · EXT" label (categoryLabel), and formatSize
     - the trailing download control is an <a href="/api/assets/{id}/download" download={file_name}> (accepted rows)
@@ -133,6 +135,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 3: ArtifactsPanel — header, rows, empty-state, Scarica tutto, PreviewModal mount</name>
+  <files>web/src/chat/artifacts/ArtifactsPanel.tsx, web/src/chat/artifacts/ArtifactsPanel.test.tsx</files>
   <behavior>
     - renders a header with the "Artefatti" title + a "Scarica tutto" button
     - lists ArtifactRow items from useThreadArtifacts, newest-first
@@ -195,3 +198,4 @@ This plan produces:
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-06-SUMMARY.md` when done.
 </output>
+</content>

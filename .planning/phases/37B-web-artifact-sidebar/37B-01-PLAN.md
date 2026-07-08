@@ -55,6 +55,7 @@ No code symbols are produced by this plan.
 
 <task type="auto">
   <name>Task 1: Amend prd.md with the 37B Artefatti sidebar + WEBART-05..08 + preview deps + persistence</name>
+  <files>prd.md</files>
   <read_first>
     - prd.md — locate the web-cockpit / artifact-delivery section (the WEBART-01..04 delivery-lane content from 37A) to append the 37B amendment adjacently; match existing PRD heading/format conventions.
     - .planning/REQUIREMENTS.md:69-72 — the locked WEBART-05..08 acceptance text to transcribe faithfully.
@@ -108,3 +109,5 @@ No code symbols are produced by this plan.
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-01-SUMMARY.md` when done.
 </output>
+</content>
+</invoke>

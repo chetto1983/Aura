@@ -67,6 +67,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 1: Thread onArtifact through the streamSSE pump</name>
+  <files>web/src/chat/sseAdapter.ts, web/src/chat/sseAdapter.onArtifact.test.ts</files>
   <behavior>
     - streamSSE fires opts.onArtifact(frame.value.asset_id) exactly when frame.type==='CUSTOM' && frame.name==='aura.artifact' && isArtifactDescriptor(frame.value)
     - reduceFrame is unchanged in its return contract (still a pure reducer, no callback emitted from it)
@@ -93,6 +94,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 2: onArtifact prop + D-15 split-fold rehydration on history load</name>
+  <files>web/src/chat/ExternalStoreChat.tsx, web/src/chat/ExternalStoreChat.rehydration.test.tsx</files>
   <behavior>
     - foldAgentOntoAssistant(messages, agentAssets) attaches agent assets to assistant messages via metadata.custom.attachments (positional heuristic mirroring attachAssetsToUserMessages)
     - on history load, assets split: uploads (source_kind !== 'agent') → attachAssetsToUserMessages (unchanged); agent (source_kind === 'agent') → foldAgentOntoAssistant
@@ -155,3 +157,4 @@ This plan produces:
 <output>
 Create `.planning/phases/37B-web-artifact-sidebar/37B-05-SUMMARY.md` when done.
 </output>
+</content>
