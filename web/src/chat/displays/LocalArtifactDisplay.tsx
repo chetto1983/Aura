@@ -1,7 +1,7 @@
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { DisplayArtifact } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
+import { formatSize } from '../artifacts/artifactMeta';
 
 // LocalArtifactDisplay (local_artifact): a file the agent produced and delivered
 // to the web chat (37A-04). When the descriptor carries an `asset_id` (ingest
@@ -17,18 +17,6 @@ import { DisplayCardShell } from './DisplayCardShell';
 
 export interface LocalArtifactDisplayProps {
   readonly payload: { readonly artifact?: DisplayArtifact };
-}
-
-const KB = 1024;
-const MB = KB * 1024;
-const GB = MB * 1024;
-
-/** A compact human byte size via the i18n size keys (B / KB / MB / GB, 1 decimal). */
-function formatSize(bytes: number, t: TFunction): string {
-  if (bytes < KB) return t('display.artifact.sizeBytes', { count: bytes });
-  if (bytes < MB) return t('display.artifact.sizeKb', { value: (bytes / KB).toFixed(1) });
-  if (bytes < GB) return t('display.artifact.sizeMb', { value: (bytes / MB).toFixed(1) });
-  return t('display.artifact.sizeGb', { value: (bytes / GB).toFixed(1) });
 }
 
 export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
