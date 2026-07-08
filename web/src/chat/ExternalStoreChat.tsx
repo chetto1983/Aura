@@ -59,21 +59,26 @@ function withMessageAttachments(
   return { ...message, metadata: { ...message.metadata, custom } };
 }
 
-function attachAssetsToUserMessages(
+// foldAssetsPositionally zips visible assets onto the messages of a given role
+// using a positional heuristic (an Asset carries no message/tool_call_id key): the
+// Nth asset attaches to the Nth role-turn, extras pile on the last. Shared by the
+// user-upload fold and the D-15 agent-deliverable fold (dupl-folded on touch).
+function foldAssetsPositionally(
   messages: readonly ThreadMessageLike[],
   assets: readonly Asset[],
+  role: ThreadMessageLike['role'],
 ): ThreadMessageLike[] {
   const visibleAssets = assets.filter(
     (asset) => asset.status !== 'deleted' && asset.status !== 'canceled',
   );
   if (visibleAssets.length === 0) return [...messages];
-  const userIndexes = messages
-    .map((message, index) => (message.role === 'user' ? index : -1))
+  const targetIndexes = messages
+    .map((message, index) => (message.role === role ? index : -1))
     .filter((index) => index >= 0);
-  if (userIndexes.length === 0) return [...messages];
+  if (targetIndexes.length === 0) return [...messages];
   const groups = new Map<number, Asset[]>();
   visibleAssets.forEach((asset, assetIndex) => {
-    const target = userIndexes[Math.min(assetIndex, userIndexes.length - 1)];
+    const target = targetIndexes[Math.min(assetIndex, targetIndexes.length - 1)];
     if (target === undefined) return;
     groups.set(target, [...(groups.get(target) ?? []), asset]);
   });
@@ -82,6 +87,26 @@ function attachAssetsToUserMessages(
     if (additions === undefined) return message;
     return withMessageAttachments(message, [...messageAttachments(message), ...additions]);
   });
+}
+
+function attachAssetsToUserMessages(
+  messages: readonly ThreadMessageLike[],
+  assets: readonly Asset[],
+): ThreadMessageLike[] {
+  return foldAssetsPositionally(messages, assets, 'user');
+}
+
+// D-15: fold `source_kind='agent'` deliverables onto the ASSISTANT turns that
+// produced them (send_file's inline chip is synthesized client-side and never
+// persisted, so the rehydrated tool card loses its asset_id — sseAdapter_snapshot).
+// It MUST NOT fold agent assets onto user turns — that is the exact bug being fixed.
+// Exported for the rehydration attribution test (pure fold, no runtime coupling).
+// eslint-disable-next-line react-refresh/only-export-components
+export function foldAgentOntoAssistant(
+  messages: readonly ThreadMessageLike[],
+  agentAssets: readonly Asset[],
+): ThreadMessageLike[] {
+  return foldAssetsPositionally(messages, agentAssets, 'assistant');
 }
 
 function replaceAssetInMessages(
@@ -133,6 +158,12 @@ export interface ExternalStoreChatProps {
   /** 25-04 seam: receives the latest per-turn usage off the SSE STATE_DELTA. */
   readonly onUsage?: (usage: TurnUsage | undefined) => void;
   /**
+   * 37B seam (mirrors onUsage): fires when a run emits an `aura.artifact` descriptor,
+   * carrying its asset_id. AppShell invalidates ['assets', threadId] + drives the
+   * one-time Artefatti panel auto-open (D-11). Forwarded into streamRun/streamPost.
+   */
+  readonly onArtifact?: (assetId: string | undefined) => void;
+  /**
    * Continue-after-resume nonce (D-05): each increment re-drives the run with a
    * no-message POST /agent/run and FOLDS the resumed stream into the chat lane (so the
    * resumed turn renders here, not in a discarded fetch). AppShell bumps it after an
@@ -146,6 +177,7 @@ export function ExternalStoreChat({
   threadId,
   onEnsureThread,
   onUsage,
+  onArtifact,
   resumeNonce = 0,
   draftPrompt,
 }: ExternalStoreChatProps) {
@@ -216,6 +248,7 @@ export function ExternalStoreChat({
           userText: text,
           attachmentIds: readyAttachmentIds,
           signal: controller.signal,
+          ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
             onUsage?.(usage);
             setMessages((prev) => {
@@ -253,7 +286,7 @@ export function ExternalStoreChat({
         invalidateRuntimeReads(runThreadId);
       }
     },
-    [threadId, onEnsureThread, onUsage, invalidateRuntimeReads, t, uploads],
+    [threadId, onEnsureThread, onUsage, onArtifact, invalidateRuntimeReads, t, uploads],
   );
 
   const onCancel = useCallback(async () => {
@@ -300,7 +333,12 @@ export function ExternalStoreChat({
         }
         if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
           return;
-        setMessages(attachAssetsToUserMessages(loaded, assets));
+        // D-15: split by source_kind BEFORE folding. Uploads (web/telegram/cli) keep
+        // the existing user-turn fold; agent deliverables rehydrate onto assistant
+        // turns (their download chip survives saved-conversation open with no reload).
+        const uploads = assets.filter((asset) => asset.source_kind !== 'agent');
+        const agent = assets.filter((asset) => asset.source_kind === 'agent');
+        setMessages(foldAgentOntoAssistant(attachAssetsToUserMessages(loaded, uploads), agent));
       })
       .catch((err: unknown) => {
         if (
@@ -366,6 +404,7 @@ export function ExternalStoreChat({
           url,
           body,
           signal: controller.signal,
+          ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
             onUsage?.(usage);
             setMessages([...base, assistant]);
@@ -380,7 +419,7 @@ export function ExternalStoreChat({
         invalidateRuntimeReads();
       }
     },
-    [onUsage, invalidateRuntimeReads],
+    [onUsage, onArtifact, invalidateRuntimeReads],
   );
 
   // Continue-after-resume (D-05): when resumeNonce changes (AppShell bumps it after an
@@ -410,6 +449,7 @@ export function ExternalStoreChat({
           url: '/agent/run',
           body: { threadId, messages: [] },
           signal: controller.signal,
+          ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
             onUsage?.(usage);
             setMessages((prev) => {
@@ -433,7 +473,7 @@ export function ExternalStoreChat({
       }
     };
     void drive();
-  }, [resumeNonce, threadId, onUsage, invalidateRuntimeReads]);
+  }, [resumeNonce, threadId, onUsage, onArtifact, invalidateRuntimeReads]);
 
   // backendSeqAt maps a visible message to the backend turn seq it diverges from. Rehydrated
   // snapshots carry metadata.custom.backendSeq from the GET /threads/{id}/messages ids

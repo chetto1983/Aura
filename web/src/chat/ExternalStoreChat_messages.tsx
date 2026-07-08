@@ -114,6 +114,8 @@ export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: Use
 
 export function AssistantMessage() {
   const { t } = useTranslation();
+  const message = useAuiState((s) => s.message) as ThreadMessageLike;
+  const attachments = messageAttachments(message);
   return (
     <MessagePrimitive.Root className="max-w-[90%] space-y-2">
       <MessagePrimitive.Parts
@@ -135,6 +137,43 @@ export function AssistantMessage() {
           },
         }}
       />
+      {/* D-15: durable authenticated download chip(s) for agent deliverables folded
+          onto THIS assistant turn on saved-conversation load. Uses only asset_id →
+          GET /api/assets/{id}/download (the 37A-proven auth path); NEVER an
+          object_key / host path (T-37B-14). Renders nothing when the turn has none. */}
+      {attachments.length > 0 ? (
+        <div className="flex flex-col items-start gap-2">
+          {attachments.map((asset) => (
+            <a
+              key={asset.id}
+              href={`/api/assets/${asset.id}/download`}
+              download={asset.file_name}
+              aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
+              className="group inline-flex w-fit items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="shrink-0 transition-transform group-hover:translate-y-0.5"
+              >
+                <path d="M12 3v12" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M5 21h14" />
+              </svg>
+              <span className="truncate font-mono" title={asset.file_name}>
+                {asset.file_name}
+              </span>
+            </a>
+          ))}
+        </div>
+      ) : null}
       <MessagePrimitive.Error>
         <p role="alert" className="text-sm text-danger">
           {/* The reducer already routes RUN_ERROR into an error text part; this
