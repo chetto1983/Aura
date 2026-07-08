@@ -12,6 +12,7 @@ package mcptools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -99,6 +100,75 @@ func TestMemoryLiveScopedGraphToolsAcceptUserIdentifier(t *testing.T) {
 	}
 	if !strings.Contains(otherText, `"fact_count": 0`) {
 		t.Fatalf("memory_get_facts leaked scoped fact to another user: %s", otherText)
+	}
+}
+
+// TestMemoryLiveNoPrincipalBridgeScopesToOperator is the end-to-end guard for the
+// fail-open fix: it seeds a fact owned by a FOREIGN user directly on the live server,
+// then drives a memory read THROUGH THE REAL BRIDGE with NO principal in context. The
+// bridge must fall back to the local operator identity so the read is operator-scoped
+// and the foreign fact never surfaces. Before the fix the bridge forwarded the call
+// bare, the server ran its unscoped global query, and this same read returned the
+// foreign fact — the leak this test now pins closed.
+func TestMemoryLiveNoPrincipalBridgeScopesToOperator(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	server := liveMemoryServer(endpoint)
+
+	// Seed a fact under a foreign user (NOT the operator), directly via the live MCP.
+	foreign := fmt.Sprintf("foreign-%d", time.Now().UnixNano())
+	subject := "NoPrincipal Leak Probe " + foreign
+	seed, err := mcp.OpenServer(ctx, "seed-foreign-fact", server)
+	if err != nil {
+		t.Fatalf("open seed MCP at %s: %v", endpoint, err)
+	}
+	if _, err := seed.CallTool(ctx, "memory_add_fact", map[string]any{
+		"subject": subject, "predicate": "has_marker", "object_value": "secret",
+		"user_identifier": foreign,
+	}); err != nil {
+		_ = seed.Close()
+		t.Fatalf("seed foreign fact: %v", err)
+	}
+	_ = seed.Close()
+
+	// Mount through the real bridge and read facts with NO identity on the context —
+	// the CLI / no-principal path that the fix protects.
+	reg := tools.NewRegistry()
+	closer, _, err := MountManagedServer(ctx, reg, "memory", server)
+	if err != nil {
+		t.Fatalf("MountManagedServer: %v", err)
+	}
+	defer func() { _ = closer() }()
+	tl, ok := reg.Get("memory__memory_get_facts")
+	if !ok {
+		t.Fatal("memory__memory_get_facts not mounted")
+	}
+	execCtx := tools.WithToolCallContext(ctx, "sess", "tc1", t.TempDir(), 8192)
+
+	res, err := tl.Execute(execCtx, json.RawMessage(fmt.Sprintf(`{"subject":%q}`, subject)))
+	if err != nil {
+		t.Fatalf("bridge Execute memory_get_facts: %v", err)
+	}
+	// Operator-scoped read: the foreign fact must NOT surface (no fail-open global leak).
+	if !strings.Contains(res.Preview, `"fact_count": 0`) {
+		t.Fatalf("no-principal bridge read leaked a foreign user's fact (fail-open NOT closed): %s", res.Preview)
+	}
+
+	// Cross-check the seed really exists under the foreign user (the read is scoped, not empty-by-accident).
+	verify, err := mcp.OpenServer(ctx, "verify-foreign-fact", server)
+	if err != nil {
+		t.Fatalf("open verify MCP: %v", err)
+	}
+	defer func() { _ = verify.Close() }()
+	vtext, err := verify.CallTool(ctx, "memory_get_facts", map[string]any{"subject": subject, "user_identifier": foreign})
+	if err != nil {
+		t.Fatalf("verify foreign fact: %v", err)
+	}
+	if !strings.Contains(vtext, `"fact_count": 1`) {
+		t.Fatalf("seed fact not retrievable under its owner — test would be vacuous: %s", vtext)
 	}
 }
 

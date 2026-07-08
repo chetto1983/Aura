@@ -2,6 +2,14 @@ package identityctx
 
 import "context"
 
+// LocalOperatorIdentity is the seeded `local` operator identity (migration 0004,
+// UUID …0001). It is the fail-closed fallback owner for any request that carries no
+// authenticated principal: a no-principal path is attributed to the local operator
+// rather than left unscoped. Both :User-writing subsystems share this single value —
+// document ingestion (documents.OperatorIdentity aliases it) and memory-MCP tool
+// scoping — so they agree on who owns no-principal data.
+const LocalOperatorIdentity = "00000000-0000-0000-0000-000000000001"
+
 type key struct{}
 
 // WithIdentityID returns a context carrying the authenticated or conversation-owned

@@ -28,6 +28,30 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	}
 }
 
+// TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal guards the fail-open fix:
+// the memory server runs an unscoped GLOBAL query when a call carries no
+// user_identifier, so a no-principal (CLI/unauthenticated) memory call must be scoped
+// to the seeded local operator identity rather than forwarded bare. Without this the
+// call would read every tenant's memory.
+func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
+	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "memory_search", Description: "Search memory."}}, callText: "ok"}
+	got, err := Bridge(context.Background(), "memory", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	// No identityctx.WithIdentityID — the no-principal path.
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
+
+	_, err = got[0].Execute(ctx, json.RawMessage(`{"query":"anything"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if srv.lastArgs["user_identifier"] != identityctx.LocalOperatorIdentity {
+		t.Fatalf("no-principal user_identifier = %v, want operator fallback %q (never unscoped)",
+			srv.lastArgs["user_identifier"], identityctx.LocalOperatorIdentity)
+	}
+}
+
 func TestBridgedMemoryGraphQueryInjectsScopeForServerSideRejection(t *testing.T) {
 	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "graph_query", Description: "Read graph."}}, callText: "ok"}
 	got, err := Bridge(context.Background(), "memory", srv)

@@ -112,9 +112,15 @@ func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[str
 	if namespaceFromSpecName(b.Spec().Name) != "memory" || !memoryToolAcceptsUserIdentifier(b.name) {
 		return args
 	}
+	// The memory server is fail-OPEN: a tool call with no user_identifier runs its
+	// unscoped/global query and returns EVERY tenant's memory. So a no-principal call
+	// (CLI, unauthenticated path) must NOT be forwarded bare — fall back to the seeded
+	// local operator identity so the call is always tenant-scoped. This mirrors the
+	// document-ingest convention (documents.OperatorIdentity), keeping the operator's
+	// memory and documents under one :User.identifier and closing the fail-open gap.
 	identityID := identityctx.IdentityID(ctx)
 	if identityID == "" {
-		return args
+		identityID = identityctx.LocalOperatorIdentity
 	}
 	if args == nil {
 		args = make(map[string]any, 1)

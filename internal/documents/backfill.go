@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // OperatorIdentity is the seeded `local` identity (migration 0004, UUID …001) that owns
@@ -14,7 +15,9 @@ import (
 // NOT the literal string "local". The backfill therefore attaches the operator edge under
 // this identifier so the post-flip scoped retrieval (which matches on the same UUID) still
 // finds the operator's existing documents (D-12: the flip must not orphan operator docs).
-const OperatorIdentity = "00000000-0000-0000-0000-000000000001"
+// It is the shared no-principal fallback owner (see identityctx.LocalOperatorIdentity) —
+// memory-MCP scoping falls back to the same UUID, so both :User-writing subsystems agree.
+const OperatorIdentity = identityctx.LocalOperatorIdentity
 
 // DocumentOwner pairs a graph document id with the identity that owns it in Postgres.
 // Identity is the identity_id UUID text (the same value ingest/retrieval use as the
