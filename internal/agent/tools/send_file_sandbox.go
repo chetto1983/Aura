@@ -46,7 +46,7 @@ func (s *SendFile) deliverFromBox(ctx context.Context, h usersandbox.BoxHandle, 
 	if !ok {
 		return outsideWorkspaceResult(resolved, stageDir), nil
 	}
-	return emitDelivery(resolved, caption), nil
+	return s.emitDelivery(ctx, resolved, caption), nil
 }
 
 // stageBoxArtifact extracts the FIRST regular file from a CopyArtifactsOut tar stream into a fresh

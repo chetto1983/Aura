@@ -38,6 +38,13 @@ type SendFile struct {
 	// is CopyArtifactsOut-staged to a host-readable path (D-10) and re-fenced there before delivery.
 	// Nil keeps the host-file delivery path byte-for-byte.
 	Router *usersandbox.SandboxRouter
+	// Assets, when set, ingests the delivered file into the identity's owned object store so the
+	// aura.artifact descriptor gains asset_id + mime_type (WEBART-01/D-01). It is wired at serve
+	// boot over the live *assets.Service (VERIF-7 post-construction, mirroring ShellPoll/ShellKill.
+	// Caps); nil on the static/manifest/CLI registry paths ⇒ the descriptor degrades to path-only
+	// (D-02). The ingest is best-effort: any miss keeps the path-only descriptor and never errors
+	// the turn.
+	Assets AssetDeliverer
 }
 
 // maxSendFileBytes is the upload ceiling enforced before a descriptor is emitted
@@ -113,14 +120,25 @@ func (s *SendFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	if !ok {
 		return outsideWorkspaceResult(resolved, s.WorkspaceRoot), nil
 	}
-	return emitDelivery(resolved, a.Caption), nil
+	return s.emitDelivery(ctx, resolved, a.Caption), nil
 }
 
 // emitDelivery is the shared delivery tail (host path AND the routed staged copy): it stats the
 // (already workspace-fenced) file, gates the size, and emits the channel-agnostic artifact
 // descriptor. A too-large or unreadable path returns an inline {error,message} the model
 // self-corrects on, NEVER a Go error / artifact Meta.
-func emitDelivery(path, caption string) ToolResult {
+//
+// The descriptor ALWAYS carries tool_call_id (whenever a tool-call context is present) and
+// size_bytes (the stat size) — both known BEFORE the ingest, so they ride on ingest SUCCESS and
+// on DEGRADE exactly like path: tool_call_id is the web reducer's correlation key (37A-04's
+// isArtifactDescriptor requires it to attach ANY card, so omitting it on degrade would make D-02's
+// "delivery unavailable" render-only card unreachable), size_bytes shows the file's size on that
+// card. asset_id + mime_type are the only genuinely ingest-derived keys — added ONLY when the
+// best-effort ingest succeeds; any miss (nil Assets, unscoped identity, empty thread id, ingest
+// error) leaves them off and the descriptor stays {path,filename,caption,tool_call_id,size_bytes}
+// (D-02 best-effort degrade — the turn never errors). A path-consuming channel reads only path and
+// ignores the extra keys, so it stays byte-for-byte unregressed.
+func (s *SendFile) emitDelivery(ctx context.Context, path, caption string) ToolResult {
 	info, err := os.Stat(path)
 	if err != nil {
 		return errorResult("file_unreadable", fmt.Sprintf("cannot read %q: %v", path, err))
@@ -128,18 +146,30 @@ func emitDelivery(path, caption string) ToolResult {
 	if info.IsDir() {
 		return errorResult("file_unreadable", fmt.Sprintf("%q is a directory, not a file", path))
 	}
-	if info.Size() > maxSendFileBytes {
+	size := info.Size()
+	if size > maxSendFileBytes {
 		return errorResult("file_too_large", fmt.Sprintf(
 			"%q is %d bytes; the upload limit is %d bytes (50 MB). Deliver a smaller file or a link instead",
-			path, info.Size(), int64(maxSendFileBytes)))
+			path, size, int64(maxSendFileBytes)))
 	}
+	filename := filepath.Base(path)
 	descriptor := map[string]any{
 		"path":     path,
-		"filename": filepath.Base(path),
+		"filename": filename,
 		"caption":  asciiCaption(caption),
 	}
+	// Always-present correlation key + stat size (success AND degrade), like path (Landmine 5 / D-02).
+	if tcid := ToolCallIDFromContext(ctx); tcid != "" {
+		descriptor["tool_call_id"] = tcid
+	}
+	descriptor["size_bytes"] = size
+	// Best-effort ingest (D-01): the ingest-derived keys ride ONLY on success; any miss degrades silently.
+	if assetID, mimeType, ok := ingestForDelivery(ctx, s.Assets, path, filename, size); ok {
+		descriptor["asset_id"] = assetID
+		descriptor["mime_type"] = mimeType
+	}
 	meta := ToolResultMeta{"artifact": descriptor}
-	preview := fmt.Sprintf("queued %s for delivery", filepath.Base(path))
+	preview := fmt.Sprintf("queued %s for delivery", filename)
 	return ToolResult{
 		Preview: preview,
 		Bytes:   len(preview),
