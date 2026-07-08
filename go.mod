@@ -41,6 +41,7 @@ require (
 	gopkg.in/telebot.v4 v4.0.0-beta.9
 	pgregory.net/rapid v1.3.0
 	rsc.io/qr v0.2.0
+	github.com/containerd/errdefs v1.0.0
 )
 
 require (
@@ -79,7 +80,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
