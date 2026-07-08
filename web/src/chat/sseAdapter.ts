@@ -469,6 +469,12 @@ export interface StreamRunOptions {
   readonly attachmentIds?: readonly string[];
   /** Called after each frame folds into the turn (drives setMessages). */
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
+  /**
+   * 37B seam (mirrors onUsage): fires from the streamSSE pump when an
+   * `aura.artifact` descriptor frame is seen, carrying its `asset_id` (undefined
+   * when the delivery degraded). Drives the Artefatti panel's invalidate + auto-open.
+   */
+  readonly onArtifact?: (assetId: string | undefined) => void;
   /** Mints the assistant message id; defaults to crypto.randomUUID. */
   readonly newId?: () => string;
 }
@@ -480,6 +486,8 @@ export interface StreamPostOptions {
   readonly body?: unknown;
   readonly signal: AbortSignal;
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
+  /** 37B seam (mirrors onUsage): fires on an `aura.artifact` descriptor frame. */
+  readonly onArtifact?: (assetId: string | undefined) => void;
   readonly newId?: () => string;
 }
 
@@ -491,6 +499,7 @@ const SSE_REQUEST_HEADERS: HeadersInit = {
 interface StreamSSEOptions {
   readonly request: (assistantId: string) => readonly [string, RequestInit];
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
+  readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   readonly newId?: (() => string) | undefined;
 }
 
@@ -511,6 +520,16 @@ async function streamSSE(opts: StreamSSEOptions): Promise<TurnUsage | undefined>
 
   for await (const frame of readSSEFrames(res.body)) {
     reduceFrame(state, frame);
+    // onArtifact is a PUMP-level signal, NEVER emitted from the pure reduceFrame
+    // (Pitfall/T-37B-15): fire it here when the descriptor frame lands, passing the
+    // asset_id (undefined on a degraded delivery — the panel still auto-opens).
+    if (
+      frame.type === 'CUSTOM' &&
+      frame.name === 'aura.artifact' &&
+      isArtifactDescriptor(frame.value)
+    ) {
+      opts.onArtifact?.(frame.value.asset_id);
+    }
     opts.onUpdate(toThreadMessage(state), state.usage);
   }
   return state.usage;
@@ -526,6 +545,7 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
   return streamSSE({
     newId: opts.newId,
     onUpdate: opts.onUpdate,
+    onArtifact: opts.onArtifact,
     request: () => [
       opts.url,
       {
@@ -549,6 +569,7 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
   return streamSSE({
     newId: opts.newId,
     onUpdate: opts.onUpdate,
+    onArtifact: opts.onArtifact,
     request: (id) => [
       '/agent/run',
       {
