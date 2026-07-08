@@ -1,10 +1,22 @@
+// HttpError carries the HTTP status so callers can branch on it (e.g. a 409 same-password reset)
+// without string-parsing the message. It stays an Error subclass, so existing generic catches work.
+export class HttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`HTTP ${String(status)}`);
+    this.name = 'HttpError';
+    this.status = status;
+  }
+}
+
 export async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
+    throw new HttpError(res.status);
   }
   return (await res.json()) as T;
 }
@@ -17,7 +29,7 @@ export async function postJSON<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
+    throw new HttpError(res.status);
   }
   return (await res.json()) as T;
 }

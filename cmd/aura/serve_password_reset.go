@@ -75,6 +75,31 @@ func (a recoveryStoreAdapter) StartChallenge(ctx context.Context, challenge agui
 	return err
 }
 
+func (a recoveryStoreAdapter) PeekChallenge(ctx context.Context, identityID, code string) error {
+	if a.pool == nil {
+		return errors.New("password reset store unavailable")
+	}
+	id, err := parsePasswordResetIdentityID(identityID)
+	if err != nil {
+		return agui.ErrPasswordResetDenied
+	}
+	q := sqlc.New(a.pool)
+	challenge, err := q.GetActivePasswordResetChallenge(ctx, pgtype.UUID{Bytes: id, Valid: true})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return agui.ErrPasswordResetDenied
+		}
+		return err
+	}
+	if !agui.VerifyOpaqueSecret(code, challenge.CodeHash) {
+		if err := q.IncrementPasswordResetChallengeAttempts(ctx, challenge.ID); err != nil {
+			return err
+		}
+		return agui.ErrPasswordResetDenied
+	}
+	return nil
+}
+
 func (a recoveryStoreAdapter) VerifyChallenge(ctx context.Context, identityID, code string) (string, error) {
 	if a.pool == nil {
 		return "", errors.New("password reset store unavailable")
@@ -413,6 +438,9 @@ func (r authulaPasswordResetter) SetPassword(ctx context.Context, identityID, pa
 	account, err := r.core.AccountService.GetByUserIDAndProvider(ctx, authulaUserID, authulamodels.AuthProviderEmail.String())
 	if err != nil || account == nil {
 		return errors.New("password reset backend unavailable")
+	}
+	if account.Password != nil && r.core.PasswordService.Verify(password, *account.Password) {
+		return agui.ErrPasswordResetSamePassword
 	}
 	hash, err := r.core.PasswordService.Hash(password)
 	if err != nil {

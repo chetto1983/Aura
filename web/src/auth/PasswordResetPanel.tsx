@@ -1,21 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
-import { completePasswordReset, startPasswordReset, verifyPasswordReset } from './passwordResetApi';
+import { HttpError } from '../api/json';
+import {
+  completePasswordReset,
+  fetchPasswordResetQuestion,
+  startPasswordReset,
+  verifyPasswordReset,
+} from './passwordResetApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SecretInput } from '@/components/ui/secret-input';
 
-type ResetStep = 'start' | 'verify' | 'complete' | 'done';
+type ResetStep = 'start' | 'code' | 'answer' | 'complete' | 'done';
 type SubmitState = 'idle' | 'submitting';
 type ResetErrorKey =
   | 'login.reset.errors.generic'
   | 'login.reset.errors.emailRequired'
-  | 'login.reset.errors.verifyRequired'
+  | 'login.reset.errors.codeRequired'
+  | 'login.reset.errors.answerRequired'
   | 'login.reset.errors.passwordRequired'
-  | 'login.reset.errors.passwordMismatch';
+  | 'login.reset.errors.passwordMismatch'
+  | 'login.reset.errors.samePassword';
 type ResetNoticeKey = 'login.reset.noticeCodeSent' | null;
 
 interface PasswordResetPanelProps {
@@ -28,6 +36,7 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
   const [state, setState] = useState<SubmitState>('idle');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,11 +45,13 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
   const [notice, setNotice] = useState<ResetNoticeKey>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const answerRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (step === 'start') emailRef.current?.focus();
-    if (step === 'verify') codeRef.current?.focus();
+    if (step === 'code') codeRef.current?.focus();
+    if (step === 'answer') answerRef.current?.focus();
     if (step === 'complete') passwordRef.current?.focus();
   }, [step]);
 
@@ -57,7 +68,7 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
       await startPasswordReset({ email: normalizedEmail });
       setEmail(normalizedEmail);
       setNotice('login.reset.noticeCodeSent');
-      setStep('verify');
+      setStep('code');
     } catch {
       setError('login.reset.errors.generic');
       emailRef.current?.focus();
@@ -66,33 +77,53 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
     }
   }
 
-  async function submitVerify() {
+  async function submitCode() {
     const normalizedCode = code.trim();
-    const normalizedAnswer = answer.trim();
-    if (normalizedCode === '' || normalizedAnswer === '') {
-      setError('login.reset.errors.verifyRequired');
-      if (normalizedCode === '') {
-        codeRef.current?.focus();
-      }
+    if (normalizedCode === '') {
+      setError('login.reset.errors.codeRequired');
+      codeRef.current?.focus();
       return;
     }
     setError(null);
     setState('submitting');
     try {
-      const res = await verifyPasswordReset({
-        email,
-        code: normalizedCode,
-        answer: normalizedAnswer,
-      });
+      // The question is revealed only after the backend accepts a live Telegram code, so the
+      // browser never learns it (or that the account exists) without proving code possession.
+      const res = await fetchPasswordResetQuestion({ email, code: normalizedCode });
+      if (res.question.trim() === '') {
+        throw new Error('empty security question');
+      }
+      setCode(normalizedCode);
+      setQuestion(res.question);
+      setStep('answer');
+      setNotice(null);
+    } catch {
+      setError('login.reset.errors.generic');
+      codeRef.current?.focus();
+    } finally {
+      setState('idle');
+    }
+  }
+
+  async function submitAnswer() {
+    const normalizedAnswer = answer.trim();
+    if (normalizedAnswer === '') {
+      setError('login.reset.errors.answerRequired');
+      answerRef.current?.focus();
+      return;
+    }
+    setError(null);
+    setState('submitting');
+    try {
+      const res = await verifyPasswordReset({ email, code, answer: normalizedAnswer });
       if (res.resetToken.trim() === '') {
         throw new Error('empty reset token');
       }
       setResetToken(res.resetToken);
       setStep('complete');
-      setNotice(null);
     } catch {
       setError('login.reset.errors.generic');
-      codeRef.current?.focus();
+      answerRef.current?.focus();
     } finally {
       setState('idle');
     }
@@ -115,8 +146,14 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
       setStep('done');
       setPassword('');
       setConfirmPassword('');
-    } catch {
-      setError('login.reset.errors.generic');
+    } catch (err) {
+      // A 409 means the new password equals the current one; the reset token stays valid so the
+      // user can retry with a different password without restarting the Telegram challenge.
+      setError(
+        err instanceof HttpError && err.status === 409
+          ? 'login.reset.errors.samePassword'
+          : 'login.reset.errors.generic',
+      );
       passwordRef.current?.focus();
     } finally {
       setState('idle');
@@ -126,7 +163,8 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
   function submit(event: { preventDefault: () => void }) {
     event.preventDefault();
     if (step === 'start') void submitStart();
-    if (step === 'verify') void submitVerify();
+    if (step === 'code') void submitCode();
+    if (step === 'answer') void submitAnswer();
     if (step === 'complete') void submitComplete();
   }
 
@@ -149,22 +187,28 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
   const formLabel =
     step === 'start'
       ? t('login.reset.startForm')
-      : step === 'verify'
-        ? t('login.reset.verifyForm')
-        : t('login.reset.completeForm');
+      : step === 'code'
+        ? t('login.reset.codeForm')
+        : step === 'answer'
+          ? t('login.reset.answerForm')
+          : t('login.reset.completeForm');
 
   const cta =
     step === 'start'
       ? submitting
         ? t('login.reset.startInFlight')
         : t('login.reset.startCta')
-      : step === 'verify'
+      : step === 'code'
         ? submitting
-          ? t('login.reset.verifyInFlight')
-          : t('login.reset.verifyCta')
-        : submitting
-          ? t('login.reset.completeInFlight')
-          : t('login.reset.completeCta');
+          ? t('login.reset.codeInFlight')
+          : t('login.reset.codeCta')
+        : step === 'answer'
+          ? submitting
+            ? t('login.reset.answerInFlight')
+            : t('login.reset.answerCta')
+          : submitting
+            ? t('login.reset.completeInFlight')
+            : t('login.reset.completeCta');
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="password-reset-title">
@@ -209,28 +253,38 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
           </div>
         ) : null}
 
-        {step === 'verify' ? (
-          <>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="reset-code">{t('login.reset.codeLabel')}</Label>
-              <Input
-                ref={codeRef}
-                id="reset-code"
-                name="code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                value={code}
-                onChange={(event) => {
-                  setCode(event.target.value);
-                }}
-                aria-invalid={ariaInvalid(error !== null)}
-                className="min-h-[var(--row-h)] bg-surface-2 text-sm"
-              />
+        {step === 'code' ? (
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="reset-code">{t('login.reset.codeLabel')}</Label>
+            <Input
+              ref={codeRef}
+              id="reset-code"
+              name="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+              }}
+              aria-invalid={ariaInvalid(error !== null)}
+              className="min-h-[var(--row-h)] bg-surface-2 text-sm"
+            />
+          </div>
+        ) : null}
+
+        {step === 'answer' ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1 rounded-md border border-border bg-surface-2 p-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                {t('login.reset.questionLabel')}
+              </span>
+              <p className="text-sm text-text">{question}</p>
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="reset-answer">{t('login.reset.answerLabel')}</Label>
               <SecretInput
+                ref={answerRef}
                 id="reset-answer"
                 name="answer"
                 autoComplete="off"
@@ -244,7 +298,7 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
                 className="min-h-[var(--row-h)] bg-surface-2 text-sm"
               />
             </div>
-          </>
+          </div>
         ) : null}
 
         {step === 'complete' ? (
@@ -264,7 +318,8 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
                 hideLabel={t('secret.hide', { label: t('login.reset.newPasswordLabel') })}
                 aria-invalid={ariaInvalid(
                   error === 'login.reset.errors.passwordRequired' ||
-                    error === 'login.reset.errors.passwordMismatch',
+                    error === 'login.reset.errors.passwordMismatch' ||
+                    error === 'login.reset.errors.samePassword',
                 )}
                 className="min-h-[var(--row-h)] bg-surface-2 text-sm"
               />
@@ -285,7 +340,8 @@ export function PasswordResetPanel({ onCancel }: PasswordResetPanelProps) {
                 hideLabel={t('secret.hide', { label: t('login.reset.confirmPasswordLabel') })}
                 aria-invalid={ariaInvalid(
                   error === 'login.reset.errors.passwordRequired' ||
-                    error === 'login.reset.errors.passwordMismatch',
+                    error === 'login.reset.errors.passwordMismatch' ||
+                    error === 'login.reset.errors.samePassword',
                 )}
                 className="min-h-[var(--row-h)] bg-surface-2 text-sm"
               />

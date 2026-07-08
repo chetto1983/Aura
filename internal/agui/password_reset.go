@@ -15,9 +15,13 @@ const passwordResetChallengeTTL = 10 * time.Minute
 
 var (
 	// ErrPasswordResetDenied is returned for invalid or unauthorized reset attempts.
-	ErrPasswordResetDenied      = errors.New("password reset denied")
-	errPasswordResetInvalid     = errors.New("password reset invalid request")
-	errPasswordResetUnavailable = errors.New("password reset unavailable")
+	ErrPasswordResetDenied = errors.New("password reset denied")
+	// ErrPasswordResetSamePassword is returned when the new password equals the current one,
+	// so the caller can tell the user to choose a different password (non-sensitive: the user
+	// already knows the password they just typed).
+	ErrPasswordResetSamePassword = errors.New("password reset new password matches current")
+	errPasswordResetInvalid      = errors.New("password reset invalid request")
+	errPasswordResetUnavailable  = errors.New("password reset unavailable")
 )
 
 // RecoveryRecord is the private recovery profile needed to start or verify a reset.
@@ -56,6 +60,11 @@ type PasswordResetStore interface {
 	// Telegram link to ErrPasswordResetDenied so callers cannot enumerate accounts.
 	LookupByEmail(ctx context.Context, email string) (RecoveryRecord, error)
 	StartChallenge(ctx context.Context, challenge PasswordResetChallenge) error
+	// PeekChallenge validates that code matches the identity's live challenge WITHOUT
+	// consuming it, so the security question can be revealed only after the caller proves
+	// Telegram-code possession. Adapters must map not-found / mismatch / expired /
+	// over-attempt to ErrPasswordResetDenied and rate-limit wrong codes.
+	PeekChallenge(ctx context.Context, identityID, code string) error
 	VerifyChallenge(ctx context.Context, identityID, code string) (string, error)
 	ClaimResetTokenHash(ctx context.Context, tokenHash string) (ResetTokenClaim, error)
 	ResolveResetTokenHash(ctx context.Context, tokenHash string) (string, error)
@@ -123,6 +132,19 @@ type PasswordResetVerifyResponse struct {
 	ResetToken string `json:"resetToken"`
 }
 
+// PasswordResetQuestionRequest reveals the security question after proving code possession.
+type PasswordResetQuestionRequest struct {
+	Email     string `json:"email"`
+	Code      string `json:"code"`
+	RequestIP string `json:"-"`
+	UserAgent string `json:"-"`
+}
+
+// PasswordResetQuestionResponse returns the security question once the code is proven.
+type PasswordResetQuestionResponse struct {
+	Question string `json:"question"`
+}
+
 // PasswordResetCompleteRequest applies a new password with a verified reset token.
 type PasswordResetCompleteRequest struct {
 	ResetToken string `json:"resetToken"`
@@ -158,13 +180,13 @@ func (s *PasswordResetService) Start(ctx context.Context, in PasswordResetStartR
 	}
 	email := strings.TrimSpace(in.Email)
 	if email == "" {
-		_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", RecoveryRecord{}, email, in, s.now()))
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_start_denied", RecoveryRecord{}, email, in.RequestIP, in.UserAgent, s.now()))
 		return ok, nil
 	}
 
 	record, err := s.store.LookupByEmail(ctx, email)
 	if err != nil || !record.canRecover() {
-		_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", RecoveryRecord{}, email, in, s.now()))
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_start_denied", RecoveryRecord{}, email, in.RequestIP, in.UserAgent, s.now()))
 		if err == nil || errors.Is(err, ErrPasswordResetDenied) {
 			return ok, nil
 		}
@@ -187,19 +209,19 @@ func (s *PasswordResetService) Start(ctx context.Context, in PasswordResetStartR
 		UserAgentHash: hashRequestValue(in.UserAgent),
 	}); err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
-			_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", record, email, in, s.now()))
+			_ = s.recordEvent(ctx, recoveryAuditEvent("reset_start_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 			return ok, nil
 		}
 		return ok, errPasswordResetUnavailable
 	}
 	if err := s.messenger.SendRecoveryCode(ctx, record.IdentityID, code); err != nil {
-		_ = s.recordEvent(ctx, passwordResetEvent("reset_start_denied", record, email, in, s.now()))
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_start_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 		return ok, nil
 	}
 	// Public start responses stay neutral even if the append-only audit sink is
 	// temporarily unavailable; backend observability can be added here without
 	// changing the user-visible flow.
-	_ = s.recordEvent(ctx, passwordResetEvent("reset_start", record, email, in, s.now()))
+	_ = s.recordEvent(ctx, recoveryAuditEvent("reset_start", record, email, in.RequestIP, in.UserAgent, s.now()))
 	return ok, nil
 }
 
@@ -212,43 +234,74 @@ func (s *PasswordResetService) Verify(ctx context.Context, in PasswordResetVerif
 	record, err := s.store.LookupByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
-			_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", RecoveryRecord{}, email, in, s.now()))
+			_ = s.recordEvent(ctx, recoveryAuditEvent("reset_verify_denied", RecoveryRecord{}, email, in.RequestIP, in.UserAgent, s.now()))
 			return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 		}
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
 	if !record.canRecover() {
-		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_verify_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 	}
 	if record.AnswerHashVersion != recoveryAnswerHashVersion ||
 		!(RecoveryHasher{}).VerifyAnswer(in.Answer, record.AnswerHash) {
 		if err := s.store.RecordChallengeAttempt(ctx, record.IdentityID); err != nil {
 			if errors.Is(err, ErrPasswordResetDenied) {
-				_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+				_ = s.recordEvent(ctx, recoveryAuditEvent("reset_verify_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 				return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 			}
 			return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 		}
-		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_verify_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 	}
 	token, err := s.store.VerifyChallenge(ctx, record.IdentityID, in.Code)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
-			_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+			_ = s.recordEvent(ctx, recoveryAuditEvent("reset_verify_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 			return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 		}
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
 	if token == "" {
-		_ = s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify_denied", record, email, in, s.now()))
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_verify_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
 		return PasswordResetVerifyResponse{}, ErrPasswordResetDenied
 	}
-	if err := s.recordEvent(ctx, passwordResetVerifyEvent("reset_verify", record, email, in, s.now())); err != nil {
+	if err := s.recordEvent(ctx, recoveryAuditEvent("reset_verify", record, email, in.RequestIP, in.UserAgent, s.now())); err != nil {
 		return PasswordResetVerifyResponse{}, errPasswordResetUnavailable
 	}
 	return PasswordResetVerifyResponse{ResetToken: token}, nil
+}
+
+// Question reveals the security question only after the caller proves possession of a live
+// Telegram code, so the browser never learns the question (or that an account exists) without
+// it. All failure paths return the neutral ErrPasswordResetDenied.
+func (s *PasswordResetService) Question(ctx context.Context, in PasswordResetQuestionRequest) (PasswordResetQuestionResponse, error) {
+	if !s.readyForVerify() {
+		return PasswordResetQuestionResponse{}, errPasswordResetUnavailable
+	}
+	email := strings.TrimSpace(in.Email)
+	record, err := s.store.LookupByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, ErrPasswordResetDenied) {
+			_ = s.recordEvent(ctx, recoveryAuditEvent("reset_question_denied", RecoveryRecord{}, email, in.RequestIP, in.UserAgent, s.now()))
+			return PasswordResetQuestionResponse{}, ErrPasswordResetDenied
+		}
+		return PasswordResetQuestionResponse{}, errPasswordResetUnavailable
+	}
+	if !record.canRecover() || record.Question == "" {
+		_ = s.recordEvent(ctx, recoveryAuditEvent("reset_question_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
+		return PasswordResetQuestionResponse{}, ErrPasswordResetDenied
+	}
+	if err := s.store.PeekChallenge(ctx, record.IdentityID, in.Code); err != nil {
+		if errors.Is(err, ErrPasswordResetDenied) {
+			_ = s.recordEvent(ctx, recoveryAuditEvent("reset_question_denied", record, email, in.RequestIP, in.UserAgent, s.now()))
+			return PasswordResetQuestionResponse{}, ErrPasswordResetDenied
+		}
+		return PasswordResetQuestionResponse{}, errPasswordResetUnavailable
+	}
+	_ = s.recordEvent(ctx, recoveryAuditEvent("reset_question", record, email, in.RequestIP, in.UserAgent, s.now()))
+	return PasswordResetQuestionResponse{Question: record.Question}, nil
 }
 
 // Complete consumes a reset token and updates the Authula password.
@@ -279,7 +332,12 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
 	if err := s.resetter.SetPassword(ctx, identityID, in.Password); err != nil {
+		// Release (not consume) so the user can retry with a different password on the same
+		// reset token instead of restarting the whole Telegram challenge.
 		_ = claim.Release(ctx)
+		if errors.Is(err, ErrPasswordResetSamePassword) {
+			return PasswordResetCompleteResponse{}, ErrPasswordResetSamePassword
+		}
 		return PasswordResetCompleteResponse{}, errPasswordResetUnavailable
 	}
 	consumedIdentityID, err := claim.Consume(ctx)
@@ -335,24 +393,13 @@ func (r RecoveryRecord) canRecover() bool {
 	return r.IdentityID != "" && r.AnswerHash != "" && r.TelegramUserID != 0
 }
 
-func passwordResetEvent(event string, record RecoveryRecord, email string, in PasswordResetStartRequest, at time.Time) RecoveryEvent {
+func recoveryAuditEvent(event string, record RecoveryRecord, email, requestIP, userAgent string, at time.Time) RecoveryEvent {
 	return RecoveryEvent{
 		Event:         event,
 		IdentityID:    record.IdentityID,
 		EmailHash:     hashRequestValue(email),
-		RequestIPHash: hashRequestValue(in.RequestIP),
-		UserAgentHash: hashRequestValue(in.UserAgent),
-		At:            at,
-	}
-}
-
-func passwordResetVerifyEvent(event string, record RecoveryRecord, email string, in PasswordResetVerifyRequest, at time.Time) RecoveryEvent {
-	return RecoveryEvent{
-		Event:         event,
-		IdentityID:    record.IdentityID,
-		EmailHash:     hashRequestValue(email),
-		RequestIPHash: hashRequestValue(in.RequestIP),
-		UserAgentHash: hashRequestValue(in.UserAgent),
+		RequestIPHash: hashRequestValue(requestIP),
+		UserAgentHash: hashRequestValue(userAgent),
 		At:            at,
 	}
 }

@@ -14,6 +14,15 @@ export interface PasswordResetVerifyResponse {
   readonly resetToken: string;
 }
 
+export interface PasswordResetQuestionRequest {
+  readonly email: string;
+  readonly code: string;
+}
+
+export interface PasswordResetQuestionResponse {
+  readonly question: string;
+}
+
 export interface PasswordResetCompleteRequest {
   readonly resetToken: string;
   readonly password: string;
@@ -27,6 +36,12 @@ export function startPasswordReset(
   req: PasswordResetStartRequest,
 ): Promise<PasswordResetStatusResponse> {
   return postJSON<PasswordResetStatusResponse>('/api/auth/password-reset/start', req);
+}
+
+export function fetchPasswordResetQuestion(
+  req: PasswordResetQuestionRequest,
+): Promise<PasswordResetQuestionResponse> {
+  return postJSON<PasswordResetQuestionResponse>('/api/auth/password-reset/question', req);
 }
 
 export function verifyPasswordReset(

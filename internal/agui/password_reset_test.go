@@ -354,6 +354,9 @@ type fakePasswordResetStore struct {
 	lookupEmail         string
 	lookupErr           error
 	challenge           PasswordResetChallenge
+	peekedIdentity      string
+	peekedCode          string
+	peekErr             error
 	verifiedIdentity    string
 	verifiedCode        string
 	verifyErr           error
@@ -383,6 +386,12 @@ func (f *fakePasswordResetStore) LookupByEmail(_ context.Context, email string) 
 func (f *fakePasswordResetStore) StartChallenge(_ context.Context, challenge PasswordResetChallenge) error {
 	f.challenge = challenge
 	return f.startErr
+}
+
+func (f *fakePasswordResetStore) PeekChallenge(_ context.Context, identityID, code string) error {
+	f.peekedIdentity = identityID
+	f.peekedCode = code
+	return f.peekErr
 }
 
 func (f *fakePasswordResetStore) VerifyChallenge(_ context.Context, identityID, code string) (string, error) {

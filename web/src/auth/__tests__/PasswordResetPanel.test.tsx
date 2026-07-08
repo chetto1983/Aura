@@ -23,6 +23,31 @@ function requireRequestBody(opts: RequestInit): string {
   return opts.body;
 }
 
+// Walks start → code → answer, leaving the panel on the answer step with the question revealed.
+async function advanceToAnswerStep() {
+  fireEvent.change(screen.getByLabelText('Operator email'), {
+    target: { value: 'operator@example.com' },
+  });
+  fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
+
+  fireEvent.change(await screen.findByLabelText('Telegram code'), {
+    target: { value: '123456' },
+  });
+  fireEvent.submit(screen.getByRole('form', { name: 'Enter recovery code' }));
+
+  await screen.findByLabelText('Security answer');
+}
+
+// Walks the full flow up to the set-new-password step.
+async function advanceToCompleteStep() {
+  await advanceToAnswerStep();
+  fireEvent.change(screen.getByLabelText('Security answer'), {
+    target: { value: 'blue bicycle' },
+  });
+  fireEvent.submit(screen.getByRole('form', { name: 'Answer your security question' }));
+  await screen.findByLabelText('New password');
+}
+
 describe('PasswordResetPanel', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
@@ -66,29 +91,42 @@ describe('PasswordResetPanel', () => {
     expect(JSON.parse(requireRequestBody(opts))).toEqual({ email: 'operator@example.com' });
   });
 
-  it('verifies the Telegram code plus security answer before asking for a new password', async () => {
+  it('reveals the security question only after the Telegram code is accepted', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ question: 'Favorite bike?' }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel();
+
+    await advanceToAnswerStep();
+
+    expect(screen.getByText('Favorite bike?')).toBeTruthy();
+    const [url, opts] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/auth/password-reset/question');
+    expect(JSON.parse(requireRequestBody(opts))).toEqual({
+      email: 'operator@example.com',
+      code: '123456',
+    });
+  });
+
+  it('verifies the security answer before asking for a new password', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ question: 'Favorite bike?' }))
       .mockResolvedValueOnce(jsonResponse({ resetToken: 'reset-token-1' }));
     vi.stubGlobal('fetch', fetchMock);
     renderPanel();
 
-    fireEvent.change(screen.getByLabelText('Operator email'), {
-      target: { value: 'operator@example.com' },
-    });
-    fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
-
-    fireEvent.change(await screen.findByLabelText('Telegram code'), {
-      target: { value: '123456' },
-    });
+    await advanceToAnswerStep();
     fireEvent.change(screen.getByLabelText('Security answer'), {
       target: { value: 'blue bicycle' },
     });
-    fireEvent.submit(screen.getByRole('form', { name: 'Verify recovery code' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Answer your security question' }));
 
     expect(await screen.findByLabelText('New password')).toBeTruthy();
-    const [url, opts] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    const [url, opts] = fetchMock.mock.calls[2] as unknown as [string, RequestInit];
     expect(url).toBe('/api/auth/password-reset/verify');
     expect(JSON.parse(requireRequestBody(opts))).toEqual({
       email: 'operator@example.com',
@@ -101,25 +139,19 @@ describe('PasswordResetPanel', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ question: 'Favorite bike?' }))
       .mockResolvedValueOnce(jsonResponse({ resetToken: 'reset-token-1' }));
     vi.stubGlobal('fetch', fetchMock);
     renderPanel();
 
-    fireEvent.change(screen.getByLabelText('Operator email'), {
-      target: { value: 'operator@example.com' },
-    });
-    fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
-
-    const answer = await screen.findByLabelText('Security answer');
+    await advanceToAnswerStep();
+    const answer = screen.getByLabelText('Security answer');
     expect(answer.getAttribute('type')).toBe('password');
     fireEvent.click(screen.getByRole('button', { name: 'Show Security answer' }));
     expect(answer.getAttribute('type')).toBe('text');
 
-    fireEvent.change(screen.getByLabelText('Telegram code'), {
-      target: { value: '123456' },
-    });
     fireEvent.change(answer, { target: { value: 'blue bicycle' } });
-    fireEvent.submit(screen.getByRole('form', { name: 'Verify recovery code' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Answer your security question' }));
 
     const newPassword = await screen.findByLabelText('New password');
     const confirmPassword = screen.getByLabelText('Confirm new password');
@@ -137,23 +169,13 @@ describe('PasswordResetPanel', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ question: 'Favorite bike?' }))
       .mockResolvedValueOnce(jsonResponse({ resetToken: 'reset-token-1' }));
     vi.stubGlobal('fetch', fetchMock);
     renderPanel();
 
-    fireEvent.change(screen.getByLabelText('Operator email'), {
-      target: { value: 'operator@example.com' },
-    });
-    fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
-    fireEvent.change(await screen.findByLabelText('Telegram code'), {
-      target: { value: '123456' },
-    });
-    fireEvent.change(screen.getByLabelText('Security answer'), {
-      target: { value: 'blue bicycle' },
-    });
-    fireEvent.submit(screen.getByRole('form', { name: 'Verify recovery code' }));
-
-    fireEvent.change(await screen.findByLabelText('New password'), {
+    await advanceToCompleteStep();
+    fireEvent.change(screen.getByLabelText('New password'), {
       target: { value: 'correct-horse-battery' },
     });
     fireEvent.change(screen.getByLabelText('Confirm new password'), {
@@ -163,30 +185,46 @@ describe('PasswordResetPanel', () => {
 
     await screen.findByRole('alert');
     expect(screen.getByText('The passwords do not match.')).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('surfaces a specific message when the new password matches the current one', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ question: 'Favorite bike?' }))
+      .mockResolvedValueOnce(jsonResponse({ resetToken: 'reset-token-1' }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'same' }, 409));
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel();
+
+    await advanceToCompleteStep();
+    fireEvent.change(screen.getByLabelText('New password'), {
+      target: { value: 'same-as-current' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), {
+      target: { value: 'same-as-current' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Set new password' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByText('Choose a password different from your current one.')).toBeTruthy();
+    // The reset token stays valid: the panel remains on the set-password step for a retry.
+    expect(screen.getByLabelText('New password')).toBeTruthy();
   });
 
   it('completes the reset using the verified reset token', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ question: 'Favorite bike?' }))
       .mockResolvedValueOnce(jsonResponse({ resetToken: 'reset-token-1' }))
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }));
     vi.stubGlobal('fetch', fetchMock);
     renderPanel();
 
-    fireEvent.change(screen.getByLabelText('Operator email'), {
-      target: { value: 'operator@example.com' },
-    });
-    fireEvent.submit(screen.getByRole('form', { name: 'Request reset code' }));
-    fireEvent.change(await screen.findByLabelText('Telegram code'), {
-      target: { value: '123456' },
-    });
-    fireEvent.change(screen.getByLabelText('Security answer'), {
-      target: { value: 'blue bicycle' },
-    });
-    fireEvent.submit(screen.getByRole('form', { name: 'Verify recovery code' }));
-    fireEvent.change(await screen.findByLabelText('New password'), {
+    await advanceToCompleteStep();
+    fireEvent.change(screen.getByLabelText('New password'), {
       target: { value: 'correct-horse-battery' },
     });
     fireEvent.change(screen.getByLabelText('Confirm new password'), {
@@ -195,7 +233,7 @@ describe('PasswordResetPanel', () => {
     fireEvent.submit(screen.getByRole('form', { name: 'Set new password' }));
 
     expect(await screen.findByText('Password updated')).toBeTruthy();
-    const [url, opts] = fetchMock.mock.calls[2] as unknown as [string, RequestInit];
+    const [url, opts] = fetchMock.mock.calls[3] as unknown as [string, RequestInit];
     expect(url).toBe('/api/auth/password-reset/complete');
     expect(JSON.parse(requireRequestBody(opts))).toEqual({
       resetToken: 'reset-token-1',

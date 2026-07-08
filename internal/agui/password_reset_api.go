@@ -15,6 +15,7 @@ func (s *Server) SetPasswordResetService(service *PasswordResetService) {
 
 func (s *Server) registerPasswordResetRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/password-reset/start", s.handlePasswordResetStart)
+	mux.HandleFunc("POST /api/auth/password-reset/question", s.handlePasswordResetQuestion)
 	mux.HandleFunc("POST /api/auth/password-reset/verify", s.handlePasswordResetVerify)
 	mux.HandleFunc("POST /api/auth/password-reset/complete", s.handlePasswordResetComplete)
 }
@@ -35,6 +36,24 @@ func (s *Server) handlePasswordResetStart(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSONStatus(w, http.StatusAccepted, resp)
+}
+
+func (s *Server) handlePasswordResetQuestion(w http.ResponseWriter, r *http.Request) {
+	if s.passwordReset == nil {
+		http.Error(w, "password reset service not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req PasswordResetQuestionRequest
+	if !decodePasswordResetRequest(w, r, &req) {
+		return
+	}
+	stampPasswordResetRequest(r, &req.RequestIP, &req.UserAgent)
+	resp, err := s.passwordReset.Question(r.Context(), req)
+	if err != nil {
+		writePasswordResetError(w, err)
+		return
+	}
+	writeJSON(w, resp)
 }
 
 func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +108,8 @@ func stampPasswordResetRequest(r *http.Request, requestIP, userAgent *string) {
 
 func writePasswordResetError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrPasswordResetSamePassword):
+		http.Error(w, "password reset same password", http.StatusConflict)
 	case errors.Is(err, ErrPasswordResetDenied):
 		http.Error(w, "password reset denied", http.StatusForbidden)
 	case errors.Is(err, errPasswordResetInvalid):

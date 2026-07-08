@@ -32,6 +32,15 @@ func TestPasswordResetRoutes(t *testing.T) {
 		t.Fatalf("start body = %s, want status ok", startRaw)
 	}
 
+	questionBody := `{"email":"reset@example.com","code":"raw-code-123"}`
+	questionResp, questionRaw := postPasswordResetJSON(t, srv.URL+"/api/auth/password-reset/question", questionBody)
+	if questionResp.StatusCode != http.StatusOK {
+		t.Fatalf("question status = %d, want 200: %s", questionResp.StatusCode, questionRaw)
+	}
+	if !strings.Contains(questionRaw, store.record.Question) {
+		t.Fatalf("question body = %s, want the security question", questionRaw)
+	}
+
 	verifyBody := `{"email":"reset@example.com","code":"raw-code-123","answer":"Blue bicycle"}`
 	verifyResp, verifyRaw := postPasswordResetJSON(t, srv.URL+"/api/auth/password-reset/verify", verifyBody)
 	if verifyResp.StatusCode != http.StatusOK {
@@ -61,6 +70,30 @@ func TestPasswordResetRoutes(t *testing.T) {
 		if strings.Contains(allBodies, secret) {
 			t.Fatalf("password reset route leaked %q in response bodies: %s", secret, allBodies)
 		}
+	}
+}
+
+// TestPasswordResetCompleteSamePasswordRoute proves the same-password sentinel surfaces as a
+// distinguishable 409 (so the browser can show a specific message) without leaking the password.
+func TestPasswordResetCompleteSamePasswordRoute(t *testing.T) {
+	store := newFakePasswordResetStore(t)
+	svc := NewPasswordResetService(PasswordResetDeps{
+		Store:     store,
+		Messenger: &fakeRecoveryMessenger{},
+		Resetter:  &fakePasswordResetter{err: ErrPasswordResetSamePassword},
+	})
+	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
+	s.SetPasswordResetService(svc)
+	srv := httptest.NewServer(s.Mux())
+	t.Cleanup(srv.Close)
+
+	body := `{"resetToken":"` + store.resetToken + `","password":"same-as-current"}`
+	resp, raw := postPasswordResetJSON(t, srv.URL+"/api/auth/password-reset/complete", body)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("complete status = %d, want 409 for same password: %s", resp.StatusCode, raw)
+	}
+	if strings.Contains(raw, "same-as-current") {
+		t.Fatalf("409 body leaked the password: %s", raw)
 	}
 }
 
