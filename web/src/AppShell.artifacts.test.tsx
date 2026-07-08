@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './i18n/i18n';
 import { AppShell } from './AppShell';
@@ -18,8 +18,14 @@ import { AppShell } from './AppShell';
 // The heavy shell children are mocked to trivial stubs so the test isolates AppShell's
 // own mount/toggle/wiring logic (ArtifactsPanel itself is covered by plan 06).
 
+// Capture the props ExternalStoreChat receives so the onArtifact wiring is observable and can be
+// fired directly (as the SSE pump does in production).
+let lastChat: { threadId?: string; onArtifact?: (assetId?: string) => void } = {};
 vi.mock('./chat/ExternalStoreChat', () => ({
-  ExternalStoreChat: () => <div data-testid="chat-lane" />,
+  ExternalStoreChat: (props: { threadId: string; onArtifact?: (assetId?: string) => void }) => {
+    lastChat = props;
+    return <div data-testid="chat-lane" data-thread={props.threadId} />;
+  },
 }));
 vi.mock('./chat/artifacts/ArtifactsPanel', () => ({
   ArtifactsPanel: ({ threadId, onClose }: { threadId: string; onClose: () => void }) => (
@@ -71,11 +77,28 @@ function setViewport(isDesktop: boolean): void {
     }) as MediaQueryList;
 }
 
-function renderShell() {
+// A minimal in-router control so a test can drive a real thread change (routeId → activeThreadId)
+// and prove the one-time auto-open re-arms per thread.
+function NavHelper() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigate('/c/conv-2');
+      }}
+    >
+      go-conv-2
+    </button>
+  );
+}
+
+function renderShell(initial = '/c/conv-1') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/c/conv-1']}>
+      <MemoryRouter initialEntries={[initial]}>
+        <NavHelper />
         <Routes>
           <Route path="/c/:id" element={<AppShell />} />
           <Route path="*" element={<AppShell />} />
@@ -88,6 +111,7 @@ function renderShell() {
 
 beforeEach(() => {
   localStorage.clear();
+  lastChat = {};
 });
 
 afterEach(() => {
@@ -153,5 +177,54 @@ describe('AppShell — Artefatti panel mount (desktop ResizablePanel / mobile Dr
     expect(dialog.querySelector('[data-testid="artifacts-panel"]')).toBeTruthy();
     // Mobile must NOT mount the desktop ResizablePanel aside.
     expect(screen.queryByRole('complementary', { name: 'Artifacts' })).toBeNull();
+  });
+});
+
+describe('AppShell — onArtifact handler (invalidate + one-time auto-open, D-11)', () => {
+  it('is wired to ExternalStoreChat and invalidates ["assets", threadId] when fired', async () => {
+    setViewport(true);
+    const { client } = renderShell();
+    await screen.findByTestId('chat-lane');
+    expect(typeof lastChat.onArtifact).toBe('function');
+
+    const spy = vi.spyOn(client, 'invalidateQueries');
+    act(() => {
+      lastChat.onArtifact?.('asset-1');
+    });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['assets', 'conv-1'] });
+  });
+
+  it('auto-opens once per thread: no reopen after manual close, re-arms on thread change', async () => {
+    setViewport(true);
+    renderShell();
+    await screen.findByTestId('chat-lane');
+    expect(screen.queryByTestId('artifacts-panel')).toBeNull();
+
+    // First artifact in conv-1 auto-opens the panel exactly once.
+    act(() => {
+      lastChat.onArtifact?.();
+    });
+    expect(await screen.findByTestId('artifacts-panel')).toBeTruthy();
+
+    // The user closes it; a subsequent artifact in the SAME thread must NOT reopen it.
+    fireEvent.click(screen.getByText('panel-close'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('artifacts-panel')).toBeNull();
+    });
+    act(() => {
+      lastChat.onArtifact?.();
+    });
+    expect(screen.queryByTestId('artifacts-panel')).toBeNull();
+
+    // Switching threads re-arms the guard: conv-2's first artifact auto-opens again.
+    fireEvent.click(screen.getByText('go-conv-2'));
+    await waitFor(() => {
+      expect(lastChat.threadId).toBe('conv-2');
+    });
+    act(() => {
+      lastChat.onArtifact?.();
+    });
+    expect(await screen.findByTestId('artifacts-panel')).toBeTruthy();
   });
 });
