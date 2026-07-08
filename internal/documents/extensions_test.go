@@ -1,6 +1,29 @@
 package documents
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
+
+// TestSupportedDocumentExts proves the exported allowlist mirrors the internal source-of-truth
+// set exactly — the assertion the assets upload layer relies on to catch ingest/upload allowlist
+// drift (the bug that silently 400'd pptx/html uploads).
+func TestSupportedDocumentExts(t *testing.T) {
+	got := SupportedDocumentExts()
+	if len(got) != len(supportedDocumentExt) {
+		t.Fatalf("SupportedDocumentExts len = %d, want %d", len(got), len(supportedDocumentExt))
+	}
+	for _, ext := range got {
+		if _, ok := supportedDocumentExt[ext]; !ok {
+			t.Fatalf("SupportedDocumentExts returned %q, not in the source-of-truth set", ext)
+		}
+	}
+	for _, want := range []string{".pdf", ".docx", ".xlsx", ".pptx", ".html"} {
+		if !slices.Contains(got, want) {
+			t.Fatalf("SupportedDocumentExts missing %q", want)
+		}
+	}
+}
 
 func TestIsSupportedDocument(t *testing.T) {
 	cases := []struct {
