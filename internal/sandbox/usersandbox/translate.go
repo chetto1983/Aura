@@ -11,13 +11,19 @@ import (
 )
 
 // The box's sanctioned mount targets. The workspace volume + tmpfs scratch + the shared
-// uv warm-cache volume are the ONLY mounts toHostConfig builds; no host path (and so no
-// docker socket) can be mounted.
+// uv / npm / pip warm-cache volumes are the ONLY mounts toHostConfig builds; no host path
+// (and so no docker socket) can be mounted. The uv/npm/pip caches are SHARED across
+// identities (constant Source name) so per-identity boxes stop re-downloading packages every
+// turn; only the workspace volume is per-identity.
 const (
 	workspaceTarget = "/workspace"
 	scratchTarget   = "/workspace/.scratch"
 	uvCacheVolume   = "aura-uv-cache"
 	uvCacheTarget   = "/root/.cache/uv"
+	npmCacheVolume  = "aura-npm-cache"
+	npmCacheTarget  = "/root/.npm"
+	pipCacheVolume  = "aura-pip-cache"
+	pipCacheTarget  = "/root/.cache/pip"
 )
 
 // toHostConfig builds the moby container.HostConfig for a SandboxSpec, pinning every
@@ -30,8 +36,8 @@ const (
 //   - CapDrop     empty        keep default caps (D-12: the box is not a jail)
 //
 // Mounts is built only from the per-identity workspace volume, a tmpfs scratch, and the
-// shared uv warm-cache volume. The docker socket is a host path whose only mount vector is
-// a bind — which never appears here — so the socket is unrepresentable.
+// shared uv / npm / pip warm-cache volumes. The docker socket is a host path whose only
+// mount vector is a bind — which never appears here — so the socket is unrepresentable.
 func toHostConfig(s SandboxSpec) *container.HostConfig {
 	pids := s.Limits.PidsLimit
 	return &container.HostConfig{
@@ -45,6 +51,8 @@ func toHostConfig(s SandboxSpec) *container.HostConfig {
 			{Type: mount.TypeVolume, Source: s.WorkspaceVol, Target: workspaceTarget},
 			{Type: mount.TypeTmpfs, Target: scratchTarget},
 			{Type: mount.TypeVolume, Source: uvCacheVolume, Target: uvCacheTarget},
+			{Type: mount.TypeVolume, Source: npmCacheVolume, Target: npmCacheTarget},
+			{Type: mount.TypeVolume, Source: pipCacheVolume, Target: pipCacheTarget},
 		},
 		Resources: container.Resources{
 			NanoCPUs:  s.Limits.NanoCPUs,

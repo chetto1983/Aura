@@ -1,7 +1,7 @@
 // docker_backend_lifecycle.go implements the Backend E2B lifecycle verbs over moby: Resolve
 // (idempotent VolumeCreate + get-or-create container + transparent Resume + materialize),
 // Suspend (ContainerStop, volume retained), Resume (ContainerStart, same container/volume),
-// and Stop (ContainerRemove + per-identity VolumeRemove — never the shared uv-cache). The
+// and Stop (ContainerRemove + per-identity VolumeRemove — never the shared uv/npm/pip caches). The
 // box is created with AutoRemove:false (via toHostConfig) so a Suspend does not destroy it
 // (Pitfall 5).
 
@@ -16,8 +16,8 @@ import (
 )
 
 // Resolve is idempotent get-or-create for the identity's box: it ensures the per-identity
-// workspace volume and the shared uv warm-cache volume exist (VolumeCreate is idempotent by
-// name), then gets-or-creates the container named aura-box-<identityID>. An already-existing
+// workspace volume and the shared uv / npm / pip warm-cache volumes exist (VolumeCreate is
+// idempotent by name), then gets-or-creates the container named aura-box-<identityID>. An already-existing
 // Suspended box is transparently started (Resume, D-08) rather than re-created. After the box
 // is live it materializes the identity's skills / Agent.md / pyscripts into the workspace
 // volume (D-10) at BOTH create and resume; a materialize failure fails Resolve closed.
@@ -34,6 +34,12 @@ func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandl
 	}
 	if err := b.ensureVolume(ctx, uvCacheVolume); err != nil {
 		return BoxHandle{}, fmt.Errorf("resolve: ensure uv-cache volume: %w", err)
+	}
+	if err := b.ensureVolume(ctx, npmCacheVolume); err != nil {
+		return BoxHandle{}, fmt.Errorf("resolve: ensure npm-cache volume: %w", err)
+	}
+	if err := b.ensureVolume(ctx, pipCacheVolume); err != nil {
+		return BoxHandle{}, fmt.Errorf("resolve: ensure pip-cache volume: %w", err)
 	}
 
 	existing, err := b.findBox(ctx, name)
@@ -99,7 +105,8 @@ func (b *DockerBackend) Resume(ctx context.Context, h BoxHandle) error {
 
 // Stop destroys the box AND its per-identity volume (ShutdownPolicy:Delete, D-08) — only on
 // explicit deprovision. The egress sidecar is removed first (no orphan), then the box, then
-// the per-identity volume. The shared aura-uv-cache volume is deliberately left intact.
+// the per-identity volume. The shared aura-uv-cache / aura-npm-cache / aura-pip-cache volumes
+// are deliberately left intact.
 func (b *DockerBackend) Stop(ctx context.Context, h BoxHandle) error {
 	if err := b.teardownEgress(ctx, h.IdentityID); err != nil {
 		return fmt.Errorf("stop: remove egress sidecar: %w", err)

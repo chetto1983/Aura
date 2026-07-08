@@ -59,7 +59,7 @@ func containerExists(t *testing.T, cli *client.Client, id string) bool {
 
 // TestLifecycle_SuspendResumeDelete proves D-08: Suspend retains the box+volume, Resume
 // reuses the SAME container against the SAME volume (marker survives), and Stop(Delete)
-// removes the container AND the per-identity volume while the shared uv-cache survives.
+// removes the container AND the per-identity volume while the shared uv/npm/pip caches survive.
 func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	skipUnlessDockerd(t)
 	cli := newTestDockerClient(t)
@@ -90,6 +90,12 @@ func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	}
 	if !volumeExists(t, cli, uvCacheVolume) {
 		t.Fatalf("shared uv-cache volume should exist after resolve")
+	}
+	if !volumeExists(t, cli, npmCacheVolume) {
+		t.Fatalf("shared npm-cache volume should exist after resolve")
+	}
+	if !volumeExists(t, cli, pipCacheVolume) {
+		t.Fatalf("shared pip-cache volume should exist after resolve")
 	}
 
 	// Suspend retains the volume (and the container).
@@ -126,6 +132,12 @@ func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	}
 	if !volumeExists(t, cli, uvCacheVolume) {
 		t.Fatalf("shared uv-cache volume must NOT be deleted by Stop")
+	}
+	if !volumeExists(t, cli, npmCacheVolume) {
+		t.Fatalf("shared npm-cache volume must NOT be deleted by Stop")
+	}
+	if !volumeExists(t, cli, pipCacheVolume) {
+		t.Fatalf("shared pip-cache volume must NOT be deleted by Stop")
 	}
 }
 

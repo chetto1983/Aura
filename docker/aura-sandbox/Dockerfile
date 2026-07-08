@@ -69,9 +69,11 @@ RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0
 # baked here; D-10/D-13):
 #   /workspace          -> the per-identity named volume aura-box-<id> (persistent, RETAINED on suspend)
 #   /workspace/.scratch -> a tmpfs RW scratch (ephemeral)
-#   /root/.cache/uv     -> the shared uv warm-cache volume (cross-identity, content-addressed)
+#   /root/.cache/uv     -> the shared uv warm-cache volume aura-uv-cache (cross-identity, content-addressed)
+#   /root/.npm          -> the shared npm warm-cache volume aura-npm-cache (cross-identity)
+#   /root/.cache/pip    -> the shared pip warm-cache volume aura-pip-cache (cross-identity)
 # Pre-create the dirs so a first exec before any mount still has a writable tree.
-RUN mkdir -p /workspace /root/.cache/uv
+RUN mkdir -p /workspace /root/.cache/uv /root/.npm /root/.cache/pip
 
 WORKDIR /workspace
 

@@ -48,10 +48,22 @@ func assertPinsSafe(t fatalf, hc *container.HostConfig) {
 	}
 }
 
+// assertSharedCacheMount fails unless hc.Mounts carries a TypeVolume mount from the shared
+// (constant Source) cache volume to target — the warm-cache parity that stops per-identity
+// boxes re-downloading packages every turn.
+func assertSharedCacheMount(t fatalf, hc *container.HostConfig, source, target string) {
+	for _, m := range hc.Mounts {
+		if m.Type == mount.TypeVolume && m.Source == source && m.Target == target {
+			return
+		}
+	}
+	t.Fatalf("missing shared cache mount %q -> %q in %v", source, target, hc.Mounts)
+}
+
 // TestTranslate_PinsSafe proves SBX-02 behaviorally over a table of hand-picked
 // adversarial specs plus ≥1000 rapid-generated ones: toHostConfig ALWAYS emits a
 // HostConfig with Privileged=false, non-host NetworkMode, nil Binds, AutoRemove=false,
-// a safe Runtime, and exactly the three sanctioned volume/tmpfs mounts (no bind, no
+// a safe Runtime, and exactly the five sanctioned volume/tmpfs mounts (no bind, no
 // socket target).
 func TestTranslate_PinsSafe(t *testing.T) {
 	// (1) Hand-picked adversarial specs — note the workspace volume NAME mimicking the
@@ -66,9 +78,14 @@ func TestTranslate_PinsSafe(t *testing.T) {
 	for i, s := range adversarial {
 		hc := toHostConfig(s)
 		assertPinsSafe(t, hc)
-		if len(hc.Mounts) != 3 {
-			t.Fatalf("case %d: want exactly 3 mounts (workspace vol + tmpfs scratch + uv-cache vol), got %d", i, len(hc.Mounts))
+		if len(hc.Mounts) != 5 {
+			t.Fatalf("case %d: want exactly 5 mounts (workspace vol + tmpfs scratch + uv/npm/pip cache vols), got %d", i, len(hc.Mounts))
 		}
+		// The shared uv/npm/pip warm caches are cross-identity (constant Source, not the
+		// per-identity workspace volume) — the parity that stops re-downloads every turn.
+		assertSharedCacheMount(t, hc, uvCacheVolume, uvCacheTarget)
+		assertSharedCacheMount(t, hc, npmCacheVolume, npmCacheTarget)
+		assertSharedCacheMount(t, hc, pipCacheVolume, pipCacheTarget)
 	}
 
 	// (2) Property: for ≥1000 rapid-generated adversarial specs, the pins always hold.
