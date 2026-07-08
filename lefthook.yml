@@ -19,6 +19,15 @@ pre-commit:
       stage_fixed: true
     vet:
       run: go vet ./...
+    # golangci-lint (dupl/gosec/govet/staticcheck/revive/…) runs here, not at pre-push, so a
+    # lint regression surfaces at the commit that introduced it instead of after a range of
+    # commits accumulates for a push (the caught issue is then one small diff, not a bisect).
+    # Gated on *.go so a docs/web-only commit skips it; it still lints WHOLE owned packages
+    # (staged-file-only linting misses cross-file findings), so the glob only decides whether
+    # to run, not what to scan.
+    lint:
+      glob: "*.go"
+      run: bash -c 'golangci-lint run $(bash scripts/go_packages.sh)'
     file-size:
       run: bash scripts/check-file-size.sh
     # Frontend copy/paste detector (jscpd) — TS/TSX parity to the Go `dupl` linter.
@@ -37,8 +46,9 @@ pre-push:
     # re-attesting the flagged row's date in docs/aura-quality-snapshot.md, then push.
     quality-snapshot:
       run: bash scripts/quality_snapshot_prepush.sh
-    lint:
-      run: bash -c 'golangci-lint run $(bash scripts/go_packages.sh)'
+    # NOTE: golangci-lint moved to pre-commit (above) so lint regressions surface at their
+    # authoring commit, not here. build/deadcode stay at pre-push — they are fast whole-module
+    # gates whose only job is a final "still compiles + no dead code" check before the network.
     build:
       run: bash -c 'go build $(bash scripts/go_packages.sh)'
     deadcode:
