@@ -4,7 +4,7 @@
 
 - ✅ **v0.0.0 Substrate** — Phases 0–21 (shipped 2026-06-15) — full details in [`milestones/v0.0.0-ROADMAP.md`](milestones/v0.0.0-ROADMAP.md)
 - ✅ **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–30 (shipped 2026-06-29) — full details in [`milestones/v1.0.0-ROADMAP.md`](milestones/v1.0.0-ROADMAP.md)
-- 🔨 **v2.0.0 Industrial Hardening & Multi-User Production** — Phases 31–41 (in planning) — close the 51-finding security audit + the ~64-finding quality audit to an honest 10/10 via stabilization/cleanup + per-user full-capability sandbox + multi-user identity isolation + ToolGateway + observability/security/ops industrialization
+- 🔨 **v2.0.0 Industrial Hardening & Multi-User Production** — Phases 31–42 (in planning) — close the 51-finding security audit + the ~64-finding quality audit to an honest 10/10 via stabilization/cleanup + per-user full-capability sandbox + multi-user identity isolation + ToolGateway + observability/security/ops industrialization
 
 ## Phases
 
@@ -68,7 +68,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 </details>
 
-### 🔨 v2.0.0 Industrial Hardening & Multi-User Production (Phases 31–41) — IN PLANNING
+### 🔨 v2.0.0 Industrial Hardening & Multi-User Production (Phases 31–42) — IN PLANNING
 
 **Goal:** Close the entire 2026-06-21 industrial audit (51 findings, F-001..F-052) **AND** the maintainability/architecture audit (`docs/audit/quality/`, ~64 findings) to an **honest 10/10** production-readiness (from 4.6/10) — via a per-user full-capability sandbox (Docker, resolving F-001 without stripping the full-host surface), multi-user identity isolation (no RBAC), Authula cutover, a central ToolGateway, observability/security/ops industrialization, and an upfront code-quality cleanup. Every hardening behavior is a **no-op under `dev`/`local_trusted`** — the operator's daily full-host experience is unchanged; hardening activates under `server_production`. Dependency rule: stabilize+cleanup → profiles + ledger → gateway → identity → sandbox → MCP → idempotency/obs → security → ops/eval. Requirements + traceability in [`REQUIREMENTS.md`](REQUIREMENTS.md); research in [`research/SUMMARY.md`](research/SUMMARY.md); quality audit in [`../docs/audit/quality/`](../../docs/audit/quality/README.md).
 
@@ -108,6 +108,9 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar)
   - Goal: drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
   - Success: (1) drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented); (2) scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill; (3) load + chaos harness runs in CI (no-skip-as-green) + capability-eval pass/fail report; (4) ADRs + release-readiness checklist + production-readiness evidence bundle → defensible 10/10.
+- [ ] **Phase 42: LLM Conversation Compaction** — `COMPACT-01..11` (`/compact` parity; activates Phase-4 deferred L3)
+  - Goal: LLM semantic compaction — manual `/compact` (CLI/REPL/Telegram) + auto-fallback at the context-overflow dead-end; non-destructive checkpoint-watermark persistence.
+  - Success: (1) manual `/compact` on all three channels reports the token delta, originals retained; (2) checkpoint-watermark (migration 0036) + byte-stable KV-cache prefix; (3) auto-fallback replaces the dead-end (bounded, behind a knob), L1/L2.5 unchanged; (4) cost attributed, `AURA_COMPACT_*` validated, ≥85% coverage.
 
 > **Host-constrained / deferred-tier flag:** Phase 41's load/chaos + DR drills and any gVisor/`server_production` live tiers may carry the same NO-SKIP-AS-GREEN "deferred verification tier" pattern as v1.0.0's 6 deferred items, pending an adequate host (DGX Spark). Decided at the Phase-41/closeout boundary.
 >
@@ -429,23 +432,29 @@ Plans:
 **Plans:** 8 plans in 6 waves
 
 **Wave 1** *(PRD-first gate — blocks all code, D-19)*
+
 - [ ] 37B-01-PLAN.md — PRD-amendment: WEBART-05..08 group + Artefatti sidebar surface + preview deps (docx-preview Apache-2.0, SheetJS CE via CDN) + null-origin HTML sandbox policy + D-14/D-15 persistence
 
 **Wave 2** *(parallel — both depend on 37B-01, zero file overlap)*
+
 - [ ] 37B-02-PLAN.md — Supply-chain: legitimacy checkpoint + install docx-preview/jszip + xlsx from CDN (CVE-safe) + widen Asset.source_kind union to add 'agent'
 - [ ] 37B-03-PLAN.md — Pure foundation: artifactMeta (previewKind SVG-gated + category label/icon + shared formatSize) + downloadAll (sequential/throttled) + artifacts.* i18n (en+it) + Stryker targets
 
 **Wave 3** *(parallel — depend on foundation, zero file overlap)*
+
 - [ ] 37B-04-PLAN.md — Preview: useBlobPreview + PreviewModal (Radix 90vw/90vh dispatch) + 6 lazy renderers (image/pdf/text/html/docx/xlsx; null-origin HTML sandbox; SVG/pptx download-only)
 - [ ] 37B-05-PLAN.md — Live-merge producer + D-15 fix: onArtifact signal through streamSSE pump + split-fold rehydration (agent→assistant turns) + assistant-side download chip
 
 **Wave 4** *(depends on 37B-02/03/04)*
+
 - [ ] 37B-06-PLAN.md — Panel: useThreadArtifacts (agent-filtered newest-first) + ArtifactRow (download + preview + degraded) + ArtifactsPanel (header, Scarica tutto, empty-state, lazy PreviewModal)
 
 **Wave 5** *(depends on 37B-05/06)*
+
 - [ ] 37B-07-PLAN.md — AppShell integration: third ResizablePanel (dynamic panelIds, no key bump) + header toggle + mobile right Drawer + onArtifact handler (invalidate + one-time auto-open)
 
 **Wave 6** *(depends on 37B-07)*
+
 - [ ] 37B-08-PLAN.md — Gate: Playwright e2e (artifact in panel + download) + full coverage ≥85% + Stryker ≥70% on pure modules + internal/webui/dist rebuild
 
 #### Phase 37C: Web Voice Lane (INSERTED)
@@ -575,10 +584,25 @@ Plans:
 3. A load + chaos harness runs in CI (no-skip-as-green) + a capability-eval pass/fail report.
 4. ADRs + a release-readiness checklist + a production-readiness evidence bundle → a defensible 10/10.
 
+#### Phase 42: LLM Conversation Compaction (`/compact` parity — Phase-4 deferred L3)
+
+**Goal:** Add LLM-driven semantic conversation compaction — the "L3" tier Phase 4 explicitly deferred. Manual `/compact` (CLI `aura chat compact <id>`, in-REPL `/compact`, Telegram `/compact`) plus auto-compaction at the `ErrContextWindowExceeded` dead-end, with non-destructive checkpoint-watermark persistence (a protected summary turn + `aura.conversation_compactions`; original turns retained for FTS + audit). Closes the last context-management parity gap with Claude Code.
+
+**Requirements:** COMPACT-01..11 (see [`42-SPEC.md`](phases/42-llm-conversation-compaction/42-SPEC.md))
+
+**Depends on:** Phase 4 (conversations + L1/L2/L2.5 context ladder) + Phase 6 (KV-cache byte-stable prefix) — both shipped; no blocking dependency. Activates the L3 deferral documented in `04-SPEC.md` + PRD §1.8 OQ#3.
+
+**Success Criteria**:
+
+1. Manual `/compact` on CLI, REPL, and Telegram compacts a conversation and reports the token delta; original turns retained (FTS still matches them).
+2. Checkpoint-watermark persistence (migration `0036_conversation_compactions` + a marker-protected summary turn) with byte-identical, checkpoint-aware history reconstruction; `messages[0]` stays byte-stable (KV-cache prefix preserved).
+3. Auto-fallback replaces the `ErrContextWindowExceeded` dead-end (behind `AURA_COMPACT_AUTO_ENABLED`, one bounded attempt, no retry loop); L1 microcompact and L2.5 hard-drop are unchanged.
+4. Compaction LLM cost attributed to conversation aggregates; `AURA_COMPACT_*` knobs validated; ≥85% coverage across the full tag matrix; `-race`/`goleak`/lint clean; every touched file ≤600 LOC.
+
 ## Progress
 
 | Milestone | Phases | Plans | Status | Completed |
 | --------- | ------ | ----- | ------ | --------- |
 | v0.0.0 Substrate | 0–21 (24 phases) | 144/144 | ✅ Shipped | 2026-06-15 |
 | v1.0.0 Aura Deep Search Web Cockpit | 22–30 (9 phases) | 45/45 | ✅ Shipped | 2026-06-29 |
-| v2.0.0 Industrial Hardening & Multi-User Production | 31–41 (12 phases, incl. 37A) | 0/— | 🔨 In planning | — |
+| v2.0.0 Industrial Hardening & Multi-User Production | 31–42 (13 phases, incl. 37A) | 0/— | 🔨 In planning | — |
