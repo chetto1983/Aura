@@ -442,7 +442,7 @@ Plans:
 
 **Wave 3** *(parallel — depend on foundation, zero file overlap)*
 
-- [ ] 37B-04-PLAN.md — Preview: useBlobPreview + PreviewModal (Radix 90vw/90vh dispatch) + 6 lazy renderers (image/pdf/text/html/docx/xlsx; null-origin HTML sandbox; SVG/pptx download-only)
+- [x] 37B-04-PLAN.md — Preview: useBlobPreview + PreviewModal (Radix 90vw/90vh dispatch) + 6 lazy renderers (image/pdf/text/html/docx/xlsx; null-origin HTML sandbox; SVG/pptx download-only)
 - [ ] 37B-05-PLAN.md — Live-merge producer + D-15 fix: onArtifact signal through streamSSE pump + split-fold rehydration (agent→assistant turns) + assistant-side download chip
 
 **Wave 4** *(depends on 37B-02/03/04)*
