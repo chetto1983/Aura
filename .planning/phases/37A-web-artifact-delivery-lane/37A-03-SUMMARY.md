@@ -138,6 +138,11 @@ None — no external configuration. The route is same-origin and inherits the ex
 ## Next Phase Readiness
 - **37A-04** (the web download button) now has its target: an authenticated `GET /api/assets/{id}/download` that returns a forced attachment. The button anchors/fetches this same-origin URL; the server enforces ownership + XSS-safe headers.
 
+## Self-Check: PASSED
+- Files: `internal/agui/assets_api.go` (modified) + `internal/agui/asset_download_test.go` (created) + `37A-03-SUMMARY.md` — all present.
+- Commits: `93cb575b` (feat), `d5cbb649` (test), `9b173ddb` (docs) — all in git.
+- STATE.md / ROADMAP.md untouched (worktree mode). go.mod/go.sum byte-unchanged (zero installs).
+
 ---
 *Phase: 37A-web-artifact-delivery-lane*
 *Completed: 2026-07-08*
