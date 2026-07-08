@@ -5,10 +5,10 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37A
 current_phase_name: web-artifact-delivery-lane
 status: complete
-stopped_at: Phase 37A closed — verified + CI green
-last_updated: "2026-07-08T17:30:00.000Z"
+stopped_at: Phase 37B context gathered
+last_updated: "2026-07-08T18:12:55.731Z"
 last_activity: 2026-07-08
-last_activity_desc: Phase 37A CLOSED — web artifact delivery verified live + deferred-tool parity + package caches + Go 1.26.5 CVE fix, full CI green
+last_activity_desc: "37A-04 web artifact-consume + download button executed (executor cut off pre-SUMMARY at session limit; orchestrator closed out after independent gate re-run: tsc/lint/1051 tests/dist-fresh/go-build all green)"
 progress:
   total_phases: 17
   completed_phases: 8
@@ -553,9 +553,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-06T18:03:37.284Z
-Stopped at: Phase 37 context gathered
-Resume file: .planning/phases/37-per-user-full-capability-sandbox/37-CONTEXT.md
+Last session: 2026-07-08T18:12:55.710Z
+Stopped at: Phase 37B context gathered
+Resume file: .planning/phases/37B-web-artifact-sidebar/37B-CONTEXT.md
 
 ## Operator Next Steps
 
