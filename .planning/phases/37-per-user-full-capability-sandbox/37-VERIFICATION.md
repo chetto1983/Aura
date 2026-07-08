@@ -1,9 +1,13 @@
 ---
 phase: 37-per-user-full-capability-sandbox
 verified: 2026-07-07T10:30:00Z
-status: human_needed
-score: 5/5 must-haves mechanism-verified (0 FAILED); 4 WSL/CI live-tier items pending human_verification
-overrides_applied: 0
+status: passed
+score: 5/5 must-haves mechanism-verified (0 FAILED); 4 WSL/CI live-tier items ACCEPTED as sanctioned deferrals (operator force-close 2026-07-08)
+overrides_applied: 1
+override:
+  applied: 2026-07-08T09:21:51Z
+  by: operator (Davide)
+  decision: "Force-close Phase 37 accepting the 4 live-tier proofs (composition-root egress DROP, full docker_integration -race suite, D-14 32GB soak, gVisor runsc smoke) as the sanctioned WSL/CI Gate-3 deferral this phase has carried from its first verification (Phase-36 precedent, CLAUDE.md-documented Windows-dev-host limitation). Status flipped human_needed -> passed under this explicit override. The 4 items remain tracked in 37-UAT.md (blocked) + 37-VALIDATION.md as appliance-only Gate-3 evidence that MUST run on native-Linux/32GB before the honest 10/10 release bundle (REL-03). This override does NOT claim the live DROP was proven -- it records that the operator accepts the deferral for phase-close purposes."
 re_verification:
   previous_status: gaps_found
   previous_score: "4/5 must-haves verified (1 BLOCKER)"
