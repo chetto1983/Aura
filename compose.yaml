@@ -211,6 +211,15 @@ services:
     volumes:
       - aura-home:/var/lib/aura
       - ${AURA_BACKUP_DIR:-./backups}:/backups
+      # Warm package caches for the non-strict host-direct shell_exec path (which runs IN this
+      # container, HOME=/root, not in a box): without these, /root/.npm|.cache/pip|.cache/uv live in
+      # the ephemeral container layer and are wiped on every recreate, so npm/pip/uv re-download every
+      # turn. These retained volumes make re-installs cache hits (no network). Same warm-cache intent
+      # as the shared box volumes (translate.go) — kept per-service here since the box path is bypassed
+      # under a non-strict profile.
+      - aura-npm-cache-host:/root/.npm
+      - aura-pip-cache-host:/root/.cache/pip
+      - aura-uv-cache-host:/root/.cache/uv
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
@@ -817,6 +826,11 @@ volumes:
   aura-rerank:
   aura-pim-data:
   garage-data:
+  # Warm package caches for the non-strict host-direct shell_exec path (npm/pip/uv download caches
+  # under HOME=/root inside the aura container) — retained across recreates so re-installs are cache hits.
+  aura-npm-cache-host:
+  aura-pip-cache-host:
+  aura-uv-cache-host:
 
 networks:
   # Local SearXNG bridge: host-loopback published; default Docker NAT egress
