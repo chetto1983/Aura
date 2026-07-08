@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"io"
 
 	"github.com/chetto1983/aura/internal/assets"
 )
@@ -11,6 +12,10 @@ type AssetService interface {
 	Presign(context.Context, assets.PresignRequest) (assets.PresignResponse, error)
 	Finalize(context.Context, string, string) (assets.Asset, error)
 	GetForIdentity(context.Context, string, string) (assets.Asset, error)
+	// OpenForIdentity streams the owner-scoped object body for the download route (WEBART-03/D-12):
+	// the ownership gate precedes any store read, and it returns a stream-through ReadCloser, never
+	// a presigned store URL (D-09). The caller closes the ReadCloser.
+	OpenForIdentity(context.Context, string, string) (io.ReadCloser, assets.Asset, error)
 	ListForThread(context.Context, string, string) ([]assets.Asset, error)
 	Promote(context.Context, string, string) (assets.Asset, error)
 	Delete(context.Context, string, string) (assets.Asset, error)

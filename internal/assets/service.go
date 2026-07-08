@@ -178,6 +178,23 @@ func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (As
 	return s.Store.GetForIdentity(ctx, id, identityID)
 }
 
+// OpenForIdentity resolves the owner-scoped asset (an error → 404 on miss / not-owned upstream,
+// D-12) and opens its per-identity object body for streaming. The GetForIdentity ownership gate
+// runs BEFORE any object-store read, so a non-owner never reaches the store (T-IDOR). It returns a
+// stream-through ReadCloser, never a presigned/direct store URL (D-09); the caller closes it.
+func (s *Service) OpenForIdentity(ctx context.Context, id, identityID string) (io.ReadCloser, Asset, error) {
+	asset, err := s.GetForIdentity(ctx, id, identityID)
+	if err != nil {
+		return nil, Asset{}, err
+	}
+	objects, _, err := s.objectsFor(identityctx.WithIdentityID(ctx, identityID))
+	if err != nil {
+		return nil, Asset{}, err
+	}
+	rc, _, err := objects.Get(ctx, objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
+	return rc, asset, err
+}
+
 func (s *Service) ListForThread(ctx context.Context, identityID, threadID string) ([]Asset, error) {
 	if s.Store == nil {
 		return nil, fmt.Errorf("asset service is not configured")
@@ -254,6 +271,10 @@ func (s *Service) ProcessAccepted(ctx context.Context, identityID, assetID strin
 	}
 }
 
+// IngestTelegramFile ingests one Telegram media stream as an owned, thread-scoped asset. It
+// enforces the per-modality Limits cap and routes the accepted asset through the processing
+// pipeline (embeddings / knowledge indexing) — see ingestObject (ingest_agent.go) for the shared
+// orchestration and IngestAgentFile for the delivery-only variant that skips both.
 func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequest) (Asset, error) {
 	if s.Store == nil || s.Objects == nil {
 		return Asset{}, fmt.Errorf("asset service is not configured")
@@ -261,69 +282,23 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 	if req.Reader == nil {
 		return Asset{}, fmt.Errorf("telegram asset reader is nil")
 	}
-	name := cleanFileName(req.FileName)
-	mimeType := normalizeMIME(req.MIMEType, name)
-	modality := req.Modality
-	if modality == "" || modality == ModalityUnknown {
-		modality = InferModality(name, mimeType)
-	}
-	if err := s.Limits.Validate(modality, name, req.SizeBytes); err != nil {
-		return Asset{}, err
-	}
-	objects, bucket, err := s.objectsFor(identityctx.WithIdentityID(ctx, req.IdentityID))
-	if err != nil {
-		return Asset{}, err
-	}
-	assetID := newAssetID()
-	key := objectstore.AssetKey(req.IdentityID, assetID)
 	sourceRef, err := telegramSourceRef(req)
 	if err != nil {
 		return Asset{}, err
 	}
-	asset, err := s.Store.Create(ctx, CreateRequest{
-		IdentityID:        req.IdentityID,
-		ThreadID:          req.ThreadID,
-		SourceKind:        SourceTelegram,
-		SourceRef:         sourceRef,
-		Scope:             ScopeThread,
-		Modality:          modality,
-		FileName:          name,
-		MIMEType:          mimeType,
-		DeclaredSizeBytes: req.SizeBytes,
-		ObjectBucket:      bucket,
-		ObjectKey:         key,
-		Metadata:          map[string]any{},
+	return s.ingestObject(ctx, objectIngest{
+		identityID:    req.IdentityID,
+		threadID:      req.ThreadID,
+		sourceKind:    SourceTelegram,
+		sourceRef:     sourceRef,
+		fileName:      req.FileName,
+		mimeType:      req.MIMEType,
+		modality:      req.Modality,
+		sizeBytes:     req.SizeBytes,
+		reader:        req.Reader,
+		enforceLimits: true,
+		process:       true,
 	})
-	if err != nil {
-		return Asset{}, err
-	}
-	ref := objectstore.ObjectRef{Bucket: bucket, Key: key}
-	attrs, err := objects.Put(ctx, ref, req.Reader, objectstore.PutOptions{
-		MIMEType: mimeType,
-		Size:     req.SizeBytes,
-	})
-	if err != nil {
-		_, _ = s.Store.SetStatus(ctx, asset.ID, req.IdentityID, StatusFailed, "object_put_failed", err.Error())
-		return Asset{}, err
-	}
-	if err = s.Limits.Validate(modality, name, attrs.SizeBytes); err != nil {
-		updated, _ := s.Store.SetStatus(ctx, asset.ID, req.IdentityID, StatusRefused, "asset_refused", err.Error())
-		_ = objects.Delete(context.WithoutCancel(ctx), ref)
-		return updated, err
-	}
-	asset, err = s.Store.MarkUploaded(ctx, asset.ID, req.IdentityID, attrs.SizeBytes, attrs.ETag)
-	if err != nil {
-		return Asset{}, err
-	}
-	hash, sniffed, err := s.hashAndSniff(ctx, objects, ref, asset.FileName)
-	if err != nil {
-		return Asset{}, err
-	}
-	asset, err = s.Store.MarkAccepted(ctx, asset.ID, req.IdentityID, attrs.SizeBytes, hash, sniffed)
-	if err != nil {
-		return Asset{}, err
-	}
-	return s.processAsset(ctx, asset)
 }
 
 func (s *Service) enqueueProcessing(ctx context.Context, asset Asset) error {

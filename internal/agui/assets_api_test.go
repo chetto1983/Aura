@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -129,11 +130,16 @@ type fakeAssetService struct {
 	listErr    error
 	getResp    assets.Asset
 	getErr     error
+	openResp   io.ReadCloser
+	openAsset  assets.Asset
+	openErr    error
 
 	listIdentityID string
 	listThreadID   string
 	getID          string
 	getIdentityID  string
+	openID         string
+	openIdentityID string
 }
 
 type PresignRequestAlias = assets.PresignRequest
@@ -157,6 +163,15 @@ func (f *fakeAssetService) GetForIdentity(_ context.Context, id, identityID stri
 		return assets.Asset{}, f.getErr
 	}
 	return f.getResp, nil
+}
+
+func (f *fakeAssetService) OpenForIdentity(_ context.Context, id, identityID string) (io.ReadCloser, assets.Asset, error) {
+	f.openID = id
+	f.openIdentityID = identityID
+	if f.openErr != nil {
+		return nil, assets.Asset{}, f.openErr
+	}
+	return f.openResp, f.openAsset, nil
 }
 
 func (f *fakeAssetService) ListForThread(_ context.Context, identityID, threadID string) ([]assets.Asset, error) {
