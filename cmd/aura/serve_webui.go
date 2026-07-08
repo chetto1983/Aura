@@ -51,6 +51,7 @@ const authConfigRoute = "/api/auth/config"
 
 const (
 	passwordResetStartRoute    = "POST /api/auth/password-reset/start"    // #nosec G101 -- route pattern, not credential material.
+	passwordResetQuestionRoute = "POST /api/auth/password-reset/question" // #nosec G101 -- route pattern, not credential material.
 	passwordResetVerifyRoute   = "POST /api/auth/password-reset/verify"   // #nosec G101 -- route pattern, not credential material.
 	passwordResetCompleteRoute = "POST /api/auth/password-reset/complete" // #nosec G101 -- route pattern, not credential material.
 	bootstrapOperatorRoute     = "POST /api/auth/bootstrap/operator"
@@ -349,6 +350,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.HandleFunc("GET "+authConfigRoute, newAuthConfigHandler(bootstrapProvider))
 	mux.Handle(bootstrapOperatorRoute, aguiHandler)
 	mux.Handle(passwordResetStartRoute, aguiHandler)
+	mux.Handle(passwordResetQuestionRoute, aguiHandler)
 	mux.Handle(passwordResetVerifyRoute, aguiHandler)
 	mux.Handle(passwordResetCompleteRoute, aguiHandler)
 	// The mutating route is interposed with the capability gate FIRST: "POST /agent/run"
@@ -534,6 +536,7 @@ func isPublicPasswordResetRoute(r *http.Request) bool {
 	}
 	switch r.URL.Path {
 	case "/api/auth/password-reset/start",
+		"/api/auth/password-reset/question",
 		"/api/auth/password-reset/verify",
 		"/api/auth/password-reset/complete":
 		return true

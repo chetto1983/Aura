@@ -276,6 +276,7 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 	t.Run("no cookie password reset routes are public and reach AG-UI", func(t *testing.T) {
 		for _, route := range []string{
 			"/api/auth/password-reset/start",
+			"/api/auth/password-reset/question",
 			"/api/auth/password-reset/verify",
 			"/api/auth/password-reset/complete",
 		} {
