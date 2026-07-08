@@ -148,6 +148,60 @@ func TestArtifactMissingPathIgnored(t *testing.T) {
 	}
 }
 
+// TestArtifactEnrichedDescriptorStillSends is the 37A-02 (WEBART-02) cross-channel non-regression
+// guard: the send_file descriptor now also rides asset_id + size_bytes + mime_type + tool_call_id
+// (the web delivery lane's keys). Telegram's artifactDescriptor reads ONLY path and ignores the
+// extra keys, so an enriched descriptor must STILL deliver the document byte-for-byte. It reuses
+// the existing artifactCustom helper + docBot fake — no new fakes.
+func TestArtifactEnrichedDescriptorStillSends(t *testing.T) {
+	t.Parallel()
+	bot := &docBot{}
+	a := newArtifact(bot, tele.ChatID(42))
+
+	msg, ok := a.consumeEvent(artifactCustom(map[string]any{
+		"path":         "/abs/results.xlsx",
+		"filename":     "results.xlsx",
+		"caption":      "results",
+		"asset_id":     "asset-abc",
+		"size_bytes":   int64(2048),
+		"mime_type":    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"tool_call_id": "call-xyz",
+	}))
+	if !ok {
+		t.Fatal("an enriched artifact CUSTOM event must still be consumed (extra keys ignored)")
+	}
+	if msg == nil || msg.Document == nil || msg.Document.FileName != "results.xlsx" {
+		t.Fatalf("enriched descriptor must still deliver the document, got %+v", msg)
+	}
+	docs := bot.recorded()
+	if len(docs) != 1 {
+		t.Fatalf("want 1 sendDocument for the enriched descriptor, got %d", len(docs))
+	}
+	if docs[0].FileName != "results.xlsx" || docs[0].Caption != "results" {
+		t.Errorf("enriched send = %q/%q, want results.xlsx/results (path-driven, extras ignored)", docs[0].FileName, docs[0].Caption)
+	}
+}
+
+// TestArtifactEnrichedPathlessStillIgnored pins that the missing-path no-op guard is intact even
+// when the new keys are present: a descriptor carrying asset_id/size_bytes/tool_call_id but NO path
+// (the D-02/D-05 degrade shape) still sends nothing on Telegram (path drives delivery).
+func TestArtifactEnrichedPathlessStillIgnored(t *testing.T) {
+	t.Parallel()
+	bot := &docBot{}
+	a := newArtifact(bot, tele.ChatID(42))
+	if _, ok := a.consumeEvent(artifactCustom(map[string]any{
+		"filename":     "results.xlsx",
+		"caption":      "results",
+		"size_bytes":   int64(2048),
+		"tool_call_id": "call-xyz",
+	})); ok {
+		t.Error("a pathless enriched descriptor must not send a document (missing-path guard intact)")
+	}
+	if len(bot.recorded()) != 0 {
+		t.Error("no document for a pathless enriched descriptor")
+	}
+}
+
 // TestArtifactConsumeChannelDrainsAll proves the consume() drain over a channel of
 // AG-UI events delivers every artifact event and ignores the rest, terminating
 // when the producer closes the channel (goleak-clean).
