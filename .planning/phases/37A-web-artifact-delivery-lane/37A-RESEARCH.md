@@ -400,12 +400,17 @@ The coverage gate runs **`db_integration neo4j_integration` ONLY** — there is 
 
 **All other claims are `[VERIFIED: codebase grep]` against the current tree — see Anchor Verification.**
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Both resolved during pattern mapping — see `37A-PATTERNS.md` §"Open Question Resolutions" and the plans that consume them.
+
 1. **Exact frontend mapping of `aura.artifact` → `LocalArtifactDisplay` (Gap C / Landmine 5/7).**
    - What we know: D-13 says route `aura.artifact` into the existing card; the card is fed by `tool_call_id`-correlated `DisplayPayload`s; `aura.artifact` currently lacks `tool_call_id`.
    - What's unclear: whether the executor builds a synthetic `local_artifact` `DisplayPayload` in `sseAdapter` from the descriptor, vs. threading `asset_id` into the *existing* `aura.display` `local_artifact` payload (`display/code.go`) which only fires for shell/sandbox exec, not `send_file`.
    - Recommendation: add `tool_call_id` to the descriptor (backend) + a synthetic-`local_artifact` branch in `sseAdapter` (frontend). This is the D-13-literal path and reuses the correlated attach. Hand this to `gsd-pattern-mapper` for the precise TSX shape.
+   - **RESOLVED:** synthesize a `local_artifact` `DisplayPayload` in the `sseAdapter.ts` CUSTOM branch from the descriptor, correlated by the new always-present `tool_call_id`; do NOT thread into the `aura.display` payload (Landmine 7 confirmed — it only fires for shell/sandbox exec). Consumed by 37A-04 (reducer + `LocalArtifactDisplay`) and produced by 37A-02 (`tool_call_id` emitted on success AND degrade).
 2. **`Content-Length` on the download (Landmine 8).** Recommend setting it from `asset.SizeBytes` (authoritative post-`MarkAccepted`); planner to confirm no partial-object edge in the existing Garage `Put` path.
+   - **RESOLVED:** set `Content-Length` from `asset.SizeBytes` (authoritative post-`MarkAccepted`, `service.go:322`); the Put→MarkUploaded→MarkAccepted sequence rules out the partial-object case. Consumed by 37A-03 (download route).
 
 ## Sources
 ### Primary (HIGH confidence — direct file reads, current tree 2026-07-08)

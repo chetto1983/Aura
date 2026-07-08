@@ -56,6 +56,8 @@ Output: `handleAssetDownload` + the route + the security/behavior test suite (ow
 - **Route specificity:** Go 1.22+ `ServeMux` matches `/{id}/download` over `/{id}` regardless of registration order — no precedence issue.
 </objective>
 
+> **Phase symbols:** see `37A-01-PLAN.md` §"Artifacts This Phase Produces" for the full phase symbol list (whole-phase source-grounding exclusion — do not flag cross-plan symbols as drift).
+
 <execution_context>
 @.claude/get-shit-done/workflows/execute-plan.md
 @.claude/get-shit-done/templates/summary.md
