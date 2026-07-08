@@ -392,7 +392,7 @@ Plans:
 
 **Design forks for discuss-phase:** (a) `assets.source_kind` CHECK allows only `web|telegram|cli` → add an `agent` value (migration) or reuse `cli`; (b) thread-id reaches the tool ctx only via `agent.SwarmContext(ctx).ConvID` (a smell for a non-swarm concern) → consider a dedicated `threadctx`; (c) download-button UI: reuse the existing `local_artifact` display card (already renders + carries `size_bytes`) vs a new dedicated file part on the delivery event.
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 **Wave 1**
 
@@ -400,7 +400,7 @@ Plans:
 
 **Wave 2** *(parallel — both depend on 37A-01, zero file overlap)*
 
-- [ ] 37A-02-PLAN.md — Ingest lane: AssetDeliverer seam + ctx-aware emitDelivery descriptor enrichment (both tails) + degrade matrix + composition-root wiring + Telegram non-regression
+- [x] 37A-02-PLAN.md — Ingest lane: AssetDeliverer seam + ctx-aware emitDelivery descriptor enrichment (both tails) + degrade matrix + composition-root wiring + Telegram non-regression
 - [ ] 37A-03-PLAN.md — Download route: GET /api/assets/{id}/download (owner-scoped stream, attachment + octet-stream + nosniff, 404 non-owner, ctx-scoped io.Copy + goleak)
 
 **Wave 3** *(depends on 37A-02 + 37A-03)*
