@@ -447,7 +447,7 @@ Plans:
 
 **Wave 4** *(depends on 37B-02/03/04)*
 
-- [ ] 37B-06-PLAN.md — Panel: useThreadArtifacts (agent-filtered newest-first) + ArtifactRow (download + preview + degraded) + ArtifactsPanel (header, Scarica tutto, empty-state, lazy PreviewModal)
+- [x] 37B-06-PLAN.md — Panel: useThreadArtifacts (agent-filtered newest-first) + ArtifactRow (download + preview + degraded) + ArtifactsPanel (header, Scarica tutto, empty-state, lazy PreviewModal)
 
 **Wave 5** *(depends on 37B-05/06)*
 
