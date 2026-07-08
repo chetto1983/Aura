@@ -21,20 +21,20 @@ function asset(id: string, file_name: string, status: AssetStatus = 'accepted'):
   };
 }
 
-let links: Array<{ href: string; download: string }>;
+let links: { href: string; download: string }[];
 let clickSpy: MockInstance<() => void>;
 
 beforeEach(() => {
   vi.useFakeTimers();
   links = [];
-  clickSpy = vi
-    .spyOn(HTMLAnchorElement.prototype, 'click')
-    .mockImplementation(function (this: HTMLAnchorElement) {
-      links.push({
-        href: this.getAttribute('href') ?? '',
-        download: this.getAttribute('download') ?? '',
-      });
+  clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    links.push({
+      href: this.getAttribute('href') ?? '',
+      download: this.getAttribute('download') ?? '',
     });
+  });
 });
 
 afterEach(() => {

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
+import { formatSize } from '../artifacts/artifactMeta';
 import type { DisplayArtifact } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
-import { formatSize } from '../artifacts/artifactMeta';
 
 // LocalArtifactDisplay (local_artifact): a file the agent produced and delivered
 // to the web chat (37A-04). When the descriptor carries an `asset_id` (ingest

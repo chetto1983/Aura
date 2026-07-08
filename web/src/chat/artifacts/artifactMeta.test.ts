@@ -57,7 +57,9 @@ describe('previewKind', () => {
 
 describe('categoryLabel', () => {
   it('builds "<category> · <UPPER-EXT>" from the mime/extension (D-16 examples)', () => {
-    expect(categoryLabel('text/markdown', 'notes.md', echoKey)).toBe('artifacts.category.document · MD');
+    expect(categoryLabel('text/markdown', 'notes.md', echoKey)).toBe(
+      'artifacts.category.document · MD',
+    );
     expect(categoryLabel('', 'book.xlsx', echoKey)).toBe('artifacts.category.spreadsheet · XLSX');
     expect(categoryLabel('image/png', 'photo.png', echoKey)).toBe('artifacts.category.image · PNG');
     expect(categoryLabel('', 'deploy.sh', echoKey)).toBe('artifacts.category.code · SH');
@@ -73,17 +75,25 @@ describe('categoryLabel', () => {
   });
 
   it('omits the separator when the filename has no extension', () => {
-    expect(categoryLabel('application/octet-stream', 'README', echoKey)).toBe('artifacts.category.file');
+    expect(categoryLabel('application/octet-stream', 'README', echoKey)).toBe(
+      'artifacts.category.file',
+    );
   });
 
   it('classifies by mime when the extension is unknown or absent', () => {
     expect(categoryLabel('image/avif', 'photo', echoKey)).toBe('artifacts.category.image');
     expect(categoryLabel('text/html', 'frame', echoKey)).toBe('artifacts.category.web');
     expect(
-      categoryLabel('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'book', echoKey),
+      categoryLabel(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'book',
+        echoKey,
+      ),
     ).toBe('artifacts.category.spreadsheet');
     expect(categoryLabel('application/pdf', 'doc', echoKey)).toBe('artifacts.category.document');
-    expect(categoryLabel('application/msword', 'memo', echoKey)).toBe('artifacts.category.document');
+    expect(categoryLabel('application/msword', 'memo', echoKey)).toBe(
+      'artifacts.category.document',
+    );
     expect(categoryLabel('application/vnd.oasis.opendocument.text', 'sheet', echoKey)).toBe(
       'artifacts.category.document',
     );
@@ -122,10 +132,14 @@ describe('formatSize', () => {
 
   it('selects the MB bucket in [1 MB, 1 GB), including the exact 1 MB boundary', () => {
     expect(formatSize(1024 * 1024, echoKeyOpts)).toBe('display.artifact.sizeMb|{"value":"1.0"}');
-    expect(formatSize(5 * 1024 * 1024, echoKeyOpts)).toBe('display.artifact.sizeMb|{"value":"5.0"}');
+    expect(formatSize(5 * 1024 * 1024, echoKeyOpts)).toBe(
+      'display.artifact.sizeMb|{"value":"5.0"}',
+    );
   });
 
   it('selects the GB bucket at or above 1 GB', () => {
-    expect(formatSize(3 * 1024 * 1024 * 1024, echoKeyOpts)).toBe('display.artifact.sizeGb|{"value":"3.0"}');
+    expect(formatSize(3 * 1024 * 1024 * 1024, echoKeyOpts)).toBe(
+      'display.artifact.sizeGb|{"value":"3.0"}',
+    );
   });
 });
