@@ -8,6 +8,15 @@ override:
   applied: 2026-07-08T09:21:51Z
   by: operator (Davide)
   decision: "Force-close Phase 37 accepting the 4 live-tier proofs (composition-root egress DROP, full docker_integration -race suite, D-14 32GB soak, gVisor runsc smoke) as the sanctioned WSL/CI Gate-3 deferral this phase has carried from its first verification (Phase-36 precedent, CLAUDE.md-documented Windows-dev-host limitation). Status flipped human_needed -> passed under this explicit override. The 4 items remain tracked in 37-UAT.md (blocked) + 37-VALIDATION.md as appliance-only Gate-3 evidence that MUST run on native-Linux/32GB before the honest 10/10 release bundle (REL-03). This override does NOT claim the live DROP was proven -- it records that the operator accepts the deferral for phase-close purposes."
+  live_proof:
+    obtained: 2026-07-08T10:34:15Z
+    host: "casaserver (192.168.1.21) — Ubuntu 24.04, kernel 6.8, native-Linux non-masquerading dockerd (docker context=default, NOT Docker-Desktop) — satisfies 37-RESEARCH Pitfall 3. Box image busybox:stable, sidecar aura-egress:latest."
+    runs:
+      - "SC#4 backend floor — TestEgress_FloorDropsInternal (internal/sandbox/usersandbox, AURA_EGRESS_ENFORCE=1): --- PASS (41.17s). Box REACHED example.com (public allowed), DROPPED from 10.0.0.1 (RFC1918) + 169.254.169.254 (metadata); aura-egress sidecar (NET_ADMIN on sidecar only, shared box netns) torn down cleanly on Stop (no orphan)."
+      - "SC#4 composition-root — TestBuildSandboxRouter_LaunchesEgressFloor (cmd/aura, AURA_SANDBOX_IMAGE=busybox:stable AURA_EGRESS_ENFORCE=1): --- PASS (16.85s). The PRODUCTION buildSandboxRouter -> Route path launched the sidecar and enforced the same reach-public + drop-internal boundary. Closes the composition-root live proof (box=busybox so no fat aura-sandbox image was needed; the wiring is identical)."
+      - "SC#1 + SC#3 — full internal/sandbox/usersandbox docker_integration suite: ok 79.29s (RoundTrip, Lifecycle Suspend/Resume/Delete, VolumeCrossIdentityDeny, Materialize, Reap, Route*/Spec*/Translate). In-box execution + cross-identity isolation + idle-TTL lifecycle live-verified on native dockerd."
+    result: "SC#1, SC#3, SC#4 (both backend-floor AND composition-root) are now LIVE-VERIFIED on a native-Linux non-masquerading dockerd — no longer only mechanism-verified. The force-close override's live tier is substantially satisfied."
+    still_deferred: "Native -race (no gcc on this box; -race was already green on WSL 2026-07-07) + TestEgress_FQDNAllowlist (needs an aura-egress image built WITH the pinned OpenSandbox binary) + D-14 32GB soak (impossible on this 8GB box — appliance-only) + gVisor runsc smoke (needs runsc install + a Docker daemon restart, not run on the shared home server)."
 re_verification:
   previous_status: gaps_found
   previous_score: "4/5 must-haves verified (1 BLOCKER)"

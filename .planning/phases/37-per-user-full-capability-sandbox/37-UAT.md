@@ -18,14 +18,14 @@ command: |
   AURA_EGRESS_ENFORCE=1 go test -tags docker_integration -race ./cmd/aura/ -run TestBuildSandboxRouter_LaunchesEgressFloor
   go test -tags docker_integration ./internal/sandbox/usersandbox/ -run 'TestEgress_FloorDropsInternal|TestEgress_FQDNAllowlist'
 expected: A box created via buildSandboxRouter→Route carries its aura-egress sidecar (NET_ADMIN, shared box netns), reaches the public internet but is DROPPED from 169.254.169.254 / RFC1918; Stop leaves no orphan. Requires a native-Linux non-masquerading dockerd (Docker-Desktop/WSL vpnkit NATs the bridge and cannot validate DROP — RESEARCH Pitfall 3).
-result: blocked
-blocked_by: server
-reason: "Requires a native-Linux non-masquerading dockerd. On WSL/Docker-Desktop (2026-07-07 live run) the sidecar launch + NET_ADMIN + shared box netns were confirmed live and the floor dropped RFC1918, but the full reach-public+drop-internal proof is unvalidatable because vpnkit NATs the bridge (Pitfall 3). A latent CAP_ normalization assertion bug was found and FIXED live (commit abc578b5)."
+result: pass
+reason: "LIVE-PROVEN 2026-07-08 on casaserver (192.168.1.21) — Ubuntu 24.04, kernel 6.8, native-Linux non-masquerading dockerd (docker context=default, NOT Docker-Desktop; satisfies Pitfall 3). `AURA_EGRESS_ENFORCE=1 go test -tags docker_integration -run TestEgress_FloorDropsInternal ./internal/sandbox/usersandbox/` → --- PASS (41.17s): box (busybox) reached example.com (public allowed) and was DROPPED from 10.0.0.1 (RFC1918) + 169.254.169.254 (metadata); aura-egress sidecar (NET_ADMIN on sidecar only, shared box netns) torn down cleanly on Stop (no orphan). The floor's tenancy-boundary DROP behavior is now behaviorally verified, not only mechanism-verified. ALSO PROVEN 2026-07-08 on casaserver: the composition-root variant `TestBuildSandboxRouter_LaunchesEgressFloor` (cmd/aura) --- PASS (16.85s) with AURA_SANDBOX_IMAGE=busybox:stable — the PRODUCTION buildSandboxRouter→Route path launched the sidecar and enforced the same reach-public+drop-internal boundary (busybox box avoids the fat aura-sandbox image; the wiring is identical). STILL DEFERRED: TestEgress_FQDNAllowlist needs an aura-egress image built with the pinned OpenSandbox binary. Earlier 2026-07-07 WSL run found+FIXED a latent CAP_ normalization assertion bug (commit abc578b5)."
 
 ### 2. Full docker_integration -race suite on native-Linux dockerd
 command: go test -tags docker_integration -race ./internal/sandbox/usersandbox/... ./internal/agent/tools/... ./cmd/aura/... ./internal/config/...
 expected: TestDockerBackend_RoundTrip, TestLifecycle_SuspendResumeDelete, TestVolume_CrossIdentityDeny, TestResolve_MaterializesInputs, TestReap_IdleSuspendAutoResume, TestRoute_StrictExecInBox, TestSnippetExec_RoutedEndToEnd, TestShellBg_RunsInBox, TestBuildSandboxRouterWiresEgress all PASS, goleak clean, -race clean. (This Windows host is CGO_ENABLED=0 — `-race` cannot even compile here.)
 result: pass
+reason: "-race suite LIVE-PASS on WSL 2026-07-07. Additionally 2026-07-08 the full internal/sandbox/usersandbox docker_integration suite ran on casaserver's NATIVE-Linux dockerd (no -race — box has no gcc): ok 79.29s (RoundTrip/Lifecycle/VolumeCrossIdentityDeny/Materialize/Reap/Route*/Spec*/Translate). Native-dockerd -race remains the only unrun dimension (gcc absent; -race dimension already covered on WSL)."
 
 ### 3. D-14 32GB concurrency soak on the real appliance host
 command: AURA_SANDBOX_SOAK_REALHOST=1 go test -tags docker_integration ./internal/sandbox/usersandbox/ -run TestSoak
@@ -44,11 +44,11 @@ reason: "Requires the runsc runtime installed on a native-Linux host; not availa
 ## Summary
 
 total: 4
-passed: 1
+passed: 2
 issues: 0
 pending: 0
 skipped: 0
-blocked: 3
+blocked: 2
 
 ## Gaps
 

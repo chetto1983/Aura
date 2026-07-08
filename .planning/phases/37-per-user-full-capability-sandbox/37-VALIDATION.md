@@ -137,12 +137,32 @@ engine (`docker info` → Name=docker-desktop, vpnkit), 9.71 GiB RAM, no gVisor 
 | Tool-routing tests (`agent/tools`) | SBX-01 | ⚠️ **gVisor-gated** | server_production → `runsc`; runsc not installed. Tool→box execution proven live via **runc** (usersandbox Route tests + the docx/xlsx skill). Observation: these tests hard-fail without runsc instead of gating on availability (pre-existing robustness gap, not 37-10). |
 | gVisor `runsc` smoke | SBX-04/D-12 | ❌ **not runnable** | runsc not installed on the Docker Desktop WSL2 engine |
 
-**Net:** SBX-02 (unit) + **SBX-03 (lifecycle / cross-identity / reap) are now LIVE-verified**; SBX-01 core
-routing + real skill execution is live-verified (runc); the SBX-04 composition-root wiring + sidecar launch +
-RFC1918-drop are live-evidenced. **Three tiers remain genuinely infra-gated (NOT code gaps):** full egress
-DROP (native-Linux non-masquerading dockerd), gVisor `runsc`, and the 32 GB soak envelope. The actionable
-follow-up is **WR-01** — a native-Linux `docker_integration` CI job (there is none today), which would run all
-three under `$CI` fail-closed.
+**Net (2026-07-07 WSL run):** SBX-02 (unit) + SBX-03 (lifecycle / cross-identity / reap) LIVE-verified; SBX-01
+core routing + real skill execution live-verified (runc); SBX-04 composition-root wiring + sidecar launch +
+RFC1918-drop live-evidenced. Full egress DROP, gVisor `runsc`, and the 32 GB soak remained infra-gated on WSL.
+**Superseded for the egress DROP + lifecycle tiers by the 2026-07-08 native-dockerd run below.**
+
+## Live UAT Results — 2026-07-08 (casaserver 192.168.1.21, NATIVE-Linux dockerd)
+
+Environment: **casaserver** — Ubuntu 24.04, kernel 6.8, **native Docker Engine** (`docker context` = `default`,
+NOT Docker-Desktop → **non-masquerading bridge**, satisfies 37-RESEARCH Pitfall 3), 8 GB / 4-core (shared home
+server also running Home Assistant + Immich + Ollama). go 1.26.4, **no `-race`** (no gcc on the box). Box image
+`busybox:stable`, sidecar `aura-egress:latest`.
+
+| Tier | Requirement | Result | Evidence |
+|------|-------------|--------|----------|
+| Backend egress DROP floor | SBX-04 | ✅ **LIVE PASS** | `TestEgress_FloorDropsInternal` (`AURA_EGRESS_ENFORCE=1`) --- PASS 41.17s: box REACHED example.com, DROPPED from `10.0.0.1` (RFC1918) + `169.254.169.254` (metadata); sidecar (NET_ADMIN on sidecar only, shared box netns) torn down clean on Stop (no orphan). **The Pitfall-3 gate is CLEARED — full reach-public-AND-drop-internal proven.** |
+| Composition-root egress DROP | SBX-04 | ✅ **LIVE PASS** | `TestBuildSandboxRouter_LaunchesEgressFloor` (`AURA_SANDBOX_IMAGE=busybox:stable`) --- PASS 16.85s: the PRODUCTION `buildSandboxRouter → Route` path launched the sidecar + enforced the same boundary. busybox box avoids the fat aura-sandbox image; wiring is identical. |
+| `usersandbox` docker_integration suite | SBX-01/03 | ✅ **LIVE PASS** | full package `ok 79.29s` (RoundTrip, Lifecycle Suspend/Resume/Delete, VolumeCrossIdentityDeny, MaterializesInputs, Reap, all Route*/Spec*/Translate) on native dockerd. |
+| gVisor `runsc` smoke | SBX-04/D-12 | ⬜ **not run** | needs runsc install + a Docker daemon restart that would bounce the host's HA/Immich/Ollama — not run on the shared server. |
+| D-14 32 GB soak | SBX-05 | ⬜ **impossible here** | 8 GB box; 32 GB envelope is appliance-only. |
+| FQDN allowlist | SBX-04 | ⬜ **not run** | needs an `aura-egress` image built with the pinned OpenSandbox binary. |
+
+**Net (updated):** SBX-01, SBX-02, SBX-03, and **SBX-04 egress DROP (backend floor AND composition-root)** are
+now LIVE-verified on a native-Linux non-masquerading dockerd. **Genuinely remaining (REL-03 must-runs, NOT code
+gaps):** native `-race` (no gcc; `-race` green on WSL 2026-07-07), FQDN-allowlist image, gVisor `runsc`, and the
+32 GB soak envelope. Actionable follow-up unchanged: **WR-01** — a native-Linux `docker_integration` CI job
+(there is none today) would run all of these under `$CI` fail-closed.
 
 ---
 
