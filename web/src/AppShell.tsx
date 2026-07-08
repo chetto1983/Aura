@@ -23,6 +23,8 @@ import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
+import { ArtifactsDrawer, ArtifactsResizablePanel, ArtifactsToggle } from './shell/ArtifactsShell';
+import { useArtifactsPanel } from './shell/useArtifactsPanel';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 
@@ -157,6 +159,12 @@ export function AppShell() {
 
   const activeThreadId = selectedId;
 
+  // 37B (D-01..D-04): the Artefatti panel integration seam lives in ./shell/ArtifactsShell so the
+  // shell stays under the 600-LOC cap. It owns the desktop-vs-mobile branch, the persisted
+  // open/closed intent, and the dynamic panelIds (no layout-key bump).
+  const { artifactsActive, artifactsPanelMounted, panelIds, toggleArtifacts, closeDesktopPanel } =
+    useArtifactsPanel(surfaces, CHAT_SHELL_PANEL_IDS);
+
   useEffect(() => {
     if (searchParams.get('onboarding') !== '1' || autoOpenedOnboarding.current) return;
     autoOpenedOnboarding.current = true;
@@ -283,9 +291,13 @@ export function AppShell() {
     isLeftOpen: surfaces.navOpen,
   });
 
+  // `panelIds` is dynamic: the artifacts id joins only on desktop when open, so
+  // react-resizable-panels v4 namespaces the persisted layout per panel-id set — the 2-panel key
+  // stays untouched while the 3-panel arrangement persists under a distinct key (RESEARCH
+  // Pattern 1 / D-02, no CHAT_SHELL_LAYOUT_ID bump).
   const chatShellLayout = useDefaultLayout({
     id: CHAT_SHELL_LAYOUT_ID,
-    panelIds: CHAT_SHELL_PANEL_IDS,
+    panelIds: [...panelIds],
     onlySaveAfterUserInteractions: true,
   });
 
@@ -471,8 +483,16 @@ export function AppShell() {
               minSize={CHAT_WORKSPACE_MIN_WIDTH}
               className="h-full min-h-0"
             >
-              {workspace}
+              <div className="relative h-full min-h-0">
+                <div className="pointer-events-none absolute right-3 top-2.5 z-20 flex items-center gap-1">
+                  <ArtifactsToggle active={artifactsActive} onToggle={toggleArtifacts} />
+                </div>
+                {workspace}
+              </div>
             </ResizablePanel>
+            {artifactsPanelMounted ? (
+              <ArtifactsResizablePanel threadId={activeThreadId} onClose={closeDesktopPanel} />
+            ) : null}
           </ResizablePanelGroup>
         </main>
       ) : (
@@ -488,6 +508,15 @@ export function AppShell() {
       <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>
         {mobileNavigation}
       </Drawer>
+
+      {/* D-04: below `lg` the Artefatti panel collapses into the shared right Drawer, routed
+          through useSurfaceRestore's overlay slot so it obeys "one heavy overlay at a time"
+          against the nav drawer. Opened by the same toggle; identical portal/trap/Esc UX. */}
+      <ArtifactsDrawer
+        open={surfaces.overlayOpen}
+        threadId={activeThreadId}
+        onClose={surfaces.closeOverlay}
+      />
 
       {/* Full-screen onboarding wizard overlay (D-04) — a lazy chunk covering the shell when
           active. It is NOT a surface/mode; an explicit trigger opens it and its own close button
