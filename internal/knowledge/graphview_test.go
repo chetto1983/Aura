@@ -154,11 +154,20 @@ func TestCompileOverviewScopesByUserID(t *testing.T) {
 		t.Fatalf("params[user_id] = %v, want identity-1", params["user_id"])
 	}
 	noLiteral(t, cypher, "identity-1")
+	// The overview hoists its three row-invariant ownership facts into the leading
+	// WITH (unscoped / single_tenant / owned_entities) and references them per row,
+	// instead of re-running a :User scan + 4-hop expand for every candidate edge.
+	// The guard asserts BOTH the traversal that populates the owned-entity set and
+	// the per-row membership/tenant checks that consume it, so a regression that drops
+	// isolation is caught regardless of which half it removes.
 	for _, frag := range []string{
 		"$user_id = ''",
 		":User {identifier:$user_id}",
 		"[:HAS_CONVERSATION]->(:Conversation)",
-		"[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)",
+		"[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity) | elementId(e) ] AS owned_entities",
+		"elementId(s) IN owned_entities OR elementId(n) IN owned_entities",
+		") AS single_tenant",
+		"single_tenant AND (",
 		"NOT EXISTS {",
 		"coalesce(other.identifier, other.id, '') <> $user_id",
 		"s:Document OR s:Chunk OR s:Preference",
