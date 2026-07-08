@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37B
 current_phase_name: web-artifact-sidebar
 status: executing
-stopped_at: Completed 37B-04-PLAN.md (click-to-preview modal + 6 lazy renderers)
-last_updated: "2026-07-09T00:20:00.000Z"
+stopped_at: Completed 37B-05-PLAN.md (onArtifact pump signal + D-15 split-fold rehydration)
+last_updated: "2026-07-09T00:45:00.000Z"
 last_activity: 2026-07-09
-last_activity_desc: Completed 37B-04 (PreviewModal + useBlobPreview + 6 lazy renderers)
+last_activity_desc: Completed 37B-05 (onArtifact signal + D-15 agent-asset rehydration)
 progress:
   total_phases: 17
   completed_phases: 8
   total_plans: 71
-  completed_plans: 67
+  completed_plans: 68
   percent: 47
 ---
 
@@ -29,11 +29,13 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37B (web-artifact-sidebar) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: Ready to execute (37B-04 complete; Wave-3 sibling 37B-05 next)
-Last activity: 2026-07-09 — 37B-04 click-to-preview modal + 6 lazy renderers shipped
+Status: Ready to execute (37B-05 complete; Wave-4 plan 37B-06 ArtifactsPanel next)
+Last activity: 2026-07-09 — 37B-05 onArtifact signal + D-15 agent-asset rehydration shipped
+
+#### 37B-05 — Live-merge producer + saved-conversation download-persistence fix (WEBART-07/08). Wave-3 sibling on master (sequential, 2 atomic feat commits `bf7856e0`/`acd9b317`). **Task 1 (`bf7856e0`):** threaded an `onArtifact?(assetId)` signal through the `streamSSE` pump (mirroring `onUsage`) — added to `StreamRun/Post/SSEOptions`, fired in the frame loop when `frame.type==='CUSTOM' && name==='aura.artifact' && isArtifactDescriptor(value)` passing `frame.value.asset_id`; NEVER emitted from the pure `reduceFrame` (T-37B-15); degraded delivery (no asset_id) fires `onArtifact(undefined)` so the panel still auto-opens. `sseAdapter.onArtifact.test.ts` (4 tests: fire/degraded/malformed/unrelated). **Task 2 (`acd9b317`):** D-15 split-fold — history load now splits `listThreadAssets` by `source_kind`: uploads (web/telegram/cli) keep the existing user-turn fold, `source_kind==='agent'` deliverables rehydrate onto ASSISTANT turns via the new exported `foldAgentOntoAssistant` (fixes the download-disappears-on-saved-conversation-open bug — T-37B-13). `AssistantMessage` renders the durable authenticated `/api/assets/{id}/download` chip for folded agent assets (asset_id only, never object_key/host path — T-37B-14). `onArtifact` prop added to `ExternalStoreChat` (mirrors `onUsage`), forwarded into `streamRun`/`streamPost` via conditional spread (exactOptionalPropertyTypes). **DEVIATION (Rule 3 / CLAUDE.md 600-LOC cap):** the additions pushed `ExternalStoreChat.tsx` to 655 LOC → refactor-on-touch dupl-folded `attachAssetsToUserMessages` + the new agent fold into a shared `foldAssetsPositionally(role)` core (595 LOC), and moved the presentational chip renderer into the existing `ExternalStoreChat_messages.tsx` sibling (`AssistantMessage`). **VALIDATION:** `tsc --noEmit` clean; new tests sseAdapter.onArtifact 4 / ExternalStoreChat.rehydration 5 all green; full `src/chat/` suite 453 pass (41 files); eslint `--max-warnings=0` + prettier clean on all touched files; file-size/dup/vet pre-commit hooks green on both commits (no --no-verify). NO backend change, NO server list-order change, NO new deps/migrations/env (client-side only). **WEBART-07/08 stay `[ ]`** (phase-spanning — live browser + aggregate land at terminal 37B-08); `requirements mark-complete` NOT run.
 
 #### 37B-04 — Click-to-preview surface (WEBART-05): useBlobPreview + PreviewModal + 6 lazy per-MIME renderers. Wave-3 plan on master (sequential, 3 atomic feat commits `f3ca15d1`/`35f27d94`/`f38907f4`). **Task 1 (`f3ca15d1`):** `useBlobPreview(assetId, mimeType?)` — same-origin fetch of the 37A route, octet-stream Blob relabelled with the SSE mime_type, one objectURL, `AbortController.abort()` + `URL.revokeObjectURL` in ONE cleanup keyed on `[assetId,mimeType]` (T-37B-11); a render-time key gate hides a stale/revoked URL on rapid switch (no synchronous setState — react-hooks/set-state-in-effect forbids it). **Task 2 (`35f27d94`):** six default-export lazy renderers — `Html` renders untrusted HTML in a NULL-ORIGIN iframe (`sandbox="allow-scripts"`, NO same-origin, `srcDoc` not `src` — T-37B-08); `Xlsx` parses via SheetJS dynamic import → `sheet_to_html` inside an EMPTY-sandbox (`sandbox=""`) iframe with the sheet NAME escaped (T-37B-09); `Docx` dynamic-imports docx-preview `renderAsync` with `className:'aura-docx'` scope (T-37B-12); `Image`/`Pdf` consume useBlobPreview object URLs; `Text` renders React-escaped `<pre>`. docx-preview + xlsx reached ONLY via `import()` inside their effects → their own chunks, never the main/modal bundle (D-08). Two shared helpers added beyond the plan file list (DEVIATION Rule 3 — jscpd threshold 0 forbids any ≥100-token clone): `renderers/PreviewStatus.tsx` (loading/error + RendererProps) + `renderers/useAssetContent.ts` (text/blob/arrayBuffer fetch primitive). **Task 3 (`f38907f4`):** `PreviewModal({active,onClose})` — Radix Dialog at `w-[90vw] h-[90vh]`, header = filename + same-origin download anchor + Radix close, `DialogDescription` a11y, body dispatches `previewKind` (plan 03) to Suspense-wrapped `lazy()` renderers or a download-only card for svg/pptx/unknown (T-37B-05, no renderer mounted); + `artifacts.preview.{download,description,unsupported}` i18n (en+it parity). **VALIDATION:** `tsc` clean; new tests useBlobPreview 6 / renderers 16 / PreviewModal 13 all green; **full web suite 1109 pass, coverage Stmts 91.56% / Branch 85.93% / Funcs 91.88% / Lines 93.37% (all ≥85%, EXIT 0)**; eslint `--max-warnings=0` + prettier clean on 14 files; grep gates (allow-scripts present, allow-same-origin absent, docx/xlsx confined, previewKind+90vw present) all pass; jscpd/vet/file-size hooks green on all 3 commits (no --no-verify). NO new deps (docx-preview/xlsx shipped 37B-02); NO migrations/env. **WEBART-05/WEBART-08 stay `[ ]`** (phase-spanning — live browser verification + aggregate land at terminal 37B-08 per the 37B-01/03 precedent); `requirements mark-complete` NOT run. The modal is not yet mounted by a panel — that is 37B-06's job (this plan produces the surface).
 
@@ -563,8 +565,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-08T21:39:47.705Z
-Stopped at: Completed 37B-03-PLAN.md (pure artifact foundation)
+Last session: 2026-07-09T00:45:00.000Z
+Stopped at: Completed 37B-05-PLAN.md (onArtifact pump signal + D-15 split-fold rehydration)
 Resume file: None
 
 ## Operator Next Steps

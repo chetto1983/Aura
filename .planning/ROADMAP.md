@@ -429,7 +429,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
-**Plans:** 3/8 plans executed
+**Plans:** 5/8 plans executed
 
 **Wave 1** *(PRD-first gate — blocks all code, D-19)*
 
@@ -443,7 +443,7 @@ Plans:
 **Wave 3** *(parallel — depend on foundation, zero file overlap)*
 
 - [x] 37B-04-PLAN.md — Preview: useBlobPreview + PreviewModal (Radix 90vw/90vh dispatch) + 6 lazy renderers (image/pdf/text/html/docx/xlsx; null-origin HTML sandbox; SVG/pptx download-only)
-- [ ] 37B-05-PLAN.md — Live-merge producer + D-15 fix: onArtifact signal through streamSSE pump + split-fold rehydration (agent→assistant turns) + assistant-side download chip
+- [x] 37B-05-PLAN.md — Live-merge producer + D-15 fix: onArtifact signal through streamSSE pump + split-fold rehydration (agent→assistant turns) + assistant-side download chip
 
 **Wave 4** *(depends on 37B-02/03/04)*
 
