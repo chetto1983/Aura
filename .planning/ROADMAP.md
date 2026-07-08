@@ -494,24 +494,6 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
-#### Phase 37E: Composer Model & Reasoning-Effort Selector (INSERTED)
-
-**Goal:** Un selettore modello + livello di reasoning-effort nel Composer (parità con "Opus 4.8 · Alto" di Claude): l'utente sceglie per-turn il modello (tra quelli configurati) e l'effort, invece del solo modello server-fisso.
-
-**Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
-
-**Depends on:** SETTINGS-01/02 (model backend config), il runner/agent (`/agent/run`).
-
-**Success Criteria**:
-
-1. Il Composer espone un selettore modello (popolato dai backend configurati, settings-scoped) + un selettore effort; la scelta è persistita per-conversazione.
-2. `/agent/run` accetta un override opzionale (model + effort) validato server-side contro l'allowlist dei backend configurati (valore non ammesso → 400, mai un modello arbitrario); assente → il default settings-based odierno (nessuna regressione).
-3. Nessun bypass della governance model (l'override sceglie tra i modelli GIÀ ammessi, non ne aggiunge); unit + e2e; coverage ≥85%.
-
-**Design forks for discuss-phase:** (a) sorgente lista modelli — deriva dai KnobSpec/settings esistenti vs. un nuovo `GET /api/models`; (b) scope override — per-conversazione persistito vs. per-turn effimero; (c) effort — mappatura a un parametro provider vs. una preferenza Aura interna. **Verifica architetturale:** confermare che il contratto LLM/OpenRouter di Aura supporti l'override per-richiesta prima del plan.
-
-**PRD-first:** richiede PRD-amendment (WEBMODEL-01..03) — tocca il contratto `/agent/run` e la governance model.
-
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
 
 **Goal:** Condivisione/export di una conversazione o di un artifact (parità con "Condividi" + link di Claude), rispettando l'isolamento identità di Aura: export file o link condiviso autenticato, MAI una superficie pubblica non autenticata by-default.
