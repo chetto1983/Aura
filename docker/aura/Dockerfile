@@ -19,7 +19,7 @@ RUN npm run build
 
 FROM dxflrs/garage:v2.0.0 AS garagebin
 
-FROM golang:1.26.4-alpine AS build
+FROM golang:1.26.5-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache ca-certificates git

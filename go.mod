@@ -1,6 +1,6 @@
 module github.com/chetto1983/aura
 
-go 1.26.4
+go 1.26.5
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.1
