@@ -3,7 +3,9 @@ package agui
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/chetto1983/aura/internal/assets"
 )
@@ -12,10 +14,48 @@ func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/assets/presign", s.handleAssetPresign)
 	mux.HandleFunc("POST /api/assets/{id}/finalize", s.handleAssetFinalize)
 	mux.HandleFunc("GET /api/assets/{id}", s.handleAssetGet)
+	mux.HandleFunc("GET /api/assets/{id}/download", s.handleAssetDownload)
 	mux.HandleFunc("GET /api/assets", s.handleAssetList)
 	mux.HandleFunc("POST /api/assets/{id}/promote", s.handleAssetPromote)
 	mux.HandleFunc("POST /api/assets/{id}/retry", s.handleAssetRetry)
 	mux.HandleFunc("DELETE /api/assets/{id}", s.handleAssetDelete)
+}
+
+// handleAssetDownload streams the owner's asset body from the object store as a forced,
+// stored-XSS-safe attachment (WEBART-03). It inherits RequireAuth whole-origin from the parent
+// mux (no per-route auth wiring, no unauthenticated surface). The security invariants:
+//   - D-12 existence-hiding: OpenForIdentity's ownership gate precedes any store read, and ANY
+//     error (not-found OR not-owned) collapses to 404 — never 403, never 200.
+//   - D-10 stored-XSS guard: the serve Content-Type is the neutral application/octet-stream plus
+//     X-Content-Type-Options: nosniff regardless of the sniffed asset.MIMEType, which is NEVER
+//     trusted as a serve header.
+//   - D-11 header-injection guard: the filename rides Content-Disposition via contentDisposition.
+//   - D-09 DoS-safe stream-through: the read is scoped to r.Context() so a client disconnect
+//     cancels it and io.Copy unblocks (no goroutine leak); the stream is never presigned/redirected.
+func (s *Server) handleAssetDownload(w http.ResponseWriter, r *http.Request) {
+	if s.assets == nil {
+		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	identityID, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	rc, asset, err := s.assets.OpenForIdentity(r.Context(), r.PathValue("id"), identityID)
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusNotFound)
+		return
+	}
+	defer func() { _ = rc.Close() }()
+
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Disposition", contentDisposition(asset.FileName))
+	h.Set("Content-Length", strconv.FormatInt(asset.SizeBytes, 10))
+
+	_, _ = io.Copy(w, rc)
 }
 
 type assetPresignBody struct {
