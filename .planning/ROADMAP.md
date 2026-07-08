@@ -426,6 +426,28 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
+**Plans:** 8 plans in 6 waves
+
+**Wave 1** *(PRD-first gate — blocks all code, D-19)*
+- [ ] 37B-01-PLAN.md — PRD-amendment: WEBART-05..08 group + Artefatti sidebar surface + preview deps (docx-preview Apache-2.0, SheetJS CE via CDN) + null-origin HTML sandbox policy + D-14/D-15 persistence
+
+**Wave 2** *(parallel — both depend on 37B-01, zero file overlap)*
+- [ ] 37B-02-PLAN.md — Supply-chain: legitimacy checkpoint + install docx-preview/jszip + xlsx from CDN (CVE-safe) + widen Asset.source_kind union to add 'agent'
+- [ ] 37B-03-PLAN.md — Pure foundation: artifactMeta (previewKind SVG-gated + category label/icon + shared formatSize) + downloadAll (sequential/throttled) + artifacts.* i18n (en+it) + Stryker targets
+
+**Wave 3** *(parallel — depend on foundation, zero file overlap)*
+- [ ] 37B-04-PLAN.md — Preview: useBlobPreview + PreviewModal (Radix 90vw/90vh dispatch) + 6 lazy renderers (image/pdf/text/html/docx/xlsx; null-origin HTML sandbox; SVG/pptx download-only)
+- [ ] 37B-05-PLAN.md — Live-merge producer + D-15 fix: onArtifact signal through streamSSE pump + split-fold rehydration (agent→assistant turns) + assistant-side download chip
+
+**Wave 4** *(depends on 37B-02/03/04)*
+- [ ] 37B-06-PLAN.md — Panel: useThreadArtifacts (agent-filtered newest-first) + ArtifactRow (download + preview + degraded) + ArtifactsPanel (header, Scarica tutto, empty-state, lazy PreviewModal)
+
+**Wave 5** *(depends on 37B-05/06)*
+- [ ] 37B-07-PLAN.md — AppShell integration: third ResizablePanel (dynamic panelIds, no key bump) + header toggle + mobile right Drawer + onArtifact handler (invalidate + one-time auto-open)
+
+**Wave 6** *(depends on 37B-07)*
+- [ ] 37B-08-PLAN.md — Gate: Playwright e2e (artifact in panel + download) + full coverage ≥85% + Stryker ≥70% on pure modules + internal/webui/dist rebuild
+
 #### Phase 37C: Web Voice Lane (INSERTED)
 
 **Goal:** Parità voce con Telegram nel cockpit web: (a) **output vocale** — la risposta dell'agente è riproducibile come audio (pulsante speaker per messaggio + preferenza "voice mode" auto-speak); (b) **input vocale** — il Mic del Composer diventa dettatura in-place (transcript nel box input, editabile, non un attachment). Cloud-only via OpenRouter (`AURA_STT_CLOUD_MODEL`/`AURA_TTS_MODEL`), nessun sidecar locale (vincolo RAM). Riusa `multimodal.TTSClient`/`STTClient` già completi. Seconda delle aree di parità cockpit-web dall'audit voice/artifact/skill.
