@@ -17,7 +17,7 @@ requirements: [WEBART-05, WEBART-06, WEBART-08]
 must_haves:
   truths:
     - "previewKind(mime, filename) returns 'download' for SVG (gated FIRST), and the correct kind for image/pdf/text/html/docx/xlsx"
-    - "category label + lucide icon are derived from mime/extension per the CitationBubble precedent"
+    - "category label + lucide icon are derived from mime/extension per the CitationBubble precedent (D-16)"
     - "downloadAll sequences one <a download> per accepted asset, throttled, skipping degraded rows, reporting N/M"
     - "formatSize lives in artifactMeta.ts and is imported by LocalArtifactDisplay.tsx (no duplication) — inline chip still renders identically"
     - "artifacts.* i18n keys exist in BOTH en and it resource modules"
