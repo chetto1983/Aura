@@ -125,6 +125,10 @@ None — the lane is fully wired: the production `SendFile` ingests via the live
 ## Next Phase Readiness
 - **37A-04** (web reducer) can now rely on `aura.artifact` carrying `tool_call_id` (correlation key) + `size_bytes` on every delivery, and `asset_id`/`mime_type` on authenticated success — the exact keys its `isArtifactDescriptor` guard + `local_artifact` synthesis consume.
 
+## Self-Check: PASSED
+- All 4 created files present on disk.
+- All 4 commits (`ce6c6b99`, `a2335fd9`, `98d1cca1`, `3ce4033d`) present in git history.
+
 ---
 *Phase: 37A-web-artifact-delivery-lane*
 *Completed: 2026-07-08*
