@@ -55,7 +55,9 @@ export const displayEn = {
       sizeKb: '{{value}} KB',
       sizeMb: '{{value}} MB',
       sizeGb: '{{value}} GB',
-      pathLabel: 'Path',
+      download: 'Download',
+      downloadAria: 'Download {{filename}}',
+      deliveryUnavailable: 'Delivery unavailable',
       noName: 'Untitled file',
     },
     document: {
@@ -237,7 +239,9 @@ export const displayIt = {
       sizeKb: '{{value}} KB',
       sizeMb: '{{value}} MB',
       sizeGb: '{{value}} GB',
-      pathLabel: 'Percorso',
+      download: 'Scarica',
+      downloadAria: 'Scarica {{filename}}',
+      deliveryUnavailable: 'Consegna non disponibile',
       noName: 'File senza nome',
     },
     document: {
