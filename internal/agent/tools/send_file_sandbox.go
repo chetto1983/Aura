@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
@@ -70,11 +71,19 @@ func stageBoxArtifact(ctx context.Context, r io.Reader, fallbackName string) (st
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
+		// Zipslip guard: filepath.Base strips every directory component, and a residual "."/".."/
+		// separator entry falls back to the (safe) basename of the requested box path — so the
+		// extracted name can never carry traversal.
 		name := filepath.Base(hdr.Name)
-		if name == "" || name == "." || name == string(filepath.Separator) {
+		if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
 			name = fallbackName
 		}
 		dest := filepath.Join(stageDir, name)
+		// Defence-in-depth: refuse any entry whose joined path escapes the staging dir (the tar
+		// stream is daemon-produced, but the containment invariant must hold on the sink itself).
+		if dest != stageDir && !strings.HasPrefix(dest, filepath.Clean(stageDir)+string(os.PathSeparator)) {
+			continue
+		}
 		f, err := os.Create(dest)
 		if err != nil {
 			return "", "", err
