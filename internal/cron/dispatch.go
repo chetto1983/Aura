@@ -204,6 +204,13 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	if d.deps.Notifier == nil {
 		return
 	}
+	// A system-seeded housekeeping sweep that succeeded is pure operational noise in
+	// the user's channel ("identity purge ok: purged 0 ..." every ~15m). Suppress the
+	// routine-success push — the audit summary is still on the run ledger (CompleteRun).
+	// A FAILURE still flows through (D-21): an errored purge/reap must surface.
+	if runErr == nil && isSilentSuccessKind(task.Kind) {
+		return
+	}
 	tier := d.taskTier(task)
 	text := summary
 	if runErr != nil {
@@ -277,6 +284,21 @@ func (d *Dispatch) insertPendingNotification(
 		IdentityID:  task.IdentityID,
 	})
 	return err
+}
+
+// isSilentSuccessKind reports the system-seeded housekeeping sweeps whose ROUTINE
+// SUCCESS must not reach the user's channel. They are not model-schedulable — the
+// composition root seeds them on a fixed cadence (identity_purge ~every 15m,
+// sandbox_reap on the idle-TTL cadence, skill_ttl_sweep daily) — so a per-tick "ok"
+// summary is noise, not signal. Their FAILURE still notifies (D-21) and the audit
+// summary is always written to the run ledger; only the success push is skipped.
+func isSilentSuccessKind(kind TaskKind) bool {
+	switch kind {
+	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep:
+		return true
+	default:
+		return false
+	}
 }
 
 // taskTier recomputes the risk tier at dispatch from the task's kind + payload (the

@@ -154,6 +154,51 @@ func TestDispatchFailureCompletesFailedAndNotifies(t *testing.T) {
 	}
 }
 
+// TestDispatchSilentSuccessKindSuppressesRoutineNotification pins the fix for the
+// Telegram housekeeping flood: a system-seeded sweep (identity_purge / sandbox_reap /
+// skill_ttl_sweep) that succeeds must STILL write its audit summary to the run ledger
+// (CompleteRun) but must NOT push a routine "ok" notification to the user's channel.
+func TestDispatchSilentSuccessKindSuppressesRoutineNotification(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []TaskKind{KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHandler{meta: HandlerMeta{Kind: kind}, summary: "purged 0 expired identit(y/ies)"}
+			comp := &fakeCompleter{}
+			notif := &captureNotifier{}
+			d, c := newDispatchFor(t, h, kind, DispatchDeps{Store: comp, Notifier: notif})
+
+			if err := d.Dispatch(context.Background(), Task{ID: "sys", Kind: kind}, c); err != nil {
+				t.Fatalf("Dispatch: %v", err)
+			}
+			// The audit ledger still records the run + summary — only the user-facing push is dropped.
+			if len(comp.calls) != 1 || comp.calls[0].Status != "completed" || comp.calls[0].Summary == "" {
+				t.Fatalf("the run must still be recorded completed with its summary, got %+v", comp.calls)
+			}
+			if len(notif.texts) != 0 {
+				t.Fatalf("a routine housekeeping success must NOT notify the user, got %v", notif.texts)
+			}
+		})
+	}
+}
+
+// TestDispatchSilentSuccessKindStillNotifiesOnFailure guards D-21: the suppression is
+// scoped to routine SUCCESS. A failed housekeeping sweep must still surface to the user.
+func TestDispatchSilentSuccessKindStillNotifiesOnFailure(t *testing.T) {
+	t.Parallel()
+	h := &fakeHandler{meta: HandlerMeta{Kind: KindIdentityPurge}, err: errors.New("purger exploded")}
+	comp := &fakeCompleter{}
+	notif := &captureNotifier{}
+	d, c := newDispatchFor(t, h, KindIdentityPurge, DispatchDeps{Store: comp, Notifier: notif})
+
+	if err := d.Dispatch(context.Background(), Task{ID: "sys-fail", Kind: KindIdentityPurge}, c); err == nil {
+		t.Fatal("a handler error must propagate")
+	}
+	if len(notif.texts) != 1 || notif.texts[0] == "" {
+		t.Fatalf("a FAILED housekeeping sweep must still notify (D-21), got %v", notif.texts)
+	}
+}
+
 func TestDispatchUnknownKindFailsLoud(t *testing.T) {
 	t.Parallel()
 	comp := &fakeCompleter{}
