@@ -89,7 +89,7 @@ SQL `BACKUP DATABASE` → `aura-backup-20260620-110725611.zip` (16 KB) in one ca
 
 ## Verdict — ArcadeDB is the STRONGEST candidate; partial replacement / deeper PoC, NOT rejected
 
-ArcadeDB clears the compatibility wall that killed every other candidate. Over native **Bolt**, Aura's graphview reads and ~7/9 of the agent-memory deep features (temporal, spatial, MERGE-upsert, FOREACH, CALL subqueries, APOC, multi-label) run **unmodified** — so `mcp-neo4j-cypher` and the agent-memory Bolt driver can point at it with minimal change. Vectors work natively (correct ranking on real embeddings) and the GDS algorithms (incl. Leiden, which needs Neo4j *Enterprise*) exist.
+ArcadeDB clears the compatibility wall that killed every other candidate. Over native **Bolt**, Aura's graphview reads and ~7/9 of the agent-memory deep features (temporal, spatial, MERGE-upsert, FOREACH, CALL subqueries, APOC, multi-label) run **unmodified** — so `mcp-neo4j-cypher` and the agent-memory Bolt driver can point at it with minimal change. Vectors work natively (correct ranking on real embeddings) and the GDS algorithms exist (incl. Leiden — which, *correction 2026-07-08*, is **free in Neo4j's GDS Community** too, capped only at 4-core concurrency, **not** Enterprise-gated).
 
 The migration is **bounded but real**, not a reimplementation:
 1. Rewrite the 8+ vector queries `db.index.vector.queryNodes` → SQL `vectorNeighbors()` (HTTP API).

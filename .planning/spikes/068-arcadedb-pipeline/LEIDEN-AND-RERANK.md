@@ -5,16 +5,18 @@
 
 **Evidence:** `[doc]` official · `[ver]` verified in spike 068 · `[ref]` reference implementation (Microsoft GraphRAG etc.).
 
+> **⚠ CORRECTION (2026-07-08).** §1 below originally claimed *"Neo4j Community does NOT have Leiden — it's a Neo4j Enterprise GDS algorithm (paid)."* **That is false.** Leiden (and PageRank, Louvain, WCC, …) ship in **GDS *Community* (free)** and run on a free Neo4j Community DB via `CALL gds.leiden.*` over Bolt; Enterprise only lifts the **4-core concurrency cap**, it does not gate the algorithm. The external-`leidenalg` recommendation still stands — but as an *optimization* (store-agnostic, sidesteps the 4-core cap, adds hierarchical communities), **not** because Neo4j Community lacks Leiden. Source: Neo4j GDS docs (Leiden; Introduction → Community vs Enterprise). Inline claims corrected below.
+
 ---
 
 ## 1. Leiden community detection
 
 ### The real problem (bigger than ArcadeDB)
-Aura's memory consolidation wants **Leiden** community detection over the entity/memory graph. But:
-- **Neo4j Community does NOT have Leiden** — it's a **Neo4j Enterprise GDS** algorithm (paid). `[doc]`
+Aura's memory consolidation wants **Leiden** community detection over the entity/memory graph. The invocation story differs per store:
+- **Neo4j GDS *Community* (free) HAS Leiden** — `CALL gds.leiden.*` runs in-engine over Bolt on a free Neo4j Community DB; the only Enterprise gate is the **4-core concurrency cap**, not the algorithm. `[doc]`
 - **ArcadeDB has Leiden, but Java-API-only** — `new GraphAlgorithms().pageRank(gav, …)` on a `GraphAnalyticalView`; no SQL/HTTP/Cypher invocation exists in the docs, the OLAP blog, or the `arcadedb-usecases/graph-rag` example. Aura (Go over Bolt/HTTP) can't reach it without embedding Java. `[ver]`
 
-→ On **either** database, Aura cannot call Leiden in-engine over the wire. The fix must be **external** — which is also exactly how the state-of-the-art does it.
+→ On **ArcadeDB** Leiden isn't reachable over the wire (Java-only); on **Neo4j** it *is* (`CALL gds.leiden.*` over Bolt, GDS Community, 4-core cap). An **external** consolidation job is still the recommended path — store-agnostic, sidesteps the 4-core cap, yields hierarchical communities, and exactly how the state-of-the-art (Microsoft GraphRAG) does it — but as an *optimization*, not because Neo4j can't.
 
 ### Recommended solution: external Python consolidation job
 Compute communities outside the DB with a C++-backed Leiden lib, write `community_id` back as a node property. This is **the same pattern Microsoft GraphRAG uses** (`graspologic.partition.hierarchical_leiden`). `[ref]`
@@ -42,7 +44,7 @@ write_back([(v["name"], part.membership[i]) for i,v in enumerate(g.vs)])
 - Deterministic with a fixed `seed`; `resolution_parameter` tunes community granularity.
 - Mirrors the existing memory-consolidation idea (`ConsolidationRun` label already exists in the live graph).
 
-**Why not the alternatives:** Neo4j Enterprise GDS = paid; ArcadeDB Java sidecar = couples Aura to ArcadeDB + a JVM component; `networkx` Louvain = pure-python but lower quality + slower than C++ Leiden. The external `leidenalg`/`graspologic` job is the cheapest, highest-quality, store-agnostic path.
+**Why not the alternatives:** in-engine `CALL gds.leiden.*` works on Neo4j (GDS Community, free) but is 4-core-capped and writes back inside the query transaction; ArcadeDB Java sidecar = couples Aura to ArcadeDB + a JVM component; `networkx` Louvain = pure-python but lower quality + slower than C++ Leiden. The external `leidenalg`/`graspologic` job is the cheapest, highest-quality, store-agnostic path.
 
 ---
 
@@ -86,7 +88,7 @@ llama.cpp natively serves rerankers. `[doc/ver-from-docs]`
 ---
 
 ## Bottom line
-- **Leiden:** external `leidenalg`/`graspologic` consolidation job over Bolt — store-agnostic, free, GraphRAG-proven, and it unblocks Aura on **today's Neo4j Community** (which otherwise has no Leiden). Removes Leiden as both an ArcadeDB blocker *and* a hidden Neo4j-Community gap.
+- **Leiden:** external `leidenalg`/`graspologic` consolidation job over Bolt — store-agnostic, free, GraphRAG-proven. Neo4j GDS Community already provides `CALL gds.leiden.*` in-engine (free, 4-core cap), so the external job is an *optimization* (sidesteps the cap, adds hierarchical communities), not a gap-filler; on ArcadeDB it's the only path (Java-only in-engine).
 - **Rerank:** a `bge-reranker-v2-m3` llama.cpp sidecar (`/v1/rerank`) for two-stage retrieval, with RRF as the free fusion baseline. Pure CPU, fits the existing sidecar pattern.
 
 Neither depends on switching databases — both are net upgrades to the current Neo4j pipeline.
