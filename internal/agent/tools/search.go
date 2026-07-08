@@ -198,6 +198,13 @@ func sourceOrientation(reg *Registry) string {
 	return b.String()
 }
 
+// Execute resolves the query to matching deferred specs and returns their full
+// Description + Parameters as the result text. On a successful match it ALSO promotes
+// the loaded tools: the matched names ride the result Meta under MetaActivatedTools,
+// which the runner reads to make them callable (with their schema) on the next turn —
+// the schema-load-before-call parity (a deferred tool is hidden from the callable set
+// until tool_search loads it here). The no-match orientation path and the embed-sidecar
+// infra-error path load nothing and therefore set no promotion Meta.
 func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	var args toolSearchArgs
 	if err := json.Unmarshal(raw, &args); err != nil {
@@ -233,13 +240,30 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	}
 
 	var b strings.Builder
+	names := make([]string, 0, len(matches))
 	for _, t := range matches {
 		s := t.Spec()
+		names = append(names, s.Name)
 		fmt.Fprintf(&b, "## %s\n%s\n\nParameters:\n%s\n\n", s.Name, s.Description, string(s.Parameters))
 	}
 	// A select of many large deferred specs can exceed the preview cap; route
 	// through the shared spillover helper so big manifests page via the sidecar.
-	return NewResult(ctx, b.String())
+	res, err := NewResult(ctx, b.String())
+	if err != nil {
+		return res, err
+	}
+	// Full-promotion parity: attach the loaded tool names on the result Meta so the
+	// runner promotes them into the callable set (MetaActivatedTools). Set on BOTH the
+	// select: and free-text success paths (they share this tail); NOT on the no-match
+	// orientation path (nothing loaded) nor the infra-error path (they return earlier).
+	// This is the schema-load-before-call parity: a deferred tool becomes callable next
+	// turn only after tool_search has loaded its schema here.
+	if res.Meta == nil {
+		m := ToolResultMeta{}
+		res.Meta = &m
+	}
+	(*res.Meta)[MetaActivatedTools] = names
+	return res, nil
 }
 
 // match resolves a query to tools. The `select:` path resolves any registered tool

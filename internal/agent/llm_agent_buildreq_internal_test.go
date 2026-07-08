@@ -56,14 +56,14 @@ func TestBuildRequest_BranchParity(t *testing.T) {
 
 	// adaptiveTierOK == true → must equal BuildWithReasoningTier output.
 	gotTier := a.buildRequest(budget, tier, true)
-	wantTier := a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier)
+	wantTier := a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier, a.activated)
 	if !reflect.DeepEqual(gotTier, wantTier) {
 		t.Fatalf("tierOK branch: buildRequest != BuildWithReasoningTier\n got=%+v\nwant=%+v", gotTier, wantTier)
 	}
 
 	// adaptiveTierOK == false → must equal plain Build output.
 	gotPlain := a.buildRequest(budget, tier, false)
-	wantPlain := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
+	wantPlain := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget, a.activated)
 	if !reflect.DeepEqual(gotPlain, wantPlain) {
 		t.Fatalf("non-tier branch: buildRequest != Build\n got=%+v\nwant=%+v", gotPlain, wantPlain)
 	}

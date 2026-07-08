@@ -22,8 +22,8 @@ func TestBudgetSourcesTailInject(t *testing.T) {
 	histLenBefore := len(hist)
 
 	srcList := "[1] Forecast — https://example.com/a\n[2] Map — https://example.com/b"
-	withSrc := b.Build(hist, reg, "openrouter", cfg, Budget{Sources: srcList})
-	noSrc := b.Build(hist, reg, "openrouter", cfg, Budget{})
+	withSrc := b.Build(hist, reg, "openrouter", cfg, Budget{Sources: srcList}, nil)
+	noSrc := b.Build(hist, reg, "openrouter", cfg, Budget{}, nil)
 
 	// The caller's slice is never mutated by the append-to-copy path.
 	if len(hist) != histLenBefore {

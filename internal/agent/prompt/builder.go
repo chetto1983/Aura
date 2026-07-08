@@ -76,7 +76,7 @@ func (b Budget) block() string {
 
 // Build assembles the chat-completion request from the supplied history, tool
 // registry, provider, and config. It reproduces the previous inline construction
-// byte-for-byte (Tools = reg.RenderToolDefs() with its cache-load-bearing
+// byte-for-byte (Tools = reg.RenderToolDefs(activated) with its cache-load-bearing
 // alphabetical order untouched, scalars from cfg) so the emitted messages[0]
 // stays byte-identical (D-01). When a volatile hint is present, a trailing user-role
 // hint message is appended to a COPY of history (the caller's slice and
@@ -84,22 +84,26 @@ func (b Budget) block() string {
 // provider branch runs last. Adaptive reasoning is applied only by
 // BuildWithReasoningTier, after a caller has produced a tier outside the pure
 // builder. cache_control remains a no-op unless provider == "anthropic".
-func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget) llm.Request {
-	req := b.buildBase(history, reg, cfg, budget)
+//
+// activated is the per-run set of deferred tool names tool_search has promoted
+// into the callable manifest (Claude Code parity); nil hides every deferred tool.
+func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, activated map[string]struct{}) llm.Request {
+	req := b.buildBase(history, reg, cfg, budget, activated)
 	injectCacheControl(&req, provider)
 	return req
 }
 
 // BuildWithReasoningTier assembles a request and applies the caller-provided
-// adaptive reasoning tier before provider-specific cache-control handling.
-func (b *PromptBuilder) BuildWithReasoningTier(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, tier ReasoningTier) llm.Request {
-	req := b.buildBase(history, reg, cfg, budget)
+// adaptive reasoning tier before provider-specific cache-control handling. activated
+// is the per-run set of tool_search-promoted deferred tool names (nil hides all).
+func (b *PromptBuilder) BuildWithReasoningTier(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, tier ReasoningTier, activated map[string]struct{}) llm.Request {
+	req := b.buildBase(history, reg, cfg, budget, activated)
 	ApplyAdaptiveReasoning(&req, provider, cfg, tier)
 	injectCacheControl(&req, provider)
 	return req
 }
 
-func (b *PromptBuilder) buildBase(history []llm.Message, reg *tools.Registry, cfg llm.Config, budget Budget) llm.Request {
+func (b *PromptBuilder) buildBase(history []llm.Message, reg *tools.Registry, cfg llm.Config, budget Budget, activated map[string]struct{}) llm.Request {
 	msgs := history
 	if budget.present() {
 		msgs = append(append([]llm.Message(nil), history...), llm.Message{Role: llm.RoleUser, Content: budget.block()})
@@ -107,7 +111,7 @@ func (b *PromptBuilder) buildBase(history []llm.Message, reg *tools.Registry, cf
 	req := llm.Request{
 		Model:       cfg.Model,
 		Messages:    msgs,
-		Tools:       reg.RenderToolDefs(),
+		Tools:       reg.RenderToolDefs(activated),
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	}

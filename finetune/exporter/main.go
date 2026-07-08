@@ -101,7 +101,7 @@ func main() {
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].Name < records[j].Name })
 
-	defaultDefs, err := json.Marshal(reg.RenderToolDefs())
+	defaultDefs, err := json.Marshal(reg.RenderToolDefs(nil))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "export-tools: marshal tooldefs: %v\n", err)
 		os.Exit(1)

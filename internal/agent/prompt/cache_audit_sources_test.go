@@ -35,7 +35,7 @@ func TestCacheAuditSourceListMessages0Stable(t *testing.T) {
 			Today:       "2026-06-18",
 			Sources:     sources,
 		}
-		req := b.Build(hist, reg, "openrouter", cfg, budget)
+		req := b.Build(hist, reg, "openrouter", cfg, budget, nil)
 		h0, err := PrefixHash(req.Messages, []int{0})
 		if err != nil {
 			t.Fatalf("turn %d hash: %v", turn, err)

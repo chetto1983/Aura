@@ -24,7 +24,7 @@ func TestApplyAdaptiveReasoningLeavesConfiguredMaxTokens(t *testing.T) {
 		{Role: llm.RoleUser, Content: "che tempo fa domani a Caraglio?"},
 	}
 	for _, tier := range []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh} {
-		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier)
+		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier, nil)
 		if req.MaxTokens != 900 {
 			t.Fatalf("tier %q with a 900 cap: MaxTokens = %d, want the configured 900 unchanged", tier, req.MaxTokens)
 		}

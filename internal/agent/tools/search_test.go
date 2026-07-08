@@ -187,6 +187,75 @@ func TestToolSearch_SelectTrimsAndAccumulates(t *testing.T) {
 	}
 }
 
+// activatedNames pulls the promoted tool-name list off a ToolResult's Meta
+// (MetaActivatedTools), the signal the runner reads to make deferred tools callable.
+func activatedNames(res ToolResult) ([]string, bool) {
+	if res.Meta == nil {
+		return nil, false
+	}
+	names, ok := (*res.Meta)[MetaActivatedTools].([]string)
+	return names, ok
+}
+
+// TestToolSearch_PromotesLoadedToolsOnMeta pins the full-promotion parity: a
+// successful tool_search (select: AND free-text) attaches the loaded tool names to
+// the result Meta under MetaActivatedTools so the runner can promote them into the
+// callable set. The no-match orientation path loads nothing and MUST NOT set it.
+func TestToolSearch_PromotesLoadedToolsOnMeta(t *testing.T) {
+	t.Run("select_path", func(t *testing.T) {
+		ts, ctx := newSearch(t,
+			searchableTool{name: "alpha_tool", summary: "a"},
+			searchableTool{name: "beta_tool", summary: "b"},
+		)
+		res, err := ts.Execute(ctx, []byte(`{"query":"select:alpha_tool,beta_tool"}`))
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		names, ok := activatedNames(res)
+		if !ok {
+			t.Fatal("select: result did not set MetaActivatedTools")
+		}
+		want := []string{"alpha_tool", "beta_tool"}
+		if !equalStrings(names, want) {
+			t.Fatalf("activated = %v, want %v", names, want)
+		}
+	})
+
+	t.Run("free_text_path", func(t *testing.T) {
+		ts, ctx := newSearch(t,
+			bm25Tool{name: "calculator", desc: "evaluate arithmetic expressions"},
+			bm25Tool{name: "calendar", desc: "list meetings and appointments"},
+		)
+		res, err := ts.Execute(ctx, []byte(`{"query":"arithmetic expressions","max_results":1}`))
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		names, ok := activatedNames(res)
+		if !ok || len(names) == 0 {
+			t.Fatalf("free-text result did not set MetaActivatedTools: names=%v ok=%v", names, ok)
+		}
+		if names[0] != "calculator" {
+			t.Fatalf("free-text activated[0] = %q, want calculator (the top match)", names[0])
+		}
+	})
+
+	t.Run("no_match_path_sets_nothing", func(t *testing.T) {
+		// A registry with only a NON-deferred tool has an empty deferred corpus, so a
+		// free-text query hits the noMatchOrientation capability-gap path — nothing loaded.
+		ts, ctx := newSearch(t, nonDeferredTool{name: "only_active"})
+		res, err := ts.Execute(ctx, []byte(`{"query":"anything at all"}`))
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		if !strings.Contains(res.Preview, "no matching tools") {
+			t.Fatalf("expected the no-match orientation, got %q", res.Preview)
+		}
+		if names, ok := activatedNames(res); ok {
+			t.Fatalf("no-match path must NOT set MetaActivatedTools, got %v", names)
+		}
+	})
+}
+
 // nonDeferredTool is a registered tool with Deferred=false — keyword search must
 // NEVER surface it (D-03), but select: by exact name MUST resolve it (D-05).
 type nonDeferredTool struct{ name string }

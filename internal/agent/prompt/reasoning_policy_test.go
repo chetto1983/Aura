@@ -59,7 +59,7 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 			}
 			before, _ := json.Marshal(hist[0])
 
-			req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tc.tier)
+			req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tc.tier, nil)
 
 			after, _ := json.Marshal(req.Messages[0])
 			if string(before) != string(after) {
@@ -124,7 +124,7 @@ func TestAdaptiveReasoningShowReasoningUnexcludes(t *testing.T) {
 		{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
 	}
 	for _, tier := range []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh} {
-		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier)
+		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier, nil)
 		if req.Reasoning.Exclude == nil || *req.Reasoning.Exclude {
 			t.Fatalf("tier %q with ShowReasoning: Exclude = %v, want false (stream the CoT)", tier, req.Reasoning.Exclude)
 		}
@@ -145,7 +145,7 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		req := b.BuildWithReasoningTier([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh)
+		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh, nil)
 		if req.MaxTokens != 1000 {
 			t.Fatalf("MaxTokens = %d, want configured cap 1000", req.MaxTokens)
 		}
@@ -157,11 +157,11 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 	t.Run("plain_build_leaves_request_unchanged", func(t *testing.T) {
 		t.Parallel()
 		hist := seedHistory()
-		got := b.Build(hist, reg, "openrouter", cfg, Budget{})
+		got := b.Build(hist, reg, "openrouter", cfg, Budget{}, nil)
 		want := llm.Request{
 			Model:       cfg.Model,
 			Messages:    hist,
-			Tools:       reg.RenderToolDefs(),
+			Tools:       reg.RenderToolDefs(nil),
 			Temperature: cfg.Temperature,
 			MaxTokens:   cfg.MaxTokens,
 		}
@@ -175,8 +175,8 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		cfg := cfg
 		cfg.AdaptiveReasoning = false
 		hist := seedHistory()
-		got := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh)
-		want := b.Build(hist, reg, "openrouter", cfg, Budget{})
+		got := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh, nil)
+		want := b.Build(hist, reg, "openrouter", cfg, Budget{}, nil)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("disabled adaptive reasoning drifted request:\n got=%+v\nwant=%+v", got, want)
 		}
@@ -187,7 +187,7 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		req := b.BuildWithReasoningTier([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "anthropic", cfg, Budget{}, ReasoningTierHigh)
+		}, reg, "anthropic", cfg, Budget{}, ReasoningTierHigh, nil)
 		if !req.Reasoning.Empty() {
 			t.Fatalf("non-openrouter request carried reasoning: %+v", req.Reasoning)
 		}
@@ -203,7 +203,7 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		req := b.BuildWithReasoningTier([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh)
+		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh, nil)
 		if !req.Reasoning.Empty() {
 			t.Fatalf("local endpoint request carried reasoning: %+v", req.Reasoning)
 		}

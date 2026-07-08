@@ -77,7 +77,7 @@ func TestCoTLiveE2E_ReasoningReachesStatusPane(t *testing.T) {
 		{Role: llm.RoleSystem, Content: "Rispondi in italiano. Ragiona passo-passo, poi una frase finale breve."},
 		{Role: llm.RoleUser, Content: "Quanto fa 17 per 23 meno 12? Spiega il ragionamento, poi il risultato."},
 	}
-	req := builder.BuildWithReasoningTier(history, reg, cfg.Provider, cfg, prompt.Budget{}, prompt.ReasoningTierHigh)
+	req := builder.BuildWithReasoningTier(history, reg, cfg.Provider, cfg, prompt.Budget{}, prompt.ReasoningTierHigh, nil)
 	if req.Reasoning.Exclude == nil || *req.Reasoning.Exclude {
 		t.Fatalf("precondition: ShowReasoning ON must set Exclude=false, got %v", req.Reasoning.Exclude)
 	}

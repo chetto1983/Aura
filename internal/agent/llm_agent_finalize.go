@@ -201,7 +201,7 @@ func truncateBytes(s string, n int) string {
 func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Usage, err error) {
 	finalizeHistory := append(append([]llm.Message(nil), a.history...),
 		llm.Message{Role: llm.RoleUser, Content: finalizeNudge})
-	req := a.builder.Build(finalizeHistory, a.registry, a.cfg.Provider, a.cfg, prompt.Budget{})
+	req := a.builder.Build(finalizeHistory, a.registry, a.cfg.Provider, a.cfg, prompt.Budget{}, a.activated)
 	req.ToolChoice = "none"
 	req.SessionID = a.sessionID
 

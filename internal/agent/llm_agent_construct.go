@@ -35,6 +35,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		client:       cfg.Client,
 		cfg:          cfg.LLM,
 		registry:     cfg.Registry,
+		activated:    make(map[string]struct{}),
 		previewCap:   cfg.PreviewCap,
 		runDir:       cfg.RunDir,
 		sessionID:    cfg.SessionID,

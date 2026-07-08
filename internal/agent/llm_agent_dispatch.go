@@ -126,6 +126,11 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			if run.Mutating {
 				a.sideEffected = true // D-43: this turn touched host state; arm the completion gate.
 			}
+			// Full-promotion parity: if this run was a tool_search hit, promote the tools
+			// it loaded (MetaActivatedTools) into a.activated so the NEXT turn's buildRequest
+			// makes them callable WITH their schema. Race-free: this is the serial result
+			// loop (executeBatch already joined); the concurrent batch only reads a.activated.
+			a.promoteFromMeta(run.Result.Meta)
 			a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: calls[i].ID, Content: run.Preview})
 			// Dedup hashes the RAW result preview, not run.Preview: the prompt-facing
 			// rendering wraps untrusted output in a per-call random nonce envelope

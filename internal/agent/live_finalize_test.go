@@ -122,7 +122,7 @@ func TestLiveToolChoiceNone(t *testing.T) {
 		{Role: llm.RoleUser, Content: finalizeNudge},
 	}
 
-	req := prompt.NewPromptBuilder().Build(hist, registryForLive(t), cfg.Provider, cfg, prompt.Budget{})
+	req := prompt.NewPromptBuilder().Build(hist, registryForLive(t), cfg.Provider, cfg, prompt.Budget{}, nil)
 	req.ToolChoice = "none"
 	req.SessionID = uuid.NewString()
 

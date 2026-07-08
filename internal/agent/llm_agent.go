@@ -44,12 +44,18 @@ type LlmAgent struct {
 	client      llm.Client
 	cfg         llm.Config
 	registry    *tools.Registry
-	previewCap  int
-	runDir      string
-	sessionID   string
-	workspace   string
-	builder     *prompt.PromptBuilder
-	hooks       *HookManager
+	// activated is the per-run set of deferred tool names promoted into the callable
+	// manifest by tool_search (Claude Code parity: a deferred tool is not callable
+	// until its schema is loaded). Reset per run (a fresh LlmAgent per turn), written
+	// only in the serial dispatch result loop (promoteFromMeta) and read by
+	// buildRequest and the dispatch gate.
+	activated  map[string]struct{}
+	previewCap int
+	runDir     string
+	sessionID  string
+	workspace  string
+	builder    *prompt.PromptBuilder
+	hooks      *HookManager
 
 	// gateway is the optional Phase-35 policy PEP (GATE-01): execTool calls its Decide
 	// before tool.Execute. nil is an Allow no-op (dev-parity for tests/standalone).
@@ -438,9 +444,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 // byte-identical to the old branch's chosen request (D-01 parity).
 func (a *LlmAgent) buildRequest(budget prompt.Budget, tier prompt.ReasoningTier, tierOK bool) llm.Request {
 	if tierOK {
-		return a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier)
+		return a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier, a.activated)
 	}
-	return a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
+	return a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget, a.activated)
 }
 
 // runTerminal handles the text_response terminal call (D-13). A malformed payload
@@ -535,6 +541,20 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
 		endToolSpan(span, run.Err)
+		return run
+	}
+	// Dispatch gate (full-promotion parity safety net): a deferred tool whose schema
+	// has not been loaded via tool_search is NOT in the callable manifest, so a call to
+	// it is hallucinated. Bounce it back with load-it-first guidance instead of executing
+	// with fabricated arguments — model-visible guidance, not an error span.
+	if a.isDeferredUnloaded(call.Function.Name) {
+		_, span := startToolSpan(ctx, call.Function.Name, false)
+		run.EndedAt = time.Now().UTC()
+		run.Preview = fmt.Sprintf(
+			"error: tool_not_loaded: %q is a deferred tool whose schema is not loaded; call tool_search with query %q to load it, then call %s with the loaded parameters",
+			call.Function.Name, "select:"+call.Function.Name, call.Function.Name)
+		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
+		endToolSpan(span, "")
 		return run
 	}
 	run.Mutating = tool.Spec().Mutating

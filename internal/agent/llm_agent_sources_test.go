@@ -28,11 +28,22 @@ func webSearchCall(id, query string) llm.ToolCall {
 	return agenttest.MakeToolCall(id, "web_search", string(args))
 }
 
+// toolSearchCall scripts a tool_search load; the select: path needs no embedder, so it
+// promotes a deferred tool (web_search) into the callable set with no sidecar.
+func toolSearchCall(id, query string) llm.ToolCall {
+	args, _ := json.Marshal(map[string]string{"query": query})
+	return agenttest.MakeToolCall(id, "tool_search", string(args))
+}
+
 func newSourcesAgent(t *testing.T, fc *agenttest.FakeClient, results []web.Result) *agent.LlmAgent {
 	t.Helper()
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.WebSearch{Engine: fakeSearchEngine{results: results}})
+	// web_search is a deferred tool: under the full-promotion contract it is not
+	// callable until tool_search loads its schema, so the registry carries the
+	// (non-deferred) tool_search hook and the scripted turn below loads web_search first.
+	reg.Register(&tools.ToolSearch{Registry: reg})
 	return agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     fc,
 		LLM:        llm.Config{Model: "test-model", Provider: "test-provider", TotalTimeoutSec: 30},
@@ -48,7 +59,8 @@ func newSourcesAgent(t *testing.T, fc *agenttest.FakeClient, results []web.Resul
 // its hits into the per-run registry; the NEXT LLM request carries the numbered
 // `[n] Title — url` list in the tail-injected hint, while messages[0] stays
 // byte-identical to the first request (the volatile list never poisons the cached
-// prefix).
+// prefix). Full-promotion parity: web_search is deferred, so the scripted flow first
+// loads it via tool_search (select: — no embedder), then calls it.
 func TestSourcesTailInjectedAfterWebSearch(t *testing.T) {
 	recordingProvider(t)
 	results := []web.Result{
@@ -56,6 +68,7 @@ func TestSourcesTailInjectedAfterWebSearch(t *testing.T) {
 		{Title: "Milan forecast", URL: "https://weather.test/milan", Snippet: "rain"},
 	}
 	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(toolSearchCall("c0", "select:web_search")),
 		agenttest.ToolCallTurn(webSearchCall("c1", "weather rome")),
 		agenttest.ToolCallTurn(textResponseCall("c2", "Rome is sunny [1]; Milan is rainy [2].")),
 	)
@@ -63,8 +76,8 @@ func TestSourcesTailInjectedAfterWebSearch(t *testing.T) {
 	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 2 {
-		t.Fatalf("expected 2 LLM calls (search turn + final), got %d", fc.CallCount())
+	if fc.CallCount() != 3 {
+		t.Fatalf("expected 3 LLM calls (tool_search load + search turn + final), got %d", fc.CallCount())
 	}
 
 	first := fc.Requests[0]

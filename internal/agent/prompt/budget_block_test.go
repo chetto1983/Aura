@@ -18,13 +18,13 @@ func TestVolatileHintLines(t *testing.T) {
 	cfg := testConfig()
 	hist := seedHistory()
 
-	both := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 1, Remaining: 2, Workspace: "D:/ws/run-1"})
+	both := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 1, Remaining: 2, Workspace: "D:/ws/run-1"}, nil)
 	last := both.Messages[len(both.Messages)-1]
 	if want := "<budget>used=1 remaining=2</budget>\n<workspace>D:/ws/run-1</workspace>"; last.Content != want {
 		t.Fatalf("budget+workspace block = %q, want %q", last.Content, want)
 	}
 
-	only := b.Build(hist, reg, "openrouter", cfg, Budget{Workspace: "D:/ws/run-1"})
+	only := b.Build(hist, reg, "openrouter", cfg, Budget{Workspace: "D:/ws/run-1"}, nil)
 	last = only.Messages[len(only.Messages)-1]
 	if want := "<workspace>D:/ws/run-1</workspace>"; last.Content != want {
 		t.Fatalf("workspace-only block = %q, want %q", last.Content, want)
@@ -36,7 +36,7 @@ func TestVolatileHintLines(t *testing.T) {
 		Workspace:   "D:/ws/run-1",
 		CurrentTime: "2026-06-09T12:34:56+02:00",
 		Today:       "2026-06-09",
-	})
+	}, nil)
 	last = withTime.Messages[len(withTime.Messages)-1]
 	if want := "<budget>used=1 remaining=2</budget>\n<workspace>D:/ws/run-1</workspace>\n<current_time>2026-06-09T12:34:56+02:00</current_time>\n<today>2026-06-09</today>"; last.Content != want {
 		t.Fatalf("budget+workspace+time block = %q, want %q", last.Content, want)
@@ -45,7 +45,7 @@ func TestVolatileHintLines(t *testing.T) {
 	timeOnly := b.Build(hist, reg, "openrouter", cfg, Budget{
 		CurrentTime: "2026-06-09T12:34:56+02:00",
 		Today:       "2026-06-09",
-	})
+	}, nil)
 	last = timeOnly.Messages[len(timeOnly.Messages)-1]
 	if want := "<current_time>2026-06-09T12:34:56+02:00</current_time>\n<today>2026-06-09</today>"; last.Content != want {
 		t.Fatalf("time-only block = %q, want %q", last.Content, want)
@@ -65,8 +65,8 @@ func TestBudgetBlockByteStable(t *testing.T) {
 		t.Parallel()
 		hist := seedHistory()
 
-		turn1 := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 0, Remaining: 3})
-		turn2 := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 1, Remaining: 2})
+		turn1 := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 0, Remaining: 3}, nil)
+		turn2 := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 1, Remaining: 2}, nil)
 
 		m0a, err := json.Marshal(turn1.Messages[0])
 		if err != nil {
@@ -105,7 +105,7 @@ func TestBudgetBlockByteStable(t *testing.T) {
 		lenBefore := len(hist)
 		tail := hist[len(hist)-1]
 
-		req := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 2, Remaining: 1})
+		req := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 2, Remaining: 1}, nil)
 
 		if len(hist) != lenBefore {
 			t.Fatalf("Build grew the caller's slice: got len %d want %d", len(hist), lenBefore)
@@ -121,7 +121,7 @@ func TestBudgetBlockByteStable(t *testing.T) {
 	t.Run("zero counts omit the budget block (backward-compatible default)", func(t *testing.T) {
 		t.Parallel()
 		hist := seedHistory()
-		req := b.Build(hist, reg, "openrouter", cfg, Budget{})
+		req := b.Build(hist, reg, "openrouter", cfg, Budget{}, nil)
 
 		if len(req.Messages) != len(hist) {
 			t.Fatalf("zero-counts build changed message count: got %d want %d", len(req.Messages), len(hist))
@@ -158,7 +158,7 @@ func TestBudgetBlockFormatting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			hist := seedHistory()
-			req := b.Build(hist, reg, "openrouter", cfg, Budget{Used: tc.used, Remaining: tc.remaining})
+			req := b.Build(hist, reg, "openrouter", cfg, Budget{Used: tc.used, Remaining: tc.remaining}, nil)
 			last := req.Messages[len(req.Messages)-1]
 			if last.Content != tc.want {
 				t.Fatalf("budget block = %q, want %q", last.Content, tc.want)

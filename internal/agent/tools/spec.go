@@ -28,6 +28,9 @@ var ErrNoNonDeferredTool = errors.New("registry: at least one non-deferred tool 
 // excluded from the Validate non-deferred count (it is never an actionable tool).
 const toolSearchName = "tool_search"
 
+// MetaActivatedTools is the ToolResult.Meta key tool_search sets to the list of tool names it loaded, so the runner can promote them into the callable set.
+const MetaActivatedTools = "activated_tools"
+
 // Spec is the LLM-visible metadata for a tool.
 type Spec struct {
 	Name        string

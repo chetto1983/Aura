@@ -7,9 +7,16 @@ import (
 	"testing"
 )
 
-// TestRenderToolDefs asserts RenderToolDefs returns []llm.ToolDef in the same
-// alphabetical order as Render(), one per tool, with Name/Description/Parameters
-// carried (deferred tools fall back to Summary and carry no Parameters).
+// TestRenderToolDefs asserts the full-promotion deferred-tool contract (Claude
+// Code / OpenAI Agents parity). This is a DELIBERATE contract change from the old
+// behavior, where every deferred tool appeared in the callable set with an EMPTY
+// parameter schema (the footgun that made the model hallucinate arguments — e.g.
+// send_file {"file":...} instead of {"path":...}). New contract:
+//   - a non-deferred tool is ALWAYS emitted, with its full Description + Parameters;
+//   - a deferred tool is OMITTED entirely when `activated` is nil/absent;
+//   - the SAME deferred tool is EMITTED with its FULL Description + Parameters once
+//     its name is in `activated` (tool_search loaded its schema);
+//   - alphabetical order (cache-stability-load-bearing) is preserved.
 func TestRenderToolDefs(t *testing.T) {
 	r := NewRegistry()
 	// Registered out of alphabetical order on purpose.
@@ -17,31 +24,25 @@ func TestRenderToolDefs(t *testing.T) {
 	r.Register(alphaTool{})
 	r.Register(deferredMidTool{})
 
-	entries := r.Render()
-	defs := r.RenderToolDefs()
-
-	if len(defs) != len(entries) {
-		t.Fatalf("RenderToolDefs len = %d, Render len = %d — must be 1:1", len(defs), len(entries))
-	}
-	// Same alphabetical order as Render (no re-sort).
-	for i := range entries {
-		if defs[i].Function.Name != entries[i].Name {
-			t.Errorf("def[%d].Name = %q, Render[%d].Name = %q — order diverged", i, defs[i].Function.Name, i, entries[i].Name)
-		}
-		if defs[i].Type != "function" {
-			t.Errorf("def[%d].Type = %q, want function", i, defs[i].Type)
+	// nil activated ⇒ the deferred tool is HIDDEN; only the two non-deferred tools
+	// are callable, in alphabetical order.
+	defs := r.RenderToolDefs(nil)
+	gotNames := make([]string, len(defs))
+	for i, d := range defs {
+		gotNames[i] = d.Function.Name
+		if d.Type != "function" {
+			t.Errorf("def[%d].Type = %q, want function", i, d.Type)
 		}
 	}
-	// Names are alpha-sorted: alpha, mid_deferred, zebra.
-	want := []string{"alpha", "mid_deferred", "zebra"}
-	for i, w := range want {
-		if defs[i].Function.Name != w {
-			t.Errorf("defs[%d].Name = %q, want %q", i, defs[i].Function.Name, w)
-		}
+	if want := []string{"alpha", "zebra"}; !equalStrings(gotNames, want) {
+		t.Fatalf("nil-activated defs = %v, want %v (deferred mid_deferred omitted)", gotNames, want)
 	}
 
 	// Non-deferred tool carries its full Description + Parameters.
 	alpha := defs[0]
+	if alpha.Function.Name != "alpha" {
+		t.Fatalf("defs[0].Name = %q, want alpha", alpha.Function.Name)
+	}
 	if alpha.Function.Description != "alpha full description" {
 		t.Errorf("alpha Description = %q, want full description", alpha.Function.Description)
 	}
@@ -49,15 +50,35 @@ func TestRenderToolDefs(t *testing.T) {
 		t.Error("alpha Parameters empty, want the JSON schema carried")
 	}
 
-	// Deferred tool falls back to Summary and carries no Parameters (hidden until
-	// tool_search promotes it).
-	mid := defs[1]
-	if mid.Function.Description != "mid summary" {
-		t.Errorf("deferred Description = %q, want the Summary fallback", mid.Function.Description)
+	// Promote the deferred tool: it now appears WITH its full Description + Parameters,
+	// slotted into alphabetical order (alpha, mid_deferred, zebra).
+	promoted := r.RenderToolDefs(map[string]struct{}{"mid_deferred": {}})
+	promotedNames := make([]string, len(promoted))
+	for i, d := range promoted {
+		promotedNames[i] = d.Function.Name
 	}
-	if len(mid.Function.Parameters) != 0 {
-		t.Errorf("deferred Parameters = %q, want empty (hidden until tool_search)", mid.Function.Parameters)
+	if want := []string{"alpha", "mid_deferred", "zebra"}; !equalStrings(promotedNames, want) {
+		t.Fatalf("promoted defs = %v, want %v", promotedNames, want)
 	}
+	mid := promoted[1]
+	if mid.Function.Description != "mid full hidden" {
+		t.Errorf("promoted deferred Description = %q, want the FULL description (not the Summary fallback)", mid.Function.Description)
+	}
+	if len(mid.Function.Parameters) == 0 {
+		t.Error("promoted deferred Parameters empty, want the full JSON schema carried once loaded")
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // TestRenderToolDefs_Namespaced proves the alphabetical Render ordering survives
@@ -75,7 +96,7 @@ func TestRenderToolDefs_Namespaced(t *testing.T) {
 	r.Register(namedTool{name: "github__list_prs"})
 
 	got := make([]string, 0, 3)
-	for _, d := range r.RenderToolDefs() {
+	for _, d := range r.RenderToolDefs(nil) {
 		got = append(got, d.Function.Name)
 	}
 	want := []string{"github__create_issue", "github__list_prs", "web_fetch"}

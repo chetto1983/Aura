@@ -42,7 +42,7 @@ func TestAdaptiveReasoningTierWireE2E(t *testing.T) {
 				{Role: llm.RoleSystem, Content: "STATIC-AURA-SYSTEM"},
 				{Role: llm.RoleUser, Content: "che tempo fa domani a Caraglio?"},
 			}
-			req := builder.BuildWithReasoningTier(history, reg, cfg.Provider, cfg, prompt.Budget{}, tc.tier)
+			req := builder.BuildWithReasoningTier(history, reg, cfg.Provider, cfg, prompt.Budget{}, tc.tier, nil)
 			body := decodeBody(t, captureBody(t, req))
 			effort, exclude, ok := reasoningFields(body)
 			gotMax, _ := body["max_tokens"].(float64)
