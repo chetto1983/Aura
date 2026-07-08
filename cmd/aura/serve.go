@@ -290,6 +290,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		return nil, fmt.Errorf("build object store: %w", err)
 	}
 	chat.assets = buildAssetService(chat.cfg, chat.pool, objectStore)
+	// Wire send_file's ingest seam to the live asset service now that chat.assets exists
+	// (VERIF-7 post-construction, mirroring the .Caps set above): an authenticated
+	// channel-driven delivery ingests into an owned Garage asset (WEBART-01). The nil guard
+	// keeps the static/manifest/CLI paths path-only (D-02).
+	if chat.toolHandles.SendFile != nil {
+		chat.toolHandles.SendFile.Assets = sendFileAssetAdapter{svc: chat.assets}
+	}
 	// Build the channels Registry FIRST (Phase 20 boot reorder): buildDispatch wires
 	// the late-bound *channels.Registry pointer as the cron.ChannelDeliverer, so the
 	// Registry must exist before dispatch is assembled. bootChannelsAndSetup needs only
