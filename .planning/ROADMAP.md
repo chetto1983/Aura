@@ -429,7 +429,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans complete
 
 **Wave 1** *(PRD-first gate — blocks all code, D-19)*
 
@@ -455,7 +455,7 @@ Plans:
 
 **Wave 6** *(depends on 37B-07)*
 
-- [ ] 37B-08-PLAN.md — Gate: Playwright e2e (artifact in panel + download) + full coverage ≥85% + Stryker ≥70% on pure modules + internal/webui/dist rebuild
+- [x] 37B-08-PLAN.md — Gate: Playwright e2e (artifact in panel + download) + full coverage ≥85% + Stryker ≥70% on pure modules + internal/webui/dist rebuild
 
 #### Phase 37C: Web Voice Lane (INSERTED)
 
