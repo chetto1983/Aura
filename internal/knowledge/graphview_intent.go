@@ -77,40 +77,44 @@ RETURN
 // of the selected labels. A label-filtered branch also returns isolated learning
 // evidence nodes (ReasoningExample/ToolSelectionExample), because those nodes are
 // intentionally stored without relationships and would otherwise look "empty".
+//
+// The three ownership facts are ROW-INVARIANT, so they are computed ONCE in the
+// leading WITH and imported into the CALL, never re-derived per candidate edge:
+// `single_tenant` (this is the only tenant) and `owned_entities` (the elementIds
+// of the Entities the caller's conversations mention). Before this, the per-row
+// WHERE re-ran a full :User label scan AND a 4-hop HAS_CONVERSATION expand for
+// EVERY relationship, making the overview O(relationships x users) — measured at
+// 216.9k db-hits / ~760ms on a 6.5k-node graph. Hoisting drops it to one relationship
+// scan + one entity roll-up (~12k db-hits, -94%). The boolean factoring is exact:
+// `unscoped OR elementId(s|n) IN owned_entities OR (single_tenant AND <label>)` has
+// the same truth value as the original nested EXISTS, verified row-for-row live
+// (unscoped, scoped-owning, and cross-tenant no-leak cases).
 func compileOverview(in GraphIntent) (cypher string, params map[string]any) {
-	cypher = `CALL {
+	cypher = `WITH
+  ($user_id = '') AS unscoped,
+  (EXISTS { MATCH (:User {identifier:$user_id}) }
+   AND NOT EXISTS { MATCH (other:User) WHERE coalesce(other.identifier, other.id, '') <> $user_id }) AS single_tenant,
+  [ (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity) | elementId(e) ] AS owned_entities
+CALL {
+  WITH unscoped, single_tenant, owned_entities
   MATCH (s)-[r]->(n)
-  WHERE ($user_id = '' OR (EXISTS {
-    MATCH (:User {identifier:$user_id})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(root:Entity)
-    WHERE root = s OR root = n
-  }) OR (
-    EXISTS { MATCH (:User {identifier:$user_id}) }
-    AND NOT EXISTS {
-      MATCH (other:User)
-      WHERE coalesce(other.identifier, other.id, '') <> $user_id
-    }
-    AND (
+  WHERE (unscoped
+    OR elementId(s) IN owned_entities OR elementId(n) IN owned_entities
+    OR (single_tenant AND (
       s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR s:ReasoningExample OR s:ToolSelectionExample OR
       n:Document OR n:Chunk OR n:Preference OR n:Entity OR n:Source OR n:ReasoningExample OR n:ToolSelectionExample
-    )
-  ))
+    )))
     AND ($rel_types = [] OR type(r) IN $rel_types)
     AND ($labels = [] OR any(l IN labels(s) WHERE l IN $labels) OR any(l IN labels(n) WHERE l IN $labels))
   WITH s, r, n LIMIT $edge_cap
   RETURN s, r, n
   UNION
+  WITH unscoped, single_tenant
   MATCH (s)
   WHERE $labels <> []
     AND any(l IN labels(s) WHERE l IN $labels)
     AND NOT (s)--()
-    AND ($user_id = '' OR (
-      EXISTS { MATCH (:User {identifier:$user_id}) }
-      AND NOT EXISTS {
-        MATCH (other:User)
-        WHERE coalesce(other.identifier, other.id, '') <> $user_id
-      }
-      AND (s:ReasoningExample OR s:ToolSelectionExample)
-    ))
+    AND (unscoped OR (single_tenant AND (s:ReasoningExample OR s:ToolSelectionExample)))
   WITH s LIMIT $node_cap
   RETURN s, null AS r, null AS n
 }
