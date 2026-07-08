@@ -52,6 +52,14 @@ export interface DisplayArtifact {
   readonly filename: string;
   readonly size_bytes?: number;
   readonly path?: string;
+  /** Present → the delivery was ingested (37A-04): render an authenticated
+   *  same-origin download button targeting GET /api/assets/{asset_id}/download.
+   *  Absent → the delivery degraded (authenticated-but-ingest-failed, D-02/D-05)
+   *  and the card is render-only. */
+  readonly asset_id?: string;
+  /** File-icon hint only (37A-04) — NEVER trusted as a serve Content-Type; the
+   *  download route forces application/octet-stream + nosniff regardless (D-10). */
+  readonly mime_type?: string;
 }
 
 /** Structured rows (type=table). Mirrors display.Table. */

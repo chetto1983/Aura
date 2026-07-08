@@ -107,12 +107,13 @@ interface CustomFrame {
 }
 
 /**
- * The reducer-relevant subset of AG-UI frames. The CUSTOM/aura.display frame
- * (Phase 26) attaches a typed DisplayPayload to a tool part by toolCallId; any
- * OTHER CUSTOM name (e.g. aura.artifact) and the frames the chat lane ignores
- * (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT) are not modelled — `reduceFrame`
- * returns the state unchanged for any type/name it does not recognise, so unknown
- * frames never corrupt the message.
+ * The reducer-relevant subset of AG-UI frames. The CUSTOM frame carries a `name`:
+ * `aura.display` (Phase 26) attaches a typed DisplayPayload to a tool part by
+ * toolCallId, and `aura.artifact` (37A) synthesizes a local_artifact display from
+ * the send_file descriptor (correlated by its tool_call_id). The frames the chat
+ * lane ignores (STEP_*, STATE_SNAPSHOT, MESSAGES_SNAPSHOT) and any other CUSTOM
+ * name are not modelled — `reduceFrame` returns the state unchanged for any
+ * type/name it does not recognise, so unknown frames never corrupt the message.
  */
 export type AguiFrame =
   | RunStartedFrame

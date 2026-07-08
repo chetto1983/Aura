@@ -1,5 +1,5 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { isDisplayPayload } from './displays/types';
+import { isDisplayPayload, type DisplayPayload } from './displays/types';
 import {
   errorDetail,
   type AguiFrame,
@@ -212,6 +212,29 @@ function ensureTool(
 }
 
 /**
+ * The `aura.artifact` CUSTOM descriptor (37A-02 enriched: a delivered send_file).
+ * It is NOT a DisplayPayload (it has no `type` field) — the reducer synthesizes a
+ * local_artifact payload FROM it. A descriptor is actionable only when it carries
+ * the `tool_call_id` correlation key (the ensureTool/writeTool attach key) and a
+ * `filename`; a malformed / pre-enrichment descriptor missing either is ignored
+ * (no card, no corruption). `path` MAY ride the descriptor for Telegram parity
+ * (D-01) but is deliberately absent from this shape — the reducer never reads it.
+ */
+interface ArtifactDescriptor {
+  readonly tool_call_id: string;
+  readonly filename: string;
+  readonly size_bytes?: number;
+  readonly asset_id?: string;
+  readonly mime_type?: string;
+}
+
+function isArtifactDescriptor(value: unknown): value is ArtifactDescriptor {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { tool_call_id?: unknown; filename?: unknown };
+  return typeof candidate.tool_call_id === 'string' && typeof candidate.filename === 'string';
+}
+
+/**
  * Apply one frame to the turn state, mutating in place. Returns the same state
  * for chaining/readability. Unknown / ignored frame types are no-ops.
  *
@@ -305,12 +328,38 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
     case 'CUSTOM': {
       // Phase 26: aura.display carries a typed DisplayPayload to attach to the
       // tool part by tool_call_id. Like TOOL_CALL_RESULT, ensureTool tolerates a
-      // payload arriving before/without the call's START. Any other CUSTOM name
-      // (e.g. aura.artifact) is left unchanged — additive safety, no corruption.
+      // payload arriving before/without the call's START.
       if (frame.name === 'aura.display' && isDisplayPayload(frame.value)) {
         const id = frame.value.tool_call_id;
         const part = ensureTool(state, id, state.tools.get(id)?.toolName ?? '');
         writeTool(state, { ...part, display: frame.value });
+      }
+      // 37A (WEBART-04): aura.display never fires for send_file (normalizeCode
+      // only synthesizes a local_artifact for code-producing tools), so consume
+      // the aura.artifact descriptor here — synthesize a local_artifact payload
+      // correlated by tool_call_id. The raw host/container `path` is NEVER copied
+      // into the payload, in EITHER branch (asset_id present → download button;
+      // asset_id absent → degraded card): the browser must never receive a raw
+      // path for any authenticated session (D-13). `path` stays a backend/
+      // Telegram-only field (D-01).
+      if (frame.name === 'aura.artifact' && isArtifactDescriptor(frame.value)) {
+        const d = frame.value;
+        const part = ensureTool(
+          state,
+          d.tool_call_id,
+          state.tools.get(d.tool_call_id)?.toolName ?? '',
+        );
+        const display: DisplayPayload = {
+          type: 'local_artifact',
+          tool_call_id: d.tool_call_id,
+          artifact: {
+            filename: d.filename,
+            ...(d.size_bytes !== undefined ? { size_bytes: d.size_bytes } : {}),
+            ...(d.asset_id !== undefined ? { asset_id: d.asset_id } : {}),
+            ...(d.mime_type !== undefined ? { mime_type: d.mime_type } : {}),
+          },
+        };
+        writeTool(state, { ...part, display });
       }
       return state;
     }

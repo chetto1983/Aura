@@ -42,6 +42,18 @@ function frameWith(name: string, patch: Record<string, unknown>): AguiFrame {
   return { ...frame(name), ...patch };
 }
 
+/** An aura.artifact CUSTOM frame carrying 37A-02's enriched descriptor. Derives
+ *  from the captured golden aura.artifact base (its real path/filename/caption)
+ *  and layers the post-37A-02 enrichment (tool_call_id + size_bytes ALWAYS;
+ *  asset_id + mime_type on ingest success) — the exact shape the live translator
+ *  now emits. The golden base still carries `path`, so these frames also prove the
+ *  reducer drops it. */
+function artifactFrame(enrichment: Record<string, unknown>): AguiFrame {
+  const base = frame('CUSTOM');
+  if (base.type !== 'CUSTOM') throw new Error('golden CUSTOM is not a CUSTOM frame');
+  return { ...base, value: { ...(base.value as Record<string, unknown>), ...enrichment } };
+}
+
 /** A reasoning STATE_DELTA / usage frame is not in the fixture as a usage shape;
  *  the fixture's STATE_DELTA carries only /cost_usd. Build a full usage frame
  *  from the SAME wire shape (op/path/value) the fixture demonstrates. */
@@ -380,13 +392,67 @@ describe('sseAdapter — CUSTOM/aura.display frame (DISP-02)', () => {
     expect(state.toolOrder).toEqual(['call-1']);
   });
 
-  it('an unrecognized CUSTOM name (aura.artifact) is a no-op — no corruption', () => {
+  // 37A (WEBART-04): aura.artifact is now CONSUMED, not dropped. These three cases
+  // REPLACE the pre-37A "aura.artifact is a no-op" test, which encoded the OLD drop
+  // contract — the legitimate CLAUDE.md exception (the test asserted the exact
+  // behavior we intentionally change). The reducer synthesizes a local_artifact
+  // display attached by tool_call_id and NEVER copies the descriptor's raw
+  // host/container path into the payload (either branch, D-13).
+  it('aura.artifact (asset_id present) attaches a local_artifact card by tool_call_id, no path', () => {
     const state = fold([
       frame('TEXT_MESSAGE_START'),
       frame('TEXT_MESSAGE_CONTENT'), // "Ciao"
-      frame('CUSTOM'), // aura.artifact — NOT modelled
+      artifactFrame({
+        tool_call_id: 'call-1',
+        size_bytes: 4096,
+        asset_id: 'asset-xyz',
+        mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
     ]);
-    // No tool part created, the prose is untouched.
+    const part = state.tools.get('call-1');
+    if (part === undefined) throw new Error('expected the call-1 tool part');
+    expect(part.display?.type).toBe('local_artifact');
+    expect(part.display?.tool_call_id).toBe('call-1');
+    const artifact = part.display?.artifact;
+    expect(artifact?.filename).toBe('results.xlsx'); // from the captured golden base
+    expect(artifact?.size_bytes).toBe(4096);
+    expect(artifact?.asset_id).toBe('asset-xyz');
+    expect(artifact?.mime_type).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    // The raw descriptor path is NEVER copied into the synthesized payload.
+    expect(artifact).not.toHaveProperty('path');
+    // Prose untouched; exactly one tool part (the card merged onto it).
+    expect(state.text).toBe('Ciao');
+    expect(state.tools.size).toBe(1);
+  });
+
+  it('aura.artifact degrade (no asset_id, descriptor has path) → render-only card, no path, no asset_id', () => {
+    // The golden aura.artifact base rides a real path (/abs/results.xlsx). On the
+    // D-02/D-05 degrade the descriptor still carries path + tool_call_id +
+    // size_bytes but NO asset_id; the reducer attaches the card, drops path, and
+    // omits asset_id — so the "delivery unavailable" render-only card is reachable.
+    const degraded = artifactFrame({ tool_call_id: 'call-1', size_bytes: 4096 });
+    expect((degraded as { value: { path?: string } }).value.path).toBe('/abs/results.xlsx');
+    const part = fold([degraded]).tools.get('call-1');
+    if (part === undefined) throw new Error('expected the call-1 tool part');
+    expect(part.display?.type).toBe('local_artifact');
+    const artifact = part.display?.artifact;
+    expect(artifact?.filename).toBe('results.xlsx');
+    expect(artifact?.size_bytes).toBe(4096);
+    expect(artifact).not.toHaveProperty('path');
+    expect(artifact).not.toHaveProperty('asset_id');
+  });
+
+  it('aura.artifact without a tool_call_id (pre-enrichment / malformed) is ignored — no card', () => {
+    // The isArtifactDescriptor guard requires the tool_call_id correlation key; a
+    // descriptor without it (the captured pre-37A-02 golden shape) attaches
+    // nothing — additive safety, never corruption.
+    const state = fold([
+      frame('TEXT_MESSAGE_START'),
+      frame('TEXT_MESSAGE_CONTENT'), // "Ciao"
+      frame('CUSTOM'), // golden base: {path, filename, caption} — no tool_call_id
+    ]);
     expect(state.tools.size).toBe(0);
     expect(state.text).toBe('Ciao');
   });
