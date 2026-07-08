@@ -65,6 +65,9 @@ const (
 	SourceWeb      SourceKind = "web"
 	SourceTelegram SourceKind = "telegram"
 	SourceCLI      SourceKind = "cli"
+	// SourceAgent marks an asset ingested from an agent-produced deliverable (send_file →
+	// Garage, WEBART-01/D-06): first-class and distinguishable from human uploads.
+	SourceAgent SourceKind = "agent"
 )
 
 // Asset is the API-facing view of a persisted multimodal asset record.
@@ -132,6 +135,21 @@ type TelegramIngestRequest struct {
 	ChatID     int64
 	MessageID  int
 	FileID     string
+	FileName   string
+	MIMEType   string
+	Modality   Modality
+	SizeBytes  int64
+	Reader     io.Reader
+}
+
+// AgentIngestRequest carries one agent-produced deliverable (send_file host file) into the
+// shared asset pipeline as a delivery-only, owned thread asset (WEBART-01/D-06). It mirrors
+// TelegramIngestRequest minus the Telegram source-reference fields (there is no ChatID /
+// MessageID / FileID / SourceRef for an agent delivery). The caller opens the host file and
+// closes the Reader after ingest.
+type AgentIngestRequest struct {
+	IdentityID string
+	ThreadID   string
 	FileName   string
 	MIMEType   string
 	Modality   Modality
