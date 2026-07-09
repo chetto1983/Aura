@@ -2,15 +2,30 @@ import { useAui, useAuiState, ComposerPrimitive } from '@assistant-ui/react';
 import { ArrowUp, Mic, Paperclip, Square } from 'lucide-react';
 import {
   useEffect,
+  useId,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type ClipboardEvent,
   type DragEvent,
+  type KeyboardEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import type { AttachmentUploads } from './attachments/useAttachmentUploads';
+import { SkillPicker } from './composer/SkillPicker';
+import { SkillPill } from './composer/SkillPill';
+import {
+  filterPickerItems,
+  flattenItems,
+  nextActiveIndex,
+  optionId,
+  pickerKeyAction,
+  shouldOpen,
+  type PickerItem,
+} from './composer/skillPickerModel';
+import type { ComposerSkillRow } from './composer/api';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { Button } from '@/components/ui/button';
 
@@ -28,9 +43,15 @@ import { Button } from '@/components/ui/button';
 // Accent is reserved for the primary Send CTA only (UI-SPEC §Color list item 1);
 // Stop is a neutral danger-tinted control so the accent stays scarce.
 
+const EMPTY_SKILLS: readonly ComposerSkillRow[] = [];
+
 interface ComposerProps {
   readonly uploads?: AttachmentUploads;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
+  readonly skills?: readonly ComposerSkillRow[];
+  readonly pinnedSkill?: ComposerSkillRow | null;
+  readonly onPinSkill?: (row: ComposerSkillRow | null) => void;
+  readonly onNewChat?: (() => void | Promise<void>) | undefined;
 }
 
 export interface ComposerDraftPrompt {
@@ -40,7 +61,14 @@ export interface ComposerDraftPrompt {
 
 type DictationPhase = 'idle' | 'listening' | 'transcribing' | 'error';
 
-export function Composer({ uploads, draftPrompt }: ComposerProps) {
+export function Composer({
+  uploads,
+  draftPrompt,
+  skills,
+  pinnedSkill,
+  onPinSkill,
+  onNewChat,
+}: ComposerProps) {
   const { t } = useTranslation();
   const aui = useAui();
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -58,6 +86,78 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
   const wasDictating = useRef(false);
   const isDictating = dictation != null;
   const sendDisabled = uploads?.hasBlockingUploads === true;
+
+  // Skill / command picker (WEBSKILL-01/03): the '/'-triggered ARIA combobox. The composer
+  // text is read reactively and every decision (trigger, filter, wrap-around active index,
+  // key→action) lives in the pure skillPickerModel, so this component only maps state → ARIA.
+  const composerText = useAuiState((s) => s.composer.text);
+  const skillList = skills ?? EMPTY_SKILLS;
+  const listboxBaseId = useId();
+  const listboxId = `${listboxBaseId}-skills`;
+  const pickerFilter = composerText.startsWith('/') ? composerText.slice(1) : '';
+  const pickerGroups = useMemo(
+    () => filterPickerItems(skillList, pickerFilter),
+    [skillList, pickerFilter],
+  );
+  const pickerOptions = useMemo(() => flattenItems(pickerGroups), [pickerGroups]);
+  // Escape records the text it dismissed at; the menu stays closed only while the text is
+  // unchanged, so the next keystroke re-arms it — a purely derived close, no effect needed.
+  const [dismissedAt, setDismissedAt] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndexFilter, setActiveIndexFilter] = useState(pickerFilter);
+  if (activeIndexFilter !== pickerFilter) {
+    // A changed filter restarts the active option at the top — adjust-during-render (React
+    // re-renders before commit, no cascading paint), not a setState-in-effect.
+    setActiveIndexFilter(pickerFilter);
+    setActiveIndex(0);
+  }
+  const menuOpen =
+    shouldOpen(composerText, skillList.length) &&
+    dismissedAt !== composerText &&
+    pickerOptions.length > 0;
+  const activeOptionIndex =
+    pickerOptions.length > 0 ? Math.min(activeIndex, pickerOptions.length - 1) : 0;
+  const activeOptionId = menuOpen ? optionId(listboxId, activeOptionIndex) : undefined;
+
+  const clearPendingAttachments = () => {
+    if (uploads === undefined) return;
+    for (const item of uploads.items) uploads.remove(item.localId);
+  };
+
+  const handlePickItem = (item: PickerItem) => {
+    if (item.kind === 'skill') {
+      onPinSkill?.({ name: item.name, description: item.description, type: item.type });
+    } else if (item.command === 'add-files') {
+      fileInputRef.current?.click();
+    } else if (item.command === 'new-chat') {
+      void onNewChat?.();
+    } else {
+      onPinSkill?.(null);
+      clearPendingAttachments();
+    }
+    // Every pick clears the '/'-filter text (the pinned skill rides the pill, not the text);
+    // the now-empty text makes shouldOpen() false, closing the menu on the next render.
+    aui.composer().setText('');
+  };
+
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // D-09: never intercept a key while the menu is closed — Enter-send / paste / drop stay
+    // intact. Only the four navigation keys are consumed, and only while the menu is open.
+    if (!menuOpen) return;
+    const action = pickerKeyAction(event.key);
+    if (action === 'none') return;
+    event.preventDefault();
+    if (action === 'up' || action === 'down') {
+      setActiveIndex(
+        nextActiveIndex(activeOptionIndex, action === 'down' ? 1 : -1, pickerOptions.length),
+      );
+    } else if (action === 'select') {
+      const item = pickerOptions[activeOptionIndex];
+      if (item !== undefined) handlePickItem(item);
+    } else {
+      setDismissedAt(composerText);
+    }
+  };
 
   useEffect(() => {
     if (draftPrompt === undefined || draftPrompt.nonce === appliedDraftNonce.current) return;
@@ -194,13 +294,26 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
       onPaste={handlePaste}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
-      className="mx-3 mb-3 flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] sm:mx-4"
+      className="relative mx-3 mb-3 flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] sm:mx-4"
     >
-      {uploads !== undefined && uploads.items.length > 0 ? (
+      {menuOpen ? (
+        <SkillPicker
+          groups={pickerGroups}
+          activeOptionId={activeOptionId}
+          listboxId={listboxId}
+          onSelect={handlePickItem}
+        />
+      ) : null}
+      {pinnedSkill != null || (uploads !== undefined && uploads.items.length > 0) ? (
         <div className="flex flex-wrap gap-2">
-          {uploads.items.map((item) => (
-            <AttachmentChip key={item.localId} item={item} onRemove={uploads.remove} />
-          ))}
+          {pinnedSkill != null ? (
+            <SkillPill name={pinnedSkill.name} onRemove={() => onPinSkill?.(null)} />
+          ) : null}
+          {uploads !== undefined
+            ? uploads.items.map((item) => (
+                <AttachmentChip key={item.localId} item={item} onRemove={uploads.remove} />
+              ))
+            : null}
         </div>
       ) : null}
       {/* Live region: announces the dictation state to screen readers; kept mounted so the
@@ -259,6 +372,13 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
           rows={1}
           placeholder={t('chat.composer.placeholder')}
           aria-label={t('chat.composer.placeholder')}
+          role="combobox"
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? listboxId : undefined}
+          aria-activedescendant={activeOptionId}
+          aria-haspopup="listbox"
+          aria-autocomplete="list"
+          onKeyDown={handleComposerKeyDown}
           className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
         {isRunning ? (

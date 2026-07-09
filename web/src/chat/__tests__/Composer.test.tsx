@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
+import type { ComposerSkillRow } from '../composer/api';
 import type { AttachmentUploads } from '../attachments/useAttachmentUploads';
 import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from '../voice/voiceMocks';
 
@@ -72,6 +73,8 @@ beforeEach(() => {
   h.caps = { tts: false, stt: false };
   h.auiState.thread = { isRunning: false };
   h.auiState.composer = { dictation: undefined, text: '' };
+  // jsdom has no scrollIntoView; the SkillPicker's active-option JS-scroll (Pitfall 6) needs it.
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
@@ -218,5 +221,182 @@ describe('Composer dictation', () => {
     await waitFor(() => {
       expect(mediaStub?.getUserMedia).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+const SKILL_CREATOR: ComposerSkillRow = {
+  name: 'skill-creator',
+  description: 'Create a new skill',
+  type: 'instruction',
+};
+const CODEQL: ComposerSkillRow = {
+  name: 'codeql',
+  description: 'Static analysis',
+  type: 'executable',
+};
+const SKILLS: readonly ComposerSkillRow[] = [SKILL_CREATOR, CODEQL];
+
+describe('Composer skill picker', () => {
+  it("typing '/' opens the ARIA combobox and keeps focus on the input", () => {
+    h.auiState.composer.text = '/';
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
+    const input = screen.getByLabelText('Ask Aura');
+    input.focus();
+
+    const listbox = screen.getByRole('listbox');
+    const options = within(listbox).getAllByRole('option');
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0]?.id);
+    // APG combobox: DOM focus never leaves the input for the listbox.
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('filters incrementally to the matching skill', () => {
+    h.auiState.composer.text = '/creat';
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
+
+    const listbox = screen.getByRole('listbox');
+    expect(within(listbox).getByText('skill-creator')).toBeTruthy();
+    expect(within(listbox).queryByText('codeql')).toBeNull();
+  });
+
+  it('ArrowDown moves the active option (aria-activedescendant follows)', () => {
+    h.auiState.composer.text = '/';
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
+    const input = screen.getByLabelText('Ask Aura');
+    const ids = within(screen.getByRole('listbox'))
+      .getAllByRole('option')
+      .map((option) => option.id);
+    expect(input.getAttribute('aria-activedescendant')).toBe(ids[0]);
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    expect(input.getAttribute('aria-activedescendant')).toBe(ids[1]);
+  });
+
+  it('Enter selects the active skill (pins it, clears the filter, does NOT send)', () => {
+    h.auiState.composer.text = '/creat';
+    const onPinSkill = vi.fn();
+    render(<Composer uploads={uploads()} skills={SKILLS} onPinSkill={onPinSkill} />);
+    const input = screen.getByLabelText('Ask Aura');
+
+    const event = createEvent.keyDown(input, { key: 'Enter' });
+    fireEvent(input, event);
+
+    expect(event.defaultPrevented).toBe(true); // never fell through to Enter-send
+    expect(onPinSkill).toHaveBeenCalledWith(SKILL_CREATOR);
+    expect(h.setText).toHaveBeenCalledWith('');
+  });
+
+  it('Escape closes the menu (preventDefault) and a keystroke re-arms it', () => {
+    h.auiState.composer.text = '/';
+    const { rerender } = render(<Composer uploads={uploads()} skills={SKILLS} />);
+    const input = screen.getByLabelText('Ask Aura');
+    expect(screen.getByRole('listbox')).toBeTruthy();
+
+    const event = createEvent.keyDown(input, { key: 'Escape' });
+    fireEvent(input, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    h.auiState.composer.text = '/c';
+    rerender(<Composer uploads={uploads()} skills={SKILLS} />);
+    expect(screen.getByRole('listbox')).toBeTruthy();
+  });
+
+  it('does NOT intercept Enter when the menu is closed (Enter-send preserved, D-09)', () => {
+    h.auiState.composer.text = 'hello world';
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
+    const input = screen.getByLabelText('Ask Aura');
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    const event = createEvent.keyDown(input, { key: 'Enter' });
+    fireEvent(input, event);
+
+    expect(event.defaultPrevented).toBe(false); // the library's Enter-send runs untouched
+  });
+
+  it('a literal slash mid-text never opens the menu (D-05)', () => {
+    h.auiState.composer.text = 'a/b';
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('degrades to a no-op when the skills list is empty ( / never opens, D-09)', () => {
+    h.auiState.composer.text = '/';
+    render(<Composer uploads={uploads()} skills={[]} />);
+    const input = screen.getByLabelText('Ask Aura');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+
+    const event = createEvent.keyDown(input, { key: 'Enter' });
+    fireEvent(input, event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('the add-files quick action clicks the hidden file input (no agent run)', () => {
+    h.auiState.composer.text = '/add';
+    const clickSpy = vi
+      .spyOn(HTMLInputElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
+
+    fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
+  });
+
+  it('the new-chat quick action calls onNewChat (no agent run)', () => {
+    h.auiState.composer.text = '/new';
+    const onNewChat = vi.fn();
+    render(<Composer uploads={uploads()} skills={SKILLS} onNewChat={onNewChat} />);
+
+    fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
+
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('the clear quick action resets the text, pinned pill, and pending attachments', () => {
+    h.auiState.composer.text = '/clear';
+    const onPinSkill = vi.fn();
+    const remove = vi.fn();
+    const withItem = uploads({
+      items: [
+        {
+          localId: 'x',
+          file: new File(['a'], 'a.txt', { type: 'text/plain' }),
+          progress: 1,
+          status: 'ready',
+        },
+      ],
+      remove,
+    });
+    render(<Composer uploads={withItem} skills={SKILLS} onPinSkill={onPinSkill} />);
+
+    fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
+
+    expect(onPinSkill).toHaveBeenCalledWith(null);
+    expect(remove).toHaveBeenCalledWith('x');
+    expect(h.setText).toHaveBeenCalledWith('');
+  });
+
+  it('renders a removable pinned-skill pill', () => {
+    const onPinSkill = vi.fn();
+    render(
+      <Composer
+        uploads={uploads()}
+        skills={SKILLS}
+        pinnedSkill={SKILL_CREATOR}
+        onPinSkill={onPinSkill}
+      />,
+    );
+    expect(screen.getByText('skill-creator')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Remove pinned skill skill-creator'));
+
+    expect(onPinSkill).toHaveBeenCalledWith(null);
   });
 });
