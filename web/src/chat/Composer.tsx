@@ -244,8 +244,7 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
               aria-label={micLabel}
               aria-pressed={micActive}
               onClick={handleMic}
-              className="rounded-full text-text-muted hover:text-text data-[dictating=true]:text-accent"
-              data-dictating={caps.stt && dictationBusy ? 'true' : undefined}
+              className="rounded-full text-text-muted hover:text-text"
             >
               {micActive ? (
                 <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />

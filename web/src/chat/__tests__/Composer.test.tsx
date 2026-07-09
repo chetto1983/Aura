@@ -185,6 +185,25 @@ describe('Composer dictation', () => {
     expect(status.textContent).toContain('Transcribing');
   });
 
+  it('announces an error when a session ends without inserting a transcript (empty/4xx)', () => {
+    h.caps = { tts: false, stt: true };
+    h.auiState.composer.text = '';
+    const { rerender } = render(<Composer uploads={uploads()} />);
+    const status = screen.getByRole('status');
+
+    fireEvent.click(screen.getByLabelText('Dictate'));
+    h.auiState.composer.dictation = { status: { type: 'running' } };
+    rerender(<Composer uploads={uploads()} />);
+    fireEvent.click(screen.getByLabelText('Stop dictation'));
+
+    // Session tears down with the composer text unchanged (nothing was transcribed).
+    h.auiState.composer.dictation = undefined;
+    rerender(<Composer uploads={uploads()} />);
+
+    expect(h.markTurnDictated).not.toHaveBeenCalled();
+    expect(status.textContent).toContain('No transcription');
+  });
+
   it('caps.stt=true but dictation unavailable → degrades to the attachment record path (D-10)', async () => {
     h.caps = { tts: false, stt: true };
     h.startDictation.mockImplementation(() => {

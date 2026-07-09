@@ -262,7 +262,7 @@ export function AssistantSpeakerControl() {
         </ActionBarPrimitive.StopSpeaking>
       </AuiIf>
       {speechIsTruncated(speech) ? (
-        <span role="note" className="text-[0.7rem] italic text-text-faint">
+        <span role="note" className="text-[0.75rem] italic text-text-faint">
           {t('chat.action.tooLong')}
         </span>
       ) : null}
