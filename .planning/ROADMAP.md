@@ -476,7 +476,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBVOICE-01..04 + superficie voce web non documentata).
 
-**Plans:** 6 plans in 6 waves
+**Plans:** 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -497,7 +497,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 37C-05-PLAN.md — [W5] Web input lane: dictationAdapter (onSpeech isFinal) + Composer dictation-primary (attachment fallback kept) + runtime adapters wiring
+- [x] 37C-05-PLAN.md — [W5] Web input lane: dictationAdapter (onSpeech isFinal) + Composer dictation-primary (attachment fallback kept) + runtime adapters wiring
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

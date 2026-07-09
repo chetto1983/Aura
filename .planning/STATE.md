@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
-stopped_at: 37C-04 complete — web voice-OUTPUT lane (useVoiceCapabilities + speechAdapter + VoiceModeProvider/auto-speak + caps-gated Speak/StopSpeaking control + D-05 too-long hint) landed (a699fc38c, 833d72a74, 0244648ea); 42 web tests, tsc+eslint+i18n-parity clean
-last_updated: "2026-07-09T15:35:00.000Z"
-last_activity: 2026-07-09 -- 37C-04 web voice-output module (speechAdapter cache/truncated/dispose + ephemeral voice mode + shouldSpeak-gated auto-speak + speaker control) committed; ExternalStoreChat.tsx untouched (37C-05's file)
+stopped_at: 37C-04 complete — web voice-output lane landed (a699fc38c/833d72a74/0244648ea; 42 web tests, tsc+eslint+i18n-parity clean, ExternalStoreChat.tsx untouched); Phase 37C Wave 5 (37C-05 web input lane) next
+last_updated: "2026-07-09T14:39:33.258Z"
+last_activity: 2026-07-09
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 77
-  completed_plans: 75
-  percent: 54
+  completed_plans: 76
+  percent: 53
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37C (web-voice-lane-inserted) — EXECUTING
-Plan: 5 of 6 (37C-01 ✓ PRD amendment #79 a02332a36; 37C-02 ✓ backend primitives 646b99539/c7f45a359; 37C-03 ✓ voice API spine 0d418a1a3/f74bfce63/3dfbcf3e0; 37C-04 ✓ web output lane a699fc38c/833d72a74/0244648ea; next: 37C-05 web input lane — dictationAdapter + Composer dictation-primary + runtime adapters wiring)
+Plan: 6 of 6 (37C-01 ✓ PRD amendment #79 a02332a36; 37C-02 ✓ backend primitives 646b99539/c7f45a359; 37C-03 ✓ voice API spine 0d418a1a3/f74bfce63/3dfbcf3e0; 37C-04 ✓ web output lane a699fc38c/833d72a74/0244648ea; next: 37C-05 web input lane — dictationAdapter + Composer dictation-primary + runtime adapters wiring)
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: Executing Phase 37C
-Last activity: 2026-07-09 -- 37C-04 web voice-output lane landed (useVoiceCapabilities + custom SpeechSynthesisAdapter + ephemeral VoiceModeProvider/auto-speak + caps-gated Speak/StopSpeaking control + D-05 too-long hint)
+Status: Ready to execute
+Last activity: 2026-07-09
 
 #### 37C-04 — Web voice-OUTPUT lane (WEBVOICE-01 speaker/auto-speak + WEBVOICE-03 degrade, web UI half). **Wave-4 plan, sequential on master (Windows-host web tests, NOT WSL), 3 atomic `feat(37C)` commits `a699fc38c` (Task 1) / `833d72a74` (Task 2) / `0244648ea` (Task 3)** + a `docs` comment-reword follow-up. Net-new `web/src/chat/voice/` module against the 37C-03 backend; `ExternalStoreChat.tsx` (595 LOC, 37C-05's SOLE owner) deliberately UNTOUCHED. **Task 1 (`a699fc38c`, `VOICE_MODULE_OK`):** `useVoiceCapabilities` (one-shot `GET /api/voice/capabilities`, Accept-json + same-origin, AbortController-cancelled, default `{false,false}` on error/non-2xx, coerces non-true→false, fetches once); `speechAdapter.createSpeechAdapter()` — a custom assistant-ui `SpeechSynthesisAdapter` whose `speak(text)` POSTs `/api/tts`→blob→`new Audio(objectURL)`, status running→ended(finished/cancelled/error), a **per-text (thread-scoped) blob cache** so a repeat Speak issues NO second fetch (D-03/Landmine #5), a `truncated` flag read from `X-Aura-TTS-Truncated` and **stamped on BOTH the Utterance AND every emitted status object** (the stock `base-thread-runtime-core.speak()` copies `utterance.status` into `s.message.speech` by reference → the D-05 hint is reachable in production with NO 37C-05 runtime change, not dead code), and a `dispose()` that `revokeObjectURL`s the cache (37C-05 calls it on unmount); `shouldSpeak(voiceMode,turnWasDictated)=voiceMode||turnWasDictated` (Telegram parity D-07); the SHARED `voiceMocks` (Audio/objectURL/tts-fetch + MediaRecorder/getUserMedia for 37C-05's dictation lane), self-tested. 26 unit tests. **Task 2 (`833d72a74`, `VOICEMODE_OK`):** `voiceModeContext.ts` (context + `useVoiceMode` hook in a NON-component module — react-refresh — with a DISABLED default so the hook is provider-OPTIONAL, keeping the existing `ExternalStoreChat` tests green); `VoiceModeProvider` (ephemeral `{caps,voiceMode,turnWasDictated,toggleVoiceMode,markTurnDictated,clearTurnDictated}`, NO persistence — no browser storage, no server pref, D-06, resets on reload); `VoiceModeToggle` (caps.tts-gated header switch, extracted so AppShell stays ≤600 @ 590); `useAutoSpeak` (tracks the last completed assistant id, speaks once via `aui.thread().message({id}).speak()` when `shouldSpeak` AND `isRunning` settled, consumes `turnWasDictated` per turn, never speaks rehydrated history on mount); AppShell wraps the chat-workspace in `VoiceModeProvider` + mounts the toggle; en+it `chat.voiceMode.on/off`. 11 unit tests. **Task 3 (`0244648ea`, `SPEAKER_CONTROL_OK`):** `AssistantSpeakerControl` (exported, INLINE in `ExternalStoreChat_messages.tsx` so the grep tokens land there) in the assistant `ActionBarPrimitive.Root` — an `AuiIf`-on-`s.message.speech` `Speak`/`StopSpeaking` toggle gated on `useVoiceMode().caps.tts` (absent when `!tts`, WEBVOICE-03), plus a `role="note"` `t('chat.action.tooLong')` hint rendered ONLY while the active utterance is truncated (makes the `X-Aura-TTS-Truncated` header VISIBLE — the anti-dead-code prohibition); en+it `chat.action.speak/stopSpeaking/tooLong`. The speaker test drives a fake runtime (a per-message React context feeds the mocked `AuiIf`/`useAuiState`/`ActionBarPrimitive`) proving the toggle, caps-gated absence, tooLong present/absent, and single-active-utterance (a second Speak leaves exactly one StopSpeaking — Landmine #6). 5 unit tests. **DEVIATIONS (both Rule 3 — blocking, no content deviation):** (1) local `web/node_modules` was missing DECLARED+lockfile-pinned deps `docx-preview`+`xlsx` → 5 pre-existing `tsc` errors in unrelated artifact-renderer files (none mine) + a broken full `npm test`; ran `npm install` (synced from the existing lockfile, md5 UNCHANGED = zero drift, 14 pkgs) so full-tree `tsc --noEmit` is clean. (2) three plan-adjacent files added for lint/LOC/coverage: `voiceModeContext.ts` (react-refresh split, `sourceExplorerControls.ts` precedent), `VoiceModeToggle.tsx` (plan-sanctioned extraction — AppShell was at 585), `voiceMocks.test.ts` (self-test the shared helper so its 37C-05 MediaRecorder/getUserMedia doubles don't drag the coverage aggregate). **VALIDATION (Windows host, node v24.16.0/vitest 4.1.9/tsc 6.0.3 — NOT WSL, which has no node):** targeted `VOICE_MODULE_OK`/`VOICEMODE_OK`/`SPEAKER_CONTROL_OK`; full lane `src/chat/voice`+speaker+`AppShell.voice` = 8 files / **42 tests pass**; `npx tsc --noEmit` clean (full tree); `eslint --max-warnings=0` clean on all new/edited files; i18n parity (en↔it) green; `ExternalStoreChat.test`+`AppShell.artifacts` unregressed; LOC AppShell 590 / `_messages` 347 / `ExternalStoreChat` 595 (untouched, git-confirmed). Full `npm test` coverage + Stryker (≥85%/≥70%) is the Wave-6 (37C-06) gate — this plan required targeted unit green + tsc clean, both achieved; the speechAdapter branches were written testably for Stryker. Commits run in the background (whole-tree file-size pre-commit hook exceeds the 2-min foreground timeout; no `--no-verify`). **WEBVOICE-01/03 stay `[ ]`** (phase-spanning — UI output half here; input lane 37C-05, e2e/coverage gate 37C-06; `requirements mark-complete` intentionally NOT run, 37C-01/02/03 precedent). Next: **37C-05** reuses `voiceMocks` (dictation doubles) + `VoiceModeProvider.markTurnDictated`, mounts `useAutoSpeak`, and wires `speechAdapter`+`dispose()` into `ExternalStoreChat.tsx`.
 
@@ -301,6 +301,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37B P03 | 25min | 3 tasks | 9 files |
 | Phase 37B P02 | 8min | 2 tasks | 3 files |
 | Phase 37B P08 | 50 | 2 tasks | 120 files |
+| Phase 37C P05 | 55min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -534,6 +535,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 37B-02: Asset.source_kind TS union widened to include 'agent' (frontend parity with 37A migration 0035)
 - [Phase ?]: 37B-08: WEBART-08 e2e is golden-replay (page.route on /agent/run + /api/assets); live browser run auth-gated so carried forward to CI web-e2e. WEBART-06 marked complete; WEBART-08 final proof deferred.
 - [Phase 37C]: 37C-01: PRD Amendment #79 landed (docs-only pre-code gate D-14, commit a02332a36) — web voice surface documented BEFORE any 37C code. Two RESEARCH corrections locked into the PRD vs CONTEXT: (D-02) multimodal.TTSClient.Synthesize has NO per-call format → mp3-for-web = a dedicated web TTSClient with TTSConfig.Format="mp3", Telegram opus untouched; (D-09) dictation transcript insertion is native via onSpeech(isFinal:true), NOT onSpeechEnd (core ignores its payload). Scope reconciliation: ROADMAP SC#1/WEBVOICE-01 "per-conversation voice mode" delivered as an EPHEMERAL session-scoped toggle (no persistence, VoiceModePref stays false stub); persisted per-conversation preference (conversations.voice_mode) DEFERRED. Net-new env AURA_TTS_MAX_CHARS default 4096 (OpenAI /audio/speech ceiling).
+- [Phase ?]: 37C-05: DictationAdapter stop() awaits the onstop→POST→callbacks so onSpeech inserts the transcript before the composer's post-stop cleanup unsubscribes it (deep form of Landmine #1)
+- [Phase ?]: 37C-05: voice runtime wiring extracted into useVoiceRuntime()+AutoSpeak so ExternalStoreChat.tsx stays 599 LOC; adapters attach directly on useExternalStoreRuntime (no RuntimeAdapterProvider)
 
 ### Pending Todos
 
@@ -578,9 +581,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-09T15:35:00.000Z
+Last session: 2026-07-09T14:38:21.606Z
 Stopped at: 37C-04 complete — web voice-output lane landed (a699fc38c/833d72a74/0244648ea; 42 web tests, tsc+eslint+i18n-parity clean, ExternalStoreChat.tsx untouched); Phase 37C Wave 5 (37C-05 web input lane) next
-Resume file: .planning/phases/37C-web-voice-lane-inserted/37C-05-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
