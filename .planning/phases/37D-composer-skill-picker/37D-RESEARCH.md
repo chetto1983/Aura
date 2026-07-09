@@ -450,21 +450,25 @@ func (s *Server) handleComposerSkills(w http.ResponseWriter, _ *http.Request) {
 | A4 | The 37D PRD amendment is #81 (next after 37C's #79/#80). | D-11 / Open Q3 | LOW — planner must confirm the highest existing amendment number in prd.md before writing (grep `Amendment #`). |
 | A5 | Category grouping uses skill `Type` and/or the free `Language` field already on the row (Claude's Discretion). The loader exposes `Name/Description/Always/Type/Language` — no richer "category" field exists. | D-07 / Discretion | LOW — if a richer taxonomy is wanted, it needs new frontmatter (out of scope); a flat "Skills" group + a "Commands" group is the safe default. `[VERIFIED: loader.go:26-34]` |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **D-01 application mechanism (the one real design decision).**
    - What we know: `action=use` is a pure read returning `useAuthorityFrame+body`; the `TurnWithModelUserMessage` prepend seam exists and needs no runner change (Mechanism A). A forced first tool call (Mechanism B) matches D-01's literal wording + shows a tool card but needs a new runner seam.
    - Recommendation: **Mechanism A** (reuse, deterministic, zero runner change). If a visible tool card is a hard requirement, scope Mechanism B as a runner change in the plan. Surface this to the user in discuss/plan.
+   - **RESOLVED:** Mechanism A — server-side context-prepend of the exact useAuthorityFrame + body via the TurnWithModelUserMessage seam (zero runner change; no visible tool card, effect byte-identical to action=use). Locked in 37D-02 (Mechanism A wire path).
 
 2. **"clear" quick-action semantics (D-02).**
    - What we know: `startNewConversation` (AppShell.tsx:251) is the clear "new-chat" control (exists). There is NO "clear current thread" control; `useDeleteConversation` (useConversations.ts:209, DELETE /api/conversations/{id}) exists but is a server mutation behind a confirm dialog. CONTEXT says quick actions are "pure client, no agent round-trip."
    - Recommendation: implement `clear` as **clear the composer input + drop the pinned pill + pending attachments** (pure client, matches "no round-trip"); do NOT map it to conversation deletion (that is a server mutation + confirm UX, closer to Telegram `/clear`). Confirm with user.
+   - **RESOLVED:** "clear" is a pure client reset (composer input + pinned pill + pending attachments); it does NOT delete the conversation. Locked in 37D-04 Task 3 (clear quick action).
 
 3. **PRD amendment number + exact insertion point (D-11).**
    - What we know: the 37B amendment is #78, 37C is #79/#80 (`prd.md:2938,2950,2970`). The pattern: a blocking `> **▶ Amendment #N (Phase 37D pre-execution gate …)**` block transcribing WEBSKILL-01..03 + the composer skill-picker surface + the new `GET /api/composer/skills` endpoint.
    - Recommendation: add **Amendment #81** mirroring #78/#79 structure; planner greps `Amendment #` for the true max first.
+   - **RESOLVED:** grep-before-write — the planner greps "Amendment #" in prd.md for the true current max and uses the next number (working assumption: #81). Locked in the 37D-01 PRD-amendment gate.
 
 4. **Endpoint name (Claude's Discretion).** `/api/composer/skills` vs `/api/skills`. Recommendation: `/api/composer/skills` (namespaced, unambiguous vs the governance skills route). Minor.
+   - **RESOLVED:** endpoint name is /api/composer/skills (namespaced, unambiguous vs the governance skills route). Locked across 37D-02/03/04.
 
 ## State of the Art
 

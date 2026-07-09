@@ -7,8 +7,11 @@ depends_on: ["37D-02", "37D-03"]
 files_modified:
   - web/src/chat/sseAdapter.ts
   - web/src/chat/__tests__/sseAdapter.test.ts
+  - web/src/chat/auraRunBody.ts
   - web/src/chat/composer/useComposerSkills.ts
   - web/src/chat/composer/useComposerSkills.test.ts
+  - web/src/chat/composer/usePinnedSkill.ts
+  - web/src/chat/composer/usePinnedSkill.test.ts
   - web/src/chat/ExternalStoreChat.tsx
   - web/src/chat/__tests__/ExternalStoreChat.skill.test.tsx
   - web/src/AppShell.tsx
@@ -77,8 +80,10 @@ Output: `sseAdapter.ts` (+test) skill field, `useComposerSkills.ts` (+test), `Ex
 <artifacts_produced>
 This plan produces:
 - `web/src/chat/sseAdapter.ts` → `StreamRunOptions.skill?: string` + the `aura` body folds `{attachment_ids?, skill?}` into ONE object (emitted only when either is set).
+- `web/src/chat/auraRunBody.ts` → `buildAuraRunBody(id, opts)` (NEW sibling): assembles the POST body `{ threadId, messages, aura? }`, folding `{attachment_ids?, skill?}` into ONE `aura` (or none); extracted OUT of `sseAdapter.ts` so that file stays ≤600 LOC (it is currently EXACTLY 600) while the `skill` fold lands here.
 - `web/src/chat/composer/useComposerSkills.ts` → `useComposerSkills(): readonly ComposerSkillRow[]` (fetch once on mount via `fetchComposerSkills`, catch → [] — the D-09 degrade source).
-- `web/src/chat/ExternalStoreChat.tsx` → a `pinnedSkill`/`setPinnedSkill` state + `useComposerSkills()`, both passed to `<Composer>`; `skill: pinnedSkill?.name` carried into `streamRun` in `onNew`; `setPinnedSkill(null)` after a send; an `onNewChat` prop threaded down to Composer.
+- `web/src/chat/composer/usePinnedSkill.ts` → `usePinnedSkill()` (NEW hook mirroring the `useAttachmentUploads` lifted-seam pattern): owns the `pinnedSkill` state + `setPinnedSkill` internally and returns `{ pinnedSkill, setPinnedSkill }`, so `ExternalStoreChat` destructures the seam instead of an inline `useState` — keeps `ExternalStoreChat.tsx` ≤600 LOC (currently 599).
+- `web/src/chat/ExternalStoreChat.tsx` → the `pinnedSkill`/`setPinnedSkill` seam (from the new `usePinnedSkill` hook) + `useComposerSkills()`, both passed to `<Composer>`; `skill: pinnedSkill?.name` carried into `streamRun` in `onNew`; `setPinnedSkill(null)` after a send; an `onNewChat` prop threaded down to Composer.
 - `web/src/AppShell.tsx` → `onNewChat={startNewConversation}` passed into `<ExternalStoreChat>`.
 - `web/src/chat/Composer.tsx` → extended `ComposerProps` (`skills`, `pinnedSkill`, `onPinSkill`, `onNewChat`); the `/`-trigger via `useAuiState((s)=>s.composer.text)` + `shouldOpen`; composed `onChange`/`onKeyDown` on `ComposerPrimitive.Input` (intercept ↑/↓/Enter/Esc ONLY when open); the input's combobox ARIA (`aria-expanded`/`aria-controls`/`aria-activedescendant`); the `<SkillPill>` row beside the attachment chips; the `<SkillPicker>` mount above the input; the add-files/new-chat/clear quick-action handlers.
 </artifacts_produced>
@@ -87,7 +92,7 @@ This plan produces:
 
 <task type="auto" tdd="true">
   <name>Task 1: sseAdapter — carry the pinned skill on the aura run envelope (WEBSKILL-02)</name>
-  <files>web/src/chat/sseAdapter.ts, web/src/chat/__tests__/sseAdapter.test.ts</files>
+  <files>web/src/chat/sseAdapter.ts, web/src/chat/auraRunBody.ts, web/src/chat/__tests__/sseAdapter.test.ts</files>
   <behavior>
     - streamRun({..., attachmentIds:['a1'], skill:'skill-creator'}) POSTs a body whose parsed aura === { attachment_ids: ['a1'], skill: 'skill-creator' } (ONE aura object).
     - streamRun({..., skill:'skill-creator'}) with no attachmentIds POSTs aura === { skill: 'skill-creator' }.
@@ -95,15 +100,16 @@ This plan produces:
   </behavior>
   <read_first>
     - web/src/chat/sseAdapter.ts:465-479 — the StreamRunOptions interface (add `readonly skill?: string;` beside attachmentIds).
-    - web/src/chat/sseAdapter.ts:574-590 — the /agent/run POST body where the aura envelope is built from attachmentIds; fold skill into the SAME aura object (emit aura only when attachmentIds?.length OR skill is set; keep it ONE object).
+    - web/src/chat/sseAdapter.ts:574-590 — the inline /agent/run POST body (`body: JSON.stringify({ threadId, messages, ...(attachmentIds ? { aura: { attachment_ids } } : {}) })`); EXTRACT this whole body assembly into a NEW sibling `web/src/chat/auraRunBody.ts` as `buildAuraRunBody(id, opts)` and fold `skill` into the SAME aura object there (emit aura only when attachmentIds?.length OR skill is set; keep it ONE object). sseAdapter.ts is EXACTLY 600 LOC — the extraction is what keeps it ≤600 once the field is added.
     - web/src/chat/__tests__/sseAdapter.test.ts (and sseAdapter_network.test.ts) — the existing body-shape/fetch assertions to extend (find how the POST body is captured + parsed).
     - .planning/phases/37D-composer-skill-picker/37D-PATTERNS.md § "MOD sseAdapter.ts" — the exact one-field extension shape (do NOT emit two aura keys).
   </read_first>
   <action>
-    Add `readonly skill?: string;` to `StreamRunOptions` (sseAdapter.ts:~469). In the POST body (sseAdapter.ts:~580-586) replace the attachment-only aura spread with a single computed aura object: build `const aura = { ...(opts.attachmentIds?.length ? { attachment_ids: opts.attachmentIds } : {}), ...(opts.skill ? { skill: opts.skill } : {}) }` and spread `...(Object.keys(aura).length > 0 ? { aura } : {})` into the body — so a set skill and/or attachments produce ONE aura object and neither produces no aura key. Extend sseAdapter.test.ts with the three `<behavior>` cases (parse the captured POST body and assert the aura object). Refactor-on-touch: keep the file ≤600 LOC; no dead code.
+    Create a NEW sibling file `web/src/chat/auraRunBody.ts` exporting `buildAuraRunBody(id: string, opts: StreamRunOptions)` that returns the full POST body object: `{ threadId: opts.threadId, messages: [{ id, role: "user", content: opts.userText }], ...(Object.keys(aura).length > 0 ? { aura } : {}) }` where `const aura = { ...(opts.attachmentIds?.length ? { attachment_ids: opts.attachmentIds } : {}), ...(opts.skill ? { skill: opts.skill } : {}) }` — so a set skill and/or attachments produce ONE aura object and neither produces no aura key. Add `readonly skill?: string;` to `StreamRunOptions` in sseAdapter.ts (~L469), and REPLACE the inline `body: JSON.stringify({ ... })` at sseAdapter.ts:580-586 with `body: JSON.stringify(buildAuraRunBody(id, opts))`. This removes ~7 inline lines from sseAdapter.ts (currently EXACTLY 600 LOC) so it stays ≤600 after the field is added, and lands the `skill` fold in `auraRunBody.ts`. Extend sseAdapter.test.ts with the three `<behavior>` cases (parse the captured POST body and assert the aura object) — these three cases exercise every branch of `buildAuraRunBody`, so it is covered without a separate test file. Refactor-on-touch: keep sseAdapter.ts and auraRunBody.ts each ≤600 LOC; no dead code.
   </action>
   <acceptance_criteria>
-    - `grep -q "skill" web/src/chat/sseAdapter.ts` in the StreamRunOptions + aura-body region (field + envelope).
+    - `grep -q "skill" web/src/chat/sseAdapter.ts` (the `StreamRunOptions.skill?` field) AND `grep -q "buildAuraRunBody" web/src/chat/auraRunBody.ts` (the extracted body assembler that carries the `skill` fold) AND `grep -q "buildAuraRunBody(id, opts)" web/src/chat/sseAdapter.ts` (sseAdapter delegates to it).
+    - `wc -l < web/src/chat/sseAdapter.ts` ≤ 600 (the pre-commit check-file-size hook must not block the commit).
     - The body emits ONE `aura` object (no duplicate aura key) — asserted by parsing the POST body in the test.
     - `cd D:/Repo/Aura/web && npx vitest run src/chat/__tests__/sseAdapter.test.ts` exits 0 with the three aura-shape cases.
     - `cd D:/Repo/Aura/web && npx tsc --noEmit` clean.
@@ -111,12 +117,12 @@ This plan produces:
   <verify>
     <automated>cd D:/Repo/Aura/web && npx vitest run src/chat/__tests__/sseAdapter.test.ts && npx tsc --noEmit && echo SSEADAPTER_SKILL_OK</automated>
   </verify>
-  <done>streamRun carries an optional skill folded into the single aura envelope (with attachment_ids when both present, no aura key when neither), proven by the parsed-body tests.</done>
+  <done>streamRun carries an optional skill folded into the single aura envelope (with attachment_ids when both present, no aura key when neither) via the extracted `buildAuraRunBody` helper, proven by the parsed-body tests; sseAdapter.ts stays ≤600 LOC.</done>
 </task>
 
 <task type="auto" tdd="true">
   <name>Task 2: ExternalStoreChat pinnedSkill lift + skills fetch + skill send + clear-after-send + AppShell onNewChat (WEBSKILL-01/02)</name>
-  <files>web/src/chat/composer/useComposerSkills.ts, web/src/chat/composer/useComposerSkills.test.ts, web/src/chat/ExternalStoreChat.tsx, web/src/chat/__tests__/ExternalStoreChat.skill.test.tsx, web/src/AppShell.tsx</files>
+  <files>web/src/chat/composer/useComposerSkills.ts, web/src/chat/composer/useComposerSkills.test.ts, web/src/chat/composer/usePinnedSkill.ts, web/src/chat/composer/usePinnedSkill.test.ts, web/src/chat/ExternalStoreChat.tsx, web/src/chat/__tests__/ExternalStoreChat.skill.test.tsx, web/src/AppShell.tsx</files>
   <behavior>
     - useComposerSkills fetches once on mount and returns the rows; when fetchComposerSkills throws (mock a rejection) it returns [] (the D-09 degrade), never throwing to the caller.
     - onNew carries skill: pinnedSkill?.name into streamRun — with a pinned skill the streamRun mock receives skill==='<name>'; with none, skill is undefined.
@@ -124,7 +130,8 @@ This plan produces:
     - AppShell passes onNewChat={startNewConversation} to ExternalStoreChat, which threads it to Composer.
   </behavior>
   <read_first>
-    - web/src/chat/ExternalStoreChat.tsx:155-176 — the ExternalStoreChatProps (add `onNewChat?: () => void`) + :178-194 the state block (add pinnedSkill useState + useComposerSkills() beside `const uploads = useAttachmentUploads(threadId)`).
+    - web/src/chat/ExternalStoreChat.tsx:155-176 — the ExternalStoreChatProps (add `onNewChat?: () => void`) + :178-194 the state block (consume `const { pinnedSkill, setPinnedSkill } = usePinnedSkill()` + `const skills = useComposerSkills()` beside `const uploads = useAttachmentUploads(threadId)` — do NOT inline a `useState` here; the state lives in the new usePinnedSkill hook to keep this file ≤600 LOC, currently 599).
+    - web/src/chat/attachments/useAttachmentUploads.ts:1-17 — the lifted-seam hook shape to MIRROR for usePinnedSkill: a hook that owns `useState` internally and returns an object (`items/clearReady/...`); usePinnedSkill returns `{ pinnedSkill, setPinnedSkill }` (ComposerSkillRow | null) the same way useAttachmentUploads returns its seam.
     - web/src/chat/ExternalStoreChat.tsx:205-267 — onNew: read pinnedSkill?.name, add `skill: pinnedSkill?.name` into the streamRun call (beside attachmentIds:251), and after the await add `setPinnedSkill(null)` next to `if (readyAttachmentIds.length > 0) uploads.clearReady()` (:267).
     - web/src/chat/ExternalStoreChat.tsx:594 — the `<Composer uploads={uploads} draftPrompt={draftPrompt} />` render; add `skills`, `pinnedSkill`, `onPinSkill={setPinnedSkill}`, `onNewChat`.
     - web/src/AppShell.tsx:251-263 (startNewConversation) + :428-435 (the <ExternalStoreChat> instantiation) — add `onNewChat={startNewConversation}`.
@@ -133,19 +140,21 @@ This plan produces:
     - .planning/phases/37D-composer-skill-picker/37D-RESEARCH.md § Pattern 3 ("mirror the uploads seam") — the four touch points (create state, pass to Composer, read in onNew, clear after send).
   </read_first>
   <action>
-    Create web/src/chat/composer/useComposerSkills.ts: `useComposerSkills(): readonly ComposerSkillRow[]` — a useState<readonly ComposerSkillRow[]>([]) + a useEffect that calls fetchComposerSkills() once, sets the rows on success and swallows any rejection to [] (the D-09 degrade), with an abort/mounted guard. In ExternalStoreChat.tsx: add `const skills = useComposerSkills()` and `const [pinnedSkill, setPinnedSkill] = useState<ComposerSkillRow | null>(null)` beside the uploads seam; add `onNewChat?: () => void` to ExternalStoreChatProps and destructure it; in onNew add `skill: pinnedSkill?.name` to the streamRun options (beside attachmentIds) and `setPinnedSkill(null)` after the await beside the uploads.clearReady() call; pass `skills`, `pinnedSkill`, `onPinSkill={setPinnedSkill}`, `onNewChat` to `<Composer>`. In AppShell.tsx add `onNewChat={startNewConversation}` to the <ExternalStoreChat> instantiation. Create useComposerSkills.test.ts (renderHook: success returns rows; rejection returns []). Create ExternalStoreChat.skill.test.tsx mirroring the attachments test: assert skill is carried into the streamRun mock and pinnedSkill is cleared after send. Refactor-on-touch: keep ExternalStoreChat.tsx ≤600 LOC; no dead code.
+    Create web/src/chat/composer/useComposerSkills.ts: `useComposerSkills(): readonly ComposerSkillRow[]` — a useState<readonly ComposerSkillRow[]>([]) + a useEffect that calls fetchComposerSkills() once, sets the rows on success and swallows any rejection to [] (the D-09 degrade), with an abort/mounted guard. Create web/src/chat/composer/usePinnedSkill.ts MIRRORING the useAttachmentUploads lifted-seam pattern: `usePinnedSkill()` owns `const [pinnedSkill, setPinnedSkill] = useState<ComposerSkillRow | null>(null)` internally and returns `{ pinnedSkill, setPinnedSkill }` — extracting the state OUT of ExternalStoreChat.tsx (currently 599 LOC) so it stays ≤600 after the wiring below. In ExternalStoreChat.tsx: add `const skills = useComposerSkills()` and `const { pinnedSkill, setPinnedSkill } = usePinnedSkill()` beside the uploads seam (NO inline useState here); add `onNewChat?: () => void` to ExternalStoreChatProps and destructure it; in onNew add `skill: pinnedSkill?.name` to the streamRun options (beside attachmentIds) and `setPinnedSkill(null)` after the await beside the uploads.clearReady() call; pass `skills`, `pinnedSkill`, `onPinSkill={setPinnedSkill}`, `onNewChat` to `<Composer>`. In AppShell.tsx add `onNewChat={startNewConversation}` to the <ExternalStoreChat> instantiation. Create useComposerSkills.test.ts (renderHook: success returns rows; rejection returns []) and usePinnedSkill.test.ts (renderHook: initial null; setPinnedSkill pins a row; setPinnedSkill(null) clears). Create ExternalStoreChat.skill.test.tsx mirroring the attachments test: assert skill is carried into the streamRun mock and pinnedSkill is cleared after send. Refactor-on-touch: keep ExternalStoreChat.tsx ≤600 LOC (verify with wc -l); no dead code.
   </action>
   <acceptance_criteria>
-    - `grep -q "useComposerSkills" web/src/chat/ExternalStoreChat.tsx` AND `grep -q "pinnedSkill" web/src/chat/ExternalStoreChat.tsx` AND `grep -q "skill: pinnedSkill" web/src/chat/ExternalStoreChat.tsx`.
+    - `grep -q "useComposerSkills" web/src/chat/ExternalStoreChat.tsx` AND `grep -q "usePinnedSkill" web/src/chat/ExternalStoreChat.tsx` (state consumed from the extracted hook, not an inline useState) AND `grep -q "skill: pinnedSkill" web/src/chat/ExternalStoreChat.tsx`.
+    - `grep -q "export function usePinnedSkill" web/src/chat/composer/usePinnedSkill.ts` (the NEW lifted-seam hook exists).
     - `grep -q "onNewChat={startNewConversation}" web/src/AppShell.tsx`.
     - useComposerSkills returns [] on a fetch rejection (degrade) — asserted in useComposerSkills.test.ts.
-    - `cd D:/Repo/Aura/web && npx vitest run src/chat/composer/useComposerSkills.test.ts src/chat/__tests__/ExternalStoreChat.skill.test.tsx` exits 0 (skill carried + cleared-after-send + degrade).
+    - `cd D:/Repo/Aura/web && npx vitest run src/chat/composer/useComposerSkills.test.ts src/chat/composer/usePinnedSkill.test.ts src/chat/__tests__/ExternalStoreChat.skill.test.tsx` exits 0 (skill carried + cleared-after-send + degrade + pin/clear).
+    - `wc -l < web/src/chat/ExternalStoreChat.tsx` ≤ 600 (the pre-commit check-file-size hook must not block the commit).
     - `cd D:/Repo/Aura/web && npx tsc --noEmit` clean.
   </acceptance_criteria>
   <verify>
-    <automated>cd D:/Repo/Aura/web && npx vitest run src/chat/composer/useComposerSkills.test.ts src/chat/__tests__/ExternalStoreChat.skill.test.tsx && npx tsc --noEmit && echo EXTSTORE_SKILL_OK</automated>
+    <automated>cd D:/Repo/Aura/web && npx vitest run src/chat/composer/useComposerSkills.test.ts src/chat/composer/usePinnedSkill.test.ts src/chat/__tests__/ExternalStoreChat.skill.test.tsx && npx tsc --noEmit && echo EXTSTORE_SKILL_OK</automated>
   </verify>
-  <done>ExternalStoreChat lifts pinnedSkill + a degrade-safe skills fetch, carries pinnedSkill?.name into streamRun, clears it after send, and threads onNewChat from AppShell's startNewConversation.</done>
+  <done>ExternalStoreChat consumes pinnedSkill from the extracted usePinnedSkill hook + a degrade-safe skills fetch, carries pinnedSkill?.name into streamRun, clears it after send, and threads onNewChat from AppShell's startNewConversation; ExternalStoreChat.tsx stays ≤600 LOC.</done>
 </task>
 
 <task type="auto" tdd="true">

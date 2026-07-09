@@ -137,13 +137,13 @@ This plan produces:
   <acceptance_criteria>
     - `grep -q 'role="listbox"' web/src/chat/composer/SkillPicker.tsx` AND `grep -q 'role="option"' web/src/chat/composer/SkillPicker.tsx` AND `grep -q "scrollIntoView" web/src/chat/composer/SkillPicker.tsx`.
     - `grep -q "aria-selected" web/src/chat/composer/SkillPicker.tsx` (active option marked).
-    - No `dangerouslySetInnerHTML` anywhere in web/src/chat/composer/ (negative assertion — server strings are text nodes).
+    - `if grep -rq "dangerouslySetInnerHTML" web/src/chat/composer/; then exit 1; fi` passes (fail-on-hit guard — server strings render as text nodes; the check ACTUALLY fails the build on any `dangerouslySetInnerHTML` sink, unlike the prior always-exit-0 chain).
     - `cd D:/Repo/Aura/web && npx vitest run src/chat/composer/__tests__/SkillPicker.test.tsx` exits 0 (listbox/options, active aria-selected + scroll spy, onSelect, empty→null, pill remove).
     - `cd D:/Repo/Aura/web && npx vitest run src/i18n/__tests__/resources.parity.test.ts` exits 0 (en/it symmetry holds with the new chat.skillPicker.* keys).
     - `cd D:/Repo/Aura/web && npx tsc --noEmit` clean.
   </acceptance_criteria>
   <verify>
-    <automated>cd D:/Repo/Aura/web && npx vitest run src/chat/composer/__tests__/SkillPicker.test.tsx src/i18n/__tests__/resources.parity.test.ts && grep -rq "dangerouslySetInnerHTML" src/chat/composer/ && echo XSS_FOUND || (npx tsc --noEmit && echo SKILLPICKER_OK)</automated>
+    <automated>cd D:/Repo/Aura/web && npx vitest run src/chat/composer/__tests__/SkillPicker.test.tsx src/i18n/__tests__/resources.parity.test.ts && if grep -rq "dangerouslySetInnerHTML" src/chat/composer/; then echo XSS_FOUND; exit 1; fi && npx tsc --noEmit && echo SKILLPICKER_OK</automated>
   </verify>
   <done>SkillPicker renders the grouped ARIA listbox (active aria-selected + JS-scroll), SkillPill is a removable AttachmentChip-shaped pill, and chat.skillPicker.* copy exists in en+it (parity green); server strings render as text nodes only.</done>
 </task>
@@ -162,7 +162,7 @@ This plan produces:
 
 | Threat ID | Category | Component | Disposition | Mitigation Plan |
 |-----------|----------|-----------|-------------|-----------------|
-| T-37D-05 | Tampering / Elevation (XSS via skill metadata) | SkillPicker option rows | mitigate | Names/descriptions render as React text nodes (auto-escaped); NO dangerouslySetInnerHTML anywhere in composer/ (negative test assertion) |
+| T-37D-05 | Tampering / Elevation (XSS via skill metadata) | SkillPicker option rows | mitigate | Names/descriptions render as React text nodes (auto-escaped); NO dangerouslySetInnerHTML anywhere in composer/ — enforced by Task 2's fail-on-hit verify guard `if grep -rq "dangerouslySetInnerHTML" src/chat/composer/; then echo XSS_FOUND; exit 1; fi` which actually FAILS the check on a match (the prior grep-and-echo-or chain exited 0 whether or not the sink was present, enforcing nothing) |
 | T-37D-06 | Information Disclosure / DoS (error surface on failed fetch) | fetchComposerSkills + shouldOpen | mitigate | getJSON throw ⇒ [] (no error surface); shouldOpen(_, 0) === false ⇒ an empty/unreachable list degrades the menu to a no-op (D-09), never a leaked error or a broken open state |
 | T-37D-SC | Tampering | npm/pip/cargo installs | accept | 37D installs NO external packages (RESEARCH § Package Legitimacy Audit: N/A) |
 </threat_model>
