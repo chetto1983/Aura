@@ -138,8 +138,6 @@ test.describe('cockpit artifacts — delivery surfaces in the Artefatti panel + 
     page,
   }) => {
     let domAssertions = 0;
-    let downloadHits = 0;
-    let downloadedPath = '';
 
     await installConversationRoutes(page);
 
@@ -152,21 +150,20 @@ test.describe('cockpit artifacts — delivery surfaces in the Artefatti panel + 
       }),
     );
 
-    // The id-addressed authenticated download route. Fulfilled as an attachment so the
-    // <a download> click resolves to a real download; the interceptor RECORDS the hit
-    // (and the exact path) so we can assert only the opaque id ever reached the wire.
-    await page.route(/\/api\/assets\/[^/]+\/download(\?|$)/, (route) => {
-      downloadHits += 1;
-      downloadedPath = new URL(route.request().url()).pathname;
-      return route.fulfill({
+    // The id-addressed download route, mocked as an attachment. NOTE: Playwright does NOT
+    // intercept browser-initiated downloads via page.route — the <a download> click bypasses
+    // this handler — so the click is verified below through the Download object's url() (the
+    // exact wire path the browser fetched), not a route-hit counter.
+    await page.route(/\/api\/assets\/[^/]+\/download(\?|$)/, (route) =>
+      route.fulfill({
         status: 200,
         headers: {
           'Content-Type': 'application/octet-stream',
           'Content-Disposition': 'attachment; filename="report.xlsx"',
         },
         body: 'xlsx-bytes',
-      });
-    });
+      }),
+    );
 
     // The live delivery turn streams the aura.artifact descriptor.
     await page.route('**/agent/run', (route) =>
@@ -185,32 +182,39 @@ test.describe('cockpit artifacts — delivery surfaces in the Artefatti panel + 
     await expect(page.getByRole('heading', { name: 'Artifacts' })).toBeVisible({ timeout: 15000 });
     domAssertions += 1;
 
-    const reportName = page.getByText('report.xlsx', { exact: true });
-    await expect(reportName).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('notes.txt', { exact: true })).toBeVisible();
+    // The delivered artifact ALSO renders as an inline assistant-message chip (D-15 fold), so
+    // report.xlsx appears twice on the page. Scope every panel assertion to the "Artifacts"
+    // region so we target the panel rows, not the page-ambiguous chip+panel pair.
+    const artifactsPanel = page.getByRole('region', { name: 'Artifacts' });
+    await expect(artifactsPanel.getByText('report.xlsx', { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(artifactsPanel.getByText('notes.txt', { exact: true })).toBeVisible();
     domAssertions += 1;
 
     // 2a) NEWEST-FIRST: report.xlsx (newer created_at) precedes notes.txt in the list.
-    const listItems = page.getByRole('listitem').filter({ hasText: /report\.xlsx|notes\.txt/ });
+    const listItems = artifactsPanel
+      .getByRole('listitem')
+      .filter({ hasText: /report\.xlsx|notes\.txt/ });
     await expect(listItems.first()).toContainText('report.xlsx');
     await expect(listItems.nth(1)).toContainText('notes.txt');
     domAssertions += 1;
 
-    // 3) DOWNLOAD: clicking the row's download control issues GET /api/assets/{id}/download.
-    // The <a download> click yields a download event; assert BOTH the browser download
-    // filename and the route-interceptor hit + the exact id-only path (T-37B-16: no
-    // object_key / bucket / host path ever leaves — only the opaque id).
-    const downloadLink = page.getByRole('link', { name: 'Download report.xlsx' });
+    // 3) DOWNLOAD: clicking the panel row's download control issues GET /api/assets/{id}/download
+    // (T-37B-16: only the opaque id ever leaves — no object_key/bucket/host path). The trailing
+    // download reveals on row hover on hover-capable pointers (always visible on touch), so hover
+    // the row first to make the click actionable on desktop too.
+    await listItems.first().hover();
+    const downloadLink = artifactsPanel.getByRole('link', { name: 'Download report.xlsx' });
     await expect(downloadLink).toHaveAttribute('href', `/api/assets/${NEWEST_ID}/download`);
     domAssertions += 1;
 
     const [download] = await Promise.all([page.waitForEvent('download'), downloadLink.click()]);
     expect(download.suggestedFilename()).toBe('report.xlsx');
-    expect(downloadHits).toBeGreaterThan(0);
-    expect(downloadedPath).toBe(`/api/assets/${NEWEST_ID}/download`);
-    // Negative surface: the addressed path carries ONLY the opaque id — never an
-    // object_key, bucket, or host/container path segment.
-    expect(downloadedPath).not.toMatch(/bucket|object_key|garage|\/root\/|\/home\//i);
+    // The click fetched from the id-addressed route — assert the ACTUAL download URL (only the
+    // opaque id ever leaves; never an object_key, bucket, or host/container path segment).
+    expect(new URL(download.url()).pathname).toBe(`/api/assets/${NEWEST_ID}/download`);
+    expect(download.url()).not.toMatch(/bucket|object_key|garage|\/root\/|\/home\//i);
 
     // COUNTED-ASSERTION GUARD: a no-op (panel never opened / row never rendered) run
     // FAILS rather than passing green.
@@ -220,8 +224,6 @@ test.describe('cockpit artifacts — delivery surfaces in the Artefatti panel + 
   test('a 404 on the download route leaves no unauthenticated surface (negative)', async ({
     page,
   }) => {
-    let downloadHits = 0;
-
     await installConversationRoutes(page);
     await page.route(/\/api\/assets\?thread_id=/, (route) =>
       route.fulfill({
@@ -230,12 +232,12 @@ test.describe('cockpit artifacts — delivery surfaces in the Artefatti panel + 
         body: JSON.stringify(agentAssets()),
       }),
     );
-    // A non-owner / missing asset: the route 404s. The row must still address the asset
-    // purely by its opaque id (no fallback to a raw host path or object key).
-    await page.route(/\/api\/assets\/[^/]+\/download(\?|$)/, (route) => {
-      downloadHits += 1;
-      return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
-    });
+    // A non-owner / missing asset 404s at the id route. The row must still address the asset
+    // purely by its opaque id (no fallback to a raw host path or object key). Playwright does
+    // not route browser downloads, so the fetched URL is asserted via the Download object below.
+    await page.route(/\/api\/assets\/[^/]+\/download(\?|$)/, (route) =>
+      route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }),
+    );
     await page.route('**/agent/run', (route) =>
       sseResponse(route, sseFromFrames(deliveryTurnFrames())),
     );
@@ -246,13 +248,20 @@ test.describe('cockpit artifacts — delivery surfaces in the Artefatti panel + 
     await composer.press('Enter');
 
     await expect(page.getByRole('heading', { name: 'Artifacts' })).toBeVisible({ timeout: 15000 });
-    const downloadLink = page.getByRole('link', { name: 'Download report.xlsx' });
+    // Scope to the panel row (the inline message chip also renders a "Download report.xlsx" link).
+    // Hover the row so the trailing download is actionable on hover-capable pointers.
+    const artifactsPanel = page.getByRole('region', { name: 'Artifacts' });
+    await artifactsPanel.getByRole('listitem').filter({ hasText: 'report.xlsx' }).hover();
+    const downloadLink = artifactsPanel.getByRole('link', { name: 'Download report.xlsx' });
     await expect(downloadLink).toHaveAttribute('href', `/api/assets/${NEWEST_ID}/download`);
 
-    // Clicking a 404 download hits the id route and surfaces nothing more — the DOM
+    // Clicking the download fetches from the id route and surfaces nothing more — the DOM
     // never exposes an alternative (unauthenticated / raw-path) download target.
-    await downloadLink.click().catch(() => undefined);
-    await expect.poll(() => downloadHits, { timeout: 10000 }).toBeGreaterThan(0);
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      downloadLink.click().catch(() => undefined),
+    ]);
+    expect(new URL(download.url()).pathname).toBe(`/api/assets/${NEWEST_ID}/download`);
     const hrefs = await page
       .getByRole('link')
       .evaluateAll((links) =>

@@ -68,7 +68,10 @@ export function ArtifactRow({ asset, onPreview }: ArtifactRowProps) {
               e.stopPropagation();
             }}
             aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
-            className="grid size-8 shrink-0 place-items-center rounded-full border border-transparent text-text-faint opacity-0 transition-all hover:border-accent hover:bg-surface hover:text-accent-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover/row:opacity-100"
+            // Touch has no hover, so the download must be visible by default (mobile Drawer,
+            // WEBART-05/06). On hover-capable pointers (desktop) it stays a clean hover-reveal:
+            // opacity-0 applies ONLY under @media(hover:hover), then group-hover/focus reveals it.
+            className="grid size-8 shrink-0 place-items-center rounded-full border border-transparent text-text-faint opacity-100 transition-all [@media(hover:hover)]:opacity-0 hover:border-accent hover:bg-surface hover:text-accent-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover/row:opacity-100"
           >
             <Download className="size-4 transition-transform group-hover/row:translate-y-px" />
           </a>
