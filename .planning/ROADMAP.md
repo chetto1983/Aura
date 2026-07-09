@@ -524,10 +524,21 @@ Plans:
 **Plans:** 5 plans in 4 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 37D-01-PLAN.md — [W1] PRD-amendment gate (#81): WEBSKILL-01..03 + GET /api/composer/skills + aura.skill envelope + Mechanism A (blocks all code)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 37D-02-PLAN.md — [W2] Backend: GET /api/composer/skills (RequireAuth-only, global snapshot) + pinned-skill wire path (aura.skill decode + Mechanism-A prepend + SkillBody seam + divergence guard)
 - [ ] 37D-03-PLAN.md — [W2] Frontend picker foundation: skills client + pure combobox model + ARIA listbox (SkillPicker) + removable pill (SkillPill) + en/it i18n
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 37D-04-PLAN.md — [W3] Composer integration: / trigger + combobox keys/ARIA + pinned pill + quick actions (add-files/new-chat/clear) + skill carried on send
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 37D-05-PLAN.md — [W4] Terminal gate: Playwright composer-skills e2e + internal/webui/dist rebuild + coverage >=85 (web vitest + owned-surface Go)
 
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)

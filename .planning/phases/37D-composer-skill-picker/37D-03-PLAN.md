@@ -21,7 +21,7 @@ must_haves:
     - "skillPickerModel exposes PURE helpers: shouldOpen(text, skillsCount) is true only when text.startsWith('/') AND skillsCount>0 (D-05 trigger + D-09 degrade); filterPickerItems groups the Commands actions + the incrementally-filtered skills; pickerKeyAction maps ArrowUp/ArrowDown/Enter/Escape to up/down/select/close and everything else to none"
     - "SkillPicker renders a role=listbox above the input with grouped role=option rows (icon + name + optional subtitle, section headers per D-07); the option whose id === activeOptionId carries aria-selected=true and is JS-scrolled into view on change (aria-activedescendant is not browser-auto-scrolled, Pitfall 6)"
     - "SkillPill renders a removable pinned-skill pill mirroring AttachmentChip (bordered inline-flex + truncated name + ghost X button with a localized remove aria-label firing onRemove)"
-    - "every new chat.skillPicker.* string exists in BOTH en and it (parity test green)"
+    - "every new chat.skillPicker.* string exists in BOTH en and it (parity test green) — D-10 i18n en+it parity for all new strings (menu labels, group headers, pill, quick-command labels)"
   artifacts:
     - path: "web/src/chat/composer/api.ts"
       provides: "COMPOSER_SKILLS_PATH + ComposerSkillRow type + fetchComposerSkills(): Promise<readonly ComposerSkillRow[]>"

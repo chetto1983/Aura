@@ -15,7 +15,7 @@ must_haves:
     - "the spec also proves the quick actions: new-chat starts a new conversation (route/effect), clear resets the composer input + pinned pill; each is a pure client action (no /agent/run POST fired for the action itself)"
     - "every assertion is a COUNTED DOM/route fact guarded > 0 (no-skip-as-green, CLAUDE.md); the shared gotoAuthenticated harness throws when neither a live serve nor the auth stack is reachable"
     - "internal/webui/dist is rebuilt from the 37D-03/04 web changes so the shipped binary + the Playwright webServer serve the composer picker"
-    - "the web unit coverage gate (vitest v8 statements/branches/functions/lines ≥85) and the owned-surface Go coverage gate (≥85 on the db_integration neo4j_integration matrix) both pass with the 37D surface included"
+    - "the web unit coverage gate (vitest v8 statements/branches/functions/lines ≥85) and the owned-surface Go coverage gate (≥85 on the db_integration neo4j_integration matrix) both pass with the 37D surface included (D-10 — web coverage ≥85%; the unit React + Playwright e2e truths above prove the open→filter→select→send flow and the quick-action new-chat/clear behavior)"
   artifacts:
     - path: "web/e2e/composer-skills.spec.ts"
       provides: "Playwright golden-replay e2e: open→filter→select→pill→send-carries-aura.skill + new-chat/clear"
