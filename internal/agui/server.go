@@ -131,6 +131,15 @@ type Server struct {
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.
 	probeTimeout time.Duration
+
+	// tts/stt are the 37C web-voice clients injected via SetVoice (D-13) as narrow
+	// seams (voice_api.go) so the handlers unit-test with no network. A nil client ⇒
+	// that capability is absent: its POST answers 503 and GET /api/voice/capabilities
+	// reports it false (D-11). ttsMaxChars is the soft rune cap POST /api/tts truncates
+	// to (AURA_TTS_MAX_CHARS, default 4096, 37C-02).
+	tts         ttsSynthesizer
+	stt         sttTranscriber
+	ttsMaxChars int
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -188,6 +197,12 @@ func (s *Server) Mux() http.Handler {
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
+	// WEBVOICE-01/02/03 web-voice routes (37C-03): POST /api/tts (audio/mpeg + soft
+	// char cap), POST /api/stt (transcribe-and-discard, D-08 — no asset/DB row), GET
+	// /api/voice/capabilities (SELF-scoped presence probe, never 503). Colocated with
+	// their handlers (voice_api.go); the parent-mux mounts (the two POSTs behind
+	// agentRunCapability, capabilities RequireAuth-only) live in serve_webui_voice.go.
+	s.registerVoiceRoutes(mux)
 	s.registerDocumentRoutes(mux)
 	s.registerStorageOrphanRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
