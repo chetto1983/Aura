@@ -17,6 +17,8 @@ import type { Asset } from './attachments/types';
 import { SourceExplorerProvider } from './displays/SourceExplorerContext';
 import { AssistantMessage, UserMessage } from './ExternalStoreChat_messages';
 import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './sseAdapter';
+import { AutoSpeak } from './voice/AutoSpeak';
+import { useVoiceRuntime } from './voice/useVoiceRuntime';
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
 // list + isRunning + per-turn usage in React state and feeds them to
@@ -532,11 +534,11 @@ export function ExternalStoreChat({
     [threadId, messages, backendSeqAt, foldReRun],
   );
 
-  // 25-07: edit/regenerate + branch nav now ride this same runtime over the path-aware
-  // backend (plan 25-06). onEdit forks a user-turn branch; onReload forks an assistant
-  // branch; the runtime models the tree from setMessages so BranchPickerPrimitive
-  // (BranchPicker.tsx) navigates siblings. Copy/Edit/Reload are the ONLY action-bar verbs
-  // (UI-SPEC — the feedback rating group is Phase 26).
+  // 25-07: edit/regenerate + branch nav ride this runtime; onEdit/onReload fork sibling
+  // branches the runtime models from setMessages so BranchPicker navigates them.
+  // Voice (37C-05): caps-gated speech + dictation adapters attach here (undefined ⇒ native
+  // degrade); useVoiceRuntime revokes the speech adapter URLs via dispose() on unmount.
+  const voiceAdapters = useVoiceRuntime();
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages,
     isRunning,
@@ -545,10 +547,12 @@ export function ExternalStoreChat({
     onEdit,
     onReload,
     onCancel,
+    adapters: voiceAdapters,
   });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <AutoSpeak />
       {/* The shared read-only Source Explorer (D-13): one sheet, two entry points
           (the "Sources (N)" button + the citation click-through), one registry. */}
       <SourceExplorerProvider>
