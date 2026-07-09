@@ -485,7 +485,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 37C-02-PLAN.md — [W2] Backend foundation: AURA_TTS_MAX_CHARS knob (default 4096) + exported ;codecs=-safe assets.AudioFormat
+- [x] 37C-02-PLAN.md — [W2] Backend foundation: AURA_TTS_MAX_CHARS knob (default 4096) + exported ;codecs=-safe assets.AudioFormat
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
