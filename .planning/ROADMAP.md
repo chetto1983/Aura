@@ -521,12 +521,12 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
-**Plans:** 5 plans in 4 waves
+**Plans:** 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 37D-01-PLAN.md — [W1] PRD-amendment gate (#81): WEBSKILL-01..03 + GET /api/composer/skills + aura.skill envelope + Mechanism A (blocks all code)
+- [x] 37D-01-PLAN.md — [W1] PRD-amendment gate (#81): WEBSKILL-01..03 + GET /api/composer/skills + aura.skill envelope + Mechanism A (blocks all code)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

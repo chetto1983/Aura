@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 37C
-current_phase_name: web-voice-lane-inserted
+current_phase: 37D
+current_phase_name: composer-skill-picker
 status: executing
 stopped_at: Phase 37D context gathered
-last_updated: "2026-07-09T21:38:49.485Z"
+last_updated: "2026-07-09T22:01:11.056Z"
 last_activity: 2026-07-09
-last_activity_desc: Phase 37D planning complete
+last_activity_desc: Phase 37D execution started
 progress:
   total_phases: 17
   completed_phases: 10
-  total_plans: 77
-  completed_plans: 77
+  total_plans: 82
+  completed_plans: 78
   percent: 59
 ---
 
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 37C — web-voice-lane-inserted
+**Current focus:** Phase 37D — composer-skill-picker
 
 ## Current Position
 
-Phase: 37C (web-voice-lane-inserted) — EXECUTING
-Plan: 6 of 6 (37C-01 ✓ PRD amendment #79 a02332a36; 37C-02 ✓ backend primitives 646b99539/c7f45a359; 37C-03 ✓ voice API spine 0d418a1a3/f74bfce63/3dfbcf3e0; 37C-04 ✓ web output lane a699fc38c/833d72a74/0244648ea; next: 37C-05 web input lane — dictationAdapter + Composer dictation-primary + runtime adapters wiring)
+Phase: 37D (composer-skill-picker) — EXECUTING
+Plan: 2 of 5
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
-Last activity: 2026-07-09 — Phase 37D planning complete
+Last activity: 2026-07-09 — Phase 37D execution started
 
 #### 37C-06 — Terminal acceptance gate (WEBVOICE-01..04 proven E2E). **Wave-6 plan, sequential on master, 3 commits `1cf4f5408` (feat — local-voice wiring) / `edac06848` (test — live-container voice E2E + rebuilt dist) / `caabf50bc` (test — adapter mutation-hardening)** + this docs commit. Rebuilt `internal/webui/dist` (voice surface baked) + rebaked the `aura` container (the 3-day-old pre-voice image served neither the routes nor the voice UI; the fresh image's three voice routes answer 401-unauth = mounted, never 404). **`web/e2e/voice.spec.ts`** (mirrors `artifacts.spec.ts`+`auth.ts`; real Authula login, external-serve `:9080`) — 4 tests × chromium + mobile-chrome, **8/8 green (~12–14s, `VOICE_E2E_OK`)**: (1) real capabilities `{true,true}` + a live LOCAL Kokoro `POST /api/tts` (200 `audio/mpeg` bytes); (2) speaker → real `POST /api/tts` `audio/mpeg` + the speaking state (the `Audio` element is stubbed via `addInitScript` so headless playback is deterministic — audible playback is Manual-Only); (3) fake-media dictation (`--use-fake-device-for-media-stream` + `grantPermissions('microphone')`) → an editable transcript inserted into the composer → Send (the `/api/stt` transcript is route-mocked — a fake device records silence; real accuracy is Manual-Only); (4) degrade → a `{false,false}` capabilities route-mock → the speaker control absent, mic in attachment mode, no console errors. **DEVIATION (Rule 4, operator-directed — supersedes D-12 cloud-only):** the web voice lane built cloud-only clients (nil unless `AURA_TTS_MODEL`/`AURA_STT_CLOUD_MODEL` set), so the deployment reported `{false,false}` despite healthy local `aura-tts`/`aura-stt` sidecars (`TTS_BASE_URL`/`STT_BASE_URL`); `buildWebTTSClient`/`buildWebSTTClient` now default to the LOCAL sidecars (mp3 override kept for the web TTS) and switch to OpenRouter only when the cloud model is set — SELECTABLE local↔cloud, with daemon-free httptest proofs the web lane routes to the local sidecars (no Bearer + no model on the Kokoro `/audio/speech` call; multipart + model/language on the whisper call). **Coverage gate:** web vitest **92.46% stmts / 86.53% branch** (1212 tests, `COVERAGE_GATE_WEB_OK`); Stryker **speechAdapter 86.6% / dictationAdapter 78.5%** killed (both ≥70, added to the CI mutation set + the Stryker-vitest include); Go owned-surface **85.4%** on the full `db_integration neo4j_integration` matrix (live stack, `-count=1`, `COVERAGE_GATE_GO_OK`); `-race` clean on `internal/agui`/`internal/assets`/`internal/config`/`cmd/aura`. **Env notes (hard-won):** re-seeded the Authula E2E operator (a prior coverage reset had wiped it → sign-in 401) via `scripts/authula_seed_e2e.go`; the coverage gate needs the FULL live-stack env (composed DSNs + `POSTGRES_*` + neo4j + objectstore `:3900` w/ real `.env` keys + embed `:8081` + `AURA_SKILL_EXPORT_DIR`) AND **`-count=1`** (go's test cache key excludes env vars, so an env-poor prior run is otherwise reused verbatim — the tell was an identical 82.2% across two differently-env'd runs). **WEBVOICE-01..04 → `[x]`** (proven E2E; `requirements mark-complete` run this time). **Phase 37C COMPLETE** — Manual-Only perceptual checks (audible TTS playback + live dictation accuracy on a real mic) remain for `/gsd-verify-work`. PRD follow-up: record the D-12 supersession (web voice = local↔cloud selectable, local default).
 
@@ -308,6 +308,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37B P08 | 50 | 2 tasks | 120 files |
 | Phase 37C P05 | 55min | 3 tasks | 10 files |
 | Phase 37C P06 | 3h | 2 tasks | 8 files |
+| Phase 37D P01 | 11min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -544,6 +545,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 37C-05: DictationAdapter stop() awaits the onstop→POST→callbacks so onSpeech inserts the transcript before the composer's post-stop cleanup unsubscribes it (deep form of Landmine #1)
 - [Phase ?]: 37C-05: voice runtime wiring extracted into useVoiceRuntime()+AutoSpeak so ExternalStoreChat.tsx stays 599 LOC; adapters attach directly on useExternalStoreRuntime (no RuntimeAdapterProvider)
 - [Phase 37C]: 37C-06 web voice lane made LOCAL-selectable (serve_voice.go defaults to the aura-tts/aura-stt sidecars, cloud override) — supersedes D-12 cloud-only per operator directive; proven live (capabilities {true,true} + real Kokoro mp3)
+- [Phase 37D]: 37D-01 Amendment #81 (PRD-first D-11): composer skill-picker documented before code — GET /api/composer/skills is RequireAuth-only, NOT governance.read (D-03 403 trap avoided); returns the GLOBAL active-skills snapshot (loader.List()), per-identity skill scoping DEFERRED (D-04, NewSkillToolForIdentity dormant)
+- [Phase 37D]: 37D-01 pinned-skill = Mechanism A: server prepends the exact useAuthorityFrame+body via the existing TurnWithModelUserMessage seam (zero runner change, no new agent tool, no new skills source of truth); Mechanism B (forced first tool call) rejected. Pinned name rides the existing aura.skill run envelope
 
 ### Pending Todos
 
@@ -588,7 +591,7 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-09T19:07:09.474Z
+Last session: 2026-07-09T21:59:33.040Z
 Stopped at: Phase 37D context gathered
 Resume file: .planning/phases/37D-composer-skill-picker/37D-CONTEXT.md
 
