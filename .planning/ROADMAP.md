@@ -521,6 +521,15 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
+**Plans:** 5 plans in 4 waves
+
+Plans:
+- [ ] 37D-01-PLAN.md — [W1] PRD-amendment gate (#81): WEBSKILL-01..03 + GET /api/composer/skills + aura.skill envelope + Mechanism A (blocks all code)
+- [ ] 37D-02-PLAN.md — [W2] Backend: GET /api/composer/skills (RequireAuth-only, global snapshot) + pinned-skill wire path (aura.skill decode + Mechanism-A prepend + SkillBody seam + divergence guard)
+- [ ] 37D-03-PLAN.md — [W2] Frontend picker foundation: skills client + pure combobox model + ARIA listbox (SkillPicker) + removable pill (SkillPill) + en/it i18n
+- [ ] 37D-04-PLAN.md — [W3] Composer integration: / trigger + combobox keys/ARIA + pinned pill + quick actions (add-files/new-chat/clear) + skill carried on send
+- [ ] 37D-05-PLAN.md — [W4] Terminal gate: Playwright composer-skills e2e + internal/webui/dist rebuild + coverage >=85 (web vitest + owned-surface Go)
+
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
 
 **Goal:** Condivisione/export di una conversazione o di un artifact (parità con "Condividi" + link di Claude), rispettando l'isolamento identità di Aura: export file o link condiviso autenticato, MAI una superficie pubblica non autenticata by-default.
