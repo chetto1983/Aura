@@ -125,6 +125,9 @@ export const resources = {
           copied: 'Copied',
           edit: 'Edit',
           reload: 'Regenerate',
+          speak: 'Read aloud',
+          stopSpeaking: 'Stop reading',
+          tooLong: 'Message too long to read fully',
         },
         edit: {
           save: 'Save and re-run',
@@ -402,6 +405,9 @@ export const resources = {
           copied: 'Copiato',
           edit: 'Modifica',
           reload: 'Rigenera',
+          speak: 'Leggi ad alta voce',
+          stopSpeaking: 'Ferma lettura',
+          tooLong: 'Messaggio troppo lungo per leggerlo tutto',
         },
         edit: {
           save: 'Salva e riesegui',

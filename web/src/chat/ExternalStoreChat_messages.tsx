@@ -1,3 +1,4 @@
+import { Square, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   ActionBarPrimitive,
@@ -8,6 +9,7 @@ import {
   type ThreadMessageLike,
   type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
+import { useVoiceMode } from './voice/voiceModeContext';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import type { Asset } from './attachments/types';
 import { BranchPicker } from './BranchPicker';
@@ -196,12 +198,75 @@ export function AssistantMessage() {
         >
           {t('chat.action.reload')}
         </ActionBarPrimitive.Reload>
+        <AssistantSpeakerControl />
         <BranchPicker />
       </ActionBarPrimitive.Root>
       {/* The "Sources (N)" affordance lives OUTSIDE the hover-only action bar so the
           evidence count is always visible (D-13); hidden when N=0. */}
       <AnswerSources />
     </MessagePrimitive.Root>
+  );
+}
+
+interface SpeakerSpeech {
+  readonly status?: unknown;
+}
+
+// A truncated TTS response (the X-Aura-TTS-Truncated header, surfaced by the
+// speechAdapter on the utterance + its status object) → the D-05 "message too long"
+// hint. Reads the flag off the active speech state for THIS message: the stock runtime
+// copies utterance.status into s.message.speech by reference, so a truncated flag stamped
+// on the status rides through (top-level `truncated` is also honored for a custom bridge).
+function speechIsTruncated(speech: SpeakerSpeech | null | undefined): boolean {
+  if (speech == null) return false;
+  const flagged = speech as { truncated?: unknown; status?: { truncated?: unknown } };
+  return flagged.truncated === true || flagged.status?.truncated === true;
+}
+
+/**
+ * AssistantSpeakerControl — the caps.tts-gated Speak/StopSpeaking pair (D-04) plus the
+ * D-05 truncation hint, dropped into the assistant ActionBar next to Copy/Reload. It
+ * renders NOTHING when TTS is unconfigured (useVoiceMode().caps.tts, WEBVOICE-03 degrade).
+ * Speak shows while s.message.speech is null, StopSpeaking while this message is being
+ * spoken; the runtime cancels any prior utterance so at most one message speaks at a time
+ * (RESEARCH Landmine #6). The tooLong hint appears only while the active utterance is
+ * truncated — this is what makes the X-Aura-TTS-Truncated header a visible element, not
+ * dead code.
+ */
+export function AssistantSpeakerControl() {
+  const { t } = useTranslation();
+  const { caps } = useVoiceMode();
+  // `s.message.speech` is the RESEARCH-endorsed speaker-state seam (Q2). Its upstream
+  // "under active development" deprecation note is not a removal, so the suppression is
+  // intentional — there is no non-deprecated substitute for the per-message speech state.
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  const speech = useAuiState((s) => s.message.speech);
+  if (!caps.tts) return null;
+  const speakerClass =
+    'text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+  return (
+    <>
+      {/* eslint-disable-next-line @typescript-eslint/no-deprecated */}
+      <AuiIf condition={(s) => s.message.speech == null}>
+        <ActionBarPrimitive.Speak aria-label={t('chat.action.speak')} className={speakerClass}>
+          <Volume2 aria-hidden="true" focusable="false" className="size-3.5" />
+        </ActionBarPrimitive.Speak>
+      </AuiIf>
+      {/* eslint-disable-next-line @typescript-eslint/no-deprecated */}
+      <AuiIf condition={(s) => s.message.speech != null}>
+        <ActionBarPrimitive.StopSpeaking
+          aria-label={t('chat.action.stopSpeaking')}
+          className={speakerClass}
+        >
+          <Square aria-hidden="true" focusable="false" className="size-3.5 fill-current" />
+        </ActionBarPrimitive.StopSpeaking>
+      </AuiIf>
+      {speechIsTruncated(speech) ? (
+        <span role="note" className="text-[0.7rem] italic text-text-faint">
+          {t('chat.action.tooLong')}
+        </span>
+      ) : null}
+    </>
   );
 }
 
