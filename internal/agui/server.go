@@ -203,6 +203,11 @@ func (s *Server) Mux() http.Handler {
 	// their handlers (voice_api.go); the parent-mux mounts (the two POSTs behind
 	// agentRunCapability, capabilities RequireAuth-only) live in serve_webui_voice.go.
 	s.registerVoiceRoutes(mux)
+	// WEBSKILL-01 composer skill-picker read route (37D-02): GET /api/composer/skills, the
+	// global active-skills snapshot behind plain RequireAuth (D-03/D-04). Colocated with its
+	// handler (composer_api.go); the parent-mux mount (bare aguiHandler, RequireAuth-only —
+	// NOT governance.read) lives in cmd/aura/serve_webui_composer.go.
+	s.registerComposerRoutes(mux)
 	s.registerDocumentRoutes(mux)
 	s.registerStorageOrphanRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
