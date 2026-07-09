@@ -1,8 +1,9 @@
 ---
 phase: 37B-web-artifact-sidebar
 verified: 2026-07-09T00:05:33Z
-status: human_needed
-score: 9/10 must-haves verified (1 legitimately carried forward to CI)
+status: passed
+score: 10/10 must-haves verified (WEBART-08 e2e live-proven 2026-07-09)
+resolved: "2026-07-09 — web/e2e/artifacts.spec.ts 4/4 green on chromium + mobile-chrome against a rebuilt aura container with real Authula auth (no TOTP); the carried-forward live e2e is now satisfied. Two defects fixed en route: mobile-unreachable download (82c243f7) + download-route-mock incompatibility (verify via Download.url())."
 overrides_applied: 0
 human_verification:
   - test: "Run `cd web && npx playwright test e2e/artifacts.spec.ts` (chromium + mobile-chrome) on a host/CI job with AURA_AUTHULA_OPERATOR_EMAIL/_PASSWORD/_TOTP_SECRET provisioned and `aura serve` reachable (the CI `web-e2e` job)."

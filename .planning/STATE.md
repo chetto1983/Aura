@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 37B
-current_phase_name: web-artifact-sidebar
-status: executing
-stopped_at: Completed 37B-07-PLAN.md (AppShell Artefatti integration — toggleable ResizablePanel + mobile Drawer + onArtifact live-merge/auto-open)
-last_updated: "2026-07-08T23:55:38.109Z"
+current_phase: 37C
+current_phase_name: Web Voice Lane
+status: completed
+stopped_at: Completed 37B-05-PLAN.md (onArtifact pump signal + D-15 split-fold rehydration)
+last_updated: "2026-07-09T05:53:17.159Z"
 last_activity: 2026-07-09
-last_activity_desc: 37B-07 AppShell Artefatti integration shipped (panel mount + onArtifact wiring)
+last_activity_desc: Phase 37B complete, transitioned to Phase 37C
 progress:
   total_phases: 17
   completed_phases: 9
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 37B (web-artifact-sidebar) — EXECUTING
-Plan: 8 of 8
+Phase: 37C — Web Voice Lane
+Plan: Not started
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute (37B-07 complete; Wave-6 terminal plan 37B-08 Playwright e2e + coverage/Stryker gate next)
-Last activity: 2026-07-09 — 37B-07 AppShell Artefatti integration shipped (panel mount + onArtifact wiring)
+Last activity: 2026-07-09 — Phase 37B complete, transitioned to Phase 37C
 
 #### 37B-07 — AppShell Artefatti integration (WEBART-05/07/08). Wave-5 plan on master (sequential, 2 atomic feat commits `d4f25893`/`b8cd3ac8`). **Task 1 (`d4f25893`):** the Artefatti panel is mounted into the running cockpit — a header doc-icon `ArtifactsToggle` (lucide FileText, `artifacts.toggleAria`) flips the panel on the live surface with the open/closed intent persisted to `localStorage['aura.shell.artifacts-open']` (D-03). On desktop (≥lg, `matchMedia('(min-width: 64rem)')`) a third `ResizablePanel id="chat-artifacts"` (19/16/32rem, `preserve-pixel-size`) + its `ResizableHandle` mount AFTER `chat-workspace` inside the `showConversationNavigation` branch; `panelIds` is DERIVED (`[...CHAT_SHELL_PANEL_IDS,'chat-artifacts']` only when open) so react-resizable-panels v4 namespaces the persisted layout per panel-id set — `CHAT_SHELL_LAYOUT_ID` stays `aura-chat-shell-v3`, NO key bump, NO `order` prop, the saved 2-panel layout byte-untouched (D-02 / RESEARCH Pattern 1). Below lg the panel content routes through the shared right `Drawer` via the `useSurfaceRestore` overlay slot (D-04), opened by the same toggle. **Task 2 (`b8cd3ac8`):** `onArtifact={handleArtifact}` passed to `ExternalStoreChat` beside `onUsage`; `handleArtifact` invalidates `['assets', activeThreadId]` (live-merge refetch — 37A persists the asset before emitting the frame, so the refetch always finds it, D-11) + one-time-per-thread auto-open via a `useRef<Set<string>>` (a thread already in the set never reopens after a manual close; a new thread re-arms — the "reset on thread change" contract without a separate reset effect, mitigates T-37B-19 UX-DoS). **DEVIATION (Rule 3 / CLAUDE.md 600-LOC cap, plan_specifics-sanctioned):** the inline integration pushed `AppShell.tsx` to 685 LOC → refactor-on-touch extraction into `shell/useArtifactsPanel.ts` (state hook + `CHAT_ARTIFACTS_PANEL_ID` + helpers) + `shell/ArtifactsShell.tsx` (component-only: `ArtifactsToggle`/`ArtifactsResizablePanel`/`ArtifactsDrawer`, satisfying react-refresh) → AppShell lands at **585 LOC**. The `files_modified` (AppShell.tsx + test) is honored; the two siblings are the sanctioned overflow. **VALIDATION:** `tsc --noEmit` clean; new `AppShell.artifacts.test.tsx` 6 tests green (closed-default + 2-panel key untouched, desktop ResizablePanel mount + no corruption, open persistence across remount, mobile Drawer branch via matchMedia mock, onArtifact invalidate, one-time auto-open + no-reopen + re-arm on thread change); **full web suite 138 files / 1142 tests pass (no regression)**; eslint `--max-warnings=0` + prettier clean on all 4 files; grep gates `chat-artifacts` present / `aura-chat-shell-v3` present / `aura-chat-shell-v4` absent / no `order=` / `onArtifact`+`invalidateQueries` present (`APPSHELL_PANEL_OK` + `APPSHELL_ONARTIFACT_OK`); file sizes 585/117/119 LOC (≤600); dup/vet/file-size pre-commit hooks green on both commits (no --no-verify). NO backend change, NO new deps/migrations/env — client-side only. The full Artefatti surface is now live in the cockpit (list 06 + preview 04 + producer 05 + shell 07). **WEBART-05/07/08 stay `[ ]`** (phase-spanning — live browser + aggregate e2e land at terminal 37B-08); `requirements mark-complete` NOT run.
 
@@ -112,7 +112,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 159
+- Total plans completed: 167
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -148,6 +148,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 35 | 7 | - | - |
 | 36 | 6 | - | - |
 | 37 | 10 | - | - |
+| 37B | 8 | - | - |
 
 **Recent Trend:**
 
