@@ -1,4 +1,5 @@
 import { adminEn, adminIt } from './resources.admin';
+import { composerSkillPickerEn, composerSkillPickerIt } from './resources.composer';
 import { displayEn, displayIt } from './resources.display';
 import { documentsEn, documentsIt } from './resources.documents';
 import { governanceEn, governanceIt } from './resources.governance';
@@ -67,6 +68,7 @@ export const resources = {
           stop: 'Stop',
           stopAria: 'Stop the current response',
         },
+        skillPicker: composerSkillPickerEn,
         attachments: {
           add: 'Add files',
           remove: 'Remove {{name}}',
@@ -354,6 +356,7 @@ export const resources = {
           stop: 'Ferma',
           stopAria: 'Ferma la risposta in corso',
         },
+        skillPicker: composerSkillPickerIt,
         attachments: {
           add: 'Aggiungi file',
           remove: 'Rimuovi {{name}}',
