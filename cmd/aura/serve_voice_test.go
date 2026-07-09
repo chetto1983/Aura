@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agui"
@@ -66,29 +67,126 @@ func TestWireVoiceProviders_OpusUntouched(t *testing.T) {
 	}
 }
 
-// TestWireVoiceProviders_CloudOnlySTT proves the cloud-only STT gating (D-12): a client
-// is built only when STTCloudModel is set — empty ⇒ nil (capability absent), set ⇒ a
-// cloud-routed client.
-func TestWireVoiceProviders_CloudOnlySTT(t *testing.T) {
-	if stt := buildWebSTTClient(&config.Config{}); stt != nil {
-		t.Fatal("buildWebSTTClient built a client with no STTCloudModel (want nil — cloud-only D-12)")
+// TestBuildWebTTSClient_LocalRoute proves the DEFAULT web TTS routes to the LOCAL aura-tts
+// (Kokoro) sidecar with the mp3 override — no cloud model set. It drives Synthesize against
+// an httptest stand-in for the sidecar and asserts the OpenAI /audio/speech shape: the
+// local path (no Authorization Bearer, no model id — Kokoro is single-model) with
+// response_format=mp3. This is the ground truth for "web voice uses the local sidecar".
+func TestBuildWebTTSClient_LocalRoute(t *testing.T) {
+	var gotPath, gotAuth string
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("mp3-bytes"))
+	}))
+	defer ts.Close()
+
+	cfg := &config.Config{TTSBaseURL: ts.URL, TTSVoice: "if_sara"} // no TTSModel → local
+	client := buildWebTTSClient(cfg)
+	if client == nil {
+		t.Fatal("buildWebTTSClient returned nil for a configured local TTSBaseURL")
 	}
-	stt := buildWebSTTClient(&config.Config{STTCloudModel: "openai/whisper-large-v3"})
-	if stt == nil {
-		t.Fatal("buildWebSTTClient returned nil for a configured STTCloudModel")
+	if got := client.AudioFormat(); got != "mp3" {
+		t.Fatalf("web TTS AudioFormat() = %q, want mp3", got)
 	}
-	if !stt.Cloud() {
-		t.Fatal("web STT client is not cloud-routed")
+	audio, err := client.Synthesize(context.Background(), "hello world")
+	if err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	if string(audio) != "mp3-bytes" {
+		t.Fatalf("audio = %q, want mp3-bytes", audio)
+	}
+	if gotPath != "/audio/speech" {
+		t.Fatalf("local TTS path = %q, want /audio/speech", gotPath)
+	}
+	if gotAuth != "" {
+		t.Fatalf("local TTS sent Authorization %q, want none (local sidecar, no key)", gotAuth)
+	}
+	if gotBody["response_format"] != "mp3" {
+		t.Fatalf("local TTS response_format = %v, want mp3", gotBody["response_format"])
+	}
+	if m, ok := gotBody["model"]; ok && m != "" {
+		t.Fatalf("local TTS sent model %v, want none (Kokoro is single-model)", m)
 	}
 }
 
-// TestWireVoiceProviders_Degraded proves the both-unset path (D-12): with neither model
-// set the builders both return nil and wireVoiceProviders is a no-op — the capabilities
-// endpoint reports {false,false} (never 503).
+// TestBuildWebSTTClient_LocalRoute proves the DEFAULT web STT routes to the LOCAL aura-stt
+// (faster-whisper) sidecar — no cloud model set. It drives Transcribe against an httptest
+// stand-in and asserts the multipart /audio/transcriptions shape: no Authorization, the
+// model + language form fields carried, transcript decoded from {"text":...}.
+func TestBuildWebSTTClient_LocalRoute(t *testing.T) {
+	var gotPath, gotAuth, gotContentType, gotModel, gotLang string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		_ = r.ParseMultipartForm(1 << 20)
+		gotModel = r.FormValue("model")
+		gotLang = r.FormValue("language")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"ciao mondo"}`))
+	}))
+	defer ts.Close()
+
+	cfg := &config.Config{STTBaseURL: ts.URL, STTModel: "large-v3-turbo", STTLanguage: "it"} // no cloud → local
+	client := buildWebSTTClient(cfg)
+	if client == nil {
+		t.Fatal("buildWebSTTClient returned nil for a configured local STTBaseURL")
+	}
+	if client.Cloud() {
+		t.Fatal("web STT reports Cloud() for a local base URL (want local)")
+	}
+	transcript, err := client.Transcribe(context.Background(), []byte("webm-bytes"), "dictation", "webm")
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if transcript != "ciao mondo" {
+		t.Fatalf("transcript = %q, want 'ciao mondo'", transcript)
+	}
+	if gotPath != "/audio/transcriptions" {
+		t.Fatalf("local STT path = %q, want /audio/transcriptions", gotPath)
+	}
+	if !strings.HasPrefix(gotContentType, "multipart/form-data") {
+		t.Fatalf("local STT Content-Type = %q, want multipart/form-data", gotContentType)
+	}
+	if gotAuth != "" {
+		t.Fatalf("local STT sent Authorization %q, want none (local sidecar)", gotAuth)
+	}
+	if gotModel != "large-v3-turbo" {
+		t.Fatalf("local STT model field = %q, want large-v3-turbo", gotModel)
+	}
+	if gotLang != "it" {
+		t.Fatalf("local STT language field = %q, want it", gotLang)
+	}
+}
+
+// TestBuildWebSTTClient_Selectable proves the local↔cloud selection (supersedes the
+// original cloud-only gating): neither set ⇒ nil (capability absent); a local base URL ⇒
+// a local-routed client; a cloud model ⇒ a cloud-routed client.
+func TestBuildWebSTTClient_Selectable(t *testing.T) {
+	if stt := buildWebSTTClient(&config.Config{}); stt != nil {
+		t.Fatal("buildWebSTTClient built a client with no base URL and no cloud model (want nil)")
+	}
+	local := buildWebSTTClient(&config.Config{STTBaseURL: "http://aura-stt:9000/v1"})
+	if local == nil || local.Cloud() {
+		t.Fatalf("STT with a local base URL is not local-routed: nil=%v", local == nil)
+	}
+	cloud := buildWebSTTClient(&config.Config{STTCloudModel: "openai/whisper-large-v3"})
+	if cloud == nil || !cloud.Cloud() {
+		t.Fatalf("STT with a cloud model is not cloud-routed: nil=%v", cloud == nil)
+	}
+}
+
+// TestWireVoiceProviders_Degraded proves the fully-unset path: with NEITHER a local base
+// URL NOR a cloud model the builders both return nil and wireVoiceProviders is a no-op —
+// the capabilities endpoint reports {false,false} (never 503).
 func TestWireVoiceProviders_Degraded(t *testing.T) {
-	cfg := &config.Config{} // no TTSModel, no STTCloudModel
+	cfg := &config.Config{} // no base URLs, no cloud models
 	if buildWebTTSClient(cfg) != nil || buildWebSTTClient(cfg) != nil {
-		t.Fatal("voice clients built despite no cloud models set (want nil/nil — D-12)")
+		t.Fatal("voice clients built despite no base URL and no cloud model (want nil/nil)")
 	}
 	srv := agui.NewServer(nil, nil, agui.ServerConfig{})
 	wireVoiceProviders(srv, cfg)
@@ -97,20 +195,24 @@ func TestWireVoiceProviders_Degraded(t *testing.T) {
 	}
 }
 
-// TestWireVoiceProviders_Branches exercises every switch arm of wireVoiceProviders and
-// proves the typed-nil footgun is handled: a tts-only wire must report {tts:true,
-// stt:false}, NOT a nil-*STTClient wrapped in a non-nil interface (which would report
-// stt:true and panic on the first call). The end-to-end capabilities round-trip is the
-// ground truth that SetVoice received a proper nil interface for the absent client.
+// TestWireVoiceProviders_Branches exercises every switch arm of wireVoiceProviders across
+// BOTH the local (base-URL) and cloud (model) selectors, and proves the typed-nil footgun
+// is handled: a tts-only wire must report {tts:true, stt:false}, NOT a nil-*STTClient
+// wrapped in a non-nil interface (which would report stt:true and panic on the first
+// call). The capabilities round-trip is the ground truth that SetVoice received a proper
+// nil interface for the absent client.
 func TestWireVoiceProviders_Branches(t *testing.T) {
 	cases := []struct {
 		name             string
 		cfg              *config.Config
 		wantTTS, wantSTT bool
 	}{
-		{"tts only", &config.Config{TTSModel: "hexgrad/kokoro-82m"}, true, false},
-		{"stt only", &config.Config{STTCloudModel: "openai/whisper-large-v3"}, false, true},
-		{"both", &config.Config{TTSModel: "hexgrad/kokoro-82m", STTCloudModel: "openai/whisper-large-v3"}, true, true},
+		{"tts cloud only", &config.Config{TTSModel: "hexgrad/kokoro-82m"}, true, false},
+		{"stt cloud only", &config.Config{STTCloudModel: "openai/whisper-large-v3"}, false, true},
+		{"both cloud", &config.Config{TTSModel: "hexgrad/kokoro-82m", STTCloudModel: "openai/whisper-large-v3"}, true, true},
+		{"tts local only", &config.Config{TTSBaseURL: "http://aura-tts:8880/v1"}, true, false},
+		{"stt local only", &config.Config{STTBaseURL: "http://aura-stt:9000/v1"}, false, true},
+		{"both local", &config.Config{TTSBaseURL: "http://aura-tts:8880/v1", STTBaseURL: "http://aura-stt:9000/v1"}, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

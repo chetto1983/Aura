@@ -1,14 +1,21 @@
 package main
 
 // serve_voice.go is the `aura serve` composition-root wiring for the 37C web-voice
-// backend (WEBVOICE-01/02/03, D-12/D-13). It builds a DEDICATED web TTSClient with
+// backend (WEBVOICE-01/02/03, D-13). It builds a DEDICATED web TTSClient with
 // TTSConfig.Format="mp3" (distinct from Telegram's opus client, which multimodalConfig
-// leaves at cfg.TTSFormat — RESEARCH Landmine #2) + a cloud-only STTClient, each built
-// ONLY when its cloud model is configured (D-12), and injects them into the agui Server
-// via SetVoice (D-13). A nil client ⇒ that capability is absent ⇒ its POST answers 503;
-// GET /api/voice/capabilities reflects presence. It lives here (not serve.go) so the
-// mp3-vs-opus split + the cloud-only gating are unit-testable via buildWebTTSClient /
-// buildWebSTTClient with no live call, and serve.go stays under the 600-LOC ceiling.
+// leaves at cfg.TTSFormat — RESEARCH Landmine #2) + an STTClient, and injects them into
+// the agui Server via SetVoice (D-13). A nil client ⇒ that capability is absent ⇒ its
+// POST answers 503; GET /api/voice/capabilities reflects presence.
+//
+// Local↔cloud SELECTABLE (the same knob the rest of multimodal uses): each client
+// defaults to the LOCAL sidecar (aura-tts Kokoro / aura-stt faster-whisper at
+// cfg.TTSBaseURL / cfg.STTBaseURL) and switches to OpenRouter only when its cloud model
+// (AURA_TTS_MODEL / AURA_STT_CLOUD_MODEL) is set. This supersedes the original
+// cloud-only gating (D-12): the deployment ships healthy local voice sidecars, so the
+// web lane uses them by default rather than degrading. It lives here (not serve.go) so
+// the mp3-vs-opus split + the local/cloud selection are unit-testable via
+// buildWebTTSClient / buildWebSTTClient with no live call, and serve.go stays under the
+// 600-LOC ceiling.
 
 import (
 	"github.com/chetto1983/aura/internal/agui"
@@ -17,10 +24,11 @@ import (
 )
 
 // wireVoiceProviders builds the web voice clients from config and injects them via
-// SetVoice. Cloud-only (D-12): each client is built ONLY when its cloud model is set,
-// so an unconfigured stack leaves that capability at false (its POST 503s). When
-// NEITHER model is set SetVoice is not called at all — the three routes degrade (the
-// POSTs 503, capabilities reports {false,false}).
+// SetVoice. Each client is built when EITHER its local sidecar base URL OR its cloud
+// model is configured (local↔cloud selectable); it is nil only when neither is set, so
+// that capability stays false (its POST 503s). When BOTH clients are nil SetVoice is not
+// called at all — the three routes degrade (the POSTs 503, capabilities reports
+// {false,false}).
 //
 // A nil concrete client is passed to SetVoice as an untyped-nil literal (never a
 // typed-nil *multimodal.TTSClient), so s.tts != nil / s.stt != nil report presence
@@ -41,37 +49,43 @@ func wireVoiceProviders(server *agui.Server, cfg *config.Config) {
 	}
 }
 
-// buildWebTTSClient builds the DEDICATED mp3 web TTS client (D-02): CloudModel from
-// cfg.TTSModel, Format="mp3" (the web override — distinct from Telegram's opus client,
-// which multimodalConfig leaves at cfg.TTSFormat), over the shared OpenRouter credential
-// (the same LLM.BaseURL/APIKey serve_channels.go maps for Telegram). Cloud-only (D-12):
-// returns nil when cfg.TTSModel is empty, so the caller leaves the tts capability absent.
-// Extracted so serve_voice_test.go asserts AudioFormat()=="mp3" with no live call.
+// buildWebTTSClient builds the DEDICATED mp3 web TTS client (D-02): Format="mp3" (the
+// web override — distinct from Telegram's opus client, which multimodalConfig leaves at
+// cfg.TTSFormat). Local↔cloud SELECTABLE: LocalBaseURL=cfg.TTSBaseURL (the aura-tts
+// Kokoro sidecar) is the default; CloudModel=cfg.TTSModel switches it to OpenRouter over
+// the shared LLM.BaseURL/APIKey credential (the same one serve_channels.go maps for
+// Telegram). Returns nil only when NEITHER a local base URL NOR a cloud model is set, so
+// the caller leaves the tts capability absent. Extracted so serve_voice_test.go asserts
+// AudioFormat()=="mp3" + the local/cloud selection with no live call.
 func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
-	if cfg.TTSModel == "" {
+	if cfg.TTSModel == "" && cfg.TTSBaseURL == "" {
 		return nil
 	}
 	return multimodal.NewTTSClient(multimodal.TTSConfig{
-		CloudModel:        cfg.TTSModel,
+		LocalBaseURL:      cfg.TTSBaseURL,
 		Voice:             cfg.TTSVoice,
 		Format:            "mp3",
+		CloudModel:        cfg.TTSModel,
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	})
 }
 
-// buildWebSTTClient builds the cloud-only web STT client (D-12): CloudModel from
-// cfg.STTCloudModel over the shared OpenRouter credential. Returns nil when
-// cfg.STTCloudModel is empty (cloud-only — the web lane has no local sidecar fallback),
-// leaving the stt capability absent.
+// buildWebSTTClient builds the web STT client. Local↔cloud SELECTABLE:
+// LocalBaseURL=cfg.STTBaseURL (the aura-stt faster-whisper sidecar, multipart, with
+// cfg.STTModel + language) is the default; CloudModel=cfg.STTCloudModel switches it to
+// OpenRouter's JSON transcription route over the shared credential. Returns nil only when
+// NEITHER a local base URL NOR a cloud model is set, leaving the stt capability absent.
 func buildWebSTTClient(cfg *config.Config) *multimodal.STTClient {
-	if cfg.STTCloudModel == "" {
+	if cfg.STTCloudModel == "" && cfg.STTBaseURL == "" {
 		return nil
 	}
 	return multimodal.NewSTTClient(multimodal.STTConfig{
-		CloudModel:        cfg.STTCloudModel,
+		LocalBaseURL:      cfg.STTBaseURL,
+		LocalModel:        cfg.STTModel,
 		Language:          cfg.STTLanguage,
+		CloudModel:        cfg.STTCloudModel,
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
