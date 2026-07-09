@@ -9,6 +9,7 @@ files_modified:
   - internal/agui/composer_api_test.go
   - internal/agui/governance_seam.go
   - internal/agui/governance_api_test.go
+  - internal/agui/governance_seam_test.go
   - internal/agui/server_run_request.go
   - internal/agui/server_run_request_test.go
   - internal/agui/server.go
@@ -91,7 +92,7 @@ Output: `internal/agui/composer_api.go` (+ test), `SkillBody` on `SkillsBoardPro
 <artifacts_produced>
 This plan produces:
 - **`internal/agui/composer_api.go`**: `handleComposerSkills(w, r)` (nil `s.governance.Skills` → 503; else `writeJSON(w, {"skills": activeSkillRows(s.governance.Skills.ActiveSkills())})`) + `registerComposerRoutes(mux)` mounting `GET /api/composer/skills` → `handleComposerSkills` on the agui `Server.Mux`.
-- **`SkillsBoardProvider.SkillBody(name string) (string, bool)`** added to the interface (`governance_seam.go`), implemented on `skillsBoardAdapter` (`serve_governance.go`) via the loader (`sk, ok := a.loader.Get(name); return sk.Body, ok`) and on the `scriptedSkillsBoard` test fake.
+- **`SkillsBoardProvider.SkillBody(name string) (string, bool)`** added to the interface (`governance_seam.go`), implemented on ALL THREE existing implementers (the interface's full set, confirmed by `grep -rn "func.*ActiveSkills()" internal/ cmd/`): `skillsBoardAdapter` (`serve_governance.go`) via the loader (`sk, ok := a.loader.Get(name); return sk.Body, ok`), the `scriptedSkillsBoard` test fake (`governance_api_test.go`), and the `fakeSkillsBoard` value-receiver test fake (`governance_seam_test.go`, minimal `return "", false`) — all three updated in the SAME task so the `agui` package still compiles.
 - **`runAgentRequest.Aura.Skill string`** (`json:"skill"`) on BOTH the typed struct and the ext-decode struct in `server_run_request.go`.
 - **`tools.UseAuthorityFrame`** — the previously-unexported `useAuthorityFrame` const in `internal/agent/tools/skill_read.go` exported (its doc-comment + both in-file uses AND the same-package white-box test `skill_test.go:228` updated), so the agui server reuses the exact literal.
 - **Mechanism-A prepend** in `handleRun` (`server.go`): after `buildTurnUserMessage`, when `req.Aura.Skill != ""` and `s.governance.Skills != nil` and `SkillBody(name)` returns ok, set `modelUserMsg = UseAuthorityFrame + body + "\n\n" + *modelUserMsg` BEFORE the `*userMsg != *modelUserMsg` split test.
@@ -129,17 +130,17 @@ This plan produces:
     - `grep -q "GET /api/composer/skills" cmd/aura/serve_webui_composer.go` AND the mount is bare `mux.Handle(composerSkillsRoute, aguiHandler)` with NO `RequireCapability` on that line.
     - `grep -q "registerComposerRoutes(mux, aguiHandler, auth)" cmd/aura/serve_webui.go`.
     - `go test ./internal/agui/ -run TestComposerSkills` passes (active rows, RequireAuth-not-capability non-empty 200, 401, nil-provider 503).
-    - `go build ./...` + `go vet ./internal/agui/ ./cmd/aura/` clean; composer_api.go and serve_webui.go ≤600 LOC.
+    - `go build ./...` + `go vet ./internal/agui/ ./cmd/aura/` clean; `wc -l < internal/agui/composer_api.go`, `wc -l < cmd/aura/serve_webui_composer.go`, and `wc -l < cmd/aura/serve_webui.go` each ≤ 600 (the pre-commit check-file-size hook must not block the commit).
   </acceptance_criteria>
   <verify>
-    <automated>go test ./internal/agui/ -run TestComposerSkills && go build ./... && go vet ./internal/agui/ ./cmd/aura/ && echo COMPOSER_ENDPOINT_OK</automated>
+    <automated>go test ./internal/agui/ -run TestComposerSkills && go build ./... && go vet ./internal/agui/ ./cmd/aura/ && for f in internal/agui/composer_api.go cmd/aura/serve_webui_composer.go cmd/aura/serve_webui.go; do [ "$(wc -l < "$f")" -le 600 ] || { echo "OVER 600 LOC: $f"; exit 1; }; done && echo COMPOSER_ENDPOINT_OK</automated>
   </verify>
-  <done>GET /api/composer/skills returns the global active-skills rows for any authenticated identity (200, non-empty for a non-admin), 401 unauth, 503 nil-provider, mounted bare RequireAuth-only on the parent mux; serve_webui.go stays ≤600 LOC.</done>
+  <done>GET /api/composer/skills returns the global active-skills rows for any authenticated identity (200, non-empty for a non-admin), 401 unauth, 503 nil-provider, mounted bare RequireAuth-only on the parent mux; composer_api.go, serve_webui_composer.go, and serve_webui.go all stay ≤600 LOC.</done>
 </task>
 
 <task type="auto" tdd="true">
   <name>Task 2: Pinned-skill wire path — aura.skill decode + SkillBody seam + Mechanism-A prepend in handleRun + exported UseAuthorityFrame (WEBSKILL-02)</name>
-  <files>internal/agui/server_run_request.go, internal/agui/server_run_request_test.go, internal/agui/governance_seam.go, internal/agui/governance_api_test.go, internal/agui/server.go, internal/agui/server_skill_run_test.go, internal/agent/tools/skill_read.go, internal/agent/tools/skill_test.go, cmd/aura/serve_governance.go</files>
+  <files>internal/agui/server_run_request.go, internal/agui/server_run_request_test.go, internal/agui/governance_seam.go, internal/agui/governance_api_test.go, internal/agui/governance_seam_test.go, internal/agui/server.go, internal/agui/server_skill_run_test.go, internal/agent/tools/skill_read.go, internal/agent/tools/skill_test.go, cmd/aura/serve_governance.go</files>
   <behavior>
     - TestDecodeRunAgentRequest_Skill: a body {"aura":{"attachment_ids":["a1"],"skill":"skill-creator"}} decodes to Aura.Skill=="skill-creator" AND Aura.AttachmentIDs==["a1"] (both fields on both the typed + ext structs).
     - TestRun_PinnedSkill_Applied: serveRunWithPrincipal(body with aura.skill="skill-creator", user content "do the thing"), scriptedRunner recording gotVisibleUserMsg/gotModelUserMsg via TurnWithModelUserMessage → 200; gotVisibleUserMsg == "do the thing" (raw, persisted); gotModelUserMsg contains tools.UseAuthorityFrame AND the resolved skill body AND "do the thing".
@@ -155,7 +156,8 @@ This plan produces:
     - internal/agent/tools/skill_test.go:228 — the THIRD, same-package (white-box) reference to `useAuthorityFrame` (a `strings.HasPrefix(res.Preview, useAuthorityFrame)` assertion); it MUST be renamed to `UseAuthorityFrame` too, or this task's own `go test ./internal/agent/tools/ -run Skill` verify fails to COMPILE. `grep -rn "useAuthorityFrame" internal/` shows exactly these hits (const, doc, two uses, this test).
     - internal/agui/governance_seam.go:33-41 — SkillsBoardProvider (add `SkillBody(name string) (string, bool)` to the interface; update the doc-comment).
     - cmd/aura/serve_governance.go:99-120 — skillsBoardAdapter (add `func (a skillsBoardAdapter) SkillBody(name string) (string, bool) { sk, ok := a.loader.Get(name); return sk.Body, ok }`; the loader.Get + skills.Skill.Body field already exist — loader.go:32,103-109).
-    - internal/agui/governance_api_test.go:40-59 — scriptedSkillsBoard fake (add a SkillBody method: look up a `bodies map[string]string` or derive from `active`, returning ok for known names).
+    - internal/agui/governance_api_test.go:40-59 — scriptedSkillsBoard fake (pointer receiver `*scriptedSkillsBoard`; add a SkillBody method: look up a `bodies map[string]string` or derive from `active`, returning ok for known names).
+    - internal/agui/governance_seam_test.go:23-31,116-120 — the THIRD SkillsBoardProvider implementer that the interface extension MUST NOT miss: the `fakeSkillsBoard` VALUE-receiver fake (ActiveSkills/StageSkills/AuditLog, struct + methods L23-31) wired as `Skills: fakeSkillsBoard{}` in TestSetGovernanceProvidersOffConstructor (~L118). Go compiles ALL `_test.go` files in the package BEFORE `-run` filtering, so adding SkillBody to the interface WITHOUT updating this fake makes `go vet ./internal/agui/` + `go test ./internal/agui/` FAIL TO COMPILE. `grep -rn "func.*ActiveSkills()" internal/ cmd/` proves the implementer set is EXACTLY three (skillsBoardAdapter, scriptedSkillsBoard, fakeSkillsBoard).
     - internal/agui/server_assets_run_test.go (whole file) — TestServerRunPrependsAttachmentBlock structure + the scriptedRunner{events:...} harness recording gotVisibleUserMsg/gotModelUserMsg via TurnWithModelUserMessage (server_test.go:152-167) + serveRunWithPrincipal(t, s, body): copy this structure exactly for server_skill_run_test.go.
     - internal/skills/loader.go:26-34,102-109 — the skills.Skill struct (Body field) + Get(name) (string,bool)-shaped snapshot read that backs SkillBody.
     - .planning/phases/37D-composer-skill-picker/37D-RESEARCH.md § Pattern 3 + § Pattern 4 + § Security Domain (V5 input validation) — the wire path + Mechanism A + the unknown-name-is-no-op / name-is-only-a-loader-key mitigation.
@@ -163,7 +165,7 @@ This plan produces:
   <action>
     (a) In server_run_request.go add `Skill string json:"skill"` to the typed `runAgentRequest.Aura` struct AND to the inner `ext.Aura` struct in decodeRunAgentRequest (one field each; keep the double-decode idiom). Extend server_run_request_test.go (create if absent) with TestDecodeRunAgentRequest_Skill asserting both fields decode.
     (b) In internal/agent/tools/skill_read.go rename the unexported `useAuthorityFrame` const to exported `UseAuthorityFrame`, update its doc-comment (L11) to lead with the new exported name, and update ALL in-package references: the two uses in skill_read.go (actionUse L119, renderSnippetUse L131) AND the same-package white-box assertion in skill_test.go:228. No behavior change — same literal. Guard: `grep -rn "useAuthorityFrame" internal/` MUST return zero hits after the rename, else the tools test package will not COMPILE and this task's own `go test ./internal/agent/tools/ -run Skill` verify fails.
-    (c) In governance_seam.go add `SkillBody(name string) (string, bool)` to the SkillsBoardProvider interface (doc: resolves a skill body from the SAME loader snapshot ActiveSkills lists — one source of truth for the composer pinned-skill application). Implement it on skillsBoardAdapter (serve_governance.go) as `sk, ok := a.loader.Get(name); return sk.Body, ok`. Add a SkillBody method to the scriptedSkillsBoard fake (governance_api_test.go) returning a canned body for known active names, ok=false otherwise.
+    (c) In governance_seam.go add `SkillBody(name string) (string, bool)` to the SkillsBoardProvider interface (doc: resolves a skill body from the SAME loader snapshot ActiveSkills lists — one source of truth for the composer pinned-skill application). This interface has EXACTLY THREE implementers (authoritative check: `grep -rn "func.*ActiveSkills()" internal/ cmd/` — every implementer must define ActiveSkills) — update ALL THREE in this task or the `agui` package will not compile: (1) skillsBoardAdapter (serve_governance.go) as `sk, ok := a.loader.Get(name); return sk.Body, ok`; (2) the scriptedSkillsBoard pointer-receiver fake (governance_api_test.go) returning a canned body for known active names, ok=false otherwise; (3) the fakeSkillsBoard value-receiver fake (governance_seam_test.go) with the minimal satisfying method `func (fakeSkillsBoard) SkillBody(string) (string, bool) { return "", false }` alongside its existing ActiveSkills/StageSkills/AuditLog — it is wired as `GovernanceProviders.Skills` at ~L118 and Go compiles all `_test.go` before `-run` filtering, so a missing method breaks THIS task's own `go vet ./internal/agui/` + `go test ./internal/agui/` verify at compile time.
     (d) In server.go handleRun, after `modelUserMsg, code, emsg := s.buildTurnUserMessage(...)` (and its error return) and BEFORE the `turn := s.run.Turn(...)` / split block: if `req.Aura.Skill != "" && s.governance.Skills != nil && modelUserMsg != nil`, resolve `body, ok := s.governance.Skills.SkillBody(req.Aura.Skill)`; if ok, set `framed := tools.UseAuthorityFrame + body + "\n\n" + *modelUserMsg` and `modelUserMsg = &framed` (import internal/agent/tools). If the name is unknown (ok=false) or the skill/provider is absent, do NOTHING (no-op — never inject client text, never 5xx). The existing `*userMsg != *modelUserMsg` split then fires so the model sees the framed skill first while the visible/persisted turn stays the raw user text. Keep the pinned-skill logic to a few lines (extract a tiny `applyPinnedSkill(modelUserMsg *string, skill string) *string` helper in composer_api.go if it aids testing/readability, but do NOT add a second loader).
     (e) Create server_skill_run_test.go mirroring server_assets_run_test.go: implement the `<behavior>` run cases (applied, unknown-name no-op, no-skill unchanged) over the scriptedRunner harness + a scriptedSkillsBoard wired via SetGovernanceProviders, plus TestComposerListSubsetOfResolvable (the Pitfall-2 guard). Wrap in goleak.VerifyNone.
     Refactor-on-touch: keep server.go ≤600 LOC (extract the helper if the prepend pushes it near the cap); update touched doc-comments; no dead code.
@@ -171,15 +173,16 @@ This plan produces:
   <acceptance_criteria>
     - `grep -q 'Skill string \`json:"skill"\`' internal/agui/server_run_request.go` on BOTH structs (two matches).
     - `grep -q "UseAuthorityFrame" internal/agent/tools/skill_read.go` (exported) AND `grep -q "UseAuthorityFrame" internal/agui/server.go` (reused, not re-declared) AND `grep -rn "useAuthorityFrame" internal/ | wc -l` returns 0 (the lowercase const, its two uses, AND the skill_test.go:228 white-box assertion all renamed — the tools test package compiles).
-    - `grep -q "SkillBody" internal/agui/governance_seam.go` AND `grep -q "func (a skillsBoardAdapter) SkillBody" cmd/aura/serve_governance.go`.
+    - `grep -q "SkillBody" internal/agui/governance_seam.go` (interface) AND ALL THREE implementers define it: `grep -q "func (a skillsBoardAdapter) SkillBody" cmd/aura/serve_governance.go` AND `grep -q "func (b \*scriptedSkillsBoard) SkillBody" internal/agui/governance_api_test.go` AND `grep -q "func (fakeSkillsBoard) SkillBody" internal/agui/governance_seam_test.go`.
+    - Interface-completeness guard: `grep -rn "func.*ActiveSkills()" internal/ cmd/` yields EXACTLY the 3 implementers (skillsBoardAdapter, scriptedSkillsBoard, fakeSkillsBoard) and `grep -rn "func.*SkillBody(" internal/ cmd/` yields the SAME 3 method defs — so `go build ./... && go vet ./internal/agui/` compile (no missing-method break from extending SkillsBoardProvider).
     - handleRun resolves the pinned skill via `s.governance.Skills.SkillBody(` (no second loader, no filesystem path from the client).
     - `go test ./internal/agui/ -run 'TestDecodeRunAgentRequest_Skill|TestRun_PinnedSkill|TestRun_NoSkill|TestComposerListSubsetOfResolvable'` passes (applied-first, raw-visible-persisted, unknown-name no-op, subset guard).
     - `go build ./...` + `go vet ./internal/agui/ ./internal/agent/tools/ ./cmd/aura/` clean; server.go ≤600 LOC.
   </acceptance_criteria>
   <verify>
-    <automated>go test ./internal/agui/ -run 'TestDecodeRunAgentRequest_Skill|TestRun_PinnedSkill|TestRun_NoSkill|TestComposerListSubsetOfResolvable' && go test ./internal/agent/tools/ -run Skill && go build ./... && go vet ./internal/agui/ ./internal/agent/tools/ ./cmd/aura/ && echo PINNED_SKILL_OK</automated>
+    <automated>go test ./internal/agui/ -run 'TestDecodeRunAgentRequest_Skill|TestRun_PinnedSkill|TestRun_NoSkill|TestComposerListSubsetOfResolvable' && go test ./internal/agent/tools/ -run Skill && go build ./... && go vet ./internal/agui/ ./internal/agent/tools/ ./cmd/aura/ && [ "$(grep -rn "func.*ActiveSkills()" internal/ cmd/ | wc -l)" -eq 3 ] && [ "$(grep -rn "func.*SkillBody(" internal/ cmd/ | wc -l)" -eq 3 ] && echo PINNED_SKILL_OK</automated>
   </verify>
-  <done>aura.skill decodes on both structs; handleRun deterministically prepends the reused tools.UseAuthorityFrame + resolved body to the model message (raw visible turn persisted) for a known skill and no-ops on an unknown name; SkillBody is served from the same provider ActiveSkills reads (subset guard green); server.go ≤600 LOC.</done>
+  <done>aura.skill decodes on both structs; handleRun deterministically prepends the reused tools.UseAuthorityFrame + resolved body to the model message (raw visible turn persisted) for a known skill and no-ops on an unknown name; SkillBody is served from the same provider ActiveSkills reads (subset guard green); ALL THREE SkillsBoardProvider implementers (skillsBoardAdapter, scriptedSkillsBoard, fakeSkillsBoard) satisfy the extended interface so `go build ./...` + `go vet ./internal/agui/` compile; server.go ≤600 LOC.</done>
 </task>
 
 </tasks>
@@ -207,7 +210,7 @@ This plan produces:
 - `go test ./internal/agui/ ./internal/agent/tools/ ./cmd/aura/` passes with the new suites (daemon-free).
 - `go build ./...` + `go vet ./internal/agui/ ./internal/agent/tools/ ./cmd/aura/` clean.
 - Full-matrix `-race` on the touched packages runs green in WSL at the wave boundary (goleak.VerifyNone — no goroutine leaks).
-- File-size hook: composer_api.go, server.go, serve_webui.go all ≤600 LOC.
+- File-size hook: composer_api.go, server.go, serve_webui.go, serve_webui_composer.go all ≤600 LOC.
 </verification>
 
 <success_criteria>
