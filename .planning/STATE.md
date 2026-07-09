@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-status: completed
-stopped_at: Phase 37C context gathered
-last_updated: "2026-07-09T08:55:11.384Z"
-last_activity: 2026-07-09 — Phase 37B complete, transitioned to Phase 37C
+status: executing
+stopped_at: 37C-01 complete — PRD amendment #79 landed (a02332a36)
+last_updated: "2026-07-09T11:30:00.000Z"
+last_activity: 2026-07-09 -- 37C-01 PRD-amendment (WEBVOICE-01..04) committed
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 71
-  completed_plans: 71
+  total_plans: 77
+  completed_plans: 72
   percent: 53
 ---
 
@@ -21,16 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 37B — web-artifact-sidebar
+**Current focus:** Phase 37C — web-voice-lane-inserted
 
 ## Current Position
 
-Phase: 37C — Web Voice Lane
-Plan: Not started
+Phase: 37C (web-voice-lane-inserted) — EXECUTING
+Plan: 2 of 6 (37C-01 ✓ — PRD amendment #79 landed, commit a02332a36; next: 37C-02 backend foundation)
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: Ready to execute (37B-07 complete; Wave-6 terminal plan 37B-08 Playwright e2e + coverage/Stryker gate next)
-Last activity: 2026-07-09 — Phase 37B complete, transitioned to Phase 37C
+Status: Executing Phase 37C
+Last activity: 2026-07-09 -- 37C-01 PRD-amendment landed (docs-only; WEBVOICE web voice surface now documented in prd.md Amendment #79)
+
+#### 37C-01 — PRD-amendment pre-code gate (D-14): Web Voice Lane surface (WEBVOICE-01..04). **Wave-1 BLOCKING gate — opens Phase 37C.** Sequential on master, ONE atomic docs commit `a02332a36` (`docs(37C): amend PRD with Web Voice Lane...`). Landed **Amendment #79** in `prd.md` adjacent to the WEBART #78 block, documenting the web voice surface that was undocumented in the PRD: **(1)** the WEBVOICE-01..04 requirement group transcribed from REQUIREMENTS.md:78-81; **(2)** the three authenticated identity-scoped routes — `POST /api/tts` (`multimodal.TTSClient.Synthesize` → `audio/mpeg`/mp3, soft `AURA_TTS_MAX_CHARS` cap + `X-Aura-TTS-Truncated`, 503 when unconfigured), `POST /api/stt` (transcribe-and-discard: NO `assets.Asset`/Garage object/DB row/async poll; `assets.AudioFormat` `;codecs=`-stripped), `GET /api/voice/capabilities` (SELF-scoped like `/api/me`, 200 `{tts,stt}` even unconfigured — never 503) + the `SetVoice` composition-root setter; **(3)** the two assistant-ui adapter seams `adapters.speech` (`SpeechSynthesisAdapter`) + `adapters.dictation` (`DictationAdapter`) attached on `useExternalStoreRuntime`, transcript insertion native via `onSpeech({transcript,isFinal:true})`; **(4)** mp3-for-web (a DEDICATED web `TTSClient` with `TTSConfig.Format="mp3"`) vs opus-for-Telegram untouched; **(5)** the ephemeral **session-scoped** voice-mode header toggle (no new persistence, `VoiceModePref` stays a `false` stub) with `ShouldSpeak(voiceMode || turnWasDictated)` parity + the kept `uploads.addFiles` attachment fallback; **(6)** the net-new `AURA_TTS_MAX_CHARS` knob (default 4096). **Two RESEARCH corrections carried into the PRD:** `Synthesize` has NO per-call format → dedicated mp3 web client (corrects CONTEXT D-02); insertion via `onSpeech` NOT `onSpeechEnd` (core ignores its payload — corrects CONTEXT D-09). **Scope reconciliation (explicit):** ROADMAP SC#1 / WEBVOICE-01's "per-conversation voice mode" wording reconciled to the delivered session-scoped toggle; a PERSISTED per-conversation preference (`conversations.voice_mode`) recorded as **DEFERRED**. **DEVIATIONS: none** — docs-only, plan executed exactly as written. **VALIDATION:** the plan's `<automated>` verify prints `PRD_AMENDMENT_OK` (all 9 grep tokens present + `git diff --name-only` == `prd.md` only); pre-commit hooks green (vet 5.3s + whole-tree file-size 74.7s, no `--no-verify`); commit is 1 file / +19 / 0 deletions. **NO Go/web/test file touched; NO new deps/migrations/env-plumbing** (the `AURA_TTS_MAX_CHARS` knob is DOCUMENTED here, WIRED in 37C-02). **WEBVOICE-01..04 stay `[ ]`** (phase-spanning — delivered by the code plans 37C-02..06; `requirements mark-complete` intentionally NOT run).
 
 #### 37B-07 — AppShell Artefatti integration (WEBART-05/07/08). Wave-5 plan on master (sequential, 2 atomic feat commits `d4f25893`/`b8cd3ac8`). **Task 1 (`d4f25893`):** the Artefatti panel is mounted into the running cockpit — a header doc-icon `ArtifactsToggle` (lucide FileText, `artifacts.toggleAria`) flips the panel on the live surface with the open/closed intent persisted to `localStorage['aura.shell.artifacts-open']` (D-03). On desktop (≥lg, `matchMedia('(min-width: 64rem)')`) a third `ResizablePanel id="chat-artifacts"` (19/16/32rem, `preserve-pixel-size`) + its `ResizableHandle` mount AFTER `chat-workspace` inside the `showConversationNavigation` branch; `panelIds` is DERIVED (`[...CHAT_SHELL_PANEL_IDS,'chat-artifacts']` only when open) so react-resizable-panels v4 namespaces the persisted layout per panel-id set — `CHAT_SHELL_LAYOUT_ID` stays `aura-chat-shell-v3`, NO key bump, NO `order` prop, the saved 2-panel layout byte-untouched (D-02 / RESEARCH Pattern 1). Below lg the panel content routes through the shared right `Drawer` via the `useSurfaceRestore` overlay slot (D-04), opened by the same toggle. **Task 2 (`b8cd3ac8`):** `onArtifact={handleArtifact}` passed to `ExternalStoreChat` beside `onUsage`; `handleArtifact` invalidates `['assets', activeThreadId]` (live-merge refetch — 37A persists the asset before emitting the frame, so the refetch always finds it, D-11) + one-time-per-thread auto-open via a `useRef<Set<string>>` (a thread already in the set never reopens after a manual close; a new thread re-arms — the "reset on thread change" contract without a separate reset effect, mitigates T-37B-19 UX-DoS). **DEVIATION (Rule 3 / CLAUDE.md 600-LOC cap, plan_specifics-sanctioned):** the inline integration pushed `AppShell.tsx` to 685 LOC → refactor-on-touch extraction into `shell/useArtifactsPanel.ts` (state hook + `CHAT_ARTIFACTS_PANEL_ID` + helpers) + `shell/ArtifactsShell.tsx` (component-only: `ArtifactsToggle`/`ArtifactsResizablePanel`/`ArtifactsDrawer`, satisfying react-refresh) → AppShell lands at **585 LOC**. The `files_modified` (AppShell.tsx + test) is honored; the two siblings are the sanctioned overflow. **VALIDATION:** `tsc --noEmit` clean; new `AppShell.artifacts.test.tsx` 6 tests green (closed-default + 2-panel key untouched, desktop ResizablePanel mount + no corruption, open persistence across remount, mobile Drawer branch via matchMedia mock, onArtifact invalidate, one-time auto-open + no-reopen + re-arm on thread change); **full web suite 138 files / 1142 tests pass (no regression)**; eslint `--max-warnings=0` + prettier clean on all 4 files; grep gates `chat-artifacts` present / `aura-chat-shell-v3` present / `aura-chat-shell-v4` absent / no `order=` / `onArtifact`+`invalidateQueries` present (`APPSHELL_PANEL_OK` + `APPSHELL_ONARTIFACT_OK`); file sizes 585/117/119 LOC (≤600); dup/vet/file-size pre-commit hooks green on both commits (no --no-verify). NO backend change, NO new deps/migrations/env — client-side only. The full Artefatti surface is now live in the cockpit (list 06 + preview 04 + producer 05 + shell 07). **WEBART-05/07/08 stay `[ ]`** (phase-spanning — live browser + aggregate e2e land at terminal 37B-08); `requirements mark-complete` NOT run.
 
@@ -525,6 +527,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 37B-02: xlsx installed from cdn.sheetjs.com tarball (URL dependency) not npm — registry copy frozen at 0.18.5 with CVE-2023-30533 + CVE-2024-22363
 - [Phase ?]: 37B-02: Asset.source_kind TS union widened to include 'agent' (frontend parity with 37A migration 0035)
 - [Phase ?]: 37B-08: WEBART-08 e2e is golden-replay (page.route on /agent/run + /api/assets); live browser run auth-gated so carried forward to CI web-e2e. WEBART-06 marked complete; WEBART-08 final proof deferred.
+- [Phase 37C]: 37C-01: PRD Amendment #79 landed (docs-only pre-code gate D-14, commit a02332a36) — web voice surface documented BEFORE any 37C code. Two RESEARCH corrections locked into the PRD vs CONTEXT: (D-02) multimodal.TTSClient.Synthesize has NO per-call format → mp3-for-web = a dedicated web TTSClient with TTSConfig.Format="mp3", Telegram opus untouched; (D-09) dictation transcript insertion is native via onSpeech(isFinal:true), NOT onSpeechEnd (core ignores its payload). Scope reconciliation: ROADMAP SC#1/WEBVOICE-01 "per-conversation voice mode" delivered as an EPHEMERAL session-scoped toggle (no persistence, VoiceModePref stays false stub); persisted per-conversation preference (conversations.voice_mode) DEFERRED. Net-new env AURA_TTS_MAX_CHARS default 4096 (OpenAI /audio/speech ceiling).
 
 ### Pending Todos
 
@@ -569,9 +572,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-09T08:55:11.365Z
-Stopped at: Phase 37C context gathered
-Resume file: .planning/phases/37C-web-voice-lane-inserted/37C-CONTEXT.md
+Last session: 2026-07-09T11:30:00.000Z
+Stopped at: 37C-01 complete — PRD amendment #79 landed (a02332a36); Phase 37C Wave 2 (37C-02 backend foundation) next
+Resume file: .planning/phases/37C-web-voice-lane-inserted/37C-02-PLAN.md
 
 ## Operator Next Steps
 

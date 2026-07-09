@@ -481,7 +481,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 37C-01-PLAN.md — [W1] PRD-amendment (WEBVOICE-01..04 + web voice surface: routes, adapters, mp3-vs-opus, AURA_TTS_MAX_CHARS) — blocking pre-code gate (D-14)
+- [x] 37C-01-PLAN.md — [W1] PRD-amendment (WEBVOICE-01..04 + web voice surface: routes, adapters, mp3-vs-opus, AURA_TTS_MAX_CHARS) — blocking pre-code gate (D-14)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
