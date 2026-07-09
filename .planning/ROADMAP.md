@@ -521,7 +521,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
-**Plans:** 2/5 plans executed
+**Plans:** 3/5 plans executed
 
 Plans:
 **Wave 1**
@@ -531,7 +531,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 37D-02-PLAN.md — [W2] Backend: GET /api/composer/skills (RequireAuth-only, global snapshot) + pinned-skill wire path (aura.skill decode + Mechanism-A prepend + SkillBody seam + divergence guard)
-- [ ] 37D-03-PLAN.md — [W2] Frontend picker foundation: skills client + pure combobox model + ARIA listbox (SkillPicker) + removable pill (SkillPill) + en/it i18n
+- [x] 37D-03-PLAN.md — [W2] Frontend picker foundation: skills client + pure combobox model + ARIA listbox (SkillPicker) + removable pill (SkillPill) + en/it i18n
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
