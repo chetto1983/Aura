@@ -21,6 +21,7 @@ import {
   type AguiFrame,
   type JSONPatchOp,
 } from '../sseAdapter';
+import { buildAuraRunBody } from '../auraRunBody';
 
 const golden = goldenEvents as Record<string, AguiFrame>;
 
@@ -461,5 +462,38 @@ describe('sseAdapter — CUSTOM/aura.display frame (DISP-02)', () => {
     const state = newAssistantTurn('a1');
     reduceFrame(state, { type: 'CUSTOM', name: 'aura.display', value: { no: 'tool_call_id' } });
     expect(state.tools.size).toBe(0);
+  });
+});
+
+// buildAuraRunBody is the single body assembler streamRun delegates to (body:
+// JSON.stringify(buildAuraRunBody(id, opts))), so these three cases exercise every branch of
+// the aura fold that a real /agent/run POST carries — attachments+skill, skill-only, neither.
+describe('buildAuraRunBody — the aura run envelope fold (WEBSKILL-02)', () => {
+  const base = {
+    threadId: 'thread-1',
+    userText: 'do the thing',
+    signal: new AbortController().signal,
+    onUpdate: () => undefined,
+  };
+
+  it('folds attachment ids AND a pinned skill into ONE aura object', () => {
+    const body = buildAuraRunBody('m1', { ...base, attachmentIds: ['a1'], skill: 'skill-creator' });
+    expect(body.aura).toEqual({ attachment_ids: ['a1'], skill: 'skill-creator' });
+    // Exactly one aura key — never two.
+    expect(Object.keys(body).filter((key) => key === 'aura')).toHaveLength(1);
+  });
+
+  it('carries the skill alone when there are no attachments', () => {
+    const body = buildAuraRunBody('m1', { ...base, skill: 'skill-creator' });
+    expect(body.aura).toEqual({ skill: 'skill-creator' });
+  });
+
+  it('emits NO aura key when neither a skill nor attachments are set (byte-identical to today)', () => {
+    const body = buildAuraRunBody('m1', base);
+    expect(body).not.toHaveProperty('aura');
+    expect(body).toEqual({
+      threadId: 'thread-1',
+      messages: [{ id: 'm1', role: 'user', content: 'do the thing' }],
+    });
   });
 });

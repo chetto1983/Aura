@@ -9,6 +9,7 @@ import {
   type TextPart,
   type ToolPart,
 } from './sseAdapter_frames';
+import { buildAuraRunBody } from './auraRunBody';
 
 // sseAdapter maps Aura's AG-UI/SSE event stream (POST /agent/run) onto
 // assistant-ui's ThreadMessageLike model. It is a PURE reducer + a thin
@@ -467,6 +468,8 @@ export interface StreamRunOptions {
   readonly userText: string;
   readonly signal: AbortSignal;
   readonly attachmentIds?: readonly string[];
+  /** 37D pinned skill name (a SkillPicker selection); folded into the same aura envelope. */
+  readonly skill?: string;
   /** Called after each frame folds into the turn (drives setMessages). */
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   /**
@@ -576,14 +579,9 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
         method: 'POST',
         headers: SSE_REQUEST_HEADERS,
         credentials: 'same-origin',
-        // The backend decodes an AG-UI RunAgentInput and requires an existing thread.
-        body: JSON.stringify({
-          threadId: opts.threadId,
-          messages: [{ id: id, role: 'user', content: opts.userText }],
-          ...(opts.attachmentIds !== undefined && opts.attachmentIds.length > 0
-            ? { aura: { attachment_ids: opts.attachmentIds } }
-            : {}),
-        }),
+        // The backend decodes an AG-UI RunAgentInput and requires an existing thread; the aura
+        // envelope (attachment_ids + the 37D pinned skill) is assembled by buildAuraRunBody.
+        body: JSON.stringify(buildAuraRunBody(id, opts)),
         signal: opts.signal,
       },
     ],
