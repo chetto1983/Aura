@@ -8,11 +8,14 @@ import (
 	"strings"
 )
 
-// useAuthorityFrame is the load-bearing literal that wraps a skill body when the
+// UseAuthorityFrame is the load-bearing literal that wraps a skill body when the
 // model applies it (D-08): it frames the body as instructions to follow for the
 // current task, not as inert reference text. Changing this string changes how the
-// model treats an applied skill — it is part of the contract.
-const useAuthorityFrame = "Follow these skill instructions for the current task:\n\n"
+// model treats an applied skill — it is part of the contract. Exported so the agui
+// composer pinned-skill path (37D Mechanism A) prepends the EXACT same frame the
+// `use` action emits, rather than re-declaring the literal (DRY — the string IS the
+// contract).
+const UseAuthorityFrame = "Follow these skill instructions for the current task:\n\n"
 
 // listSkillTail rides on every list result: a list miss is the capability-gap
 // decision point. Discovery+install is NOT a tool action (amendment #51 / D-40) —
@@ -116,7 +119,7 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	if !ok {
 		return ToolResult{}, fmt.Errorf("skill use: unknown skill %q", name)
 	}
-	return NewResult(ctx, useAuthorityFrame+body)
+	return NewResult(ctx, UseAuthorityFrame+body)
 }
 
 // renderSnippetUse frames a snippet's HOST by-path invocation for the model (D-01
@@ -128,7 +131,7 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 // model assembles a correct call.
 func renderSnippetUse(instructions, hostPath, interpreter string) string {
 	var b strings.Builder
-	b.WriteString(useAuthorityFrame)
+	b.WriteString(UseAuthorityFrame)
 	if instructions != "" {
 		b.WriteString(instructions)
 		b.WriteString("\n")

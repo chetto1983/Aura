@@ -13,6 +13,7 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/runner"
@@ -329,6 +330,20 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	if code != 0 {
 		http.Error(w, emsg, code)
 		return
+	}
+	// Pinned skill (37D / WEBSKILL-02, D-01 Mechanism A): when the client pins a skill on the
+	// aura envelope, prepend the EXACT authority frame + resolved body that `skill action=use`
+	// emits (tools.UseAuthorityFrame, reused verbatim — the string IS the contract) to the
+	// MODEL message, so the model treats the skill as leading instructions while the visible/
+	// persisted turn stays the raw user text (the *userMsg != *modelUserMsg split below then
+	// fires). The name is a loader KEY resolved via the SAME provider ActiveSkills lists —
+	// never a filesystem path; an unknown/absent name resolves ok=false → clean no-op (never
+	// inject client text, never a 5xx). Zero runner change, no new tool (T-37D-02/03).
+	if req.Aura.Skill != "" && s.governance.Skills != nil && modelUserMsg != nil {
+		if body, ok := s.governance.Skills.SkillBody(req.Aura.Skill); ok {
+			framed := tools.UseAuthorityFrame + body + "\n\n" + *modelUserMsg
+			modelUserMsg = &framed
+		}
 	}
 
 	var unlock func()

@@ -49,6 +49,18 @@ type scriptedSkillsBoard struct {
 
 func (b *scriptedSkillsBoard) ActiveSkills() []skills.Skill { return b.active }
 
+// SkillBody resolves a body from the SAME active snapshot ActiveSkills lists, so the fake
+// preserves the list ⊆ resolvable invariant the real skillsBoardAdapter guarantees (both
+// delegate to one loader snapshot — Pitfall 2). An unknown name → ("", false).
+func (b *scriptedSkillsBoard) SkillBody(name string) (string, bool) {
+	for _, sk := range b.active {
+		if sk.Name == name {
+			return sk.Body, true
+		}
+	}
+	return "", false
+}
+
 func (b *scriptedSkillsBoard) StageSkills(stage string) ([]skills.StageSkill, error) {
 	if b.stageErr != nil {
 		return nil, b.stageErr

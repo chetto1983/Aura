@@ -23,6 +23,9 @@ func (fakeMCPBoard) Probe(context.Context, string, mcp.ManagedServer) mcp.ProbeR
 type fakeSkillsBoard struct{}
 
 func (fakeSkillsBoard) ActiveSkills() []skills.Skill { return nil }
+func (fakeSkillsBoard) SkillBody(string) (string, bool) {
+	return "", false
+}
 func (fakeSkillsBoard) StageSkills(string) ([]skills.StageSkill, error) {
 	return nil, nil
 }

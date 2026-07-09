@@ -34,8 +34,15 @@ type MCPBoardProvider interface {
 // snapshot (Loader.List), the per-stage pending/archived metadata (ListStage — never a
 // mounted body), and the append-only audit ledger (newest-first). The pending/archived
 // reader returns metadata only, so a pending body never enters context by construction.
+//
+// SkillBody resolves an active skill's body from the SAME loader snapshot ActiveSkills
+// lists (37D / WEBSKILL-02): one source of truth for the composer pinned-skill application
+// (handleRun Mechanism A). Because both delegate to one Loader.Get/List snapshot, every
+// name ActiveSkills returns is resolvable via SkillBody (list ⊆ resolvable — Pitfall 2). An
+// unknown name → ("", false), which handleRun treats as a no-op (never a path read).
 type SkillsBoardProvider interface {
 	ActiveSkills() []skills.Skill
+	SkillBody(name string) (string, bool)
 	StageSkills(stage string) ([]skills.StageSkill, error)
 	AuditLog(ctx context.Context, filter skills.AuditFilter) ([]skills.AuditRow, error)
 }

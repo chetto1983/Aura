@@ -225,7 +225,7 @@ func TestSkillReadActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
-	if !strings.HasPrefix(res.Preview, useAuthorityFrame) || !strings.Contains(res.Preview, "Do the bravo thing.") {
+	if !strings.HasPrefix(res.Preview, UseAuthorityFrame) || !strings.Contains(res.Preview, "Do the bravo thing.") {
 		t.Fatalf("use should wrap body in the authority frame: %q", res.Preview)
 	}
 

@@ -109,6 +109,15 @@ type skillsBoardAdapter struct {
 
 func (a skillsBoardAdapter) ActiveSkills() []skills.Skill { return a.loader.List() }
 
+// SkillBody resolves a skill body from the SAME loader snapshot ActiveSkills lists (37D /
+// WEBSKILL-02): one source of truth for the composer pinned-skill application. loader.Get
+// re-reads the cached snapshot List reads, so every listed name resolves (list ⊆ resolvable,
+// Pitfall 2); an unknown name → ("", false). The name is a snapshot KEY, never a path.
+func (a skillsBoardAdapter) SkillBody(name string) (string, bool) {
+	sk, ok := a.loader.Get(name)
+	return sk.Body, ok
+}
+
 func (a skillsBoardAdapter) StageSkills(stage string) ([]skills.StageSkill, error) {
 	return skills.ListStage(a.pendingDir, a.archiveDir, stage)
 }

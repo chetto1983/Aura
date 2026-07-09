@@ -10,6 +10,10 @@ type runAgentRequest struct {
 	RunAgentInput types.RunAgentInput
 	Aura          struct {
 		AttachmentIDs []string `json:"attachment_ids"`
+		// Skill is the optional pinned skill NAME (37D / WEBSKILL-02). handleRun resolves it
+		// to a body via the loader snapshot and applies Mechanism A; it is a loader key only,
+		// never a filesystem path (T-37D-02).
+		Skill string `json:"skill"`
 	}
 }
 
@@ -25,6 +29,7 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 	var ext struct {
 		Aura struct {
 			AttachmentIDs []string `json:"attachment_ids"`
+			Skill         string   `json:"skill"`
 		} `json:"aura"`
 	}
 	if err := json.Unmarshal(raw, &ext); err != nil {
