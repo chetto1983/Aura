@@ -131,6 +131,10 @@ export const resources = {
           cancel: 'Cancel edit',
           label: 'Edit message',
         },
+        voiceMode: {
+          on: 'Voice mode on',
+          off: 'Voice mode off',
+        },
       },
       ...displayEn,
       ...documentsEn,
@@ -403,6 +407,10 @@ export const resources = {
           save: 'Salva e riesegui',
           cancel: 'Annulla modifica',
           label: 'Modifica messaggio',
+        },
+        voiceMode: {
+          on: 'Modalità vocale attiva',
+          off: 'Modalità vocale disattivata',
         },
       },
       ...displayIt,

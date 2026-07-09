@@ -26,6 +26,8 @@ import type { DocumentItem } from './documents/documentApi';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
 import { ArtifactsDrawer, ArtifactsResizablePanel, ArtifactsToggle } from './shell/ArtifactsShell';
 import { useArtifactsPanel } from './shell/useArtifactsPanel';
+import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
+import { VoiceModeToggle } from './chat/voice/VoiceModeToggle';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 
@@ -506,12 +508,15 @@ export function AppShell() {
               minSize={CHAT_WORKSPACE_MIN_WIDTH}
               className="h-full min-h-0"
             >
-              <div className="relative h-full min-h-0">
-                <div className="pointer-events-none absolute right-3 top-2.5 z-20 flex items-center gap-1">
-                  <ArtifactsToggle active={artifactsActive} onToggle={toggleArtifacts} />
+              <VoiceModeProvider>
+                <div className="relative h-full min-h-0">
+                  <div className="pointer-events-none absolute right-3 top-2.5 z-20 flex items-center gap-1">
+                    <VoiceModeToggle />
+                    <ArtifactsToggle active={artifactsActive} onToggle={toggleArtifacts} />
+                  </div>
+                  {workspace}
                 </div>
-                {workspace}
-              </div>
+              </VoiceModeProvider>
             </ResizablePanel>
             {artifactsPanelMounted ? (
               <ArtifactsResizablePanel threadId={activeThreadId} onClose={closeDesktopPanel} />
