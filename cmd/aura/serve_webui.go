@@ -496,6 +496,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// (self-scoped, RequireAuth only) + the /api/admin/* surface behind
 	// RequireCapability(governance.write).
 	registerMUSRRoutes(mux, aguiHandler, auth)
+	// The 37C web-voice mounts (WEBVOICE-01/02/03) live in serve_webui_voice.go to keep
+	// this file under the 600-LOC ceiling: POST /api/tts + POST /api/stt behind
+	// RequireCapability(agentRunCapability) (cost-bearing), GET /api/voice/capabilities
+	// RequireAuth-only (a SELF-scoped presence probe, like meRoute).
+	registerVoiceRoutes(mux, aguiHandler, auth)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the

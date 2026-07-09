@@ -421,6 +421,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// mux; no capability gate (read-only).
 	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store))
 	wireSettingsProviders(aguiServer, chat.pool)
+	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
+	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only
+	// STTClient, each built ONLY when its cloud model is configured, injected via
+	// SetVoice. With neither model set the three voice routes degrade (POSTs 503,
+	// GET /api/voice/capabilities reports {false,false}); the Telegram opus path
+	// (multimodalConfig) is untouched.
+	wireVoiceProviders(aguiServer, chat.cfg)
 	// Wire the Phase-36 (MUSR-01 / D-26/D-28) admin/user-distinction stores: the per-user
 	// audit read (over the identity-keyed mcp_audit/skill_audit/tool_invocations ledgers)
 	// and the capability-management + roster seam (the SAME *identity.Store the auth
@@ -562,39 +569,4 @@ func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 		Check: func(ctx context.Context) error { return knowledge.VerifyConnectivity(ctx, &chat.cfg.Neo4j) },
 	})
 	return probes
-}
-
-// seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it
-// scans the active tasks for an existing skill_ttl_sweep and only inserts one if
-// absent. The schedule is a daily 03:00 cron (a quiet hour), TZ Europe/Rome (the
-// scheduler default). A seed failure is non-fatal (logged by the caller) — the daemon
-// still runs; the operator can re-seed by restarting. The INSERT succeeds against the
-// 0010-widened scheduler_tasks.kind CHECK (A2 landmine closed).
-func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
-	tasks, err := store.ListActiveTasks(ctx)
-	if err != nil {
-		return fmt.Errorf("list active tasks: %w", err)
-	}
-	for _, t := range tasks {
-		if t.Kind == cron.KindSkillTTLSweep {
-			return nil // already seeded — idempotent
-		}
-	}
-	spec, err := cron.ParseSchedule(string(cron.KindCron), "0 3 * * *", 0, time.Time{}, "Europe/Rome")
-	if err != nil {
-		return fmt.Errorf("parse daily schedule: %w", err)
-	}
-	next, err := cron.NextRunAt(spec, time.Now().UTC())
-	if err != nil {
-		return fmt.Errorf("compute next run: %w", err)
-	}
-	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
-		Kind:      cron.KindSkillTTLSweep,
-		Spec:      spec,
-		NextRunAt: next,
-	}); err != nil {
-		return fmt.Errorf("create skill_ttl_sweep task: %w", err)
-	}
-	slog.Info("aura serve: seeded daily skill TTL sweep", "schedule", "0 3 * * * Europe/Rome")
-	return nil
 }

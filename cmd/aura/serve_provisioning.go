@@ -448,3 +448,40 @@ func sandboxReapSweepMinutes(idleTTLSec int) int {
 	}
 	return m
 }
+
+// seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it
+// scans the active tasks for an existing skill_ttl_sweep and only inserts one if
+// absent. The schedule is a daily 03:00 cron (a quiet hour), TZ Europe/Rome (the
+// scheduler default). A seed failure is non-fatal (logged by the caller) — the daemon
+// still runs; the operator can re-seed by restarting. The INSERT succeeds against the
+// 0010-widened scheduler_tasks.kind CHECK (A2 landmine closed). Co-located here with
+// its sibling seed helpers (seedIdentityPurgeSweep/seedSandboxReapSweep) so serve.go
+// stays under the 600-LOC cap after the 37C web-voice wiring landed (refactor-on-touch).
+func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
+	tasks, err := store.ListActiveTasks(ctx)
+	if err != nil {
+		return fmt.Errorf("list active tasks: %w", err)
+	}
+	for _, t := range tasks {
+		if t.Kind == cron.KindSkillTTLSweep {
+			return nil // already seeded — idempotent
+		}
+	}
+	spec, err := cron.ParseSchedule(string(cron.KindCron), "0 3 * * *", 0, time.Time{}, "Europe/Rome")
+	if err != nil {
+		return fmt.Errorf("parse daily schedule: %w", err)
+	}
+	next, err := cron.NextRunAt(spec, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("compute next run: %w", err)
+	}
+	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
+		Kind:      cron.KindSkillTTLSweep,
+		Spec:      spec,
+		NextRunAt: next,
+	}); err != nil {
+		return fmt.Errorf("create skill_ttl_sweep task: %w", err)
+	}
+	slog.Info("aura serve: seeded daily skill TTL sweep", "schedule", "0 3 * * * Europe/Rome")
+	return nil
+}
