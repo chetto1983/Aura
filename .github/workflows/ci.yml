@@ -396,13 +396,13 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Restore llama.cpp embedding model cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
           key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/neo4j-plugins
           key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
@@ -603,13 +603,13 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Restore llama.cpp embedding model cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
           key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/neo4j-plugins
           key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
@@ -821,13 +821,13 @@ jobs:
         run: go vet -tags memory_integration ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
 
       - name: Restore llama.cpp embedding model cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
           key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/neo4j-plugins
           key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
