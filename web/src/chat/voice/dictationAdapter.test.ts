@@ -132,7 +132,10 @@ describe('createDictationAdapter', () => {
   ): void {
     stubMediaRecorder();
     const descriptor = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
-    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
     media = {
       getUserMedia,
       trackStop,

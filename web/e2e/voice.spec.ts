@@ -233,7 +233,9 @@ test.describe('cockpit voice lane — speaker + dictation + degrade against the 
     assertions += 1;
 
     // Speaking state: the control swaps Read aloud → Stop reading; playback was initiated.
-    await expect(page.getByRole('button', { name: 'Stop reading' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: 'Stop reading' })).toBeVisible({
+      timeout: 10000,
+    });
     assertions += 1;
     const plays = await page.evaluate(
       () => (window as unknown as { __auraAudioPlays?: number }).__auraAudioPlays ?? 0,
@@ -311,9 +313,7 @@ test.describe('cockpit voice lane — speaker + dictation + degrade against the 
     // Send works end-to-end: Enter drives a real POST /agent/run and the dictated user turn
     // renders in-thread.
     const [runRequest] = await Promise.all([
-      page.waitForRequest(
-        (req) => req.url().includes('/agent/run') && req.method() === 'POST',
-      ),
+      page.waitForRequest((req) => req.url().includes('/agent/run') && req.method() === 'POST'),
       composer.press('Enter'),
     ]);
     expect(runRequest.method()).toBe('POST');

@@ -22,13 +22,15 @@ interface MsgValue {
   readonly onSpeak: (id: string) => void;
 }
 
-const H = vi.hoisted((): {
-  caps: { tts: boolean; stt: boolean };
-  ctxRef: { current: unknown };
-} => ({
-  caps: { tts: true, stt: false },
-  ctxRef: { current: null },
-}));
+const H = vi.hoisted(
+  (): {
+    caps: { tts: boolean; stt: boolean };
+    ctxRef: { current: unknown };
+  } => ({
+    caps: { tts: true, stt: false },
+    ctxRef: { current: null },
+  }),
+);
 
 vi.mock('./voice/voiceModeContext', () => ({
   useVoiceMode: () => ({
@@ -91,7 +93,12 @@ vi.mock('@assistant-ui/react', async () => {
         </button>
       ),
     },
-    ComposerPrimitive: { Root: () => null, Input: () => null, Cancel: () => null, Send: () => null },
+    ComposerPrimitive: {
+      Root: () => null,
+      Input: () => null,
+      Cancel: () => null,
+      Send: () => null,
+    },
     MessagePrimitive: { Root: () => null, Parts: () => null, Error: () => null },
   };
 });
