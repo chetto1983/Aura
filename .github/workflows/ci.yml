@@ -838,7 +838,7 @@ jobs:
           chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build agent-memory MCP image with GHA cache
         uses: docker/build-push-action@v7
