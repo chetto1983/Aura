@@ -88,3 +88,38 @@ func TestAudioProcessorReadsObjectAndCallsSTTSidecar(t *testing.T) {
 		t.Fatalf("STT fields model/language = %q/%q, want configured values", gotModel, gotLanguage)
 	}
 }
+
+// TestAudioFormat locks the exported container→STT-format map (37C-02): the
+// ";codecs=" media-type parameter a browser MediaRecorder emits is stripped
+// before the switch, so "audio/webm;codecs=opus" maps to "webm" (not the "ogg"
+// default) and "audio/mp4;codecs=mp4a.40.2" to "m4a"; bare MIME types keep their
+// prior mapping and anything unrecognised (incl. empty) stays "ogg".
+func TestAudioFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		mimeType string
+		want     string
+	}{
+		{"webm with codecs param stripped", "audio/webm;codecs=opus", "webm"},
+		{"mp4 with codecs param stripped", "audio/mp4;codecs=mp4a.40.2", "m4a"},
+		{"whitespace around the semicolon", "audio/webm ; codecs=opus", "webm"},
+		{"bare webm", "audio/webm", "webm"},
+		{"mpeg maps to mp3", "audio/mpeg", "mp3"},
+		{"legacy mp3 alias", "audio/mp3", "mp3"},
+		{"wav", "audio/wav", "wav"},
+		{"x-wav alias", "audio/x-wav", "wav"},
+		{"flac", "audio/flac", "flac"},
+		{"bare mp4", "audio/mp4", "m4a"},
+		{"m4a alias", "audio/m4a", "m4a"},
+		{"x-m4a alias", "audio/x-m4a", "m4a"},
+		{"empty defaults to ogg", "", "ogg"},
+		{"unknown container defaults to ogg", "application/octet-stream", "ogg"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AudioFormat(tt.mimeType); got != tt.want {
+				t.Errorf("AudioFormat(%q) = %q, want %q", tt.mimeType, got, tt.want)
+			}
+		})
+	}
+}

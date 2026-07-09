@@ -1,5 +1,5 @@
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { formatSize } from '../artifacts/artifactMeta';
 import type { DisplayArtifact } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 
@@ -17,18 +17,6 @@ import { DisplayCardShell } from './DisplayCardShell';
 
 export interface LocalArtifactDisplayProps {
   readonly payload: { readonly artifact?: DisplayArtifact };
-}
-
-const KB = 1024;
-const MB = KB * 1024;
-const GB = MB * 1024;
-
-/** A compact human byte size via the i18n size keys (B / KB / MB / GB, 1 decimal). */
-function formatSize(bytes: number, t: TFunction): string {
-  if (bytes < KB) return t('display.artifact.sizeBytes', { count: bytes });
-  if (bytes < MB) return t('display.artifact.sizeKb', { value: (bytes / KB).toFixed(1) });
-  if (bytes < GB) return t('display.artifact.sizeMb', { value: (bytes / MB).toFixed(1) });
-  return t('display.artifact.sizeGb', { value: (bytes / GB).toFixed(1) });
 }
 
 export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
@@ -64,7 +52,7 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
         </span>
         {assetId ? (
           <a
-            href={`/api/assets/${assetId}/download`}
+            href={`/api/assets/${encodeURIComponent(assetId)}/download`}
             download={filename}
             aria-label={t('display.artifact.downloadAria', { filename })}
             className="group inline-flex w-fit items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

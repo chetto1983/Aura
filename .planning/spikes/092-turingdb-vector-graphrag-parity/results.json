@@ -1,0 +1,128 @@
+{
+  "actual_ids": [
+    42,
+    206,
+    58,
+    18,
+    210
+  ],
+  "cleanup": {
+    "log_path": "/scratch/092-vector-graphrag/db/server.log",
+    "process_returncode": 0,
+    "stop_returncode": 0,
+    "stopped": true
+  },
+  "client_package_version": "1.35",
+  "composed_rows": [
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 206,
+      "d.title": "Doc 206"
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 210,
+      "d.title": "Doc 210"
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 42,
+      "d.title": "Doc 42"
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 58,
+      "d.title": "Doc 58"
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 18,
+      "d.title": "Doc 18"
+    }
+  ],
+  "composed_with_score_error": null,
+  "composed_with_score_rows": [
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 206,
+      "d.title": "Doc 206",
+      "score": 0.519277
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 210,
+      "d.title": "Doc 210",
+      "score": 0.492275
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 42,
+      "d.title": "Doc 42",
+      "score": 1.0
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 58,
+      "d.title": "Doc 58",
+      "score": 0.496729
+    },
+    {
+      "d.cluster": "cluster-2",
+      "d.id": 18,
+      "d.title": "Doc 18",
+      "score": 0.493547
+    }
+  ],
+  "container_image": "aura-turingdb-spike:1.35",
+  "daemon_logs_tail": "******* Turing DB\n    *** Copyright Turing Biosystems Ltd. All Rights Reserved.\n\n\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557     \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \n\u255a\u2550\u2550\u2588\u2588\u2554\u2550\u2550\u255d\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d     \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d    \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u255a\u2550\u255d    \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d     \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \n\nTuringDB - b5c5338ed9b6dc34f808f68bf7e4989d61a731ae - 08-07-2026 15:08:17\n\n[2026-07-09 09:22:15] [info] Starting TuringDB. Root directory: '/scratch/092-vector-graphrag/db'\n[2026-07-09 09:22:15] [info] Creating graphs directory /scratch/092-vector-graphrag/db/graphs\n[2026-07-09 09:22:15] [info] Creating vector directory /scratch/092-vector-graphrag/db/vector\n[2026-07-09 09:22:15] [info] Creating extensions directory /scratch/092-vector-graphrag/db/extensions\n[2026-07-09 09:22:15] [info] Loading graph default\n[2026-07-09 09:22:15] [error] Failed to load graph 'default' from /scratch/092-vector-graphrag/db/graphs/default: Graph dump/load error: Graph does not exist\n[2026-07-09 09:22:15] [info] Dumping graph default\n[2026-07-09 09:22:15] [info] TuringDB started\n[2026-07-09 09:22:15] [info]   - Home directory: /scratch/092-vector-graphrag/db\n[2026-07-09 09:22:15] [info]   - Server listening on address: 127.0.0.1:35345 (http)\n[2026-07-09 09:22:15] [info] Dumping graph aura092\n[2026-07-09 09:22:16] [info] Dumping graph aura092\n",
+  "dimension": 384,
+  "documents": 256,
+  "expected_ids": [
+    42,
+    206,
+    58,
+    18,
+    210
+  ],
+  "id": "092-turingdb-vector-graphrag-parity",
+  "k": 5,
+  "latency": {
+    "max_ms": 62.278,
+    "min_ms": 39.894,
+    "p50_ms": 45.242,
+    "p95_ms": 57.243,
+    "runs": 25
+  },
+  "overlap_at_k": 1.0,
+  "query_id": 42,
+  "scratch": "/scratch/092-vector-graphrag",
+  "standalone_rows": [
+    {
+      "ids": 42,
+      "score": 1.0
+    },
+    {
+      "ids": 206,
+      "score": 0.519277
+    },
+    {
+      "ids": 58,
+      "score": 0.496729
+    },
+    {
+      "ids": 18,
+      "score": 0.493547
+    },
+    {
+      "ids": 210,
+      "score": 0.492275
+    }
+  ],
+  "timestamp": "2026-07-09T09:22:17.698551+00:00",
+  "timings": {
+    "index_load_ms": 98.906,
+    "seed_docs_ms": 446.315
+  },
+  "top1_ok": true,
+  "verdict": "VALIDATED"
+}

@@ -5,6 +5,10 @@
   "coverageAnalysis": "perTest",
   "mutate": [
     "src/api/json.ts",
+    "src/chat/artifacts/artifactMeta.ts",
+    "src/chat/artifacts/downloadAll.ts",
+    "src/chat/voice/speechAdapter.ts",
+    "src/chat/voice/dictationAdapter.ts",
     "src/chat/displays/answerSources.ts",
     "src/chat/displays/sourceExplorerData.ts",
     "src/chat/displays/swarmRow.ts",

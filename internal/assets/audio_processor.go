@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -45,7 +46,7 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	transcript, err := p.STT.Transcribe(ctx, audioBytes, asset.FileName, audioFormat(asset.MIMEType))
+	transcript, err := p.STT.Transcribe(ctx, audioBytes, asset.FileName, AudioFormat(asset.MIMEType))
 	if err != nil {
 		return Result{}, err
 	}
@@ -58,11 +59,18 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	}, nil
 }
 
-// audioFormat maps an asset MIME to the container hint the cloud STT JSON route
+// AudioFormat maps an asset MIME to the container hint the cloud STT JSON route
 // needs (the local multipart route ignores it — the file part carries the
-// container). Defaults to "ogg", the Telegram/voice-note container.
-func audioFormat(mimeType string) string {
-	switch mimeType {
+// container). It first strips any media-type parameter: a browser MediaRecorder
+// blob reports "audio/webm;codecs=opus" or "audio/mp4;codecs=mp4a.40.2", so the
+// bare type is taken before the first ';' (and trimmed) — otherwise every such
+// recording falls through to the "ogg" default and is mis-tagged. Defaults to
+// "ogg", the Telegram/voice-note container.
+func AudioFormat(mimeType string) string {
+	if i := strings.IndexByte(mimeType, ';'); i >= 0 {
+		mimeType = mimeType[:i]
+	}
+	switch strings.TrimSpace(mimeType) {
 	case "audio/mpeg", "audio/mp3":
 		return "mp3"
 	case "audio/wav", "audio/x-wav":

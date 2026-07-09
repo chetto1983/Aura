@@ -187,6 +187,32 @@ export const displayEn = {
     emptyHeading: 'No workers',
     emptyBody: 'This run dispatched no swarm workers.',
   },
+  artifacts: {
+    title: 'Artifacts',
+    downloadAll: 'Download all',
+    downloadAllProgress: 'Downloading {{done}} of {{total}}',
+    empty: 'No artifacts in this conversation',
+    emptyHint: 'Files the agent delivers appear here.',
+    toggleAria: 'Toggle the artifacts panel',
+    category: {
+      document: 'Document',
+      spreadsheet: 'Spreadsheet',
+      image: 'Image',
+      code: 'Code',
+      text: 'Text',
+      data: 'Data',
+      web: 'Web page',
+      file: 'File',
+    },
+    preview: {
+      loading: 'Loading preview…',
+      error: "Couldn't load this preview.",
+      downloadFallback: 'Download file',
+      download: 'Download {{name}}',
+      description: 'Preview of {{name}}. Use the download button to save the original file.',
+      unsupported: "This file type can't be previewed safely — download it to open.",
+    },
+  },
 } as const;
 
 export const displayIt = {
@@ -367,5 +393,33 @@ export const displayIt = {
     noSummary: 'Nessun riepilogo riportato.',
     emptyHeading: 'Nessun worker',
     emptyBody: 'Questa esecuzione non ha avviato worker.',
+  },
+  artifacts: {
+    title: 'Artefatti',
+    downloadAll: 'Scarica tutto',
+    downloadAllProgress: 'Scaricamento {{done}} di {{total}}',
+    empty: 'Nessun artefatto in questa conversazione',
+    emptyHint: "I file consegnati dall'agente compaiono qui.",
+    toggleAria: 'Mostra o nascondi il pannello artefatti',
+    category: {
+      document: 'Documento',
+      spreadsheet: 'Foglio',
+      image: 'Immagine',
+      code: 'Codice',
+      text: 'Testo',
+      data: 'Dati',
+      web: 'Pagina web',
+      file: 'File',
+    },
+    preview: {
+      loading: 'Caricamento anteprima…',
+      error: "Impossibile caricare l'anteprima.",
+      downloadFallback: 'Scarica il file',
+      download: 'Scarica {{name}}',
+      description:
+        'Anteprima di {{name}}. Usa il pulsante di download per salvare il file originale.',
+      unsupported:
+        'Questo tipo di file non può essere mostrato in anteprima — scaricalo per aprirlo.',
+    },
   },
 } as const;

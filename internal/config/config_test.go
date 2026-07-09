@@ -45,7 +45,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_SETUP_BIND", "AURA_SETUP_TOKEN", "AURA_VISION_CLOUD",
 		"MULTIMODAL_BASE_URL", "MULTIMODAL_MODEL", "MULTIMODAL_FALLBACK_MODEL",
 		"STT_BASE_URL", "STT_MODEL",
-		"TTS_BASE_URL", "TTS_VOICE", "TTS_FORMAT",
+		"TTS_BASE_URL", "TTS_VOICE", "TTS_FORMAT", "AURA_TTS_MAX_CHARS",
 		"AURA_PROFILE_DIR", "AURA_PROFILE_CERTAINTY_N",
 		"AURA_WHATSAPP_BRIDGE_URL",
 		"AURA_RERANK_BASE_URL",
@@ -549,6 +549,23 @@ func TestMUSRIsolationDefaultOff(t *testing.T) {
 	t.Setenv("AURA_MUSR_ISOLATION", "true")
 	if cfg := LoadDB(); !cfg.MUSRIsolation {
 		t.Error("MUSRIsolation override = false, want true when AURA_MUSR_ISOLATION=true")
+	}
+}
+
+// TestTTSMaxChars_DefaultAndOverride locks the 37C-02 web-voice knob (D-05):
+// unset ⇒ the 4096 provider ceiling (OpenAI-compatible /audio/speech, which
+// OpenRouter proxies, hard-400s a longer input), set ⇒ the override is parsed.
+// The soft cap bounds per-character synth cost + latency on POST /api/tts.
+func TestTTSMaxChars_DefaultAndOverride(t *testing.T) {
+	clearPostgresEnv(t)
+
+	if cfg := LoadDB(); cfg.TTSMaxChars != 4096 {
+		t.Errorf("TTSMaxChars default = %d, want 4096 (the /audio/speech provider ceiling)", cfg.TTSMaxChars)
+	}
+
+	t.Setenv("AURA_TTS_MAX_CHARS", "1200")
+	if cfg := LoadDB(); cfg.TTSMaxChars != 1200 {
+		t.Errorf("TTSMaxChars override = %d, want 1200", cfg.TTSMaxChars)
 	}
 }
 

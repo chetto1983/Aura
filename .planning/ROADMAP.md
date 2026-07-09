@@ -4,7 +4,7 @@
 
 - ✅ **v0.0.0 Substrate** — Phases 0–21 (shipped 2026-06-15) — full details in [`milestones/v0.0.0-ROADMAP.md`](milestones/v0.0.0-ROADMAP.md)
 - ✅ **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–30 (shipped 2026-06-29) — full details in [`milestones/v1.0.0-ROADMAP.md`](milestones/v1.0.0-ROADMAP.md)
-- 🔨 **v2.0.0 Industrial Hardening & Multi-User Production** — Phases 31–41 (in planning) — close the 51-finding security audit + the ~64-finding quality audit to an honest 10/10 via stabilization/cleanup + per-user full-capability sandbox + multi-user identity isolation + ToolGateway + observability/security/ops industrialization
+- 🔨 **v2.0.0 Industrial Hardening & Multi-User Production** — Phases 31–42 (in planning) — close the 51-finding security audit + the ~64-finding quality audit to an honest 10/10 via stabilization/cleanup + per-user full-capability sandbox + multi-user identity isolation + ToolGateway + observability/security/ops industrialization
 
 ## Phases
 
@@ -68,7 +68,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 </details>
 
-### 🔨 v2.0.0 Industrial Hardening & Multi-User Production (Phases 31–41) — IN PLANNING
+### 🔨 v2.0.0 Industrial Hardening & Multi-User Production (Phases 31–42) — IN PLANNING
 
 **Goal:** Close the entire 2026-06-21 industrial audit (51 findings, F-001..F-052) **AND** the maintainability/architecture audit (`docs/audit/quality/`, ~64 findings) to an **honest 10/10** production-readiness (from 4.6/10) — via a per-user full-capability sandbox (Docker, resolving F-001 without stripping the full-host surface), multi-user identity isolation (no RBAC), Authula cutover, a central ToolGateway, observability/security/ops industrialization, and an upfront code-quality cleanup. Every hardening behavior is a **no-op under `dev`/`local_trusted`** — the operator's daily full-host experience is unchanged; hardening activates under `server_production`. Dependency rule: stabilize+cleanup → profiles + ledger → gateway → identity → sandbox → MCP → idempotency/obs → security → ops/eval. Requirements + traceability in [`REQUIREMENTS.md`](REQUIREMENTS.md); research in [`research/SUMMARY.md`](research/SUMMARY.md); quality audit in [`../docs/audit/quality/`](../../docs/audit/quality/README.md).
 
@@ -93,7 +93,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036) (executed; 37-10 closed the SBX-04 composition-root BLOCKER; all 5 SC mechanism-verified; **LIVE-VERIFIED on native-Linux dockerd 2026-07-08 (casaserver)**: SC#1/SC#3 full usersandbox docker_integration suite `ok 79s`, SC#4 egress DROP proven both backend-floor (`TestEgress_FloorDropsInternal`) AND composition-root (`TestBuildSandboxRouter_LaunchesEgressFloor`); operator force-close 2026-07-08. Only genuinely-blocked tiers remain: D-14 32GB soak (impossible on 8GB), gVisor runsc (needs daemon restart), native `-race` (no gcc; green on WSL), FQDN-allowlist image — tracked as REL-03 must-runs) (completed 2026-07-08)
   - Goal: resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; host never exposed.
   - Success: (1) under `server_production` shell/fs target the per-identity sandbox, real host filesystem unreachable; (2) Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable (test-asserted); (3) cross-identity leakage impossible + idle-TTL lifecycle works; (4) configured egress allowlist cannot reach a disallowed host (default egress = full-internet-minus-internal per D-06, not `--network none`); (5) ADR records container-per-identity (K8s/gVisor-default → DGX) + pre-merge concurrency benchmark on 32GB.
-- [ ] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
+- [X] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
   - Goal: agent-generated files (`send_file`) reach the web cockpit as an authenticated same-origin download (Garage-backed identity-scoped asset), never a raw container/host path.
   - Success: (1) `send_file` stores bytes in the identity's Garage store + creates a thread-scoped owned `assets.Asset`, and the `aura.artifact` event carries `asset_id`/`filename`/`size_bytes`/`mime_type`; (2) `GET /api/assets/{id}/download` streams from Garage with `Content-Disposition: attachment`, ownership-checked, `RequireAuth`-gated, non-owner → 404/403; (3) web chat consumes `aura.artifact` and renders a download button, no raw path in the browser; (4) Telegram delivery unregressed, CLI/no-identity degrades to today's host-path behavior.
 - [ ] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
@@ -108,6 +108,9 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar)
   - Goal: drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
   - Success: (1) drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented); (2) scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill; (3) load + chaos harness runs in CI (no-skip-as-green) + capability-eval pass/fail report; (4) ADRs + release-readiness checklist + production-readiness evidence bundle → defensible 10/10.
+- [ ] **Phase 42: LLM Conversation Compaction** — `COMPACT-01..11` (`/compact` parity; activates Phase-4 deferred L3)
+  - Goal: LLM semantic compaction — manual `/compact` (CLI/REPL/Telegram) + auto-fallback at the context-overflow dead-end; non-destructive checkpoint-watermark persistence.
+  - Success: (1) manual `/compact` on all three channels reports the token delta, originals retained; (2) checkpoint-watermark (migration 0036) + byte-stable KV-cache prefix; (3) auto-fallback replaces the dead-end (bounded, behind a knob), L1/L2.5 unchanged; (4) cost attributed, `AURA_COMPACT_*` validated, ≥85% coverage.
 
 > **Host-constrained / deferred-tier flag:** Phase 41's load/chaos + DR drills and any gVisor/`server_production` live tiers may carry the same NO-SKIP-AS-GREEN "deferred verification tier" pattern as v1.0.0's 6 deferred items, pending an adequate host (DGX Spark). Decided at the Phase-41/closeout boundary.
 >
@@ -426,6 +429,34 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment prima del codice (nuovo requirement group WEBART-05..08 + la superficie sidebar non è documentata nel PRD) — vedi §Q&A revision protocol.
 
+**Plans:** 8/8 plans complete
+
+**Wave 1** *(PRD-first gate — blocks all code, D-19)*
+
+- [x] 37B-01-PLAN.md — PRD-amendment: WEBART-05..08 group + Artefatti sidebar surface + preview deps (docx-preview Apache-2.0, SheetJS CE via CDN) + null-origin HTML sandbox policy + D-14/D-15 persistence
+
+**Wave 2** *(parallel — both depend on 37B-01, zero file overlap)*
+
+- [x] 37B-02-PLAN.md — Supply-chain: legitimacy checkpoint + install docx-preview/jszip + xlsx from CDN (CVE-safe) + widen Asset.source_kind union to add 'agent'
+- [x] 37B-03-PLAN.md — Pure foundation: artifactMeta (previewKind SVG-gated + category label/icon + shared formatSize) + downloadAll (sequential/throttled) + artifacts.* i18n (en+it) + Stryker targets
+
+**Wave 3** *(parallel — depend on foundation, zero file overlap)*
+
+- [x] 37B-04-PLAN.md — Preview: useBlobPreview + PreviewModal (Radix 90vw/90vh dispatch) + 6 lazy renderers (image/pdf/text/html/docx/xlsx; null-origin HTML sandbox; SVG/pptx download-only)
+- [x] 37B-05-PLAN.md — Live-merge producer + D-15 fix: onArtifact signal through streamSSE pump + split-fold rehydration (agent→assistant turns) + assistant-side download chip
+
+**Wave 4** *(depends on 37B-02/03/04)*
+
+- [x] 37B-06-PLAN.md — Panel: useThreadArtifacts (agent-filtered newest-first) + ArtifactRow (download + preview + degraded) + ArtifactsPanel (header, Scarica tutto, empty-state, lazy PreviewModal)
+
+**Wave 5** *(depends on 37B-05/06)*
+
+- [x] 37B-07-PLAN.md — AppShell integration: third ResizablePanel (dynamic panelIds, no key bump) + header toggle + mobile right Drawer + onArtifact handler (invalidate + one-time auto-open)
+
+**Wave 6** *(depends on 37B-07)*
+
+- [x] 37B-08-PLAN.md — Gate: Playwright e2e (artifact in panel + download) + full coverage ≥85% + Stryker ≥70% on pure modules + internal/webui/dist rebuild
+
 #### Phase 37C: Web Voice Lane (INSERTED)
 
 **Goal:** Parità voce con Telegram nel cockpit web: (a) **output vocale** — la risposta dell'agente è riproducibile come audio (pulsante speaker per messaggio + preferenza "voice mode" auto-speak); (b) **input vocale** — il Mic del Composer diventa dettatura in-place (transcript nel box input, editabile, non un attachment). Cloud-only via OpenRouter (`AURA_STT_CLOUD_MODEL`/`AURA_TTS_MODEL`), nessun sidecar locale (vincolo RAM). Riusa `multimodal.TTSClient`/`STTClient` già completi. Seconda delle aree di parità cockpit-web dall'audit voice/artifact/skill.
@@ -445,6 +476,33 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBVOICE-01..04 + superficie voce web non documentata).
 
+**Plans:** 6/6 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 37C-01-PLAN.md — [W1] PRD-amendment (WEBVOICE-01..04 + web voice surface: routes, adapters, mp3-vs-opus, AURA_TTS_MAX_CHARS) — blocking pre-code gate (D-14)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 37C-02-PLAN.md — [W2] Backend foundation: AURA_TTS_MAX_CHARS knob (default 4096) + exported ;codecs=-safe assets.AudioFormat
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 37C-03-PLAN.md — [W3] Voice API: POST /api/tts + POST /api/stt + GET /api/voice/capabilities handlers + SetVoice + mp3 web TTSClient wiring (daemon-free tests)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 37C-04-PLAN.md — [W4] Web output lane: useVoiceCapabilities + speechAdapter + VoiceModeProvider/auto-speak + caps-gated Speak/StopSpeaking control (a699fc38c/833d72a74/0244648ea, 42 web tests, tsc+eslint+i18n-parity clean)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 37C-05-PLAN.md — [W5] Web input lane: dictationAdapter (onSpeech isFinal) + Composer dictation-primary (attachment fallback kept) + runtime adapters wiring
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 37C-06-PLAN.md — [W6] Terminal gate: Playwright voice.spec.ts (speaker+dictation+degrade) + coverage/Stryker ≥85%/≥70% + internal/webui/dist rebuild
+
 #### Phase 37D: Composer Skill & Command Picker (INSERTED)
 
 **Goal:** Un menu slash "/" nel Composer (parità col picker skill/comandi di Claude) che elenca le skill disponibili all'identità + comandi rapidi, filtrabili da tastiera, per invocare/allegare una skill inline nel turn — invece di gestirle solo nella board Governance admin. Terza area di parità cockpit-web dall'audit.
@@ -462,24 +520,6 @@ Plans:
 **Design forks for discuss-phase:** (a) sorgente lista — `GET /api/governance/skills` (esiste) vs. un endpoint per-identity più snello; (b) semantica selezione — allega la skill come contesto del turn vs. la invoca come tool esplicito; (c) ambito — solo skill vs. skill + comandi rapidi (new-chat, clear).
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
-
-#### Phase 37E: Composer Model & Reasoning-Effort Selector (INSERTED)
-
-**Goal:** Un selettore modello + livello di reasoning-effort nel Composer (parità con "Opus 4.8 · Alto" di Claude): l'utente sceglie per-turn il modello (tra quelli configurati) e l'effort, invece del solo modello server-fisso.
-
-**Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
-
-**Depends on:** SETTINGS-01/02 (model backend config), il runner/agent (`/agent/run`).
-
-**Success Criteria**:
-
-1. Il Composer espone un selettore modello (popolato dai backend configurati, settings-scoped) + un selettore effort; la scelta è persistita per-conversazione.
-2. `/agent/run` accetta un override opzionale (model + effort) validato server-side contro l'allowlist dei backend configurati (valore non ammesso → 400, mai un modello arbitrario); assente → il default settings-based odierno (nessuna regressione).
-3. Nessun bypass della governance model (l'override sceglie tra i modelli GIÀ ammessi, non ne aggiunge); unit + e2e; coverage ≥85%.
-
-**Design forks for discuss-phase:** (a) sorgente lista modelli — deriva dai KnobSpec/settings esistenti vs. un nuovo `GET /api/models`; (b) scope override — per-conversazione persistito vs. per-turn effimero; (c) effort — mappatura a un parametro provider vs. una preferenza Aura interna. **Verifica architetturale:** confermare che il contratto LLM/OpenRouter di Aura supporti l'override per-richiesta prima del plan.
-
-**PRD-first:** richiede PRD-amendment (WEBMODEL-01..03) — tocca il contratto `/agent/run` e la governance model.
 
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
 
@@ -553,10 +593,25 @@ Plans:
 3. A load + chaos harness runs in CI (no-skip-as-green) + a capability-eval pass/fail report.
 4. ADRs + a release-readiness checklist + a production-readiness evidence bundle → a defensible 10/10.
 
+#### Phase 42: LLM Conversation Compaction (`/compact` parity — Phase-4 deferred L3)
+
+**Goal:** Add LLM-driven semantic conversation compaction — the "L3" tier Phase 4 explicitly deferred. Manual `/compact` (CLI `aura chat compact <id>`, in-REPL `/compact`, Telegram `/compact`) plus auto-compaction at the `ErrContextWindowExceeded` dead-end, with non-destructive checkpoint-watermark persistence (a protected summary turn + `aura.conversation_compactions`; original turns retained for FTS + audit). Closes the last context-management parity gap with Claude Code.
+
+**Requirements:** COMPACT-01..11 (see [`42-SPEC.md`](phases/42-llm-conversation-compaction/42-SPEC.md))
+
+**Depends on:** Phase 4 (conversations + L1/L2/L2.5 context ladder) + Phase 6 (KV-cache byte-stable prefix) — both shipped; no blocking dependency. Activates the L3 deferral documented in `04-SPEC.md` + PRD §1.8 OQ#3.
+
+**Success Criteria**:
+
+1. Manual `/compact` on CLI, REPL, and Telegram compacts a conversation and reports the token delta; original turns retained (FTS still matches them).
+2. Checkpoint-watermark persistence (migration `0036_conversation_compactions` + a marker-protected summary turn) with byte-identical, checkpoint-aware history reconstruction; `messages[0]` stays byte-stable (KV-cache prefix preserved).
+3. Auto-fallback replaces the `ErrContextWindowExceeded` dead-end (behind `AURA_COMPACT_AUTO_ENABLED`, one bounded attempt, no retry loop); L1 microcompact and L2.5 hard-drop are unchanged.
+4. Compaction LLM cost attributed to conversation aggregates; `AURA_COMPACT_*` knobs validated; ≥85% coverage across the full tag matrix; `-race`/`goleak`/lint clean; every touched file ≤600 LOC.
+
 ## Progress
 
 | Milestone | Phases | Plans | Status | Completed |
 | --------- | ------ | ----- | ------ | --------- |
 | v0.0.0 Substrate | 0–21 (24 phases) | 144/144 | ✅ Shipped | 2026-06-15 |
 | v1.0.0 Aura Deep Search Web Cockpit | 22–30 (9 phases) | 45/45 | ✅ Shipped | 2026-06-29 |
-| v2.0.0 Industrial Hardening & Multi-User Production | 31–41 (12 phases, incl. 37A) | 0/— | 🔨 In planning | — |
+| v2.0.0 Industrial Hardening & Multi-User Production | 31–42 (13 phases, incl. 37A) | 0/— | 🔨 In planning | — |

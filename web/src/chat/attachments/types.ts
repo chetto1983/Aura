@@ -16,7 +16,7 @@ export type AssetModality = 'document' | 'image' | 'audio' | 'unknown';
 
 export interface Asset {
   readonly id: string;
-  readonly source_kind?: 'web' | 'telegram' | 'cli';
+  readonly source_kind?: 'web' | 'telegram' | 'cli' | 'agent';
   readonly thread_id?: string;
   readonly scope?: 'thread' | 'library';
   readonly status: AssetStatus;

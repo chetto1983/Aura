@@ -201,6 +201,7 @@ type Config struct {
 	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
 	DocumentsBaseURL        string // DOCUMENTS_BASE_URL — markitdown /convert base (UX-04 documents leg)
 	MultimodalTimeoutSec    int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
+	TTSMaxChars             int    // AURA_TTS_MAX_CHARS — soft input cap for POST /api/tts (default 4096, the OpenAI /audio/speech ceiling OpenRouter proxies; a longer input 400s)
 
 	// Phase 14 (Slice 10) Agent.md profile knobs.
 	ProfileDir        string // AURA_PROFILE_DIR — per-identity Agent.md root, default ~/.aura/agents
@@ -485,6 +486,7 @@ func loadBase() *Config {
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
 		DocumentsBaseURL:        os.Getenv("DOCUMENTS_BASE_URL"),
 		MultimodalTimeoutSec:    envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
+		TTSMaxChars:             envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
 
 		ProfileDir:        envDefault("AURA_PROFILE_DIR", profile.DefaultRoot()),
 		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),
