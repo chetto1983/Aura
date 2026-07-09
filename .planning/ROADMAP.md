@@ -479,11 +479,28 @@ Plans:
 **Plans:** 6 plans in 6 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 37C-01-PLAN.md — [W1] PRD-amendment (WEBVOICE-01..04 + web voice surface: routes, adapters, mp3-vs-opus, AURA_TTS_MAX_CHARS) — blocking pre-code gate (D-14)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 37C-02-PLAN.md — [W2] Backend foundation: AURA_TTS_MAX_CHARS knob (default 4096) + exported ;codecs=-safe assets.AudioFormat
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 37C-03-PLAN.md — [W3] Voice API: POST /api/tts + POST /api/stt + GET /api/voice/capabilities handlers + SetVoice + mp3 web TTSClient wiring (daemon-free tests)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 37C-04-PLAN.md — [W4] Web output lane: useVoiceCapabilities + speechAdapter + VoiceModeProvider/auto-speak + caps-gated Speak/StopSpeaking control
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 37C-05-PLAN.md — [W5] Web input lane: dictationAdapter (onSpeech isFinal) + Composer dictation-primary (attachment fallback kept) + runtime adapters wiring
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 37C-06-PLAN.md — [W6] Terminal gate: Playwright voice.spec.ts (speaker+dictation+degrade) + coverage/Stryker ≥85%/≥70% + internal/webui/dist rebuild
 
 #### Phase 37D: Composer Skill & Command Picker (INSERTED)
