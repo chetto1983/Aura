@@ -20,6 +20,7 @@ must_haves:
     - "POST /api/tts returns Content-Type audio/mpeg with the synthesized bytes for an authed request; 401 without a cookie; 503 when s.tts==nil"
     - "POST /api/tts caps input at ttsMaxChars — the synthesizer receives the capped prefix and the response carries X-Aura-TTS-Truncated when the source text exceeds the cap; empty text → 400"
     - "POST /api/stt transcribes and creates NO asset/Garage object/DB row (a recording fakeAssetService is untouched); 401; 503 when s.stt==nil; audio/webm;codecs=opus maps to STT format webm"
+    - "POST /api/stt returns 200 {\"text\":\"\"} cleanly when the transcriber yields an empty string (no error, no persist, no asset call) — the empty-transcript edge is handled, not a 5xx"
     - "GET /api/voice/capabilities returns 200 {tts,stt} reflecting client presence — {false,false} when unconfigured (never 503); 401 without a cookie"
     - "the web TTSClient is constructed with Format=mp3 (AudioFormat()==mp3) while the Telegram opus TTSClient is untouched; SetVoice (D-13) injects narrow ttsSynthesizer/sttTranscriber seams, not concrete clients"
   artifacts:
@@ -28,7 +29,7 @@ must_haves:
       contains: "registerVoiceRoutes"
       min_lines: 90
     - path: "internal/agui/voice_api_test.go"
-      provides: "daemon-free three-handler suite (auth/identity/degrade/content-type/char-cap/no-persist)"
+      provides: "daemon-free three-handler suite (auth/identity/degrade/content-type/char-cap/no-persist/empty-transcript)"
       contains: "TestTTS"
     - path: "cmd/aura/serve_voice.go"
       provides: "composition-root: build mp3 web TTSClient + STTClient from config, call SetVoice"
@@ -53,6 +54,7 @@ must_haves:
     - "MUST NOT persist the STT audio — no assets.Asset, no Garage object, no DB row, no async poll (D-08); the handler must not call the asset service"
     - "MUST NOT thread a per-call Format through the shared TTSClient — build a DEDICATED web TTSClient with TTSConfig.Format=mp3 (RESEARCH Landmine #2); leave the Telegram opus client untouched"
     - "MUST NOT let GET /api/voice/capabilities return 503 when unconfigured — it returns 200 {false,false} (D-11)"
+    - "MUST NOT 5xx on an empty transcript — an empty STT result is a clean 200 {\"text\":\"\"} (RESEARCH Nyquist edge: STT returns empty string, session ends clean)"
     - "MUST NOT depend on concrete *multimodal.TTSClient/*STTClient in the handler struct — depend on the narrow ttsSynthesizer/sttTranscriber interfaces so tests inject fakes with no network"
     - "MUST NOT let voice_api.go or serve_webui.go exceed 600 LOC — handlers live in the new voice_api.go, mounts in the new serve_webui_voice.go"
 ---
@@ -99,6 +101,7 @@ This plan produces:
     - TestTTS_Degraded: no SetVoice (nil tts) → 503.
     - TestTTS_CharCap: len(text) > ttsMaxChars → synth receives the ttsMaxChars-length prefix AND response has header X-Aura-TTS-Truncated: true; len(text)==ttsMaxChars → no truncated header; empty text → 400 (no synth call).
     - TestSTT_Owner: withPrincipal(POST /api/stt, multipart audio part typed audio/webm;codecs=opus) → 200 {"text":...}; fakeSTT.gotFormat=="webm"; recording fakeAssetService UNTOUCHED.
+    - TestSTT_EmptyTranscript: fakeSTT returns "" (empty transcript) → 200 {"text":""} (NOT a 5xx), the recording fakeAssetService is UNTOUCHED (no insert, no persist) — the RESEARCH Nyquist edge "STT returns empty string, session ends clean".
     - TestSTT_Unauth / TestSTT_Degraded: 401 / 503.
     - TestVoiceCapabilities: table — both set→{true,true}; tts only→{true,false}; none→200 {false,false} (never 503); 401 without cookie.
     - All handler tests wrap in goleak.VerifyNone.
@@ -111,23 +114,23 @@ This plan produces:
     - internal/multimodal/tts.go:42,60 + stt.go:52 — the exact Synthesize/AudioFormat/Transcribe signatures the seams must match so *multimodal.TTSClient/*STTClient satisfy them.
     - internal/agui/asset_download_test.go:25-129 — the happy-path (withPrincipal + s.Mux().ServeHTTP) and 401 (RequireAuth(s.Mux(), testDeps) + no cookie) harness to reuse; find the existing withPrincipal/testDeps helpers.
     - internal/assets/audio_processor.go — assets.AudioFormat (exported in 37C-02) for the /api/stt container→format mapping.
-    - .planning/phases/37C-web-voice-lane-inserted/37C-RESEARCH.md § Q6 (items 1-3) + § Validation Architecture "Go unit tests" — the concrete assertions.
+    - .planning/phases/37C-web-voice-lane-inserted/37C-RESEARCH.md § Q6 (items 1-3) + § Validation Architecture "Go unit tests" + § "Nyquist edge / sampling cases" (empty transcript) — the concrete assertions.
   </read_first>
   <action>
-    Create internal/agui/voice_api.go. Declare the consumer-side seams `ttsSynthesizer` (`Synthesize(ctx context.Context, text string) ([]byte, error)`; `AudioFormat() string`) and `sttTranscriber` (`Transcribe(ctx context.Context, audio []byte, fileName, format string) (string, error)`). Add `SetVoice(tts ttsSynthesizer, stt sttTranscriber, maxChars int)` storing them on the Server. Add `registerVoiceRoutes(mux)` mounting `POST /api/tts`→`handleTTS`, `POST /api/stt`→`handleSTT`, `GET /api/voice/capabilities`→`handleVoiceCapabilities`. handleTTS: nil `s.tts`→503; `principalIdentityID`→401; decode JSON `{text}`; empty text→400; if `len(text) > s.ttsMaxChars` (and maxChars>0) take the rune-safe prefix and set response header `X-Aura-TTS-Truncated: true` (the D-05 char cap); call `s.tts.Synthesize(r.Context(), text)`; on error→502; set `Content-Type: audio/mpeg` (canonical mp3 MIME) + `X-Content-Type-Options: nosniff`; write bytes. handleSTT: nil `s.stt`→503; `principalIdentityID`→401; parse multipart, read the `audio` file part; map its part Content-Type via `assets.AudioFormat` (which strips `;codecs=`); call `s.stt.Transcribe(r.Context(), bytes, fileName, format)`; on error→502; write JSON `{text}`. NEVER call the asset service (no persist). handleVoiceCapabilities: `principalIdentityID`→401 (inherit the whole-mux RequireAuth); return 200 JSON `{tts: s.tts != nil, stt: s.stt != nil}` — NEVER 503. Add `tts`, `stt`, `ttsMaxChars` fields to the Server struct (server.go) and call `s.registerVoiceRoutes(mux)` in `Mux()` beside `s.registerAssetRoutes(mux)`. Create voice_api_test.go implementing the `<behavior>` suite with in-package fakes: `fakeTTS` (records gotText/calls, returns fixed bytes + a configurable error), `fakeSTT` (records gotFormat, returns fixed text), and a recording `fakeAssetService` wired via SetAssetService and asserted untouched for the no-persist proof. Keep voice_api.go ≤600 LOC.
+    Create internal/agui/voice_api.go. Declare the consumer-side seams `ttsSynthesizer` (`Synthesize(ctx context.Context, text string) ([]byte, error)`; `AudioFormat() string`) and `sttTranscriber` (`Transcribe(ctx context.Context, audio []byte, fileName, format string) (string, error)`). Add `SetVoice(tts ttsSynthesizer, stt sttTranscriber, maxChars int)` storing them on the Server. Add `registerVoiceRoutes(mux)` mounting `POST /api/tts`→`handleTTS`, `POST /api/stt`→`handleSTT`, `GET /api/voice/capabilities`→`handleVoiceCapabilities`. handleTTS: nil `s.tts`→503; `principalIdentityID`→401; decode JSON `{text}`; empty text→400; if `len(text) > s.ttsMaxChars` (and maxChars>0) take the rune-safe prefix and set response header `X-Aura-TTS-Truncated: true` (the D-05 char cap); call `s.tts.Synthesize(r.Context(), text)`; on error→502; set `Content-Type: audio/mpeg` (canonical mp3 MIME) + `X-Content-Type-Options: nosniff`; write bytes. handleSTT: nil `s.stt`→503; `principalIdentityID`→401; parse multipart, read the `audio` file part; map its part Content-Type via `assets.AudioFormat` (which strips `;codecs=`); call `s.stt.Transcribe(r.Context(), bytes, fileName, format)`; on error→502; write JSON `{text}` — and when the transcriber returns an EMPTY string this is still a clean 200 `{"text":""}` (do NOT 5xx; the empty-transcript edge ends clean with no asset call). NEVER call the asset service (no persist). handleVoiceCapabilities: `principalIdentityID`→401 (inherit the whole-mux RequireAuth); return 200 JSON `{tts: s.tts != nil, stt: s.stt != nil}` — NEVER 503. Add `tts`, `stt`, `ttsMaxChars` fields to the Server struct (server.go) and call `s.registerVoiceRoutes(mux)` in `Mux()` beside `s.registerAssetRoutes(mux)`. Create voice_api_test.go implementing the `<behavior>` suite with in-package fakes: `fakeTTS` (records gotText/calls, returns fixed bytes + a configurable error), `fakeSTT` (records gotFormat, returns a configurable text incl. the empty-string case), and a recording `fakeAssetService` wired via SetAssetService and asserted untouched for the no-persist proof (incl. the empty-transcript case). Keep voice_api.go ≤600 LOC.
   </action>
   <acceptance_criteria>
     - `grep -q "registerVoiceRoutes" internal/agui/voice_api.go` AND `grep -q "func (s \\*Server) SetVoice" internal/agui/voice_api.go`.
     - `grep -q "registerVoiceRoutes" internal/agui/server.go` (wired into Mux()).
     - `grep -q "audio/mpeg" internal/agui/voice_api.go` AND `grep -q "X-Aura-TTS-Truncated" internal/agui/voice_api.go`.
     - voice_api.go does NOT reference the asset service in handleSTT (no persist): `handleSTT` body contains no `s.assets` call.
-    - `go test ./internal/agui/ -run 'TestTTS|TestSTT|TestVoiceCapabilities'` passes (all behaviors incl. no-persist assertion and codecs→webm).
+    - `go test ./internal/agui/ -run 'TestTTS|TestSTT|TestVoiceCapabilities'` passes (all behaviors incl. no-persist assertion, codecs→webm, AND the empty-transcript 200 {"text":""} clean case).
     - `go vet ./internal/agui/` clean; voice_api.go ≤600 LOC.
   </acceptance_criteria>
   <verify>
     <automated>go test ./internal/agui/ -run 'TestTTS|TestSTT|TestVoiceCapabilities' && go vet ./internal/agui/ && echo VOICE_API_OK</automated>
   </verify>
-  <done>The three handlers exist over the narrow seams, wired into Mux(), with a daemon-free suite proving auth/identity/degrade/content-type/char-cap/no-persist and codecs→format mapping.</done>
+  <done>The three handlers exist over the narrow seams, wired into Mux(), with a daemon-free suite proving auth/identity/degrade/content-type/char-cap/no-persist, codecs→format mapping, and the empty-transcript clean-200 edge.</done>
 </task>
 
 <task type="auto" tdd="true">
@@ -175,7 +178,7 @@ This plan produces:
 </verification>
 
 <success_criteria>
-- The three voice routes answer per contract: `/api/tts`→audio/mpeg (+truncation header, char-cap prefix), `/api/stt`→transcribe-and-discard, `/api/voice/capabilities`→200 {tts,stt} (never 503); 401 without a cookie; 503 on nil client for the two POSTs.
+- The three voice routes answer per contract: `/api/tts`→audio/mpeg (+truncation header, char-cap prefix), `/api/stt`→transcribe-and-discard (incl. a clean 200 {"text":""} on an empty transcript), `/api/voice/capabilities`→200 {tts,stt} (never 503); 401 without a cookie; 503 on nil client for the two POSTs.
 - The web TTSClient is mp3; the Telegram opus client is untouched; SetVoice injects narrow seams.
 </success_criteria>
 

@@ -35,7 +35,7 @@ must_haves:
 Terminal acceptance gate for Phase 37C: a live-container Playwright `voice.spec.ts` (speaker + dictation + degrade), the full coverage/mutation gate (web vitest ≥85% + Stryker ≥70% on the two adapters + Go owned-surface ≥85% on the full integration matrix), and an `internal/webui/dist` rebuild so the baked cockpit bundle carries the voice surface. Mirrors the 37B-08 terminal pattern.
 
 Purpose: Prove WEBVOICE-01..04 end to end against a real rebuilt container and lock the coverage floors (WEBVOICE-04).
-Output: `web/e2e/voice.spec.ts` green vs the live container + a rebuilt `internal/webui/dist` + green coverage/mutation gates.
+Output: `web/e2e/voice.spec.ts` green vs the live container + a rebuilt `internal/webui/dist` + green coverage/mutation gates (web AND Go).
 </objective>
 
 <execution_context>
@@ -92,7 +92,7 @@ This plan produces:
     - MEMORY references "make coverage .env leak breaks config tests" + "Coverage gate wipes shared PG" + "DB+knowledge integration test invocation" — the WSL invocation gotchas (unset AURA_WEB_AUTH_SECRET; GOFLAGS=-p=1; stack up).
   </read_first>
   <action>
-    Run the full gates and fix any shortfall by adding daemon-free unit tests (never by weakening a gate). Web: `cd web && npm test` (vitest --coverage) must report ≥85% across the touched surface; run Stryker scoped to the two adapters (`src/chat/voice/speechAdapter.ts` + `src/chat/voice/dictationAdapter.ts`) and confirm ≥70% killed. Go: in WSL with the stack up (prepend `~/.local/bin:~/go/bin`, export the composed DSNs), run `make quality-full` (or `scripts/coverage_gate.sh`) on the full `db_integration neo4j_integration` matrix and confirm owned-surface ≥85% with the new `internal/agui/voice_api.go` + `internal/assets` AudioFormat exercised by unit tests (no docker_integration-only surface). Run `-race` on the touched Go packages (`internal/agui`, `internal/assets`, `internal/config`, `cmd/aura`). Record the measured web + Go coverage numbers + the Stryker score in the SUMMARY. If any package dips below 85%, add daemon-free unit tests to lift it — do not lower a floor.
+    Run the full gates and fix any shortfall by adding daemon-free unit tests (never by weakening a gate). Web: `cd web && npm test` (vitest --coverage) must report ≥85% across the touched surface; run Stryker scoped to the two adapters (`src/chat/voice/speechAdapter.ts` + `src/chat/voice/dictationAdapter.ts`) and confirm ≥70% killed. Go: in WSL with the stack up (prepend `~/.local/bin:~/go/bin`, export the composed DSNs, unset AURA_WEB_AUTH_SECRET, GOFLAGS=-p=1), run `make quality-full` (or `bash scripts/coverage_gate.sh`) on the full `db_integration neo4j_integration` matrix and confirm owned-surface ≥85% with the new `internal/agui/voice_api.go` + `internal/assets` AudioFormat exercised by unit tests (no docker_integration-only surface). Run `-race` on the touched Go packages (`internal/agui`, `internal/assets`, `internal/config`, `cmd/aura`). Record the measured web + Go coverage numbers + the Stryker score in the SUMMARY. If any package dips below 85%, add daemon-free unit tests to lift it — do not lower a floor.
   </action>
   <acceptance_criteria>
     - `cd web && npm test` exits 0 with reported coverage ≥85% (Stmts/Branch/Funcs/Lines).
@@ -102,22 +102,23 @@ This plan produces:
   </acceptance_criteria>
   <verify>
     <automated>cd web && npm test 2>&1 | tail -20 && echo COVERAGE_GATE_WEB_OK</automated>
+    <automated>bash scripts/coverage_gate.sh 2>&1 | tail -20 && echo COVERAGE_GATE_GO_OK</automated>
   </verify>
-  <done>Web vitest ≥85% + Stryker ≥70% on the two adapters + Go owned-surface ≥85% on the full integration matrix, all measured live and recorded; the phase closes at score >9.8 on the real speaker+dictation+degrade scenario.</done>
+  <done>Web vitest ≥85% + Stryker ≥70% on the two adapters + Go owned-surface ≥85% on the full db_integration+neo4j_integration matrix, all measured live (both the web AND the WSL Go gate verified) and recorded; the phase closes at score >9.8 on the real speaker+dictation+degrade scenario.</done>
 </task>
 
 </tasks>
 
 <verification>
 - `cd web && ./node_modules/.bin/playwright test voice.spec.ts` green against the rebuilt live container (speaker + dictation + degrade).
-- `cd web && npm test` ≥85% + Stryker ≥70% on the two adapters; WSL `make quality-full` owned-surface ≥85% on the `db_integration neo4j_integration` matrix; `-race` clean on the touched Go packages.
+- `cd web && npm test` ≥85% + Stryker ≥70% on the two adapters; WSL `make quality-full` / `bash scripts/coverage_gate.sh` owned-surface ≥85% on the `db_integration neo4j_integration` matrix; `-race` clean on the touched Go packages.
 - `internal/webui/dist` rebuilt; no skip-as-green (real e2e + live integration coverage).
 - Manual-Only (→ /gsd-verify-work): audible TTS playback intelligibility + live dictation accuracy (perceptual, per VALIDATION.md).
 </verification>
 
 <success_criteria>
 - WEBVOICE-01..04 proven end to end: speaker → audio/mpeg, dictation → editable transcript, degrade → {false,false} with the mic in attachment mode and no console errors.
-- Coverage floors met: web ≥85% + Stryker ≥70% on the adapters + Go owned-surface ≥85%; internal/webui/dist rebuilt.
+- Coverage floors met: web ≥85% + Stryker ≥70% on the adapters + Go owned-surface ≥85% (verified via a dedicated WSL Go gate command, not folded into the web run); internal/webui/dist rebuilt.
 </success_criteria>
 
 <output>
