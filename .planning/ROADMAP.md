@@ -489,7 +489,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 37C-03-PLAN.md — [W3] Voice API: POST /api/tts + POST /api/stt + GET /api/voice/capabilities handlers + SetVoice + mp3 web TTSClient wiring (daemon-free tests)
+- [x] 37C-03-PLAN.md — [W3] Voice API: POST /api/tts + POST /api/stt + GET /api/voice/capabilities handlers + SetVoice + mp3 web TTSClient wiring (daemon-free tests)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
