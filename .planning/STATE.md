@@ -2,9 +2,11 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
+current_phase: 37C
+current_phase_name: web-voice-lane-inserted
 status: verifying
-stopped_at: 37C-06 complete — Phase 37C terminal gate GREEN: live-container voice.spec.ts 8/8 (VOICE_E2E_OK — real Kokoro TTS synth + fake-media dictation + degrade), web coverage 92.46% stmts + Stryker 86.6%/78.5% on the two adapters + Go owned-surface 85.4% (COVERAGE_GATE_GO_OK), internal/webui/dist rebuilt, web voice wired to the LOCAL sidecars (selectable local↔cloud, supersedes D-12). Phase 37C COMPLETE — ready for /gsd-verify-work (Manual-Only: audible playback + live dictation accuracy)
-last_updated: "2026-07-09T16:12:14.568Z"
+stopped_at: Phase 37D context gathered
+last_updated: "2026-07-09T19:07:09.497Z"
 last_activity: 2026-07-09
 progress:
   total_phases: 17
@@ -585,9 +587,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-09T16:11:14.132Z
-Stopped at: 37C-04 complete — web voice-output lane landed (a699fc38c/833d72a74/0244648ea; 42 web tests, tsc+eslint+i18n-parity clean, ExternalStoreChat.tsx untouched); Phase 37C Wave 5 (37C-05 web input lane) next
-Resume file: None
+Last session: 2026-07-09T19:07:09.474Z
+Stopped at: Phase 37D context gathered
+Resume file: .planning/phases/37D-composer-skill-picker/37D-CONTEXT.md
 
 ## Operator Next Steps
 
