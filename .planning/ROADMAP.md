@@ -493,7 +493,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 37C-04-PLAN.md — [W4] Web output lane: useVoiceCapabilities + speechAdapter + VoiceModeProvider/auto-speak + caps-gated Speak/StopSpeaking control
+- [x] 37C-04-PLAN.md — [W4] Web output lane: useVoiceCapabilities + speechAdapter + VoiceModeProvider/auto-speak + caps-gated Speak/StopSpeaking control (a699fc38c/833d72a74/0244648ea, 42 web tests, tsc+eslint+i18n-parity clean)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
