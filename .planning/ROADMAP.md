@@ -476,7 +476,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBVOICE-01..04 + superficie voce web non documentata).
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 **Wave 1**
@@ -501,7 +501,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 37C-06-PLAN.md — [W6] Terminal gate: Playwright voice.spec.ts (speaker+dictation+degrade) + coverage/Stryker ≥85%/≥70% + internal/webui/dist rebuild
+- [x] 37C-06-PLAN.md — [W6] Terminal gate: Playwright voice.spec.ts (speaker+dictation+degrade) + coverage/Stryker ≥85%/≥70% + internal/webui/dist rebuild
 
 #### Phase 37D: Composer Skill & Command Picker (INSERTED)
 

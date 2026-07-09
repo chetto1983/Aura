@@ -75,10 +75,10 @@ Agent-generated files (e.g. a DOCX the model builds inside the sandbox) must rea
 
 Cockpit-web voice parity with Telegram, cloud-only (OpenRouter STT/TTS; no local sidecar — RAM constraint). Reuses the shipped `internal/multimodal` clients. *(product gap — voice/artifact/skill audit)*
 
-- [ ] **WEBVOICE-01**: Each assistant message exposes a speaker control that synthesizes its text via a new authenticated `POST /api/tts` (identity-scoped, streaming opus/mp3) over `multimodal.TTSClient`, played by an in-page `<audio>`; a per-conversation "voice mode" preference enables auto-speak (parity with Telegram `ShouldSpeak`). *(Phase 37C)*
-- [ ] **WEBVOICE-02**: The Composer Mic becomes dictation — record → transcribe via the existing STT pipeline → insert the transcript into the input box (editable before send), instead of attaching a voice note; on failure it falls back to today's attachment behavior. *(Phase 37C)*
-- [ ] **WEBVOICE-03**: Cloud-only — TTS/STT run on OpenRouter with no local sidecar; when the cloud models are unconfigured the UI degrades gracefully (speaker hidden / mic in attachment mode) with no errors. *(Phase 37C)*
-- [ ] **WEBVOICE-04**: No regression of the audio-attachment path; `RequireAuth` on the TTS endpoint; React unit tests (speaker + dictation) + e2e; web + owned-surface Go coverage ≥85%. *(Phase 37C)*
+- [x] **WEBVOICE-01**: Each assistant message exposes a speaker control that synthesizes its text via a new authenticated `POST /api/tts` (identity-scoped, streaming opus/mp3) over `multimodal.TTSClient`, played by an in-page `<audio>`; a per-conversation "voice mode" preference enables auto-speak (parity with Telegram `ShouldSpeak`). *(Phase 37C)*
+- [x] **WEBVOICE-02**: The Composer Mic becomes dictation — record → transcribe via the existing STT pipeline → insert the transcript into the input box (editable before send), instead of attaching a voice note; on failure it falls back to today's attachment behavior. *(Phase 37C)*
+- [x] **WEBVOICE-03**: Selectable local↔cloud — TTS/STT default to the local aura-tts (Kokoro) / aura-stt (faster-whisper) sidecars and switch to OpenRouter when `AURA_TTS_MODEL`/`AURA_STT_CLOUD_MODEL` is set (supersedes the original cloud-only D-12 per operator directive); when neither a local base URL nor a cloud model is configured the UI degrades gracefully (speaker hidden / mic in attachment mode) with no errors. *(Phase 37C)*
+- [x] **WEBVOICE-04**: No regression of the audio-attachment path; `RequireAuth` on the TTS endpoint; React unit tests (speaker + dictation) + e2e; web + owned-surface Go coverage ≥85%. *(Phase 37C)*
 
 ### Composer Skill & Command Picker (WEBSKILL)
 
