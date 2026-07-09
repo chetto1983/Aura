@@ -138,6 +138,13 @@ export const resources = {
           on: 'Voice mode on',
           off: 'Voice mode off',
         },
+        dictation: {
+          start: 'Dictate',
+          stop: 'Stop dictation',
+          listening: 'Listening…',
+          transcribing: 'Transcribing…',
+          error: 'No transcription. Try again or attach an audio file.',
+        },
       },
       ...displayEn,
       ...documentsEn,
@@ -417,6 +424,13 @@ export const resources = {
         voiceMode: {
           on: 'Modalità vocale attiva',
           off: 'Modalità vocale disattivata',
+        },
+        dictation: {
+          start: 'Detta',
+          stop: 'Ferma dettatura',
+          listening: 'In ascolto…',
+          transcribing: 'Trascrizione…',
+          error: 'Nessuna trascrizione. Riprova o allega un file audio.',
         },
       },
       ...displayIt,

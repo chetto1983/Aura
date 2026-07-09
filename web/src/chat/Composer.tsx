@@ -11,12 +11,19 @@ import {
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import type { AttachmentUploads } from './attachments/useAttachmentUploads';
+import { useVoiceMode } from './voice/voiceModeContext';
 import { Button } from '@/components/ui/button';
 
 // Composer: the query input + the Send↔Stop swap. Enter sends / Shift+Enter
 // newlines / Esc cancels are handled by ComposerPrimitive.Input. Stop is
 // ComposerPrimitive.Cancel → api.thread().cancelRun() → the external-store
 // onCancel aborts the in-flight fetch (the server streamSSE unwinds on ctx.Done).
+//
+// The Mic is dictation-primary when caps.stt (WEBVOICE-02): it toggles the runtime
+// dictation session (the dictationAdapter's onSpeech inserts an editable transcript
+// natively) and announces listening/transcribing/error via an aria-live region. When
+// STT is unconfigured OR dictation is unavailable it reverts to the KEPT attachment-
+// record path (MediaRecorder → uploads.addFiles), so there is no regression (D-10).
 //
 // Accent is reserved for the primary Send CTA only (UI-SPEC §Color list item 1);
 // Stop is a neutral danger-tinted control so the accent stays scarce.
@@ -31,10 +38,14 @@ export interface ComposerDraftPrompt {
   readonly nonce: number;
 }
 
+type DictationPhase = 'idle' | 'listening' | 'transcribing' | 'error';
+
 export function Composer({ uploads, draftPrompt }: ComposerProps) {
   const { t } = useTranslation();
   const aui = useAui();
   const isRunning = useAuiState((s) => s.thread.isRunning);
+  const dictation = useAuiState((s) => s.composer.dictation);
+  const { caps, markTurnDictated } = useVoiceMode();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -42,6 +53,10 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
   const chunksRef = useRef<Blob[]>([]);
   const appliedDraftNonce = useRef<number | undefined>(undefined);
   const [isRecording, setIsRecording] = useState(false);
+  const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
+  const dictationStartLen = useRef(0);
+  const wasDictating = useRef(false);
+  const isDictating = dictation != null;
   const sendDisabled = uploads?.hasBlockingUploads === true;
 
   useEffect(() => {
@@ -50,6 +65,26 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
     aui.composer().setText(draftPrompt.text);
     requestAnimationFrame(() => composerInputRef.current?.focus());
   }, [aui, draftPrompt]);
+
+  // Detect a dictation session ending. If the transcript was inserted (the composer text
+  // grew via onSpeech), mark the turn dictated for auto-speak parity (D-07). If nothing was
+  // inserted (an empty transcript or an /api/stt error), surface chat.dictation.error and
+  // leave the mic usable (D-10). The insert lands before the session tears down (Landmine #1).
+  useEffect(() => {
+    if (isDictating) {
+      wasDictating.current = true;
+      return;
+    }
+    if (!wasDictating.current) return;
+    wasDictating.current = false;
+    const inserted = aui.composer().getState().text.length > dictationStartLen.current;
+    if (inserted) {
+      markTurnDictated();
+      setDictationPhase('idle');
+    } else {
+      setDictationPhase((phase) => (phase === 'idle' ? 'idle' : 'error'));
+    }
+  }, [isDictating, aui, markTurnDictated]);
 
   const addFiles = (files: FileList | File[]) => {
     if (files.length > 0) uploads?.addFiles(files);
@@ -113,13 +148,46 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
     }
   };
 
+  // beginDictation opens a runtime dictation session; on any failure (e.g. no adapter
+  // configured) it degrades to the attachment record path so the Mic never dead-ends (D-10).
+  const beginDictation = () => {
+    try {
+      dictationStartLen.current = aui.composer().getState().text.length;
+      aui.composer().startDictation();
+      setDictationPhase('listening');
+    } catch {
+      setDictationPhase('error');
+      void startRecording();
+    }
+  };
+
   const handleMic = () => {
-    if (isRecording) {
-      stopRecording();
+    if (!caps.stt) {
+      if (isRecording) stopRecording();
+      else void startRecording();
       return;
     }
-    void startRecording();
+    if (dictationPhase === 'listening') {
+      setDictationPhase('transcribing');
+      aui.composer().stopDictation();
+      return;
+    }
+    beginDictation();
   };
+
+  const dictationBusy = dictationPhase === 'listening' || dictationPhase === 'transcribing';
+  const micActive = caps.stt ? dictationBusy : isRecording;
+  const micLabel = caps.stt
+    ? t(dictationBusy ? 'chat.dictation.stop' : 'chat.dictation.start')
+    : t(isRecording ? 'chat.attachments.micStop' : 'chat.attachments.mic');
+  const dictationAnnouncement =
+    dictationPhase === 'listening'
+      ? t('chat.dictation.listening')
+      : dictationPhase === 'transcribing'
+        ? t('chat.dictation.transcribing')
+        : dictationPhase === 'error'
+          ? t('chat.dictation.error')
+          : '';
 
   return (
     <ComposerPrimitive.Root
@@ -135,6 +203,19 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
           ))}
         </div>
       ) : null}
+      {/* Live region: announces the dictation state to screen readers; kept mounted so the
+          transition is picked up (empty + sr-only while idle). */}
+      <p
+        role="status"
+        aria-live="polite"
+        className={
+          dictationAnnouncement === ''
+            ? 'sr-only'
+            : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
+        }
+      >
+        {dictationAnnouncement}
+      </p>
       <div className="flex items-end gap-2">
         {uploads !== undefined ? (
           <>
@@ -160,11 +241,13 @@ export function Composer({ uploads, draftPrompt }: ComposerProps) {
               type="button"
               size="icon"
               variant="ghost"
-              aria-label={t(isRecording ? 'chat.attachments.micStop' : 'chat.attachments.mic')}
+              aria-label={micLabel}
+              aria-pressed={micActive}
               onClick={handleMic}
-              className="rounded-full text-text-muted hover:text-text"
+              className="rounded-full text-text-muted hover:text-text data-[dictating=true]:text-accent"
+              data-dictating={caps.stt && dictationBusy ? 'true' : undefined}
             >
-              {isRecording ? (
+              {micActive ? (
                 <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
               ) : (
                 <Mic data-icon aria-hidden="true" className="size-4" />
