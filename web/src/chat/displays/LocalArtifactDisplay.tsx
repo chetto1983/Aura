@@ -52,7 +52,7 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
         </span>
         {assetId ? (
           <a
-            href={`/api/assets/${assetId}/download`}
+            href={`/api/assets/${encodeURIComponent(assetId)}/download`}
             download={filename}
             aria-label={t('display.artifact.downloadAria', { filename })}
             className="group inline-flex w-fit items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

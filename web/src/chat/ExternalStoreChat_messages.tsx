@@ -146,7 +146,7 @@ export function AssistantMessage() {
           {attachments.map((asset) => (
             <a
               key={asset.id}
-              href={`/api/assets/${asset.id}/download`}
+              href={`/api/assets/${encodeURIComponent(asset.id)}/download`}
               download={asset.file_name}
               aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
               className="group inline-flex w-fit items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

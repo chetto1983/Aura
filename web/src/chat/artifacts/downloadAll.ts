@@ -29,7 +29,7 @@ export async function downloadAll(
   for (const a of rows) {
     if (opts?.signal?.aborted) break;
     const link = document.createElement('a');
-    link.href = `/api/assets/${a.id}/download`;
+    link.href = `/api/assets/${encodeURIComponent(a.id)}/download`;
     link.download = a.file_name;
     document.body.appendChild(link);
     link.click();

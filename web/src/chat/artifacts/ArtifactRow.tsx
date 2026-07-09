@@ -62,7 +62,7 @@ export function ArtifactRow({ asset, onPreview }: ArtifactRowProps) {
             </span>
           </button>
           <a
-            href={`/api/assets/${asset.id}/download`}
+            href={`/api/assets/${encodeURIComponent(asset.id)}/download`}
             download={asset.file_name}
             onClick={(e) => {
               e.stopPropagation();

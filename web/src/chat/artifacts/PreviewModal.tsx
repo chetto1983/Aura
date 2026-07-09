@@ -70,7 +70,7 @@ function DownloadCard({ active }: { active: Asset }) {
         <p className="text-[13px] text-text-muted">{t('artifacts.preview.unsupported')}</p>
       </div>
       <a
-        href={`/api/assets/${active.id}/download`}
+        href={`/api/assets/${encodeURIComponent(active.id)}/download`}
         download={active.file_name}
         className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-surface px-4 py-2 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
@@ -98,7 +98,7 @@ export function PreviewModal({ active, onClose }: PreviewModalProps) {
                 {active.file_name}
               </DialogTitle>
               <a
-                href={`/api/assets/${active.id}/download`}
+                href={`/api/assets/${encodeURIComponent(active.id)}/download`}
                 download={active.file_name}
                 aria-label={t('artifacts.preview.download', { name: active.file_name })}
                 className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

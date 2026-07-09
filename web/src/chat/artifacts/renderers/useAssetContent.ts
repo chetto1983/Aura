@@ -30,7 +30,7 @@ export function useAssetContent(
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
-      const res = await fetch(`/api/assets/${assetId}/download`, {
+      const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}/download`, {
         credentials: 'same-origin',
         signal: controller.signal,
       });
