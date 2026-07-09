@@ -7,6 +7,8 @@ const mutationTests = [
   'src/approvals/__tests__/ThreadApprovalCards.test.tsx',
   'src/chat/artifacts/artifactMeta.test.ts',
   'src/chat/artifacts/downloadAll.test.ts',
+  'src/chat/voice/speechAdapter.test.ts',
+  'src/chat/voice/dictationAdapter.test.ts',
   'src/chat/displays/__tests__/SourcesButton.test.tsx',
   'src/chat/displays/__tests__/sourceExplorerData.test.ts',
   'src/chat/displays/__tests__/swarmRow.test.ts',

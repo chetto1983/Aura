@@ -154,4 +154,37 @@ describe('createSpeechAdapter', () => {
     expect(audioStub.instances).toHaveLength(0);
     expect(urlStub.createObjectURL).toHaveBeenCalledTimes(1);
   });
+
+  it('POSTs the message text to /api/tts with same-origin credentials + Accept audio/mpeg', async () => {
+    const fetchMock = mockTtsFetch();
+    const adapter = setup(fetchMock);
+    adapter.speak('read this back to me');
+    await tick();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/tts');
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('same-origin');
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'read this back to me' });
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Accept).toBe('audio/mpeg');
+    expect(headers['Content-Type']).toBe('application/json');
+  });
+
+  it('caches the truncated flag — a repeat speak reports truncated without re-fetching', async () => {
+    const fetchMock = mockTtsFetch({ truncated: true });
+    const adapter = setup(fetchMock);
+
+    const first = adapter.speak('a very long report');
+    await tick();
+    expect(first.truncated).toBe(true);
+
+    const second = adapter.speak('a very long report');
+    await tick();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // served from cache, no second synth
+    // The truncated flag must ride through the cache entry, not just the live fetch.
+    expect(second.truncated).toBe(true);
+    expect(second.status.type).toBe('running');
+  });
 });
