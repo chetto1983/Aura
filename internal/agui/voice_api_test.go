@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -374,5 +375,150 @@ func TestVoiceCapabilities_Unauth(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401 (no session)", rec.Code)
+	}
+}
+
+// TestCapText is the direct rune-cap unit: a non-positive cap disables truncation, an
+// input at/under the cap is untouched, and an over-cap input is cut to the rune-safe
+// prefix (multi-byte runes counted as one, never split mid-character).
+func TestCapText(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		text      string
+		maxChars  int
+		wantText  string
+		wantTrunc bool
+	}{
+		{"cap disabled (zero)", "abcdef", 0, "abcdef", false},
+		{"cap disabled (negative)", "abcdef", -1, "abcdef", false},
+		{"under cap", "abc", 8, "abc", false},
+		{"at cap", "abcdefgh", 8, "abcdefgh", false},
+		{"over cap ascii", "abcdefghXY", 8, "abcdefgh", true},
+		{"over cap multibyte (rune-safe)", "àéîõü✓漢字", 4, "àéîõ", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, trunc := capText(tc.text, tc.maxChars)
+			if got != tc.wantText || trunc != tc.wantTrunc {
+				t.Fatalf("capText(%q, %d) = (%q, %v), want (%q, %v)", tc.text, tc.maxChars, got, trunc, tc.wantText, tc.wantTrunc)
+			}
+		})
+	}
+}
+
+// TestTTS_SynthError: a synthesizer failure is a 502 (BadGateway) — an upstream fault,
+// not a server bug (500).
+func TestTTS_SynthError(t *testing.T) {
+	t.Parallel()
+	tts := &fakeTTS{err: errors.New("openrouter 500")}
+	s := newVoiceServer()
+	s.SetVoice(tts, &fakeSTT{}, 4096)
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/tts", strings.NewReader(`{"text":"hi"}`)), localIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (synth error)", rec.Code)
+	}
+}
+
+// TestTTS_InvalidJSON: a malformed body is a 400 with no synth call.
+func TestTTS_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	tts := &fakeTTS{audio: []byte("x")}
+	s := newVoiceServer()
+	s.SetVoice(tts, &fakeSTT{}, 4096)
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/tts", strings.NewReader(`{"text":`)), localIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (invalid JSON)", rec.Code)
+	}
+	if tts.calls != 0 {
+		t.Fatalf("synth called on invalid JSON: calls=%d", tts.calls)
+	}
+}
+
+// TestTTS_NoPrincipal is the handler's own defense-in-depth 401 (bare mux, no principal —
+// independent of the parent-mux RequireAuth): the POST is 401 and synth is never called.
+func TestTTS_NoPrincipal(t *testing.T) {
+	t.Parallel()
+	tts := &fakeTTS{audio: []byte("x")}
+	s := newVoiceServer()
+	s.SetVoice(tts, &fakeSTT{}, 4096)
+	req := httptest.NewRequest(http.MethodPost, "/api/tts", strings.NewReader(`{"text":"hi"}`))
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (no principal on the bare mux)", rec.Code)
+	}
+	if tts.calls != 0 {
+		t.Fatalf("synth called with no principal: calls=%d", tts.calls)
+	}
+}
+
+// TestSTT_TranscribeError: a transcriber failure is a 502, and still no asset is written.
+func TestSTT_TranscribeError(t *testing.T) {
+	t.Parallel()
+	stt := &fakeSTT{err: errors.New("openrouter 500")}
+	assetSvc := &fakeAssetService{}
+	s := newVoiceServer()
+	s.SetAssetService(assetSvc)
+	s.SetVoice(&fakeTTS{}, stt, 4096)
+	req := withPrincipal(newSTTRequest(t, "audio/webm;codecs=opus", []byte("x")), localIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (transcribe error)", rec.Code)
+	}
+	assertAssetServiceUntouched(t, assetSvc)
+}
+
+// TestSTT_MissingAudioPart: a body with no `audio` part is a 400 with no transcribe call.
+func TestSTT_MissingAudioPart(t *testing.T) {
+	t.Parallel()
+	stt := &fakeSTT{text: "x"}
+	s := newVoiceServer()
+	s.SetVoice(&fakeTTS{}, stt, 4096)
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/stt", strings.NewReader("not-multipart")), localIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (missing audio part)", rec.Code)
+	}
+	if stt.calls != 0 {
+		t.Fatalf("transcribe called with no audio part: calls=%d", stt.calls)
+	}
+}
+
+// TestSTT_NoPrincipal is the handler's own 401 (bare mux, no principal).
+func TestSTT_NoPrincipal(t *testing.T) {
+	t.Parallel()
+	stt := &fakeSTT{text: "x"}
+	s := newVoiceServer()
+	s.SetVoice(&fakeTTS{}, stt, 4096)
+	req := newSTTRequest(t, "audio/webm;codecs=opus", []byte("x"))
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (no principal)", rec.Code)
+	}
+	if stt.calls != 0 {
+		t.Fatalf("transcribe called with no principal: calls=%d", stt.calls)
+	}
+}
+
+// TestVoiceCapabilities_NoPrincipal is the handler's own 401 branch (bare mux, no
+// principal) — distinct from the parent-mux RequireAuth gate exercised in _Unauth.
+func TestVoiceCapabilities_NoPrincipal(t *testing.T) {
+	t.Parallel()
+	s := newVoiceServer()
+	s.SetVoice(&fakeTTS{}, &fakeSTT{}, 4096)
+	req := httptest.NewRequest(http.MethodGet, "/api/voice/capabilities", nil)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (no principal on the bare mux)", rec.Code)
 	}
 }
