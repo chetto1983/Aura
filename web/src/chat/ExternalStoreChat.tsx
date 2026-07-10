@@ -13,9 +13,21 @@ import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
+import { useComposerSkills } from './composer/useComposerSkills';
+import { usePinnedSkill } from './composer/usePinnedSkill';
 import type { Asset } from './attachments/types';
 import { SourceExplorerProvider } from './displays/SourceExplorerContext';
 import { AssistantMessage, UserMessage } from './ExternalStoreChat_messages';
+import {
+  appendMessageText,
+  assistantErrorMessage,
+  attachAssetsToUserMessages,
+  foldAgentOntoAssistant,
+  isAbortSignalAborted,
+  removeAssetFromMessages,
+  replaceAssetInMessages,
+  userMessage,
+} from './ExternalStoreChat_folds';
 import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './sseAdapter';
 import { AutoSpeak } from './voice/AutoSpeak';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
@@ -31,126 +43,8 @@ import { useVoiceRuntime } from './voice/useVoiceRuntime';
 //     footer can mount alongside without re-plumbing the stream.
 //   • 25-07 BranchPicker — onEdit/onReload + branch nav land on this same runtime
 //     once the path-aware backend (25-06) exists; capabilities gate them off now.
-
-function appendMessageText(message: AppendMessage): string {
-  return message.content
-    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-    .map((p) => p.text)
-    .join('');
-}
-
-function userMessage(text: string, attachments: readonly Asset[] = []): ThreadMessageLike {
-  return {
-    id: crypto.randomUUID(),
-    role: 'user',
-    content: [{ type: 'text', text }],
-    ...(attachments.length > 0 ? { metadata: { custom: { attachments } } } : {}),
-  };
-}
-
-function messageAttachments(message: ThreadMessageLike): readonly Asset[] {
-  const metadata = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
-  return metadata?.attachments ?? [];
-}
-
-function withMessageAttachments(
-  message: ThreadMessageLike,
-  attachments: readonly Asset[],
-): ThreadMessageLike {
-  const custom = { ...(message.metadata?.custom ?? {}), attachments };
-  return { ...message, metadata: { ...message.metadata, custom } };
-}
-
-// foldAssetsPositionally zips visible assets onto the messages of a given role
-// using a positional heuristic (an Asset carries no message/tool_call_id key): the
-// Nth asset attaches to the Nth role-turn, extras pile on the last. Shared by the
-// user-upload fold and the D-15 agent-deliverable fold (dupl-folded on touch).
-function foldAssetsPositionally(
-  messages: readonly ThreadMessageLike[],
-  assets: readonly Asset[],
-  role: ThreadMessageLike['role'],
-): ThreadMessageLike[] {
-  const visibleAssets = assets.filter(
-    (asset) => asset.status !== 'deleted' && asset.status !== 'canceled',
-  );
-  if (visibleAssets.length === 0) return [...messages];
-  const targetIndexes = messages
-    .map((message, index) => (message.role === role ? index : -1))
-    .filter((index) => index >= 0);
-  if (targetIndexes.length === 0) return [...messages];
-  const groups = new Map<number, Asset[]>();
-  visibleAssets.forEach((asset, assetIndex) => {
-    const target = targetIndexes[Math.min(assetIndex, targetIndexes.length - 1)];
-    if (target === undefined) return;
-    groups.set(target, [...(groups.get(target) ?? []), asset]);
-  });
-  return messages.map((message, index) => {
-    const additions = groups.get(index);
-    if (additions === undefined) return message;
-    return withMessageAttachments(message, [...messageAttachments(message), ...additions]);
-  });
-}
-
-function attachAssetsToUserMessages(
-  messages: readonly ThreadMessageLike[],
-  assets: readonly Asset[],
-): ThreadMessageLike[] {
-  return foldAssetsPositionally(messages, assets, 'user');
-}
-
-// D-15: fold `source_kind='agent'` deliverables onto the ASSISTANT turns that
-// produced them (send_file's inline chip is synthesized client-side and never
-// persisted, so the rehydrated tool card loses its asset_id — sseAdapter_snapshot).
-// It MUST NOT fold agent assets onto user turns — that is the exact bug being fixed.
-// Exported for the rehydration attribution test (pure fold, no runtime coupling).
-// eslint-disable-next-line react-refresh/only-export-components
-export function foldAgentOntoAssistant(
-  messages: readonly ThreadMessageLike[],
-  agentAssets: readonly Asset[],
-): ThreadMessageLike[] {
-  return foldAssetsPositionally(messages, agentAssets, 'assistant');
-}
-
-function replaceAssetInMessages(
-  messages: readonly ThreadMessageLike[],
-  asset: Asset,
-): ThreadMessageLike[] {
-  return messages.map((message) => {
-    const attachments = messageAttachments(message);
-    if (!attachments.some((item) => item.id === asset.id)) return message;
-    return withMessageAttachments(
-      message,
-      attachments.map((item) => (item.id === asset.id ? asset : item)),
-    );
-  });
-}
-
-function removeAssetFromMessages(
-  messages: readonly ThreadMessageLike[],
-  assetID: string,
-): ThreadMessageLike[] {
-  return messages.map((message) => {
-    const attachments = messageAttachments(message);
-    if (!attachments.some((item) => item.id === assetID)) return message;
-    return withMessageAttachments(
-      message,
-      attachments.filter((item) => item.id !== assetID),
-    );
-  });
-}
-
-function assistantErrorMessage(text: string): ThreadMessageLike {
-  return {
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content: [{ type: 'text', text }],
-    status: { type: 'incomplete', reason: 'error' },
-  };
-}
-
-function isAbortSignalAborted(signal: AbortSignal): boolean {
-  return signal.aborted;
-}
+// Pure message/asset-fold helpers live in ./ExternalStoreChat_folds (refactor-on-touch to
+// keep this file under the 600-LOC cap); the presentational rows live in _messages.
 
 export interface ExternalStoreChatProps {
   /** Conversation/thread id the run is POSTed against. */
@@ -173,6 +67,8 @@ export interface ExternalStoreChatProps {
    */
   readonly resumeNonce?: number;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
+  /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
+  readonly onNewChat?: () => void | Promise<void>;
 }
 
 export function ExternalStoreChat({
@@ -182,6 +78,7 @@ export function ExternalStoreChat({
   onArtifact,
   resumeNonce = 0,
   draftPrompt,
+  onNewChat,
 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -192,6 +89,8 @@ export function ExternalStoreChat({
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
   const uploads = useAttachmentUploads(threadId);
+  const skills = useComposerSkills();
+  const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -249,6 +148,7 @@ export function ExternalStoreChat({
           threadId: runThreadId,
           userText: text,
           attachmentIds: readyAttachmentIds,
+          ...(pinnedSkill !== null ? { skill: pinnedSkill.name } : {}),
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
@@ -265,6 +165,8 @@ export function ExternalStoreChat({
           },
         });
         if (readyAttachmentIds.length > 0) uploads.clearReady();
+        // The pinned skill applies to exactly one turn (mirrors uploads.clearReady).
+        if (pinnedSkill !== null) setPinnedSkill(null);
       } catch (err) {
         // An aborted fetch (Stop) throws AbortError; the partial assistant
         // message already rendered is left as-is (incomplete). Other network
@@ -288,7 +190,17 @@ export function ExternalStoreChat({
         invalidateRuntimeReads(runThreadId);
       }
     },
-    [threadId, onEnsureThread, onUsage, onArtifact, invalidateRuntimeReads, t, uploads],
+    [
+      threadId,
+      onEnsureThread,
+      onUsage,
+      onArtifact,
+      invalidateRuntimeReads,
+      t,
+      uploads,
+      pinnedSkill,
+      setPinnedSkill,
+    ],
   );
 
   const onCancel = useCallback(async () => {
@@ -591,7 +503,14 @@ export function ExternalStoreChat({
             </p>
           ) : null}
 
-          <Composer uploads={uploads} draftPrompt={draftPrompt} />
+          <Composer
+            uploads={uploads}
+            draftPrompt={draftPrompt}
+            skills={skills}
+            pinnedSkill={pinnedSkill}
+            onPinSkill={setPinnedSkill}
+            onNewChat={onNewChat}
+          />
         </ThreadPrimitive.Root>
       </SourceExplorerProvider>
     </AssistantRuntimeProvider>

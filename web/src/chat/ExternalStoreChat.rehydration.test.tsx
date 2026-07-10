@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
-import { ExternalStoreChat, foldAgentOntoAssistant } from './ExternalStoreChat';
+import { ExternalStoreChat } from './ExternalStoreChat';
+import { foldAgentOntoAssistant } from './ExternalStoreChat_folds';
 import type { Asset } from './attachments/types';
 
 // 37B plan 05 — D-15 split-fold rehydration + onArtifact forwarding.

@@ -432,6 +432,7 @@ export function AppShell() {
               onArtifact={handleArtifact}
               resumeNonce={resumeNonce}
               draftPrompt={documentDraftPrompt}
+              onNewChat={startNewConversation}
             />
           )}
         </Suspense>
