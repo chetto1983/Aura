@@ -552,7 +552,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 37E-01-PLAN.md — Wave 1: PRD-amendment gate (drop model-selector, 7-level capability-gated, delete stale "no Max", llama.cpp + capability requirements)
+- [x] 37E-01-PLAN.md — Wave 1: PRD-amendment gate (drop model-selector, 7-level capability-gated, delete stale "no Max", llama.cpp + capability requirements)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
