@@ -301,3 +301,100 @@ func TestModelCapabilityDefensiveParse(t *testing.T) {
 		t.Errorf("absent model: want ok=false err=nil, got ok=%v err=%v", ok, err)
 	}
 }
+
+// --- Task 3 behavior: llama.cpp capability source ---
+
+func newTestLlamaCppSource(rt http.RoundTripper, provider string) *llamaCppReasoningCaps {
+	s := newLlamaCppReasoningCaps(Config{Provider: provider, BaseURL: "http://localhost:8080"})
+	s.httpClient = &http.Client{Transport: rt}
+	return s
+}
+
+func TestLlamaCppReasoningCaps(t *testing.T) {
+	ctx := context.Background()
+	full := []ReasoningEffort{
+		ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortMedium,
+		ReasoningEffortHigh, ReasoningEffortXHigh, ReasoningEffortMax,
+	}
+
+	// Row 1 — explicit provider=llamacpp, /props UNREACHABLE → the full graduated set
+	// (operator asserting the spike-095 launch config, OQ-4 widen), detected=true.
+	unreachable := &fakeRoundTripper{fn: func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	}}
+	s1 := newTestLlamaCppSource(unreachable, "llamacpp")
+	eff, deflt, detected := s1.AllowedEfforts(ctx)
+	if !detected {
+		t.Fatal("explicit provider=llamacpp must be detected even with no /props")
+	}
+	if !effortsEqual(eff, full) {
+		t.Errorf("efforts = %v, want full graduated %v", eff, full)
+	}
+	if deflt != "" {
+		t.Errorf("default = %q, want \"\" (auto)", deflt)
+	}
+
+	// Row 2 — /props whose chat_template_caps thinking flag is present-and-false →
+	// narrow to {none} (off only), detected=true.
+	props := readFixture(t, "testdata/llamacpp_props.json")
+	narrowRT := &fakeRoundTripper{fn: func(r *http.Request) (*http.Response, error) {
+		if !strings.HasSuffix(r.URL.Path, "/props") {
+			t.Errorf("path = %s, want .../props", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, props), nil
+	}}
+	s2 := newTestLlamaCppSource(narrowRT, "llamacpp")
+	eff2, _, det2 := s2.AllowedEfforts(ctx)
+	if !det2 {
+		t.Fatal("narrow case must remain detected=true")
+	}
+	if !effortsEqual(eff2, []ReasoningEffort{ReasoningEffortNone}) {
+		t.Errorf("narrowed efforts = %v, want {none}", eff2)
+	}
+
+	// Row 3 — /props present but NO thinking flag → trust the provider+ops-contract
+	// full set (defensive: unknown flag name must not narrow).
+	noFlagRT := &fakeRoundTripper{fn: func(_ *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, []byte(`{"chat_template_caps":{"supports_tools":true}}`)), nil
+	}}
+	s3 := newTestLlamaCppSource(noFlagRT, "llamacpp")
+	eff3, _, det3 := s3.AllowedEfforts(ctx)
+	if !det3 || !effortsEqual(eff3, full) {
+		t.Errorf("unknown flag: want full+detected, got efforts=%v detected=%v", eff3, det3)
+	}
+
+	// Row 4 — malformed /props body → never panic, keep the full set.
+	badRT := &fakeRoundTripper{fn: func(_ *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, []byte("{not json")), nil
+	}}
+	s4 := newTestLlamaCppSource(badRT, "llamacpp")
+	eff4, _, det4 := s4.AllowedEfforts(ctx)
+	if !det4 || !effortsEqual(eff4, full) {
+		t.Errorf("malformed /props: want full+detected, got efforts=%v detected=%v", eff4, det4)
+	}
+
+	// Row 5 — a non-llamacpp provider on this source is not detected (guard; the
+	// factory never builds it for a non-llamacpp target, but the source is self-safe).
+	s5 := newTestLlamaCppSource(unreachable, "openrouter")
+	if _, _, det5 := s5.AllowedEfforts(ctx); det5 {
+		t.Error("non-llamacpp provider must yield detected=false")
+	}
+}
+
+func TestNewReasoningCapabilitySource(t *testing.T) {
+	// OpenRouter target → the /models-backed source.
+	orCfg := Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Model: "deepseek/deepseek-v4-flash"}
+	if _, ok := NewReasoningCapabilitySource(orCfg, time.Hour).(*openRouterReasoningCaps); !ok {
+		t.Error("openrouter target should select *openRouterReasoningCaps")
+	}
+	// llama.cpp target → the provider+ops-contract source.
+	lcCfg := Config{Provider: "llamacpp", BaseURL: "http://localhost:8080"}
+	if _, ok := NewReasoningCapabilitySource(lcCfg, time.Hour).(*llamaCppReasoningCaps); !ok {
+		t.Error("llamacpp target should select *llamaCppReasoningCaps")
+	}
+	// unrecognized (e.g. local vLLM) → nil source (caller shows the safe floor).
+	vllmCfg := Config{Provider: "vllm", BaseURL: "http://dgx:8000/v1"}
+	if src := NewReasoningCapabilitySource(vllmCfg, time.Hour); src != nil {
+		t.Errorf("unrecognized target should select nil, got %T", src)
+	}
+}
