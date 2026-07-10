@@ -1,7 +1,8 @@
 ---
 phase: 37D-composer-skill-picker
 verified: 2026-07-10T07:30:00Z
-status: human_needed
+status: passed
+human_verification_resolved: 2026-07-10T06:05:00Z — both manual-only items (visual parity + live-LLM Mechanism A) confirmed PASS by the operator on the rebaked live :9080 deployment (37D-UAT.md)
 score: 28/28 must-haves verified (3 ROADMAP success criteria + 25 plan-level truths)
 overrides_applied: 0
 human_verification:

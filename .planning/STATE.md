@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 37D
-current_phase_name: composer-skill-picker
-status: executing
-stopped_at: Completed 37D-05-PLAN.md
-last_updated: "2026-07-10T03:30:00.000Z"
+current_phase: 37F
+current_phase_name: Conversation & Artifact Sharing / Export
+status: verifying
+stopped_at: 37D-03 complete (composer picker foundation — client + pure model + SkillPicker/SkillPill + en/it i18n)
+last_updated: "2026-07-10T06:03:26.228Z"
 last_activity: 2026-07-10
-last_activity_desc: 37D-05 complete — composer-skills e2e 8/8 green (aura.skill wire proof + new-chat/clear) + dist rebuilt + dual coverage ≥85 (web 92.6% / owned-surface Go 85.5%); WEBSKILL-01/02/03 done
+last_activity_desc: Phase 37D complete, transitioned to Phase 37F
 progress:
   total_phases: 17
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 82
   completed_plans: 82
-  percent: 59
+  percent: 65
 ---
 
 # Project State
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 37D (composer-skill-picker) — EXECUTING
-Plan: 5 of 5
+Phase: 37F — Conversation & Artifact Sharing / Export
+Plan: Not started
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: 37D-05 complete — Phase 37D (all 5 plans) ready for /gsd-verify-work
-Last activity: 2026-07-10 — 37D-05 complete (composer-skills e2e 8/8 green + dist rebuild + dual coverage ≥85; WEBSKILL-01/02/03 marked done)
+Last activity: 2026-07-10 — Phase 37D complete, transitioned to Phase 37F
 
 #### 37D-05 — Composer skill-picker terminal acceptance gate (WEBSKILL-01/02/03 proven e2e + ≥85 dual coverage). **Wave-4 plan, sequential on master, 1 atomic `test(37D-05)` commit `66ac8775` (Task 1 = spec + dist) + this docs commit; Task 2 = verification-only.** The terminal gate mirroring 37C-06. **Task 1 (`66ac8775`, `COMPOSER_SKILLS_E2E_OK`):** `web/e2e/composer-skills.spec.ts` — a golden-replay Playwright spec mirroring `artifacts.spec.ts`/`voice.spec.ts` (external-serve `gotoAuthenticated`, page-network mocks, `sseFromFrames`): mocks `GET /api/composer/skills` (non-empty) + the `/agent/run` SSE, and a `page.on('request')` interceptor captures the run POST body. **4 tests × chromium + mobile-chrome = 8/8 green:** (1) open `/` → the APG listbox + both group headers + 2 skills render, `/creator` narrows to 1 option, CLICK selects → the removable `SkillPill` + composer cleared, a plain message + Enter SENDS and the intercepted body carries **`aura.skill === 'skill-creator'`** (exact equality — the WEBSKILL-02 wire proof) + the pill clears after the one turn; (2) the picker Enter SELECTS without sending (`runCount===0`) then a closed-menu Enter SENDS (`runCount===1`) carrying the skill — the D-09/T-37D-08 discipline in the REAL browser; (3) new-chat → `POST /api/conversations` + route→`/c/{new}` + no `/agent/run`; (4) clear → empty input + pill gone + no `/agent/run`. Every check is a COUNTED DOM/route fact guarded (`domAssertions`/`runCount`/`createCount`) — no-skip-as-green. Rebuilt `internal/webui/dist` via `npm run build` (picker baked: `skillPicker` + `Remove pinned skill` present; pre-37D dist had 0); the e2e served a fresh `aura.exe` (embeds the new dist) on the spare `:9099` (`AURA_AGUI_BIND` derives the Authula trusted origin) with REAL Authula auth — the live `:9080` container untouched. **DEVIATIONS (both Rule 3 — blocking scaffolding, nothing committed):** (a) served the fresh embed on a spare port + used a throwaway identity-aware seed (the stock `authula_seed_e2e.go` hardcodes identity name `"local"`; this deployment's identity is email-named) rather than rebaking the container; (b) ran the owned-surface Go gate against a THROWAWAY isolated DB (`aura_cov37d05`), not the live `aura` DB — `migratedPool` has no per-run isolation. **INCIDENT (remediated):** the FIRST coverage attempt ran against the LIVE `aura` DB and its `db_integration`/`webauth` setup truncated shared tables — it destroyed the `b130c94d` (`dvdmarchetto@gmail.com`) operator identity + wiped `aura.authula` (login broken); no backup existed. RESTORED: re-created the identity + `*` grant + re-seeded the operator (temp password `AuraRecovery2026-ChangeMe` — **operator must change it**; TOTP was wiped) → `:9080` sign-in verified HTTP 200; cleaned the 19 test-junk conversations + 11 `*_drill` DBs + the throwaway seed. Any conversations under `b130c94d` before the run are unrecoverable. **VALIDATION:** e2e 8/8 (`COMPOSER_SKILLS_E2E_OK`); web vitest **155 files / 1260 tests** green, **92.6% stmts / 86.68% branch / 92.77% funcs / 94.34% lines** (≥85, `WEB_COVERAGE_85_OK`); owned-surface Go on the full `db_integration neo4j_integration` matrix (isolated fresh DB, `-count=1`, live Neo4j + embed + objectstore, containerized mcp-neo4j-cypher) **85.5% ≥ 85%**, 0 failures, **internal/agui 86.8%** (the composer surface); `go.mod`/`go.sum` + `web/package.json`/lockfile byte-unchanged; NO new deps/migrations/env; i18n untouched. **WEBSKILL-01/02/03 → `[x]`** (`requirements mark-complete` run — the terminal plan owns the mark). **Phase 37D COMPLETE** (5/5 plans) — ready for `/gsd-verify-work`.
 
@@ -130,7 +130,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 167
+- Total plans completed: 172
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -167,6 +167,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 36 | 6 | - | - |
 | 37 | 10 | - | - |
 | 37B | 8 | - | - |
+| 37D | 5 | - | - |
 
 **Recent Trend:**
 

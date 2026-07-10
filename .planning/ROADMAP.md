@@ -521,7 +521,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
-**Plans:** 5/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1**
