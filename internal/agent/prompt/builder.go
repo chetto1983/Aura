@@ -103,6 +103,20 @@ func (b *PromptBuilder) BuildWithReasoningTier(history []llm.Message, reg *tools
 	return req
 }
 
+// BuildWithReasoningOverride assembles a request and forces a caller-selected FIXED
+// reasoning effort before provider-specific cache-control handling — the symmetric
+// sibling of BuildWithReasoningTier for the per-turn web-Composer override (D-02/D-04).
+// A fixed effort BYPASSES the adaptive classifier (ApplyFixedReasoning gates on the
+// generalized OpenRouter-or-llama.cpp target, D-08); an empty effort is the "auto"
+// sentinel that leaves the request byte-identical to a plain Build (D-04 zero regression).
+// activated is the per-run set of tool_search-promoted deferred tool names (nil hides all).
+func (b *PromptBuilder) BuildWithReasoningOverride(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, effort llm.ReasoningEffort, activated map[string]struct{}) llm.Request {
+	req := b.buildBase(history, reg, cfg, budget, activated)
+	ApplyFixedReasoning(&req, provider, cfg, effort)
+	injectCacheControl(&req, provider)
+	return req
+}
+
 func (b *PromptBuilder) buildBase(history []llm.Message, reg *tools.Registry, cfg llm.Config, budget Budget, activated map[string]struct{}) llm.Request {
 	msgs := history
 	if budget.present() {

@@ -42,14 +42,44 @@ func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, t
 	req.Reasoning = tier.reasoning(cfg.ShowReasoning)
 }
 
-// IsOpenRouterReasoningTarget reports whether provider/baseURL support this
-// OpenRouter reasoning projection.
+// ApplyFixedReasoning forces a per-turn reasoning EFFORT chosen by the user (the web
+// Composer selector, D-02) onto the main request, BYPASSING the adaptive classifier.
+// Unlike ApplyAdaptiveReasoning it is orthogonal to cfg.AdaptiveReasoning — an explicit
+// selection must fire even when adaptive tiering is off — and it gates on the GENERALIZED
+// IsReasoningTarget, so a fixed effort reaches OpenRouter OR a local llama.cpp backend
+// (D-08). An empty effort is the "auto" sentinel: a no-op that leaves the adaptive/plain
+// path byte-identical (D-04, zero regression). exclude is derived from cfg.ShowReasoning
+// EXACTLY as ReasoningTier.reasoning() does — the selector controls effort, never CoT
+// visibility (D-10). Like the adaptive path it never touches MaxTokens (the 2026-06-14
+// contract: capping the output budget by tier truncated tool-call arguments mid-JSON).
+func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effort llm.ReasoningEffort) {
+	if effort == "" || !IsReasoningTarget(provider, cfg.BaseURL) {
+		return
+	}
+	req.Reasoning = llm.ReasoningConfig{Effort: effort, Exclude: boolPtr(!cfg.ShowReasoning)}
+}
+
+// IsOpenRouterReasoningTarget reports whether provider/baseURL is the OpenRouter
+// reasoning projection. It delegates to the neutral llm.ReasoningTarget classifier
+// (landed by 37E-02) so OpenRouter recognition has a single source of truth; the
+// result is byte-identical to the historical inline string check, so the ADAPTIVE-path
+// callers (ApplyAdaptiveReasoning, adaptiveReasoningTier) are unchanged (D-04).
 func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
-	if !strings.EqualFold(provider, "openrouter") {
+	return llm.ReasoningTarget(provider, baseURL) == llm.ReasoningTargetOpenRouter
+}
+
+// IsReasoningTarget reports whether provider/baseURL is ANY recognized reasoning
+// backend — OpenRouter OR llama.cpp (D-08). The FIXED per-turn effort override gates on
+// this generalized recognition so an explicit selection reaches a local llama.cpp chat
+// backend too; the ADAPTIVE path stays OpenRouter-only (IsOpenRouterReasoningTarget, D-04)
+// because llama.cpp never ran the classifier tiering.
+func IsReasoningTarget(provider, baseURL string) bool {
+	switch llm.ReasoningTarget(provider, baseURL) {
+	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp:
+		return true
+	default:
 		return false
 	}
-	base := strings.ToLower(strings.TrimSpace(baseURL))
-	return base == "" || strings.Contains(base, "openrouter.ai")
 }
 
 // reasoning maps a tier to the OpenRouter reasoning object. Verified live against
