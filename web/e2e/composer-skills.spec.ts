@@ -149,7 +149,9 @@ async function installComposerRoutes(page: Page) {
   await page.route(/\/api\/assets\?thread_id=/, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
-  await page.route('**/agent/run', (route) => sseResponse(route, sseFromFrames(assistantTurnFrames())));
+  await page.route('**/agent/run', (route) =>
+    sseResponse(route, sseFromFrames(assistantTurnFrames())),
+  );
 }
 
 test.describe('cockpit composer skill-picker — open→filter→select→pill→send carries aura.skill + new-chat/clear (WEBSKILL-01/02/03)', () => {
