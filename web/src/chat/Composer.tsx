@@ -372,12 +372,17 @@ export function Composer({
           rows={1}
           placeholder={t('chat.composer.placeholder')}
           aria-label={t('chat.composer.placeholder')}
-          role="combobox"
+          // The composer is a plain message textbox by default; it only takes on APG
+          // combobox semantics while the '/'-menu is open. Applying role="combobox"
+          // unconditionally reclassifies the input away from role=textbox even when
+          // idle — that regressed shell.spec.ts (getByRole('textbox', 'Ask Aura')) and
+          // made screen readers announce a listbox popup on every plain message.
+          role={menuOpen ? 'combobox' : undefined}
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? listboxId : undefined}
-          aria-activedescendant={activeOptionId}
-          aria-haspopup="listbox"
-          aria-autocomplete="list"
+          aria-activedescendant={menuOpen ? activeOptionId : undefined}
+          aria-haspopup={menuOpen ? 'listbox' : undefined}
+          aria-autocomplete={menuOpen ? 'list' : undefined}
           onKeyDown={handleComposerKeyDown}
           className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />

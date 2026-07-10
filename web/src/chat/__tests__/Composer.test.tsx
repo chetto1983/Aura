@@ -245,6 +245,7 @@ describe('Composer skill picker', () => {
 
     const listbox = screen.getByRole('listbox');
     const options = within(listbox).getAllByRole('option');
+    expect(input.getAttribute('role')).toBe('combobox');
     expect(input.getAttribute('aria-expanded')).toBe('true');
     expect(input.getAttribute('aria-controls')).toBe(listbox.id);
     expect(input.getAttribute('aria-activedescendant')).toBe(options[0]?.id);
@@ -330,6 +331,9 @@ describe('Composer skill picker', () => {
     const input = screen.getByLabelText('Ask Aura');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(input.getAttribute('aria-expanded')).toBe('false');
+    // Regression guard (shell.spec.ts): the idle composer is a plain textbox, not a combobox.
+    expect(input.getAttribute('role')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Ask Aura' })).toBe(input);
 
     const event = createEvent.keyDown(input, { key: 'Enter' });
     fireEvent(input, event);
