@@ -178,6 +178,40 @@ func (s *Store) RenameForIdentity(ctx context.Context, conversationID, identityI
 	return affected, nil
 }
 
+// UpdateReasoningEffortForIdentity persists the per-conversation reasoning-effort symbol
+// into the metadata jsonb only when identityID owns the conversation (Phase 37E WEBMODEL-01
+// / D-06 — Claude parity: persisted + restored on reopen). Returns rows-affected (0 = not
+// owned, mirroring the other *ForIdentity mutations). The effort is a symbol validated
+// upstream (plan 06's two-stage governance); this method is the dumb owner-scoped writer,
+// mirroring RenameForIdentity — no schema migration (the metadata column exists since 0005).
+func (s *Store) UpdateReasoningEffortForIdentity(ctx context.Context, conversationID, identityID, effort string) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, fmt.Errorf("update reasoning effort: %w", err)
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, fmt.Errorf("update reasoning effort: %w", err)
+	}
+	var affected int64
+	txErr := db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		n, uErr := q.UpdateConversationReasoningEffortForIdentity(ctx, sqlc.UpdateConversationReasoningEffortForIdentityParams{
+			Effort:     effort,
+			ID:         id,
+			IdentityID: owner,
+		})
+		if uErr != nil {
+			return fmt.Errorf("update reasoning effort %s: %w", conversationID, uErr)
+		}
+		affected = n
+		return nil
+	})
+	if txErr != nil {
+		return 0, txErr
+	}
+	return affected, nil
+}
+
 // SearchConversationTurnsForIdentity is the owner-scoped FTS: SearchConversationTurns with
 // every hit filtered to identityID's conversations (MUSR-01). The LOCKED sqlc query is
 // unchanged; the owner predicate is the Go-side filter in searchTurns.

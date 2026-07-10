@@ -96,3 +96,17 @@ UPDATE aura.conversations
 SET title = sqlc.arg(title)
 WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id);
+
+-- name: UpdateConversationReasoningEffortForIdentity :execrows
+-- Owner-scoped reasoning-effort persistence (Phase 37E WEBMODEL-01 / D-06): writes the
+-- chosen effort symbol into the EXISTING metadata jsonb — the column exists since
+-- 0005_conversations.up.sql, so NO migration is added (numbering unchanged). Mirrors
+-- RenameConversationForIdentity: rows-affected==0 = the caller does NOT own the id
+-- (foreign OR absent), routed through db.WithIdentityTx so the 0032 RLS owner policy
+-- backstops a forgotten predicate. Parameterized jsonb_set (never string concat) — the
+-- effort is a symbol validated upstream (plan 06). COALESCE seeds '{}' when metadata is
+-- NULL so the first write on a metadata-less row succeeds.
+UPDATE aura.conversations
+SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{reasoning_effort}', to_jsonb(sqlc.arg(effort)::text), true)
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id);

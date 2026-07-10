@@ -206,6 +206,15 @@ type Querier interface {
 	UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (AuraAssets, error)
 	UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUploadedParams) (AuraAssets, error)
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
+	// Owner-scoped reasoning-effort persistence (Phase 37E WEBMODEL-01 / D-06): writes the
+	// chosen effort symbol into the EXISTING metadata jsonb — the column exists since
+	// 0005_conversations.up.sql, so NO migration is added (numbering unchanged). Mirrors
+	// RenameConversationForIdentity: rows-affected==0 = the caller does NOT own the id
+	// (foreign OR absent), routed through db.WithIdentityTx so the 0032 RLS owner policy
+	// backstops a forgotten predicate. Parameterized jsonb_set (never string concat) — the
+	// effort is a symbol validated upstream (plan 06). COALESCE seeds '{}' when metadata is
+	// NULL so the first write on a metadata-less row succeeds.
+	UpdateConversationReasoningEffortForIdentity(ctx context.Context, arg UpdateConversationReasoningEffortForIdentityParams) (int64, error)
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
 	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.

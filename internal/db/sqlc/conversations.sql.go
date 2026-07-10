@@ -325,6 +325,35 @@ func (q *Queries) UpdateConversationAggregates(ctx context.Context, arg UpdateCo
 	return err
 }
 
+const updateConversationReasoningEffortForIdentity = `-- name: UpdateConversationReasoningEffortForIdentity :execrows
+UPDATE aura.conversations
+SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{reasoning_effort}', to_jsonb($1::text), true)
+WHERE id = $2
+  AND identity_id = $3
+`
+
+type UpdateConversationReasoningEffortForIdentityParams struct {
+	Effort     string      `json:"effort"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Owner-scoped reasoning-effort persistence (Phase 37E WEBMODEL-01 / D-06): writes the
+// chosen effort symbol into the EXISTING metadata jsonb — the column exists since
+// 0005_conversations.up.sql, so NO migration is added (numbering unchanged). Mirrors
+// RenameConversationForIdentity: rows-affected==0 = the caller does NOT own the id
+// (foreign OR absent), routed through db.WithIdentityTx so the 0032 RLS owner policy
+// backstops a forgotten predicate. Parameterized jsonb_set (never string concat) — the
+// effort is a symbol validated upstream (plan 06). COALESCE seeds '{}' when metadata is
+// NULL so the first write on a metadata-less row succeeds.
+func (q *Queries) UpdateConversationReasoningEffortForIdentity(ctx context.Context, arg UpdateConversationReasoningEffortForIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateConversationReasoningEffortForIdentity, arg.Effort, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateConversationStatus = `-- name: UpdateConversationStatus :exec
 UPDATE aura.conversations
 SET status = $2,
