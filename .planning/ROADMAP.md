@@ -547,6 +547,17 @@ Plans:
 
 **Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
 
+**Plans:** 7 plans in 5 waves (single phase; effort-only per D-01, reconciled by 37E-01)
+
+Plans:
+- [ ] 37E-01-PLAN.md — Wave 1: PRD-amendment gate (drop model-selector, 7-level capability-gated, delete stale "no Max", llama.cpp + capability requirements)
+- [ ] 37E-02-PLAN.md — Wave 2: llm effort engine (ReasoningEffortMax, neutral ReasoningTarget, AURA_LLM_PROVIDER, llama.cpp wire branch)
+- [ ] 37E-03-PLAN.md — Wave 2: per-conversation persistence (metadata jsonb, no migration; owner-scoped update + read projection)
+- [ ] 37E-04-PLAN.md — Wave 3: override seam (ApplyFixedReasoning, BuildWithReasoningOverride, ctx WithReasoningOverride, skip-when-fixed)
+- [ ] 37E-05-PLAN.md — Wave 3: capability-detection subsystem (OpenRouter /models client + TTL cache, llama.cpp /props source, fixtures)
+- [ ] 37E-06-PLAN.md — Wave 4: two-stage /agent/run validation + GET /api/composer/reasoning-capabilities + composition wiring
+- [ ] 37E-07-PLAN.md — Wave 5: Composer capability-aware selector UI + hooks + en/it i18n + vitest/Playwright e2e
+
 **Depends on:** Phase 37D (il Composer e il suo contratto di invio del turn), la config dei backend LLM/OpenRouter (sorgente dell'allowlist modelli), le settings (default modello/effort odierno).
 
 **Success Criteria**:
