@@ -88,13 +88,13 @@ A slash "/" menu in the Composer (parity with Claude's skill/command picker) to 
 - [x] **WEBSKILL-02**: Selecting an entry injects the skill into the turn per the existing runtime contract; no new source of truth for skills (reuses the governance API). *(Phase 37D)*
 - [x] **WEBSKILL-03**: Accessible (ARIA combobox/listbox), preserves Composer paste/drop/Enter-to-send, degrades to a no-op when the skills API is empty/unreachable; unit + e2e; coverage ≥85%. *(Phase 37D)*
 
-### Composer Model & Reasoning-Effort Selector (WEBMODEL)
+### Composer Reasoning-Effort Selector (WEBMODEL)
 
-Per-turn model + reasoning-effort selection in the Composer (parity with Claude's "Opus 4.8 · Alto"), bounded by the configured backends. *(product gap — voice/artifact/skill audit)*
+Per-turn reasoning-effort ("thinking") selection in the Composer (parity with Claude's `off · low · mid · high · extra · max` effort control plus Aura's adaptive `auto`). **Effort-only — the model dropdown is dropped**: model selection stays operator-scoped in the Settings page (`AURA_LLM_MODEL`, D-01). This is the resolved 37E scope after the mandatory Wave-1 PRD-amendment (37E-01, D-11) — a scope reduction of the chartered "model + effort" WEBMODEL surface. *(product gap — voice/artifact/skill audit)*
 
-- [ ] **WEBMODEL-01**: The Composer exposes a model selector (populated from the configured backends, settings-scoped) + an effort selector; the choice is persisted per-conversation. *(Phase 37E)*
-- [ ] **WEBMODEL-02**: `/agent/run` accepts an optional (model, effort) override validated server-side against the configured-backend allowlist (a non-allowed value → 400, never an arbitrary model); absent → today's settings-based default (no regression). *(Phase 37E)*
-- [ ] **WEBMODEL-03**: No bypass of model governance (the override picks among ALREADY-allowed models, never adds one); unit + e2e; coverage ≥85%. Architectural check: confirm the LLM/OpenRouter contract supports a per-request override before planning. *(Phase 37E)*
+- [ ] **WEBMODEL-01**: The Composer exposes a reasoning-effort selector whose levels are auto-detected per active model from the set `auto·off·low·mid·high·extra·max` (never a hard-coded or placebo list — D-12/D-13); the choice is persisted per-conversation (`aura.conversations.metadata` jsonb, no migration) and restored on reopen. *(Phase 37E)*
+- [ ] **WEBMODEL-02**: `/agent/run` accepts an optional symbolic `effort` override; the server maps the symbol → `llm.ReasoningConfig` and validates it in two stages — (1) syntactic enum, then (2) capability (the level must be in the active model's advertised `supported_efforts`); a non-enum OR non-advertised value → 400; absent/`auto` → today's adaptive default (no regression). Effort takes effect on BOTH OpenRouter AND a local llama.cpp backend (D-08). *(Phase 37E)*
+- [ ] **WEBMODEL-03**: No bypass of governance: the client sends a symbol, never a raw `ReasoningConfig`/budget/model; the server owns the symbol→config map and the capability gate. Every UI level maps to a REAL spike-validated wire knob (D-12) — no placebo/fabricated field (in particular `reasoning.max_tokens` is NOT resurrected as a hard cap). Unit + e2e; coverage ≥85%. Honest-fidelity caveat (D-09): advertised `supported_efforts` is best-effort — graduated fidelity is backend-dependent (real on budget-capable local llama.cpp; the default DeepSeek-V4-Flash collapses low..max to on/off), so the UI must not sell graduated effort as uniform. *(Phase 37E)*
 
 ### Conversation & Artifact Sharing / Export (WEBSHARE)
 
@@ -211,7 +211,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | WEBART | WEBART-05..08 | (product gap — cockpit-web "Artefatti" sidebar parity vs Telegram/Claude UI; voice/artifact/skill audit) | Phase 37B |
 | WEBVOICE | WEBVOICE-01..04 | (product gap — cockpit-web voice parity vs Telegram/Claude; voice/artifact/skill audit) | Phase 37C |
 | WEBSKILL | WEBSKILL-01..03 | (product gap — composer skill/command "/" picker vs Claude; audit) | Phase 37D |
-| WEBMODEL | WEBMODEL-01..03 | (product gap — composer model + reasoning-effort selector vs Claude; audit) | Phase 37E |
+| WEBMODEL | WEBMODEL-01..03 | (product gap — composer reasoning-effort selector vs Claude; audit; model-selector dropped, effort-only per 37E-01/D-01) | Phase 37E |
 | WEBSHARE | WEBSHARE-01..04 | (product gap — conversation/artifact sharing + export vs Claude; audit) | Phase 37F |
 | MCPH | MCPH-01..09 (+QUAL-03 trust-norm) | F-013, F-014, F-027, F-033, F-034, F-035, F-037, F-038, F-046 | Phase 38 |
 | OBS | OBS-01..06 | F-008, F-017, F-023, F-024, F-049 (+F-020 idempotency) | Phase 39 |
@@ -222,7 +222,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 **Coverage:**
 
-- v2.0.0 requirements: 81 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 8, WEBVOICE 4, WEBSKILL 3, WEBMODEL 3, WEBSHARE 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — the WEB* groups are product-gap requirements (no audit F-finding; findings-mapped count unchanged), the cockpit-web parity cluster from the voice/artifact/skill audit: WEBART 37A/37B artifacts, WEBVOICE 37C voice, WEBSKILL 37D skill-picker, WEBMODEL 37E model+effort selector, WEBSHARE 37F sharing/export
+- v2.0.0 requirements: 81 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 8, WEBVOICE 4, WEBSKILL 3, WEBMODEL 3, WEBSHARE 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — the WEB* groups are product-gap requirements (no audit F-finding; findings-mapped count unchanged), the cockpit-web parity cluster from the voice/artifact/skill audit: WEBART 37A/37B artifacts, WEBVOICE 37C voice, WEBSKILL 37D skill-picker, WEBMODEL 37E reasoning-effort selector (effort-only per 37E-01/D-01), WEBSHARE 37F sharing/export
 - Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
 - CodeQL-surfaced findings (outside the F-series): 2 / 2 — SEC-08 SSRF (`internal/mcp/http_client.go`) → Phase 31, SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40 ✓
 - Quality/maintainability audit: `docs/audit/quality/` (4-slice, ~64 findings) → QUAL-01..05 + routed to security phases ✓
