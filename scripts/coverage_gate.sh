@@ -25,6 +25,22 @@ MIN="${AURA_COVERAGE_MIN:-85}"
 TAGS="${AURA_COVERAGE_TAGS:-db_integration neo4j_integration}"
 PROFILE="${AURA_COVERAGE_PROFILE:-cover_gate.out}"
 
+# Anti-footgun (defense-in-depth; see scripts/coverage_docker.sh + the 2026-07-10
+# data-loss incident): the db_integration tier TRUNCATEs/DELETEs shared auth tables
+# on setup. On a developer host a database named `aura` is the live personal
+# deployment — running the gate against it destroys the operator identity + the
+# authula schema. CI provisions a fresh ephemeral `aura` and always sets
+# GITHUB_ACTIONS, so it is exempt; locally, point the gate at a disposable DB
+# (`make coverage-docker` does this automatically). Escape hatch: AURA_COVERAGE_ALLOW_LIVE_AURA_DB=1.
+if [[ " ${TAGS} " == *" db_integration "* ]] && [ -z "${GITHUB_ACTIONS:-}" ]; then
+  _cov_db="$(printf '%s' "${AURA_DB_URL:-}" | sed -E 's#.*/([^/?]+)(\?.*)?$#\1#')"
+  if [ "$_cov_db" = "aura" ] && [ "${AURA_COVERAGE_ALLOW_LIVE_AURA_DB:-}" != "1" ]; then
+    echo "FATAL: refusing db_integration coverage against the live 'aura' database — it TRUNCATEs shared auth tables (data loss, see the 2026-07-10 incident)." >&2
+    echo "       Use 'make coverage-docker' (disposable DB), or export AURA_DB_URL for a throwaway DB. Intentional override (danger): AURA_COVERAGE_ALLOW_LIVE_AURA_DB=1." >&2
+    exit 5
+  fi
+fi
+
 echo "==> coverage gate: internal/* >= ${MIN}% (tags: ${TAGS})"
 # -p 1 (serial package execution) is MANDATORY: the integration tiers across
 # internal/* share ONE Postgres, so running packages concurrently collides on
