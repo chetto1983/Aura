@@ -29,7 +29,9 @@ Spike sessions wrapped: 2026-06-04 (001-002), 2026-06-05 (003-010 session 2,
 2026-06-12 (043a-047 s11-12, 048-050 s13, 052-058 s14), 2026-06-14 (059-062 s15),
 2026-06-16 (063-066 s16), 2026-06-20 (067-069 s17-18), 2026-06-21 (070-074 s19),
 2026-06-28 (075-077 s20), 2026-06-29 (078-081 s21), 2026-07-04 (082-085 s22),
-2026-07-05 (086-089 s23 — Casbin authz + org-roles, the deferred forward bet).
+2026-07-05 (086-089 s23 — Casbin authz + org-roles, the deferred forward bet),
+2026-07-08/09 (071-arcadedb-adopt-strategy + 090-094 TuringDB s24 — graph-DB contingency, still STAY-Neo4j),
+2026-07-10 (095-096 s25 — Phase 37E reasoning-effort selector wire contract, llama.cpp + OpenRouter).
 </context>
 
 <requirements>
@@ -148,6 +150,7 @@ The session-7→20 areas each carry their own non-negotiables in `references/<ar
 | Document ingestion (Phase 15) | references/document-ingestion.md | Page-aware sparse-first lane = searchable in ~1.6s on the 830-pg G220; provenance-scoped chunk identity (8 keys), dense embeddings background; exact 5/50 MiB tiers; PrivateGPT (`@8ac84e3c`) reference-only, never its Celery/S3/Qdrant |
 | Onboarding + Agent.md (Phase 14) | references/onboarding-agent-md.md | `Agent.md` = per-identity filesystem profile at protected user-role `messages[1]` (profile-first, then skills), NOT a 2nd system message; `messages[0]` byte-stable; Windows `MoveFileEx` atomic writes; Telegram onboarding = `LoopAgent` escalate-to-finish |
 | Adaptive reasoning (Slice 13) | references/adaptive-reasoning.md | SHIPPED granite tier classifier (90/92% @~10ms, `16cb5380`) + async centroid-refresh active-learning replaced the per-turn LLM router; tier sets `Reasoning.Effort` ONLY, **never `max_tokens`** (the 203-turn truncation disaster); AdaptThink≠AutoThink |
+| Reasoning-effort selector (Phase 37E) | references/reasoning-effort-selector.md | Per-turn composer effort control (off/low/mid/high/auto). OFF reliable on BOTH backends; **llama.cpp graduates** via `thinking_budget_tokens` (needs `--jinja`, NO `--reasoning-budget`; off=`enable_thinking:false`), **DeepSeek is on/off** (ignores `reasoning.max_tokens`, effort labels don't track). Aura's OpenRouter `reasoning:{effort}` object is **IGNORED by llama-server** → net-new llama.cpp wire branch in `buildWireReasoning`. Gradation fidelity is backend-dependent — do NOT promise uniform low/mid/high |
 | Tool-search + semindex | references/tool-search-semindex.md | Semantic `tool_search` ships EMBEDDING-PRIMARY (granite 384d cosine ~2× BM25, **no RRF, no ANN** to N=115) via ONE ~90-LOC `internal/semindex` Index that also does reasoning classification; re-embed on MCP mount (~7ms/tool) |
 | Local-LLM multimodal (Slice 13) | references/local-llm-multimodal.md | One pinned `llama.cpp:server-cuda` (≥2026-06-11) + gemma-4 E2B Q4 + MTP draft (n-max=2) + BF16 mmproj (CPU) does text+image+audio+video in 4 GB (peak 3392 MiB) where vLLM died; does NOT retire the 3-CPU-sidecar 9c stack |
 | FunctionGemma local FC (Slice 13) | references/functiongemma-local-fc.md | Base FunctionGemma-270M unusable on Aura tools (~8% top1, ~80% refusal) → Colab LoRA finetune mandatory; train safetensors not -GGUF; custom `<start_function_call>` parser needed (`--jinja` won't parse it); eval 074 **PENDING** operator Colab run |
@@ -259,4 +262,12 @@ SKILL.md, the CONNECT proxy, and bridge-patch.diff are preserved under `sources/
 - 087b-casbin-adapter-sql-stdlib
 - 088-casbin-rbac-domains-orgroles
 - 089-casbin-nethttp-management-api
+- 071-arcadedb-adopt-strategy
+- 090-turingdb-runtime-durability-fit
+- 091-turingdb-aura-cypher-compat
+- 092-turingdb-vector-graphrag-parity
+- 093-turingdb-llm-graph-access-path
+- 094-turingdb-memory-doc-e2e
+- 095-llama-cpp-reasoning-effort-wire-contract
+- 096-openrouter-reasoning-effort-wire-contract
 </metadata>
