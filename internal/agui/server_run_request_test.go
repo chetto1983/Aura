@@ -11,7 +11,7 @@ import (
 // struct and the inner ext-decode struct (the existing double-decode idiom), so handleRun
 // reads a populated req.Aura.Skill next to req.Aura.AttachmentIDs.
 func TestDecodeRunAgentRequest_Skill(t *testing.T) {
-	const body = `{"threadId":"t1","messages":[{"id":"m1","role":"user","content":"hi"}],"aura":{"attachment_ids":["a1"],"skill":"skill-creator"}}`
+	const body = `{"threadId":"t1","messages":[{"id":"m1","role":"user","content":"hi"}],"aura":{"attachment_ids":["a1"],"skill":"skill-creator","effort":"high"}}`
 
 	req, err := decodeRunAgentRequest(json.NewDecoder(strings.NewReader(body)))
 	if err != nil {
@@ -22,6 +22,10 @@ func TestDecodeRunAgentRequest_Skill(t *testing.T) {
 	}
 	if len(req.Aura.AttachmentIDs) != 1 || req.Aura.AttachmentIDs[0] != "a1" {
 		t.Fatalf("Aura.AttachmentIDs = %v, want [a1] (both fields decode together)", req.Aura.AttachmentIDs)
+	}
+	// 37E: the effort symbol rides the SAME aura envelope, decoding alongside skill/attachment_ids.
+	if req.Aura.Effort != "high" {
+		t.Fatalf("Aura.Effort = %q, want %q", req.Aura.Effort, "high")
 	}
 }
 
@@ -36,5 +40,9 @@ func TestDecodeRunAgentRequest_NoSkill(t *testing.T) {
 	}
 	if req.Aura.Skill != "" {
 		t.Fatalf("Aura.Skill = %q, want empty when aura.skill is absent", req.Aura.Skill)
+	}
+	// 37E: an absent aura.effort decodes to "" (handleRun then treats it as auto — no override).
+	if req.Aura.Effort != "" {
+		t.Fatalf("Aura.Effort = %q, want empty when aura.effort is absent", req.Aura.Effort)
 	}
 }

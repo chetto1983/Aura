@@ -10,12 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
-	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -141,6 +140,16 @@ type Server struct {
 	tts         ttsSynthesizer
 	stt         sttTranscriber
 	ttsMaxChars int
+
+	// reasoningCaps is the active model's advertised reasoning-effort set (37E / WEBMODEL-01,
+	// D-13), wired via SetReasoningCapabilitySource at the composition root. Stage-2 of
+	// handleRun's effort governance AND handleReasoningCapabilities both read it from its
+	// in-memory TTL cache — never a per-turn fetch. Nil ⇒ Stage-2 is skipped (a syntactically
+	// valid fixed level passes) and the endpoint returns the safe floor {auto,off} (never 503).
+	// reasoningBackend is the non-secret UI label ("openrouter"|"llamacpp"|"") the endpoint
+	// reports; it is injected alongside the source (llm.ReasoningTarget is known only at boot).
+	reasoningCaps    llm.ReasoningCapabilitySource
+	reasoningBackend string
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -172,6 +181,44 @@ func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
 // both routes answer 503 (a missing graph client must not abort serve boot). Kept off the
 // constructor so existing NewServer callers/tests stay unchanged (D-A2-02 narrow seam).
 func (s *Server) SetGraphView(gv GraphView) { s.graph = gv }
+
+// SetReasoningCapabilitySource wires the active model's reasoning-capability source (37E /
+// WEBMODEL-01, D-13) plus its non-secret backend label, both selected at boot by
+// llm.ReasoningTarget. It backs Stage-2 of the /agent/run effort governance AND the
+// GET /api/composer/reasoning-capabilities endpoint, which share the one in-memory TTL-cached
+// set (no per-turn fetch). Set by the daemon composition root after NewServer; a nil source
+// degrades to the safe floor {auto,off} (never 503), mirroring SetSettingsStore.
+func (s *Server) SetReasoningCapabilitySource(src llm.ReasoningCapabilitySource, backend string) {
+	s.reasoningCaps = src
+	s.reasoningBackend = backend
+}
+
+// parseEffortSymbol maps a Composer UI effort SYMBOL to the internal llm.ReasoningEffort,
+// returning (effort, isFixed, ok). It is the WEBMODEL-03 no-bypass gate (T-37E-06-ENUM): the
+// client sends ONLY one of the seven symbols, never a ReasoningConfig. "" and "auto" are valid
+// with no override (isFixed=false → today's adaptive path, D-04); off/low/mid/high/extra/max are
+// fixed levels — the UI symbols mid/extra/max translate to the internal medium/xhigh/max HERE —
+// and anything else is ok=false so handleRun returns 400 (enum-injection rejected).
+func parseEffortSymbol(symbol string) (effort llm.ReasoningEffort, isFixed, ok bool) {
+	switch symbol {
+	case "", "auto":
+		return "", false, true
+	case "off":
+		return llm.ReasoningEffortNone, true, true
+	case "low":
+		return llm.ReasoningEffortLow, true, true
+	case "mid":
+		return llm.ReasoningEffortMedium, true, true
+	case "high":
+		return llm.ReasoningEffortHigh, true, true
+	case "extra":
+		return llm.ReasoningEffortXHigh, true, true
+	case "max":
+		return llm.ReasoningEffortMax, true, true
+	default:
+		return "", false, false
+	}
+}
 
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
 // — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
@@ -319,6 +366,15 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "thread lookup failed", http.StatusInternalServerError)
 		return
 	}
+	// Two-stage reasoning-effort governance (37E / WEBMODEL-02/03, D-05/D-13) — placed AFTER the
+	// owner-scope gate so a foreign thread still 404s BEFORE any effort validation (isolation
+	// precedes governance, T-37E-06-ISO). On success ctx may carry a validated fixed override
+	// threaded into the runner, and the symbol is persisted owner-scoped; a rejected symbol has
+	// already written its 400 and we stop here.
+	var effortOK bool
+	if ctx, effortOK = s.applyReasoningEffort(ctx, w, in.ThreadID, req.Aura.Effort); !effortOK {
+		return
+	}
 	userMsg, err := lastUserMessage(in.Messages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -430,111 +486,6 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// streamSSE pumps the translated event stream to the client over SSE through a
-// cap-N buffered channel: the producer goroutine ranges the stream (the sole sender,
-// drop+WARN on a full buffer so it never blocks the Loop, T-12-09) while the handler
-// goroutine drains the channel onto the wire via the SDK writer. On client disconnect
-// (ctx.Done) both unwind — the producer stops yielding, the channel closes, the drain
-// loop returns (goleak-clean, Pitfall 4). A translated RUN_ERROR is sanitized at the
-// translator boundary already; sanitizeErr is the belt-and-suspenders for the pump's
-// own error frame.
-func (s *Server) streamSSE(ctx context.Context, w http.ResponseWriter, stream iter.Seq2[events.Event, error]) {
-	writer := sse.NewSSEWriter()
-	out := make(chan events.Event, s.bufferCap())
-	go func() {
-		defer close(out)
-		for ev, err := range stream {
-			if err != nil {
-				s.pumpSend(ctx, out, events.NewRunErrorEvent(sanitizeErr(err)))
-				return
-			}
-			if !s.pumpSend(ctx, out, ev) {
-				return
-			}
-		}
-	}()
-
-	flusher, _ := w.(http.Flusher)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case ev, ok := <-out:
-			if !ok {
-				return
-			}
-			ev = redactEvent(ev)
-			if err := writer.WriteEventWithType(ctx, w, ev, string(ev.Type())); err != nil {
-				return // client gone — let the producer drain via ctx (Pitfall 4)
-			}
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-	}
-}
-
-// pumpSend delivers one event to the SSE channel without ever blocking the producer
-// indefinitely: deliver if there is room, abort on ctx-cancel. A run-lifecycle frame
-// (RUN_STARTED/RUN_FINISHED/RUN_ERROR) that cannot fit falls back to a blocking send
-// (still abortable on ctx-cancel) so the terminal frame is never dropped — an AG-UI
-// consumer waits on RUN_FINISHED, and silently dropping it is a protocol violation, not
-// graceful degradation (WR-01). A non-lifecycle delta that cannot fit is DROPPED with a
-// WARN (T-12-09: the Loop must never stall on a slow client). Returns false only on
-// ctx-cancel so the producer unwinds and closes the channel.
-func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.Event) bool {
-	if isLifecycleFrame(ev.Type()) {
-		select {
-		case out <- ev:
-			return true
-		case <-ctx.Done():
-			return false
-		}
-	}
-	select {
-	case out <- ev:
-		return true
-	case <-ctx.Done():
-		return false
-	default:
-		recordSSEDropped()
-		slog.Warn("agui server: SSE client slow, dropping event", "type", ev.Type())
-		return true
-	}
-}
-
-// isLifecycleFrame reports whether an event is a protocol boundary frame that cannot
-// be dropped under backpressure. Dropping START/END/RESULT/CUSTOM/SNAPSHOT frames can
-// leave delivered deltas without their protocol parent, causing events.ValidateSequence
-// to reject the surviving sub-sequence. Shared by the SSE pump and in-process fanout.
-func isLifecycleFrame(t events.EventType) bool {
-	switch t {
-	case events.EventTypeRunStarted,
-		events.EventTypeRunFinished,
-		events.EventTypeRunError,
-		events.EventTypeTextMessageStart,
-		events.EventTypeTextMessageEnd,
-		events.EventTypeToolCallStart,
-		events.EventTypeToolCallEnd,
-		events.EventTypeToolCallResult,
-		events.EventTypeReasoningStart,
-		events.EventTypeReasoningMessageStart,
-		events.EventTypeReasoningMessageEnd,
-		events.EventTypeReasoningEnd,
-		events.EventTypeCustom,
-		events.EventTypeStateDelta,
-		events.EventTypeStateSnapshot:
-		return true
-	default:
-		return false
-	}
-}
-
-// bufferCap resolves the per-connection SSE channel cap, falling back to the fanout
-// default when the config knob is non-positive.
-func (s *Server) bufferCap() int {
-	if s.cfg.BufferCap > 0 {
-		return s.cfg.BufferCap
-	}
-	return fanoutBuffer
-}
+// The per-connection SSE pump (streamSSE / pumpSend / isLifecycleFrame / bufferCap) lives in
+// server_sse.go to keep this file — routing + the run/messages handlers + the 37E effort
+// governance — under the 600-LOC ceiling.

@@ -14,6 +14,12 @@ type runAgentRequest struct {
 		// to a body via the loader snapshot and applies Mechanism A; it is a loader key only,
 		// never a filesystem path (T-37D-02).
 		Skill string `json:"skill"`
+		// Effort is the optional per-turn reasoning-effort SYMBOL (37E / WEBMODEL-02, D-05):
+		// one of {auto,off,low,mid,high,extra,max} ("" == auto). handleRun two-stage-validates
+		// it (parseEffortSymbol enum + capability), threads a fixed level via
+		// runner.WithReasoningOverride, and persists the symbol owner-scoped. The client sends a
+		// symbol only, NEVER a raw ReasoningConfig — that is the WEBMODEL-03 no-bypass control.
+		Effort string `json:"effort"`
 	}
 }
 
@@ -30,6 +36,7 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 		Aura struct {
 			AttachmentIDs []string `json:"attachment_ids"`
 			Skill         string   `json:"skill"`
+			Effort        string   `json:"effort"`
 		} `json:"aura"`
 	}
 	if err := json.Unmarshal(raw, &ext); err != nil {
