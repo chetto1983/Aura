@@ -53,8 +53,11 @@ Fourth cockpit-web parity area from the voice/artifact/skill audit (37B artifact
   - **Server requirements** (document for 37E ops): llama-server must run WITH `--jinja` and WITHOUT `--reasoning-budget` (else per-request `thinking_budget_tokens` is locked out — llama.cpp discussion #21445).
   - **Local model:** unsloth `gemma-4-E2B-it-qat` UD-Q4_K_XL (2.44 GB, GPU-fit 3606/4096), NOT the base `mradermacher/gemma-4-E2B` Q4_K_S.
 
-### Honest backend reality + the token-budget fix (updated by spike 095)
-- **D-09:** With the **effort-STRING** approach, `low/medium` collapse to `high` on DeepSeek-V4 (probe-verified) — only off/on/auto would be distinct. **Spike 095 found the fix:** define the levels by **thinking-token budget**, which gives REAL gradation on BOTH backends — llama.cpp `thinking_budget_tokens` (proven monotonic) and OpenRouter `reasoning.max_tokens` (a real reasoning cap DeepSeek honors, unlike the collapsed effort label). **Recommendation for planning:** 37E defines `low/mid/high` as token budgets (e.g. the llama.cpp webui's 512/2048/8192, `max`=unlimited), mapped to `reasoning.max_tokens` on OpenRouter and `thinking_budget_tokens` on llama.cpp; the effort STRING becomes a secondary/fallback projection. This makes mid/high genuinely distinct, not cosmetic.
+### Honest backend reality — gradation is BACKEND-DEPENDENT (spikes 095 + 096, both VALIDATED live)
+- **D-09:** Reliable on every backend = **off vs. on vs. auto**. True **low/mid/high gradation is backend-dependent** — the two live probes disagree, so 37E must NOT assume a uniform model:
+  - **llama.cpp / local (spike 095):** `thinking_budget_tokens` gives REAL, monotonic gradation (webui Low 512 / Med 2048 / High 8192 / Max −1). Off = `chat_template_kwargs:{enable_thinking:false}`.
+  - **OpenRouter / DeepSeek-V4-Flash (spike 096):** gradation is **NOT reliable** — `effort` labels don't track (low 404 > high 303 > med 264 tok) and **`reasoning.max_tokens` is NOT honored as a hard cap** (256 budget → 330 reasoning tokens). The cloud path is effectively **on/off** (off = `reasoning:{effort:"none"}` or `{enabled:false}`; the model self-scales otherwise). **This REFUTES the earlier hope (deleted) that `reasoning.max_tokens` unifies both backends.** Aura's CURRENT OpenRouter shape already handles OFF — no OpenRouter wire change needed; only the llama.cpp branch (D-08) is net-new.
+  - **Planning + UAT implication (MANDATORY):** 37E's UI may present all levels, but the plan + UAT MUST state that low/mid/high fidelity is guaranteed only on backends that truly support it (local thinking-budget models; cloud models trained with effort levels e.g. GPT-OSS/o-series) — **NOT on the default DeepSeek-V4-Flash**, where the knobs are effectively on/off. Do not sell graduated effort as uniform.
 - **D-09a (level-set reconciliation — for planning):** the operator's llama.cpp reference UI shows **Off / Low / Medium / High / Max** (Max = unlimited budget), vs. the earlier locked `off/low/mid/high/auto` (D-02). "Max" (a budget) and "auto" (Aura's adaptive policy) are **different axes** — planning should confirm whether 37E ships off/low/mid/high/**auto**, adds **Max**, or both. Not re-decided here; flagged so the planner asks.
 
 ### Effort vs. visibility (constraint)
@@ -106,6 +109,7 @@ Fourth cockpit-web parity area from the voice/artifact/skill audit (37B artifact
 ### Live-proof harness (reasoning behavior ground truth)
 - `scripts/deepseek_reasoning_probe.py` + `internal/agent/prompt/adaptive_reasoning_live_e2e_test.go` — the source of D-03/D-09 claims (effort:none off-switch; low/med→high collapse on DeepSeek).
 - `.planning/spikes/095-llama-cpp-reasoning-effort-wire-contract/` (VALIDATED) — the llama.cpp per-request reasoning contract that resolves D-08: `enable_thinking:false` (off), `thinking_budget_tokens:N` (graduated), Aura's OpenRouter `reasoning:{effort}` object ignored. MUST read before planning the llama.cpp wire branch.
+- `.planning/spikes/096-openrouter-reasoning-effort-wire-contract/` (VALIDATED) — the OpenRouter/DeepSeek-V4 counterpart (D-09): OFF reliable (`effort:"none"` / `enabled:false`), but gradation NOT reliable (`reasoning.max_tokens` not a hard cap; effort labels don't track) → cloud path is on/off. MUST read before promising graduated effort.
 
 </canonical_refs>
 
