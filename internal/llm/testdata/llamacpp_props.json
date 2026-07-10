@@ -1,0 +1,21 @@
+{
+  "_note": "Fixture for GET {AURA_LLM_BASE_URL}/props on a spike-095-pinned llama-server (gemma-4-E2B-it-qat, --jinja). Field set (chat_template, chat_template_caps, modalities, default_generation_settings, model_path, total_slots, build_info) is the official llama.cpp server README /props schema [CITED: github.com/ggml-org/llama.cpp tools/server/README.md]. The EXACT chat_template_caps flag that signals thinking/reasoning support is UNDOCUMENTED and was not confirmable against a live server in this env, so this fixture is a constructed variant [ASSUMED-pending-live-capture]: chat_template_caps.supports_thinking is set to false to exercise the best-effort /props NARROWING path (Task 3 Row 2). The production code treats an explicit-false on any candidate flag name as a narrow-to-{none} signal, and TRUSTS the provider+ops-contract full set when the flag is absent/unknown/unreachable (never panics). The provider+ops-contract fallback is authoritative; /props is best-effort narrowing only.",
+  "model_path": "/models/gemma-4-E2B-it-qat.gguf",
+  "total_slots": 1,
+  "chat_template": "{{ bos_token }}{% for message in messages %}{{ '<start_of_turn>' + message['role'] + '\n' + message['content'] | trim + '<end_of_turn>\n' }}{% endfor %}",
+  "chat_template_caps": {
+    "supports_tools": true,
+    "supports_tool_calls": true,
+    "supports_tool_responses": true,
+    "supports_system_role": true,
+    "supports_parallel_tool_calls": false,
+    "supports_thinking": false
+  },
+  "modalities": {
+    "vision": false,
+    "audio": false
+  },
+  "media_marker": "",
+  "build_info": "b9999-spike095",
+  "is_sleeping": false
+}

@@ -1,0 +1,54 @@
+{
+  "_note": "Real-SHAPE fixture for GET https://openrouter.ai/api/v1/models. The data[].reasoning.{supported_efforts,default_effort,default_enabled,mandatory} + top-level supported_parameters nesting is operator-verified LIVE 2026-07-10 (37E-RESEARCH.md P2.2 A / 37E-CONTEXT.md D-13). No live re-capture was possible in this execution env (no OPENROUTER_API_KEY / no network), so the byte content is hand-built to the verified shape and TRIMMED to 3 models that exercise every parse branch. Two synthetic-for-test values are marked below: (1) the 'turbo' token on the graduated model is a deliberately-injected HOSTILE/unknown effort to prove the allowlist clamp drops it (Threat T-37E-05-UPSTREAM); (2) 'none' is listed on the mandatory model to prove the mandatory->strip-off path. Everything else is faithful to the verified /models shape. [ASSUMED-content; VERIFIED-shape]",
+  "data": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "name": "DeepSeek: DeepSeek V4 Flash",
+      "reasoning": {
+        "supported_efforts": ["turbo", "low", "medium", "high", "xhigh", "max"],
+        "default_effort": "high",
+        "default_enabled": true,
+        "mandatory": false
+      },
+      "supported_parameters": [
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "include_reasoning",
+        "reasoning_effort"
+      ]
+    },
+    {
+      "id": "openai/o4-mini",
+      "name": "OpenAI: o4 Mini",
+      "reasoning": {
+        "supported_efforts": ["none", "low", "medium", "high"],
+        "default_effort": "medium",
+        "default_enabled": true,
+        "mandatory": true
+      },
+      "supported_parameters": [
+        "max_tokens",
+        "temperature",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "reasoning_effort"
+      ]
+    },
+    {
+      "id": "meta-llama/llama-3.3-70b-instruct",
+      "name": "Meta: Llama 3.3 70B Instruct",
+      "supported_parameters": [
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "tools",
+        "tool_choice"
+      ]
+    }
+  ]
+}
