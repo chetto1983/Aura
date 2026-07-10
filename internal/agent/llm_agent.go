@@ -100,6 +100,13 @@ type LlmAgent struct {
 	// the per-turn LLM router round-trip; the LLM router remains the fallback.
 	classifier *prompt.ReasoningClassifier
 
+	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),
+	// threaded from runner.WithReasoningOverride via LlmAgentConfig. When non-empty the
+	// Run loop SKIPS adaptiveReasoningTier and forces req.Reasoning through
+	// BuildWithReasoningOverride on a reasoning target (OpenRouter OR llama.cpp, D-08);
+	// empty is "auto" — today's adaptive path runs byte-identical (D-04, zero regression).
+	reasoningOverride llm.ReasoningEffort
+
 	// sources is the per-run URL-keyed source registry (D-05): web_search/web_fetch
 	// results accumulate into it across the turn so the model sees ONE numbered
 	// [n] Title — url list, threaded into prompt.Budget.Sources (the tail-inject copy
@@ -261,7 +268,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				// untouched — the static citation convention lives in the system prompt.
 				Sources: a.sources.RenderSourceList(),
 			}
-			if !adaptiveTierSet {
+			// A FIXED per-turn override (37E) bypasses the adaptive classifier entirely
+			// (D-04/D-08): skip the reasoning-router round-trip so buildRequest can force
+			// the selected effort. Auto (empty override) runs the classifier UNCHANGED.
+			if a.reasoningOverride == "" && !adaptiveTierSet {
 				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
 				adaptiveTierSet = true
 			}
@@ -448,6 +458,13 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 // RenderToolDefs() per turn, QUAL-02/T7) is gone — and the chosen request is
 // byte-identical to the old branch's chosen request (D-01 parity).
 func (a *LlmAgent) buildRequest(budget prompt.Budget, tier prompt.ReasoningTier, tierOK bool) llm.Request {
+	// Fixed per-turn override (37E): force the selected effort and bypass the adaptive
+	// tier/plain selector. ApplyFixedReasoning gates on the generalized reasoning target
+	// (OpenRouter OR llama.cpp, D-08); off-target it no-ops, so a non-reasoning backend
+	// simply gets a plain build with the override inert.
+	if a.reasoningOverride != "" {
+		return a.builder.BuildWithReasoningOverride(a.history, a.registry, a.cfg.Provider, a.cfg, budget, a.reasoningOverride, a.activated)
+	}
 	if tierOK {
 		return a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier, a.activated)
 	}
