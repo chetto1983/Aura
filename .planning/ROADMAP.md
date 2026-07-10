@@ -543,7 +543,7 @@ Plans:
 
 #### Phase 37E: Composer Model & Reasoning-Effort Selector (INSERTED)
 
-**Goal:** Selezione per-turn di modello + reasoning-effort nel Composer (parità col "Opus 4.8 · Alto" di Claude), delimitata dai backend configurati: un selettore modello (popolato dai backend configurati, settings-scoped — nessuna lista hard-coded) + un selettore effort, con la scelta persistita per-conversazione. L'override è validato server-side contro l'allowlist dei backend configurati — mai un modo per aggiungere un modello fuori dalla governance. Quarta area di parità cockpit-web dall'audit voice/artifact/skill.
+**Goal:** Un selettore di reasoning-effort ("thinking") per-turno nel Composer (parità col controllo `off · low · mid · high · extra · max` di Claude più l'`auto` adattivo di Aura), che lascia all'utente scegliere quanto "pensa" l'agente sul prossimo turno. **Effort-only (D-01): il Composer NON espone un picker di modello** — la selezione del modello resta operator-scoped nella pagina Settings (`AURA_LLM_MODEL`, già shippata). I livelli mostrati sono **auto-detettati per modello attivo** (D-13), mai una lista hard-coded né un placebo (D-12); la scelta è persistita per-conversazione (`aura.conversations.metadata` jsonb, nessuna migration — D-06) e ripristinata alla riapertura. Quarta area di parità cockpit-web dall'audit voice/artifact/skill; scope ridotto da "modello + effort" a effort-only via l'amendment PRD-first di Wave 1 (37E-01, D-11).
 
 **Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
 
@@ -572,17 +572,17 @@ Plans:
 
 - [ ] 37E-07-PLAN.md — Wave 5: Composer capability-aware selector UI + hooks + en/it i18n + vitest/Playwright e2e
 
-**Depends on:** Phase 37D (il Composer e il suo contratto di invio del turn), la config dei backend LLM/OpenRouter (sorgente dell'allowlist modelli), le settings (default modello/effort odierno).
+**Depends on:** Phase 37D (il Composer e il suo contratto di invio del turn), il contratto reasoning provider-neutral di `internal/llm` (`ReasoningConfig`/`ReasoningEffort`), la sorgente di capability per-modello (OpenRouter `/models` `supported_efforts` per il cloud, llama.cpp `/props` + ops-contract per il locale), le settings (default effort `auto` odierno).
 
 **Success Criteria**:
 
-1. Il Composer espone un selettore modello popolato dai backend configurati (settings-scoped, nessuna lista hard-coded) + un selettore reasoning-effort; la scelta è persistita per-conversazione e ripristinata alla riapertura del thread.
-2. `/agent/run` accetta un override opzionale `(model, effort)` validato server-side contro l'allowlist dei backend configurati: un valore non-allowed → 400 (mai un modello arbitrario); assente → il default settings-based odierno, nessuna regressione.
-3. Nessun bypass della governance modelli — l'override sceglie tra modelli GIÀ permessi, non ne aggiunge; nessuna nuova sorgente di verità sui modelli. Unit + e2e; coverage ≥85%.
+1. Il Composer espone un selettore reasoning-effort i cui livelli sono **auto-detettati per modello attivo** (nessuna lista hard-coded, nessun placebo — D-12/D-13), dal set `auto·off·low·mid·high·extra·max`; la scelta è persistita per-conversazione (`conversations.metadata` jsonb, no migration — D-06) e ripristinata alla riapertura del thread.
+2. `/agent/run` accetta un override simbolico opzionale `effort`, validato server-side in **due stadi** (enum sintattico + capability contro i `supported_efforts` del modello attivo): un valore non-enum o non-advertised → 400; assente/`auto` → il default adattivo odierno, nessuna regressione. L'effort ha effetto su **OpenRouter E llama.cpp** (D-08).
+3. Nessun bypass della governance — il client invia un **simbolo**, mai un `ReasoningConfig`/budget grezzo; il server possiede la mappa simbolo→config e il capability-gate. Ogni livello mappa su un **vero knob wire spike-validato** (D-12), nessun campo fabbricato. Unit + e2e; coverage ≥85%. Caveat di fedeltà onesto (D-09): supporto advertised ≠ gradazione garantita — la fedeltà graduata è reale sui modelli locali budget-capable, mentre il DeepSeek-V4-Flash di default collassa low..max a on/off.
 
-**Design forks for discuss-phase:** (a) **sorgente della lista modelli** — un nuovo endpoint per-identity/settings-scoped che espone i backend configurati vs. riuso di una config/settings già servita al client; (b) **store per-conversazione** — WEBMODEL-01 richiede persistenza per-conversazione ma Phase 37C ha notato che "non esiste uno store di preferenze per-conv"; questa fase probabilmente lo introduce (nuova colonna/tabella vs. riuso di un campo `conversations` esistente) → fork di persistenza + migration; (c) **semantica effort** — mappatura dell'effort UI (Basso/Medio/Alto) al contratto per-request del backend (conferma architetturale WEBMODEL-03: il contratto LLM/OpenRouter supporta un override per-request PRIMA di pianificare).
+**Design forks (RESOLVED da 37E-CONTEXT + 37E-01 amendment):** (a) **selezione modello** — FUORI SCOPE (effort-only, D-01): niente endpoint di lista-modelli, niente override di modello; (b) **store per-conversazione** — RISOLTO a `aura.conversations.metadata` jsonb (la colonna esiste già in migration 0005, **nessuna migration** — D-06); (c) **semantica effort** — RISOLTA alla scala a 7 livelli capability-gated `auto·off·low·mid·high·extra·max` mappata su knob wire reali per entrambi i backend (OpenRouter `reasoning:{effort}` immutato; llama.cpp `chat_template_kwargs:{enable_thinking:false}` / `thinking_budget_tokens:512/2048/8192/16384/-1`, spike 095), con auto-detection della capability per-modello (D-13) e validazione a due stadi (D-05).
 
-**PRD-first:** richiede PRD-amendment (WEBMODEL-01..03) prima del codice; probabile migration per lo store di preferenza per-conversazione.
+**PRD-first:** richiede il PRD-amendment (WEBMODEL-01..03 effort-only + i requisiti effort-enum a due stadi + capability-auto-detection + real-knobs-only, D-11/D-12/D-13) prima del codice; **nessuna nuova migration** (persistenza sulla colonna `conversations.metadata` jsonb esistente, D-06).
 
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
 
