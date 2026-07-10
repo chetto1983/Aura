@@ -1,0 +1,136 @@
+{
+  "client_package_version": "1.35",
+  "container_image": "aura-turingdb-spike:1.35",
+  "final_daemon_logs_tail": "******* Turing DB\n    *** Copyright Turing Biosystems Ltd. All Rights Reserved.\n\n\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557     \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \n\u255a\u2550\u2550\u2588\u2588\u2554\u2550\u2550\u255d\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d     \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d    \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u255a\u2550\u255d    \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d     \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \n\nTuringDB - b5c5338ed9b6dc34f808f68bf7e4989d61a731ae - 08-07-2026 15:08:17\n\n[2026-07-09 09:22:05] [info] Starting TuringDB. Root directory: '/scratch/090-runtime-durability/db'\n[2026-07-09 09:22:05] [info] Creating graphs directory /scratch/090-runtime-durability/db/graphs\n[2026-07-09 09:22:05] [info] Creating vector directory /scratch/090-runtime-durability/db/vector\n[2026-07-09 09:22:05] [info] Creating extensions directory /scratch/090-runtime-durability/db/extensions\n[2026-07-09 09:22:05] [info] Loading graph default\n[2026-07-09 09:22:05] [error] Failed to load graph 'default' from /scratch/090-runtime-durability/db/graphs/default: Graph dump/load error: Graph does not exist\n[2026-07-09 09:22:05] [info] Dumping graph default\n[2026-07-09 09:22:05] [info] TuringDB started\n[2026-07-09 09:22:05] [info]   - Home directory: /scratch/090-runtime-durability/db\n[2026-07-09 09:22:05] [info]   - Server listening on address: 127.0.0.1:58147 (http)\n[2026-07-09 09:22:05] [info] Dumping graph aura090\n[2026-07-09 09:22:06] [info] Dumping graph aura090\n[2026-07-09 09:22:06] [info] Terminating server\n[2026-07-09 09:22:06] [info] Stopped TuringDB instance at /scratch/090-runtime-durability/db\n******* Turing DB\n    *** Copyright Turing Biosystems Ltd. All Rights Reserved.\n\n\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557     \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \n\u255a\u2550\u2550\u2588\u2588\u2554\u2550\u2550\u255d\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d     \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d    \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u255a\u2550\u255d    \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d     \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \n\nTuringDB - b5c5338ed9b6dc34f808f68bf7e4989d61a731ae - 08-07-2026 15:08:17\n\n[2026-07-09 09:22:07] [info] Starting TuringDB. Root directory: '/scratch/090-runtime-durability/db'\n[2026-07-09 09:22:07] [info] Loading graph default\n[2026-07-09 09:22:07] [info] TuringDB started\n[2026-07-09 09:22:07] [info]   - Home directory: /scratch/090-runtime-durability/db\n[2026-07-09 09:22:07] [info]   - Server listening on address: 127.0.0.1:42491 (http)\n[2026-07-09 09:22:07] [info] Loading graph aura090\n",
+  "first_daemon_logs_tail": "******* Turing DB\n    *** Copyright Turing Biosystems Ltd. All Rights Reserved.\n\n\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557     \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \n\u255a\u2550\u2550\u2588\u2588\u2554\u2550\u2550\u255d\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d     \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551    \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n   \u2588\u2588\u2551   \u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d    \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\n   \u255a\u2550\u255d    \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d     \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \n\nTuringDB - b5c5338ed9b6dc34f808f68bf7e4989d61a731ae - 08-07-2026 15:08:17\n\n[2026-07-09 09:22:05] [info] Starting TuringDB. Root directory: '/scratch/090-runtime-durability/db'\n[2026-07-09 09:22:05] [info] Creating graphs directory /scratch/090-runtime-durability/db/graphs\n[2026-07-09 09:22:05] [info] Creating vector directory /scratch/090-runtime-durability/db/vector\n[2026-07-09 09:22:05] [info] Creating extensions directory /scratch/090-runtime-durability/db/extensions\n[2026-07-09 09:22:05] [info] Loading graph default\n[2026-07-09 09:22:05] [error] Failed to load graph 'default' from /scratch/090-runtime-durability/db/graphs/default: Graph dump/load error: Graph does not exist\n[2026-07-09 09:22:05] [info] Dumping graph default\n[2026-07-09 09:22:05] [info] TuringDB started\n[2026-07-09 09:22:05] [info]   - Home directory: /scratch/090-runtime-durability/db\n[2026-07-09 09:22:05] [info]   - Server listening on address: 127.0.0.1:58147 (http)\n[2026-07-09 09:22:05] [info] Dumping graph aura090\n[2026-07-09 09:22:06] [info] Dumping graph aura090\n",
+  "id": "090-turingdb-runtime-durability-fit",
+  "results": [
+    {
+      "detail": {
+        "pid": 14,
+        "port": 58147
+      },
+      "elapsed_ms": 715.531,
+      "name": "start_turingdb_daemon",
+      "ok": true
+    },
+    {
+      "detail": [
+        {
+          "graphName": "aura090"
+        }
+      ],
+      "elapsed_ms": 187.11,
+      "name": "create_graph",
+      "ok": true
+    },
+    {
+      "detail": "aura090",
+      "elapsed_ms": 0.005,
+      "name": "set_graph",
+      "ok": true
+    },
+    {
+      "detail": {
+        "change": 0,
+        "marker": "aura090_1783588925"
+      },
+      "elapsed_ms": 426.342,
+      "name": "write_submit_runtime_node",
+      "ok": true
+    },
+    {
+      "detail": [
+        {
+          "n.id": 9001,
+          "n.marker": "aura090_1783588925",
+          "n.name": "aura-runtime"
+        }
+      ],
+      "elapsed_ms": 3.948,
+      "name": "read_runtime_node_before_restart",
+      "ok": true
+    },
+    {
+      "detail": [
+        {
+          "ids": 100,
+          "score": 0.0
+        },
+        {
+          "ids": 101,
+          "score": 2.0
+        }
+      ],
+      "elapsed_ms": 40.028,
+      "name": "create_load_search_vector_index",
+      "ok": true
+    },
+    {
+      "detail": {
+        "log_path": "/scratch/090-runtime-durability/db/server.log",
+        "process_returncode": 0,
+        "stop_returncode": 0,
+        "stopped": true
+      },
+      "elapsed_ms": 477.186,
+      "name": "stop_daemon_before_restart",
+      "ok": true
+    },
+    {
+      "detail": {
+        "pid": 69,
+        "port": 42491
+      },
+      "elapsed_ms": 543.16,
+      "name": "restart_daemon_same_volume",
+      "ok": true
+    },
+    {
+      "detail": {},
+      "elapsed_ms": 213.583,
+      "name": "load_graph_after_restart",
+      "ok": true
+    },
+    {
+      "detail": [
+        {
+          "n.id": 9001,
+          "n.marker": "aura090_1783588925",
+          "n.name": "aura-runtime"
+        }
+      ],
+      "elapsed_ms": 3.642,
+      "name": "read_runtime_node_after_restart",
+      "ok": true
+    },
+    {
+      "detail": [
+        {
+          "ids": 100,
+          "score": 0.0
+        },
+        {
+          "ids": 101,
+          "score": 2.0
+        }
+      ],
+      "elapsed_ms": 21.918,
+      "name": "search_vector_index_after_restart",
+      "ok": true
+    },
+    {
+      "detail": {
+        "log_path": "/scratch/090-runtime-durability/db/server.log",
+        "process_returncode": 0,
+        "stop_returncode": 0,
+        "stopped": true
+      },
+      "name": "cleanup_daemon",
+      "ok": true
+    }
+  ],
+  "scratch": "/scratch/090-runtime-durability",
+  "timestamp": "2026-07-09T09:22:08.177682+00:00",
+  "verdict": "VALIDATED"
+}
