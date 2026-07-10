@@ -76,9 +76,16 @@ type wireRequest struct {
 	Temperature float64        `json:"temperature"`
 	MaxTokens   int            `json:"max_tokens"`
 	Reasoning   *wireReasoning `json:"reasoning,omitempty"`
-	SessionID   string         `json:"session_id,omitempty"`
-	Stream      bool           `json:"stream"`
-	Provider    providerObj    `json:"provider"`
+	// ChatTemplateKwargs and ThinkingBudgetTokens are the llama-server per-request
+	// reasoning controls (spike 095). They are populated ONLY on a llama.cpp target
+	// (Reasoning is left nil there — llama-server ignores the OpenRouter object); on
+	// the OpenRouter path they stay nil and omitempty drops them, so that wire is
+	// byte-unchanged.
+	ChatTemplateKwargs   map[string]any `json:"chat_template_kwargs,omitempty"`
+	ThinkingBudgetTokens *int           `json:"thinking_budget_tokens,omitempty"`
+	SessionID            string         `json:"session_id,omitempty"`
+	Stream               bool           `json:"stream"`
+	Provider             providerObj    `json:"provider"`
 }
 
 type wireReasoning struct {
@@ -226,18 +233,27 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 	if choice == "none" {
 		tools = nil // omitempty drops the tools key → forces prose, no phantom tool-call-in-text
 	}
-	return wireRequest{
+	wire := wireRequest{
 		Model:       req.Model,
 		Messages:    req.Messages,
 		Tools:       tools,
 		ToolChoice:  choice,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
-		Reasoning:   buildWireReasoning(req.Reasoning),
 		SessionID:   req.SessionID,
 		Stream:      true,
 		Provider:    providerObj{DataCollection: "deny"},
 	}
+	// The reasoning projection is target-aware. llama-server ignores the OpenRouter
+	// reasoning:{...} object (spike 095), so it gets its own per-request fields and
+	// leaves Reasoning nil; OpenRouter (and any unrecognized target) keeps today's
+	// nested object UNCHANGED — xhigh/max serialize automatically via string(r.Effort).
+	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetLlamaCpp {
+		applyLlamaCppReasoning(&wire, req.Reasoning)
+	} else {
+		wire.Reasoning = buildWireReasoning(req.Reasoning)
+	}
+	return wire
 }
 
 func buildWireReasoning(r llm.ReasoningConfig) *wireReasoning {
@@ -251,3 +267,43 @@ func buildWireReasoning(r llm.ReasoningConfig) *wireReasoning {
 		Enabled:   r.Enabled,
 	}
 }
+
+// llama.cpp per-request thinking budgets in tokens, spike-095-validated live on
+// gemma-4-E2B-it-qat: Low/Mid/High mirror the llama.cpp webui, Extra sits between
+// High and unlimited, and Max=-1 is unlimited. They are FIXED consts selected by a
+// fixed effort symbol — no request-supplied N ever reaches the wire (T-37E-02-BUDGET)
+// — and are promotable to AURA_LLM_LLAMACPP_THINKING_BUDGET_* config later without a
+// contract change.
+const (
+	llamaCppBudgetLow   = 512
+	llamaCppBudgetMid   = 2048
+	llamaCppBudgetHigh  = 8192
+	llamaCppBudgetExtra = 16384
+	llamaCppBudgetMax   = -1
+)
+
+// applyLlamaCppReasoning translates the provider-neutral effort onto llama-server's
+// per-request fields (spike 095) and NEVER sets wire.Reasoning (the OpenRouter object
+// is a no-op on llama-server). OFF is the only off-switch — chat_template_kwargs:
+// {enable_thinking:false} (needs --jinja); a graduated effort maps to a fixed
+// thinking_budget_tokens; an empty effort (auto) emits no reasoning fields at all, so
+// llama.cpp's default thinking stays on. An effort outside the 37E set (e.g. minimal)
+// falls through untouched — a safe no-op, never a guessed budget.
+func applyLlamaCppReasoning(wire *wireRequest, r llm.ReasoningConfig) {
+	switch r.Effort {
+	case llm.ReasoningEffortNone:
+		wire.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
+	case llm.ReasoningEffortLow:
+		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetLow)
+	case llm.ReasoningEffortMedium:
+		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetMid)
+	case llm.ReasoningEffortHigh:
+		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetHigh)
+	case llm.ReasoningEffortXHigh:
+		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetExtra)
+	case llm.ReasoningEffortMax:
+		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetMax)
+	}
+}
+
+func intPtr(n int) *int { return &n }
