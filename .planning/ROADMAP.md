@@ -557,7 +557,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 37E-02-PLAN.md — Wave 2: llm effort engine (ReasoningEffortMax, neutral ReasoningTarget, AURA_LLM_PROVIDER, llama.cpp wire branch)
-- [ ] 37E-03-PLAN.md — Wave 2: per-conversation persistence (metadata jsonb, no migration; owner-scoped update + read projection)
+- [x] 37E-03-PLAN.md — Wave 2: per-conversation persistence (metadata jsonb, no migration; owner-scoped update + read projection)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
