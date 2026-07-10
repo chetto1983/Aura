@@ -20,6 +20,7 @@ must_haves:
     - "A neutral `llm.ReasoningTarget(provider,baseURL)` classifier positively identifies OpenRouter, llama.cpp, and none — keyed on Provider==\"llamacpp\" for the local path"
     - "The operator can select the backend via `AURA_LLM_PROVIDER` (env + settings)"
     - "On a llama.cpp target the wire emits `chat_template_kwargs:{enable_thinking:false}` (off) or `thinking_budget_tokens:512/2048/8192/16384/-1` (low/mid/high/extra/max) and NO OpenRouter reasoning object; on OpenRouter the wire is byte-unchanged"
+    - "The UI-level→wire mapping (D-03) is exhaustive and real-knob-only: off→none, low→low, mid→medium, high→high, extra→xhigh, max→max; no placebo level and no `reasoning.max_tokens` cap (D-12)"
   artifacts:
     - path: "internal/llm/reasoning_target.go"
       provides: "ReasoningTargetKind + ReasoningTarget(provider,baseURL)"

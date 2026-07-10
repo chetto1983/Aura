@@ -1,8 +1,8 @@
 ---
 phase: 37E
 slug: composer-model-reasoning-effort-selector-inserted
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-10
 ---
@@ -74,11 +74,11 @@ created: 2026-07-10
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (fixtures + fake source)
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies *(plan-checker confirmed across 37E-01..07)*
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (fixtures sequenced as 37E-05 Task 1 + fake `ReasoningCapabilitySource`)
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-07-10 (plan-checker Dimension-8 pass; `wave_0_complete` flips during execution when fixtures land)

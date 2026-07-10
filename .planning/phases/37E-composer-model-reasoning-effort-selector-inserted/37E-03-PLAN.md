@@ -18,6 +18,7 @@ must_haves:
     - "A conversation's chosen effort symbol writes to `aura.conversations.metadata` jsonb via an owner-scoped update (0 rows = not owned) — NO migration is added"
     - "Reopening a conversation surfaces the stored effort: `Conversation.ReasoningEffort` is populated from `metadata` (empty/absent → \"\", which hydrates as auto)"
     - "The agui `ConversationStore` interface exposes the effort update method"
+    - "New conversations with no persisted effort default to `auto` (D-07): the adaptive policy runs unchanged — zero regression for users who never touch the selector"
   artifacts:
     - path: "internal/db/queries/conversations.sql"
       provides: "UpdateConversationReasoningEffortForIdentity :execrows (jsonb_set)"
