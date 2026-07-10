@@ -133,6 +133,11 @@ type Request struct {
 type ReasoningEffort string
 
 const (
+	// ReasoningEffortMax is OpenRouter's own top effort token; it serializes 1:1 as
+	// `reasoning.effort:"max"` (spike 096) and backs the Composer's "max" UI level
+	// (D-02/D-09a). On llama.cpp the same UI level maps to an unlimited thinking
+	// budget at the wire layer, not to this string.
+	ReasoningEffortMax     ReasoningEffort = "max"
 	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
 	ReasoningEffortHigh    ReasoningEffort = "high"
 	ReasoningEffortMedium  ReasoningEffort = "medium"
