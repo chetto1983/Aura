@@ -45,11 +45,17 @@ Fourth cockpit-web parity area from the voice/artifact/skill audit (37B artifact
 ### Default (RESOLVED — user)
 - **D-07:** **New conversations default to `auto`** → identical to today's behavior (adaptive policy runs), so a user who never touches the selector sees zero change.
 
-### Multi-backend coverage (RESOLVED — user: "add on llama.cpp too")
-- **D-08:** The effort selector **must take effect on BOTH OpenRouter AND a local llama.cpp chat backend** — not just OpenRouter. Today `IsOpenRouterReasoningTarget` (`reasoning_policy.go:47`) gates `ApplyAdaptiveReasoning` to OpenRouter only, so on a local llama.cpp target `req.Reasoning` stays empty and the knob is a no-op. 37E must extend/generalize the reasoning-target recognition to include llama.cpp AND ensure the wire projection is correct for it. **Evidence-gated (see Architectural Verification below):** the exact llama.cpp per-request contract MUST be confirmed by the researcher before planning locks — the wire client currently emits OpenRouter's nested `reasoning:{effort}` object (`openai_compat/client.go:243 buildWireReasoning`), whereas llama-server may expect top-level `reasoning_effort` (OpenAI-standard) or `chat_template_kwargs:{enable_thinking}` (Qwen3-style toggle). A llama.cpp branch in the wire builder may be required.
+### Multi-backend coverage (RESOLVED — user: "add on llama.cpp too"; wire contract now SPIKE-VALIDATED)
+- **D-08:** The effort selector **must take effect on BOTH OpenRouter AND a local llama.cpp chat backend**. Today `IsOpenRouterReasoningTarget` (`reasoning_policy.go:47`) gates `ApplyAdaptiveReasoning` to OpenRouter only, so on a local llama.cpp target `req.Reasoning` stays empty and the knob is a no-op. 37E must generalize the reasoning-target recognition to include llama.cpp AND add a wire branch. **The llama.cpp per-request contract is now empirically settled by spike 095** (`.planning/spikes/095-llama-cpp-reasoning-effort-wire-contract/`, VALIDATED live on `gemma-4-E2B-it-qat`):
+  - **Aura's current OpenRouter `reasoning:{effort}` object is IGNORED by llama-server** — as are `reasoning:"off"` and top-level `reasoning_effort`. So `openai_compat`'s `buildWireReasoning` (`client.go:243`) MUST branch for llama.cpp.
+  - **OFF** → `chat_template_kwargs:{enable_thinking:false}` (only working off-switch).
+  - **Graduated** → `thinking_budget_tokens: N` (proven monotonic: 64→214B … 1024→full). llama.cpp's own webui uses Low=512 / Med=2048 / High=8192 / Max=-1 (unlimited).
+  - **Server requirements** (document for 37E ops): llama-server must run WITH `--jinja` and WITHOUT `--reasoning-budget` (else per-request `thinking_budget_tokens` is locked out — llama.cpp discussion #21445).
+  - **Local model:** unsloth `gemma-4-E2B-it-qat` UD-Q4_K_XL (2.44 GB, GPU-fit 3606/4096), NOT the base `mradermacher/gemma-4-E2B` Q4_K_S.
 
-### Honest backend reality (MUST surface — not a fork)
-- **D-09:** On the **current primary model (DeepSeek-V4 via OpenRouter)**, `low/medium` collapse to `high` server-side (probe-verified), so `low·mid·high` are **effectively the same gear today**; only **off vs. on vs. auto** are genuinely distinct. The five labels are kept for **provider-neutrality + forward-compat** with models that DON'T collapse (and for the llama.cpp path, D-08). Plans/UAT must state this so no one is surprised the mid/high distinction is invisible on DeepSeek.
+### Honest backend reality + the token-budget fix (updated by spike 095)
+- **D-09:** With the **effort-STRING** approach, `low/medium` collapse to `high` on DeepSeek-V4 (probe-verified) — only off/on/auto would be distinct. **Spike 095 found the fix:** define the levels by **thinking-token budget**, which gives REAL gradation on BOTH backends — llama.cpp `thinking_budget_tokens` (proven monotonic) and OpenRouter `reasoning.max_tokens` (a real reasoning cap DeepSeek honors, unlike the collapsed effort label). **Recommendation for planning:** 37E defines `low/mid/high` as token budgets (e.g. the llama.cpp webui's 512/2048/8192, `max`=unlimited), mapped to `reasoning.max_tokens` on OpenRouter and `thinking_budget_tokens` on llama.cpp; the effort STRING becomes a secondary/fallback projection. This makes mid/high genuinely distinct, not cosmetic.
+- **D-09a (level-set reconciliation — for planning):** the operator's llama.cpp reference UI shows **Off / Low / Medium / High / Max** (Max = unlimited budget), vs. the earlier locked `off/low/mid/high/auto` (D-02). "Max" (a budget) and "auto" (Aura's adaptive policy) are **different axes** — planning should confirm whether 37E ships off/low/mid/high/**auto**, adds **Max**, or both. Not re-decided here; flagged so the planner asks.
 
 ### Effort vs. visibility (constraint)
 - **D-10:** The selector controls **reasoning effort only**. Reasoning **visibility** (whether the CoT text streams to the UI) stays governed by `AURA_SHOW_REASONING` / the `exclude` flag — the selector must not touch it.
@@ -98,7 +104,8 @@ Fourth cockpit-web parity area from the voice/artifact/skill audit (37B artifact
 - `.planning/phases/37C-web-voice-lane-inserted/37C-CONTEXT.md` — the "no per-conv preference store exists" note (D-06 context) + setter-injection / degrade conventions.
 
 ### Live-proof harness (reasoning behavior ground truth)
-- `scripts/deepseek_reasoning_probe.py` + `internal/agent/prompt/adaptive_reasoning_live_e2e_test.go` — the source of D-03/D-09 claims (effort:none off-switch; low/med→high collapse). The llama.cpp path needs its own equivalent evidence (D-08).
+- `scripts/deepseek_reasoning_probe.py` + `internal/agent/prompt/adaptive_reasoning_live_e2e_test.go` — the source of D-03/D-09 claims (effort:none off-switch; low/med→high collapse on DeepSeek).
+- `.planning/spikes/095-llama-cpp-reasoning-effort-wire-contract/` (VALIDATED) — the llama.cpp per-request reasoning contract that resolves D-08: `enable_thinking:false` (off), `thinking_budget_tokens:N` (graduated), Aura's OpenRouter `reasoning:{effort}` object ignored. MUST read before planning the llama.cpp wire branch.
 
 </canonical_refs>
 
