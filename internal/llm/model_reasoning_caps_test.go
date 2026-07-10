@@ -398,3 +398,65 @@ func TestNewReasoningCapabilitySource(t *testing.T) {
 		t.Errorf("unrecognized target should select nil, got %T", src)
 	}
 }
+
+// TestClampEfforts pins the security-critical allowlist clamp (Threat
+// T-37E-05-UPSTREAM) as a pure function: unknown/hostile tokens are dropped, the
+// vocab survives order-preserved, and both empty-input and all-dropped yield nil so
+// the seam's "empty => detected=false" check is unambiguous.
+func TestClampEfforts(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want []ReasoningEffort
+	}{
+		{"nil input", nil, nil},
+		{"empty input", []string{}, nil},
+		{"all unknown dropped", []string{"turbo", "ultra", "", "minimal"}, nil},
+		{"case + whitespace normalized", []string{" HIGH ", "Low"}, []ReasoningEffort{ReasoningEffortHigh, ReasoningEffortLow}},
+		{
+			"mixed keeps vocab in order, drops hostile",
+			[]string{"none", "turbo", "low", "medium", "high", "xhigh", "max", "bogus"},
+			[]ReasoningEffort{ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh, ReasoningEffortXHigh, ReasoningEffortMax},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := clampEfforts(tc.in)
+			if !effortsEqual(got, tc.want) {
+				t.Errorf("clampEfforts(%v) = %v, want %v", tc.in, got, tc.want)
+			}
+			if tc.want == nil && got != nil {
+				t.Errorf("clampEfforts(%v) = %v, want nil (not empty slice)", tc.in, got)
+			}
+		})
+	}
+	// minimal is a real ReasoningEffort but NOT in OpenRouter's supported_efforts
+	// vocab, so it is deliberately dropped by the clamp.
+	if clampEffort("minimal") != "" {
+		t.Error("minimal must be dropped — not in the 37E allowlist")
+	}
+}
+
+// TestCapabilitySourceRequestBuildError covers the request-build failure branch: an
+// un-parseable BaseURL fails http.NewRequestWithContext before any transport call. The
+// OpenRouter source surfaces detected=false; the llama.cpp source falls back to the
+// full provider+ops-contract set (a /props build failure is not fatal).
+func TestCapabilitySourceRequestBuildError(t *testing.T) {
+	ctx := context.Background()
+	badURL := "http://\x7f-control-char" // DEL byte → net/url rejects the URL
+
+	orClient := NewModelCapabilityClient(Config{BaseURL: badURL, APIKey: "k"}, time.Hour)
+	if _, _, err := orClient.ReasoningCapabilityFor(ctx, "x"); err == nil {
+		t.Error("openrouter: un-parseable BaseURL should return a request-build error")
+	}
+
+	lc := newLlamaCppReasoningCaps(Config{Provider: "llamacpp", BaseURL: badURL})
+	eff, _, detected := lc.AllowedEfforts(ctx)
+	full := []ReasoningEffort{
+		ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortMedium,
+		ReasoningEffortHigh, ReasoningEffortXHigh, ReasoningEffortMax,
+	}
+	if !detected || !effortsEqual(eff, full) {
+		t.Errorf("llamacpp: /props build failure should keep the full set detected=true, got efforts=%v detected=%v", eff, detected)
+	}
+}
