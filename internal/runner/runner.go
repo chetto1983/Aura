@@ -549,19 +549,24 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 	// (D-03), never to the headless deny-with-guidance branch cron/swarm take.
 	boundedCtx = gateway.WithResponder(boundedCtx)
 	seed := stripLeadingSystem(history)
+	// Read the FIXED per-turn reasoning-effort override the run handler put on ctx
+	// (37E). Absent => zero effort => the agent's adaptive path runs unchanged (D-04);
+	// a fixed level bypasses the classifier and forces req.Reasoning (D-08).
+	reasoningEffort, _ := reasoningOverride(ctx)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:      r.client,
-		LLM:         r.cfg,
-		Registry:    r.registry,
-		PreviewCap:  r.previewCap,
-		RunDir:      r.runDir,
-		SessionID:   convID, // session_id == conversation_id (D-26)
-		Workspace:   r.workspace,
-		UserTurns:   seed,
-		Classifier:  r.classifier, // shared, anchors built once
-		Breaker:     r.breaker,    // shared process-lifetime breaker (B-05)
-		HookManager: r.hookManager,
-		Gateway:     r.gateway, // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
+		Client:            r.client,
+		LLM:               r.cfg,
+		Registry:          r.registry,
+		PreviewCap:        r.previewCap,
+		RunDir:            r.runDir,
+		SessionID:         convID, // session_id == conversation_id (D-26)
+		Workspace:         r.workspace,
+		UserTurns:         seed,
+		Classifier:        r.classifier, // shared, anchors built once
+		Breaker:           r.breaker,    // shared process-lifetime breaker (B-05)
+		HookManager:       r.hookManager,
+		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
+		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,
