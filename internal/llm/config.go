@@ -55,6 +55,7 @@ const (
 // stays the canonical third-party secret name (NOT renamed to AURA_*).
 const (
 	envAPIKey               = "OPENROUTER_API_KEY" //nolint:gosec // G101: env var NAME, not a credential
+	envProvider             = "AURA_LLM_PROVIDER"
 	envModel                = "AURA_LLM_MODEL"
 	envBaseURL              = "AURA_LLM_BASE_URL"
 	envTemperature          = "AURA_LLM_TEMPERATURE"
@@ -307,6 +308,9 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 // silent presence checks; numeric knobs are fail-fast on a set-but-malformed
 // value (an operator typo must not be silently absorbed into a default).
 func applyEnvOverrides(cfg *Config) error {
+	if v := os.Getenv(envProvider); v != "" {
+		cfg.Provider = v
+	}
 	if v := os.Getenv(envModel); v != "" {
 		cfg.Model = v
 	}

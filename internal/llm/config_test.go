@@ -16,6 +16,7 @@ func clearLLMEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
 		"OPENROUTER_API_KEY",
+		"AURA_LLM_PROVIDER",
 		"AURA_LLM_MODEL",
 		"AURA_LLM_BASE_URL",
 		"AURA_LLM_TEMPERATURE",
@@ -216,6 +217,40 @@ func TestConfigMalformedNumericEnv(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestConfigEnvProviderOverride locks the net-new AURA_LLM_PROVIDER env knob (OQ-1):
+// set → cfg.Provider takes the env value so llama.cpp is positively identifiable at
+// request time; unset → the built-in "openrouter" default is untouched (no regression).
+func TestConfigEnvProviderOverride(t *testing.T) {
+	t.Run("set_overrides_default", func(t *testing.T) {
+		isolateHome(t)
+		clearLLMEnv(t)
+		t.Setenv("OPENROUTER_API_KEY", "sk-test-provider")
+		t.Setenv("AURA_LLM_PROVIDER", "llamacpp")
+
+		cfg, err := llm.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Provider != "llamacpp" {
+			t.Errorf("Provider = %q, want llamacpp from AURA_LLM_PROVIDER", cfg.Provider)
+		}
+	})
+
+	t.Run("unset_keeps_default", func(t *testing.T) {
+		isolateHome(t)
+		clearLLMEnv(t)
+		t.Setenv("OPENROUTER_API_KEY", "sk-test-provider-default")
+
+		cfg, err := llm.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Provider != "openrouter" {
+			t.Errorf("Provider = %q, want the untouched openrouter default", cfg.Provider)
+		}
+	})
 }
 
 // TestConfigEnvNumericOverrides asserts every valid numeric env value overrides

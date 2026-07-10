@@ -31,6 +31,9 @@ func TestAllowed(t *testing.T) {
 	if _, ok := Allowed("AURA_RERANK_MODEL"); !ok {
 		t.Error("AURA_RERANK_MODEL should be allowed")
 	}
+	if m, ok := Allowed("AURA_LLM_PROVIDER"); !ok || m.Secret || m.Kind != KindString {
+		t.Errorf("AURA_LLM_PROVIDER should be an allowlisted non-secret string setting, got ok=%v meta=%+v", ok, m)
+	}
 	if m, ok := Allowed("TELEGRAM_BOT_TOKEN"); !ok || !m.Secret {
 		t.Errorf("TELEGRAM_BOT_TOKEN should be allowed + secret, got ok=%v meta=%+v", ok, m)
 	}
@@ -173,6 +176,7 @@ func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
 
 	for _, key := range []string{
 		"OPENROUTER_API_KEY",
+		"AURA_LLM_PROVIDER",
 		"AURA_LLM_MODEL",
 		"AURA_LLM_BASE_URL",
 		"AURA_LLM_TEMPERATURE",
