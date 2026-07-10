@@ -562,7 +562,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 37E-04-PLAN.md — Wave 3: override seam (ApplyFixedReasoning, BuildWithReasoningOverride, ctx WithReasoningOverride, skip-when-fixed)
-- [ ] 37E-05-PLAN.md — Wave 3: capability-detection subsystem (OpenRouter /models client + TTL cache, llama.cpp /props source, fixtures)
+- [x] 37E-05-PLAN.md — Wave 3: capability-detection subsystem (OpenRouter /models client + TTL cache, llama.cpp /props source, fixtures)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
