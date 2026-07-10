@@ -541,6 +541,24 @@ Plans:
 
 - [x] 37D-05-PLAN.md — [W4] Terminal gate: Playwright composer-skills e2e (8/8, aura.skill wire proof + new-chat/clear) + internal/webui/dist rebuild + coverage ≥85 (web vitest 92.6% + owned-surface Go 85.5%, internal/agui 86.8%)
 
+#### Phase 37E: Composer Model & Reasoning-Effort Selector (INSERTED)
+
+**Goal:** Selezione per-turn di modello + reasoning-effort nel Composer (parità col "Opus 4.8 · Alto" di Claude), delimitata dai backend configurati: un selettore modello (popolato dai backend configurati, settings-scoped — nessuna lista hard-coded) + un selettore effort, con la scelta persistita per-conversazione. L'override è validato server-side contro l'allowlist dei backend configurati — mai un modo per aggiungere un modello fuori dalla governance. Quarta area di parità cockpit-web dall'audit voice/artifact/skill.
+
+**Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
+
+**Depends on:** Phase 37D (il Composer e il suo contratto di invio del turn), la config dei backend LLM/OpenRouter (sorgente dell'allowlist modelli), le settings (default modello/effort odierno).
+
+**Success Criteria**:
+
+1. Il Composer espone un selettore modello popolato dai backend configurati (settings-scoped, nessuna lista hard-coded) + un selettore reasoning-effort; la scelta è persistita per-conversazione e ripristinata alla riapertura del thread.
+2. `/agent/run` accetta un override opzionale `(model, effort)` validato server-side contro l'allowlist dei backend configurati: un valore non-allowed → 400 (mai un modello arbitrario); assente → il default settings-based odierno, nessuna regressione.
+3. Nessun bypass della governance modelli — l'override sceglie tra modelli GIÀ permessi, non ne aggiunge; nessuna nuova sorgente di verità sui modelli. Unit + e2e; coverage ≥85%.
+
+**Design forks for discuss-phase:** (a) **sorgente della lista modelli** — un nuovo endpoint per-identity/settings-scoped che espone i backend configurati vs. riuso di una config/settings già servita al client; (b) **store per-conversazione** — WEBMODEL-01 richiede persistenza per-conversazione ma Phase 37C ha notato che "non esiste uno store di preferenze per-conv"; questa fase probabilmente lo introduce (nuova colonna/tabella vs. riuso di un campo `conversations` esistente) → fork di persistenza + migration; (c) **semantica effort** — mappatura dell'effort UI (Basso/Medio/Alto) al contratto per-request del backend (conferma architetturale WEBMODEL-03: il contratto LLM/OpenRouter supporta un override per-request PRIMA di pianificare).
+
+**PRD-first:** richiede PRD-amendment (WEBMODEL-01..03) prima del codice; probabile migration per lo store di preferenza per-conversazione.
+
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
 
 **Goal:** Condivisione/export di una conversazione o di un artifact (parità con "Condividi" + link di Claude), rispettando l'isolamento identità di Aura: export file o link condiviso autenticato, MAI una superficie pubblica non autenticata by-default.
