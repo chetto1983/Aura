@@ -178,4 +178,8 @@ No new npm packages (all deps already in web/package.json — RESEARCH Package L
 
 <output>
 Create `.planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-07-SUMMARY.md` when done.
+
+**PHASE-CLOSE STEP (this is the FINAL 37E plan — MANDATORY before the phase-close `git push`):** Per CLAUDE.md "QUALITY SNAPSHOT AT PHASE CLOSE", 37E touched `internal/llm`, `internal/agent`, `internal/agui`, `internal/conversations`, `internal/runner`, `internal/settings`, `cmd/aura`, and `web/src/chat`. Update `docs/aura-quality-snapshot.md`: for EVERY row whose CI-gate-path glob matches a file changed in this phase, bump `Last measured` to today and PREPEND a re-attestation note (a fresh measurement if the metric moved, else a metric-neutral justification naming exactly what changed and why the number cannot move — keep the prior notes as `Prior …`). Then verify LOCALLY FIRST — it MUST print `ok: … checked N row(s)` — with the exact CLAUDE.md invocation:
+`AURA_QUALITY_CHANGED_FILES="$(git diff --name-only origin/master..HEAD)" AURA_QUALITY_BASE_DATE="$(git log -1 --format=%cs origin/master)" bash scripts/quality_snapshot_gate.sh`
+The CI job `scripts/quality_snapshot_gate.sh` FAILS the phase-close push otherwise (PRD amendment #20). Do NOT push until this prints `ok`.
 </output>
