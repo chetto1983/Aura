@@ -84,9 +84,9 @@ Cockpit-web voice parity with Telegram, cloud-only (OpenRouter STT/TTS; no local
 
 A slash "/" menu in the Composer (parity with Claude's skill/command picker) to invoke/attach a skill inline, instead of only the admin Governance board. *(product gap — voice/artifact/skill audit)*
 
-- [ ] **WEBSKILL-01**: Typing "/" at the start of a Composer line opens a keyboard-filterable menu listing the skills available to the authenticated identity (via the governance skills API, identity-scoped) with ↑/↓/Enter/Esc and a per-row description. *(Phase 37D)*
-- [ ] **WEBSKILL-02**: Selecting an entry injects the skill into the turn per the existing runtime contract; no new source of truth for skills (reuses the governance API). *(Phase 37D)*
-- [ ] **WEBSKILL-03**: Accessible (ARIA combobox/listbox), preserves Composer paste/drop/Enter-to-send, degrades to a no-op when the skills API is empty/unreachable; unit + e2e; coverage ≥85%. *(Phase 37D)*
+- [x] **WEBSKILL-01**: Typing "/" at the start of a Composer line opens a keyboard-filterable menu listing the skills available to the authenticated identity (via the governance skills API, identity-scoped) with ↑/↓/Enter/Esc and a per-row description. *(Phase 37D)*
+- [x] **WEBSKILL-02**: Selecting an entry injects the skill into the turn per the existing runtime contract; no new source of truth for skills (reuses the governance API). *(Phase 37D)*
+- [x] **WEBSKILL-03**: Accessible (ARIA combobox/listbox), preserves Composer paste/drop/Enter-to-send, degrades to a no-op when the skills API is empty/unreachable; unit + e2e; coverage ≥85%. *(Phase 37D)*
 
 ### Composer Model & Reasoning-Effort Selector (WEBMODEL)
 

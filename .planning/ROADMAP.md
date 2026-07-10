@@ -521,7 +521,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -539,7 +539,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 37D-05-PLAN.md — [W4] Terminal gate: Playwright composer-skills e2e + internal/webui/dist rebuild + coverage >=85 (web vitest + owned-surface Go)
+- [x] 37D-05-PLAN.md — [W4] Terminal gate: Playwright composer-skills e2e (8/8, aura.skill wire proof + new-chat/clear) + internal/webui/dist rebuild + coverage ≥85 (web vitest 92.6% + owned-surface Go 85.5%, internal/agui 86.8%)
 
 #### Phase 37F: Conversation & Artifact Sharing / Export (INSERTED)
 
