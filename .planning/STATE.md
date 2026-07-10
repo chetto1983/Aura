@@ -2,19 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 37F
-current_phase_name: Conversation & Artifact Sharing / Export
 status: verifying
-stopped_at: 37D-03 complete (composer picker foundation — client + pure model + SkillPicker/SkillPill + en/it i18n)
-last_updated: "2026-07-10T06:03:26.228Z"
-last_activity: 2026-07-10
-last_activity_desc: Phase 37D complete, transitioned to Phase 37F
+stopped_at: Phase 37E context gathered (Composer reasoning-effort selector; effort-only, off/low/mid/high/auto; llama.cpp coverage)
+last_updated: "2026-07-10T14:14:25.311Z"
+last_activity: 2026-07-10 — Phase 37D complete, transitioned to Phase 37F
 progress:
-  total_phases: 17
+  total_phases: 18
   completed_phases: 11
   total_plans: 82
   completed_plans: 82
-  percent: 65
+  percent: 61
 ---
 
 # Project State
@@ -600,9 +597,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-10T01:20:00.000Z
-Stopped at: 37D-03 complete (composer picker foundation — client + pure model + SkillPicker/SkillPill + en/it i18n)
-Resume file: None
+Last session: 2026-07-10T14:14:25.283Z
+Stopped at: Phase 37E context gathered (Composer reasoning-effort selector; effort-only, off/low/mid/high/auto; llama.cpp coverage)
+Resume file: .planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-CONTEXT.md
 
 ## Operator Next Steps
 
