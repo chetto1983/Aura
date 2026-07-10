@@ -521,7 +521,7 @@ Plans:
 
 **PRD-first:** richiede PRD-amendment (WEBSKILL-01..03).
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -535,7 +535,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 37D-04-PLAN.md — [W3] Composer integration: / trigger + combobox keys/ARIA + pinned pill + quick actions (add-files/new-chat/clear) + skill carried on send
+- [x] 37D-04-PLAN.md — [W3] Composer integration: / trigger + combobox keys/ARIA + pinned pill + quick actions (add-files/new-chat/clear) + skill carried on send
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
