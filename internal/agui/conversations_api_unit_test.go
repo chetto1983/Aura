@@ -104,6 +104,10 @@ func (e *errConvStore) RenameForIdentity(context.Context, string, string, string
 	return 0, e.err
 }
 
+func (e *errConvStore) UpdateReasoningEffortForIdentity(context.Context, string, string, string) (int64, error) {
+	return 0, e.err
+}
+
 func convAPIServer(t *testing.T, store ConversationStore) *httptest.Server {
 	t.Helper()
 	// The DELETE route now goes through the runner's delete lifecycle (MUSR-05); wire the

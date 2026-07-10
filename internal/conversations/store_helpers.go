@@ -37,7 +37,28 @@ func conversationFromRow(r sqlc.AuraConversations) Conversation {
 	if r.CreatedAt.Valid {
 		c.CreatedAt = r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
+	c.ReasoningEffort = reasoningEffortFromMetadata(r.Metadata)
 	return c
+}
+
+// reasoningEffortFromMetadata defensively extracts the per-conversation effort symbol
+// from the aura.conversations.metadata jsonb (Phase 37E / D-06). nil/empty metadata,
+// malformed JSON, a non-object, or an object missing (or with a non-string)
+// reasoning_effort key all yield "" — which the frontend hydrates as auto (D-07). The
+// column is otherwise DROPPED by the projection, so a poisoned metadata value can never
+// panic the read path (T-37E-03-XSS: the value is surfaced as a controlled selector
+// symbol, never raw HTML; it is written only via parameterized jsonb_set upstream).
+func reasoningEffortFromMetadata(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var meta struct {
+		ReasoningEffort string `json:"reasoning_effort"`
+	}
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return ""
+	}
+	return meta.ReasoningEffort
 }
 
 // DisplayTitle renders the title for the CLI list: the set title, or the SPEC

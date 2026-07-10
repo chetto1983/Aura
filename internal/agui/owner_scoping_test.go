@@ -63,6 +63,10 @@ func (o *ownerConvStore) RenameForIdentity(_ context.Context, id, identity, _ st
 	return o.ownedRows(id, identity), nil
 }
 
+func (o *ownerConvStore) UpdateReasoningEffortForIdentity(_ context.Context, id, identity, _ string) (int64, error) {
+	return o.ownedRows(id, identity), nil
+}
+
 // TestConversationsAPI_ForeignReadIs404 proves a GET of another identity's conversation is
 // 404 (the read hides its existence — D-06).
 func TestConversationsAPI_ForeignReadIs404(t *testing.T) {

@@ -111,6 +111,10 @@ func (f *fakeConvStore) RenameForIdentity(context.Context, string, string, strin
 	return 1, nil
 }
 
+func (f *fakeConvStore) UpdateReasoningEffortForIdentity(context.Context, string, string, string) (int64, error) {
+	return 1, nil
+}
+
 // scriptedRunner is a fake Runner whose Turn replays a fixed *agent.Event slice and
 // whose SubmitAnswers records the resume map it was given. turnErr injects a turn-level
 // error (drives the RUN_ERROR path) for the redaction test.

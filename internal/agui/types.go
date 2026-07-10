@@ -47,6 +47,11 @@ type ConversationStore interface {
 	DeleteForIdentity(ctx context.Context, conversationID, identityID string) (int64, error)
 	UpdateStatusForIdentity(ctx context.Context, conversationID, identityID, status string) (int64, error)
 	RenameForIdentity(ctx context.Context, conversationID, identityID, title string) (int64, error)
+	// Phase 37E (WEBMODEL-01 / D-06) owner-scoped effort persistence: handleRun (plan 06)
+	// calls this to persist the per-conversation reasoning-effort symbol into the metadata
+	// jsonb (no migration). rows-affected==0 = the caller does not own the id. On the read
+	// side the value rides Conversation.ReasoningEffort (surfaced by conversationFromRow).
+	UpdateReasoningEffortForIdentity(ctx context.Context, conversationID, identityID, effort string) (int64, error)
 	// D-09 / CHAT-05 branch surface (plan 25-07). ListBranches enumerates the navigable
 	// branch leaves; ForkBranch writes a new sibling branch (edit-a-user-turn /
 	// regenerate) chained off the diverging turn's parent and returns the new leaf seq.

@@ -96,12 +96,16 @@ func New(pool *pgxpool.Pool, cfg Config) *Store {
 // the package boundary instead of the sqlc pgtype wrappers. Title is the rendered
 // title (NULL renders "(untitled <created_at>)" via DisplayTitle).
 type Conversation struct {
-	ID                string
-	Title             string // empty when the DB title is NULL
-	TitleSet          bool   // false when the DB title is NULL
-	IdentityID        string
-	Status            string
-	Model             string
+	ID         string
+	Title      string // empty when the DB title is NULL
+	TitleSet   bool   // false when the DB title is NULL
+	IdentityID string
+	Status     string
+	Model      string
+	// ReasoningEffort is the per-conversation effort symbol persisted in the metadata
+	// jsonb (Phase 37E / D-06); "" means absent → the frontend hydrates it as auto (the
+	// adaptive policy runs unchanged, D-07). Populated by conversationFromRow.
+	ReasoningEffort   string
 	TotalInputTokens  int64
 	TotalOutputTokens int64
 	TotalCachedTokens int64
