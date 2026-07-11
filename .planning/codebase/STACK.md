@@ -19,7 +19,7 @@
 **Environment:**
 - Go 1.26.4 toolchain (`go.mod` pins `go 1.26.4`; confirmed via `go version` → `go1.26.4 windows/amd64` in this dev environment)
 - Node.js `24.16.0` for the frontend (`.nvmrc`, `.node-version`, `web/package.json` engines `>=24.16.0 <25`)
-- npm `>=11 <12`, pinned `packageManager: npm@11.17.0` (`web/package.json`)
+- npm `>=11 <13` (npm 11 and 12 both supported), pinned `packageManager: npm@12.0.0`; `web/.npmrc` sets `allow-remote=root` so npm 12 can still fetch the xlsx SheetJS CDN tarball (`web/package.json`)
 - Docker / Docker Compose — primary deployment/runtime unit for the whole stack (Postgres, Neo4j, sidecars, reverse proxy)
 
 **Package Manager:**
