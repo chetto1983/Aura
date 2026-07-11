@@ -686,12 +686,12 @@ Plans:
 **Root cause (why this phase exists):** the 37D-05 coverage-gate DB-wipe footgun left the live operator (`dvdmarchetto@gmail.com`) with `identity_auth_links` + `telegram_accounts` rows but **no `identity_recovery` row** (recovery_rows=0). `LookupRecoveryByEmail` INNER-JOINs all three tables, so it returns zero rows → `ErrPasswordResetDenied` → forgot-password silently sends no code, and there is no offline recovery path → **permanent lockout**. This phase closes that class of footgun.
 **Requirements**: R1–R6 (locked in 43-SPEC.md — break-glass command, operator guard, password sourcing, recovery re-seed, forgot-password E2E, backend coverage)
 **Depends on:** Phase 36 (Multi-User Identity Isolation + Authula cutover — owns `authula.*`, `aura.identity_recovery`, the forgot-password flow, and `PasswordService`)
-**Plans:** 4 plans (3 waves)
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 43-01-PLAN.md — [wave 1] `internal/breakglass` pure logic: operator guard (`selectSoleOperator`, R2/D-11 active/deactivated rule) + password/Q&A sourcing (`Sourcer`, R3/D-03) + unit tests
+- [x] 43-01-PLAN.md — [wave 1] `internal/breakglass` pure logic: operator guard (`selectSoleOperator`, R2/D-11 active/deactivated rule) + password/Q&A sourcing (`Sourcer`, R3/D-03) + unit tests
 - [ ] 43-04-PLAN.md — [wave 1] Playwright `password-reset.spec.ts` happy + deny (mocked, generic-no-factor denial, R5/D-10)
 
 **Wave 2** *(blocked on Wave 1 completion)*
