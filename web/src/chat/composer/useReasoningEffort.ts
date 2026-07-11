@@ -30,7 +30,8 @@ export function useReasoningEffort(
   // — the adaptive default runs unchanged (D-07).
   if (hydratedKey !== threadId && (threadId.length === 0 || hydratedEffort !== undefined)) {
     setHydratedKey(threadId);
-    const next = hydratedEffort !== undefined && hydratedEffort.length > 0 ? hydratedEffort : 'auto';
+    const next =
+      hydratedEffort !== undefined && hydratedEffort.length > 0 ? hydratedEffort : 'auto';
     if (next !== effort) setEffort(next);
   }
 

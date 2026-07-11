@@ -60,7 +60,11 @@ export async function fetchReasoningCapabilities(): Promise<ReasoningCapabilitie
   try {
     const body = await getJSON<Partial<ReasoningCapabilities>>(REASONING_CAPABILITIES_PATH);
     if (body.levels === undefined || body.levels.length === 0) return REASONING_CAPABILITIES_FLOOR;
-    return { levels: body.levels, default: body.default ?? 'auto', detected: body.detected ?? false };
+    return {
+      levels: body.levels,
+      default: body.default ?? 'auto',
+      detected: body.detected ?? false,
+    };
   } catch {
     return REASONING_CAPABILITIES_FLOOR;
   }

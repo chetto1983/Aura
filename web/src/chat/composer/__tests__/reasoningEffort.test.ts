@@ -72,7 +72,9 @@ describe('fetchReasoningCapabilities', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
-        Promise.resolve(jsonResponse({ levels: ['auto', 'off', 'high'], default: 'auto', detected: true })),
+        Promise.resolve(
+          jsonResponse({ levels: ['auto', 'off', 'high'], default: 'auto', detected: true }),
+        ),
       ),
     );
     const caps = await fetchReasoningCapabilities();
