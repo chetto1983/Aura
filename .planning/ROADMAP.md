@@ -684,10 +684,13 @@ Plans:
 **Goal:** Add a host-only **break-glass operator recovery** path so a missing/wiped `aura.identity_recovery` row can never permanently lock the operator out of the cockpit: an `aura` CLI subcommand (running on the host = admin proof) that resets the operator password (reusing Authula's argon2 `PasswordService.Hash`), invalidates existing sessions, and re-seeds a missing `identity_recovery` row — the credential sourced from a prompt/env the operator supplies, never logged. Plus **end-to-end coverage of the forgot-password flow**: happy path (recovery configured → `/start` → security question → code [Telegram delivery mocked] → `/verify` → set new password → login) and the **deny path** (recovery row missing → generic denial, no factor leak), with backend unit/integration coverage of the new command and the deny branch.
 
 **Root cause (why this phase exists):** the 37D-05 coverage-gate DB-wipe footgun left the live operator (`dvdmarchetto@gmail.com`) with `identity_auth_links` + `telegram_accounts` rows but **no `identity_recovery` row** (recovery_rows=0). `LookupRecoveryByEmail` INNER-JOINs all three tables, so it returns zero rows → `ErrPasswordResetDenied` → forgot-password silently sends no code, and there is no offline recovery path → **permanent lockout**. This phase closes that class of footgun.
-**Requirements**: TBD (auth-recovery; to be catalogued in spec)
+**Requirements**: R1–R6 (locked in 43-SPEC.md — break-glass command, operator guard, password sourcing, recovery re-seed, forgot-password E2E, backend coverage)
 **Depends on:** Phase 36 (Multi-User Identity Isolation + Authula cutover — owns `authula.*`, `aura.identity_recovery`, the forgot-password flow, and `PasswordService`)
-**Plans:** 0 plans
+**Plans:** 4 plans (3 waves)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 43 to break down)
+- [ ] 43-01-PLAN.md — [wave 1] `internal/breakglass` pure logic: operator guard (`selectSoleOperator`, R2/D-11 active/deactivated rule) + password/Q&A sourcing (`Sourcer`, R3/D-03) + unit tests
+- [ ] 43-02-PLAN.md — [wave 2] offline Authula setter + `RecoverOperator` orchestrator (re-seed + neutral audit, D-01/D-02/D-04/D-06) + throwaway-DB `db_integration` test (R1/R4/R6, D-07/D-08) + `coverage_docker.sh` secret export (DC-1)
+- [ ] 43-03-PLAN.md — [wave 3] `cmd/aura` glue: `recover-operator` subcommand + `identity.go` dispatch (D-05) + `golang.org/x/term` direct promotion (R1/R3/R4)
+- [ ] 43-04-PLAN.md — [wave 1] Playwright `password-reset.spec.ts` happy + deny (mocked, generic-no-factor denial, R5/D-10)
