@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 43
 current_phase_name: operator-break-glass-recovery-and-forgot-password-e2e
 status: executing
-stopped_at: Phase 43 context gathered
-last_updated: "2026-07-11T11:01:51.362Z"
+stopped_at: Completed 43-04-PLAN.md (forgot-password E2E)
+last_updated: "2026-07-11T11:23:54.890Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 43 execution started
 progress:
   total_phases: 19
   completed_phases: 12
   total_plans: 93
-  completed_plans: 90
+  completed_plans: 91
   percent: 63
 ---
 
@@ -329,6 +329,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37C P06 | 3h | 2 tasks | 8 files |
 | Phase 37D P01 | 11min | 1 tasks | 1 files |
 | Phase 43 P01 | 23min | 2 tasks | 4 files |
+| Phase 43 P04 | 15min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -570,6 +571,8 @@ Recent decisions affecting current work:
 - [Phase 37D]: 37D-01 pinned-skill = Mechanism A: server prepends the exact useAuthorityFrame+body via the existing TurnWithModelUserMessage seam (zero runner change, no new agent tool, no new skills source of truth); Mechanism B (forced first tool call) rejected. Pinned name rides the existing aura.skill run envelope
 - [Phase ?]: 43-01: locked the D-11 active/deactivated operator-resolution rule in internal/breakglass.selectSoleOperator (count active kind='user' for the >1 refusal; a lone deactivated operator is recoverable)
 - [Phase ?]: 43-01: Sourcer.Source sources password + recovery Q&A via injectable seams (env / --generate / hidden prompt), rejecting conflict/non-TTY/empty before any Secrets; the only secret emission is one --generate Stdout line
+- [Phase 43]: 43-04: forgot-password E2E (web/e2e/password-reset.spec.ts) is fully page.route-mocked (D-10) — happy + deny driven from the UNAUTHENTICATED LoginPage 'Forgot password?' with zero dependency on the Go break-glass command; /api/auth/config is mocked (bootstrap_available:false) so the reset entry renders deterministically.
+- [Phase 43]: 43-04 deny no-leak: body.innerHTML() must exclude the backend factor identifiers identity_recovery/telegram_accounts (only neutral 'Telegram' brand copy allowed) — proves the panel never reveals which recovery factor is missing (R5/T-43-04).
 
 ### Pending Todos
 
@@ -614,9 +617,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-11T11:00:56.126Z
-Stopped at: Phase 43 context gathered
-Resume file: .planning/phases/43-operator-break-glass-recovery-and-forgot-password-e2e/43-CONTEXT.md
+Last session: 2026-07-11T11:22:05.252Z
+Stopped at: Completed 43-04-PLAN.md (forgot-password E2E)
+Resume file: None
 
 ## Operator Next Steps
 
