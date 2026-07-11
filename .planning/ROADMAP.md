@@ -678,3 +678,16 @@ Plans:
 | v0.0.0 Substrate | 0–21 (24 phases) | 144/144 | ✅ Shipped | 2026-06-15 |
 | v1.0.0 Aura Deep Search Web Cockpit | 22–30 (9 phases) | 45/45 | ✅ Shipped | 2026-06-29 |
 | v2.0.0 Industrial Hardening & Multi-User Production | 31–42 (13 phases, incl. 37A) | 0/— | 🔨 In planning | — |
+
+### Phase 43: Operator break-glass recovery and forgot-password E2E
+
+**Goal:** Add a host-only **break-glass operator recovery** path so a missing/wiped `aura.identity_recovery` row can never permanently lock the operator out of the cockpit: an `aura` CLI subcommand (running on the host = admin proof) that resets the operator password (reusing Authula's argon2 `PasswordService.Hash`), invalidates existing sessions, and re-seeds a missing `identity_recovery` row — the credential sourced from a prompt/env the operator supplies, never logged. Plus **end-to-end coverage of the forgot-password flow**: happy path (recovery configured → `/start` → security question → code [Telegram delivery mocked] → `/verify` → set new password → login) and the **deny path** (recovery row missing → generic denial, no factor leak), with backend unit/integration coverage of the new command and the deny branch.
+
+**Root cause (why this phase exists):** the 37D-05 coverage-gate DB-wipe footgun left the live operator (`dvdmarchetto@gmail.com`) with `identity_auth_links` + `telegram_accounts` rows but **no `identity_recovery` row** (recovery_rows=0). `LookupRecoveryByEmail` INNER-JOINs all three tables, so it returns zero rows → `ErrPasswordResetDenied` → forgot-password silently sends no code, and there is no offline recovery path → **permanent lockout**. This phase closes that class of footgun.
+**Requirements**: TBD (auth-recovery; to be catalogued in spec)
+**Depends on:** Phase 36 (Multi-User Identity Isolation + Authula cutover — owns `authula.*`, `aura.identity_recovery`, the forgot-password flow, and `PasswordService`)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 43 to break down)
