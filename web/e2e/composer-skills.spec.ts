@@ -178,9 +178,12 @@ test.describe('cockpit composer skill-picker — open→filter→select→pill�
     domAssertions += 1;
 
     // 2) FILTER: '/creator' narrows to EXACTLY the one matching skill — no command matches
-    // 'creator', and pdf-extract's name/description does not contain it.
+    // 'creator', and pdf-extract's name/description does not contain it. Scope the count to
+    // the skill-picker listbox: the 37E reasoning-effort control is a sibling native <select>
+    // whose <option> children also expose role="option", so a page-wide getByRole('option')
+    // would additionally count the effort levels (auto/…) and inflate the count.
     await composer.fill('/creator');
-    await expect(page.getByRole('option')).toHaveCount(1);
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(1);
     await expect(page.getByRole('option', { name: new RegExp(SKILL_NAME) })).toBeVisible();
     await expect(page.getByRole('option', { name: /pdf-extract/ })).toHaveCount(0);
     domAssertions += 1;
