@@ -547,7 +547,7 @@ Plans:
 
 **Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
 
-**Plans:** 7 plans in 5 waves (single phase; effort-only per D-01, reconciled by 37E-01)
+**Plans:** 6/7 plans executed
 
 Plans:
 **Wave 1**
@@ -566,7 +566,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 37E-06-PLAN.md — Wave 4: two-stage /agent/run validation + GET /api/composer/reasoning-capabilities + composition wiring
+- [x] 37E-06-PLAN.md — Wave 4: two-stage /agent/run validation + GET /api/composer/reasoning-capabilities + composition wiring
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
