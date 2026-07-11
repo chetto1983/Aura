@@ -5,16 +5,16 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37E
 current_phase_name: composer-model-reasoning-effort-selector-inserted
 status: executing
-stopped_at: Phase 37E-05 model reasoning-CAPABILITY DETECTION complete (ModelCapabilityClient — TTL-cached defensive OpenRouter /models fetch + strict allowlist clamp; llamaCppReasoningCaps — provider+ops-contract with best-effort /props narrowing; ReasoningCapabilitySource neutral seam + NewReasoningCapabilitySource boot selector by llm.ReasoningTarget; detected=false safe floor on any failure; zero network in CI via injected RoundTripper + fixtures)
-last_updated: "2026-07-11T05:51:07.952Z"
+stopped_at: Phase 43 context gathered
+last_updated: "2026-07-11T09:16:33.364Z"
 last_activity: 2026-07-10
 last_activity_desc: Phase 37E-05 capability detection complete (ModelCapabilityClient TTL cache + allowlist clamp; llamaCppReasoningCaps provider+ops-contract + /props narrowing; ReasoningCapabilitySource seam + NewReasoningCapabilitySource selector; D-13 auto-detect, D-12 no-placebo, safe-floor detected=false; owned-surface 94.5%, zero network in CI)
 progress:
-  total_phases: 18
-  completed_phases: 11
+  total_phases: 19
+  completed_phases: 12
   total_plans: 89
-  completed_plans: 88
-  percent: 61
+  completed_plans: 89
+  percent: 63
 ---
 
 # Project State
@@ -611,9 +611,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-10T21:13:00.000Z
-Stopped at: Phase 37E-05 capability detection complete (3 atomic commits 42fe6d2e/936c6f59/61c12c6d + hardening 19dbf827) — Wave-3 done; next 37E-06 wires the source into the /agent/run validator + capability endpoint (Wave-4)
-Resume file: .planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-05-SUMMARY.md
+Last session: 2026-07-11T09:16:33.342Z
+Stopped at: Phase 43 context gathered
+Resume file: .planning/phases/43-operator-break-glass-recovery-and-forgot-password-e2e/43-CONTEXT.md
 
 ## Operator Next Steps
 
