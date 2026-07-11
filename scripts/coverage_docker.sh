@@ -32,6 +32,19 @@ if [ -z "$PGPW" ] || [ -z "$NEOPW" ]; then
   exit 3
 fi
 
+# AURA_AUTHULA_SECRET — the internal/breakglass db_integration test constructs
+# webauth.New (Authula), which REQUIRES a 64-hex secret and t.Fatals under CI=true when
+# unset (no-skip-as-green). Export it from .env; fall back to the 64-hex CI dummy — a
+# fresh throwaway `authula` schema is self-consistent with any valid 64-hex secret, so
+# unlike PGPW/NEOPW this is NOT hard-FATAL (DC-1 local gap; ci.yml:18 already sets it
+# workflow-level, so NO ci.yml edit). AURA_AUTHULA_DATABASE_URL stays unset → the test
+# derives its throwaway DSN from AURA_DB_URL.
+AURA_AUTHULA_SECRET="$(read_secret AURA_AUTHULA_SECRET)"
+if [ -z "$AURA_AUTHULA_SECRET" ]; then
+  AURA_AUTHULA_SECRET="00000000000000000000000000000000000000000000000000000000000000a1"
+fi
+export AURA_AUTHULA_SECRET
+
 # --- Isolated coverage database (anti-footgun) --------------------------------
 # The db_integration tier TRUNCATEs/DELETEs shared tables on setup. Pointing it at a
 # live personal deployment's `aura` DB DESTROYS auth data (operator identity + the
