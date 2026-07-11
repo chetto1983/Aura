@@ -5,16 +5,16 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 43
 current_phase_name: operator-break-glass-recovery-and-forgot-password-e2e
 status: executing
-stopped_at: Completed 43-02-PLAN.md (offline break-glass setter + RecoverOperator + throwaway-DB db_integration proof)
-last_updated: "2026-07-11T11:53:41Z"
+stopped_at: Completed 43-03-PLAN.md (recover-operator CLI glue) — phase 43 all 4 plans complete
+last_updated: "2026-07-11T12:24:01.444Z"
 last_activity: 2026-07-11
-last_activity_desc: Completed 43-02 (break-glass setter + orchestrator + db_integration proof; next 43-03 CLI glue)
+last_activity_desc: "Completed 43-03 (aura identity recover-operator CLI glue: flags → Sourcer → offline Authula → breakglass.RecoverOperator; go build/vet green, x/term promoted direct) — phase 43 all 4 plans executed, ready for /gsd-verify-work"
 progress:
   total_phases: 19
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 93
-  completed_plans: 92
-  percent: 63
+  completed_plans: 93
+  percent: 68
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 43 (operator-break-glass-recovery-and-forgot-password-e2e) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4 — all plans executed (terminal 43-03 done); phase ready for /gsd-verify-work
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
-Last activity: 2026-07-11 — Completed 43-02 (offline break-glass setter + RecoverOperator orchestrator + throwaway-DB db_integration proof, -race green on the live stack; next 43-03 CLI glue)
+Last activity: 2026-07-11 — Completed 43-03 (aura identity recover-operator CLI glue: flags → Sourcer → offline Authula → breakglass.RecoverOperator; go build/vet green, x/term promoted direct) — phase 43 all 4 plans executed, ready for /gsd-verify-work
 
 #### 37E-05 — model reasoning-CAPABILITY DETECTION (WEBMODEL-01/03 capability foundation, Wave-3, the phase's only net-new external-dependency vertical). **Sequential on master, 3 atomic commits `42fe6d2e` (Task 1, test — fixtures) / `936c6f59` (Task 2, feat) / `61c12c6d` (Task 3, feat) + `19dbf827` (coverage hardening, test) + this docs commit.** Auto-detects the ACTIVE model's advertised reasoning efforts (D-13) instead of the hard-coded placebo table (D-12), behind ONE neutral seam plan 06 reads. **Task 1 (`42fe6d2e`):** captured daemon-free fixtures `internal/llm/testdata/openrouter_models.json` (3 models exercising every branch: graduated set with an injected hostile `turbo` token, `mandatory:true`, no-reasoning) + `llamacpp_props.json` (`chat_template_caps.supports_thinking:false`); the /models nesting is operator-verified LIVE 2026-07-10, no live capture possible in-env (no key/network) so hand-built to the verified shape with an in-file `_note` marking the synthetic-for-test values + `[ASSUMED-pending-live-capture]` /props flag. **Task 2 (`936c6f59`, TDD):** `internal/llm/model_reasoning_caps.go` (271 LOC) — `ReasoningCapability` struct, `openRouterModelsResponse` DTO, `ModelCapabilityClient` (+`NewModelCapabilityClient`, `ReasoningCapabilityFor`): `GET {BaseURL}/models` over cfg's Bearer+attribution headers, body-size-capped `json.Decoder`, TTL cache keyed by `normalizeModelID` with an injectable clock — cold→warm(no 2nd call)→post-expiry re-fetch proven; STRICT allowlist clamp `{max,xhigh,high,medium,low,none}` DROPS unknown/hostile tokens (T-37E-05-UPSTREAM); `ReasoningCapabilitySource` interface (`AllowedEfforts(ctx)→efforts,default,detected`) + `openRouterReasoningCaps` (honors `mandatory`→strips off, surfaces `default_effort`); fetch-fail/absent/empty→`detected=false` (T-37E-05-AVAIL safe floor, never serves stale). **Task 3 (`61c12c6d`, TDD):** `internal/llm/llamacpp_caps.go` (170 LOC) — `llamaCppReasoningCaps` (explicit `Provider==llamacpp` widens to the full spike-095 graduated set `{none,low,medium,high,xhigh,max}` detected=true WITHOUT /props per OQ-4; best-effort `/props` probe narrows to `{none}` only on an explicit thinking-disabled flag; probed once + cached; unknown/absent/unreachable/malformed keeps the full set, never panics) + `NewReasoningCapabilitySource(cfg,ttl)` boot selector branching on `llm.ReasoningTarget` (openrouter→/models source, llamacpp→/props source, else nil→safe floor). **DEVIATIONS (2, both Rule 2 — missing critical):** (1) added the `NewReasoningCapabilitySource` boot seam (the objective's "selected by ReasoningTarget" — the exact linkage plan 06's `SetReasoningCapabilitySource` needs, else 06 re-implements the branch); (2) `19dbf827` — `TestClampEfforts` (pure-fn coverage of the named security control) + `TestCapabilitySourceRequestBuildError` raised `clampEfforts` 77.8%→100%, pkg 93.1%→94.5%. No architectural changes; NO new deps/migrations/env (reuses the configured OpenRouter key + base URL). **NO network in CI:** every HTTP call is an injected `http.RoundTripper` returning a captured testdata fixture. **VALIDATION:** `go test ./internal/llm/ -race` (WSL, CGO) `ok`; `go vet ./...`+`go build ./...` (Windows) exit 0; `golangci-lint` 0 issues; owned-surface 94.5% (≥85% floor); each new file <600 LOC (271/170). Exact downstream symbols for 37E-06: `ReasoningCapability`, `ReasoningCapabilitySource.AllowedEfforts`, `ModelCapabilityClient`, `NewReasoningCapabilitySource`, `openRouterReasoningCaps`/`llamaCppReasoningCaps`. **TDD gate:** Tasks 2+3 RED→GREEN observed in-tree (compile-fail RED both times), single atomic `feat` each because the lefthook pre-commit `go vet`+`golangci-lint` rejects a non-compiling RED-only commit (no `--no-verify`; same accommodation as 37E-02/04). **WEBMODEL-01/03 stay `[ ]`** (phase-spanning — capability FOUNDATION only; the endpoint 37E-06 + dynamic UI 37E-07 + two-stage validator make them user-observable; `requirements mark-complete` intentionally NOT run, matching 37E-01..04 precedent — the terminal plan 37E-07 owns the mark). SUMMARY: `.planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-05-SUMMARY.md`. Next: **37E-06** (two-stage `/agent/run` validation + `GET /api/composer/reasoning-capabilities` + composition wiring, Wave-4).
 
@@ -330,6 +330,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37D P01 | 11min | 1 tasks | 1 files |
 | Phase 43 P01 | 23min | 2 tasks | 4 files |
 | Phase 43 P04 | 15min | 1 tasks | 1 files |
+| Phase 43 P03 | 15min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -573,6 +574,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 43-01: Sourcer.Source sources password + recovery Q&A via injectable seams (env / --generate / hidden prompt), rejecting conflict/non-TTY/empty before any Secrets; the only secret emission is one --generate Stdout line
 - [Phase 43]: 43-04: forgot-password E2E (web/e2e/password-reset.spec.ts) is fully page.route-mocked (D-10) — happy + deny driven from the UNAUTHENTICATED LoginPage 'Forgot password?' with zero dependency on the Go break-glass command; /api/auth/config is mocked (bootstrap_available:false) so the reset entry renders deterministically.
 - [Phase 43]: 43-04 deny no-leak: body.innerHTML() must exclude the backend factor identifiers identity_recovery/telegram_accounts (only neutral 'Telegram' brand copy allowed) — proves the panel never reveals which recovery factor is missing (R5/T-43-04).
+- [Phase 43]: 43-03: shipped `aura identity recover-operator` as a hand-rolled (flag.FlagSet, NOT cobra) sibling subcommand of `recover <name>` (D-05); identityUsage disambiguates token-mint vs offline operator password reset + recovery re-seed; the recover <name> path is untouched — go.mod has no spf13/cobra; CLAUDE.md mandates the existing runIdentity switch-tree; recover-operator is a distinct mechanism, not a replacement
+- [Phase 43]: 43-03: the recover-operator glue wires real os.Getenv + golang.org/x/term seams into breakglass.Sourcer; the ONLY secret emission is the single --generate stdout line (ok-line/errors/argv stay secret-free); golang.org/x/term promoted indirect→direct with go.sum unchanged — T-43-01 secret discipline mirrors recovery.go:53-55; x/term already pinned in go.sum so the promotion adds no supply-chain surface (T-43-SC)
 
 ### Pending Todos
 
@@ -617,8 +620,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-11T11:22:05.252Z
-Stopped at: Completed 43-04-PLAN.md (forgot-password E2E)
+Last session: 2026-07-11T12:20:32.914Z
+Stopped at: Completed 43-03-PLAN.md (recover-operator CLI glue) — phase 43 all 4 plans complete
 Resume file: None
 
 ## Operator Next Steps
