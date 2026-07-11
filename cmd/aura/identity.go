@@ -26,7 +26,9 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 )
 
-const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>}"
+const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>|recover-operator [--generate] [--no-recovery]}\n" +
+	"  recover <name>   = mint a short-lived reset token to hand a user (recovery.go)\n" +
+	"  recover-operator = offline operator password reset + session-kill + recovery re-seed (recover_operator.go)"
 
 func runIdentity(args []string) {
 	if len(args) < 1 {
@@ -57,6 +59,8 @@ func runIdentity(args []string) {
 		identityRevoke(ctx, store, args[1:])
 	case "recover":
 		identityRecover(ctx, store, pool, args[1:])
+	case "recover-operator":
+		identityRecoverOperator(ctx, pool, cfg, args[1:])
 	default:
 		fmt.Fprintln(os.Stderr, identityUsage)
 		os.Exit(1)
