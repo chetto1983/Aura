@@ -689,8 +689,15 @@ Plans:
 **Plans:** 4 plans (3 waves)
 
 Plans:
+**Wave 1**
 
 - [ ] 43-01-PLAN.md — [wave 1] `internal/breakglass` pure logic: operator guard (`selectSoleOperator`, R2/D-11 active/deactivated rule) + password/Q&A sourcing (`Sourcer`, R3/D-03) + unit tests
-- [ ] 43-02-PLAN.md — [wave 2] offline Authula setter + `RecoverOperator` orchestrator (re-seed + neutral audit, D-01/D-02/D-04/D-06) + throwaway-DB `db_integration` test (R1/R4/R6, D-07/D-08) + `coverage_docker.sh` secret export (DC-1)
-- [ ] 43-03-PLAN.md — [wave 3] `cmd/aura` glue: `recover-operator` subcommand + `identity.go` dispatch (D-05) + `golang.org/x/term` direct promotion (R1/R3/R4)
 - [ ] 43-04-PLAN.md — [wave 1] Playwright `password-reset.spec.ts` happy + deny (mocked, generic-no-factor denial, R5/D-10)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 43-02-PLAN.md — [wave 2] offline Authula setter + `RecoverOperator` orchestrator (re-seed + neutral audit, D-01/D-02/D-04/D-06) + throwaway-DB `db_integration` test (R1/R4/R6, D-07/D-08) + `coverage_docker.sh` secret export (DC-1)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 43-03-PLAN.md — [wave 3] `cmd/aura` glue: `recover-operator` subcommand + `identity.go` dispatch (D-05) + `golang.org/x/term` direct promotion (R1/R3/R4)
