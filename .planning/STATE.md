@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 43
-current_phase_name: operator-break-glass-recovery-and-forgot-password-e2e
+current_phase: 37F
+current_phase_name: Conversation & Artifact Sharing / Export
 status: executing
 stopped_at: Completed 43-03-PLAN.md (recover-operator CLI glue) — phase 43 all 4 plans complete
-last_updated: "2026-07-11T12:24:01.444Z"
+last_updated: "2026-07-11T13:20:31.691Z"
 last_activity: 2026-07-11
-last_activity_desc: "Completed 43-03 (aura identity recover-operator CLI glue: flags → Sourcer → offline Authula → breakglass.RecoverOperator; go build/vet green, x/term promoted direct) — phase 43 all 4 plans executed, ready for /gsd-verify-work"
+last_activity_desc: Phase 37E complete, transitioned to Phase 37F
 progress:
   total_phases: 19
   completed_phases: 13
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 43 (operator-break-glass-recovery-and-forgot-password-e2e) — EXECUTING
-Plan: 4 of 4 — all plans executed (terminal 43-03 done); phase ready for /gsd-verify-work
+Phase: 37F — Conversation & Artifact Sharing / Export
+Plan: Not started
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
-Last activity: 2026-07-11 — Completed 43-03 (aura identity recover-operator CLI glue: flags → Sourcer → offline Authula → breakglass.RecoverOperator; go build/vet green, x/term promoted direct) — phase 43 all 4 plans executed, ready for /gsd-verify-work
+Last activity: 2026-07-11 — Phase 37E complete, transitioned to Phase 37F
 
 #### 37E-05 — model reasoning-CAPABILITY DETECTION (WEBMODEL-01/03 capability foundation, Wave-3, the phase's only net-new external-dependency vertical). **Sequential on master, 3 atomic commits `42fe6d2e` (Task 1, test — fixtures) / `936c6f59` (Task 2, feat) / `61c12c6d` (Task 3, feat) + `19dbf827` (coverage hardening, test) + this docs commit.** Auto-detects the ACTIVE model's advertised reasoning efforts (D-13) instead of the hard-coded placebo table (D-12), behind ONE neutral seam plan 06 reads. **Task 1 (`42fe6d2e`):** captured daemon-free fixtures `internal/llm/testdata/openrouter_models.json` (3 models exercising every branch: graduated set with an injected hostile `turbo` token, `mandatory:true`, no-reasoning) + `llamacpp_props.json` (`chat_template_caps.supports_thinking:false`); the /models nesting is operator-verified LIVE 2026-07-10, no live capture possible in-env (no key/network) so hand-built to the verified shape with an in-file `_note` marking the synthetic-for-test values + `[ASSUMED-pending-live-capture]` /props flag. **Task 2 (`936c6f59`, TDD):** `internal/llm/model_reasoning_caps.go` (271 LOC) — `ReasoningCapability` struct, `openRouterModelsResponse` DTO, `ModelCapabilityClient` (+`NewModelCapabilityClient`, `ReasoningCapabilityFor`): `GET {BaseURL}/models` over cfg's Bearer+attribution headers, body-size-capped `json.Decoder`, TTL cache keyed by `normalizeModelID` with an injectable clock — cold→warm(no 2nd call)→post-expiry re-fetch proven; STRICT allowlist clamp `{max,xhigh,high,medium,low,none}` DROPS unknown/hostile tokens (T-37E-05-UPSTREAM); `ReasoningCapabilitySource` interface (`AllowedEfforts(ctx)→efforts,default,detected`) + `openRouterReasoningCaps` (honors `mandatory`→strips off, surfaces `default_effort`); fetch-fail/absent/empty→`detected=false` (T-37E-05-AVAIL safe floor, never serves stale). **Task 3 (`61c12c6d`, TDD):** `internal/llm/llamacpp_caps.go` (170 LOC) — `llamaCppReasoningCaps` (explicit `Provider==llamacpp` widens to the full spike-095 graduated set `{none,low,medium,high,xhigh,max}` detected=true WITHOUT /props per OQ-4; best-effort `/props` probe narrows to `{none}` only on an explicit thinking-disabled flag; probed once + cached; unknown/absent/unreachable/malformed keeps the full set, never panics) + `NewReasoningCapabilitySource(cfg,ttl)` boot selector branching on `llm.ReasoningTarget` (openrouter→/models source, llamacpp→/props source, else nil→safe floor). **DEVIATIONS (2, both Rule 2 — missing critical):** (1) added the `NewReasoningCapabilitySource` boot seam (the objective's "selected by ReasoningTarget" — the exact linkage plan 06's `SetReasoningCapabilitySource` needs, else 06 re-implements the branch); (2) `19dbf827` — `TestClampEfforts` (pure-fn coverage of the named security control) + `TestCapabilitySourceRequestBuildError` raised `clampEfforts` 77.8%→100%, pkg 93.1%→94.5%. No architectural changes; NO new deps/migrations/env (reuses the configured OpenRouter key + base URL). **NO network in CI:** every HTTP call is an injected `http.RoundTripper` returning a captured testdata fixture. **VALIDATION:** `go test ./internal/llm/ -race` (WSL, CGO) `ok`; `go vet ./...`+`go build ./...` (Windows) exit 0; `golangci-lint` 0 issues; owned-surface 94.5% (≥85% floor); each new file <600 LOC (271/170). Exact downstream symbols for 37E-06: `ReasoningCapability`, `ReasoningCapabilitySource.AllowedEfforts`, `ModelCapabilityClient`, `NewReasoningCapabilitySource`, `openRouterReasoningCaps`/`llamaCppReasoningCaps`. **TDD gate:** Tasks 2+3 RED→GREEN observed in-tree (compile-fail RED both times), single atomic `feat` each because the lefthook pre-commit `go vet`+`golangci-lint` rejects a non-compiling RED-only commit (no `--no-verify`; same accommodation as 37E-02/04). **WEBMODEL-01/03 stay `[ ]`** (phase-spanning — capability FOUNDATION only; the endpoint 37E-06 + dynamic UI 37E-07 + two-stage validator make them user-observable; `requirements mark-complete` intentionally NOT run, matching 37E-01..04 precedent — the terminal plan 37E-07 owns the mark). SUMMARY: `.planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-05-SUMMARY.md`. Next: **37E-06** (two-stage `/agent/run` validation + `GET /api/composer/reasoning-capabilities` + composition wiring, Wave-4).
 
@@ -140,7 +140,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 172
+- Total plans completed: 183
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -178,6 +178,8 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 37 | 10 | - | - |
 | 37B | 8 | - | - |
 | 37D | 5 | - | - |
+| 43 | 4 | - | - |
+| 37E | 7 | - | - |
 
 **Recent Trend:**
 

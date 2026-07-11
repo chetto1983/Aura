@@ -1,9 +1,10 @@
 ---
 phase: 37E-composer-model-reasoning-effort-selector-inserted
 verified: 2026-07-11T06:04:55Z
-status: human_needed
+status: passed
 score: 10/10 must-haves verified
-overrides_applied: 0
+overrides_applied: 2
+closeout: "2026-07-11 — closed via operator override (precedent: Phase 37). All 10/10 automatable must-haves verified. The 2 human items — graduated-effort fidelity on a real backend (D-09) and the live OpenRouter /models capability fetch — are explicitly Manual-Only / out-of-CI per 37E-VALIDATION.md (they need live chat/OpenRouter models) and are DEFERRED as documented live-model spot-checks (2 overrides), not CI-blocking."
 human_verification:
   - test: "Graduated-effort output fidelity on a real backend (D-09)"
     expected: "OFF vs ON reliably differs on both backends; llama.cpp thinking_budget_tokens scales monotonically (low<mid<high<extra<unlimited) on the spike-095 pinned local model; DeepSeek-V4-Flash may legitimately collapse low..max to on/off — that is the DOCUMENTED honest-fidelity caveat, not a bug."

@@ -1,9 +1,10 @@
 ---
 phase: 43-operator-break-glass-recovery-and-forgot-password-e2e
 verified: 2026-07-11T15:10:00Z
-status: human_needed
+status: passed
 score: 7/7 must-haves verified (31/31 granular plan-level truths/prohibitions verified)
-overrides_applied: 0
+overrides_applied: 1
+closeout: "2026-07-11 — human item #1 (live forgot-password) VALIDATED end-to-end on the live aura DB: aura.identity_recovery re-seeded for the operator (question 'Come si chiama tua madre?'), then POST /api/auth/password-reset/start → HTTP 202 → real Telegram recovery code received by the operator (chetto983). LookupRecoveryByEmail no longer denies; the lockout is resolved. Human item #2 (WSL go-mutesting spot-check) deferred as documented Manual-Only (1 override)."
 human_verification:
   - test: "On the deploy host, with the live single-operator `aura` DB (currently 1 `kind='user'` identity, 0 `identity_recovery` rows — the real lockout), run `aura identity recover-operator` (choose a password source: hidden prompt, `AURA_RECOVERY_PASSWORD`, or `--generate`)."
     expected: "Exits 0, prints an `ok: recovered operator <id>; sessions invalidated; recovery re-seeded` line with no secret; the operator can log in with the new password; the forgot-password flow now sends a Telegram code again (LookupRecoveryByEmail no longer denies)."
