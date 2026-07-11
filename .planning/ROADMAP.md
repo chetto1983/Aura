@@ -547,7 +547,7 @@ Plans:
 
 **Requirements:** WEBMODEL-01, WEBMODEL-02, WEBMODEL-03
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
@@ -570,7 +570,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 37E-07-PLAN.md — Wave 5: Composer capability-aware selector UI + hooks + en/it i18n + vitest/Playwright e2e
+- [x] 37E-07-PLAN.md — Wave 5: Composer capability-aware selector UI + hooks + en/it i18n + vitest/Playwright e2e
 
 **Depends on:** Phase 37D (il Composer e il suo contratto di invio del turn), il contratto reasoning provider-neutral di `internal/llm` (`ReasoningConfig`/`ReasoningEffort`), la sorgente di capability per-modello (OpenRouter `/models` `supported_efforts` per il cloud, llama.cpp `/props` + ops-contract per il locale), le settings (default effort `auto` odierno).
 

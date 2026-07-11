@@ -6,7 +6,7 @@ current_phase: 37E
 current_phase_name: composer-model-reasoning-effort-selector-inserted
 status: executing
 stopped_at: Phase 37E-05 model reasoning-CAPABILITY DETECTION complete (ModelCapabilityClient — TTL-cached defensive OpenRouter /models fetch + strict allowlist clamp; llamaCppReasoningCaps — provider+ops-contract with best-effort /props narrowing; ReasoningCapabilitySource neutral seam + NewReasoningCapabilitySource boot selector by llm.ReasoningTarget; detected=false safe floor on any failure; zero network in CI via injected RoundTripper + fixtures)
-last_updated: "2026-07-11T05:22:45.197Z"
+last_updated: "2026-07-11T05:51:07.952Z"
 last_activity: 2026-07-10
 last_activity_desc: Phase 37E-05 capability detection complete (ModelCapabilityClient TTL cache + allowlist clamp; llamaCppReasoningCaps provider+ops-contract + /props narrowing; ReasoningCapabilitySource seam + NewReasoningCapabilitySource selector; D-13 auto-detect, D-12 no-placebo, safe-floor detected=false; owned-surface 94.5%, zero network in CI)
 progress:
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37E (composer-model-reasoning-effort-selector-inserted) — EXECUTING
-Plan: 6 of 7 complete — Wave-1 PRD gate + Wave-2 engine/persistence + Wave-3 (37E-04 override seam + 37E-05 capability detection) landed; next Wave-4 37E-06 (two-stage /agent/run enum+capability gate + GET /api/composer/reasoning-capabilities + composition wiring), then Wave-5 37E-07 (Composer UI)
+Plan: 7 of 7 complete — Wave-1 PRD gate + Wave-2 engine/persistence + Wave-3 (37E-04 override seam + 37E-05 capability detection) landed; next Wave-4 37E-06 (two-stage /agent/run enum+capability gate + GET /api/composer/reasoning-capabilities + composition wiring), then Wave-5 37E-07 (Composer UI)
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
