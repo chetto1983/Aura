@@ -30,10 +30,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/webui"
 )
 
@@ -553,4 +556,38 @@ func isPublicPasswordResetRoute(r *http.Request) bool {
 	default:
 		return false
 	}
+}
+
+// reasoningCapsTTL is the TTL of the 37E model reasoning-capability cache (D-13). The active
+// model's advertised effort set changes rarely and is boot-stable (AURA_LLM_MODEL applies only on
+// restart), so a long TTL keeps the endpoint + Stage-2 validator memory-served with at most
+// hours-long staleness — never a per-turn /models fetch.
+const reasoningCapsTTL = 6 * time.Hour
+
+// wireReasoningCapabilities injects the 37E reasoning-capability source (WEBMODEL-01 / D-13) into
+// the agui Server after NewServer (called from the serve composition root). The source is selected
+// by llm.ReasoningTarget: OpenRouter → a TTL-cached GET /models client; llama.cpp → the
+// provider+ops-contract source; any other backend → nil (the endpoint then degrades to the safe
+// floor {auto,off}). The composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run
+// effort governance share this one cached source (no per-turn fetch). The cache is warmed once in
+// a bounded fire-and-forget goroutine so the first hit is memory-served — serve boot NEVER blocks
+// on the (possibly slow or unreachable) /models fetch.
+func wireReasoningCapabilities(server *agui.Server, cfg llm.Config) {
+	src := llm.NewReasoningCapabilitySource(cfg, reasoningCapsTTL)
+	var backend string
+	switch llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) {
+	case llm.ReasoningTargetOpenRouter:
+		backend = "openrouter"
+	case llm.ReasoningTargetLlamaCpp:
+		backend = "llamacpp"
+	}
+	server.SetReasoningCapabilitySource(src, backend)
+	if src == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _, _ = src.AllowedEfforts(ctx) // warm the TTL cache; result intentionally discarded
+	}()
 }

@@ -25,10 +25,18 @@ import (
 
 const composerSkillsRoute = "GET /api/composer/skills"
 
-// registerComposerRoutes mounts the composer read route on the parent mux. It delegates to
-// the AG-UI handler (the route lives on Server.Mux) with NO capability gate — RequireAuth-only,
-// so an ordinary authenticated identity gets the global picker list (D-03). auth is accepted
-// for signature parity with registerVoiceRoutes/registerMUSRRoutes and future gated routes.
+// composerReasoningCapsRoute is the 37E composer reasoning-effort capability read route
+// (WEBMODEL-01 / D-13). Same RequireAuth-only posture as the skills route: any authenticated
+// identity reads the active model's advertised levels (the capability is operator-scoped and
+// process-global, so there is no per-identity leak — RequireAuth is the only gate needed).
+const composerReasoningCapsRoute = "GET /api/composer/reasoning-capabilities"
+
+// registerComposerRoutes mounts the composer read routes on the parent mux. They delegate to
+// the AG-UI handler (the routes live on Server.Mux) with NO capability gate — RequireAuth-only,
+// so an ordinary authenticated identity gets the global picker list + reasoning capabilities
+// (D-03). auth is accepted for signature parity with registerVoiceRoutes/registerMUSRRoutes and
+// future gated routes.
 func registerComposerRoutes(mux *http.ServeMux, aguiHandler http.Handler, _ agui.AuthDeps) {
 	mux.Handle(composerSkillsRoute, aguiHandler)
+	mux.Handle(composerReasoningCapsRoute, aguiHandler)
 }

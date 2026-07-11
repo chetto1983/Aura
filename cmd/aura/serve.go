@@ -428,6 +428,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// GET /api/voice/capabilities reports {false,false}); the Telegram opus path
 	// (multimodalConfig) is untouched.
 	wireVoiceProviders(aguiServer, chat.cfg)
+	// Wire the 37E reasoning-capability source (WEBMODEL-01/D-13): the active model's advertised
+	// effort set, selected by llm.ReasoningTarget and warmed once at boot (never blocking). It
+	// backs the composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run effort
+	// governance from one TTL cache; an unrecognized backend leaves it nil so both degrade to the
+	// safe floor {auto,off}.
+	wireReasoningCapabilities(aguiServer, chat.cfg.LLM)
 	// Wire the Phase-36 (MUSR-01 / D-26/D-28) admin/user-distinction stores: the per-user
 	// audit read (over the identity-keyed mcp_audit/skill_audit/tool_invocations ledgers)
 	// and the capability-management + roster seam (the SAME *identity.Store the auth
