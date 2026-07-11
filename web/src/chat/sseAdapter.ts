@@ -470,6 +470,7 @@ export interface StreamRunOptions {
   readonly attachmentIds?: readonly string[];
   /** 37D pinned skill name (a SkillPicker selection); folded into the same aura envelope. */
   readonly skill?: string;
+  readonly effort?: string; // 37E reasoning-effort symbol; folded into aura for fixed levels, omitted for 'auto'.
   /** Called after each frame folds into the turn (drives setMessages). */
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   /**
