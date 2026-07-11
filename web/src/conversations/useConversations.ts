@@ -25,6 +25,9 @@ export interface Conversation {
   readonly TotalCostUSD: number;
   /** RFC3339 created-at; drives recent-first ordering + the untitled fallback. */
   readonly CreatedAt: string;
+  /** 37E per-conversation reasoning-effort symbol persisted in metadata jsonb (empty/absent ⇒
+   * "" ⇒ the selector hydrates as auto). Populated by the store's conversationFromRow. */
+  readonly ReasoningEffort?: string;
 }
 
 /** GET /api/conversations/search hit — conversations.Store.SearchResult projection. */

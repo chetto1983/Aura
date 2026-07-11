@@ -1,5 +1,10 @@
 import { adminEn, adminIt } from './resources.admin';
-import { composerSkillPickerEn, composerSkillPickerIt } from './resources.composer';
+import {
+  composerEffortEn,
+  composerEffortIt,
+  composerSkillPickerEn,
+  composerSkillPickerIt,
+} from './resources.composer';
 import { displayEn, displayIt } from './resources.display';
 import { documentsEn, documentsIt } from './resources.documents';
 import { governanceEn, governanceIt } from './resources.governance';
@@ -67,6 +72,7 @@ export const resources = {
           sendAria: 'Send message',
           stop: 'Stop',
           stopAria: 'Stop the current response',
+          effort: composerEffortEn,
         },
         skillPicker: composerSkillPickerEn,
         attachments: {
@@ -355,6 +361,7 @@ export const resources = {
           sendAria: 'Invia messaggio',
           stop: 'Ferma',
           stopAria: 'Ferma la risposta in corso',
+          effort: composerEffortIt,
         },
         skillPicker: composerSkillPickerIt,
         attachments: {

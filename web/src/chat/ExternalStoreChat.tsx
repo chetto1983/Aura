@@ -9,12 +9,18 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import { CONVERSATION_KEY, CONVERSATION_ROT_EVENTS_KEY } from '../conversations/useConversations';
+import {
+  CONVERSATION_KEY,
+  CONVERSATION_ROT_EVENTS_KEY,
+  useConversation,
+} from '../conversations/useConversations';
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import { useComposerSkills } from './composer/useComposerSkills';
 import { usePinnedSkill } from './composer/usePinnedSkill';
+import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
+import { useReasoningEffort } from './composer/useReasoningEffort';
 import type { Asset } from './attachments/types';
 import { SourceExplorerProvider } from './displays/SourceExplorerContext';
 import { AssistantMessage, UserMessage } from './ExternalStoreChat_messages';
@@ -91,6 +97,12 @@ export function ExternalStoreChat({
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
+  // 37E reasoning-effort selector: the advertised levels (D-13, degrades to {auto,off}) and the
+  // per-conversation effort hydrated from the conversation DTO's persisted ReasoningEffort (37E-03),
+  // restored on reopen and NEVER cleared after send.
+  const reasoningCaps = useReasoningCapabilities();
+  const hydratedEffort = useConversation(threadId).data?.ReasoningEffort;
+  const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -149,6 +161,9 @@ export function ExternalStoreChat({
           userText: text,
           attachmentIds: readyAttachmentIds,
           ...(pinnedSkill !== null ? { skill: pinnedSkill.name } : {}),
+          // The effort rides every send (buildAuraRunBody omits 'auto'); unlike the pinned skill
+          // it is a per-conversation preference and is NOT cleared after the turn.
+          effort,
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
@@ -200,6 +215,7 @@ export function ExternalStoreChat({
       uploads,
       pinnedSkill,
       setPinnedSkill,
+      effort,
     ],
   );
 
@@ -510,6 +526,9 @@ export function ExternalStoreChat({
             pinnedSkill={pinnedSkill}
             onPinSkill={setPinnedSkill}
             onNewChat={onNewChat}
+            effort={effort}
+            effortLevels={reasoningCaps.levels}
+            onEffortChange={setEffort}
           />
         </ThreadPrimitive.Root>
       </SourceExplorerProvider>

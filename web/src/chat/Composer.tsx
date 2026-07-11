@@ -1,5 +1,5 @@
 import { useAui, useAuiState, ComposerPrimitive } from '@assistant-ui/react';
-import { ArrowUp, Mic, Paperclip, Square } from 'lucide-react';
+import { ArrowUp, ChevronDown, Mic, Paperclip, Square } from 'lucide-react';
 import {
   useEffect,
   useId,
@@ -52,6 +52,12 @@ interface ComposerProps {
   readonly pinnedSkill?: ComposerSkillRow | null;
   readonly onPinSkill?: (row: ComposerSkillRow | null) => void;
   readonly onNewChat?: (() => void | Promise<void>) | undefined;
+  /** 37E reasoning-effort selector: the currently selected symbol (default 'auto'). */
+  readonly effort?: string;
+  /** The advertised effort levels to render — auto-first, dynamic (D-13). Absent/empty ⇒ the
+   * selector is not rendered at all (e.g. the Composer mounted without the effort wiring). */
+  readonly effortLevels?: readonly string[];
+  readonly onEffortChange?: (effort: string) => void;
 }
 
 export interface ComposerDraftPrompt {
@@ -68,6 +74,9 @@ export function Composer({
   pinnedSkill,
   onPinSkill,
   onNewChat,
+  effort,
+  effortLevels,
+  onEffortChange,
 }: ComposerProps) {
   const { t } = useTranslation();
   const aui = useAui();
@@ -386,6 +395,31 @@ export function Composer({
           onKeyDown={handleComposerKeyDown}
           className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
+        {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
+            and screen-reader-correct out of the box, and separate from the textbox so it never
+            reclassifies the input or intercepts Enter-send / paste / drop. It renders ONLY the
+            model's advertised levels (effortLevels, auto-first); absent ⇒ not rendered. */}
+        {effortLevels !== undefined && effortLevels.length > 0 ? (
+          <div className="relative flex items-center self-center">
+            <select
+              aria-label={t('chat.composer.effort.ariaLabel')}
+              value={effort ?? 'auto'}
+              onChange={(event) => onEffortChange?.(event.currentTarget.value)}
+              className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
+            >
+              {effortLevels.map((level) => (
+                <option key={level} value={level}>
+                  {t(`chat.composer.effort.${level}`)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              data-icon
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
+            />
+          </div>
+        ) : null}
         {isRunning ? (
           <Button asChild size="icon" className="rounded-full">
             <ComposerPrimitive.Cancel aria-label={t('chat.composer.stopAria')}>

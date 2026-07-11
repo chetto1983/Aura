@@ -404,3 +404,57 @@ describe('Composer skill picker', () => {
     expect(onPinSkill).toHaveBeenCalledWith(null);
   });
 });
+
+describe('Composer reasoning-effort selector', () => {
+  it('renders EXACTLY the advertised levels (dynamic, D-13 — never the full 7)', () => {
+    render(
+      <Composer uploads={uploads()} effort="auto" effortLevels={['auto', 'off', 'high']} />,
+    );
+    const select = screen.getByRole('combobox', { name: 'Reasoning effort' });
+    const options = within(select).getAllByRole('option').map((o) => o.textContent);
+    expect(options).toEqual(['Auto', 'Off', 'High']);
+    // A level the model did NOT advertise is absent (not a placebo).
+    expect(within(select).queryByText('Medium')).toBeNull();
+    expect(within(select).queryByText('Max')).toBeNull();
+  });
+
+  it('shows the hydrated value as the current selection', () => {
+    render(
+      <Composer uploads={uploads()} effort="high" effortLevels={['auto', 'off', 'high']} />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Reasoning effort' })).toHaveProperty(
+      'value',
+      'high',
+    );
+  });
+
+  it('calls onEffortChange when a level is picked', () => {
+    const onEffortChange = vi.fn();
+    render(
+      <Composer
+        uploads={uploads()}
+        effort="auto"
+        effortLevels={['auto', 'off', 'high']}
+        onEffortChange={onEffortChange}
+      />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Reasoning effort' }), {
+      target: { value: 'high' },
+    });
+    expect(onEffortChange).toHaveBeenCalledWith('high');
+  });
+
+  it('is NOT rendered when no levels are provided (Composer mounted without the effort wiring)', () => {
+    render(<Composer uploads={uploads()} />);
+    expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).toBeNull();
+  });
+
+  it('does not reclassify the message input — the idle textbox is preserved (no regression)', () => {
+    render(
+      <Composer uploads={uploads()} effort="auto" effortLevels={['auto', 'off', 'high']} />,
+    );
+    // The selector is a separate combobox; the message input stays a plain textbox (shell.spec).
+    expect(screen.getByRole('textbox', { name: 'Ask Aura' })).toBeTruthy();
+    expect(screen.getByLabelText('Ask Aura').getAttribute('role')).toBeNull();
+  });
+});
