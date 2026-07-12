@@ -426,18 +426,25 @@ The ≥85% floor covers `internal/*` owned surface. **`cmd/aura` glue is exclude
 
 **Note:** A1–A4 are low-risk *confirmations*, not open design questions. No `[ASSUMED]` claim in this research affects a locked decision, a compliance/retention/security *requirement*, or a package choice (there are no new packages).
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three questions are resolved by the Phase-42 plan set (42-01 / 42-03 / 42-04); each inline **RESOLVED:** note below points at the deliverable that closes it.
 
 1. **Manual-path concurrency for `checkpoint_seq`.**
+   - **RESOLVED (42-04 Task 1 + 42-01 prohibition):** `Runner.Compact` captures `checkpoint_seq` from the `LatestTurnSeq` snapshot at load and passes it to `RecordCompaction` — never recomputed in-tx (the 42-01 prohibition). A turn racing in between load and persist lands at `seq > checkpoint_seq` and is *preserved*; the auto path additionally holds the per-conversation lock, so the manual-path edge is benign either way.
    - What we know: the auto path runs under the per-conversation lock (`turnLocked`), so `checkpoint_seq` = summarized-snapshot max(seq) is race-free. Manual `/compact` (CLI/REPL/Telegram/web) does not obviously hold that lock.
    - What's unclear: whether a concurrent live turn could append between `LoadHistory` and `RecordCompaction` on the manual path.
    - Recommendation: pass `checkpoint_seq = max(seq of summarized history)` into `RecordCompaction` (do **not** recompute in-tx). A concurrent turn then lands at `seq > checkpoint_seq` and is *preserved* in context (benign). Optionally acquire the per-conversation runner lock inside `Runner.Compact` for full serialization — cheap, and eliminates the edge entirely. Planner's call.
 
 2. **`AURA_COMPACT_MAX_OUTPUT_TOKENS` vs the 64 KB spill cap.**
+   - **RESOLVED (42-03 Task 1):** `AURA_COMPACT_MAX_OUTPUT_TOKENS` is clamped at parse time (pure `clampCompactMaxOutput` → `compactMaxOutputCeiling` ≈8192 tokens ≈32KB) provably under the 65536-byte `turnCapBytes` spill cap, so a summary turn can never exceed the tx-append cap. Defense-in-depth: a bypassed over-cap summary still fails cleanly as `ErrContentSpillUnsupported` inside the same `db.WithTx` (COMPACT-11), never silent corruption.
    - What we know: `AppendTurnTx` rejects >`turnCapBytes` (65536) content with `ErrContentSpillUnsupported`. 4096 tokens ≈ 16 KB (safe); ~16k tokens ≈ 64 KB (borderline).
    - Recommendation: document the ceiling, or clamp the effective summary budget so a summary can never exceed the tx-append cap. Default (4096) is safe; only an extreme operator override risks it.
 
-3. **Does `AURA_COMPACT_TIMEOUT_SEC` also bound the *manual* path?** SPEC Req#11 applies `WithTimeout` to the *auto* path explicitly; the manual path surfaces errors to the user. Recommendation: apply the same `WithTimeout` bound to `Runner.Compact` regardless of trigger (a hung manual compaction is still bad UX), with `WithoutCancel` reserved for the auto path (where a client disconnect must not corrupt the checkpoint). Planner to confirm the ctx-shaping per trigger.
+3. **Does `AURA_COMPACT_TIMEOUT_SEC` also bound the *manual* path?**
+   - **RESOLVED (42-04 Task 1):** `Runner.Compact` applies `context.WithTimeout(ctx, r.compactTimeout)` on *every* trigger (manual + auto); `context.WithoutCancel` wraps *only* the auto path (the relocated `loadTurnHistory`), where a client disconnect must not corrupt the checkpoint — so a hung manual compaction is bounded too.
+
+   SPEC Req#11 applies `WithTimeout` to the *auto* path explicitly; the manual path surfaces errors to the user. Recommendation: apply the same `WithTimeout` bound to `Runner.Compact` regardless of trigger (a hung manual compaction is still bad UX), with `WithoutCancel` reserved for the auto path (where a client disconnect must not corrupt the checkpoint). Planner to confirm the ctx-shaping per trigger.
 
 ## Sources
 
