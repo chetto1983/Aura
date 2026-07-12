@@ -671,6 +671,29 @@ Plans:
 3. Auto-fallback replaces the `ErrContextWindowExceeded` dead-end (behind `AURA_COMPACT_AUTO_ENABLED`, one bounded attempt, no retry loop); L1 microcompact and L2.5 hard-drop are unchanged.
 4. Compaction LLM cost attributed to conversation aggregates; `AURA_COMPACT_*` knobs validated; ≥85% coverage across the full tag matrix; `-race`/`goleak`/lint clean; every touched file ≤600 LOC.
 
+**Plans:** 7 plans across 4 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 42-01-PLAN.md — [wave 1] persistence + reconstruction: migration `0036_conversation_compactions` + sqlc, `context_compaction.go` marker/`truncateAtCheckpoint`, `store_compact.go` atomic `RecordCompaction`/`LatestCompaction`/`ListCompactions`, checkpoint-aware `context.go` reconstruction (COMPACT-03/04/10; D-01/02/03)
+- [ ] 42-02-PLAN.md — [wave 1] summarization core: `CompactConversation` + 9-section governance-hardened `compactSystemPrompt` (COMPACT-01/02; D-06) + D-07 L3-activation doc notes
+- [ ] 42-03-PLAN.md — [wave 1] config: 4 `AURA_COMPACT_*` knob-registry rows + `Config` parse (COMPACT-09; D-04 derived floor, D-05 model default)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 42-04-PLAN.md — [wave 2] shared `Runner.Compact` (5-trigger seam) + inline-bounded auto-fallback at the `ErrContextWindowExceeded` dead-end (COMPACT-08/10/11; D-04/05/08)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 42-05-PLAN.md — [wave 3] manual triggers CLI `aura chat compact` + REPL `dispatchSlash` + Telegram `/compact` + `chat_boot` Deps wiring (COMPACT-05/06/07/09)
+- [ ] 42-06-PLAN.md — [wave 3] AG-UI owner-gated `POST /compact` + `GET /compactions` routes (web 4th manual trigger + gauge read; D-08/D-09)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 42-07-PLAN.md — [wave 4] web React: `/compact` composer QuickCommand + visually-distinct `ContextBudgetGauge` compaction markers (D-08/D-09/D-10)
+
+
 ## Progress
 
 | Milestone | Phases | Plans | Status | Completed |
