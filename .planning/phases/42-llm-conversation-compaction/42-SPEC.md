@@ -100,11 +100,13 @@ Persistence primitives that exist and are reused: `conversations.Store.AppendTur
 - Auto-fallback in `runner.loadTurnHistory` at the `ErrContextWindowExceeded` seam (behind `AURA_COMPACT_AUTO_ENABLED`).
 - Config knobs `AURA_COMPACT_*` (registry + Config + `chat_boot` wiring), cost attribution to conversation aggregates, `conversation_compactions` audit.
 - Bounded/best-effort lifecycle (WithTimeout/WithoutCancel), atomic persist, `goleak`/`-race` clean.
+- **[AMENDED 2026-07-12] Web cockpit manual `/compact` trigger** — `/compact` QuickCommand in the composer (`web/src/chat/composer/SkillPicker.tsx` + `skillPickerModel.ts`) wired to a new AG-UI POST route (`internal/agui/conversations_api.go`, sibling to the rot-events handler) that runs the shared server-side compaction path and returns the token delta; the web cockpit becomes the 4th manual trigger surface (parity with CLI/REPL/Telegram, Req#5–7). See §Amendment 2026-07-12.
+- **[AMENDED 2026-07-12] Compaction markers on the context-budget gauge** — `GET /api/conversations/{id}/compactions` (thin `ListCompactions` wrapper) rendered as visually-distinct event markers on `web/src/chat/ContextBudgetGauge.tsx`, sibling to the existing `context_rot_events` (`pairs_dropped`) markers (D-11 parity). Read-path only. See §Amendment 2026-07-12.
 
 **Out of scope:**
 - **A new pre-L2.5 "L2.4" auto-compaction tier** (compact *before* the lossy hard-drop). Operator explicitly chose auto-fallback at the dead-end only; long conversations still lose oldest rounds to L2.5 first, and the manual `/compact` is the proactive tool to summarize before that loss. Documented as a known boundary, revisitable in a follow-on.
 - **Branch-leaf persistence** (migration 0017 `ForkBranch`) — the rejected alternative to checkpoint-watermark; branch semantics model alternate futures, not a replaced past.
-- **Web cockpit context-budget gauge marking compaction events** — `ListCompactions` exposes the data; the AG-UI/React surface is a separate frontend phase (parity with the `context_rot_events` gauge, D-11).
+- **Web cockpit compaction UI beyond the two amended-in surfaces above** (dedicated compaction-history panel, per-compaction summary preview/diff, undo) — the trigger + gauge markers are in; richer compaction UX stays a later frontend phase.
 - **Multimodal/image-turn summarization** — text turns only; image sidecars are summarized by reference, not re-described.
 - **Neo4j long-term memory integration** (spilling the summarized rounds into the agent-memory subgraph) — Phase 15 memory subsystem territory; not this phase.
 - **Automatic re-compaction of an already-compacted conversation on every overflow** beyond the single bounded auto-attempt per load (Req#8) — no compaction-of-a-compaction chaining in this phase.
@@ -159,8 +161,18 @@ Status: ✓ = met minimum. Open items for `/gsd-discuss-phase` (do not block the
 | 1     | Boundary Keeper | Deliverable format under PRD-first discipline?     | This GSD phase SPEC first → `/gsd-discuss-phase` → `/gsd-plan-phase`                 |
 | 1     | Researcher      | Is this a PRD deviation?                            | No — activates the L3 deferral documented in `04-SPEC.md` + PRD §1.8 OQ#3            |
 
+## Amendment 2026-07-12 (discuss-phase, operator-directed)
+
+`/gsd-discuss-phase 42` resolved the three open items (summary-turn role = `role='user'` + marker @ `messages[2]`; derived min-compact floor with no new knob; `AURA_COMPACT_MODEL` default `""` = same model as conversation) and made two additional decisions the operator directed:
+
+1. **Prompt schema refinement (Req#2):** adopt the newer 9-section Claude Code compaction schema (adds "All user messages" + "Errors and fixes" sections, verbatim preservation of user-stated security/safety constraints, and a "reply in TEXT ONLY, call no tools" guard) instead of the older 7-section `docs/compact_prompt.md` — an *adaptation* under Req#2, mitigating the "governance decay" failure mode. The Req#2 acceptance test extends from 7 → 9 section headers + the no-tools guard.
+
+2. **Frontend scope addition (SPEC boundary expansion):** operator directed frontend UI be included ("we must do also on frontend UI"). Two web cockpit surfaces move from Out-of-scope to In-scope (see Boundaries `[AMENDED 2026-07-12]`): the web manual `/compact` trigger and the compaction markers on `ContextBudgetGauge`. This is an operator-owned scope *addition*, documented here rather than via a full re-spec because it reuses shipped patterns (rot-events read-path + composer QuickCommand) and adds no new architecture. Richer compaction UI stays deferred.
+
+Full decision rationale + canonical refs + code_context: `42-CONTEXT.md` (D-01…D-10). PRD alignment unchanged — still activates the Phase-4 L3 deferral, not a PRD deviation (D-07).
+
 ---
 
 *Phase: 42-llm-conversation-compaction (PROVISIONAL number — place with `/gsd-phase`)*
-*Spec created: 2026-07-08*
-*Next step: `/gsd-discuss-phase 42` — implementation decisions (summary-turn role, min-compact floor, model default) before `/gsd-plan-phase`*
+*Spec created: 2026-07-08; amended 2026-07-12 (discuss-phase)*
+*Next step: `/gsd-plan-phase 42` — read amended Boundaries + §Amendment 2026-07-12 + 42-CONTEXT.md before planning*
