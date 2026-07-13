@@ -671,13 +671,13 @@ Plans:
 3. Structured non-authoritative summaries, typed content parts, recursive rebase, and separately governed durable memory pass authority, artifact, security, privacy, deletion, and rollback gates.
 4. CLI, REPL, Telegram, AG-UI, and accessible web surfaces share one coordinator; the 500+200 corpus meets every Section 17.13 threshold before deterministic staged activation.
 
-**Plans:** 2/10 plans executed
+**Plans:** 3/10 plans executed
 
 Plans:
 
 - [x] 42-01-PLAN.md — [wave 1 / slice 1] provider capabilities, exact budgets, semantic units, recent tail, L1 contracts, redacted shadow telemetry
 - [x] 42-02-PLAN.md — [wave 2 / slice 1] additive schema, distributed claims, immutable manifests, CAS pointer, deterministic reconstruction and bounded recovery
-- [ ] 42-03-PLAN.md — [wave 3 / slice 2] structured summarizer, authority ledger, adversarial validator, manual coordinator, preview and restore
+- [x] 42-03-PLAN.md — [wave 3 / slice 2] structured summarizer, authority ledger, adversarial validator, manual coordinator, preview and restore
 - [ ] 42-04-PLAN.md — [wave 4 / slice 3] typed content parts, artifact durability/reachability, provider projection and typed L1
 - [ ] 42-05-PLAN.md — [wave 5 / slices 4-5] atomic L2.4-before-L2.5 ladder, bounded overflow, recursive rebase, corruption recovery and canary controls
 - [ ] 42-06-PLAN.md — [wave 6 / slice 6] separate durable-memory privacy lifecycle and security review
