@@ -5384,3 +5384,8 @@ Distinzioni semantiche **non negoziabili**: knowledge + vectors → solo Neo4j (
 ```
 
 Questa nota va committata nello stesso commit di Slice 0.5 (sono accoppiate: codice + contract documentale insieme).
+# Industrial conversation context lifecycle (Phase 42)
+
+Phase 42 is governed by IC-01..IC-14 and Section 17 of `docs/superpowers/specs/2026-07-13-industrial-conversation-compaction-design.md`. It delivers provider capability preflight, exact budgets, semantic units and recent tail, proactive L2.4 before L2.5, distributed claim/out-of-transaction inference/serializable CAS finalize, branch manifests, safe structured summaries and authority ledger, typed multimodal references, recursive rebase, separate consent-bound durable memory, LKG recovery, common operator surfaces, and evidence-gated rollout.
+
+Legacy COMPACT plans 42-01..07 are retired as executable specifications; compatibility is additive and canonical turns remain immutable/readable. Old config is accepted only as activation-disabled bootstrap. Activation requires a complete adapter contract and persisted effective state; promotions require immutable numerical evidence and CAS. Rollback fences new claims, rejects stale finalization, and atomically restores the complete last-known-good snapshot across replicas and restart. Migrations are additive with tested down/up paths, and unobserved canary stages remain disabled.

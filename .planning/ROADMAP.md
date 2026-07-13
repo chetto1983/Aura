@@ -108,9 +108,9 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar)
   - Goal: drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
   - Success: (1) drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented); (2) scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill; (3) load + chaos harness runs in CI (no-skip-as-green) + capability-eval pass/fail report; (4) ADRs + release-readiness checklist + production-readiness evidence bundle → defensible 10/10.
-- [ ] **Phase 42: LLM Conversation Compaction** — `COMPACT-01..11` (`/compact` parity; activates Phase-4 deferred L3)
-  - Goal: LLM semantic compaction — manual `/compact` (CLI/REPL/Telegram) + auto-fallback at the context-overflow dead-end; non-destructive checkpoint-watermark persistence.
-  - Success: (1) manual `/compact` on all three channels reports the token delta, originals retained; (2) checkpoint-watermark (migration 0036) + byte-stable KV-cache prefix; (3) auto-fallback replaces the dead-end (bounded, behind a knob), L1/L2.5 unchanged; (4) cost attributed, `AURA_COMPACT_*` validated, ≥85% coverage.
+- [ ] **Phase 42: Industrial Conversation Compaction** — `IC-01..14`
+  - Goal: provider-portable context lifecycle with semantic-first compaction, immutable evidence, branch-aware recovery, typed artifacts, separated durable memory, operations surfaces, and measured rollout.
+  - Success: exact fail-closed budgets; L2.4-before-L2.5; durable claim/CAS checkpoints and bounded recovery; safe typed summaries/artifacts/memory; all surfaces; 500+200 evaluation corpus and staged rollback-gated rollout.
 
 > **Host-constrained / deferred-tier flag:** Phase 41's load/chaos + DR drills and any gVisor/`server_production` live tiers may carry the same NO-SKIP-AS-GREEN "deferred verification tier" pattern as v1.0.0's 6 deferred items, pending an adequate host (DGX Spark). Decided at the Phase-41/closeout boundary.
 >
@@ -656,42 +656,34 @@ Plans:
 3. A load + chaos harness runs in CI (no-skip-as-green) + a capability-eval pass/fail report.
 4. ADRs + a release-readiness checklist + a production-readiness evidence bundle → a defensible 10/10.
 
-#### Phase 42: LLM Conversation Compaction (`/compact` parity — Phase-4 deferred L3)
+#### Phase 42: Industrial Conversation Compaction
 
-**Goal:** Add LLM-driven semantic conversation compaction — the "L3" tier Phase 4 explicitly deferred. Manual `/compact` (CLI `aura chat compact <id>`, in-REPL `/compact`, Telegram `/compact`) plus auto-compaction at the `ErrContextWindowExceeded` dead-end, with non-destructive checkpoint-watermark persistence (a protected summary turn + `aura.conversation_compactions`; original turns retained for FTS + audit). Closes the last context-management parity gap with Claude Code.
+**Goal:** Deliver the complete provider-portable context lifecycle from the approved Section 17 design: compact before destructive loss, preserve immutable canonical evidence and semantic recent continuity, support distributed recursive checkpoints and bounded recovery, keep typed artifacts and durable memory governed separately, and enable only through numerical safety, quality, privacy, and rollback gates.
 
-**Requirements:** COMPACT-01..11 (see [`42-SPEC.md`](phases/42-llm-conversation-compaction/42-SPEC.md))
+**Requirements:** IC-01..14 (see [`42-SPEC.md`](phases/42-llm-conversation-compaction/42-SPEC.md) and [`42-TRACEABILITY.md`](phases/42-llm-conversation-compaction/42-TRACEABILITY.md))
 
-**Depends on:** Phase 4 (conversations + L1/L2/L2.5 context ladder) + Phase 6 (KV-cache byte-stable prefix) — both shipped; no blocking dependency. Activates the L3 deferral documented in `04-SPEC.md` + PRD §1.8 OQ#3.
+**Depends on:** shipped conversation/context, provider, assets, identity/privacy, database, AG-UI, and web foundations. Every slice is additive, backwards-readable, activation-disabled, and rollback-compatible.
 
 **Success Criteria**:
 
-1. Manual `/compact` on CLI, REPL, and Telegram compacts a conversation and reports the token delta; original turns retained (FTS still matches them).
-2. Checkpoint-watermark persistence (migration `0036_conversation_compactions` + a marker-protected summary turn) with byte-identical, checkpoint-aware history reconstruction; `messages[0]` stays byte-stable (KV-cache prefix preserved).
-3. Auto-fallback replaces the `ErrContextWindowExceeded` dead-end (behind `AURA_COMPACT_AUTO_ENABLED`, one bounded attempt, no retry loop); L1 microcompact and L2.5 hard-drop are unchanged.
-4. Compaction LLM cost attributed to conversation aggregates; `AURA_COMPACT_*` knobs validated; ≥85% coverage across the full tag matrix; `-race`/`goleak`/lint clean; every touched file ≤600 LOC.
+1. Exact provider/model budgeting and semantic-unit selection trigger proactive L2.4 before any allowed L2.5 event and preserve a bounded atomic recent tail.
+2. Durable claim/infer/finalize, immutable branch generations, CAS active pointer, deterministic reconstruction, last-known-good recovery, preview/restore, and quarantine pass independent-process tests.
+3. Structured non-authoritative summaries, typed content parts, recursive rebase, and separately governed durable memory pass authority, artifact, security, privacy, deletion, and rollback gates.
+4. CLI, REPL, Telegram, AG-UI, and accessible web surfaces share one coordinator; the 500+200 corpus meets every Section 17.13 threshold before deterministic staged activation.
 
-**Plans:** 7 plans across 4 waves
+**Plans:** 10 replacement plans across 9 waves
 
 Plans:
-**Wave 1**
-
-- [ ] 42-01-PLAN.md — [wave 1] persistence + reconstruction: migration `0036_conversation_compactions` + sqlc, `context_compaction.go` marker/`truncateAtCheckpoint`, `store_compact.go` atomic `RecordCompaction`/`LatestCompaction`/`ListCompactions`, checkpoint-aware `context.go` reconstruction (COMPACT-03/04/10; D-01/02/03)
-- [ ] 42-02-PLAN.md — [wave 1] summarization core: `CompactConversation` + 9-section governance-hardened `compactSystemPrompt` (COMPACT-01/02; D-06) + D-07 L3-activation doc notes
-- [ ] 42-03-PLAN.md — [wave 1] config: 4 `AURA_COMPACT_*` knob-registry rows + `Config` parse (COMPACT-09; D-04 derived floor, D-05 model default)
-
-**Wave 2** *(blocked on Wave 1)*
-
-- [ ] 42-04-PLAN.md — [wave 2] shared `Runner.Compact` (5-trigger seam) + inline-bounded auto-fallback at the `ErrContextWindowExceeded` dead-end (COMPACT-08/10/11; D-04/05/08)
-
-**Wave 3** *(blocked on Wave 2)*
-
-- [ ] 42-05-PLAN.md — [wave 3] manual triggers CLI `aura chat compact` + REPL `dispatchSlash` + Telegram `/compact` + `chat_boot` Deps wiring (COMPACT-05/06/07/09)
-- [ ] 42-06-PLAN.md — [wave 3] AG-UI owner-gated `POST /compact` + `GET /compactions` routes (web 4th manual trigger + gauge read; D-08/D-09)
-
-**Wave 4** *(blocked on Wave 3)*
-
-- [ ] 42-07-PLAN.md — [wave 4] web React: `/compact` composer QuickCommand + visually-distinct `ContextBudgetGauge` compaction markers (D-08/D-09/D-10)
+- [ ] 42-01-PLAN.md — [wave 1 / slice 1] provider capabilities, exact budgets, semantic units, recent tail, L1 contracts, redacted shadow telemetry
+- [ ] 42-02-PLAN.md — [wave 2 / slice 1] additive schema, distributed claims, immutable manifests, CAS pointer, deterministic reconstruction and bounded recovery
+- [ ] 42-03-PLAN.md — [wave 3 / slice 2] structured summarizer, authority ledger, adversarial validator, manual coordinator, preview and restore
+- [ ] 42-04-PLAN.md — [wave 4 / slice 3] typed content parts, artifact durability/reachability, provider projection and typed L1
+- [ ] 42-05-PLAN.md — [wave 5 / slices 4-5] atomic L2.4-before-L2.5 ladder, bounded overflow, recursive rebase, corruption recovery and canary controls
+- [ ] 42-06-PLAN.md — [wave 6 / slice 6] separate durable-memory privacy lifecycle and security review
+- [ ] 42-07-PLAN.md — [wave 7 / slice 7] common CLI/REPL/Telegram/AG-UI surfaces and accessible web recovery UX
+- [ ] 42-08-PLAN.md — [wave 7 / rollout persistence] additive schema, sqlc queries, durable scoped state, immutable evidence, CAS and atomic LKG rollback
+- [ ] 42-09-PLAN.md — [wave 8 / rollout control] evaluator-to-store/controller-to-effective-config-to-coordinator wiring and distributed rollback fences
+- [ ] 42-10-PLAN.md — [wave 9 / terminal gate] 500+200 corpus, blocking CI matrix, operations runbook and acceptance evidence
 
 
 ## Progress

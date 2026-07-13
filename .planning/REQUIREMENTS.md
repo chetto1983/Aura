@@ -153,6 +153,23 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [ ] **REL-02**: Owned-surface coverage stays ≥85%; mutation testing ≥70% killed on the gateway, identity-isolation, profile-validation, and sandbox files.
 - [ ] **REL-03**: The production-readiness score reaches a defensible 10/10 with a written evidence bundle (two-identity live E2E, prompt-injection-denied-under-production, drilled DR with RPO/RTO, honest `/readyz`, effective-behavior profile validation) — score bounded by weakest evidence, not green-check count.
 
+### Industrial Conversation Compaction (IC)
+
+- [ ] **IC-01**: Provider capability registry and exact fail-closed token budget model.
+- [ ] **IC-02**: Semantic-unit selection, atomic recent tail, disjoint manifests, and typed L1 edits.
+- [ ] **IC-03**: Pure proactive L2.4 decision seam before any allowed L2.5 fallback.
+- [ ] **IC-04**: Durable stable-ID claims, leases, out-of-transaction inference, and serializable CAS finalize.
+- [ ] **IC-05**: Branch-aware immutable checkpoint generations, versioned digests, active pointer, and deterministic reconstruction.
+- [ ] **IC-06**: Safe structured summarization, unresolved-authority ledger, and non-authoritative internal rendering.
+- [ ] **IC-07**: Unified manual/lifecycle/proactive/overflow coordinator with bounded non-destructive failures.
+- [ ] **IC-08**: Typed content parts, authorized immutable links, provider projection, artifact durability and reachability GC.
+- [ ] **IC-09**: Four-generation recursion cap, deterministic drift gates, and hierarchical canonical rebase.
+- [ ] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
+- [ ] **IC-11**: Active/LKG/bounded-rebuild recovery, compatible preview/restore, quarantine and disaster recovery.
+- [ ] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
+- [ ] **IC-13**: Redacted observability, 500+200 evaluation corpus, numerical promotion gates, staged canaries and automatic rollback.
+- [ ] **IC-14**: Backwards-compatible additive migrations, activation-disabled slices, full CI/security/privacy/rollback evidence, and legacy retirement.
+
 ### Code Quality Cleanup (QUAL)
 
 Derived from the maintainability/architecture audit `docs/audit/quality/` (4-slice, ~64 findings: 0 Critical, ~8 High, ~26 Medium, ~26 Low). Most items ride **refactor-on-touch** inside the phases above; the security-overlapping dups are routed to their phase (F-027→36, F-052→38, F-015→38, F-016→31). These QUAL requirements capture the work that does NOT naturally fall inside another phase.
@@ -219,6 +236,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | SEC | SEC-07 (F-015), SEC-08 | CI `./...` hygiene + CodeQL SSRF (pulled forward) | Phase 31 |
 | OPS | OPS-01..06 | F-019(ops), F-025, F-042, F-043 | Phase 41 |
 | REL | REL-01..03 | (cross-cutting evidence bar) | Phase 41 / all |
+| IC | IC-01..14 | Industrial provider-portable conversation context lifecycle | Phase 42 |
 
 **Coverage:**
 

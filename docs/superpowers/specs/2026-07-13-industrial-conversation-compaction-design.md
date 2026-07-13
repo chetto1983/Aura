@@ -234,6 +234,10 @@ No component is counted twice. Proactive L2.4 triggers when `projected_input / i
 
 Provider tokenization is preferred. A fallback must expose an upper bound `ceil(estimate × 1.15) + 256` and record estimator ID/error. An unknown or invalid model window disables proactive compaction; overflow recovery remains available.
 
+Configuration validation requires `window_tokens > reserved_output_tokens + safety_margin_tokens + minimum_fixed_reserve_tokens`, where `minimum_fixed_reserve_tokens=1024`. If `input_capacity <= 0`, or if `rendered_fixed_tokens + pending_input_tokens >= input_capacity`, proactive compaction is disabled as `insufficient_input_capacity` and no ratio or percentage-derived savings calculation is performed. Overflow recovery may compact eligible history only when fixed plus pending input can fit afterward; otherwise it returns `context_unavailable` without persistence or L2.5 retries.
+
+`estimator_error_tokens` is the provider-declared bound when available; otherwise it is the calibrated p99 absolute undercount over a rolling minimum of 1,000 observed requests, scoped by provider, model, and tokenizer/estimator version. Until that sample exists, the mandated 15%+256 upper bound is used and `estimator_error_tokens=0` because the error allowance is already embedded. Calibration versions and sample windows are recorded.
+
 ### 17.2 L2.4 must precede L2.5
 
 `LoadManagedHistory` may not apply L2.5 directly. It first produces a pure `BudgetDecision{Projection, L1Edits, SemanticCandidate, EmergencyCandidate, Reason}`. No L2.5 projection or rot event may be returned or persisted until L2.4 was attempted or explicitly waived as `disabled`, `no_eligible_prefix`, `provider_unsupported`, `quality_rejected`, or `timeout`. This seam and the L2.5 gate ship atomically. Acceptance must prove an over-soft/over-hard eligible history attempts semantic compaction before any hard-drop event.
@@ -275,6 +279,8 @@ The relational contract requires:
 - structured summary JSON as canonical storage; rendered text is a versioned projection;
 - checkpoint retention no shorter than its canonical conversation unless stricter privacy policy applies.
 
+Before claim creation, the initiating coordinator generates and durably retains one operation ID. The same ID is the idempotency key across transport, process, and database retries. A uniqueness conflict returns the existing claim or completed checkpoint outcome; it never starts duplicate inference.
+
 Reconstruction is a pure versioned function selected only through the active pointer. Restore never chooses “latest by timestamp.”
 
 ### 17.6 Distributed claims, concurrency, and idempotency
@@ -301,7 +307,7 @@ The summary is rendered through a dedicated internal-context envelope supported 
 
 ### 17.9 Recursive drift and hierarchical rebase
 
-`max_generation_depth=4`. Rebase is mandatory at depth four, or when invariant-ledger coverage is below 100%, artifact-reference coverage below 100%, factual entailment below 0.98 on deterministic/curated probes, or similarity to a canonical hierarchical baseline below 0.90.
+`max_generation_depth=4`. Rebase is mandatory at depth four, or when invariant-ledger coverage is below 100%, artifact-reference coverage below 100%, factual entailment below 0.98 on deterministic/curated probes, or similarity to a canonical hierarchical baseline below 0.90. Entailment and similarity use a frozen, versioned probe set and scorer contract; deterministic settings are mandatory where supported, and scorer/model/prompt versions are recorded with every result.
 
 Rebase partitions canonical semantic units into chunks no larger than 60% of summarizer input capacity, summarizes each into the same schema, then reduces them hierarchically while carrying manifests and ledgers. Failure leaves the last-known-good checkpoint active and disables further automatic generations pending retry or operator action.
 
@@ -342,6 +348,8 @@ The versioned corpus contains at least 500 golden conversations stratified acros
 - p95 proactive latency at most 8 seconds and overflow latency at most 15 seconds;
 - compaction failure at most 1%;
 - compaction cost at most 15% of the following 20-turn median saved-input cost.
+
+The cost gate is an offline and per-canary-stage cohort metric, never a per-attempt activation condition. It uses the price snapshot captured at compaction, only conversations with at least five eligible post-compaction model turns, and at most the first 20 such turns. Conversations ending earlier are right-censored and reported separately, not counted as passing. Restored/superseded checkpoints end their cohort interval; model or price changes start a normalized sub-cohort. Promotion requires the bound on both the aggregate eligible cohort and every provider/model stratum with at least 100 attempts.
 
 Metrics use bounded labels and contain no message/summary text, user IDs, artifact names, or secrets. Canary sampling is deterministic by tenant/conversation at 1%, 5%, 20%, then 50%, with at least 24 hours and 1,000 attempts per stage. Automatic rollback occurs on any safety regression, continuation regression over two points, failure above 2% for 15 minutes, p95 latency breach for 30 minutes, or restore rate above 1%. Shadow mode runs selection and summary generation but no live counterfactual continuation; it stores only redacted structural/quality scores under production consent/retention rules. Enabled mode is prohibited until shadow gates and restore drills pass.
 
