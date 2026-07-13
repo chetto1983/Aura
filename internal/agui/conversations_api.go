@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
 
@@ -54,9 +55,86 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/conversations/{id}/archive", s.handleArchiveConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/unarchive", s.handleArchiveConversation)
 	mux.HandleFunc("DELETE /api/conversations/{id}", s.handleDeleteConversation)
+	mux.HandleFunc("POST /api/conversations/{id}/compact/preview", s.handleCompactPreview)
+	mux.HandleFunc("POST /api/conversations/{id}/compact/restore", s.handleCompactRestore)
 	// D-09 / CHAT-05 branch tree routes (plan 25-07) — list/edit/select, rides the same
 	// /api/conversations/{id}/ subtree (conversations_branch_api.go).
 	s.registerConversationBranchRoutes(mux)
+}
+
+type compactRequestBody struct {
+	OperationID  string `json:"operationId"`
+	CheckpointID string `json:"checkpointId,omitempty"`
+	SafePoint    bool   `json:"safePoint,omitempty"`
+}
+
+func (s *Server) decodeOwnedCompactRequest(w http.ResponseWriter, r *http.Request) (runner.CompactRequest, bool) {
+	id, ok := parseConvID(w, r)
+	if !ok {
+		return runner.CompactRequest{}, false
+	}
+	actor := scopedIdentityID(r.Context())
+	if actor == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return runner.CompactRequest{}, false
+	}
+	if _, err := s.conv.GetForIdentity(r.Context(), id, actor); err != nil {
+		writeStoreErr(w, err)
+		return runner.CompactRequest{}, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
+	var body compactRequestBody
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || strings.TrimSpace(body.OperationID) == "" {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return runner.CompactRequest{}, false
+	}
+	return runner.CompactRequest{OperationID: body.OperationID, ConversationID: id, BranchID: "root", CheckpointID: body.CheckpointID, ActorID: actor, Trigger: runner.CompactTriggerManual, SafePoint: body.SafePoint}, true
+}
+
+// handleCompactPreview returns bounded shadow metadata and never changes activation.
+func (s *Server) handleCompactPreview(w http.ResponseWriter, r *http.Request) {
+	if s.compact == nil || s.conv == nil {
+		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	req, ok := s.decodeOwnedCompactRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.compact.Preview(r.Context(), req)
+	if err != nil {
+		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, result)
+}
+
+// handleCompactRestore rolls back only at a caller-declared model-safe point.
+func (s *Server) handleCompactRestore(w http.ResponseWriter, r *http.Request) {
+	if s.compact == nil || s.conv == nil {
+		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	req, ok := s.decodeOwnedCompactRequest(w, r)
+	if !ok {
+		return
+	}
+	if req.CheckpointID == "" {
+		http.Error(w, "checkpoint required", http.StatusBadRequest)
+		return
+	}
+	if !req.SafePoint {
+		http.Error(w, "safe point required", http.StatusConflict)
+		return
+	}
+	result, err := s.compact.Restore(r.Context(), req)
+	if err != nil {
+		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, result)
 }
 
 // writeJSON encodes v as the JSON body of a 200 response. A late encode failure (the
