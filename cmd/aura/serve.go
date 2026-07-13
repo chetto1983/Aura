@@ -368,6 +368,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
+	aguiServer.SetCompactService(newConversationCompactCoordinator(chat.conv))
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))

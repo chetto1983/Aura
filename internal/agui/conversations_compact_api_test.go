@@ -51,3 +51,22 @@ func TestRestoreRequiresSafePoint(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestCompactOperationsUseIdenticalOwnerScopedCoordinatorOutcome(t *testing.T) {
+	owner := "11111111-1111-1111-1111-111111111111"
+	conversationID := "22222222-2222-2222-2222-222222222222"
+	service := &fakeCompactService{preview: runner.CompactPreview{OperationID: "op", CheckpointID: "cp-1", Status: runner.CompactStatusDisabled}}
+	s := &Server{conv: &errConvStore{ownsGate: true}, compact: service}
+
+	for _, path := range []string{"/api/conversations/" + conversationID + "/compact", "/api/conversations/" + conversationID + "/compact/history", "/api/conversations/" + conversationID + "/compact/preview", "/api/conversations/" + conversationID + "/compact/diff"} {
+		rec := httptest.NewRecorder()
+		req := withPrincipal(httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"operationId":"op","checkpointId":"cp-1"}`)), owner)
+		s.Mux().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"disabled"`) {
+			t.Fatalf("%s: code=%d body=%q", path, rec.Code, rec.Body.String())
+		}
+		if service.request.ActorID != owner || service.request.ConversationID != conversationID {
+			t.Fatalf("%s escaped owner scope: %+v", path, service.request)
+		}
+	}
+}

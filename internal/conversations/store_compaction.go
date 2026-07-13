@@ -36,6 +36,31 @@ type CompactionClaim struct {
 	OutcomeCheckpointID string
 }
 
+// CompactionPreview is the bounded operator projection of the active checkpoint.
+type CompactionPreview struct {
+	CheckpointID, PriorCheckpointID, Summary string
+}
+
+// PreviewCompaction returns only the active checkpoint and its parent for one branch.
+func (s *Store) PreviewCompaction(ctx context.Context, conversationID, branchID string) (CompactionPreview, error) {
+	conv, err := uuid.Parse(conversationID)
+	if err != nil {
+		return CompactionPreview{}, err
+	}
+	var checkpointID, priorID, summary string
+	err = s.pool.QueryRow(ctx, `SELECT cp.id::text,COALESCE(cp.parent_id::text,''),cp.structured_summary::text
+		FROM aura.compaction_active_pointers ap
+		JOIN aura.compaction_checkpoints cp ON cp.id=ap.checkpoint_id
+		WHERE ap.conversation_id=$1 AND ap.branch_id=$2`, conv, branchID).Scan(&checkpointID, &priorID, &summary)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CompactionPreview{}, nil
+	}
+	if err != nil {
+		return CompactionPreview{}, fmt.Errorf("preview compaction: %w", err)
+	}
+	return CompactionPreview{CheckpointID: checkpointID, PriorCheckpointID: priorID, Summary: summary}, nil
+}
+
 // ClaimCompaction performs only durable coordination; inference starts after it returns.
 func (s *Store) ClaimCompaction(ctx context.Context, p CompactionClaimParams) (CompactionClaim, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})

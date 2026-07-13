@@ -55,7 +55,10 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/conversations/{id}/archive", s.handleArchiveConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/unarchive", s.handleArchiveConversation)
 	mux.HandleFunc("DELETE /api/conversations/{id}", s.handleDeleteConversation)
+	mux.HandleFunc("POST /api/conversations/{id}/compact", s.handleCompactPreview)
+	mux.HandleFunc("POST /api/conversations/{id}/compact/history", s.handleCompactPreview)
 	mux.HandleFunc("POST /api/conversations/{id}/compact/preview", s.handleCompactPreview)
+	mux.HandleFunc("POST /api/conversations/{id}/compact/diff", s.handleCompactPreview)
 	mux.HandleFunc("POST /api/conversations/{id}/compact/restore", s.handleCompactRestore)
 	// D-09 / CHAT-05 branch tree routes (plan 25-07) — list/edit/select, rides the same
 	// /api/conversations/{id}/ subtree (conversations_branch_api.go).

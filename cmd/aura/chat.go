@@ -254,6 +254,7 @@ func runReplOrExitNamed(ctx context.Context, label string, env *chatEnv, convID 
 		run:        env.run,
 		cfg:        env.cfg,
 		convID:     convID,
+		compact:    newConversationCompactCoordinator(env.conv),
 		newTurnCtx: signalTurnCtx,
 	}
 	// Session-end Runner.Stop (auto-resolve orphan pendings + join auto-title
@@ -273,5 +274,6 @@ type replDeps struct {
 	run        *runner.Runner
 	cfg        *config.Config
 	convID     string
+	compact    compactCommandService
 	newTurnCtx func(parent context.Context) (context.Context, context.CancelFunc, func() bool)
 }

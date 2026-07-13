@@ -64,6 +64,12 @@ func chatLoop(ctx context.Context, d replDeps) error {
 		_, _ = fmt.Fprint(d.out, "› ")
 		line, readErr := reader.ReadString('\n')
 		line = trimLine(line)
+		if dispatchCompactCommand(ctx, d.compact, d.convID, "local", false, line, d.out) {
+			if readErr != nil && errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			continue
+		}
 
 		if line == exitCommand {
 			_, _ = fmt.Fprintln(d.out, "bye")
