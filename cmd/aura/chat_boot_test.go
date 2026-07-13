@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,45 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func rolloutSource(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+func TestCompactionRolloutComposition(t *testing.T) {
+	s := rolloutSource(t, "chat_boot.go")
+	if !strings.Contains(s, "NewCompactionRolloutStore(pool)") || !strings.Contains(s, "NewCompactionRolloutController") {
+		t.Fatal("durable rollout composition missing")
+	}
+}
+func TestCompactionRolloutPersistedReaderInjection(t *testing.T) {
+	s := rolloutSource(t, "chat_boot.go")
+	if !strings.Contains(s, "CompactionEffective: rolloutReader") || !strings.Contains(s, "compactionEffective: rolloutReader") {
+		t.Fatal("persisted reader injection missing")
+	}
+}
+func TestCompactionRolloutEvaluatorLifecycle(t *testing.T) {
+	s := rolloutSource(t, "serve.go")
+	if !strings.Contains(s, "compactionRollout.Run(signalCtx") {
+		t.Fatal("signal-scoped evaluator lifecycle missing")
+	}
+}
+func TestCompactionRolloutCancellation(t *testing.T) {
+	s := rolloutSource(t, "serve.go")
+	if !strings.Contains(s, "errors.Is(err, context.Canceled)") {
+		t.Fatal("evaluator cancellation handling missing")
+	}
+}
+func TestCompactionRolloutStartupFailsClosed(t *testing.T) {
+	s := rolloutSource(t, "chat_boot.go")
+	if !strings.Contains(s, "compaction rollout durable preflight") || !strings.Contains(s, "rolloutReader.Read(ctx)") {
+		t.Fatal("durable preflight missing")
+	}
+}
 
 // chat_boot_test.go pins QUAL-04b: no boot error path leaks a pool or an MCP
 // subprocess. The real leak was the CommandHookManagerFromEnv failure path, which
