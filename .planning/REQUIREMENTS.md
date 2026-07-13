@@ -164,7 +164,7 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [x] **IC-07**: Unified manual/lifecycle/proactive/overflow coordinator with bounded non-destructive failures.
 - [ ] **IC-08**: Typed content parts, authorized immutable links, provider projection, artifact durability and reachability GC.
 - [x] **IC-09**: Four-generation recursion cap, deterministic drift gates, and hierarchical canonical rebase.
-- [ ] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
+- [x] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
 - [x] **IC-11**: Active/LKG/bounded-rebuild recovery, compatible preview/restore, quarantine and disaster recovery.
 - [ ] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
 - [x] **IC-13**: Redacted observability, 500+200 evaluation corpus, numerical promotion gates, staged canaries and automatic rollback.
