@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-13  
 **Target:** Phase 42 — LLM conversation compaction  
-**Status:** Approved architecture; design contract for replanning
+**Status:** Draft architecture; blocked until adversarial review approves the normative invariants below
 
 ## 1. Outcome
 
@@ -211,3 +211,152 @@ Each slice must specify migrations, runtime-state transitions, rollback behavior
 ## 16. Design Acceptance
 
 The replanned phase is complete only when every requirement above maps to an implementation task, automated verification, rollout control, and recovery path. “Industry complete” means the system supports proactive reduction, safe continuation, auditability, recovery, recursive operation, typed modalities, durable memory separation, and measured quality as one coherent lifecycle.
+
+## 17. Normative Invariants After Adversarial Review
+
+This section replaces any conflicting or less-specific language in Sections 3–16. Replanning must use these requirements verbatim as architecture constraints.
+
+### 17.1 Exact budget model
+
+All quantities are integer tokens:
+
+- `window_tokens`: provider-declared context window.
+- `reserved_output_tokens`: configured maximum output.
+- `safety_margin_tokens = max(1024, ceil(window_tokens × 0.02), estimator_error_tokens)`.
+- `rendered_fixed_tokens`: system/developer instructions and rendered tool schemas.
+- `rendered_history_tokens`: candidate working projection, excluding fixed content and pending input.
+- `pending_input_tokens`: current user/event input.
+- `forecast_turn_tokens`: configured p95 observed turn size after at least 200 samples; otherwise `min(8192, ceil(window_tokens × 0.05))`.
+- `input_capacity = window_tokens - reserved_output_tokens - safety_margin_tokens`.
+- `projected_input = rendered_fixed_tokens + rendered_history_tokens + pending_input_tokens + forecast_turn_tokens`.
+
+No component is counted twice. Proactive L2.4 triggers when `projected_input / input_capacity >= trigger_ratio` or remaining headroom is below `forecast_turn_tokens`. Defaults are `trigger_ratio=0.80`, `target_ratio=0.55`, `minimum_saved_tokens=max(4096, ceil(input_capacity × 0.10))`, and `minimum_reduction_ratio=0.20`. Validation requires `0.30 ≤ target_ratio < trigger_ratio ≤ 0.90`. Activation is rejected unless both minimum-savings controls pass and projected post-compaction utilization is at or below target.
+
+Provider tokenization is preferred. A fallback must expose an upper bound `ceil(estimate × 1.15) + 256` and record estimator ID/error. An unknown or invalid model window disables proactive compaction; overflow recovery remains available.
+
+### 17.2 L2.4 must precede L2.5
+
+`LoadManagedHistory` may not apply L2.5 directly. It first produces a pure `BudgetDecision{Projection, L1Edits, SemanticCandidate, EmergencyCandidate, Reason}`. No L2.5 projection or rot event may be returned or persisted until L2.4 was attempted or explicitly waived as `disabled`, `no_eligible_prefix`, `provider_unsupported`, `quality_rejected`, or `timeout`. This seam and the L2.5 gate ship atomically. Acceptance must prove an over-soft/over-hard eligible history attempts semantic compaction before any hard-drop event.
+
+### 17.3 Disjoint capture manifests and reconstruction
+
+Each attempt records:
+
+- `captured_watermark_seq`;
+- ordered `summarized_turn_seqs`;
+- ordered `tail_turn_seqs`;
+- ordered `protected_turn_seqs`;
+- post-watermark turns defined as `seq > captured_watermark_seq`;
+- digest per manifest plus a complete-capture digest.
+
+The summarized, tail, and protected sets are pairwise disjoint. Every captured canonical turn belongs to exactly one of those sets or an explicit excluded manifest. Reconstruction is logical, independent of physical append sequence:
+
+`[L0, always-block, active internal summary, tail manifest order, seq > captured watermark]`.
+
+RFC 8785 canonical JSON plus SHA-256 is the initial digest algorithm; its version and included immutable turn fields are stored. Golden fixtures prove each canonical turn appears exactly once across schema/projection migrations.
+
+### 17.4 Semantic-unit state machine
+
+Selection operates on semantic units keyed by parent turn, invocation ID, tool-call ID, approval ID, and response/stream ID. A unit may include user input, assistant preamble, parallel calls, matched results, approvals, ask-user responses, retries, cancellation, and assistant continuation. Open, malformed, duplicated, missing-result, cancelled, retried, or partially persisted units are ineligible unless an explicit legacy normalization rule closes them.
+
+The recent-tail start expands backward only to include its complete containing unit, capped at 20% of input capacity. If atomicity exceeds the cap or eliminates the minimum-saving prefix, compaction is a reasoned no-op. Fixtures cover parallel calls, missing/duplicate results, cancellations, approvals, streamed partials, retries, and malformed legacy rows.
+
+### 17.5 Normative checkpoint schema
+
+Checkpoints include conversation, branch/projection, generation, parent, captured watermark, all manifests/digests, structured summary JSON, schema/prompt/projection versions, trigger/reason, model/provider/estimator, budget/threshold/target/tail values, usage/cost/latency, quality state, rollout mode, idempotency/claim state, and restore/supersession state.
+
+The relational contract requires:
+
+- unique `(conversation_id, branch_id, generation)`;
+- unique `(conversation_id, branch_id, idempotency_key)`;
+- parent FK with `child.generation = parent.generation + 1`;
+- one compare-and-swap active-projection pointer per conversation/branch;
+- immutable checkpoint rows and audited restore events referencing old/new active pointers;
+- structured summary JSON as canonical storage; rendered text is a versioned projection;
+- checkpoint retention no shorter than its canonical conversation unless stricter privacy policy applies.
+
+Reconstruction is a pure versioned function selected only through the active pointer. Restore never chooses “latest by timestamp.”
+
+### 17.6 Distributed claims, concurrency, and idempotency
+
+No process-local lock is a correctness mechanism. Compaction uses a durable three-step protocol:
+
+1. In a short transaction, claim `(conversation, branch, captured_watermark, base_active_generation)` using row locking, a unique idempotency key, lease, and `pending` state.
+2. Summarize and validate outside the transaction.
+3. In a short serializable transaction, finalize only if the claim remains pending, the active generation equals the base generation, and no new governance-ledger event invalidates the capture. Insert summary/checkpoint, complete the claim, and compare-and-swap the active pointer atomically.
+
+Stale completions become `superseded`. Expired abandoned claims may be reclaimed. Restore and finalization contend on the same pointer row. Manual claims outrank unstarted automatic claims but cannot preempt active inference. Tests use independent connections and separate processes for duplicates, stale completion, lease expiry, restore races, and process death.
+
+### 17.7 Typed content-part prerequisite
+
+Industrial multimodal support requires a prerequisite typed content-part and attachment architecture. Parts carry storage ID, MIME type, digest, byte length, owner/tenant, encryption class, retention class, provider requirements, and text fallback. Attachment-to-turn links are immutable; every reload rechecks authorization. Provider adapters negotiate supported modalities and project either the verified original or an explicit reference-only fallback.
+
+Referenced artifacts live at least as long as every reachable checkpoint/memory and use reachability GC, backup/migration, digest validation, and explicit `missing`/`unauthorized` states. Host-local sidecars are not described as durable. Acceptance inspects actual provider request projections for supported media and reference-only behavior otherwise.
+
+### 17.8 Authority and injection safety
+
+Authoritative L0/developer/governance inputs are never summarized. Aura maintains a typed unresolved-user-instruction ledger with source sequence, authority, state, and quoted-data encoding; revocations are ledger events. Historical claims and tool content remain untrusted data.
+
+The summary is rendered through a dedicated internal-context envelope supported by every adapter. If a provider lacks an internal role, an escaped data block follows a fixed developer-level “non-authoritative historical data” instruction. Verbatim quotations remain encoded fields, never interpolated instructions. Acceptance compares L0 hashes, the unresolved ledger, deterministic safety predicates, and manifests—not circular natural-language extraction. Reject malformed, authority-confusing, policy-dropping, or poisoned summaries. Adversarial fixtures cover role spoofing, delimiter/encoded injection, fake summaries, poisoned tools, revocation, and malicious quoted text.
+
+### 17.9 Recursive drift and hierarchical rebase
+
+`max_generation_depth=4`. Rebase is mandatory at depth four, or when invariant-ledger coverage is below 100%, artifact-reference coverage below 100%, factual entailment below 0.98 on deterministic/curated probes, or similarity to a canonical hierarchical baseline below 0.90.
+
+Rebase partitions canonical semantic units into chunks no larger than 60% of summarizer input capacity, summarizes each into the same schema, then reduces them hierarchically while carrying manifests and ledgers. Failure leaves the last-known-good checkpoint active and disables further automatic generations pending retry or operator action.
+
+### 17.10 Bounded recovery
+
+Recovery order is:
+
+1. validate the active checkpoint;
+2. select the last-known-good compatible checkpoint;
+3. build a bounded projection from canonical originals using the same selector;
+4. if none fits, expose `context_unavailable` without changing the pointer.
+
+Recovery never injects the full oversized transcript. Restore is previewed against the current model budget and schema/projection compatibility before transactional activation. Corrupt checkpoints/artifacts are quarantined and visible to operators. Disaster-recovery tests cover incompatible versions, missing artifacts, corrupt digests, oversized originals, and failed restores.
+
+### 17.11 Durable-memory privacy lifecycle
+
+Memory candidates carry tenant/identity owner, purpose/consent basis, source manifest, minimized evidence digest, confidence, authority, sensitivity, region, encryption class, retention/expiry, and supersession/revocation state. Automatic promotion is disabled until a class-specific policy is configured. Creation is idempotent across restore/rebuild.
+
+Retrieval is relevance-, recency-, tenant-, identity-, capability-, purpose-, region-, and sensitivity-gated. Source deletion, consent withdrawal, expiry, and “forget me” propagate to candidates and memories. Tests cover cross-identity denial, deletion, expiry, supersession, secrets, and regional isolation.
+
+### 17.12 Provider capability contract
+
+Every adapter declares context window, maximum output, tokenizer/upper-bound estimator, structured-output support, internal-role mapping, accepted content parts, tool-cycle ordering, usage/cost reporting, native-compaction metadata, and storage/ZDR behavior. Activation requires bounded input estimation, schema-validatable output, safe role/envelope mapping, and usage reporting. Native compaction is accepted only if it yields enough metadata for Aura's manifests, audit, recovery, and evaluation.
+
+The summarizer model is preflighted independently. Oversized sources use the hierarchical algorithm; unsupported adapters reject the attempt without persistence.
+
+### 17.13 Numerical evaluation and rollout gates
+
+The versioned corpus contains at least 500 golden conversations stratified across chat, code, research, tool-heavy, approval, multilingual, multimodal/reference, recursive, and recovery cases, plus at least 200 adversarial conversations. Promotion requires:
+
+- 100% L0 and unresolved-ledger retention;
+- zero accepted authority-escalation cases;
+- at least 99% tool/pending-state retention;
+- at least 98% factual/decision retention;
+- continuation success no more than two percentage points below uncompacted baseline at 95% confidence;
+- median token reduction at least 40%;
+- post-projection at/below target in at least 99% of attempts;
+- p95 proactive latency at most 8 seconds and overflow latency at most 15 seconds;
+- compaction failure at most 1%;
+- compaction cost at most 15% of the following 20-turn median saved-input cost.
+
+Metrics use bounded labels and contain no message/summary text, user IDs, artifact names, or secrets. Canary sampling is deterministic by tenant/conversation at 1%, 5%, 20%, then 50%, with at least 24 hours and 1,000 attempts per stage. Automatic rollback occurs on any safety regression, continuation regression over two points, failure above 2% for 15 minutes, p95 latency breach for 30 minutes, or restore rate above 1%. Shadow mode runs selection and summary generation but no live counterfactual continuation; it stores only redacted structural/quality scores under production consent/retention rules. Enabled mode is prohibited until shadow gates and restore drills pass.
+
+### 17.14 Safe delivery order
+
+1. Provider capabilities, exact budgets, semantic units, redacted telemetry, schema/versioning, distributed claims/CAS, last-known-good recovery, and shadow-only migration.
+2. Structured summarizer, authority ledger, validation/adversarial corpus, manual coordinator, preview, and restore; activation stays disabled.
+3. Content-part/attachment architecture, artifact durability, L1 editing, and provider-projection tests.
+4. One atomic ladder slice: proactive L2.4 seam, L2.5 waiver/fallback, shadow evaluation, and overflow recovery.
+5. Recursive generations, hierarchical rebase, corruption recovery, multi-process tests, and canary controls.
+6. Durable-memory projection, privacy lifecycle, retrieval/deletion gates, and separate security review.
+7. All user surfaces, history/preview/diff/restore, accessibility, full evaluation, staged rollout, documentation, and terminal acceptance.
+
+Every slice is deployable with activation disabled, backwards-readable, and rollback-compatible. Telemetry and recovery precede activation. Content-part and durable-memory work remain separate workstreams inside Phase 42.
+
+### 17.15 Supersession and traceability
+
+The current 11-requirement Phase 42 specification and plans 42-01 through 42-07 are legacy inputs, not executable plans after this design is approved. Replanning begins with a traceability matrix classifying every old requirement, decision, prohibition, migration, and task as `retained`, `superseded`, or `removed`, with destination and rationale. No old plan may execute after replacement SPEC acceptance. Unshipped migrations are replaced; shipped schemas require additive compatibility migrations.
