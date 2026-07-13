@@ -157,13 +157,13 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 
 - [x] **IC-01**: Provider capability registry and exact fail-closed token budget model.
 - [x] **IC-02**: Semantic-unit selection, atomic recent tail, disjoint manifests, and typed L1 edits.
-- [ ] **IC-03**: Pure proactive L2.4 decision seam before any allowed L2.5 fallback.
+- [x] **IC-03**: Pure proactive L2.4 decision seam before any allowed L2.5 fallback.
 - [x] **IC-04**: Durable stable-ID claims, leases, out-of-transaction inference, and serializable CAS finalize.
 - [x] **IC-05**: Branch-aware immutable checkpoint generations, versioned digests, active pointer, and deterministic reconstruction.
 - [x] **IC-06**: Safe structured summarization, unresolved-authority ledger, and non-authoritative internal rendering.
 - [x] **IC-07**: Unified manual/lifecycle/proactive/overflow coordinator with bounded non-destructive failures.
 - [ ] **IC-08**: Typed content parts, authorized immutable links, provider projection, artifact durability and reachability GC.
-- [ ] **IC-09**: Four-generation recursion cap, deterministic drift gates, and hierarchical canonical rebase.
+- [x] **IC-09**: Four-generation recursion cap, deterministic drift gates, and hierarchical canonical rebase.
 - [ ] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
 - [x] **IC-11**: Active/LKG/bounded-rebuild recovery, compatible preview/restore, quarantine and disaster recovery.
 - [ ] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
