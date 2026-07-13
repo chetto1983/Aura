@@ -9,6 +9,7 @@ CREATE TABLE aura.compaction_claims (
     base_active_generation integer NOT NULL CHECK (base_active_generation >= 0),
     priority text NOT NULL CHECK (priority IN ('automatic','manual')),
     state text NOT NULL CHECK (state IN ('pending','completed','superseded')),
+    inference_started boolean NOT NULL DEFAULT false,
     owner_id text NOT NULL,
     lease_until timestamptz NOT NULL,
     outcome_checkpoint_id uuid,
@@ -63,6 +64,8 @@ CREATE TABLE aura.compaction_restore_events (
     old_checkpoint_id uuid, new_checkpoint_id uuid NOT NULL,
     operation_id uuid NOT NULL, actor_id text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX compaction_one_pending_claim_per_branch
+  ON aura.compaction_claims(conversation_id, branch_id) WHERE state = 'pending';
 CREATE TABLE aura.compaction_quarantine (
     id uuid PRIMARY KEY, checkpoint_id uuid, artifact_kind text NOT NULL,
     reason text NOT NULL, observed_digest text, created_at timestamptz NOT NULL DEFAULT now()

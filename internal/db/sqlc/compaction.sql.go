@@ -69,7 +69,7 @@ func (q *Queries) GetCompactionCheckpoint(ctx context.Context, id pgtype.UUID) (
 }
 
 const getCompactionClaim = `-- name: GetCompactionClaim :one
-SELECT operation_id, conversation_id, branch_id, idempotency_key, captured_watermark_seq, governance_watermark, base_active_generation, priority, state, owner_id, lease_until, outcome_checkpoint_id, created_at, updated_at FROM aura.compaction_claims WHERE operation_id = $1
+SELECT operation_id, conversation_id, branch_id, idempotency_key, captured_watermark_seq, governance_watermark, base_active_generation, priority, state, inference_started, owner_id, lease_until, outcome_checkpoint_id, created_at, updated_at FROM aura.compaction_claims WHERE operation_id = $1
 `
 
 func (q *Queries) GetCompactionClaim(ctx context.Context, operationID pgtype.UUID) (AuraCompactionClaims, error) {
@@ -85,6 +85,7 @@ func (q *Queries) GetCompactionClaim(ctx context.Context, operationID pgtype.UUI
 		&i.BaseActiveGeneration,
 		&i.Priority,
 		&i.State,
+		&i.InferenceStarted,
 		&i.OwnerID,
 		&i.LeaseUntil,
 		&i.OutcomeCheckpointID,

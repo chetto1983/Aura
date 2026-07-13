@@ -139,6 +139,7 @@ type AuraCompactionClaims struct {
 	BaseActiveGeneration int32              `json:"base_active_generation"`
 	Priority             string             `json:"priority"`
 	State                string             `json:"state"`
+	InferenceStarted     bool               `json:"inference_started"`
 	OwnerID              string             `json:"owner_id"`
 	LeaseUntil           pgtype.Timestamptz `json:"lease_until"`
 	OutcomeCheckpointID  pgtype.UUID        `json:"outcome_checkpoint_id"`
