@@ -147,6 +147,54 @@ type AuraCompactionClaims struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AuraCompactionMemories struct {
+	ID               pgtype.UUID        `json:"id"`
+	CandidateID      pgtype.UUID        `json:"candidate_id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	OwnerID          pgtype.UUID        `json:"owner_id"`
+	Class            string             `json:"class"`
+	Purpose          string             `json:"purpose"`
+	ConsentBasis     string             `json:"consent_basis"`
+	EvidenceDigest   string             `json:"evidence_digest"`
+	Sensitivity      string             `json:"sensitivity"`
+	Region           string             `json:"region"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	SupersededBy     pgtype.UUID        `json:"superseded_by"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+	RevocationReason pgtype.Text        `json:"revocation_reason"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraCompactionMemoryCandidates struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	OwnerID              pgtype.UUID        `json:"owner_id"`
+	Class                string             `json:"class"`
+	Purpose              string             `json:"purpose"`
+	ConsentBasis         string             `json:"consent_basis"`
+	SourceManifestDigest string             `json:"source_manifest_digest"`
+	EvidenceDigest       string             `json:"evidence_digest"`
+	Confidence           float64            `json:"confidence"`
+	Authority            string             `json:"authority"`
+	Sensitivity          string             `json:"sensitivity"`
+	Region               string             `json:"region"`
+	EncryptionClass      string             `json:"encryption_class"`
+	RetentionClass       string             `json:"retention_class"`
+	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
+	SupersededBy         pgtype.UUID        `json:"superseded_by"`
+	RevokedAt            pgtype.Timestamptz `json:"revoked_at"`
+	RevocationReason     pgtype.Text        `json:"revocation_reason"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraCompactionMemorySources struct {
+	CandidateID  pgtype.UUID        `json:"candidate_id"`
+	SourceKind   string             `json:"source_kind"`
+	SourceID     string             `json:"source_id"`
+	SourceDigest string             `json:"source_digest"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type AuraCompactionQuarantine struct {
 	ID             pgtype.UUID        `json:"id"`
 	CheckpointID   pgtype.UUID        `json:"checkpoint_id"`
@@ -165,6 +213,79 @@ type AuraCompactionRestoreEvents struct {
 	OperationID     pgtype.UUID        `json:"operation_id"`
 	ActorID         string             `json:"actor_id"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+// Immutable transition and rollback ledger keyed by stable reason codes.
+type AuraCompactionRolloutDecisions struct {
+	ID               pgtype.UUID        `json:"id"`
+	ScopeID          string             `json:"scope_id"`
+	EvidenceID       pgtype.UUID        `json:"evidence_id"`
+	ExpectedVersion  int64              `json:"expected_version"`
+	ResultingVersion int64              `json:"resulting_version"`
+	DecisionKind     string             `json:"decision_kind"`
+	FromStage        string             `json:"from_stage"`
+	ToStage          string             `json:"to_stage"`
+	ReasonCode       string             `json:"reason_code"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// Immutable locale-neutral evaluator evidence; prose and translated presentation text are forbidden.
+type AuraCompactionRolloutEvidence struct {
+	ID               pgtype.UUID        `json:"id"`
+	ScopeID          string             `json:"scope_id"`
+	EvidenceDigest   string             `json:"evidence_digest"`
+	EvaluatorVersion string             `json:"evaluator_version"`
+	ScorerVersion    string             `json:"scorer_version"`
+	ConfigVersion    string             `json:"config_version"`
+	CorpusVersion    string             `json:"corpus_version"`
+	Snapshot         []byte             `json:"snapshot"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// Replica-shared version-CAS effective state for the compaction rollout control plane.
+type AuraCompactionRolloutStates struct {
+	ScopeID             string             `json:"scope_id"`
+	Version             int64              `json:"version"`
+	Stage               string             `json:"stage"`
+	StageStartedAt      pgtype.Timestamptz `json:"stage_started_at"`
+	EligibleAttempts    int64              `json:"eligible_attempts"`
+	EvaluatorVersion    string             `json:"evaluator_version"`
+	ScorerVersion       string             `json:"scorer_version"`
+	ConfigVersion       string             `json:"config_version"`
+	CorpusVersion       string             `json:"corpus_version"`
+	StratumSnapshots    []byte             `json:"stratum_snapshots"`
+	FailureWindow       []byte             `json:"failure_window"`
+	LatencyWindow       []byte             `json:"latency_window"`
+	RestoreWindow       []byte             `json:"restore_window"`
+	ActiveConfig        []byte             `json:"active_config"`
+	LastKnownGoodConfig []byte             `json:"last_known_good_config"`
+	LastKnownGoodPolicy []byte             `json:"last_known_good_policy"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AuraContentPartLinks struct {
+	PartID           pgtype.UUID        `json:"part_id"`
+	ReachabilityKind string             `json:"reachability_kind"`
+	ReachabilityID   string             `json:"reachability_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraContentParts struct {
+	ID                   pgtype.UUID        `json:"id"`
+	StorageID            string             `json:"storage_id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	OwnerID              pgtype.UUID        `json:"owner_id"`
+	MimeType             string             `json:"mime_type"`
+	DigestSha256         string             `json:"digest_sha256"`
+	ByteLength           int64              `json:"byte_length"`
+	EncryptionClass      string             `json:"encryption_class"`
+	RetentionClass       string             `json:"retention_class"`
+	ProviderRequirements []byte             `json:"provider_requirements"`
+	FallbackText         string             `json:"fallback_text"`
+	State                string             `json:"state"`
+	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
 
 // L2.5 hard-rolling-buffer audit (amendment #22). One row per pair-drop; never written when L1 alone suffices (SC-1).

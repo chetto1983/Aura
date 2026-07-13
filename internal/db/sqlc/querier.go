@@ -12,8 +12,12 @@ import (
 
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
+	AppendCompactionRolloutDecision(ctx context.Context, arg AppendCompactionRolloutDecisionParams) (AuraCompactionRolloutDecisions, error)
+	AppendCompactionRolloutEvidence(ctx context.Context, arg AppendCompactionRolloutEvidenceParams) (AuraCompactionRolloutEvidence, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
+	CASRollbackCompactionRollout(ctx context.Context, arg CASRollbackCompactionRolloutParams) (AuraCompactionRolloutStates, error)
+	CASTransitionCompactionRollout(ctx context.Context, arg CASTransitionCompactionRolloutParams) (AuraCompactionRolloutStates, error)
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -32,9 +36,11 @@ type Querier interface {
 	// empty → sql.ErrNoRows / pgx.ErrNoRows → ErrTokenConsumed). The expires_at guard
 	// rejects a stale token in the same statement.
 	ConsumeTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
+	CountCompactionRolloutDecisions(ctx context.Context, scopeID string) (int64, error)
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
+	CreateCompactionRolloutState(ctx context.Context, arg CreateCompactionRolloutStateParams) (AuraCompactionRolloutStates, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
 	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
@@ -63,6 +69,7 @@ type Querier interface {
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetCompactionCheckpoint(ctx context.Context, id pgtype.UUID) (AuraCompactionCheckpoints, error)
 	GetCompactionClaim(ctx context.Context, operationID pgtype.UUID) (AuraCompactionClaims, error)
+	GetCompactionRolloutState(ctx context.Context, scopeID string) (AuraCompactionRolloutStates, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
