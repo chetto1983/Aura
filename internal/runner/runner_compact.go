@@ -4,7 +4,47 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
+
+// ErrOverflowMidStream rejects activation while a model stream is in flight.
+var ErrOverflowMidStream = errors.New("overflow compaction requires a model boundary")
+
+// OverflowExecutor performs exactly one compaction attempt and one reconstruction.
+type OverflowExecutor struct {
+	Timeout     time.Duration
+	Compact     func(context.Context) error
+	Reconstruct func(context.Context) ([]llm.Message, error)
+}
+
+// Run is non-destructive: every failure returns an independent copy of original.
+func (e OverflowExecutor) Run(ctx context.Context, midStream bool, original []llm.Message) ([]llm.Message, error) {
+	fallback := append([]llm.Message(nil), original...)
+	if midStream {
+		return fallback, ErrOverflowMidStream
+	}
+	if e.Compact == nil {
+		return fallback, fmt.Errorf("overflow compaction unavailable")
+	}
+	if e.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.Timeout)
+		defer cancel()
+	}
+	if err := e.Compact(ctx); err != nil {
+		return fallback, err
+	}
+	if e.Reconstruct == nil {
+		return fallback, fmt.Errorf("overflow reconstruction unavailable")
+	}
+	projection, err := e.Reconstruct(ctx)
+	if err != nil {
+		return fallback, err
+	}
+	return projection, nil
+}
 
 // CompactTrigger is the stable trigger vocabulary shared by every coordinator caller.
 type CompactTrigger string
