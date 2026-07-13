@@ -92,4 +92,132 @@ func TestMigration0038TablesAndImmutableSources(t *testing.T) {
 	}
 }
 
+func TestPromotionRequiresReviewAndExplicitClassPolicy(t *testing.T) {
+	s := testStore(t)
+	in := candidateFixtureForStore(t, s)
+	c, err := s.CreateCandidate(t.Context(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := Principal{TenantID: in.TenantID, OwnerID: in.OwnerID, Purpose: in.Purpose, Region: in.Region, Capabilities: []string{"memory.read"}, MaxSensitivity: "normal"}
+	if _, err := s.Promote(t.Context(), Policy{}, principal, c.ID); !errors.Is(err, ErrPromotionDisabled) {
+		t.Fatalf("default promotion error=%v", err)
+	}
+	policy := Policy{ReviewApproved: true, Classes: map[string]ClassPolicy{"preference": {AllowPromotion: true}}}
+	m, err := s.Promote(t.Context(), policy, principal, c.ID)
+	if err != nil || m.CandidateID != c.ID {
+		t.Fatalf("promote=%+v err=%v", m, err)
+	}
+}
+
+func TestRetrievalGateDeniesCrossBoundaryBeforeRelevance(t *testing.T) {
+	s := testStore(t)
+	in := candidateFixtureForStore(t, s)
+	c, err := s.CreateCandidate(t.Context(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := Policy{ReviewApproved: true, Classes: map[string]ClassPolicy{"preference": {AllowPromotion: true, AllowRetrieval: true}}}
+	p := Principal{TenantID: in.TenantID, OwnerID: in.OwnerID, Purpose: in.Purpose, Region: in.Region, Capabilities: []string{"memory.read"}, MaxSensitivity: "normal"}
+	if _, err := s.Promote(t.Context(), policy, p, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*Principal)
+	}{
+		{"identity", func(p *Principal) { p.OwnerID = uuid.NewString() }},
+		{"region", func(p *Principal) { p.Region = "us" }},
+		{"purpose", func(p *Principal) { p.Purpose = "ads" }},
+		{"capability", func(p *Principal) { p.Capabilities = nil }},
+		{"sensitivity", func(p *Principal) { p.MaxSensitivity = "public" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			denied := p
+			tc.mutate(&denied)
+			got, err := s.Retrieve(t.Context(), policy, denied, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("cross-boundary retrieval=%+v", got)
+			}
+		})
+	}
+	got, err := s.Retrieve(t.Context(), policy, p, 1)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("authorized retrieval=%+v err=%v", got, err)
+	}
+}
+
+func TestConsentWithdrawalDeletionForgetAndExpiryPropagate(t *testing.T) {
+	for _, event := range []string{"consent", "deletion", "forget", "expiry"} {
+		t.Run(event, func(t *testing.T) {
+			s := testStore(t)
+			in := candidateFixtureForStore(t, s)
+			c, err := s.CreateCandidate(t.Context(), in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			policy := Policy{ReviewApproved: true, Classes: map[string]ClassPolicy{"preference": {AllowPromotion: true, AllowRetrieval: true}}}
+			p := Principal{TenantID: in.TenantID, OwnerID: in.OwnerID, Purpose: in.Purpose, Region: in.Region, Capabilities: []string{"memory.read"}, MaxSensitivity: "normal"}
+			if _, err = s.Promote(t.Context(), policy, p, c.ID); err != nil {
+				t.Fatal(err)
+			}
+			switch event {
+			case "consent":
+				err = s.WithdrawConsent(t.Context(), in.TenantID, in.OwnerID, in.Purpose)
+			case "deletion":
+				err = s.DeleteSource(t.Context(), in.SourceManifest[0].Kind, in.SourceManifest[0].ID)
+			case "forget":
+				err = s.ForgetMe(t.Context(), in.TenantID, in.OwnerID)
+			case "expiry":
+				err = s.Expire(t.Context(), in.ExpiresAt.Add(time.Second))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.Retrieve(t.Context(), policy, p, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("%s left retrievable memory", event)
+			}
+		})
+	}
+}
+
+func TestSupersessionRemovesOldMemoryFromRetrieval(t *testing.T) {
+	s := testStore(t)
+	first := candidateFixtureForStore(t, s)
+	a, err := s.CreateCandidate(t.Context(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.Evidence = "prefers very concise answers"
+	second.SourceManifest = []SourceRef{{Kind: "turn", ID: uuid.NewString(), Digest: digest("new")}}
+	b, err := s.CreateCandidate(t.Context(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := Policy{ReviewApproved: true, Classes: map[string]ClassPolicy{"preference": {AllowPromotion: true, AllowRetrieval: true}}}
+	p := Principal{TenantID: first.TenantID, OwnerID: first.OwnerID, Purpose: first.Purpose, Region: first.Region, Capabilities: []string{"memory.read"}, MaxSensitivity: "normal"}
+	if _, err = s.Promote(t.Context(), policy, p, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Promote(t.Context(), policy, p, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Supersede(t.Context(), a.ID, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Retrieve(t.Context(), policy, p, 10)
+	if err != nil || len(got) != 1 || got[0].CandidateID != b.ID {
+		t.Fatalf("superseded retrieval=%+v err=%v", got, err)
+	}
+}
+
 func digest(v string) string { return EvidenceDigest(v) }
