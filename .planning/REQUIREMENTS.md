@@ -155,8 +155,8 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 
 ### Industrial Conversation Compaction (IC)
 
-- [ ] **IC-01**: Provider capability registry and exact fail-closed token budget model.
-- [ ] **IC-02**: Semantic-unit selection, atomic recent tail, disjoint manifests, and typed L1 edits.
+- [x] **IC-01**: Provider capability registry and exact fail-closed token budget model.
+- [x] **IC-02**: Semantic-unit selection, atomic recent tail, disjoint manifests, and typed L1 edits.
 - [ ] **IC-03**: Pure proactive L2.4 decision seam before any allowed L2.5 fallback.
 - [ ] **IC-04**: Durable stable-ID claims, leases, out-of-transaction inference, and serializable CAS finalize.
 - [ ] **IC-05**: Branch-aware immutable checkpoint generations, versioned digests, active pointer, and deterministic reconstruction.
@@ -167,8 +167,8 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [ ] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
 - [ ] **IC-11**: Active/LKG/bounded-rebuild recovery, compatible preview/restore, quarantine and disaster recovery.
 - [ ] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
-- [ ] **IC-13**: Redacted observability, 500+200 evaluation corpus, numerical promotion gates, staged canaries and automatic rollback.
-- [ ] **IC-14**: Backwards-compatible additive migrations, activation-disabled slices, full CI/security/privacy/rollback evidence, and legacy retirement.
+- [x] **IC-13**: Redacted observability, 500+200 evaluation corpus, numerical promotion gates, staged canaries and automatic rollback.
+- [x] **IC-14**: Backwards-compatible additive migrations, activation-disabled slices, full CI/security/privacy/rollback evidence, and legacy retirement.
 
 ### Code Quality Cleanup (QUAL)
 

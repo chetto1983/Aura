@@ -2,15 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
+current_phase: 42
+current_phase_name: llm-conversation-compaction
 status: executing
-stopped_at: Phase 37F context gathered
-last_updated: "2026-07-13T10:08:19.532Z"
-last_activity: 2026-07-11 — Phase 37E complete, transitioned to Phase 37F
+stopped_at: Completed 42-01-PLAN.md
+last_updated: "2026-07-13T11:21:15.007Z"
+last_activity: 2026-07-13
+last_activity_desc: Phase 42 execution started
 progress:
   total_phases: 19
   completed_phases: 13
-  total_plans: 100
-  completed_plans: 93
+  total_plans: 103
+  completed_plans: 94
   percent: 68
 ---
 
@@ -21,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 43 — operator-break-glass-recovery-and-forgot-password-e2e
+**Current focus:** Phase 42 — llm-conversation-compaction
 
 ## Current Position
 
-Phase: 37F — Conversation & Artifact Sharing / Export
-Plan: Not started
+Phase: 42 (llm-conversation-compaction) — EXECUTING
+Plan: 2 of 10
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
-Last activity: 2026-07-11 — Phase 37E complete, transitioned to Phase 37F
+Last activity: 2026-07-13 — Phase 42 execution started
 
 #### 37E-05 — model reasoning-CAPABILITY DETECTION (WEBMODEL-01/03 capability foundation, Wave-3, the phase's only net-new external-dependency vertical). **Sequential on master, 3 atomic commits `42fe6d2e` (Task 1, test — fixtures) / `936c6f59` (Task 2, feat) / `61c12c6d` (Task 3, feat) + `19dbf827` (coverage hardening, test) + this docs commit.** Auto-detects the ACTIVE model's advertised reasoning efforts (D-13) instead of the hard-coded placebo table (D-12), behind ONE neutral seam plan 06 reads. **Task 1 (`42fe6d2e`):** captured daemon-free fixtures `internal/llm/testdata/openrouter_models.json` (3 models exercising every branch: graduated set with an injected hostile `turbo` token, `mandatory:true`, no-reasoning) + `llamacpp_props.json` (`chat_template_caps.supports_thinking:false`); the /models nesting is operator-verified LIVE 2026-07-10, no live capture possible in-env (no key/network) so hand-built to the verified shape with an in-file `_note` marking the synthetic-for-test values + `[ASSUMED-pending-live-capture]` /props flag. **Task 2 (`936c6f59`, TDD):** `internal/llm/model_reasoning_caps.go` (271 LOC) — `ReasoningCapability` struct, `openRouterModelsResponse` DTO, `ModelCapabilityClient` (+`NewModelCapabilityClient`, `ReasoningCapabilityFor`): `GET {BaseURL}/models` over cfg's Bearer+attribution headers, body-size-capped `json.Decoder`, TTL cache keyed by `normalizeModelID` with an injectable clock — cold→warm(no 2nd call)→post-expiry re-fetch proven; STRICT allowlist clamp `{max,xhigh,high,medium,low,none}` DROPS unknown/hostile tokens (T-37E-05-UPSTREAM); `ReasoningCapabilitySource` interface (`AllowedEfforts(ctx)→efforts,default,detected`) + `openRouterReasoningCaps` (honors `mandatory`→strips off, surfaces `default_effort`); fetch-fail/absent/empty→`detected=false` (T-37E-05-AVAIL safe floor, never serves stale). **Task 3 (`61c12c6d`, TDD):** `internal/llm/llamacpp_caps.go` (170 LOC) — `llamaCppReasoningCaps` (explicit `Provider==llamacpp` widens to the full spike-095 graduated set `{none,low,medium,high,xhigh,max}` detected=true WITHOUT /props per OQ-4; best-effort `/props` probe narrows to `{none}` only on an explicit thinking-disabled flag; probed once + cached; unknown/absent/unreachable/malformed keeps the full set, never panics) + `NewReasoningCapabilitySource(cfg,ttl)` boot selector branching on `llm.ReasoningTarget` (openrouter→/models source, llamacpp→/props source, else nil→safe floor). **DEVIATIONS (2, both Rule 2 — missing critical):** (1) added the `NewReasoningCapabilitySource` boot seam (the objective's "selected by ReasoningTarget" — the exact linkage plan 06's `SetReasoningCapabilitySource` needs, else 06 re-implements the branch); (2) `19dbf827` — `TestClampEfforts` (pure-fn coverage of the named security control) + `TestCapabilitySourceRequestBuildError` raised `clampEfforts` 77.8%→100%, pkg 93.1%→94.5%. No architectural changes; NO new deps/migrations/env (reuses the configured OpenRouter key + base URL). **NO network in CI:** every HTTP call is an injected `http.RoundTripper` returning a captured testdata fixture. **VALIDATION:** `go test ./internal/llm/ -race` (WSL, CGO) `ok`; `go vet ./...`+`go build ./...` (Windows) exit 0; `golangci-lint` 0 issues; owned-surface 94.5% (≥85% floor); each new file <600 LOC (271/170). Exact downstream symbols for 37E-06: `ReasoningCapability`, `ReasoningCapabilitySource.AllowedEfforts`, `ModelCapabilityClient`, `NewReasoningCapabilitySource`, `openRouterReasoningCaps`/`llamaCppReasoningCaps`. **TDD gate:** Tasks 2+3 RED→GREEN observed in-tree (compile-fail RED both times), single atomic `feat` each because the lefthook pre-commit `go vet`+`golangci-lint` rejects a non-compiling RED-only commit (no `--no-verify`; same accommodation as 37E-02/04). **WEBMODEL-01/03 stay `[ ]`** (phase-spanning — capability FOUNDATION only; the endpoint 37E-06 + dynamic UI 37E-07 + two-stage validator make them user-observable; `requirements mark-complete` intentionally NOT run, matching 37E-01..04 precedent — the terminal plan 37E-07 owns the mark). SUMMARY: `.planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-05-SUMMARY.md`. Next: **37E-06** (two-stage `/agent/run` validation + `GET /api/composer/reasoning-capabilities` + composition wiring, Wave-4).
 
@@ -330,6 +333,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 43 P01 | 23min | 2 tasks | 4 files |
 | Phase 43 P04 | 15min | 1 tasks | 1 files |
 | Phase 43 P03 | 15min | 2 tasks | 3 files |
+| Phase 42 P01 | 42 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -575,6 +579,9 @@ Recent decisions affecting current work:
 - [Phase 43]: 43-04 deny no-leak: body.innerHTML() must exclude the backend factor identifiers identity_recovery/telegram_accounts (only neutral 'Telegram' brand copy allowed) — proves the panel never reveals which recovery factor is missing (R5/T-43-04).
 - [Phase 43]: 43-03: shipped `aura identity recover-operator` as a hand-rolled (flag.FlagSet, NOT cobra) sibling subcommand of `recover <name>` (D-05); identityUsage disambiguates token-mint vs offline operator password reset + recovery re-seed; the recover <name> path is untouched — go.mod has no spf13/cobra; CLAUDE.md mandates the existing runIdentity switch-tree; recover-operator is a distinct mechanism, not a replacement
 - [Phase 43]: 43-03: the recover-operator glue wires real os.Getenv + golang.org/x/term seams into breakglass.Sourcer; the ONLY secret emission is the single --generate stdout line (ok-line/errors/argv stay secret-free); golang.org/x/term promoted indirect→direct with go.sum unchanged — T-43-01 secret discipline mirrors recovery.go:53-55; x/term already pinned in go.sum so the promotion adds no supply-chain surface (T-43-SC)
+- [Phase 42]: Unknown or incomplete adapters fail compaction preflight while ordinary compatibility remains available. — Preserves generic transport compatibility without permitting unsafe compaction activation.
+- [Phase 42]: Historical summary data uses a fixed non-authoritative base64 envelope. — Prevents transcript delimiters and quoted instructions from becoming provider roles.
+- [Phase 42]: Semantic selection excludes unsafe lifecycles and never splits an atomic unit. — Preserves tool, approval, retry, and stream correctness.
 
 ### Pending Todos
 
@@ -619,9 +626,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-13T10:08:19.499Z
-Stopped at: Phase 37F context gathered
-Resume file: .planning/phases/37F-conversation-artifact-sharing-export-inserted/37F-CONTEXT.md
+Last session: 2026-07-13T11:20:56.620Z
+Stopped at: Completed 42-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
