@@ -9,6 +9,10 @@ import (
 	"github.com/google/uuid"
 )
 
+type compactMessageCatalog struct{ unavailable, wait, usage, retry, result string }
+
+var compactMessagesItalian = compactMessageCatalog{"Compattazione non disponibile.", "Attendi la fine della risposta del modello prima di ripristinare un checkpoint.", "Uso: /compact restore <checkpoint-id>", "Compattazione non disponibile, riprova.", "Compattazione %s: stato %s, checkpoint %s, precedente %s."}
+
 type compactService interface {
 	Preview(context.Context, runner.CompactRequest) (runner.CompactPreview, error)
 	Restore(context.Context, runner.CompactRequest) (runner.CompactPreview, error)
@@ -16,7 +20,7 @@ type compactService interface {
 
 func dispatchCompact(ctx context.Context, service compactService, conversationID, actorID string, streaming bool, arg string) string {
 	if service == nil || conversationID == "" || actorID == "" {
-		return "Compattazione non disponibile."
+		return compactMessagesItalian.unavailable
 	}
 	fields := strings.Fields(strings.TrimSpace(arg))
 	action := "compact"
@@ -28,21 +32,21 @@ func dispatchCompact(ctx context.Context, service compactService, conversationID
 		checkpointID = fields[1]
 	}
 	if action == "restore" && streaming {
-		return "Attendi la fine della risposta del modello prima di ripristinare un checkpoint."
+		return compactMessagesItalian.wait
 	}
 	req := runner.CompactRequest{OperationID: uuid.NewString(), ConversationID: conversationID, BranchID: "root", CheckpointID: checkpointID, ActorID: actorID, Trigger: runner.CompactTriggerManual, SafePoint: action == "restore"}
 	var result runner.CompactPreview
 	var err error
 	if action == "restore" {
 		if checkpointID == "" {
-			return "Uso: /compact restore <checkpoint-id>"
+			return compactMessagesItalian.usage
 		}
 		result, err = service.Restore(ctx, req)
 	} else {
 		result, err = service.Preview(ctx, req)
 	}
 	if err != nil {
-		return "Compattazione non disponibile, riprova."
+		return compactMessagesItalian.retry
 	}
-	return fmt.Sprintf("Compattazione %s: stato %s, checkpoint %s, precedente %s.", action, result.Status, result.CheckpointID, result.PriorCheckpointID)
+	return fmt.Sprintf(compactMessagesItalian.result, action, result.Status, result.CheckpointID, result.PriorCheckpointID)
 }

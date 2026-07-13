@@ -36,3 +36,10 @@ func TestTelegramCompactLocalizedAndSafePointBound(t *testing.T) {
 		t.Fatalf("mid-stream restore reached coordinator or lacked localized rejection: %q", reply)
 	}
 }
+
+func TestTelegramCompactUsesItalianMessageCatalog(t *testing.T) {
+	reply := dispatchCompact(context.Background(), nil, "", "", false, "")
+	if reply != compactMessagesItalian.unavailable {
+		t.Fatalf("reply = %q", reply)
+	}
+}

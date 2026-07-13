@@ -71,6 +71,10 @@ type compactRequestBody struct {
 	SafePoint    bool   `json:"safePoint,omitempty"`
 }
 
+func writeCompactAPIError(w http.ResponseWriter, status int, code string) {
+	writeJSONStatus(w, status, map[string]string{"error": code})
+}
+
 func (s *Server) decodeOwnedCompactRequest(w http.ResponseWriter, r *http.Request) (runner.CompactRequest, bool) {
 	id, ok := parseConvID(w, r)
 	if !ok {
@@ -78,7 +82,7 @@ func (s *Server) decodeOwnedCompactRequest(w http.ResponseWriter, r *http.Reques
 	}
 	actor := scopedIdentityID(r.Context())
 	if actor == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeCompactAPIError(w, http.StatusUnauthorized, "unauthorized")
 		return runner.CompactRequest{}, false
 	}
 	if _, err := s.conv.GetForIdentity(r.Context(), id, actor); err != nil {
@@ -90,7 +94,7 @@ func (s *Server) decodeOwnedCompactRequest(w http.ResponseWriter, r *http.Reques
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || strings.TrimSpace(body.OperationID) == "" {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeCompactAPIError(w, http.StatusBadRequest, "invalid_request_body")
 		return runner.CompactRequest{}, false
 	}
 	return runner.CompactRequest{OperationID: body.OperationID, ConversationID: id, BranchID: "root", CheckpointID: body.CheckpointID, ActorID: actor, Trigger: runner.CompactTriggerManual, SafePoint: body.SafePoint}, true
@@ -99,7 +103,7 @@ func (s *Server) decodeOwnedCompactRequest(w http.ResponseWriter, r *http.Reques
 // handleCompactPreview returns bounded shadow metadata and never changes activation.
 func (s *Server) handleCompactPreview(w http.ResponseWriter, r *http.Request) {
 	if s.compact == nil || s.conv == nil {
-		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		writeCompactAPIError(w, http.StatusServiceUnavailable, "compaction_unavailable")
 		return
 	}
 	req, ok := s.decodeOwnedCompactRequest(w, r)
@@ -108,7 +112,7 @@ func (s *Server) handleCompactPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.compact.Preview(r.Context(), req)
 	if err != nil {
-		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		writeCompactAPIError(w, http.StatusServiceUnavailable, "compaction_unavailable")
 		return
 	}
 	writeJSON(w, result)
@@ -117,7 +121,7 @@ func (s *Server) handleCompactPreview(w http.ResponseWriter, r *http.Request) {
 // handleCompactRestore rolls back only at a caller-declared model-safe point.
 func (s *Server) handleCompactRestore(w http.ResponseWriter, r *http.Request) {
 	if s.compact == nil || s.conv == nil {
-		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		writeCompactAPIError(w, http.StatusServiceUnavailable, "compaction_unavailable")
 		return
 	}
 	req, ok := s.decodeOwnedCompactRequest(w, r)
@@ -125,16 +129,16 @@ func (s *Server) handleCompactRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.CheckpointID == "" {
-		http.Error(w, "checkpoint required", http.StatusBadRequest)
+		writeCompactAPIError(w, http.StatusBadRequest, "checkpoint_required")
 		return
 	}
 	if !req.SafePoint {
-		http.Error(w, "safe point required", http.StatusConflict)
+		writeCompactAPIError(w, http.StatusConflict, "safe_point_required")
 		return
 	}
 	result, err := s.compact.Restore(r.Context(), req)
 	if err != nil {
-		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
+		writeCompactAPIError(w, http.StatusServiceUnavailable, "compaction_unavailable")
 		return
 	}
 	writeJSON(w, result)

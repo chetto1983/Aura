@@ -44,3 +44,12 @@ func TestChatCompactCommandsShareCoordinatorAndRejectMidStreamRestore(t *testing
 		t.Fatalf("mid-stream restore must be rejected before coordinator call, req=%+v out=%q", service.req, out.String())
 	}
 }
+
+func TestChatCompactUsesItalianCatalogFromLocale(t *testing.T) {
+	t.Setenv("LANG", "it_IT.UTF-8")
+	var out bytes.Buffer
+	dispatchCompactCommand(context.Background(), nil, "", "", false, "/compact", &out)
+	if !strings.Contains(out.String(), compactMessagesItalian.unavailable) {
+		t.Fatalf("localized output = %q", out.String())
+	}
+}

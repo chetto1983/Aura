@@ -5,7 +5,7 @@ import {
   composerSkillPickerEn,
   composerSkillPickerIt,
 } from './resources.composer';
-import { displayEn, displayIt } from './resources.display';
+import { displayEn, displayIt } from './resources.display'; import { compactionEn, compactionIt } from './resources.compaction';
 import { documentsEn, documentsIt } from './resources.documents';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
@@ -155,6 +155,7 @@ export const resources = {
         },
       },
       ...displayEn,
+      ...compactionEn,
       ...documentsEn,
       ...governanceEn,
       ...graphEn,
@@ -444,6 +445,7 @@ export const resources = {
         },
       },
       ...displayIt,
+      ...compactionIt,
       ...documentsIt,
       ...governanceIt,
       ...graphIt,

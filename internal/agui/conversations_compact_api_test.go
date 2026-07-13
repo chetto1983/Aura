@@ -50,6 +50,9 @@ func TestRestoreRequiresSafePoint(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
+	if rec.Header().Get("Content-Type") != "application/json" || !strings.Contains(rec.Body.String(), `"error":"safe_point_required"`) {
+		t.Fatalf("localized client cannot consume error: %s", rec.Body.String())
+	}
 }
 
 func TestCompactOperationsUseIdenticalOwnerScopedCoordinatorOutcome(t *testing.T) {

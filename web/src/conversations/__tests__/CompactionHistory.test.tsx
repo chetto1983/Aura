@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../../i18n/i18n';
 import { CompactionHistory } from '../CompactionHistory';
 
 function wrapper() {
@@ -12,7 +13,18 @@ function wrapper() {
 }
 
 describe('CompactionHistory', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await i18n.changeLanguage('en');
+  });
+
+  it('localizes labels and token counts using the active locale', async () => {
+    await i18n.changeLanguage('it');
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ entries: [{ checkpoint_id: 'cp-1', kind: 'compaction', trigger: 'manual', reason: 'target', token_delta: -1200.5, quality: 'passed' }] }), { status: 200 }))));
+    render(<CompactionHistory conversationId="c-1" />, { wrapper: wrapper() });
+    expect(await screen.findByRole('heading', { name: 'Cronologia compattazione' })).toBeTruthy();
+    expect(await screen.findByText(/-1200,5 token/)).toBeTruthy();
+  });
 
   it('distinguishes semantic compaction, L1 offload, and lossy L2.5 for screen readers', async () => {
     vi.stubGlobal(
