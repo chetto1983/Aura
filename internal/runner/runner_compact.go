@@ -96,9 +96,9 @@ const (
 
 // CompactRequest carries one durable operation identity through preview or restore.
 type CompactRequest struct {
-	OperationID, ConversationID, BranchID, CheckpointID, ActorID string
-	Trigger                                                      CompactTrigger
-	SafePoint                                                    bool
+	OperationID, ConversationID, BranchID, CheckpointID, ActorID, TenantID string
+	Trigger                                                                CompactTrigger
+	SafePoint                                                              bool
 }
 
 // CompactPreview is sanitized metadata; summary content is already validated historical data.
@@ -121,11 +121,17 @@ type CompactBackend interface {
 type CompactCoordinator struct {
 	backend           CompactBackend
 	activationEnabled bool
+	effective         CompactionEffectiveReader
 }
 
 // NewCompactCoordinator constructs a shadow-only coordinator unless explicitly enabled later.
 func NewCompactCoordinator(backend CompactBackend, activationEnabled bool) *CompactCoordinator {
 	return &CompactCoordinator{backend: backend, activationEnabled: activationEnabled}
+}
+
+// NewPersistedCompactCoordinator constructs a coordinator whose activation is fenced by durable state.
+func NewPersistedCompactCoordinator(backend CompactBackend, effective CompactionEffectiveReader) *CompactCoordinator {
+	return &CompactCoordinator{backend: backend, effective: effective}
 }
 
 // Preview returns a validated checkpoint projection without changing the active pointer.
@@ -136,13 +142,31 @@ func (c *CompactCoordinator) Preview(ctx context.Context, req CompactRequest) (C
 	if req.OperationID == "" || req.Trigger.Validate() != nil {
 		return CompactPreview{OperationID: req.OperationID, Status: CompactStatusRejected}, nil
 	}
+	var claimVersion int64
+	if c.effective != nil {
+		snap, e := c.effective.Read(ctx)
+		if e != nil {
+			return CompactPreview{OperationID: req.OperationID, Status: CompactStatusUnavailable}, nil
+		}
+		if !snap.Config.Selected(req.TenantID, req.ConversationID) {
+			return CompactPreview{OperationID: req.OperationID, Status: CompactStatusDisabled}, nil
+		}
+		claimVersion = snap.Version
+	}
 	preview, err := c.backend.PreviewCompaction(ctx, req)
 	preview.OperationID, preview.Activated = req.OperationID, false
 	if err != nil {
 		preview.Status = compactErrorStatus(err)
 		return preview, nil
 	}
-	if c.activationEnabled {
+	if c.effective != nil {
+		final, e := c.effective.Read(ctx)
+		if e != nil || final.Version != claimVersion {
+			preview.Status = CompactStatusDisabled
+			return preview, nil
+		}
+		preview.Status = CompactStatusCompacting
+	} else if c.activationEnabled {
 		preview.Status = CompactStatusCompacting
 	} else {
 		preview.Status = CompactStatusDisabled

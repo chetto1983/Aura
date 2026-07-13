@@ -19,12 +19,18 @@ import (
 	"context"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
+
+// CompactionEffectiveReader reloads the durable activation fence before claim and finalize.
+type CompactionEffectiveReader interface {
+	Read(context.Context) (config.EffectiveCompactionSnapshot, error)
+}
 
 // ConversationStore is the narrow conversation surface the Runner consumes
 // (D-A2-02). *conversations.Store satisfies it implicitly. LoadManagedHistory

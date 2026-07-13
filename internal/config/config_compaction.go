@@ -1,11 +1,62 @@
 package config
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"hash/fnv"
 	"strconv"
 	"strings"
 )
+
+// PersistedCompactionState is the locale-neutral durable state projection consumed at runtime.
+type PersistedCompactionState struct {
+	ScopeID      string
+	Version      int64
+	ActiveConfig []byte
+}
+
+// CompactionEffectiveSource loads authoritative rollout state from shared storage.
+type CompactionEffectiveSource interface {
+	LoadEffectiveCompaction(context.Context, string) (PersistedCompactionState, error)
+}
+
+// EffectiveCompactionSnapshot fences one claim/finalization against a durable version.
+type EffectiveCompactionSnapshot struct {
+	ScopeID string
+	Version int64
+	Config  CompactionConfig
+}
+
+// PersistedCompactionReader validates the durable JSON snapshot on every read.
+type PersistedCompactionReader struct {
+	Source  CompactionEffectiveSource
+	ScopeID string
+}
+
+// Read returns no static-config fallback: unavailable or malformed durable state fails closed.
+func (r PersistedCompactionReader) Read(ctx context.Context) (EffectiveCompactionSnapshot, error) {
+	if r.Source == nil || r.ScopeID == "" {
+		return EffectiveCompactionSnapshot{}, ErrInvalidCompactionConfig
+	}
+	s, err := r.Source.LoadEffectiveCompaction(ctx, r.ScopeID)
+	if err != nil {
+		return EffectiveCompactionSnapshot{}, err
+	}
+	var raw struct {
+		Mode                string `json:"mode"`
+		Percent             int    `json:"percent"`
+		RecoveryDrillPassed bool   `json:"recovery_drill_passed"`
+	}
+	if s.ScopeID != r.ScopeID || s.Version < 1 || json.Unmarshal(s.ActiveConfig, &raw) != nil {
+		return EffectiveCompactionSnapshot{}, ErrInvalidCompactionConfig
+	}
+	cfg := CompactionConfig{Mode: CompactionMode(raw.Mode), Percent: raw.Percent, RecoveryDrillPassed: raw.RecoveryDrillPassed}
+	if err := cfg.Validate(); err != nil {
+		return EffectiveCompactionSnapshot{}, err
+	}
+	return EffectiveCompactionSnapshot{ScopeID: s.ScopeID, Version: s.Version, Config: cfg}, nil
+}
 
 // ErrInvalidCompactionConfig rejects unsafe rollout combinations.
 var ErrInvalidCompactionConfig = errors.New("invalid compaction configuration")

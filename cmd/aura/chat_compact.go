@@ -35,9 +35,12 @@ func (b conversationCompactBackend) RestoreCompaction(ctx context.Context, req r
 	return b.store.RestoreCompaction(ctx, req.ConversationID, req.BranchID, req.CheckpointID, req.OperationID, req.ActorID)
 }
 
-func newConversationCompactCoordinator(store *conversations.Store) *runner.CompactCoordinator {
+func newConversationCompactCoordinator(store *conversations.Store, readers ...runner.CompactionEffectiveReader) *runner.CompactCoordinator {
 	if store == nil {
 		return runner.NewCompactCoordinator(nil, false)
+	}
+	if len(readers) > 0 && readers[0] != nil {
+		return runner.NewPersistedCompactCoordinator(conversationCompactBackend{store: store}, readers[0])
 	}
 	return runner.NewCompactCoordinator(conversationCompactBackend{store: store}, false)
 }

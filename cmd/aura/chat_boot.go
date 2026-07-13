@@ -38,19 +38,21 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg             *config.Config
-	pool            *pgxpool.Pool
-	conv            *conversations.Store
-	pause           *askuser.Store
-	identity        *identity.Store
-	run             *runner.Runner
-	client          llm.Client
-	reg             *tools.Registry
-	gateway         *gateway.Gateway
-	toolInvocations *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
-	assets          *assets.Service
-	toolHandles     runtimeToolHandles
-	mcpClosers      []func() error
+	cfg                 *config.Config
+	pool                *pgxpool.Pool
+	conv                *conversations.Store
+	pause               *askuser.Store
+	identity            *identity.Store
+	run                 *runner.Runner
+	compactionEffective runner.CompactionEffectiveReader
+	compactionRollout   *conversations.CompactionRolloutController
+	client              llm.Client
+	reg                 *tools.Registry
+	gateway             *gateway.Gateway
+	toolInvocations     *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	assets              *assets.Service
+	toolHandles         runtimeToolHandles
+	mcpClosers          []func() error
 	// sandboxRouter is the per-identity box routing seam (Phase 37, plan 37-05). It is nil
 	// under a non-strict profile or a Docker-unavailable host — a safe host-direct no-op
 	// everywhere (Route/Strict/SuspendIdle all nil-guard). buildDispatch registers it as the
@@ -318,14 +320,21 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	if err != nil {
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
+	rolloutStore := conversations.NewCompactionRolloutStore(pool)
+	rolloutReader := config.PersistedCompactionReader{Source: rolloutStore, ScopeID: "default"}
+	if _, err := rolloutReader.Read(ctx); err != nil {
+		return nil, fmt.Errorf("compaction rollout durable preflight: %w", err)
+	}
+	rolloutController := conversations.NewCompactionRolloutController(rolloutStore, "default", time.Now)
 
 	client := newLLMClient(cfg.LLM)
 	deps := runner.Deps{
-		Conv:            convStore,
-		Pause:           pauseStore,
-		Identity:        idStore,
-		CacheMetrics:    cacheStore,
-		ToolInvocations: toolInvocationStore,
+		Conv:                convStore,
+		Pause:               pauseStore,
+		Identity:            idStore,
+		CacheMetrics:        cacheStore,
+		ToolInvocations:     toolInvocationStore,
+		CompactionEffective: rolloutReader,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
@@ -358,7 +367,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, compactionEffective: rolloutReader, compactionRollout: rolloutController, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

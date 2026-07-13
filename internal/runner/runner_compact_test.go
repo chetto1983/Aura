@@ -6,8 +6,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+type effectiveReaderFixture struct {
+	snapshots []config.EffectiveCompactionSnapshot
+	calls     int
+}
+
+func (f *effectiveReaderFixture) Read(context.Context) (config.EffectiveCompactionSnapshot, error) {
+	i := f.calls
+	if i >= len(f.snapshots) {
+		i = len(f.snapshots) - 1
+	}
+	f.calls++
+	return f.snapshots[i], nil
+}
+
+func TestCoordinatorHonorsRollbackFinalizeFence(t *testing.T) {
+	b := &fakeCompactBackend{}
+	r := &effectiveReaderFixture{snapshots: []config.EffectiveCompactionSnapshot{{ScopeID: "s", Version: 2, Config: config.CompactionConfig{Mode: config.CompactionEnabled, Percent: 100, RecoveryDrillPassed: true}}, {ScopeID: "s", Version: 3, Config: config.CompactionConfig{Mode: config.CompactionDisabled}}}}
+	got, err := NewPersistedCompactCoordinator(b, r).Preview(t.Context(), CompactRequest{OperationID: "op", ConversationID: "c", TenantID: "t", Trigger: CompactTriggerManual})
+	if err != nil || got.Status != CompactStatusDisabled || got.Activated {
+		t.Fatalf("got=%+v err=%v", got, err)
+	}
+}
 
 type fakeCompactBackend struct {
 	preview  CompactPreview

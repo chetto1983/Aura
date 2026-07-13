@@ -254,7 +254,7 @@ func runReplOrExitNamed(ctx context.Context, label string, env *chatEnv, convID 
 		run:        env.run,
 		cfg:        env.cfg,
 		convID:     convID,
-		compact:    newConversationCompactCoordinator(env.conv),
+		compact:    newConversationCompactCoordinator(env.conv, env.compactionEffective),
 		newTurnCtx: signalTurnCtx,
 	}
 	// Session-end Runner.Stop (auto-resolve orphan pendings + join auto-title

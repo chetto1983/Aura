@@ -2,6 +2,7 @@ package conversations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -81,4 +82,60 @@ func promotionPasses(g compaction_eval.Gates) bool {
 }
 func evidenceFromDecision(d compaction_eval.Decision) RolloutEvidence {
 	return RolloutEvidence{ScopeID: d.ScopeID, Digest: d.EvidenceDigest, EvaluatorVersion: d.EvaluatorVersion, ScorerVersion: d.ScorerVersion, ConfigVersion: d.ConfigVersion, CorpusVersion: d.CorpusVersion, Snapshot: d.Snapshot}
+}
+
+// EvaluateOnce converts the persisted rolling windows into immutable evidence and applies it.
+func (c *CompactionRolloutController) EvaluateOnce(ctx context.Context) (RolloutState, error) {
+	s, err := c.store.Load(ctx, c.scope)
+	if err != nil {
+		return RolloutState{}, err
+	}
+	var failure struct {
+		Rate float64 `json:"rate"`
+	}
+	var latency struct {
+		P95Seconds    float64 `json:"p95_seconds"`
+		BreachMinutes int64   `json:"breach_minutes"`
+	}
+	var restore struct {
+		Rate float64 `json:"rate"`
+	}
+	var strata struct {
+		L0Retention              float64 `json:"l0_retention"`
+		ToolPendingRetention     float64 `json:"tool_pending_retention"`
+		FactualDecisionRetention float64 `json:"factual_decision_retention"`
+		ContinuationDelta        float64 `json:"continuation_delta"`
+		ContinuationConfidence   float64 `json:"continuation_confidence"`
+		MedianReduction          float64 `json:"median_reduction"`
+		TargetAchievement        float64 `json:"target_achievement"`
+		CostRatio                float64 `json:"cost_ratio"`
+		P95OverflowSeconds       float64 `json:"p95_overflow_seconds"`
+	}
+	if json.Unmarshal(s.FailureWindow, &failure) != nil || json.Unmarshal(s.LatencyWindow, &latency) != nil || json.Unmarshal(s.RestoreWindow, &restore) != nil || json.Unmarshal(s.StratumSnapshots, &strata) != nil {
+		return RolloutState{}, errors.New("corrupt rollout evaluation windows")
+	}
+	d, err := compaction_eval.Evaluate(compaction_eval.Input{ScopeID: s.ScopeID, EligibleAttempts: s.EligibleAttempts, EvaluatorVersion: s.EvaluatorVersion, ScorerVersion: s.ScorerVersion, ConfigVersion: s.ConfigVersion, CorpusVersion: s.CorpusVersion, Gates: compaction_eval.Gates{L0Retention: strata.L0Retention, ToolPendingRetention: strata.ToolPendingRetention, FactualDecisionRetention: strata.FactualDecisionRetention, ContinuationDelta: strata.ContinuationDelta, ContinuationConfidence: strata.ContinuationConfidence, MedianReduction: strata.MedianReduction, TargetAchievement: strata.TargetAchievement, CostRatio: strata.CostRatio, P95ProactiveSeconds: latency.P95Seconds, P95OverflowSeconds: strata.P95OverflowSeconds, FailureRate: failure.Rate, LatencyBreachMinutes: latency.BreachMinutes, RestoreRate: restore.Rate}})
+	if err != nil {
+		return RolloutState{}, err
+	}
+	return c.Apply(ctx, d)
+}
+
+// Run evaluates immediately and periodically until cancellation.
+func (c *CompactionRolloutController) Run(ctx context.Context, interval time.Duration) error {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	for {
+		if _, err := c.EvaluateOnce(ctx); err != nil {
+			return err
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+	}
 }

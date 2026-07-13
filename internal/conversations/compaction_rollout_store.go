@@ -9,12 +9,22 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// LoadEffectiveCompaction projects only the versioned active config for runtime consumers.
+func (s *CompactionRolloutStore) LoadEffectiveCompaction(ctx context.Context, scope string) (config.PersistedCompactionState, error) {
+	state, err := s.Load(ctx, scope)
+	if err != nil {
+		return config.PersistedCompactionState{}, err
+	}
+	return config.PersistedCompactionState{ScopeID: state.ScopeID, Version: state.Version, ActiveConfig: append([]byte(nil), state.ActiveConfig...)}, nil
+}
 
 // ErrRolloutStaleVersion identifies a failed expected-version CAS.
 var ErrRolloutStaleVersion = errors.New("compaction rollout version is stale")

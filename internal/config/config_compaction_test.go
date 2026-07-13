@@ -1,6 +1,31 @@
 package config
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
+
+type effectiveSourceFixture struct {
+	state PersistedCompactionState
+	err   error
+}
+
+func (f effectiveSourceFixture) LoadEffectiveCompaction(context.Context, string) (PersistedCompactionState, error) {
+	return f.state, f.err
+}
+
+func TestEffectiveSnapshotFailsClosedAndPreservesVersion(t *testing.T) {
+	r := PersistedCompactionReader{Source: effectiveSourceFixture{state: PersistedCompactionState{ScopeID: "scope", Version: 7, ActiveConfig: []byte(`{"mode":"canary","percent":5,"recovery_drill_passed":true}`)}}, ScopeID: "scope"}
+	s, err := r.Read(t.Context())
+	if err != nil || s.Version != 7 || s.Config.Percent != 5 {
+		t.Fatalf("snapshot=%+v err=%v", s, err)
+	}
+	r.Source = effectiveSourceFixture{err: errors.New("db unavailable")}
+	if _, err = r.Read(t.Context()); err == nil {
+		t.Fatal("unavailable durable state did not fail closed")
+	}
+}
 
 func TestCompactionConfigDefaultsDisabled(t *testing.T) {
 	cfg, err := ParseCompactionConfig("", "")
