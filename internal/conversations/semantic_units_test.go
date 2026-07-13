@@ -67,6 +67,17 @@ func TestL1EditRequiresAuthorizedReference(t *testing.T) {
 	}
 }
 
+func TestL1TypedEditsDoNotMutateCanonicalTurns(t *testing.T) {
+	src := []Turn{{Seq: 7, Role: llm.RoleTool, Content: "large payload", ToolCallID: "call"}}
+	got := ApplyL1TypedEdits(src, []ContextEdit{{TurnSeq: 7, Kind: "authorized_reference", Reference: "content-part:p1"}})
+	if src[0].Content != "large payload" {
+		t.Fatal("canonical turn mutated")
+	}
+	if got[0].Content != "[content part reference: content-part:p1]" || got[0].ContentSidecarPath != "" {
+		t.Fatalf("projection=%+v", got[0])
+	}
+}
+
 func assertManifestPartition(t *testing.T, m CompactionManifest, want []int) {
 	t.Helper()
 	seen := map[int]int{}

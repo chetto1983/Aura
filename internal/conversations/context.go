@@ -332,6 +332,25 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 	return out
 }
 
+// ApplyL1TypedEdits returns a working projection with reconstructable payloads
+// replaced by authorized durable references. Canonical turns are never mutated.
+func ApplyL1TypedEdits(turns []Turn, edits []ContextEdit) []Turn {
+	out := append([]Turn(nil), turns...)
+	bySeq := make(map[int]ContextEdit, len(edits))
+	for _, edit := range edits {
+		if edit.Kind == "authorized_reference" && strings.TrimSpace(edit.Reference) != "" {
+			bySeq[edit.TurnSeq] = edit
+		}
+	}
+	for i := range out {
+		if edit, ok := bySeq[out[i].Seq]; ok {
+			out[i].Content = "[content part reference: " + edit.Reference + "]"
+			out[i].ContentSidecarPath = ""
+		}
+	}
+	return out
+}
+
 // isSidecarBacked reports whether a RoleTool turn's full content is retrievable via
 // read_tool_output — either an explicit ContentSidecarPath or an inline spill footer
 // (M-01). Only such turns may be evicted to a pointer; a non-spilled turn (an
