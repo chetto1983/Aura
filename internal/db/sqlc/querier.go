@@ -57,9 +57,12 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	GetActiveCompactionPointer(ctx context.Context, arg GetActiveCompactionPointerParams) (AuraCompactionActivePointers, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
+	GetCompactionCheckpoint(ctx context.Context, id pgtype.UUID) (AuraCompactionCheckpoints, error)
+	GetCompactionClaim(ctx context.Context, operationID pgtype.UUID) (AuraCompactionClaims, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
@@ -138,6 +141,7 @@ type Querier interface {
 	ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
+	ListCompatibleCompactionCheckpoints(ctx context.Context, arg ListCompatibleCompactionCheckpointsParams) ([]AuraCompactionCheckpoints, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one

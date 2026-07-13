@@ -95,6 +95,77 @@ type AuraCapabilityGrants struct {
 	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
 }
 
+type AuraCompactionActivePointers struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	BranchID       string             `json:"branch_id"`
+	Generation     int32              `json:"generation"`
+	CheckpointID   pgtype.UUID        `json:"checkpoint_id"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AuraCompactionCheckpoints struct {
+	ID                    pgtype.UUID        `json:"id"`
+	ConversationID        pgtype.UUID        `json:"conversation_id"`
+	BranchID              string             `json:"branch_id"`
+	Generation            int32              `json:"generation"`
+	ParentID              pgtype.UUID        `json:"parent_id"`
+	CapturedWatermarkSeq  int32              `json:"captured_watermark_seq"`
+	SummarizedTurnSeqs    []byte             `json:"summarized_turn_seqs"`
+	TailTurnSeqs          []byte             `json:"tail_turn_seqs"`
+	ProtectedTurnSeqs     []byte             `json:"protected_turn_seqs"`
+	ExcludedTurnSeqs      []byte             `json:"excluded_turn_seqs"`
+	ManifestDigest        string             `json:"manifest_digest"`
+	CompleteCaptureDigest string             `json:"complete_capture_digest"`
+	DigestAlgorithm       string             `json:"digest_algorithm"`
+	DigestVersion         int32              `json:"digest_version"`
+	StructuredSummary     []byte             `json:"structured_summary"`
+	SchemaVersion         int32              `json:"schema_version"`
+	PromptVersion         int32              `json:"prompt_version"`
+	ProjectionVersion     int32              `json:"projection_version"`
+	Metadata              []byte             `json:"metadata"`
+	QualityState          string             `json:"quality_state"`
+	RolloutMode           string             `json:"rollout_mode"`
+	RetentionUntil        pgtype.Timestamptz `json:"retention_until"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraCompactionClaims struct {
+	OperationID          pgtype.UUID        `json:"operation_id"`
+	ConversationID       pgtype.UUID        `json:"conversation_id"`
+	BranchID             string             `json:"branch_id"`
+	IdempotencyKey       string             `json:"idempotency_key"`
+	CapturedWatermarkSeq int32              `json:"captured_watermark_seq"`
+	GovernanceWatermark  int64              `json:"governance_watermark"`
+	BaseActiveGeneration int32              `json:"base_active_generation"`
+	Priority             string             `json:"priority"`
+	State                string             `json:"state"`
+	OwnerID              string             `json:"owner_id"`
+	LeaseUntil           pgtype.Timestamptz `json:"lease_until"`
+	OutcomeCheckpointID  pgtype.UUID        `json:"outcome_checkpoint_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AuraCompactionQuarantine struct {
+	ID             pgtype.UUID        `json:"id"`
+	CheckpointID   pgtype.UUID        `json:"checkpoint_id"`
+	ArtifactKind   string             `json:"artifact_kind"`
+	Reason         string             `json:"reason"`
+	ObservedDigest pgtype.Text        `json:"observed_digest"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraCompactionRestoreEvents struct {
+	ID              pgtype.UUID        `json:"id"`
+	ConversationID  pgtype.UUID        `json:"conversation_id"`
+	BranchID        string             `json:"branch_id"`
+	OldCheckpointID pgtype.UUID        `json:"old_checkpoint_id"`
+	NewCheckpointID pgtype.UUID        `json:"new_checkpoint_id"`
+	OperationID     pgtype.UUID        `json:"operation_id"`
+	ActorID         string             `json:"actor_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 // L2.5 hard-rolling-buffer audit (amendment #22). One row per pair-drop; never written when L1 alone suffices (SC-1).
 type AuraContextRotEvents struct {
 	Ts             pgtype.Timestamptz `json:"ts"`
