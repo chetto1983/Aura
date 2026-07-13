@@ -166,7 +166,7 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [x] **IC-09**: Four-generation recursion cap, deterministic drift gates, and hierarchical canonical rebase.
 - [x] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
 - [x] **IC-11**: Active/LKG/bounded-rebuild recovery, compatible preview/restore, quarantine and disaster recovery.
-- [ ] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
+- [x] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
 - [x] **IC-13**: Redacted observability, 500+200 evaluation corpus, numerical promotion gates, staged canaries and automatic rollback.
 - [x] **IC-14**: Backwards-compatible additive migrations, activation-disabled slices, full CI/security/privacy/rollback evidence, and legacy retirement.
 
