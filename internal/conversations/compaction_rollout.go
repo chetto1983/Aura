@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/chetto1983/aura/internal/conversations/compaction_eval"
@@ -42,15 +43,41 @@ func (c *CompactionRolloutController) Apply(ctx context.Context, d compaction_ev
 	if reason := rollbackReason(s, d); reason != "" {
 		return c.store.Rollback(ctx, RolloutRollback{ScopeID: s.ScopeID, ExpectedVersion: s.Version, Evidence: evidenceFromDecision(d), ReasonCode: reason})
 	}
-	if c.now().Sub(s.StageStartedAt) < 24*time.Hour || d.EligibleAttempts < 1000 || !promotionPasses(d.Gates) {
+	now := c.now()
+	if now.Sub(s.StageStartedAt) < 24*time.Hour || d.EligibleAttempts < 1000 || !promotionPasses(d.Gates) {
+		return s, nil
+	}
+	nextStage, percent := nextCanaryStage(s.Stage)
+	if nextStage == "" {
 		return s, nil
 	}
 	next := s
-	next.Stage = "canary_1"
-	next.StageStartedAt = c.now().UTC()
+	next.Stage = nextStage
+	next.StageStartedAt = now.UTC()
 	next.EligibleAttempts = d.EligibleAttempts
-	next.ActiveConfig = []byte(`{"mode":"canary","percent":1,"recovery_drill_passed":true}`)
+	mode := "canary"
+	if nextStage == "enabled" {
+		mode = "enabled"
+	}
+	next.ActiveConfig = []byte(`{"mode":"` + mode + `","percent":` + strconv.Itoa(percent) + `,"recovery_drill_passed":true}`)
 	return c.store.Transition(ctx, RolloutTransition{ExpectedVersion: s.Version, State: next, Evidence: evidenceFromDecision(d), ReasonCode: "promotion_gates_passed"})
+}
+
+func nextCanaryStage(current string) (string, int) {
+	switch current {
+	case "disabled", "shadow":
+		return "canary_1", 1
+	case "canary_1":
+		return "canary_5", 5
+	case "canary_5":
+		return "canary_20", 20
+	case "canary_20":
+		return "canary_50", 50
+	case "canary_50":
+		return "enabled", 100
+	default:
+		return "", 0
+	}
 }
 
 func rollbackReason(s RolloutState, d compaction_eval.Decision) string {

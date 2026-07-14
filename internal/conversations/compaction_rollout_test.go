@@ -48,6 +48,38 @@ func TestPromotionAfter24HoursAnd1000Attempts(t *testing.T) {
 	}
 }
 
+func TestRolloutControllerAdvancesFullLadder(t *testing.T) {
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		current, next, config string
+		transitions           int
+	}{
+		{"disabled", "canary_1", `{"mode":"canary","percent":1,"recovery_drill_passed":true}`, 1},
+		{"shadow", "canary_1", `{"mode":"canary","percent":1,"recovery_drill_passed":true}`, 1},
+		{"canary_1", "canary_5", `{"mode":"canary","percent":5,"recovery_drill_passed":true}`, 1},
+		{"canary_5", "canary_20", `{"mode":"canary","percent":20,"recovery_drill_passed":true}`, 1},
+		{"canary_20", "canary_50", `{"mode":"canary","percent":50,"recovery_drill_passed":true}`, 1},
+		{"canary_50", "enabled", `{"mode":"enabled","percent":100,"recovery_drill_passed":true}`, 1},
+		{"enabled", "enabled", `{"mode":"enabled","percent":100,"recovery_drill_passed":true}`, 0},
+	} {
+		t.Run(tc.current, func(t *testing.T) {
+			state := rolloutControllerState(now.Add(-24*time.Hour), 1000)
+			state.Stage = tc.current
+			if tc.current == "enabled" {
+				state.ActiveConfig = []byte(tc.config)
+			}
+			store := &fakeRolloutStore{state: state}
+			got, err := NewCompactionRolloutController(store, "scope", func() time.Time { return now }).Apply(t.Context(), passingDecision(t, state))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Stage != tc.next || string(got.ActiveConfig) != tc.config || store.transitions != tc.transitions {
+				t.Fatalf("stage=%q config=%s transitions=%d; want stage=%q config=%s transitions=%d", got.Stage, got.ActiveConfig, store.transitions, tc.next, tc.config, tc.transitions)
+			}
+		})
+	}
+}
+
 func TestRolloutControllerRequiresDurationAndAttempts(t *testing.T) {
 	now := time.Now().UTC()
 	for _, tc := range []struct {
@@ -83,6 +115,12 @@ func TestRollbackSafetyAndStaleEvaluator(t *testing.T) {
 	if err != nil || f.rollbacks != 2 {
 		t.Fatalf("stale rollback=%d err=%v", f.rollbacks, err)
 	}
+	f.state = s
+	d = restoreFailingDecision(t, s)
+	_, err = NewCompactionRolloutController(f, "scope", time.Now).Apply(t.Context(), d)
+	if err != nil || f.rollbacks != 3 {
+		t.Fatalf("restore-rate rollback=%d err=%v", f.rollbacks, err)
+	}
 }
 
 func TestRolloutControllerConflictIsReported(t *testing.T) {
@@ -100,6 +138,39 @@ func rolloutControllerState(start time.Time, attempts int64) RolloutState {
 func passingDecision(t *testing.T, s RolloutState) compaction_eval.Decision {
 	t.Helper()
 	d, err := compaction_eval.Evaluate(compaction_eval.Input{ScopeID: s.ScopeID, EligibleAttempts: s.EligibleAttempts, EvaluatorVersion: s.EvaluatorVersion, ScorerVersion: s.ScorerVersion, ConfigVersion: s.ConfigVersion, CorpusVersion: s.CorpusVersion, Gates: compaction_eval.Gates{L0Retention: 1, ToolPendingRetention: .999, FactualDecisionRetention: .99, ContinuationDelta: 0, ContinuationConfidence: .95, MedianReduction: .5, TargetAchievement: .999, FailureRate: .005, CostRatio: .1, P95ProactiveSeconds: 4, P95OverflowSeconds: 8}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func restoreFailingDecision(t *testing.T, s RolloutState) compaction_eval.Decision {
+	t.Helper()
+	d := passingDecision(t, s)
+	d, err := compaction_eval.Evaluate(compaction_eval.Input{
+		ScopeID:          s.ScopeID,
+		EligibleAttempts: s.EligibleAttempts + 1,
+		EvaluatorVersion: s.EvaluatorVersion,
+		ScorerVersion:    s.ScorerVersion,
+		ConfigVersion:    s.ConfigVersion,
+		CorpusVersion:    s.CorpusVersion,
+		Gates:            d.Gates,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Gates.RestoreRate = .02
+	// Re-evaluate after changing the gate so the immutable digest and snapshot match it.
+	input := compaction_eval.Input{
+		ScopeID:          d.ScopeID,
+		EligibleAttempts: d.EligibleAttempts,
+		EvaluatorVersion: d.EvaluatorVersion,
+		ScorerVersion:    d.ScorerVersion,
+		ConfigVersion:    d.ConfigVersion,
+		CorpusVersion:    d.CorpusVersion,
+		Gates:            d.Gates,
+	}
+	d, err = compaction_eval.Evaluate(input)
 	if err != nil {
 		t.Fatal(err)
 	}

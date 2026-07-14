@@ -20,7 +20,8 @@ func TestCompactionRolloutFullChainPostgres(t *testing.T) {
 	}
 	t.Cleanup(replica.Close)
 	scope := "chain-" + uuid.NewString()
-	initial := rolloutControllerState(time.Now().UTC().Add(-25*time.Hour), 1000)
+	now := time.Now().UTC()
+	initial := rolloutControllerState(now.Add(-25*time.Hour), 1000)
 	initial.ScopeID = scope
 	initial.StratumSnapshots = []byte(`{"l0_retention":1,"tool_pending_retention":0.999,"factual_decision_retention":0.99,"continuation_delta":0,"continuation_confidence":0.95,"median_reduction":0.5,"target_achievement":0.999,"cost_ratio":0.1,"p95_overflow_seconds":8}`)
 	first, second := NewCompactionRolloutStore(pool), NewCompactionRolloutStore(replica)
@@ -32,10 +33,20 @@ func TestCompactionRolloutFullChainPostgres(t *testing.T) {
 	if _, err = first.Transition(t.Context(), RolloutTransition{ExpectedVersion: created.Version, State: initial, Evidence: evidenceFixture(scope, "shadow"), ReasonCode: "shadow_evaluation_started"}); err != nil {
 		t.Fatal(err)
 	}
-	controller := NewCompactionRolloutController(first, scope, time.Now)
-	promoted, err := controller.EvaluateOnce(t.Context())
-	if err != nil || promoted.Stage != "canary_1" {
-		t.Fatalf("promoted=%+v err=%v", promoted, err)
+	controller := NewCompactionRolloutController(first, scope, func() time.Time { return now })
+	var promoted RolloutState
+	for i, stage := range []string{"canary_1", "canary_5", "canary_20", "canary_50", "enabled"} {
+		if i == 0 {
+			promoted, err = controller.EvaluateOnce(t.Context())
+		} else {
+			fresh := promoted
+			fresh.EligibleAttempts += int64(i)
+			promoted, err = controller.Apply(t.Context(), passingDecision(t, fresh))
+		}
+		if err != nil || promoted.Stage != stage {
+			t.Fatalf("promote to %s: state=%+v err=%v", stage, promoted, err)
+		}
+		now = now.Add(25 * time.Hour)
 	}
 	r1 := config.PersistedCompactionReader{Source: first, ScopeID: scope}
 	r2 := config.PersistedCompactionReader{Source: second, ScopeID: scope}
@@ -47,9 +58,8 @@ func TestCompactionRolloutFullChainPostgres(t *testing.T) {
 	if err != nil || seen.Version != claim.Version {
 		t.Fatalf("replica=%+v err=%v", seen, err)
 	}
-	decision := passingDecision(t, promoted)
+	decision := restoreFailingDecision(t, promoted)
 	decision.ScopeID = scope
-	decision.Gates.RestoreRate = .02
 	rolled, err := NewCompactionRolloutController(second, scope, time.Now).Apply(t.Context(), decision)
 	if err != nil || rolled.Stage != "disabled" {
 		t.Fatalf("rolled=%+v err=%v", rolled, err)
@@ -61,7 +71,7 @@ func TestCompactionRolloutFullChainPostgres(t *testing.T) {
 	if final.Version == claim.Version || final.Config.Mode != config.CompactionDisabled {
 		t.Fatalf("stale finalize accepted: claim=%d final=%+v", claim.Version, final)
 	}
-	if n, err := first.DecisionCount(t.Context(), scope); err != nil || n != 3 {
+	if n, err := first.DecisionCount(t.Context(), scope); err != nil || n != 7 {
 		t.Fatalf("ledger=%d err=%v", n, err)
 	}
 	_, err = first.Transition(t.Context(), RolloutTransition{ExpectedVersion: claim.Version, State: promoted, Evidence: evidenceFromDecision(decision), ReasonCode: "stale_finalize"})
