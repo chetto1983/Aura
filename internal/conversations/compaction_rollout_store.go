@@ -95,6 +95,51 @@ func (s *CompactionRolloutStore) Create(ctx context.Context, state RolloutState)
 	return rolloutStateFromSQL(row), nil
 }
 
+// bootstrapEvaluatorVersion, bootstrapScorerVersion, bootstrapConfigVersion, and
+// bootstrapCorpusVersion identify the disabled-default row EnsureDisabledDefault
+// seeds. They follow the "v1" convention already used by the rollout evidence/decision
+// fixtures across this package (see rolloutFixture/rolloutControllerState in the tests)
+// so a freshly-seeded scope stays version-consistent with the first real evaluator
+// evidence appended against it; bump alongside a rollout evidence migration.
+const (
+	bootstrapEvaluatorVersion = "eval-v1"
+	bootstrapScorerVersion    = "score-v1"
+	bootstrapConfigVersion    = "config-v1"
+	bootstrapCorpusVersion    = "corpus-v1"
+)
+
+// bootstrapDisabledActiveConfig is the exact disabled snapshot
+// config.PersistedCompactionReader.Read requires ({mode,percent,recovery_drill_passed})
+// to yield a valid, non-fail-closed disabled CompactionConfig.
+var bootstrapDisabledActiveConfig = []byte(`{"mode":"disabled","percent":0,"recovery_drill_passed":false}`)
+
+// EnsureDisabledDefault idempotently seeds a disabled-by-default effective state for
+// scopeID and returns the current row. A freshly migrated deployment has NO row for
+// any scope (0039_compaction_rollout creates the table but seeds nothing), so the
+// durable boot preflight and the background evaluator loop would otherwise hard-fail
+// forever with "no rows in result set". This reuses Create's existing idempotent
+// on-conflict Load fallback: the first caller inserts the seed, every later caller
+// (including every subsequent boot) finds the existing row and returns it unmodified.
+// A genuine failure (DB unreachable, or an existing row somehow failing
+// validateRolloutState) still propagates so boot keeps failing closed.
+func (s *CompactionRolloutStore) EnsureDisabledDefault(ctx context.Context, scopeID string) (RolloutState, error) {
+	return s.Create(ctx, RolloutState{
+		ScopeID:             scopeID,
+		Stage:               "disabled",
+		EvaluatorVersion:    bootstrapEvaluatorVersion,
+		ScorerVersion:       bootstrapScorerVersion,
+		ConfigVersion:       bootstrapConfigVersion,
+		CorpusVersion:       bootstrapCorpusVersion,
+		StratumSnapshots:    []byte(`{}`),
+		FailureWindow:       []byte(`{}`),
+		LatencyWindow:       []byte(`{}`),
+		RestoreWindow:       []byte(`{}`),
+		ActiveConfig:        bootstrapDisabledActiveConfig,
+		LastKnownGoodConfig: bootstrapDisabledActiveConfig,
+		LastKnownGoodPolicy: []byte(`{}`),
+	})
+}
+
 // Load reads the replica-shared effective state for a deployment scope.
 func (s *CompactionRolloutStore) Load(ctx context.Context, scopeID string) (RolloutState, error) {
 	row, err := s.q.GetCompactionRolloutState(ctx, scopeID)

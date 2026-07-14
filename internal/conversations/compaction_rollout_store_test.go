@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -124,6 +125,51 @@ func TestRolloutStoreAtomicRollbackRestoresLastKnownGood(t *testing.T) {
 	}
 	if count, err := store.DecisionCount(t.Context(), scope); err != nil || count != 2 {
 		t.Fatalf("failed transaction changed ledger: count=%d err=%v", count, err)
+	}
+}
+
+// TestEnsureDisabledDefaultSeedsFreshScope proves the fresh-DB crash-loop fix: against
+// a freshly-migrated rollout table with NO row for scope, EnsureDisabledDefault (a)
+// creates a disabled row, (b) is idempotent on a second call (no error, same version),
+// and (c) after seeding, both PersistedCompactionReader.Read (the chat_boot.go
+// preflight) and store.Load (what the serve.go evaluator Run loop calls every minute)
+// succeed against the seeded scope.
+func TestEnsureDisabledDefaultSeedsFreshScope(t *testing.T) {
+	pool, _, _ := compactionDB(t)
+	scope := "bootstrap-" + uuid.NewString()
+	store := NewCompactionRolloutStore(pool)
+
+	if _, err := store.Load(t.Context(), scope); err == nil {
+		t.Fatal("scope must have no row before seeding")
+	}
+
+	seeded, err := store.EnsureDisabledDefault(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("EnsureDisabledDefault first call: %v", err)
+	}
+	if seeded.ScopeID != scope || seeded.Stage != "disabled" || seeded.Version != 1 {
+		t.Fatalf("seeded=%+v", seeded)
+	}
+
+	again, err := store.EnsureDisabledDefault(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("EnsureDisabledDefault second call must be idempotent: %v", err)
+	}
+	if again.Version != seeded.Version || again.Stage != seeded.Stage {
+		t.Fatalf("idempotent reseed changed state: first=%+v second=%+v", seeded, again)
+	}
+
+	reader := config.PersistedCompactionReader{Source: store, ScopeID: scope}
+	snapshot, err := reader.Read(t.Context())
+	if err != nil {
+		t.Fatalf("preflight Read after seeding must succeed: %v", err)
+	}
+	if snapshot.Config.Mode != config.CompactionDisabled {
+		t.Fatalf("seeded config mode=%q, want disabled", snapshot.Config.Mode)
+	}
+
+	if _, err := store.Load(t.Context(), scope); err != nil {
+		t.Fatalf("Load after seeding (evaluator Run loop path) must succeed: %v", err)
 	}
 }
 

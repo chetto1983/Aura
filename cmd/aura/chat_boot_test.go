@@ -54,6 +54,22 @@ func TestCompactionRolloutStartupFailsClosed(t *testing.T) {
 	}
 }
 
+// TestCompactionRolloutDisabledBootstrapSeed pins the fresh-DB crash-loop fix: a
+// disabled-default rollout row must be seeded BEFORE the fail-closed Read preflight
+// (and before the serve.go evaluator loop starts), or every boot against a freshly
+// migrated database hard-fails with "no rows in result set" forever.
+func TestCompactionRolloutDisabledBootstrapSeed(t *testing.T) {
+	s := rolloutSource(t, "chat_boot.go")
+	seedIdx := strings.Index(s, "rolloutStore.EnsureDisabledDefault(ctx")
+	readIdx := strings.Index(s, "rolloutReader.Read(ctx)")
+	if seedIdx < 0 {
+		t.Fatal("disabled-default bootstrap seed missing")
+	}
+	if readIdx < 0 || seedIdx > readIdx {
+		t.Fatal("bootstrap seed must run before the durable preflight Read")
+	}
+}
+
 // chat_boot_test.go pins QUAL-04b: no boot error path leaks a pool or an MCP
 // subprocess. The real leak was the CommandHookManagerFromEnv failure path, which
 // returned after the pool + registry were built with neither pool.Close nor an

@@ -321,6 +321,17 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
 	rolloutStore := conversations.NewCompactionRolloutStore(pool)
+	// Seed the disabled-default rollout row BEFORE the fail-closed preflight below: a
+	// freshly migrated DB has no row for any scope (0039_compaction_rollout creates the
+	// table but seeds nothing), so the very first boot must install the disabled
+	// bootstrap state or every future boot — and the background evaluator loop started
+	// in serve.go — would hard-fail forever with "no rows in result set". This call is
+	// idempotent (Create's existing on-conflict Load fallback): later boots find the
+	// existing row and leave it untouched. A genuine failure (DB unreachable, or an
+	// existing row failing validation) still aborts boot, preserving fail-closed.
+	if _, err := rolloutStore.EnsureDisabledDefault(ctx, "default"); err != nil {
+		return nil, fmt.Errorf("compaction rollout durable preflight: %w", err)
+	}
 	rolloutReader := config.PersistedCompactionReader{Source: rolloutStore, ScopeID: "default"}
 	if _, err := rolloutReader.Read(ctx); err != nil {
 		return nil, fmt.Errorf("compaction rollout durable preflight: %w", err)
