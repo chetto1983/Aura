@@ -41,6 +41,12 @@ func TestCompactionRolloutEvaluatorLifecycle(t *testing.T) {
 		t.Fatal("signal-scoped evaluator lifecycle missing")
 	}
 }
+func TestCompactionMemoryComposition(t *testing.T) {
+	s := rolloutSource(t, "serve.go")
+	if !strings.Contains(s, "SetCompactionMemoryStore(memory.NewStore(chat.pool))") {
+		t.Fatal("IC-10 compaction memory store is not wired into the live control plane")
+	}
+}
 func TestCompactionRolloutCancellation(t *testing.T) {
 	s := rolloutSource(t, "serve.go")
 	if !strings.Contains(s, "errors.Is(err, context.Canceled)") {

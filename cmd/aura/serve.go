@@ -36,6 +36,7 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/memory"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -376,6 +377,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
 	aguiServer.SetCompactService(newConversationCompactCoordinator(chat.conv, chat.compactionEffective))
+	aguiServer.SetCompactionMemoryStore(memory.NewStore(chat.pool))
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))

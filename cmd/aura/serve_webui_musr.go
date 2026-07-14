@@ -24,11 +24,12 @@ import (
 )
 
 const (
-	meRoute              = "GET /api/me"
-	adminIdentitiesRoute = "GET /api/admin/identities"
-	adminGrantRoute      = "POST /api/admin/identities/{id}/capabilities"
-	adminRevokeRoute     = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
-	adminAuditRoute      = "GET /api/admin/audit"
+	meRoute                    = "GET /api/me"
+	adminIdentitiesRoute       = "GET /api/admin/identities"
+	adminGrantRoute            = "POST /api/admin/identities/{id}/capabilities"
+	adminRevokeRoute           = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
+	adminAuditRoute            = "GET /api/admin/audit"
+	adminCompactionMemoryRoute = "POST /api/admin/compaction-memory/{action}"
 )
 
 // registerMUSRRoutes mounts the admin/user-distinction routes on the parent mux. Each
@@ -41,4 +42,5 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	mux.Handle(adminGrantRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(adminCompactionMemoryRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 }
