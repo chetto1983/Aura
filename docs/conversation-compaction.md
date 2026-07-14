@@ -104,10 +104,12 @@ a background goroutine gated on `env.compactionRollout != nil`, cancelled via
      `CostRatio<=.15` — the exact Section 17.13 numerical promotion gates.
      Promotion additionally requires `now - StageStartedAt >= 24h` AND
      `EligibleAttempts >= 1000` (the canary-duration gate).
-   - When ALL of the above clear, `store.Transition` CAS-updates
-     `stage='canary_1'` (see §8 "Known limitations" — this is currently the
-     *only* stage the automated controller promotes to) and appends an
-     immutable `transition` decision with `reason_code=promotion_gates_passed`.
+   - When ALL of the above clear, `nextCanaryStage` selects exactly one next
+     stage: `disabled`/`shadow` → `canary_1` → `canary_5` → `canary_20` →
+     `canary_50` → `enabled`. `store.Transition` CAS-updates that stage and its
+     matching effective config, then appends an immutable `transition` decision
+     with `reason_code=promotion_gates_passed`. `enabled` is terminal and does
+     not append same-stage transitions.
 4. **CAS fencing.** Every `Transition`/`Rollback` call includes
    `ExpectedVersion`; `CASTransitionCompactionRollout`/
    `CASRollbackCompactionRollout` are `UPDATE ... WHERE scope_id=$1 AND
@@ -221,20 +223,6 @@ copied into the repository and is not a runtime dependency.
 
 ## 8. Known limitations
 
-**The automated canary ladder currently implements only the first promotion
-step.** `CompactionRolloutController.Apply` hard-codes `next.Stage =
-"canary_1"` unconditionally whenever the rollback check clears and the
-24h/1000-attempt/promotion-gates guard passes — there is no stage-lookup
-table keyed on the CURRENT stage, so calling `Apply` again while already at
-`canary_1` (or any later stage) re-targets `canary_1` again rather than
-advancing to `canary_5` → `canary_20` → `canary_50` → `enabled`. This is
-confirmed by direct code inspection and by test coverage:
-`TestPromotionAfter24HoursAnd1000Attempts` (fixture starts at `stage:
-"shadow"`) is the only promotion test; `TestRollbackSafetyAndStaleEvaluator`
-sets `Stage="canary_1"` only to test rollback FROM that stage. Full detail
-and a recommended follow-up: `.planning/phases/42-llm-conversation-compaction/deferred-items.md#d1`.
-This document does not claim the full ladder is automated end-to-end.
-
 **No canary stage has ever run in production.** Every numerical gate in §6 is
 proven against the synthetic corpus (§7) and against unit/integration
 fixtures — never against real deployed traffic. §13 records this explicitly
@@ -255,6 +243,21 @@ helper, keeping the four propagation paths structurally identical rather
 than four independent implementations. `Retrieve` gates tenant, owner,
 purpose, region, and sensitivity (`principalAllows`/`sensitivityAllows`)
 before returning anything.
+
+The live daemon now constructs `memory.NewStore(chat.pool)` and injects it
+into the AG-UI control plane. Operators holding `governance.write` can call
+the bounded, closed-action endpoint
+`POST /api/admin/compaction-memory/{action}` for `create`, `promote`,
+`retrieve`, `withdraw_consent`, `delete_source`, `forget_me`, `expire`, or
+`supersede`. The route is not model-facing, returns sanitized errors, and does
+not weaken the independent-review/class-policy gates: promotion and retrieval
+remain disabled unless the request supplies an approved explicit class
+policy. `TestCompactionMemoryAdminActionsReachStore` covers every dispatch,
+the serve auth tests prove the `governance.write` boundary, and
+`TestCompactionMemoryAdminLifecyclePostgresE2E` drives every privacy event
+through HTTP into a disposable migrated PostgreSQL database and verifies the
+old memory is no longer retrievable. `deadcode -test ./...` reports no
+`internal/memory` production function as unreachable.
 
 ## 10. Operator/manual surfaces (shadow-only; independent of the automated rollout)
 

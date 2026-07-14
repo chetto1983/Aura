@@ -9,6 +9,14 @@ executor's SCOPE BOUNDARY rule, they are logged here rather than fixed.
 
 ## D1 — Automated canary ladder only implements the first promotion step
 
+**Status: resolved 2026-07-14 (`b258486c9`).** `Apply` now uses the recommended
+`nextCanaryStage(current) (stage, percent)` closed lookup, treats `enabled` as
+terminal, and retains the same 24h/1000-attempt/numerical/rollback/CAS gates at
+every step. `TestRolloutControllerAdvancesFullLadder` covers every unit-stage
+transition; `TestCompactionRolloutFullChainPostgres` traverses the complete
+ladder across replica-backed durable reads, then proves rollback and restart.
+The text below is retained as the original discovery record.
+
 **File:** `internal/conversations/compaction_rollout.go`, `CompactionRolloutController.Apply`
 **Found during:** 42-10 Task 2, tracing the "complete live evaluation flow" and
 "deterministic 1/5/20/50%" canary requirement (42-VALIDATION.md Section 17.13)

@@ -6,7 +6,7 @@
 
 ## Threat boundary
 
-Continuation checkpoints are working-context projections and are never durable memories. The memory boundary accepts only typed candidate metadata, an ephemeral evidence sample used for validation, immutable minimized source references, and SHA-256 evidence/source digests. It never persists summary prose. PostgreSQL is the durability and transaction boundary; callers are untrusted for tenant, identity, capability, purpose, region, and sensitivity claims.
+Continuation checkpoints are working-context projections and are never durable memories. The memory boundary accepts only typed candidate metadata, an ephemeral evidence sample used for validation, immutable minimized source references, and SHA-256 evidence/source digests. It never persists summary prose. PostgreSQL is the durability and transaction boundary. The live API is an operator control plane behind `governance.write`; no model tool can reach it. Store policy predicates still treat tenant, identity, capability, purpose, region, and sensitivity claims as untrusted.
 
 ## Abuse cases and controls
 
@@ -21,6 +21,8 @@ Continuation checkpoints are working-context projections and are never durable m
 | Deleted source or withdrawn consent remains retrievable | One transaction revokes candidate and all promoted projections | `TestConsentWithdrawalDeletionForgetAndExpiryPropagate` | Mitigated |
 | Superseded or expired record remains active | Candidate and memory lifecycle links are updated transactionally and both are filtered before ranking | `TestSupersessionRemovesOldMemoryFromRetrieval` | Mitigated |
 | Provenance is rewritten to hide origin | Source/reachability rows reject update and delete | `TestMigration0038TablesAndImmutableSources` | Mitigated |
+| Privacy methods exist only in tests and never run in production | Daemon injects the concrete store into a bounded closed-action admin route; every action has a production call edge | `TestCompactionMemoryComposition`, `TestCompactionMemoryAdminActionsReachStore`, `deadcode -test ./...` | Mitigated |
+| An ordinary identity or model invokes a destructive lifecycle action | Parent mux requires `governance.write`; the route is absent from the tool registry and errors are sanitized | `TestServeWebuiAuthulaSubtreePublic`, `TestServeWebuiApprovalsCapabilityGate` | Mitigated |
 
 ## Privacy lifecycle
 
@@ -30,6 +32,7 @@ Continuation checkpoints are working-context projections and are never durable m
 - Promotion and retrieval are separate authorization decisions.
 - Source deletion, consent withdrawal, expiry, supersession, and forget-me revoke both candidates and promoted memories transactionally.
 - Canonical conversation deletion remains owned by the conversation domain; this store consumes a typed source-deletion event and does not mutate canonical evidence.
+- The admin control plane dispatches the same store methods; `TestCompactionMemoryAdminLifecyclePostgresE2E` proves consent withdrawal, source deletion, forget-me, expiry, and supersession across the HTTP/PostgreSQL boundary.
 
 ## Residual risk
 
@@ -37,7 +40,8 @@ Continuation checkpoints are working-context projections and are never durable m
 - Digests may still be linkable when an attacker already knows candidate evidence. Database access controls and tenant isolation remain mandatory.
 - Region is a policy label in this slice; infrastructure residency and replication enforcement must be verified separately before a regional class is enabled.
 - Lifecycle propagation is transactional inside PostgreSQL. External replicas, backups, and downstream exports require their own deletion attestations before durable-memory rollout.
+- `governance.write` holders are trusted operators and can name tenants, owners, and sources. Any future self-service route must derive those identifiers from the authenticated principal instead of accepting them from request JSON.
 
 ## Reviewer gate
 
-The gate passes only while all named integration tests execute against PostgreSQL with race detection, migration 0038 remains rollback-compatible, no summary/value prose column is added, and the default policy remains disabled. Any new candidate class, evidence field, export, replica, or region changes this disposition to **review required**.
+The gate passes only while all named integration tests execute against PostgreSQL with race detection, the governance-write auth tests remain green, `deadcode` keeps the production memory surface reachable, migration 0038 remains rollback-compatible, no summary/value prose column is added, and the default policy remains disabled. Any new candidate class, evidence field, self-service route, export, replica, or region changes this disposition to **review required**.
