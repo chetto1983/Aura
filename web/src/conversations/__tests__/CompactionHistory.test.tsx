@@ -20,7 +20,28 @@ describe('CompactionHistory', () => {
 
   it('localizes labels and token counts using the active locale', async () => {
     await i18n.changeLanguage('it');
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ entries: [{ checkpoint_id: 'cp-1', kind: 'compaction', trigger: 'manual', reason: 'target', token_delta: -1200.5, quality: 'passed' }] }), { status: 200 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              entries: [
+                {
+                  checkpoint_id: 'cp-1',
+                  kind: 'compaction',
+                  trigger: 'manual',
+                  reason: 'target',
+                  token_delta: -1200.5,
+                  quality: 'passed',
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+      ),
+    );
     render(<CompactionHistory conversationId="c-1" />, { wrapper: wrapper() });
     expect(await screen.findByRole('heading', { name: 'Cronologia compattazione' })).toBeTruthy();
     expect(await screen.findByText(/-1200,5 token/)).toBeTruthy();

@@ -5,7 +5,9 @@ import {
   composerSkillPickerEn,
   composerSkillPickerIt,
 } from './resources.composer';
-import { displayEn, displayIt } from './resources.display'; import { compactionEn, compactionIt } from './resources.compaction';
+import { displayEn, displayIt } from './resources.display';
+import { compactionEn, compactionIt } from './resources.compaction';
+import { footerEn, footerIt } from './resources.footer';
 import { documentsEn, documentsIt } from './resources.documents';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
@@ -246,20 +248,7 @@ export const resources = {
           resumeToken: 'Resume token:',
         },
       },
-      footer: {
-        runtimeLabel: 'Runtime telemetry',
-        tokens: 'Tokens',
-        cache: 'Cache',
-        cost: 'Cost',
-        context: 'Context',
-        perTurn: 'This turn',
-        session: 'Session',
-        none: '—',
-        noSpend: 'Local reply - no model spend',
-        gaugeValue: '{{used}} / {{window}} · {{percent}}%',
-        contextLabel: 'Context budget - near at {{near}}%, critical at {{critical}}%',
-        compacted: 'Compacted {{count}} older turns',
-      },
+      ...footerEn,
       skeleton: {
         shell: 'Loading cockpit...',
         login: 'Loading sign-in...',
@@ -537,20 +526,7 @@ export const resources = {
           resumeToken: 'Token di ripresa:',
         },
       },
-      footer: {
-        runtimeLabel: 'Telemetria runtime',
-        tokens: 'Token',
-        cache: 'Cache',
-        cost: 'Costo',
-        context: 'Contesto',
-        perTurn: 'Questo turno',
-        session: 'Sessione',
-        none: '—',
-        noSpend: 'Risposta locale - nessun costo modello',
-        gaugeValue: '{{used}} / {{window}} · {{percent}}%',
-        contextLabel: 'Budget di contesto - attenzione a {{near}}%, critico a {{critical}}%',
-        compacted: 'Compattati {{count}} turni più vecchi',
-      },
+      ...footerIt,
       skeleton: {
         shell: 'Caricamento cockpit...',
         login: 'Caricamento accesso...',
