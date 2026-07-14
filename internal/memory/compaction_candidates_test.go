@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -221,3 +222,46 @@ func TestSupersessionRemovesOldMemoryFromRetrieval(t *testing.T) {
 }
 
 func digest(v string) string { return EvidenceDigest(v) }
+
+// TestCreateCandidateCanonicalizesManifestOrderRegardlessOfInputOrder proves the
+// sort.Slice canonicalization in CreateCandidate: two calls carrying the SAME source
+// set in DIFFERENT input order (exercising both the same-kind ID-comparison branch and
+// the cross-kind Kind-comparison branch) must hash to the same source_manifest_digest
+// and therefore resolve to the identical idempotent candidate row.
+func TestCreateCandidateCanonicalizesManifestOrderRegardlessOfInputOrder(t *testing.T) {
+	s := testStore(t)
+	base := candidateFixtureForStore(t, s)
+	turnA := SourceRef{Kind: "turn", ID: "aaa-" + uuid.NewString(), Digest: digest("turn-a")}
+	turnB := SourceRef{Kind: "turn", ID: "bbb-" + uuid.NewString(), Digest: digest("turn-b")}
+	checkpoint := SourceRef{Kind: "checkpoint", ID: uuid.NewString(), Digest: digest("checkpoint")}
+	artifact := SourceRef{Kind: "artifact", ID: uuid.NewString(), Digest: digest("artifact")}
+
+	forward := base
+	forward.SourceManifest = []SourceRef{turnA, turnB, checkpoint, artifact}
+	a, err := s.CreateCandidate(t.Context(), forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shuffled := base
+	shuffled.SourceManifest = []SourceRef{artifact, turnB, checkpoint, turnA}
+	b, err := s.CreateCandidate(t.Context(), shuffled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != b.ID {
+		t.Fatalf("manifest order changed candidate identity: forward=%s shuffled=%s", a.ID, b.ID)
+	}
+}
+
+// TestCreateCandidateRejectsUnknownOwnerForeignKey proves the DB-level owner_id FK
+// constraint surfaces as a wrapped "insert candidate" error: validateCandidate only
+// checks OwnerID is a well-formed UUID, not that the identity actually exists.
+func TestCreateCandidateRejectsUnknownOwnerForeignKey(t *testing.T) {
+	s := testStore(t)
+	in := candidateFixtureForStore(t, s)
+	in.OwnerID = uuid.NewString() // syntactically valid, no matching aura.identities row
+	if _, err := s.CreateCandidate(t.Context(), in); err == nil || !strings.Contains(err.Error(), "insert candidate") {
+		t.Fatalf("unknown owner FK error=%v", err)
+	}
+}

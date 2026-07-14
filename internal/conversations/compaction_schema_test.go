@@ -51,6 +51,37 @@ func TestAuthorityLedgerPreservesTypedRevocationAndSources(t *testing.T) {
 	}
 }
 
+func TestParseStructuredSummaryDecodesExactlyOneDocument(t *testing.T) {
+	raw := []byte(`{"schema_version":1,"prompt_version":1,"projection_version":1,"facts":[{"text":"Rome","source_seqs":[4]}],"unresolved_instructions":[],"l0_manifest_hash":"` + strings.Repeat("a", 64) + `","source_tokens":1000,"summary_tokens":200}`)
+	got, err := ParseStructuredSummary(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SchemaVersion != 1 || len(got.Facts) != 1 || got.Facts[0].Text != "Rome" {
+		t.Fatalf("parsed=%+v", got)
+	}
+}
+
+func TestParseStructuredSummaryRejectsUnknownFields(t *testing.T) {
+	raw := []byte(`{"schema_version":1,"prompt_version":1,"projection_version":1,"facts":[],"unresolved_instructions":[],"unexpected_field":"x"}`)
+	if _, err := ParseStructuredSummary(raw); err == nil {
+		t.Fatal("expected unknown-field rejection")
+	}
+}
+
+func TestParseStructuredSummaryRejectsMultipleDocuments(t *testing.T) {
+	raw := []byte(`{"schema_version":1,"prompt_version":1,"projection_version":1}{"schema_version":2,"prompt_version":1,"projection_version":1}`)
+	if _, err := ParseStructuredSummary(raw); err == nil || !strings.Contains(err.Error(), "multiple summary documents") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestParseStructuredSummaryRejectsMalformedJSON(t *testing.T) {
+	if _, err := ParseStructuredSummary([]byte(`{not-json`)); err == nil {
+		t.Fatal("expected decode error")
+	}
+}
+
 func TestInternalContextIsNonAuthoritativeAndEscaped(t *testing.T) {
 	rendered, err := RenderSummaryInternalContext(validSummary())
 	if err != nil {

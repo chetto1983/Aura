@@ -64,3 +64,42 @@ func TestRebaseFailurePreservesLKGAndDisablesAutoGenerations(t *testing.T) {
 		t.Fatalf("state=%+v", got)
 	}
 }
+
+func TestRebaseSuccessClearsQuarantineReason(t *testing.T) {
+	prior := RebaseState{ActiveCheckpointID: "lkg", AutoGenerationsEnabled: false, QuarantineReason: "stale rejection"}
+	got := ApplyRebase(prior, RebaseResult{Contract: RebaseContract{ModelVersion: "m1"}}, nil)
+	if got.QuarantineReason != "" || got.ActiveCheckpointID != "lkg" {
+		t.Fatalf("state=%+v", got)
+	}
+}
+
+func TestRebaseCanonicalRejectsInvalidFrozenContract(t *testing.T) {
+	_, err := RebaseCanonical(context.Background(), nil, RebaseContract{}, func(context.Context, []CanonicalSemanticUnit) (RebaseChunk, error) {
+		t.Fatal("summarizer must not be invoked with an invalid contract")
+		return RebaseChunk{}, nil
+	})
+	if err == nil {
+		t.Fatal("expected invalid contract error")
+	}
+}
+
+func TestRebaseCanonicalRejectsOversizedUnit(t *testing.T) {
+	units := []CanonicalSemanticUnit{{Seqs: []int{1}, Tokens: 200}}
+	_, err := RebaseCanonical(context.Background(), units, RebaseContract{ModelVersion: "m1", PromptVersion: "p1", ProbeVersion: "q1", ScorerVersion: "s1", SummarizerCapacity: 100}, func(context.Context, []CanonicalSemanticUnit) (RebaseChunk, error) {
+		return RebaseChunk{}, nil
+	})
+	if !errors.Is(err, ErrRebaseUnitTooLarge) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestRebaseCanonicalPropagatesSummarizerError(t *testing.T) {
+	wantErr := errors.New("summarizer unavailable")
+	units := []CanonicalSemanticUnit{{Seqs: []int{1}, Tokens: 10}}
+	_, err := RebaseCanonical(context.Background(), units, RebaseContract{ModelVersion: "m1", PromptVersion: "p1", ProbeVersion: "q1", ScorerVersion: "s1", SummarizerCapacity: 100}, func(context.Context, []CanonicalSemanticUnit) (RebaseChunk, error) {
+		return RebaseChunk{}, wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err=%v", err)
+	}
+}

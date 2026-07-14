@@ -37,3 +37,40 @@ func TestManifestRejectsDigestMismatch(t *testing.T) {
 		t.Fatal("expected digest mismatch")
 	}
 }
+
+func TestManifestRejectsUnsupportedDigestAlgorithmOrVersion(t *testing.T) {
+	m := NewCompactionManifest(1, []int{1}, nil, nil, nil, []ManifestTurn{{Seq: 1}})
+	m.DigestAlgorithm = "md5"
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected unsupported digest algorithm error")
+	}
+}
+
+func TestManifestRejectsSeqOutsideCapture(t *testing.T) {
+	m := NewCompactionManifest(1, []int{5}, nil, nil, nil, []ManifestTurn{{Seq: 1}})
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected seq-outside-capture error")
+	}
+}
+
+func TestManifestRejectsUnclassifiedCapturedSeq(t *testing.T) {
+	m := NewCompactionManifest(2, []int{1}, nil, nil, nil, []ManifestTurn{{Seq: 1}, {Seq: 2}})
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected unclassified seq error")
+	}
+}
+
+func TestManifestRejectsClassifiedSeqAbsentFromCapture(t *testing.T) {
+	m := NewCompactionManifest(1, []int{1}, nil, nil, nil, nil)
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected classified-seq-absent error")
+	}
+}
+
+func TestManifestRejectsCompleteCaptureDigestMismatch(t *testing.T) {
+	m := NewCompactionManifest(1, []int{1}, nil, nil, nil, []ManifestTurn{{Seq: 1, Content: "x"}})
+	m.CompleteCaptureDigest = "bad"
+	if err := m.Verify(); err == nil {
+		t.Fatal("expected complete capture digest mismatch")
+	}
+}

@@ -53,4 +53,44 @@ func TestQuarantineOnCorruptCheckpoint(t *testing.T) {
 	if !errors.As(err, &q) {
 		t.Fatalf("got %v", err)
 	}
+	if q.Error() != "quarantine compaction checkpoint: "+q.Reason {
+		t.Fatalf("QuarantineError.Error()=%q", q.Error())
+	}
+}
+
+func TestRecoveryPrefersActivePointerOverLKG(t *testing.T) {
+	active := ReconstructionCheckpoint{SchemaVersion: 1, ProjectionVersion: 1, Manifest: NewCompactionManifest(1, nil, []int{1}, nil, nil, []ManifestTurn{{Seq: 1, Content: "active"}})}
+	lkg := ReconstructionCheckpoint{SchemaVersion: 1, ProjectionVersion: 1, Manifest: NewCompactionManifest(1, nil, []int{1}, nil, nil, []ManifestTurn{{Seq: 1, Content: "lkg"}})}
+	got, source, err := RecoverProjection(active, []ReconstructionCheckpoint{lkg}, []ManifestTurn{{Seq: 1, Content: "active"}}, RecoveryPolicy{SchemaVersion: 1, ProjectionVersion: 1, MaxTurns: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != RecoveryActive || len(got) != 1 || got[0].Content != "active" {
+		t.Fatalf("source=%s got=%#v", source, got)
+	}
+}
+
+func TestRecoveryBoundedRebuildWhenNoCompatibleCheckpoint(t *testing.T) {
+	bad := ReconstructionCheckpoint{SchemaVersion: 2, ProjectionVersion: 1}
+	canonical := []ManifestTurn{{Seq: 2, Content: "b"}, {Seq: 1, Content: "a"}}
+	got, source, err := RecoverProjection(bad, nil, canonical, RecoveryPolicy{SchemaVersion: 1, ProjectionVersion: 1, MaxTurns: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != RecoveryRebuild || len(got) != 2 || got[0].Seq != 1 || got[1].Seq != 2 {
+		t.Fatalf("source=%s got=%#v", source, got)
+	}
+}
+
+func TestPreviewRestorePassesThroughValidateCheckpoint(t *testing.T) {
+	cp := ReconstructionCheckpoint{SchemaVersion: 1, ProjectionVersion: 1, EstimatedTokens: 5, Manifest: NewCompactionManifest(1, []int{1}, nil, nil, nil, []ManifestTurn{{Seq: 1}})}
+	if err := PreviewRestore(cp, RestoreBudget{SchemaVersion: 1, ProjectionVersion: 1, InputCapacity: 10}); err != nil {
+		t.Fatalf("got %v", err)
+	}
+	cp.Manifest.Digest = "bad"
+	err := PreviewRestore(cp, RestoreBudget{SchemaVersion: 1, ProjectionVersion: 1, InputCapacity: 10})
+	var q *QuarantineError
+	if !errors.As(err, &q) {
+		t.Fatalf("got %v", err)
+	}
 }
