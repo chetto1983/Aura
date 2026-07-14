@@ -108,7 +108,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar)
   - Goal: drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
   - Success: (1) drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented); (2) scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill; (3) load + chaos harness runs in CI (no-skip-as-green) + capability-eval pass/fail report; (4) ADRs + release-readiness checklist + production-readiness evidence bundle → defensible 10/10.
-- [ ] **Phase 42: Industrial Conversation Compaction** — `IC-01..14`
+- [x] **Phase 42: Industrial Conversation Compaction** — `IC-01..14` (completed 2026-07-14)
   - Goal: provider-portable context lifecycle with semantic-first compaction, immutable evidence, branch-aware recovery, typed artifacts, separated durable memory, operations surfaces, and measured rollout.
   - Success: exact fail-closed budgets; L2.4-before-L2.5; durable claim/CAS checkpoints and bounded recovery; safe typed summaries/artifacts/memory; all surfaces; 500+200 evaluation corpus and staged rollback-gated rollout.
 
@@ -671,7 +671,7 @@ Plans:
 3. Structured non-authoritative summaries, typed content parts, recursive rebase, and separately governed durable memory pass authority, artifact, security, privacy, deletion, and rollback gates.
 4. CLI, REPL, Telegram, AG-UI, and accessible web surfaces share one coordinator; the 500+200 corpus meets every Section 17.13 threshold before deterministic staged activation.
 
-**Plans:** 9/10 plans executed
+**Plans:** 10/10 plans complete
 
 Plans:
 
@@ -684,7 +684,7 @@ Plans:
 - [x] 42-07-PLAN.md — [wave 7 / slice 7] common CLI/REPL/Telegram/AG-UI surfaces and accessible web recovery UX
 - [x] 42-08-PLAN.md — [wave 7 / rollout persistence] additive schema, sqlc queries, durable scoped state, immutable evidence, CAS and atomic LKG rollback
 - [x] 42-09-PLAN.md — [wave 8 / rollout control] evaluator-to-store/controller-to-effective-config-to-coordinator wiring and distributed rollback fences
-- [ ] 42-10-PLAN.md — [wave 9 / terminal gate] 500+200 corpus, blocking CI matrix, operations runbook and acceptance evidence
+- [x] 42-10-PLAN.md — [wave 9 / terminal gate] 500+200 corpus, blocking CI matrix, operations runbook and acceptance evidence
 
 ## Progress
 
