@@ -464,10 +464,10 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 
 	// LoadDB() must succeed with SEARXNG_URL unset — no panic, no error path.
 	cfg := LoadDB()
-	if cfg == nil {
+	if cfg == nil { //nolint:staticcheck // SA5011 false positive: t.Fatal below halts execution via runtime.Goexit
 		t.Fatal("LoadDB() returned nil with SEARXNG_URL unset")
 	}
-	if cfg.SearxngURL != "" {
+	if cfg.SearxngURL != "" { //nolint:staticcheck // SA5011 false positive: t.Fatal (line above) halts execution via runtime.Goexit
 		t.Errorf("SearxngURL: want empty default (fail-closed at call time), got %q", cfg.SearxngURL)
 	}
 	if cfg.WebDNSPinTTLSec != 60 {

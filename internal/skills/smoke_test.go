@@ -77,10 +77,10 @@ func TestHaikuFlow(t *testing.T) {
 			haiku = &loaded[i]
 		}
 	}
-	if haiku == nil {
+	if haiku == nil { //nolint:staticcheck // SA5011 false positive: t.Fatalf below halts execution via runtime.Goexit
 		t.Fatalf("haiku skill not loaded from %s; loaded=%v", root, names(loaded))
 	}
-	if !haiku.Always {
+	if !haiku.Always { //nolint:staticcheck // SA5011 false positive: t.Fatalf (line above) halts execution via runtime.Goexit
 		t.Fatalf("haiku skill must load with Always=true, got %+v", *haiku)
 	}
 

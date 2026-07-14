@@ -20,10 +20,10 @@ func TestLoadServe_AllowsEmptyLLMKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadServe: %v", err)
 	}
-	if cfg == nil {
+	if cfg == nil { //nolint:staticcheck // SA5011 false positive: t.Fatal below halts execution via runtime.Goexit
 		t.Fatal("LoadServe returned nil config")
 	}
-	if cfg.LLM.APIKey != "" {
+	if cfg.LLM.APIKey != "" { //nolint:staticcheck // SA5011 false positive: t.Fatal above halts execution via runtime.Goexit
 		t.Fatalf("LoadServe LLM.APIKey = %q, want empty", cfg.LLM.APIKey)
 	}
 	if cfg.DB.MigrateURL == "" {
