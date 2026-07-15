@@ -145,8 +145,14 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     // POST went to /agent/run with the AG-UI body.
     expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(true);
 
-    // Reasoning drawer rendered the CoT (shown by default).
-    expect(screen.getByText('let me think')).toBeTruthy();
+    // Fresh storage keeps reasoning collapsed until the disclosure is opened.
+    const reasoningToggle = screen.getByRole('button', { name: 'Show reasoning' });
+    const reasoningText = screen.getByText('let me think');
+    expect(reasoningToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(reasoningText.hidden).toBe(true);
+    fireEvent.click(reasoningToggle);
+    expect(reasoningToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(reasoningText.hidden).toBe(false);
 
     // Tool card shows the tool name + done status; expanding reveals the raw blob.
     expect(screen.getByText('web_search')).toBeTruthy();

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { Conversation } from '../src/conversations/useConversations';
 import { gotoAuthenticated } from './auth';
 
 // chat.spec.ts is the phase-proving E2E (CHAT-01 / D-03 / APRV-02 / CHAT-04): it drives
@@ -185,15 +186,19 @@ function messagesSnapshotBody(messages: readonly Record<string, unknown>[]): str
   return JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages });
 }
 
-function conversationRecord(title: string): Record<string, unknown> {
+function conversationRecord(title: string): Conversation {
   return {
-    id: CONV_ID,
-    title,
-    status: 'active',
-    total_input_tokens: 0,
-    total_output_tokens: 0,
-    total_cached_tokens: 0,
-    total_cost_usd: 0,
+    ID: CONV_ID,
+    Title: title,
+    TitleSet: true,
+    IdentityID: 'operator',
+    Status: 'active',
+    Model: 'e2e',
+    TotalInputTokens: 0,
+    TotalOutputTokens: 0,
+    TotalCachedTokens: 0,
+    TotalCostUSD: 0,
+    CreatedAt: '2026-07-15T00:00:00Z',
   };
 }
 
@@ -290,6 +295,33 @@ async function installGoldenRoutes(
 }
 
 async function installTimelineRoutes(page: Page, g: GoldenFrames) {
+  await page.route('**/api/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ identity_id: 'operator', capabilities: [] }),
+    }),
+  );
+  await page.route('**/api/voice/capabilities', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tts: false, stt: false }),
+    }),
+  );
+  await page.route('**/api/composer/skills', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"skills":[]}' }),
+  );
+  await page.route('**/api/composer/reasoning-capabilities', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ levels: ['auto', 'off'], default: 'auto', detected: false }),
+    }),
+  );
+  await page.route(/\/api\/assets\?thread_id=/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
   await page.route(`**/api/conversations/${CONV_ID}`, (route) =>
     route.fulfill({
       status: 200,
@@ -347,12 +379,27 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
       consoleProblems.push(err.message);
     });
 
+    await page.addInitScript(() => {
+      localStorage.removeItem('aura.chat.reasoning.shown');
+    });
     await installTimelineRoutes(page, g);
     await gotoAuthenticated(page, `/c/${CONV_ID}`);
 
     const composer = page.getByPlaceholder('Ask Aura');
     await composer.fill('show the turn timeline');
     await composer.press('Enter');
+
+    await expect(page.getByText('Final timeline answer.')).toBeVisible({ timeout: 15000 });
+    const showReasoningButtons = page.getByRole('button', { name: 'Show reasoning' });
+    await expect(showReasoningButtons).toHaveCount(2);
+    const reasoningToggle = showReasoningButtons.first();
+    await expect(reasoningToggle).toHaveAttribute('aria-expanded', 'false');
+    await reasoningToggle.click();
+    await expect(page.getByText('First timeline reasoning')).toBeVisible();
+    const secondReasoningToggle = showReasoningButtons.first();
+    await expect(secondReasoningToggle).toHaveAttribute('aria-expanded', 'false');
+    await secondReasoningToggle.click();
+    await expect(page.getByText('Second timeline reasoning')).toBeVisible();
 
     const labels = [
       'First timeline reasoning',

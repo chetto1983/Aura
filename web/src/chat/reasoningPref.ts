@@ -1,16 +1,16 @@
-// Persisted reasoning-drawer show/hide preference (D-01). Builder default =
-// shown. Kept in its own module so ReasoningDrawer.tsx only exports a component
-// (react-refresh/only-export-components).
+// Persisted reasoning-drawer show/hide preference (D-01). The unsaved browser
+// default is hidden. Kept in its own module so ReasoningDrawer.tsx only exports
+// a component (react-refresh/only-export-components).
 
 const PREF_KEY = 'aura.chat.reasoning.shown';
 
-/** Read the persisted preference; builder default is shown (true). */
+/** Read the persisted preference; the unsaved browser default is hidden. */
 export function readReasoningPref(): boolean {
   try {
     const raw = localStorage.getItem(PREF_KEY);
-    return raw === null ? true : raw === '1';
+    return raw === '1';
   } catch {
-    return true; // private-mode / disabled storage → default shown
+    return false; // private-mode / disabled storage -> default hidden
   }
 }
 

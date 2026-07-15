@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ReasoningDrawer } from '../ReasoningDrawer';
@@ -11,52 +11,102 @@ describe('ReasoningDrawer (D-01)', () => {
     localStorage.removeItem(PREF_KEY);
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     localStorage.removeItem(PREF_KEY);
   });
 
   it('shows a safe lifecycle cue when reasoning has started but no text has streamed yet', () => {
     render(<ReasoningDrawer text="" />);
-    expect(screen.getByRole('button')).toBeTruthy();
-    expect(screen.getByText('Thinking...')).toBeTruthy();
-  });
-
-  it('shows the reasoning text by default (builder default = shown)', () => {
-    render(<ReasoningDrawer text="step one then step two" />);
-    const toggle = screen.getByRole('button');
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByText('step one then step two')).toBeTruthy();
-  });
-
-  it('toggling hides the text and persists the preference', () => {
-    render(<ReasoningDrawer text="hidden cot" />);
-    const toggle = screen.getByRole('button');
+    const toggle = screen.getByRole('button', { name: 'Show reasoning' });
+    const body = screen.getByText('Thinking...');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(body.hidden).toBe(true);
     fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByText('hidden cot')).toBeNull();
-    // Persisted to localStorage as "0" (hidden).
-    expect(localStorage.getItem(PREF_KEY)).toBe('0');
+    expect(screen.getByRole('button', { name: 'Hide reasoning' })).toBeTruthy();
+    expect(body.hidden).toBe(false);
+  });
+
+  it.each([
+    [null, false],
+    ['invalid', false],
+    ['0', false],
+    ['1', true],
+  ])('reads %s as %s', (stored, expected) => {
+    if (stored === null) localStorage.removeItem(PREF_KEY);
+    else localStorage.setItem(PREF_KEY, stored);
+    expect(readReasoningPref()).toBe(expected);
+  });
+
+  it('defaults hidden when storage cannot be read', () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked');
+    });
     expect(readReasoningPref()).toBe(false);
+    get.mockRestore();
   });
 
-  it('honors a persisted hidden preference on mount', () => {
-    localStorage.setItem(PREF_KEY, '0');
-    render(<ReasoningDrawer text="should start collapsed" />);
-    const toggle = screen.getByRole('button');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByText('should start collapsed')).toBeNull();
-  });
-
-  it('toggling from hidden back to shown re-reveals and persists "1"', () => {
-    localStorage.setItem(PREF_KEY, '0');
-    render(<ReasoningDrawer text="reveal me" />);
-    fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('reveal me')).toBeTruthy();
+  it('persists toggles with the existing 1/0 encoding', () => {
+    render(<ReasoningDrawer text="encoded trace" />);
+    const toggle = screen.getByRole('button', { name: 'Show reasoning' });
+    fireEvent.click(toggle);
     expect(localStorage.getItem(PREF_KEY)).toBe('1');
+    fireEvent.click(toggle);
+    expect(localStorage.getItem(PREF_KEY)).toBe('0');
   });
 
-  it('readReasoningPref defaults to shown when storage is empty', () => {
-    expect(readReasoningPref()).toBe(true);
+  it('keeps the current-session toggle when persistence fails', () => {
+    localStorage.setItem(PREF_KEY, '1');
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota');
+    });
+    render(<ReasoningDrawer text="private trace" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide reasoning' }));
+    expect(screen.getByText('private trace').hidden).toBe(true);
+    expect(localStorage.getItem(PREF_KEY)).toBe('1');
+    set.mockRestore();
+  });
+
+  it('uses the last readable explicit value on the next mount after a failed write', () => {
+    localStorage.setItem(PREF_KEY, '1');
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota');
+    });
+    const first = render(<ReasoningDrawer text="first mount" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide reasoning' }));
+    first.unmount();
+    render(<ReasoningDrawer text="second mount" />);
+    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+    set.mockRestore();
+  });
+
+  it('gives every disclosure a resolving unique body id without aria-pressed', () => {
+    const { container } = render(
+      <>
+        <ReasoningDrawer text="one" />
+        <ReasoningDrawer text="two" />
+      </>,
+    );
+    const buttons = screen.getAllByRole('button');
+    const ids = buttons.map((button) => button.getAttribute('aria-controls'));
+    expect(new Set(ids).size).toBe(2);
+    for (const [index, button] of buttons.entries()) {
+      const id = ids[index];
+      expect(button.hasAttribute('aria-pressed')).toBe(false);
+      expect(id).not.toBeNull();
+      expect(container.querySelector(`[id="${id ?? ''}"]`)).not.toBeNull();
+    }
+  });
+
+  it('uses the compact touch target and disclosure border treatment', () => {
+    render(<ReasoningDrawer text="styled trace" />);
+    const toggle = screen.getByRole('button');
+    const body = screen.getByText('styled trace');
+    expect(toggle.className).toContain('min-h-11');
+    expect(toggle.className).toContain('px-2');
+    expect(toggle.className).toContain('text-xs');
+    expect(toggle.className).toContain('text-text-muted');
+    expect(toggle.className).toContain('hover:text-text');
+    expect(body.className).toContain('border-s');
+    expect(body.className).toContain('border-border');
   });
 });
