@@ -132,11 +132,8 @@ export function AssistantMessage() {
           components={{
             // Assistant prose → sanitized markdown.
             Text: () => (
-              <div
-                data-message-prose
-                className="w-full max-w-[48rem] [overflow-wrap:anywhere] text-base leading-relaxed text-text"
-              >
-                <MarkdownText />
+              <div className="w-full min-w-0 text-base leading-relaxed text-text">
+                <MarkdownText constrainProse />
               </div>
             ),
             // CoT → collapsible drawer (D-01). The drawer reads the reasoning text
