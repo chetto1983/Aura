@@ -40,7 +40,7 @@ Large-file guardrails:
 
 - Modify: `prd.md:2984-3006`
 
-- [ ] **Step 1: Record the clean implementation baseline and owned path**
+- [x] **Step 1: Record the clean implementation baseline and owned path**
 
 Run:
 
@@ -51,7 +51,7 @@ git rev-parse --short HEAD
 
 Expected: HEAD includes the approved design spec; `prd.md` has no unrelated modification. Preserve any unrelated status entries.
 
-- [ ] **Step 2: Append Amendment #83 after Amendment #82 and before the cross-cutting risk section**
+- [x] **Step 2: Append Amendment #83 after Amendment #82 and before the cross-cutting risk section**
 
 Add this exact contract:
 
@@ -61,7 +61,7 @@ Add this exact contract:
 > **Acceptance gates.** Failing-first Vitest coverage pins reasoning storage/IDs, all seven tool states, generic approval framing/token transport, approval order/lock/focus/three-token resume behavior, exact bilingual starters, run-scoped settlement, live-versus-announced telemetry, semantic width/touch hooks, and resource parity. An explicit Playwright `channel: 'chrome'` project collects console, page, request, and same-origin HTTP failures; deterministic 1440 × 1000 and 393 × 852 dark/light states assert bounding-box nonintersection, viewport containment, 44 × 44 coarse targets, and no horizontal overflow. Reference and implementation screenshots are reviewed in the same comparison input, accepted screenshots become `toHaveScreenshot` baselines, the contrast/typecheck/lint/build/file-size gates pass, and the generated `internal/webui/dist` diff is reviewed separately.
 ```
 
-- [ ] **Step 3: Verify that #83 is the latest numbered amendment and only `prd.md` changed**
+- [x] **Step 3: Verify that #83 is the latest numbered amendment and only `prd.md` changed**
 
 Run:
 
@@ -73,7 +73,7 @@ git diff --stat -- prd.md
 
 Expected: the two Amendment #83 lines are found, `git diff --check` is silent, and the stat names only `prd.md`.
 
-- [ ] **Step 4: Commit the PRD gate before any source or test change**
+- [x] **Step 4: Commit the PRD gate before any source or test change**
 
 ```powershell
 git add -- prd.md
