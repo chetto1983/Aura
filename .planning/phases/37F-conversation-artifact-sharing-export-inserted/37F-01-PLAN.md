@@ -16,6 +16,7 @@ must_haves:
     - "The PRD records the D-08 amendment (reasoning traces DROPPED — never persisted) as a permanent decision"
     - "The PRD records the D-13 amendment (hash-indexed equality, NOT a constant-time table scan) explicitly enough that a later reviewer cannot 'fix' it into a scan"
     - "An ADR records the public tier as a deliberate, bounded hole in MUSR identity isolation with its fail-closed mitigations"
+    - "The PRD resolves RESEARCH OQ#4 explicitly — the internal tier is an id-addressed authenticated route, the public tier a hashed opaque token — and records why each is correct, so a reviewer does not read the internal UUID as a D-03 violation"
   artifacts:
     - path: "prd.md"
       provides: "WEBSHARE-01..04 amendment + tiers + snapshot model + tables + D-08/D-13 amendments"
@@ -28,6 +29,10 @@ must_haves:
       to: ".planning/REQUIREMENTS.md WEBSHARE-01..04"
       via: "requirement IDs quoted verbatim"
       pattern: "WEBSHARE-0[1-4]"
+    - from: "prd.md"
+      to: "the 37F route table (plans 37F-10 / 37F-12 / 37F-16)"
+      via: "the OQ#4 resolution — internal is id-addressed + authenticated, public is token-addressed + anonymous"
+      pattern: "api/shares/\\{id\\}/data"
     - from: "docs/adr/0039-conversation-sharing-vs-identity-isolation.md"
       to: "prd.md"
       via: "ADR referenced from the PRD share section"
@@ -38,6 +43,8 @@ must_haves:
     - "MUST NOT document 'constant-time compare on lookup' as the token lookup (D-13 amended: hash-indexed equality)"
     - "MUST NOT document migration 0036 (taken by Phase 42) — the slot is 0040"
     - "MUST NOT document an S3-public Garage bucket — 'public-readable' means reachable without an identity principal THROUGH Aura; Aura streams the bytes"
+    - "MUST NOT leave RESEARCH OQ#4 (the internal-tier link format) implicit — it is the unresolved question that left D-10 unroutable in the first plan set; the PRD must state the answer and its rationale"
+    - "MUST NOT document an opaque token for the INTERNAL tier — that contradicts D-11's locked 'token_hash (public only)' and would need a sixth operator-approved amendment that was neither sought nor granted; it is also less safe (see item 17)"
 ---
 
 <objective>
@@ -72,11 +79,13 @@ Output: `prd.md` share section + `docs/adr/0039-conversation-sharing-vs-identity
 
 **Go — new package `internal/share`:** `Snapshot`, `SnapshotTurn`, `SnapshotArtifact`,
 `BuildSnapshot`, `Snapshot.Markdown()`, `Snapshot.JSON()`, `Mint()`, `Hash()`, `Link`,
-`Store`, `Service`, `Create`, `Update`, `Revoke`, `ResolveByToken`, `ResolveInternal`,
-`ExpireDue`, `ErrShareNotFound`, `bundleFilter`.
+`Store`, `Service`, `Create`, `Update`, `Revoke`, `ResolveByToken`, `ResolveLiveByID`,
+`ResolveInternal`, `ExpireDue`, `ErrShareNotFound`, `bundleFilter`.
 **Go — `internal/objectstore`:** `ShareSnapshotKey`, `ShareArtifactKey`, `ShareKeyPrefix`.
 **Go — `internal/agui`:** `ShareService` interface, `registerShareRoutes`, `handleShareCreate`,
-`handleShareResolvePublic`, `handleShareAssetPublic`, `handleConversationExport`.
+`handleShareList`, `handleShareUpdateSnapshot`, `handleShareRevoke`, `handleShareResolveInternal`,
+`handleShareAssetInternal`, `handleShareResolvePublic`, `handleShareAssetPublic`,
+`handleConversationExport`.
 **Go — `internal/cron/handlers`:** `KindShareExpirySweep = "share_expiry_sweep"`, `ShareExpirer`,
 `NewShareExpiryHandler`.
 **Go — `cmd/aura`:** `sharePublicCapability = "share.public"`, `isPublicShareRoute`,
@@ -84,16 +93,33 @@ Output: `prd.md` share section + `docs/adr/0039-conversation-sharing-vs-identity
 **Go — `internal/config`:** `ShareConfig`, `AURA_SHARE_PUBLIC_ENABLED`, `AURA_SHARE_MAX_EXPIRY_DAYS`.
 **DB:** `aura.shared_links`, `aura.share_audit`, migration `0040`, scheduler kind
 `share_expiry_sweep`, audit union source value `"share"`.
-**Routes:** `GET /api/conversations/{id}/export`, `POST /api/shares`, `GET /api/shares`,
-`PATCH /api/shares/{id}/snapshot`, `DELETE /api/shares/{id}`, `GET /s/{token}`,
-`GET /s/{token}/data`, `GET /s/{token}/asset/{id}`.
+**Routes — the master inventory. Three trust boundaries; every downstream plan mounts from this table.**
+
+| Route | Boundary | Gate | Plan |
+|---|---|---|---|
+| `GET /api/conversations/{id}/export` | owner | RequireAuth + owner predicate | 37F-09 |
+| `POST /api/shares` | owner | RequireAuth; public tier adds `share.public` + in-handler kill-switch | 37F-10/12 |
+| `GET /api/shares` | owner | RequireAuth + owner predicate (404-on-foreign) | 37F-10/12 |
+| `PATCH /api/shares/{id}/snapshot` | owner | RequireAuth + owner predicate (404-on-foreign) | 37F-10/12 |
+| `DELETE /api/shares/{id}` | owner | RequireAuth + owner predicate (404-on-foreign) | 37F-10/12 |
+| **`GET /api/shares/{id}/data`** | **bearer-within-auth (D-10)** | RequireAuth ONLY — no capability, **no owner predicate**; audited | 37F-10/12 |
+| **`GET /api/shares/{id}/asset/{assetID}`** | **bearer-within-auth (D-10)** | RequireAuth ONLY; snapshot-scoped | 37F-10/12 |
+| **`GET /shared/{id}`** | SPA page (internal tier) | falls through to the shell; the **data fetch** is the gate | 37F-16 |
+| `GET /s/{token}` | SPA page (public tier) | falls through to the shell; the **data fetch** is the gate | 37F-16 |
+| `GET /s/{token}/data` | unauthenticated | the token predicate is the entire gate | 37F-10/12 |
+| `GET /s/{token}/asset/{id}` | unauthenticated | the token predicate is the entire gate; snapshot-scoped | 37F-10/12 |
+
+**Only `/s/` is on the public allowlist.** `/api/shares/{id}/data` and `/api/shares/{id}/asset/{assetID}`
+are authenticated (D-10 = bearer-*within-auth*) and are explicit NON-members of `isPublicShareRoute` and
+`fallbackExcludedPrefixes` (plan 37F-12). See PRD item (17) for why the two tiers are addressed
+differently.
 **Web:** `ShareToggle`, `useSharePanel`, `ShareModal`, `RevokeConfirmDialog`, `SharePage`,
 `SharedSection`, `useThreadShares`, `AssetSourceContext`, `shareEn`/`shareIt`.
 
 <tasks>
 
 <task type="auto">
-  <name>Task 1: PRD-amendment — the 37F share surface, tiers, snapshot model, schema, and the two contradicting amendments</name>
+  <name>Task 1: PRD-amendment — the 37F share surface, tiers, snapshot model, schema, the two contradicting amendments, and the OQ#4 link-format resolution</name>
   <read_first>
     - `prd.md` — locate the section that catalogs web/cockpit requirements and the §Persistence "Migration numbering — fonte di verità" block. READ BOTH before editing; the migration-numbering block is the one that must gain 0040.
     - `.planning/REQUIREMENTS.md:99-106` — WEBSHARE-01..04 acceptance text (LOCKED, quote verbatim)
@@ -217,6 +243,52 @@ Output: `prd.md` share section + `docs/adr/0039-conversation-sharing-vs-identity
     single-message share links, per-recipient-identity internal grants + recipient picker, remix/re-import
     of a shared JSON, interactive AI-powered shared artifacts.
 
+    (17) **[RESOLVES RESEARCH OQ#4 — the internal-tier link format. Record as a stated DECISION with its
+    rationale; the whole plan set depends on it.]** RESEARCH §Open Questions #4 asked what an internal
+    link actually *is*, and flagged the tension: if it is `/api/shares/{id}` with a UUID, D-03's "no
+    enumerable IDs" is arguably weakened even behind auth. **It was never resolved**, and the first plan
+    set silently kept D-11's "token_hash (public only)" wording without building the alternate resolution
+    path that choice requires — leaving D-10's internal tier, which **D-01 designates the DEFAULT share
+    action**, with no route a recipient could open. Resolve it here, in words.
+
+    **Decision: the two tiers are addressed differently, on purpose.**
+    - **Internal = an id-addressed authenticated route.** `GET /api/shares/{id}/data` +
+      `GET /api/shares/{id}/asset/{assetID}`, behind `RequireAuth`, **no capability, no owner predicate**,
+      audited with the caller's identity. The human-facing link the owner copies is `/shared/{id}`.
+    - **Public = a hashed opaque token.** `GET /s/{token}/data` + `GET /s/{token}/asset/{id}`,
+      unauthenticated, where the token predicate is the entire gate.
+
+    Record all four reasons — a reviewer who reads only D-03 will otherwise see the UUID as a violation
+    and "fix" it:
+    1. **D-03's "no enumerable IDs" is textually scoped to the public surface.** Its subject is *"Public
+       recipient sees a rendered read-only page at `/s/{token}` ... This is a new **unauthenticated HTML
+       surface** → it MUST inherit 37A/37B XSS discipline: ... no enumerable IDs."* Every clause in that
+       bullet governs the unauthenticated surface. It was never a statement about a route behind
+       `RequireAuth`.
+    2. **D-10 makes the authenticated surface the gate.** "Being logged into Aura is the gate, the link is
+       the capability." A `shared_links.id` UUIDv4 carries 122 bits of entropy; an attacker must already
+       hold a valid Aura session to probe one, every probe returns an oracle-free 404 (unknown, revoked,
+       expired, and public-tier ids are byte-identical), and every resolve is audited with a first-class
+       identity. That is materially different from the anonymous surface D-03 governs.
+    3. **It is the codebase's own established pattern, not a deviation.** 36 D-17 is *"identity-keyed
+       audit ledgers + **random-unguessable IDs bound to owner**"*. Aura already addresses authenticated
+       resources by random UUID; `/api/shares/{id}/data` is that pattern.
+    4. **It is structurally SAFER than OQ#4's own recommendation, which is therefore REJECTED.** OQ#4
+       proposed giving internal links a hashed token too and unifying `ResolveByToken`. But
+       `isPublicShareRoute` (plan 37F-12) admits **every** `GET /s/...` as **unauthenticated**. The moment
+       an internal share carries a resolvable token, one handler bug on the `/s/` lane serves it to an
+       anonymous caller — precisely the failure SC4 row 4 exists to catch. Keeping the internal tier
+       **structurally token-less**, enforced by the migration's own CHECK `(tier='internal' AND token_hash
+       IS NULL)`, makes anonymous resolution of an internal share **impossible by construction** rather
+       than *prevented by a correct handler*. Record that this CHECK is load-bearing security, not
+       bookkeeping — the same constraint that makes `/s/{token}` structurally unable to serve an internal
+       share is what forces the id-addressed route to exist.
+
+    Record the consequence for D-11: this resolution keeps its locked **"token_hash (public only)"**
+    wording **intact — no further amendment needed**. OQ#4's alternative would have contradicted a locked
+    decision and required a sixth operator-approved amendment, which was neither sought nor granted; the
+    security argument in (4) runs against it independently.
+
     Write the amendment where the PRD keeps its per-slice requirement sections. Do NOT restructure the
     PRD. Do NOT touch unrelated sections.
   </action>
@@ -233,10 +305,14 @@ Output: `prd.md` share section + `docs/adr/0039-conversation-sharing-vs-identity
     - `grep -niE "source_kind|agent-produced|agent artifacts" prd.md` matches inside the 37F section, stating user uploads never enter a share.
     - `grep -n "0036" prd.md` — any match inside the 37F section states 0036 is TAKEN by Phase 42, never that 37F uses it.
     - The 37F section states "public-readable" is NOT an S3-public ACL.
+    - **OQ#4 is resolved in the text, not left implicit:** the 37F section names BOTH `/api/shares/{id}/data` (internal — authenticated, id-addressed) AND `/s/{token}/data` (public — unauthenticated, hashed token) and states why each tier is addressed differently. `grep -q "api/shares/{id}/data" prd.md` succeeds.
+    - The 37F section states that D-03's "no enumerable IDs" is scoped to the **unauthenticated** surface, and that D-11's "token_hash (public only)" therefore stands **unamended**.
+    - The 37F section records that OQ#4's own recommendation (an opaque token for the internal tier too) was **REJECTED**, naming the reason: `isPublicShareRoute` admits every `GET /s/...` unauthenticated, so a token-bearing internal share is one handler bug away from anonymous resolution — while a token-less internal tier is safe by construction via the `shared_links_tier_shape` CHECK.
+    - The 37F section states the internal routes require **no capability and no owner predicate** (D-10) and are NOT on the public allowlist.
     - The 37F section records the bootstrap-`*` decision AND that provisioned identities get named caps only.
     - No Go, TypeScript, or SQL file is modified by this task: `git diff --name-only` lists only `prd.md`.
   </acceptance_criteria>
-  <done>`prd.md` documents WEBSHARE-01..04, the three tiers, `share.public`, the kill-switch, the snapshot model, the 9 leak sources, the agent-artifacts-only rule, migration 0040, `share_audit`, the lifecycle, the bootstrap-`*` decision, and BOTH the D-08 and D-13 amendments as stated decisions with rationale.</done>
+  <done>`prd.md` documents WEBSHARE-01..04, the three tiers, `share.public`, the kill-switch, the snapshot model, the 9 leak sources, the agent-artifacts-only rule, migration 0040, `share_audit`, the lifecycle, the bootstrap-`*` decision, BOTH the D-08 and D-13 amendments, and the OQ#4 resolution (internal = id-addressed authenticated route, public = hashed opaque token, with the reason each is correct and why OQ#4's own recommendation was rejected) — all as stated decisions with rationale.</done>
 </task>
 
 <task type="auto">
@@ -340,11 +416,13 @@ Output: `prd.md` share section + `docs/adr/0039-conversation-sharing-vs-identity
 | T-37F-D1 | Repudiation | prd.md | mitigate | Record D-08 (reasoning DROPPED) + D-13 (hash-indexed equality) as explicit dated amendments with rationale, so the decision is attributable and cannot be silently reverted. |
 | T-37F-D2 | Elevation of Privilege | ADR 0039 | mitigate | Record the public tier as a bounded, mitigated exception with all seven fail-closed controls named, so a later phase cannot widen the hole without amending the ADR. |
 | T-37F-D3 | Tampering | prd.md §Persistence | mitigate | Reserve slot 0040 in the migration-numbering source-of-truth so a concurrent in-flight phase does not also claim it. |
+| T-37F-D4 | Elevation of Privilege | an unresolved OQ#4 leaving the internal tier unroutable, or a later reviewer "fixing" the internal UUID into a `/s/` token and thereby exposing it to the unauthenticated allowlist | mitigate | Item (17) records the resolution as a decision: internal = id-addressed behind `RequireAuth` (D-03's "no enumerable IDs" is scoped to the unauthenticated surface); public = hashed token. The rejection of OQ#4's token-for-internal recommendation is recorded WITH its security reason, so the "fix" is pre-refuted in the PRD rather than re-litigated in review. |
 | T-37F-SC | Tampering | npm/pip/cargo installs | accept | 37F adds ZERO new dependencies, sidecars, or packages (RESEARCH §Environment Availability: "37F requires no new dependency, no new sidecar, no new package"). No install task exists in this phase, so no legitimacy gate applies. |
 </threat_model>
 
 <verification>
 - `grep -o "WEBSHARE-0[1-4]" prd.md | sort -u | wc -l` → `4`
+- `grep -q "api/shares/{id}/data" prd.md` → the OQ#4 resolution is recorded, not implicit
 - `test -f docs/adr/0039-conversation-sharing-vs-identity-isolation.md`
 - No source file touched: `git diff --name-only` ⊆ {`prd.md`, `docs/adr/0039-*.md`}
 - `bash scripts/check-file-size.sh` passes (docs are not capped, but the hook scans the whole tree — confirm nothing else regressed)

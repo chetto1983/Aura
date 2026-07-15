@@ -134,8 +134,8 @@ Every 37F test file is net-new — `grep` for `shared_links|share_audit|ShareLin
 |---|---|---|---|
 | 1 | A owns conv-A | B `GET /api/conversations/{conv-A}/export` | **404** (not 403 — reads hide foreign existence, 36 D-06) |
 | 2 | A owns conv-A | B `POST /api/shares` for conv-A | **404** |
-| 3 | A minted an **internal** link | B (authenticated) resolves it | **200** — D-10 bearer-within-auth is *intended* |
-| 4 | A minted an **internal** link | **Anonymous** resolves it | **401/302** — internal is NOT on the public allowlist |
+| 3 | A minted an **internal** link | B (authenticated, **non-owner**) `GET /api/shares/{id}/data` | **200** — D-10 bearer-within-auth is *intended*; resolving as A would pass vacuously |
+| 4 | A minted an **internal** link | **Anonymous** `GET /api/shares/{id}/data` (through the real `RequireAuth` chain) | **401/302** — internal is NOT on the public allowlist |
 | 5 | A minted a **public** link | Anonymous resolves | **200** + zero B data + zero paths |
 | 6 | A minted a **public** link | B `POST /api/shares/{id}/revoke` | **404** |
 | 7 | A minted a **public** link, then revoked | Anonymous resolves | **404** (never a stale render — D-15) |
@@ -145,6 +145,15 @@ Every 37F test file is net-new — `grep` for `shared_links|share_audit|ShareLin
 
 **Rows 9 and 10 are the ones a naive implementation fails:** 9 catches "token authenticates, then
 any asset id is fetched"; 10 catches "the public session leaks into the authenticated lane."
+
+**Rows 3 and 4 are the D-10 pair, and they are why `GET /api/shares/{id}/data` exists.** An internal
+share cannot be served over `/s/{token}`: migration 0040's `shared_links_tier_shape` CHECK forces
+`token_hash IS NULL` for `tier='internal'`, so there is no token to address it with, and
+`ResolveByToken`'s `WHERE token_hash = $1` can never match NULL. It also must not be — `isPublicShareRoute`
+admits every `GET /s/...` **unauthenticated**, which row 4 forbids. The internal tier is therefore an
+id-addressed authenticated route (`RequireAuth`, no capability, no owner predicate), resolved by
+`share.Service.ResolveInternal` via `Store.ResolveLiveByID`. See PRD item (17) / RESEARCH OQ#4 for the
+recorded rationale.
 
 > **R-13 caution:** `local` holds the `*` wildcard (`capability_grants.sql:22`; seeded in `0004`),
 > so `share.public` auto-passes for the operator. **Cross-identity tests MUST use provisioned

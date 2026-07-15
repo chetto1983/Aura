@@ -174,6 +174,18 @@ Output: `assetSourceContext.ts`, `resources.share.ts`, `shareTypes.ts`.
     `expires_at`, optional `revoked_at`, `created_at`, `updated_at`. This is the API contract plan
     37F-10 serves.
 
+    **Document what `url` holds per tier — the two shapes are different and the difference is
+    load-bearing** (PRD item 17 / RESEARCH OQ#4):
+    - `tier: 'public'` ⇒ `/s/{token}` — the token appears **only** here, returned once by `createShare`
+      and never re-fetchable, so `listShares` returns public links with `url` **absent**.
+    - `tier: 'internal'` ⇒ `/shared/{id}` — derived from the `id` the caller already has, carries **no
+      secret**, and is therefore **always** present, including from `listShares`.
+
+    State the consequence for consumers: a UI that treats `url` as uniformly-present will break on a
+    listed public link, and one that treats it as uniformly-absent will needlessly hide the internal link
+    it could always show. State plainly that an internal link is **never** `/s/{token}`: migration 0040's
+    CHECK forces `token_hash IS NULL` for `tier='internal'`, so no token exists to build that URL from.
+
     Header doc: state that this file mirrors `internal/share/snapshot.go`'s json tags and that the two
     must not drift; name the Go file so a reader can diff them. State that no field capable of carrying
     tool arguments, results, or a path exists on either side — the TS type is the second statement of the
@@ -190,6 +202,7 @@ Output: `assetSourceContext.ts`, `resources.share.ts`, `shareTypes.ts`.
     - **Wire-contract parity is machine-checked, not eyeballed:** write `scripts/check_share_wire_contract.cjs`, a small node script that extracts every `json:"<tag>"` from `internal/share/snapshot.go` and asserts each tag string appears in `web/src/chat/share/shareTypes.ts`, exiting non-zero on any missing tag. It prints the mirrored tag count on success. Running it exits 0.
     - `grep -cE "'user' \| 'assistant'|\"user\" \| \"assistant\"" web/src/chat/share/shareTypes.ts` returns ≥1 — `role` is a literal union, not `string`.
     - `grep -nE "\bpath\b|arguments|args|result_preview|sidecar|identity_id|tool_call_id" web/src/chat/share/shareTypes.ts` returns NOTHING — the TS mirror carries no leak-capable field.
+    - **The `url` doc states both tier shapes:** `grep -q "/shared/" web/src/chat/share/shareTypes.ts` and `grep -q "/s/" web/src/chat/share/shareTypes.ts` both succeed, and the surrounding text states public `url` is absent from `listShares` while internal `url` is always derivable.
     - The header names `internal/share/snapshot.go` explicitly.
     - `web/src/chat/share/shareTypes.ts` ≤600 LOC.
   </acceptance_criteria>

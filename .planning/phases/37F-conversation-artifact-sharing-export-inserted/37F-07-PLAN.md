@@ -19,11 +19,13 @@ must_haves:
     - "Every owner-scoped share read/mutate runs through db.WithIdentityTx so the 0032 RLS policy backstops a forgotten predicate"
     - "A foreign or absent share id returns ErrShareNotFound, which the handler maps to 404 — never 403, never a distinguishable body"
     - "ResolveByToken finds a live link by hash-indexed equality on token_hash, and returns not-found for a revoked or expired link without the sweep ever running"
+    - "ResolveLiveByID finds a live INTERNAL link by id with NO owner filter (D-10 bearer-within-auth) — it is the only store method that can serve a non-owner read, and without it ResolveInternal cannot be implemented at all"
+    - "ResolveLiveByID returns not-found for a public-tier id, a revoked link, and an expired link — one indistinguishable miss, no tier oracle"
     - "share_audit rows appear in the admin activity feed with source='share'"
     - "Deleting a conversation removes its shared_links rows via the FK cascade"
   artifacts:
     - path: "internal/share/store.go"
-      provides: "shared_links CRUD over raw pgx: Insert, GetForIdentity, ListForIdentity, ResolveByToken, UpdateSnapshot, RevokeForIdentity, DueForExpiry"
+      provides: "shared_links CRUD over raw pgx: Insert, GetForIdentity, ListForIdentity, ResolveByToken, ResolveLiveByID, UpdateSnapshot, RevokeForIdentity, DueForExpiry"
       min_lines: 120
     - path: "internal/share/audit.go"
       provides: "share_audit append-only writer"
@@ -36,6 +38,10 @@ must_haves:
       to: "aura.shared_links"
       via: "hash-indexed equality on the unique partial index"
       pattern: "token_hash = \\$1"
+    - from: "internal/share/store.go"
+      to: "share.Service.ResolveInternal (plan 37F-08) -> GET /api/shares/{id}/data (plan 37F-10)"
+      via: "ResolveLiveByID — the non-owner bearer read that makes the D-10 internal tier resolvable"
+      pattern: "ResolveLiveByID"
     - from: "internal/agui/audit_store.go"
       to: "aura.share_audit"
       via: "UNION ALL leg keyed on identity_id = ANY($1::text[])"
@@ -44,6 +50,9 @@ must_haves:
     - "MUST NOT implement ResolveByToken as a table scan with subtle.ConstantTimeCompare per row — D-13 is AMENDED to hash-indexed equality (WHERE token_hash = $1); a scan is slower and no more secure"
     - "MUST NOT use db.WithIdentityTx in ResolveByToken — a public recipient has no principal; it reads on the plain pool, and the token predicate is the trust boundary"
     - "MUST NOT omit the revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) predicate from ResolveByToken — lazy enforcement IS the fail-closed gate"
+    - "MUST NOT omit that same lazy predicate from ResolveLiveByID — the two resolvers enforce the identical liveness rule and must never drift; if one gains a condition, so does the other"
+    - "MUST NOT add an owner_identity_id filter to ResolveLiveByID — D-10 is bearer-within-auth, so the resolver is deliberately NOT the owner. An owner filter would make the internal tier owner-only and break SC4 row 3. This is the most likely well-intentioned fix a future reader will attempt."
+    - "MUST NOT let ResolveLiveByID return a public-tier row — tier = 'internal' belongs IN the SQL predicate, so a public id never reaches Go and cannot be leaked as a distinguishable status"
     - "MUST NOT use the Go clock in the expiry predicate — use the DB clock now(), so a skewed app clock cannot resurrect a link"
     - "MUST NOT log, %w-wrap, or audit a plaintext token"
     - "MUST NOT add an UPDATE or DELETE path against share_audit — aura_app has no such grant and the ledger is append-only"
@@ -120,6 +129,37 @@ the `source="share"` audit union value.
     - `DueForExpiry(ctx, now time.Time, limit int) ([]Link, error)` — the sweep's due set, over
       `shared_links_expiry_idx`
     - `ResolveByToken(ctx, tokenHash []byte) (Link, error)` — **the exception, see below**
+    - `ResolveLiveByID(ctx, shareID uuid.UUID) (Link, error)` — **the internal-tier sibling exception, see
+      below.** This is the method `share.Service.ResolveInternal` (plan 37F-08) calls, and it is not a
+      convenience: **no other method on this store can serve D-10.** `GetForIdentity` carries an owner
+      filter, and D-10's entire point is that the resolver is *not* the owner — a bearer read routed
+      through `GetForIdentity` would always miss, leaving the internal tier (D-01's DEFAULT share action)
+      minting rows nobody but the owner could open.
+
+    **`ResolveLiveByID` — the internal-tier resolver. Three deliberate properties, each requiring a doc
+    block:**
+    1. **No owner filter, by design (D-10 bearer-within-auth).** Any authenticated identity holding the
+       link may open the already-redacted snapshot. Document that the absence is *intended*, not a
+       forgotten `AND owner_identity_id = $2` — a future reader WILL try to add one, which silently
+       reduces the internal tier to an owner-only view and breaks SC4 row 3. The gate is `RequireAuth` at
+       the mount (plan 37F-12) plus the 122-bit unguessable `id`; the redaction (D-08) is what bounds
+       what a bearer can see.
+    2. **`tier = 'internal'` is part of the SQL predicate, not a post-hoc Go check.** A public share's
+       `id` MUST NOT resolve here: the public tier's capability is its token, and admitting its `id` on an
+       authenticated route would open a second, id-addressed path to a public snapshot that bypasses
+       `ResolveByToken`'s token predicate entirely. Fold the tier into the query so the wrong-tier row is
+       never returned to Go at all, and the handler cannot leak a tier mismatch as a distinguishable
+       status.
+    3. **The same lazy fail-closed predicate as `ResolveByToken`** — `revoked_at IS NULL AND (expires_at
+       IS NULL OR expires_at > now())`, on the **DB clock**. An expired or revoked internal link 404s even
+       if the sweep never runs. Document that this predicate is duplicated deliberately and that the two
+       resolvers must never drift.
+
+    Like `ResolveByToken`, it reads on the **plain pool** without `WithIdentityTx`. Document this one
+    explicitly, because unlike `ResolveByToken` the caller *does* have a principal, so the omission looks
+    like a bug at a glance: the principal is deliberately not the scope of this read, and setting it as
+    the RLS session var would make 0032's owner policy reject a legitimate bearer. The predicate
+    (`id` + `tier` + liveness) is the trust boundary for this read.
 
     **`ResolveByToken` — the two deliberate deviations, each requiring a doc block:**
     1. **It does NOT use `WithIdentityTx`.** A public recipient has no principal, so there is no identity
@@ -150,6 +190,10 @@ the `source="share"` audit union value.
     - `go build ./... && go vet ./internal/share/` clean; `golangci-lint run ./internal/share/` reports 0 issues.
     - `grep -c "db.WithIdentityTx" internal/share/store.go` returns ≥ 7 (every owner-scoped method).
     - `ResolveByToken` does NOT use it: the function body between `func (s *Store) ResolveByToken` and the next `func` contains no `WithIdentityTx`.
+    - **`ResolveLiveByID` exists** — `grep -q "func (s \*Store) ResolveLiveByID" internal/share/store.go` succeeds. Without it plan 37F-08's `ResolveInternal` has nothing to call.
+    - **`ResolveLiveByID` has NO owner filter:** its function body contains no `owner_identity_id` and no `WithIdentityTx`, and a doc comment within 5 lines of the signature states the omission is D-10-intended.
+    - **`ResolveLiveByID` is tier-filtered in SQL:** `grep -q "tier = 'internal'" internal/share/store.go` succeeds and the match sits inside `ResolveLiveByID`'s query string.
+    - **Both resolvers carry the identical lazy predicate:** `grep -c "revoked_at IS NULL" internal/share/store.go` returns ≥ 2 and `grep -c "expires_at > now()" internal/share/store.go` returns ≥ 2 — one pair per resolver.
     - `grep -q "token_hash = \$1" internal/share/store.go` succeeds — indexed equality.
     - `grep -nE "subtle\.|ConstantTimeCompare" internal/share/store.go` returns NOTHING.
     - The lazy predicate is present and complete: `grep -q "revoked_at IS NULL" internal/share/store.go` and `grep -q "expires_at > now()" internal/share/store.go` both succeed.
@@ -246,6 +290,15 @@ the `source="share"` audit union value.
     - `TestShareExpiredLazy404` — insert a link with `expires_at` in the past, then `ResolveByToken`
       returns `ErrShareNotFound` **with the sweep never run**. This is the test that proves lazy is the
       gate; assert explicitly in a comment that no sweep ran.
+    - `TestShareResolveLiveByIDBearer` — A owns an **internal** link; resolving it by id returns the row
+      **with no owner argument in play at all**. The D-10 property: the store method cannot filter by an
+      owner it is never given. Assert the returned link is A's.
+    - `TestShareResolveLiveByIDRejectsPublicTier` — a **public** link's id passed to `ResolveLiveByID`
+      returns `ErrShareNotFound`, proving `tier = 'internal'` is in the predicate and a public snapshot has
+      no id-addressed path.
+    - `TestShareResolveLiveByIDLazyLiveness` — a revoked internal link and an expired internal link both
+      return `ErrShareNotFound` **with the sweep never run**, and the error is the same sentinel an
+      unknown id returns — no tier or state oracle.
     - `TestSharePublicRequiresExpiry` — inserting a public link with a NULL `expires_at` (or NULL
       `token_hash`) is rejected **by the database** — assert on the SQLSTATE `23514` (check violation), not
       on a message match. This proves the `shared_links_tier_shape` CHECK is doing its job.
@@ -271,6 +324,8 @@ the `source="share"` audit union value.
     - The file carries **exactly one** build tag: `head -1 internal/share/store_integration_test.go` is `//go:build db_integration`.
     - `grep -rn "garage_integration\|neo4j_integration\|authula_integration\|musr_e2e\|docker_integration" internal/share/` returns NOTHING.
     - `TestShareExpiredLazy404` passes with no sweep invocation anywhere in the test body.
+    - `TestShareResolveLiveByIDRejectsPublicTier` and `TestShareResolveLiveByIDLazyLiveness` each assert `errors.Is(err, ErrShareNotFound)` for the public-tier, revoked, and expired cases — one sentinel, no oracle.
+    - `TestShareResolveLiveByIDLazyLiveness` runs no sweep anywhere in its body.
     - `TestSharePublicRequiresExpiry` and `TestShareTokenUniqueness` assert on **SQLSTATE** codes (`23514`, `23505`), never on an error message string.
     - Identities are seeded fresh and non-wildcard: `grep -q "t.Name()" internal/share/store_integration_test.go`, and no test grants `*`.
     - `envOrSkip` (the shared helper) is used; no new skip helper is defined: `grep -c "func.*EnvOrSkip\|func envOrSkip" internal/share/store_integration_test.go` returns `0`.

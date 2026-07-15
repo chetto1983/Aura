@@ -14,6 +14,8 @@ must_haves:
   truths:
     - "All ten SC4 cross-identity rows pass against a real Postgres"
     - "The SC4 test lives in internal/agui under a single db_integration tag, so it actually contributes coverage"
+    - "Row 3 passes: B, an authenticated non-owner, resolves A's internal link via GET /api/shares/{id}/data and gets 200 — D-10 bearer-within-auth"
+    - "Row 4 passes: the same internal link resolved anonymously via GET /api/shares/{id}/data returns 401/302 — the internal tier is NOT on the public allowlist"
     - "Row 9 passes: a token scopes to ITS snapshot's artifacts only — another identity's assetID 404s"
     - "Row 10 passes: a public token grants zero access to the identity-scoped /api/assets lane"
     - "Every identity in the suite is provisioned and non-wildcard, so no capability assertion passes vacuously"
@@ -115,11 +117,19 @@ Output: `internal/agui/share_cross_identity_test.go` + a closed-out VALIDATION.m
     1. **A owns conv-A; B GETs the export of conv-A ⇒ 404** (not 403 — reads hide foreign existence).
        Also assert the body omits A's conversation title.
     2. **B POSTs to create a share for conv-A ⇒ 404** — B cannot mint a link to A's thread.
-    3. **A minted an internal link; B (authenticated) resolves it ⇒ 200.** This is the one row whose
-       expected answer is success: D-10 bearer-within-auth is *intended*, and the redacted snapshot is the
-       protection. Comment it as such so a later reader does not "fix" it to a 404.
-    4. **A minted an internal link; anonymous resolves ⇒ 401/302** — internal is NOT on the public
-       allowlist; `RequireAuth` gates it.
+    3. **A minted an internal link; B (authenticated) `GET /api/shares/{id}/data` ⇒ 200.** The concrete
+       route is plan 37F-10's `handleShareResolveInternal` — the D-10 resolver's only HTTP consumer. Use
+       `withPrincipal` to make B the caller; **B is NOT the owner**, and resolving as A would pass
+       vacuously. This is the one row whose expected answer is success: D-10 bearer-within-auth is
+       *intended*, and the redacted snapshot (D-08) is the protection. Comment it as such so a later
+       reader does not "fix" it to a 404. Note in the comment why this route exists at all rather than
+       `/s/{token}`: the migration's `shared_links_tier_shape` CHECK forces `token_hash IS NULL` for
+       `tier='internal'`, so an internal share has no token to put in a `/s/` URL (PRD item 17 / OQ#4).
+    4. **A minted an internal link; anonymous `GET /api/shares/{id}/data` ⇒ 401/302** — internal is NOT on
+       the public allowlist. Exercise this through the **real `RequireAuth` chain** with the same
+       `PublicRoute` closure the server builds (a bare handler call bypasses the gate under test and
+       passes vacuously). This row is what fails if anyone "unifies" the internal tier onto the `/s/`
+       lane, which `isPublicShareRoute` admits unauthenticated.
     5. **A minted a public link; anonymous resolves ⇒ 200 + zero B data + zero paths.** Assert the BODY:
        it contains A's prose, and contains none of B's conversation text, B's artifact filename, or any
        `/abs/`, `/etc/`, or `AURA_RUN_DIR` substring. A status-only assertion here proves nothing.
@@ -156,13 +166,15 @@ Output: `internal/agui/share_cross_identity_test.go` + a closed-out VALIDATION.m
     - **Row 8** seeds `share.public` for B only via a raw `capability_grants` INSERT and asserts A's mint is 403.
     - **Row 5** asserts on the BODY (A's prose present; B's data, `/abs/`, `/etc/`, `AURA_RUN_DIR` all absent), not merely on the 200.
     - **Row 7** asserts the 404 body omits A's title — no stale render.
-    - **Row 3** asserts 200 and carries a comment marking bearer-within-auth as intended.
+    - **Row 3** calls the concrete route `GET /api/shares/{id}/data`, asserts **200**, resolves as **B (the non-owner)**, and carries a comment marking bearer-within-auth as intended. A row that resolves as the owner, or that calls any other route, does not satisfy this criterion.
+    - **Row 4** calls the same concrete route anonymously **through the real `RequireAuth` chain** and asserts 401/302 — proving the internal tier is not on the public allowlist.
+    - Rows 3 and 4 both name `/api/shares/{id}/data` literally: `grep -c "api/shares" internal/agui/share_cross_identity_test.go` returns ≥ 2.
     - **Rows 9 and 10 are present and pass** — the two rows a naive implementation fails.
     - **Rows 4 and 10 exercise the real `RequireAuth` chain**, or the SUMMARY records the decomposition used instead.
     - `envOrSkip` is used; the test `t.Fatal`s under `$CI` with the DSN unset.
     - `grep -c "t.Run(" internal/agui/share_cross_identity_test.go` returns ≥ 10.
   </acceptance_criteria>
-  <done>All ten SC4 rows pass in `internal/agui` under a single `db_integration` tag with `FakeStore` and provisioned non-wildcard identities — including rows 9 and 10, with body-level assertions where a status code alone would prove nothing.</done>
+  <done>All ten SC4 rows pass in `internal/agui` under a single `db_integration` tag with `FakeStore` and provisioned non-wildcard identities — including rows 3 and 4 against the concrete `GET /api/shares/{id}/data` route (200 for a non-owner bearer, 401/302 anonymous through the real `RequireAuth` chain) and rows 9 and 10, with body-level assertions where a status code alone would prove nothing.</done>
 </task>
 
 <task type="auto">
@@ -177,7 +189,9 @@ Output: `internal/agui/share_cross_identity_test.go` + a closed-out VALIDATION.m
     Close the phase's test contract.
 
     **1. Tag audit.** Across every file 37F created or modified, assert no test carries a build tag other
-    than `db_integration`. 37F adds **zero** container/daemon-gated code — the only external dependency is
+    than `db_integration` — and that the phase's genuinely daemon-free tests
+    (`internal/agui/share_public_route_test.go`, `cmd/aura/share_public_route_test.go`,
+    `internal/share/bundle_test.go`, the web suites) carry **no tag at all**, so they run everywhere. 37F adds **zero** container/daemon-gated code — the only external dependency is
     Garage, covered in-process by `objectstore.FakeStore` — so 100% of its Go surface is reachable under
     the gate's two tags. Any stray tag means that code contributes zero coverage and CI fails ~20 minutes
     after the push.
@@ -203,7 +217,7 @@ Output: `internal/agui/share_cross_identity_test.go` + a closed-out VALIDATION.m
     <automated>bash scripts/coverage_docker.sh</automated>
   </verify>
   <acceptance_criteria>
-    - **Tag audit passes:** `grep -rlE "go:build .*(garage_integration|authula_integration|musr_e2e|docker_integration)" internal/share/ internal/objectstore/ internal/cron/handlers/ internal/config/ internal/runner/runner_delete_share_test.go internal/agui/share_export_test.go internal/agui/share_api_test.go internal/agui/share_cross_identity_test.go internal/agui/share_audit_union_test.go` returns NOTHING.
+    - **Tag audit passes:** `grep -rlE "go:build .*(garage_integration|authula_integration|musr_e2e|docker_integration)" internal/share/ internal/objectstore/ internal/cron/handlers/ internal/config/ internal/runner/runner_delete_share_test.go internal/agui/share_export_test.go internal/agui/share_api_test.go internal/agui/share_cross_identity_test.go internal/agui/share_audit_union_test.go internal/agui/share_public_route_test.go cmd/aura/share_public_route_test.go` returns NOTHING. The two predicate tests (plan 37F-12) are **untagged unit tests** and must stay that way — a build tag on either would drop the `/s/` allowlist predicate out of the gate entirely.
     - `bash scripts/coverage_docker.sh` exits 0 with the aggregate ≥ 85%.
     - **Every owned 37F package individually reports ≥85.0%** — `internal/share`, `internal/agui`, `internal/objectstore`, `internal/runner`, `internal/cron/handlers`, `internal/config`. Each number is recorded in the SUMMARY.
     - The gate ran against the **disposable** `aura_cov` DB, never `aura` — confirmed by using `coverage_docker.sh` rather than a bare `coverage_gate.sh`.
@@ -232,6 +246,8 @@ Output: `internal/agui/share_cross_identity_test.go` + a closed-out VALIDATION.m
 | T-37F-05 | Information Disclosure | cross-identity read via a token (rows 1, 2, 5, 9) | mitigate | Ten-row matrix with body-level assertions; row 5 asserts B's data and every path shape are absent from a real public response. |
 | T-37F-52 | Elevation of Privilege | token authenticates then any asset id is fetched (row 9) | mitigate | Row 9 requests B's assetID under A's token and asserts 404. |
 | T-37F-05b | Elevation of Privilege | public session leaking into the authenticated lane (row 10) | mitigate | Row 10 requests the identity-scoped download lane with only a public token and asserts 401/302, exercised through the real `RequireAuth` chain. |
+| T-37F-54 | Elevation of Privilege | the D-10 internal route reachable anonymously (row 4) | mitigate | Row 4 calls `GET /api/shares/{id}/data` with no principal through the real `RequireAuth` chain and asserts 401/302 — the integration-level backstop for plan 37F-12's predicate tests. |
+| T-37F-56 | Elevation of Privilege | an owner predicate on the internal route silently reducing D-10 to owner-only (row 3) | mitigate | Row 3 resolves as B, the non-owner, and asserts 200 — it fails the moment an owner predicate is added at any layer (store, service, or handler). |
 | T-37F-06 | Elevation of Privilege | the wildcard making capability assertions vacuous (R-13) | mitigate | Provisioned non-wildcard identities only; row 8 seeds `share.public` for B alone and asserts A's mint is 403. Grep-gated against any wildcard grant. |
 | T-37F-01 | Information Disclosure | stale render after revoke (row 7) | mitigate | Row 7 asserts the 404 body omits A's title — bytes, not just a status code. |
 | T-37F-62 | Repudiation | a 5-tag test compiling+skipping and reporting a false green (WR-01) | mitigate | Exactly one build tag, enforced by a `head -1` assertion and a phase-wide grep audit; runtime is checked for the sub-second skip tell. |

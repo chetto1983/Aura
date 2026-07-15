@@ -7,6 +7,7 @@ depends_on: ["37F-10"]
 files_modified:
   - cmd/aura/serve_webui_share.go
   - cmd/aura/serve_webui.go
+  - cmd/aura/share_public_route_test.go
   - internal/agui/share_public_route_test.go
 autonomous: true
 requirements: [WEBSHARE-02]
@@ -19,6 +20,8 @@ must_haves:
     - "isPublicShareRoute is fail-closed: non-GET methods and non-/s/ paths return false"
     - "cmd/aura/serve_webui.go stays under 600 LOC"
     - "The internal tier is mounted bare — RequireAuth only, no capability"
+    - "GET /api/shares/{id}/data and GET /api/shares/{id}/asset/{assetID} are mounted AUTHENTICATED — they are explicit NON-members of isPublicShareRoute, so an anonymous caller gets 401/302 (SC4 row 4)"
+    - "/shared/{id} — the internal-tier page — is NOT matched by the /s/ predicate, proven by test, not by eye"
   artifacts:
     - path: "cmd/aura/serve_webui_share.go"
       provides: "sharePublicCapability const + isPublicShareRoute + registerShareRoutes (parent mux)"
@@ -38,6 +41,9 @@ must_haves:
     - "MUST NOT gate the internal tier on any capability"
     - "MUST NOT make isPublicShareRoute match a non-GET method or any path outside /s/"
     - "MUST NOT add /api/shares to the public allowlist — it is authenticated; the \"/api/\" carve-out already covers it in fallbackExcludedPrefixes"
+    - "MUST NOT admit GET /api/shares/{id}/data or GET /api/shares/{id}/asset/{assetID} to isPublicShareRoute — D-10 is bearer-within-AUTH; admitting them would make every internal share anonymously readable and break SC4 row 4. They are explicit NON-members."
+    - "MUST NOT add /shared/ to fallbackExcludedPrefixes — like /s/{token}, the internal page must fall through to the SPA shell; its data fetch is the gate, not the router"
+    - "MUST NOT gate /api/shares/{id}/data on RequireCapability — the internal tier needs no capability (D-02); RequireAuth is its only mount gate"
 ---
 
 <objective>
@@ -104,6 +110,15 @@ the `/s/` public-route allowlist entry.
       both tiers, so the tier-specific gate cannot live at the mount.
     - `GET /api/shares`, `PATCH /api/shares/{id}/snapshot`, `DELETE /api/shares/{id}` — bare `aguiHandler`;
       owner-scoped, `*ForIdentity`-gated, 404-on-foreign.
+    - **`GET /api/shares/{id}/data`, `GET /api/shares/{id}/asset/{assetID}` — bare `aguiHandler`,
+      `RequireAuth`-only, and deliberately NOT admitted to `PublicRoute`.** These are the D-10
+      bearer-within-auth routes (plan 37F-10). State the two halves of the rule explicitly, because each
+      half looks like a mistake to someone checking the other: **no capability and no owner predicate**
+      (any authenticated identity holding the link resolves it — that is the whole point of the tier), but
+      **authenticated** (bearer-within-**auth**; anonymous gets 401/302, SC4 row 4). They are on the
+      authenticated `/api/` lane precisely so `RequireAuth` gates them for free. Do not "unify" them with
+      the `/s/` routes: `isPublicShareRoute` admits every `GET /s/...` anonymously, so moving them there
+      would expose every internal share to the internet.
     - `GET /s/{token}/data`, `GET /s/{token}/asset/{id}` — bare `aguiHandler` **plus** the `PublicRoute`
       admission. State loudly that these are the phase's ONLY unauthenticated routes and that the token
       predicate is their gate.
@@ -139,6 +154,8 @@ the `/s/` public-route allowlist entry.
     - The const doc records the bootstrap-`*` vs provisioned-named-caps contrast: `grep -qE "bootstrap|wildcard|\\*" cmd/aura/serve_webui_share.go`.
     - `isPublicShareRoute` is fail-closed: it checks the method first and returns false by default.
     - The internal tier is ungated at the mount: `POST /api/shares` is mounted with a bare `aguiHandler`, not wrapped in `RequireCapability`.
+    - **The D-10 routes are mounted bare AND authenticated:** `GET /api/shares/{id}/data` and `GET /api/shares/{id}/asset/{assetID}` appear in the mount table wrapped in neither `RequireCapability` nor any owner predicate, and neither path appears anywhere inside `isPublicShareRoute`. `grep -c "api/shares" cmd/aura/serve_webui_share.go` is ≥ 2 in the mount table and `grep -n "api/shares" cmd/aura/serve_webui_share.go` shows **no** match inside the `isPublicShareRoute` function body.
+    - The mount table's comment states the D-10 rule's two halves (no capability + no owner predicate, but authenticated) and warns against moving them onto the `/s/` lane.
     - `cmd/aura/serve_webui_share.go` ≤ 600 LOC; `bash scripts/check-file-size.sh` exits 0.
   </acceptance_criteria>
   <done>`serve_webui_share.go` holds the `share.public` const with its `identity.create`-sibling rationale and the bootstrap-`*` fact, a fail-closed `/s/` prefix predicate, and a mount table where the internal tier is ungated and the `/s/` routes are marked as the only unauthenticated surface.</done>
@@ -174,38 +191,53 @@ the `/s/` public-route allowlist entry.
     If the file exceeds 598 after the edit, split something else out of it into a sibling (the precedent is
     established four times over) in the SAME commit — do not ship at the cap.
 
-    Then create `internal/agui/share_public_route_test.go` — **a plain unit test, no build tag** (it is a
-    pure request-matching predicate; VALIDATION.md lists it in the daemon-free table).
-    Implement `TestPublicShareRouteAllowlist`:
+    Then create **two** test files. This is not a choice to make at execute time — `isPublicShareRoute` is
+    `package main` in `serve_webui_share.go`, so a `package agui` test **cannot call it**, while
+    `cmd/aura` contributes **zero** coverage at any tag. Neither file alone is sufficient, so write both:
+
+    **(a) `cmd/aura/share_public_route_test.go`** — **no build tag.** The direct predicate test, in the
+    package that can actually see the function. Implement `TestPublicShareRouteAllowlist`:
     - `GET /s/abc` ⇒ admitted; `GET /s/abc/data` ⇒ admitted; `GET /s/abc/asset/x` ⇒ admitted
     - `POST /s/abc` ⇒ **not** admitted (fail-closed on method)
     - `GET /api/shares` ⇒ **not** admitted
+    - **`GET /api/shares/abc/data` ⇒ not admitted** — the D-10 internal route is authenticated
+      (bearer-within-**auth**). If this case ever passes, every internal share is world-readable and SC4
+      row 4 fails.
+    - **`GET /api/shares/abc/asset/x` ⇒ not admitted** — same rule for the internal artifact route.
+    - **`GET /shared/abc` ⇒ not admitted** — the internal-tier SPA page. `/shared/` is *visually* the
+      `/s/` prefix but is not one (`"/sh"` != `"/s/"`); a naive `HasPrefix(p, "/s")` without the trailing
+      slash admits it. This case proves the distinction by execution rather than by eye, and it is the
+      most confusable neighbour in the route table.
     - `GET /api/conversations/1/export` ⇒ **not** admitted
     - `GET /` , `GET /login`, `GET /sabotage`, `GET /s` (no trailing slash) ⇒ **not** admitted — in
       particular `/sabotage` must not match a naive `/s` prefix
     - `TestSharePublicCapabilityNameValid` — `identity.ValidateCapabilityName("share.public")` returns no
       error (settles assumption A3 by execution rather than by inspection).
 
-    If the predicate lives in `package main` and the test lives in `internal/agui`, put the predicate test
-    in `cmd/aura` instead **and additionally** assert the allowlist behavior through
-    `agui.RequireAuth` from `internal/agui` — the `internal/agui` test is the one the coverage gate
-    measures (`cmd/aura` is not measured at any tag). State the placement choice in the SUMMARY.
+    **(b) `internal/agui/share_public_route_test.go`** — **no build tag.** The same cases exercised
+    **through `agui.RequireAuth`** with an equivalent `PublicRoute` closure, asserting admitted paths
+    reach the handler and refused paths get 401/302. This is the file the coverage gate measures
+    (`./internal/...` only), and it tests the property that actually matters: not "does a predicate return
+    true" but "does `RequireAuth` let this request through". Keep the closure's cases in lockstep with (a);
+    note in both headers that they are a pair and why neither alone suffices.
   </action>
   <verify>
-    <automated>bash -c 'set -e; go build ./...; go vet ./cmd/aura/ ./internal/agui/; go test ./internal/agui/ -run "TestPublicShareRoute|TestSharePublicCapabilityName" -count=1; L=$(wc -l < cmd/aura/serve_webui.go); echo "serve_webui.go = $L"; [ "$L" -le 598 ] || { echo "FAIL: serve_webui.go over budget"; exit 1; }; grep -q "\"/s/\"" cmd/aura/serve_webui.go && { echo "FAIL: /s/ must NOT be in fallbackExcludedPrefixes"; exit 1; }; bash scripts/check-file-size.sh; echo MOUNT-OK'</automated>
+    <automated>bash -c 'set -e; go build ./...; go vet ./cmd/aura/ ./internal/agui/; go test ./cmd/aura/ -run "TestPublicShareRoute|TestSharePublicCapabilityName" -count=1; go test ./internal/agui/ -run "TestPublicShareRoute" -count=1; L=$(wc -l < cmd/aura/serve_webui.go); echo "serve_webui.go = $L"; [ "$L" -le 598 ] || { echo "FAIL: serve_webui.go over budget"; exit 1; }; grep -q "\"/s/\"" cmd/aura/serve_webui.go && { echo "FAIL: /s/ must NOT be in fallbackExcludedPrefixes"; exit 1; }; grep -q "\"/shared/\"" cmd/aura/serve_webui.go && { echo "FAIL: /shared/ must NOT be in fallbackExcludedPrefixes"; exit 1; }; grep -q "\"/api/shares" cmd/aura/serve_webui.go && { echo "FAIL: /api/shares must NOT be listed in serve_webui.go — the /api/ carve-out covers it"; exit 1; }; bash scripts/check-file-size.sh; echo MOUNT-OK'</automated>
   </verify>
   <acceptance_criteria>
     - `wc -l cmd/aura/serve_webui.go` returns ≤ 598 (was 593). `bash scripts/check-file-size.sh` exits 0.
     - **The NON-action holds:** `fallbackExcludedPrefixes()`'s returned slice does NOT contain `/s/`. Asserted by the automated grep and by reading the function.
     - `grep -c "registerShareRoutes" cmd/aura/serve_webui.go` returns `1`.
     - `grep -c "isPublicShareRoute" cmd/aura/serve_webui.go` returns `1` (the chain entry).
-    - `go test ./internal/agui/ -run 'TestPublicShareRoute' -count=1` passes, including the `/sabotage` and `GET /s` negative cases — a naive `/s` prefix match fails these.
+    - **BOTH test files exist** — `cmd/aura/share_public_route_test.go` (the direct predicate test, in the only package that can see `isPublicShareRoute`) and `internal/agui/share_public_route_test.go` (the same cases through `agui.RequireAuth` — the file the coverage gate measures). Neither alone satisfies this criterion.
+    - `go test ./cmd/aura/ -run 'TestPublicShareRoute' -count=1` and `go test ./internal/agui/ -run 'TestPublicShareRoute' -count=1` both pass, including the `/sabotage` and `GET /s` negative cases — a naive `/s` prefix match fails these.
+    - **The D-10 internal routes are proven NOT public:** `GET /api/shares/abc/data` and `GET /api/shares/abc/asset/x` are asserted **not admitted** in both files. This is SC4 row 4's unit-level counterpart.
+    - **`GET /shared/abc` is asserted not admitted** — the confusable-neighbour case that a `HasPrefix(p, "/s")` without the trailing slash would fail.
     - `TestSharePublicCapabilityNameValid` passes, settling A3 by execution.
-    - The predicate test carries **no build tag**.
-    - The route test that the coverage gate measures lives in `internal/agui`, not only in `cmd/aura`.
+    - Both predicate test files carry **no build tag**.
     - `golangci-lint run ./cmd/aura/ ./internal/agui/` reports 0 issues.
   </acceptance_criteria>
-  <done>`serve_webui.go` gained ≤4 LOC (≤598 total), `/s/` is admitted by the `PublicRoute` chain and deliberately absent from `fallbackExcludedPrefixes()`, and the fail-closed predicate is proven against `/sabotage`, bare `/s`, non-GET methods, and every `/api/` path.</done>
+  <done>`serve_webui.go` gained ≤4 LOC (≤598 total), `/s/` is admitted by the `PublicRoute` chain and deliberately absent from `fallbackExcludedPrefixes()`, and the fail-closed predicate is proven — in both the `cmd/aura` direct test and the coverage-measured `internal/agui` `RequireAuth` test — against `/sabotage`, bare `/s`, `/shared/abc`, the two D-10 `/api/shares/{id}/...` routes, non-GET methods, and every `/api/` path.</done>
 </task>
 
 </tasks>
@@ -229,6 +261,9 @@ the `/s/` public-route allowlist entry.
 | T-37F-59 | Denial of Service | `/s/{token}` 404ing because the prefix was added to the fallback exclusion list | mitigate | Explicit non-action, stated in the plan and enforced by an automated grep gate in the verify block. |
 | T-37F-60 | Denial of Service | a `serve_webui.go` LOC breach blocking every commit tree-wide | mitigate | The delta is capped at ≤4 LOC with an automated `wc -l ≤ 598` gate; everything else lives in the sibling file, per the four-times-established precedent. |
 | T-37F-61 | Information Disclosure | `/api/shares` accidentally admitted to the public allowlist | mitigate | Only `isPublicShareRoute` (GET `/s/` only) is chained; `TestPublicShareRouteAllowlist` asserts `GET /api/shares` is refused. |
+| T-37F-54 | Elevation of Privilege | the D-10 internal routes admitted to the public allowlist, making every internal share world-readable | mitigate | `/api/shares/{id}/data` and `/api/shares/{id}/asset/{assetID}` are explicit NON-members of `isPublicShareRoute`; both test files assert they are refused, and the mount table's comment warns against "unifying" them onto the `/s/` lane. SC4 row 4 (plan 37F-13) is the integration-level backstop. |
+| T-37F-65 | Elevation of Privilege | `/shared/{id}` matching a naive `/s` prefix and joining the public allowlist | mitigate | The predicate requires the trailing slash (`/s/`); `GET /shared/abc` is an asserted negative case in both test files, alongside `/sabotage`. |
+| T-37F-66 | Repudiation | the predicate tested only in `cmd/aura`, which contributes zero coverage at any tag (WR-01) | mitigate | Two files, non-conditionally: the `cmd/aura` direct predicate test plus the coverage-measured `internal/agui` test that drives the same cases through the real `RequireAuth`. |
 | T-37F-SC | Tampering | npm/pip/cargo installs | accept | Existing deps only. |
 </threat_model>
 

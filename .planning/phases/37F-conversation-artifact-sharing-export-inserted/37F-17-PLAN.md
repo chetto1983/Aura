@@ -44,6 +44,8 @@ must_haves:
     - "MUST NOT read the sweep's stamp to decide whether a row is expired — read expires_at; an expired-but-not-swept row must render as expired"
     - "MUST NOT build a bespoke list table — reuse an existing list primitive"
     - "MUST NOT show a raw plaintext token in any list — it is returned once at creation and never re-fetchable"
+    - "MUST NOT render a /s/{token} URL for an internal row — an internal share has no token; its link is /shared/{id}, derived from the id the list already holds. See PRD item 17 / RESEARCH OQ#4."
+    - "MUST NOT render a copy-link affordance on a PUBLIC row — listShares does not return the token (D-13: once at creation only), so there is no URL to copy. The internal row CAN offer one: /shared/{id} carries no secret and is always derivable."
     - "MUST NOT let any touched file exceed 600 LOC"
 ---
 
@@ -104,6 +106,8 @@ Output: `SharedSection.tsx`, `useThreadShares.ts`, `SharedLinksSection.tsx`.
     - The section renders a heading matching the panel's existing type treatment
     - Zero shares ⇒ the empty state, in the panel's established `EmptyState` shape
     - Each row shows the tier badge, the created date, and a relative expiry with the absolute date on the title attribute
+    - An **internal** row can offer a copy-link affordance resolving `/shared/{id}` — no secret, always derivable
+    - A **public** row offers **no** copy-link — `listShares` returns no token, so no URL exists to copy
     - An expired row is visually inert (no copy, no update)
     - Each row offers revoke, which opens the confirm dialog
     - Rows reveal with the panel's staggered animation
@@ -130,6 +134,16 @@ Output: `SharedSection.tsx`, `useThreadShares.ts`, `SharedLinksSection.tsx`.
     visually inert. Read `expires_at`, **never** the sweep's stamp: the sweep is byte reclamation, not the
     source of truth for whether a link is live.
 
+    **URL display is asymmetric across tiers, and the asymmetry is the security design** (PRD item 17 /
+    RESEARCH OQ#4):
+    - **internal** ⇒ the link is `/shared/{id}`, derived from the `id` the row already holds. It carries
+      **no secret**, so the row MAY offer a copy-link affordance.
+    - **public** ⇒ the link is `/s/{token}`, and `listShares` deliberately does **not** return the token
+      (D-13: shown once at creation, thereafter it lives only in the URL). The row therefore offers **no**
+      copy-link. That is not an omission to fix — it is D-13 working.
+    Never render `/s/{token}` for an internal row: migration 0040's CHECK forces `token_hash IS NULL` for
+    `tier='internal'`, so that URL cannot exist and would resolve nowhere.
+
     Per-row revoke opens `RevokeConfirmDialog` (plan 37F-15). **Confirm on per-row too** — open-webui's
     no-confirm per-row is a defensible speed choice for a free link, but Aura's links are capability-gated
     and audited, so revoke is treated as destructive consistently.
@@ -151,6 +165,8 @@ Output: `SharedSection.tsx`, `useThreadShares.ts`, `SharedLinksSection.tsx`.
     - The list reads `expires_at`, not a sweep stamp: `grep -ciE "swept|sweep" web/src/chat/share/SharedSection.tsx` returns `0`.
     - Per-row revoke is confirmed: a test asserts revoke does not fire until the confirm is accepted.
     - No plaintext token is rendered: `grep -ciE "token" web/src/chat/share/SharedSection.tsx` returns `0`, or every match is a non-secret identifier.
+    - **The URL shape is right per tier:** any rendered internal link is `/shared/{id}`; `grep -c "/s/" web/src/chat/share/SharedSection.tsx` returns `0` — a list cannot render a public URL it has no token for, and must never render `/s/…` for an internal row.
+    - A test asserts an internal row exposes a copy-link resolving `/shared/{id}` and a public row exposes none.
     - No literal user-facing strings — all via `t('share.…')`.
     - `wc -l web/src/chat/artifacts/ArtifactsPanel.tsx` ≤ 600; all touched files ≤600.
     - `npx eslint web/src/chat/share/` reports 0 errors; `npx tsc --noEmit` clean.

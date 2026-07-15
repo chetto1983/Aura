@@ -22,6 +22,8 @@ must_haves:
     - "Update re-snapshots to a NEW snapshot_id and keeps the token; turns added after mint never appear on the existing link until Update runs"
     - "Revoke stamps the row and drops every byte under the share's prefix"
     - "The plaintext token is returned exactly once, from Create, and never again"
+    - "ResolveInternal serves ANY authenticated identity holding an internal link (D-10 bearer-within-auth) — the resolver is deliberately NOT the owner, which is the exact opposite of Create/Update/Revoke"
+    - "ResolveInternal returns one indistinguishable ErrShareNotFound for a public-tier id, a revoked link, and an expired link — never a tier-mismatch signal"
   artifacts:
     - path: "internal/share/service.go"
       provides: "Create / Update / Revoke / ResolveByToken / ResolveInternal"
@@ -34,6 +36,14 @@ must_haves:
       to: "conversations GetForIdentity (via a consumer-declared seam)"
       via: "owner gate before any side effect"
       pattern: "GetForIdentity"
+    - from: "internal/share/service.go ResolveInternal"
+      to: "internal/share/store.go ResolveLiveByID (plan 37F-07)"
+      via: "the only store method that serves a non-owner bearer read (D-10)"
+      pattern: "ResolveLiveByID"
+    - from: "internal/share/service.go ResolveInternal"
+      to: "GET /api/shares/{id}/data (plan 37F-10, internal/agui/share_api_internal.go)"
+      via: "the route is ResolveInternal's ONLY consumer — without it the internal tier mints rows no recipient can open"
+      pattern: "ResolveInternal"
     - from: "internal/share/bundle.go"
       to: "objectstore.ShareArtifactKey"
       via: "copy-on-share into the token-scoped namespace"
@@ -49,6 +59,9 @@ must_haves:
     - "MUST NOT import internal/agui or internal/conversations — declare consumer-side seams"
     - "MUST NOT put more than one build tag on the integration test — db_integration ONLY"
     - "MUST NOT log or return the plaintext token anywhere except the Create result"
+    - "MUST NOT gate ResolveInternal on ownership — D-10 is bearer-within-auth; an owner gate breaks SC4 row 3. The asymmetry against Create/Update/Revoke is intentional and must be documented, or a reader who just absorbed owner-gate-first will 'fix' it."
+    - "MUST NOT let ResolveInternal resolve a public-tier share by id — the public tier's capability is its token; an id-addressed path to a public snapshot would bypass ResolveByToken's predicate"
+    - "MUST NOT re-check tier or liveness in Go inside ResolveInternal — ResolveLiveByID folds both into SQL; a Go-side re-check invites a distinguishable error and a drift between the two resolvers"
 ---
 
 <objective>
@@ -218,10 +231,34 @@ and the consumer-declared seams `share.ConversationReader` / `share.ArtifactList
     via the store's lazy predicate, `Get` the snapshot blob, unmarshal, return. Audit `open` with **no
     recipient PII**. Any error ⇒ `ErrShareNotFound` (no oracle).
 
-    **`ResolveInternal(ctx, shareID, identityID)`** — D-10 bearer-within-auth: **any** authenticated
-    identity holding the link may open the already-redacted snapshot. Document that this is *intended*,
-    not a gap: the snapshot is redacted, so a bearer never sees more than the owner chose to share. This
-    is SC4 row 3, and it is the one row where the expected answer is 200 rather than 404.
+    **`ResolveInternal(ctx, shareID, identityID) (Snapshot, Link, error)`** — D-10 bearer-within-auth:
+    **any** authenticated identity holding the link may open the already-redacted snapshot. This is the
+    resolver behind `GET /api/shares/{id}/data` (plan 37F-10), which is its **only** consumer; without
+    that route the internal tier — D-01's DEFAULT share action — mints rows no recipient can ever open.
+
+    Steps: call `Store.ResolveLiveByID(ctx, shareID)` (plan 37F-07). That is the **only** store method
+    that can serve this read — `GetForIdentity` carries an owner filter and would always miss for a
+    bearer, which is the whole reason `ResolveLiveByID` exists. Its SQL predicate already enforces
+    `tier='internal'` + `revoked_at IS NULL` + not-expired, so an unknown id, a public-tier id, a revoked
+    link, and an expired link all arrive here as the **same** miss. Map every miss to `ErrShareNotFound`
+    and do **not** re-check tier or liveness in Go — a Go-side re-check is how a distinguishable error
+    (and a drift between the two resolvers) gets introduced. Then `Get` the snapshot blob and unmarshal,
+    exactly as `ResolveByToken` does.
+
+    **Document the asymmetry, loudly.** `Create`/`Update`/`Revoke` run an owner gate FIRST; this method
+    deliberately runs **none**. A reader who has just absorbed the owner-gate-first discipline three
+    functions above will read the absence as a bug and "fix" it — which would silently reduce the internal
+    tier to an owner-only view. State that D-10 makes the *link* the capability and `RequireAuth` (the
+    route mount, plan 37F-12) the gate; that the snapshot is redacted (D-08), so a bearer never sees more
+    than the owner chose to share; and that this is **SC4 row 3** — the one row where the expected answer
+    is 200 rather than 404.
+
+    Audit `open` with the resolving `identityID`. Unlike `ResolveByToken`'s anonymous open — where the
+    audit must carry **no** recipient PII (D-14) — the internal resolver has a first-class Aura identity
+    to record, and there is no PII concern in recording it. Recording it is what makes "authenticated and
+    auditable" true rather than aspirational, and that claim is load-bearing: it is a stated pillar of the
+    **OQ#4 resolution** recorded in the PRD (plan 37F-01), which is what justifies addressing an internal
+    share by id at all.
 
     Error discipline: `%w` everywhere, prefix `"<operation>: "`. **Never `%w` a token.**
 
@@ -239,6 +276,10 @@ and the consumer-declared seams `share.ConversationReader` / `share.ArtifactList
     - Tier defaulting is fail-closed: the tier switch has an explicit `public` case and a `default:` that yields internal; no code path assigns public without an explicit request value.
     - Revoke order: within `Revoke`, the `dropBlobs` call appears at a lower line number than the `RevokeForIdentity` (stamp) call.
     - `grep -nE "%w.*[Tt]oken|Errorf.*plaintext" internal/share/service.go` returns NOTHING.
+    - **`ResolveInternal` has no owner gate:** its function body contains no `GetForIdentity` call, and a doc comment within 5 lines of its signature states the omission is D-10-intended and contrasts it with `Create`'s owner-gate-first rule.
+    - **`ResolveInternal` delegates tier + liveness to the store:** its body calls `ResolveLiveByID` and contains no Go-side `tier ==` / `Tier ==` comparison and no `revoked`/`expires` comparison.
+    - **`ResolveInternal` maps every store miss to `ErrShareNotFound`:** no code path returns a distinct error for a public-tier id, a revoked link, or an expired link.
+    - **`ResolveInternal` audits `open` with the resolving identity** — the audit call names `identityID`, unlike `ResolveByToken`'s PII-free open.
     - The doc comment carries numbered steps matching the numbered body steps (the `runner_delete.go` discipline).
     - Every file ≤600 LOC; `bash scripts/check-file-size.sh` exits 0.
   </acceptance_criteria>
@@ -271,6 +312,16 @@ and the consumer-declared seams `share.ConversationReader` / `share.ArtifactList
     - `TestShareBundledArtifactTokenScoped` — a bundled artifact is readable at
       `ShareArtifactKey(shareID, snapshotID, assetID)` and the service never calls the identity-scoped
       opener at resolve time (copy, not reference).
+    - `TestShareResolveInternalBearer` — **the D-10 core.** A mints an internal link; **B** — a different
+      provisioned identity who is NOT the owner — calls `ResolveInternal` and gets the snapshot. This is
+      SC4 row 3 at the service layer, and it is the test that fails the moment anyone adds an owner filter
+      to `ResolveLiveByID` or an owner gate to `ResolveInternal`. Resolving as A would pass vacuously —
+      the test MUST resolve as B.
+    - `TestShareResolveInternalRejectsPublicTier` — a **public** share's id passed to `ResolveInternal`
+      returns `ErrShareNotFound`, never the snapshot: the public tier is token-addressed only.
+    - `TestShareResolveInternalLazyLiveness` — a revoked internal link and an expired internal link both
+      return `ErrShareNotFound` from `ResolveInternal` **with the sweep never run**, indistinguishable
+      from the unknown-id case.
     - `TestSharePublicRequiresExpiryService` — a public `CreateRequest` with no expiry is rejected by the
       **service**, before the DB CHECK. Both layers must refuse it; this test proves the Go layer does.
     - `TestSharePublicDeniedWhenKillSwitchOff` — `publicEnabled=false` ⇒ a public Create is denied even
@@ -290,6 +341,8 @@ and the consumer-declared seams `share.ConversationReader` / `share.ArtifactList
     - `TestShareSnapshotFrozen` appends a real turn between mint and resolve and asserts its absence — the frozen-snapshot property is proven, not assumed.
     - `TestShareRevokeDropsBlobs` asserts BOTH an empty prefix listing AND a 404-class resolve.
     - `TestShareUpdateResnapshot` asserts the token is unchanged (resolve with the original plaintext succeeds after Update).
+    - **`TestShareResolveInternalBearer` resolves as B, the NON-owner**, and asserts success — the D-10 property. A test that resolves as the owner passes vacuously and does not satisfy this criterion.
+    - `TestShareResolveInternalRejectsPublicTier` and `TestShareResolveInternalLazyLiveness` assert `errors.Is(err, ErrShareNotFound)` for the public-tier, revoked, and expired cases — one sentinel, no tier oracle.
     - `internal/share` package coverage under `db_integration` is ≥ 85%: `go test -tags db_integration -cover -p 1 ./internal/share/` reports ≥ 85.0%.
     - No test grants `*` to a seeded identity.
   </acceptance_criteria>
@@ -320,6 +373,9 @@ and the consumer-declared seams `share.ConversationReader` / `share.ArtifactList
 | T-37F-07 | Information Disclosure | Garage bytes surviving revoke | mitigate | `Revoke` drops blobs BEFORE stamping the row, so a crash re-runs the idempotent delete; stamp-then-delete would orphan bytes permanently (R-10). Line-order asserted. |
 | T-37F-44 | Information Disclosure | the share store silently resolving the wrong credentials | mitigate | The object store is injected at the composition root from the shared credentials, never via `IdentityStore.Resolve(ctx)` — which would return the right thing by accident on an empty principal. Grep-gated. |
 | T-37F-11 | Information Disclosure | plaintext token leaking past Create | mitigate | Returned only in `CreateResult`; never stored, logged, or `%w`-wrapped. Grep-gated. |
+| T-37F-45 | Elevation of Privilege | an owner gate/filter added to the internal resolver, silently reducing D-10 to owner-only | mitigate | `ResolveInternal` runs no owner gate and `ResolveLiveByID` takes no owner argument — both documented as intended, against the owner-gate-first discipline three functions above. `TestShareResolveInternalBearer` resolves as a NON-owner and fails the moment a filter appears. |
+| T-37F-46 | Information Disclosure | a public share resolved by id on the authenticated route, bypassing the token predicate | mitigate | `tier='internal'` is folded into `ResolveLiveByID`'s SQL, so a public row never reaches Go; `ResolveInternal` adds no Go-side tier check that could leak a mismatch. `TestShareResolveInternalRejectsPublicTier` asserts `ErrShareNotFound`. |
+| T-37F-53 | Information Disclosure | an expired/revoked internal link resolving because liveness was only swept, not enforced lazily | mitigate | `ResolveLiveByID` carries the same DB-clock lazy predicate as `ResolveByToken`; `TestShareResolveInternalLazyLiveness` proves it with the sweep never run. |
 | T-37F-SC | Tampering | npm/pip/cargo installs | accept | Existing deps only. |
 </threat_model>
 

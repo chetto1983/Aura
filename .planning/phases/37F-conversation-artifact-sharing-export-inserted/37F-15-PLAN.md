@@ -21,6 +21,7 @@ must_haves:
     - "The warning states that revoking prevents new access but does not delete copies already seen or cached by search engines"
     - "Expiry chips appear for the public tier with 7 days preselected"
     - "The URL is rendered after minting and copied by a separate user gesture — no clipboard write after an await"
+    - "The internal tier's URL is /shared/{id} and the public tier's is /s/{token} — the modal renders the right shape per tier and never a /s/{token} form for an internal link"
     - "The stale-snapshot affordance tells the user how many new messages are missing from the link"
     - "Revoke requires a confirm dialog"
     - "The tier selector is a real fieldset + legend + radio group, and the warning is aria-describedby-linked to the public option"
@@ -41,6 +42,7 @@ must_haves:
       pattern: "createShare|updateShare|revokeShare"
   prohibitions:
     - "MUST NOT preselect the public tier — D-01: public is never default"
+    - "MUST NOT render an internal link as /s/{token} — an internal share has NO token (migration 0040's CHECK forces token_hash IS NULL for tier='internal'), so that URL cannot resolve. Internal is /shared/{id}; public is /s/{token}. See PRD item 17 / RESEARCH OQ#4."
     - "MUST NOT render the public warning unconditionally — a warning shown always is a warning nobody reads"
     - "MUST NOT mint first and configure access after — that is open-webui's IA and it inverts D-01's explicit opt-in"
     - "MUST NOT call navigator.clipboard.writeText after an await — Safari loses the user gesture. Mint, render the URL, then copy on a direct gesture. Do NOT port open-webui's ClipboardItem workaround."
@@ -100,7 +102,7 @@ Output: `ShareModal.tsx`, `RevokeConfirmDialog.tsx`, `shareApi.ts`.
     - `web/src/documents/` — find the existing library-document API client module (the one `DocumentUploadDialog` calls, e.g. `uploadLibraryDocument`) and follow its fetch/error/`credentials` conventions exactly. Do not invent a new HTTP idiom.
   </read_first>
   <behavior>
-    - `createShare(threadId, tier, expiryOption)` posts to the share route and returns the created `ShareLink`, including the plaintext URL for the public tier
+    - `createShare(threadId, tier, expiryOption)` posts to the share route and returns the created `ShareLink`; for the **public** tier the response carries the one-time plaintext URL (`/s/{token}`), and for the **internal** tier the URL (`/shared/{id}`) is derivable from the returned `id` and carries no secret
     - `listShares(threadId?)` returns the owner's links, optionally filtered to one thread
     - `updateShareSnapshot(id)` re-snapshots and returns the updated link
     - `revokeShare(id)` revokes and resolves void
@@ -117,6 +119,13 @@ Output: `ShareModal.tsx`, `RevokeConfirmDialog.tsx`, `shareApi.ts`.
     re-fetchable: `listShares` returns links without it. That is D-13's "shown to the owner once at
     creation; thereafter it lives only in the URL," and it is why the modal must render the URL
     immediately rather than expecting to load it later.
+
+    **State the per-tier URL shapes in the header too, because they are not symmetric** (PRD item 17 /
+    RESEARCH OQ#4): a **public** link is `/s/{token}` and is one-time-only; an **internal** link is
+    `/shared/{id}`, derived from the `id` the caller already holds, carries **no secret**, and is
+    therefore re-derivable at any time — including from `listShares`. An internal link is **never**
+    `/s/{token}`: migration 0040's CHECK forces `token_hash IS NULL` for `tier='internal'`, so there is no
+    token to build that URL from and it would resolve nowhere.
 
     Write `shareApi.test.ts` (vitest) with a mocked `fetch` covering every `<behavior>` row, including the
     non-2xx throw and the abort path.
@@ -157,6 +166,8 @@ Output: `ShareModal.tsx`, `RevokeConfirmDialog.tsx`, `shareApi.ts`.
     - Create ⇒ `creating` (primary disabled, `role="status"`) ⇒ `shared`
     - In `shared`: the URL renders in a readonly input with a **separate** Copy button; clicking Copy
       swaps the label to "Copied" for ~2s and announces via `aria-live="polite"`
+    - In `shared` on the **internal** tier, the rendered URL is `/shared/{id}` (absolute, same origin)
+    - In `shared` on the **public** tier, the rendered URL is `/s/{token}` (absolute, same origin)
     - In `shared`: a metadata line shows tier, relative expiry ("expires in 6 days") with the absolute
       date on the title attribute, and the created date
     - When the thread has newer turns than the link's snapshot, a stale note shows the count and
@@ -223,6 +234,7 @@ Output: `ShareModal.tsx`, `RevokeConfirmDialog.tsx`, `shareApi.ts`.
     - **The warning is `aria-describedby`-linked** to the public radio — asserted by test.
     - **The tier selector is a real radio group:** the DOM contains a `fieldset`, a `legend`, and `input[type=radio]` elements. `grep -c "onClick" web/src/chat/share/ShareModal.tsx` shows no click-handler-on-div tier selection.
     - **No clipboard-after-await:** `grep -n "clipboard" web/src/chat/share/ShareModal.tsx` shows `writeText` reached from a direct click handler with no preceding `await` in that handler; `grep -c "ClipboardItem" web/src/chat/share/ShareModal.tsx` returns `0`.
+    - **The URL shape is right per tier:** a test asserts the readonly input holds a `/shared/{id}` URL after an internal mint and a `/s/{token}` URL after a public mint. A modal that renders `/s/…` for an internal link renders a URL that resolves nowhere and fails this criterion.
     - **Revoke is confirmed:** a test asserts revoke does not fire until the confirm dialog is accepted.
     - **The stale note is conditional:** present with newer turns, absent without — both tested.
     - `aria-invalid` is omitted when valid: `grep -q "|| undefined" web/src/chat/share/ShareModal.tsx` and a test asserts the attribute is absent for a valid custom expiry.
