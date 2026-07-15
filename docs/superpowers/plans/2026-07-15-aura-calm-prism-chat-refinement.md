@@ -261,8 +261,11 @@ git commit -m "fix(web): contain chat controls and message actions"
 - Modify: `web/src/chat/__tests__/ExternalStoreChat.test.tsx:57-166`
 - Modify: `web/playwright.config.ts:82-111`
 - Modify: `web/e2e/chat.spec.ts:333-377`
+- Modify (review-driven Chrome project compatibility): `web/e2e/documents-library.spec.ts`
+- Modify (review-driven Chrome project compatibility): `web/e2e/documents-library-size.spec.ts`
+- Modify (review-driven Chrome project compatibility): `web/e2e/phase32-uat.spec.ts`
 
-- [ ] **Step 1: Replace the old builder-default tests with the complete storage and ID matrix**
+- [x] **Step 1: Replace the old builder-default tests with the complete storage and ID matrix**
 
 Add tests with these concrete cases:
 
@@ -330,7 +333,7 @@ it("gives every disclosure a resolving unique body id without aria-pressed", () 
 });
 ```
 
-- [ ] **Step 2: Run tests and verify the expected default/ID/pressed failures**
+- [x] **Step 2: Run tests and verify the expected default/ID/pressed failures**
 
 ```powershell
 cd web
@@ -339,7 +342,7 @@ npx vitest run src/chat/__tests__/ReasoningDrawer.test.tsx src/chat/__tests__/Ex
 
 Expected: FAIL because missing/unreadable storage is shown, every body uses `reasoning-body`, collapsed bodies disappear, and `aria-pressed` is present.
 
-- [ ] **Step 3: Implement the storage precedence and disclosure contract**
+- [x] **Step 3: Implement the storage precedence and disclosure contract**
 
 Use this reader:
 
@@ -381,7 +384,7 @@ In `ReasoningDrawer`, create `const bodyId = useId()` and render the body in bot
 
 Retain `writeReasoningPref` as best-effort and update comments from “builder default shown” to “unsaved browser default hidden.”
 
-- [ ] **Step 4: Update integration and chronology checks for collapsed-by-default reasoning**
+- [x] **Step 4: Update integration and chronology checks for collapsed-by-default reasoning**
 
 First rename the desktop project to `chrome` and add `channel: 'chrome'` in `web/playwright.config.ts`; apply the same channel to `mobile-chrome`. Then, in Vitest and Playwright, assert fresh storage is collapsed, click the disclosure, and inspect reasoning text:
 
@@ -398,7 +401,7 @@ await reasoningToggle.click();
 await expect(page.getByText("First timeline reasoning")).toBeVisible();
 ```
 
-- [ ] **Step 5: Verify and commit reasoning behavior**
+- [x] **Step 5: Verify and commit reasoning behavior**
 
 ```powershell
 cd web
