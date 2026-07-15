@@ -393,6 +393,52 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     expect(filename.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
   });
 
+  it('sizes persisted attachment Retry, Promote, and Remove actions for touch', async () => {
+    const baseAsset = {
+      modality: 'document',
+      mime_type: 'application/pdf',
+      declared_size_bytes: 8,
+      size_bytes: 8,
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: unknown) => {
+        if (url === '/threads/conv-1/messages') {
+          return Promise.resolve(
+            messagesSnapshotResponse([
+              { id: 'msg-1', role: 'user', content: 'failed document' },
+              { id: 'msg-2', role: 'assistant', content: 'retry available' },
+              { id: 'msg-3', role: 'user', content: 'ready document' },
+              { id: 'msg-4', role: 'assistant', content: 'promotion available' },
+            ]),
+          );
+        }
+        if (url === '/api/assets?thread_id=conv-1') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                { ...baseAsset, id: 'asset-failed', status: 'failed', file_name: 'broken.pdf' },
+                { ...baseAsset, id: 'asset-ready', status: 'complete', file_name: 'ready.pdf' },
+              ]),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${String(url)}`));
+      }),
+    );
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    await screen.findByText('broken.pdf');
+    const actions = [
+      screen.getByRole('button', { name: 'Retry' }),
+      screen.getByRole('button', { name: 'Promote' }),
+      ...screen.getAllByRole('button', { name: /^Remove (?:broken|ready)\.pdf$/ }),
+    ];
+    expect(actions).toHaveLength(4);
+    actions.forEach(expectRequiredTouchTarget);
+  });
+
   it('creates a thread id before the first send when no conversation is active', async () => {
     const runBodies: unknown[] = [];
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {

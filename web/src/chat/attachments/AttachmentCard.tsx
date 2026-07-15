@@ -30,10 +30,11 @@ export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: Attachme
               type="button"
               variant="ghost"
               size="sm"
+              data-required-touch-target
               onClick={() => {
                 onRetry(asset.id);
               }}
-              className="px-2 text-xs text-text-muted hover:bg-surface-3 hover:text-text"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs text-text-muted hover:bg-surface-3 hover:text-text"
             >
               <RefreshCw data-icon aria-hidden="true" className="size-3.5" />
               {t('chat.attachments.retry')}
@@ -44,10 +45,11 @@ export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: Attachme
               type="button"
               variant="ghost"
               size="sm"
+              data-required-touch-target
               onClick={() => {
                 onPromote(asset.id);
               }}
-              className="px-2 text-xs text-text-muted hover:bg-surface-3 hover:text-text"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs text-text-muted hover:bg-surface-3 hover:text-text"
             >
               <UploadCloud data-icon aria-hidden="true" className="size-3.5" />
               {t('chat.attachments.promote')}
@@ -59,10 +61,11 @@ export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: Attachme
               variant="ghost"
               size="icon"
               aria-label={t('chat.attachments.remove', { name: asset.file_name })}
+              data-required-touch-target
               onClick={() => {
                 onRemove(asset.id);
               }}
-              className="h-8 min-h-8 w-8 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
+              className="inline-flex h-11 min-h-11 w-11 min-w-11 items-center justify-center rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
             >
               <X data-icon aria-hidden="true" className="size-3.5" />
             </Button>
