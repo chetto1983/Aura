@@ -119,6 +119,10 @@ export const resources = {
         tool: {
           showRaw: 'Show raw result',
           hideRaw: 'Hide raw result',
+          duration: {
+            seconds: '{{value}} s',
+            minutes: '{{minutes}} min {{seconds}} s',
+          },
           status: {
             running: 'Running',
             done: 'Done',
@@ -396,6 +400,10 @@ export const resources = {
         tool: {
           showRaw: 'Mostra risultato grezzo',
           hideRaw: 'Nascondi risultato grezzo',
+          duration: {
+            seconds: '{{value}} s',
+            minutes: '{{minutes}} min {{seconds}} s',
+          },
           status: {
             running: 'In corso',
             done: 'Completato',
