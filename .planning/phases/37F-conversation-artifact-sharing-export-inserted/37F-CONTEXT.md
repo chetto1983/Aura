@@ -1,7 +1,29 @@
 # Phase 37F: Conversation & Artifact Sharing / Export (INSERTED) - Context
 
 **Gathered:** 2026-07-13
+**Amended:** 2026-07-15 (post-research, operator-approved — see Amendment Log)
 **Status:** Ready for planning
+
+## Amendment Log — 2026-07-15 (post-research)
+
+`37F-RESEARCH.md` (2026-07-15, HEAD `1a3252e64`) surfaced **five** locked decisions that were
+stale, structurally impossible, or dangerously ambiguous. Each was verified against real code and
+ruled on by the operator before planning. Decisions NOT listed here are unchanged and still locked.
+
+| # | Decision | Change | Basis |
+|---|---|---|---|
+| 1 | **D-11** | migration `0036` → **`0040`** | Phase 42 shipped 0036–0039 on 2026-07-14, one day after this CONTEXT was gathered. Verified on disk. A blind 0036 collides → dirty migrate tracker → every later migration blocked. **Factual correction.** |
+| 2 | **D-08** | **reasoning/thinking traces DROPPED** from the snapshot | Never persisted — verified 3 ways (no column, no `llm.Message` field, `Chunk.Reasoning` stream-only). `LoadHistory` structurally cannot produce them. **Operator-approved 2026-07-15. Requires PRD-amendment.** |
+| 3 | **D-09** | "delivered artifacts" **narrowed to agent-produced only** | Original wording did not forbid bundling the user's OWN uploads into a public link. Claude excludes user attachments; open-webui shipped a write-through-share bug. **Operator-approved 2026-07-15.** |
+| 4 | **D-13** | "constant-time compare on lookup" → **hash-indexed equality** | Literal reading = full table scan + per-row compare: slower, no more secure. Intent (no plaintext at rest, backup-leak-safe, no enumerable IDs) fully preserved. **Operator-approved 2026-07-15. Requires PRD-amendment.** |
+| 5 | **D-05** | share-arrow target: "thread header" → **`ArtifactsShell.tsx` floating cluster** | Aura has no thread header; `ShellHeader.tsx` is app-level. 37B reserved the exact spot in code (`ArtifactsShell.tsx:20-22`). Intent validated, DOM target corrected. **Factual correction.** |
+
+**Also corrected (D-08 parenthetical):** the 37A D-13 path strip is **client-side**
+(`sseAdapter.ts:346-360`); the backend still ships `path`. The Go serializer must implement its
+own server-side allowlist — a recipient's browser is not a trust boundary.
+
+**PRD-amendments required before code** (PRD-first is absolute — CLAUDE.md): items **2** and **4**
+above, in addition to the WEBSHARE-01..04 amendment the phase already required.
 
 <domain>
 ## Phase Boundary
@@ -66,8 +88,15 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
 - **D-05 — Whole-conversation only.** Single-artifact and single-message share links are OUT
   (deferred). Per-artifact *download* already exists (37A/37B); a shared conversation still
   carries its artifacts (D-09). The 37B-deferred "Condiviso" section + share-arrow operate at
-  **thread level** (thread-header share-arrow + a "Condiviso" section listing active shares in
-  `ArtifactsPanel.tsx`).
+  **thread level** (top-right-of-thread share-arrow + a "Condiviso" section listing active shares
+  in `ArtifactsPanel.tsx`).
+  **[AMENDED 2026-07-15 — placement target corrected, intent unchanged]** Aura has **no thread
+  header**: `ShellHeader.tsx` is the *app-level* header. The real top-right-of-thread seam is the
+  floating overlay cluster at `AppShell.tsx:514-517`, and 37B **reserved this exact spot in code**
+  — `ArtifactsShell.tsx:20-22`: *"the adjacent share-arrow is 37F, not built."* Ship `ShareToggle`
+  as a sibling module (`web/src/shell/ShareShell.tsx`) mirroring `ArtifactsToggle`; order
+  `[VoiceModeToggle] [ShareToggle] [ArtifactsToggle]`. The locked *intent* (thread-level
+  share-arrow) is validated; only the DOM target moves.
 - **D-06 — A shared conversation is a STATIC SNAPSHOT frozen at creation + an owner "Update"
   button** to refresh to a newer snapshot (Claude/ChatGPT/open-webui). Turns added after
   sharing NEVER retroactively appear on an existing link — the core SC3 leak-prevention. Not a
@@ -79,19 +108,47 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
   public page AND both file formats all derive from **ONE canonical redacted snapshot model**
   (single serializer core + format adapters), so redaction can't diverge between surfaces.
 - **D-08 — Snapshot/export content:** visible user+assistant text (baseline) + delivered
-  artifacts (D-09) + **tool-call provenance (tool NAMES only, per turn)** + reasoning/thinking
-  traces. **HARD SC3 redaction (non-negotiable, NOT a toggle):** raw tool-call
+  artifacts (D-09) + **tool-call provenance (tool NAMES only, per turn)**. **HARD SC3 redaction
+  (non-negotiable, NOT a toggle):** raw tool-call
   arguments/results and any host/container filesystem path are ALWAYS stripped. Concrete leak
   sources to scrub: the `send_file` artifact descriptor `{path}` (host/container path),
   `aura.tool_invocations` args/results, and any other-identity data. The snapshot carries
-  `asset_id`/`filename` only, never the raw path chip (37A D-13 already replaces it in the live
-  UI — the exporter must do the same).
+  `asset_id`/`filename` only, never the raw path chip.
+  **[AMENDED 2026-07-15 — reasoning/thinking traces REMOVED; requires PRD-amendment]** The
+  original D-08 listed "reasoning/thinking traces" in the snapshot. Reasoning is **never
+  persisted** — verified three ways: `aura.conversation_turns` has no reasoning column
+  (`0005_conversations.up.sql:23-36`), `llm.Message` has no reasoning field (`client.go:24-30`),
+  and `llm.Chunk.Reasoning` is **stream-only** (`client.go:79`). The only "reasoning" at rest is
+  `metadata.reasoning_effort` — the *setting*, not the trace. `LoadHistory` structurally cannot
+  produce traces. Operator decision (2026-07-15): **drop reasoning from the snapshot
+  permanently.** No reference product ships CoT in a share (Claude keeps tool-call data private;
+  open-webui stores only the chat JSON). Adding persistence would put CoT at rest and then export
+  it — a privacy regression contradicting this phase's own SC3 posture. `internal/reasoningtrace`
+  is an operator debug JSONL on disk and MUST NOT be exported (it carries host paths + prompts).
+  **[AMENDED 2026-07-15 — the 37A path strip is CLIENT-side]** The parenthetical "37A D-13
+  already replaces it in the live UI — the exporter must do the same" is misleading: the strip
+  runs **in the browser** (`sseAdapter.ts:346-360`) while the backend still ships `path` over the
+  wire (`Actions.ArtifactDelta map[string]any`, `event.go:72`). A recipient's browser is **not a
+  trust boundary**. The Go serializer MUST implement its own server-side allowlist and be tested
+  with hostile fixtures. Do NOT assume "37A already strips paths."
 - **D-09 — Delivered artifacts travel with the share; PUBLIC = bundled token-scoped.** Artifact
   bytes are copied into a **token-scoped, public-readable snapshot store**; the recipient
   downloads via the token, NEVER via the identity-scoped `/api/assets/{id}/download`. Served
   `Content-Disposition: attachment` + `application/octet-stream` (37A D-10); HTML previews
   sandboxed (D-03). Revoke/expiry drops the bundled copy. Internal (bearer-within-auth) shares
   resolve artifacts via the same snapshot.
+  **[AMENDED 2026-07-15 — "delivered artifacts" NARROWED to agent-produced only]** The original
+  wording did not obviously forbid bundling the **user's own uploads**. Operator decision
+  (2026-07-15): **agent artifacts ONLY** — mirror the existing `selectAgentArtifacts` filter
+  (`useThreadArtifacts.ts:35`: `source_kind === 'agent' && status !== 'deleted' && status !==
+  'canceled'`) **server-side**. A user's own upload (`source_kind='web'` — possibly a passport
+  scan) MUST NEVER enter a share, above all a public one. Claude does exactly this: *"If you share
+  a chat containing an attached file, the file itself is not included in the shared snapshot and
+  remains private."* Aura already encodes the rule client-side; 37F enforces it at the trust
+  boundary. **Copy, never reference:** the recipient's token addresses `share/{id}/…` blobs and
+  has NO path to `identity/{owner}/asset/…` — never "resolve the share's asset_id through
+  `assets.Service`." open-webui shipped precisely this bug (granted **write** on files through a
+  share link; fixed in their `CHANGELOG.md:331`).
 
 ### Internal-identity link semantics (WEBSHARE-02 branch a)
 - **D-10 — Internal link = bearer-within-auth.** ANY authenticated Aura identity holding the
@@ -102,8 +159,15 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
   admin-listable-only variant = deferred.
 
 ### Storage & data model (fork c)
-- **D-11 — New `shared_links` table, migration 0036** (next free slot; 0035
-  `assets_source_kind_agent` is latest on disk). Columns (planner refines): `id`,
+- **D-11 — New `shared_links` table, migration 0040.**
+  **[AMENDED 2026-07-15 — slot corrected 0036 → 0040; VERIFIED ON DISK]** The original text read
+  "migration 0036 (next free slot; 0035 `assets_source_kind_agent` is latest on disk)". That was
+  true on 2026-07-13 when this CONTEXT was gathered. **Phase 42 (llm-conversation-compaction)
+  shipped 0036–0039 on 2026-07-14** (`0036_compaction_checkpoints`, `0037_content_parts`,
+  `0038_compaction_memory`, `0039_compaction_rollout`). A blind `0036_shared_links.up.sql`
+  **collides**, dirties the golang-migrate tracker, and blocks every subsequent migration. **37F
+  uses 0040.** Re-verify `ls internal/db/migrations/ | tail -1` at execute time — this project
+  runs multiple phases in flight. Columns (planner refines): `id`,
   `owner_identity_id`, `conversation_id`, `tier` (internal|public), `token_hash` (public only),
   snapshot pointer, format/options, `expires_at`, `revoked_at`, `created_at`, `updated_at` (for
   "Update"). Table = metadata + lifecycle. Reuse-assets-only REJECTED (assets can't cleanly
@@ -115,9 +179,20 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
   blob. Small serialized MD/JSON MAY be jsonb, but artifacts MUST be blobs — keep bytes in
   Garage for one consistent path.
 - **D-13 — Public token = 256-bit opaque random, stored HASHED at rest** (SHA-256),
-  constant-time compare on lookup, never logged. A DB/backup leak never exposes live links
+  **hash-indexed equality lookup**, never logged. A DB/backup leak never exposes live links
   (session-token discipline). Opaque → no enumerable IDs. Plaintext shown to the owner once at
   creation; it lives only in the URL.
+  **[AMENDED 2026-07-15 — "constant-time compare on lookup" → hash-indexed equality; requires
+  PRD-amendment]** Implemented **literally**, "constant-time compare on lookup" means scanning
+  every row and `subtle.ConstantTimeCompare`-ing each — **slower and no more secure**. The correct
+  implementation is `WHERE token_hash = $1` on the unique index (the standard "store a hash of the
+  API key, index it, look it up" pattern). This is safe: the lookup key is already `SHA-256(token)`,
+  so exploiting a timing signal on the index probe to recover the *token* would require inverting
+  SHA-256. D-13's **intent** — no plaintext token at rest, a DB/backup leak never exposes live
+  links, no enumerable IDs — is **fully satisfied**. `crypto/subtle.ConstantTimeCompare` remains
+  correct **only** where a secret is compared in Go memory; this design has no such site. The
+  PRD-amendment MUST record the hash-indexed lookup explicitly so a later reviewer does not
+  "fix" it into a table scan.
 - **D-14 — Share act audited via a dedicated identity-keyed `share_audit` ledger** capturing
   **create / update-snapshot / revoke / expire / public-access(open)** events. Joins the
   existing audit family (`aura.mcp_audit` + `aura.skill_audit` + `aura.tool_invocations`,
@@ -137,7 +212,7 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
 
 ### Claude's Discretion
 - Exact `shared_links` / `share_audit` column set + indexes; whether `share_audit` is its own
-  migration or shares 0036.
+  migration or shares 0040 (see amended D-11 — the slot is 0040, NOT 0036).
 - The capability NAME for public-share gating (D-02) — net-new `share.public` vs reuse
   `governance.write`; the per-user-grantable / off-by-default / org-disableable SEMANTICS are
   locked, only the name is open.
