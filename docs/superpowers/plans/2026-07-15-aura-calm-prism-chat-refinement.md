@@ -34,6 +34,16 @@ Large-file guardrails:
 - `web/src/chat/ExternalStoreChat.tsx` starts near 537 lines. Delete the nonce-driven resume effect, move lifecycle mechanics into `runUsage.ts` and approval mechanics into `useThreadApprovals.ts`, and move the empty state into `EmptyThreadStarters.tsx`.
 - Run `bash scripts/check-file-size.sh` after every production-code task. Expected: `check-file-size: all source files within the 600-LOC cap.`
 
+### Progress tracking hard rule
+
+This plan is the source of truth for implementation progress. Every current and future agent working from it must follow these rules:
+
+- Keep a task open while implementation, spec-compliance review, or code-quality review is incomplete.
+- Mark every step in a task `[x]` only after the implementation and both reviews pass with no unresolved findings.
+- Update the checkboxes immediately after approval; do not defer progress tracking to a later task or session.
+- Commit each approved task's checkbox update as a separate docs-only checkpoint so code-review ranges remain exact.
+- Never mark a task complete based only on passing tests or an implementer's report.
+
 ### Task 1: Land the PRD-first contract as a standalone commit
 
 **Files:**
