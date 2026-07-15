@@ -599,9 +599,59 @@ Plans:
 3. Nessun path host/container e nessun dato di un'altra identità raggiungono un destinatario; l'atto di condivisione è audited.
 4. Unit + e2e + un test di cross-identity deny sul link condiviso; coverage ≥85%.
 
-**Design forks for discuss-phase:** (a) scope — solo export file (semplice, nessuna nuova superficie auth) vs. link interno-identità vs. link pubblico a token (max parità, max rischio); (b) granularità — intera conversazione vs. singolo artifact/messaggio; (c) storage link — riusa `assets`/Garage vs. una nuova tabella `shared_links`. **Nota sicurezza:** un link pubblico è un buco potenziale nell'isolamento MUSR — default fail-closed, opt-in esplicito, revoca obbligatoria (probabile ADR).
+**Design forks (RESOLVED da 37F-CONTEXT + Amendment Log 2026-07-15):** (a) **scope** — RISOLTO: **tutti e tre i tier** shippano fail-closed (export file sempre; link interno-identità revocabile = default "Condividi"; link pubblico opt-in a token con scadenza, mai default — D-01); (b) **granularità** — RISOLTO a **intera conversazione** (single-artifact e single-message deferred — D-05); (c) **storage link** — RISOLTO alla nuova tabella `aura.shared_links` + ledger `aura.share_audit`, **migration 0040** (NON 0036: Phase 42 ha shippato 0036–0039 il 2026-07-14 — D-11 amended), con blob snapshot/artifact token-scoped sotto un prefisso `share/` lessicalmente disgiunto da `identity/` (D-12). **Nota sicurezza:** il link pubblico è un buco **deliberato e limitato** nell'isolamento MUSR — le sette mitigazioni fail-closed sono registrate in **ADR 0039**.
 
-**PRD-first:** richiede PRD-amendment (WEBSHARE-01..04) + probabile ADR (condivisione vs. isolamento identità).
+**Plans:** 19 plans
+
+Plans:
+
+**Wave 1** *(PRD-first gate — blocks all code)*
+
+- [ ] 37F-01-PLAN.md — PRD-amendment (WEBSHARE-01..04 + i tre tier + snapshot model + `shared_links`/`share_audit` + amendment D-08 reasoning DROPPED e D-13 hash-indexed equality) + ADR 0039 (sharing vs. identity isolation)
+
+**Wave 2** *(foundations — parallel, zero file overlap)*
+
+- [ ] 37F-02-PLAN.md — Migration 0040 (`shared_links` + `share_audit` + scheduler kind `share_expiry_sweep`) + `AURA_SHARE_PUBLIC_ENABLED` (default false) / `AURA_SHARE_MAX_EXPIRY_DAYS` (default 90)
+- [ ] 37F-03-PLAN.md — **SC3 redaction core**: `Snapshot` + `BuildSnapshot` allowlist projection (TDD, hostile fixtures, mutation ≥70% — a surviving mutant here is a live leak)
+- [ ] 37F-04-PLAN.md — Token mint/hash (256-bit opaque, SHA-256 at rest) + token-scoped objectstore keys (namespace-disjoint) + expiry math (TDD)
+- [ ] 37F-05-PLAN.md — Web foundations: `AssetSourceContext` (R-05 — unblocks the public page) + `resources.share.ts` (en+it) + TS snapshot wire mirror
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 37F-06-PLAN.md — Markdown + JSON adapters (pure functions of `Snapshot`) + the redaction-totality property suite (TDD)
+- [ ] 37F-07-PLAN.md — `shared_links` store (lazy fail-closed token predicate = the security gate) + `share_audit` + the 4th admin audit-union leg
+- [ ] 37F-14-PLAN.md — `ShareToggle` in the floating cluster 37B reserved in code + `useSharePanel` + AppShell refactor-on-touch (R-02)
+- [ ] 37F-16-PLAN.md — Public read-only page `/s/{token}` (null-origin iframe, no owner PII, no oracle, renderers reused unedited)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 37F-08-PLAN.md — Share service (Create/Update/Revoke/Resolve) + **agent-artifacts-only** bundle filter (D-09 amended — a user upload never enters a share)
+- [ ] 37F-09-PLAN.md — **WEBSHARE-01** export endpoint `GET /api/conversations/{id}/export` (zero `serve_webui.go` delta — F-1)
+- [ ] 37F-15-PLAN.md — Share modal (tier chosen before mint, public never preselected, stale-snapshot detection) + revoke confirm + API client
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 37F-10-PLAN.md — Share HTTP surface + the **in-handler org kill-switch** that survives the loopback capability bypass (R-08)
+- [ ] 37F-11-PLAN.md — Lifecycle: expiry sweep (GC, not the gate) + revoke-on-conversation-delete cascade (D-15/R-10 — the FK drops the row, not the bytes)
+- [ ] 37F-17-PLAN.md — "Condiviso" section (37B-deferred here) + Settings shared-links management + revoke-all
+
+**Wave 6** *(blocked on 37F-10)*
+
+- [ ] 37F-12-PLAN.md — Parent-mux mount + `share.public` capability + `/s/` public allowlist (`/s/` stays **out** of `fallbackExcludedPrefixes`)
+
+**Wave 7** *(blocked on 37F-11 + 37F-12)*
+
+- [ ] 37F-13-PLAN.md — **WEBSHARE-04** SC4 cross-identity deny (10 rows, `internal/agui`, single `db_integration` tag) + phase-wide tag audit + per-package ≥85%
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 37F-18-PLAN.md — Full local matrix + mutation + dist rebuild + quality-snapshot re-attestation (PRD amendment #20)
+
+**Wave 9** *(terminal, autonomous:false)*
+
+- [ ] 37F-19-PLAN.md — Live public-page verification (blocking checkpoint) + push + CI green (both coverage gates)
+
+**PRD-first:** richiede PRD-amendment (WEBSHARE-01..04 + i tre tier + snapshot model + `shared_links`/`share_audit` + gli amendment D-08 e D-13) + **ADR 0039** (condivisione vs. isolamento identità) — entrambi **Wave 1, gating del codice**.
 
 #### Phase 38: MCP Governance Hardening
 
