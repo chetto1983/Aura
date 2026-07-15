@@ -65,8 +65,8 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
   expiring opaque token**, never default, behind an explicit warning. Max Claude/ChatGPT/
   open-webui parity while the public surface stays strictly fail-closed (the "premium bar"
   cockpit posture + the roadmap's fail-closed mandate).
-- **D-02 — Public-link minting is capability-gated: off by default per user, admin-grantable,
-  org kill-switch.** Reached via the existing `RequireCapability`/`HasCapability` interface +
+- **D-02 — Public-link minting is capability-gated: off by default per user, admin-grantable, org kill-switch.**
+  Reached via the existing `RequireCapability`/`HasCapability` interface +
   `capability_grants` seam (36 D-01/D-04). **Locked semantics:** per-user grantable, off by
   default, an admin can disable public sharing org-wide. **OPEN (planner/PRD call):** the
   capability *name* — the codebase's RESEARCH-OQ3 precedent reuses `governance.write` and
@@ -97,8 +97,8 @@ resolved in discussion, grounded in a user-directed industrial-pattern research 
   as a sibling module (`web/src/shell/ShareShell.tsx`) mirroring `ArtifactsToggle`; order
   `[VoiceModeToggle] [ShareToggle] [ArtifactsToggle]`. The locked *intent* (thread-level
   share-arrow) is validated; only the DOM target moves.
-- **D-06 — A shared conversation is a STATIC SNAPSHOT frozen at creation + an owner "Update"
-  button** to refresh to a newer snapshot (Claude/ChatGPT/open-webui). Turns added after
+- **D-06 — A shared conversation is a STATIC SNAPSHOT frozen at creation + an owner "Update" button**
+  to refresh to a newer snapshot (Claude/ChatGPT/open-webui). Turns added after
   sharing NEVER retroactively appear on an existing link — the core SC3 leak-prevention. Not a
   live view.
 
