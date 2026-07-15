@@ -110,7 +110,7 @@ Expected: one docs-only commit. `git show --stat --oneline HEAD` names only `prd
 - Test: `web/src/AppShell.voice.test.tsx`
 - Test: `web/src/AppShell.artifacts.test.tsx`
 
-- [ ] **Step 1: Add failing semantic layout and full-action target assertions**
+- [x] **Step 1: Add failing semantic layout and full-action target assertions**
 
 Add these assertions to the existing shell/chat tests after rendering representative content:
 
@@ -148,7 +148,7 @@ for (const name of actionNames) {
 
 Also assert the attachment remove button and the Voice/Artifacts buttons carry `min-h-11 min-w-11`.
 
-- [ ] **Step 2: Run the targeted tests and observe the current overlay/width/target failures**
+- [x] **Step 2: Run the targeted tests and observe the current overlay/width/target failures**
 
 Run:
 
@@ -159,7 +159,7 @@ npx vitest run src/__tests__/AppShell.shell.test.tsx src/chat/__tests__/External
 
 Expected: FAIL because the workspace controls are absolute, semantic hooks are absent, assistant prose has no exact 48rem surface, and several targets are below 44px.
 
-- [ ] **Step 3: Create the normal-flow workspace control lane**
+- [x] **Step 3: Create the normal-flow workspace control lane**
 
 Create `web/src/shell/ChatWorkspaceControls.tsx`:
 
@@ -202,7 +202,7 @@ Replace AppShell's relative/absolute wrapper with a two-row contained wrapper:
 </VoiceModeProvider>
 ```
 
-- [ ] **Step 4: Add semantic message surfaces and 44px actions**
+- [x] **Step 4: Add semantic message surfaces and 44px actions**
 
 Use these exact contracts in `ExternalStoreChat_messages.tsx`:
 
@@ -230,7 +230,7 @@ Use these exact contracts in `ExternalStoreChat_messages.tsx`:
 
 Apply `data-required-touch-target` and `inline-flex min-h-11 min-w-11 items-center justify-center` to Edit, Copy, Reload, Speak/Stop, attachment remove/download/promote/retry actions, both BranchPicker arrows, Voice, and Artifacts. Preserve localized `aria-label`s. Add `min-w-0 overflow-wrap-anywhere` or `break-words` to filenames/tool-adjacent labels so controls never shrink off-screen. Do not add raw colors.
 
-- [ ] **Step 5: Run the layout tests, file cap, and diff checks**
+- [x] **Step 5: Run the layout tests, file cap, and diff checks**
 
 Run:
 
@@ -244,7 +244,7 @@ git diff --check -- web/src/AppShell.tsx web/src/shell/ChatWorkspaceControls.tsx
 
 Expected: targeted tests PASS, every source file is at most 600 lines, and diff check is silent.
 
-- [ ] **Step 6: Commit the contained message and control geometry**
+- [x] **Step 6: Commit the contained message and control geometry**
 
 ```powershell
 git add -- web/src/AppShell.tsx web/src/shell/ChatWorkspaceControls.tsx web/src/chat/ExternalStoreChat_messages.tsx web/src/chat/BranchPicker.tsx web/src/chat/attachments/AttachmentChip.tsx web/src/chat/voice/VoiceModeToggle.tsx web/src/shell/ArtifactsShell.tsx web/src/__tests__/AppShell.shell.test.tsx web/src/chat/__tests__/ExternalStoreChat.test.tsx web/src/chat/ExternalStoreChat_messages.speaker.test.tsx web/src/AppShell.voice.test.tsx web/src/AppShell.artifacts.test.tsx
