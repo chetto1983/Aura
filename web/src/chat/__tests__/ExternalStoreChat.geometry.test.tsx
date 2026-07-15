@@ -60,6 +60,30 @@ function renderChat(ui: ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
+function renderMarkdownMessage(markdown: string) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      if (url.startsWith('/api/assets')) {
+        return Promise.resolve(new Response('[]', { status: 200 }));
+      }
+      if (url.startsWith('/threads/')) {
+        return Promise.resolve(messagesSnapshotResponse([]));
+      }
+      return Promise.resolve(sseResponse(completedTurn('msg-markdown', markdown)));
+    }),
+  );
+  const rendered = renderChat(<ExternalStoreChat threadId="conv-1" />);
+  sendPrompt('show metrics');
+  return rendered;
+}
+
+function expectFluidTable(table: HTMLElement): void {
+  expect(table.closest('[data-message-content]')).not.toBeNull();
+  expect(table.closest('[data-message-prose]')).toBeNull();
+  expect(table.closest('[class~="max-w-[48rem]"]')).toBeNull();
+}
+
 beforeEach(() => {
   localStorage.removeItem('aura.chat.reasoning.shown');
 });
@@ -78,32 +102,50 @@ describe('ExternalStoreChat message geometry', () => {
       '| --- | ---: |',
       '| Latency | 42 ms |',
     ].join('\n');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) => {
-        if (url.startsWith('/api/assets')) {
-          return Promise.resolve(new Response('[]', { status: 200 }));
-        }
-        if (url.startsWith('/threads/')) {
-          return Promise.resolve(messagesSnapshotResponse([]));
-        }
-        return Promise.resolve(sseResponse(completedTurn('msg-markdown', markdown)));
-      }),
-    );
-    const { container } = renderChat(<ExternalStoreChat threadId="conv-1" />);
-    sendPrompt('show metrics');
+    const { container } = renderMarkdownMessage(markdown);
 
     const paragraph = await screen.findByText('Measured paragraph.');
     expect(paragraph.getAttribute('data-message-prose')).not.toBeNull();
     expect(paragraph.classList.contains('max-w-[48rem]')).toBe(true);
 
-    const table = screen.getByRole('table');
-    expect(table.closest('[data-message-content]')).not.toBeNull();
-    expect(table.closest('[data-message-prose]')).toBeNull();
-    expect(table.closest('[class~="max-w-[48rem]"]')).toBeNull();
+    expectFluidTable(screen.getByRole('table'));
     expect(
       container.querySelector('[data-message-content]')?.classList.contains('max-w-[48rem]'),
     ).toBe(false);
+  });
+
+  it('keeps a quoted GFM table outside prose caps', async () => {
+    renderMarkdownMessage(
+      [
+        '> Quoted context.',
+        '>',
+        '> | Metric | Value |',
+        '> | --- | ---: |',
+        '> | Latency | 42 ms |',
+      ].join('\n'),
+    );
+
+    const paragraph = await screen.findByText('Quoted context.');
+    expect(paragraph.getAttribute('data-message-prose')).not.toBeNull();
+    expect(paragraph.classList.contains('max-w-[48rem]')).toBe(true);
+    expectFluidTable(screen.getByRole('table'));
+  });
+
+  it('keeps a list-nested GFM table outside prose caps', async () => {
+    renderMarkdownMessage(
+      [
+        '- Listed context.',
+        '',
+        '  | Metric | Value |',
+        '  | --- | ---: |',
+        '  | Latency | 42 ms |',
+      ].join('\n'),
+    );
+
+    const paragraph = await screen.findByText('Listed context.');
+    expect(paragraph.getAttribute('data-message-prose')).not.toBeNull();
+    expect(paragraph.classList.contains('max-w-[48rem]')).toBe(true);
+    expectFluidTable(screen.getByRole('table'));
   });
 
   it('keeps assistant content fluid and exposes responsive action rows', async () => {

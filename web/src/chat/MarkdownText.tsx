@@ -2,6 +2,7 @@ import {
   MarkdownTextPrimitive,
   type MarkdownTextPrimitiveProps,
 } from '@assistant-ui/react-markdown';
+import type { Element } from 'hast';
 import type { PluggableList } from 'unified';
 import { baseMarkdownComponents, buildRehypePlugins, remarkPlugins } from './markdownConfig';
 
@@ -28,6 +29,19 @@ export interface MarkdownTextProps extends Omit<
 }
 
 const PROSE_BLOCK_CLASS = 'w-full max-w-[48rem] [overflow-wrap:anywhere]';
+
+function containsTable(node: Element | undefined): boolean {
+  return (
+    node?.children.some(
+      (child) => child.type === 'element' && (child.tagName === 'table' || containsTable(child)),
+    ) ?? false
+  );
+}
+
+function structuralProseProps(node: Element | undefined) {
+  return containsTable(node) ? {} : { 'data-message-prose': true, className: PROSE_BLOCK_CLASS };
+}
+
 const constrainedProseComponents = {
   p: ({ children }) => (
     <p data-message-prose className={PROSE_BLOCK_CLASS}>
@@ -64,21 +78,11 @@ const constrainedProseComponents = {
       {children}
     </h6>
   ),
-  blockquote: ({ children }) => (
-    <blockquote data-message-prose className={PROSE_BLOCK_CLASS}>
-      {children}
-    </blockquote>
+  blockquote: ({ node, children }) => (
+    <blockquote {...structuralProseProps(node)}>{children}</blockquote>
   ),
-  ol: ({ children }) => (
-    <ol data-message-prose className={PROSE_BLOCK_CLASS}>
-      {children}
-    </ol>
-  ),
-  ul: ({ children }) => (
-    <ul data-message-prose className={PROSE_BLOCK_CLASS}>
-      {children}
-    </ul>
-  ),
+  ol: ({ node, children }) => <ol {...structuralProseProps(node)}>{children}</ol>,
+  ul: ({ node, children }) => <ul {...structuralProseProps(node)}>{children}</ul>,
 } satisfies ExtraMarkdownComponents;
 
 export function MarkdownText({
