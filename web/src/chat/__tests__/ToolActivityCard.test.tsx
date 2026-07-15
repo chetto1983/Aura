@@ -4,6 +4,26 @@ import i18n from '../../i18n/i18n';
 import { ToolActivityCard } from '../ToolActivityCard';
 import { toolStatus } from '../toolStatus';
 
+function rawPre(text: string): HTMLPreElement {
+  const raw = screen.getByText(text);
+  expect(raw.tagName.toLowerCase()).toBe('pre');
+  return raw as HTMLPreElement;
+}
+
+function expectRawHidden(text: string): HTMLPreElement {
+  const raw = rawPre(text);
+  expect(raw.hidden).toBe(true);
+  expect(raw.hasAttribute('hidden')).toBe(true);
+  return raw;
+}
+
+function expectRawVisible(text: string): HTMLPreElement {
+  const raw = rawPre(text);
+  expect(raw.hidden).toBe(false);
+  expect(raw.hasAttribute('hidden')).toBe(false);
+  return raw;
+}
+
 describe('ToolActivityCard (D-02 — raw view only)', () => {
   it('renders the tool name + a running status when no result yet', () => {
     render(<ToolActivityCard toolName="web_search" argsText='{"query":"meteo"}' />);
@@ -23,21 +43,20 @@ describe('ToolActivityCard (D-02 — raw view only)', () => {
 
   it('the expander reveals the raw mono result and toggles aria-expanded', () => {
     render(<ToolActivityCard toolName="web_search" result="RAW RESULT BLOB" />);
-    // Collapsed by default — the raw blob is not yet in the DOM.
-    expect(screen.queryByText('RAW RESULT BLOB')).toBeNull();
     const expander = screen.getByRole('button', { name: 'Show raw result' });
     expect(expander.getAttribute('aria-expanded')).toBe('false');
+    const raw = expectRawHidden('RAW RESULT BLOB');
+    expect(expander.getAttribute('aria-controls')).toBe(raw.id);
+    expect(document.getElementById(raw.id)).toBe(raw);
 
     fireEvent.click(expander);
     expect(expander.getAttribute('aria-expanded')).toBe('true');
-    const raw = screen.getByText('RAW RESULT BLOB');
-    expect(raw).toBeTruthy();
+    expectRawVisible('RAW RESULT BLOB');
     // It renders as a <pre> mono block — text only.
-    expect(raw.tagName.toLowerCase()).toBe('pre');
     expect(raw.className).toContain('font-mono');
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide raw result' }));
-    expect(screen.queryByText('RAW RESULT BLOB')).toBeNull();
+    expectRawHidden('RAW RESULT BLOB');
   });
 
   it('renders untrusted tool output as TEXT, never as HTML (XSS guard)', () => {
