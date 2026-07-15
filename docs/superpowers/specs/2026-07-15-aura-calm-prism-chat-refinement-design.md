@@ -1,8 +1,8 @@
 # Aura Calm Prism Chat Refinement Design
 
 - **Date:** 2026-07-15
-- **Revision:** 2 — adversarial-review amendments
-- **Status:** Direction approved; revised contract awaiting second-round adversarial approval.
+- **Revision:** 3 — final adversarial-review precision pass
+- **Status:** Direction approved; revised contract awaiting final adversarial approval.
 - **Surface:** Aura authenticated chat cockpit in light and dark themes, desktop and mobile.
 - **Approach:** Targeted refinement of Aura's existing semantic-token design system.
 - **Browser evidence:** Live Aura inspected with user-approved Playwright using the Google Chrome channel.
@@ -119,7 +119,7 @@ The thread layout uses this measurable DOM contract:
 - tool, typed display, source, table, attachment, artifact, and error parts: siblings outside the prose cap;
 - user content column: `min-width: 0`, wrapping and overflow containment;
 - message action row: `max-width: 100%`, `min-width: 0`, `flex-wrap: wrap`;
-- workspace-control and frequent message-action targets: at least 44 × 44 CSS px.
+- on coarse-pointer and touch layouts, every rendered workspace and message-action target is at least 44 × 44 CSS px, including Voice, Artifacts, Edit, Copy, Reload, Speak/Stop, document/audio actions, and both BranchPicker arrows.
 
 Stable semantic hooks support tests without coupling them to Tailwind strings:
 
@@ -148,8 +148,10 @@ The browser-origin preference contract is frozen:
 - key remains `aura.chat.reasoning.shown`;
 - `'1'` means shown;
 - `'0'` means hidden;
-- missing, invalid, unreadable, or unwritable storage means hidden;
-- an explicit stored value remains authoritative for that browser profile.
+- missing, invalid, or unreadable storage means hidden;
+- a readable valid `'1'` or `'0'` remains authoritative even if a later write fails;
+- a write failure does not block or undo the current-session toggle; it only prevents persistence;
+- on the next mount, the last readable valid value is used, otherwise the drawer defaults hidden.
 
 This changes only the default for a browser profile with no valid preference. It does not create identity-scoped persistence.
 
@@ -218,6 +220,8 @@ While at least one approval is unresolved:
 - approvals retain deterministic backend order;
 - after resolution, focus moves to the next pending approval or returns to the composer.
 
+The composer container exposes the approval-lock hint through a stable localized `aria-describedby` relationship and `aria-disabled="true"`. Every actionable child uses native `disabled` where supported; otherwise it uses `aria-disabled` plus keyboard and pointer event suppression. No control may remain operable while the composer is approval-locked.
+
 The server-sanitized question string renders as escaped text with `white-space: pre-wrap`, `overflow-wrap: anywhere`, and contained horizontal overflow so commands, paths, hashes, and line breaks remain inspectable. The client does not describe the string as raw or unsanitized verbatim backend input.
 
 The current DTO has no trusted skill-install subtype. Therefore:
@@ -229,12 +233,14 @@ The current DTO has no trusted skill-install subtype. Therefore:
 
 The UI no longer renders `approval.token` as a dedicated label or technical field. The token remains client-visible in the authenticated approvals response and encoded resolution URL; authentication, ownership, capability checks, and one-time resolution remain the authorization boundary. The client never redacts or rewrites the server-sanitized question if that question independently contains the same string.
 
-Approval actions and wire behavior remain unchanged:
+Approval resolution verbs and endpoint payloads remain unchanged:
 
 - **Answer** sends `accept` with operator content;
 - **Decline** sends `decline` without typed answer content;
 - **Cancel run** sends `cancel`, with inline confirmation while streaming;
 - the token travels in the encoded URL path, not the JSON body.
+
+Accept and Decline resolve only the selected token. They do not re-drive the run while the active conversation still has unresolved approvals. After the single shared approvals query is refetched, a locally initiated Accept or Decline requests exactly one no-message re-drive only when that conversation transitions from one-or-more pending approvals to zero. Intermediate resolutions keep the composer disabled and move focus to the next approval. Cancel auto-resolves the conversation's pending approvals and never re-drives. The existing `204` endpoint contract remains unchanged; remaining state is derived from the refetched approvals query.
 
 Cancel confirmation behavior is explicit:
 
@@ -262,7 +268,7 @@ This supersedes the older client presentation that inferred skill installation f
 - `web/src/chat/RuntimeFooter.tsx`
 - `web/src/chat/ContextBudgetGauge.tsx`
 
-The existing `onUsage` callback is generalized to a frontend-only usage-state seam. Streaming frames report the latest usage with `settled: false`; run completion, cancellation, or failure reports the last available usage with `settled: true` exactly once. `AppShell` owns `{usage, settled}` and passes both to `RuntimeFooter`. No SSE payload or backend protocol changes.
+The existing `onUsage` callback is generalized to a frontend-only, run-scoped usage-state seam. At the start of every new, edit/reload, and resumed run, `ExternalStoreChat` resets a run-local usage accumulator and emits `{usage: undefined, settled: false}`. Streaming updates replace only that run-local value. One shared finalization boundary emits `{usage: latestRunUsage, settled: true}` exactly once for every started run, including completion, cancellation, failure, and the no-usage case. `onCancel` only aborts and never emits a second settlement. Thread changes clear the AppShell usage state. `AppShell` owns `{usage, settled}` and passes both to `RuntimeFooter`. No SSE payload or backend protocol changes.
 
 Visible metrics use the live cluster. A separate visually hidden, non-interactive `role="status" aria-live="polite" aria-atomic="true"` region receives only the latched settled summary. Expanding or collapsing telemetry does not mutate that live region.
 
@@ -373,6 +379,7 @@ The work changes client interaction seams but preserves backend contracts:
 - `AppShell` owns composer draft events and footer usage state.
 - `ExternalStoreChat` emits draft requests upward and usage settlement upward; neither adds a backend field.
 - `ThreadApprovalCards` moves inside the chat task order and shares a single thread-approval selection with composer-disabled state.
+- `ExternalStoreChat` owns a per-conversation resume gate. `InlineApprovalCard` reports resolution intent but does not directly re-drive. The gate consumes the shared approval selector and emits one resume only after the final locally accepted/declined approval leaves zero pending items.
 - `ExternalStoreChat_messages` remains a presentational renderer.
 - `sseAdapter` event handling and message content shapes do not change.
 - `DisplayRouter` remains the only typed-result routing seam.
@@ -396,14 +403,15 @@ Implementation follows Aura's existing test stack and starts with failing behavi
 
 ### Component and integration tests
 
-- Reasoning preference tests cover missing, invalid, `'0'`, `'1'`, read failure, and write failure.
+- Reasoning preference tests cover missing, invalid, `'0'`, `'1'`, read failure, write failure with an existing readable value, current-session toggle survival, and the next-mount fallback.
 - Two simultaneous reasoning drawers produce unique, resolving control/body relationships without `aria-pressed`.
 - The chronology E2E expands reasoning before asserting its content; a separate fresh-profile test asserts default-collapsed behavior.
 - Tool tests pin the complete seven-case disclosure state matrix, safe text rendering, long-name containment, child rows, and locale-aware settled duration.
 - Generic approval tests cover ordinary input, generic approval risk, multiline whitespace, token-field removal, and no invented install/container copy.
 - Token sentinel tests assert no dedicated token field in pending, terminal, and failure states while the encoded resolve URL still contains the token and JSON bodies remain `{action, content?}`.
-- Approval tests cover DOM order before composer, composer disablement, deterministic multiple-approval order, focus movement/restoration, Escape, one-time announcements, and terminal tone mapping.
-- Footer tests prove visual values update mid-stream while the visually hidden status remains latched, then announces exactly once on settlement; disclosure mutations do not alter the live region.
+- Approval tests cover DOM order before composer, the composer's stable `aria-describedby`/`aria-disabled` relationship, native/fallback child disablement, deterministic multiple-approval order, focus movement/restoration, Escape, one-time announcements, and terminal tone mapping.
+- With three pending approvals in one conversation, resolving the first two produces no `/agent/run`; resolving the final local Accept/Decline produces exactly one `/agent/run`; Cancel produces none. Focus advances after intermediate resolutions and the composer remains disabled until pending count reaches zero.
+- Footer tests prove visual values update mid-stream while the visually hidden status remains latched, then announces exactly once on settlement; disclosure mutations do not alter the live region. Two sequential runs, no-usage completion, cancellation, failure, edit/reload, resume, and thread change each prove exactly one settlement per started run with no prior-turn usage reuse.
 - Starter tests cover exact English/Italian labels and bodies, repeated same-starter nonce, replacement, focus, editability, and zero run requests.
 - English/Italian resource parity remains green.
 
@@ -413,7 +421,7 @@ Implementation follows Aura's existing test stack and starts with failing behavi
 - Assistant root, content, action rows, and workspace controls expose stable semantic hooks.
 - Fine-pointer hover behavior and coarse-pointer visible behavior are both asserted.
 - Long content contains overflow at the correct boundary.
-- Frequent controls retain 44 × 44 CSS px minimum targets.
+- Representative full-action states enumerate Voice, Artifacts, Edit, Copy, Reload, Speak/Stop, document/audio actions, and both BranchPicker arrows; every rendered control has a 44 × 44 CSS px minimum target on coarse-pointer/touch layouts.
 
 ### Playwright browser verification
 
@@ -474,17 +482,17 @@ The refinement is complete only when all of the following are true:
 
 1. At 320, 393, 768, and 1440 CSS px and 200% zoom, workspace-control and message-action rectangles do not intersect content and no page-level horizontal overflow exists.
 2. Assistant root is full-width/min-width-zero; plain prose alone is capped at `48rem`; tools, typed displays, tables, sources, and artifacts remain outside the cap.
-3. Fine-pointer hover may quiet actions, while coarse-pointer/touch always exposes them; frequent targets measure at least 44 × 44 CSS px.
-4. The reasoning preference key and `'1'`/`'0'` encoding remain unchanged; missing, invalid, and storage-error states default collapsed; explicit values are honored.
+3. Fine-pointer hover may quiet actions, while coarse-pointer/touch always exposes Voice, Artifacts, Edit, Copy, Reload, Speak/Stop, document/audio actions, and both BranchPicker arrows; every rendered target measures at least 44 × 44 CSS px.
+4. The reasoning preference key and `'1'`/`'0'` encoding remain unchanged; missing, invalid, and unreadable storage defaults collapsed; readable explicit values remain authoritative after write failure; current-session toggles survive failed persistence.
 5. Multiple reasoning disclosures have unique resolving IDs, use `aria-expanded`, and do not use `aria-pressed`.
 6. Tool raw-data behavior passes the complete seven-case state matrix and remains XSS-safe.
-7. Pending approvals render before the disabled composer in DOM, reading, visual, focus, and tab order.
+7. Pending approvals render before the disabled composer in DOM, reading, visual, focus, and tab order; the composer exposes its localized lock reason through stable `aria-describedby` and no child control remains operable.
 8. Generic approval/input framing never claims skill installation, container isolation, or activation without a trusted subtype.
 9. Server-sanitized question whitespace is preserved and long content remains contained.
 10. No dedicated resume-token label or field is rendered; the encoded resolution URL and unchanged verb JSON remain correct.
-11. Approval cancel confirmation manages Escape and focus; every resolution/expiry/failure outcome is announced once with the specified semantic tone.
+11. Approval cancel confirmation manages Escape and focus; every resolution/expiry/failure outcome is announced once with the specified semantic tone; intermediate Accept/Decline resolutions never re-drive and the final locally resolved pending item re-drives exactly once.
 12. Empty-state starters insert the exact localized editable body, replace through the sole nonce-backed draft owner, focus the composer, and create no run request.
-13. Visible telemetry updates during streaming; a separate non-interactive status region announces only once when the turn settles.
+13. Visible telemetry updates during streaming; every run resets its own usage and settles exactly once without reusing prior-turn values; a separate non-interactive status region announces only that run's settlement.
 14. Mobile telemetry starts compact with labeled cost/context and a visible disclosure cue; its gauge appears in expanded detail; desktop telemetry remains complete.
 15. English and Italian tests cover actual visible/accessibility copy and locale-aware values, not only key parity.
 16. Dark and light contrast gates pass with no required-pair regression; focus uses `ring`.
