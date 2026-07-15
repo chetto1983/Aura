@@ -72,6 +72,13 @@ function renderShell() {
   );
 }
 
+function expectRequiredTouchTarget(element: HTMLElement): void {
+  const classes = element.getAttribute('class') ?? '';
+  expect(element.getAttribute('data-required-touch-target')).not.toBeNull();
+  expect(classes).toMatch(/(?:^|\s)(?:min-h-11|h-11)(?:\s|$)/);
+  expect(classes).toMatch(/(?:^|\s)(?:min-w-11|w-11)(?:\s|$)/);
+}
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -88,6 +95,7 @@ describe('AppShell — voice-mode header toggle (D-06 / WEBVOICE-03)', () => {
 
     const toggle = await screen.findByLabelText('Voice mode off');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expectRequiredTouchTarget(toggle);
 
     fireEvent.click(toggle);
 

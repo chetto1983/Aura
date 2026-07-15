@@ -24,10 +24,10 @@ import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
 import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
-import { ArtifactsDrawer, ArtifactsResizablePanel, ArtifactsToggle } from './shell/ArtifactsShell';
+import { ArtifactsDrawer, ArtifactsResizablePanel } from './shell/ArtifactsShell';
+import { ChatWorkspaceControls } from './shell/ChatWorkspaceControls';
 import { useArtifactsPanel } from './shell/useArtifactsPanel';
 import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
-import { VoiceModeToggle } from './chat/voice/VoiceModeToggle';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 
@@ -162,9 +162,7 @@ export function AppShell() {
 
   const activeThreadId = selectedId;
 
-  // 37B (D-01..D-04): the Artefatti panel integration seam lives in ./shell/ArtifactsShell so the
-  // shell stays under the 600-LOC cap. It owns the desktop-vs-mobile branch, the persisted
-  // open/closed intent, and the dynamic panelIds (no layout-key bump).
+  // 37B: useArtifactsPanel owns desktop/mobile, persisted open state, and dynamic panel IDs.
   const {
     artifactsActive,
     artifactsPanelMounted,
@@ -510,11 +508,11 @@ export function AppShell() {
               className="h-full min-h-0"
             >
               <VoiceModeProvider>
-                <div className="relative h-full min-h-0">
-                  <div className="pointer-events-none absolute right-3 top-2.5 z-20 flex items-center gap-1">
-                    <VoiceModeToggle />
-                    <ArtifactsToggle active={artifactsActive} onToggle={toggleArtifacts} />
-                  </div>
+                <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+                  <ChatWorkspaceControls
+                    artifactsActive={artifactsActive}
+                    onArtifactsToggle={toggleArtifacts}
+                  />
                   {workspace}
                 </div>
               </VoiceModeProvider>

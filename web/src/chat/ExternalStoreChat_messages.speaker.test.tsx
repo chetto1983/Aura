@@ -47,6 +47,7 @@ interface ButtonProps {
   children?: ReactNode;
   'aria-label'?: string;
   className?: string;
+  'data-required-touch-target'?: true;
 }
 
 vi.mock('@assistant-ui/react', async () => {
@@ -78,7 +79,7 @@ vi.mock('@assistant-ui/react', async () => {
         return (
           <button
             type="button"
-            aria-label={props['aria-label']}
+            {...props}
             onClick={() => {
               m.onSpeak(m.messageId);
             }}
@@ -88,7 +89,7 @@ vi.mock('@assistant-ui/react', async () => {
         );
       },
       StopSpeaking: ({ children, ...props }: ButtonProps) => (
-        <button type="button" aria-label={props['aria-label']}>
+        <button type="button" {...props}>
           {children}
         </button>
       ),
@@ -124,6 +125,13 @@ const SPEAK = 'Read aloud';
 const STOP = 'Stop reading';
 const HINT = 'Message too long to read fully';
 
+function expectRequiredTouchTarget(element: HTMLElement): void {
+  const classes = element.getAttribute('class') ?? '';
+  expect(element.getAttribute('data-required-touch-target')).not.toBeNull();
+  expect(classes).toMatch(/(?:^|\s)(?:min-h-11|h-11)(?:\s|$)/);
+  expect(classes).toMatch(/(?:^|\s)(?:min-w-11|w-11)(?:\s|$)/);
+}
+
 afterEach(() => {
   H.caps = { tts: true, stt: false };
 });
@@ -131,11 +139,11 @@ afterEach(() => {
 describe('AssistantSpeakerControl (caps.tts-gated, D-04/D-05)', () => {
   it('shows Speak when idle and StopSpeaking when this message is being spoken', () => {
     const { rerender } = render(<Msg id="m1" speech={null} />);
-    expect(screen.getByLabelText(SPEAK)).toBeTruthy();
+    expectRequiredTouchTarget(screen.getByLabelText(SPEAK));
     expect(screen.queryByLabelText(STOP)).toBeNull();
 
     rerender(<Msg id="m1" speech={{ messageId: 'm1', status: { type: 'running' } }} />);
-    expect(screen.getByLabelText(STOP)).toBeTruthy();
+    expectRequiredTouchTarget(screen.getByLabelText(STOP));
     expect(screen.queryByLabelText(SPEAK)).toBeNull();
   });
 

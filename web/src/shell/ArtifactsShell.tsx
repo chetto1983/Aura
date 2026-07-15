@@ -18,8 +18,7 @@ const ArtifactsPanel = lazy(() =>
 );
 
 // D-01: the header-style doc toggle (the reference's top-right icon; the adjacent share-arrow is
-// 37F, not built). It floats over the chat workspace so it reads as a header control without
-// editing ShellHeader (out of this plan's scope) or shifting the chat layout.
+// 37F, not built). ChatWorkspaceControls keeps it in the workspace's normal-flow controls row.
 export function ArtifactsToggle({
   active,
   onToggle,
@@ -36,8 +35,9 @@ export function ArtifactsToggle({
       aria-label={t('artifacts.toggleAria')}
       aria-pressed={active}
       data-active={active}
+      data-required-touch-target
       onClick={onToggle}
-      className="pointer-events-auto rounded-full bg-surface/70 text-text-muted backdrop-blur hover:bg-surface-2 hover:text-text data-[active=true]:bg-surface-2 data-[active=true]:text-accent-text"
+      className="min-h-11 min-w-11 rounded-full bg-surface/70 text-text-muted backdrop-blur hover:bg-surface-2 hover:text-text data-[active=true]:bg-surface-2 data-[active=true]:text-accent-text"
     >
       <FileText aria-hidden="true" focusable="false" />
     </Button>
