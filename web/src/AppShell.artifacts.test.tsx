@@ -109,6 +109,13 @@ function renderShell(initial = '/c/conv-1') {
   return { client, ...utils };
 }
 
+function expectRequiredTouchTarget(element: HTMLElement): void {
+  const classes = element.getAttribute('class') ?? '';
+  expect(element.getAttribute('data-required-touch-target')).not.toBeNull();
+  expect(classes).toMatch(/(?:^|\s)(?:min-h-11|h-11)(?:\s|$)/);
+  expect(classes).toMatch(/(?:^|\s)(?:min-w-11|w-11)(?:\s|$)/);
+}
+
 beforeEach(() => {
   localStorage.clear();
   lastChat = {};
@@ -126,7 +133,7 @@ describe('AppShell — Artefatti panel mount (desktop ResizablePanel / mobile Dr
     await screen.findByTestId('chat-lane');
 
     expect(screen.queryByTestId('artifacts-panel')).toBeNull();
-    expect(screen.getByLabelText(TOGGLE_LABEL)).toBeTruthy();
+    expectRequiredTouchTarget(screen.getByLabelText(TOGGLE_LABEL));
     // Dynamic panelIds means the 3-panel key is never read/written while closed.
     expect(localStorage.getItem(NAV_KEY)).toBe(SEED_2PANEL);
     expect(localStorage.getItem(ART_KEY)).toBeNull();

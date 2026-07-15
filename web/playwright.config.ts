@@ -95,8 +95,8 @@ export default defineConfig({
   // Source Explorer sheet, pagination) is validated on all three so the cockpit holds
   // on a touch viewport, not just desktop.
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
+    { name: 'chrome', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
+    { name: 'mobile-chrome', use: { ...devices['Pixel 5'], channel: 'chrome' } },
     // mobile-safari is enabled only when an HTTPS origin is provided (the __Host-/Secure
     // cookie needs https for WebKit — see HTTPS_ORIGIN above). It overrides baseURL to the
     // TLS proxy and ignores the self-signed cert.

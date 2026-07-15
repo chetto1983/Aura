@@ -13,7 +13,7 @@ export function AttachmentChip({ item, onRemove }: AttachmentChipProps) {
   const { t } = useTranslation();
   const label = statusLabel(item, t);
   return (
-    <span className="inline-flex min-h-10 max-w-full items-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text">
+    <span className="inline-flex min-h-10 min-w-0 max-w-full items-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text">
       <span className="min-w-0 truncate">{item.file.name}</span>
       <Badge variant={statusVariant(item.status)} className="shrink-0 text-[0.75rem]">
         {label}
@@ -23,10 +23,11 @@ export function AttachmentChip({ item, onRemove }: AttachmentChipProps) {
         variant="ghost"
         size="icon"
         aria-label={t('chat.attachments.remove', { name: item.file.name })}
+        data-required-touch-target
         onClick={() => {
           onRemove(item.localId);
         }}
-        className="h-8 min-h-8 w-8 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
+        className="h-11 min-h-11 w-11 min-w-11 shrink-0 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
       >
         <X data-icon aria-hidden="true" className="size-3.5" />
       </Button>

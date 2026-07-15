@@ -128,6 +128,18 @@ describe('AppShell', () => {
     expect(screen.getByRole('separator', { name: 'Resize conversation sidebar' })).toBeTruthy();
   });
 
+  it('reserves a normal-flow controls row above the chat workspace', () => {
+    const { container } = renderShell();
+    const controls = container.querySelector('[data-chat-workspace-controls]');
+    if (!(controls instanceof HTMLElement)) throw new Error('expected chat workspace controls');
+
+    expect(controls.classList.contains('absolute')).toBe(false);
+    expect(controls.classList.contains('shrink-0')).toBe(true);
+    expect(controls.parentElement?.classList.contains('grid')).toBe(true);
+    expect(controls.parentElement?.classList.contains('grid-rows-[auto_minmax(0,1fr)]')).toBe(true);
+    expect(controls.nextElementSibling).not.toBeNull();
+  });
+
   it('uses New chat as the sidebar primary action instead of identity creation', () => {
     renderShell();
 

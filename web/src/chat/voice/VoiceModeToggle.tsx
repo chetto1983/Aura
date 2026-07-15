@@ -4,7 +4,7 @@ import { useVoiceMode } from './voiceModeContext';
 import { Button } from '@/components/ui/button';
 
 // VoiceModeToggle — the ephemeral session voice-mode switch that lives in the chat
-// header's floating toggle group beside the Artefatti toggle (D-06). Rendered only
+// workspace controls row beside the Artefatti toggle (D-06). Rendered only
 // when TTS is configured (caps.tts, WEBVOICE-03); flips the in-memory voiceMode with
 // aria-pressed reflecting state. Extracted from AppShell to keep it under the 600-LOC
 // cap; matches the ArtifactsToggle shape (BLUE accent on active).
@@ -22,8 +22,9 @@ export function VoiceModeToggle() {
       aria-label={label}
       title={label}
       data-active={voiceMode}
+      data-required-touch-target
       onClick={toggleVoiceMode}
-      className="pointer-events-auto rounded-full bg-surface/70 text-text-muted backdrop-blur hover:bg-surface-2 hover:text-text data-[active=true]:bg-surface-2 data-[active=true]:text-accent-text"
+      className="min-h-11 min-w-11 rounded-full bg-surface/70 text-text-muted backdrop-blur hover:bg-surface-2 hover:text-text data-[active=true]:bg-surface-2 data-[active=true]:text-accent-text"
     >
       {voiceMode ? (
         <Volume2 aria-hidden="true" focusable="false" />

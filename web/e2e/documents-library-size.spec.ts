@@ -132,18 +132,18 @@ async function mockDocumentApi(page: Page) {
 }
 
 // The Size column is `hidden sm:table-cell` — it only renders at >= 640px, so the
-// assertions below apply to the desktop (chromium) profile, not the 393px mobile
+// assertions below apply to the desktop (chrome) profile, not the 393px mobile
 // profiles where the column is intentionally absent.
 function skipUnlessDesktop(projectName: string) {
   test.skip(
-    projectName !== 'chromium',
+    projectName !== 'chrome',
     'Size column is hidden below the sm breakpoint (mobile profiles)',
   );
 }
 
 async function openDocuments(page: Page, projectName: string) {
   const nav =
-    projectName === 'chromium'
+    projectName === 'chrome'
       ? page.getByRole('navigation', { name: /Primary|Principale/ })
       : page.getByRole('navigation', { name: /Modes|Modalit/ });
   await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
@@ -186,7 +186,7 @@ test('document controls and action menu stay inside the viewport', async ({ page
   await expect(page.getByRole('button', { name: /List view|Vista elenco/ })).toBeVisible();
 
   const alphaItem =
-    testInfo.project.name === 'chromium'
+    testInfo.project.name === 'chrome'
       ? page.getByRole('row').filter({ hasText: ALPHA.title })
       : page.getByRole('listitem').filter({ hasText: ALPHA.title });
   await expect(alphaItem).toBeVisible();

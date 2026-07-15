@@ -9,7 +9,7 @@ import { gotoAuthenticated } from './auth';
 //   (2) the rich SkeletonBlock CSS-wave loading visuals in the three migrated consumers
 //       (ConversationSidebar, SearchPanel, governanceView), proving the retired shadcn
 //       `animate-pulse` ui/skeleton is gone (no `.animate-pulse` survives anywhere).
-// Runs on desktop chromium against the already-running serve (AURA_E2E_ORIGIN reuses the
+// Runs on desktop Chrome against the already-running serve (AURA_E2E_ORIGIN reuses the
 // container on 127.0.0.1:9080). The /api/* surface is mocked at the page-network layer so
 // only the served SPA + Authula come from `aura serve`.
 
@@ -185,8 +185,8 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
     page,
   }, testInfo) => {
     test.skip(
-      testInfo.project.name !== 'chromium',
-      'the left nav (conversation list) is a hidden off-canvas drawer on the mobile viewport; the skeleton is verified on desktop chromium',
+      testInfo.project.name !== 'chrome',
+      'the left nav (conversation list) is a hidden off-canvas drawer on the mobile viewport; the skeleton is verified on desktop Chrome',
     );
     // Hang the conversation LIST so the sidebar stays in its loading (skeleton) state.
     await page.route('**/api/conversations**', async (route) => {
@@ -222,8 +222,8 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
     page,
   }, testInfo) => {
     test.skip(
-      testInfo.project.name !== 'chromium',
-      'the search panel lives in the hidden off-canvas nav drawer on the mobile viewport; the skeleton is verified on desktop chromium',
+      testInfo.project.name !== 'chrome',
+      'the search panel lives in the hidden off-canvas nav drawer on the mobile viewport; the skeleton is verified on desktop Chrome',
     );
     await page.route('**/api/conversations**', async (route) => {
       const path = new URL(route.request().url()).pathname;

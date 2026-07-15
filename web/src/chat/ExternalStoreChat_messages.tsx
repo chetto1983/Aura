@@ -35,6 +35,11 @@ interface UserMessageProps {
   readonly onAssetRemove: (assetID: string) => void;
 }
 
+const MESSAGE_ACTION_CLASS =
+  'inline-flex min-h-11 min-w-11 items-center justify-center text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+const MESSAGE_ACTION_ROW_CLASS =
+  'flex flex-wrap items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100 [@media(pointer:coarse)]:opacity-100';
+
 function messageAttachments(message: ThreadMessageLike): readonly Asset[] {
   const metadata = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
   return metadata?.attachments ?? [];
@@ -45,7 +50,7 @@ export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: Use
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
   const attachments = messageAttachments(message);
   return (
-    <MessagePrimitive.Root className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
+    <MessagePrimitive.Root className="ml-auto flex min-w-0 max-w-[80%] flex-col items-end gap-1">
       {/* Edit mode: a message-scoped composer whose Send fires onEdit (fork + re-run). */}
       <AuiIf condition={({ composer }) => composer.isEditing}>
         <ComposerPrimitive.Root className="flex w-full flex-col gap-2 rounded-[var(--radius-md)] border border-accent/40 bg-surface-2 px-3 py-2">
@@ -69,11 +74,11 @@ export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: Use
 
       {/* Normal view: the rendered user turn + the action bar. */}
       <AuiIf condition={({ composer }) => !composer.isEditing}>
-        <div className="rounded-3xl bg-surface-2 px-5 py-3">
+        <div className="min-w-0 max-w-full rounded-3xl bg-surface-2 px-5 py-3">
           <MessagePrimitive.Parts
             components={{
               Text: () => (
-                <div className="whitespace-pre-wrap text-base leading-relaxed text-text">
+                <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-base leading-relaxed text-text">
                   <MarkdownText />
                 </div>
               ),
@@ -82,7 +87,7 @@ export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: Use
         </div>
         {/* Edit a user turn → onEdit forks a branch + re-runs. Copy is the minimum verb. */}
         {attachments.length > 0 ? (
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex min-w-0 max-w-full flex-col items-end gap-2">
             {attachments.map((asset) => (
               <AttachmentCard
                 key={asset.id}
@@ -94,16 +99,18 @@ export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: Use
             ))}
           </div>
         ) : null}
-        <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
+        <ActionBarPrimitive.Root data-message-actions className={MESSAGE_ACTION_ROW_CLASS}>
           <ActionBarPrimitive.Edit
             aria-label={t('chat.action.edit')}
-            className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            data-required-touch-target
+            className={MESSAGE_ACTION_CLASS}
           >
             {t('chat.action.edit')}
           </ActionBarPrimitive.Edit>
           <ActionBarPrimitive.Copy
             aria-label={t('chat.action.copy')}
-            className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            data-required-touch-target
+            className={MESSAGE_ACTION_CLASS}
           >
             {t('chat.action.copy')}
           </ActionBarPrimitive.Copy>
@@ -119,39 +126,42 @@ export function AssistantMessage() {
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
   const attachments = messageAttachments(message);
   return (
-    <MessagePrimitive.Root className="max-w-[90%] space-y-2">
-      <MessagePrimitive.Parts
-        components={{
-          // Assistant prose → sanitized markdown.
-          Text: () => (
-            <div className="text-base leading-relaxed text-text">
-              <MarkdownText />
-            </div>
-          ),
-          // CoT → collapsible drawer (D-01). The drawer reads the reasoning text
-          // from the part via the reasoning render-fn arg.
-          Reasoning: ({ text }) => <ReasoningDrawer text={text} />,
-          // Tool activity → typed display when a trusted backend normalizer
-          // produced an aura.display payload (Phase 26, DISP-02); otherwise the
-          // raw escaped card (D-02 / D-FALLBACK). The branch lives in ToolFallback.
-          tools: {
-            Fallback: ToolFallback,
-          },
-        }}
-      />
+    <MessagePrimitive.Root data-message-role="assistant" className="w-full min-w-0 space-y-2">
+      <div data-message-content className="w-full min-w-0 overflow-x-auto">
+        <MessagePrimitive.Parts
+          components={{
+            // Assistant prose → sanitized markdown.
+            Text: () => (
+              <div className="w-full min-w-0 text-base leading-relaxed text-text">
+                <MarkdownText constrainProse />
+              </div>
+            ),
+            // CoT → collapsible drawer (D-01). The drawer reads the reasoning text
+            // from the part via the reasoning render-fn arg.
+            Reasoning: ({ text }) => <ReasoningDrawer text={text} />,
+            // Tool activity → typed display when a trusted backend normalizer
+            // produced an aura.display payload (Phase 26, DISP-02); otherwise the
+            // raw escaped card (D-02 / D-FALLBACK). The branch lives in ToolFallback.
+            tools: {
+              Fallback: ToolFallback,
+            },
+          }}
+        />
+      </div>
       {/* D-15: durable authenticated download chip(s) for agent deliverables folded
           onto THIS assistant turn on saved-conversation load. Uses only asset_id →
           GET /api/assets/{id}/download (the 37A-proven auth path); NEVER an
           object_key / host path (T-37B-14). Renders nothing when the turn has none. */}
       {attachments.length > 0 ? (
-        <div className="flex flex-col items-start gap-2">
+        <div className="flex w-full min-w-0 flex-col items-start gap-2">
           {attachments.map((asset) => (
             <a
               key={asset.id}
               href={`/api/assets/${encodeURIComponent(asset.id)}/download`}
               download={asset.file_name}
               aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
-              className="group inline-flex w-fit items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              data-required-touch-target
+              className="group inline-flex min-h-11 min-w-11 max-w-full items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <svg
                 width="15"
@@ -169,7 +179,10 @@ export function AssistantMessage() {
                 <path d="m7 10 5 5 5-5" />
                 <path d="M5 21h14" />
               </svg>
-              <span className="truncate font-mono" title={asset.file_name}>
+              <span
+                className="min-w-0 break-words [overflow-wrap:anywhere] font-mono"
+                title={asset.file_name}
+              >
                 {asset.file_name}
               </span>
             </a>
@@ -185,16 +198,18 @@ export function AssistantMessage() {
       {/* Assistant action bar: Copy + Reload (regenerate) + the answer-level
           "Sources (N)" affordance (D-13). The feedback rating group is deferred;
           Reload forks an assistant-turn branch. */}
-      <ActionBarPrimitive.Root className="flex items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
+      <ActionBarPrimitive.Root data-message-actions className={MESSAGE_ACTION_ROW_CLASS}>
         <ActionBarPrimitive.Copy
           aria-label={t('chat.action.copy')}
-          className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          data-required-touch-target
+          className={MESSAGE_ACTION_CLASS}
         >
           {t('chat.action.copy')}
         </ActionBarPrimitive.Copy>
         <ActionBarPrimitive.Reload
           aria-label={t('chat.action.reload')}
-          className="text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          data-required-touch-target
+          className={MESSAGE_ACTION_CLASS}
         >
           {t('chat.action.reload')}
         </ActionBarPrimitive.Reload>
@@ -242,13 +257,15 @@ export function AssistantSpeakerControl() {
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const speech = useAuiState((s) => s.message.speech);
   if (!caps.tts) return null;
-  const speakerClass =
-    'text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
   return (
     <>
       {/* eslint-disable-next-line @typescript-eslint/no-deprecated */}
       <AuiIf condition={(s) => s.message.speech == null}>
-        <ActionBarPrimitive.Speak aria-label={t('chat.action.speak')} className={speakerClass}>
+        <ActionBarPrimitive.Speak
+          aria-label={t('chat.action.speak')}
+          data-required-touch-target
+          className={MESSAGE_ACTION_CLASS}
+        >
           <Volume2 aria-hidden="true" focusable="false" className="size-3.5" />
         </ActionBarPrimitive.Speak>
       </AuiIf>
@@ -256,7 +273,8 @@ export function AssistantSpeakerControl() {
       <AuiIf condition={(s) => s.message.speech != null}>
         <ActionBarPrimitive.StopSpeaking
           aria-label={t('chat.action.stopSpeaking')}
-          className={speakerClass}
+          data-required-touch-target
+          className={MESSAGE_ACTION_CLASS}
         >
           <Square aria-hidden="true" focusable="false" className="size-3.5 fill-current" />
         </ActionBarPrimitive.StopSpeaking>

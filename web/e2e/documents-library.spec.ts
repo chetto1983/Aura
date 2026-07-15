@@ -5,7 +5,7 @@ test('document library exposes product file manager controls', async ({ page }, 
   await gotoAuthenticated(page, '/');
 
   const nav =
-    testInfo.project.name === 'chromium'
+    testInfo.project.name === 'chrome'
       ? page.getByRole('navigation', { name: /Primary|Principale/ })
       : page.getByRole('navigation', { name: /Modes|Modalit/ });
   await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
@@ -17,7 +17,7 @@ test('document library exposes product file manager controls', async ({ page }, 
     page.getByRole('searchbox', { name: /Search documents|Cerca documenti/ }),
   ).toBeVisible();
   await expect(page.getByRole('tab', { name: /All|Tutti/ })).toBeVisible();
-  if (testInfo.project.name === 'chromium') {
+  if (testInfo.project.name === 'chrome') {
     await expect(page.getByRole('button', { name: /Upload|Carica/ })).toBeVisible();
   }
   await expect(page.getByRole('button', { name: /List view|Vista elenco/ })).toBeVisible();
