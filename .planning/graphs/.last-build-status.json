@@ -1,8 +1,8 @@
 {
-  "ts": "2026-07-09T09:55:28Z",
-  "status": "failed",
-  "exit_code": 1,
-  "duration_ms": 91260,
-  "head_at_build": "0f6d8b745aa57ab0895f0ee1fa2af944c45c4fea",
+  "ts": "2026-07-15T12:24:33Z",
+  "status": "ok",
+  "exit_code": 0,
+  "duration_ms": 286627,
+  "head_at_build": "4bd6ed203159fc085175d1ce4ae9622edd00762e",
   "graphify_version": null
 }
