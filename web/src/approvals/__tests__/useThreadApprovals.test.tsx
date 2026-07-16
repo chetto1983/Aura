@@ -19,6 +19,7 @@ vi.mock('../useApprovals', async () => {
 interface Deferred<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
+  readonly reject: (reason?: unknown) => void;
 }
 
 interface ResolutionAttempt {
@@ -30,6 +31,7 @@ interface ResolutionAttempt {
 interface ApprovalLifecycle {
   readonly onResolutionStarted?: (attempt: ResolutionAttempt) => void;
   readonly onResolutionFailed?: (attempt: ResolutionAttempt) => void | Promise<void>;
+  readonly onResolved: (attempt: ResolutionAttempt) => Promise<void>;
 }
 
 function lifecycle(value: ReturnType<typeof useThreadApprovals>): ApprovalLifecycle {
@@ -38,14 +40,20 @@ function lifecycle(value: ReturnType<typeof useThreadApprovals>): ApprovalLifecy
 
 function deferred<T>(): Deferred<T> {
   let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => {
+  let rejectPromise: ((reason?: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
     resolvePromise = resolve;
+    rejectPromise = reject;
   });
   return {
     promise,
     resolve(value) {
       if (resolvePromise === undefined) throw new Error('deferred resolver was not initialized');
       resolvePromise(value);
+    },
+    reject(reason) {
+      if (rejectPromise === undefined) throw new Error('deferred rejecter was not initialized');
+      rejectPromise(reason);
     },
   };
 }
@@ -62,21 +70,28 @@ function row(token: string, conversationId: string, over: Partial<Approval> = {}
 }
 
 function startResolution(
-  onResolved: (resolution: { approval: Approval; action: ResolveAction }) => Promise<void>,
+  value: ReturnType<typeof useThreadApprovals>,
   approval: Approval,
   action: ResolveAction,
+  attemptId = `${approval.token}-${action}-${String(++attemptSequence)}`,
 ): Promise<void> {
+  const attempt = { approval, action, attemptId };
   let promise: Promise<void> | undefined;
   act(() => {
-    promise = onResolved({ approval, action });
+    const current = lifecycle(value);
+    current.onResolutionStarted?.(attempt);
+    promise = current.onResolved(attempt);
   });
   if (promise === undefined) throw new Error('resolution did not start');
   return promise;
 }
 
+let attemptSequence = 0;
+
 beforeEach(() => {
   h.data = undefined;
   h.refetch.mockReset();
+  attemptSequence = 0;
 });
 
 describe('useThreadApprovals truthful pending gate', () => {
@@ -107,9 +122,7 @@ describe('useThreadApprovals truthful pending gate', () => {
 
     expect(result.current.approvals).toEqual([expiredFirst, pending, expiredLast]);
     expect(result.current.isPending).toBe(true);
-    await act(async () => {
-      await result.current.onResolved({ approval: pending, action: 'accept' });
-    });
+    await act(async () => startResolution(result.current, pending, 'accept'));
 
     expect(onFocus).toHaveBeenCalledTimes(1);
     expect(onFocus).toHaveBeenCalledWith(undefined);
@@ -127,9 +140,7 @@ describe('useThreadApprovals truthful pending gate', () => {
     const onFocus = vi.fn();
     const { result } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
 
-    await act(async () => {
-      await result.current.onResolved({ approval: resolved, action: 'decline' });
-    });
+    await act(async () => startResolution(result.current, resolved, 'decline'));
 
     expect(onFocus).toHaveBeenCalledWith(next);
     expect(onResume).not.toHaveBeenCalled();
@@ -150,13 +161,175 @@ describe('useThreadApprovals async session safety', () => {
       { initialProps: { threadId: 'a' } },
     );
 
-    const inFlight = startResolution(result.current.onResolved, approvalA, 'accept');
+    const inFlight = startResolution(result.current, approvalA, 'accept');
     rerender({ threadId: 'b' });
     rerender({ threadId: 'a' });
     await act(async () => {
       refresh.resolve({ data: [] });
       await inFlight;
     });
+
+    expect(onFocus).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+});
+
+describe('useThreadApprovals pending generation ownership', () => {
+  it.each([
+    ['accept', 'accept'],
+    ['decline', 'decline'],
+    ['cancel', 'accept'],
+  ] as const)(
+    'ignores delayed %s completion after token A is replaced by token B, then permits B %s',
+    async (oldAction, newAction) => {
+      const approvalA = row('generation-a', 'a');
+      const approvalB = row('generation-b', 'a');
+      h.data = [approvalA];
+      const oldRefresh = deferred<{ data: Approval[] }>();
+      h.refetch.mockReturnValueOnce(oldRefresh.promise).mockResolvedValueOnce({ data: [] });
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+      const oldResolution = startResolution(result.current, approvalA, oldAction, 'old-a');
+      h.data = [approvalB];
+      rerender();
+      await act(async () => {
+        oldRefresh.resolve({ data: [approvalB] });
+        await oldResolution;
+      });
+
+      expect(onFocus).not.toHaveBeenCalled();
+      expect(onResume).not.toHaveBeenCalled();
+
+      await act(async () => startResolution(result.current, approvalB, newAction, 'new-b'));
+
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onFocus).toHaveBeenCalledWith(undefined);
+      expect(onResume).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps A,B to B in one generation and focuses the overlapping next row', async () => {
+    const approvalA = row('overlap-a', 'a');
+    const approvalB = row('overlap-b', 'a');
+    h.data = [approvalA, approvalB];
+    const refresh = deferred<{ data: Approval[] }>();
+    h.refetch.mockReturnValueOnce(refresh.promise);
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+    const answer = startResolution(result.current, approvalA, 'accept');
+    h.data = [approvalB];
+    rerender();
+    await act(async () => {
+      refresh.resolve({ data: [approvalB] });
+      await answer;
+    });
+
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledWith(approvalB);
+    expect(onResume).not.toHaveBeenCalled();
+  });
+});
+
+describe('useThreadApprovals durable local outcomes', () => {
+  it.each(['accept', 'decline'] as const)(
+    'recovers a successful local %s after refetch throws when polling later reaches zero',
+    async (action) => {
+      const approval = row(`throw-${action}`, 'a');
+      h.data = [approval];
+      h.refetch.mockRejectedValueOnce(new Error('offline'));
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+      await act(async () => startResolution(result.current, approval, action));
+      expect(onFocus).not.toHaveBeenCalled();
+      expect(onResume).not.toHaveBeenCalled();
+
+      await act(async () => {
+        h.data = [];
+        rerender();
+        await Promise.resolve();
+      });
+
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onFocus).toHaveBeenCalledWith(undefined);
+      expect(onResume).toHaveBeenCalledTimes(1);
+      rerender();
+      expect(onResume).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ['accept', 'an error result', 'error'],
+    ['decline', 'an error result', 'error'],
+    ['accept', 'a stale nonempty result', 'stale'],
+    ['decline', 'a stale nonempty result', 'stale'],
+  ] as const)(
+    'retains resume eligibility for %s after refetch returns %s',
+    async (action, _label, resultKind) => {
+      const approval = row(`${resultKind}-${action}`, 'a');
+      h.data = [approval];
+      h.refetch.mockResolvedValueOnce(
+        resultKind === 'error' ? { data: [], error: new Error('offline') } : { data: [approval] },
+      );
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+      await act(async () => startResolution(result.current, approval, action));
+      expect(onFocus).not.toHaveBeenCalled();
+      expect(onResume).not.toHaveBeenCalled();
+
+      await act(async () => {
+        h.data = [];
+        rerender();
+        await Promise.resolve();
+      });
+
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onFocus).toHaveBeenCalledWith(undefined);
+      expect(onResume).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps an intermediate successful outcome eligible until the overlapping queue reaches zero', async () => {
+    const approvalA = row('remaining-a', 'a');
+    const approvalB = row('remaining-b', 'a');
+    h.data = [approvalA, approvalB];
+    h.refetch.mockResolvedValueOnce({ data: [approvalB] });
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+    await act(async () => startResolution(result.current, approvalA, 'decline'));
+    expect(onFocus).toHaveBeenCalledWith(approvalB);
+    expect(onResume).not.toHaveBeenCalled();
+
+    await act(async () => {
+      h.data = [];
+      rerender();
+      await Promise.resolve();
+    });
+
+    expect(onFocus).toHaveBeenLastCalledWith(undefined);
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resume while a stale queue never reaches zero', async () => {
+    const approval = row('still-pending', 'a');
+    h.data = [approval];
+    h.refetch.mockResolvedValueOnce({ data: [approval] });
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+    await act(async () => startResolution(result.current, approval, 'accept'));
+    rerender();
+    rerender();
 
     expect(onFocus).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();
@@ -184,8 +357,8 @@ describe('useThreadApprovals cancellation precedence', () => {
       const onFocus = vi.fn();
       const { result } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
 
-      const cancel = startResolution(result.current.onResolved, cancelApproval, 'cancel');
-      const answer = startResolution(result.current.onResolved, answerApproval, answerAction);
+      const cancel = startResolution(result.current, cancelApproval, 'cancel');
+      const answer = startResolution(result.current, answerApproval, answerAction);
       await act(async () => {
         if (completionOrder === 'cancel-first') {
           cancelRefresh.resolve({ data: [] });
@@ -214,8 +387,8 @@ describe('useThreadApprovals cancellation precedence', () => {
     const onFocus = vi.fn();
     const { result } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
 
-    const first = startResolution(result.current.onResolved, approval, 'cancel');
-    const second = startResolution(result.current.onResolved, approval, 'cancel');
+    const first = startResolution(result.current, approval, 'cancel');
+    const second = startResolution(result.current, approval, 'cancel');
     await act(async () => {
       secondRefresh.resolve({ data: [] });
       await second;
@@ -247,7 +420,7 @@ describe('useThreadApprovals pre-mutation cancellation ownership', () => {
         attemptId: 'cancel-1',
       };
 
-      const answer = startResolution(result.current.onResolved, answerApproval, answerAction);
+      const answer = startResolution(result.current, answerApproval, answerAction);
       act(() => {
         lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
       });
@@ -276,7 +449,7 @@ describe('useThreadApprovals pre-mutation cancellation ownership', () => {
       attemptId: 'cancel-failed',
     };
 
-    const answer = startResolution(result.current.onResolved, answerApproval, 'accept');
+    const answer = startResolution(result.current, answerApproval, 'accept');
     act(() => {
       lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
     });
@@ -310,7 +483,7 @@ describe('useThreadApprovals pre-mutation cancellation ownership', () => {
       attemptId: 'same-attempt',
     };
 
-    const answer = startResolution(result.current.onResolved, answerApproval, 'decline');
+    const answer = startResolution(result.current, answerApproval, 'decline');
     act(() => {
       lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
       lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
@@ -352,9 +525,7 @@ describe('useThreadApprovals pre-mutation cancellation ownership', () => {
         attemptId: 'stale-cancel',
       });
     });
-    await act(async () => {
-      await result.current.onResolved({ approval: answerApproval, action: 'accept' });
-    });
+    await act(async () => startResolution(result.current, answerApproval, 'accept'));
 
     expect(onResume).toHaveBeenCalledTimes(1);
   });

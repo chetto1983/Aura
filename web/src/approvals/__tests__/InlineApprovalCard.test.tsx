@@ -180,6 +180,24 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(calls[0]?.body).toEqual({ action: 'cancel' });
   });
 
+  it('carries the exact started attempt identity through successful resolution', async () => {
+    const onResolutionStarted = vi.fn();
+    const onResolved = vi.fn();
+    renderCard({
+      approval: approval({ token: 't-owned', conversation_id: 'c-1' }),
+      onResolutionStarted,
+      onResolved,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    await waitFor(() => {
+      expect(onResolved).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onResolutionStarted).toHaveBeenCalledTimes(1);
+    expect(onResolved.mock.calls[0]?.[0]).toEqual(onResolutionStarted.mock.calls[0]?.[0]);
+  });
+
   it('signals Cancel intent synchronously before starting the resolve request', async () => {
     const order: string[] = [];
     const fetchStub = stubResolve(calls);

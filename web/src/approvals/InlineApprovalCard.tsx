@@ -69,9 +69,9 @@ export function InlineApprovalCard({
 
   function submit(action: ResolveAction, content?: string) {
     attemptSequence.current += 1;
-    const resolution: ApprovalResolution = { approval, action };
-    const attempt: ApprovalResolutionAttempt = {
-      ...resolution,
+    const attempt: ApprovalResolution = {
+      approval,
+      action,
       attemptId: `${freeTextId}:${String(attemptSequence.current)}`,
     };
     onResolutionStarted?.(attempt);
@@ -84,7 +84,7 @@ export function InlineApprovalCard({
           setState(
             action === 'accept' ? 'answered' : action === 'decline' ? 'declined' : 'cancelled',
           );
-          void onResolved?.(resolution);
+          void onResolved?.(attempt);
         },
         onError: () => {
           void onResolutionFailed?.(attempt);

@@ -97,12 +97,33 @@ export function Composer({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recordingRequestRef = useRef(false);
+  const captureEpochRef = useRef(0);
+  const approvalLockedRef = useRef(approvalLocked);
+  const previousApprovalLockedRef = useRef(approvalLocked);
   const appliedDraftNonce = useRef<number | undefined>(undefined);
-  const [isRecording, setIsRecording] = useState(false);
+  const [captureGeneration, setCaptureGeneration] = useState({
+    approvalLocked,
+    epoch: 0,
+  });
+  if (captureGeneration.approvalLocked !== approvalLocked) {
+    setCaptureGeneration({
+      approvalLocked,
+      epoch: captureGeneration.epoch + (approvalLocked ? 1 : 0),
+    });
+  }
+  const captureEpoch = captureGeneration.epoch;
+  const [recordingEpoch, setRecordingEpoch] = useState<number | null>(null);
+  const [dictationCaptureEpoch, setDictationCaptureEpoch] = useState(0);
   const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
   const dictationStartLen = useRef(0);
   const wasDictating = useRef(false);
+  const suppressedDictationRef = useRef<{ readonly draft: string; sawActive: boolean } | undefined>(
+    undefined,
+  );
   const isDictating = dictation != null;
+  const isRecording = recordingEpoch === captureEpoch;
+  const activeDictationPhase = dictationCaptureEpoch === captureEpoch ? dictationPhase : 'idle';
   const sendDisabled = approvalLocked || uploads?.hasBlockingUploads === true;
 
   useLayoutEffect(() => {
@@ -111,6 +132,35 @@ export function Composer({
       onInputAvailable?.(null);
     };
   }, [composerInputRef, onInputAvailable]);
+
+  useLayoutEffect(() => {
+    captureEpochRef.current = captureEpoch;
+    approvalLockedRef.current = approvalLocked;
+    const becameLocked = approvalLocked && !previousApprovalLockedRef.current;
+    previousApprovalLockedRef.current = approvalLocked;
+    if (!becameLocked) return;
+
+    const recorder = recorderRef.current;
+    if (recorder !== null) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      if (recorder.state !== 'inactive') recorder.stop();
+    }
+    for (const track of recordingStreamRef.current?.getTracks() ?? []) track.stop();
+    chunksRef.current = [];
+    recordingStreamRef.current = null;
+    recorderRef.current = null;
+
+    const dictationBusy =
+      dictationPhase === 'listening' || dictationPhase === 'transcribing' || isDictating;
+    if (dictationBusy) {
+      suppressedDictationRef.current = {
+        draft: aui.composer().getState().text,
+        sawActive: isDictating || wasDictating.current,
+      };
+      aui.composer().stopDictation();
+    }
+  }, [approvalLocked, aui, captureEpoch, dictationPhase, isDictating]);
 
   // Skill / command picker (WEBSKILL-01/03): the '/'-triggered ARIA combobox. The composer
   // text is read reactively and every decision (trigger, filter, wrap-around active index,
@@ -200,6 +250,20 @@ export function Composer({
   // inserted (an empty transcript or an /api/stt error), surface chat.dictation.error and
   // leave the mic usable (D-10). The insert lands before the session tears down (Landmine #1).
   useEffect(() => {
+    const suppressed = suppressedDictationRef.current;
+    if (suppressed !== undefined) {
+      if (isDictating) {
+        suppressed.sawActive = true;
+        return;
+      }
+      const composer = aui.composer();
+      if (composer.getState().text !== suppressed.draft) composer.setText(suppressed.draft);
+      if (suppressed.sawActive || !approvalLocked) {
+        suppressedDictationRef.current = undefined;
+        wasDictating.current = false;
+      }
+      return;
+    }
     if (isDictating) {
       wasDictating.current = true;
       return;
@@ -213,7 +277,7 @@ export function Composer({
     } else {
       setDictationPhase((phase) => (phase === 'idle' ? 'idle' : 'error'));
     }
-  }, [isDictating, aui, markTurnDictated]);
+  }, [approvalLocked, isDictating, aui, markTurnDictated]);
 
   const addFiles = (files: FileList | File[]) => {
     if (approvalLocked) return;
@@ -249,42 +313,63 @@ export function Composer({
   };
 
   const startRecording = async () => {
-    if (approvalLocked || uploads === undefined || isRecording) return;
+    if (approvalLocked || uploads === undefined || isRecording || recordingRequestRef.current) {
+      return;
+    }
     const mediaDevices = (navigator as Partial<Pick<Navigator, 'mediaDevices'>>).mediaDevices;
     if (mediaDevices === undefined) return;
     if (typeof MediaRecorder === 'undefined') return;
+    const captureEpoch = captureEpochRef.current;
+    recordingRequestRef.current = true;
     let stream: MediaStream | null = null;
     try {
       stream = await mediaDevices.getUserMedia({ audio: true });
+      recordingRequestRef.current = false;
+      if (approvalLockedRef.current || captureEpochRef.current !== captureEpoch) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
       recordingStreamRef.current = stream;
       chunksRef.current = [];
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+        if (
+          event.data.size > 0 &&
+          !approvalLockedRef.current &&
+          captureEpochRef.current === captureEpoch
+        ) {
+          chunksRef.current.push(event.data);
+        }
       };
       recorder.onstop = () => {
+        const shouldAttach = !approvalLockedRef.current && captureEpochRef.current === captureEpoch;
         const type = recorder.mimeType || 'audio/webm';
         const file = new File(chunksRef.current, 'voice-note.webm', { type });
-        uploads.addFiles([file]);
         for (const track of stream?.getTracks() ?? []) track.stop();
+        chunksRef.current = [];
         recordingStreamRef.current = null;
         recorderRef.current = null;
-        setIsRecording(false);
+        setRecordingEpoch(null);
+        if (shouldAttach) uploads.addFiles([file]);
       };
       recorder.start();
-      setIsRecording(true);
+      setRecordingEpoch(captureEpoch);
     } catch {
+      recordingRequestRef.current = false;
       for (const track of stream?.getTracks() ?? []) track.stop();
+      chunksRef.current = [];
       recordingStreamRef.current = null;
       recorderRef.current = null;
-      setIsRecording(false);
+      setRecordingEpoch(null);
     }
   };
 
   // beginDictation opens a runtime dictation session; on any failure (e.g. no adapter
   // configured) it degrades to the attachment record path so the Mic never dead-ends (D-10).
   const beginDictation = () => {
+    suppressedDictationRef.current = undefined;
+    setDictationCaptureEpoch(captureEpoch);
     try {
       dictationStartLen.current = aui.composer().getState().text.length;
       aui.composer().startDictation();
@@ -302,7 +387,7 @@ export function Composer({
       else void startRecording();
       return;
     }
-    if (dictationPhase === 'listening') {
+    if (activeDictationPhase === 'listening') {
       setDictationPhase('transcribing');
       aui.composer().stopDictation();
       return;
@@ -310,17 +395,19 @@ export function Composer({
     beginDictation();
   };
 
-  const dictationBusy = dictationPhase === 'listening' || dictationPhase === 'transcribing';
-  const micActive = caps.stt ? dictationBusy : isRecording;
+  const visibleDictationPhase = approvalLocked ? 'idle' : activeDictationPhase;
+  const dictationBusy =
+    visibleDictationPhase === 'listening' || visibleDictationPhase === 'transcribing';
+  const micActive = caps.stt ? dictationBusy : !approvalLocked && isRecording;
   const micLabel = caps.stt
     ? t(dictationBusy ? 'chat.dictation.stop' : 'chat.dictation.start')
-    : t(isRecording ? 'chat.attachments.micStop' : 'chat.attachments.mic');
+    : t(micActive ? 'chat.attachments.micStop' : 'chat.attachments.mic');
   const dictationAnnouncement =
-    dictationPhase === 'listening'
+    visibleDictationPhase === 'listening'
       ? t('chat.dictation.listening')
-      : dictationPhase === 'transcribing'
+      : visibleDictationPhase === 'transcribing'
         ? t('chat.dictation.transcribing')
-        : dictationPhase === 'error'
+        : visibleDictationPhase === 'error'
           ? t('chat.dictation.error')
           : '';
 
