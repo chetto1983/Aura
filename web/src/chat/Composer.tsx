@@ -53,6 +53,7 @@ interface ComposerProps {
   readonly approvalLocked?: boolean;
   readonly uploads?: AttachmentUploads;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
+  readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
   readonly pinnedSkill?: ComposerSkillRow | null;
   readonly onPinSkill?: (row: ComposerSkillRow | null) => void;
@@ -78,6 +79,7 @@ export function Composer({
   approvalLocked = false,
   uploads,
   draftPrompt,
+  onDraftPromptConsumed,
   skills,
   pinnedSkill,
   onPinSkill,
@@ -248,7 +250,8 @@ export function Composer({
     appliedDraftNonce.current = draftPrompt.nonce;
     aui.composer().setText(draftPrompt.text);
     composerInputRef.current?.focus();
-  }, [approvalLocked, aui, composerInputRef, draftPrompt]);
+    onDraftPromptConsumed?.(draftPrompt.nonce);
+  }, [approvalLocked, aui, composerInputRef, draftPrompt, onDraftPromptConsumed]);
 
   // Detect a dictation session ending. If the transcript was inserted (the composer text
   // grew via onSpeech), mark the turn dictated for auto-speak parity (D-07). If nothing was

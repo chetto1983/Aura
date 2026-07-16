@@ -392,6 +392,26 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     expect(announcer.textContent).toBe(settledText);
   });
 
+  it('clears the prior settled announcement when the conversation changes', async () => {
+    const settled = usageState(7, 'settled', {
+      promptTokens: 120,
+      completionTokens: 80,
+      cacheHitTokens: 60,
+      costUsd: 0.0012,
+    });
+    const { rerender } = renderFooter({ conversationId: 'c-1', usageState: settled });
+    const announcer = screen.getByTestId('footer-settled-status');
+    await waitFor(() => {
+      expect(announcer.textContent).toMatch(/200/);
+    });
+
+    rerender(<RuntimeFooter conversationId="c-2" usageState={settled} />);
+
+    await waitFor(() => {
+      expect(announcer.textContent).toBe('');
+    });
+  });
+
   // AC-6: RUNNING resets visible turn values without changing the prior announcement.
   it('keeps sequential runs isolated, including a completion with no usage', async () => {
     const first: TurnUsage = {

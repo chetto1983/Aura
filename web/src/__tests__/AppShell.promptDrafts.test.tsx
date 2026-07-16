@@ -45,9 +45,21 @@ vi.mock('../admin/useAdmin', () => ({
 vi.mock('../shell/ShellHeader', async () => {
   const { LanguageSwitcher } = await import('../i18n/LanguageSwitcher');
   return {
-    ShellHeader: ({ onModeSelect }: { readonly onModeSelect: (mode: 'documents') => void }) => (
+    ShellHeader: ({
+      onModeSelect,
+    }: {
+      readonly onModeSelect: (mode: 'chat' | 'documents') => void;
+    }) => (
       <header>
         <nav aria-label="Surface controls">
+          <button
+            type="button"
+            onClick={() => {
+              onModeSelect('chat');
+            }}
+          >
+            Chat
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -109,32 +121,43 @@ vi.mock('../documents/DocumentsWorkspace', () => ({
 
 vi.mock('../chat/ExternalStoreChat', async () => {
   const { useLayoutEffect, useRef, useState } = await import('react');
-  function DraftField({ draft }: { readonly draft: ComposerDraftPrompt }) {
-    const [value, setValue] = useState(draft.text);
+  function ExternalStoreChat({
+    draftPrompt,
+    onDraftPromptConsumed,
+    onRequestDraftPrompt,
+  }: {
+    readonly draftPrompt?: ComposerDraftPrompt;
+    readonly onDraftPromptConsumed?: (nonce: number) => void;
+    readonly onRequestDraftPrompt?: (text: string) => void;
+  }) {
+    const [value, setValue] = useState('');
+    const [appliedNonce, setAppliedNonce] = useState<number | undefined>(undefined);
     const inputRef = useRef<HTMLTextAreaElement | null>(null);
     useLayoutEffect(() => {
+      if (draftPrompt === undefined || draftPrompt.nonce === appliedNonce) return;
+      setValue(draftPrompt.text);
+      setAppliedNonce(draftPrompt.nonce);
       inputRef.current?.focus();
-    }, []);
+      onDraftPromptConsumed?.(draftPrompt.nonce);
+    }, [appliedNonce, draftPrompt, onDraftPromptConsumed]);
     return (
-      <textarea
-        ref={inputRef}
-        aria-label="Draft prompt"
-        data-nonce={draft.nonce}
-        value={value}
-        onChange={(event) => {
-          setValue(event.currentTarget.value);
-        }}
-      />
+      <>
+        <button type="button" onClick={() => onRequestDraftPrompt?.('Starter prompt')}>
+          Request starter
+        </button>
+        <textarea
+          ref={inputRef}
+          aria-label="Draft prompt"
+          data-nonce={appliedNonce}
+          value={value}
+          onChange={(event) => {
+            setValue(event.currentTarget.value);
+          }}
+        />
+      </>
     );
   }
-  return {
-    ExternalStoreChat: ({ draftPrompt }: { readonly draftPrompt?: ComposerDraftPrompt }) =>
-      draftPrompt === undefined ? (
-        <textarea aria-label="Draft prompt" />
-      ) : (
-        <DraftField key={draftPrompt.nonce} draft={draftPrompt} />
-      ),
-  };
+  return { ExternalStoreChat };
 });
 
 function json(body: unknown): Response {
@@ -196,6 +219,36 @@ afterEach(async () => {
 });
 
 describe('AppShell prompt draft integration', () => {
+  it('does not resurrect an acknowledged starter prompt after the chat remounts', async () => {
+    let rendered!: ReturnType<typeof renderShell>;
+    await act(async () => {
+      rendered = renderShell();
+      await Promise.resolve();
+    });
+    const shell = rendered.container.firstElementChild;
+    if (!(shell instanceof HTMLElement)) throw new Error('expected application shell');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Request starter' }));
+    const input = await screen.findByRole('textbox', { name: 'Draft prompt' });
+    await waitFor(() => {
+      expect(input).toHaveProperty('value', 'Starter prompt');
+      expect(input.getAttribute('data-nonce')).toBe('1');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Documents' }));
+    await waitFor(() => {
+      expect(shell.getAttribute('data-surface')).toBe('documents');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
+    await waitFor(() => {
+      expect(shell.getAttribute('data-surface')).toBe('chat');
+    });
+
+    const remountedInput = await screen.findByRole('textbox', { name: 'Draft prompt' });
+    expect(remountedInput).toHaveProperty('value', '');
+    expect(remountedInput.getAttribute('data-nonce')).toBeNull();
+  });
+
   it('uses the current locale and a fresh nonce when asking the same document twice', async () => {
     await import('../documents/DocumentsWorkspace');
     let rendered!: ReturnType<typeof renderShell>;

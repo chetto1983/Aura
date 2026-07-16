@@ -86,7 +86,7 @@ export function RuntimeFooter({
       turnCost,
     ],
   );
-  const settled = useSettledAnnouncement(liveCluster, usageState);
+  const settled = useSettledAnnouncement(liveCluster, usageState, conversationId);
   const usedTokens = turn?.promptTokens ?? session.promptTokens;
   const window = windowTokens ?? DEFAULT_CONTEXT_WINDOW;
   const ctxPct = contextPercent(usedTokens, window);
@@ -163,15 +163,41 @@ export function RuntimeFooter({
   );
 }
 
-function useSettledAnnouncement(live: NumericCluster, event: RunUsageEvent): NumericCluster | null {
-  const [value, setValue] = useState<NumericCluster | null>(null);
-  const announcedRun = useRef<number | null>(null);
+function useSettledAnnouncement(
+  live: NumericCluster,
+  event: RunUsageEvent,
+  conversationId: string,
+): NumericCluster | null {
+  const [value, setValue] = useState<{
+    readonly conversationId: string;
+    readonly cluster: NumericCluster;
+  } | null>(null);
+  const announcedRun = useRef<{ readonly conversationId: string; readonly runId: number } | null>(
+    null,
+  );
+  const activeConversation = useRef(conversationId);
+  const suppressedSettledRun = useRef<number | null>(null);
   useEffect(() => {
-    if (event.phase !== 'settled' || announcedRun.current === event.runId) return;
-    announcedRun.current = event.runId;
-    setValue(live);
-  }, [event.phase, event.runId, live]);
-  return value;
+    if (activeConversation.current === conversationId) return;
+    activeConversation.current = conversationId;
+    announcedRun.current = null;
+    suppressedSettledRun.current = event.phase === 'settled' ? event.runId : null;
+  }, [conversationId, event.phase, event.runId]);
+  useEffect(() => {
+    if (event.phase !== 'settled') {
+      suppressedSettledRun.current = null;
+      return;
+    }
+    if (
+      suppressedSettledRun.current === event.runId ||
+      (announcedRun.current?.conversationId === conversationId &&
+        announcedRun.current.runId === event.runId)
+    )
+      return;
+    announcedRun.current = { conversationId, runId: event.runId };
+    setValue({ conversationId, cluster: live });
+  }, [conversationId, event.phase, event.runId, live]);
+  return value?.conversationId === conversationId ? value.cluster : null;
 }
 
 interface MetricProps {

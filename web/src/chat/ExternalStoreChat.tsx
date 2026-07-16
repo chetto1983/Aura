@@ -64,6 +64,7 @@ export interface ExternalStoreChatProps {
    */
   readonly onArtifact?: (assetId: string | undefined) => void;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
+  readonly onDraftPromptConsumed?: (nonce: number) => void;
   readonly onRequestDraftPrompt?: (text: string) => void;
   /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
   readonly onNewChat?: () => void | Promise<void>;
@@ -77,6 +78,7 @@ export function ExternalStoreChat({
   allocateUsageRunId,
   onArtifact,
   draftPrompt,
+  onDraftPromptConsumed,
   onRequestDraftPrompt = ignoreDraftPrompt,
   onNewChat,
 }: ExternalStoreChatProps) {
@@ -582,6 +584,7 @@ export function ExternalStoreChat({
             approvalLocked={threadApprovals.isPending}
             uploads={uploads}
             draftPrompt={draftPrompt}
+            onDraftPromptConsumed={onDraftPromptConsumed}
             skills={skills}
             pinnedSkill={pinnedSkill}
             onPinSkill={setPinnedSkill}
