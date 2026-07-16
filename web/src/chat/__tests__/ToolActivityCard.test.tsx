@@ -407,7 +407,7 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
     { label: 'error', settledProps: { isError: true }, statusText: 'Error' },
   ])(
     'stops and exposes the frozen duration when $label settles without finishedAt',
-    ({ settledProps, statusText }) => {
+    async ({ settledProps, statusText }) => {
       vi.useFakeTimers();
       try {
         const t0 = 1000;
@@ -421,18 +421,22 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
           vi.advanceTimersByTime(2000);
         });
         expect(screen.getByTestId('tool-elapsed').textContent).toBe('2 s');
+        vi.setSystemTime(t0 + 2500);
 
-        rerender(
-          <ToolActivityCard
-            toolName="logical_settle"
-            argsText="{}"
-            startedAt={t0}
-            {...settledProps}
-          />,
-        );
+        await act(async () => {
+          rerender(
+            <ToolActivityCard
+              toolName="logical_settle"
+              argsText="{}"
+              startedAt={t0}
+              {...settledProps}
+            />,
+          );
+          await Promise.resolve();
+        });
         const settledElapsed = screen.getByTestId('tool-elapsed');
         expect(screen.getByText(statusText)).toBeTruthy();
-        expect(settledElapsed.textContent).toBe('2 s');
+        expect(settledElapsed.textContent).toBe('2.5 s');
         expect(settledElapsed.hasAttribute('aria-hidden')).toBe(false);
         expect(settledElapsed.hasAttribute('aria-live')).toBe(false);
         expect(vi.getTimerCount()).toBe(0);
@@ -440,7 +444,7 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
         act(() => {
           vi.advanceTimersByTime(5000);
         });
-        expect(screen.getByTestId('tool-elapsed').textContent).toBe('2 s');
+        expect(screen.getByTestId('tool-elapsed').textContent).toBe('2.5 s');
       } finally {
         vi.useRealTimers();
       }
@@ -450,10 +454,10 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
   it('does not register a ticking interval once settled (no leak after freeze)', () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(2000);
+      vi.setSystemTime(2500);
       render(<ToolActivityCard toolName="web_search" result="ok" startedAt={1000} />);
       // Settled card: no live ticker.
-      expect(screen.getByTestId('tool-elapsed').textContent).toBe('1 s');
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('1.5 s');
       expect(screen.getByTestId('tool-elapsed').hasAttribute('aria-hidden')).toBe(false);
       expect(vi.getTimerCount()).toBe(0);
     } finally {

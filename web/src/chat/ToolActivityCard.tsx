@@ -166,9 +166,9 @@ function formatElapsed(ms: number, language: string, t: TFunction): string {
 
 /**
  * Canonical result/error status controls ticker life and assistive semantics. `finishedAt`
- * is the authoritative endpoint when present; otherwise the last tick freezes on logical
- * settlement. The interval is cleared on settlement and unmount. Returns null without a
- * start timestamp.
+ * is the authoritative endpoint when present; otherwise the logical settlement instant is
+ * captured once. The interval is cleared on settlement and unmount. Returns null without
+ * a start timestamp.
  */
 function useElapsed(
   startedAt: number | undefined,
@@ -177,9 +177,8 @@ function useElapsed(
 ): string | null {
   const { i18n, t } = useTranslation();
   const isRunning = startedAt !== undefined && status === 'running';
-  // `now` is read from the clock only in the lazy initializer (once) and the interval
-  // callback (not during render) — keeps the render pure (react-hooks/purity) and avoids a
-  // synchronous setState in the effect body (react-hooks/set-state-in-effect).
+  const previousStatus = useRef(status);
+  // Clock reads stay outside render: mount, running ticks, and one logical-settlement edge.
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -191,6 +190,22 @@ function useElapsed(
       clearInterval(id);
     };
   }, [isRunning, startedAt]);
+
+  useEffect(() => {
+    const settled = previousStatus.current === 'running' && status !== 'running';
+    previousStatus.current = status;
+    if (!settled || finishedAt !== undefined || startedAt === undefined) return;
+
+    const settledAt = Date.now();
+    let active = true;
+    // Capture synchronously, then notify outside the effect body to preserve hook purity.
+    queueMicrotask(() => {
+      if (active) setNow(settledAt);
+    });
+    return () => {
+      active = false;
+    };
+  }, [finishedAt, startedAt, status]);
 
   if (startedAt === undefined) return null;
   const end = finishedAt ?? now;
