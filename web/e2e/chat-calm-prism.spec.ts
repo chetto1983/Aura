@@ -6,6 +6,7 @@ import {
   expectCalmPrismGeometry,
   expectCoarseTargets,
   expectNoHorizontalOverflow,
+  expectPairSeparate,
 } from './support/calmPrismGeometry';
 import { collectBrowserHealth } from './support/browserHealth';
 import {
@@ -59,6 +60,69 @@ function verificationDirectory() {
 
 test.describe('Calm Prism Chrome contracts', () => {
   test.skip(CAPTURE_LABEL !== undefined || BUILD_COMPARISONS);
+
+  test('samples pair rectangles under one stable scroll position', async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 400 });
+    await page.setContent(`
+      <style>
+        html, body { margin: 0; min-height: 3400px; }
+        .sample { position: absolute; left: 40px; width: 240px; height: 80px; }
+        #first { top: 1000px; }
+        #second { top: 3000px; }
+      </style>
+      <div id="first" class="sample">First rectangle</div>
+      <div id="second" class="sample">Second rectangle</div>
+    `);
+
+    const first = page.locator('#first');
+    const second = page.locator('#second');
+    await expectPairSeparate(first, second);
+
+    const sampled = await page.evaluate(() => ({
+      firstY: document.querySelector('#first')?.getBoundingClientRect().y,
+      secondY: document.querySelector('#second')?.getBoundingClientRect().y,
+    }));
+    expect(sampled.firstY).toBeLessThan(0);
+    expect(sampled.secondY).toBeGreaterThanOrEqual(0);
+    expect(sampled.secondY).toBeLessThan(400);
+  });
+
+  test('cross-origin allowed-looking responses cannot suppress browser health', async ({
+    page,
+  }) => {
+    const appOrigin = 'http://aura.test';
+    const crossOriginUrl = 'http://cross-origin.test/api/approvals/error-token/resolve';
+    const consoleErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    const health = collectBrowserHealth(page, appOrigin, [
+      {
+        method: 'POST',
+        pathname: '/api/approvals/error-token/resolve',
+        status: 409,
+      },
+    ]);
+    await page.route(crossOriginUrl, (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: '{"error":"cross-origin conflict"}',
+      }),
+    );
+    await page.setContent('<main>Browser health origin regression</main>');
+    await page.evaluate(async (url) => {
+      await fetch(url, { method: 'POST' }).catch(() => undefined);
+    }, crossOriginUrl);
+    await expect
+      .poll(() => consoleErrors)
+      .toContain('Failed to load resource: the server responded with a status of 409 (Conflict)');
+
+    expect(() => {
+      health.assertClean();
+    }).toThrow(/console:/);
+  });
 
   test('empty thread exposes all localized starters', async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });

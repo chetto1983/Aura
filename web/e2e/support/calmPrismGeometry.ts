@@ -29,10 +29,12 @@ export function intersects(a: BoundingBox, b: BoundingBox) {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
-async function expectPairSeparate(first: Locator, second: Locator) {
+export async function expectPairSeparate(first: Locator, second: Locator) {
   await second.scrollIntoViewIfNeeded();
-  const firstBox = await boxFor(first);
-  const secondBox = await boxFor(second);
+  const [firstBox, secondBox] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+  if (firstBox === null || secondBox === null) {
+    throw new Error('required rectangle pair is not rendered');
+  }
   expect(
     intersects(firstBox, secondBox),
     `rectangles intersect: ${JSON.stringify({ firstBox, secondBox })}`,

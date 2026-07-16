@@ -11,6 +11,7 @@ export function collectBrowserHealth(
   origin: string,
   allowedHttp: readonly AllowedHttpFailure[] = [],
 ) {
+  const expectedOrigin = new URL(origin).origin;
   const problems: string[] = [];
   const consoleProblems: { readonly text: string; readonly url: string }[] = [];
   const allowedObserved = new Set<string>();
@@ -31,32 +32,35 @@ export function collectBrowserHealth(
   page.on('response', (response) => {
     const url = new URL(response.url());
     const request = response.request();
-    const allowed = allowedHttp.some(
-      (entry) =>
-        entry.method === request.method() &&
-        entry.pathname === url.pathname &&
-        entry.status === response.status(),
-    );
+    const allowed =
+      url.origin === expectedOrigin &&
+      allowedHttp.some(
+        (entry) =>
+          entry.method === request.method() &&
+          entry.pathname === url.pathname &&
+          entry.status === response.status(),
+      );
     if (allowed) {
-      allowedObserved.add(`${request.method()} ${url.pathname} ${String(response.status())}`);
+      allowedObserved.add(`${request.method()} ${url.href} ${String(response.status())}`);
     }
-    if (url.origin === origin && response.status() >= 400 && !allowed) {
+    if (url.origin === expectedOrigin && response.status() >= 400 && !allowed) {
       problems.push(`http: ${String(response.status())} ${url.pathname}`);
     }
   });
   return {
     assertClean() {
       const unallowedConsole = consoleProblems.filter((problem) => {
-        let pathname = '';
+        let url: URL;
         try {
-          pathname = new URL(problem.url).pathname;
+          url = new URL(problem.url);
         } catch {
           return true;
         }
         return !allowedHttp.some(
           (entry) =>
-            entry.pathname === pathname &&
-            allowedObserved.has(`${entry.method} ${entry.pathname} ${String(entry.status)}`) &&
+            url.origin === expectedOrigin &&
+            entry.pathname === url.pathname &&
+            allowedObserved.has(`${entry.method} ${url.href} ${String(entry.status)}`) &&
             problem.text ===
               'Failed to load resource: the server responded with a status of 409 (Conflict)',
         );
