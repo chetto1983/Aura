@@ -5,9 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { toolStatus, type ToolStatus } from './toolStatus';
 import { Button } from '@/components/ui/button';
 
-// ToolActivityCard (D-02): the LIGHTWEIGHT raw tool-activity view. It shows the
-// tool name + a status dot (icon + text, never colour alone) + an expandable
-// mono raw text/JSON result blob.
+// ToolActivityCard (D-02): the LIGHTWEIGHT raw tool-activity view. It shows a
+// marker + tool name + text status + optional elapsed time + a raw-text disclosure.
 //
 // SECURITY (T-25-11 / HARDEN-08): the raw blob is untrusted tool/swarm output —
 // it renders as TEXT inside a <pre> (React escapes children), never as raw HTML,
@@ -46,9 +45,9 @@ export interface ToolActivityCardProps {
 
 interface ToolActivityRowProps {
   readonly toolName: string;
+  readonly status: ToolStatus;
   readonly argsText?: string;
   readonly result?: string;
-  readonly isError?: boolean;
   /** Pre-formatted elapsed readout (parent only); omitted on child rows. */
   readonly elapsed?: string | null;
   /** Running ticks stay hidden from assistive technology; settled duration does not. */
@@ -56,26 +55,22 @@ interface ToolActivityRowProps {
 }
 
 /**
- * One status-tinted tool-activity line: dot + name + pill (+ optional elapsed) + an
- * expandable, XSS-safe raw `<pre>` blob. Owns the expand state machine: auto-expand while
+ * One tool-activity line: marker + name + text status + optional elapsed + an XSS-safe
+ * raw-text disclosure. Owns the expand state machine: auto-expand while
  * running, auto-collapse ONCE on the running → done|error settle edge, and a userToggled
  * intent-guard that lets a manual toggle win thereafter. Used by both the parent card and
  * its nested child rows (no duplication).
  */
 function ToolActivityRow({
   toolName,
+  status,
   argsText,
   result,
-  isError,
   elapsed,
   elapsedRunning = false,
 }: ToolActivityRowProps) {
   const { t } = useTranslation();
   const bodyId = useId();
-  const status = toolStatus({
-    ...(result !== undefined ? { result } : {}),
-    ...(isError !== undefined ? { isError } : {}),
-  });
   // The raw blob: prefer the result; while running, show the streamed args so the operator
   // sees what was requested. Always rendered as plain text/mono.
   const raw = result ?? argsText ?? '';
@@ -141,9 +136,10 @@ function ToolActivityRow({
           </Button>
         ) : null}
       </div>
-      {expanded && hasRaw ? (
+      {hasRaw ? (
         <pre
           id={bodyId}
+          hidden={!expanded}
           className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-xs leading-relaxed text-text-muted"
         >
           {raw}
@@ -169,15 +165,18 @@ function formatElapsed(ms: number, language: string, t: TFunction): string {
 }
 
 /**
- * Live elapsed time for a tool call. While running (startedAt present, no finishedAt) a
- * setInterval bumps a tick counter once a second to re-render; the elapsed value is read
- * from Date.now() at render time. The interval is cleared on settle AND on unmount (no
- * leak — only one interval is ever live, and only while running). Once settled it freezes
- * at finishedAt - startedAt. Returns null when no timing is derivable.
+ * Canonical result/error status controls ticker life and assistive semantics. `finishedAt`
+ * is the authoritative endpoint when present; otherwise the last tick freezes on logical
+ * settlement. The interval is cleared on settlement and unmount. Returns null without a
+ * start timestamp.
  */
-function useElapsed(startedAt: number | undefined, finishedAt: number | undefined): string | null {
+function useElapsed(
+  startedAt: number | undefined,
+  finishedAt: number | undefined,
+  status: ToolStatus,
+): string | null {
   const { i18n, t } = useTranslation();
-  const isRunning = startedAt !== undefined && finishedAt === undefined;
+  const isRunning = startedAt !== undefined && status === 'running';
   // `now` is read from the clock only in the lazy initializer (once) and the interval
   // callback (not during render) — keeps the render pure (react-hooks/purity) and avoids a
   // synchronous setState in the effect body (react-hooks/set-state-in-effect).
@@ -207,17 +206,21 @@ export function ToolActivityCard({
   finishedAt,
   childActivity,
 }: ToolActivityCardProps) {
-  const elapsed = useElapsed(startedAt, finishedAt);
-  const elapsedRunning = startedAt !== undefined && finishedAt === undefined;
+  const status = toolStatus({
+    ...(result !== undefined ? { result } : {}),
+    ...(isError !== undefined ? { isError } : {}),
+  });
+  const elapsed = useElapsed(startedAt, finishedAt, status);
+  const elapsedRunning = status === 'running';
   const hasChildren = childActivity !== undefined && childActivity.length > 0;
 
   return (
     <div className="rounded-[var(--radius-md)] border border-border">
       <ToolActivityRow
         toolName={toolName}
+        status={status}
         {...(argsText !== undefined ? { argsText } : {})}
         {...(result !== undefined ? { result } : {})}
-        {...(isError !== undefined ? { isError } : {})}
         elapsed={elapsed}
         elapsedRunning={elapsedRunning}
       />
@@ -229,9 +232,9 @@ export function ToolActivityCard({
               // is a stable key within a single parent card's children list.
               key={`${child.toolName}-${String(i)}`}
               toolName={child.toolName}
+              status={toolStatus(child)}
               {...(child.argsText !== undefined ? { argsText: child.argsText } : {})}
               {...(child.result !== undefined ? { result: child.result } : {})}
-              {...(child.isError !== undefined ? { isError: child.isError } : {})}
             />
           ))}
         </div>
