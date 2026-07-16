@@ -34,6 +34,6 @@
     ".planning/graphs/GRAPH_REPORT.md",
     ".planning/intel/"
   ],
-  "next_action": "Open the Calm Prism plan at Task 7, verify the clean worktree at 25fca185c, run the existing ExternalStoreChat and RuntimeFooter baseline tests, then add the runUsage lifecycle/footer tests and capture RED before production edits.",
-  "context_notes": "Tasks 1-6 are approved, merged, checked, and post-merge verified. Task 7 is untouched. Master and the feature worktree branch both point to 25fca185c. Preserve the three unrelated dirty master paths. No servers or async jobs are active."
+  "next_action": "Open the Calm Prism plan at Task 7, verify the clean worktree contains verified Task 6 implementation merge 25fca185c plus the latest docs-only handoff commit, run the existing ExternalStoreChat and RuntimeFooter baseline tests, then add the runUsage lifecycle/footer tests and capture RED before production edits.",
+  "context_notes": "Tasks 1-6 are approved, merged, checked, and post-merge verified. Task 7 is untouched. Verified Task 6 implementation merge is 25fca185c; current HEAD is a docs-only handoff commit and both master and the feature branch must contain it before resuming. Preserve the three unrelated dirty master paths. No servers or async jobs are active."
 }
