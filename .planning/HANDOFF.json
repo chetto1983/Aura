@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-16T13:36:54.808Z",
+  "phase": "aura-calm-prism-chat-refinement",
+  "phase_name": "Aura Calm Prism chat refinement",
+  "phase_dir": "docs/superpowers/plans",
+  "plan": 1,
+  "task": 7,
+  "total_tasks": 9,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Land the PRD-first contract", "status": "done", "commit": "19f949c2d"},
+    {"id": 2, "name": "Refine chat shell and message geometry", "status": "done", "commit": "c47f9e9b2"},
+    {"id": 3, "name": "Refine reasoning disclosure", "status": "done", "commit": "3ed76331f"},
+    {"id": 4, "name": "Refine tool activity hierarchy and lifecycle", "status": "done", "commit": "1c3579741"},
+    {"id": 5, "name": "Gate chat on pending approvals", "status": "done", "commit": "854c38c08"},
+    {"id": 6, "name": "Add localized empty-thread prompt starters", "status": "done", "commit": "25fca185c"}
+  ],
+  "remaining_tasks": [
+    {"id": 7, "name": "Make usage state run-scoped and announcements settlement-only", "status": "not_started"},
+    {"id": 8, "name": "Add explicit Chrome Playwright health and visual contracts", "status": "not_started"},
+    {"id": 9, "name": "Run final repository verification and commit the reviewed bundle", "status": "not_started"}
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Use strict TDD plus sequential spec and adversarial reviews for every task", "rationale": "Later adversarial passes repeatedly exposed real lifecycle and concurrency gaps after initial green tests", "phase": "aura-calm-prism-chat-refinement"},
+    {"decision": "Merge and freshly verify every approved task on master before starting the next", "rationale": "Permanent user and repository hard rule", "phase": "aura-calm-prism-chat-refinement"},
+    {"decision": "Model async ownership with explicit run IDs, phases, generations, and exact event ownership", "rationale": "Inferred emptiness and late callbacks caused starter, approval, focus, and recovery defects", "phase": "aura-calm-prism-chat-refinement"}
+  ],
+  "uncommitted_files": [
+    ".planning/graphs/.last-build-status.json",
+    ".planning/graphs/GRAPH_REPORT.md",
+    ".planning/intel/"
+  ],
+  "next_action": "Open the Calm Prism plan at Task 7, verify the clean worktree contains verified Task 6 implementation merge 25fca185c plus the latest docs-only handoff commit, run the existing ExternalStoreChat and RuntimeFooter baseline tests, then add the runUsage lifecycle/footer tests and capture RED before production edits.",
+  "context_notes": "Tasks 1-6 are approved, merged, checked, and post-merge verified. Task 7 is untouched. Verified Task 6 implementation merge is 25fca185c; current HEAD is a docs-only handoff commit and both master and the feature branch must contain it before resuming. Preserve the three unrelated dirty master paths. No servers or async jobs are active."
+}
