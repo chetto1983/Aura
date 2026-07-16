@@ -68,6 +68,7 @@ const HTTPS_ORIGIN = process.env.AURA_E2E_HTTPS_ORIGIN;
 
 export default defineConfig({
   testDir: './e2e',
+  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
