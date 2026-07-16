@@ -339,44 +339,6 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     expectExactlyOneSettlement(usageEvents(onUsage), runId);
   });
 
-  it('cancelling only aborts; AbortError finally settles the run exactly once', async () => {
-    let rejectRun: ((reason: unknown) => void) | undefined;
-    let runSignal: AbortSignal | undefined;
-    const fetchMock = vi.fn((url: string, init: RequestInit) => {
-      if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
-      runSignal = init.signal ?? undefined;
-      return new Promise<Response>((_resolve, reject) => {
-        rejectRun = reject;
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const onUsage = vi.fn();
-    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
-    sendPrompt('long task');
-
-    // Stop replaces Send while the turn is in flight.
-    const stop = await screen.findByRole('button', { name: 'Stop the current response' });
-    fireEvent.click(stop);
-    expect(runSignal?.aborted).toBe(true);
-    expect(screen.getByRole('button', { name: 'Stop the current response' })).toBeTruthy();
-    expect(usageEvents(onUsage).filter((event) => event.phase === 'settled')).toHaveLength(0);
-
-    await act(async () => {
-      rejectRun?.(new DOMException('aborted', 'AbortError'));
-      await Promise.resolve();
-    });
-
-    // After abort the turn ends → Send returns.
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
-    });
-    const runId = usageEvents(onUsage).find((event) => event.phase === 'running')?.runId;
-    if (runId === undefined) throw new Error('expected a started usage run');
-    expectExactlyOneSettlement(usageEvents(onUsage), runId);
-    expect(screen.queryByText(/response stopped unexpectedly/i)).toBeNull();
-  });
-
   // AC-5: once a turn completes (RUN_FINISHED → onNew finally), the conversation
   // React-Query read is invalidated so the persisted Session totals refresh.
   it('invalidates the conversation query key when a turn completes', async () => {

@@ -13,13 +13,14 @@ import {
   seedSession,
 } from './footerMetrics';
 import type { RunUsageEvent } from './runUsage';
-import { useRunSessionUsage } from './runSessionUsage';
+import { useRunSessionUsage, type RunSessionBaselineEvent } from './runSessionUsage';
 import { Button } from '@/components/ui/button';
 
 export interface RuntimeFooterProps {
   readonly usageState: RunUsageEvent;
   readonly conversationId: string;
   readonly windowTokens?: number;
+  readonly sessionBaseline?: RunSessionBaselineEvent;
 }
 
 interface NumericCluster {
@@ -31,14 +32,25 @@ interface NumericCluster {
   readonly sessionCost: string;
 }
 
-export function RuntimeFooter({ usageState, conversationId, windowTokens }: RuntimeFooterProps) {
+export function RuntimeFooter({
+  usageState,
+  conversationId,
+  windowTokens,
+  sessionBaseline,
+}: RuntimeFooterProps) {
   const { t } = useTranslation();
   const { data: conv } = useConversation(conversationId);
   const [expanded, setExpanded] = useState(false);
   const detailId = `footer-telemetry-detail-${useId()}`;
   const turn = usageState.usage ?? null;
   const seed = seedSession(conv);
-  const session = useRunSessionUsage(conversationId, seed, conv !== undefined, usageState);
+  const session = useRunSessionUsage(
+    conversationId,
+    seed,
+    conv !== undefined,
+    usageState,
+    sessionBaseline,
+  );
   const none = t('footer.none');
   const noSpend = isNoSpendTurn(turn ?? undefined);
   const noSpendLabel = t('footer.noSpend');

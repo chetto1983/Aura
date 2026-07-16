@@ -4,6 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   autoTitleFromPrompt,
+  CONVERSATION_KEY,
   displayTitle,
   isArchived,
   useArchiveConversation,
@@ -17,8 +18,7 @@ import {
   type Conversation,
 } from '../useConversations';
 
-function wrapper() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function wrapper(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(QueryClientProvider, { client }, children);
   };
@@ -189,6 +189,22 @@ describe('useConversations mutations', () => {
     expect(captured?.url).toBe('/api/conversations');
     expect(captured?.init?.method).toBe('POST');
     expect(captured?.init?.body).toBe(JSON.stringify({ title: 'Deploy rollback plan' }));
+  });
+
+  it('seeds the created conversation detail as the first-run usage baseline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(CONV), { status: 201 }))),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useCreateConversation(), { wrapper: wrapper(client) });
+
+    result.current.mutate('first prompt');
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(client.getQueryData([CONVERSATION_KEY, CONV.ID])).toEqual(CONV);
   });
 
   it('archive/unarchive/delete hit their routes and surface errors on non-2xx', async () => {

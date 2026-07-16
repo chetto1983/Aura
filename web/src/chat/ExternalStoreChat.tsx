@@ -40,6 +40,7 @@ import {
 } from './ExternalStoreChat_folds';
 import { fetchThreadMessages, streamPost, streamRun } from './sseAdapter';
 import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
+import { useRunUsageBaseline, type RunSessionBaselineListener } from './useRunUsageBaseline';
 import { AutoSpeak } from './voice/AutoSpeak';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
 import { useApprovalFocus } from './useApprovalFocus';
@@ -54,6 +55,7 @@ export interface ExternalStoreChatProps {
   /** Create/select a conversation before the first send when no thread is active. */
   readonly onEnsureThread?: (initialPrompt: string) => Promise<string>;
   readonly onUsage?: (event: RunUsageEvent) => void;
+  readonly onUsageBaseline?: RunSessionBaselineListener;
   readonly allocateUsageRunId?: () => number;
   /**
    * 37B seam (mirrors onUsage): fires when a run emits an `aura.artifact` descriptor,
@@ -71,6 +73,7 @@ export function ExternalStoreChat({
   threadId,
   onEnsureThread,
   onUsage,
+  onUsageBaseline,
   allocateUsageRunId,
   onArtifact,
   draftPrompt,
@@ -95,6 +98,7 @@ export function ExternalStoreChat({
   const isRunningRef = useRef(false);
   const usageThreadRef = useRef<string | null>(null);
   const usageLifecycle = useRunUsageLifecycle(onUsage, allocateUsageRunId);
+  const prepareUsageBaseline = useRunUsageBaseline(onUsageBaseline);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [composerInput, setComposerInput] = useState<HTMLTextAreaElement | null>(null);
   const approvalFocusRef = useRef<(next: Approval | undefined) => void>(() => undefined);
@@ -104,9 +108,6 @@ export function ExternalStoreChat({
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
-  // 37E reasoning-effort selector: the advertised levels (D-13, degrades to {auto,off}) and the
-  // per-conversation effort hydrated from the conversation DTO's persisted ReasoningEffort (37E-03),
-  // restored on reopen and NEVER cleared after send.
   const reasoningCaps = useReasoningCapabilities();
   const hydratedEffort = useConversation(threadId).data?.ReasoningEffort;
   const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
@@ -132,8 +133,6 @@ export function ExternalStoreChat({
         item.status === 'ready' && item.asset !== undefined ? [item.asset] : [],
       );
       const user = userMessage(text, readyAttachments);
-      // Snapshot the assistant message index after appending the user turn so the
-      // streaming folder can replace exactly that slot in place.
       let assistantIndex = -1;
       setMessages((prev) => {
         assistantIndex = prev.length + 1;
@@ -166,13 +165,12 @@ export function ExternalStoreChat({
           });
           return;
         }
+        if (!(await prepareUsageBaseline(runThreadId, usageRunId, controller.signal))) return;
         await streamRun({
           threadId: runThreadId,
           userText: text,
           attachmentIds: readyAttachmentIds,
           ...(pinnedSkill !== null ? { skill: pinnedSkill.name } : {}),
-          // The effort rides every send (buildAuraRunBody omits 'auto'); unlike the pinned skill
-          // it is a per-conversation preference and is NOT cleared after the turn.
           effort,
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
@@ -193,9 +191,6 @@ export function ExternalStoreChat({
         // The pinned skill applies to exactly one turn (mirrors uploads.clearReady).
         if (pinnedSkill !== null) setPinnedSkill(null);
       } catch (err) {
-        // An aborted fetch (Stop) throws AbortError; the partial assistant
-        // message already rendered is left as-is (incomplete). Other network
-        // failures surface through the reducer's error part where reachable.
         if (!isAbortError(err)) {
           setMessages((prev) => {
             const next = prev.slice();
@@ -229,6 +224,7 @@ export function ExternalStoreChat({
       pinnedSkill,
       setPinnedSkill,
       effort,
+      prepareUsageBaseline,
     ],
   );
 
@@ -357,6 +353,7 @@ export function ExternalStoreChat({
       usageThreadRef.current = threadId;
       const usageRunId = usageLifecycle.start();
       try {
+        if (!(await prepareUsageBaseline(threadId, usageRunId, controller.signal))) return;
         await streamPost({
           url,
           body,
@@ -381,7 +378,7 @@ export function ExternalStoreChat({
         invalidateRuntimeReads();
       }
     },
-    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, threadId],
+    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, threadId, prepareUsageBaseline],
   );
 
   const foldResumeRun = useCallback(
@@ -397,6 +394,7 @@ export function ExternalStoreChat({
       let appended = false;
       const usageRunId = usageLifecycle.start();
       try {
+        if (!(await prepareUsageBaseline(resumeThreadId, usageRunId, controller.signal))) return;
         await streamPost({
           url: '/agent/run',
           body: { threadId: resumeThreadId, messages: [] },
@@ -430,7 +428,7 @@ export function ExternalStoreChat({
         invalidateRuntimeReads(resumeThreadId);
       }
     },
-    [usageLifecycle, onArtifact, invalidateRuntimeReads, t],
+    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, prepareUsageBaseline],
   );
 
   const resumeRun = useCallback(async () => {

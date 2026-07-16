@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
 import type { RunUsageEvent } from '../runUsage';
+import type { RunSessionBaselineEvent } from '../runSessionUsage';
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -15,6 +16,22 @@ function jsonResponse(value: unknown): Response {
 
 function messagesSnapshotResponse(): Response {
   return jsonResponse({ type: 'MESSAGES_SNAPSHOT', messages: [] });
+}
+
+function conversationResponse(): Response {
+  return jsonResponse({
+    ID: 'conv-1',
+    Title: 'Existing',
+    TitleSet: true,
+    IdentityID: 'operator',
+    Status: 'active',
+    Model: 'test',
+    TotalInputTokens: 1000,
+    TotalOutputTokens: 500,
+    TotalCachedTokens: 400,
+    TotalCostUSD: 0.05,
+    CreatedAt: '2026-07-16T00:00:00Z',
+  });
 }
 
 function sseResponse(frames: readonly Record<string, unknown>[]): Response {
@@ -114,6 +131,166 @@ describe('ExternalStoreChat usage ownership races', () => {
     expect(
       events.filter((event) => event.runId === runId && event.phase === 'settled'),
     ).toHaveLength(1);
+  });
+
+  it('publishes the existing conversation baseline before issuing the agent run', async () => {
+    const detail = deferred<Response>();
+    const order: string[] = [];
+    const onUsage = vi.fn();
+    const onUsageBaseline = vi.fn((event: RunSessionBaselineEvent) => {
+      order.push('baseline');
+      expect(event.baseline).toMatchObject({ promptTokens: 1000, completionTokens: 500 });
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/conversations/conv-1') return detail.promise;
+        if (url === '/agent/run') {
+          order.push('agent');
+          return Promise.resolve(completedRun('conv-1'));
+        }
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(
+      <ExternalStoreChat threadId="conv-1" onUsage={onUsage} onUsageBaseline={onUsageBaseline} />,
+    );
+    sendPrompt('wait for baseline');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(order).not.toContain('agent');
+
+    detail.resolve(conversationResponse());
+
+    await screen.findByText('Done.');
+    expect(order).toEqual(['baseline', 'agent']);
+    const runId = eventsOf(onUsage).find((event) => event.phase === 'running')?.runId;
+    expect(onUsageBaseline).toHaveBeenCalledWith({
+      runId,
+      baseline: {
+        promptTokens: 1000,
+        completionTokens: 500,
+        cacheHitTokens: 400,
+        costUsd: 0.05,
+        hasCost: true,
+      },
+    });
+  });
+
+  it('stops while the existing conversation baseline is still loading', async () => {
+    const detail = deferred<Response>();
+    const runRequests: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/conversations/conv-1') return detail.promise;
+        if (url === '/agent/run') {
+          runRequests.push(url);
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new DOMException('aborted', 'AbortError'));
+            });
+          });
+        }
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    sendPrompt('stop during baseline');
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop the current response' }));
+
+    expect(runRequests).toHaveLength(0);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
+    });
+    detail.resolve(jsonResponse([]));
+  });
+
+  it('continues with an explicit unavailable baseline when the detail query fails', async () => {
+    const order: string[] = [];
+    const onUsageBaseline = vi.fn((event: RunSessionBaselineEvent) => {
+      order.push(`baseline:${event.baseline === null ? 'unavailable' : 'known'}`);
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/conversations/conv-1') {
+          return Promise.resolve(new Response('failed', { status: 500 }));
+        }
+        if (url === '/agent/run') {
+          order.push('agent');
+          return Promise.resolve(completedRun('conv-1'));
+        }
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsageBaseline={onUsageBaseline} />);
+    sendPrompt('fail soft');
+    await screen.findByText('Done.');
+
+    expect(order).toEqual(['baseline:unavailable', 'agent']);
+  });
+
+  it('aborts an active agent stream and settles its usage exactly once', async () => {
+    let rejectRun: ((reason: unknown) => void) | undefined;
+    let runSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        if (url === '/api/conversations/conv-1') {
+          return Promise.resolve(conversationResponse());
+        }
+        if (url === '/agent/run') {
+          runSignal = init?.signal ?? undefined;
+          return new Promise<Response>((_resolve, reject) => {
+            rejectRun = reject;
+          });
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    const onUsage = vi.fn();
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
+    sendPrompt('long task');
+    await waitFor(() => {
+      expect(runSignal).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop the current response' }));
+    expect(runSignal?.aborted).toBe(true);
+    expect(eventsOf(onUsage).filter((event) => event.phase === 'settled')).toHaveLength(0);
+
+    await act(async () => {
+      rejectRun?.(new DOMException('aborted', 'AbortError'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
+    });
+    const events = eventsOf(onUsage);
+    const runId = events.find((event) => event.phase === 'running')?.runId;
+    expect(runId).toBeDefined();
+    expect(
+      events.filter((event) => event.runId === runId && event.phase === 'settled'),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/response stopped unexpectedly/i)).toBeNull();
   });
 
   it('keeps an immediately settled first send through matching thread adoption', async () => {

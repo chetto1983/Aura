@@ -128,7 +128,14 @@ export function AppShell() {
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
-  const { usageState, allocateUsageRunId, acceptUsage, resetUsage } = useRunUsageOwner();
+  const {
+    usageState,
+    sessionBaseline,
+    allocateUsageRunId,
+    acceptUsage,
+    acceptUsageBaseline,
+    resetUsage,
+  } = useRunUsageOwner();
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   // §3.1c: the mobile/tablet overlay surfaces (nav drawer + runtime sheet) are driven by
   // the one-heavy-surface intent reducer, NOT two independent booleans. At `lg` the regions
@@ -422,6 +429,7 @@ export function AppShell() {
               threadId={activeThreadId}
               onEnsureThread={ensureThread}
               onUsage={acceptUsage}
+              onUsageBaseline={acceptUsageBaseline}
               allocateUsageRunId={allocateUsageRunId}
               onArtifact={handleArtifact}
               draftPrompt={composerDraftPrompt}
@@ -522,7 +530,11 @@ export function AppShell() {
       )}
 
       <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
-        <RuntimeFooter usageState={usageState} conversationId={activeThreadId} />
+        <RuntimeFooter
+          usageState={usageState}
+          conversationId={activeThreadId}
+          {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
+        />
       </BottomDock>
 
       <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>

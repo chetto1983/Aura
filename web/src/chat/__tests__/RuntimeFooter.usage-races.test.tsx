@@ -1,10 +1,12 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import { CONVERSATION_KEY } from '../../conversations/useConversations';
 import { RuntimeFooter } from '../RuntimeFooter';
+import type { SessionTotals } from '../footerMetrics';
+import type { RunSessionBaselineEvent } from '../runSessionUsage';
 import type { RunUsageEvent } from '../runUsage';
 import type { TurnUsage } from '../sseAdapter';
 
@@ -45,11 +47,100 @@ function renderFooter(usageState: RunUsageEvent, conversationId = 'c-1') {
   return { ...view, client };
 }
 
+function renderUnseededFooter(
+  usageState: RunUsageEvent,
+  sessionBaseline: RunSessionBaselineEvent,
+  conversationId = 'c-1',
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const Wrapper = ({ children }: { readonly children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const view = render(
+    <RuntimeFooter
+      usageState={usageState}
+      conversationId={conversationId}
+      sessionBaseline={sessionBaseline}
+    />,
+    { wrapper: Wrapper },
+  );
+  return { ...view, client };
+}
+
 function visibleMetrics(): string {
   return screen.getByTestId('footer-visible-metrics').textContent ?? '';
 }
 
 describe('RuntimeFooter run/session ownership', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('accepts a first authoritative aggregate that already includes a fast settled turn', () => {
+    const usageState = event(1, 'settled', SETTLED_TURN);
+    const sessionBaseline = { runId: 1, baseline: null };
+    const { client, rerender } = renderUnseededFooter(usageState, sessionBaseline);
+    expect(visibleMetrics()).toContain('Session 300');
+
+    act(() => {
+      client.setQueryData([CONVERSATION_KEY, 'c-1'], {
+        TotalInputTokens: 200,
+        TotalOutputTokens: 100,
+        TotalCachedTokens: 50,
+        TotalCostUSD: 0.01,
+      });
+    });
+    rerender(
+      <RuntimeFooter
+        usageState={usageState}
+        conversationId="c-1"
+        sessionBaseline={sessionBaseline}
+      />,
+    );
+
+    expect(visibleMetrics()).toContain('Session 300');
+    expect(visibleMetrics()).not.toContain('Session 600');
+  });
+
+  it('retains a locally committed turn when a rapid next run receives a late pre-turn aggregate', () => {
+    const preTurnBaseline: SessionTotals = {
+      promptTokens: 1000,
+      completionTokens: 500,
+      cacheHitTokens: 400,
+      costUsd: 0.05,
+      hasCost: true,
+    };
+    const { client, rerender } = renderUnseededFooter(event(1, 'settled', SETTLED_TURN), {
+      runId: 1,
+      baseline: preTurnBaseline,
+    });
+    const nextUsage: TurnUsage = {
+      promptTokens: 100,
+      completionTokens: 0,
+      cacheHitTokens: 0,
+      costUsd: 0.002,
+    };
+    const rapidNext = event(2, 'running', nextUsage);
+    const rapidBaseline = { runId: 2, baseline: preTurnBaseline };
+    rerender(
+      <RuntimeFooter usageState={rapidNext} conversationId="c-1" sessionBaseline={rapidBaseline} />,
+    );
+
+    act(() => {
+      client.setQueryData([CONVERSATION_KEY, 'c-1'], PRE_TURN_AGGREGATE);
+    });
+    rerender(
+      <RuntimeFooter usageState={rapidNext} conversationId="c-1" sessionBaseline={rapidBaseline} />,
+    );
+
+    expect(visibleMetrics()).toContain('Session 1.9k');
+    expect(visibleMetrics()).not.toContain('Session 1.6k');
+  });
+
   it('does not count a settled turn again when the conversation aggregate refetch includes it', async () => {
     const { client, rerender } = renderFooter(event(1, 'settled', SETTLED_TURN));
     expect(visibleMetrics()).toContain('Session 1.8k');

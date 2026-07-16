@@ -10,9 +10,15 @@ interface RunSessionSnapshot {
   readonly runId: number;
   readonly phase: RunUsageEvent['phase'];
   readonly usage: TurnUsage | undefined;
+  readonly eventBaseline: SessionTotals | null | undefined;
   readonly committed: SessionTotals;
   readonly baseline: SessionTotals;
   readonly visible: SessionTotals;
+}
+
+export interface RunSessionBaselineEvent {
+  readonly runId: number;
+  readonly baseline: SessionTotals | null;
 }
 
 export function useRunSessionUsage(
@@ -20,11 +26,12 @@ export function useRunSessionUsage(
   seed: SessionTotals,
   seedReady: boolean,
   event: RunUsageEvent,
+  baselineEvent?: RunSessionBaselineEvent,
 ): SessionTotals {
   const [snapshot, setSnapshot] = useState<RunSessionSnapshot>(() =>
-    advanceRunSession(undefined, conversationId, seed, seedReady, event),
+    advanceRunSession(undefined, conversationId, seed, seedReady, event, baselineEvent),
   );
-  const next = advanceRunSession(snapshot, conversationId, seed, seedReady, event);
+  const next = advanceRunSession(snapshot, conversationId, seed, seedReady, event, baselineEvent);
   if (next !== snapshot) {
     setSnapshot(next);
     return next.visible;
@@ -38,27 +45,53 @@ function advanceRunSession(
   seed: SessionTotals,
   seedReady: boolean,
   event: RunUsageEvent,
+  baselineEvent: RunSessionBaselineEvent | undefined,
 ): RunSessionSnapshot {
+  const eventBaseline = baselineEvent?.runId === event.runId ? baselineEvent.baseline : undefined;
   if (
     previous?.conversationId === conversationId &&
     previous.seedReady === seedReady &&
     sameTotals(previous.seed, seed) &&
     previous.runId === event.runId &&
     previous.phase === event.phase &&
-    sameUsage(previous.usage, event.usage)
+    sameUsage(previous.usage, event.usage) &&
+    sameBaseline(previous.eventBaseline, eventBaseline)
   ) {
     return previous;
   }
 
   const sameConversation = previous?.conversationId === conversationId;
-  const priorCommitted = sameConversation ? previous.committed : seed;
-  const committedSeed = maximumTotals(priorCommitted, seed);
+  const priorCommitted = sameConversation ? previous.committed : seedReady ? seed : emptySession();
+  const committedSeed = seedReady ? maximumTotals(priorCommitted, seed) : priorCommitted;
   const sameRun = sameConversation && previous.runId === event.runId;
-  const baseline = sameRun
-    ? !previous.seedReady && seedReady
+  const eventBaselineChanged = !sameRun || !sameBaseline(previous.eventBaseline, eventBaseline);
+  const baseline = eventBaselineChanged
+    ? eventBaseline === undefined
+      ? committedSeed
+      : eventBaseline === null
+        ? emptySession()
+        : maximumTotals(priorCommitted, eventBaseline)
+    : eventBaseline === undefined && !previous.seedReady && seedReady
       ? seed
-      : previous.baseline
-    : committedSeed;
+      : previous.baseline;
+
+  if (eventBaseline === null) {
+    const turnOnly =
+      event.usage === undefined ? emptySession() : addTurn(emptySession(), event.usage);
+    const visible = seedReady ? seed : turnOnly;
+    return {
+      conversationId,
+      seedReady,
+      seed,
+      runId: event.runId,
+      phase: event.phase,
+      usage: event.usage,
+      eventBaseline: null,
+      committed: visible,
+      baseline: emptySession(),
+      visible,
+    };
+  }
 
   if (event.phase === 'running') {
     return {
@@ -68,6 +101,7 @@ function advanceRunSession(
       runId: event.runId,
       phase: event.phase,
       usage: event.usage,
+      eventBaseline,
       committed: committedSeed,
       baseline,
       visible: event.usage === undefined ? baseline : addTurn(baseline, event.usage),
@@ -84,6 +118,7 @@ function advanceRunSession(
       runId: event.runId,
       phase: event.phase,
       usage: event.usage,
+      eventBaseline,
       committed,
       baseline,
       visible: committed,
@@ -97,9 +132,20 @@ function advanceRunSession(
     runId: event.runId,
     phase: event.phase,
     usage: undefined,
+    eventBaseline,
     committed: committedSeed,
     baseline: committedSeed,
     visible: committedSeed,
+  };
+}
+
+function emptySession(): SessionTotals {
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    cacheHitTokens: 0,
+    costUsd: 0,
+    hasCost: false,
   };
 }
 
@@ -131,4 +177,18 @@ function sameUsage(left: TurnUsage | undefined, right: TurnUsage | undefined): b
       left?.cacheHitTokens === right?.cacheHitTokens &&
       left?.costUsd === right?.costUsd)
   );
+}
+
+function sameBaseline(
+  left: SessionTotals | null | undefined,
+  right: SessionTotals | null | undefined,
+): boolean {
+  return left === right || (left !== null && right !== null && sameOptionalTotals(left, right));
+}
+
+function sameOptionalTotals(
+  left: SessionTotals | undefined,
+  right: SessionTotals | undefined,
+): boolean {
+  return left === undefined || right === undefined ? left === right : sameTotals(left, right);
 }
