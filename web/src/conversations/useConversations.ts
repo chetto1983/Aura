@@ -105,6 +105,13 @@ export const CONVERSATION_KEY = 'conversation';
 export const CONVERSATION_SEARCH_KEY = 'conversation-search';
 export const CONVERSATION_ROT_EVENTS_KEY = 'conversation-rot-events';
 
+export function fetchConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<Conversation> {
+  return getJSON<Conversation>(`/api/conversations/${encodeURIComponent(conversationId)}`, signal);
+}
+
 /**
  * GET /api/conversations/{id} — the single row incl. session-cumulative token/cost
  * aggregates (D-10 footer reload seed). Disabled (no fetch) for an empty id.
@@ -112,8 +119,7 @@ export const CONVERSATION_ROT_EVENTS_KEY = 'conversation-rot-events';
 export function useConversation(conversationId: string) {
   return useQuery({
     queryKey: [CONVERSATION_KEY, conversationId],
-    queryFn: () =>
-      getJSON<Conversation>(`/api/conversations/${encodeURIComponent(conversationId)}`),
+    queryFn: ({ signal }) => fetchConversation(conversationId, signal),
     enabled: conversationId.length > 0,
     retry: false,
   });
@@ -151,7 +157,8 @@ export function useCreateConversation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createConversation,
-    onSuccess: () => {
+    onSuccess: (conversation) => {
+      queryClient.setQueryData([CONVERSATION_KEY, conversation.ID], conversation);
       void queryClient.invalidateQueries({ queryKey: [CONVERSATIONS_KEY] });
     },
   });

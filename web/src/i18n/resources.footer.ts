@@ -9,6 +9,10 @@ export const footerEn = {
     session: 'Session',
     none: '—',
     noSpend: 'Local reply - no model spend',
+    showDetails: 'Show telemetry details',
+    hideDetails: 'Hide telemetry details',
+    settledAnnouncement:
+      'Run complete. Tokens {{tokens}}, cache {{cache}}, cost {{cost}}. Session tokens {{sessionTokens}}, cache {{sessionCache}}, cost {{sessionCost}}.',
     gaugeValue: '{{used}} / {{window}} · {{percent}}%',
     contextLabel: 'Context budget - near at {{near}}%, critical at {{critical}}%',
     compacted: 'Compacted {{count}} older turns',
@@ -26,6 +30,10 @@ export const footerIt = {
     session: 'Sessione',
     none: '—',
     noSpend: 'Risposta locale - nessun costo modello',
+    showDetails: 'Mostra dettagli telemetria',
+    hideDetails: 'Nascondi dettagli telemetria',
+    settledAnnouncement:
+      'Esecuzione completata. Token {{tokens}}, cache {{cache}}, costo {{cost}}. Token sessione {{sessionTokens}}, cache {{sessionCache}}, costo {{sessionCost}}.',
     gaugeValue: '{{used}} / {{window}} · {{percent}}%',
     contextLabel: 'Budget di contesto - attenzione a {{near}}%, critico a {{critical}}%',
     compacted: 'Compattati {{count}} turni più vecchi',

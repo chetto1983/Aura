@@ -18,7 +18,7 @@ import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import { useCapabilities } from './admin/useAdmin';
 import { fetchOnboardingStatus } from './onboarding/onboardingApi';
-import type { TurnUsage } from './chat/sseAdapter';
+import { useRunUsageOwner } from './chat/useRunUsageOwner';
 import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
@@ -128,7 +128,14 @@ export function AppShell() {
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
-  const [usage, setUsage] = useState<TurnUsage | undefined>(undefined);
+  const {
+    usageState,
+    sessionBaseline,
+    allocateUsageRunId,
+    acceptUsage,
+    acceptUsageBaseline,
+    resetUsage,
+  } = useRunUsageOwner();
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   // §3.1c: the mobile/tablet overlay surfaces (nav drawer + runtime sheet) are driven by
   // the one-heavy-surface intent reducer, NOT two independent booleans. At `lg` the regions
@@ -145,10 +152,13 @@ export function AppShell() {
   const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
   const autoOpenedOnboarding = useRef(false);
 
-  if ((routeId ?? '') !== lastRouteId) {
-    setLastRouteId(routeId ?? '');
-    setSelectedId(routeId ?? '');
-    setUsage(undefined);
+  const nextRouteId = routeId ?? '';
+  if (nextRouteId !== lastRouteId) {
+    setLastRouteId(nextRouteId);
+    if (nextRouteId !== selectedId) {
+      setSelectedId(nextRouteId);
+      resetUsage();
+    }
   }
 
   const activeThreadId = selectedId;
@@ -203,14 +213,14 @@ export function AppShell() {
 
   function selectThread(id: string) {
     setSelectedId(id);
-    setUsage(undefined);
+    resetUsage();
     surfaces.closeNav();
   }
 
   function selectThreadFromMobileNav(id: string) {
     setSurface('chat');
     setSelectedId(id);
-    setUsage(undefined);
+    resetUsage();
     surfaces.closeNav();
     void navigate(`/c/${encodeURIComponent(id)}`);
   }
@@ -220,7 +230,6 @@ export function AppShell() {
       if (activeThreadId.length > 0) return activeThreadId;
       const conv = await createConversation.mutateAsync(initialPrompt);
       setSelectedId(conv.ID);
-      setUsage(undefined);
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
       return conv.ID;
     },
@@ -238,13 +247,13 @@ export function AppShell() {
       const conv = await createConversation.mutateAsync('');
       setSurface('chat');
       setSelectedId(conv.ID);
-      setUsage(undefined);
+      resetUsage();
       closeNav();
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
     } catch {
       // The mutation keeps the failure state; the current thread remains selected.
     }
-  }, [closeNav, createConversation, navigate, setSurface]);
+  }, [closeNav, createConversation, navigate, resetUsage, setSurface]);
 
   const requestComposerDraft = useCallback(
     (text: string) => {
@@ -419,7 +428,9 @@ export function AppShell() {
             <ExternalStoreChat
               threadId={activeThreadId}
               onEnsureThread={ensureThread}
-              onUsage={setUsage}
+              onUsage={acceptUsage}
+              onUsageBaseline={acceptUsageBaseline}
+              allocateUsageRunId={allocateUsageRunId}
               onArtifact={handleArtifact}
               draftPrompt={composerDraftPrompt}
               onRequestDraftPrompt={requestComposerDraft}
@@ -519,7 +530,11 @@ export function AppShell() {
       )}
 
       <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
-        <RuntimeFooter usage={usage} conversationId={activeThreadId} />
+        <RuntimeFooter
+          usageState={usageState}
+          conversationId={activeThreadId}
+          {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
+        />
       </BottomDock>
 
       <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>

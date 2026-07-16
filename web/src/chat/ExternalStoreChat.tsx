@@ -38,34 +38,25 @@ import {
   replaceAssetInMessages,
   userMessage,
 } from './ExternalStoreChat_folds';
-import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './sseAdapter';
+import { fetchThreadMessages, streamPost, streamRun } from './sseAdapter';
+import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
+import { useRunUsageBaseline, type RunSessionBaselineListener } from './useRunUsageBaseline';
 import { AutoSpeak } from './voice/AutoSpeak';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
 import { useApprovalFocus } from './useApprovalFocus';
 
 const ignoreDraftPrompt = () => undefined;
-
-// ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
-// list + isRunning + per-turn usage in React state and feeds them to
-// useExternalStoreRuntime. onNew POSTs /agent/run and folds the AG-UI SSE stream
-// onto one assistant ThreadMessageLike via the sseAdapter reducer; onCancel
-// aborts the in-flight fetch (the Stop affordance, ctx-cancel on the server).
-//
-// Integration seams left for later plans (do NOT build here):
-//   • 25-04 RuntimeFooter — the latest TurnUsage is surfaced via onUsage so the
-//     footer can mount alongside without re-plumbing the stream.
-//   • 25-07 BranchPicker — onEdit/onReload + branch nav land on this same runtime
-//     once the path-aware backend (25-06) exists; capabilities gate them off now.
-// Pure message/asset-fold helpers live in ./ExternalStoreChat_folds (refactor-on-touch to
-// keep this file under the 600-LOC cap); the presentational rows live in _messages.
+const isAbortError = (error: unknown) =>
+  error instanceof DOMException && error.name === 'AbortError';
 
 export interface ExternalStoreChatProps {
   /** Conversation/thread id the run is POSTed against. */
   readonly threadId: string;
   /** Create/select a conversation before the first send when no thread is active. */
   readonly onEnsureThread?: (initialPrompt: string) => Promise<string>;
-  /** 25-04 seam: receives the latest per-turn usage off the SSE STATE_DELTA. */
-  readonly onUsage?: (usage: TurnUsage | undefined) => void;
+  readonly onUsage?: (event: RunUsageEvent) => void;
+  readonly onUsageBaseline?: RunSessionBaselineListener;
+  readonly allocateUsageRunId?: () => number;
   /**
    * 37B seam (mirrors onUsage): fires when a run emits an `aura.artifact` descriptor,
    * carrying its asset_id. AppShell invalidates ['assets', threadId] + drives the
@@ -82,6 +73,8 @@ export function ExternalStoreChat({
   threadId,
   onEnsureThread,
   onUsage,
+  onUsageBaseline,
+  allocateUsageRunId,
   onArtifact,
   draftPrompt,
   onRequestDraftPrompt = ignoreDraftPrompt,
@@ -103,6 +96,9 @@ export function ExternalStoreChat({
   const historyAbortRef = useRef<AbortController | null>(null);
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
+  const usageThreadRef = useRef<string | null>(null);
+  const usageLifecycle = useRunUsageLifecycle(onUsage, allocateUsageRunId);
+  const prepareUsageBaseline = useRunUsageBaseline(onUsageBaseline);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [composerInput, setComposerInput] = useState<HTMLTextAreaElement | null>(null);
   const approvalFocusRef = useRef<(next: Approval | undefined) => void>(() => undefined);
@@ -112,9 +108,6 @@ export function ExternalStoreChat({
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
-  // 37E reasoning-effort selector: the advertised levels (D-13, degrades to {auto,off}) and the
-  // per-conversation effort hydrated from the conversation DTO's persisted ReasoningEffort (37E-03),
-  // restored on reopen and NEVER cleared after send.
   const reasoningCaps = useReasoningCapabilities();
   const hydratedEffort = useConversation(threadId).data?.ReasoningEffort;
   const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
@@ -140,8 +133,6 @@ export function ExternalStoreChat({
         item.status === 'ready' && item.asset !== undefined ? [item.asset] : [],
       );
       const user = userMessage(text, readyAttachments);
-      // Snapshot the assistant message index after appending the user turn so the
-      // streaming folder can replace exactly that slot in place.
       let assistantIndex = -1;
       setMessages((prev) => {
         assistantIndex = prev.length + 1;
@@ -150,11 +141,17 @@ export function ExternalStoreChat({
       isRunningRef.current = true;
       setIsRunning(true);
 
+      const controller = new AbortController();
+      abortRef.current = controller;
       let runThreadId = threadId;
+      usageThreadRef.current = runThreadId;
+      const usageRunId = usageLifecycle.start();
       try {
         if (runThreadId.length === 0 && onEnsureThread !== undefined) {
           runThreadId = await onEnsureThread(text);
+          usageThreadRef.current = runThreadId;
         }
+        if (controller.signal.aborted) return;
         if (runThreadId.length === 0) {
           setMessages((prev) => {
             const next = prev.slice();
@@ -168,21 +165,17 @@ export function ExternalStoreChat({
           });
           return;
         }
-
-        const controller = new AbortController();
-        abortRef.current = controller;
+        if (!(await prepareUsageBaseline(runThreadId, usageRunId, controller.signal))) return;
         await streamRun({
           threadId: runThreadId,
           userText: text,
           attachmentIds: readyAttachmentIds,
           ...(pinnedSkill !== null ? { skill: pinnedSkill.name } : {}),
-          // The effort rides every send (buildAuraRunBody omits 'auto'); unlike the pinned skill
-          // it is a per-conversation preference and is NOT cleared after the turn.
           effort,
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
-            onUsage?.(usage);
+            usageLifecycle.update(usageRunId, usage);
             setMessages((prev) => {
               const next = prev.slice();
               if (assistantIndex >= 0 && assistantIndex < next.length) {
@@ -198,10 +191,7 @@ export function ExternalStoreChat({
         // The pinned skill applies to exactly one turn (mirrors uploads.clearReady).
         if (pinnedSkill !== null) setPinnedSkill(null);
       } catch (err) {
-        // An aborted fetch (Stop) throws AbortError; the partial assistant
-        // message already rendered is left as-is (incomplete). Other network
-        // failures surface through the reducer's error part where reachable.
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!isAbortError(err)) {
           setMessages((prev) => {
             const next = prev.slice();
             const assistant = assistantErrorMessage(t('chat.error.stream'));
@@ -214,16 +204,19 @@ export function ExternalStoreChat({
           });
         }
       } finally {
-        isRunningRef.current = false;
-        setIsRunning(false);
-        abortRef.current = null;
+        usageLifecycle.settle(usageRunId);
+        if (abortRef.current === controller) {
+          isRunningRef.current = false;
+          setIsRunning(false);
+          abortRef.current = null;
+        }
         invalidateRuntimeReads(runThreadId);
       }
     },
     [
       threadId,
       onEnsureThread,
-      onUsage,
+      usageLifecycle,
       onArtifact,
       invalidateRuntimeReads,
       t,
@@ -231,17 +224,27 @@ export function ExternalStoreChat({
       pinnedSkill,
       setPinnedSkill,
       effort,
+      prepareUsageBaseline,
     ],
   );
 
-  const onCancel = useCallback(async () => {
+  const onCancel = useCallback(() => {
     abortRef.current?.abort();
-    isRunningRef.current = false;
-    setIsRunning(false);
     return Promise.resolve();
   }, []);
 
+  useEffect(
+    () => () => {
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
+    },
+    [],
+  );
+
   useEffect(() => {
+    if (usageThreadRef.current === threadId) usageThreadRef.current = null;
+    else usageLifecycle.clear();
     historyRequestRef.current += 1;
     const request = historyRequestRef.current;
     const nextHistoryStatus = threadId.length === 0 ? 'ready' : 'loading';
@@ -257,7 +260,6 @@ export function ExternalStoreChat({
       queueMicrotask(() => {
         if (request !== historyRequestRef.current) return;
         setMessages([]);
-        onUsage?.(undefined);
       });
     };
     historyAbortRef.current?.abort();
@@ -313,7 +315,7 @@ export function ExternalStoreChat({
     return () => {
       controller.abort();
     };
-  }, [threadId, onUsage, t]);
+  }, [threadId, usageLifecycle, t]);
 
   const handleAssetRetry = useCallback((assetID: string) => {
     void retryAsset(assetID)
@@ -339,13 +341,6 @@ export function ExternalStoreChat({
       .catch(() => undefined);
   }, []);
 
-  // foldReRun streams a backend branch re-run (edit / regenerate) onto the supplied base
-  // message list, folding the AG-UI reply onto ONE freshly-id'd assistant message appended
-  // after the base. The base already reflects the forked turn (the edited user message, or
-  // the truncation before a regenerate), so the external-store runtime keeps the PRIOR
-  // version as a SIBLING branch automatically — the BranchPicker lights up without a
-  // hand-rolled state machine (RESEARCH "Don't Hand-Roll"). It does NOT re-implement the
-  // walk — the server drives LoadManagedHistoryForBranch over the forked path (Task-1).
   const foldReRun = useCallback(
     async (url: string, body: unknown, base: ThreadMessageLike[]) => {
       historyRequestRef.current += 1;
@@ -355,31 +350,37 @@ export function ExternalStoreChat({
       setIsRunning(true);
       const controller = new AbortController();
       abortRef.current = controller;
+      usageThreadRef.current = threadId;
+      const usageRunId = usageLifecycle.start();
       try {
+        if (!(await prepareUsageBaseline(threadId, usageRunId, controller.signal))) return;
         await streamPost({
           url,
           body,
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
-            onUsage?.(usage);
+            usageLifecycle.update(usageRunId, usage);
             setMessages([...base, assistant]);
           },
         });
-      } catch {
-        // Aborted (Stop) or network failure — the partial/last message is left as-is.
+      } catch (error) {
+        if (!isAbortError(error)) {
+          setMessages([...base, assistantErrorMessage(t('chat.error.stream'))]);
+        }
       } finally {
-        isRunningRef.current = false;
-        setIsRunning(false);
-        abortRef.current = null;
+        usageLifecycle.settle(usageRunId);
+        if (abortRef.current === controller) {
+          isRunningRef.current = false;
+          setIsRunning(false);
+          abortRef.current = null;
+        }
         invalidateRuntimeReads();
       }
     },
-    [onUsage, onArtifact, invalidateRuntimeReads],
+    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, threadId, prepareUsageBaseline],
   );
 
-  // Fold one final approval resume into this lane. Intermediate resolutions only
-  // refetch the queue; useThreadApprovals invokes this once the generation empties.
   const foldResumeRun = useCallback(
     async (resumeThreadId: string) => {
       historyRequestRef.current += 1;
@@ -387,20 +388,20 @@ export function ExternalStoreChat({
       historyAbortRef.current = null;
       const controller = new AbortController();
       abortRef.current = controller;
-      // The resumed turn is folded onto a fresh assistant slot appended after whatever the
-      // lane currently shows. Each streamed frame replaces that one slot (never N copies):
-      // the first onUpdate appends, the rest replace the last element while running.
+      usageThreadRef.current = resumeThreadId;
       isRunningRef.current = true;
       setIsRunning(true);
       let appended = false;
+      const usageRunId = usageLifecycle.start();
       try {
+        if (!(await prepareUsageBaseline(resumeThreadId, usageRunId, controller.signal))) return;
         await streamPost({
           url: '/agent/run',
           body: { threadId: resumeThreadId, messages: [] },
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
-            onUsage?.(usage);
+            usageLifecycle.update(usageRunId, usage);
             setMessages((prev) => {
               if (!appended) {
                 appended = true;
@@ -412,16 +413,22 @@ export function ExternalStoreChat({
             });
           },
         });
-      } catch {
-        // Aborted / network error — the partial resumed turn is left as rendered.
+      } catch (error) {
+        if (!isAbortError(error)) {
+          const message = assistantErrorMessage(t('chat.error.stream'));
+          setMessages((prev) => (appended ? [...prev.slice(0, -1), message] : [...prev, message]));
+        }
       } finally {
-        isRunningRef.current = false;
-        setIsRunning(false);
-        abortRef.current = null;
+        usageLifecycle.settle(usageRunId);
+        if (abortRef.current === controller) {
+          isRunningRef.current = false;
+          setIsRunning(false);
+          abortRef.current = null;
+        }
         invalidateRuntimeReads(resumeThreadId);
       }
     },
-    [onUsage, onArtifact, invalidateRuntimeReads],
+    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, prepareUsageBaseline],
   );
 
   const resumeRun = useCallback(async () => {

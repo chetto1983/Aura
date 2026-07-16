@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConversation } from '../conversations/useConversations';
 import { ContextBudgetGauge } from './ContextBudgetGauge';
 import {
-  addTurn,
   cacheHitPercent,
   contextPercent,
   DEFAULT_CONTEXT_WINDOW,
@@ -12,41 +12,17 @@ import {
   isNoSpendTurn,
   seedSession,
 } from './footerMetrics';
-import type { TurnUsage } from './sseAdapter';
+import type { RunUsageEvent } from './runUsage';
+import { useRunSessionUsage, type RunSessionBaselineEvent } from './runSessionUsage';
 import { Button } from '@/components/ui/button';
 
-// RuntimeFooter (CHAT-04 / D-10/D-12) is the one runtime instrument cluster
-// spanning the AppShell bottom: Tokens · Cache · Cost · Context. It reuses the
-// RuntimeHealthPanel mono-metric idiom (all numbers font-mono). Per-turn metrics
-// come off the live SSE STATE_DELTA usage (the chat lane's onUsage seam, parsed by
-// usageFromStateDelta). Session-cumulative SEEDS from the persisted conversation
-// aggregates (GET /api/conversations/{id}; D-10 reload seed) then adds the live
-// in-flight turn — no double-count, because the backend persists each finalized
-// turn into the aggregate, so the only delta not yet counted is the current turn.
-//
-// Guards at the presentation boundary: cache-% /0 → "—" (never NaN%); a missing
-// cost_usd → "—" (never $NaN). This is a runtime instrument, NOT a typed display —
-// kept entirely off the Phase-26 typed-display namespace (no payload-type routing).
-
 export interface RuntimeFooterProps {
-  /** The latest per-turn usage off the chat lane's onUsage seam (undefined idle). */
-  readonly usage: TurnUsage | undefined;
-  /** The open conversation; seeds the session aggregates + the gauge marker read. */
+  readonly usageState: RunUsageEvent;
   readonly conversationId: string;
-  /** Model context window override (defaults to the DeepSeek-V4 1M window). */
   readonly windowTokens?: number;
-  /**
-   * Whether the latest usage is the SETTLED end-of-turn figure (true) or an
-   * in-flight streaming value (false). Only settled usage feeds the aria-live
-   * region so a screen reader announces once per finished turn, never per frame
-   * (AC-6). AppShell wires usage on every onUpdate, so the default is `true`.
-   */
-  readonly turnSettled?: boolean;
+  readonly sessionBaseline?: RunSessionBaselineEvent;
 }
 
-// The settled numeric instrument strings the aria-live region announces: the
-// per-turn value AND the session figure of each instrument, latched together so
-// a streaming turn never makes the region chatty (AC-6).
 interface NumericCluster {
   readonly tokens: string;
   readonly cache: string;
@@ -57,145 +33,145 @@ interface NumericCluster {
 }
 
 export function RuntimeFooter({
-  usage,
+  usageState,
   conversationId,
   windowTokens,
-  turnSettled = true,
+  sessionBaseline,
 }: RuntimeFooterProps) {
   const { t } = useTranslation();
   const { data: conv } = useConversation(conversationId);
   const [expanded, setExpanded] = useState(false);
-
-  // Session = persisted aggregate seed + the live in-flight turn (if any).
+  const detailId = `footer-telemetry-detail-${useId()}`;
+  const turn = usageState.usage ?? null;
   const seed = seedSession(conv);
-  const session = usage ? addTurn(seed, usage) : seed;
-  const turn = usage ?? null;
-
+  const session = useRunSessionUsage(
+    conversationId,
+    seed,
+    conv !== undefined,
+    usageState,
+    sessionBaseline,
+  );
   const none = t('footer.none');
   const noSpend = isNoSpendTurn(turn ?? undefined);
   const noSpendLabel = t('footer.noSpend');
   const sessionLabel = t('footer.session');
-
-  // Per-turn cache % (/0-guarded) and cost (undefined cost_usd → em-dash).
   const turnCachePct = turn ? cacheHitPercent(turn.cacheHitTokens, turn.promptTokens) : undefined;
   const turnCost = turn ? formatCost(turn.costUsd ?? 0, turn.costUsd !== undefined) : undefined;
   const sessionCachePct = cacheHitPercent(session.cacheHitTokens, session.promptTokens);
   const sessionCost = formatCost(session.costUsd, session.hasCost);
 
+  const liveCluster = useMemo<NumericCluster>(
+    () => ({
+      tokens: noSpend
+        ? noSpendLabel
+        : turn
+          ? formatTokens(turn.promptTokens + turn.completionTokens)
+          : none,
+      cache: noSpend || turnCachePct === undefined ? none : `${String(turnCachePct)}%`,
+      cost: noSpend ? none : (turnCost ?? none),
+      sessionTokens: formatTokens(session.promptTokens + session.completionTokens),
+      sessionCache: sessionCachePct === undefined ? none : `${String(sessionCachePct)}%`,
+      sessionCost: sessionCost ?? none,
+    }),
+    [
+      noSpend,
+      noSpendLabel,
+      none,
+      session.completionTokens,
+      session.promptTokens,
+      sessionCachePct,
+      sessionCost,
+      turn,
+      turnCachePct,
+      turnCost,
+    ],
+  );
+  const settled = useSettledAnnouncement(liveCluster, usageState);
   const usedTokens = turn?.promptTokens ?? session.promptTokens;
-
-  // The live numeric cluster (visually current). It feeds the aria-live region
-  // only when the turn has SETTLED — during streaming the region holds the prior
-  // settled numbers (the gauge, outside the region, still updates live). AC-6.
-  const liveCluster: NumericCluster = {
-    tokens: noSpend
-      ? noSpendLabel
-      : turn
-        ? formatTokens(turn.promptTokens + turn.completionTokens)
-        : none,
-    cache: noSpend || turnCachePct === undefined ? none : `${String(turnCachePct)}%`,
-    cost: noSpend ? none : (turnCost ?? none),
-    sessionTokens: formatTokens(session.promptTokens + session.completionTokens),
-    sessionCache: sessionCachePct === undefined ? none : `${String(sessionCachePct)}%`,
-    sessionCost: sessionCost ?? none,
-  };
-  const announced = useSettledCluster(liveCluster, turnSettled);
-
   const window = windowTokens ?? DEFAULT_CONTEXT_WINDOW;
   const ctxPct = contextPercent(usedTokens, window);
 
   return (
     <footer aria-label={t('footer.runtimeLabel')} className="bg-surface px-3 py-2 sm:px-4">
-      {/* AC-6: the settled numeric cluster announces once per finished turn. */}
       <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
+        data-testid="footer-visible-metrics"
         className="flex flex-wrap items-center gap-x-6 gap-y-2"
       >
-        {/* AC-7 mobile compact summary + tap-to-expand disclosure (hidden ≥sm):
-            Session cost + context % are the two figures an operator scans on a
-            phone; the full trio expands below it. */}
         <Button
           type="button"
           variant="ghost"
+          aria-label={t(expanded ? 'footer.hideDetails' : 'footer.showDetails')}
           aria-expanded={expanded}
-          aria-controls="footer-telemetry-detail"
+          aria-controls={detailId}
           onClick={() => {
-            setExpanded((v) => !v);
+            setExpanded((value) => !value);
           }}
-          className="h-auto min-h-[44px] items-baseline gap-3 px-0 py-2 font-mono text-xs text-text-muted hover:bg-transparent sm:hidden"
+          className="h-auto min-h-[44px] gap-3 px-0 py-2 font-mono text-xs text-text-muted hover:bg-transparent sm:hidden"
         >
           <span className="text-text">
-            {sessionLabel} {announced.sessionCost}
+            {t('footer.cost')} {liveCluster.sessionCost}
           </span>
-          <span className="text-text-faint">{`${String(ctxPct)}%`}</span>
+          <span className="text-text-faint">
+            {t('footer.context')} {String(ctxPct)}%
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            data-testid="footer-disclosure-cue"
+            className={`size-4 transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
+          />
         </Button>
 
-        {/* Full instrument cluster: always on ≥sm; on mobile only when expanded. */}
         <div
-          id="footer-telemetry-detail"
+          id={detailId}
           className={`${expanded ? 'flex' : 'hidden'} flex-wrap items-center gap-x-6 gap-y-2 sm:flex`}
         >
           <Metric
             label={t('footer.tokens')}
-            value={announced.tokens}
-            session={announced.sessionTokens}
+            value={liveCluster.tokens}
+            session={liveCluster.sessionTokens}
             sessionLabel={sessionLabel}
           />
           <Metric
             label={t('footer.cache')}
-            value={announced.cache}
-            session={announced.sessionCache}
+            value={liveCluster.cache}
+            session={liveCluster.sessionCache}
             sessionLabel={sessionLabel}
           />
           <Metric
             label={t('footer.cost')}
-            value={announced.cost}
-            session={announced.sessionCost}
+            value={liveCluster.cost}
+            session={liveCluster.sessionCost}
             sessionLabel={sessionLabel}
+          />
+          <ContextBudgetGauge
+            usedTokens={usedTokens}
+            windowTokens={window}
+            conversationId={conversationId}
           />
         </div>
       </div>
-
-      {/* The gauge sits outside the live region: it updates the fill live every
-          frame (role=progressbar carries its own semantics) without making the
-          status region chatty. */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2">
-        <ContextBudgetGauge
-          usedTokens={usedTokens}
-          windowTokens={window}
-          conversationId={conversationId}
-        />
+      <div
+        data-testid="footer-settled-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {settled === null ? '' : t('footer.settledAnnouncement', { ...settled })}
       </div>
     </footer>
   );
 }
 
-// useSettledCluster latches the last SETTLED numeric cluster: while a turn is
-// streaming (settled === false) the announced values stay at the prior settled
-// turn so the aria-live region announces once per finished turn, not per frame.
-// It uses React's sanctioned "store info from prior renders" pattern — setState
-// DURING render (never in an effect, never a ref read at render) — so the latched
-// snapshot updates synchronously when a turn settles without cascading renders.
-function useSettledCluster(live: NumericCluster, settled: boolean): NumericCluster {
-  const [latched, setLatched] = useState<NumericCluster>(live);
-  if (settled && !clusterEquals(latched, live)) {
-    setLatched(live);
-    return live;
-  }
-  return settled ? live : latched;
-}
-
-function clusterEquals(a: NumericCluster, b: NumericCluster): boolean {
-  return (
-    a.tokens === b.tokens &&
-    a.cache === b.cache &&
-    a.cost === b.cost &&
-    a.sessionTokens === b.sessionTokens &&
-    a.sessionCache === b.sessionCache &&
-    a.sessionCost === b.sessionCost
-  );
+function useSettledAnnouncement(live: NumericCluster, event: RunUsageEvent): NumericCluster | null {
+  const [value, setValue] = useState<NumericCluster | null>(null);
+  const announcedRun = useRef<number | null>(null);
+  useEffect(() => {
+    if (event.phase !== 'settled' || announcedRun.current === event.runId) return;
+    announcedRun.current = event.runId;
+    setValue(live);
+  }, [event.phase, event.runId, live]);
+  return value;
 }
 
 interface MetricProps {
@@ -205,9 +181,6 @@ interface MetricProps {
   readonly sessionLabel: string;
 }
 
-// A single instrument: a micro caption label over the per-turn value, with the
-// session-cumulative figure beside it. All numbers are font-mono (UI-SPEC §Typography
-// — Mono carries every numeric instrument).
 function Metric({ label, value, session, sessionLabel }: MetricProps) {
   return (
     <div className="flex flex-col">
