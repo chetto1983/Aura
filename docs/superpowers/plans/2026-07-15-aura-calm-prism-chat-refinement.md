@@ -1274,7 +1274,7 @@ git commit -m "fix(web): scope telemetry to each chat run"
 - Create: `docs/superpowers/verification/2026-07-15-aura-calm-prism-chat/comparison-desktop-dark.png`
 - Create: `docs/superpowers/verification/2026-07-15-aura-calm-prism-chat/comparison-mobile-dark.png`
 
-- [ ] **Step 1: Pin Playwright to installed Chrome and stable snapshot paths**
+- [x] **Step 1: Pin Playwright to installed Chrome and stable snapshot paths**
 
 Keep the explicit Chrome projects introduced in Task 3 and add stable snapshot paths:
 
@@ -1295,7 +1295,7 @@ projects: [
 
 Update any command/document reference from `--project=chromium` to `--project=chrome`.
 
-- [ ] **Step 2: Create the browser health collector before navigation**
+- [x] **Step 2: Create the browser health collector before navigation**
 
 ```ts
 import { expect, type Page } from "@playwright/test";
@@ -1348,7 +1348,7 @@ export function collectBrowserHealth(
 
 Call `collectBrowserHealth(page, new URL(baseURL).origin)` before every `goto`. The approval-error test may pass exactly `[{ method: 'POST', pathname: '/api/approvals/error-token/resolve', status: 409 }]`; do not allowlist auth, polling, voice, artifact, asset, wildcard paths, or status ranges.
 
-- [ ] **Step 3: Build deterministic Calm Prism fixtures and geometry helpers**
+- [x] **Step 3: Build deterministic Calm Prism fixtures and geometry helpers**
 
 In `chat-calm-prism.spec.ts`, fix locale, theme, density, reduced motion, font readiness, long questions, long tool names, typed display, artifact data, and three approvals through `page.addInitScript` plus `page.route`. Use stable viewport cases:
 
@@ -1397,7 +1397,7 @@ function intersects(a: BoundingBox, b: BoundingBox) {
 
 Fixtures must expose: empty starters; reasoning plus running/done/error tools; ordinary input plus generic approval with option/free-text/terminal/error states; typed result and artifact; collapsed/expanded footer; long filenames and questions. Route responses must be 2xx except the intentional resolve-error case scoped to that test.
 
-- [ ] **Step 4: Assert nonintersection, containment, target size, and overflow**
+- [x] **Step 4: Assert nonintersection, containment, target size, and overflow**
 
 ```ts
 const controls = page.locator("[data-chat-workspace-controls]");
@@ -1433,7 +1433,7 @@ if (testInfo.project.name === "mobile-chrome") {
 
 At 320px and 768px, run dedicated reflow cases without screenshots and repeat overflow/viewport assertions. On fine-pointer Chrome, assert an action row becomes visible on hover and focus; on mobile Chrome, assert it is visible before interaction. Measure controls against the first user bubble, attachment, action row, and prose, and measure each message action row against its owning content rectangle; every pair must report `intersects(...) === false`. Record 200% Chrome zoom, forced colors, reduced motion, keyboard-only, one screen-reader pass, and touch/coarse behavior in the review document; do not claim full WCAG conformance from automation.
 
-- [ ] **Step 5: Capture current implementation goldens with `toHaveScreenshot`**
+- [x] **Step 5: Capture current implementation goldens with `toHaveScreenshot`**
 
 ```ts
 for (const visual of CASES) {
@@ -1471,7 +1471,7 @@ npx playwright test e2e/chat-calm-prism.spec.ts --project=mobile-chrome
 
 Expected: four stable screenshots are written under `web/e2e/__screenshots__/chat-calm-prism.spec.ts/`; the second pair of runs PASS without updating them.
 
-- [ ] **Step 6: Capture the same fixture from baseline commit `de700c425` and the implementation**
+- [x] **Step 6: Capture the same fixture from baseline commit `de700c425` and the implementation**
 
 Create a read-only reference worktree and start its Vite server without showing a console window:
 
@@ -1486,7 +1486,7 @@ Start the implementation Vite server on 4175 the same way. Run the screenshot-on
 
 Use Playwright to build each same-input comparison: read the reference/current PNGs as base64, `page.setContent` a two-column figure labelled Reference and Calm Prism, and capture `comparison-*.png`. Inspect both comparison images before writing the verdict.
 
-- [ ] **Step 7: Write the visual-review record with measured evidence**
+- [x] **Step 7: Write the visual-review record with measured evidence**
 
 Use this complete structure:
 
@@ -1530,7 +1530,7 @@ PASS — no unresolved crop, overlap, spacing, typography, border, radius, focus
 
 Replace that descriptive implementation-commit line with the literal output of `git rev-parse --short HEAD` before committing the review record.
 
-- [ ] **Step 8: Run the browser suite and commit Playwright evidence**
+- [x] **Step 8: Run the browser suite and commit Playwright evidence**
 
 ```powershell
 cd web
