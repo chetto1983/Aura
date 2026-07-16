@@ -309,12 +309,14 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
     async () => {
       // The approvals poll returns one pending interrupt in a background thread.
       const runCalls: string[] = [];
+      let approvalPending = true;
       vi.stubGlobal(
         'fetch',
         vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
           const url =
             typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
           if (url.includes('/api/approvals') && (init?.method ?? 'GET') === 'POST') {
+            approvalPending = false;
             return Promise.resolve(new Response(null, { status: 204 }));
           }
           if (url === '/agent/run') {
@@ -324,15 +326,19 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
           if (url.includes('/api/approvals')) {
             return Promise.resolve(
               new Response(
-                JSON.stringify([
-                  {
-                    token: 't-1',
-                    conversation_id: 'c-1',
-                    kind: 'clarification',
-                    question: 'Which city?',
-                    priority: 0,
-                  },
-                ]),
+                JSON.stringify(
+                  approvalPending
+                    ? [
+                        {
+                          token: 't-1',
+                          conversation_id: 'c-1',
+                          kind: 'clarification',
+                          question: 'Which city?',
+                          priority: 0,
+                        },
+                      ]
+                    : [],
+                ),
                 { status: 200 },
               ),
             );
@@ -389,8 +395,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
       await waitFor(() => {
         expect(screen.getAllByText('Which city?').length).toBeGreaterThan(0);
       });
-      // Answering the inline card re-drives the run (continue-after-resume): the
-      // AppShell redriveRun callback POSTs /agent/run for the resumed thread (D-05).
+      // Answering the final inline card re-drives exactly once through the chat-owned gate.
       fireEvent.change(screen.getByPlaceholderText('Type your answer'), {
         target: { value: 'Rome' },
       });

@@ -228,14 +228,20 @@ export const resources = {
           choice: 'Choice',
           approval: 'Approval',
         },
+        frame: {
+          approval: 'Approval required',
+          input: 'Input required',
+          review: 'Review the scope and consequence before continuing.',
+        },
+        lock: 'Answer the request above to continue.',
         card: {
           freeText: 'Your answer',
           freeTextPlaceholder: 'Type your answer',
           answer: 'Answer',
           decline: 'Decline',
           cancel: 'Cancel run',
-          declined: 'The agent will continue, informed you declined.',
-          answered: 'Answered — run resumed.',
+          declined: 'Declined.',
+          answered: 'Answered.',
           cancelled: 'Run cancelled.',
           confirmCancel: 'Stop this run?',
           confirmCancelYes: 'Stop run',
@@ -244,12 +250,6 @@ export const resources = {
         },
         terminal: {
           expired: 'Expired — auto-resolved.',
-        },
-        skill: {
-          riskBadge: 'RISKY skill install',
-          containerNote:
-            "Runs in Aura's container. Install scripts are permitted; isolation is the container boundary + this approval + Writer validation. Approving activates it; declining discards the staged skill.",
-          resumeToken: 'Resume token:',
         },
       },
       ...footerEn,
@@ -509,14 +509,20 @@ export const resources = {
           choice: 'Scelta',
           approval: 'Approvazione',
         },
+        frame: {
+          approval: 'Approvazione richiesta',
+          input: 'Input richiesto',
+          review: 'Controlla ambito e conseguenze prima di continuare.',
+        },
+        lock: 'Rispondi alla richiesta qui sopra per continuare.',
         card: {
           freeText: 'La tua risposta',
           freeTextPlaceholder: 'Scrivi la tua risposta',
           answer: 'Rispondi',
           decline: 'Rifiuta',
           cancel: 'Annulla esecuzione',
-          declined: "L'agente continuerà, informato del tuo rifiuto.",
-          answered: 'Risposto — esecuzione ripresa.',
+          declined: 'Rifiutata.',
+          answered: 'Risposta inviata.',
           cancelled: 'Esecuzione annullata.',
           confirmCancel: 'Fermare questa esecuzione?',
           confirmCancelYes: 'Ferma esecuzione',
@@ -526,12 +532,6 @@ export const resources = {
         },
         terminal: {
           expired: 'Scaduta — risolta automaticamente.',
-        },
-        skill: {
-          riskBadge: 'Installazione skill RISCHIOSA',
-          containerNote:
-            "Gira nel container di Aura. Gli script di installazione sono consentiti; l'isolamento è il confine del container + questa approvazione + la validazione del Writer. Approvare la attiva; rifiutare scarta la skill in coda.",
-          resumeToken: 'Token di ripresa:',
         },
       },
       ...footerIt,

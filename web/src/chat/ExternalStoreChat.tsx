@@ -14,6 +14,8 @@ import {
   CONVERSATION_ROT_EVENTS_KEY,
   useConversation,
 } from '../conversations/useConversations';
+import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
+import { useThreadApprovals } from '../approvals/useThreadApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
@@ -65,13 +67,6 @@ export interface ExternalStoreChatProps {
    * one-time Artefatti panel auto-open (D-11). Forwarded into streamRun/streamPost.
    */
   readonly onArtifact?: (assetId: string | undefined) => void;
-  /**
-   * Continue-after-resume nonce (D-05): each increment re-drives the run with a
-   * no-message POST /agent/run and FOLDS the resumed stream into the chat lane (so the
-   * resumed turn renders here, not in a discarded fetch). AppShell bumps it after an
-   * inline approval resolves. The initial value is ignored (only changes re-drive).
-   */
-  readonly resumeNonce?: number;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
   readonly onNewChat?: () => void | Promise<void>;
@@ -82,7 +77,6 @@ export function ExternalStoreChat({
   onEnsureThread,
   onUsage,
   onArtifact,
-  resumeNonce = 0,
   draftPrompt,
   onNewChat,
 }: ExternalStoreChatProps) {
@@ -94,6 +88,7 @@ export function ExternalStoreChat({
   const historyAbortRef = useRef<AbortController | null>(null);
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
@@ -352,32 +347,25 @@ export function ExternalStoreChat({
     [onUsage, onArtifact, invalidateRuntimeReads],
   );
 
-  // Continue-after-resume (D-05): when resumeNonce changes (AppShell bumps it after an
-  // inline approval resolves), re-drive the run with a no-message POST /agent/run and FOLD
-  // the resumed stream into THIS lane's message list, so the resumed turn renders in-thread
-  // (not in a discarded fetch). Initial mount only skips nonce=0; if the chat chunk loaded
-  // after an approval resolved, a non-zero nonce must still replay.
-  const lastResumeNonce = useRef(0);
-  useEffect(() => {
-    if (resumeNonce === lastResumeNonce.current) return;
-    lastResumeNonce.current = resumeNonce;
-    if (threadId.length === 0) return;
-    historyRequestRef.current += 1;
-    historyAbortRef.current?.abort();
-    historyAbortRef.current = null;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    // The resumed turn is folded onto a fresh assistant slot appended after whatever the
-    // lane currently shows. Each streamed frame replaces that one slot (never N copies):
-    // the first onUpdate appends, the rest replace the last element while running.
-    const drive = async () => {
+  // Fold one final approval resume into this lane. Intermediate resolutions only
+  // refetch the queue; useThreadApprovals invokes this once the generation empties.
+  const foldResumeRun = useCallback(
+    async (resumeThreadId: string) => {
+      historyRequestRef.current += 1;
+      historyAbortRef.current?.abort();
+      historyAbortRef.current = null;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      // The resumed turn is folded onto a fresh assistant slot appended after whatever the
+      // lane currently shows. Each streamed frame replaces that one slot (never N copies):
+      // the first onUpdate appends, the rest replace the last element while running.
       isRunningRef.current = true;
       setIsRunning(true);
       let appended = false;
       try {
         await streamPost({
           url: '/agent/run',
-          body: { threadId, messages: [] },
+          body: { threadId: resumeThreadId, messages: [] },
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
@@ -399,11 +387,32 @@ export function ExternalStoreChat({
         isRunningRef.current = false;
         setIsRunning(false);
         abortRef.current = null;
-        invalidateRuntimeReads();
+        invalidateRuntimeReads(resumeThreadId);
       }
-    };
-    void drive();
-  }, [resumeNonce, threadId, onUsage, onArtifact, invalidateRuntimeReads]);
+    },
+    [onUsage, onArtifact, invalidateRuntimeReads],
+  );
+
+  const resumeRun = useCallback(async () => {
+    if (threadId.length === 0) return;
+    await foldResumeRun(threadId);
+  }, [foldResumeRun, threadId]);
+
+  const threadApprovals = useThreadApprovals(threadId, resumeRun, (next) => {
+    requestAnimationFrame(() => {
+      if (next === undefined) {
+        composerInputRef.current?.focus();
+        return;
+      }
+      const target =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? document.querySelector<HTMLElement>(`[data-approval-token="${CSS.escape(next.token)}"]`)
+          : Array.from(document.querySelectorAll<HTMLElement>('[data-approval-token]')).find(
+              (element) => element.dataset.approvalToken === next.token,
+            );
+      target?.focus();
+    });
+  });
 
   // backendSeqAt maps a visible message to the backend turn seq it diverges from. Rehydrated
   // snapshots carry metadata.custom.backendSeq from the GET /threads/{id}/messages ids
@@ -519,7 +528,14 @@ export function ExternalStoreChat({
             </p>
           ) : null}
 
+          <ThreadApprovalCards
+            approvals={threadApprovals.approvals}
+            isStreaming={isRunning}
+            onResolved={threadApprovals.onResolved}
+          />
           <Composer
+            inputRef={composerInputRef}
+            approvalLocked={threadApprovals.isPending}
             uploads={uploads}
             draftPrompt={draftPrompt}
             skills={skills}

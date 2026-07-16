@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useDefaultLayout } from 'react-resizable-panels';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ThreadApprovalCards } from './approvals/ThreadApprovalCards';
 import { RuntimeFooter } from './chat/RuntimeFooter';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
 import { SearchPanel } from './conversations/SearchPanel';
@@ -126,13 +125,6 @@ export function AppShell() {
     }
   }, [capabilitiesLoading, isAdmin, surface, setSurface]);
   const showConversationNavigation = surface === 'chat';
-  // Focused workspaces own their panes (canvas/inspector, master/detail, dense lists).
-  // Runtime readiness stays in the header; chat approval cards remain chat-only.
-  const isFocusedWorkspace =
-    surface === 'graph' ||
-    surface === 'governance' ||
-    surface === 'documents' ||
-    surface === 'settings';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
@@ -143,7 +135,6 @@ export function AppShell() {
   // are permanent columns, so these only gate the portaled drawers.
   const surfaces = useSurfaceRestore();
   const closeNav = surfaces.closeNav;
-  const [resumeNonce, setResumeNonce] = useState(0);
   const [documentDraftPrompt, setDocumentDraftPrompt] = useState<ComposerDraftPrompt | undefined>(
     undefined,
   );
@@ -222,11 +213,6 @@ export function AppShell() {
     setUsage(undefined);
     surfaces.closeNav();
     void navigate(`/c/${encodeURIComponent(id)}`);
-  }
-
-  function redriveRun(conversationId: string) {
-    if (conversationId.length === 0) return;
-    setResumeNonce((n) => n + 1);
   }
 
   const ensureThread = useCallback(
@@ -428,16 +414,12 @@ export function AppShell() {
               onEnsureThread={ensureThread}
               onUsage={setUsage}
               onArtifact={handleArtifact}
-              resumeNonce={resumeNonce}
               draftPrompt={documentDraftPrompt}
               onNewChat={startNewConversation}
             />
           )}
         </Suspense>
       </div>
-      {!isFocusedWorkspace ? (
-        <ThreadApprovalCards conversationId={activeThreadId} onResolved={redriveRun} />
-      ) : null}
     </section>
   );
 

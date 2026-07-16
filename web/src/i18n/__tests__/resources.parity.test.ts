@@ -4,7 +4,7 @@ import { resources } from '../resources';
 // i18n parity gate — every key present in the `en` bundle MUST be present in `it` (and vice
 // versa). A missing key in either locale is a defect (the resources.governance.ts discipline,
 // extended to the whole bundle). This is the Phase-29 key-diff acceptance: zero missing keys
-// in either locale across the governance write copy + the approval skill-install copy.
+// in either locale across the governance write copy + the generic approval contract.
 
 function flatten(obj: unknown, prefix = ''): string[] {
   if (obj === null || typeof obj !== 'object') return [prefix];
@@ -28,7 +28,7 @@ describe('i18n bundle parity (en ↔ it)', () => {
     expect(missing).toEqual([]);
   });
 
-  it('includes the Phase-29 governance write + skill-approval keys in BOTH locales', () => {
+  it('includes the governance write + truthful generic-approval keys in BOTH locales', () => {
     const required = [
       'governance.mcp.install.submit',
       'governance.mcp.env.softWarning.heading',
@@ -36,9 +36,10 @@ describe('i18n bundle parity (en ↔ it)', () => {
       'governance.skills.install.riskBanner',
       'governance.skills.install.submit',
       'governance.skills.collidingRestore',
-      'approval.skill.riskBadge',
-      'approval.skill.containerNote',
-      'approval.skill.resumeToken',
+      'approval.frame.approval',
+      'approval.frame.input',
+      'approval.frame.review',
+      'approval.lock',
     ];
     for (const key of required) {
       expect(enKeys.has(key)).toBe(true);

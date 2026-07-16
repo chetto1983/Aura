@@ -1,45 +1,62 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { InlineApprovalCard } from './InlineApprovalCard';
-import { useApprovals } from './useApprovals';
+import type { Approval } from './useApprovals';
+import type { ApprovalResolution } from './useThreadApprovals';
 
-// ThreadApprovalCards (D-03) renders the inline approval card(s) for the ACTIVE
-// thread inside the chat lane region. It filters the cross-thread pending poll
-// (useApprovals) down to the open conversation, so an ask_user interrupt that fired
-// in THIS thread surfaces as an in-thread card answered in place. Interrupts in
-// OTHER threads stay in the cross-thread badge/list until the operator jumps there
-// (the badge keeps them visible — D-04).
-//
-// On a successful accept/decline the run is re-driven (continue-after-resume) via
-// onResolved so the stream continues over the rehydrated history.
+interface Announcement {
+  readonly id: number;
+  readonly text: string;
+}
 
 export interface ThreadApprovalCardsProps {
-  /** The open conversation id; only its pending interrupts render here. */
-  readonly conversationId: string;
-  /** True while this thread's run is streaming — gates the Cancel-run confirm. */
+  /** Already-filtered active-thread rows in deterministic backend order. */
+  readonly approvals: readonly Approval[];
   readonly isStreaming?: boolean;
-  /** Re-drive the run after a successful accept/decline. */
-  readonly onResolved?: (conversationId: string) => void;
+  readonly onResolved?: (resolution: ApprovalResolution) => void | Promise<void>;
 }
 
 export function ThreadApprovalCards({
-  conversationId,
+  approvals,
   isStreaming,
   onResolved,
 }: ThreadApprovalCardsProps) {
-  const { data } = useApprovals();
-  if (conversationId.length === 0) return null;
-  const forThread = (data ?? []).filter((a) => a.conversation_id === conversationId);
-  if (forThread.length === 0) return null;
+  const { t } = useTranslation();
+  const [announcement, setAnnouncement] = useState<Announcement>({ id: 0, text: '' });
+
+  function handleResolved(resolution: ApprovalResolution) {
+    const key =
+      resolution.action === 'accept'
+        ? 'approval.card.answered'
+        : resolution.action === 'decline'
+          ? 'approval.card.declined'
+          : 'approval.card.cancelled';
+    setAnnouncement((current) => ({ id: current.id + 1, text: t(key) }));
+    void onResolved?.(resolution);
+  }
 
   return (
-    <div className="flex flex-col gap-2 px-3 pb-2 sm:px-4">
-      {forThread.map((approval) => (
+    <div
+      data-testid="thread-approvals"
+      className={approvals.length > 0 ? 'flex flex-col gap-2 px-3 pb-2 sm:px-4' : undefined}
+    >
+      {approvals.map((approval) => (
         <InlineApprovalCard
           key={approval.token}
           approval={approval}
           {...(isStreaming !== undefined ? { isStreaming } : {})}
-          {...(onResolved !== undefined ? { onResolved } : {})}
+          onResolved={handleResolved}
         />
       ))}
+      <p
+        key={announcement.id}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {announcement.text}
+      </p>
     </div>
   );
 }
