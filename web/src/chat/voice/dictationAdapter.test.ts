@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { DictationAdapter } from '@assistant-ui/react';
 import { createDictationAdapter } from './dictationAdapter';
-import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from './voiceMocks';
+import {
+  FakeMediaRecorder,
+  stubGetUserMedia,
+  stubMediaRecorder,
+  type GetUserMediaStub,
+} from './voiceMocks';
 
 // Drain the adapter's async pipeline (getUserMedia → MediaRecorder, or onstop → POST).
 async function tick(): Promise<void> {
@@ -190,6 +195,62 @@ describe('createDictationAdapter', () => {
     await tick();
     expect(trackStop).toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stop before deferred mic permission resolves cancels the late stream without recording', async () => {
+    const trackStop = vi.fn();
+    const stream = { getTracks: () => [{ stop: trackStop }] } as unknown as MediaStream;
+    let resolveGum: (value: MediaStream) => void = () => undefined;
+    const getUserMedia = vi.fn<(constraints?: MediaStreamConstraints) => Promise<MediaStream>>(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          resolveGum = resolve;
+        }),
+    );
+    stubCustomMedia(getUserMedia, trackStop);
+    const fetchMock = mockSttFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createDictationAdapter();
+
+    const session = adapter.listen();
+    let stopSettled = false;
+    const stop = session.stop().then(() => {
+      stopSettled = true;
+    });
+    await tick();
+    resolveGum(stream);
+    await tick();
+
+    expect(stopSettled).toBe(true);
+    await stop;
+    expect(trackStop).toHaveBeenCalledTimes(1);
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(session.status).toEqual({ type: 'ended', reason: 'cancelled' });
+  });
+
+  it('stop is idempotent while transcribing and never stops an inactive recorder twice', async () => {
+    const fetchMock = mockSttFetch({ text: 'once' });
+    const adapter = setup(fetchMock);
+    const session = adapter.listen();
+    await tick();
+    const recorder = FakeMediaRecorder.instances[0];
+    if (recorder === undefined) throw new Error('expected active recorder');
+    const realStop = recorder.stop.bind(recorder);
+    const strictStop = vi.fn(() => {
+      if (recorder.state === 'inactive') throw new DOMException('inactive', 'InvalidStateError');
+      realStop();
+    });
+    recorder.stop = strictStop;
+
+    const first = session.stop();
+    const second = session.stop();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    await expect(session.stop()).resolves.toBeUndefined();
+
+    expect(strictStop).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(session.status).toEqual({ type: 'ended', reason: 'stopped' });
   });
 
   it('a fetch that throws (network error) ends the session error with no onSpeech', async () => {

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { InlineApprovalCard } from '../InlineApprovalCard';
+import type { ApprovalResolution } from '../useThreadApprovals';
 import type { Approval } from '../useApprovals';
 
 function approval(over: Partial<Approval> & Pick<Approval, 'token' | 'conversation_id'>): Approval {
@@ -45,7 +46,9 @@ function client() {
 function renderCard(props: {
   approval: Approval;
   isStreaming?: boolean;
-  onResolved?: (id: string) => void;
+  onResolved?: (resolution: unknown) => void;
+  onResolutionStarted?: (resolution: unknown) => void;
+  onResolutionFailed?: (resolution: unknown) => void;
 }) {
   const qc = client();
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -56,6 +59,12 @@ function renderCard(props: {
       approval={props.approval}
       {...(props.isStreaming !== undefined ? { isStreaming: props.isStreaming } : {})}
       {...(props.onResolved !== undefined ? { onResolved: props.onResolved } : {})}
+      {...(props.onResolutionStarted !== undefined
+        ? { onResolutionStarted: props.onResolutionStarted }
+        : {})}
+      {...(props.onResolutionFailed !== undefined
+        ? { onResolutionFailed: props.onResolutionFailed }
+        : {})}
     />,
     { wrapper: Wrapper },
   );
@@ -113,13 +122,18 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Milan' }));
     await waitFor(() => {
-      expect(screen.getByText('Answered — run resumed.')).toBeTruthy();
+      expect(screen.getByText('Answered.')).toBeTruthy();
     });
+    expect(screen.getByText('Answered.').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
+      'success',
+    );
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toContain('/api/approvals/t-1/resolve');
     expect(calls[0]?.body).toEqual({ action: 'accept', content: 'Milan' });
-    // accept keeps the run alive → re-driven.
-    expect(onResolved).toHaveBeenCalledWith('c-1');
+    const resolution = onResolved.mock.calls[0]?.[0] as ApprovalResolution | undefined;
+    expect(resolution?.approval.token).toBe('t-1');
+    expect(resolution?.approval.conversation_id).toBe('c-1');
+    expect(resolution?.action).toBe('accept');
   });
 
   it('Answer (free-text) resolves accept with the typed content', async () => {
@@ -143,7 +157,7 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
     await waitFor(() => {
-      expect(screen.getByText('The agent will continue, informed you declined.')).toBeTruthy();
+      expect(screen.getByText('Declined.')).toBeTruthy();
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.body.action).toBe('decline');
@@ -160,7 +174,78 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     await waitFor(() => {
       expect(screen.getByText('Run cancelled.')).toBeTruthy();
     });
+    expect(
+      screen.getByText('Run cancelled.').closest('[data-tone]')?.getAttribute('data-tone'),
+    ).toBe('danger');
     expect(calls[0]?.body).toEqual({ action: 'cancel' });
+  });
+
+  it('carries the exact started attempt identity through successful resolution', async () => {
+    const onResolutionStarted = vi.fn();
+    const onResolved = vi.fn();
+    renderCard({
+      approval: approval({ token: 't-owned', conversation_id: 'c-1' }),
+      onResolutionStarted,
+      onResolved,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    await waitFor(() => {
+      expect(onResolved).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onResolutionStarted).toHaveBeenCalledTimes(1);
+    expect(onResolved.mock.calls[0]?.[0]).toEqual(onResolutionStarted.mock.calls[0]?.[0]);
+  });
+
+  it('signals Cancel intent synchronously before starting the resolve request', async () => {
+    const order: string[] = [];
+    const fetchStub = stubResolve(calls);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        order.push('post');
+        return fetchStub(input, init);
+      }),
+    );
+    renderCard({
+      approval: approval({ token: 't-1', conversation_id: 'c-1' }),
+      isStreaming: false,
+      onResolutionStarted: () => {
+        order.push('start');
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    await waitFor(() => {
+      expect(order).toContain('post');
+    });
+    expect(order.slice(0, 2)).toEqual(['start', 'post']);
+  });
+
+  it('signals the matching Cancel attempt when its resolve request fails', async () => {
+    vi.stubGlobal('fetch', stubResolve(calls, true));
+    const onResolutionFailed = vi.fn();
+    const onResolved = vi.fn();
+    renderCard({
+      approval: approval({ token: 't-1', conversation_id: 'c-1' }),
+      isStreaming: false,
+      onResolved,
+      onResolutionFailed,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    await waitFor(() => {
+      expect(onResolutionFailed).toHaveBeenCalledTimes(1);
+    });
+    const failed = onResolutionFailed.mock.calls[0]?.[0] as
+      | { action: string; attemptId: string }
+      | undefined;
+    expect(failed?.action).toBe('cancel');
+    expect(failed?.attemptId.length).toBeGreaterThan(0);
+    expect(onResolved).not.toHaveBeenCalled();
   });
 
   it('Cancel run while STREAMING shows an inline "Stop this run?" confirm (not a modal)', async () => {
@@ -178,6 +263,27 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(calls[0]?.body).toEqual({ action: 'cancel' });
   });
 
+  it('moves focus to Keep running, restores Cancel run on Escape, and gives confirmation controls a 44px floor', async () => {
+    renderCard({ approval: approval({ token: 't-1', conversation_id: 'c-1' }), isStreaming: true });
+    const cancel = screen.getByRole('button', { name: 'Cancel run' });
+    fireEvent.click(cancel);
+
+    const keepRunning = screen.getByRole('button', { name: 'Keep running' });
+    const stopRun = screen.getByRole('button', { name: 'Stop run' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(keepRunning);
+    });
+    expect(keepRunning.className).toContain('min-h-11');
+    expect(stopRun.className).toContain('min-h-11');
+
+    fireEvent.keyDown(keepRunning, { key: 'Escape' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel run' }));
+    });
+    expect(screen.queryByText('Stop this run?')).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
   it('D-06: an expired/auto-terminated interrupt renders its terminal state inline, verbs gone (never silent)', () => {
     renderCard({
       approval: approval({ token: 't-1', conversation_id: 'c-1', terminal: true }),
@@ -189,53 +295,78 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(screen.queryByRole('button', { name: 'Cancel run' })).toBeNull();
   });
 
-  it('a failed resolve renders the error in a role="alert"', async () => {
+  it('a failed resolve renders the error in a persistent status region', async () => {
     vi.stubGlobal('fetch', stubResolve(calls, true));
     renderCard({ approval: approval({ token: 't-1', conversation_id: 'c-1' }) });
     fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
     await waitFor(() => {
-      const alert = screen.getByRole('alert');
-      expect(alert.textContent).toContain("Couldn't resume this run.");
+      const status = screen.getByRole('status');
+      expect(status.textContent).toContain("Couldn't resume this run.");
+      expect(status.getAttribute('data-tone')).toBe('danger');
     });
   });
 
-  describe('Phase-29 RISKY skill-install approval (SKW-02 / D-11)', () => {
-    const SKILL_QUESTION =
-      'Approve RISKY skill install "fancy-skill" from "owner/fancy-skill"? (RISKY supply-chain input — container-isolated, approval-gated, Writer-validated)';
-
-    function skillApproval(over: Partial<Approval> = {}): Approval {
-      return approval({
-        token: 'sk-tok-1',
-        conversation_id: 'gov-conv',
-        kind: 'approval',
-        question: SKILL_QUESTION,
-        ...over,
-      });
-    }
-
-    it('renders the RISKY supply-chain strip (badge + container note + resume token) above the verbs', () => {
-      renderCard({ approval: skillApproval() });
-      expect(screen.getByText('RISKY skill install')).toBeTruthy();
-      expect(screen.getByText(/Runs in Aura's container/)).toBeTruthy();
-      // The resume token renders (mono) so the operator can correlate it to the staged skill.
-      expect(screen.getByText('sk-tok-1')).toBeTruthy();
-      // The verbatim question (source embedded) is rendered, React-escaped.
-      expect(screen.getByText(SKILL_QUESTION)).toBeTruthy();
+  it('uses truthful generic approval framing, preserves whitespace, and keeps the token out of visible text', async () => {
+    const risky = approval({
+      token: 'resume-secret-123',
+      conversation_id: 'c-1',
+      kind: 'approval',
+      question: 'Run command:\n  rm -rf /tmp/example\nReview scope first.',
     });
+    renderCard({ approval: risky });
 
-    it('carries NO run/activate affordance — activation is the approval resume only', () => {
-      renderCard({ approval: skillApproval() });
-      expect(screen.queryByRole('button', { name: /^(run|activate|install)\b/i })).toBeNull();
-      // The existing approve-by-answer verb IS present (the resume bridge), but never a "run".
-      expect(screen.getByRole('button', { name: 'Answer' })).toBeTruthy();
-    });
+    expect(screen.getByText('Approval required')).toBeTruthy();
+    expect(screen.getByText('Review the scope and consequence before continuing.')).toBeTruthy();
+    expect(screen.queryByText(/container|install|activate/i)).toBeNull();
+    expect(screen.queryByText('resume-secret-123')).toBeNull();
+    expect(
+      screen.getByText((_, element) => element?.textContent === risky.question).className,
+    ).toMatch(/whitespace-pre-wrap/);
 
-    it('an expired/consumed skill approval renders the warning TerminalChip, verbs gone', () => {
-      renderCard({ approval: skillApproval({ terminal: true }) });
-      expect(screen.getByText('Expired — auto-resolved.')).toBeTruthy();
-      // The RISKY strip still frames the terminal card (never a silent disappearance).
-      expect(screen.getByText('RISKY skill install')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    await waitFor(() => {
+      expect(calls).toHaveLength(1);
     });
+    expect(calls[0]?.url).toContain('/resume-secret-123/resolve');
+    expect(calls[0]?.body).toEqual({ action: 'decline' });
+    expect(
+      screen
+        .getByText(/declined/i)
+        .closest('[data-tone]')
+        ?.getAttribute('data-tone'),
+    ).toBe('neutral');
+    expect(screen.queryByText('resume-secret-123')).toBeNull();
+  });
+
+  it('keeps token sentinels hidden in pending, terminal, and failure states', async () => {
+    const pending = approval({ token: 'pending-secret-1', conversation_id: 'c-1' });
+    const pendingView = renderCard({ approval: pending });
+    expect(screen.queryByText('pending-secret-1')).toBeNull();
+    pendingView.unmount();
+
+    const terminal = approval({
+      token: 'terminal-secret-2',
+      conversation_id: 'c-1',
+      terminal: true,
+    });
+    const terminalView = renderCard({ approval: terminal });
+    expect(screen.queryByText('terminal-secret-2')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Expired');
+    expect(
+      screen
+        .getByText(/expired/i)
+        .closest('[data-tone]')
+        ?.getAttribute('data-tone'),
+    ).toBe('warning');
+    terminalView.unmount();
+
+    vi.stubGlobal('fetch', stubResolve(calls, true));
+    const failed = approval({ token: 'failure secret/3', conversation_id: 'c-1' });
+    renderCard({ approval: failed });
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+    await screen.findByRole('status');
+    expect(screen.queryByText('failure secret/3')).toBeNull();
+    expect(calls.at(-1)?.url).toContain('/failure%20secret%2F3/resolve');
+    expect(calls.at(-1)?.body).toEqual({ action: 'accept', content: '' });
   });
 });

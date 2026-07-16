@@ -129,6 +129,110 @@ describe('Composer attachments', () => {
   });
 });
 
+describe('Composer approval lock', () => {
+  it('exposes a stable localized lock relationship and natively disables every primary action', () => {
+    h.auiState.composer.text = '/';
+    const addFiles = vi.fn();
+    const onEffortChange = vi.fn();
+    const { container, rerender } = render(
+      <Composer
+        approvalLocked
+        uploads={uploads({ addFiles })}
+        skills={SKILLS}
+        effort="auto"
+        effortLevels={['auto', 'off']}
+        onEffortChange={onEffortChange}
+      />,
+    );
+
+    const root = screen.getByTestId('chat-composer');
+    const hintId = root.getAttribute('aria-describedby');
+    expect(root.getAttribute('aria-disabled')).toBe('true');
+    expect(hintId).not.toBeNull();
+    expect(document.getElementById(hintId ?? '')?.textContent).toBe(
+      'Answer the request above to continue.',
+    );
+    expect(screen.getByPlaceholderText('Ask Aura')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Add files' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Record audio' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Send message' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('combobox', { name: 'Reasoning effort' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    const fileInput = container.querySelector('input[type="file"]');
+    if (!(fileInput instanceof HTMLInputElement)) throw new Error('expected hidden file input');
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['x'], 'blocked.txt', { type: 'text/plain' })] },
+    });
+    fireEvent.paste(root, {
+      clipboardData: { files: [new File(['x'], 'blocked-paste.txt', { type: 'text/plain' })] },
+    });
+    expect(addFiles).not.toHaveBeenCalled();
+
+    rerender(
+      <Composer
+        approvalLocked
+        uploads={uploads({ addFiles })}
+        skills={SKILLS}
+        effort="auto"
+        effortLevels={['auto', 'off']}
+        onEffortChange={onEffortChange}
+      />,
+    );
+    expect(screen.getByTestId('chat-composer').getAttribute('aria-describedby')).toBe(hintId);
+  });
+
+  it('disables the running Cancel action while approval-locked', () => {
+    h.auiState.thread = { isRunning: true };
+    render(<Composer approvalLocked uploads={uploads()} />);
+
+    expect(screen.getByRole('button', { name: 'Stop the current response' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+
+  it('literally disables pinned-skill and attachment removal actions', () => {
+    const onPinSkill = vi.fn();
+    const remove = vi.fn();
+    const lockedUploads = uploads({
+      items: [
+        {
+          localId: 'locked-file',
+          file: new File(['x'], 'locked.txt', { type: 'text/plain' }),
+          progress: 1,
+          status: 'ready',
+        },
+      ],
+      remove,
+    });
+    render(
+      <Composer
+        approvalLocked
+        uploads={lockedUploads}
+        pinnedSkill={SKILL_CREATOR}
+        onPinSkill={onPinSkill}
+      />,
+    );
+
+    const removeSkill = screen.getByRole('button', {
+      name: 'Remove pinned skill skill-creator',
+    });
+    const removeAttachment = screen.getByRole('button', { name: 'Remove locked.txt' });
+    expect(removeSkill).toHaveProperty('disabled', true);
+    expect(removeAttachment).toHaveProperty('disabled', true);
+
+    fireEvent.click(removeSkill);
+    fireEvent.click(removeAttachment);
+
+    expect(onPinSkill).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+});
+
 describe('Composer dictation', () => {
   it('caps.stt=false → the Mic records an audio attachment (no regression, WEBVOICE-04)', async () => {
     stubMediaRecorder();

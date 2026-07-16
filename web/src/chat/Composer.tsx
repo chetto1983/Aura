@@ -3,6 +3,7 @@ import { ArrowUp, ChevronDown, Mic, Paperclip, Square } from 'lucide-react';
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type RefObject,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
@@ -46,6 +48,9 @@ import { Button } from '@/components/ui/button';
 const EMPTY_SKILLS: readonly ComposerSkillRow[] = [];
 
 interface ComposerProps {
+  readonly inputRef?: RefObject<HTMLTextAreaElement | null>;
+  readonly onInputAvailable?: (input: HTMLTextAreaElement | null) => void;
+  readonly approvalLocked?: boolean;
   readonly uploads?: AttachmentUploads;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly skills?: readonly ComposerSkillRow[];
@@ -68,6 +73,9 @@ export interface ComposerDraftPrompt {
 type DictationPhase = 'idle' | 'listening' | 'transcribing' | 'error';
 
 export function Composer({
+  inputRef,
+  onInputAvailable,
+  approvalLocked = false,
   uploads,
   draftPrompt,
   skills,
@@ -84,17 +92,75 @@ export function Composer({
   const dictation = useAuiState((s) => s.composer.dictation);
   const { caps, markTurnDictated } = useVoiceMode();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fallbackComposerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerInputRef = inputRef ?? fallbackComposerInputRef;
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recordingRequestRef = useRef(false);
+  const captureEpochRef = useRef(0);
+  const approvalLockedRef = useRef(approvalLocked);
+  const previousApprovalLockedRef = useRef(approvalLocked);
   const appliedDraftNonce = useRef<number | undefined>(undefined);
-  const [isRecording, setIsRecording] = useState(false);
+  const [captureGeneration, setCaptureGeneration] = useState({
+    approvalLocked,
+    epoch: 0,
+  });
+  if (captureGeneration.approvalLocked !== approvalLocked) {
+    setCaptureGeneration({
+      approvalLocked,
+      epoch: captureGeneration.epoch + (approvalLocked ? 1 : 0),
+    });
+  }
+  const captureEpoch = captureGeneration.epoch;
+  const [recordingEpoch, setRecordingEpoch] = useState<number | null>(null);
+  const [dictationCaptureEpoch, setDictationCaptureEpoch] = useState(0);
   const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
   const dictationStartLen = useRef(0);
   const wasDictating = useRef(false);
+  const suppressedDictationRef = useRef<{ readonly draft: string; sawActive: boolean } | undefined>(
+    undefined,
+  );
   const isDictating = dictation != null;
-  const sendDisabled = uploads?.hasBlockingUploads === true;
+  const isRecording = recordingEpoch === captureEpoch;
+  const activeDictationPhase = dictationCaptureEpoch === captureEpoch ? dictationPhase : 'idle';
+  const sendDisabled = approvalLocked || uploads?.hasBlockingUploads === true;
+
+  useLayoutEffect(() => {
+    onInputAvailable?.(composerInputRef.current);
+    return () => {
+      onInputAvailable?.(null);
+    };
+  }, [composerInputRef, onInputAvailable]);
+
+  useLayoutEffect(() => {
+    captureEpochRef.current = captureEpoch;
+    approvalLockedRef.current = approvalLocked;
+    const becameLocked = approvalLocked && !previousApprovalLockedRef.current;
+    previousApprovalLockedRef.current = approvalLocked;
+    if (!becameLocked) return;
+
+    const recorder = recorderRef.current;
+    if (recorder !== null) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      if (recorder.state !== 'inactive') recorder.stop();
+    }
+    for (const track of recordingStreamRef.current?.getTracks() ?? []) track.stop();
+    chunksRef.current = [];
+    recordingStreamRef.current = null;
+    recorderRef.current = null;
+
+    const dictationBusy =
+      dictationPhase === 'listening' || dictationPhase === 'transcribing' || isDictating;
+    if (dictationBusy) {
+      suppressedDictationRef.current = {
+        draft: aui.composer().getState().text,
+        sawActive: isDictating || wasDictating.current,
+      };
+      aui.composer().stopDictation();
+    }
+  }, [approvalLocked, aui, captureEpoch, dictationPhase, isDictating]);
 
   // Skill / command picker (WEBSKILL-01/03): the '/'-triggered ARIA combobox. The composer
   // text is read reactively and every decision (trigger, filter, wrap-around active index,
@@ -102,6 +168,7 @@ export function Composer({
   const composerText = useAuiState((s) => s.composer.text);
   const skillList = skills ?? EMPTY_SKILLS;
   const listboxBaseId = useId();
+  const approvalHintId = useId();
   const listboxId = `${listboxBaseId}-skills`;
   const pickerFilter = composerText.startsWith('/') ? composerText.slice(1) : '';
   const pickerGroups = useMemo(
@@ -121,6 +188,7 @@ export function Composer({
     setActiveIndex(0);
   }
   const menuOpen =
+    !approvalLocked &&
     shouldOpen(composerText, skillList.length) &&
     dismissedAt !== composerText &&
     pickerOptions.length > 0;
@@ -134,6 +202,7 @@ export function Composer({
   };
 
   const handlePickItem = (item: PickerItem) => {
+    if (approvalLocked) return;
     if (item.kind === 'skill') {
       onPinSkill?.({ name: item.name, description: item.description, type: item.type });
     } else if (item.command === 'add-files') {
@@ -150,6 +219,7 @@ export function Composer({
   };
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (approvalLocked) return;
     // D-09: never intercept a key while the menu is closed — Enter-send / paste / drop stay
     // intact. Only the four navigation keys are consumed, and only while the menu is open.
     if (!menuOpen) return;
@@ -173,13 +243,27 @@ export function Composer({
     appliedDraftNonce.current = draftPrompt.nonce;
     aui.composer().setText(draftPrompt.text);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [aui, draftPrompt]);
+  }, [aui, composerInputRef, draftPrompt]);
 
   // Detect a dictation session ending. If the transcript was inserted (the composer text
   // grew via onSpeech), mark the turn dictated for auto-speak parity (D-07). If nothing was
   // inserted (an empty transcript or an /api/stt error), surface chat.dictation.error and
   // leave the mic usable (D-10). The insert lands before the session tears down (Landmine #1).
   useEffect(() => {
+    const suppressed = suppressedDictationRef.current;
+    if (suppressed !== undefined) {
+      if (isDictating) {
+        suppressed.sawActive = true;
+        return;
+      }
+      const composer = aui.composer();
+      if (composer.getState().text !== suppressed.draft) composer.setText(suppressed.draft);
+      if (suppressed.sawActive || !approvalLocked) {
+        suppressedDictationRef.current = undefined;
+        wasDictating.current = false;
+      }
+      return;
+    }
     if (isDictating) {
       wasDictating.current = true;
       return;
@@ -193,29 +277,34 @@ export function Composer({
     } else {
       setDictationPhase((phase) => (phase === 'idle' ? 'idle' : 'error'));
     }
-  }, [isDictating, aui, markTurnDictated]);
+  }, [approvalLocked, isDictating, aui, markTurnDictated]);
 
   const addFiles = (files: FileList | File[]) => {
+    if (approvalLocked) return;
     if (files.length > 0) uploads?.addFiles(files);
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (approvalLocked) return;
     if (event.currentTarget.files !== null) addFiles(event.currentTarget.files);
     event.currentTarget.value = '';
   };
 
   const handlePaste = (event: ClipboardEvent) => {
+    if (approvalLocked) return;
     if (event.clipboardData.files.length === 0) return;
     addFiles(event.clipboardData.files);
   };
 
   const handleDrop = (event: DragEvent) => {
+    if (approvalLocked) return;
     if (event.dataTransfer.files.length === 0) return;
     event.preventDefault();
     addFiles(event.dataTransfer.files);
   };
 
   const handleDragOver = (event: DragEvent) => {
+    if (approvalLocked) return;
     if (event.dataTransfer.types.includes('Files')) event.preventDefault();
   };
 
@@ -224,42 +313,63 @@ export function Composer({
   };
 
   const startRecording = async () => {
-    if (uploads === undefined || isRecording) return;
+    if (approvalLocked || uploads === undefined || isRecording || recordingRequestRef.current) {
+      return;
+    }
     const mediaDevices = (navigator as Partial<Pick<Navigator, 'mediaDevices'>>).mediaDevices;
     if (mediaDevices === undefined) return;
     if (typeof MediaRecorder === 'undefined') return;
+    const captureEpoch = captureEpochRef.current;
+    recordingRequestRef.current = true;
     let stream: MediaStream | null = null;
     try {
       stream = await mediaDevices.getUserMedia({ audio: true });
+      recordingRequestRef.current = false;
+      if (approvalLockedRef.current || captureEpochRef.current !== captureEpoch) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
       recordingStreamRef.current = stream;
       chunksRef.current = [];
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+        if (
+          event.data.size > 0 &&
+          !approvalLockedRef.current &&
+          captureEpochRef.current === captureEpoch
+        ) {
+          chunksRef.current.push(event.data);
+        }
       };
       recorder.onstop = () => {
+        const shouldAttach = !approvalLockedRef.current && captureEpochRef.current === captureEpoch;
         const type = recorder.mimeType || 'audio/webm';
         const file = new File(chunksRef.current, 'voice-note.webm', { type });
-        uploads.addFiles([file]);
         for (const track of stream?.getTracks() ?? []) track.stop();
+        chunksRef.current = [];
         recordingStreamRef.current = null;
         recorderRef.current = null;
-        setIsRecording(false);
+        setRecordingEpoch(null);
+        if (shouldAttach) uploads.addFiles([file]);
       };
       recorder.start();
-      setIsRecording(true);
+      setRecordingEpoch(captureEpoch);
     } catch {
+      recordingRequestRef.current = false;
       for (const track of stream?.getTracks() ?? []) track.stop();
+      chunksRef.current = [];
       recordingStreamRef.current = null;
       recorderRef.current = null;
-      setIsRecording(false);
+      setRecordingEpoch(null);
     }
   };
 
   // beginDictation opens a runtime dictation session; on any failure (e.g. no adapter
   // configured) it degrades to the attachment record path so the Mic never dead-ends (D-10).
   const beginDictation = () => {
+    suppressedDictationRef.current = undefined;
+    setDictationCaptureEpoch(captureEpoch);
     try {
       dictationStartLen.current = aui.composer().getState().text.length;
       aui.composer().startDictation();
@@ -271,12 +381,13 @@ export function Composer({
   };
 
   const handleMic = () => {
+    if (approvalLocked) return;
     if (!caps.stt) {
       if (isRecording) stopRecording();
       else void startRecording();
       return;
     }
-    if (dictationPhase === 'listening') {
+    if (activeDictationPhase === 'listening') {
       setDictationPhase('transcribing');
       aui.composer().stopDictation();
       return;
@@ -284,159 +395,195 @@ export function Composer({
     beginDictation();
   };
 
-  const dictationBusy = dictationPhase === 'listening' || dictationPhase === 'transcribing';
-  const micActive = caps.stt ? dictationBusy : isRecording;
+  const visibleDictationPhase = approvalLocked ? 'idle' : activeDictationPhase;
+  const dictationBusy =
+    visibleDictationPhase === 'listening' || visibleDictationPhase === 'transcribing';
+  const micActive = caps.stt ? dictationBusy : !approvalLocked && isRecording;
   const micLabel = caps.stt
     ? t(dictationBusy ? 'chat.dictation.stop' : 'chat.dictation.start')
-    : t(isRecording ? 'chat.attachments.micStop' : 'chat.attachments.mic');
+    : t(micActive ? 'chat.attachments.micStop' : 'chat.attachments.mic');
   const dictationAnnouncement =
-    dictationPhase === 'listening'
+    visibleDictationPhase === 'listening'
       ? t('chat.dictation.listening')
-      : dictationPhase === 'transcribing'
+      : visibleDictationPhase === 'transcribing'
         ? t('chat.dictation.transcribing')
-        : dictationPhase === 'error'
+        : visibleDictationPhase === 'error'
           ? t('chat.dictation.error')
           : '';
 
   return (
     <ComposerPrimitive.Root
+      data-testid="chat-composer"
+      aria-disabled={approvalLocked}
+      aria-describedby={approvalLocked ? approvalHintId : undefined}
       onPaste={handlePaste}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       className="relative mx-3 mb-3 flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] sm:mx-4"
     >
-      {menuOpen ? (
-        <SkillPicker
-          groups={pickerGroups}
-          activeOptionId={activeOptionId}
-          listboxId={listboxId}
-          onSelect={handlePickItem}
-        />
+      {approvalLocked ? (
+        <p id={approvalHintId} className="px-1 text-xs text-warning">
+          {t('approval.lock')}
+        </p>
       ) : null}
-      {pinnedSkill != null || (uploads !== undefined && uploads.items.length > 0) ? (
-        <div className="flex flex-wrap gap-2">
-          {pinnedSkill != null ? (
-            <SkillPill name={pinnedSkill.name} onRemove={() => onPinSkill?.(null)} />
-          ) : null}
-          {uploads !== undefined
-            ? uploads.items.map((item) => (
-                <AttachmentChip key={item.localId} item={item} onRemove={uploads.remove} />
-              ))
-            : null}
-        </div>
-      ) : null}
-      {/* Live region: announces the dictation state to screen readers; kept mounted so the
-          transition is picked up (empty + sr-only while idle). */}
-      <p
-        role="status"
-        aria-live="polite"
-        className={
-          dictationAnnouncement === ''
-            ? 'sr-only'
-            : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
-        }
-      >
-        {dictationAnnouncement}
-      </p>
-      <div className="flex items-end gap-2">
-        {uploads !== undefined ? (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="sr-only"
-              aria-label={t('chat.attachments.add')}
-              onChange={handleFileChange}
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={t('chat.attachments.add')}
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-full text-text-muted hover:text-text"
-            >
-              <Paperclip data-icon aria-hidden="true" className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={micLabel}
-              aria-pressed={micActive}
-              onClick={handleMic}
-              className="rounded-full text-text-muted hover:text-text"
-            >
-              {micActive ? (
-                <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-              ) : (
-                <Mic data-icon aria-hidden="true" className="size-4" />
-              )}
-            </Button>
-          </>
+      <fieldset disabled={approvalLocked} className="contents">
+        {menuOpen ? (
+          <SkillPicker
+            groups={pickerGroups}
+            activeOptionId={activeOptionId}
+            listboxId={listboxId}
+            disabled={approvalLocked}
+            onSelect={handlePickItem}
+          />
         ) : null}
-        <ComposerPrimitive.Input
-          ref={composerInputRef}
-          rows={1}
-          placeholder={t('chat.composer.placeholder')}
-          aria-label={t('chat.composer.placeholder')}
-          // The composer is a plain message textbox by default; it only takes on APG
-          // combobox semantics while the '/'-menu is open. Applying role="combobox"
-          // unconditionally reclassifies the input away from role=textbox even when
-          // idle — that regressed shell.spec.ts (getByRole('textbox', 'Ask Aura')) and
-          // made screen readers announce a listbox popup on every plain message.
-          role={menuOpen ? 'combobox' : undefined}
-          aria-expanded={menuOpen}
-          aria-controls={menuOpen ? listboxId : undefined}
-          aria-activedescendant={menuOpen ? activeOptionId : undefined}
-          aria-haspopup={menuOpen ? 'listbox' : undefined}
-          aria-autocomplete={menuOpen ? 'list' : undefined}
-          onKeyDown={handleComposerKeyDown}
-          className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        />
-        {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
+        {pinnedSkill != null || (uploads !== undefined && uploads.items.length > 0) ? (
+          <div className="flex flex-wrap gap-2">
+            {pinnedSkill != null ? (
+              <SkillPill
+                name={pinnedSkill.name}
+                disabled={approvalLocked}
+                onRemove={() => onPinSkill?.(null)}
+              />
+            ) : null}
+            {uploads !== undefined
+              ? uploads.items.map((item) => (
+                  <AttachmentChip
+                    key={item.localId}
+                    item={item}
+                    disabled={approvalLocked}
+                    onRemove={uploads.remove}
+                  />
+                ))
+              : null}
+          </div>
+        ) : null}
+        {/* Live region: announces the dictation state to screen readers; kept mounted so the
+          transition is picked up (empty + sr-only while idle). */}
+        <p
+          role="status"
+          aria-live="polite"
+          className={
+            dictationAnnouncement === ''
+              ? 'sr-only'
+              : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
+          }
+        >
+          {dictationAnnouncement}
+        </p>
+        <div className="flex items-end gap-2">
+          {uploads !== undefined ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="sr-only"
+                aria-label={t('chat.attachments.add')}
+                disabled={approvalLocked}
+                onChange={handleFileChange}
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={t('chat.attachments.add')}
+                disabled={approvalLocked}
+                onClick={() => {
+                  if (approvalLocked) return;
+                  fileInputRef.current?.click();
+                }}
+                className="rounded-full text-text-muted hover:text-text"
+              >
+                <Paperclip data-icon aria-hidden="true" className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={micLabel}
+                aria-pressed={micActive}
+                disabled={approvalLocked}
+                onClick={handleMic}
+                className="rounded-full text-text-muted hover:text-text"
+              >
+                {micActive ? (
+                  <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+                ) : (
+                  <Mic data-icon aria-hidden="true" className="size-4" />
+                )}
+              </Button>
+            </>
+          ) : null}
+          <ComposerPrimitive.Input
+            ref={composerInputRef}
+            rows={1}
+            placeholder={t('chat.composer.placeholder')}
+            aria-label={t('chat.composer.placeholder')}
+            // The composer is a plain message textbox by default; it only takes on APG
+            // combobox semantics while the '/'-menu is open. Applying role="combobox"
+            // unconditionally reclassifies the input away from role=textbox even when
+            // idle — that regressed shell.spec.ts (getByRole('textbox', 'Ask Aura')) and
+            // made screen readers announce a listbox popup on every plain message.
+            role={menuOpen ? 'combobox' : undefined}
+            aria-expanded={menuOpen}
+            aria-controls={menuOpen ? listboxId : undefined}
+            aria-activedescendant={menuOpen ? activeOptionId : undefined}
+            aria-haspopup={menuOpen ? 'listbox' : undefined}
+            aria-autocomplete={menuOpen ? 'list' : undefined}
+            disabled={approvalLocked}
+            onKeyDown={handleComposerKeyDown}
+            className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          />
+          {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
             and screen-reader-correct out of the box, and separate from the textbox so it never
             reclassifies the input or intercepts Enter-send / paste / drop. It renders ONLY the
             model's advertised levels (effortLevels, auto-first); absent ⇒ not rendered. */}
-        {effortLevels !== undefined && effortLevels.length > 0 ? (
-          <div className="relative flex items-center self-center">
-            <select
-              aria-label={t('chat.composer.effort.ariaLabel')}
-              value={effort ?? 'auto'}
-              onChange={(event) => onEffortChange?.(event.currentTarget.value)}
-              className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
-            >
-              {effortLevels.map((level) => (
-                <option key={level} value={level}>
-                  {t(`chat.composer.effort.${level}`)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              data-icon
-              aria-hidden="true"
-              className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
-            />
-          </div>
-        ) : null}
-        {isRunning ? (
-          <Button asChild size="icon" className="rounded-full">
-            <ComposerPrimitive.Cancel aria-label={t('chat.composer.stopAria')}>
-              <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-            </ComposerPrimitive.Cancel>
-          </Button>
-        ) : (
-          <Button asChild size="icon" className="rounded-full">
-            <ComposerPrimitive.Send
-              aria-label={t('chat.composer.sendAria')}
-              disabled={sendDisabled}
-            >
-              <ArrowUp data-icon aria-hidden="true" className="size-4" />
-            </ComposerPrimitive.Send>
-          </Button>
-        )}
-      </div>
+          {effortLevels !== undefined && effortLevels.length > 0 ? (
+            <div className="relative flex items-center self-center">
+              <select
+                aria-label={t('chat.composer.effort.ariaLabel')}
+                value={effort ?? 'auto'}
+                disabled={approvalLocked}
+                onChange={(event) => {
+                  if (approvalLocked) return;
+                  onEffortChange?.(event.currentTarget.value);
+                }}
+                className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
+              >
+                {effortLevels.map((level) => (
+                  <option key={level} value={level}>
+                    {t(`chat.composer.effort.${level}`)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                data-icon
+                aria-hidden="true"
+                className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
+              />
+            </div>
+          ) : null}
+          {isRunning ? (
+            <Button asChild size="icon" className="rounded-full">
+              <ComposerPrimitive.Cancel
+                aria-label={t('chat.composer.stopAria')}
+                disabled={approvalLocked}
+              >
+                <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+              </ComposerPrimitive.Cancel>
+            </Button>
+          ) : (
+            <Button asChild size="icon" className="rounded-full">
+              <ComposerPrimitive.Send
+                aria-label={t('chat.composer.sendAria')}
+                disabled={sendDisabled}
+              >
+                <ArrowUp data-icon aria-hidden="true" className="size-4" />
+              </ComposerPrimitive.Send>
+            </Button>
+          )}
+        </div>
+      </fieldset>
     </ComposerPrimitive.Root>
   );
 }

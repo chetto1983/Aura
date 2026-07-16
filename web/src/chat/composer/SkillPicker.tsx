@@ -71,6 +71,7 @@ export interface SkillPickerProps {
   readonly activeOptionId: string | undefined;
   readonly listboxId: string;
   readonly labelledById?: string;
+  readonly disabled?: boolean;
   readonly onSelect: (item: PickerItem) => void;
 }
 
@@ -79,6 +80,7 @@ export function SkillPicker({
   activeOptionId,
   listboxId,
   labelledById,
+  disabled = false,
   onSelect,
 }: SkillPickerProps) {
   const { t } = useTranslation();
@@ -124,13 +126,15 @@ export function SkillPicker({
                     role="option"
                     tabIndex={-1}
                     aria-selected={active}
+                    aria-disabled={disabled}
+                    disabled={disabled}
                     onMouseDown={(event) => {
                       // Keep DOM focus on the composer input (APG combobox): stop the button
                       // from stealing focus; the click still selects.
                       event.preventDefault();
                     }}
                     onClick={() => {
-                      onSelect(item);
+                      if (!disabled) onSelect(item);
                     }}
                     className={cn(
                       'flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',

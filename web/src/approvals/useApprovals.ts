@@ -25,7 +25,7 @@ export interface Approval {
   readonly token: string;
   readonly conversation_id: string;
   readonly kind: string;
-  /** Server-sanitized ask_user question — rendered VERBATIM, no client rewrite. */
+  /** Server-sanitized ask_user question — rendered completely as escaped React text. */
   readonly question: string;
   /** Raw JSON option set (string[] | null) the pause offered; absent for free-form. */
   readonly options?: unknown;

@@ -1,8 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
+import i18n from '../../i18n/i18n';
 import { ToolActivityCard } from '../ToolActivityCard';
 import { toolStatus } from '../toolStatus';
+
+function rawPre(text: string): HTMLPreElement {
+  const raw = screen.getByText(text);
+  expect(raw.tagName.toLowerCase()).toBe('pre');
+  return raw as HTMLPreElement;
+}
+
+function expectRawHidden(text: string): HTMLPreElement {
+  const raw = rawPre(text);
+  expect(raw.hidden).toBe(true);
+  expect(raw.hasAttribute('hidden')).toBe(true);
+  return raw;
+}
+
+function expectRawVisible(text: string): HTMLPreElement {
+  const raw = rawPre(text);
+  expect(raw.hidden).toBe(false);
+  expect(raw.hasAttribute('hidden')).toBe(false);
+  return raw;
+}
 
 describe('ToolActivityCard (D-02 — raw view only)', () => {
   it('renders the tool name + a running status when no result yet', () => {
@@ -23,21 +43,20 @@ describe('ToolActivityCard (D-02 — raw view only)', () => {
 
   it('the expander reveals the raw mono result and toggles aria-expanded', () => {
     render(<ToolActivityCard toolName="web_search" result="RAW RESULT BLOB" />);
-    // Collapsed by default — the raw blob is not yet in the DOM.
-    expect(screen.queryByText('RAW RESULT BLOB')).toBeNull();
     const expander = screen.getByRole('button', { name: 'Show raw result' });
     expect(expander.getAttribute('aria-expanded')).toBe('false');
+    const raw = expectRawHidden('RAW RESULT BLOB');
+    expect(expander.getAttribute('aria-controls')).toBe(raw.id);
+    expect(document.getElementById(raw.id)).toBe(raw);
 
     fireEvent.click(expander);
     expect(expander.getAttribute('aria-expanded')).toBe('true');
-    const raw = screen.getByText('RAW RESULT BLOB');
-    expect(raw).toBeTruthy();
+    expectRawVisible('RAW RESULT BLOB');
     // It renders as a <pre> mono block — text only.
-    expect(raw.tagName.toLowerCase()).toBe('pre');
     expect(raw.className).toContain('font-mono');
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide raw result' }));
-    expect(screen.queryByText('RAW RESULT BLOB')).toBeNull();
+    expectRawHidden('RAW RESULT BLOB');
   });
 
   it('renders untrusted tool output as TEXT, never as HTML (XSS guard)', () => {
@@ -62,10 +81,25 @@ describe('ToolActivityCard (D-02 — raw view only)', () => {
     expect(toolStatus({ result: 'x' })).toBe('done');
     expect(toolStatus({ result: 'x', isError: true })).toBe('error');
   });
+
+  it('keeps one quiet outer boundary and contains a long tool name beside the disclosure', () => {
+    const toolName = 'namespace__a_very_long_tool_name_that_must_wrap_without_overflow';
+    const { container } = render(<ToolActivityCard toolName={toolName} result="ok" />);
+    const card = container.firstElementChild;
+    const name = screen.getByText(toolName);
+    const disclosure = screen.getByRole('button', { name: 'Show raw result' });
+
+    expect(card?.className).toContain('border-border');
+    expect(card?.className).not.toContain('border-l-2');
+    expect(name.className).toContain('min-w-0');
+    expect(name.className).toContain('break-words');
+    expect(disclosure.className).toContain('min-h-11');
+    expect(disclosure.className).toContain('min-w-11');
+  });
 });
 
 describe('ToolActivityCard — nested subagent / child rows (§3.5)', () => {
-  it('renders each child tool entry as its own status-tinted indented row', () => {
+  it('renders each child tool entry as its own indented status row', () => {
     render(
       <ToolActivityCard
         toolName="swarm_coordinator"
@@ -81,7 +115,7 @@ describe('ToolActivityCard — nested subagent / child rows (§3.5)', () => {
     expect(screen.getByText('web_search')).toBeTruthy();
     expect(screen.getByText('web_fetch')).toBeTruthy();
     expect(screen.getByText('sandbox_exec')).toBeTruthy();
-    // Each child carries its own status label (status-tinted line).
+    // Each child carries its own marker and text status.
     expect(screen.getAllByText('Done').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('Error')).toBeTruthy();
@@ -126,15 +160,42 @@ describe('ToolActivityCard — nested subagent / child rows (§3.5)', () => {
 });
 
 describe('ToolActivityCard — auto-collapse on settle (§3.5)', () => {
+  it('expands when raw content arrives during a running call before manual intent', () => {
+    const { rerender } = render(<ToolActivityCard toolName="delayed" />);
+    expect(screen.queryByRole('button')).toBeNull();
+
+    rerender(<ToolActivityCard toolName="delayed" argsText="late args" />);
+
+    expect(screen.getByText('late args')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide raw result' })).toBeTruthy();
+  });
+
+  it('does not auto-expand delayed raw after the user has expressed intent', () => {
+    const { rerender } = render(<ToolActivityCard toolName="manual" argsText="first" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide raw result' }));
+    expectRawHidden('first');
+
+    rerender(<ToolActivityCard toolName="manual" />);
+    expect(screen.queryByRole('button')).toBeNull();
+
+    rerender(<ToolActivityCard toolName="manual" argsText="late replacement" />);
+
+    const raw = expectRawHidden('late replacement');
+    const disclosure = screen.getByRole('button', { name: 'Show raw result' });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(disclosure.getAttribute('aria-controls')).toBe(raw.id);
+    expect(document.getElementById(raw.id)).toBe(raw);
+  });
+
   it('auto-collapses ONCE to the one-line summary when running → done', () => {
     const { rerender } = render(
       <ToolActivityCard toolName="slow_tool" argsText="PARTIAL ARGS BLOB" />,
     );
     // Running with raw → auto-expanded, blob visible.
-    expect(screen.getByText('PARTIAL ARGS BLOB')).toBeTruthy();
+    expectRawVisible('PARTIAL ARGS BLOB');
     // The call settles (a result arrives) → auto-collapse to one line.
     rerender(<ToolActivityCard toolName="slow_tool" result="FINAL RESULT BLOB" />);
-    expect(screen.queryByText('FINAL RESULT BLOB')).toBeNull();
+    expectRawHidden('FINAL RESULT BLOB');
     // The expander reflects the collapsed state.
     expect(
       screen.getByRole('button', { name: 'Show raw result' }).getAttribute('aria-expanded'),
@@ -143,21 +204,21 @@ describe('ToolActivityCard — auto-collapse on settle (§3.5)', () => {
 
   it('auto-collapses when running → error too', () => {
     const { rerender } = render(<ToolActivityCard toolName="slow_tool" argsText="ARGS" />);
-    expect(screen.getByText('ARGS')).toBeTruthy();
+    expectRawVisible('ARGS');
     rerender(<ToolActivityCard toolName="slow_tool" result="boom" isError />);
-    expect(screen.queryByText('boom')).toBeNull();
+    expectRawHidden('boom');
   });
 
   it('a manual toggle wins: a user-collapsed running card stays collapsed on settle', () => {
     const { rerender } = render(<ToolActivityCard toolName="slow_tool" argsText="ARGS BLOB" />);
     // Auto-expanded while running; the operator manually collapses it.
-    expect(screen.getByText('ARGS BLOB')).toBeTruthy();
+    expectRawVisible('ARGS BLOB');
     fireEvent.click(screen.getByRole('button', { name: 'Hide raw result' }));
-    expect(screen.queryByText('ARGS BLOB')).toBeNull();
+    expectRawHidden('ARGS BLOB');
     // Settle: auto-collapse must NOT fight the user — the intent-guard means status
     // transitions no longer drive expansion.
     rerender(<ToolActivityCard toolName="slow_tool" result="RESULT BLOB" />);
-    expect(screen.queryByText('RESULT BLOB')).toBeNull();
+    expectRawHidden('RESULT BLOB');
   });
 
   it('a user who manually keeps it expanded stays expanded across a settle (manual wins over auto-collapse)', () => {
@@ -165,10 +226,10 @@ describe('ToolActivityCard — auto-collapse on settle (§3.5)', () => {
     // Operator toggles: collapse then expand — now userToggled, final state = expanded.
     fireEvent.click(screen.getByRole('button', { name: 'Hide raw result' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
-    expect(screen.getByText('ARGS BLOB')).toBeTruthy();
+    expectRawVisible('ARGS BLOB');
     // Settle: the auto-collapse-once is suppressed by the user-intent guard.
     rerender(<ToolActivityCard toolName="slow_tool" result="RESULT BLOB" />);
-    expect(screen.getByText('RESULT BLOB')).toBeTruthy();
+    expectRawVisible('RESULT BLOB');
     expect(
       screen.getByRole('button', { name: 'Hide raw result' }).getAttribute('aria-expanded'),
     ).toBe('true');
@@ -176,20 +237,20 @@ describe('ToolActivityCard — auto-collapse on settle (§3.5)', () => {
 
   it('a card that mounts already-settled stays collapsed (no regression)', () => {
     render(<ToolActivityCard toolName="web_search" result="DONE BLOB" />);
-    expect(screen.queryByText('DONE BLOB')).toBeNull();
+    expectRawHidden('DONE BLOB');
   });
 
   it('collapses exactly ONCE: a settled card stays collapsed even if a later frame flickers status back to running', () => {
     // running → done auto-collapses once.
     const { rerender } = render(<ToolActivityCard toolName="flicky" argsText="ARGS" />);
-    expect(screen.getByText('ARGS')).toBeTruthy();
+    expectRawVisible('ARGS');
     rerender(<ToolActivityCard toolName="flicky" result="RES" />);
-    expect(screen.queryByText('RES')).toBeNull();
+    expectRawHidden('RES');
     // A spurious late frame reports running again (result undefined). The ONCE semantics
     // mean the card must NOT auto-re-expand from a status re-seed — the collapse already
     // fired once and no manual intent re-opened it.
     rerender(<ToolActivityCard toolName="flicky" argsText="ARGS AGAIN" />);
-    expect(screen.queryByText('ARGS AGAIN')).toBeNull();
+    expectRawHidden('ARGS AGAIN');
   });
 });
 
@@ -198,23 +259,39 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
     render(<ToolActivityCard toolName="web_search" result="ok" />);
     // No elapsed readout element at all.
     expect(screen.queryByTestId('tool-elapsed')).toBeNull();
-    // And no spurious "0s" text leaked anywhere.
-    expect(screen.queryByText(/0s/)).toBeNull();
+    // And no spurious zero-second text leaked anywhere.
+    expect(screen.queryByText(/0\s*s/)).toBeNull();
   });
 
-  it('shows a frozen final duration when the call is settled with timing', () => {
+  it('shows a frozen final duration as ordinary non-live assistive text', () => {
     render(
       <ToolActivityCard toolName="web_search" result="ok" startedAt={1000} finishedAt={3500} />,
     );
     const elapsed = screen.getByTestId('tool-elapsed');
     // (3500 - 1000) / 1000 = 2.5s
-    expect(elapsed.textContent).toBe('2.5s');
-    // Frozen readout is aria-hidden (must not spam aria-live).
-    expect(elapsed.getAttribute('aria-hidden')).toBe('true');
+    expect(elapsed.textContent).toBe('2.5 s');
+    expect(elapsed.hasAttribute('aria-hidden')).toBe(false);
+    expect(elapsed.hasAttribute('aria-live')).toBe(false);
     // Mono tabular-nums faint readout.
     expect(elapsed.className).toContain('font-mono');
     expect(elapsed.className).toContain('tabular-nums');
     expect(elapsed.className).toContain('text-text-faint');
+  });
+
+  it('formats a settled decimal duration for the active Italian locale', async () => {
+    await act(async () => {
+      await i18n.changeLanguage('it');
+    });
+    try {
+      render(
+        <ToolActivityCard toolName="ricerca" result="ok" startedAt={1000} finishedAt={3500} />,
+      );
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('2,5 s');
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage('en');
+      });
+    }
   });
 
   it('ticks while running (no finishedAt) and freezes once a finishedAt arrives', () => {
@@ -226,13 +303,14 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
       const { rerender } = render(
         <ToolActivityCard toolName="slow_tool" argsText="{}" startedAt={t0} />,
       );
-      // At mount the readout reads 0s.
-      expect(screen.getByTestId('tool-elapsed').textContent).toBe('0s');
+      // Running ticks are hidden from assistive technology so each timer update is quiet.
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('0 s');
+      expect(screen.getByTestId('tool-elapsed').getAttribute('aria-hidden')).toBe('true');
       // Advance 2s of wall clock — the ticker re-renders against the advanced clock.
       act(() => {
         vi.advanceTimersByTime(2000);
       });
-      expect(screen.getByTestId('tool-elapsed').textContent).toBe('2s');
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('2 s');
       // A result + finishedAt arrives: the readout freezes at the exact final duration.
       rerender(
         <ToolActivityCard
@@ -242,12 +320,14 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
           finishedAt={t0 + 3750}
         />,
       );
-      expect(screen.getByTestId('tool-elapsed').textContent).toBe('3.75s');
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('3.75 s');
+      expect(screen.getByTestId('tool-elapsed').hasAttribute('aria-hidden')).toBe(false);
+      expect(screen.getByTestId('tool-elapsed').hasAttribute('aria-live')).toBe(false);
       // Further wall-clock advance does NOT move a frozen readout.
       act(() => {
         vi.advanceTimersByTime(5000);
       });
-      expect(screen.getByTestId('tool-elapsed').textContent).toBe('3.75s');
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('3.75 s');
     } finally {
       vi.useRealTimers();
     }
@@ -273,14 +353,112 @@ describe('ToolActivityCard — elapsed time (§3.5)', () => {
     }
   });
 
+  it('keeps END-only lifecycle running until RESULT settles it, while honoring END timing', () => {
+    vi.useFakeTimers();
+    try {
+      const t0 = 1000;
+      vi.setSystemTime(t0);
+      const { rerender } = render(
+        <ToolActivityCard toolName="split_events" argsText="{}" startedAt={t0} />,
+      );
+      expect(screen.getByText('Running')).toBeTruthy();
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      rerender(
+        <ToolActivityCard
+          toolName="split_events"
+          argsText="{}"
+          startedAt={t0}
+          finishedAt={t0 + 1500}
+        />,
+      );
+      const endedOnlyElapsed = screen.getByTestId('tool-elapsed');
+      expect(screen.getByText('Running')).toBeTruthy();
+      expect(screen.queryByText('Done')).toBeNull();
+      expect(endedOnlyElapsed.textContent).toBe('1.5 s');
+      expect(endedOnlyElapsed.getAttribute('aria-hidden')).toBe('true');
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('1.5 s');
+
+      rerender(
+        <ToolActivityCard
+          toolName="split_events"
+          result="done"
+          startedAt={t0}
+          finishedAt={t0 + 1500}
+        />,
+      );
+      const settledElapsed = screen.getByTestId('tool-elapsed');
+      expect(screen.getByText('Done')).toBeTruthy();
+      expect(settledElapsed.textContent).toBe('1.5 s');
+      expect(settledElapsed.hasAttribute('aria-hidden')).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { label: 'result', settledProps: { result: 'done' }, statusText: 'Done' },
+    { label: 'error', settledProps: { isError: true }, statusText: 'Error' },
+  ])(
+    'stops and exposes the frozen duration when $label settles without finishedAt',
+    async ({ settledProps, statusText }) => {
+      vi.useFakeTimers();
+      try {
+        const t0 = 1000;
+        vi.setSystemTime(t0);
+        const { rerender } = render(
+          <ToolActivityCard toolName="logical_settle" argsText="{}" startedAt={t0} />,
+        );
+        expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+        act(() => {
+          vi.advanceTimersByTime(2000);
+        });
+        expect(screen.getByTestId('tool-elapsed').textContent).toBe('2 s');
+        vi.setSystemTime(t0 + 2500);
+
+        await act(async () => {
+          rerender(
+            <ToolActivityCard
+              toolName="logical_settle"
+              argsText="{}"
+              startedAt={t0}
+              {...settledProps}
+            />,
+          );
+          await Promise.resolve();
+        });
+        const settledElapsed = screen.getByTestId('tool-elapsed');
+        expect(screen.getByText(statusText)).toBeTruthy();
+        expect(settledElapsed.textContent).toBe('2.5 s');
+        expect(settledElapsed.hasAttribute('aria-hidden')).toBe(false);
+        expect(settledElapsed.hasAttribute('aria-live')).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        expect(screen.getByTestId('tool-elapsed').textContent).toBe('2.5 s');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('does not register a ticking interval once settled (no leak after freeze)', () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(1000);
-      render(
-        <ToolActivityCard toolName="web_search" result="ok" startedAt={1000} finishedAt={2000} />,
-      );
+      vi.setSystemTime(2500);
+      render(<ToolActivityCard toolName="web_search" result="ok" startedAt={1000} />);
       // Settled card: no live ticker.
+      expect(screen.getByTestId('tool-elapsed').textContent).toBe('1.5 s');
+      expect(screen.getByTestId('tool-elapsed').hasAttribute('aria-hidden')).toBe(false);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();

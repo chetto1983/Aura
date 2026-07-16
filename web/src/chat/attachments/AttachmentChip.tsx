@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button';
 interface AttachmentChipProps {
   readonly item: UploadItem;
   readonly onRemove: (localId: string) => void;
+  readonly disabled?: boolean;
 }
 
-export function AttachmentChip({ item, onRemove }: AttachmentChipProps) {
+export function AttachmentChip({ item, onRemove, disabled = false }: AttachmentChipProps) {
   const { t } = useTranslation();
   const label = statusLabel(item, t);
   return (
@@ -24,8 +25,9 @@ export function AttachmentChip({ item, onRemove }: AttachmentChipProps) {
         size="icon"
         aria-label={t('chat.attachments.remove', { name: item.file.name })}
         data-required-touch-target
+        disabled={disabled}
         onClick={() => {
-          onRemove(item.localId);
+          if (!disabled) onRemove(item.localId);
         }}
         className="h-11 min-h-11 w-11 min-w-11 shrink-0 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
       >

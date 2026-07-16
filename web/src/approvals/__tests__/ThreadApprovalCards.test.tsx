@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState, type ReactNode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { ThreadApprovalCards } from '../ThreadApprovalCards';
 import type { Approval } from '../useApprovals';
+import type { ApprovalResolution } from '../useThreadApprovals';
 
 function approval(over: Partial<Approval> & Pick<Approval, 'token' | 'conversation_id'>): Approval {
   return { kind: 'clarification', question: 'Pick one', priority: 0, ...over };
@@ -15,14 +16,9 @@ interface ResolveCall {
   readonly body: unknown;
 }
 
-// fetch double: the approvals poll returns the given rows; /resolve → 204; the
-// /agent/run re-drive (continue-after-resume) is recorded so the redrive is asserted.
-function stubFetch(rows: Approval[], calls: ResolveCall[]) {
+function stubResolve(calls: ResolveCall[]) {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url.includes('/api/approvals') && (init?.method ?? 'GET') === 'GET') {
-      return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }));
-    }
     calls.push({
       url,
       body: init?.body !== undefined ? JSON.parse(init.body as string) : undefined,
@@ -31,79 +27,185 @@ function stubFetch(rows: Approval[], calls: ResolveCall[]) {
   });
 }
 
-function renderCards(props: { conversationId: string; onResolved?: (id: string) => void }) {
-  const qc = new QueryClient({
+function client() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+}
+
+function first<T>(rows: readonly T[]): T {
+  const value = rows[0];
+  if (value === undefined) throw new Error('expected at least one row');
+  return value;
+}
+
+function renderCards(
+  approvals: readonly Approval[],
+  onResolved?: (resolution: unknown) => void | Promise<void>,
+) {
+  const qc = client();
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
   return render(
     <ThreadApprovalCards
-      conversationId={props.conversationId}
-      {...(props.onResolved !== undefined ? { onResolved: props.onResolved } : {})}
+      approvals={approvals}
+      {...(onResolved !== undefined ? { onResolved } : {})}
     />,
     { wrapper: Wrapper },
   );
 }
 
-describe('ThreadApprovalCards (D-03 inline mount)', () => {
-  let calls: ResolveCall[];
-  beforeEach(() => {
-    calls = [];
-  });
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+function StatefulCards({
+  initial,
+  onResolved,
+}: {
+  readonly initial: readonly Approval[];
+  readonly onResolved: (resolution: unknown) => void;
+}) {
+  const [rows, setRows] = useState(initial);
+  return (
+    <ThreadApprovalCards
+      approvals={rows}
+      onResolved={(resolution) => {
+        const token = (resolution as { approval: Approval }).approval.token;
+        setRows((current) => current.filter((row) => row.token !== token));
+        onResolved(resolution);
+      }}
+    />
+  );
+}
 
-  it('renders nothing for an empty conversation id', () => {
-    vi.stubGlobal('fetch', stubFetch([], calls));
-    const { container } = renderCards({ conversationId: '' });
-    expect(container.textContent).toBe('');
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-  it("renders only the active thread's pending interrupts (filters cross-thread)", async () => {
-    vi.stubGlobal(
-      'fetch',
-      stubFetch(
-        [
-          approval({ token: 't-1', conversation_id: 'c-1', question: 'For c-1' }),
-          approval({ token: 't-2', conversation_id: 'c-2', question: 'For c-2' }),
-        ],
-        calls,
-      ),
+describe('ThreadApprovalCards active-thread presentation', () => {
+  it('preserves backend order and exposes focus targets without rendering tokens as text', () => {
+    vi.stubGlobal('fetch', stubResolve([]));
+    const rows = [
+      approval({ token: 't-1', conversation_id: 'c-1', question: 'First' }),
+      approval({ token: 't-2', conversation_id: 'c-1', question: 'Second' }),
+    ];
+    renderCards(rows);
+
+    const cards = screen.getByTestId('thread-approvals');
+    expect(cards.textContent?.indexOf('First')).toBeLessThan(
+      cards.textContent?.indexOf('Second') ?? 0,
     );
-    renderCards({ conversationId: 'c-1' });
-    await waitFor(() => {
-      expect(screen.getByText('For c-1')).toBeTruthy();
-    });
-    // The other thread's interrupt does NOT render in this lane (it stays in the badge).
-    expect(screen.queryByText('For c-2')).toBeNull();
+    expect(
+      cards.querySelectorAll('[data-approval-token]')[0]?.getAttribute('data-approval-token'),
+    ).toBe('t-1');
+    expect(screen.queryByText('t-1')).toBeNull();
+    expect(screen.queryByText('t-2')).toBeNull();
   });
 
-  it('renders nothing when the active thread has no pending interrupt', async () => {
-    vi.stubGlobal('fetch', stubFetch([approval({ token: 't-2', conversation_id: 'c-2' })], calls));
-    const { container } = renderCards({ conversationId: 'c-1' });
-    // Let the poll settle; c-1 has nothing pending → no card.
-    await waitFor(() => {
-      expect(container.querySelector('p')).toBeNull();
-    });
-  });
-
-  it('answering an inline card re-drives the run via onResolved (continue-after-resume)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      stubFetch(
-        [approval({ token: 't-1', conversation_id: 'c-1', options: ['Yes', 'No'] })],
-        calls,
-      ),
-    );
+  it('keeps a keyed one-time announcement alive when the resolved row disappears', async () => {
+    const calls: ResolveCall[] = [];
+    vi.stubGlobal('fetch', stubResolve(calls));
     const onResolved = vi.fn();
-    renderCards({ conversationId: 'c-1', onResolved });
-    fireEvent.click(await screen.findByRole('button', { name: 'Yes' }));
+    const qc = client();
+    render(
+      <QueryClientProvider client={qc}>
+        <StatefulCards
+          initial={[
+            approval({
+              token: 't-1',
+              conversation_id: 'c-1',
+              options: ['Yes'],
+            }),
+          ]}
+          onResolved={onResolved}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
     await waitFor(() => {
-      expect(onResolved).toHaveBeenCalledWith('c-1');
+      expect(onResolved).toHaveBeenCalledTimes(1);
     });
-    expect(calls.some((c) => c.url.includes('/api/approvals/t-1/resolve'))).toBe(true);
+    const resolution = onResolved.mock.calls[0]?.[0] as ApprovalResolution | undefined;
+    expect(resolution?.approval.token).toBe('t-1');
+    expect(resolution?.action).toBe('accept');
+    expect(screen.queryByText('Pick one')).toBeNull();
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('Answered.');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.getAttribute('aria-atomic')).toBe('true');
+    expect(calls[0]?.url).toContain('/api/approvals/t-1/resolve');
+  });
+
+  it('keeps the announcement region mounted when the approval list is empty', () => {
+    vi.stubGlobal('fetch', stubResolve([]));
+    renderCards([]);
+
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('forwards resolution-start lifecycle before the successful outcome', async () => {
+    vi.stubGlobal('fetch', stubResolve([]));
+    const order: string[] = [];
+    const qc = client();
+    render(
+      <QueryClientProvider client={qc}>
+        <ThreadApprovalCards
+          approvals={[approval({ token: 't-1', conversation_id: 'c-1' })]}
+          onResolutionStarted={() => {
+            order.push('start');
+          }}
+          onResolved={() => {
+            order.push('resolved');
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    await waitFor(() => {
+      expect(order).toContain('resolved');
+    });
+    expect(order).toEqual(['start', 'resolved']);
+  });
+
+  it('keys repeated local outcomes so each intermediate answer gets a fresh announcement node', async () => {
+    vi.stubGlobal('fetch', stubResolve([]));
+    const onResolved = vi.fn();
+    const qc = client();
+    render(
+      <QueryClientProvider client={qc}>
+        <StatefulCards
+          initial={[
+            approval({
+              token: 't-1',
+              conversation_id: 'c-1',
+              question: 'First',
+              options: ['Yes'],
+            }),
+            approval({
+              token: 't-2',
+              conversation_id: 'c-1',
+              question: 'Second',
+              options: ['Yes'],
+            }),
+          ]}
+          onResolved={onResolved}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Yes' })));
+    await waitFor(() => {
+      expect(onResolved).toHaveBeenCalledTimes(1);
+    });
+    const firstAnnouncement = screen.getByRole('status');
+    expect(firstAnnouncement.textContent).toBe('Answered.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    await waitFor(() => {
+      expect(onResolved).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByRole('status')).not.toBe(firstAnnouncement);
+    expect(screen.getByRole('status').textContent).toBe('Answered.');
   });
 });

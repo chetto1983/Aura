@@ -11,9 +11,10 @@ import { Button } from '@/components/ui/button';
 interface SkillPillProps {
   readonly name: string;
   readonly onRemove: () => void;
+  readonly disabled?: boolean;
 }
 
-export function SkillPill({ name, onRemove }: SkillPillProps) {
+export function SkillPill({ name, onRemove, disabled = false }: SkillPillProps) {
   const { t } = useTranslation();
   return (
     <span className="inline-flex min-h-10 max-w-full items-center gap-2 rounded-md border border-accent/40 bg-surface-2 px-2 py-1 text-xs text-text">
@@ -24,7 +25,10 @@ export function SkillPill({ name, onRemove }: SkillPillProps) {
         variant="ghost"
         size="icon"
         aria-label={t('chat.skillPicker.pinnedRemove', { name })}
-        onClick={onRemove}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) onRemove();
+        }}
         className="h-8 min-h-8 w-8 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
       >
         <X data-icon aria-hidden="true" className="size-3.5" />
