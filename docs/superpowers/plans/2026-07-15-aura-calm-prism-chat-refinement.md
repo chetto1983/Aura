@@ -424,7 +424,7 @@ Expected: Vitest and the explicit Chrome chronology test PASS.
 - Test: `web/src/chat/__tests__/ToolActivityCard.test.tsx`
 - Test: `web/src/i18n/__tests__/resources.parity.test.ts`
 
-- [ ] **Step 1: Add the two missing state-matrix tests and locale-aware duration checks**
+- [x] **Step 1: Add the two missing state-matrix tests and locale-aware duration checks**
 
 ```tsx
 it("expands when raw content arrives during a running call before manual intent", () => {
@@ -461,7 +461,7 @@ it("formats settled decimal duration for the active Italian locale", async () =>
 
 Keep the existing XSS, settle-once, manual-wins, flicker, child, and timer-leak tests; together they are the seven-case matrix.
 
-- [ ] **Step 2: Run the tool tests and observe delayed-raw and locale failures**
+- [x] **Step 2: Run the tool tests and observe delayed-raw and locale failures**
 
 ```powershell
 cd web
@@ -470,7 +470,7 @@ npx vitest run src/chat/__tests__/ToolActivityCard.test.tsx src/i18n/__tests__/r
 
 Expected: delayed raw remains collapsed and `2.5s` is not localized.
 
-- [ ] **Step 3: Implement delayed-raw expansion without weakening manual intent**
+- [x] **Step 3: Implement delayed-raw expansion without weakening manual intent**
 
 Track whether raw has appeared and preserve the current settle-once guard:
 
@@ -495,7 +495,7 @@ useEffect(() => {
 
 On disclosure click, set `userToggled.current = true` before toggling.
 
-- [ ] **Step 4: Localize duration and refine hierarchy with semantic tokens**
+- [x] **Step 4: Localize duration and refine hierarchy with semantic tokens**
 
 Add resources:
 
@@ -526,7 +526,7 @@ function formatElapsed(ms: number, language: string, t: TFunction): string {
 
 Use one low-contrast `border-border` outer boundary, text plus marker for state, a 44 × 44 disclosure button, `min-w-0 break-words` tool names, and an indented connector for children. Keep raw data exclusively as React text inside `<pre>`. Running elapsed ticks use `aria-hidden="true"`; once settled, the frozen duration becomes ordinary non-live text available to assistive technology. Add a test that rerenders running → settled and verifies this `aria-hidden` transition.
 
-- [ ] **Step 5: Verify and commit the tool matrix**
+- [x] **Step 5: Verify and commit the tool matrix**
 
 ```powershell
 cd web
