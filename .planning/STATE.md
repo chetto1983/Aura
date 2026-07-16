@@ -651,8 +651,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T01:03:27.7110428+02:00
-Stopped at: Calm Prism Task 9 of 9 started from verified Task 8 merge 026d9b323 after fresh master frontend, installed-Chrome, static, build, exact-size, and diff gates passed
+Last session: 2026-07-17T01:38:44.9963328+02:00
+Stopped at: Calm Prism Task 9 review hardening committed at c461cf2f4; Steps 1-4 checked, same-reviewer minors and final rebuilt bundle/real-agent Chrome 10/10 still open
 Resume file: .planning/.continue-here.md
 
 ## Operator Next Steps

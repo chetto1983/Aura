@@ -1549,9 +1549,10 @@ Expected: both Chrome projects PASS and the commit includes only Playwright conf
 **Files:**
 
 - Generated: `internal/webui/dist/**`
+- Create: `web/e2e/chat-real-agent.spec.ts`
 - Review: every file committed in Tasks 1-8
 
-- [ ] **Step 1: Run targeted suites once more without snapshot updates**
+- [x] **Step 1: Run targeted suites once more without snapshot updates**
 
 ```powershell
 cd web
@@ -1560,7 +1561,7 @@ npx vitest run src/chat/__tests__/ReasoningDrawer.test.tsx src/chat/__tests__/To
 
 Expected: all named suites PASS.
 
-- [ ] **Step 2: Run all web static, unit, contrast, and browser gates**
+- [x] **Step 2: Run all web static, unit, contrast, and browser gates**
 
 ```powershell
 npm run typecheck
@@ -1574,7 +1575,7 @@ npm run test:e2e -- e2e/chat.spec.ts e2e/chat-calm-prism.spec.ts --project=mobil
 
 Expected: every command exits 0; Vitest retains the repository coverage threshold; Playwright reports no health collector failures or screenshot mismatches.
 
-- [ ] **Step 3: Build the production bundle and inspect generated output separately**
+- [x] **Step 3: Build the production bundle and inspect generated output separately**
 
 ```powershell
 npm run build
@@ -1586,7 +1587,7 @@ git diff --check -- internal/webui/dist
 
 Expected: build exits 0, only expected generated bundle files change, and diff check is silent. Inspect the manifest and chunk names to ensure no new dependency or unexpected large main-chunk regression appeared.
 
-- [ ] **Step 4: Run repository file-size and Go regression gates sequentially**
+- [x] **Step 4: Run repository file-size and Go regression gates sequentially**
 
 ```powershell
 bash scripts/check-file-size.sh
@@ -1632,6 +1633,19 @@ cd ..
 ```
 
 Expected: no owned files remain uncommitted, unrelated pre-existing status is unchanged, and the final Chrome golden route PASSes against the built implementation.
+
+- [ ] **Step 8: Prove the real-agent Chrome path at an explicit 10/10**
+
+Add an opt-in paid/local Playwright test that uses installed Chrome, real Authula, real APIs, the real composer, and an unmocked `/agent/run`. Score ten hard checks: authenticated composer, searchable real DOCX upload, real run request/HTTP 200, successful RUN lifecycle, `document_search`, grounded answer facts, non-zero usage, persisted replay, desktop containment, and mobile overflow plus strict browser health. Delete the created conversation in teardown.
+
+```powershell
+cd web
+$env:AURA_E2E_REAL_AGENT = '1'
+$env:AURA_E2E_ORIGIN = 'http://127.0.0.1:9080'
+npx playwright test e2e/chat-real-agent.spec.ts --project=chrome --reporter=line
+```
+
+Expected: the current merged/rebuilt Aura instance is used, the test reports `SCORE: 10/10 = 100%`, strict browser health is clean, and the command exits 0. Mocked `/agent/run` evidence does not count.
 
 ## Final acceptance trace
 
