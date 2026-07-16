@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import '../../i18n/i18n';
+import i18n from '../../i18n/i18n';
 import type { Approval } from '../../approvals/useApprovals';
 import { ExternalStoreChat } from '../ExternalStoreChat';
 
@@ -112,7 +112,8 @@ function first<T>(rows: readonly T[]): T {
   return value;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage('en');
   localStorage.removeItem('aura.chat.reasoning.shown');
   vi.stubGlobal('CSS', { escape: (value: string) => value });
 });
@@ -123,6 +124,48 @@ afterEach(() => {
 });
 
 describe('ExternalStoreChat approval gate', () => {
+  it.each([
+    [
+      'en',
+      'Approval required',
+      'Review the scope and consequence before continuing.',
+      'Expired — auto-resolved.',
+      'Answer the request above to continue.',
+    ],
+    [
+      'it',
+      'Approvazione richiesta',
+      'Controlla ambito e conseguenze prima di continuare.',
+      'Scaduta — risolta automaticamente.',
+      'Rispondi alla richiesta qui sopra per continuare.',
+    ],
+  ] as const)(
+    'renders the exact %s approval frame, terminal state, and accessible lock copy',
+    async (language, frame, review, terminal, lock) => {
+      await i18n.changeLanguage(language);
+      const terminalRow: Approval = {
+        ...row('expired', 'Old approval'),
+        kind: 'approval',
+        terminal: true,
+      };
+      const pendingRow: Approval = {
+        ...row('pending', 'Current approval'),
+        kind: 'approval',
+      };
+      vi.stubGlobal('fetch', approvalsFetch([terminalRow, pendingRow], []));
+      renderChat(<ExternalStoreChat threadId="c-1" />);
+
+      expect(await screen.findAllByText(frame)).toHaveLength(2);
+      expect(screen.getAllByText(review)).toHaveLength(2);
+      expect(screen.getByText(terminal).textContent).toBe(terminal);
+      const composer = await screen.findByTestId('chat-composer');
+      const hintId = composer.getAttribute('aria-describedby');
+      expect(composer.getAttribute('aria-disabled')).toBe('true');
+      expect(hintId).not.toBeNull();
+      expect(document.getElementById(hintId ?? '')?.textContent).toBe(lock);
+    },
+  );
+
   it('renders ordered approvals before a locked composer and re-drives exactly once after the third answer', async () => {
     const pending = [
       row('token-1', 'First decision'),
@@ -194,5 +237,47 @@ describe('ExternalStoreChat approval gate', () => {
     });
     expect(runRequests).toHaveLength(0);
     expect(document.activeElement).toBe(screen.getByPlaceholderText('Ask Aura'));
+  });
+
+  it('escapes special approval tokens before focusing the next card', async () => {
+    const nextToken = 'next"quoted/slash';
+    const escape = vi.fn((value: string) => value.replaceAll('"', '\\"'));
+    vi.stubGlobal('CSS', { escape });
+    vi.stubGlobal(
+      'fetch',
+      approvalsFetch([row('first', 'First decision'), row(nextToken, 'Second decision')], []),
+    );
+    renderChat(<ExternalStoreChat threadId="c-1" />);
+
+    fireEvent.click(first(await screen.findAllByRole('button', { name: 'Yes' })));
+
+    await waitFor(() => {
+      expect(
+        document.activeElement
+          ?.closest('[data-approval-token]')
+          ?.getAttribute('data-approval-token'),
+      ).toBe(nextToken);
+    });
+    expect(escape).toHaveBeenCalledWith(nextToken);
+  });
+
+  it('focuses special approval tokens through the dataset fallback when CSS.escape is absent', async () => {
+    const nextToken = 'next "quoted"/slash';
+    vi.stubGlobal('CSS', undefined);
+    vi.stubGlobal(
+      'fetch',
+      approvalsFetch([row('first', 'First decision'), row(nextToken, 'Second decision')], []),
+    );
+    renderChat(<ExternalStoreChat threadId="c-1" />);
+
+    fireEvent.click(first(await screen.findAllByRole('button', { name: 'Yes' })));
+
+    await waitFor(() => {
+      expect(
+        document.activeElement
+          ?.closest('[data-approval-token]')
+          ?.getAttribute('data-approval-token'),
+      ).toBe(nextToken);
+    });
   });
 });

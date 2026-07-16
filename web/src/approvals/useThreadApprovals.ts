@@ -15,6 +15,33 @@ export function selectThreadApprovals(
   return (rows ?? []).filter((row) => row.conversation_id === threadId);
 }
 
+function selectPendingThreadApprovals(
+  rows: readonly Approval[] | undefined,
+  threadId: string,
+): Approval[] {
+  return selectThreadApprovals(rows, threadId).filter((row) => row.terminal !== true);
+}
+
+interface ApprovalGate {
+  readonly threadId: string;
+  generation: number;
+  hadPending: boolean;
+  resumed: number;
+  cancelled: number;
+  settled: number;
+}
+
+function freshGate(threadId: string): ApprovalGate {
+  return {
+    threadId,
+    generation: 0,
+    hadPending: false,
+    resumed: -1,
+    cancelled: -1,
+    settled: -1,
+  };
+}
+
 export function useThreadApprovals(
   threadId: string,
   onResume: () => Promise<void>,
@@ -25,45 +52,72 @@ export function useThreadApprovals(
     () => selectThreadApprovals(query.data, threadId),
     [query.data, threadId],
   );
-  const gate = useRef({
-    threadId,
-    generation: 0,
-    hadPending: false,
-    resumed: -1,
-  });
+  const pendingApprovals = useMemo(
+    () => selectPendingThreadApprovals(query.data, threadId),
+    [query.data, threadId],
+  );
+  const sessionEpoch = useRef(0);
+  const gate = useRef<ApprovalGate>(freshGate(threadId));
 
   useEffect(() => {
-    if (gate.current.threadId !== threadId) {
-      gate.current = {
-        threadId,
-        generation: 0,
-        hadPending: false,
-        resumed: -1,
-      };
-    }
-    if (approvals.length > 0 && !gate.current.hadPending) {
+    sessionEpoch.current += 1;
+    gate.current = freshGate(threadId);
+    return () => {
+      sessionEpoch.current += 1;
+    };
+  }, [threadId]);
+
+  useEffect(() => {
+    if (pendingApprovals.length > 0 && !gate.current.hadPending) {
       gate.current.generation += 1;
       gate.current.hadPending = true;
+    } else if (pendingApprovals.length === 0) {
+      gate.current.hadPending = false;
     }
-  }, [approvals.length, threadId]);
+  }, [pendingApprovals.length, threadId]);
 
   const onResolved = useCallback(
     async ({ action }: ApprovalResolution) => {
+      if (gate.current.threadId !== threadId) return;
+      const epoch = sessionEpoch.current;
       const generation = gate.current.generation;
+      if (action === 'cancel') gate.current.cancelled = generation;
+
       const refreshed = await query.refetch();
-      const remaining = selectThreadApprovals(refreshed.data, threadId);
+      if (
+        sessionEpoch.current !== epoch ||
+        gate.current.threadId !== threadId ||
+        gate.current.generation !== generation
+      ) {
+        return;
+      }
+
+      const cancelled = gate.current.cancelled === generation;
+      if (cancelled && action !== 'cancel') return;
+
+      const remaining = selectPendingThreadApprovals(refreshed.data, threadId);
+      if (cancelled) {
+        if (gate.current.settled === generation) return;
+        gate.current.settled = generation;
+        gate.current.hadPending = remaining.length > 0;
+        onFocusRequested(remaining[0]);
+        return;
+      }
       if (remaining.length > 0) {
         onFocusRequested(remaining[0]);
         return;
       }
+
+      if (gate.current.settled === generation) return;
+      gate.current.settled = generation;
       gate.current.hadPending = false;
       onFocusRequested(undefined);
-      if (action === 'cancel' || gate.current.resumed === generation) return;
+      if (gate.current.resumed === generation) return;
       gate.current.resumed = generation;
       await onResume();
     },
     [onFocusRequested, onResume, query, threadId],
   );
 
-  return { approvals, isPending: approvals.length > 0, onResolved };
+  return { approvals, isPending: pendingApprovals.length > 0, onResolved };
 }

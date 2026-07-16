@@ -116,6 +116,31 @@ describe('SkillPicker', () => {
     if (arg.kind === 'skill') expect(arg.name).toBe('skill-creator');
   });
 
+  it('literally disables every option and suppresses selection when locked', () => {
+    const onSelect = vi.fn();
+    render(
+      <SkillPicker
+        groups={GROUPS}
+        activeOptionId={undefined}
+        listboxId="skpick"
+        disabled
+        onSelect={onSelect}
+      />,
+    );
+
+    const options = screen.getAllByRole('option');
+    for (const option of options) {
+      expect(option).toHaveProperty('disabled', true);
+      expect(option.getAttribute('aria-disabled')).toBe('true');
+    }
+    const firstOption = options[0];
+    if (firstOption === undefined) throw new Error('expected an option');
+    fireEvent.mouseDown(firstOption);
+    fireEvent.click(firstOption);
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it('renders nothing when there are no groups (degrade-to-no-op, D-09)', () => {
     const { container } = render(
       <SkillPicker groups={[]} activeOptionId={undefined} listboxId="skpick" onSelect={vi.fn()} />,

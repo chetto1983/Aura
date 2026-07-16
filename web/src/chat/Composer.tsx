@@ -335,17 +335,27 @@ export function Composer({
             groups={pickerGroups}
             activeOptionId={activeOptionId}
             listboxId={listboxId}
+            disabled={approvalLocked}
             onSelect={handlePickItem}
           />
         ) : null}
         {pinnedSkill != null || (uploads !== undefined && uploads.items.length > 0) ? (
           <div className="flex flex-wrap gap-2">
             {pinnedSkill != null ? (
-              <SkillPill name={pinnedSkill.name} onRemove={() => onPinSkill?.(null)} />
+              <SkillPill
+                name={pinnedSkill.name}
+                disabled={approvalLocked}
+                onRemove={() => onPinSkill?.(null)}
+              />
             ) : null}
             {uploads !== undefined
               ? uploads.items.map((item) => (
-                  <AttachmentChip key={item.localId} item={item} onRemove={uploads.remove} />
+                  <AttachmentChip
+                    key={item.localId}
+                    item={item}
+                    disabled={approvalLocked}
+                    onRemove={uploads.remove}
+                  />
                 ))
               : null}
           </div>

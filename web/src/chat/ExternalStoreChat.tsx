@@ -89,6 +89,7 @@ export function ExternalStoreChat({
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const activeThreadIdRef = useRef(threadId);
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
@@ -98,6 +99,10 @@ export function ExternalStoreChat({
   const reasoningCaps = useReasoningCapabilities();
   const hydratedEffort = useConversation(threadId).data?.ReasoningEffort;
   const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
+
+  useEffect(() => {
+    activeThreadIdRef.current = threadId;
+  }, [threadId]);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -399,9 +404,17 @@ export function ExternalStoreChat({
   }, [foldResumeRun, threadId]);
 
   const threadApprovals = useThreadApprovals(threadId, resumeRun, (next) => {
-    requestAnimationFrame(() => {
+    const requestedThreadId = threadId;
+    const focusRequestedTarget = () => {
+      if (activeThreadIdRef.current !== requestedThreadId) return;
       if (next === undefined) {
-        composerInputRef.current?.focus();
+        const input = composerInputRef.current;
+        if (input === null) return;
+        if (input.disabled) {
+          requestAnimationFrame(focusRequestedTarget);
+          return;
+        }
+        input.focus();
         return;
       }
       const target =
@@ -411,7 +424,8 @@ export function ExternalStoreChat({
               (element) => element.dataset.approvalToken === next.token,
             );
       target?.focus();
-    });
+    };
+    requestAnimationFrame(focusRequestedTarget);
   });
 
   // backendSeqAt maps a visible message to the backend turn seq it diverges from. Rehydrated

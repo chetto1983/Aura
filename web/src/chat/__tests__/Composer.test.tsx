@@ -194,6 +194,43 @@ describe('Composer approval lock', () => {
       true,
     );
   });
+
+  it('literally disables pinned-skill and attachment removal actions', () => {
+    const onPinSkill = vi.fn();
+    const remove = vi.fn();
+    const lockedUploads = uploads({
+      items: [
+        {
+          localId: 'locked-file',
+          file: new File(['x'], 'locked.txt', { type: 'text/plain' }),
+          progress: 1,
+          status: 'ready',
+        },
+      ],
+      remove,
+    });
+    render(
+      <Composer
+        approvalLocked
+        uploads={lockedUploads}
+        pinnedSkill={SKILL_CREATOR}
+        onPinSkill={onPinSkill}
+      />,
+    );
+
+    const removeSkill = screen.getByRole('button', {
+      name: 'Remove pinned skill skill-creator',
+    });
+    const removeAttachment = screen.getByRole('button', { name: 'Remove locked.txt' });
+    expect(removeSkill).toHaveProperty('disabled', true);
+    expect(removeAttachment).toHaveProperty('disabled', true);
+
+    fireEvent.click(removeSkill);
+    fireEvent.click(removeAttachment);
+
+    expect(onPinSkill).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
 });
 
 describe('Composer dictation', () => {
