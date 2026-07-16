@@ -42,6 +42,7 @@ This plan is the source of truth for implementation progress. Every current and 
 - Mark every step in a task `[x]` only after the implementation and both reviews pass with no unresolved findings.
 - Update the checkboxes immediately after approval; do not defer progress tracking to a later task or session.
 - Commit each approved task's checkbox update as a separate docs-only checkpoint so code-review ranges remain exact.
+- At every task close, merge the approved task branch into `master` and run fresh post-merge verification before starting the next task. A task is not closed while it exists only in a worktree or feature branch.
 - Never mark a task complete based only on passing tests or an implementer's report.
 
 ### Task 1: Land the PRD-first contract as a standalone commit
