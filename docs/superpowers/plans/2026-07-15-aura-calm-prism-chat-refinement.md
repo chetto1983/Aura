@@ -555,7 +555,7 @@ git commit -m "fix(web): preserve truthful tool disclosure states"
 - Create: `web/src/chat/__tests__/ExternalStoreChat.approvals.test.tsx`
 - Test: `web/src/chat/__tests__/Composer.test.tsx`
 
-- [ ] **Step 1: Add failing generic-framing, token, whitespace, and terminal-tone tests**
+- [x] **Step 1: Add failing generic-framing, token, whitespace, and terminal-tone tests**
 
 ```tsx
 const risky = approval({
@@ -590,7 +590,7 @@ expect(
 
 Add parallel pending/terminal/failure sentinel assertions proving the token is absent as visible text in every state while URL transport remains encoded.
 
-- [ ] **Step 2: Add failing integration coverage for DOM order, lock, focus, and three approvals**
+- [x] **Step 2: Add failing integration coverage for DOM order, lock, focus, and three approvals**
 
 Create `ExternalStoreChat.approvals.test.tsx` using the existing QueryClient/SSE helpers. The core case must be literal:
 
@@ -630,7 +630,7 @@ expect(document.activeElement).toBe(screen.getByPlaceholderText("Ask Aura"));
 
 Add a second case where Cancel resolves the queue and leaves `runRequests` empty. Add a confirmation case proving focus moves to **Keep running**, Escape restores **Cancel run**, and all confirmation controls are 44px-classed.
 
-- [ ] **Step 3: Run the approval/composer tests and verify current false claims and eager re-drive failures**
+- [x] **Step 3: Run the approval/composer tests and verify current false claims and eager re-drive failures**
 
 ```powershell
 cd web
@@ -639,7 +639,7 @@ npx vitest run src/approvals/__tests__/InlineApprovalCard.test.tsx src/approvals
 
 Expected: FAIL because `kind=approval` claims skill/container behavior, renders the token, cards are after the composer, children remain active, and every accept/decline re-drives immediately.
 
-- [ ] **Step 4: Create the single active-thread selector and generation-based resume gate**
+- [x] **Step 4: Create the single active-thread selector and generation-based resume gate**
 
 Create `useThreadApprovals.ts` with these public types and behavior:
 
@@ -717,7 +717,7 @@ export function useThreadApprovals(
 
 Preserve array order; do not client-sort or infer a subtype. The generation guard makes duplicate final callbacks idempotent.
 
-- [ ] **Step 5: Make approval cards truthful, focus-safe, and announcement-safe**
+- [x] **Step 5: Make approval cards truthful, focus-safe, and announcement-safe**
 
 Change `InlineApprovalCard.onResolved` to receive `ApprovalResolution`. Replace `SkillRiskStrip` with generic framing:
 
@@ -760,7 +760,7 @@ The newly keyed node announces repeated intermediate outcomes once each without 
 
 For cancel confirmation, hold refs to Cancel and Keep-running buttons. On open, focus Keep-running; on Escape, close and refocus Cancel. Give every confirmation control `min-h-11`.
 
-- [ ] **Step 6: Move cards inside `ExternalStoreChat` and lock every composer action**
+- [x] **Step 6: Move cards inside `ExternalStoreChat` and lock every composer action**
 
 Delete `resumeNonce`, `redriveRun`, and the AppShell-level `ThreadApprovalCards`. In `ExternalStoreChat`, convert the old nonce resume effect into an awaited `resumeRun` callback, then call the hook:
 
@@ -811,7 +811,7 @@ Render in this exact order:
 
 In `Composer`, use a stable `const approvalHintId = useId()`, set `data-testid="chat-composer"`, `aria-disabled`, and `aria-describedby` on the root, render the localized hint, and pass `disabled={approvalLocked || existingCondition}` to the textarea, Add files, Mic, Send, Cancel, skill buttons, and effort select. Guard pointer/key handlers with `if (approvalLocked) return;` where a primitive lacks native disabled behavior.
 
-- [ ] **Step 7: Add exact bilingual approval copy**
+- [x] **Step 7: Add exact bilingual approval copy**
 
 Replace the skill-specific bundle with:
 
@@ -837,7 +837,7 @@ lock: 'Rispondi alla richiesta qui sopra per continuare.',
 
 Change Answered copy so it does not claim the run resumed before the final pending item; use `Answered.` / `Risposta inviata.`. Remove skill/container/token keys only after all imports are gone.
 
-- [ ] **Step 8: Verify the approval gate, file cap, and transport contract**
+- [x] **Step 8: Verify the approval gate, file cap, and transport contract**
 
 ```powershell
 cd web
@@ -849,7 +849,7 @@ git diff --check -- web/src/approvals web/src/chat/ExternalStoreChat.tsx web/src
 
 Expected: all tests PASS; three accepts cause one `/agent/run`, cancel causes zero, URL token transport and JSON verb bodies are unchanged, and both large files stay under 600 lines.
 
-- [ ] **Step 9: Commit the approval hierarchy**
+- [x] **Step 9: Commit the approval hierarchy**
 
 ```powershell
 git add -- web/src/approvals/useThreadApprovals.ts web/src/approvals/useApprovals.ts web/src/approvals/ThreadApprovalCards.tsx web/src/approvals/InlineApprovalCard.tsx web/src/chat/ExternalStoreChat.tsx web/src/chat/Composer.tsx web/src/AppShell.tsx web/src/i18n/resources.ts web/src/approvals/__tests__/InlineApprovalCard.test.tsx web/src/approvals/__tests__/ThreadApprovalCards.test.tsx web/src/chat/__tests__/ExternalStoreChat.approvals.test.tsx web/src/chat/__tests__/Composer.test.tsx
