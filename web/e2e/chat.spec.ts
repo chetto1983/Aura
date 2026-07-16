@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { Conversation } from '../src/conversations/useConversations';
 import { gotoAuthenticated } from './auth';
+import { collectBrowserHealth } from './support/browserHealth';
 
 // chat.spec.ts is the phase-proving E2E (CHAT-01 / D-03 / APRV-02 / CHAT-04): it drives
 // the Core-Value loop end-to-end against the REAL served SPA + the REAL sseAdapter/runtime
@@ -48,13 +49,6 @@ function isCI(): boolean {
 function loadGolden(): GoldenFrames | null {
   if (!existsSync(GOLDEN_PATH)) return null;
   return JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as GoldenFrames;
-}
-
-function isExpectedBrowserConsoleNoise(text: string): boolean {
-  return (
-    text === 'Viewport argument key "interactive-widget" not recognized and ignored.' ||
-    text.includes('/api/auth/config due to access control checks.')
-  );
 }
 
 let golden: GoldenFrames | null = null;
@@ -210,6 +204,36 @@ function conversationListBody(title: string): string {
   return JSON.stringify([conversationRecord(title)]);
 }
 
+async function installAppShellRoutes(page: Page) {
+  await page.route('**/api/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ identity_id: 'operator', capabilities: [] }),
+    }),
+  );
+  await page.route('**/api/voice/capabilities', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tts: false, stt: false }),
+    }),
+  );
+  await page.route('**/api/composer/skills', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"skills":[]}' }),
+  );
+  await page.route('**/api/composer/reasoning-capabilities', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ levels: ['auto', 'off'], default: 'auto', detected: false }),
+    }),
+  );
+  await page.route(/\/api\/assets\?thread_id=/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
+}
+
 // installGoldenRoutes wires the deterministic golden replay over the served SPA: the
 // conversation list/get + approvals poll + the two /agent/run turns (initial-with-interrupt,
 // then resume) + the resolve POST. The SSE bodies feed the REAL in-browser sseAdapter.
@@ -220,6 +244,8 @@ async function installGoldenRoutes(
 ) {
   let pending = false; // flips true after the first turn (the ask_user interrupt is live)
   let resolved = false;
+
+  await installAppShellRoutes(page);
 
   await page.route(`**/api/conversations/${CONV_ID}`, (route) =>
     route.fulfill({
@@ -277,10 +303,10 @@ async function installGoldenRoutes(
     });
   });
 
-  // The three-action resolve bridge: mark resolved (the badge poll drops the row) → 204.
+  // The three-action resolve bridge: mark resolved (the badge poll drops the row) → successful 2xx.
   await page.route(`**/api/approvals/${PAUSE_TOKEN}/resolve`, (route) => {
     resolved = true;
-    return route.fulfill({ status: 204, body: '' });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 
   // /agent/run: the FIRST POST streams the initial turn ending in the interrupt; subsequent
@@ -295,33 +321,7 @@ async function installGoldenRoutes(
 }
 
 async function installTimelineRoutes(page: Page, g: GoldenFrames) {
-  await page.route('**/api/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ identity_id: 'operator', capabilities: [] }),
-    }),
-  );
-  await page.route('**/api/voice/capabilities', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ tts: false, stt: false }),
-    }),
-  );
-  await page.route('**/api/composer/skills', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"skills":[]}' }),
-  );
-  await page.route('**/api/composer/reasoning-capabilities', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ levels: ['auto', 'off'], default: 'auto', detected: false }),
-    }),
-  );
-  await page.route(/\/api\/assets\?thread_id=/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  );
+  await installAppShellRoutes(page);
   await page.route(`**/api/conversations/${CONV_ID}`, (route) =>
     route.fulfill({
       status: 200,
@@ -365,19 +365,11 @@ async function installTimelineRoutes(page: Page, g: GoldenFrames) {
 test.describe('cockpit chat — core-value loop (E2E)', () => {
   test('renders reasoning, tools, and answer in chronological stream order', async ({
     page,
+    baseURL,
   }, testInfo) => {
     const g = golden;
     if (g === null) throw new Error('golden fixture not loaded');
-    const consoleProblems: string[] = [];
-    page.on('console', (msg) => {
-      const text = msg.text();
-      if (msg.type() === 'error' && !isExpectedBrowserConsoleNoise(text)) {
-        consoleProblems.push(text);
-      }
-    });
-    page.on('pageerror', (err) => {
-      consoleProblems.push(err.message);
-    });
+    const health = collectBrowserHealth(page, new URL(baseURL ?? 'http://127.0.0.1:9080').origin);
 
     await page.addInitScript(() => {
       localStorage.removeItem('aura.chat.reasoning.shown');
@@ -419,7 +411,7 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
     expect(firstReasoning).toBeLessThan(tool);
     expect(tool).toBeLessThan(secondReasoning);
     expect(secondReasoning).toBeLessThan(answer);
-    expect(consoleProblems).toEqual([]);
+    health.assertClean();
 
     await testInfo.attach('chat-timeline-order.png', {
       body: await page.screenshot({ fullPage: false }),
@@ -427,9 +419,10 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
     });
   });
 
-  test('opening an existing conversation renders persisted history', async ({ page }) => {
+  test('opening an existing conversation renders persisted history', async ({ page, baseURL }) => {
     const g = golden;
     if (g === null) throw new Error('golden fixture not loaded');
+    const health = collectBrowserHealth(page, new URL(baseURL ?? 'http://127.0.0.1:9080').origin);
     await installGoldenRoutes(page, g, [
       { id: 'msg-1', role: 'user', content: 'Persisted prompt from DB' },
       { id: 'msg-2', role: 'assistant', content: 'Persisted answer from DB' },
@@ -439,13 +432,16 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
 
     await expect(page.getByText('Persisted prompt from DB')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Persisted answer from DB')).toBeVisible();
+    health.assertClean();
   });
 
   test('prompt -> stream -> inline approval resolve -> resume, footer updates', async ({
     page,
+    baseURL,
   }, testInfo) => {
     const g = golden;
     if (g === null) throw new Error('golden fixture not loaded'); // beforeAll guards this
+    const health = collectBrowserHealth(page, new URL(baseURL ?? 'http://127.0.0.1:9080').origin);
     await installGoldenRoutes(page, g);
 
     // A streamed-token counter — asserted >= 1 at the end so a no-op run FAILS (not green).
@@ -484,11 +480,11 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
 
     // 4) The runtime footer shows non-zero tokens/cost after the turn (CHAT-04).
     const footer = page.getByRole('contentinfo').or(page.locator('footer'));
-    const detail = footer.locator('#footer-telemetry-detail');
+    const detail = footer.locator('[id^="footer-telemetry-detail-"]');
     // <sm viewports collapse the full instrument cluster behind a tap-to-expand
     // disclosure (RuntimeFooter AC-7); expand it on mobile so the detail is visible.
     if (testInfo.project.name.startsWith('mobile')) {
-      await footer.locator('button[aria-controls="footer-telemetry-detail"]').click();
+      await footer.locator('button[aria-controls^="footer-telemetry-detail-"]').click();
     }
     await expect(detail).toBeVisible({ timeout: 15000 });
     await expect(detail.getByText('$', { exact: false }).first()).toBeVisible();
@@ -499,5 +495,6 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
     // COUNTED-ASSERTION GUARD: at least one streamed-token assertion executed, so a 0-token
     // (no-op) run fails rather than passing silently.
     expect(tokenChunkAssertions).toBeGreaterThan(0);
+    health.assertClean();
   });
 });

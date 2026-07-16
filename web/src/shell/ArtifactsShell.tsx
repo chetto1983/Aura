@@ -37,7 +37,7 @@ export function ArtifactsToggle({
       data-active={active}
       data-required-touch-target
       onClick={onToggle}
-      className="min-h-11 min-w-11 rounded-full bg-surface/70 text-text-muted backdrop-blur hover:bg-surface-2 hover:text-text data-[active=true]:bg-surface-2 data-[active=true]:text-accent-text"
+      className="min-h-[44px] min-w-[44px] rounded-full bg-surface/70 text-text-muted backdrop-blur hover:bg-surface-2 hover:text-text data-[active=true]:bg-surface-2 data-[active=true]:text-accent-text"
     >
       <FileText aria-hidden="true" focusable="false" />
     </Button>

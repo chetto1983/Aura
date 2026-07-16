@@ -36,7 +36,7 @@ interface UserMessageProps {
 }
 
 const MESSAGE_ACTION_CLASS =
-  'inline-flex min-h-11 min-w-11 items-center justify-center text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+  'inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
 const MESSAGE_ACTION_ROW_CLASS =
   'flex flex-wrap items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100 [@media(pointer:coarse)]:opacity-100';
 
@@ -161,7 +161,7 @@ export function AssistantMessage() {
               download={asset.file_name}
               aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
               data-required-touch-target
-              className="group inline-flex min-h-11 min-w-11 max-w-full items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="group inline-flex min-h-[44px] min-w-[44px] max-w-full items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <svg
                 width="15"

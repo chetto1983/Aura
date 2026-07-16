@@ -24,7 +24,7 @@ export function BranchPicker() {
         <BranchPickerPrimitive.Previous
           aria-label={t('chat.branch.previous')}
           data-required-touch-target
-          className="inline-flex h-11 min-h-11 w-11 min-w-11 items-center justify-center rounded-[var(--radius-sm)] outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+          className="inline-flex h-[44px] min-h-[44px] w-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-sm)] outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
         >
           <span aria-hidden="true">‹</span>
         </BranchPickerPrimitive.Previous>
@@ -38,7 +38,7 @@ export function BranchPicker() {
         <BranchPickerPrimitive.Next
           aria-label={t('chat.branch.next')}
           data-required-touch-target
-          className="inline-flex h-11 min-h-11 w-11 min-w-11 items-center justify-center rounded-[var(--radius-sm)] outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+          className="inline-flex h-[44px] min-h-[44px] w-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-sm)] outline-none hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
         >
           <span aria-hidden="true">›</span>
         </BranchPickerPrimitive.Next>

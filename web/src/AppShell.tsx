@@ -399,7 +399,10 @@ export function AppShell() {
   );
 
   const workspace = (
-    <section aria-label={t('shell.chatRegion')} className="flex h-full min-h-0 flex-col bg-bg">
+    <section
+      aria-label={t('shell.chatRegion')}
+      className="flex h-full min-h-0 min-w-0 flex-col bg-bg"
+    >
       <div className="min-h-0 flex-1">
         <Suspense
           fallback={

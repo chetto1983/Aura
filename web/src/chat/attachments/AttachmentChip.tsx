@@ -29,7 +29,7 @@ export function AttachmentChip({ item, onRemove, disabled = false }: AttachmentC
         onClick={() => {
           if (!disabled) onRemove(item.localId);
         }}
-        className="h-11 min-h-11 w-11 min-w-11 shrink-0 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
+        className="h-[44px] min-h-[44px] w-[44px] min-w-[44px] shrink-0 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
       >
         <X data-icon aria-hidden="true" className="size-3.5" />
       </Button>

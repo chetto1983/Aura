@@ -25,17 +25,24 @@ export interface DrawerProps {
 export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
   useScrollLock(open);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
+    const returnFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     focusFirstDescendant(panel);
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose('explicit');
+        onCloseRef.current('explicit');
         return;
       }
       trapTabKey(event, panel);
@@ -44,8 +51,9 @@ export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
+      returnFocus?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

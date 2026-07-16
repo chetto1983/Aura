@@ -112,8 +112,8 @@ function renderShell(initial = '/c/conv-1') {
 function expectRequiredTouchTarget(element: HTMLElement): void {
   const classes = element.getAttribute('class') ?? '';
   expect(element.getAttribute('data-required-touch-target')).not.toBeNull();
-  expect(classes).toMatch(/(?:^|\s)(?:min-h-11|h-11)(?:\s|$)/);
-  expect(classes).toMatch(/(?:^|\s)(?:min-w-11|w-11)(?:\s|$)/);
+  expect(classes).toMatch(/(?:^|\s)(?:min-h-\[44px\]|h-\[44px\])(?:\s|$)/);
+  expect(classes).toMatch(/(?:^|\s)(?:min-w-\[44px\]|w-\[44px\])(?:\s|$)/);
 }
 
 beforeEach(() => {

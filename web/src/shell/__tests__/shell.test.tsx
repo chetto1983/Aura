@@ -104,6 +104,33 @@ describe('shell utilities', () => {
     }
   });
 
+  it('Drawer restores focus to its opener after an explicit close', () => {
+    const onClose = vi.fn();
+    const closed = (
+      <>
+        <button type="button">Open artifacts</button>
+        <Drawer open={false} title="Artifacts" side="right" onClose={onClose}>
+          <button type="button">Artifact action</button>
+        </Drawer>
+      </>
+    );
+    const { rerender } = render(closed);
+    const opener = screen.getByRole('button', { name: 'Open artifacts' });
+    opener.focus();
+    rerender(
+      <>
+        <button type="button">Open artifacts</button>
+        <Drawer open title="Artifacts" side="right" onClose={onClose}>
+          <button type="button">Artifact action</button>
+        </Drawer>
+      </>,
+    );
+    expect(document.activeElement).not.toBe(opener);
+
+    rerender(closed);
+    expect(document.activeElement).toBe(opener);
+  });
+
   it('Drawer renders nothing when closed', () => {
     render(
       <Drawer open={false} title="Navigation" side="right" onClose={() => undefined}>
