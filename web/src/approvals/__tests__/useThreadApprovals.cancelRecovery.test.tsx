@@ -79,4 +79,35 @@ describe('useThreadApprovals Cancel focus recovery', () => {
       expect(onResume).not.toHaveBeenCalled();
     },
   );
+
+  it.each(['throw', 'error', 'stale'] as const)(
+    'focuses the remaining card once when uncertain Cancel %s recovery becomes nonfinal',
+    async (resultKind) => {
+      const approvalA = row(`cancel-remaining-${resultKind}`);
+      const approvalB = row('cancel-remaining-b');
+      h.data = [approvalA, approvalB];
+      if (resultKind === 'throw') h.refetch.mockRejectedValueOnce(new Error('offline'));
+      else if (resultKind === 'error') {
+        h.refetch.mockResolvedValueOnce({
+          data: [approvalA, approvalB],
+          error: new Error('offline'),
+        });
+      } else h.refetch.mockResolvedValueOnce({ data: [approvalA, approvalB] });
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+      await act(async () => resolve(result.current, approvalA, 'cancel'));
+      expect(onFocus).not.toHaveBeenCalled();
+
+      h.data = [approvalB];
+      rerender();
+
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onFocus).toHaveBeenCalledWith(approvalB);
+      expect(onResume).not.toHaveBeenCalled();
+      rerender();
+      expect(onFocus).toHaveBeenCalledTimes(1);
+    },
+  );
 });

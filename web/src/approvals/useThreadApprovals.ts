@@ -38,9 +38,11 @@ interface DeferredOutcome {
   readonly generation: number;
   readonly remaining: readonly Approval[];
   readonly resolvedToken?: string;
+  readonly recoveryKind?: 'resume' | 'focus';
 }
 
 interface RecoveryOutcome {
+  readonly attemptId: string;
   readonly generation: number;
   readonly resolvedToken: string;
   readonly kind: 'resume' | 'focus';
@@ -54,7 +56,7 @@ interface ApprovalGate {
   resumed: number;
   cancelled: number;
   settled: number;
-  recovery: RecoveryOutcome | undefined;
+  readonly recoveries: Map<string, RecoveryOutcome>;
   pendingTokens: Set<string>;
   readonly attempts: Map<string, AttemptOwner>;
   readonly cancelIntents: Set<string>;
@@ -70,7 +72,7 @@ function freshGate(threadId: string, session: object): ApprovalGate {
     resumed: -1,
     cancelled: -1,
     settled: -1,
-    recovery: undefined,
+    recoveries: new Map<string, RecoveryOutcome>(),
     pendingTokens: new Set<string>(),
     attempts: new Map<string, AttemptOwner>(),
     cancelIntents: new Set<string>(),
@@ -95,11 +97,30 @@ function rotateGeneration(gate: ApprovalGate, pendingTokens: Set<string>): void 
   gate.resumed = -1;
   gate.cancelled = -1;
   gate.settled = -1;
-  gate.recovery = undefined;
+  gate.recoveries.clear();
   gate.pendingTokens = pendingTokens;
   gate.attempts.clear();
   gate.cancelIntents.clear();
   gate.deferred = undefined;
+}
+
+function clearGenerationRecoveries(gate: ApprovalGate, generation: number): void {
+  for (const [attemptId, recovery] of gate.recoveries) {
+    if (recovery.generation === generation) gate.recoveries.delete(attemptId);
+  }
+}
+
+function generationRecoveryKind(
+  gate: ApprovalGate,
+  generation: number,
+): 'resume' | 'focus' | undefined {
+  let result: 'resume' | undefined;
+  for (const recovery of gate.recoveries.values()) {
+    if (recovery.generation !== generation) continue;
+    if (recovery.kind === 'focus') return 'focus';
+    result = 'resume';
+  }
+  return result;
 }
 
 function matchesAttempt(owner: AttemptOwner, attempt: ApprovalResolutionAttempt): boolean {
@@ -150,13 +171,18 @@ export function useThreadApprovals(
       return;
     }
     current.pendingTokens = pendingTokens;
-    if (
-      current.recovery?.generation === current.generation &&
-      !pendingTokens.has(current.recovery.resolvedToken)
-    ) {
-      current.recovery = undefined;
+    let recoveredCandidateRemoved = false;
+    for (const [attemptId, recovery] of current.recoveries) {
+      if (
+        recovery.generation === current.generation &&
+        !pendingTokens.has(recovery.resolvedToken)
+      ) {
+        current.recoveries.delete(attemptId);
+        recoveredCandidateRemoved = true;
+      }
     }
-  }, [pendingTokens, session, threadId]);
+    if (recoveredCandidateRemoved) onFocusRequested(pendingApprovals[0]);
+  }, [onFocusRequested, pendingApprovals, pendingTokens, session, threadId]);
 
   const finishNonCancel = useCallback(
     async (generation: number, remaining: readonly Approval[]) => {
@@ -170,7 +196,6 @@ export function useThreadApprovals(
         return;
       }
       if (remaining.length > 0) {
-        current.recovery = undefined;
         current.hadPending = true;
         current.pendingTokens = tokensFor(remaining);
         onFocusRequested(remaining[0]);
@@ -178,7 +203,7 @@ export function useThreadApprovals(
       }
       if (current.settled === generation) return;
       current.settled = generation;
-      current.recovery = undefined;
+      clearGenerationRecoveries(current, generation);
       current.hadPending = false;
       current.pendingTokens = new Set<string>();
       onFocusRequested(undefined);
@@ -199,7 +224,7 @@ export function useThreadApprovals(
       ) {
         return;
       }
-      current.recovery = undefined;
+      clearGenerationRecoveries(current, generation);
       if (remaining.length > 0) {
         current.hadPending = true;
         current.pendingTokens = tokensFor(remaining);
@@ -218,22 +243,22 @@ export function useThreadApprovals(
   useLayoutEffect(() => {
     const current = gate.current;
     const generation = current.generation;
-    const recovery = current.recovery;
+    const recoveryKind = generationRecoveryKind(current, generation);
     if (
       pendingApprovals.length !== 0 ||
       current.threadId !== threadId ||
       current.session !== session ||
-      recovery?.generation !== generation ||
+      recoveryKind === undefined ||
       current.settled === generation
     ) {
       return;
     }
     if (current.cancelIntents.size > 0) {
-      current.deferred = { generation, remaining: [] };
+      current.deferred = { generation, remaining: [], recoveryKind };
       return;
     }
-    current.recovery = undefined;
-    if (recovery.kind === 'focus') {
+    clearGenerationRecoveries(current, generation);
+    if (recoveryKind === 'focus') {
       finishCancel(generation, []);
       return;
     }
@@ -302,16 +327,17 @@ export function useThreadApprovals(
       const deferred = current.deferred;
       if (deferred?.generation !== owner.generation) return;
       current.deferred = undefined;
-      if (current.recovery?.generation === owner.generation) current.recovery = undefined;
+      clearGenerationRecoveries(current, owner.generation);
       if (
         deferred.resolvedToken !== undefined &&
         deferred.remaining.some((approval) => approval.token === deferred.resolvedToken)
       ) {
         return;
       }
-      await finishNonCancel(owner.generation, deferred.remaining);
+      if (deferred.recoveryKind === 'focus') finishCancel(owner.generation, deferred.remaining);
+      else await finishNonCancel(owner.generation, deferred.remaining);
     },
-    [finishNonCancel, takeAttempt],
+    [finishCancel, finishNonCancel, takeAttempt],
   );
 
   const onResolved = useCallback(
@@ -320,22 +346,48 @@ export function useThreadApprovals(
       if (owner === undefined) return;
       const current = gate.current;
       const generation = owner.generation;
-      current.recovery = {
-        generation,
-        resolvedToken: owner.token,
-        kind: owner.action === 'cancel' ? 'focus' : 'resume',
-      };
       if (owner.action === 'cancel') {
         current.cancelled = generation;
+        clearGenerationRecoveries(current, generation);
         current.cancelIntents.clear();
         current.attempts.clear();
         current.deferred = undefined;
       }
 
+      const installRecovery = (): void => {
+        const active = gate.current;
+        if (
+          sessionEpoch.current !== owner.epoch ||
+          active.threadId !== threadId ||
+          active.session !== session ||
+          active.generation !== generation ||
+          active.settled === generation ||
+          (owner.action !== 'cancel' && active.cancelled === generation)
+        ) {
+          return;
+        }
+        const recovery: RecoveryOutcome = {
+          attemptId: owner.attemptId,
+          generation,
+          resolvedToken: owner.token,
+          kind: owner.action === 'cancel' ? 'focus' : 'resume',
+        };
+        active.recoveries.set(owner.attemptId, recovery);
+        if (active.pendingTokens.size !== 0) return;
+        if (active.cancelIntents.size > 0) {
+          active.deferred = { generation, remaining: [], recoveryKind: recovery.kind };
+          return;
+        }
+        clearGenerationRecoveries(active, generation);
+        if (recovery.kind === 'focus') finishCancel(generation, []);
+        else void finishNonCancel(generation, []);
+      };
+
       let refreshed: Awaited<ReturnType<typeof query.refetch>>;
       try {
         refreshed = await query.refetch();
       } catch {
+        installRecovery();
         return;
       }
       if (
@@ -346,17 +398,23 @@ export function useThreadApprovals(
       ) {
         return;
       }
-      if (refreshed.error != null) return;
+      if (refreshed.error != null) {
+        installRecovery();
+        return;
+      }
 
       const remaining = selectPendingThreadApprovals(refreshed.data, threadId);
-      if (remaining.some((approval) => approval.token === owner.token)) return;
+      if (remaining.some((approval) => approval.token === owner.token)) {
+        installRecovery();
+        return;
+      }
       const remainingTokens = tokensFor(remaining);
       if (remaining.length > 0 && !overlaps(gate.current.pendingTokens, remainingTokens)) {
         rotateGeneration(gate.current, remainingTokens);
         onFocusRequested(remaining[0]);
         return;
       }
-      gate.current.recovery = undefined;
+      gate.current.recoveries.delete(owner.attemptId);
       if (owner.action !== 'cancel' && gate.current.cancelled === generation) return;
       if (owner.action !== 'cancel' && gate.current.cancelIntents.size > 0) {
         gate.current.deferred = { generation, remaining, resolvedToken: owner.token };
