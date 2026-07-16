@@ -56,8 +56,10 @@ interface ApprovalGate {
   resumed: number;
   cancelled: number;
   settled: number;
+  focusedToken: string | undefined;
   readonly recoveries: Map<string, RecoveryOutcome>;
   pendingTokens: Set<string>;
+  pendingRows: readonly Approval[];
   readonly attempts: Map<string, AttemptOwner>;
   readonly cancelIntents: Set<string>;
   deferred: DeferredOutcome | undefined;
@@ -72,8 +74,10 @@ function freshGate(threadId: string, session: object): ApprovalGate {
     resumed: -1,
     cancelled: -1,
     settled: -1,
+    focusedToken: undefined,
     recoveries: new Map<string, RecoveryOutcome>(),
     pendingTokens: new Set<string>(),
+    pendingRows: [],
     attempts: new Map<string, AttemptOwner>(),
     cancelIntents: new Set<string>(),
     deferred: undefined,
@@ -97,11 +101,22 @@ function rotateGeneration(gate: ApprovalGate, pendingTokens: Set<string>): void 
   gate.resumed = -1;
   gate.cancelled = -1;
   gate.settled = -1;
+  gate.focusedToken = undefined;
   gate.recoveries.clear();
   gate.pendingTokens = pendingTokens;
   gate.attempts.clear();
   gate.cancelIntents.clear();
   gate.deferred = undefined;
+}
+
+function focusPendingOnce(
+  gate: ApprovalGate,
+  next: Approval | undefined,
+  onFocusRequested: (approval: Approval | undefined) => void,
+): void {
+  if (next === undefined || gate.focusedToken === next.token) return;
+  gate.focusedToken = next.token;
+  onFocusRequested(next);
 }
 
 function clearGenerationRecoveries(gate: ApprovalGate, generation: number): void {
@@ -163,14 +178,17 @@ export function useThreadApprovals(
     if (current.threadId !== threadId || current.session !== session) return;
     if (pendingTokens.size === 0) {
       current.pendingTokens = pendingTokens;
+      current.pendingRows = [];
       current.hadPending = false;
       return;
     }
     if (!current.hadPending || !overlaps(current.pendingTokens, pendingTokens)) {
       rotateGeneration(current, pendingTokens);
+      current.pendingRows = pendingApprovals;
       return;
     }
     current.pendingTokens = pendingTokens;
+    current.pendingRows = pendingApprovals;
     let recoveredCandidateRemoved = false;
     for (const [attemptId, recovery] of current.recoveries) {
       if (
@@ -181,7 +199,9 @@ export function useThreadApprovals(
         recoveredCandidateRemoved = true;
       }
     }
-    if (recoveredCandidateRemoved) onFocusRequested(pendingApprovals[0]);
+    if (recoveredCandidateRemoved) {
+      focusPendingOnce(current, pendingApprovals[0], onFocusRequested);
+    }
   }, [onFocusRequested, pendingApprovals, pendingTokens, session, threadId]);
 
   const finishNonCancel = useCallback(
@@ -198,7 +218,8 @@ export function useThreadApprovals(
       if (remaining.length > 0) {
         current.hadPending = true;
         current.pendingTokens = tokensFor(remaining);
-        onFocusRequested(remaining[0]);
+        current.pendingRows = remaining;
+        focusPendingOnce(current, remaining[0], onFocusRequested);
         return;
       }
       if (current.settled === generation) return;
@@ -206,6 +227,8 @@ export function useThreadApprovals(
       clearGenerationRecoveries(current, generation);
       current.hadPending = false;
       current.pendingTokens = new Set<string>();
+      current.pendingRows = [];
+      current.focusedToken = undefined;
       onFocusRequested(undefined);
       if (current.resumed === generation) return;
       current.resumed = generation;
@@ -228,13 +251,16 @@ export function useThreadApprovals(
       if (remaining.length > 0) {
         current.hadPending = true;
         current.pendingTokens = tokensFor(remaining);
-        onFocusRequested(remaining[0]);
+        current.pendingRows = remaining;
+        focusPendingOnce(current, remaining[0], onFocusRequested);
         return;
       }
       if (current.settled === generation) return;
       current.settled = generation;
       current.hadPending = false;
       current.pendingTokens = new Set<string>();
+      current.pendingRows = [];
+      current.focusedToken = undefined;
       onFocusRequested(undefined);
     },
     [onFocusRequested, session, threadId],
@@ -327,7 +353,7 @@ export function useThreadApprovals(
       const deferred = current.deferred;
       if (deferred?.generation !== owner.generation) return;
       current.deferred = undefined;
-      clearGenerationRecoveries(current, owner.generation);
+      current.recoveries.delete(owner.attemptId);
       if (
         deferred.resolvedToken !== undefined &&
         deferred.remaining.some((approval) => approval.token === deferred.resolvedToken)
@@ -364,6 +390,10 @@ export function useThreadApprovals(
           active.settled === generation ||
           (owner.action !== 'cancel' && active.cancelled === generation)
         ) {
+          return;
+        }
+        if (active.pendingTokens.size > 0 && !active.pendingTokens.has(owner.token)) {
+          focusPendingOnce(active, active.pendingRows[0], onFocusRequested);
           return;
         }
         const recovery: RecoveryOutcome = {
@@ -411,7 +441,8 @@ export function useThreadApprovals(
       const remainingTokens = tokensFor(remaining);
       if (remaining.length > 0 && !overlaps(gate.current.pendingTokens, remainingTokens)) {
         rotateGeneration(gate.current, remainingTokens);
-        onFocusRequested(remaining[0]);
+        gate.current.pendingRows = remaining;
+        focusPendingOnce(gate.current, remaining[0], onFocusRequested);
         return;
       }
       gate.current.recoveries.delete(owner.attemptId);

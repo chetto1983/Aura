@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Approval, ResolveAction } from '../useApprovals';
+import type { ApprovalResolutionAttempt } from '../useThreadApprovals';
 import { useThreadApprovals } from '../useThreadApprovals';
 
 const h = vi.hoisted(() => ({
@@ -59,18 +60,29 @@ function resolve(
   approval: Approval,
   action: ResolveAction,
 ): Promise<void> {
+  const attempt = start(value, approval, action);
+  let promise: Promise<void> | undefined;
+  act(() => {
+    promise = value.onResolved(attempt);
+  });
+  if (promise === undefined) throw new Error('resolution did not start');
+  return promise;
+}
+
+function start(
+  value: ReturnType<typeof useThreadApprovals>,
+  approval: Approval,
+  action: ResolveAction,
+): ApprovalResolutionAttempt {
   const attempt = {
     approval,
     action,
     attemptId: `${approval.token}-${action}-${String(++attemptSequence)}`,
   };
-  let promise: Promise<void> | undefined;
   act(() => {
     value.onResolutionStarted(attempt);
-    promise = value.onResolved(attempt);
   });
-  if (promise === undefined) throw new Error('resolution did not start');
-  return promise;
+  return attempt;
 }
 
 async function settleUncertain(
@@ -91,6 +103,52 @@ beforeEach(() => {
 });
 
 describe('useThreadApprovals concurrent recovery ownership', () => {
+  it.each([
+    ['accept', 'throw'],
+    ['decline', 'error'],
+    ['accept', 'stale'],
+    ['cancel', 'throw'],
+    ['cancel', 'error'],
+    ['cancel', 'stale'],
+  ] as const)(
+    'treats observer-first A removal as confirmed nonfinal for %s after refetch %s',
+    async (action, resultKind) => {
+      const approvalA = row(`observer-first-a-${action}-${resultKind}`);
+      const approvalB = row(`observer-first-b-${action}-${resultKind}`);
+      h.data = [approvalA, approvalB];
+      const refresh = deferred<{ data: Approval[]; error?: Error }>();
+      h.refetch.mockReturnValueOnce(refresh.promise);
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+      const resolution = resolve(result.current, approvalA, action);
+      h.data = [approvalB];
+      rerender();
+      expect(onFocus).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await settleUncertain(refresh, resultKind, [approvalA, approvalB]);
+        await resolution;
+      });
+
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onFocus).toHaveBeenCalledWith(approvalB);
+      expect(onResume).not.toHaveBeenCalled();
+
+      await act(async () => {
+        h.data = [];
+        rerender();
+        await Promise.resolve();
+      });
+
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onResume).not.toHaveBeenCalled();
+      rerender();
+      expect(onFocus).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([
     ['accept', 'decline', 'throw', 'a-first'],
     ['decline', 'accept', 'error', 'a-first'],
@@ -213,6 +271,53 @@ describe('useThreadApprovals concurrent recovery ownership', () => {
       expect(onResume).not.toHaveBeenCalled();
       rerender();
       expect(onFocus).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['throw', 'error', 'stale'] as const)(
+    'preserves C %s recovery when failed Cancel B releases deferred Accept A',
+    async (resultKind) => {
+      const approvalA = row(`failed-cancel-a-${resultKind}`);
+      const approvalB = row(`failed-cancel-b-${resultKind}`);
+      const approvalC = row(`failed-cancel-c-${resultKind}`);
+      h.data = [approvalA, approvalB, approvalC];
+      const refreshA = deferred<{ data: Approval[]; error?: Error }>();
+      const refreshC = deferred<{ data: Approval[]; error?: Error }>();
+      h.refetch.mockReturnValueOnce(refreshA.promise).mockReturnValueOnce(refreshC.promise);
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+      const answerA = resolve(result.current, approvalA, 'accept');
+      const cancelB = start(result.current, approvalB, 'cancel');
+      const answerC = resolve(result.current, approvalC, 'accept');
+      await act(async () => {
+        await settleUncertain(refreshC, resultKind, [approvalC]);
+        await answerC;
+        refreshA.resolve({ data: [approvalC] });
+        await answerA;
+      });
+
+      expect(onFocus).not.toHaveBeenCalled();
+      expect(onResume).not.toHaveBeenCalled();
+
+      await act(async () => result.current.onResolutionFailed(cancelB));
+      expect(onFocus).toHaveBeenCalledTimes(1);
+      expect(onFocus).toHaveBeenCalledWith(approvalC);
+      expect(onResume).not.toHaveBeenCalled();
+
+      await act(async () => {
+        h.data = [];
+        rerender();
+        await Promise.resolve();
+      });
+
+      expect(onFocus).toHaveBeenCalledTimes(2);
+      expect(onFocus).toHaveBeenLastCalledWith(undefined);
+      expect(onResume).toHaveBeenCalledTimes(1);
+      rerender();
+      expect(onFocus).toHaveBeenCalledTimes(2);
+      expect(onResume).toHaveBeenCalledTimes(1);
     },
   );
 });
