@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react';
 
 // DisplayCardShell — the shared chrome for every typed display card (26-04/26-05).
-// It reuses the ToolActivityCard surface vocabulary (rounded surface-2 panel with a
-// 2px left rule) so a typed display reads as a sibling of the raw tool card it
-// upgrades in place (D-02). Per-type bodies slot inside via `children`; the header
-// is a type label (+ optional meta/actions). Accent stays scarce here — the shell
-// is neutral surface/border/text (Color rule).
+// It gives structured result cards their own rounded surface, semantic left rule,
+// type header, optional metadata/actions, and slotted body. This typed result layer
+// complements the lightweight raw ToolActivityCard fallback (D-02). Accent stays
+// scarce here — the shell is neutral surface/border/text (Color rule).
 //
 // Kept dependency-free and side-effect-free so it composes inside any per-type card
 // without pulling pagination/i18n into the shell itself (each body owns its own t()).

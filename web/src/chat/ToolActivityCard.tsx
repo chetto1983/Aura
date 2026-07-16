@@ -178,7 +178,8 @@ function useElapsed(
   const { i18n, t } = useTranslation();
   const isRunning = startedAt !== undefined && status === 'running';
   const previousStatus = useRef(status);
-  // Clock reads stay outside render: mount, running ticks, and one logical-settlement edge.
+  // Date.now initializes state once during mount rendering, then is read on running ticks
+  // and the logical-settlement edge.
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
