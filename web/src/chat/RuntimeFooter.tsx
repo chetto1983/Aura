@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConversation } from '../conversations/useConversations';
 import { ContextBudgetGauge } from './ContextBudgetGauge';
 import {
-  addTurn,
   cacheHitPercent,
   contextPercent,
   DEFAULT_CONTEXT_WINDOW,
@@ -14,6 +13,7 @@ import {
   seedSession,
 } from './footerMetrics';
 import type { RunUsageEvent } from './runUsage';
+import { useRunSessionUsage } from './runSessionUsage';
 import { Button } from '@/components/ui/button';
 
 export interface RuntimeFooterProps {
@@ -35,9 +35,10 @@ export function RuntimeFooter({ usageState, conversationId, windowTokens }: Runt
   const { t } = useTranslation();
   const { data: conv } = useConversation(conversationId);
   const [expanded, setExpanded] = useState(false);
+  const detailId = `footer-telemetry-detail-${useId()}`;
   const turn = usageState.usage ?? null;
   const seed = seedSession(conv);
-  const session = turn ? addTurn(seed, turn) : seed;
+  const session = useRunSessionUsage(conversationId, seed, conv !== undefined, usageState);
   const none = t('footer.none');
   const noSpend = isNoSpendTurn(turn ?? undefined);
   const noSpendLabel = t('footer.noSpend');
@@ -89,7 +90,7 @@ export function RuntimeFooter({ usageState, conversationId, windowTokens }: Runt
           variant="ghost"
           aria-label={t(expanded ? 'footer.hideDetails' : 'footer.showDetails')}
           aria-expanded={expanded}
-          aria-controls="footer-telemetry-detail"
+          aria-controls={detailId}
           onClick={() => {
             setExpanded((value) => !value);
           }}
@@ -109,7 +110,7 @@ export function RuntimeFooter({ usageState, conversationId, windowTokens }: Runt
         </Button>
 
         <div
-          id="footer-telemetry-detail"
+          id={detailId}
           className={`${expanded ? 'flex' : 'hidden'} flex-wrap items-center gap-x-6 gap-y-2 sm:flex`}
         >
           <Metric

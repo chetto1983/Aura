@@ -426,7 +426,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
       expect(announcer.textContent).toMatch(/1k/);
     });
     rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(3, 'running')} />);
-    expect(visible.textContent).not.toMatch(/\$0\.5/);
+    expect(visible.textContent).toMatch(/Cost—Session \$0\.5500/);
     const secondAnnouncement = announcer.textContent;
     rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(3, 'settled')} />);
     await waitFor(() => {
@@ -451,10 +451,10 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     expect(toggle.textContent).toMatch(/Cost/);
     expect(toggle.textContent).toMatch(/Context/);
     expect(screen.getByTestId('footer-disclosure-cue')).toBeTruthy();
-    const detail = document.getElementById('footer-telemetry-detail');
+    const detail = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
     expect(detail?.className).toMatch(/hidden/);
     expect(detail?.className).toMatch(/sm:flex/);
-    expect(screen.getByRole('progressbar').closest('#footer-telemetry-detail')).toBe(detail);
+    expect(screen.getByRole('progressbar').closest(`#${detail?.id ?? ''}`)).toBe(detail);
   });
 
   it('expands the mobile disclosure on click (aria-expanded toggles true)', () => {
@@ -470,7 +470,9 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: 'Hide telemetry details' })).toBe(toggle);
-    expect(document.getElementById('footer-telemetry-detail')?.className).toMatch(/flex/);
+    expect(document.getElementById(toggle.getAttribute('aria-controls') ?? '')?.className).toMatch(
+      /flex/,
+    );
     expect(screen.getByTestId('footer-settled-status').textContent).toBe(announcement);
   });
 });

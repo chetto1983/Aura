@@ -18,7 +18,7 @@ import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import { useCapabilities } from './admin/useAdmin';
 import { fetchOnboardingStatus } from './onboarding/onboardingApi';
-import type { RunUsageEvent } from './chat/runUsage';
+import { useRunUsageOwner } from './chat/useRunUsageOwner';
 import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
@@ -128,11 +128,7 @@ export function AppShell() {
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
-  const [usageState, setUsageState] = useState<RunUsageEvent>({
-    runId: 0,
-    phase: 'idle',
-    usage: undefined,
-  });
+  const { usageState, allocateUsageRunId, acceptUsage, resetUsage } = useRunUsageOwner();
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   // §3.1c: the mobile/tablet overlay surfaces (nav drawer + runtime sheet) are driven by
   // the one-heavy-surface intent reducer, NOT two independent booleans. At `lg` the regions
@@ -154,7 +150,7 @@ export function AppShell() {
     setLastRouteId(nextRouteId);
     if (nextRouteId !== selectedId) {
       setSelectedId(nextRouteId);
-      setUsageState({ runId: 0, phase: 'idle', usage: undefined });
+      resetUsage();
     }
   }
 
@@ -210,14 +206,14 @@ export function AppShell() {
 
   function selectThread(id: string) {
     setSelectedId(id);
-    setUsageState({ runId: 0, phase: 'idle', usage: undefined });
+    resetUsage();
     surfaces.closeNav();
   }
 
   function selectThreadFromMobileNav(id: string) {
     setSurface('chat');
     setSelectedId(id);
-    setUsageState({ runId: 0, phase: 'idle', usage: undefined });
+    resetUsage();
     surfaces.closeNav();
     void navigate(`/c/${encodeURIComponent(id)}`);
   }
@@ -244,13 +240,13 @@ export function AppShell() {
       const conv = await createConversation.mutateAsync('');
       setSurface('chat');
       setSelectedId(conv.ID);
-      setUsageState({ runId: 0, phase: 'idle', usage: undefined });
+      resetUsage();
       closeNav();
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
     } catch {
       // The mutation keeps the failure state; the current thread remains selected.
     }
-  }, [closeNav, createConversation, navigate, setSurface]);
+  }, [closeNav, createConversation, navigate, resetUsage, setSurface]);
 
   const requestComposerDraft = useCallback(
     (text: string) => {
@@ -425,7 +421,8 @@ export function AppShell() {
             <ExternalStoreChat
               threadId={activeThreadId}
               onEnsureThread={ensureThread}
-              onUsage={setUsageState}
+              onUsage={acceptUsage}
+              allocateUsageRunId={allocateUsageRunId}
               onArtifact={handleArtifact}
               draftPrompt={composerDraftPrompt}
               onRequestDraftPrompt={requestComposerDraft}

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RunUsageEvent } from '../chat/runUsage';
 import { fetchOnboardingStatus } from '../onboarding/onboardingApi';
@@ -9,6 +10,8 @@ import { AppShell } from '../AppShell';
 const h = vi.hoisted(() => ({
   footerStates: [] as RunUsageEvent[],
   settle: undefined as (() => void) | undefined,
+  settlements: [] as (() => void)[],
+  mounts: 0,
 }));
 
 vi.mock('../onboarding/onboardingApi', async (importOriginal) => {
@@ -32,38 +35,52 @@ vi.mock('../chat/ExternalStoreChat', () => ({
     threadId,
     onEnsureThread,
     onUsage,
+    allocateUsageRunId,
   }: {
     readonly threadId: string;
     readonly onEnsureThread?: (initialPrompt: string) => Promise<string>;
     readonly onUsage?: (event: RunUsageEvent) => void;
-  }) => (
-    <div>
-      <span data-testid="chat-thread">{threadId}</span>
-      <button
-        type="button"
-        onClick={() => {
-          void (async () => {
-            onUsage?.({ runId: 1, phase: 'running', usage: undefined });
-            await onEnsureThread?.('first prompt');
-            h.settle = () => {
-              onUsage?.({
-                runId: 1,
-                phase: 'settled',
-                usage: {
-                  promptTokens: 20,
-                  completionTokens: 5,
-                  cacheHitTokens: 4,
-                  costUsd: 0.001,
-                },
-              });
-            };
-          })();
-        }}
-      >
-        Start first run
-      </button>
-    </div>
-  ),
+    readonly allocateUsageRunId?: () => number;
+  }) => {
+    const [mount] = useState(() => ++h.mounts);
+    const localSequence = useRef(0);
+    return (
+      <div>
+        <span data-testid="chat-thread">{threadId}</span>
+        <span data-testid="chat-mount">{mount}</span>
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              const runId = allocateUsageRunId?.() ?? ++localSequence.current;
+              onUsage?.({ runId, phase: 'running', usage: undefined });
+              await onEnsureThread?.('first prompt');
+              const settle = () => {
+                onUsage?.({
+                  runId,
+                  phase: 'settled',
+                  usage: {
+                    promptTokens: runId * 20,
+                    completionTokens: 5,
+                    cacheHitTokens: 4,
+                    costUsd: 0.001,
+                  },
+                });
+              };
+              h.settle = settle;
+              h.settlements.push(settle);
+            })();
+          }}
+        >
+          Start run
+        </button>
+      </div>
+    );
+  },
+}));
+
+vi.mock('../graph/GraphExplorer', () => ({
+  default: () => <div>Graph surface</div>,
 }));
 
 const created = {
@@ -105,6 +122,8 @@ describe('AppShell run usage ownership', () => {
   beforeEach(() => {
     h.footerStates.length = 0;
     h.settle = undefined;
+    h.settlements.length = 0;
+    h.mounts = 0;
     vi.mocked(fetchOnboardingStatus).mockResolvedValue({
       required: false,
       completed: true,
@@ -144,10 +163,10 @@ describe('AppShell run usage ownership', () => {
 
   it('preserves the first run while adopting its created thread route', async () => {
     renderShell();
-    await screen.findByRole('button', { name: 'Start first run' });
+    await screen.findByRole('button', { name: 'Start run' });
     h.footerStates.length = 0;
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start first run' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
     await waitFor(() => {
       expect(screen.getByTestId('chat-thread').textContent).toBe(created.ID);
       expect(screen.getByTestId('location').textContent).toBe(`/c/${created.ID}`);
@@ -167,5 +186,51 @@ describe('AppShell run usage ownership', () => {
     const activeRunStates = h.footerStates.slice(runningIndex);
     expect(activeRunStates.some((event) => event.phase === 'idle')).toBe(false);
     expect(activeRunStates.at(-1)).toMatchObject({ runId: 1, phase: 'settled' });
+  });
+
+  it('keeps run IDs monotonic across chat remounts and rejects an old mount settlement', async () => {
+    renderShell();
+    await screen.findByRole('button', { name: 'Start run' });
+    expect(h.footerStates[0]).toEqual({ runId: 0, phase: 'idle', usage: undefined });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
+    await waitFor(() => {
+      expect(h.settlements).toHaveLength(1);
+      expect(screen.getByTestId('usage-state').textContent).toBe('running:1');
+    });
+    const staleSettlement = h.settlements[0];
+
+    const graphButton = screen.getAllByRole('button', { name: 'Graph' })[0];
+    if (graphButton === undefined) throw new Error('expected Graph surface control');
+    fireEvent.click(graphButton);
+    expect(await screen.findByText('Graph surface')).toBeTruthy();
+    const chatButton = screen.getAllByRole('button', { name: 'Chat' })[0];
+    if (chatButton === undefined) throw new Error('expected Chat surface control');
+    fireEvent.click(chatButton);
+    await screen.findByRole('button', { name: 'Start run' });
+    expect(screen.getByTestId('chat-mount').textContent).toBe('2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
+    await waitFor(() => {
+      expect(h.settlements).toHaveLength(2);
+      expect(screen.getByTestId('usage-state').textContent).toBe('running:2');
+    });
+
+    act(() => {
+      staleSettlement?.();
+    });
+    expect(screen.getByTestId('usage-state').textContent).toBe('running:2');
+
+    act(() => {
+      h.settlements[1]?.();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('usage-state').textContent).toBe('settled:2');
+      expect(h.footerStates.at(-1)).toMatchObject({
+        runId: 2,
+        phase: 'settled',
+        usage: { promptTokens: 40 },
+      });
+    });
   });
 });

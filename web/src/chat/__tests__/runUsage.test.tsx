@@ -34,7 +34,6 @@ describe('useRunUsageLifecycle', () => {
     expect(events).toEqual([
       { runId: 1, phase: 'running', usage: undefined },
       { runId: 1, phase: 'running', usage: usage(10) },
-      { runId: 1, phase: 'running', usage: usage(10) },
       { runId: 1, phase: 'settled', usage: usage(10) },
       { runId: 2, phase: 'running', usage: undefined },
       { runId: 2, phase: 'settled', usage: undefined },
@@ -61,6 +60,31 @@ describe('useRunUsageLifecycle', () => {
       { runId: 2, phase: 'running', usage: usage(20) },
       { runId: 2, phase: 'settled', usage: usage(20) },
       { runId: 2, phase: 'idle', usage: undefined },
+    ]);
+  });
+
+  it('emits only the initial reset and numerically changed defined usage', () => {
+    const onUsage = vi.fn<(event: RunUsageEvent) => void>();
+    const { result } = renderHook(() => useRunUsageLifecycle(onUsage));
+    const first = usage(40);
+    const changed = { ...first, costUsd: 0.25 };
+
+    act(() => {
+      const runId = result.current.start();
+      result.current.update(runId, undefined);
+      result.current.update(runId, first);
+      result.current.update(runId, { ...first });
+      result.current.update(runId, changed);
+      result.current.update(runId, undefined);
+      result.current.settle(runId);
+      result.current.update(runId, usage(999));
+    });
+
+    expect(onUsage.mock.calls.map(([event]) => event)).toEqual([
+      { runId: 1, phase: 'running', usage: undefined },
+      { runId: 1, phase: 'running', usage: first },
+      { runId: 1, phase: 'running', usage: changed },
+      { runId: 1, phase: 'settled', usage: changed },
     ]);
   });
 

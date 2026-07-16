@@ -54,6 +54,7 @@ export interface ExternalStoreChatProps {
   /** Create/select a conversation before the first send when no thread is active. */
   readonly onEnsureThread?: (initialPrompt: string) => Promise<string>;
   readonly onUsage?: (event: RunUsageEvent) => void;
+  readonly allocateUsageRunId?: () => number;
   /**
    * 37B seam (mirrors onUsage): fires when a run emits an `aura.artifact` descriptor,
    * carrying its asset_id. AppShell invalidates ['assets', threadId] + drives the
@@ -70,6 +71,7 @@ export function ExternalStoreChat({
   threadId,
   onEnsureThread,
   onUsage,
+  allocateUsageRunId,
   onArtifact,
   draftPrompt,
   onRequestDraftPrompt = ignoreDraftPrompt,
@@ -92,7 +94,7 @@ export function ExternalStoreChat({
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
   const usageThreadRef = useRef<string | null>(null);
-  const usageLifecycle = useRunUsageLifecycle(onUsage);
+  const usageLifecycle = useRunUsageLifecycle(onUsage, allocateUsageRunId);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [composerInput, setComposerInput] = useState<HTMLTextAreaElement | null>(null);
   const approvalFocusRef = useRef<(next: Approval | undefined) => void>(() => undefined);
@@ -140,6 +142,8 @@ export function ExternalStoreChat({
       isRunningRef.current = true;
       setIsRunning(true);
 
+      const controller = new AbortController();
+      abortRef.current = controller;
       let runThreadId = threadId;
       usageThreadRef.current = runThreadId;
       const usageRunId = usageLifecycle.start();
@@ -148,6 +152,7 @@ export function ExternalStoreChat({
           runThreadId = await onEnsureThread(text);
           usageThreadRef.current = runThreadId;
         }
+        if (controller.signal.aborted) return;
         if (runThreadId.length === 0) {
           setMessages((prev) => {
             const next = prev.slice();
@@ -161,9 +166,6 @@ export function ExternalStoreChat({
           });
           return;
         }
-
-        const controller = new AbortController();
-        abortRef.current = controller;
         await streamRun({
           threadId: runThreadId,
           userText: text,
@@ -208,10 +210,11 @@ export function ExternalStoreChat({
         }
       } finally {
         usageLifecycle.settle(usageRunId);
-        isRunningRef.current = false;
-        setIsRunning(false);
-        abortRef.current = null;
-        usageThreadRef.current = null;
+        if (abortRef.current === controller) {
+          isRunningRef.current = false;
+          setIsRunning(false);
+          abortRef.current = null;
+        }
         invalidateRuntimeReads(runThreadId);
       }
     },
@@ -234,8 +237,18 @@ export function ExternalStoreChat({
     return Promise.resolve();
   }, []);
 
+  useEffect(
+    () => () => {
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (!isRunningRef.current || usageThreadRef.current !== threadId) usageLifecycle.clear();
+    if (usageThreadRef.current === threadId) usageThreadRef.current = null;
+    else usageLifecycle.clear();
     historyRequestRef.current += 1;
     const request = historyRequestRef.current;
     const nextHistoryStatus = threadId.length === 0 ? 'ready' : 'loading';
@@ -332,13 +345,6 @@ export function ExternalStoreChat({
       .catch(() => undefined);
   }, []);
 
-  // foldReRun streams a backend branch re-run (edit / regenerate) onto the supplied base
-  // message list, folding the AG-UI reply onto ONE freshly-id'd assistant message appended
-  // after the base. The base already reflects the forked turn (the edited user message, or
-  // the truncation before a regenerate), so the external-store runtime keeps the PRIOR
-  // version as a SIBLING branch automatically — the BranchPicker lights up without a
-  // hand-rolled state machine (RESEARCH "Don't Hand-Roll"). It does NOT re-implement the
-  // walk — the server drives LoadManagedHistoryForBranch over the forked path (Task-1).
   const foldReRun = useCallback(
     async (url: string, body: unknown, base: ThreadMessageLike[]) => {
       historyRequestRef.current += 1;
@@ -367,18 +373,17 @@ export function ExternalStoreChat({
         }
       } finally {
         usageLifecycle.settle(usageRunId);
-        isRunningRef.current = false;
-        setIsRunning(false);
-        abortRef.current = null;
-        usageThreadRef.current = null;
+        if (abortRef.current === controller) {
+          isRunningRef.current = false;
+          setIsRunning(false);
+          abortRef.current = null;
+        }
         invalidateRuntimeReads();
       }
     },
     [usageLifecycle, onArtifact, invalidateRuntimeReads, t, threadId],
   );
 
-  // Fold one final approval resume into this lane. Intermediate resolutions only
-  // refetch the queue; useThreadApprovals invokes this once the generation empties.
   const foldResumeRun = useCallback(
     async (resumeThreadId: string) => {
       historyRequestRef.current += 1;
@@ -387,9 +392,6 @@ export function ExternalStoreChat({
       const controller = new AbortController();
       abortRef.current = controller;
       usageThreadRef.current = resumeThreadId;
-      // The resumed turn is folded onto a fresh assistant slot appended after whatever the
-      // lane currently shows. Each streamed frame replaces that one slot (never N copies):
-      // the first onUpdate appends, the rest replace the last element while running.
       isRunningRef.current = true;
       setIsRunning(true);
       let appended = false;
@@ -420,10 +422,11 @@ export function ExternalStoreChat({
         }
       } finally {
         usageLifecycle.settle(usageRunId);
-        isRunningRef.current = false;
-        setIsRunning(false);
-        abortRef.current = null;
-        usageThreadRef.current = null;
+        if (abortRef.current === controller) {
+          isRunningRef.current = false;
+          setIsRunning(false);
+          abortRef.current = null;
+        }
         invalidateRuntimeReads(resumeThreadId);
       }
     },
