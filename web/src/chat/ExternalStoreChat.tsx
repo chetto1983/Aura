@@ -18,6 +18,7 @@ import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
 import { useThreadApprovals } from '../approvals/useThreadApprovals';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
+import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import { useComposerSkills } from './composer/useComposerSkills';
@@ -41,6 +42,8 @@ import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './ss
 import { AutoSpeak } from './voice/AutoSpeak';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
 import { useApprovalFocus } from './useApprovalFocus';
+
+const ignoreDraftPrompt = () => undefined;
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
 // list + isRunning + per-turn usage in React state and feeds them to
@@ -70,6 +73,7 @@ export interface ExternalStoreChatProps {
    */
   readonly onArtifact?: (assetId: string | undefined) => void;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
+  readonly onRequestDraftPrompt?: (text: string) => void;
   /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
   readonly onNewChat?: () => void | Promise<void>;
 }
@@ -80,11 +84,20 @@ export function ExternalStoreChat({
   onUsage,
   onArtifact,
   draftPrompt,
+  onRequestDraftPrompt = ignoreDraftPrompt,
   onNewChat,
 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
+  const [historyReadiness, setHistoryReadiness] = useState<{
+    readonly threadId: string;
+    readonly status: 'loading' | 'ready' | 'error';
+  }>({ threadId, status: threadId.length === 0 ? 'ready' : 'loading' });
+  const historyReadinessRef = useRef(historyReadiness);
+  useEffect(() => {
+    historyReadinessRef.current = historyReadiness;
+  }, [historyReadiness]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const historyAbortRef = useRef<AbortController | null>(null);
@@ -231,6 +244,15 @@ export function ExternalStoreChat({
   useEffect(() => {
     historyRequestRef.current += 1;
     const request = historyRequestRef.current;
+    const nextHistoryStatus = threadId.length === 0 ? 'ready' : 'loading';
+    queueMicrotask(() => {
+      if (request !== historyRequestRef.current) return;
+      const current = historyReadinessRef.current;
+      if (current.threadId === threadId && current.status === nextHistoryStatus) return;
+      const next = { threadId, status: nextHistoryStatus } as const;
+      historyReadinessRef.current = next;
+      setHistoryReadiness(next);
+    });
     const clearLoadedMessages = () => {
       queueMicrotask(() => {
         if (request !== historyRequestRef.current) return;
@@ -271,6 +293,7 @@ export function ExternalStoreChat({
         const uploads = assets.filter((asset) => asset.source_kind !== 'agent');
         const agent = assets.filter((asset) => asset.source_kind === 'agent');
         setMessages(foldAgentOntoAssistant(attachAssetsToUserMessages(loaded, uploads), agent));
+        setHistoryReadiness({ threadId, status: 'ready' });
       })
       .catch((err: unknown) => {
         if (
@@ -281,6 +304,7 @@ export function ExternalStoreChat({
           return;
         }
         setMessages([assistantErrorMessage(t('chat.error.loadHistory'))]);
+        setHistoryReadiness({ threadId, status: 'error' });
       })
       .finally(() => {
         if (request === historyRequestRef.current) historyAbortRef.current = null;
@@ -509,6 +533,9 @@ export function ExternalStoreChat({
                     {t('chat.empty.thread.heading')}
                   </h2>
                   <p className="max-w-sm text-sm text-text-muted">{t('chat.empty.thread.body')}</p>
+                  {historyReadiness.threadId === threadId && historyReadiness.status === 'ready' ? (
+                    <EmptyThreadStarters onRequestDraftPrompt={onRequestDraftPrompt} />
+                  ) : null}
                 </div>
               </div>
             </AuiIf>

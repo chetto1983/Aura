@@ -9,6 +9,7 @@ import { displayEn, displayIt } from './resources.display';
 import { compactionEn, compactionIt } from './resources.compaction';
 import { footerEn, footerIt } from './resources.footer';
 import { documentsEn, documentsIt } from './resources.documents';
+import { chatEmptyEn, chatEmptyIt } from './resources.empty';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
@@ -91,13 +92,7 @@ export const resources = {
           micStop: 'Stop recording',
         },
         running: 'Running...',
-        empty: {
-          thread: {
-            heading: 'Ask Aura',
-            body: 'Type a prompt below to start this run.',
-          },
-          suggestionsLabel: 'Suggestions',
-        },
+        empty: chatEmptyEn,
         error: {
           stream:
             'The response stopped unexpectedly. Retry the last message or check the runtime status.',
@@ -372,13 +367,7 @@ export const resources = {
           micStop: 'Ferma registrazione',
         },
         running: 'In esecuzione...',
-        empty: {
-          thread: {
-            heading: 'Chiedi ad Aura',
-            body: 'Scrivi un prompt qui sotto per avviare questa esecuzione.',
-          },
-          suggestionsLabel: 'Suggerimenti',
-        },
+        empty: chatEmptyIt,
         error: {
           stream:
             "La risposta si è interrotta inaspettatamente. Riprova l'ultimo messaggio o controlla lo stato del runtime.",

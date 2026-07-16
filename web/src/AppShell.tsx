@@ -135,7 +135,7 @@ export function AppShell() {
   // are permanent columns, so these only gate the portaled drawers.
   const surfaces = useSurfaceRestore();
   const closeNav = surfaces.closeNav;
-  const [documentDraftPrompt, setDocumentDraftPrompt] = useState<ComposerDraftPrompt | undefined>(
+  const [composerDraftPrompt, setComposerDraftPrompt] = useState<ComposerDraftPrompt | undefined>(
     undefined,
   );
   const [logoutPending, setLogoutPending] = useState(false);
@@ -246,6 +246,18 @@ export function AppShell() {
     }
   }, [closeNav, createConversation, navigate, setSurface]);
 
+  const requestComposerDraft = useCallback(
+    (text: string) => {
+      setComposerDraftPrompt((current) => ({
+        text,
+        nonce: (current?.nonce ?? 0) + 1,
+      }));
+      setSurface('chat');
+      closeNav();
+    },
+    [closeNav, setSurface],
+  );
+
   const askDocument = useCallback(
     (document: DocumentItem) => {
       const searchDocumentID =
@@ -259,14 +271,9 @@ export function AppShell() {
               title: document.title,
               documentId: searchDocumentID,
             });
-      setDocumentDraftPrompt((current) => ({
-        text,
-        nonce: (current?.nonce ?? 0) + 1,
-      }));
-      setSurface('chat');
-      closeNav();
+      requestComposerDraft(text);
     },
-    [closeNav, setSurface, t],
+    [requestComposerDraft, t],
   );
 
   const logout = useCallback(async () => {
@@ -414,7 +421,8 @@ export function AppShell() {
               onEnsureThread={ensureThread}
               onUsage={setUsage}
               onArtifact={handleArtifact}
-              draftPrompt={documentDraftPrompt}
+              draftPrompt={composerDraftPrompt}
+              onRequestDraftPrompt={requestComposerDraft}
               onNewChat={startNewConversation}
             />
           )}
