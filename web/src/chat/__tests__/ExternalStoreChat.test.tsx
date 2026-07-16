@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ExternalStoreChat } from '../ExternalStoreChat';
 import { CONVERSATION_KEY } from '../../conversations/useConversations';
+import type { Approval } from '../../approvals/useApprovals';
+import type { RunUsageEvent } from '../runUsage';
 
 // Build a single SSE wire body from raw AG-UI frame objects (the same shapes the
 // Go translator emits). Used to stub /agent/run for the streaming-path tests.
@@ -25,6 +27,13 @@ function sseResponse(frames: readonly Record<string, unknown>[]): Response {
 
 function messagesSnapshotResponse(messages: readonly Record<string, unknown>[]): Response {
   return new Response(JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
@@ -52,6 +61,35 @@ function renderChatWithClient(ui: ReactElement): { client: QueryClient } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
   return { client };
+}
+
+function usageEvents(spy: { mock: { calls: unknown[][] } }): RunUsageEvent[] {
+  return spy.mock.calls.map((call) => call[0] as RunUsageEvent);
+}
+
+function expectExactlyOneSettlement(events: readonly RunUsageEvent[], runId: number): void {
+  expect(events.filter((event) => event.runId === runId && event.phase === 'settled')).toHaveLength(
+    1,
+  );
+}
+
+function usageFrames(messageId: string, text: string, promptTokens: number) {
+  return [
+    { type: 'RUN_STARTED', threadId: 'conv-1', runId: `run-${String(promptTokens)}` },
+    { type: 'TEXT_MESSAGE_START', messageId },
+    { type: 'TEXT_MESSAGE_CONTENT', messageId, delta: text },
+    { type: 'TEXT_MESSAGE_END', messageId },
+    {
+      type: 'STATE_DELTA',
+      delta: [{ op: 'replace', path: '/prompt_tokens', value: promptTokens }],
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: 'conv-1',
+      runId: `run-${String(promptTokens)}`,
+      outcome: { type: 'success' },
+    },
+  ];
 }
 
 describe('ExternalStoreChat (CHAT-01)', () => {
@@ -167,8 +205,16 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     await waitFor(() => {
       expect(usageSpy).toHaveBeenCalled();
     });
-    const lastUsage = usageSpy.mock.calls.at(-1)?.[0] as { promptTokens: number } | undefined;
-    expect(lastUsage?.promptTokens).toBe(120);
+    const events = usageEvents(usageSpy);
+    const runId = events.find((event) => event.phase === 'running')?.runId;
+    if (runId === undefined) throw new Error('expected a started usage run');
+    expect(events.find((event) => event.runId === runId && event.phase === 'running')?.usage).toBe(
+      undefined,
+    );
+    expectExactlyOneSettlement(events, runId);
+    expect(
+      events.find((event) => event.runId === runId && event.phase === 'settled')?.usage,
+    ).toMatchObject({ promptTokens: 120 });
   });
 
   it('routes a tool turn carrying an aura.display payload through the DisplayRouter (DISP-02)', async () => {
@@ -226,12 +272,47 @@ describe('ExternalStoreChat (CHAT-01)', () => {
 
   it('creates a thread id before the first send when no conversation is active', async () => {
     const runBodies: unknown[] = [];
+    let resolveRun: ((response: Response) => void) | undefined;
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       if (init?.body !== undefined) {
         if (typeof init.body !== 'string') throw new Error('expected JSON request body');
         runBodies.push(JSON.parse(init.body) as unknown);
+        return new Promise<Response>((resolve) => {
+          resolveRun = resolve;
+        });
       }
-      return Promise.resolve(
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ensureThread = vi.fn<(text: string) => Promise<string>>(() =>
+      Promise.resolve('conv-created'),
+    );
+    const onUsage = vi.fn();
+    function FirstSendHost() {
+      const [threadId, setThreadId] = useState('');
+      return (
+        <>
+          <span data-testid="active-thread">{threadId}</span>
+          <ExternalStoreChat
+            threadId={threadId}
+            onEnsureThread={async (text) => {
+              const created = await ensureThread(text);
+              setThreadId(created);
+              return created;
+            }}
+            onUsage={onUsage}
+          />
+        </>
+      );
+    }
+
+    renderChat(<FirstSendHost />);
+    sendPrompt('ciao');
+    await waitFor(() => {
+      expect(screen.getByTestId('active-thread').textContent).toBe('conv-created');
+    });
+    await act(async () => {
+      resolveRun?.(
         sseResponse([
           { type: 'RUN_STARTED', threadId: 'conv-created', runId: 'run-1' },
           { type: 'TEXT_MESSAGE_START', messageId: 'msg-1' },
@@ -245,53 +326,55 @@ describe('ExternalStoreChat (CHAT-01)', () => {
           },
         ]),
       );
+      await Promise.resolve();
     });
-    vi.stubGlobal('fetch', fetchMock);
-    const ensureThread = vi.fn(() => Promise.resolve('conv-created'));
-
-    renderChat(<ExternalStoreChat threadId="" onEnsureThread={ensureThread} />);
-    sendPrompt('ciao');
 
     await waitFor(() => {
       expect(screen.getByText('Ciao.')).toBeTruthy();
     });
     expect(ensureThread).toHaveBeenCalledWith('ciao');
     expect(runBodies[0]).toMatchObject({ threadId: 'conv-created' });
+    const runId = usageEvents(onUsage).find((event) => event.phase === 'running')?.runId;
+    if (runId === undefined) throw new Error('expected a started usage run');
+    expectExactlyOneSettlement(usageEvents(onUsage), runId);
   });
 
-  it('shows the Stop control while running and cancelling aborts the fetch', async () => {
-    // A fetch that rejects with AbortError once the signal fires (never resolves
-    // otherwise), so the turn stays "running" until cancelled.
+  it('cancelling only aborts; AbortError finally settles the run exactly once', async () => {
+    let rejectRun: ((reason: unknown) => void) | undefined;
+    let runSignal: AbortSignal | undefined;
     const fetchMock = vi.fn((url: string, init: RequestInit) => {
       if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
+      runSignal = init.signal ?? undefined;
       return new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener('abort', () => {
-          reject(new DOMException('aborted', 'AbortError'));
-        });
+        rejectRun = reject;
       });
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    const onUsage = vi.fn();
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
     sendPrompt('long task');
 
     // Stop replaces Send while the turn is in flight.
     const stop = await screen.findByRole('button', { name: 'Stop the current response' });
-    expect(stop).toBeTruthy();
-
     fireEvent.click(stop);
+    expect(runSignal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: 'Stop the current response' })).toBeTruthy();
+    expect(usageEvents(onUsage).filter((event) => event.phase === 'settled')).toHaveLength(0);
+
+    await act(async () => {
+      rejectRun?.(new DOMException('aborted', 'AbortError'));
+      await Promise.resolve();
+    });
 
     // After abort the turn ends → Send returns.
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
     });
-    // The fetch carried an AbortSignal that was triggered.
-    const runCall = fetchMock.mock.calls.find((call) => call[0] === '/agent/run') as
-      | [string, RequestInit]
-      | undefined;
-    if (runCall === undefined) throw new Error('expected /agent/run fetch call');
-    const init = runCall[1];
-    expect(init.signal).toBeInstanceOf(AbortSignal);
+    const runId = usageEvents(onUsage).find((event) => event.phase === 'running')?.runId;
+    if (runId === undefined) throw new Error('expected a started usage run');
+    expectExactlyOneSettlement(usageEvents(onUsage), runId);
+    expect(screen.queryByText(/response stopped unexpectedly/i)).toBeNull();
   });
 
   // AC-5: once a turn completes (RUN_FINISHED → onNew finally), the conversation
@@ -363,6 +446,138 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     // The reducer routes RUN_ERROR into an error text part rendered as markdown.
     await waitFor(() => {
       expect(screen.getByText('upstream 5xx')).toBeTruthy();
+    });
+  });
+
+  it('starts fresh usage for send, edit, and reload and settles each stream once', async () => {
+    let streamCount = 0;
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
+      if (init?.method === 'POST' && (url === '/agent/run' || url.includes('/edit'))) {
+        streamCount += 1;
+        return Promise.resolve(
+          sseResponse(
+            usageFrames(
+              `message-${String(streamCount)}`,
+              `answer ${String(streamCount)}`,
+              10 * streamCount,
+            ),
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onUsage = vi.fn();
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
+
+    sendPrompt('first question');
+    await screen.findByText('answer 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.input(await screen.findByRole('textbox', { name: 'Edit message' }), {
+      target: { value: 'edited question' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save and re-run' }));
+    await screen.findByText('answer 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
+    await screen.findByText('answer 3');
+
+    const events = usageEvents(onUsage);
+    const settled = events.filter((event) => event.phase === 'settled');
+    expect(settled.map((event) => event.usage?.promptTokens)).toEqual([10, 20, 30]);
+    expect(new Set(settled.map((event) => event.runId)).size).toBe(3);
+    for (const event of settled) {
+      expectExactlyOneSettlement(events, event.runId);
+      expect(events.find((candidate) => candidate.runId === event.runId)?.usage).toBeUndefined();
+    }
+  });
+
+  it('shows non-Abort stream failure and still settles the started run', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
+        if (url === '/agent/run') return Promise.reject(new Error('offline'));
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const onUsage = vi.fn();
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
+    sendPrompt('fail');
+
+    expect(
+      await screen.findByText(
+        'The response stopped unexpectedly. Retry the last message or check the runtime status.',
+      ),
+    ).toBeTruthy();
+    const runId = usageEvents(onUsage).find((event) => event.phase === 'running')?.runId;
+    if (runId === undefined) throw new Error('expected a started usage run');
+    expectExactlyOneSettlement(usageEvents(onUsage), runId);
+  });
+
+  it('settles an approval-resume stream once with its own usage', async () => {
+    const approval: Approval = {
+      token: 'resume-token',
+      conversation_id: 'conv-1',
+      kind: 'clarification',
+      question: 'Continue?',
+      options: ['Yes'],
+      priority: 0,
+    };
+    let pending = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
+        if (url.startsWith('/api/approvals') && init?.method !== 'POST') {
+          return Promise.resolve(jsonResponse(pending ? [approval] : []));
+        }
+        if (url.includes('/resolve') && init?.method === 'POST') {
+          pending = false;
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        if (url === '/agent/run' && init?.method === 'POST') {
+          return Promise.resolve(sseResponse(usageFrames('resumed', 'resumed answer', 77)));
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const onUsage = vi.fn();
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes' }));
+    await waitFor(() => {
+      expect(usageEvents(onUsage).some((event) => event.phase === 'settled')).toBe(true);
+    });
+    const settled = usageEvents(onUsage).filter((event) => event.phase === 'settled');
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.usage?.promptTokens).toBe(77);
+  });
+
+  it('clears lifecycle usage when the thread id changes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(messagesSnapshotResponse([]))),
+    );
+    const onUsage = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <ExternalStoreChat threadId="conv-1" onUsage={onUsage} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(usageEvents(onUsage).at(-1)).toMatchObject({ phase: 'idle', usage: undefined });
+    });
+    onUsage.mockClear();
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <ExternalStoreChat threadId="conv-2" onUsage={onUsage} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(usageEvents(onUsage)).toEqual([{ runId: 0, phase: 'idle', usage: undefined }]);
     });
   });
 });

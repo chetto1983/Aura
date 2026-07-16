@@ -18,7 +18,7 @@ import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import { useCapabilities } from './admin/useAdmin';
 import { fetchOnboardingStatus } from './onboarding/onboardingApi';
-import type { TurnUsage } from './chat/sseAdapter';
+import type { RunUsageEvent } from './chat/runUsage';
 import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
@@ -128,7 +128,11 @@ export function AppShell() {
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
-  const [usage, setUsage] = useState<TurnUsage | undefined>(undefined);
+  const [usageState, setUsageState] = useState<RunUsageEvent>({
+    runId: 0,
+    phase: 'idle',
+    usage: undefined,
+  });
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   // §3.1c: the mobile/tablet overlay surfaces (nav drawer + runtime sheet) are driven by
   // the one-heavy-surface intent reducer, NOT two independent booleans. At `lg` the regions
@@ -148,7 +152,7 @@ export function AppShell() {
   if ((routeId ?? '') !== lastRouteId) {
     setLastRouteId(routeId ?? '');
     setSelectedId(routeId ?? '');
-    setUsage(undefined);
+    setUsageState({ runId: 0, phase: 'idle', usage: undefined });
   }
 
   const activeThreadId = selectedId;
@@ -203,14 +207,14 @@ export function AppShell() {
 
   function selectThread(id: string) {
     setSelectedId(id);
-    setUsage(undefined);
+    setUsageState({ runId: 0, phase: 'idle', usage: undefined });
     surfaces.closeNav();
   }
 
   function selectThreadFromMobileNav(id: string) {
     setSurface('chat');
     setSelectedId(id);
-    setUsage(undefined);
+    setUsageState({ runId: 0, phase: 'idle', usage: undefined });
     surfaces.closeNav();
     void navigate(`/c/${encodeURIComponent(id)}`);
   }
@@ -220,7 +224,7 @@ export function AppShell() {
       if (activeThreadId.length > 0) return activeThreadId;
       const conv = await createConversation.mutateAsync(initialPrompt);
       setSelectedId(conv.ID);
-      setUsage(undefined);
+      setUsageState({ runId: 0, phase: 'idle', usage: undefined });
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
       return conv.ID;
     },
@@ -238,7 +242,7 @@ export function AppShell() {
       const conv = await createConversation.mutateAsync('');
       setSurface('chat');
       setSelectedId(conv.ID);
-      setUsage(undefined);
+      setUsageState({ runId: 0, phase: 'idle', usage: undefined });
       closeNav();
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
     } catch {
@@ -419,7 +423,7 @@ export function AppShell() {
             <ExternalStoreChat
               threadId={activeThreadId}
               onEnsureThread={ensureThread}
-              onUsage={setUsage}
+              onUsage={setUsageState}
               onArtifact={handleArtifact}
               draftPrompt={composerDraftPrompt}
               onRequestDraftPrompt={requestComposerDraft}
@@ -519,7 +523,7 @@ export function AppShell() {
       )}
 
       <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
-        <RuntimeFooter usage={usage} conversationId={activeThreadId} />
+        <RuntimeFooter usageState={usageState} conversationId={activeThreadId} />
       </BottomDock>
 
       <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>

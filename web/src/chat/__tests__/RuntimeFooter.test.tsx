@@ -18,6 +18,7 @@ import {
   type ConversationAggregate,
 } from '../footerMetrics';
 import type { TurnUsage } from '../sseAdapter';
+import type { RunUsageEvent } from '../runUsage';
 
 const AGG: ConversationAggregate = {
   TotalInputTokens: 1000,
@@ -59,9 +60,9 @@ function stubFetch(opts?: { agg?: ConversationAggregate; rotEvents?: { PairsDrop
 
 function renderFooter(props: {
   usage?: TurnUsage;
+  usageState?: RunUsageEvent;
   conversationId?: string;
   windowTokens?: number;
-  turnSettled?: boolean;
 }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -70,12 +71,25 @@ function renderFooter(props: {
   return render(
     <RuntimeFooter
       conversationId={props.conversationId ?? 'c-1'}
-      {...(props.usage ? { usage: props.usage } : { usage: undefined })}
+      usageState={
+        props.usageState ?? {
+          runId: props.usage === undefined ? 0 : 1,
+          phase: props.usage === undefined ? 'idle' : 'settled',
+          usage: props.usage,
+        }
+      }
       {...(props.windowTokens !== undefined ? { windowTokens: props.windowTokens } : {})}
-      {...(props.turnSettled !== undefined ? { turnSettled: props.turnSettled } : {})}
     />,
     { wrapper: Wrapper },
   );
+}
+
+function usageState(
+  runId: number,
+  phase: RunUsageEvent['phase'],
+  usage?: TurnUsage,
+): RunUsageEvent {
+  return { runId, phase, usage };
 }
 
 describe('footerMetrics (pure)', () => {
@@ -341,51 +355,83 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     });
   });
 
-  // AC-6: the settled numeric cluster (TOKENS/CACHE/COST) sits in a single
-  // role=status aria-live=polite aria-atomic region that announces on SETTLE.
-  it('wraps the settled numeric cluster in a role=status aria-live=polite region', () => {
+  // AC-6: visual metrics stay live while a separate atomic status announces on SETTLE.
+  it('updates visible metrics live but announces only once when that run settles', async () => {
     const usage: TurnUsage = {
       promptTokens: 120,
       completionTokens: 80,
       cacheHitTokens: 60,
       costUsd: 0.0012,
     };
-    const { container } = renderFooter({ usage, turnSettled: true });
-    const status = container.querySelector('[role="status"]');
-    expect(status).not.toBeNull();
-    expect(status?.getAttribute('aria-live')).toBe('polite');
-    expect(status?.getAttribute('aria-atomic')).toBe('true');
-    // The numeric instruments live inside the status region (announced together).
-    expect(status?.textContent).toMatch(/200/); // tokens 120+80
-    expect(status?.textContent).toMatch(/50%/); // cache 60/120
-    expect(status?.textContent).toMatch(/\$0\.0012/); // cost
+    const running = usageState(7, 'running', usage);
+    const { rerender } = renderFooter({ usageState: running });
+    const visible = screen.getByTestId('footer-visible-metrics');
+    const announcer = screen.getByTestId('footer-settled-status');
+    expect(visible.textContent).toMatch(/200/);
+    expect(visible.textContent).toMatch(/\$0\.0012/);
+    expect(announcer.getAttribute('role')).toBe('status');
+    expect(announcer.getAttribute('aria-live')).toBe('polite');
+    expect(announcer.getAttribute('aria-atomic')).toBe('true');
+    expect(announcer.className).toContain('sr-only');
+    expect(announcer.textContent).not.toMatch(/200/);
+
+    rerender(<RuntimeFooter conversationId="c-1" usageState={{ ...running, phase: 'settled' }} />);
+    await waitFor(() => {
+      expect(announcer.textContent).toMatch(/200/);
+      expect(announcer.textContent).toMatch(/\$0\.0012/);
+    });
+    const settledText = announcer.textContent;
+    fireEvent.click(screen.getByRole('button', { name: 'Show telemetry details' }));
+    expect(announcer.textContent).toBe(settledText);
+    rerender(
+      <RuntimeFooter
+        conversationId="c-1"
+        usageState={usageState(7, 'settled', { ...usage, promptTokens: 999 })}
+      />,
+    );
+    expect(announcer.textContent).toBe(settledText);
   });
 
-  // AC-6: while a turn is RUNNING (not settled) the live region must NOT announce
-  // the in-flight figures — it holds the prior settled numbers.
-  it('does not announce in-flight figures while a turn is running (settled-only)', () => {
-    const settled: TurnUsage = {
+  // AC-6: RUNNING resets visible turn values without changing the prior announcement.
+  it('keeps sequential runs isolated, including a completion with no usage', async () => {
+    const first: TurnUsage = {
       promptTokens: 100,
       completionTokens: 50,
       cacheHitTokens: 10,
       costUsd: 0.0005,
     };
-    const { container, rerender } = renderFooter({ usage: settled, turnSettled: true });
-    const statusBefore = container.querySelector('[role="status"]');
-    expect(statusBefore?.textContent).toMatch(/150/); // 100+50 settled
+    const { rerender } = renderFooter({ usageState: usageState(1, 'settled', first) });
+    const visible = screen.getByTestId('footer-visible-metrics');
+    const announcer = screen.getByTestId('footer-settled-status');
+    await waitFor(() => {
+      expect(announcer.textContent).toMatch(/150/);
+    });
+    const firstAnnouncement = announcer.textContent;
 
-    // A new turn streams: a different in-flight usage arrives but turnSettled=false.
-    const inflight: TurnUsage = {
+    // A new run starts empty, then streams values without reusing the prior run.
+    const second: TurnUsage = {
       promptTokens: 999,
       completionTokens: 1,
       cacheHitTokens: 0,
       costUsd: 0.5,
     };
-    rerender(<RuntimeFooter conversationId="c-1" usage={inflight} turnSettled={false} />);
-    const statusAfter = container.querySelector('[role="status"]');
-    // The live region still holds the PRIOR settled numbers, not the streaming ones.
-    expect(statusAfter?.textContent).not.toMatch(/1k/); // 999+1=1000 → "1k" must NOT leak
-    expect(statusAfter?.textContent).toMatch(/150/); // prior settled value retained
+    rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(2, 'running')} />);
+    expect(visible.textContent).not.toMatch(/\$0\.0005/);
+    expect(announcer.textContent).toBe(firstAnnouncement);
+    rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(2, 'running', second)} />);
+    expect(visible.textContent).toMatch(/1k/);
+    expect(announcer.textContent).toBe(firstAnnouncement);
+    rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(2, 'settled', second)} />);
+    await waitFor(() => {
+      expect(announcer.textContent).toMatch(/1k/);
+    });
+    rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(3, 'running')} />);
+    expect(visible.textContent).not.toMatch(/\$0\.5/);
+    const secondAnnouncement = announcer.textContent;
+    rerender(<RuntimeFooter conversationId="c-1" usageState={usageState(3, 'settled')} />);
+    await waitFor(() => {
+      expect(announcer.textContent).not.toBe(secondAnnouncement);
+    });
   });
 
   // AC-7: below sm the footer exposes a tap-to-expand disclosure with a compact
@@ -397,16 +443,18 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
       cacheHitTokens: 60,
       costUsd: 0.0012,
     };
-    const { container } = renderFooter({ usage, turnSettled: true });
-    // A disclosure toggle carries aria-expanded and is hidden on desktop (sm:hidden).
-    const toggle = container.querySelector('[aria-expanded]');
-    expect(toggle).not.toBeNull();
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle?.className).toMatch(/sm:hidden/);
-    expect(toggle?.className).toMatch(/min-h-\[44px\]/);
-    // The full instrument cluster is visible from sm up (the disclosure is mobile-only).
-    const full = container.querySelector('.hidden.sm\\:flex, .hidden.sm\\:grid');
-    expect(full).not.toBeNull();
+    renderFooter({ usage });
+    const toggle = screen.getByRole('button', { name: 'Show telemetry details' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.className).toMatch(/sm:hidden/);
+    expect(toggle.className).toMatch(/min-h-\[44px\]/);
+    expect(toggle.textContent).toMatch(/Cost/);
+    expect(toggle.textContent).toMatch(/Context/);
+    expect(screen.getByTestId('footer-disclosure-cue')).toBeTruthy();
+    const detail = document.getElementById('footer-telemetry-detail');
+    expect(detail?.className).toMatch(/hidden/);
+    expect(detail?.className).toMatch(/sm:flex/);
+    expect(screen.getByRole('progressbar').closest('#footer-telemetry-detail')).toBe(detail);
   });
 
   it('expands the mobile disclosure on click (aria-expanded toggles true)', () => {
@@ -416,10 +464,13 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
       cacheHitTokens: 60,
       costUsd: 0.0012,
     };
-    const { container } = renderFooter({ usage, turnSettled: true });
-    const toggle = container.querySelector('[aria-expanded]');
-    if (toggle === null) throw new Error('expected a mobile disclosure toggle');
+    renderFooter({ usage });
+    const toggle = screen.getByRole('button', { name: 'Show telemetry details' });
+    const announcement = screen.getByTestId('footer-settled-status').textContent;
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Hide telemetry details' })).toBe(toggle);
+    expect(document.getElementById('footer-telemetry-detail')?.className).toMatch(/flex/);
+    expect(screen.getByTestId('footer-settled-status').textContent).toBe(announcement);
   });
 });
