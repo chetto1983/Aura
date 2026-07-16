@@ -1045,7 +1045,7 @@ git commit -m "feat(web): add Calm Prism prompt starters"
 - Test: `web/src/chat/__tests__/ExternalStoreChat.test.tsx`
 - Test: `web/src/chat/__tests__/RuntimeFooter.test.tsx`
 
-- [ ] **Step 1: Add failing lifecycle tests for reset, update, settle-once, cancel, and clear**
+- [x] **Step 1: Add failing lifecycle tests for reset, update, settle-once, cancel, and clear**
 
 ```tsx
 it("resets every run and settles it exactly once with its own last usage", () => {
@@ -1088,7 +1088,7 @@ it("ignores stale updates and clears on thread change", () => {
 
 Extend ExternalStoreChat integration tests to cover normal send, edit, reload, resume, failure, and AbortError. Each started run must finish with one `phase:'settled'`; the cancel handler only aborts, so the stream `finally` performs settlement.
 
-- [ ] **Step 2: Add failing footer tests for live visual values and one hidden announcement**
+- [x] **Step 2: Add failing footer tests for live visual values and one hidden announcement**
 
 ```tsx
 const running = { runId: 7, phase: "running" as const, usage: usage(200) };
@@ -1111,7 +1111,7 @@ expect(announcer.textContent).toBe(settledText);
 
 Also assert the mobile button visibly labels Cost and Context, has a chevron/cue, and the gauge sits inside expanded detail on mobile while remaining visible at `sm`.
 
-- [ ] **Step 3: Run lifecycle/footer tests and observe prior-turn reuse and live-region coupling**
+- [x] **Step 3: Run lifecycle/footer tests and observe prior-turn reuse and live-region coupling**
 
 ```powershell
 cd web
@@ -1120,7 +1120,7 @@ npx vitest run src/chat/__tests__/runUsage.test.tsx src/chat/__tests__/ExternalS
 
 Expected: FAIL because there is no run ID/phase, new runs do not emit a reset, settlement is implicit, and visible metrics are latched inside the live region.
 
-- [ ] **Step 4: Implement the isolated run lifecycle**
+- [x] **Step 4: Implement the isolated run lifecycle**
 
 Create `runUsage.ts`:
 
@@ -1176,7 +1176,7 @@ export function useRunUsageLifecycle(onUsage?: (event: RunUsageEvent) => void) {
 }
 ```
 
-- [ ] **Step 5: Wire every stream path through start/update/finally-settle**
+- [x] **Step 5: Wire every stream path through start/update/finally-settle**
 
 Change `ExternalStoreChat.onUsage` to `(event: RunUsageEvent) => void`. For new, edit/reload, and approval-resume paths use this exact pattern:
 
@@ -1203,7 +1203,7 @@ try {
 
 Call `usageLifecycle.clear()` when `threadId` changes. `onCancel` only calls `abortRef.current?.abort()`; it does not emit usage. AppShell stores the whole event and initializes `{runId: 0, phase: 'idle', usage: undefined}`.
 
-- [ ] **Step 6: Split visible telemetry from the settled-only status**
+- [x] **Step 6: Split visible telemetry from the settled-only status**
 
 Change RuntimeFooter to receive `usageState: RunUsageEvent`. Render visible values from the current `liveCluster` in `data-testid="footer-visible-metrics"`. Render a separate non-interactive announcer:
 
@@ -1242,7 +1242,7 @@ function useSettledAnnouncement(live: NumericCluster, event: RunUsageEvent) {
 
 Memoize `liveCluster` so this effect is stable. Add `showDetails`/`hideDetails` labels and a settled announcement template to both footer resource bundles.
 
-- [ ] **Step 7: Verify all usage paths and commit**
+- [x] **Step 7: Verify all usage paths and commit**
 
 ```powershell
 cd web
