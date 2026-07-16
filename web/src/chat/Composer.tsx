@@ -239,11 +239,16 @@ export function Composer({
   };
 
   useEffect(() => {
-    if (draftPrompt === undefined || draftPrompt.nonce === appliedDraftNonce.current) return;
+    if (
+      approvalLocked ||
+      draftPrompt === undefined ||
+      draftPrompt.nonce === appliedDraftNonce.current
+    )
+      return;
     appliedDraftNonce.current = draftPrompt.nonce;
     aui.composer().setText(draftPrompt.text);
     composerInputRef.current?.focus();
-  }, [aui, composerInputRef, draftPrompt]);
+  }, [approvalLocked, aui, composerInputRef, draftPrompt]);
 
   // Detect a dictation session ending. If the transcript was inserted (the composer text
   // grew via onSpeech), mark the turn dictated for auto-speak parity (D-07). If nothing was

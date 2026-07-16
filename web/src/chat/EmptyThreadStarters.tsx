@@ -12,6 +12,7 @@ export function EmptyThreadStarters({
 
   return (
     <div
+      role="group"
       aria-label={t('chat.empty.suggestionsLabel')}
       className="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2"
     >
