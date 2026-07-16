@@ -1,16 +1,16 @@
-# Graph Report - Aura  (2026-07-03)
+# Graph Report - Aura  (2026-07-15)
 
 ## Corpus Check
-- 2771 files · ~4,247,156 words
+- 4567 files · ~5,606,250 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 35599 nodes · 59513 edges · 2256 communities (1970 shown, 286 thin omitted)
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 8631 edges (avg confidence: 0.69)
+- 49834 nodes · 79177 edges · 3928 communities (3242 shown, 686 thin omitted)
+- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 10283 edges (avg confidence: 0.71)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `965e361b`
+- Built from commit: `4bd6ed20`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -2058,6 +2058,7 @@
 - [[_COMMUNITY_Community 2106|Community 2106]]
 - [[_COMMUNITY_Community 2107|Community 2107]]
 - [[_COMMUNITY_Community 2108|Community 2108]]
+- [[_COMMUNITY_Community 2109|Community 2109]]
 - [[_COMMUNITY_Community 2110|Community 2110]]
 - [[_COMMUNITY_Community 2111|Community 2111]]
 - [[_COMMUNITY_Community 2112|Community 2112]]
@@ -2065,11 +2066,13 @@
 - [[_COMMUNITY_Community 2114|Community 2114]]
 - [[_COMMUNITY_Community 2115|Community 2115]]
 - [[_COMMUNITY_Community 2116|Community 2116]]
+- [[_COMMUNITY_Community 2117|Community 2117]]
 - [[_COMMUNITY_Community 2118|Community 2118]]
 - [[_COMMUNITY_Community 2119|Community 2119]]
 - [[_COMMUNITY_Community 2120|Community 2120]]
 - [[_COMMUNITY_Community 2121|Community 2121]]
 - [[_COMMUNITY_Community 2122|Community 2122]]
+- [[_COMMUNITY_Community 2123|Community 2123]]
 - [[_COMMUNITY_Community 2124|Community 2124]]
 - [[_COMMUNITY_Community 2125|Community 2125]]
 - [[_COMMUNITY_Community 2127|Community 2127]]
@@ -2189,26 +2192,1225 @@
 - [[_COMMUNITY_Community 2245|Community 2245]]
 - [[_COMMUNITY_Community 2246|Community 2246]]
 - [[_COMMUNITY_Community 2247|Community 2247]]
+- [[_COMMUNITY_Community 2248|Community 2248]]
+- [[_COMMUNITY_Community 2249|Community 2249]]
+- [[_COMMUNITY_Community 2250|Community 2250]]
 - [[_COMMUNITY_Community 2251|Community 2251]]
 - [[_COMMUNITY_Community 2252|Community 2252]]
+- [[_COMMUNITY_Community 2253|Community 2253]]
+- [[_COMMUNITY_Community 2254|Community 2254]]
+- [[_COMMUNITY_Community 2255|Community 2255]]
+- [[_COMMUNITY_Community 2256|Community 2256]]
+- [[_COMMUNITY_Community 2257|Community 2257]]
+- [[_COMMUNITY_Community 2258|Community 2258]]
+- [[_COMMUNITY_Community 2259|Community 2259]]
+- [[_COMMUNITY_Community 2260|Community 2260]]
+- [[_COMMUNITY_Community 2261|Community 2261]]
+- [[_COMMUNITY_Community 2262|Community 2262]]
+- [[_COMMUNITY_Community 2263|Community 2263]]
+- [[_COMMUNITY_Community 2264|Community 2264]]
+- [[_COMMUNITY_Community 2265|Community 2265]]
+- [[_COMMUNITY_Community 2266|Community 2266]]
+- [[_COMMUNITY_Community 2267|Community 2267]]
+- [[_COMMUNITY_Community 2268|Community 2268]]
+- [[_COMMUNITY_Community 2269|Community 2269]]
+- [[_COMMUNITY_Community 2270|Community 2270]]
+- [[_COMMUNITY_Community 2271|Community 2271]]
+- [[_COMMUNITY_Community 2272|Community 2272]]
+- [[_COMMUNITY_Community 2273|Community 2273]]
+- [[_COMMUNITY_Community 2274|Community 2274]]
+- [[_COMMUNITY_Community 2275|Community 2275]]
+- [[_COMMUNITY_Community 2276|Community 2276]]
+- [[_COMMUNITY_Community 2277|Community 2277]]
+- [[_COMMUNITY_Community 2278|Community 2278]]
+- [[_COMMUNITY_Community 2279|Community 2279]]
+- [[_COMMUNITY_Community 2280|Community 2280]]
+- [[_COMMUNITY_Community 2281|Community 2281]]
+- [[_COMMUNITY_Community 2282|Community 2282]]
+- [[_COMMUNITY_Community 2283|Community 2283]]
+- [[_COMMUNITY_Community 2284|Community 2284]]
+- [[_COMMUNITY_Community 2285|Community 2285]]
+- [[_COMMUNITY_Community 2286|Community 2286]]
+- [[_COMMUNITY_Community 2287|Community 2287]]
+- [[_COMMUNITY_Community 2288|Community 2288]]
+- [[_COMMUNITY_Community 2289|Community 2289]]
+- [[_COMMUNITY_Community 2290|Community 2290]]
+- [[_COMMUNITY_Community 2291|Community 2291]]
+- [[_COMMUNITY_Community 2292|Community 2292]]
+- [[_COMMUNITY_Community 2293|Community 2293]]
+- [[_COMMUNITY_Community 2294|Community 2294]]
+- [[_COMMUNITY_Community 2295|Community 2295]]
+- [[_COMMUNITY_Community 2296|Community 2296]]
+- [[_COMMUNITY_Community 2297|Community 2297]]
+- [[_COMMUNITY_Community 2298|Community 2298]]
+- [[_COMMUNITY_Community 2299|Community 2299]]
+- [[_COMMUNITY_Community 2300|Community 2300]]
+- [[_COMMUNITY_Community 2301|Community 2301]]
+- [[_COMMUNITY_Community 2302|Community 2302]]
+- [[_COMMUNITY_Community 2303|Community 2303]]
+- [[_COMMUNITY_Community 2304|Community 2304]]
+- [[_COMMUNITY_Community 2305|Community 2305]]
+- [[_COMMUNITY_Community 2306|Community 2306]]
+- [[_COMMUNITY_Community 2307|Community 2307]]
+- [[_COMMUNITY_Community 2308|Community 2308]]
+- [[_COMMUNITY_Community 2309|Community 2309]]
+- [[_COMMUNITY_Community 2310|Community 2310]]
+- [[_COMMUNITY_Community 2311|Community 2311]]
+- [[_COMMUNITY_Community 2312|Community 2312]]
+- [[_COMMUNITY_Community 2313|Community 2313]]
+- [[_COMMUNITY_Community 2314|Community 2314]]
+- [[_COMMUNITY_Community 2315|Community 2315]]
+- [[_COMMUNITY_Community 2316|Community 2316]]
+- [[_COMMUNITY_Community 2317|Community 2317]]
+- [[_COMMUNITY_Community 2318|Community 2318]]
+- [[_COMMUNITY_Community 2319|Community 2319]]
+- [[_COMMUNITY_Community 2320|Community 2320]]
+- [[_COMMUNITY_Community 2321|Community 2321]]
+- [[_COMMUNITY_Community 2322|Community 2322]]
+- [[_COMMUNITY_Community 2323|Community 2323]]
+- [[_COMMUNITY_Community 2324|Community 2324]]
+- [[_COMMUNITY_Community 2325|Community 2325]]
+- [[_COMMUNITY_Community 2326|Community 2326]]
+- [[_COMMUNITY_Community 2327|Community 2327]]
+- [[_COMMUNITY_Community 2328|Community 2328]]
+- [[_COMMUNITY_Community 2329|Community 2329]]
+- [[_COMMUNITY_Community 2330|Community 2330]]
+- [[_COMMUNITY_Community 2331|Community 2331]]
+- [[_COMMUNITY_Community 2332|Community 2332]]
+- [[_COMMUNITY_Community 2333|Community 2333]]
+- [[_COMMUNITY_Community 2334|Community 2334]]
+- [[_COMMUNITY_Community 2335|Community 2335]]
+- [[_COMMUNITY_Community 2336|Community 2336]]
+- [[_COMMUNITY_Community 2337|Community 2337]]
+- [[_COMMUNITY_Community 2338|Community 2338]]
+- [[_COMMUNITY_Community 2339|Community 2339]]
+- [[_COMMUNITY_Community 2340|Community 2340]]
+- [[_COMMUNITY_Community 2341|Community 2341]]
 - [[_COMMUNITY_Community 2342|Community 2342]]
+- [[_COMMUNITY_Community 2343|Community 2343]]
+- [[_COMMUNITY_Community 2344|Community 2344]]
+- [[_COMMUNITY_Community 2345|Community 2345]]
+- [[_COMMUNITY_Community 2346|Community 2346]]
+- [[_COMMUNITY_Community 2347|Community 2347]]
+- [[_COMMUNITY_Community 2348|Community 2348]]
+- [[_COMMUNITY_Community 2349|Community 2349]]
+- [[_COMMUNITY_Community 2350|Community 2350]]
+- [[_COMMUNITY_Community 2351|Community 2351]]
+- [[_COMMUNITY_Community 2352|Community 2352]]
+- [[_COMMUNITY_Community 2353|Community 2353]]
+- [[_COMMUNITY_Community 2354|Community 2354]]
+- [[_COMMUNITY_Community 2355|Community 2355]]
+- [[_COMMUNITY_Community 2356|Community 2356]]
+- [[_COMMUNITY_Community 2357|Community 2357]]
+- [[_COMMUNITY_Community 2358|Community 2358]]
+- [[_COMMUNITY_Community 2359|Community 2359]]
+- [[_COMMUNITY_Community 2360|Community 2360]]
 - [[_COMMUNITY_Community 2361|Community 2361]]
+- [[_COMMUNITY_Community 2362|Community 2362]]
+- [[_COMMUNITY_Community 2363|Community 2363]]
+- [[_COMMUNITY_Community 2364|Community 2364]]
+- [[_COMMUNITY_Community 2365|Community 2365]]
+- [[_COMMUNITY_Community 2366|Community 2366]]
+- [[_COMMUNITY_Community 2367|Community 2367]]
+- [[_COMMUNITY_Community 2368|Community 2368]]
+- [[_COMMUNITY_Community 2369|Community 2369]]
+- [[_COMMUNITY_Community 2370|Community 2370]]
+- [[_COMMUNITY_Community 2371|Community 2371]]
+- [[_COMMUNITY_Community 2372|Community 2372]]
+- [[_COMMUNITY_Community 2373|Community 2373]]
+- [[_COMMUNITY_Community 2374|Community 2374]]
+- [[_COMMUNITY_Community 2375|Community 2375]]
+- [[_COMMUNITY_Community 2376|Community 2376]]
+- [[_COMMUNITY_Community 2377|Community 2377]]
+- [[_COMMUNITY_Community 2378|Community 2378]]
+- [[_COMMUNITY_Community 2379|Community 2379]]
+- [[_COMMUNITY_Community 2380|Community 2380]]
+- [[_COMMUNITY_Community 2381|Community 2381]]
+- [[_COMMUNITY_Community 2382|Community 2382]]
+- [[_COMMUNITY_Community 2383|Community 2383]]
+- [[_COMMUNITY_Community 2384|Community 2384]]
+- [[_COMMUNITY_Community 2385|Community 2385]]
+- [[_COMMUNITY_Community 2386|Community 2386]]
+- [[_COMMUNITY_Community 2387|Community 2387]]
+- [[_COMMUNITY_Community 2388|Community 2388]]
+- [[_COMMUNITY_Community 2389|Community 2389]]
+- [[_COMMUNITY_Community 2390|Community 2390]]
+- [[_COMMUNITY_Community 2391|Community 2391]]
+- [[_COMMUNITY_Community 2392|Community 2392]]
+- [[_COMMUNITY_Community 2393|Community 2393]]
+- [[_COMMUNITY_Community 2394|Community 2394]]
+- [[_COMMUNITY_Community 2395|Community 2395]]
+- [[_COMMUNITY_Community 2396|Community 2396]]
+- [[_COMMUNITY_Community 2397|Community 2397]]
+- [[_COMMUNITY_Community 2398|Community 2398]]
+- [[_COMMUNITY_Community 2399|Community 2399]]
+- [[_COMMUNITY_Community 2400|Community 2400]]
+- [[_COMMUNITY_Community 2401|Community 2401]]
+- [[_COMMUNITY_Community 2402|Community 2402]]
+- [[_COMMUNITY_Community 2403|Community 2403]]
+- [[_COMMUNITY_Community 2404|Community 2404]]
+- [[_COMMUNITY_Community 2405|Community 2405]]
+- [[_COMMUNITY_Community 2406|Community 2406]]
+- [[_COMMUNITY_Community 2407|Community 2407]]
+- [[_COMMUNITY_Community 2408|Community 2408]]
+- [[_COMMUNITY_Community 2409|Community 2409]]
+- [[_COMMUNITY_Community 2410|Community 2410]]
+- [[_COMMUNITY_Community 2411|Community 2411]]
+- [[_COMMUNITY_Community 2412|Community 2412]]
+- [[_COMMUNITY_Community 2413|Community 2413]]
+- [[_COMMUNITY_Community 2414|Community 2414]]
+- [[_COMMUNITY_Community 2415|Community 2415]]
+- [[_COMMUNITY_Community 2416|Community 2416]]
+- [[_COMMUNITY_Community 2417|Community 2417]]
+- [[_COMMUNITY_Community 2418|Community 2418]]
+- [[_COMMUNITY_Community 2419|Community 2419]]
+- [[_COMMUNITY_Community 2420|Community 2420]]
+- [[_COMMUNITY_Community 2421|Community 2421]]
+- [[_COMMUNITY_Community 2422|Community 2422]]
+- [[_COMMUNITY_Community 2423|Community 2423]]
+- [[_COMMUNITY_Community 2424|Community 2424]]
+- [[_COMMUNITY_Community 2425|Community 2425]]
+- [[_COMMUNITY_Community 2426|Community 2426]]
+- [[_COMMUNITY_Community 2430|Community 2430]]
+- [[_COMMUNITY_Community 2431|Community 2431]]
+- [[_COMMUNITY_Community 2432|Community 2432]]
+- [[_COMMUNITY_Community 2433|Community 2433]]
+- [[_COMMUNITY_Community 2434|Community 2434]]
+- [[_COMMUNITY_Community 2435|Community 2435]]
+- [[_COMMUNITY_Community 2436|Community 2436]]
+- [[_COMMUNITY_Community 2437|Community 2437]]
+- [[_COMMUNITY_Community 2438|Community 2438]]
+- [[_COMMUNITY_Community 2439|Community 2439]]
+- [[_COMMUNITY_Community 2440|Community 2440]]
+- [[_COMMUNITY_Community 2441|Community 2441]]
+- [[_COMMUNITY_Community 2442|Community 2442]]
+- [[_COMMUNITY_Community 2443|Community 2443]]
+- [[_COMMUNITY_Community 2444|Community 2444]]
+- [[_COMMUNITY_Community 2445|Community 2445]]
+- [[_COMMUNITY_Community 2446|Community 2446]]
+- [[_COMMUNITY_Community 2447|Community 2447]]
+- [[_COMMUNITY_Community 2448|Community 2448]]
+- [[_COMMUNITY_Community 2449|Community 2449]]
+- [[_COMMUNITY_Community 2450|Community 2450]]
+- [[_COMMUNITY_Community 2451|Community 2451]]
+- [[_COMMUNITY_Community 2452|Community 2452]]
+- [[_COMMUNITY_Community 2453|Community 2453]]
+- [[_COMMUNITY_Community 2454|Community 2454]]
+- [[_COMMUNITY_Community 2455|Community 2455]]
+- [[_COMMUNITY_Community 2456|Community 2456]]
+- [[_COMMUNITY_Community 2457|Community 2457]]
+- [[_COMMUNITY_Community 2458|Community 2458]]
+- [[_COMMUNITY_Community 2459|Community 2459]]
+- [[_COMMUNITY_Community 2460|Community 2460]]
+- [[_COMMUNITY_Community 2461|Community 2461]]
 - [[_COMMUNITY_Community 2462|Community 2462]]
+- [[_COMMUNITY_Community 2463|Community 2463]]
+- [[_COMMUNITY_Community 2464|Community 2464]]
+- [[_COMMUNITY_Community 2465|Community 2465]]
+- [[_COMMUNITY_Community 2466|Community 2466]]
+- [[_COMMUNITY_Community 2467|Community 2467]]
+- [[_COMMUNITY_Community 2468|Community 2468]]
+- [[_COMMUNITY_Community 2469|Community 2469]]
+- [[_COMMUNITY_Community 2470|Community 2470]]
+- [[_COMMUNITY_Community 2471|Community 2471]]
+- [[_COMMUNITY_Community 2472|Community 2472]]
+- [[_COMMUNITY_Community 2473|Community 2473]]
+- [[_COMMUNITY_Community 2474|Community 2474]]
+- [[_COMMUNITY_Community 2475|Community 2475]]
+- [[_COMMUNITY_Community 2476|Community 2476]]
+- [[_COMMUNITY_Community 2477|Community 2477]]
+- [[_COMMUNITY_Community 2478|Community 2478]]
+- [[_COMMUNITY_Community 2479|Community 2479]]
+- [[_COMMUNITY_Community 2480|Community 2480]]
+- [[_COMMUNITY_Community 2481|Community 2481]]
+- [[_COMMUNITY_Community 2482|Community 2482]]
+- [[_COMMUNITY_Community 2483|Community 2483]]
+- [[_COMMUNITY_Community 2484|Community 2484]]
+- [[_COMMUNITY_Community 2485|Community 2485]]
+- [[_COMMUNITY_Community 2486|Community 2486]]
+- [[_COMMUNITY_Community 2487|Community 2487]]
+- [[_COMMUNITY_Community 2488|Community 2488]]
+- [[_COMMUNITY_Community 2489|Community 2489]]
+- [[_COMMUNITY_Community 2490|Community 2490]]
+- [[_COMMUNITY_Community 2491|Community 2491]]
+- [[_COMMUNITY_Community 2492|Community 2492]]
+- [[_COMMUNITY_Community 2493|Community 2493]]
+- [[_COMMUNITY_Community 2494|Community 2494]]
+- [[_COMMUNITY_Community 2495|Community 2495]]
+- [[_COMMUNITY_Community 2496|Community 2496]]
+- [[_COMMUNITY_Community 2497|Community 2497]]
+- [[_COMMUNITY_Community 2498|Community 2498]]
+- [[_COMMUNITY_Community 2499|Community 2499]]
+- [[_COMMUNITY_Community 2500|Community 2500]]
+- [[_COMMUNITY_Community 2501|Community 2501]]
+- [[_COMMUNITY_Community 2502|Community 2502]]
+- [[_COMMUNITY_Community 2503|Community 2503]]
+- [[_COMMUNITY_Community 2504|Community 2504]]
+- [[_COMMUNITY_Community 2505|Community 2505]]
+- [[_COMMUNITY_Community 2506|Community 2506]]
+- [[_COMMUNITY_Community 2507|Community 2507]]
+- [[_COMMUNITY_Community 2508|Community 2508]]
+- [[_COMMUNITY_Community 2509|Community 2509]]
+- [[_COMMUNITY_Community 2510|Community 2510]]
+- [[_COMMUNITY_Community 2511|Community 2511]]
+- [[_COMMUNITY_Community 2512|Community 2512]]
+- [[_COMMUNITY_Community 2513|Community 2513]]
+- [[_COMMUNITY_Community 2514|Community 2514]]
+- [[_COMMUNITY_Community 2515|Community 2515]]
+- [[_COMMUNITY_Community 2516|Community 2516]]
+- [[_COMMUNITY_Community 2517|Community 2517]]
+- [[_COMMUNITY_Community 2518|Community 2518]]
+- [[_COMMUNITY_Community 2519|Community 2519]]
+- [[_COMMUNITY_Community 2520|Community 2520]]
+- [[_COMMUNITY_Community 2521|Community 2521]]
+- [[_COMMUNITY_Community 2522|Community 2522]]
+- [[_COMMUNITY_Community 2523|Community 2523]]
+- [[_COMMUNITY_Community 2524|Community 2524]]
+- [[_COMMUNITY_Community 2525|Community 2525]]
+- [[_COMMUNITY_Community 2526|Community 2526]]
+- [[_COMMUNITY_Community 2527|Community 2527]]
+- [[_COMMUNITY_Community 2528|Community 2528]]
+- [[_COMMUNITY_Community 2529|Community 2529]]
+- [[_COMMUNITY_Community 2530|Community 2530]]
+- [[_COMMUNITY_Community 2531|Community 2531]]
+- [[_COMMUNITY_Community 2532|Community 2532]]
+- [[_COMMUNITY_Community 2533|Community 2533]]
+- [[_COMMUNITY_Community 2534|Community 2534]]
+- [[_COMMUNITY_Community 2535|Community 2535]]
+- [[_COMMUNITY_Community 2536|Community 2536]]
+- [[_COMMUNITY_Community 2537|Community 2537]]
+- [[_COMMUNITY_Community 2538|Community 2538]]
+- [[_COMMUNITY_Community 2539|Community 2539]]
+- [[_COMMUNITY_Community 2540|Community 2540]]
+- [[_COMMUNITY_Community 2541|Community 2541]]
+- [[_COMMUNITY_Community 2542|Community 2542]]
 - [[_COMMUNITY_Community 2543|Community 2543]]
+- [[_COMMUNITY_Community 2544|Community 2544]]
+- [[_COMMUNITY_Community 2545|Community 2545]]
+- [[_COMMUNITY_Community 2546|Community 2546]]
+- [[_COMMUNITY_Community 2547|Community 2547]]
+- [[_COMMUNITY_Community 2548|Community 2548]]
+- [[_COMMUNITY_Community 2549|Community 2549]]
+- [[_COMMUNITY_Community 2550|Community 2550]]
+- [[_COMMUNITY_Community 2551|Community 2551]]
+- [[_COMMUNITY_Community 2552|Community 2552]]
+- [[_COMMUNITY_Community 2553|Community 2553]]
+- [[_COMMUNITY_Community 2554|Community 2554]]
+- [[_COMMUNITY_Community 2555|Community 2555]]
+- [[_COMMUNITY_Community 2556|Community 2556]]
+- [[_COMMUNITY_Community 2557|Community 2557]]
+- [[_COMMUNITY_Community 2559|Community 2559]]
+- [[_COMMUNITY_Community 2560|Community 2560]]
+- [[_COMMUNITY_Community 2561|Community 2561]]
+- [[_COMMUNITY_Community 2562|Community 2562]]
+- [[_COMMUNITY_Community 2563|Community 2563]]
+- [[_COMMUNITY_Community 2564|Community 2564]]
+- [[_COMMUNITY_Community 2565|Community 2565]]
+- [[_COMMUNITY_Community 2566|Community 2566]]
+- [[_COMMUNITY_Community 2567|Community 2567]]
+- [[_COMMUNITY_Community 2568|Community 2568]]
+- [[_COMMUNITY_Community 2569|Community 2569]]
+- [[_COMMUNITY_Community 2570|Community 2570]]
+- [[_COMMUNITY_Community 2571|Community 2571]]
+- [[_COMMUNITY_Community 2572|Community 2572]]
+- [[_COMMUNITY_Community 2573|Community 2573]]
+- [[_COMMUNITY_Community 2574|Community 2574]]
+- [[_COMMUNITY_Community 2575|Community 2575]]
+- [[_COMMUNITY_Community 2576|Community 2576]]
+- [[_COMMUNITY_Community 2577|Community 2577]]
+- [[_COMMUNITY_Community 2578|Community 2578]]
+- [[_COMMUNITY_Community 2579|Community 2579]]
+- [[_COMMUNITY_Community 2580|Community 2580]]
+- [[_COMMUNITY_Community 2581|Community 2581]]
+- [[_COMMUNITY_Community 2582|Community 2582]]
+- [[_COMMUNITY_Community 2583|Community 2583]]
+- [[_COMMUNITY_Community 2584|Community 2584]]
+- [[_COMMUNITY_Community 2585|Community 2585]]
+- [[_COMMUNITY_Community 2586|Community 2586]]
+- [[_COMMUNITY_Community 2587|Community 2587]]
+- [[_COMMUNITY_Community 2588|Community 2588]]
+- [[_COMMUNITY_Community 2589|Community 2589]]
+- [[_COMMUNITY_Community 2590|Community 2590]]
+- [[_COMMUNITY_Community 2591|Community 2591]]
+- [[_COMMUNITY_Community 2592|Community 2592]]
+- [[_COMMUNITY_Community 2593|Community 2593]]
+- [[_COMMUNITY_Community 2609|Community 2609]]
+- [[_COMMUNITY_Community 2610|Community 2610]]
+- [[_COMMUNITY_Community 2611|Community 2611]]
+- [[_COMMUNITY_Community 2612|Community 2612]]
+- [[_COMMUNITY_Community 2613|Community 2613]]
+- [[_COMMUNITY_Community 2614|Community 2614]]
+- [[_COMMUNITY_Community 2615|Community 2615]]
+- [[_COMMUNITY_Community 2616|Community 2616]]
+- [[_COMMUNITY_Community 2617|Community 2617]]
+- [[_COMMUNITY_Community 2618|Community 2618]]
+- [[_COMMUNITY_Community 2619|Community 2619]]
+- [[_COMMUNITY_Community 2620|Community 2620]]
+- [[_COMMUNITY_Community 2621|Community 2621]]
+- [[_COMMUNITY_Community 2622|Community 2622]]
+- [[_COMMUNITY_Community 2623|Community 2623]]
+- [[_COMMUNITY_Community 2624|Community 2624]]
+- [[_COMMUNITY_Community 2625|Community 2625]]
+- [[_COMMUNITY_Community 2626|Community 2626]]
+- [[_COMMUNITY_Community 2627|Community 2627]]
+- [[_COMMUNITY_Community 2628|Community 2628]]
+- [[_COMMUNITY_Community 2629|Community 2629]]
+- [[_COMMUNITY_Community 2630|Community 2630]]
+- [[_COMMUNITY_Community 2631|Community 2631]]
+- [[_COMMUNITY_Community 2632|Community 2632]]
+- [[_COMMUNITY_Community 2633|Community 2633]]
+- [[_COMMUNITY_Community 2634|Community 2634]]
+- [[_COMMUNITY_Community 2635|Community 2635]]
+- [[_COMMUNITY_Community 2636|Community 2636]]
+- [[_COMMUNITY_Community 2637|Community 2637]]
+- [[_COMMUNITY_Community 2638|Community 2638]]
+- [[_COMMUNITY_Community 2639|Community 2639]]
+- [[_COMMUNITY_Community 2640|Community 2640]]
+- [[_COMMUNITY_Community 2641|Community 2641]]
+- [[_COMMUNITY_Community 2642|Community 2642]]
+- [[_COMMUNITY_Community 2643|Community 2643]]
+- [[_COMMUNITY_Community 2644|Community 2644]]
+- [[_COMMUNITY_Community 2645|Community 2645]]
+- [[_COMMUNITY_Community 2646|Community 2646]]
+- [[_COMMUNITY_Community 2647|Community 2647]]
+- [[_COMMUNITY_Community 2648|Community 2648]]
+- [[_COMMUNITY_Community 2649|Community 2649]]
+- [[_COMMUNITY_Community 2650|Community 2650]]
+- [[_COMMUNITY_Community 2651|Community 2651]]
+- [[_COMMUNITY_Community 2652|Community 2652]]
+- [[_COMMUNITY_Community 2653|Community 2653]]
+- [[_COMMUNITY_Community 2654|Community 2654]]
+- [[_COMMUNITY_Community 2655|Community 2655]]
+- [[_COMMUNITY_Community 2656|Community 2656]]
+- [[_COMMUNITY_Community 2657|Community 2657]]
+- [[_COMMUNITY_Community 2658|Community 2658]]
+- [[_COMMUNITY_Community 2659|Community 2659]]
+- [[_COMMUNITY_Community 2660|Community 2660]]
+- [[_COMMUNITY_Community 2661|Community 2661]]
+- [[_COMMUNITY_Community 2662|Community 2662]]
+- [[_COMMUNITY_Community 2663|Community 2663]]
+- [[_COMMUNITY_Community 2664|Community 2664]]
+- [[_COMMUNITY_Community 2665|Community 2665]]
+- [[_COMMUNITY_Community 2666|Community 2666]]
+- [[_COMMUNITY_Community 2667|Community 2667]]
+- [[_COMMUNITY_Community 2668|Community 2668]]
+- [[_COMMUNITY_Community 2669|Community 2669]]
+- [[_COMMUNITY_Community 2670|Community 2670]]
+- [[_COMMUNITY_Community 2671|Community 2671]]
+- [[_COMMUNITY_Community 2672|Community 2672]]
+- [[_COMMUNITY_Community 2673|Community 2673]]
+- [[_COMMUNITY_Community 2674|Community 2674]]
+- [[_COMMUNITY_Community 2675|Community 2675]]
+- [[_COMMUNITY_Community 2676|Community 2676]]
+- [[_COMMUNITY_Community 2677|Community 2677]]
+- [[_COMMUNITY_Community 2678|Community 2678]]
+- [[_COMMUNITY_Community 2679|Community 2679]]
+- [[_COMMUNITY_Community 2680|Community 2680]]
+- [[_COMMUNITY_Community 2681|Community 2681]]
+- [[_COMMUNITY_Community 2682|Community 2682]]
+- [[_COMMUNITY_Community 2683|Community 2683]]
+- [[_COMMUNITY_Community 2684|Community 2684]]
+- [[_COMMUNITY_Community 2685|Community 2685]]
+- [[_COMMUNITY_Community 2686|Community 2686]]
+- [[_COMMUNITY_Community 2687|Community 2687]]
+- [[_COMMUNITY_Community 2688|Community 2688]]
+- [[_COMMUNITY_Community 2689|Community 2689]]
+- [[_COMMUNITY_Community 2690|Community 2690]]
+- [[_COMMUNITY_Community 2691|Community 2691]]
+- [[_COMMUNITY_Community 2692|Community 2692]]
+- [[_COMMUNITY_Community 2693|Community 2693]]
+- [[_COMMUNITY_Community 2694|Community 2694]]
+- [[_COMMUNITY_Community 2695|Community 2695]]
+- [[_COMMUNITY_Community 2696|Community 2696]]
+- [[_COMMUNITY_Community 2697|Community 2697]]
+- [[_COMMUNITY_Community 2698|Community 2698]]
+- [[_COMMUNITY_Community 2699|Community 2699]]
+- [[_COMMUNITY_Community 2700|Community 2700]]
+- [[_COMMUNITY_Community 2701|Community 2701]]
+- [[_COMMUNITY_Community 2702|Community 2702]]
+- [[_COMMUNITY_Community 2703|Community 2703]]
+- [[_COMMUNITY_Community 2704|Community 2704]]
+- [[_COMMUNITY_Community 2705|Community 2705]]
+- [[_COMMUNITY_Community 2706|Community 2706]]
+- [[_COMMUNITY_Community 2707|Community 2707]]
+- [[_COMMUNITY_Community 2708|Community 2708]]
+- [[_COMMUNITY_Community 2709|Community 2709]]
+- [[_COMMUNITY_Community 2710|Community 2710]]
+- [[_COMMUNITY_Community 2711|Community 2711]]
+- [[_COMMUNITY_Community 2712|Community 2712]]
+- [[_COMMUNITY_Community 2713|Community 2713]]
+- [[_COMMUNITY_Community 2714|Community 2714]]
+- [[_COMMUNITY_Community 2715|Community 2715]]
+- [[_COMMUNITY_Community 2716|Community 2716]]
+- [[_COMMUNITY_Community 2717|Community 2717]]
+- [[_COMMUNITY_Community 2718|Community 2718]]
+- [[_COMMUNITY_Community 2719|Community 2719]]
+- [[_COMMUNITY_Community 2720|Community 2720]]
+- [[_COMMUNITY_Community 2721|Community 2721]]
+- [[_COMMUNITY_Community 2722|Community 2722]]
+- [[_COMMUNITY_Community 2723|Community 2723]]
+- [[_COMMUNITY_Community 2724|Community 2724]]
+- [[_COMMUNITY_Community 2725|Community 2725]]
+- [[_COMMUNITY_Community 2726|Community 2726]]
+- [[_COMMUNITY_Community 2727|Community 2727]]
+- [[_COMMUNITY_Community 2728|Community 2728]]
 - [[_COMMUNITY_Community 2729|Community 2729]]
+- [[_COMMUNITY_Community 2730|Community 2730]]
+- [[_COMMUNITY_Community 2731|Community 2731]]
+- [[_COMMUNITY_Community 2732|Community 2732]]
+- [[_COMMUNITY_Community 2733|Community 2733]]
+- [[_COMMUNITY_Community 2734|Community 2734]]
+- [[_COMMUNITY_Community 2735|Community 2735]]
+- [[_COMMUNITY_Community 2736|Community 2736]]
+- [[_COMMUNITY_Community 2737|Community 2737]]
+- [[_COMMUNITY_Community 2738|Community 2738]]
+- [[_COMMUNITY_Community 2739|Community 2739]]
+- [[_COMMUNITY_Community 2740|Community 2740]]
+- [[_COMMUNITY_Community 2741|Community 2741]]
+- [[_COMMUNITY_Community 2742|Community 2742]]
+- [[_COMMUNITY_Community 2743|Community 2743]]
+- [[_COMMUNITY_Community 2744|Community 2744]]
+- [[_COMMUNITY_Community 2745|Community 2745]]
+- [[_COMMUNITY_Community 2746|Community 2746]]
+- [[_COMMUNITY_Community 2747|Community 2747]]
+- [[_COMMUNITY_Community 2748|Community 2748]]
+- [[_COMMUNITY_Community 2749|Community 2749]]
+- [[_COMMUNITY_Community 2750|Community 2750]]
+- [[_COMMUNITY_Community 2751|Community 2751]]
+- [[_COMMUNITY_Community 2752|Community 2752]]
+- [[_COMMUNITY_Community 2753|Community 2753]]
+- [[_COMMUNITY_Community 2754|Community 2754]]
+- [[_COMMUNITY_Community 2755|Community 2755]]
+- [[_COMMUNITY_Community 2756|Community 2756]]
+- [[_COMMUNITY_Community 2757|Community 2757]]
+- [[_COMMUNITY_Community 2758|Community 2758]]
+- [[_COMMUNITY_Community 2759|Community 2759]]
+- [[_COMMUNITY_Community 2760|Community 2760]]
+- [[_COMMUNITY_Community 2761|Community 2761]]
+- [[_COMMUNITY_Community 2762|Community 2762]]
+- [[_COMMUNITY_Community 2763|Community 2763]]
+- [[_COMMUNITY_Community 2764|Community 2764]]
+- [[_COMMUNITY_Community 2765|Community 2765]]
+- [[_COMMUNITY_Community 2766|Community 2766]]
+- [[_COMMUNITY_Community 2767|Community 2767]]
+- [[_COMMUNITY_Community 2768|Community 2768]]
+- [[_COMMUNITY_Community 2769|Community 2769]]
+- [[_COMMUNITY_Community 2770|Community 2770]]
+- [[_COMMUNITY_Community 2771|Community 2771]]
+- [[_COMMUNITY_Community 2772|Community 2772]]
+- [[_COMMUNITY_Community 2773|Community 2773]]
+- [[_COMMUNITY_Community 2774|Community 2774]]
+- [[_COMMUNITY_Community 2775|Community 2775]]
+- [[_COMMUNITY_Community 2776|Community 2776]]
+- [[_COMMUNITY_Community 2777|Community 2777]]
+- [[_COMMUNITY_Community 2778|Community 2778]]
+- [[_COMMUNITY_Community 2779|Community 2779]]
+- [[_COMMUNITY_Community 2780|Community 2780]]
+- [[_COMMUNITY_Community 2781|Community 2781]]
+- [[_COMMUNITY_Community 2782|Community 2782]]
+- [[_COMMUNITY_Community 2783|Community 2783]]
+- [[_COMMUNITY_Community 2784|Community 2784]]
+- [[_COMMUNITY_Community 2785|Community 2785]]
+- [[_COMMUNITY_Community 2786|Community 2786]]
+- [[_COMMUNITY_Community 2787|Community 2787]]
+- [[_COMMUNITY_Community 2788|Community 2788]]
+- [[_COMMUNITY_Community 2789|Community 2789]]
+- [[_COMMUNITY_Community 2790|Community 2790]]
+- [[_COMMUNITY_Community 2791|Community 2791]]
+- [[_COMMUNITY_Community 2792|Community 2792]]
+- [[_COMMUNITY_Community 2793|Community 2793]]
+- [[_COMMUNITY_Community 2794|Community 2794]]
+- [[_COMMUNITY_Community 2795|Community 2795]]
+- [[_COMMUNITY_Community 2796|Community 2796]]
+- [[_COMMUNITY_Community 2797|Community 2797]]
+- [[_COMMUNITY_Community 2798|Community 2798]]
+- [[_COMMUNITY_Community 2799|Community 2799]]
+- [[_COMMUNITY_Community 2800|Community 2800]]
+- [[_COMMUNITY_Community 2801|Community 2801]]
+- [[_COMMUNITY_Community 2802|Community 2802]]
+- [[_COMMUNITY_Community 2803|Community 2803]]
+- [[_COMMUNITY_Community 2804|Community 2804]]
+- [[_COMMUNITY_Community 2805|Community 2805]]
+- [[_COMMUNITY_Community 2806|Community 2806]]
+- [[_COMMUNITY_Community 2807|Community 2807]]
+- [[_COMMUNITY_Community 2808|Community 2808]]
+- [[_COMMUNITY_Community 2809|Community 2809]]
+- [[_COMMUNITY_Community 2810|Community 2810]]
+- [[_COMMUNITY_Community 2811|Community 2811]]
+- [[_COMMUNITY_Community 2812|Community 2812]]
+- [[_COMMUNITY_Community 2813|Community 2813]]
+- [[_COMMUNITY_Community 2814|Community 2814]]
+- [[_COMMUNITY_Community 2816|Community 2816]]
+- [[_COMMUNITY_Community 2818|Community 2818]]
+- [[_COMMUNITY_Community 2819|Community 2819]]
+- [[_COMMUNITY_Community 2820|Community 2820]]
+- [[_COMMUNITY_Community 2821|Community 2821]]
+- [[_COMMUNITY_Community 2822|Community 2822]]
+- [[_COMMUNITY_Community 2823|Community 2823]]
+- [[_COMMUNITY_Community 2824|Community 2824]]
+- [[_COMMUNITY_Community 2825|Community 2825]]
+- [[_COMMUNITY_Community 2826|Community 2826]]
+- [[_COMMUNITY_Community 2827|Community 2827]]
+- [[_COMMUNITY_Community 2828|Community 2828]]
+- [[_COMMUNITY_Community 2829|Community 2829]]
+- [[_COMMUNITY_Community 2830|Community 2830]]
+- [[_COMMUNITY_Community 2831|Community 2831]]
+- [[_COMMUNITY_Community 2832|Community 2832]]
+- [[_COMMUNITY_Community 2834|Community 2834]]
+- [[_COMMUNITY_Community 2836|Community 2836]]
+- [[_COMMUNITY_Community 2837|Community 2837]]
+- [[_COMMUNITY_Community 2838|Community 2838]]
+- [[_COMMUNITY_Community 2839|Community 2839]]
+- [[_COMMUNITY_Community 2840|Community 2840]]
+- [[_COMMUNITY_Community 2841|Community 2841]]
+- [[_COMMUNITY_Community 2842|Community 2842]]
+- [[_COMMUNITY_Community 2843|Community 2843]]
+- [[_COMMUNITY_Community 2844|Community 2844]]
+- [[_COMMUNITY_Community 2845|Community 2845]]
+- [[_COMMUNITY_Community 2846|Community 2846]]
+- [[_COMMUNITY_Community 2847|Community 2847]]
+- [[_COMMUNITY_Community 2848|Community 2848]]
+- [[_COMMUNITY_Community 2849|Community 2849]]
+- [[_COMMUNITY_Community 2850|Community 2850]]
+- [[_COMMUNITY_Community 2851|Community 2851]]
+- [[_COMMUNITY_Community 2852|Community 2852]]
+- [[_COMMUNITY_Community 2853|Community 2853]]
+- [[_COMMUNITY_Community 2854|Community 2854]]
+- [[_COMMUNITY_Community 2855|Community 2855]]
+- [[_COMMUNITY_Community 2856|Community 2856]]
+- [[_COMMUNITY_Community 2857|Community 2857]]
+- [[_COMMUNITY_Community 2858|Community 2858]]
+- [[_COMMUNITY_Community 2859|Community 2859]]
+- [[_COMMUNITY_Community 2860|Community 2860]]
+- [[_COMMUNITY_Community 2861|Community 2861]]
+- [[_COMMUNITY_Community 2862|Community 2862]]
+- [[_COMMUNITY_Community 2863|Community 2863]]
+- [[_COMMUNITY_Community 2864|Community 2864]]
+- [[_COMMUNITY_Community 2865|Community 2865]]
+- [[_COMMUNITY_Community 2866|Community 2866]]
+- [[_COMMUNITY_Community 2867|Community 2867]]
+- [[_COMMUNITY_Community 2868|Community 2868]]
+- [[_COMMUNITY_Community 2869|Community 2869]]
+- [[_COMMUNITY_Community 2870|Community 2870]]
+- [[_COMMUNITY_Community 2871|Community 2871]]
+- [[_COMMUNITY_Community 2872|Community 2872]]
+- [[_COMMUNITY_Community 2873|Community 2873]]
+- [[_COMMUNITY_Community 2875|Community 2875]]
+- [[_COMMUNITY_Community 2876|Community 2876]]
+- [[_COMMUNITY_Community 2877|Community 2877]]
+- [[_COMMUNITY_Community 2878|Community 2878]]
+- [[_COMMUNITY_Community 2879|Community 2879]]
+- [[_COMMUNITY_Community 2880|Community 2880]]
+- [[_COMMUNITY_Community 2881|Community 2881]]
+- [[_COMMUNITY_Community 2882|Community 2882]]
+- [[_COMMUNITY_Community 2883|Community 2883]]
+- [[_COMMUNITY_Community 2884|Community 2884]]
+- [[_COMMUNITY_Community 2885|Community 2885]]
+- [[_COMMUNITY_Community 2886|Community 2886]]
+- [[_COMMUNITY_Community 2887|Community 2887]]
+- [[_COMMUNITY_Community 2888|Community 2888]]
+- [[_COMMUNITY_Community 2889|Community 2889]]
+- [[_COMMUNITY_Community 2890|Community 2890]]
+- [[_COMMUNITY_Community 2892|Community 2892]]
+- [[_COMMUNITY_Community 2893|Community 2893]]
+- [[_COMMUNITY_Community 2894|Community 2894]]
+- [[_COMMUNITY_Community 2895|Community 2895]]
+- [[_COMMUNITY_Community 2896|Community 2896]]
+- [[_COMMUNITY_Community 2897|Community 2897]]
+- [[_COMMUNITY_Community 2898|Community 2898]]
+- [[_COMMUNITY_Community 2899|Community 2899]]
+- [[_COMMUNITY_Community 2900|Community 2900]]
+- [[_COMMUNITY_Community 2901|Community 2901]]
+- [[_COMMUNITY_Community 2902|Community 2902]]
+- [[_COMMUNITY_Community 2903|Community 2903]]
+- [[_COMMUNITY_Community 2904|Community 2904]]
+- [[_COMMUNITY_Community 2905|Community 2905]]
+- [[_COMMUNITY_Community 2906|Community 2906]]
+- [[_COMMUNITY_Community 2907|Community 2907]]
+- [[_COMMUNITY_Community 2908|Community 2908]]
+- [[_COMMUNITY_Community 2909|Community 2909]]
+- [[_COMMUNITY_Community 2910|Community 2910]]
+- [[_COMMUNITY_Community 2911|Community 2911]]
+- [[_COMMUNITY_Community 2912|Community 2912]]
+- [[_COMMUNITY_Community 2913|Community 2913]]
+- [[_COMMUNITY_Community 2914|Community 2914]]
+- [[_COMMUNITY_Community 2915|Community 2915]]
+- [[_COMMUNITY_Community 2917|Community 2917]]
+- [[_COMMUNITY_Community 2918|Community 2918]]
+- [[_COMMUNITY_Community 2920|Community 2920]]
+- [[_COMMUNITY_Community 2921|Community 2921]]
+- [[_COMMUNITY_Community 2922|Community 2922]]
+- [[_COMMUNITY_Community 2923|Community 2923]]
+- [[_COMMUNITY_Community 2924|Community 2924]]
+- [[_COMMUNITY_Community 2925|Community 2925]]
+- [[_COMMUNITY_Community 2926|Community 2926]]
+- [[_COMMUNITY_Community 2927|Community 2927]]
+- [[_COMMUNITY_Community 2928|Community 2928]]
+- [[_COMMUNITY_Community 2929|Community 2929]]
+- [[_COMMUNITY_Community 2930|Community 2930]]
+- [[_COMMUNITY_Community 2931|Community 2931]]
+- [[_COMMUNITY_Community 2932|Community 2932]]
+- [[_COMMUNITY_Community 2933|Community 2933]]
+- [[_COMMUNITY_Community 2934|Community 2934]]
+- [[_COMMUNITY_Community 2935|Community 2935]]
+- [[_COMMUNITY_Community 2936|Community 2936]]
+- [[_COMMUNITY_Community 2937|Community 2937]]
+- [[_COMMUNITY_Community 2938|Community 2938]]
+- [[_COMMUNITY_Community 2939|Community 2939]]
+- [[_COMMUNITY_Community 2941|Community 2941]]
+- [[_COMMUNITY_Community 2942|Community 2942]]
+- [[_COMMUNITY_Community 2943|Community 2943]]
+- [[_COMMUNITY_Community 2944|Community 2944]]
+- [[_COMMUNITY_Community 2946|Community 2946]]
+- [[_COMMUNITY_Community 2947|Community 2947]]
+- [[_COMMUNITY_Community 2948|Community 2948]]
+- [[_COMMUNITY_Community 2949|Community 2949]]
+- [[_COMMUNITY_Community 2950|Community 2950]]
+- [[_COMMUNITY_Community 2951|Community 2951]]
+- [[_COMMUNITY_Community 2952|Community 2952]]
+- [[_COMMUNITY_Community 2953|Community 2953]]
+- [[_COMMUNITY_Community 2954|Community 2954]]
+- [[_COMMUNITY_Community 2955|Community 2955]]
+- [[_COMMUNITY_Community 2956|Community 2956]]
+- [[_COMMUNITY_Community 2957|Community 2957]]
+- [[_COMMUNITY_Community 2958|Community 2958]]
+- [[_COMMUNITY_Community 2959|Community 2959]]
+- [[_COMMUNITY_Community 2960|Community 2960]]
+- [[_COMMUNITY_Community 2961|Community 2961]]
+- [[_COMMUNITY_Community 2962|Community 2962]]
+- [[_COMMUNITY_Community 2963|Community 2963]]
+- [[_COMMUNITY_Community 2964|Community 2964]]
+- [[_COMMUNITY_Community 2965|Community 2965]]
+- [[_COMMUNITY_Community 2966|Community 2966]]
+- [[_COMMUNITY_Community 2967|Community 2967]]
+- [[_COMMUNITY_Community 2968|Community 2968]]
+- [[_COMMUNITY_Community 2969|Community 2969]]
+- [[_COMMUNITY_Community 2970|Community 2970]]
+- [[_COMMUNITY_Community 2971|Community 2971]]
+- [[_COMMUNITY_Community 2972|Community 2972]]
+- [[_COMMUNITY_Community 2973|Community 2973]]
+- [[_COMMUNITY_Community 2974|Community 2974]]
+- [[_COMMUNITY_Community 2975|Community 2975]]
+- [[_COMMUNITY_Community 2976|Community 2976]]
+- [[_COMMUNITY_Community 2977|Community 2977]]
+- [[_COMMUNITY_Community 2978|Community 2978]]
+- [[_COMMUNITY_Community 2979|Community 2979]]
+- [[_COMMUNITY_Community 2980|Community 2980]]
+- [[_COMMUNITY_Community 2981|Community 2981]]
+- [[_COMMUNITY_Community 2982|Community 2982]]
+- [[_COMMUNITY_Community 2983|Community 2983]]
+- [[_COMMUNITY_Community 2985|Community 2985]]
+- [[_COMMUNITY_Community 2986|Community 2986]]
+- [[_COMMUNITY_Community 2987|Community 2987]]
+- [[_COMMUNITY_Community 2988|Community 2988]]
+- [[_COMMUNITY_Community 2989|Community 2989]]
+- [[_COMMUNITY_Community 2990|Community 2990]]
+- [[_COMMUNITY_Community 2991|Community 2991]]
+- [[_COMMUNITY_Community 2992|Community 2992]]
+- [[_COMMUNITY_Community 2993|Community 2993]]
+- [[_COMMUNITY_Community 2994|Community 2994]]
+- [[_COMMUNITY_Community 2995|Community 2995]]
+- [[_COMMUNITY_Community 2996|Community 2996]]
+- [[_COMMUNITY_Community 2997|Community 2997]]
+- [[_COMMUNITY_Community 2998|Community 2998]]
+- [[_COMMUNITY_Community 2999|Community 2999]]
+- [[_COMMUNITY_Community 3000|Community 3000]]
+- [[_COMMUNITY_Community 3001|Community 3001]]
+- [[_COMMUNITY_Community 3002|Community 3002]]
+- [[_COMMUNITY_Community 3005|Community 3005]]
+- [[_COMMUNITY_Community 3006|Community 3006]]
+- [[_COMMUNITY_Community 3007|Community 3007]]
+- [[_COMMUNITY_Community 3008|Community 3008]]
+- [[_COMMUNITY_Community 3009|Community 3009]]
+- [[_COMMUNITY_Community 3010|Community 3010]]
+- [[_COMMUNITY_Community 3011|Community 3011]]
+- [[_COMMUNITY_Community 3012|Community 3012]]
+- [[_COMMUNITY_Community 3013|Community 3013]]
+- [[_COMMUNITY_Community 3014|Community 3014]]
+- [[_COMMUNITY_Community 3015|Community 3015]]
+- [[_COMMUNITY_Community 3016|Community 3016]]
+- [[_COMMUNITY_Community 3017|Community 3017]]
+- [[_COMMUNITY_Community 3018|Community 3018]]
+- [[_COMMUNITY_Community 3019|Community 3019]]
+- [[_COMMUNITY_Community 3020|Community 3020]]
+- [[_COMMUNITY_Community 3021|Community 3021]]
+- [[_COMMUNITY_Community 3022|Community 3022]]
+- [[_COMMUNITY_Community 3023|Community 3023]]
+- [[_COMMUNITY_Community 3024|Community 3024]]
+- [[_COMMUNITY_Community 3025|Community 3025]]
+- [[_COMMUNITY_Community 3026|Community 3026]]
+- [[_COMMUNITY_Community 3027|Community 3027]]
+- [[_COMMUNITY_Community 3028|Community 3028]]
+- [[_COMMUNITY_Community 3029|Community 3029]]
+- [[_COMMUNITY_Community 3030|Community 3030]]
+- [[_COMMUNITY_Community 3031|Community 3031]]
+- [[_COMMUNITY_Community 3032|Community 3032]]
+- [[_COMMUNITY_Community 3033|Community 3033]]
+- [[_COMMUNITY_Community 3036|Community 3036]]
+- [[_COMMUNITY_Community 3037|Community 3037]]
+- [[_COMMUNITY_Community 3038|Community 3038]]
+- [[_COMMUNITY_Community 3039|Community 3039]]
+- [[_COMMUNITY_Community 3040|Community 3040]]
+- [[_COMMUNITY_Community 3041|Community 3041]]
+- [[_COMMUNITY_Community 3042|Community 3042]]
+- [[_COMMUNITY_Community 3043|Community 3043]]
+- [[_COMMUNITY_Community 3044|Community 3044]]
+- [[_COMMUNITY_Community 3045|Community 3045]]
+- [[_COMMUNITY_Community 3046|Community 3046]]
+- [[_COMMUNITY_Community 3047|Community 3047]]
+- [[_COMMUNITY_Community 3048|Community 3048]]
+- [[_COMMUNITY_Community 3049|Community 3049]]
+- [[_COMMUNITY_Community 3050|Community 3050]]
+- [[_COMMUNITY_Community 3051|Community 3051]]
+- [[_COMMUNITY_Community 3052|Community 3052]]
+- [[_COMMUNITY_Community 3053|Community 3053]]
+- [[_COMMUNITY_Community 3054|Community 3054]]
+- [[_COMMUNITY_Community 3055|Community 3055]]
+- [[_COMMUNITY_Community 3056|Community 3056]]
+- [[_COMMUNITY_Community 3057|Community 3057]]
+- [[_COMMUNITY_Community 3058|Community 3058]]
+- [[_COMMUNITY_Community 3059|Community 3059]]
+- [[_COMMUNITY_Community 3060|Community 3060]]
+- [[_COMMUNITY_Community 3061|Community 3061]]
+- [[_COMMUNITY_Community 3064|Community 3064]]
+- [[_COMMUNITY_Community 3065|Community 3065]]
+- [[_COMMUNITY_Community 3066|Community 3066]]
+- [[_COMMUNITY_Community 3067|Community 3067]]
+- [[_COMMUNITY_Community 3068|Community 3068]]
+- [[_COMMUNITY_Community 3069|Community 3069]]
+- [[_COMMUNITY_Community 3070|Community 3070]]
+- [[_COMMUNITY_Community 3071|Community 3071]]
+- [[_COMMUNITY_Community 3072|Community 3072]]
+- [[_COMMUNITY_Community 3073|Community 3073]]
+- [[_COMMUNITY_Community 3074|Community 3074]]
+- [[_COMMUNITY_Community 3075|Community 3075]]
+- [[_COMMUNITY_Community 3076|Community 3076]]
+- [[_COMMUNITY_Community 3077|Community 3077]]
+- [[_COMMUNITY_Community 3078|Community 3078]]
+- [[_COMMUNITY_Community 3080|Community 3080]]
+- [[_COMMUNITY_Community 3081|Community 3081]]
+- [[_COMMUNITY_Community 3082|Community 3082]]
+- [[_COMMUNITY_Community 3084|Community 3084]]
+- [[_COMMUNITY_Community 3085|Community 3085]]
+- [[_COMMUNITY_Community 3086|Community 3086]]
+- [[_COMMUNITY_Community 3087|Community 3087]]
+- [[_COMMUNITY_Community 3089|Community 3089]]
+- [[_COMMUNITY_Community 3090|Community 3090]]
+- [[_COMMUNITY_Community 3091|Community 3091]]
+- [[_COMMUNITY_Community 3092|Community 3092]]
+- [[_COMMUNITY_Community 3093|Community 3093]]
+- [[_COMMUNITY_Community 3094|Community 3094]]
+- [[_COMMUNITY_Community 3095|Community 3095]]
+- [[_COMMUNITY_Community 3096|Community 3096]]
+- [[_COMMUNITY_Community 3097|Community 3097]]
+- [[_COMMUNITY_Community 3098|Community 3098]]
+- [[_COMMUNITY_Community 3099|Community 3099]]
+- [[_COMMUNITY_Community 3100|Community 3100]]
+- [[_COMMUNITY_Community 3101|Community 3101]]
+- [[_COMMUNITY_Community 3102|Community 3102]]
+- [[_COMMUNITY_Community 3103|Community 3103]]
+- [[_COMMUNITY_Community 3104|Community 3104]]
+- [[_COMMUNITY_Community 3105|Community 3105]]
+- [[_COMMUNITY_Community 3106|Community 3106]]
+- [[_COMMUNITY_Community 3107|Community 3107]]
+- [[_COMMUNITY_Community 3108|Community 3108]]
+- [[_COMMUNITY_Community 3109|Community 3109]]
+- [[_COMMUNITY_Community 3110|Community 3110]]
+- [[_COMMUNITY_Community 3111|Community 3111]]
+- [[_COMMUNITY_Community 3113|Community 3113]]
+- [[_COMMUNITY_Community 3115|Community 3115]]
+- [[_COMMUNITY_Community 3116|Community 3116]]
+- [[_COMMUNITY_Community 3117|Community 3117]]
+- [[_COMMUNITY_Community 3120|Community 3120]]
+- [[_COMMUNITY_Community 3121|Community 3121]]
+- [[_COMMUNITY_Community 3122|Community 3122]]
+- [[_COMMUNITY_Community 3123|Community 3123]]
+- [[_COMMUNITY_Community 3124|Community 3124]]
+- [[_COMMUNITY_Community 3125|Community 3125]]
+- [[_COMMUNITY_Community 3126|Community 3126]]
+- [[_COMMUNITY_Community 3127|Community 3127]]
+- [[_COMMUNITY_Community 3128|Community 3128]]
+- [[_COMMUNITY_Community 3129|Community 3129]]
+- [[_COMMUNITY_Community 3130|Community 3130]]
+- [[_COMMUNITY_Community 3131|Community 3131]]
+- [[_COMMUNITY_Community 3132|Community 3132]]
+- [[_COMMUNITY_Community 3133|Community 3133]]
+- [[_COMMUNITY_Community 3134|Community 3134]]
+- [[_COMMUNITY_Community 3137|Community 3137]]
+- [[_COMMUNITY_Community 3138|Community 3138]]
+- [[_COMMUNITY_Community 3140|Community 3140]]
+- [[_COMMUNITY_Community 3141|Community 3141]]
+- [[_COMMUNITY_Community 3142|Community 3142]]
+- [[_COMMUNITY_Community 3143|Community 3143]]
+- [[_COMMUNITY_Community 3145|Community 3145]]
+- [[_COMMUNITY_Community 3146|Community 3146]]
+- [[_COMMUNITY_Community 3147|Community 3147]]
+- [[_COMMUNITY_Community 3148|Community 3148]]
+- [[_COMMUNITY_Community 3149|Community 3149]]
+- [[_COMMUNITY_Community 3150|Community 3150]]
+- [[_COMMUNITY_Community 3151|Community 3151]]
+- [[_COMMUNITY_Community 3152|Community 3152]]
+- [[_COMMUNITY_Community 3153|Community 3153]]
+- [[_COMMUNITY_Community 3154|Community 3154]]
+- [[_COMMUNITY_Community 3155|Community 3155]]
+- [[_COMMUNITY_Community 3156|Community 3156]]
+- [[_COMMUNITY_Community 3157|Community 3157]]
+- [[_COMMUNITY_Community 3158|Community 3158]]
+- [[_COMMUNITY_Community 3159|Community 3159]]
+- [[_COMMUNITY_Community 3160|Community 3160]]
+- [[_COMMUNITY_Community 3161|Community 3161]]
+- [[_COMMUNITY_Community 3162|Community 3162]]
+- [[_COMMUNITY_Community 3163|Community 3163]]
+- [[_COMMUNITY_Community 3164|Community 3164]]
+- [[_COMMUNITY_Community 3165|Community 3165]]
+- [[_COMMUNITY_Community 3166|Community 3166]]
+- [[_COMMUNITY_Community 3167|Community 3167]]
+- [[_COMMUNITY_Community 3169|Community 3169]]
+- [[_COMMUNITY_Community 3171|Community 3171]]
+- [[_COMMUNITY_Community 3172|Community 3172]]
+- [[_COMMUNITY_Community 3173|Community 3173]]
+- [[_COMMUNITY_Community 3174|Community 3174]]
+- [[_COMMUNITY_Community 3175|Community 3175]]
+- [[_COMMUNITY_Community 3176|Community 3176]]
+- [[_COMMUNITY_Community 3177|Community 3177]]
+- [[_COMMUNITY_Community 3178|Community 3178]]
+- [[_COMMUNITY_Community 3179|Community 3179]]
+- [[_COMMUNITY_Community 3180|Community 3180]]
+- [[_COMMUNITY_Community 3181|Community 3181]]
+- [[_COMMUNITY_Community 3182|Community 3182]]
+- [[_COMMUNITY_Community 3183|Community 3183]]
+- [[_COMMUNITY_Community 3184|Community 3184]]
+- [[_COMMUNITY_Community 3185|Community 3185]]
+- [[_COMMUNITY_Community 3186|Community 3186]]
+- [[_COMMUNITY_Community 3187|Community 3187]]
+- [[_COMMUNITY_Community 3188|Community 3188]]
+- [[_COMMUNITY_Community 3189|Community 3189]]
+- [[_COMMUNITY_Community 3190|Community 3190]]
+- [[_COMMUNITY_Community 3191|Community 3191]]
+- [[_COMMUNITY_Community 3192|Community 3192]]
+- [[_COMMUNITY_Community 3193|Community 3193]]
+- [[_COMMUNITY_Community 3194|Community 3194]]
+- [[_COMMUNITY_Community 3195|Community 3195]]
+- [[_COMMUNITY_Community 3197|Community 3197]]
+- [[_COMMUNITY_Community 3199|Community 3199]]
+- [[_COMMUNITY_Community 3200|Community 3200]]
+- [[_COMMUNITY_Community 3201|Community 3201]]
+- [[_COMMUNITY_Community 3204|Community 3204]]
+- [[_COMMUNITY_Community 3205|Community 3205]]
+- [[_COMMUNITY_Community 3206|Community 3206]]
+- [[_COMMUNITY_Community 3207|Community 3207]]
+- [[_COMMUNITY_Community 3208|Community 3208]]
+- [[_COMMUNITY_Community 3209|Community 3209]]
+- [[_COMMUNITY_Community 3210|Community 3210]]
+- [[_COMMUNITY_Community 3211|Community 3211]]
+- [[_COMMUNITY_Community 3213|Community 3213]]
+- [[_COMMUNITY_Community 3214|Community 3214]]
+- [[_COMMUNITY_Community 3215|Community 3215]]
+- [[_COMMUNITY_Community 3217|Community 3217]]
+- [[_COMMUNITY_Community 3218|Community 3218]]
+- [[_COMMUNITY_Community 3220|Community 3220]]
+- [[_COMMUNITY_Community 3222|Community 3222]]
+- [[_COMMUNITY_Community 3223|Community 3223]]
+- [[_COMMUNITY_Community 3224|Community 3224]]
+- [[_COMMUNITY_Community 3225|Community 3225]]
+- [[_COMMUNITY_Community 3226|Community 3226]]
+- [[_COMMUNITY_Community 3227|Community 3227]]
+- [[_COMMUNITY_Community 3228|Community 3228]]
+- [[_COMMUNITY_Community 3229|Community 3229]]
+- [[_COMMUNITY_Community 3230|Community 3230]]
+- [[_COMMUNITY_Community 3231|Community 3231]]
+- [[_COMMUNITY_Community 3232|Community 3232]]
+- [[_COMMUNITY_Community 3234|Community 3234]]
+- [[_COMMUNITY_Community 3235|Community 3235]]
+- [[_COMMUNITY_Community 3239|Community 3239]]
+- [[_COMMUNITY_Community 3240|Community 3240]]
+- [[_COMMUNITY_Community 3241|Community 3241]]
+- [[_COMMUNITY_Community 3242|Community 3242]]
+- [[_COMMUNITY_Community 3243|Community 3243]]
+- [[_COMMUNITY_Community 3244|Community 3244]]
+- [[_COMMUNITY_Community 3245|Community 3245]]
+- [[_COMMUNITY_Community 3246|Community 3246]]
+- [[_COMMUNITY_Community 3247|Community 3247]]
+- [[_COMMUNITY_Community 3248|Community 3248]]
+- [[_COMMUNITY_Community 3249|Community 3249]]
+- [[_COMMUNITY_Community 3250|Community 3250]]
+- [[_COMMUNITY_Community 3251|Community 3251]]
+- [[_COMMUNITY_Community 3252|Community 3252]]
+- [[_COMMUNITY_Community 3254|Community 3254]]
+- [[_COMMUNITY_Community 3255|Community 3255]]
+- [[_COMMUNITY_Community 3256|Community 3256]]
+- [[_COMMUNITY_Community 3258|Community 3258]]
+- [[_COMMUNITY_Community 3261|Community 3261]]
+- [[_COMMUNITY_Community 3263|Community 3263]]
+- [[_COMMUNITY_Community 3265|Community 3265]]
+- [[_COMMUNITY_Community 3266|Community 3266]]
+- [[_COMMUNITY_Community 3268|Community 3268]]
+- [[_COMMUNITY_Community 3270|Community 3270]]
+- [[_COMMUNITY_Community 3271|Community 3271]]
+- [[_COMMUNITY_Community 3272|Community 3272]]
+- [[_COMMUNITY_Community 3275|Community 3275]]
+- [[_COMMUNITY_Community 3276|Community 3276]]
+- [[_COMMUNITY_Community 3277|Community 3277]]
+- [[_COMMUNITY_Community 3278|Community 3278]]
+- [[_COMMUNITY_Community 3279|Community 3279]]
+- [[_COMMUNITY_Community 3280|Community 3280]]
+- [[_COMMUNITY_Community 3281|Community 3281]]
+- [[_COMMUNITY_Community 3282|Community 3282]]
+- [[_COMMUNITY_Community 3284|Community 3284]]
+- [[_COMMUNITY_Community 3285|Community 3285]]
+- [[_COMMUNITY_Community 3286|Community 3286]]
+- [[_COMMUNITY_Community 3288|Community 3288]]
+- [[_COMMUNITY_Community 3289|Community 3289]]
+- [[_COMMUNITY_Community 3291|Community 3291]]
+- [[_COMMUNITY_Community 3293|Community 3293]]
+- [[_COMMUNITY_Community 3294|Community 3294]]
+- [[_COMMUNITY_Community 3295|Community 3295]]
+- [[_COMMUNITY_Community 3296|Community 3296]]
+- [[_COMMUNITY_Community 3297|Community 3297]]
+- [[_COMMUNITY_Community 3298|Community 3298]]
+- [[_COMMUNITY_Community 3299|Community 3299]]
+- [[_COMMUNITY_Community 3300|Community 3300]]
+- [[_COMMUNITY_Community 3301|Community 3301]]
+- [[_COMMUNITY_Community 3302|Community 3302]]
+- [[_COMMUNITY_Community 3303|Community 3303]]
+- [[_COMMUNITY_Community 3305|Community 3305]]
+- [[_COMMUNITY_Community 3306|Community 3306]]
+- [[_COMMUNITY_Community 3310|Community 3310]]
+- [[_COMMUNITY_Community 3311|Community 3311]]
+- [[_COMMUNITY_Community 3312|Community 3312]]
+- [[_COMMUNITY_Community 3313|Community 3313]]
+- [[_COMMUNITY_Community 3314|Community 3314]]
+- [[_COMMUNITY_Community 3315|Community 3315]]
+- [[_COMMUNITY_Community 3316|Community 3316]]
+- [[_COMMUNITY_Community 3317|Community 3317]]
+- [[_COMMUNITY_Community 3318|Community 3318]]
+- [[_COMMUNITY_Community 3319|Community 3319]]
+- [[_COMMUNITY_Community 3320|Community 3320]]
+- [[_COMMUNITY_Community 3321|Community 3321]]
+- [[_COMMUNITY_Community 3322|Community 3322]]
+- [[_COMMUNITY_Community 3323|Community 3323]]
+- [[_COMMUNITY_Community 3325|Community 3325]]
+- [[_COMMUNITY_Community 3326|Community 3326]]
+- [[_COMMUNITY_Community 3327|Community 3327]]
+- [[_COMMUNITY_Community 3329|Community 3329]]
+- [[_COMMUNITY_Community 3332|Community 3332]]
+- [[_COMMUNITY_Community 3334|Community 3334]]
+- [[_COMMUNITY_Community 3336|Community 3336]]
+- [[_COMMUNITY_Community 3338|Community 3338]]
+- [[_COMMUNITY_Community 3339|Community 3339]]
+- [[_COMMUNITY_Community 3340|Community 3340]]
+- [[_COMMUNITY_Community 3341|Community 3341]]
+- [[_COMMUNITY_Community 3342|Community 3342]]
+- [[_COMMUNITY_Community 3343|Community 3343]]
+- [[_COMMUNITY_Community 3344|Community 3344]]
+- [[_COMMUNITY_Community 3345|Community 3345]]
+- [[_COMMUNITY_Community 3347|Community 3347]]
+- [[_COMMUNITY_Community 3348|Community 3348]]
+- [[_COMMUNITY_Community 3349|Community 3349]]
+- [[_COMMUNITY_Community 3350|Community 3350]]
+- [[_COMMUNITY_Community 3351|Community 3351]]
+- [[_COMMUNITY_Community 3352|Community 3352]]
+- [[_COMMUNITY_Community 3353|Community 3353]]
+- [[_COMMUNITY_Community 3354|Community 3354]]
+- [[_COMMUNITY_Community 3355|Community 3355]]
+- [[_COMMUNITY_Community 3356|Community 3356]]
+- [[_COMMUNITY_Community 3357|Community 3357]]
+- [[_COMMUNITY_Community 3358|Community 3358]]
+- [[_COMMUNITY_Community 3359|Community 3359]]
+- [[_COMMUNITY_Community 3360|Community 3360]]
+- [[_COMMUNITY_Community 3361|Community 3361]]
+- [[_COMMUNITY_Community 3362|Community 3362]]
+- [[_COMMUNITY_Community 3363|Community 3363]]
+- [[_COMMUNITY_Community 3364|Community 3364]]
+- [[_COMMUNITY_Community 3365|Community 3365]]
+- [[_COMMUNITY_Community 3366|Community 3366]]
+- [[_COMMUNITY_Community 3367|Community 3367]]
+- [[_COMMUNITY_Community 3368|Community 3368]]
+- [[_COMMUNITY_Community 3369|Community 3369]]
+- [[_COMMUNITY_Community 3370|Community 3370]]
+- [[_COMMUNITY_Community 3371|Community 3371]]
+- [[_COMMUNITY_Community 3372|Community 3372]]
+- [[_COMMUNITY_Community 3373|Community 3373]]
+- [[_COMMUNITY_Community 3374|Community 3374]]
+- [[_COMMUNITY_Community 3375|Community 3375]]
+- [[_COMMUNITY_Community 3376|Community 3376]]
+- [[_COMMUNITY_Community 3377|Community 3377]]
+- [[_COMMUNITY_Community 3378|Community 3378]]
+- [[_COMMUNITY_Community 3379|Community 3379]]
+- [[_COMMUNITY_Community 3380|Community 3380]]
+- [[_COMMUNITY_Community 3381|Community 3381]]
+- [[_COMMUNITY_Community 3382|Community 3382]]
+- [[_COMMUNITY_Community 3383|Community 3383]]
+- [[_COMMUNITY_Community 3384|Community 3384]]
+- [[_COMMUNITY_Community 3385|Community 3385]]
+- [[_COMMUNITY_Community 3386|Community 3386]]
+- [[_COMMUNITY_Community 3387|Community 3387]]
+- [[_COMMUNITY_Community 3388|Community 3388]]
+- [[_COMMUNITY_Community 3389|Community 3389]]
+- [[_COMMUNITY_Community 3390|Community 3390]]
+- [[_COMMUNITY_Community 3391|Community 3391]]
+- [[_COMMUNITY_Community 3392|Community 3392]]
+- [[_COMMUNITY_Community 3393|Community 3393]]
+- [[_COMMUNITY_Community 3394|Community 3394]]
+- [[_COMMUNITY_Community 3397|Community 3397]]
+- [[_COMMUNITY_Community 3398|Community 3398]]
+- [[_COMMUNITY_Community 3399|Community 3399]]
+- [[_COMMUNITY_Community 3400|Community 3400]]
+- [[_COMMUNITY_Community 3401|Community 3401]]
+- [[_COMMUNITY_Community 3412|Community 3412]]
+- [[_COMMUNITY_Community 3413|Community 3413]]
+- [[_COMMUNITY_Community 3419|Community 3419]]
+- [[_COMMUNITY_Community 3421|Community 3421]]
+- [[_COMMUNITY_Community 3423|Community 3423]]
+- [[_COMMUNITY_Community 3437|Community 3437]]
+- [[_COMMUNITY_Community 3445|Community 3445]]
+- [[_COMMUNITY_Community 3453|Community 3453]]
+- [[_COMMUNITY_Community 3456|Community 3456]]
+- [[_COMMUNITY_Community 3457|Community 3457]]
+- [[_COMMUNITY_Community 3458|Community 3458]]
+- [[_COMMUNITY_Community 3469|Community 3469]]
+- [[_COMMUNITY_Community 3470|Community 3470]]
+- [[_COMMUNITY_Community 3476|Community 3476]]
+- [[_COMMUNITY_Community 3478|Community 3478]]
+- [[_COMMUNITY_Community 3480|Community 3480]]
+- [[_COMMUNITY_Community 3494|Community 3494]]
+- [[_COMMUNITY_Community 3502|Community 3502]]
+- [[_COMMUNITY_Community 3510|Community 3510]]
+- [[_COMMUNITY_Community 3513|Community 3513]]
+- [[_COMMUNITY_Community 3514|Community 3514]]
+- [[_COMMUNITY_Community 3797|Community 3797]]
+- [[_COMMUNITY_Community 3798|Community 3798]]
+- [[_COMMUNITY_Community 3799|Community 3799]]
+- [[_COMMUNITY_Community 3800|Community 3800]]
+- [[_COMMUNITY_Community 3801|Community 3801]]
+- [[_COMMUNITY_Community 3802|Community 3802]]
+- [[_COMMUNITY_Community 3803|Community 3803]]
+- [[_COMMUNITY_Community 3804|Community 3804]]
+- [[_COMMUNITY_Community 3805|Community 3805]]
+- [[_COMMUNITY_Community 3806|Community 3806]]
+- [[_COMMUNITY_Community 3807|Community 3807]]
+- [[_COMMUNITY_Community 3808|Community 3808]]
+- [[_COMMUNITY_Community 3809|Community 3809]]
+- [[_COMMUNITY_Community 3810|Community 3810]]
+- [[_COMMUNITY_Community 3811|Community 3811]]
+- [[_COMMUNITY_Community 3812|Community 3812]]
+- [[_COMMUNITY_Community 3813|Community 3813]]
+- [[_COMMUNITY_Community 3814|Community 3814]]
+- [[_COMMUNITY_Community 3815|Community 3815]]
+- [[_COMMUNITY_Community 3816|Community 3816]]
+- [[_COMMUNITY_Community 3817|Community 3817]]
+- [[_COMMUNITY_Community 3818|Community 3818]]
+- [[_COMMUNITY_Community 3819|Community 3819]]
+- [[_COMMUNITY_Community 3820|Community 3820]]
+- [[_COMMUNITY_Community 3821|Community 3821]]
+- [[_COMMUNITY_Community 3822|Community 3822]]
+- [[_COMMUNITY_Community 3823|Community 3823]]
+- [[_COMMUNITY_Community 3824|Community 3824]]
+- [[_COMMUNITY_Community 3825|Community 3825]]
+- [[_COMMUNITY_Community 3826|Community 3826]]
+- [[_COMMUNITY_Community 3827|Community 3827]]
+- [[_COMMUNITY_Community 3828|Community 3828]]
+- [[_COMMUNITY_Community 3829|Community 3829]]
+- [[_COMMUNITY_Community 3830|Community 3830]]
+- [[_COMMUNITY_Community 3831|Community 3831]]
+- [[_COMMUNITY_Community 3832|Community 3832]]
+- [[_COMMUNITY_Community 3833|Community 3833]]
+- [[_COMMUNITY_Community 3834|Community 3834]]
+- [[_COMMUNITY_Community 3835|Community 3835]]
+- [[_COMMUNITY_Community 3836|Community 3836]]
+- [[_COMMUNITY_Community 3837|Community 3837]]
+- [[_COMMUNITY_Community 3838|Community 3838]]
+- [[_COMMUNITY_Community 3839|Community 3839]]
+- [[_COMMUNITY_Community 3840|Community 3840]]
+- [[_COMMUNITY_Community 3841|Community 3841]]
+- [[_COMMUNITY_Community 3842|Community 3842]]
+- [[_COMMUNITY_Community 3843|Community 3843]]
+- [[_COMMUNITY_Community 3844|Community 3844]]
+- [[_COMMUNITY_Community 3845|Community 3845]]
+- [[_COMMUNITY_Community 3846|Community 3846]]
+- [[_COMMUNITY_Community 3847|Community 3847]]
+- [[_COMMUNITY_Community 3848|Community 3848]]
+- [[_COMMUNITY_Community 3849|Community 3849]]
+- [[_COMMUNITY_Community 3850|Community 3850]]
+- [[_COMMUNITY_Community 3851|Community 3851]]
+- [[_COMMUNITY_Community 3852|Community 3852]]
+- [[_COMMUNITY_Community 3853|Community 3853]]
+- [[_COMMUNITY_Community 3864|Community 3864]]
+- [[_COMMUNITY_Community 3865|Community 3865]]
+- [[_COMMUNITY_Community 3866|Community 3866]]
+- [[_COMMUNITY_Community 3867|Community 3867]]
+- [[_COMMUNITY_Community 3868|Community 3868]]
+- [[_COMMUNITY_Community 3869|Community 3869]]
+- [[_COMMUNITY_Community 3870|Community 3870]]
+- [[_COMMUNITY_Community 3871|Community 3871]]
+- [[_COMMUNITY_Community 3872|Community 3872]]
+- [[_COMMUNITY_Community 3873|Community 3873]]
+- [[_COMMUNITY_Community 3874|Community 3874]]
+- [[_COMMUNITY_Community 3875|Community 3875]]
+- [[_COMMUNITY_Community 3876|Community 3876]]
+- [[_COMMUNITY_Community 3877|Community 3877]]
+- [[_COMMUNITY_Community 3878|Community 3878]]
+- [[_COMMUNITY_Community 3879|Community 3879]]
+- [[_COMMUNITY_Community 3880|Community 3880]]
+- [[_COMMUNITY_Community 3881|Community 3881]]
+- [[_COMMUNITY_Community 3882|Community 3882]]
+- [[_COMMUNITY_Community 3883|Community 3883]]
+- [[_COMMUNITY_Community 3884|Community 3884]]
+- [[_COMMUNITY_Community 3885|Community 3885]]
+- [[_COMMUNITY_Community 3886|Community 3886]]
+- [[_COMMUNITY_Community 3887|Community 3887]]
+- [[_COMMUNITY_Community 3888|Community 3888]]
+- [[_COMMUNITY_Community 3889|Community 3889]]
+- [[_COMMUNITY_Community 3890|Community 3890]]
+- [[_COMMUNITY_Community 3891|Community 3891]]
+- [[_COMMUNITY_Community 3892|Community 3892]]
+- [[_COMMUNITY_Community 3893|Community 3893]]
+- [[_COMMUNITY_Community 3894|Community 3894]]
+- [[_COMMUNITY_Community 3895|Community 3895]]
+- [[_COMMUNITY_Community 3896|Community 3896]]
+- [[_COMMUNITY_Community 3897|Community 3897]]
+- [[_COMMUNITY_Community 3898|Community 3898]]
+- [[_COMMUNITY_Community 3899|Community 3899]]
+- [[_COMMUNITY_Community 3900|Community 3900]]
+- [[_COMMUNITY_Community 3901|Community 3901]]
+- [[_COMMUNITY_Community 3902|Community 3902]]
+- [[_COMMUNITY_Community 3903|Community 3903]]
+- [[_COMMUNITY_Community 3904|Community 3904]]
+- [[_COMMUNITY_Community 3906|Community 3906]]
+- [[_COMMUNITY_Community 3907|Community 3907]]
+- [[_COMMUNITY_Community 3908|Community 3908]]
+- [[_COMMUNITY_Community 3909|Community 3909]]
+- [[_COMMUNITY_Community 3910|Community 3910]]
+- [[_COMMUNITY_Community 3911|Community 3911]]
+- [[_COMMUNITY_Community 3912|Community 3912]]
+- [[_COMMUNITY_Community 3913|Community 3913]]
+- [[_COMMUNITY_Community 3914|Community 3914]]
+- [[_COMMUNITY_Community 3915|Community 3915]]
+- [[_COMMUNITY_Community 3916|Community 3916]]
+- [[_COMMUNITY_Community 3917|Community 3917]]
+- [[_COMMUNITY_Community 3918|Community 3918]]
+- [[_COMMUNITY_Community 3919|Community 3919]]
+- [[_COMMUNITY_Community 3920|Community 3920]]
+- [[_COMMUNITY_Community 3921|Community 3921]]
+- [[_COMMUNITY_Community 3922|Community 3922]]
+- [[_COMMUNITY_Community 3923|Community 3923]]
+- [[_COMMUNITY_Community 3924|Community 3924]]
+- [[_COMMUNITY_Community 3931|Community 3931]]
+- [[_COMMUNITY_Community 3946|Community 3946]]
+- [[_COMMUNITY_Community 3947|Community 3947]]
 - [[_COMMUNITY_Community 4096|Community 4096]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `Communities (2276 total, 302 thin omitted)` - 1901 edges
-2. `Marshal()` - 201 edges
-3. `writeFile()` - 130 edges
-4. `ToolCallTurn()` - 119 edges
-5. `Entity` - 116 edges
-6. `MemoryClient` - 114 edges
-7. `Neo4jClient` - 114 edges
-8. `Message` - 104 edges
-9. `newConvID()` - 100 edges
-10. `NotSupportedError` - 99 edges
+1. `__` - 432 edges
+2. `$_()` - 236 edges
+3. `Marshal()` - 227 edges
+4. `writeFile()` - 133 edges
+5. `ToolCallTurn()` - 120 edges
+6. `Entity` - 116 edges
+7. `MemoryClient` - 114 edges
+8. `Neo4jClient` - 114 edges
+9. `ctxWith()` - 105 edges
+10. `Message` - 104 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `main()` --calls--> `Marshal()`  [INFERRED]
@@ -2223,6 +3425,8 @@
   .planning/spikes/001-mail-mcp-live-mount/main.go → internal/swarm/swarm_test.go
 
 ## Import Cycles
+- 1-file cycle: `.planning/spikes/091-turingdb-aura-cypher-compat/probe_compat.py -> .planning/spikes/091-turingdb-aura-cypher-compat/probe_compat.py`
+- 1-file cycle: `.planning/spikes/_turingdb_docker.py -> .planning/spikes/_turingdb_docker.py`
 - 1-file cycle: `docker/agent-memory/src/neo4j_agent_memory/__init__.py -> docker/agent-memory/src/neo4j_agent_memory/__init__.py`
 - 1-file cycle: `docker/agent-memory/src/neo4j_agent_memory/core/memory.py -> docker/agent-memory/src/neo4j_agent_memory/core/memory.py`
 - 1-file cycle: `docker/agent-memory/src/neo4j_agent_memory/core/protocols.py -> docker/agent-memory/src/neo4j_agent_memory/core/protocols.py`
@@ -2242,23 +3446,23 @@
 - 1-file cycle: `docker/agent-memory/src/neo4j_agent_memory/testing/fixtures.py -> docker/agent-memory/src/neo4j_agent_memory/testing/fixtures.py`
 - 1-file cycle: `docker/agent-memory/src/neo4j_agent_memory/testing/mocks.py -> docker/agent-memory/src/neo4j_agent_memory/testing/mocks.py`
 
-## Communities (2256 total, 286 thin omitted)
+## Communities (3928 total, 686 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.03
-Nodes (190): LongTermProtocol, Backend-agnostic Protocols implemented by bolt and NAMS impls.  These are the sh, Return assembled context text for a query., Generate (or fetch) a summary of a conversation., Explicitly create a conversation node (without adding messages)., List conversations; bolt may filter by user_identifier, NAMS by user_id., Bulk-insert messages in one round-trip. Server-side on NAMS., Return inline observations extracted from the session (NAMS Platinum). (+182 more)
+Nodes (192): CypherQueryProtocol, LongTermProtocol, Backend-agnostic Protocols implemented by bolt and NAMS impls.  These are the sh, Return assembled context text for a query., Generate (or fetch) a summary of a conversation., Explicitly create a conversation node (without adding messages)., List conversations; bolt may filter by user_identifier, NAMS by user_id., Bulk-insert messages in one round-trip. Server-side on NAMS. (+184 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.01
-Nodes (161): AsyncDriver, AsyncSession, BaseMemory, Config, MemoryEntry, MemoryStore, Base memory classes and protocols., Get the entity extractor. (+153 more)
+Cohesion: 0.22
+Nodes (6): ResolutionMatch, ResolvedEntity, Find semantic matches from candidates., Get embedding for text, using cache if available., Compute cosine similarity between two vectors., Resolve entity using semantic similarity.
 
 ### Community 2 - "Community 2"
-Cohesion: 0.04
-Nodes (44): booleanField(), readCookie(), readJSON(), stringField(), valueOrFallback(), BootstrapCreateRequest, BootstrapCreateResponse, createFirstOperator() (+36 more)
+Cohesion: 0.01
+Nodes (215): b0, bn, T0, _1, a(), A1, ab(), Af (+207 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.03
-Nodes (74): Any, datetime, UUID, _deduplication_scope(), _deserialize_metadata(), LongTermMemory, _node_matches_scope(), _node_metadata() (+66 more)
+Cohesion: 0.02
+Nodes (138): BaseMemory, Config, MemoryEntry, MemoryStore, Base memory classes and protocols., Get the entity extractor., Add content to memory with automatic extraction.          Args:             cont, Search memory for relevant entries.          Args:             query: The search (+130 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.05
@@ -2266,46 +3470,46 @@ Nodes (40): 1. Instrument the agent loop with OpenTelemetry GenAI semantic conve
 
 ### Community 5 - "Community 5"
 Cohesion: 0.05
-Nodes (136): NewHookManager(), NewLlmAgent(), newAgentCover(), TestLlmAgent_Accessors(), TestLlmAgent_ConsumeStopMidStream(), TestLlmAgent_DispatchStopsOnParseError(), TestLlmAgent_DispatchStopsOnToolResult(), TestLlmAgent_MalformedTextResponse() (+128 more)
+Nodes (132): NewHookManager(), NewLlmAgent(), newAgentCover(), TestLlmAgent_Accessors(), TestLlmAgent_ConsumeStopMidStream(), TestLlmAgent_DispatchStopsOnParseError(), TestLlmAgent_DispatchStopsOnToolResult(), TestLlmAgent_MalformedTextResponse() (+124 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.02
 Nodes (126): ..., 1. Ingest documento, 1. Save manuale snippet via la UNA tool skill, 2. Discovery BM25 (semantic Neo4j HNSW deferred a 7f/Phase 15, D-21), 2. Telegram ingest auto, ..., 3. Community detection — DEFERITA fuori MVP (amendment #27, sub-slice 11c), 3. Pattern auto-suggest (background) (+118 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.05
-Nodes (123): T, T, PauseStore, T, T, T, ToolCall, T (+115 more)
+Cohesion: 0.06
+Nodes (114): T, T, PauseStore, T, T, T, ToolCall, T (+106 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.03
-Nodes (103): getJSON(), AddAccountForm(), CreateResult, AdvancedSection(), Field(), GoogleStartPanel(), ProviderConfigFields(), ProviderSelect() (+95 more)
+Cohesion: 0.01
+Nodes (280): __, _0, $2(), aA, ab, ac(), Ah(), al() (+272 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.18
 Nodes (29): defaultSchedulerTZ(), fmtTimePtr(), nullableInt(), nullableText(), nullableTime(), openTaskPool(), payloadOrEmpty(), requireID() (+21 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.14
-Nodes (47): artifactEvent(), TestTranslatorArtifactClosesOpenRun(), TestTranslatorArtifactCustomEventPayload(), TestTranslatorArtifactEmitsCustomEvent(), TestTranslatorArtifactGoldenShape(), TestTranslatorEmptyArtifactDeltaIgnored(), assertReasoningQuartets(), reasoning() (+39 more)
+Cohesion: 0.26
+Nodes (26): assertGoldenShape(), assertNonEmptyIDs(), chunk(), collect(), collectRapid(), countType(), finalChunk(), loadGolden() (+18 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.02
-Nodes (169): NamsConfig, Configuration for the hosted NAMS (Neo4j Agent Memory Service) backend.      Act, AuthenticationError, MemoryError, NotSupportedError, RateLimitError, Custom exceptions for neo4j-agent-memory., Raised when a method is not supported on the active backend.      Use cases: (+161 more)
+Cohesion: 0.06
+Nodes (82): clean(), event(), iso_now(), main(), records(), run_step(), classify_error(), clean() (+74 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.02
-Nodes (115): AttachmentCard(), AttachmentCardProps, isPromotable(), statusText(), statusVariant(), Asset, BranchPicker(), AnswerSources() (+107 more)
+Cohesion: 0.04
+Nodes (61): ABC, Any, Exception, F, get_current_tracer(), get_tracer(), _is_async_callable(), is_opentelemetry_available() (+53 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.06
-Nodes (41): T, Context, Mutex, ToolResult, ShellExec, T, Context, ShellExec (+33 more)
+Cohesion: 0.03
+Nodes (18): a_, Ba, close(), el(), Ia, isShowing(), Mh, moveTo() (+10 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.05
 Nodes (72): cronFakeDBTX, cronFakeRow, cronFakeRows, cronAssignDest(), schedulerTaskRow(), storeWithFake(), TestStoreFakeCancelTaskDBErrorWraps(), TestStoreFakeCancelTaskInvalidUUID() (+64 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.06
+Cohesion: 0.05
 Nodes (60): Claim, taskHash(), CompleteRunParams, CreateTaskParams, mustUUID(), TestClaimConnAccessor(), TestIsUniqueViolationClassification(), TestPendingNotificationFromRowProjectsNullIdentity() (+52 more)
 
 ### Community 16 - "Community 16"
@@ -2321,92 +3525,92 @@ Cohesion: 0.11
 Nodes (16): fakeCatalogStore, recordingAssetDeleter, recordingCatalogDB, recordingGraphDeactivator, CommandTag, Context, CreateDocumentRequest, Document (+8 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.04
-Nodes (87): DocumentActionMenu(), DocumentActionMenuProps, appendParam(), cleanupStorageOrphans(), deleteDocument(), DocumentDetail, DocumentItem, DocumentScope (+79 more)
+Cohesion: 0.02
+Nodes (85): { ATTRIBUTE_NODE }, { setAnExistingAttributeValue }, appendToEventPath(), defaultPassiveValue(), DOMException, EVENT_PHASE, EventTargetImpl, flattenEventListenerOptions() (+77 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.07
-Nodes (60): T, AuditActor, Context, Frontmatter, RiskTier, Writer, T, T (+52 more)
+Cohesion: 0.06
+Nodes (40): Any, EntityExtractor, ExtractedEntity, ExtractionResult, BatchItemResult, ConditionalPipeline, _entity_key(), ExtractionStage (+32 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.08
-Nodes (25): Any, Fact, Preference, UUID, _drop_none(), NamsLongTermMemory, _normalize_entity(), NAMS implementation of :class:`LongTermProtocol`.  Endpoint mappings verified ag (+17 more)
+Cohesion: 0.07
+Nodes (12): parseNonNegativeInteger(), conversions, { domSymbolTree }, { getLabelsForLabelable, formOwner, isDisabled }, HTMLCollection, HTMLOptionsCollection, HTMLSelectElementImpl, idlUtils (+4 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.06
-Nodes (50): fakePauseTool, artifactRun(), TestMetaArtifact_WrongTypeIsAbsent(), TestToolResultEvent_LiftsArtifactMeta(), TestToolResultEvent_NoArtifactLeavesNil(), exitCodeFromMeta(), metaArtifact(), toolResultMetaMap() (+42 more)
+Cohesion: 0.13
+Nodes (27): TestToolInvocation_ForensicShapeIsRawRedactionRoutedToStore(), fakePauseTool, artifactRun(), TestMetaArtifact_WrongTypeIsAbsent(), TestToolResultEvent_LiftsArtifactMeta(), TestToolResultEvent_NoArtifactLeavesNil(), internalPauseIC(), newBareAgent() (+19 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.10
-Nodes (12): faultAuraLeg, faultRecovery, liveAuraLeg, liveTelegram, statefulAuthula, AuraLegParams, AuraLegWriter, AuthulaUser (+4 more)
+Nodes (13): faultAuraLeg, faultRecovery, faultTelegram, liveAuraLeg, statefulAuthula, AuraLegParams, AuraLegWriter, AuthulaUser (+5 more)
 
 ### Community 24 - "Community 24"
 Cohesion: 0.03
-Nodes (52): assetURL(), deleteAsset(), errorDetail(), finalizeAsset(), getAsset(), listThreadAssets(), presignAsset(), promoteAsset() (+44 more)
+Nodes (87): DOMException, ElementInternalsImpl, { getLabelsForLabelable }, daysInMonth, isDate(), isLeapYear(), isValidDateString(), isValidLocalDateAndTimeString() (+79 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.16
 Nodes (15): normalizeCreateDocumentRequest(), normalizeListDocumentsRequest(), normalizeRecordAssetVersionRequest(), normalizeUpdateDocumentRequest(), CatalogService, CatalogStore, Context, CreateDocumentRequest (+7 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.16
-Nodes (30): backdateHeartbeat(), ctx(), runStatus(), TestCatchUpMissed_CollapsesMultipleWindowsToOne(), TestCatchUpMissed_ConsultsReschedulesOnRecovery(), TestCatchUpMissed_SkipsFutureTasks(), TestRecoverOrphans_MarksStaleLeavesFresh(), TestStartDispatchesMissedAtBoot() (+22 more)
+Cohesion: 0.11
+Nodes (42): columnExists(), headDownBound(), TestDispatchCompletesRunOnCancelledRootCtx(), TestDispatchCompletionIsIdempotent(), TestDispatchPendingNotificationIdentityRoundTrip(), TestDispatchWritesSummaryToRun(), TestPendingNotificationFailedSelfSendBoundedRetry(), TestPendingNotificationQuietHoursDispatchAndSweep() (+34 more)
 
 ### Community 27 - "Community 27"
 Cohesion: 0.05
 Nodes (47): anyInt(), buildSkillDrivenRegistry(), buildToolDrivenRegistry(), classifyCall(), driveRun(), driveTurn(), freshXlsxInSandbox(), isInstallEndpoint() (+39 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.06
-Nodes (45): bgShell, CancelFunc, Context, Mutex, RawMessage, Regexp, Spec, Time (+37 more)
+Cohesion: 0.05
+Nodes (42): bgShell, BoxHandle, CancelFunc, Context, Duration, ExecStreamHandle, Mutex, Once (+34 more)
 
 ### Community 29 - "Community 29"
 Cohesion: 0.05
 Nodes (38): InsertMcpAuditParams, AuraMcpAudit, Context, MCPAuditStore, Queries, Time, Context, MCPAuditStore (+30 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.00
-Nodes (1901): Communities (2276 total, 302 thin omitted), Community 0 - "Community 0", Community 1000 - "Community 1000", Community 1001 - "Community 1001", Community 1002 - "Community 1002", Community 1003 - "Community 1003", Community 1004 - "Community 1004", Community 1005 - "Community 1005" (+1893 more)
+Cohesion: 0.01
+Nodes (195): rT(), zc, $_(), a4, ah(), am(), ao(), ap() (+187 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.19
-Nodes (11): DOT_CLASS, formatElapsed(), PILL_VARIANT, RULE_CLASS, ToolActivityCard(), ToolActivityCardProps, ToolActivityChild, ToolActivityRowProps (+3 more)
+Cohesion: 0.03
+Nodes (75): convertToSequenceDOMString(), CustomElementRegistryImpl, DOMException, { getHTMLElementInterface }, { HTML_NS }, HTMLUnknownElement, IDLFunction, idlUtils (+67 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.08
 Nodes (27): AgentSession, BaseContextProvider, Any, Message, SessionContext, MemoryClient, Message, format_context_section() (+19 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.09
-Nodes (33): fakeAuraLeg, fakeAuthula, fakeRecoveryStore, fakeTelegram, TestProvisionAbandonedLeavesNothing(), TestProvisionRejectsMismatchedRequester(), assertNoWrites(), provReq() (+25 more)
+Cohesion: 0.12
+Nodes (32): fakeAuraLeg, fakeRecoveryStore, fakeTelegram, assertNoWrites(), sagaService(), TestProvisionProceedsPastIsolationGateWhenOn(), TestProvisionRefusedWhenIsolationOff(), TestProvisionAbandonedLeavesNothing() (+24 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.05
-Nodes (52): ApprovalStore, Fanout, closeAll(), eventJSONString(), send(), recordSSEDropped(), Runner, isLifecycleFrame() (+44 more)
+Cohesion: 0.06
+Nodes (32): ApprovalStore, CompactService, Runner, NewServer(), ServerConfig, threadTryLocker, AssetService, auditReader (+24 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.20
-Nodes (24): TestCommandHook_NonZeroExitDenyHonored(), TestCommandHook_NonZeroExitRewriteRejected(), TestCommandHook_OversizedRewriteRejected(), TestNewCommandHook_RejectsBareCommandName(), newTestCommandHook(), newTestCommandHookWithEnv(), quoteJSON(), TestCommandHook_AfterToolRewrite() (+16 more)
+Cohesion: 0.08
+Nodes (32): BASIC_FORBIDDEN_REQUEST_HEADERS, FORBIDDEN_METHODS, FORBIDDEN_RESPONSE, getDecodeAndSplit(), isCORSSafelistedRequestHeader(), isForbiddenRequestHeader(), isForbiddenResponseHeaderName(), isNoCORSSafelistedRequestHeader() (+24 more)
 
 ### Community 36 - "Community 36"
-Cohesion: 0.16
-Nodes (17): Dispatcher, notificationSweeper, envInt(), minuteOfDay(), parseHHMM(), parseQuietWindow(), SchedulerConfig, Context (+9 more)
+Cohesion: 0.10
+Nodes (32): Dispatcher, startHeartbeat(), notificationSweeper, envInt(), minuteOfDay(), NewScheduler(), parseHHMM(), parseQuietWindow() (+24 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.08
-Nodes (17): dependency(), formatLastChecked(), liveness(), readiness(), RowState, RuntimeHealthPanel(), Tone, TONE_CLASS (+9 more)
+Cohesion: 0.04
+Nodes (38): EmbeddingError, Raised when embedding generation fails., Any, Any, adapt_to_embedding_provider(), adapt_to_legacy_embedder(), BaseEmbedder, _EmbedderToProviderAdapter (+30 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.04
-Nodes (73): AssistantStatus, AssistantTurnState, cacheHitRatio(), ensureReasoning(), ensureText(), ensureTool(), AguiFrame, ChatPart (+65 more)
+Cohesion: 0.05
+Nodes (31): isButton(), isListed(), isSubmitButton(), isSubmittable(), constraintValidationNegativeResult, constraintValidationPositiveResult, DOMException, { domSymbolTree } (+23 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.06
-Nodes (58): fail(), folderHash(), logf(), main(), check, main(), report, contains() (+50 more)
+Cohesion: 0.07
+Nodes (54): fail(), folderHash(), logf(), main(), check, main(), report, contains() (+46 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.07
-Nodes (44): boundedOutputBuffer, BackgroundShells, Builder, Context, Duration, Mutex, RawMessage, ShellApprovals (+36 more)
+Cohesion: 0.06
+Nodes (47): boundedOutputBuffer, Duration, BackgroundShells, Builder, Context, Duration, Mutex, RawMessage (+39 more)
 
 ### Community 41 - "Community 41"
 Cohesion: 0.13
@@ -2417,8 +3621,8 @@ Cohesion: 0.08
 Nodes (23): Accessibility, Actions, API/Data Flow, Architecture, Design - Aura document library product UX, Details Drawer, Document Row, Empty, Loading, And Failure States (+15 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.12
-Nodes (50): T, T, T, T, consumerFactory, Context, Deps, T (+42 more)
+Cohesion: 0.09
+Nodes (63): T, T, T, T, Mutex, T, turnDriver, T (+55 more)
 
 ### Community 44 - "Community 44"
 Cohesion: 0.07
@@ -2429,24 +3633,24 @@ Cohesion: 0.08
 Nodes (22): AppendTurnParams, Context, ContextConfig, Conversation, CreateParams, Identity, InsertCacheMetricParams, InsertParams (+14 more)
 
 ### Community 46 - "Community 46"
-Cohesion: 0.03
-Nodes (67): ApprovalBadge(), ApprovalList(), ApprovalListProps, ApprovalRow(), ApprovalRowProps, isTerminal(), parseOptions(), InlineApprovalCard() (+59 more)
+Cohesion: 0.04
+Nodes (51): { domSymbolTree }, isFollowing(), isInclusiveAncestor(), NODE_TYPE, nodeLength(), nodeRoot(), DocumentOrShadowRootImpl, NODE_TYPE (+43 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.09
-Nodes (33): cli(), extract(), format_entities_table(), format_preferences_table(), format_relations_table(), main(), mcp(), CLI commands for Neo4j Agent Memory entity extraction.  Usage:     neo4j-agent-m (+25 more)
+Cohesion: 0.03
+Nodes (66): AdoptionReport, cli(), extract(), format_entities_table(), format_preferences_table(), format_relations_table(), main(), mcp() (+58 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.19
-Nodes (27): assertToolRoundsIntact(), captureSlog(), sizedTurns(), TestApplyL1_EmptyTurnsNoPanic(), TestDropOldestPairs_EmptyAndSystemArms(), TestDropOldestPairs_Seq1NonSystemIsBody(), TestDropOldestPairs_SystemDetectionAndLoop(), TestDropOldestPairs_ToolRoundBoundary() (+19 more)
+Cohesion: 0.18
+Nodes (28): assertToolRoundsIntact(), captureSlog(), sizedTurns(), TestApplyL1_EmptyTurnsNoPanic(), TestDropOldestPairs_EmptyAndSystemArms(), TestDropOldestPairs_Seq1NonSystemIsBody(), TestDropOldestPairs_SystemDetectionAndLoop(), TestDropOldestPairs_ToolRoundBoundary() (+20 more)
 
 ### Community 49 - "Community 49"
 Cohesion: 0.06
 Nodes (39): EntityExtractor, ExtractedEntity, ExtractedRelation, ExtractionResult, chunk_text_by_chars(), chunk_text_by_tokens(), ChunkInfo, create_streaming_extractor() (+31 more)
 
 ### Community 50 - "Community 50"
-Cohesion: 0.06
-Nodes (72): BackupHandler, backupDir(), defaultNeo4jDumper(), defaultPostgresDumper(), envOr(), isBackupArtifact(), requireLiveBackupEnv(), TestBackupNetworkPostgresLive() (+64 more)
+Cohesion: 0.09
+Nodes (39): defaultNeo4jDumper(), defaultPostgresDumper(), envOr(), isBackupArtifact(), MissedBackupAlert(), neo4jDumpRequestFromEnv(), postgresDumpRequestFromEnv(), postgresDumpRequestFromURL() (+31 more)
 
 ### Community 51 - "Community 51"
 Cohesion: 0.09
@@ -2458,27 +3662,27 @@ Nodes (48): Alternatives Considered, Anti-Patterns to Avoid, Applicable ASVS Cat
 
 ### Community 53 - "Community 53"
 Cohesion: 0.09
-Nodes (33): parseLimit(), writeJSONStatus(), activeSkillRows(), envChips(), mcpProfiles(), parseOffset(), parseTaskID(), schedulerRunRows() (+25 more)
+Nodes (32): parseLimit(), activeSkillRows(), envChips(), mcpProfiles(), parseOffset(), parseTaskID(), schedulerRunRows(), schedulerTaskRows() (+24 more)
 
 ### Community 54 - "Community 54"
 Cohesion: 0.11
-Nodes (46): T, T, T, T, botSender, Duration, Event, ReplyMarkup (+38 more)
+Nodes (48): T, T, T, T, botSender, Duration, Event, Mutex (+40 more)
 
 ### Community 55 - "Community 55"
-Cohesion: 0.06
-Nodes (46): AnnouncedSkeletonProps, AppShellSkeleton(), LanguageSwitcherSkeleton(), LoginPageSkeleton(), NotFoundViewSkeleton(), RouteSkeletonFallback(), RuntimeHealthPanelSkeleton(), RuntimeHealthPanelSkeletonProps (+38 more)
+Cohesion: 0.01
+Nodes (81): firstChildWithLocalNames(), firstDescendantWithLocalName(), DOMException, name(), qname(), validateAndExtract(), { XML_NS, XMLNS_NS }, xnv (+73 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.06
-Nodes (24): EntityExtractor, ExtractedEntity, ExtractedPreference, ExtractedRelation, ExtractionResult, is_valid_entity_name(), Base extraction classes and protocols., Check if an entity name is valid (not a stopword or noise).      Args:         n (+16 more)
+Cohesion: 0.04
+Nodes (72): Any, ReasoningStep, ReasoningTrace, UUID, Any, BaseModel, datetime, M (+64 more)
 
 ### Community 57 - "Community 57"
 Cohesion: 0.06
-Nodes (36): accountResolver, clearBackend, costBackend, documentsClient, hitlReplyKey, AnswerExtractor, Bot, commands (+28 more)
+Nodes (37): accountResolver, clearBackend, costBackend, documentsClient, hitlReplyKey, AnswerExtractor, Bot, commands (+29 more)
 
 ### Community 58 - "Community 58"
 Cohesion: 0.17
-Nodes (23): contains(), failedContains(), newDispatchFor(), TestDispatchCompleterErrorIsNonFatal(), TestDispatchDefaultsAlertThreshold(), TestDispatchDestructiveRidesImmediateAlert(), TestDispatchFailureCompletesFailedAndNotifies(), TestDispatchNotifyFailurePersistsFailedNotification() (+15 more)
+Nodes (26): NewDispatch(), contains(), failedContains(), newDispatchFor(), TestDispatchCompleterErrorIsNonFatal(), TestDispatchDefaultsAlertThreshold(), TestDispatchDestructiveRidesImmediateAlert(), TestDispatchFailureCompletesFailedAndNotifies() (+18 more)
 
 ### Community 59 - "Community 59"
 Cohesion: 0.12
@@ -2489,68 +3693,68 @@ Cohesion: 0.08
 Nodes (40): Context, Conversation, Event, Message, Pending, liveHarness, T, Usage (+32 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.26
-Nodes (14): decodeToolPreview(), NormalizeToolPreview(), stripShellFooter(), TestNormalizeToolPreviewFallback(), TestNormalizeToolPreviewParitySwarm(), TestNormalizeToolPreviewParityWithTypedNormalize(), TestNormalizeToolPreviewShell(), TestNormalizeToolPreviewShellNoFooter() (+6 more)
+Cohesion: 0.07
+Nodes (37): normalizeCode(), TestNormalizeCodeArtifact(), TestNormalizeCodeText(), CodeInput, Normalize(), NormalizeWithRegistry(), TestNormalizeDispatch(), TestNormalizeUnknownToolFallback() (+29 more)
 
 ### Community 62 - "Community 62"
-Cohesion: 0.10
-Nodes (41): TestEnvChips_KeyExtractionAcrossUnionCases(), TestGovernanceMCPEmptyAllowlistIsArrayNotNull(), boolPtr(), doGov(), govServer(), secretMCPDoc(), TestGovernanceAuthGate401(), TestGovernanceBackendErrorSanitized() (+33 more)
+Cohesion: 0.11
+Nodes (39): TestComposerSkills_Active(), TestComposerSkills_NilProvider(), TestComposerSkills_Unauth(), TestEnvChips_KeyExtractionAcrossUnionCases(), TestGovernanceMCPEmptyAllowlistIsArrayNotNull(), boolPtr(), doGov(), govServer() (+31 more)
 
 ### Community 63 - "Community 63"
 Cohesion: 0.21
 Nodes (29): buildSwarmRegistry(), enforceSwarm(), logTurnTrace(), mailReadBack(), mustJSON(), pickTool(), pollToolForTag(), runAgentTurn() (+21 more)
 
 ### Community 64 - "Community 64"
-Cohesion: 0.11
-Nodes (29): T, botSender, Builder, Context, Duration, Event, Message, ParseMode (+21 more)
+Cohesion: 0.13
+Nodes (25): botSender, Builder, Context, Duration, Event, Message, ParseMode, Recipient (+17 more)
 
 ### Community 65 - "Community 65"
 Cohesion: 0.09
 Nodes (29): AuraDeleteJobs, AuraStorageObjects, AuraDocuments, AuraDocumentVersions, AuraIngestionEvents, AuraIngestionJobs, Context, Interval (+21 more)
 
 ### Community 66 - "Community 66"
-Cohesion: 0.10
-Nodes (40): errMalformed(), NewBudgetFromEnv(), fixedClock(), TestBudget_Child_SharesStepsCounter(), TestBudget_ConsumeStep_AtomicDecrement_NoRace(), TestBudget_ConsumeStep_ExactlyOneWinner_When_CounterIsOne(), TestBudget_ConsumeStep_OverspendReason(), TestBudget_ConsumeStep_OverspendRestoresCounter() (+32 more)
+Cohesion: 0.12
+Nodes (38): errMalformed(), NewBudgetFromEnv(), fixedClock(), TestBudget_Child_SharesStepsCounter(), TestBudget_ConsumeStep_AtomicDecrement_NoRace(), TestBudget_ConsumeStep_ExactlyOneWinner_When_CounterIsOne(), TestBudget_ConsumeStep_OverspendReason(), TestBudget_ConsumeStep_OverspendRestoresCounter() (+30 more)
 
 ### Community 67 - "Community 67"
 Cohesion: 0.04
 Nodes (44): Critical Pitfalls (P0 continued — agentic loop correctness), Critical Pitfalls (P0 — data loss / security), Integration Gotchas, "Looks Done But Isn't" Checklist, P1 Pitfalls (data corruption / silent broken behavior), P2 Pitfalls (UX degradation / maintenance pain), Performance Traps, Pitfall 10: Context cancellation does not propagate through tool tree (+36 more)
 
 ### Community 68 - "Community 68"
-Cohesion: 0.07
-Nodes (45): releaseBootResources(), buildBaseRegistry(), buildBaseRegistryWithHandles(), buildRegistry(), buildRegistryWithMCP(), closeMCPServers(), main(), mcpMountRetryPolicy() (+37 more)
+Cohesion: 0.09
+Nodes (36): buildBaseRegistry(), buildBaseRegistryWithHandles(), buildRegistry(), buildRegistryWithMCP(), closeMCPServers(), mcpMountRetryPolicy(), printTools(), TestBuildBaseRegistryValidatesWithSwarmSpawn() (+28 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.10
-Nodes (42): T, T, T, ManagedConfig, ManagedServer, ServerConfig, T, T (+34 more)
+Nodes (41): T, T, T, ManagedConfig, ManagedServer, ServerConfig, T, T (+33 more)
 
 ### Community 70 - "Community 70"
 Cohesion: 0.13
-Nodes (41): isWSLCommand(), loadManagedMCPConfig(), mcpAdd(), mcpBoolPtr(), mcpDoctor(), mcpInstall(), mcpList(), mcpRecipes() (+33 more)
+Nodes (41): isWSLCommand(), loadManagedMCPConfig(), mcpAdd(), mcpBoolPtr(), mcpInstall(), mcpList(), mcpRecipes(), mcpRemove() (+33 more)
 
 ### Community 71 - "Community 71"
 Cohesion: 0.05
 Nodes (43): 0. Direction & non-negotiables, 10. WCAG 2.2 contrast proof, 11. Acceptance criteria, 1. The single-theme decision (and why `dark` stays the theme key), 2. Token taxonomy — two tiers (primitive → semantic), 3.1 Chosen pairing (locked): **Fraunces · Hanken Grotesk · Commit Mono**, 3.2 Self-host plan (single binary), 3.3 Font tokens (semantic — emitted) (+35 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.26
+Cohesion: 0.29
 Nodes (12): MultimodalConfig, VisionClient, HandlerFunc, Int32, T, newPhotoClient(), TestPhotoCloudBranchFallbackModel(), TestPhotoCloudBranchVisionModel() (+4 more)
 
 ### Community 73 - "Community 73"
-Cohesion: 0.14
-Nodes (27): F, T, Frontmatter, T, assertSC3(), buildNFKCCorpus(), collapsesToBlocklist(), FuzzSkillValidator() (+19 more)
+Cohesion: 0.23
+Nodes (17): Frontmatter, T, SanitizeName(), TestSanitizeName(), TestSanitizeName_RejectsNameNotEqualDir(), TestValidateForWrite_BlocklistHitReportsDetail(), TestValidateForWrite_OperatorOverride(), TestValidateForWrite_StructureBoundaries() (+9 more)
 
 ### Community 74 - "Community 74"
 Cohesion: 0.20
 Nodes (21): fakeQueryEmbedder, fakeRetrieveKnowledge, seedRow(), TestEffectiveLimitClamps(), TestRetrieveBelowThresholdKeepsSeedOrder(), TestRetrieveDocumentScopedUsesNativePreFilter(), TestRetrieveEmbedderErrorFallsBackToFulltext(), TestRetrieveEmptySeedsReturnsEmpty() (+13 more)
 
 ### Community 75 - "Community 75"
-Cohesion: 0.11
-Nodes (44): AnthropicProvider, Native Anthropic adapter for the Provider Protocol.  Preferred over LiteLLM for, Native Anthropic LLM provider.      Implements both :class:`~neo4j_agent_memory., Build the ``system=`` parameter, honoring ``cache_system``.          When prompt, Use Anthropic forced tool use for structured extraction.          Converts ``res, Extract the first system message; return ``(system, remaining)``.      Anthropic, Translate an anthropic ``Usage`` object to our :class:`Usage`., Map an :mod:`anthropic` exception to a :class:`ProviderError` subclass. (+36 more)
+Cohesion: 0.12
+Nodes (20): Any, BaseModel, ChatMessage, Exception, LLMProvider, T, EmbeddingDimensionMismatchError, ProviderError (+12 more)
 
 ### Community 76 - "Community 76"
-Cohesion: 0.08
-Nodes (36): assembleChatEnv(), bootChatEnvWithConfig(), cronTaskStore, TestProfileContextProviderMissingProfileIsEmpty(), TestProfileContextProviderReadsIdentityName(), selfSendResolver, selfSendTool, alwaysBlockProvider() (+28 more)
+Cohesion: 0.07
+Nodes (34): cronTaskStore, TestProfileContextProviderMissingProfileIsEmpty(), TestProfileContextProviderReadsIdentityName(), selfSendResolver, selfSendTool, alwaysBlockProvider(), newCronTaskStore(), newSelfSendResolver() (+26 more)
 
 ### Community 77 - "Community 77"
 Cohesion: 0.12
@@ -2594,23 +3798,23 @@ Nodes (40): Architectural Responsibility Map, Assumptions Log, Code Examples (ve
 
 ### Community 87 - "Community 87"
 Cohesion: 0.03
-Nodes (59): focusFirstDescendant(), trapTabKey(), anyIncomplete(), filterAndSortSources(), nextExplorerSort(), safeHost(), sourceIncomplete(), SourceSort (+51 more)
+Nodes (46): AbortSignal, AbortSignalImpl, DOMException, { fireAnEvent }, { setupForSimpleEventAccessors }, appendHandler(), BeforeUnloadEvent, createEventAccessor() (+38 more)
 
 ### Community 88 - "Community 88"
-Cohesion: 0.07
-Nodes (30): BaseMemoryService, Any, MemoryClient, MemoryEntry, Neo4jMemoryService, Google ADK MemoryService implementation backed by Neo4j.  Provides a Neo4j-backe, Initialize the Neo4j memory service.          Args:             memory_client: C, Get the underlying memory client. (+22 more)
+Cohesion: 0.06
+Nodes (32): BaseMemoryService, Any, MemoryClient, MemoryEntry, Neo4jMemoryService, Google ADK MemoryService implementation backed by Neo4j.  Provides a Neo4j-backe, Initialize the Neo4j memory service.          Args:             memory_client: C, Get the underlying memory client. (+24 more)
 
 ### Community 89 - "Community 89"
-Cohesion: 0.06
-Nodes (22): Agent, Event, InvocationContext, Seq2, T, budgetOwningToolAgent, escalateOnNthRun, TestLoopAgent_BudgetOwningSubConsumesOnlyOnce() (+14 more)
+Cohesion: 0.07
+Nodes (10): Agent, Event, InvocationContext, Seq2, budgetOwningToolAgent, escalateOnNthRun, multiToolAgent, multiToolEscalateAgent (+2 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.15
-Nodes (29): flagValue(), bootSkills(), hasFlag(), newSkillWriter(), runSkills(), shortHash(), skillsAlways(), skillsApprove() (+21 more)
+Cohesion: 0.12
+Nodes (35): flagValue(), pausedStatesList(), pausedStatesPurge(), runPausedStates(), truncate(), bootSkills(), hasFlag(), newSkillWriter() (+27 more)
 
 ### Community 91 - "Community 91"
-Cohesion: 0.12
-Nodes (23): botNotifier, CallbackResponse, commandReply, Voice, API, Bot, Context, HandlerFunc (+15 more)
+Cohesion: 0.10
+Nodes (29): botNotifier, CallbackResponse, commandReply, Voice, API, Bot, Context, HandlerFunc (+21 more)
 
 ### Community 92 - "Community 92"
 Cohesion: 0.12
@@ -2637,8 +3841,8 @@ Cohesion: 0.08
 Nodes (38): Any, MemoryClient, _CachedNamsClient, clear_client_cache(), context_graph_tools(), _create_add_memory_tool(), _create_get_entity_graph_tool(), _create_get_user_preferences_tool() (+30 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.16
-Nodes (29): Subscribe(), NewFanout(), agentSeq(), aguiTypesOf(), blockingSource(), boundaryOverflowSource(), containsEventType(), drain() (+21 more)
+Cohesion: 0.03
+Nodes (20): asciiLowercase(), asciiUppercase(), ElementImpl, HTMLElementImpl, { asciiLowercase }, { childTextContent }, { domSymbolTree, cloningSteps }, { getBOMEncoding, labelToName, legacyHookDecode } (+12 more)
 
 ### Community 99 - "Community 99"
 Cohesion: 0.08
@@ -2650,7 +3854,7 @@ Nodes (9): B2c mutation autopsy (post-hardening), Formerly out-of-scope — reso
 
 ### Community 101 - "Community 101"
 Cohesion: 0.07
-Nodes (38): emptyRows, InsertParams, Pending, Record, recordingDBTX, ResumeAnswer, Store, decodeResumedAnswer() (+30 more)
+Nodes (38): emptyRows, InsertParams, Pending, Record, recordingDBTX, ResumeAnswer, decodeResumedAnswer(), encodeAnswer() (+30 more)
 
 ### Community 102 - "Community 102"
 Cohesion: 0.08
@@ -2661,24 +3865,24 @@ Cohesion: 0.12
 Nodes (24): GenerateTitle(), renderHistoryForTitle(), sanitizeTitle(), TestGenerateTitle_EmptyResult(), TestGenerateTitle_NilClient(), TestGenerateTitle_StreamError(), TestGenerateTitle_Success(), TestRenderHistoryForTitle_SkipsNonChatAndTruncates() (+16 more)
 
 ### Community 104 - "Community 104"
-Cohesion: 0.06
-Nodes (46): ConversationRow(), ConversationRowProps, ConversationSidebar(), ConversationSidebarProps, groupByRecency(), MenuPosition, RecencyGroup, RecencyKey (+38 more)
+Cohesion: 0.14
+Nodes (29): Color, Face, Image, RGBA, Image, T, dims, fillRect() (+21 more)
 
 ### Community 105 - "Community 105"
-Cohesion: 0.07
-Nodes (23): Any, ExtractedEntity, ExtractedRelation, ExtractionResult, GLiNERWithRelationsExtractor, GLiRELExtractor, Synchronous relation extraction using GLiREL., Extract relations between entities using GLiREL.          Args:             text (+15 more)
+Cohesion: 0.03
+Nodes (103): af(), df, ef(), ff(), Ja(), lf(), mt(), nf() (+95 more)
 
 ### Community 106 - "Community 106"
-Cohesion: 0.20
-Nodes (21): TestServiceIngestPathRejectsMissingDependencies(), fakeExtractor, fakeJobStore, newFakeJobStore(), oneChunkResponse(), TestServiceDelegatesSearchGetAndList(), TestServiceMakesDocumentSearchableBeforeEmbedding(), TestServiceMarksFailedWhenExtractionFails() (+13 more)
+Cohesion: 0.14
+Nodes (27): TestServiceIngestPathRejectsMissingDependencies(), fakeEmbedQueue, fakeExtractor, fakeJobStore, fakeSearchBackend, fakeSparseIndexer, newFakeJobStore(), oneChunkResponse() (+19 more)
 
 ### Community 107 - "Community 107"
 Cohesion: 0.14
 Nodes (16): Client, Conn, Context, RawConn, Conn, Context, T, dialFunc (+8 more)
 
 ### Community 108 - "Community 108"
-Cohesion: 0.11
-Nodes (32): Context, RiskTier, Context, RiskTier, SkillTool, T, ToolResult, fakeSkillAlerter (+24 more)
+Cohesion: 0.12
+Nodes (30): Context, Context, RiskTier, SkillTool, T, ToolResult, fakeSkillAlerter, fakeSkillWriter (+22 more)
 
 ### Community 109 - "Community 109"
 Cohesion: 0.08
@@ -2693,12 +3897,12 @@ Cohesion: 0.04
 Nodes (46): agent `CanonicalArgs` (QA-A-01), agent `isTransientNetworkErr` (QA-A-02) — ⚠️ asymmetric, read carefully, Architectural Responsibility Map, Assumptions Log, `AURA_MEMORY_EMBED_*` Removal Map (D-05 — full-stack), Claude's Discretion, Common Pitfalls, D-12 Verdict: `memory_integration` already runs live (+38 more)
 
 ### Community 112 - "Community 112"
-Cohesion: 0.20
-Nodes (30): computeFingerprint(), canon(), TestBudget_BeforeAfterToolResult_Concurrent(), TestBudget_BeforeToolCall_CanonicalHashOrderIndependent(), TestBudget_BeforeToolCall_DistinctArgsDistinctFingerprint(), TestBudget_Child_DistinctDedupRing(), TestBudget_Dedup_ExemptTool_NeverDedups(), TestBudget_Dedup_ExemptToolBreaksRepeatSequence() (+22 more)
+Cohesion: 0.16
+Nodes (35): computeFingerprint(), ExemptToolsFromEnv(), newDedupRing(), parseExemptTools(), ringCapacity(), canon(), TestBudget_BeforeAfterToolResult_Concurrent(), TestBudget_BeforeToolCall_CanonicalHashOrderIndependent() (+27 more)
 
 ### Community 113 - "Community 113"
 Cohesion: 0.07
-Nodes (25): fakeMCPBoard, fakeOnboarding, fakeSchedulerBoard, fakeSkillsBoard, TestGovernanceAndOnboardingRoutesRegistered(), TestSetGovernanceProvidersOffConstructor(), TestSetOnboardingServiceOffConstructor(), AuditFilter (+17 more)
+Nodes (26): fakeMCPBoard, fakeOnboarding, fakeSchedulerBoard, fakeSkillsBoard, TestGovernanceAndOnboardingRoutesRegistered(), TestSetGovernanceProvidersOffConstructor(), TestSetOnboardingServiceOffConstructor(), AuditFilter (+18 more)
 
 ### Community 114 - "Community 114"
 Cohesion: 0.15
@@ -2709,8 +3913,8 @@ Cohesion: 0.07
 Nodes (22): Any, Exception, Any, Exception, OpikSpan, OpikSpanData, Opik tracing provider.  Provides Opik-based tracing for LLM and extraction pipel, Record an exception on the span. (+14 more)
 
 ### Community 116 - "Community 116"
-Cohesion: 0.10
-Nodes (38): Context, Duration, RawMessage, Registry, Spec, Tool, ToolDef, ToolResult (+30 more)
+Cohesion: 0.11
+Nodes (35): Context, Duration, RawMessage, Spec, Tool, ToolDef, ToolResult, Value (+27 more)
 
 ### Community 117 - "Community 117"
 Cohesion: 0.19
@@ -2721,28 +3925,28 @@ Cohesion: 0.17
 Nodes (36): Namespace, adaptive_verdict(), as_int(), as_len(), compact_preview(), first_message(), has_reasoning(), has_reasoning_tokens() (+28 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.11
-Nodes (28): agentMetrics, metricLabel(), newAgentMetrics(), newExpvarFloat(), newExpvarInt(), newExpvarMap(), recordHookOutcome(), recordLLMDuration() (+20 more)
+Cohesion: 0.08
+Nodes (35): agentMetrics, metricLabel(), newAgentMetrics(), newExpvarFloat(), newExpvarInt(), newExpvarMap(), recordBudgetConsumeStep(), recordHookOutcome() (+27 more)
 
 ### Community 120 - "Community 120"
-Cohesion: 0.09
-Nodes (27): BedrockEmbeddingProvider, BedrockProvider, _converse_messages(), _is_anthropic_on_bedrock(), Native AWS Bedrock adapter for the Provider Protocol.  Uses Bedrock's Converse A, Split messages into ``(system, messages)`` for the Converse API.      Bedrock's, Native Bedrock LLM provider via the Converse API.      Example::          provid, Use Converse toolConfig for Anthropic-on-Bedrock; SAP for everything else. (+19 more)
+Cohesion: 0.11
+Nodes (11): BedrockEmbeddingProvider, Bedrock embedding provider.      Wraps the existing     :class:`~neo4j_agent_mem, _strip_provider_prefix(), Vertex AI embedding adapter for the Provider Protocol.  Wraps the existing :clas, Vertex AI embedding provider.      Implements :class:`~neo4j_agent_memory.llm.pr, _strip_provider_prefix(), VertexAIEmbeddingProvider, lookup_embedding_dimensions() (+3 more)
 
 ### Community 121 - "Community 121"
 Cohesion: 0.11
 Nodes (39): conversationExists(), dirSize(), parseContentSeq(), reconcileLiveConversationSidecars(), removeOrphan(), scanConversationOrphans(), ScanOrphans(), sweepTmp() (+31 more)
 
 ### Community 122 - "Community 122"
-Cohesion: 0.14
-Nodes (29): Color, Face, Image, RGBA, Image, T, dims, fillRect() (+21 more)
+Cohesion: 0.12
+Nodes (31): chunkText(), clamp(), cleanup(), containsAll(), cosine(), decoyLines(), degradeJPEG(), denseOrder() (+23 more)
 
 ### Community 123 - "Community 123"
-Cohesion: 0.11
-Nodes (32): InsertToolInvocationParams, AuraToolInvocations, Bool, Context, Int4, Int8, Pool, Queries (+24 more)
+Cohesion: 0.08
+Nodes (36): InsertToolInvocationParams, AuraToolInvocations, Bool, Context, Int4, Int8, Pool, Queries (+28 more)
 
 ### Community 124 - "Community 124"
-Cohesion: 0.19
-Nodes (30): countAction(), doGovWrite(), envValueTest(), govWriteServer(), newFakeMCPWrite(), TestGovernanceWriteByNameOrder(), TestGovernanceWriteDoubleRemove404(), TestGovernanceWriteEnableDisableIdempotent() (+22 more)
+Cohesion: 0.13
+Nodes (36): fakeMCPWrite, countAction(), doGovWrite(), envValueTest(), govWriteServer(), newFakeMCPWrite(), TestGovernanceWriteByNameOrder(), TestGovernanceWriteDoubleRemove404() (+28 more)
 
 ### Community 125 - "Community 125"
 Cohesion: 0.06
@@ -2750,19 +3954,19 @@ Nodes (34): 1. System Classification, 1b. Domain Context, 2. Framework Decision,
 
 ### Community 126 - "Community 126"
 Cohesion: 0.13
-Nodes (27): ContextBudgetGauge(), ContextBudgetGaugeProps, addTurn(), aggregateNumber(), cacheHitPercent(), contextPercent(), ConversationAggregate, EMPTY_SESSION (+19 more)
+Nodes (17): putSettingBody, settingItemDTO, settingItemFromRow(), validateSettingValue(), settingsListDTO, settingsStore, telegramAvailabilityDTO, telegramAvailabilityRequest (+9 more)
 
 ### Community 127 - "Community 127"
-Cohesion: 0.03
-Nodes (103): ariaInvalid, ApprovalBadgeProps, CardState, CHIP_DOT, CHIP_TEXT, ChipTone, InlineApprovalCardProps, BootstrapErrorKey (+95 more)
+Cohesion: 0.12
+Nodes (18): Event, CancelFunc, Context, ContextConfig, Event, InvocationContext, LlmAgent, Message (+10 more)
 
 ### Community 128 - "Community 128"
 Cohesion: 0.10
-Nodes (27): AnswerExtractor, filterWildcard(), marshalPreferences(), NewOnboardingService(), newSessionToken(), OnboardingDeps, ProfileWriter, RecoverySetupWriter (+19 more)
+Nodes (29): AnswerExtractor, filterWildcard(), marshalPreferences(), newSessionToken(), OnboardingDeps, ProfileWriter, RecoverySetupWriter, sessionEntry (+21 more)
 
 ### Community 129 - "Community 129"
-Cohesion: 0.13
-Nodes (15): displayEn, displayIt, documentsEn, documentsIt, governanceEn, governanceIt, graphEn, graphIt (+7 more)
+Cohesion: 0.05
+Nodes (37): Architectural Responsibility Map, Architecture Patterns, Assumptions Log, Common Pitfalls, Core, Deferred Ideas (OUT OF SCOPE), Don't Hand-Roll, Durable Memory Lifecycle (+29 more)
 
 ### Community 130 - "Community 130"
 Cohesion: 0.12
@@ -2770,19 +3974,19 @@ Nodes (15): Any, GDSIntegration, Check if GDS library is installed in Neo4j.    
 
 ### Community 131 - "Community 131"
 Cohesion: 0.14
-Nodes (29): B, Context, Mutex, RawMessage, Spec, T, ToolResult, ToolSearch (+21 more)
+Nodes (31): B, Context, Mutex, RawMessage, Spec, T, ToolResult, ToolSearch (+23 more)
 
 ### Community 132 - "Community 132"
 Cohesion: 0.17
 Nodes (34): Event, fakeBot, T, Time, Event, fakeBot, T, drivePaneReasoning() (+26 more)
 
 ### Community 133 - "Community 133"
-Cohesion: 0.09
-Nodes (26): Context, Duration, Editable, MultimodalConfig, Recipient, STTClient, Voice, Editable (+18 more)
+Cohesion: 0.06
+Nodes (33): 10. Durable Memory, 11. Recovery and User Experience, 12. Failure Semantics, 13. Observability and Evaluation, 14. Delivery Decomposition, 15. Non-goals, 16. Design Acceptance, 17.10 Bounded recovery (+25 more)
 
 ### Community 134 - "Community 134"
-Cohesion: 0.06
-Nodes (68): logf(), main(), logf(), main(), namedEvent, logf(), main(), percentile() (+60 more)
+Cohesion: 0.07
+Nodes (62): logf(), main(), logf(), main(), percentile(), runOne(), result, TestActionsDisplayRoundTrip() (+54 more)
 
 ### Community 135 - "Community 135"
 Cohesion: 0.06
@@ -2797,40 +4001,40 @@ Cohesion: 0.06
 Nodes (33): `caddy/Caddyfile` + Caddy compose service (config, TLS front) — CREATE, `cmd/aura/doctor.go` — aura doctor aggregate (command, request-response) — CREATE, `cmd/aura/main.go` — wire `case "doctor"` (command, dispatch) — MODIFY, `compose.gvisor.yaml` (config, runtime tier) — CREATE, Compose sibling over streamable-HTTP (applies to: whatsapp sibling, Caddy split, aura-migrate gating), `compose.yaml` — the `aura` service (config, request-response) — MODIFY (DE-HARDEN), Coverage, `docker/aura/Dockerfile` (config, build/file-I/O) — CREATE (+25 more)
 
 ### Community 138 - "Community 138"
-Cohesion: 0.15
-Nodes (17): costFooter(), costFooterFromFinish(), TestRenderTurn_MidStreamRetryDiscardsPartial(), TestRenderTurn_NoDiscardOnNormalPath(), discardStreamed(), TestRenderRunnerTurn_DrainsPastFinalEvent(), renderRunnerTurn(), renderToolActivity() (+9 more)
+Cohesion: 0.08
+Nodes (24): 10. Operator/manual surfaces (shadow-only; independent of the automated rollout), 11. CI tier matrix, 12. Operator commands (reproduce), 13. Terminal acceptance evidence, 14. Manual-only evidence (explicitly NOT observed; activation stays disabled), 1. Architecture summary, 2. Schema and migrations, 3. Live evaluation and promotion/rollback flow (+16 more)
 
 ### Community 139 - "Community 139"
-Cohesion: 0.15
-Nodes (17): branchItem, normalizeCreateTitle(), parseConvID(), writeJSON(), writeStoreErr(), parseBranchSeq(), createConversationBody, editBranchBody (+9 more)
+Cohesion: 0.14
+Nodes (21): scopedIdentityID(), branchItem, compactRequestBody, normalizeCreateTitle(), parseConvID(), writeCompactAPIError(), writeJSON(), writeStoreErr() (+13 more)
 
 ### Community 140 - "Community 140"
-Cohesion: 0.19
-Nodes (11): downscaleAssetForVision(), NewImageProcessor(), TestImageProcessorReadsObjectAndCallsVisionSidecar(), ImageProcessor, Asset, Context, Result, Store (+3 more)
+Cohesion: 0.17
+Nodes (12): downscaleAssetForVision(), NewImageProcessor(), TestImageProcessorReadsObjectAndCallsVisionSidecar(), ImageProcessor, Asset, Context, ObjectResolverBundle, Result (+4 more)
 
 ### Community 141 - "Community 141"
-Cohesion: 0.09
-Nodes (35): T, ApprovalSource, AuditAction, AuditActor, Context, Writer, T, collectFilesNoSymlinks() (+27 more)
+Cohesion: 0.13
+Nodes (20): ApprovalSource, AuditActor, Context, Writer, T, ApprovalSource, AuditAction, AuditActor (+12 more)
 
 ### Community 142 - "Community 142"
-Cohesion: 0.13
-Nodes (33): bootChat(), bootChatEnv(), bootChatNamed(), bootServeChatEnv(), chatDelete(), chatList(), chatNew(), chatRename() (+25 more)
+Cohesion: 0.10
+Nodes (45): assembleChatEnv(), bootChat(), bootChatEnv(), bootChatEnvWithConfig(), bootChatNamed(), bootServeChatEnv(), openSettingsOverlayPool(), releaseBootResources() (+37 more)
 
 ### Community 143 - "Community 143"
-Cohesion: 0.13
-Nodes (34): docsBench(), docsIngest(), docsList(), docsSearch(), docsStatus(), documentHTTPClient(), documentsBaseURL(), industrialScore() (+26 more)
+Cohesion: 0.10
+Nodes (39): fakeResolver, recordingFactory, docsBench(), docsIngest(), docsList(), docsSearch(), docsStatus(), documentHTTPClient() (+31 more)
 
 ### Community 144 - "Community 144"
-Cohesion: 0.09
-Nodes (27): objectStoreBootstrap(), runObjectStore(), Config, Context, CORSConfiguration, Endpoint, EndpointParameters, EndpointResolverV2 (+19 more)
+Cohesion: 0.08
+Nodes (34): check(), env(), garagePlane(), isAccessDenied(), logf(), main(), memoryPlane(), newStore() (+26 more)
 
 ### Community 145 - "Community 145"
-Cohesion: 0.10
-Nodes (34): bootChannelsAndSetup(), buildSetupServer(), buildTelegramDeps(), clampInt64ToInt(), ensuringTurn(), multimodalConfig(), newTodayCost(), serveTelegramOverride() (+26 more)
+Cohesion: 0.07
+Nodes (42): contextRoundTripper, bootChannelsAndSetup(), buildSetupServer(), buildTelegramDeps(), clampInt64ToInt(), ensuringTurn(), multimodalConfig(), newTodayCost() (+34 more)
 
 ### Community 146 - "Community 146"
-Cohesion: 0.16
-Nodes (33): idRow(), newFakeStore(), TestDeleteIdentity_FakeError(), TestDeleteIdentity_FakeSuccess(), TestGetIdentityByID_FakeBadUUID(), TestGetIdentityByID_FakeNotFound(), TestGetIdentityByID_FakeOtherError(), TestGetIdentityByID_FakeSuccess() (+25 more)
+Cohesion: 0.14
+Nodes (35): TestGetIdentityByID_MapsDeactivated(), idRow(), newFakeStore(), TestDeleteIdentity_FakeError(), TestDeleteIdentity_FakeSuccess(), TestGetIdentityByID_FakeBadUUID(), TestGetIdentityByID_FakeNotFound(), TestGetIdentityByID_FakeOtherError() (+27 more)
 
 ### Community 147 - "Community 147"
 Cohesion: 0.13
@@ -2841,16 +4045,16 @@ Cohesion: 0.06
 Nodes (32): Channel interface / registry note (greenfield-but-shaped), `cmd/aura/serve.go` (MODIFY — channels registry mount in bootServe), Deferred-tool convention, env-helper (silent fallback, AURA_ convention), Fail-soft daemon-subsystem lifecycle, File Classification, goleak TestMain, `internal/agent/tools/send_file.go` (deferred tool, event emit) (+24 more)
 
 ### Community 149 - "Community 149"
-Cohesion: 0.11
-Nodes (26): completionLeakClient, completionLeakTool, agentToolCallChunk(), assertMessagesToolCallsAnswered(), chunksFor(), collectInternal(), finalInternal(), requestContains() (+18 more)
+Cohesion: 0.09
+Nodes (31): completionLeakClient, completionLeakTool, agentToolCallChunk(), assertMessagesToolCallsAnswered(), chunksFor(), collectInternal(), finalInternal(), requestContains() (+23 more)
 
 ### Community 150 - "Community 150"
 Cohesion: 0.14
-Nodes (30): echoCall(), finalContent(), lastFinal(), mutatingCall(), newGateAgent(), TestCompletionGate_ContentStop_Veto(), TestCompletionGate_CriticError_FailsOpen(), TestCompletionGate_CriticRetryExhaustedFailsOpen() (+22 more)
+Nodes (29): echoCall(), finalContent(), lastFinal(), mutatingCall(), newGateAgent(), TestCompletionGate_ContentStop_Veto(), TestCompletionGate_CriticError_FailsOpen(), TestCompletionGate_CriticRetryExhaustedFailsOpen() (+21 more)
 
 ### Community 151 - "Community 151"
-Cohesion: 0.14
-Nodes (28): commandDeps, commands, Context, SearchResult, T, newTestCommands(), TestBotMenuCommandsMirrorInterceptedCommands(), TestCancelCancelsInflightTurnCtx() (+20 more)
+Cohesion: 0.10
+Nodes (33): commandDeps, Context, HandlerFunc, Telegram, commands, Context, SearchResult, T (+25 more)
 
 ### Community 152 - "Community 152"
 Cohesion: 0.24
@@ -2865,8 +4069,8 @@ Cohesion: 0.12
 Nodes (29): T, T, capTraceString(), readRows(), TestEnabled(), TestMaxTraceBytes(), TestPath(), TestRecord_AppendsAcrossCalls() (+21 more)
 
 ### Community 155 - "Community 155"
-Cohesion: 0.09
-Nodes (32): mcpWriteAdapter, buildInstallServer(), buildMCPWriteProvider(), mapManagerErr(), placeholderWarnings(), recipeOf(), removeString(), Context (+24 more)
+Cohesion: 0.14
+Nodes (21): mcpWriteAdapter, buildInstallServer(), buildMCPWriteProvider(), mapManagerErr(), placeholderWarnings(), recipeOf(), removeString(), Context (+13 more)
 
 ### Community 156 - "Community 156"
 Cohesion: 0.06
@@ -2881,36 +4085,36 @@ Cohesion: 0.14
 Nodes (31): entry, appendSchema(), bm25Document(), bm25Execute(), buildCorpus(), cosineRank(), dot(), embedInto() (+23 more)
 
 ### Community 159 - "Community 159"
-Cohesion: 0.19
-Nodes (22): CommandHook, CommandHookDecision, CommandHookEnvConfig, CommandHookEvent, commandDecisionMessage(), commandDecisionToolResult(), fileSHA256(), isAllowDecision() (+14 more)
+Cohesion: 0.15
+Nodes (28): CommandHook, CommandHookConfig, CommandHookDecision, CommandHookEnvConfig, CommandHookEvent, allowedCommandHookParentEnv(), commandDecisionMessage(), commandDecisionToolResult() (+20 more)
 
 ### Community 160 - "Community 160"
-Cohesion: 0.12
-Nodes (29): countingExtractor, fakeCaps, newInterviewService(), onboardingTestServer(), TestNoDuplicatePrompt(), TestOnboardingStartCapabilityOptions(), TestOnboardingStartHandler(), TestOnboardingStartHandler503() (+21 more)
+Cohesion: 0.10
+Nodes (38): countingExtractor, fakeCaps, TestHandleOnboardingProvisionValidation(), TestHandleOnboardingStatus(), TestHandleProfileOnboardingComplete(), TestHandleProfileOnboardingStart(), TestHandleTelegramStatusHandler(), TestSetOnboardingStatusSourceOffConstructor() (+30 more)
 
 ### Community 161 - "Community 161"
-Cohesion: 0.14
-Nodes (28): auditSearchEngine, cacheAuditMain(), decodeFixture(), drainTurn(), expectedAuditRequests(), hashMessages0(), hashMessages1(), loadFixtures() (+20 more)
+Cohesion: 0.07
+Nodes (55): Aggregate, auditSearchEngine, cacheAuditMain(), decodeFixture(), drainTurn(), expectedAuditRequests(), hashMessages0(), hashMessages1() (+47 more)
 
 ### Community 162 - "Community 162"
-Cohesion: 0.09
-Nodes (30): CacheMetricStore, Breaker, Client, Config, ContextBlockProvider, ConversationStore, Duration, Embedder (+22 more)
+Cohesion: 0.10
+Nodes (31): CacheMetricStore, Breaker, Client, CompactionEffectiveReader, Config, ContextBlockProvider, ConversationStore, Duration (+23 more)
 
 ### Community 163 - "Community 163"
-Cohesion: 0.16
-Nodes (21): appendRecoveredToolResultGroup(), compactedToolPointer(), decodeToolCalls(), managedToolPointerMessage(), parseUUID(), postgresTextSafe(), recoveryToolResultContent(), repairManagedToolMessagePairs() (+13 more)
+Cohesion: 0.13
+Nodes (23): appendRecoveredToolResultGroup(), compactedToolPointer(), decodeToolCalls(), managedToolPointerMessage(), optionalText(), parseUUID(), postgresTextSafe(), recoveryToolResultContent() (+15 more)
 
 ### Community 164 - "Community 164"
 Cohesion: 0.15
 Nodes (13): Agent Runtime Core, Aura — Codebase & Function Map, How to read this, `internal/agent/agenttest` — shared `Agent` mocks + a deterministic fake `llm.Client` for runtime tests, `internal/agent/mcptools` — bridges a generic MCP server's tools into the Aura registry (namespacing, trust framing, schema capping, reconnect), `internal/agent/panicobs` — bounded-cardinality recovered-panic observability, `internal/agent` — the cornerstone runtime: the open `Agent` interface, `Event`/`Actions` model, `Budget` tree, and the `LlmAgent` tool-dispatch run-loop, `internal/agent/tools` — the agent's tool registry, ToolResult/spillover substrate, deferred-tool pattern, and every built-in LLM-facing tool (+5 more)
 
 ### Community 165 - "Community 165"
-Cohesion: 0.21
-Nodes (14): TestBuildExtractedDocumentRejectsChunkEmptyAfterNormalize(), TestContentHashPathReturnsErrorForMissingFile(), TestExtractClientFailsWhenFileMissing(), TestExtractClientFallsBackToFileNameFromPath(), TestExtractClientRequiresBaseURL(), TestFloatValueReturnsNaNForUnknownType(), TestSearchHitFromRowRejectsInvalidLocatorJSON(), TestServiceDefaultsMIMEToOctetStreamForUnknownExtension() (+6 more)
+Cohesion: 0.14
+Nodes (26): TestBuildExtractedDocumentFallsBackToResponseMIMEAndCopiesHeadingPath(), TestBuildExtractedDocumentRejectsChunkEmptyAfterNormalize(), TestBuildExtractedDocumentRejectsNilResponse(), TestContentHashPathOpensFileAndHashesContent(), TestContentHashPathReturnsErrorForMissingFile(), TestContentHashReaderPropagatesReadError(), TestExtractClientFailsWhenFileMissing(), TestExtractClientFallsBackToFileNameFromPath() (+18 more)
 
 ### Community 166 - "Community 166"
-Cohesion: 0.14
-Nodes (24): CancelFunc, Context, Mutex, Price, ReplyMarkup, searchPagerState, clearBackend, commandDeps (+16 more)
+Cohesion: 0.12
+Nodes (22): CancelFunc, compactService, Context, Mutex, Price, ReplyMarkup, searchPagerState, clearBackend (+14 more)
 
 ### Community 167 - "Community 167"
 Cohesion: 0.18
@@ -2933,36 +4137,36 @@ Cohesion: 0.06
 Nodes (30): `cmd/aura/main.go` + new `cmd/aura/sandbox.go` (controller / CLI, MODIFIED/NEW), Config knob convention (non-fatal env), Deferred-tool partition (CLAUDE.md), File Classification, goleak.VerifyTestMain (mandatory — the 2b reaper goroutine), Hand-rolled CLI switch dispatcher (no cobra), Injectable clock for deterministic time tests, `internal/agent/tools/execute.go` (controller / tool, MODIFIED) (+22 more)
 
 ### Community 172 - "Community 172"
-Cohesion: 0.13
-Nodes (27): countingSpanExporter, recordSpanExportFailure(), recordSpanIDEntropyFailure(), TracerProvider, endToolSpan(), endTurnSpan(), mintSpanID(), newTracerProvider() (+19 more)
+Cohesion: 0.12
+Nodes (29): countingSpanExporter, recordSpanExportFailure(), recordSpanIDEntropyFailure(), TracerProvider, endToolSpan(), endTurnSpan(), mintSpanID(), newTracerProvider() (+21 more)
 
 ### Community 173 - "Community 173"
 Cohesion: 0.13
 Nodes (10): CountingAgent, EmitNThenEscalate, InfiniteToolCallAgent, orDefault(), selfIfNamed(), RecordingAgent, Agent, Event (+2 more)
 
 ### Community 174 - "Community 174"
-Cohesion: 0.11
-Nodes (32): clearSessionCookie(), deriveSigningKey(), setSessionCookie(), signSession(), validateSecret(), verifySession(), nextRecorder(), readSessionCookie() (+24 more)
+Cohesion: 0.06
+Nodes (55): TestAdminRoutesRefuseNonAdmin(), TestRequireAuthRejectsBlankPrincipal(), clearSessionCookie(), deriveSigningKey(), setSessionCookie(), signSession(), validateSecret(), verifySession() (+47 more)
 
 ### Community 175 - "Community 175"
-Cohesion: 0.14
-Nodes (21): PresignRequest, PresignResponse, ProcessingJobQueue, cleanFileName(), newAssetID(), normalizeMIME(), telegramSourceRef(), StoreBackend (+13 more)
+Cohesion: 0.12
+Nodes (24): PresignRequest, PresignResponse, ProcessingJobQueue, cleanFileName(), newAssetID(), normalizeMIME(), telegramSourceRef(), StoreBackend (+16 more)
 
 ### Community 176 - "Community 176"
-Cohesion: 0.09
-Nodes (28): OpenAIEmbeddingProvider, OpenAIProvider, _OpenAISDKMixin, Native OpenAI adapter for the Provider Protocol.  Preferred over the LiteLLM pat, Native OpenAI LLM provider.      Implements both :class:`~neo4j_agent_memory.llm, Use OpenAI strict-mode structured outputs when supported.          Falls back to, One-shot strict-mode call. Raises on validation/schema errors., Native OpenAI embedding provider.      Auto-populates :attr:`dimensions` from th (+20 more)
+Cohesion: 0.02
+Nodes (56): CSSStyleProperties, ElementCSSInlineStyle, HTMLBaseElementImpl, whatwgURL, HTMLBRElementImpl, { Canvas }, HTMLCanvasElementImpl, idlUtils (+48 more)
 
 ### Community 177 - "Community 177"
-Cohesion: 0.05
-Nodes (60): aguiIdentityStore, aguiIdentityStore, bootstrapAvailabilityProvider, capturedReq, credentialProvider, fakeAuthulaProvider, frontendAuthConfig, getThrough() (+52 more)
+Cohesion: 0.06
+Nodes (41): aguiIdentityStore, aguiIdentityStore, bootstrapAvailabilityProvider, credentialProvider, fakeAuthulaProvider, frontendAuthConfig, bootstrapAvailabilityProviderConfigured(), bootstrapAvailable() (+33 more)
 
 ### Community 178 - "Community 178"
 Cohesion: 0.06
 Nodes (30): 04 — Runtime Telemetry Footer SPEC (cost / cache / token / context instrument), (2) Data sources — robust dual-source design (recommended), (3) Redesigned footer instrument, (4) File targets, acceptance criteria, test plan, a11y / i18n / formatting verdicts, Acceptance criteria, Closed in the 2026-06-18 implementation pass (TDD; working tree, uncommitted), Context gauge (D-11/D-12) — 3-tier severity (+22 more)
 
 ### Community 179 - "Community 179"
-Cohesion: 0.19
-Nodes (13): fakeSelfSend, fakeSelfSendTool, TestNotifyDefaultRouteFromEnv(), TestNotifyEmailResolvesSendEmail(), TestNotifyMCPFailureFallsBackToStdoutAndSignalsUndelivered(), TestNotifyMissingMountFallsBackToStdout(), TestNotifyStdoutRouteAlwaysDelivers(), TestNotifyUnknownRouteDegradesToStdout() (+5 more)
+Cohesion: 0.11
+Nodes (23): compositeNotifier, fakeSelfSend, fakeSelfSendTool, Notifier, buildSend(), NewNotifier(), TestNotifyDefaultRouteFromEnv(), TestNotifyEmailResolvesSendEmail() (+15 more)
 
 ### Community 180 - "Community 180"
 Cohesion: 0.07
@@ -2989,24 +4193,24 @@ Cohesion: 0.07
 Nodes (29): Approval / HITL protocol (LOCKED — Phase 25, D-11), Architecture / security canon, Canonical References, Claude's Discretion (planner/research-resolved — no further operator input), Cockpit write UI + approval-queue reuse, Deferred Ideas, Established Patterns, Existing Code Insights (+21 more)
 
 ### Community 186 - "Community 186"
-Cohesion: 0.11
-Nodes (25): FuzzCanonicalArgs(), FuzzNormalizeContentStopAnswer(), FuzzParseTextResponse(), FuzzRenderToolResultForPrompt(), FuzzWrapUntrustedToolOutput(), normalizeContentStopAnswer(), parseTextResponse(), parseTextResponsePayload() (+17 more)
+Cohesion: 0.16
+Nodes (19): FuzzCanonicalArgs(), FuzzNormalizeContentStopAnswer(), FuzzParseTextResponse(), FuzzRenderToolResultForPrompt(), FuzzWrapUntrustedToolOutput(), normalizeContentStopAnswer(), parseTextResponse(), parseTextResponsePayload() (+11 more)
 
 ### Community 187 - "Community 187"
-Cohesion: 0.04
-Nodes (62): ABC, Any, Exception, F, get_current_tracer(), get_tracer(), _is_async_callable(), is_opentelemetry_available() (+54 more)
+Cohesion: 0.07
+Nodes (42): BudgetInput, CompactionBudget, BudgetDecision, BudgetDecisionInput, BudgetInput, BudgetPolicy, BudgetReason, BudgetInputFromCapability() (+34 more)
 
 ### Community 188 - "Community 188"
-Cohesion: 0.03
-Nodes (80): postJSON(), completePasswordReset(), PasswordResetCompleteRequest, PasswordResetStartRequest, PasswordResetStatusResponse, PasswordResetVerifyRequest, PasswordResetVerifyResponse, startPasswordReset() (+72 more)
+Cohesion: 0.02
+Nodes (75): attributes, DOMException, { HTML_NS }, idlUtils, add(), delete(), { domSymbolTree }, get() (+67 more)
 
 ### Community 189 - "Community 189"
 Cohesion: 0.07
 Nodes (29): 00 — Cockpit-Overhaul SPEC Set: Adversarial Validation, 01 — Chat Lane, 02 — Shell / Sidebar, 03 — Design System (re-confirm only), 04 — Footer Telemetry, 05 — Authula Auth, 06 — Candidates Eval, A. Composer-dock contract (01 ↔ 02) — **CONSISTENT, no fix.** (+21 more)
 
 ### Community 190 - "Community 190"
-Cohesion: 0.07
-Nodes (29): Assert artifact, not reply, Async / channel sync, Bad vs good — table from PRD §Test discipline, Cancellation testing, Common patterns, Coverage, Fixtures, Gate 3 — Definition of Done checklist for tests (+21 more)
+Cohesion: 0.20
+Nodes (9): Common Patterns, Coverage, Fixtures and Factories, Mocking, Test File Organization, Test Framework, Test Structure, Test Types (+1 more)
 
 ### Community 191 - "Community 191"
 Cohesion: 0.13
@@ -3021,8 +4225,8 @@ Cohesion: 0.15
 Nodes (20): JobStore, PostgresJobStore, jobFromSQL(), pgText(), pgUUID(), TestStoreValueHelpers(), textString(), timeValue() (+12 more)
 
 ### Community 194 - "Community 194"
-Cohesion: 0.22
-Nodes (26): runMCPCommand(), containsString(), newMCPHTTPTestServer(), TestMCPAddListAndDisable(), TestMCPDoctorAllChecksCalendarRecipe(), TestMCPDoctorAndToolsStartConfiguredServer(), TestMCPDoctorBlockedDoesNotLaunch(), TestMCPInstallCalculatorWritesRecipe() (+18 more)
+Cohesion: 0.04
+Nodes (48): Alternatives Considered, Anchor Verification (CONTEXT.md drift check — Focus #2), Applicable ASVS Categories, Architectural Responsibility Map, Architecture / Integration Mechanics (discretionary gaps — Focus #3), Assumptions Log, Claude's Discretion (verbatim), Common Pitfalls / Landmines (Focus #4) (+40 more)
 
 ### Community 195 - "Community 195"
 Cohesion: 0.13
@@ -3053,24 +4257,24 @@ Cohesion: 0.18
 Nodes (33): fakeGraphView, doGraph(), fakeGraph(), graphIntentUserID(), graphServer(), TestGraphQueryErrorSanitized(), TestGraphQueryFilterSchemaError(), TestGraphQueryInjectsAuthenticatedPrincipal() (+25 more)
 
 ### Community 202 - "Community 202"
-Cohesion: 0.17
-Nodes (22): T, ManagedConfig, T, cutEnv(), ExportProfile(), TestExportProfileSynthesizesMissingProfileEntry(), TestImportProfileInitializesZeroBase(), TestImportProfileOverwriteCredentials() (+14 more)
+Cohesion: 0.25
+Nodes (14): ManagedConfig, T, cutEnv(), ExportProfile(), isPlaceholderValue(), mergeEnvPreserveCredentials(), RedactEnv(), TestCutEnvEdgeCases() (+6 more)
 
 ### Community 203 - "Community 203"
-Cohesion: 0.11
-Nodes (25): handlerAdapter, bootServe(), buildDispatch(), closeAuthulaProviders(), runServe(), seedSkillTTLSweep(), serveReadinessProbes(), serveEnv (+17 more)
+Cohesion: 0.06
+Nodes (40): buildDocumentCatalogService(), buildDocumentEventService(), buildStorageOrphanService(), handlerAdapter, runtimeDocumentAssetDeleter, bootServe(), closeAuthulaProviders(), resolveMaxToolExecWindow() (+32 more)
 
 ### Community 204 - "Community 204"
 Cohesion: 0.06
 Nodes (30): Current Dirty Worktree To Avoid, Document Ingestion 10/10 Implementation Plan, Execution Rules, File Map, Phase 0: Baseline and Low-Risk Correctness, Phase 1: Document Catalog, Tags, and Version Ledger, Phase 2: Versioned Ingestion and Hashing, Phase 3: Durable Jobs and Events (+22 more)
 
 ### Community 205 - "Community 205"
-Cohesion: 0.33
-Nodes (5): blockReader, pendingClarification(), TestPromptForPause_SharedReader_WR01(), Pending, Reader
+Cohesion: 0.05
+Nodes (12): Bo(), fr, gb(), hb(), hT(), i_, ii(), jb() (+4 more)
 
 ### Community 206 - "Community 206"
-Cohesion: 0.15
-Nodes (19): Account, AnswerExtractor, Answers, Context, Event, Mutex, ReplyMarkup, Session (+11 more)
+Cohesion: 0.08
+Nodes (41): Account, AnswerExtractor, Answers, Context, Event, Mutex, ReplyMarkup, Session (+33 more)
 
 ### Community 207 - "Community 207"
 Cohesion: 0.18
@@ -3081,28 +4285,28 @@ Cohesion: 0.12
 Nodes (34): Buffer, Client, File, T, componentsResp(), newFakeClient(), TestBoundedStderrBufferKeepsTail(), TestClose_NilCmd() (+26 more)
 
 ### Community 209 - "Community 209"
-Cohesion: 0.19
-Nodes (27): jsonStringLit(), configGet(), configSet(), configShow(), configUsage(), getConfigKey(), jsonBool(), jsonNumber() (+19 more)
+Cohesion: 0.07
+Nodes (63): T, T, T, T, Writer, TestReadUsageSidecarMalformedJSON(), TestRenderSnippetDocsRendersAllFields(), TestResumeAndDiscardPendingRejectBadName() (+55 more)
 
 ### Community 210 - "Community 210"
 Cohesion: 0.07
 Nodes (27): aura config, Claude's Discretion, Commit decomposition, current_time delivery, Deferred Ideas, Degradation policy, finish_reason="length" (truncation), Generation params (+19 more)
 
 ### Community 211 - "Community 211"
-Cohesion: 0.15
-Nodes (25): failf(), logf(), main(), oneLine(), Closer, ResponseWriter, Server, T (+17 more)
+Cohesion: 0.08
+Nodes (26): Any, Entity, Fact, Preference, UUID, _drop_none(), NamsLongTermMemory, _normalize_entity() (+18 more)
 
 ### Community 212 - "Community 212"
 Cohesion: 0.07
 Nodes (27): 1. Summary, 2. Implementation-Readiness Map (per locked decision), 3. D-04 Open-Item Resolution (the ⚠), 5. Risks / Landmines (grounded in the read code), 6. Open Questions for the Planner (RESOLVED in plans), Architectural Responsibility Map, CI vs live-only, D-01 — semindex API shape: unexported pure core + `Classifier`/`Ranker` wrappers + vector-in doors (+19 more)
 
 ### Community 213 - "Community 213"
-Cohesion: 0.11
-Nodes (24): flakyTool, isTransientNetworkErr(), isTransientToolErr(), TestExecTool_DoesNotRetryMutating(), TestExecTool_DoesNotRetryPermanent(), TestExecTool_RetriesTransientNonMutating(), TestExecTool_StopsAtBudget(), TestExecTool_StopsOnCancelledParentCtx() (+16 more)
+Cohesion: 0.14
+Nodes (19): flakyTool, isTransientNetworkErr(), isTransientToolErr(), TestExecTool_DoesNotRetryMutating(), TestExecTool_DoesNotRetryPermanent(), TestExecTool_RetriesTransientNonMutating(), TestExecTool_StopsAtBudget(), TestExecTool_StopsOnCancelledParentCtx() (+11 more)
 
 ### Community 214 - "Community 214"
-Cohesion: 0.11
-Nodes (24): hookToolRunResult(), LlmAgentConfig, toolRunResult, LlmAgent, Breaker, Budget, Client, Config (+16 more)
+Cohesion: 0.07
+Nodes (35): hookToolRunResult(), LlmAgentConfig, recordToolDispatch(), toolRunResult, LlmAgent, Event, InvocationContext, ToolCall (+27 more)
 
 ### Community 215 - "Community 215"
 Cohesion: 0.15
@@ -3113,8 +4317,8 @@ Cohesion: 0.18
 Nodes (19): Store, assetFromSQL(), metadataFromJSON(), metadataJSON(), NewStore(), pgUUID(), timeValue(), uuidString() (+11 more)
 
 ### Community 217 - "Community 217"
-Cohesion: 0.03
-Nodes (64): mcp_serve(), Start the MCP server for Claude Desktop and other MCP hosts.      The server exp, Any, MemoryClient, MemoryObserver, Context, MemoryClient, MemoryObserver (+56 more)
+Cohesion: 0.04
+Nodes (48): Any, MemoryClient, MemoryObserver, Context, MemoryClient, MemoryObserver, Any, LLMProvider (+40 more)
 
 ### Community 218 - "Community 218"
 Cohesion: 0.18
@@ -3129,20 +4333,20 @@ Cohesion: 0.12
 Nodes (16): Accomplishments, Decisions Made, Dependency graph, Deviations, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 221 - "Community 221"
-Cohesion: 0.07
-Nodes (27): Anti-Patterns, Architectural Constraints, Architecture, Bypassing the deferred-tool flag, Calling `ask_user` alongside other tools in the same turn, Component Responsibilities — Current State, Component Responsibilities — Target State, Cross-Cutting Concerns (+19 more)
+Cohesion: 0.11
+Nodes (18): Anti-Patterns, Architectural Constraints, Architecture, Bypassing the Gateway for "simple" mutating tools, Component Responsibilities, Cross-Cutting Concerns, Data Flow, Entry Points (+10 more)
 
 ### Community 222 - "Community 222"
-Cohesion: 0.19
-Nodes (13): AppendTurnParams, cleanupSidecarOnTxError(), insertTurnAndAggregates(), optionalText(), writeTurnSidecar(), InsertConversationTurnParams, Context, Store (+5 more)
+Cohesion: 0.33
+Nodes (9): AppendTurnParams, cleanupSidecarOnTxError(), insertTurnAndAggregates(), InsertConversationTurnParams, Context, Store, InsertCacheMetricParams, Queries (+1 more)
 
 ### Community 223 - "Community 223"
 Cohesion: 0.14
 Nodes (16): Config, ConversationCleaner, CreateParams, SearchResult, conversationFromRow(), New(), normalizeSearchLimit(), Turn (+8 more)
 
 ### Community 224 - "Community 224"
-Cohesion: 0.22
-Nodes (27): HTTPClient, HTTPConfig, HandlerFunc, Server, T, httpInitHandler(), int64Ptr(), openHTTPTest() (+19 more)
+Cohesion: 0.14
+Nodes (44): HTTPClient, HTTPConfig, HandlerFunc, Server, T, RawMessage, ResponseWriter, T (+36 more)
 
 ### Community 225 - "Community 225"
 Cohesion: 0.16
@@ -3153,12 +4357,12 @@ Cohesion: 0.17
 Nodes (16): Context, Int4, Queries, Text, Timestamptz, UUID, GetTurnPointersParams, GetTurnPointersRow (+8 more)
 
 ### Community 227 - "Community 227"
-Cohesion: 0.14
-Nodes (43): Bool, Int4, Int8, Numeric, Text, Timestamptz, UUID, AuraAgentJobRuns (+35 more)
+Cohesion: 0.11
+Nodes (58): Bool, Int4, Int8, Numeric, Text, Timestamptz, UUID, AuraAgentJobRuns (+50 more)
 
 ### Community 228 - "Community 228"
-Cohesion: 0.20
-Nodes (14): SwarmReportTable(), SwarmReportTableProps, SwarmRow(), SwarmRowProps, hasField(), hasOptions(), isSwarmStatus(), statusDotClass() (+6 more)
+Cohesion: 0.08
+Nodes (39): filesystemProvisionAdapter, identityDeactivatorAdapter, objectStoreProvisionAdapter, sagaJournalAdapter, auraSubdir(), buildDeprovisioner(), buildProvisioningPorts(), identityDirRoots() (+31 more)
 
 ### Community 229 - "Community 229"
 Cohesion: 0.07
@@ -3173,12 +4377,12 @@ Cohesion: 0.07
 Nodes (26): Budget tree (shared *atomic.Int32), `cmd/aura/main.go aura swarm-demo` (route, optional) — NEW, `cmd/aura/main.go buildRegistryWithMCP` + `cmd/aura/chat.go bootChat` (config) — EDIT (D-21 fail-soft), `cmd/aura/mcp.go mcpRecipes` (config, CRUD) — EDIT (D-19), Deferred-tool pattern, Env var naming + loading, File Classification, goleak + race test setup (+18 more)
 
 ### Community 232 - "Community 232"
-Cohesion: 0.16
-Nodes (25): Client, Message, Pool, Runner, Store, T, Time, T (+17 more)
+Cohesion: 0.22
+Nodes (12): exitCodeFromMeta(), metaArtifact(), toolResultMetaMap(), usageStateDelta(), LlmAgent, Event, InvocationContext, Time (+4 more)
 
 ### Community 233 - "Community 233"
-Cohesion: 0.09
-Nodes (21): auraLegAdapter, authulaCoreAdapter, onboardingStatusAdapter, recoverySetupAdapter, telegramGetMeProbe(), buildOnboardingService(), isUniqueViolation(), newOnboardingStatusAdapter() (+13 more)
+Cohesion: 0.08
+Nodes (25): auraLegAdapter, authulaCoreAdapter, onboardingStatusAdapter, recoverySetupAdapter, telegramGetMeProbe(), newBotUsernameResolver(), buildOnboardingService(), isUniqueViolation() (+17 more)
 
 ### Community 234 - "Community 234"
 Cohesion: 0.09
@@ -3197,8 +4401,8 @@ Cohesion: 0.16
 Nodes (31): Bool, Int32, T, T, IsTransportError(), alwaysTransportListClient, TestReconnectServer_CallToolNonTransportErrorPropagates(), TestReconnectServer_CallToolOnClosedServer() (+23 more)
 
 ### Community 238 - "Community 238"
-Cohesion: 0.21
-Nodes (24): RawMessage, ReplyMarkup, T, callbackData(), newHitl(), markupOf(), optsJSON(), TestCallbackDataPanicsOverTelegramLimit() (+16 more)
+Cohesion: 0.07
+Nodes (50): hitlSend, botSender, Context, Message, RawMessage, Recipient, ReplyMarkup, Context (+42 more)
 
 ### Community 239 - "Community 239"
 Cohesion: 0.07
@@ -3217,24 +4421,24 @@ Cohesion: 0.08
 Nodes (25): Answer chrome, Architecture / stack / pitfalls (LOCKED shape), Canonical References, Citations & Source Explorer (DISP-03, DISP-05), Claude's Discretion (research-resolved — no operator input needed), Deferred Ideas, Display router & placement, Established Patterns (+17 more)
 
 ### Community 243 - "Community 243"
-Cohesion: 0.13
-Nodes (15): envFloatFailFast(), envIntFailFast(), int32Knob(), NewBudget(), resolveInt(), softCap(), BudgetOptions, recordBudgetConsumeStep() (+7 more)
+Cohesion: 0.15
+Nodes (14): envFloatFailFast(), envIntFailFast(), int32Knob(), NewBudget(), resolveInt(), softCap(), BudgetOptions, dedupRing (+6 more)
 
 ### Community 244 - "Community 244"
-Cohesion: 0.16
-Nodes (17): ChannelDeliverer, pendingNotificationAttemptBound(), DispatchDeps, Handler, HandlerMeta, Job, PendingNotificationStore, RunCompleter (+9 more)
+Cohesion: 0.15
+Nodes (18): ChannelDeliverer, isSilentSuccessKind(), pendingNotificationAttemptBound(), DispatchDeps, Handler, HandlerMeta, Job, PendingNotificationStore (+10 more)
 
 ### Community 245 - "Community 245"
-Cohesion: 0.13
-Nodes (23): _ensure_litellm(), LiteLLMEmbeddingProvider, LiteLLMProvider, Universal LiteLLM adapter for the Provider Protocol.  LiteLLM is the canonical u, Universal LLM provider routed through LiteLLM.      Implements both :class:`~neo, Universal embedding provider routed through LiteLLM.      Auto-populates :attr:`, Import :mod:`litellm` lazily, raising a helpful error if missing., Any (+15 more)
+Cohesion: 0.12
+Nodes (26): OpenAIEmbeddingProvider, OpenAIProvider, _OpenAISDKMixin, Native OpenAI adapter for the Provider Protocol.  Preferred over the LiteLLM pat, Map an :mod:`openai` exception to a :class:`ProviderError` subclass.      Return, Native OpenAI LLM provider.      Implements both :class:`~neo4j_agent_memory.llm, Use OpenAI strict-mode structured outputs when supported.          Falls back to, One-shot strict-mode call. Raises on validation/schema errors. (+18 more)
 
 ### Community 246 - "Community 246"
-Cohesion: 0.15
-Nodes (18): isLoopbackRemoteAddr(), principalFrom(), RequireAuth(), RequireCapability(), TestIsPublicPath_AuthBasePath(), TestRequireAuth_SessionValidatorSeam(), wantsHTML(), AuthDeps (+10 more)
+Cohesion: 0.42
+Nodes (10): allGatedRoutes(), connectGatedRoutes(), mutatingWriteRoutes(), newRequestFor(), TestGovernanceWriteAuthSweep401(), TestGovernanceWriteAuthSweep403(), TestGovernanceWriteAuthSweepGranteeReaches(), writeRoute (+2 more)
 
 ### Community 247 - "Community 247"
-Cohesion: 0.05
-Nodes (29): CachedGeocoder, create_geocoder(), GeocodingResult, GoogleGeocoder, NominatimGeocoder, Geocoding services for Location entities.  Provides geocoding functionality to c, Wait if needed to respect rate limit., Geocode a location string using Nominatim.          Args:             location: (+21 more)
+Cohesion: 0.02
+Nodes (85): { copyToArrayBufferInTargetRealm }, encode(), encoder, { TextEncoder }, arrayBuffer(), Blob, bytes(), { concatTypedArrays, copyToArrayBufferInTargetRealm } (+77 more)
 
 ### Community 248 - "Community 248"
 Cohesion: 0.18
@@ -3245,12 +4449,12 @@ Cohesion: 0.10
 Nodes (12): fakeDBTX, assignDest(), fakeRow, fakeRows, CommandTag, Conn, Context, fakeRow (+4 more)
 
 ### Community 250 - "Community 250"
-Cohesion: 0.08
-Nodes (25): ActionRouter helper (multi-action tools), Architectural patterns (mandatory), Behavioral rules (CLAUDE.md, apply to every change), Code style, Coding Conventions, Comments policy (mandatory), Commit discipline, Deferred-tool pattern (+17 more)
+Cohesion: 0.24
+Nodes (9): Code Style, Coding Conventions, Comments, Error Handling, Function Design, Import Organization, Logging, Module Design (+1 more)
 
 ### Community 251 - "Community 251"
-Cohesion: 0.08
-Nodes (25): APIs & External Services, Authentication & Identity, CI/CD & Deployment, Current implementation, Current implementation, Current implementation, Current implementation, Current implementation (+17 more)
+Cohesion: 0.22
+Nodes (8): APIs & External Services, Authentication & Identity, CI/CD & Deployment, Data Storage, Environment Configuration, External Integrations, Monitoring & Observability, Webhooks & Callbacks
 
 ### Community 252 - "Community 252"
 Cohesion: 0.12
@@ -3261,15 +4465,15 @@ Cohesion: 0.10
 Nodes (12): fakeDBTX, assignDest(), fakeRow, fakeRows, CommandTag, Conn, Context, fakeRow (+4 more)
 
 ### Community 254 - "Community 254"
-Cohesion: 0.15
-Nodes (21): Classifier, Embedder, RWMutex, Scored, Context, LabeledVec, Scored, T (+13 more)
+Cohesion: 0.12
+Nodes (24): Classifier, Context, Embedder, LabeledVec, RWMutex, Scored, ToolSearch, Context (+16 more)
 
 ### Community 255 - "Community 255"
 Cohesion: 0.16
-Nodes (21): Account, API, Callback, Context, dispatchBot, Editable, T, callbackContext() (+13 more)
+Nodes (22): Account, API, Callback, Context, dispatchBot, Editable, T, callbackContext() (+14 more)
 
 ### Community 256 - "Community 256"
-Cohesion: 0.17
+Cohesion: 0.16
 Nodes (16): Buffer, CancelFunc, Cmd, Config, Context, Int64, Mutex, RawMessage (+8 more)
 
 ### Community 257 - "Community 257"
@@ -3281,8 +4485,8 @@ Cohesion: 0.15
 Nodes (16): T, AuditActor, Context, Duration, Writer, Time, Frontmatter, indexClosingFence() (+8 more)
 
 ### Community 259 - "Community 259"
-Cohesion: 0.24
-Nodes (24): T, Addr, Client, T, AsWebError(), TestFetchImage_BlocksPrivateAndMetadata(), TestFetchImage_RedirectNotFollowed(), TestFetchImage_RejectsBadScheme() (+16 more)
+Cohesion: 0.16
+Nodes (27): T, Addr, Client, T, AsWebError(), sanitize(), TestFetchImage_BlocksPrivateAndMetadata(), TestFetchImage_RedirectNotFollowed() (+19 more)
 
 ### Community 260 - "Community 260"
 Cohesion: 0.19
@@ -3305,8 +4509,8 @@ Cohesion: 0.08
 Nodes (24): Architecture / stack / pitfalls (LOCKED shape), Backend graph access (LOCKED shape — reuse, do not re-invent), Canonical References, Claude's Discretion (resolved by directive + research — no further operator input needed), Default view + dense-graph strategy (GRAPH-04), Deferred Ideas, Established Patterns, Existing Code Insights (+16 more)
 
 ### Community 265 - "Community 265"
-Cohesion: 0.19
-Nodes (17): T, Context, ManagedServer, T, calendarEndpointOrGate(), reapIdleHTTPConns(), TestCalendarServerLive(), Transport (+9 more)
+Cohesion: 0.12
+Nodes (32): failf(), logf(), main(), oneLine(), contains(), intPtr(), memoryRecallEndpoint(), reapIdleHTTPConns() (+24 more)
 
 ### Community 266 - "Community 266"
 Cohesion: 0.12
@@ -3321,8 +4525,8 @@ Cohesion: 0.10
 Nodes (27): check, chunk, ingestResult, buildLargeMarkdown(), formatOccurrences(), main(), mib(), newStore() (+19 more)
 
 ### Community 269 - "Community 269"
-Cohesion: 0.35
-Nodes (16): Context, Pool, T, bootstrapURL(), envOrSkip(), migratedPool(), migrateToVersion(), seedPausedState() (+8 more)
+Cohesion: 0.05
+Nodes (44): Any, datetime, UUID, build_create_entity_query(), Build the CREATE_ENTITY query with dynamic type/subtype labels.      The query M, _build_metadata_filter_clause(), _build_metadata_filter_clause_json(), _deserialize_metadata() (+36 more)
 
 ### Community 270 - "Community 270"
 Cohesion: 0.16
@@ -3337,20 +4541,20 @@ Cohesion: 0.08
 Nodes (35): fakeDocDBTX, fakeDocRow, fakeDocRows, assignDocDest(), jobRowValues(), TestNewPostgresJobStoreWiresQueries(), TestPostgresJobStoreCreateBindsParamsAndMapsRow(), TestPostgresJobStoreCreatePropagatesScanError() (+27 more)
 
 ### Community 273 - "Community 273"
-Cohesion: 0.10
-Nodes (14): editCall, API, Callback, ChatAction, Editable, File, Message, Mutex (+6 more)
+Cohesion: 0.02
+Nodes (263): BaseModel, BaseSettings, EmbeddingConfig, EmbeddingProvider, EnrichmentConfig, EnrichmentProvider, ExtractionConfig, ExtractorType (+255 more)
 
 ### Community 274 - "Community 274"
 Cohesion: 0.12
-Nodes (25): T, Config, Message, Registry, T, T, T, T (+17 more)
+Nodes (27): T, T, Config, Message, Registry, T, T, T (+19 more)
 
 ### Community 275 - "Community 275"
 Cohesion: 0.19
 Nodes (16): AuraTelegramAccounts, Context, Pool, Queries, Text, Time, UUID, Account (+8 more)
 
 ### Community 276 - "Community 276"
-Cohesion: 0.17
-Nodes (22): Reader, Chunk, T, errReadBoom, errReader, parseSSE(), replayFixture(), TestAccumulate() (+14 more)
+Cohesion: 0.23
+Nodes (20): Reader, Chunk, T, parseSSE(), replayFixture(), TestAccumulate(), TestParseSSE_ConsumerStopsOnFinalize(), TestParseSSE_ConsumerStopsOnText() (+12 more)
 
 ### Community 277 - "Community 277"
 Cohesion: 0.15
@@ -3361,8 +4565,8 @@ Cohesion: 0.13
 Nodes (21): Answers, Client, Context, Step, Chunk, Context, Request, T (+13 more)
 
 ### Community 279 - "Community 279"
-Cohesion: 0.18
-Nodes (21): doctorLiveEnvReady(), TestDoctorLiveStack(), T, TestLoadDBAssetObjectStoreDefaultsAndOverrides(), LoadDB(), clearMCPEnv(), TestCalculatorContainerDefaultOn(), TestCalculatorContainerDefaultOn_EnvServersOverrideWins() (+13 more)
+Cohesion: 0.19
+Nodes (27): configGet(), configSet(), configShow(), configUsage(), getConfigKey(), isMissingAPIKey(), jsonBool(), jsonNumber() (+19 more)
 
 ### Community 280 - "Community 280"
 Cohesion: 0.11
@@ -3417,28 +4621,28 @@ Cohesion: 0.15
 Nodes (21): Actions, Actions, AwaitingInput, Event, decodeSpan(), decodeSpanPtr(), hexPtr(), uuidPtrIfSet() (+13 more)
 
 ### Community 293 - "Community 293"
-Cohesion: 0.14
-Nodes (23): NoOpExtractor, Extractor that does nothing (for when extraction is disabled)., _convert_merge_strategy(), create_extraction_pipeline(), create_extractor(), create_gliner_extractor(), create_llm_extractor(), create_spacy_extractor() (+15 more)
+Cohesion: 0.22
+Nodes (12): Identity, Store, fromRow(), isUniqueViolation(), New(), parseUUID(), ValidateCapabilityName(), AuraIdentities (+4 more)
 
 ### Community 294 - "Community 294"
-Cohesion: 0.13
-Nodes (25): delay(), BrowserUploadProbe, applyAuthState(), asError(), AuthConfig, authenticateViaApi(), authenticateViaAuthula(), authStatePath() (+17 more)
+Cohesion: 0.14
+Nodes (8): CDATASectionImpl, NODE_TYPE, DOMException, { domSymbolTree }, idlUtils, { mixin }, NODE_TYPE, TextImpl
 
 ### Community 295 - "Community 295"
 Cohesion: 0.12
-Nodes (18): LlmAgent, Context, Duration, ReasoningTier, T, Config, Message, ReasoningConfig (+10 more)
+Nodes (20): LlmAgent, Context, Duration, ReasoningTier, T, Config, Message, ReasoningConfig (+12 more)
 
 ### Community 296 - "Community 296"
-Cohesion: 0.14
-Nodes (20): SwarmContext(), WithSwarmContext(), SwarmContextValue, swarmCtxKey, Budget, Client, Config, Context (+12 more)
+Cohesion: 0.13
+Nodes (21): SwarmContext(), WithSwarmContext(), SwarmContextValue, swarmCtxKey, Budget, Client, Config, Context (+13 more)
 
 ### Community 297 - "Community 297"
-Cohesion: 0.12
-Nodes (26): buildObjectStore(), filesystemObjectRoot(), isDefaultObjectStoreEndpoint(), Config, Context, Store, fakeStorageLedger, TestStorageOrphanCleanupRequiresTokenAndConfirmation() (+18 more)
+Cohesion: 0.04
+Nodes (51): createScriptingDisabledDocument(), Document, idlUtils, parseFromString(), { parseIntoDocument }, canDispatchEvents(), { computedMIMEType }, { evaluateJavaScriptURL } (+43 more)
 
 ### Community 298 - "Community 298"
-Cohesion: 0.21
-Nodes (17): TestAppendTurnWrites_PostgresTextSafeContent(), TestCleanupSidecarOnTxError_RemovesSpilledFileOnRollback(), TestDisplayTitle(), TestInsertContextRotEvent_BadUUID(), TestLoadManagedHistory_BadUUID(), TestNewStore_DefaultCap(), TestNormalizeSearchLimitBoundsInt32(), TestOptionalText() (+9 more)
+Cohesion: 0.20
+Nodes (18): repairToolMessagePairs(), TestAppendTurnWrites_PostgresTextSafeContent(), TestCleanupSidecarOnTxError_RemovesSpilledFileOnRollback(), TestDisplayTitle(), TestInsertContextRotEvent_BadUUID(), TestLoadManagedHistory_BadUUID(), TestNewStore_DefaultCap(), TestNormalizeSearchLimitBoundsInt32() (+10 more)
 
 ### Community 299 - "Community 299"
 Cohesion: 0.08
@@ -3454,7 +4658,7 @@ Nodes (17): Context, RawMessage, Spec, T, ToolResult, ToolSearch, conceptEmbedde
 
 ### Community 302 - "Community 302"
 Cohesion: 0.04
-Nodes (33): DisplayPagination(), McpProbeResult, McpServerRow, McpLifecycleClusterProps, McpServerDetailProps, browserLanguage(), changeAppLanguage(), detectInitialLanguage() (+25 more)
+Nodes (43): { asciiLowercase }, AST_TYPES, calcContainedRegEx, calcNameRegEx, calcRegEx, cssTree, GLOBAL_KEYS, isValidPropertyValue() (+35 more)
 
 ### Community 303 - "Community 303"
 Cohesion: 0.15
@@ -3469,8 +4673,8 @@ Cohesion: 0.05
 Nodes (38): Learner, New(), observation, CancelFunc, Config, Context, Map, Once (+30 more)
 
 ### Community 306 - "Community 306"
-Cohesion: 0.19
-Nodes (17): Duration, Mutex, Time, cache, Duration, T, Time, cache (+9 more)
+Cohesion: 0.17
+Nodes (19): Duration, Mutex, Time, cache, Duration, T, Time, URL (+11 more)
 
 ### Community 307 - "Community 307"
 Cohesion: 0.11
@@ -3509,8 +4713,8 @@ Cohesion: 0.17
 Nodes (14): barrierTool, contextDeadlineTool, runParallelConcurrentAndOrdered(), TestDispatch_ParallelConcurrentAndOrdered(), TestDispatch_ParallelDedupRingRaceClean(), panicTool, trackingTool, Context (+6 more)
 
 ### Community 316 - "Community 316"
-Cohesion: 0.14
-Nodes (20): AuditInsert, InsertSkillAuditParams, AuraSkillAudit, Context, Pool, Queries, AuditStore, Time (+12 more)
+Cohesion: 0.05
+Nodes (40): 404-on-miss existence hiding, Attachment download headers, Auth / capability gate, Backend — Go, `cmd/aura/serve_webui.go` (modified — ~4 LOC, 593 → ~597), `cmd/aura/serve_webui_share.go` **(new)** — analog `serve_webui_musr.go` (whole file), Consumer-declared interfaces (no reverse imports), Error wrapping (+32 more)
 
 ### Community 317 - "Community 317"
 Cohesion: 0.11
@@ -3525,8 +4729,8 @@ Cohesion: 0.16
 Nodes (16): bm25Index, Context, Embedder, Mutex, Ranker, RawMessage, Registry, Spec (+8 more)
 
 ### Community 320 - "Community 320"
-Cohesion: 0.21
-Nodes (22): TestPhase13ConfigDefaultsAndOverrides(), TestWhatsAppBridgeURLDefaultAndOverride(), clearPostgresEnv(), TestAGUIConfigDefaultsAndOverrides(), TestComposeDSNEscapesComponents(), TestEmbedDimensions_RequiredNonZero(), TestEnvDefault_FallbackOnUnset(), TestLoad_ComposesFromPrimitives() (+14 more)
+Cohesion: 0.15
+Nodes (27): Duration, Mutex, ReasoningEffort, Request, Response, RoundTripper, T, Time (+19 more)
 
 ### Community 321 - "Community 321"
 Cohesion: 0.17
@@ -3561,24 +4765,24 @@ Cohesion: 0.21
 Nodes (21): T, T, TestApplyAnswerUnknownStep(), TestCurrentPromptPerStep(), TestMergeAnswersAllFields(), TestMergeAnswersPreservesExistingOnEmptyFields(), TestMergeAnswersTextOnlyAtIdentityStep(), TestPreferencesJSONPopulated() (+13 more)
 
 ### Community 329 - "Community 329"
-Cohesion: 0.20
-Nodes (22): T, mustMkdir(), mustWrite(), TestAtomicWriteCreateTempError(), TestDefaultRootUnderHome(), TestNewStoreEmptyRootFallsBackToDefault(), TestReadProfileInvalidIdentity(), TestReadProfileMalformedMetadata() (+14 more)
+Cohesion: 0.19
+Nodes (23): T, DefaultRoot(), mustMkdir(), mustWrite(), TestDefaultRootUnderHome(), TestNewStoreEmptyRootFallsBackToDefault(), TestReadProfileInvalidIdentity(), TestReadProfileMalformedMetadata() (+15 more)
 
 ### Community 330 - "Community 330"
 Cohesion: 0.11
 Nodes (19): 10/10 Quality Score Rubric, API Design, Bucket and Garbage Cleanup Design, Current-State Audit, Design - Industrial document ingestion audit, Embedding Lifecycle Design, End-to-End Validation Plan, Evidence Base (+11 more)
 
 ### Community 331 - "Community 331"
-Cohesion: 0.18
+Cohesion: 0.12
 Nodes (11): Integration Gotchas, "Looks Done But Isn't" Checklist, Performance Traps, Pitfall-to-Phase Mapping, Pitfalls Research, Recovery Strategies, Security Mistakes, Sources (+3 more)
 
 ### Community 332 - "Community 332"
-Cohesion: 0.11
-Nodes (12): EnrichmentProvider, EnrichmentResult, UUID, Background enrichment processing.  Uses asyncio for non-blocking background enri, Add an entity to the enrichment queue.          Args:             entity_id: Ent, Main worker loop processing enrichment tasks., Process a single enrichment task., Update entity in Neo4j with enrichment data. (+4 more)
+Cohesion: 0.08
+Nodes (28): acquireStore, anyToolResultContains(), drainForPause(), extractApprovalRelay(), firstJSONObject(), lastToolResult(), newRTPauseStore(), scriptRoundTripTurn() (+20 more)
 
 ### Community 333 - "Community 333"
-Cohesion: 0.06
-Nodes (35): dependencies, assistant-stream, @assistant-ui/react, @assistant-ui/react-markdown, class-variance-authority, clsx, graphology, graphology-layout-forceatlas2 (+27 more)
+Cohesion: 0.05
+Nodes (37): dependencies, assistant-stream, @assistant-ui/react, @assistant-ui/react-markdown, class-variance-authority, clsx, docx-preview, graphology (+29 more)
 
 ### Community 334 - "Community 334"
 Cohesion: 0.09
@@ -3597,8 +4801,8 @@ Cohesion: 0.09
 Nodes (21): Brand asset, Canonical References, Claude's Discretion, Deferred Ideas, Embed & build pipeline (FND-02, FND-06), Established Patterns, Existing Code Insights, Implementation Decisions (+13 more)
 
 ### Community 338 - "Community 338"
-Cohesion: 0.15
-Nodes (18): CatalogHit, AuditActor, Context, Writer, CatalogHit, CatalogResult, CheckItem, CommandRunner (+10 more)
+Cohesion: 0.26
+Nodes (18): CommandRunner, Installer, T, T, fakeAdd(), installPastValidation(), newTestInstaller(), TestInstallChecklistFiveItems() (+10 more)
 
 ### Community 339 - "Community 339"
 Cohesion: 0.25
@@ -3606,19 +4810,19 @@ Nodes (12): decodeMCPBody(), mcpWriteResponseFrom(), writeMCPWriteError(), mcpTr
 
 ### Community 340 - "Community 340"
 Cohesion: 0.11
-Nodes (16): prefixSnapshot(), recordPrefixDrift(), LlmAgent, Message, T, T, Message, Message (+8 more)
+Nodes (19): assertShape(), composeHistory(), main(), renderMessages1(), run(), prefixSnapshot(), recordPrefixDrift(), LlmAgent (+11 more)
 
 ### Community 341 - "Community 341"
 Cohesion: 0.14
 Nodes (15): prefixMutatingHook, textOnceClient, ptrI(), TestBudgetTryReserveIsAtomic(), TestPrefixDrift_DetectedAfterHookRewrite(), Chunk, Context, HookTurn (+7 more)
 
 ### Community 342 - "Community 342"
-Cohesion: 0.15
+Cohesion: 0.13
 Nodes (9): errConvStore, Branch, Context, Conversation, CreateParams, Message, RotEvent, SearchResult (+1 more)
 
 ### Community 343 - "Community 343"
-Cohesion: 0.21
-Nodes (15): MetricParams, anyInt64(), anyNumericFloat(), NewInsertParams(), mustNumeric(), TestAnyInt64_DecodeShapes(), TestAnyInt64_UnparseableErrors(), TestAnyNumericFloat_DecodeShapes() (+7 more)
+Cohesion: 0.15
+Nodes (16): deprovFakes, fakeAuthulaDeleter, fakeConvPurger, fakeDeactivator, fakeGraphPurger, fakeIdentityDeleter, fakeJobs, fakeSessions (+8 more)
 
 ### Community 344 - "Community 344"
 Cohesion: 0.17
@@ -3633,12 +4837,12 @@ Cohesion: 0.15
 Nodes (17): assetScanErrorRow, captureAssetDBTX, argAt(), compactSQL(), invokeLifecycleMethod(), lifecycleArgs(), reflectValues(), TestStoreLifecycleUpdatesScopeMutationsToIdentity() (+9 more)
 
 ### Community 347 - "Community 347"
-Cohesion: 0.15
-Nodes (11): rebuildMessages(), memCacheMetricStore, memConvStore, AppendTurnParams, Context, ContextConfig, Conversation, CreateParams (+3 more)
+Cohesion: 0.07
+Nodes (24): newMemConvStore(), newMemPauseStore(), rebuildMessages(), TestRebuildMessagesInvalidToolCallsErrors(), memCacheMetricStore, memConvStore, memIdentityStore, memPauseStore (+16 more)
 
 ### Community 348 - "Community 348"
-Cohesion: 0.12
-Nodes (24): absRunDir(), auraHomeDir(), composeDSN(), defaultRunDir(), defaultSkillExportDir(), defaultSkillInjectionBlocklist(), defaultSkillsDir(), envDefault() (+16 more)
+Cohesion: 0.10
+Nodes (28): absRunDir(), auraHomeDir(), composeDSN(), defaultRunDir(), defaultSkillExportDir(), defaultSkillInjectionBlocklist(), defaultSkillsDir(), envDefault() (+20 more)
 
 ### Community 349 - "Community 349"
 Cohesion: 0.13
@@ -3646,23 +4850,30 @@ Nodes (13): Neo4jCrewMemory, CrewAI memory integration., Async implementation of
 
 ### Community 350 - "Community 350"
 Cohesion: 0.09
-Nodes (33): authulaPasswordResetter, passwordResetCoreProvider, passwordResetServer, passwordResetTokenLocker, passwordResetTokenQueries, pgPasswordResetTokenClaim, recoveryCodeDeliverer, recoveryStoreAdapter (+25 more)
+Nodes (32): authulaPasswordResetter, passwordResetCoreProvider, passwordResetServer, passwordResetTokenLocker, passwordResetTokenQueries, pgPasswordResetTokenClaim, recoveryCodeDeliverer, recoveryStoreAdapter (+24 more)
 
 ### Community 351 - "Community 351"
-Cohesion: 0.03
-Nodes (87): fetchGraphSchema(), postGraphQuery(), GraphExplorer(), GraphExplorerProps, INITIAL_VIEW, SigmaCanvas, ViewState, ViewStatus (+79 more)
+Cohesion: 0.06
+Nodes (35): 10. Test-First Implementation Contract, 11. Acceptance Criteria, 12. Implementation Sequence, 13. Risks and Mitigations, 14. Research References, 1. Outcome, 2. Evidence and Current-State Findings, 3. Goals (+27 more)
 
 ### Community 352 - "Community 352"
-Cohesion: 0.12
-Nodes (31): chunkText(), clamp(), cleanup(), containsAll(), cosine(), decoyLines(), degradeJPEG(), denseOrder() (+23 more)
+Cohesion: 0.05
+Nodes (59): { asciiLowercase }, {
+  borderProperties,
+  getPositionValue,
+  normalizeProperties,
+  prepareBorderProperties,
+  prepareProperties,
+  shorthandProperties
+}, computedStyle, csstree, cssValues, DOMException, idlUtils, propertyDefinitions (+51 more)
 
 ### Community 353 - "Community 353"
-Cohesion: 0.13
-Nodes (10): adapt_to_embedding_provider(), adapt_to_legacy_embedder(), _EmbedderToProviderAdapter, _ProviderToEmbedderAdapter, Base embedder protocol and utilities.  .. deprecated:: 0.3.0     The :class:`Emb, Return ``embedder`` as an :class:`EmbeddingProvider`.      Accepts either an :cl, Wraps an :class:`EmbeddingProvider` to expose the old :class:`Embedder` API., Return ``provider`` as a legacy :class:`Embedder`.      Accepts either an :class (+2 more)
+Cohesion: 0.12
+Nodes (16): TestBreakerOpenRoutesToFinalize(), TestInjectedBreakerIsSharedNotPerAgent(), resolveBreaker(), T, Breaker, LlmAgentConfig, Breaker, Duration (+8 more)
 
 ### Community 354 - "Community 354"
-Cohesion: 0.16
-Nodes (24): T, Skill, T, Frontmatter, T, MaterializeBuiltins(), TestMaterializeBuiltinsAppearsInLoader(), TestMaterializeBuiltinsIdempotent() (+16 more)
+Cohesion: 0.23
+Nodes (19): T, Skill, T, MaterializeBuiltins(), TestMaterializeBuiltinsAppearsInLoader(), TestMaterializeBuiltinsIdempotent(), TestMaterializeFindSkillsAuraAlwaysOn(), writeIfChanged() (+11 more)
 
 ### Community 355 - "Community 355"
 Cohesion: 0.11
@@ -3673,8 +4884,8 @@ Cohesion: 0.08
 Nodes (23): compilerOptions, exactOptionalPropertyTypes, isolatedModules, jsx, lib, module, moduleResolution, noEmit (+15 more)
 
 ### Community 357 - "Community 357"
-Cohesion: 0.07
-Nodes (46): candidate, audioProbe(), logf(), main(), ollamaChat(), ollamaPS(), probe(), renderTablePNG() (+38 more)
+Cohesion: 0.11
+Nodes (28): candidate, audioProbe(), logf(), main(), ollamaChat(), ollamaPS(), probe(), renderTablePNG() (+20 more)
 
 ### Community 358 - "Community 358"
 Cohesion: 0.10
@@ -3701,8 +4912,8 @@ Cohesion: 0.09
 Nodes (30): errReader, hookMetricErrorHook, drainRun(), findMetricFamily(), metricInt(), metricMapInt(), ptrInt(), TestHookMetric_ErrorOutcome() (+22 more)
 
 ### Community 364 - "Community 364"
-Cohesion: 0.25
-Nodes (17): repoRoot(), cacheFixtureRequestCount(), hashOfLine(), linesWithPrefix(), nonEmptyLines(), TestCacheAudit_AllEqual_Exit0(), TestCacheAudit_CorruptFixture_Exit2(), TestCacheAudit_FixturesIncludeToolCalls() (+9 more)
+Cohesion: 0.06
+Nodes (3): getTypeFromAttribute(), HTMLInputElementImpl, valueAttributeMode()
 
 ### Community 365 - "Community 365"
 Cohesion: 0.09
@@ -3713,8 +4924,8 @@ Cohesion: 0.04
 Nodes (53): Bug Report And Correctness Findings, [P1] F-001 Full-host shell and filesystem tools lack an industrial capability boundary, [P1] F-002 Sample environment disables destructive shell approval by using an empty override, [P1] F-003 Terminal `text_response` can execute after mutating sibling tools, [P1] F-004 Batch pause resume injects answers before atomically claiming pauses, [P1] F-005 Conversation sidecar loading trusts DB-stored paths, [P1] F-006 Command hooks default to fail-open, [P1] F-007 Static object-store and Garage credentials are accepted as defaults (+45 more)
 
 ### Community 367 - "Community 367"
-Cohesion: 0.13
-Nodes (25): applyL1(), mustEncoderRaw(), TestApplyL1_PreservesNonSidecarToolAnswers(), TestHardCap(), TestL1_DisabledWhenEvictNonPositive(), TestL1_EvictPreservesExistingReadToolOutputSpillID(), TestL1_EvictPreservesHTMLEscapedReadToolOutputSpillID(), TestL1_EvictPreservesRealTruncationFooterOverFakeEarlierPointer() (+17 more)
+Cohesion: 0.12
+Nodes (28): TestAlwaysBlockInjectedAfterSystem(), TestAlwaysBlockOmittedWhenEmpty(), TestAlwaysBlockSurvivesL25Reduction(), applyL1(), TestProfileBlockOmittedWhenContextBlockEmpty(), TestProfileBlockSurvivesL1ToolEviction(), TestProfileSkillsBlockSurvivesL25Reduction(), mustEncoderRaw() (+20 more)
 
 ### Community 368 - "Community 368"
 Cohesion: 0.18
@@ -3729,32 +4940,32 @@ Cohesion: 0.16
 Nodes (20): Any, Neo4jMicrosoftMemory, ReasoningTrace, format_traces_for_prompt(), _get_content(), _get_role(), get_similar_traces(), _get_tool_arguments() (+12 more)
 
 ### Community 371 - "Community 371"
-Cohesion: 0.15
-Nodes (15): Clock, EmbedQueue, SearchBackend, SparseIndexer, Extractor, Context, Service, EmbeddingGenerator (+7 more)
+Cohesion: 0.14
+Nodes (17): Clock, EmbedQueue, SearchBackend, normalizeIngestRequest(), SparseIndexer, Extractor, Context, Service (+9 more)
 
 ### Community 372 - "Community 372"
-Cohesion: 0.11
-Nodes (25): AnyFloat(), AnyInt(), FlushRemainder(), IsTerminalToolCall(), IsToolResultPreview(), chatAnyIntOld(), evalAnyIntOld(), TestAnyFloat() (+17 more)
+Cohesion: 0.09
+Nodes (29): AnyFloat(), AnyInt(), FlushRemainder(), IsTerminalToolCall(), IsToolResultPreview(), chatAnyIntOld(), evalAnyIntOld(), TestAnyFloat() (+21 more)
 
 ### Community 373 - "Community 373"
-Cohesion: 0.25
-Nodes (20): buildSeamFreeSkillsRegistry(), buildSkillsRegistry(), driveSkillsLoop(), enforceSkills(), newInspectableWorkspace(), runSkillsScenario(), runSkillsTurn(), skillsHardFloorPass() (+12 more)
+Cohesion: 0.17
+Nodes (25): skillsScenarios(), skillsSnippetReuseScenarios(), buildSeamFreeSkillsRegistry(), buildSkillsRegistry(), driveSkillsLoop(), enforceSkills(), newInspectableWorkspace(), runSkillsScenario() (+17 more)
 
 ### Community 374 - "Community 374"
-Cohesion: 0.11
-Nodes (11): BatchExtractionResult, Number of successfully processed items., Number of failed items., Success rate as a fraction (0.0-1.0)., Total entities extracted across all successful items., Total relations extracted across all successful items., Get list of (index, error_message) for failed items., Extract entities from multiple texts in parallel.          This method efficient (+3 more)
+Cohesion: 0.06
+Nodes (30): argon2 envelope discipline (R1; Pitfall 3), `cmd/aura/identity.go` (controller, EDIT) — in-file pattern, `cmd/aura/recover_operator.go` (controller, CLI glue), Coverage, DC-1 — `AURA_AUTHULA_SECRET` is ALREADY present in the coverage-gate job (contradicts D-09 / Pitfall 2), DC-2 — `identity.Identity` has a 4th field `Deactivated` (guard example is stale), Drift Corrections (research vs. live codebase — planner MUST read), File Classification (+22 more)
 
 ### Community 375 - "Community 375"
-Cohesion: 0.23
-Nodes (17): knobRegistry(), reparsePass(), checkableKnobs(), drawGarbage(), findViolation(), TestKnobRegistry(), TestRapidEnvAggregationMonotonic(), TestRapidEnvNoFalsePositive() (+9 more)
+Cohesion: 0.19
+Nodes (19): knobRegistry(), reparsePass(), checkableKnobs(), drawGarbage(), findViolation(), TestKnobRegistry(), TestRapidEnvAggregationMonotonic(), TestRapidEnvNoFalsePositive() (+11 more)
 
 ### Community 376 - "Community 376"
-Cohesion: 0.11
-Nodes (25): runAgentRequest, decodeRunAgentRequest(), appendUniqueAssets(), BuildAttachmentBlock(), BuildKnowledgeCatalog(), sanitizeLine(), TestBuildAttachmentBlockGuidesDocumentSearchAndSanitizesLines(), TestBuildKnowledgeCatalogEmptyWhenNothingSearchable() (+17 more)
+Cohesion: 0.14
+Nodes (21): appendUniqueAssets(), BuildAttachmentBlock(), BuildKnowledgeCatalog(), sanitizeLine(), TestBuildAttachmentBlockGuidesDocumentSearchAndSanitizesLines(), TestBuildKnowledgeCatalogEmptyWhenNothingSearchable(), TestBuildKnowledgeCatalogListsSearchableDocsExcludingAttached(), TestBuildTurnContextComposesAttachmentAndCatalogChannelAgnostic() (+13 more)
 
 ### Community 377 - "Community 377"
-Cohesion: 0.18
-Nodes (12): Context, RawMessage, Spec, T, ToolResult, alphaTool, deferredMidTool, TestFilesystemToolSpecsDescribeOperationalContracts() (+4 more)
+Cohesion: 0.20
+Nodes (19): TestIngestAgentFileBypassesLimits(), TestIngestAgentFilePutErrorMovesAssetToFailed(), TestIngestAgentFileStoresAcceptedAssetSkippingProcess(), newAssetServiceTestRig(), newFakeAssetStore(), TestServiceFinalizeMarksAcceptedAndEnqueuesProcessing(), TestServiceFinalizeRefusesOversizedActualObject(), TestServiceIngestTelegramFileStoresObjectAndReturnsProcessedAsset() (+11 more)
 
 ### Community 378 - "Community 378"
 Cohesion: 0.17
@@ -3770,7 +4981,7 @@ Nodes (21): Chunk, Config, HandlerFunc, Request, T, captureBody(), drain(), fixt
 
 ### Community 381 - "Community 381"
 Cohesion: 0.20
-Nodes (16): Context, Response, Client, ResultMetadata, Values, Result, ResultMetadata, SearchParams (+8 more)
+Nodes (16): Context, Response, Values, Client, ResultMetadata, Result, ResultMetadata, SearchParams (+8 more)
 
 ### Community 382 - "Community 382"
 Cohesion: 0.10
@@ -3837,8 +5048,8 @@ Cohesion: 0.10
 Nodes (19): 1. `internal/db/migrations/0022_mcp_audit.{up,down}.sql` (migration, append-only ledger), 2. `internal/mcp/manager/audit.go` (store, append-INSERT in tx) — NEW, 3. `internal/mcp/manager/envedit.go` (service, transform) — NEW (the one MCP backend gap-filler), 4. `internal/agui/governance_write_api.go` (controller, request-response) — NEW, 5. `internal/agui/governance_write_seam.go` (provider interface) — NEW, 6. `internal/skills/installer.go` (service, file-I/O + exec transport) — NEW (the largest net-new piece), 7. Skills lifecycle endpoints — `Activate` / `Restore` / `Archive` reuse (in the write provider), 8. `cmd/aura/serve_webui.go` (route + capability mount) — MODIFY in place (+11 more)
 
 ### Community 398 - "Community 398"
-Cohesion: 0.24
-Nodes (18): newResolveTestServer(), postResolve(), TestApprovalsAPI_ListNoStore(), TestApprovalsAPI_ListProjectionSanitizes(), TestApprovalsAPI_ListStoreError(), TestApprovalsAPI_ResolveInvalidBody(), TestApprovalsAPI_ResolveNonUUIDToken(), TestApprovalsAPI_ResolvePauseNotFound() (+10 more)
+Cohesion: 0.34
+Nodes (15): newResolveTestServer(), postResolve(), TestApprovalsAPI_ListNoStore(), TestApprovalsAPI_ListProjectionSanitizes(), TestApprovalsAPI_ListStoreError(), TestApprovalsAPI_ResolveInvalidBody(), TestApprovalsAPI_ResolveNonUUIDToken(), TestApprovalsAPI_ResolvePauseNotFound() (+7 more)
 
 ### Community 399 - "Community 399"
 Cohesion: 0.15
@@ -3857,20 +5068,20 @@ Cohesion: 0.08
 Nodes (23): Audit findings (the F-026 contract — MUST read), Available dependency (don't reinvent), Canonical References, Claude's Discretion, Code to extend / mirror (read before writing), Deferred Ideas, Established Patterns, Existing Code Insights (+15 more)
 
 ### Community 403 - "Community 403"
-Cohesion: 0.33
-Nodes (7): Registry, T, TestRegisterDistinctNamesSucceeds(), TestRegisterDuplicateNamePanics(), TestWithout(), TestWithoutMultipleNames(), Without()
+Cohesion: 0.14
+Nodes (33): BackupHandler, backupDir(), requireLiveBackupEnv(), TestBackupNetworkPostgresLive(), containsFileWith(), fakeNeo4jHandler(), fakePostgresHandler(), setBackupEnv() (+25 more)
 
 ### Community 404 - "Community 404"
-Cohesion: 0.10
-Nodes (19): Configuration, Current implementation, Current implementation, Current implementation, Current implementation, Current implementation, Current implementation, Frameworks (+11 more)
+Cohesion: 0.25
+Nodes (7): Configuration, Frameworks, Key Dependencies, Languages, Platform Requirements, Runtime, Technology Stack
 
 ### Community 405 - "Community 405"
 Cohesion: 0.16
 Nodes (13): identityAuditFromRow(), IdentityAuditFilter, IdentityAuditRow, IdentityAuditInsert, IdentityAuditRow, Context, Context, IdentityAuditStore (+5 more)
 
 ### Community 406 - "Community 406"
-Cohesion: 0.17
-Nodes (14): FailPolicy, HookManager, recoverHook(), HookTurn, ModelHookResult, ToolHookResult, ToolResultHookResult, LlmAgent (+6 more)
+Cohesion: 0.05
+Nodes (40): ConsolidationReport, Any, Neo4jClient, Any, Neo4jClient, Identify reasoning traces with many steps that lack a summary.          v0.5 shi, Find preference pairs likely to be supersedes.          Two preferences in the s, Mark conversations older than ``ttl_days`` as archived.          Pairs with ``Me (+32 more)
 
 ### Community 407 - "Community 407"
 Cohesion: 0.07
@@ -3881,12 +5092,12 @@ Cohesion: 0.18
 Nodes (15): fakeSnippet, SkillMeta, T, fakeSkillLoader, fakeSnippet, newFakeLoader(), TestSkillDescriptionByteStable(), TestSkillDispatchErrors() (+7 more)
 
 ### Community 409 - "Community 409"
-Cohesion: 0.32
-Nodes (15): T, panickingAgent, NewParallel(), budgetIC(), TestParallelAgent_BackpressureAckChannel(), TestParallelAgent_ChildrenShareParentBudget(), TestParallelAgent_DepthChainBudgetShared_NotFresh(), TestParallelAgent_EscalateFromAnyCancelsSiblings() (+7 more)
+Cohesion: 0.16
+Nodes (29): Client, Reader, Resources, T, T, Client, T, Client (+21 more)
 
 ### Community 410 - "Community 410"
-Cohesion: 0.21
-Nodes (11): AuraConversations, Context, Numeric, Queries, Text, UUID, CreateConversationParams, RenameConversationParams (+3 more)
+Cohesion: 0.15
+Nodes (17): AuraConversations, Context, Numeric, Queries, Text, UUID, CreateConversationParams, DeleteConversationForIdentityParams (+9 more)
 
 ### Community 411 - "Community 411"
 Cohesion: 0.25
@@ -3897,8 +5108,8 @@ Cohesion: 0.22
 Nodes (17): Duration, Logger, Mutex, Time, Buffer, Logger, T, installOTelErrorHandler() (+9 more)
 
 ### Community 413 - "Community 413"
-Cohesion: 0.07
-Nodes (26): 2026-06-18 Edge/Web Lint Memory, 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack., Accumulated Context, Blockers/Concerns, Current Position, Decisions, Deferred Items, Operator Next Steps (+18 more)
+Cohesion: 0.04
+Nodes (47): 34-06 — Atomic HITL resume/pause (ONE cross-store db.WithTx) + Stop goroutine-leak fix (LOOP-02/03/04/11). New consumer-side `ResumeCommitter` seam in `runner/interfaces.go` (`CommitResume`/`CommitResumeBatch`/`CommitPause` + `ResumeClaim`). Two impls in `resume_committer.go`: `PoolResumeCommitter` (owns the pool + concrete `*askuser.Store`/`*conversations.Store`; each method runs ONE `db.WithTx` composing the 34-05 `MarkResumedTx`/`MarkResumedBatchTx`/`InsertTx` + `AppendTurnTx`, reserving the turn seq under the conversation row-lock via the shared sqlc queries because `AppendTurnTx` requires `Seq>0` and the conversations allocator is unexported — D-02), and `splitResumeCommitter` (pool-less non-atomic fallback over the narrow Conv/Pause interfaces so cache_audit + unit tests compile unchanged). `runner.New` nil-defaults to split; `cmd/aura/chat.go` injects `NewPoolResumeCommitter(pool, convStore, pauseStore)`. `SubmitAnswer`→`CommitResume` (claim+append one tx; duplicate→`ErrPauseNotFound`, no second answer; append-fail-after-claim rolls back → `resumed_at IS NULL` → retryable — D-06 conditional-update idempotency, the claimed-without-answer residual is now structurally impossible). `SubmitAnswers`→`CommitResumeBatch` (claim-all-sorted-then-append-all, replacing the inject-first bug; concurrent duplicate batch → one winner, loser `ErrPauseNotFound`, deadlock-free, exactly one answer/pause). `persistPause` stops inserting — it mints the token + accumulates `InsertParams` in `tr.pauseInserts`; `flushPause`→`CommitPause` writes the assistant ask_user tool_call turn + all N `paused_states` rows in one tx, so a pause is consumable only after durable wire-valid history (F-030). A1 CONFIRMED: `agent.AwaitingInput` carries no token, so moving the insert surfaces none early. `waitWorkers` replaces its per-call waiter goroutine with a lifecycle-owned `sync.Once`+`stopDone` — repeated `Stop` on a hung title worker no longer leaks a waiter per call (F-045); proven by a `runtime.NumGoroutine`-delta test (verified to catch the regression: base=4→after=24 with the bug) that deterministically unblocks+joins its ctx-honoring hung client so package goleak stays green. NEW `internal/runner` db_integration tier + `scripts/run_runner_integration.sh` (self-seeds the local identity; live-PG atomicity proofs: append-fail rollback + retry, concurrent batch, pause-exposure flush-fail hides nothing). NO migration, NO ledger, NOT SERIALIZABLE, `sweeper.go` untouched (Phase-35 note left in `waitWorkers`). All touched files ≤600 (extracted `runner_wiring.go` to keep runner.go under). Unit race+goleak green; db_integration `-run 'Resume|Pause|Multipause'` all 5 green on the live stack., 35-04 — Durable reservation + idempotency (GATE-03/04, D-01a/b/c). The append-only `aura.tool_invocations` ledger is promoted (ZERO migration) into a synchronous, fatal-on-failure pre-execution reservation. `InsertToolInvocation` flips `:exec`→`:execrows` (KEEPS `ON CONFLICT DO NOTHING`) so the rows-affected conditional-write IS the GATE-04 idempotency key; added `GetToolInvocationEnd :one` (replay) + `ListInFlightToolInvocationsBefore :many` (start∧¬end anti-join for the 35-05 reconciler); sqlc regenerated (pinned v1.31.1). `Store.Reserve` (rows==1 acquire / rows==0 → `GetEnd` replay / INSERT error → wrapped) + `Store.GetEnd` (pgx.ErrNoRows→nil = valid reserved-but-not-finished) + `Store.ListInFlightBefore`; `Insert` ignores the new count. NEW `internal/gateway/reserve.go`: the ONE reserve call every mutating-Allow converges on — decide.go's not-GateRecommended auto-allow AND routeApprove's post-resume `Verdict{Allow, OperatorID}` — before `Decide` returns Allow; the operator_id rides that SINGLE start's Meta (the executed marker), NO competing Insert (D-03 point 2). `execTool` returns `Verdict.Replay` (a `*tools.ToolResult` built from the recorded end) WITHOUT calling `tool.Execute` (GATE-04); a failed reservation → `Verdict{Deny, "reservation failed"}` → Execute never called, even post-approval (GATE-03 fail-closed). Replay tolerates a GC'd sidecar (capped preview + `result expired`, Pitfall 6); a rows==0 with no end yet replays an in-flight marker (at-most-once holds). Reserve is synchronous+fatal BESIDE the async `persistToolInvocationLedger` (which becomes a harmless rows==0 no-op via the same UNIQUE key). NO migration, `internal/scoring` + append-only triggers + status CHECK untouched; verdict/operator_id ride `meta jsonb`. Live db_integration `-race` proof tier (WSL, real stack): `ReserveBeforeExecute` (order), `ReservationFailBlocks` (Execute==0), `IdempotentReplay` (Execute==1), `ApprovedCallReservedAndIdempotent` (approved-resume reserved+idempotent, exactly one start w/ operator_id in Meta + one end, no third row), `ReplayMissingSidecar` — all ran live (not skipped). GATE-03 + GATE-04 marked complete., 35-05 — Crash-orphan reconciler (D-01d / GATE-03 durability + GATE-04 recovery). NEW `internal/gateway/reconcile.go`: a `Reconciler` mirroring `conversations.Sweeper` VERBATIM (boot one-shot + interval tick, `once`-guarded stop, bounded `wg` join, goleak-clean). `reconcileOrphans` lists `Store.ListInFlightBefore(now - effectiveGrace)` (the 35-04 start∧¬end anti-join), RE-CHECKS `Store.GetEnd` immediately before appending (skip if a real end landed since the snapshot), then APPENDS an `end{status='error', meta{indeterminate:true, reconciled:true}}` keyed on the orphan's {conv,req,toolCall} triple — APPEND-only (append-only triggers reject UPDATE/DELETE, D-01d), status stays `'error'` because the CHECK is `IN ('ok','error')` (indeterminate rides meta, Pitfall 4), and NO second `Execute` anywhere (a mutating orphan's side effect may already have fired → never re-invoke, Pitfall 5 — the reconciler has no tool seam by construction). The candidate set is provenance-agnostic: an approved-resume and an auto-allow share ONE start∧¬end shape (35-04 unified reserve), so no approve-path special-casing. **Collision-impossibility invariant (checker WARNING 4):** `effectiveGrace(w) = max(reservationOrphanGrace=30m, w + reservationOrphanMargin=5m)` where `w = maxToolExecWindow = max(AURA_LOOP_NODE_TIMEOUT_SEC, AURA_LOOP_MAX_WALLCLOCK_SEC)` (defaults 0/300s); `effectiveGrace(w) > w` for every config, so a start∧¬end older than the effective grace is a PROVABLE crash-orphan whose real `end` can never race the synthetic end into `ON CONFLICT DO NOTHING` (35-04 semantics unchanged) — a legitimately slow-but-within-lifetime tool's real outcome is never overwritten. Serve wiring: exposed `*toolinvocations.Store` on `chatEnv`; constructed the Reconciler beside `conversations.Sweeper` in `cmd/aura/serve.go`, `Start(ctx)` at boot + `Stop()` in `drainShutdown` (bounded, idempotent, nil/disabled-safe) — NOT `runner.go` (the plan frontmatter's listed file, but the Sweeper lifecycle it mandates mirroring lives in the serve root, and `runner.New` is shared by the one-shot `aura chat`). Refactor-on-touch: split the cron-dispatch block into `cmd/aura/serve_dispatch.go` to hold serve.go ≤600 (648→555). NO migration, NO new query, NO new env knob (fixed `reconcileTickInterval=10min` + the boot one-shot). Live db_integration `-race -p 1` proof tier (WSL, real stack): `AppendsIndeterminateEndForOrphan` (append not update, start row intact, indeterminate not ok), `InGraceOrphanUntouchedThenSlowToolRealEndWins` (no discard), `RechecksBeforeAppendLiveRealEndWins` (raced end preserved), `StartStopGoleakLive`, plus unit `EffectiveGraceExceedsRunLifetime` — all ran live (not skipped). Phase 35 GATE-01..04 complete end-to-end., 35-06 — Interactive `approve` pause/resume UX end-to-end (gap-closure, D-03 point 2 / GATE-01). Closed the ONE escalated Phase-35 gap (35-VERIFICATION item 1: a mutating GateRecommended call under `single_user_hardened` rendered as a permanent `error: awaiting user input`) by mirroring `internal/agent/tools/shell_approval.go` EXACTLY, hoisted ABOVE `tool.Execute`. NEW `internal/gateway/approvals.go`: `GatewayApprovals` — a session-scoped, in-memory, one-shot approval ledger (Approve/Consume/Peek/Evict, nil-safe) keyed on `(conversation_id, tool, gatewayArgsFingerprint)` where `gatewayArgsFingerprint = hex(sha256(canonicaljson.CanonicalArgs(args)))` (cosmetic-insensitive, semantic-strict) — the cross-turn carrier a ctx value cannot span (resolve-Turn and re-drive-Turn are separate calls). `gateway.Decide`/`routeApprove`/`reserve` now return `(Verdict, error)` (the dead `*tools.ErrAwaitingUserInput` middle return REMOVED — the gateway no longer mints a pause; refactor-on-touch also folded reserve.go). On a no-ledger-hit hardened+responder call, `routeApprove` returns `Verdict{Approve, ApprovalRequest:&<ToolResult>}` — the shell_exec-style `gatewayApprovalRequiredResult` (gateway_approval + args_sha256 + a secret-safe descriptive question rendering arg KEYS only + the exact resume_context). `execTool` returns it as a NORMAL result (no error, `tool.Execute` WITHHELD, count 0), so `runTool` persists the REAL `swarm_spawn(goals=[…])` call+args — the resume rehydrates the verbatim call and re-emits it, `routeApprove` Consumes the ledger (recorded by the SOLE production writer `newGatewayResumeHook`, OperatorID="local", D-03c: the model relaying via ask_user cannot self-approve), returns `Verdict{Allow, OperatorID}`, takes the SINGLE 35-04 reservation (operator_id in Meta, no competing Insert), and executes exactly once. This structurally eliminates the round-trip gap the prior pre-dispatch pause sentinel could never cross (`assistantAskUserToolCalls` rewrote the persisted turn to ask_user with only a hash). `llm_agent_pause.go` UNCHANGED (ask_user stays the sole name-gated pause; `TestAskUserOnlyPauseConstraint` green); `internal/agui/approvals_api.go` verified UNCHANGED (a gateway_approval Kind=approval pending flows through GET /api/approvals + POST /resolve → SubmitAnswers → applyResumeHook identically to shell_exec_approval; the descriptive question renders non-blank). `runner_resume.go` evicts the gateway ledger (R-41, outside the tool registry). NO migration, table, route, or env knob; NO Phase-36 identity. Proven by unit `-race` (gateway/agent/cmd-aura/runner all green), the MANDATORY full persist→LoadManagedHistory→re-Turn `TestGatewayApprovalRoundTrip` (fingerprint match + execute-once, the model copying question+resume_context VERBATIM from the observed envelope-wrapped/HTML-escaped result), and live `db_integration` (`TestGatewayApprovalResumeReentersAndReservesOnce` — one start w/ operator_id in Meta + one end, no competing row, idempotent replay; `TestGatewayApprovalDeclineStaysFailClosed`; + regression `ApprovedCallReservedAndIdempotent`) — all ran live on the real Postgres stack, not skipped. GATE-01 approve path closed end-to-end; ready for the REQUIREMENTS.md GATE-01/GATE-02 `[x]` flip pending phase re-verification., 35-07 — CR-01 informed-consent binding: port shell_exec's challenge/question guard into GatewayApprovals (gap-closure, GATE-01). Closes the BLOCKING code-review Critical (35-REVIEW CR-01): 35-06 dropped shell_exec's server-side challenge/question binding, so `newGatewayResumeHook` recorded an operator accept straight from the **model-relayed** `resume_context` with no proof the gateway issued the approval and no check that the operator-visible `pending.Question` matched the gateway-generated one — an adversarial model could relay the REAL `resume_context` (matching `args_sha256`) with a benign/false question so the operator approves *"Save your meeting notes?"* and unknowingly authorizes `swarm_spawn{goals:["destroy prod"]}` (confused-deputy). Made the "byte-for-byte analog of shell_exec" claim TRUE: `GatewayApprovals` now holds a `pending map[string]gatewayChallenge{question}` + `Challenge(convID,tool,fp,question)` (records the gateway-generated question keyed on the AUTHENTICATED `(conversation_id, tool, args_sha256)` at issue) + `ApproveChallenge(convID,tool,fp,question,r) error` (moves pending→approved ONLY on existence + `question==challenge.question`, else typed not-found/question-mismatch error) — the byte-for-byte analog of `ShellApprovals.ApproveChallenge`; `Evict` sweeps BOTH maps; dead `Peek` removed (IN-01). `routeApprove` reordered deny-before-Consume (`ProfileServerProduction || !responderPresent` hard-deny BEFORE the cross-turn `Consume`, so a recorded/fabricated approval can NEVER be consumed on a headless/production run — WR-01), records `approvals.Challenge(key.ConversationID, spec.Name, fp, question)` on issue, and computes the fingerprint+question ONCE, threading them into `Challenge`+`gatewayApprovalRequiredResult`+`gatewayApprovalContext` (IN-02, single `gatewayArgsFingerprint` site). `Gateway.ApproveChallenge` (new host-side recorder) + `RecordResolvedApproval` (now a low-level test-seed seam) both REFUSE under `ProfileServerProduction` (WR-01 defense-in-depth). `newGatewayResumeHook` now calls `g.ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question, …)` — the AUTHENTICATED server-stored conversation id (WR-02: no cross-conversation transfer) + the operator-visible question binding (CR-01) — dropping the model-relayed `rc.ConversationID`. NEW `TestGatewayResumeHookRejectsMismatchedQuestion` (WR-03 adversarial: real `resume_context` + benign question → hook errors, records nothing, re-drive stays Approve/withheld) + `TestGatewayApprovalsApproveChallengeQuestionMismatch` + `TestRouteApproveProductionDeniesEvenWithLedgerApproval` (injected ledger approval NOT consumed under production, reserves==0) + `TestGatewayApproveChallengeRefusedUnderProduction`. Prohibitions held: `internal/agui/approvals_api.go`, `internal/runner/runner_resume.go`, `internal/gateway/decide.go`, `internal/gateway/reserve.go`, `internal/agent/llm_agent_pause.go`, `internal/agent/llm_agent_retry.go` byte-UNCHANGED (git diff); NO new migration/route/env; ledger key still excludes `tool_call_id`. ZERO REGRESSION: the cooperative `TestGatewayApprovalRoundTrip` still executes once; `TestAskUserOnlyPauseConstraint` green; the live `db_integration` reserve/idempotency tier green. DEVIATION (Rule 1, 8th file): the WR-01 reorder makes a headless (no-responder) re-drive DENY, so `TestGatewayApprovalResumeReentersAndReservesOnce` (in `gateway_integration_test.go`) was corrected to re-drive with `WithResponder(...)` — modeling the real interactive resume the runner marks (runner.go:551); without it the test asserted the now-forbidden headless-consume behavior. Proven: unit `-race` (gateway/agent/cmd-aura/runner all green) + live `db_integration -race -p 1` (`GatewayApprovalResume|GatewayApprovalDecline|ApprovedCallReservedAndIdempotent` + full tier, all PASS on the real Postgres stack, not skipped). Gateway coverage 89.4% (db_integration, > 85% floor). Commits e2c9f6c1 (ledger half + IN-01), f257d9f4 (PEP half + WR-01 + IN-02), e75f5bf6 (host binding + WR-02 + WR-03 + integration-test correction). GATE-01 consent property holds end-to-end; ready for the GATE-01/GATE-02 `[x]` flip pending phase re-verification + code-review., 36-01 — MUSR-06 "break-glass first": host-only `aura identity recover` + migration 0026 local admin-caps seed. Migration `0026_local_admin_caps.{up,down}.sql` idempotently seeds the `local` identity (UUID …001) with three EXPLICIT admin capability grants — `governance.write` + `identity.create` + `agent.run` — mirroring the `0004_identity` seed shape (`ON CONFLICT DO NOTHING`); the down migration deletes exactly those three rows and leaves the system-managed `*` wildcard (0004) intact. Per 36-RESEARCH OQ3 the D-02/D-03 model-settings capability is realized as the EXISTING `governance.write` (NO net-new `settings.model.write`), so admin-gated routes later resolve on named caps, not solely `*`. NEW `cmd/aura/recovery.go`: `aura identity recover <name>` is the host-only break-glass path (D-16) — it resolves the identity via `GetIdentityByName`, then `mintBreakGlassToken` reuses the shipped 0023 token infra EXACTLY (there is no new token scheme): because `aura.password_reset_tokens.challenge_id` is a NOT NULL FK to `password_reset_challenges (id, identity_id)`, it creates + consumes a throwaway host-minted challenge (random discarded `code_hash`) and inserts a hashed token (`agui.HashLookupToken` sha256, `expires_at`, `max_attempts` reused from `serve_password_reset.go`'s online 10-minute mint), then appends a NEUTRAL append-only `identity_recovery_audit` row (`break_glass_token_minted`, no secrets) — all inside ONE atomic tx. The one-time PLAINTEXT token is printed to stdout ONLY (never slog); host access is the sole ownership proof and NO server route mints an admin bypass. Impl lives in recovery.go so `identity.go` stays 137 LOC (only the `recover` dispatch case + usage added). NO Casbin imported (the indirect spike deps stay unwired). Tests: 3 Windows-runnable unit tests (`recovery_test.go` — TTL short-lived pinned to 10m + challenge/token param builders reuse the online 5/3 max_attempts + expiry shape + hashed-not-plaintext) all green; 2 `db_integration` round-trips written + compile-clean (`migrate_0026_integration_test.go` seed→down→re-up→`*`-survives; `recovery_integration_test.go` end-to-end mint validates via `resolveResetTokenHash` + audit row + fail-closed unknown identity) that gate in WSL/CI under no-skip-as-green (NOT run on this Windows host — status honestly `unknown`). `go build ./...` + `go vet ./...` + `go vet -tags db_integration` all clean; `go test ./cmd/aura/` green. Commits `1cd90d0a` (migration 0026), `89ef6337` (recover subcommand). DEVIATIONS (2, both inside the declared file scope): (1) Rule-2 added the atomic break-glass audit write (a privileged reset must be audited); (2) resolved the plan's loose "~1h const" TTL to the actual reused 10-minute shape (shorter/safer). NOTE for verifier: `must_haves` truth 3 (grant/revoke writes an audited capability change) is NOT delivered here — grant/revoke were untouched (out of the 2-task scope; `internal/identity/store.go` is deliberately absent from `files_modified`) and today emit only a stdout confirmation with no DB capability-audit ledger; that belongs to the D-26/D-28 admin-audit work in a later Phase-36 plan. MUSR-06 stays `[ ]` (phase-spanning: Authula default cutover + capability-per-route + no-token-in-URL E2E close at 36-12), so it is NOT marked complete., 36-02 — Additive identity-isolation schema foundation + `AURA_MUSR_ISOLATION` rollout flag (MUSR-01/03/06 advanced, NOT closed). Five ADDITIVE forward-only migration pairs sequenced cleanly above the 0026 floor (no renumber/collision): **0027** `ALTER TABLE aura.paused_states ADD COLUMN identity_id uuid` (OQ2 — a stored, backfilled, NULLABLE owner column chosen over a per-read `conversation_id` subquery for a clean plan-04 `*ForIdentity`/RLS predicate) + backfill `UPDATE ... FROM aura.conversations` (the 0005 uuid+FK promotion makes the join total) + `paused_states_identity_idx`; write-path population deferred to plan 05. **0028** `CREATE TABLE aura.provisioning_saga (saga_id, identity_id, kind CHECK provision|deprovision, step, status CHECK pending|done|failed, updated_at, PK(saga_id,step))` — MUTABLE (0023 `GRANT SELECT,INSERT,UPDATE` shape, NOT the append-only trigger shape) so a step transitions pending→done/failed for forward recovery (D-14/D-27); **NO FK on identity_id** (mirrors 0014 `pending_notifications`) so a de-provision saga survives the identity deletion it executes. **0029** `ALTER TABLE aura.identities ADD COLUMN deactivated_at + purge_after timestamptz` (D-27 soft-delete grace window; deleted_at precedent 0020:33). **0030** `CREATE TABLE aura.identity_object_store (identity_id PK REFERENCES identities ON DELETE CASCADE, bucket, access_key, secret_key_enc bytea, created_at)` — the per-identity Garage S3 secret is **encrypted-at-rest bytea ciphertext, never plaintext** (T-36-02-I, D-08/OQ4); documented KEK source = existing `AURA_AUTHULA_SECRET` (32-byte hex), AEAD impl = plan 06; `GRANT SELECT,INSERT,DELETE`. **0031** `(actor_identity_id, created_at DESC)` on `mcp_audit` + `(identity_id, created_at DESC)` on `skill_audit` for the D-28 admin per-user reads; `identity_audit` (already has `new_identity_id` idx) and `tool_invocations` (conversation-keyed, no identity column) intentionally untouched — both exclusions documented in the migration. Every up has a matching down. **Config:** `config.Config.MUSRIsolation bool` read via `envutil.BoolDefault("AURA_MUSR_ISOLATION", false)` — the **D-13 documents-retrieval scoped-vs-unscoped query-PATH selector** (flag ON = fail-closed EXISTS enforcement; OFF = pre-existing unscoped fallback) that **plan 05 consumes and plan 12 flips**; DEFAULT OFF is load-bearing (keeps plan 12's deploy-flag-off step safe). Catalogued in the `config_knobs.go` KnobSpec registry (KindBool); **NOT routed through `internal/settings` OverlayEnv AllowedKeys** (T-36-02-T, verified 0 matches in settings.go). `TestMUSRIsolationDefaultOff` (unset→false, set→true) green. **NO RLS ENABLE/policy this plan** — deferred to plan 04 co-located with its safe `WithIdentityTx` read-path (enabling RLS now fail-closes pooled non-tx reads, RESEARCH Pitfall 1). REQUIREMENTS.md RBAC-03 note augmented with 36-RESEARCH OQ1/A4 (RLS-for-isolation IN, RLS-for-roles OUT; no role model). Commits `79ba36a4` (0027-0030), `10ee788f` (0031 + flag + KnobSpec + test + RBAC-03 note). DEVIATION (Rule 2, in-scope): added `NOT NULL` to the saga columns the plan's DDL sketch left unspecified (a NULL saga_id/status defeats forward-recovery; matches the 0004/0020/0023 convention). ENV CONSTRAINT: `.env.example` (in `files_modified`) could NOT be edited — the workspace permission settings hard-deny `.env*` across Read/Grep/Bash; the flag is fully catalogued in `config_knobs.go` (the registry named as the ".env.example / doc generation" source) so no info is lost — a follow-up with `.env*` access should add the one-line entry. NO-SKIP-AS-GREEN: `go build ./...` + `go vet ./internal/db/ ./internal/config/` + untagged `go test ./internal/db/ ./internal/config/` all green on this Windows host; the `db_integration` migration apply/reverse round-trip was NOT run here (no live stack) and is honestly reported `unknown` — it must run in WSL/CI before phase close. MUSR-01/03/06 stay `[ ]` (phase-spanning: RLS=plan 04, documents scoping=plan 05, Garage keys=plan 06, saga=plan 08, audit UI=plan 10, rollout flip=plan 12); `requirements mark-complete` intentionally NOT run., 36-03 — Background-job owner-binding + crypto IDs + 1h TTL reaper (MUSR-03/04 CLOSED). Closed the guessable-ID / no-owner / no-TTL gap in `internal/agent/tools/shell_bg.go`. **MUSR-03:** `newBackgroundShellID` mints 128-bit `crypto/rand` hex IDs (fail-closed on RNG error — no guessable fallback), replacing the sequential `sh_%d` (`b.seq++`, trivially guessable → cross-session takeover, T-36-03-E/T); every `bgShell` binds `(ownerID, sessionID)` at start from `identityctx.IdentityID(ctx)` + the tool-call session key (empty principal → the seeded `local` UUID `…001`, D-25 CLI fallback). `start` gained a `callerCtx` param (owner source) — sole prod caller `shell_exec.go` + 6 test call sites updated; the process-lifetime ctx stays a fresh `context.Background()` so the job outlives the turn. **Authority (D-06/D-18):** `bgShell.authorize` + `authorizeCaller` gate `shell_poll`/`shell_kill` on owner-match OR admin cap — a foreign non-admin poll returns the not-found shape (D-06 read=404, hides existence), a foreign non-admin kill is refused (D-06 mutate=403). The admin exemption consults `HasCapability(governance.write)` (reused, RESEARCH OQ — no net-new `settings.model.write`) via a **nil-safe `capabilityChecker` seam** on `ShellPoll`/`ShellKill` (D-A2-02 accept-interfaces); **nil at the current composition root → owner-only / fail-closed** (foreign denied even without the admin escape hatch), a zero-rework store-swap deferred to 36-10/36-12. **MUSR-04:** every job carries a default 1h TTL (`AURA_SHELL_BG_TTL`, Go-duration overridable; invalid/absent → 1h always-on safety bound); `sweepExpired` terminates the whole process group (`cancel` → `cmd.Cancel = killProcessGroup`) + records status `"expired"` (preserved through `finish()`), swept BOTH opportunistically on every `start` AND from a bounded, **goleak-safe** background ticker (`StartReaper`, interval ttl/4 clamped [1s,1m]) that never self-starts in the constructor, is wired once at serve boot on the work ctx, and is joined by `Shutdown`'s once-guarded `stopReaper` fold. `shell_poll` now exposes an `age_ms` metric (now − startedAt) on the Meta + footer. **Refactor-on-touch (Pitfall 7):** split the 499-LOC `shell_bg.go` into `shell_bg.go` (421) + `shell_bg_owner.go` (232) + `shell_bg_ttl.go` (150), all ≤600. Commits `3a4ffc9d` (Task 1 IDs+owner+authority), `f7949e6e` (Task 2 TTL+age+reaper). DEVIATIONS: (Rule 3) `start` ctx-param ripple to `shell_exec.go` + 6 test sites; (Rule 2) `StartReaper` wired into `cmd/aura/serve.go` (a reaper that never starts is dead code — the only file beyond the plan's `files_modified`); + `TestShellPollRedactsModelPreview` fixture given owner fields for the new contract (redaction assertion unchanged). NO-SKIP-AS-GREEN: `go build ./...` + `go vet` + untagged `go test ./internal/agent/tools/` + goleak all green on Windows; **`-race` NOT run (no CGO/gcc on this host) — must run in WSL/CI before phase close** (D5 coverage flags it). MUSR-03/04 marked `[x]` (mechanism + stated requirement delivered + unit-proven); the phase-level two-identity live E2E (success-criterion 2) is exercised at 36-12, and 36-10 should wire `ShellPoll.Caps`/`ShellKill.Caps` to activate the D-18 admin cross-session recovery path. (+39 more)
 
 ### Community 414 - "Community 414"
 Cohesion: 0.12
@@ -3969,28 +5180,28 @@ Cohesion: 0.11
 Nodes (18): 1. MCP install panel (MCPW-01), 2. MCP env-edit form (MCPW-02) — the four-state field + redacted-secret-chip, 3. MCP lifecycle controls (MCPW-02 / MCPW-03), 4. Skill install panel (SKW-01) — RISKY-honest, NO `--ignore-scripts` chip, 5. Skill approval queue entry (SKW-02) — reuse the Phase-25 surface, do NOT mint a new one, 6. Skill lifecycle tabs (SKW-03) — restore/archive on the existing four tabs, Accessibility & responsive (held to the locked gates), Checker Sign-Off (+10 more)
 
 ### Community 431 - "Community 431"
-Cohesion: 0.21
-Nodes (20): TestServerReadyz(), newTestServer(), newTestServerCfg(), runPayload(), TestIsLifecycleFrameIncludesStateDelta(), TestProjectMessagesToolCalls(), TestServer_CORSPermissive(), TestServer_DisconnectClosesPump() (+12 more)
+Cohesion: 0.14
+Nodes (31): TestServerReadyz(), TestServer_MalformedThreadID404(), TestServer_MessagesLoadHistoryError(), TestServer_ResumeSubmitError(), TestServer_RunBadRequests(), TestServer_RunContinueAfterResume(), TestServer_RunSSERoundTrip(), TestServer_RunUnknownThread404() (+23 more)
 
 ### Community 432 - "Community 432"
 Cohesion: 0.11
 Nodes (18): Alternatives Considered, Confidence Assessment, Context7 lookups, Core Technologies, Development Tools, Drift Flags Summary (for roadmap consumer), Executive Summary, GitHub repository inspection (gh CLI, 2026-05-29) (+10 more)
 
 ### Community 433 - "Community 433"
-Cohesion: 0.20
-Nodes (15): botSender, Context, Message, RawMessage, Recipient, ReplyMarkup, callbackOutcome, hitl (+7 more)
+Cohesion: 0.07
+Nodes (55): applyDeclaration(), counterStyleDescriptorMap, CSSContainerRule, CSSCounterStyleRule, CSSFontFaceRule, CSSImportRule, CSSKeyframeRule, CSSKeyframesRule (+47 more)
 
 ### Community 434 - "Community 434"
-Cohesion: 0.09
-Nodes (49): dimResult, runJudgeScoring(), runScenario(), scoreScenario(), TestCoTEval(), TestCaptureTurnTTFTTracksToolCallBeforeContent(), TestMetricHelpersComputeToolLoopAndTPS(), scenarioMetrics (+41 more)
+Cohesion: 0.10
+Nodes (45): dimResult, runJudgeScoring(), runScenario(), scoreScenario(), TestCoTEval(), scenarioMetrics, buildRegistry(), calledSwarmSpawn() (+37 more)
 
 ### Community 435 - "Community 435"
 Cohesion: 0.22
 Nodes (14): fakeDocsFactory(), TestDocsCommandRequiresSubcommand(), TestDocsIngestPrintsSearchableJob(), TestDocsSearchPrintsHits(), TestDocsStatusPrintsJob(), fakeDocsService, Context, IngestRequest (+6 more)
 
 ### Community 436 - "Community 436"
-Cohesion: 0.17
-Nodes (19): TestAlwaysBlockInjectedAfterSystem(), TestAlwaysBlockOmittedWhenEmpty(), TestAlwaysBlockSurvivesL25Reduction(), applyContextLadder(), dropOldestRound(), injectAlwaysBlock(), isAlwaysBlock(), isSidecarBacked() (+11 more)
+Cohesion: 0.13
+Nodes (24): applyContextLadder(), ApplyL1TypedEdits(), dropOldestRound(), injectAlwaysBlock(), isAlwaysBlock(), isSidecarBacked(), readToolOutputPointer(), readToolOutputSpillID() (+16 more)
 
 ### Community 437 - "Community 437"
 Cohesion: 0.15
@@ -4005,12 +5216,12 @@ Cohesion: 0.15
 Nodes (15): fakeObject, Attrs, Context, ListRequest, ObjectInfo, ObjectRef, PresignedPut, PresignPutRequest (+7 more)
 
 ### Community 440 - "Community 440"
-Cohesion: 0.17
-Nodes (12): currentMigrationVersion(), TestMigrate0017_BranchPointersBackfillAndRoundTrip(), TestMigrate0019_AuthulaSchemaAndLink(), TestMigrateSteps_DownUpReversible(), TestMigrateSteps_EmptyURLErrors(), MigrateSteps(), Context, Pool (+4 more)
+Cohesion: 0.07
+Nodes (36): currentMigrationVersion(), TestMigrate0017_BranchPointersBackfillAndRoundTrip(), TestMigrate0019_AuthulaSchemaAndLink(), localCapabilitySet0026(), requireCap0026(), TestMigration0026LocalAdminCapsRoundTrip(), TestMigration0026RetireSafe_LocalAbsent(), insertPurgeTask0033() (+28 more)
 
 ### Community 441 - "Community 441"
-Cohesion: 0.18
-Nodes (17): faultyHook, NewHookManagerWithPolicy(), TestHookDefaultPolicyStaysFailClosed(), TestHookFailClosed_ErrorAborts(), TestHookFailClosed_PanicAbortsWithReason(), TestHookFailOpen_ErrorIsContained(), TestHookFailOpen_PanicIsContained(), TestHookFailOpen_TurnLifecycleContained() (+9 more)
+Cohesion: 0.16
+Nodes (20): faultyHook, NewHookManagerWithPolicy(), TestCommandHookDefaultPolicyNeverSilentAllows(), TestCommandHookFailOpen_ContainedAllowsTool(), TestCommandHookFailPolicy_BothBranchesDenyVsContain(), TestHookDefaultPolicyStaysFailClosed(), TestHookFailClosed_ErrorAborts(), TestHookFailClosed_PanicAbortsWithReason() (+12 more)
 
 ### Community 442 - "Community 442"
 Cohesion: 0.27
@@ -4030,7 +5241,7 @@ Nodes (30): Overview, Phase 07.1: Agent-Loop Forced Finalization (INSERTED), Pha
 
 ### Community 446 - "Community 446"
 Cohesion: 0.06
-Nodes (31): Add After Foundations — Architecture + sandbox (Roadmap Phase 2–3; P1/P2), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Category 1 — ToolGateway / Policy-Enforcement-Point, Category 3 — Per-User Sandbox Lifecycle (+23 more)
+Nodes (35): Add After Foundations — Architecture + sandbox (Roadmap Phase 2–3; P1/P2), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Anti-Features (do NOT build), Category 1 — ToolGateway / Policy-Enforcement-Point (+27 more)
 
 ### Community 447 - "Community 447"
 Cohesion: 0.11
@@ -4145,16 +5356,16 @@ Cohesion: 0.11
 Nodes (17): Accomplishments, Auto-fixed / structural, Decisions Made, Dependency graph, Deviations from Plan, Issues Encountered, Known Stubs, Metrics (+9 more)
 
 ### Community 475 - "Community 475"
-Cohesion: 0.20
-Nodes (11): assetPresignBody, principalIdentityID(), Server, Asset, Context, Request, ResponseWriter, ServeMux (+3 more)
+Cohesion: 0.11
+Nodes (20): assetPresignBody, principalIdentityID(), sttTranscriber, ttsRequestBody, ttsSynthesizer, capText(), voiceCapabilitiesDTO, Server (+12 more)
 
 ### Community 476 - "Community 476"
 Cohesion: 0.11
 Nodes (17): Anti-Features Reaffirmed (PROJECT.md Out of Scope — STAY LOCKED), Architecture Approach, Confidence Assessment, Critical Pitfalls (Top 5 cross-cutting — must wire into multi-slice Gate 1/3 checklists), Executive Summary, Expected Features, Gaps to Address (Gate 1 DoR open questions per slice), Implications for Roadmap (+9 more)
 
 ### Community 477 - "Community 477"
-Cohesion: 0.25
-Nodes (17): RiskTier, T, RiskTier, baseTaskTier(), bumpTier(), ComputeSkillTier(), ComputeTaskTier(), GateRecommended() (+9 more)
+Cohesion: 0.05
+Nodes (24): CSSConditionRuleImpl, containerNameExclusions, CSSContainerRuleImpl, { serializeCustomIdent }, { serializeGroupingRuleBody }, CSSGroupingRuleImpl, CSSRuleList, CSSStyleRule (+16 more)
 
 ### Community 478 - "Community 478"
 Cohesion: 0.15
@@ -4165,8 +5376,8 @@ Cohesion: 0.12
 Nodes (14): BaseRetriever, CallbackManagerForRetrieverRun, Any, Document, llm_provider_from_langchain(), LangChain integration for neo4j-agent-memory., Translate a LangChain ``BaseChatModel`` into an :class:`LLMProvider`.      Lets, Config (+6 more)
 
 ### Community 480 - "Community 480"
-Cohesion: 0.16
-Nodes (20): newSchedulerForTest(), seedDueTask(), TestClaimIdempotentCompletion(), TestClaimSkipLocked_Singleton(), TestClaimSurvivorReacquiresAfterConnClose(), startHeartbeat(), runHeartbeat(), TestHeartbeatStopsOnCtxCancel() (+12 more)
+Cohesion: 0.14
+Nodes (28): newSchedulerForTest(), seedDueTask(), TestClaimIdempotentCompletion(), TestClaimSkipLocked_Singleton(), TestClaimSurvivorReacquiresAfterConnClose(), runHeartbeat(), TestHeartbeatStopsOnCtxCancel(), TestHeartbeatTickerUpdatesHeldConn() (+20 more)
 
 ### Community 481 - "Community 481"
 Cohesion: 0.11
@@ -4177,28 +5388,28 @@ Cohesion: 0.15
 Nodes (17): Chunk, CreateJobParams, EmbeddedChunk, ExtractedChunk, ExtractedDocument, ExtractorResponse, ExtractorStats, IngestRequest (+9 more)
 
 ### Community 483 - "Community 483"
-Cohesion: 0.13
-Nodes (28): ContentHashes, TestBuildExtractedDocumentFallsBackToResponseMIMEAndCopiesHeadingPath(), TestBuildExtractedDocumentRejectsNilResponse(), TestContentHashPathOpensFileAndHashesContent(), TestContentHashReaderPropagatesReadError(), BuildExtractedDocument(), ChunkHash(), ChunkID() (+20 more)
+Cohesion: 0.16
+Nodes (24): ContentHashes, BuildExtractedDocument(), ChunkHash(), ChunkID(), ContentHashesPath(), ContentHashesReader(), ContentHashPath(), ContentHashReader() (+16 more)
 
 ### Community 484 - "Community 484"
-Cohesion: 0.23
-Nodes (12): Identity, Store, fromRow(), isUniqueViolation(), New(), parseUUID(), ValidateCapabilityName(), AuraIdentities (+4 more)
+Cohesion: 0.14
+Nodes (20): AuditInsert, InsertSkillAuditParams, AuraSkillAudit, Context, Pool, Queries, AuditStore, Time (+12 more)
 
 ### Community 485 - "Community 485"
 Cohesion: 0.10
 Nodes (20): B. Findings Table, QA-D-01 — Duplicate `getJSON` implementation across three API modules, QA-D-02 — Focus-trap logic duplicated in `BoardLayout.tsx` instead of using `focusTrap.ts`, QA-D-03 — `LoginPage.test.tsx` exceeds the 600-LOC cap (643 lines), QA-D-04 — `conversations/useConversations.ts` local `getJSON` also diverges with a local `postJSON` pattern, QA-D-05 — `ProfileOnboardingWizard.tsx` uses `Loader2 animate-spin` instead of the shared `Spinner` component, QA-D-06 — Stryker mutation scope missing high-value state-logic files, QA-D-07 — CI `unit-test` and `vulncheck` jobs use raw `./...` instead of `go_packages.sh` (F-015) (+12 more)
 
 ### Community 486 - "Community 486"
-Cohesion: 0.22
-Nodes (15): Context, RawMessage, Spec, T, ToolResult, scoredDoc, containsToken(), ownerDoc() (+7 more)
+Cohesion: 0.14
+Nodes (23): Spec, Context, RawMessage, Spec, T, ToolResult, scoredDoc, appendSchema() (+15 more)
 
 ### Community 487 - "Community 487"
-Cohesion: 0.10
-Nodes (16): DomainSchema, GLiNERConfig, GLiRELConfig, is_gliner_available(), is_glirel_available(), list_schemas(), Entity extraction using GLiNER2 zero-shot NER.  GLiNER2 is an improved version o, Create extractor from configuration. (+8 more)
+Cohesion: 0.07
+Nodes (22): EntityExtractor, ExtractedEntity, ExtractedRelation, ExtractionResult, is_valid_entity_name(), Base extraction classes and protocols., Check if an entity name is valid (not a stopword or noise).      Args:         n, Entity extracted from text.      Supports the POLE+O model (Person, Object, Loca (+14 more)
 
 ### Community 488 - "Community 488"
-Cohesion: 0.14
-Nodes (13): ActionRouter, Context, Once, RawMessage, Spec, ToolResult, SkillTool, skillAlerter (+5 more)
+Cohesion: 0.19
+Nodes (24): TestPhase13ConfigDefaultsAndOverrides(), TestWhatsAppBridgeURLDefaultAndOverride(), clearPostgresEnv(), TestAGUIConfigDefaultsAndOverrides(), TestComposeDSNEscapesComponents(), TestEmbedDimensions_RequiredNonZero(), TestEnvDefault_FallbackOnUnset(), TestLoad_ComposesFromPrimitives() (+16 more)
 
 ### Community 489 - "Community 489"
 Cohesion: 0.20
@@ -4213,20 +5424,20 @@ Cohesion: 0.22
 Nodes (10): AuraAgentJobRuns, Context, Int4, Queries, Text, UUID, CompleteRunParams, InsertRunParams (+2 more)
 
 ### Community 492 - "Community 492"
-Cohesion: 0.22
-Nodes (9): AuraPausedStates, Context, Queries, Text, Timestamptz, UUID, AutoResolvePendingForConversationParams, InsertPausedStateParams (+1 more)
+Cohesion: 0.19
+Nodes (11): AuraPausedStates, Context, Queries, Text, Timestamptz, UUID, AutoResolvePendingForConversationParams, GetPausedStateByTokenForIdentityParams (+3 more)
 
 ### Community 493 - "Community 493"
 Cohesion: 0.16
-Nodes (16): Chunk, Config, Context, Duration, Message, ReasoningConfig, Request, ToolDef (+8 more)
+Nodes (18): Chunk, Config, Context, Duration, Message, ReasoningConfig, Request, ToolDef (+10 more)
 
 ### Community 494 - "Community 494"
-Cohesion: 0.17
-Nodes (11): provisionFail(), renderQRSVG(), TestRenderQRSVG(), onboardingService, Context, OnboardingProfileComplete, OnboardingProvisionRequest, OnboardingProvisionResponse (+3 more)
+Cohesion: 0.09
+Nodes (20): AuraLegParams, AuraLegWriter, AuthulaCore, AuthulaUser, provisionFail(), renderQRSVG(), TestRenderQRSVG(), TelegramMint (+12 more)
 
 ### Community 495 - "Community 495"
-Cohesion: 0.22
-Nodes (16): Budget, ChildReport, Client, Config, Context, PauseOption, Registry, RunConfig (+8 more)
+Cohesion: 0.15
+Nodes (21): Event, Budget, ChildReport, Client, Config, Context, Gateway, PauseOption (+13 more)
 
 ### Community 496 - "Community 496"
 Cohesion: 0.11
@@ -4398,7 +5609,7 @@ Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph
 
 ### Community 538 - "Community 538"
 Cohesion: 0.20
-Nodes (13): ActionFunc, Context, RawMessage, ToolResult, T, NewActionRouter(), TestActionRouterActionsAreSorted(), TestActionRouterCopiesHandlerMap() (+5 more)
+Nodes (28): CompactionClaimParams, compactionDB(), claimAndFinalizeCheckpoint(), claimFixture(), TestClaimCompactionDuplicateIdempotencyKeepsOriginalOwner(), TestClaimCompactionFirstClaimIsPending(), TestClaimCompactionInProgressWhenAnotherAutomaticIsPending(), TestClaimCompactionMalformedIdentifiers() (+20 more)
 
 ### Community 539 - "Community 539"
 Cohesion: 0.15
@@ -4409,8 +5620,8 @@ Cohesion: 0.12
 Nodes (16): Development, Documentation, Examples, Framework Integrations, Installation, License, MCP Server, Neo4j Agent Memory (+8 more)
 
 ### Community 541 - "Community 541"
-Cohesion: 0.37
-Nodes (16): doReq(), getJSON(), newConvAPIServer(), TestConversationsAPI_ArchiveUnarchive(), TestConversationsAPI_Delete(), TestConversationsAPI_DeleteWithAuditedPause(), TestConversationsAPI_GetAggregates(), TestConversationsAPI_List() (+8 more)
+Cohesion: 0.19
+Nodes (27): doReq(), getJSON(), newConvAPIServer(), TestConversationsAPI_ArchiveUnarchive(), TestConversationsAPI_Delete(), TestConversationsAPI_DeleteWithAuditedPause(), TestConversationsAPI_GetAggregates(), TestConversationsAPI_List() (+19 more)
 
 ### Community 542 - "Community 542"
 Cohesion: 0.13
@@ -4425,8 +5636,8 @@ Cohesion: 0.12
 Nodes (16): description, devDependencies, playwright, @playwright/test, name, private, scripts, serve (+8 more)
 
 ### Community 545 - "Community 545"
-Cohesion: 0.23
-Nodes (15): effectiveManagedMCPServer(), effectiveMCPServer(), firstMCPDescriptionLine(), mcpTools(), openAndListManagedMCPTools(), openAndListMCPTools(), toolCount(), writeMCPTools() (+7 more)
+Cohesion: 0.24
+Nodes (16): mcpDoctor(), effectiveManagedMCPServer(), effectiveMCPServer(), firstMCPDescriptionLine(), mcpTools(), openAndListManagedMCPTools(), openAndListMCPTools(), toolCount() (+8 more)
 
 ### Community 546 - "Community 546"
 Cohesion: 0.14
@@ -4442,7 +5653,7 @@ Nodes (17): Loader, T, instructionMD(), newLoaderAdapter(), snippetMD(), TestLoa
 
 ### Community 549 - "Community 549"
 Cohesion: 0.21
-Nodes (22): fakeKnowledgeClient, lastHasChunkWriteIndex(), nextChunkWrite(), nextChunkWriteIndex(), TestCountFromRowsHandlesNumericShapes(), testDocumentWithChunks(), TestIndexerBatchesChunks(), TestIndexerDeactivateDocumentMarksGraphInactive() (+14 more)
+Nodes (23): fakeKnowledgeClient, lastHasChunkWriteIndex(), nextChunkWrite(), nextChunkWriteIndex(), TestCountFromRowsHandlesNumericShapes(), testDocumentWithChunks(), TestIndexerBatchesChunks(), TestIndexerDeactivateDocumentMarksGraphInactive() (+15 more)
 
 ### Community 550 - "Community 550"
 Cohesion: 0.20
@@ -4457,28 +5668,28 @@ Cohesion: 0.19
 Nodes (9): approvalItem, parseApprovalsLimit(), resolveAction(), resolveBody, Server, RawMessage, Request, ResponseWriter (+1 more)
 
 ### Community 553 - "Community 553"
-Cohesion: 0.18
-Nodes (13): ChatAction, Context, Recipient, ChatAction, Mutex, Recipient, T, keepWorking() (+5 more)
+Cohesion: 0.06
+Nodes (36): ExtractionResult, LLMProvider, ChatMessage, Completion, T, EntityExtractor, ExtractedPreference, Preference extracted from text. (+28 more)
 
 ### Community 554 - "Community 554"
-Cohesion: 0.11
-Nodes (21): CancelFunc, Client, Context, Request, M, T, Client, Context (+13 more)
+Cohesion: 0.24
+Nodes (9): CancelFunc, Context, M, T, TestMain(), TestSetBearerOnlyWhenKey(), TestStatusError(), TestTimeoutContextDefault() (+1 more)
 
 ### Community 555 - "Community 555"
 Cohesion: 0.08
 Nodes (24): Patch 10: Require explicit remote MCP trust, Patch 11: Make mutating tool ledger mandatory in production, Patch 12: Align CI package discovery with local filtering, Patch 13: Canonicalize MCP transport classification, Patch 14: Scope AG-UI data by authenticated identity, Patch 15: Make resume claim and answer append transactional, Patch 16: Persist pause tool-call turns before exposing pending pauses, Patch 17: Preserve mutating metadata on tool panic (+16 more)
 
 ### Community 556 - "Community 556"
-Cohesion: 0.21
-Nodes (14): ManagedConfig, ManagedServer, T, authStatus(), profilesForServer(), runtimeName(), SnapshotStatus(), findStatus() (+6 more)
+Cohesion: 0.20
+Nodes (15): ManagedConfig, ManagedServer, T, TestStatusAuthRuntimeBranches(), authStatus(), profilesForServer(), runtimeName(), SnapshotStatus() (+7 more)
 
 ### Community 557 - "Community 557"
 Cohesion: 0.15
 Nodes (13): liveIndustrialScore(), TestLiveDocumentIngestE2E(), TestGraphRAGLive(), liveP95(), livePercentile(), syncEmbedQueue, Duration, T (+5 more)
 
 ### Community 558 - "Community 558"
-Cohesion: 0.15
-Nodes (9): newMemConvStore(), newMemPauseStore(), memPauseStore, memToolInvocationStore, Event, InsertParams, Mutex, Pending (+1 more)
+Cohesion: 0.09
+Nodes (22): Audit findings (the contract — `docs/audit/bug-report.md`), Canonical References, Claude's Discretion, Code to extend / mirror (read before writing), D-01 — Durable reservation + idempotency: reuse `tool_invocations`, ZERO migration (GATE-03/04), D-02 — `Mutating` classification for action-multiplexed tools: hybrid floor + de-escalation (GATE-01/03), D-03 — `approve` verdict runtime: route by responder-presence (GATE-01), D-04 — GATE-02 (command-hook fail-closed): verify-only + assert coverage (+14 more)
 
 ### Community 559 - "Community 559"
 Cohesion: 0.21
@@ -4493,8 +5704,8 @@ Cohesion: 0.24
 Nodes (15): URL, T, Node, cleanMarkdown(), convertNode(), extractLinks(), ExtractMarkdown(), referencesTailStart() (+7 more)
 
 ### Community 562 - "Community 562"
-Cohesion: 0.18
-Nodes (18): CoreServices, Request, T, Validator, fakeCore, fakeResolver, reqWithCookie(), TestHardenedCookieConstants() (+10 more)
+Cohesion: 0.22
+Nodes (16): Request, T, Validator, fakeResolver, reqWithCookie(), TestHardenedCookieConstants(), TestIdentityLinkerNilPool(), TestNewRejectsBadDSN() (+8 more)
 
 ### Community 563 - "Community 563"
 Cohesion: 0.24
@@ -4685,8 +5896,8 @@ Cohesion: 0.12
 Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+7 more)
 
 ### Community 610 - "Community 610"
-Cohesion: 0.12
-Nodes (16): ConversationStore, TestBufferCapFallback(), TestDefaultIDGenerator(), TestLastUserMessage(), TestPayloadString(), TestResumeAnswersActions(), IDGenerator, payloadString() (+8 more)
+Cohesion: 0.11
+Nodes (25): newDocServer(), TestDocumentCreateInvalidBodyIs400(), TestDocumentCreateStoreErrorIs400(), TestDocumentDeleteStoreErrorIs404(), TestDocumentEventsBranches(), TestDocumentGetStoreErrorIs404(), TestDocumentJobID(), TestDocumentListStoreErrorIs500() (+17 more)
 
 ### Community 611 - "Community 611"
 Cohesion: 0.13
@@ -4697,8 +5908,8 @@ Cohesion: 0.28
 Nodes (6): TestAgentRunCapability(), storeChecker, Context, Identity, Store, T
 
 ### Community 613 - "Community 613"
-Cohesion: 0.22
-Nodes (15): T, FormatSectionTree(), ParseSections(), TestAddFactAppendsToTrailingFactsSection(), TestAddFactHeaderNoFactsInsertsAfterHeader(), TestAddFactNoHeaderNoFactsInsertsAtTop(), TestAddFactOnEmptyAgentMDRendersFresh(), TestAddFactRejectsEmptyFact() (+7 more)
+Cohesion: 0.09
+Nodes (26): BoxHandle, Context, RawMessage, SandboxRouter, Spec, ToolResult, BoxHandle, Context (+18 more)
 
 ### Community 614 - "Community 614"
 Cohesion: 0.11
@@ -4733,8 +5944,8 @@ Cohesion: 0.18
 Nodes (15): build_label_set_clause(), is_poleo_subtype(), is_poleo_type(), Query builder utilities for dynamic Cypher generation with validated labels.  Th, Sanitize and normalize a string for use as a Neo4j label.      Labels must start, Check if an entity type is a valid POLE+O type.      Args:         entity_type:, Check if a subtype is valid for a given POLE+O entity type.      Args:         e, Validate and normalize entity type for use as a label.      Accepts both POLE+O (+7 more)
 
 ### Community 622 - "Community 622"
-Cohesion: 0.29
-Nodes (6): hitl, botSender, Context, Message, Telegram, convID()
+Cohesion: 0.12
+Nodes (20): hitl, botSender, Context, Recipient, Telegram, botSender, Context, Message (+12 more)
 
 ### Community 623 - "Community 623"
 Cohesion: 0.25
@@ -4745,8 +5956,8 @@ Cohesion: 0.19
 Nodes (23): fakeSkillsWrite, contains(), doSkillsWrite(), newFakeSkillsWrite(), skillsWriteServer(), TestGovernanceWriteSkillsArchive(), TestGovernanceWriteSkillsCatalogFlagGated(), TestGovernanceWriteSkillsCreateUpdateDelete() (+15 more)
 
 ### Community 625 - "Community 625"
-Cohesion: 0.26
-Nodes (9): Config, Message, ReasoningTier, Registry, Request, Request, Budget, injectCacheControl() (+1 more)
+Cohesion: 0.18
+Nodes (14): T, Config, Message, ReasoningEffort, ReasoningTier, Registry, Request, Request (+6 more)
 
 ### Community 626 - "Community 626"
 Cohesion: 0.15
@@ -4773,7 +5984,7 @@ Cohesion: 0.28
 Nodes (9): Context, Request, ResponseWriter, Server, deepLink(), writeJSON(), writeSSE(), qrSVG() (+1 more)
 
 ### Community 632 - "Community 632"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (15): Milestones, Phase 22: Agent Perimeter Hardening, Phase 23: Frontend Infrastructure & Industrial Foundation, Phase 24: Web Foundation — Serve + Auth + Health, Phase 25: Chat + Approval Center, Phase 26: Typed-Display Protocol + Router, Phase 27: Neo4j Graph Explorer, Phase 28: Governance Boards + Web Onboarding (+7 more)
 
 ### Community 633 - "Community 633"
@@ -4781,8 +5992,8 @@ Cohesion: 0.13
 Nodes (14): Auto-fixed Issues, Dependency graph, Deviations from Plan, Known Stubs, License Hygiene (Apache-2.0), Metrics, Phase 2 Plan 06: ParallelAgent (Concurrent Workflow Orchestrator) Summary, Self-Check: PASSED (+6 more)
 
 ### Community 634 - "Community 634"
-Cohesion: 0.25
-Nodes (13): Complexity, Decision, classify(), log(), main(), maxFloat(), minFloat(), projectOpenRouterReasoning() (+5 more)
+Cohesion: 0.07
+Nodes (29): Backend mapping (RESOLVED — grounded in `internal/llm` + `reasoning_policy.go`), Backend — reasoning contract (the heart of this phase), Backend — run request + auth + model-selection-lives-here, Canonical References, Capability auto-detection source (D-13, external contract), Capability detection & real-knobs (RESOLVED — operator directives, 2026-07-10), Claude's Discretion, Default (RESOLVED — user) (+21 more)
 
 ### Community 635 - "Community 635"
 Cohesion: 0.30
@@ -4890,23 +6101,23 @@ Nodes (14): Checker Sign-Off, Color, Component Inventory (for planner/executor),
 
 ### Community 661 - "Community 661"
 Cohesion: 0.23
-Nodes (15): TestProfileConfigDefaultsAndOverrides(), T, Store, Time, LoadedProfile, Metadata, Preferences, Profile (+7 more)
+Nodes (14): Store, Time, LoadedProfile, Metadata, Preferences, Profile, atomicWrite(), atomicWriteWithReplace() (+6 more)
 
 ### Community 662 - "Community 662"
-Cohesion: 0.17
-Nodes (8): Vertex AI embedding adapter for the Provider Protocol.  Wraps the existing :clas, Vertex AI embedding provider.      Implements :class:`~neo4j_agent_memory.llm.pr, _strip_provider_prefix(), VertexAIEmbeddingProvider, lookup_embedding_dimensions(), Known embedding model dimensions.  Neo4j vector indexes are sized at creation ti, Return known dimensions for ``model``, or ``None`` if not in the table.      Loo, VertexAIEmbedder
+Cohesion: 0.25
+Nodes (19): Context, Pool, T, T, bootstrapURL(), envOrSkip(), migratedPool(), migrateToVersion() (+11 more)
 
 ### Community 663 - "Community 663"
 Cohesion: 0.21
 Nodes (9): TestAgent_FindAgent_RecursesIntoSubs(), TestInvocationContext_WithContext_CopiesWithoutMutating(), TestInvocationContext_WithSubAgent_CopiesWithoutMutating(), stubAgent, Agent, Event, InvocationContext, Seq2 (+1 more)
 
 ### Community 664 - "Community 664"
-Cohesion: 0.16
-Nodes (11): ExemptToolsFromEnv(), newDedupRing(), parseExemptTools(), ringCapacity(), dedupRing, fingerprint, resultTrack, fingerprint (+3 more)
+Cohesion: 0.23
+Nodes (6): dedupRing, fingerprint, fingerprint, Budget, Mutex, resultTrack
 
 ### Community 665 - "Community 665"
-Cohesion: 0.09
-Nodes (41): badReader, chatLoop(), trimLine(), plainTurnCtx(), TestChat_EOFQuitsClean(), TestChat_ExitCommand(), TestChat_MissingKey(), TestChat_TwoTurns() (+33 more)
+Cohesion: 0.12
+Nodes (17): compactionMemoryOK(), compactionMemoryCandidateRequest, compactionMemoryClassPolicyRequest, compactionMemoryPolicyRequest, compactionMemoryPrincipalRequest, compactionMemoryRequest, CompactionMemoryStore, Server (+9 more)
 
 ### Community 666 - "Community 666"
 Cohesion: 0.24
@@ -4917,12 +6128,12 @@ Cohesion: 0.25
 Nodes (11): fixedClock, newSessionStore(), newTestSession(), TestSessionStoreConcurrent(), TestSessionStoreLazySweepReclaims(), TestSessionTTL(), Duration, Mutex (+3 more)
 
 ### Community 668 - "Community 668"
-Cohesion: 0.13
-Nodes (22): handleOnboardingMutation(), handleOnboardingSessionRequest(), validateOnboardingProvision(), validateOnboardingStep(), OnboardingProfileComplete, OnboardingProvisionRequest, OnboardingProvisionResponse, OnboardingStart (+14 more)
+Cohesion: 0.12
+Nodes (23): handleOnboardingMutation(), handleOnboardingSessionRequest(), validateOnboardingProvision(), validateOnboardingStep(), OnboardingProfileComplete, OnboardingProvisionRequest, OnboardingProvisionResponse, OnboardingStart (+15 more)
 
 ### Community 669 - "Community 669"
-Cohesion: 0.19
-Nodes (11): audioFormat(), NewAudioProcessor(), TestAudioProcessorReadsObjectAndCallsSTTSidecar(), AudioProcessor, Asset, Context, Result, Store (+3 more)
+Cohesion: 0.17
+Nodes (13): AudioFormat(), NewAudioProcessor(), TestAudioFormat(), TestAudioProcessorReadsObjectAndCallsSTTSidecar(), AudioProcessor, Asset, Context, ObjectResolverBundle (+5 more)
 
 ### Community 670 - "Community 670"
 Cohesion: 0.14
@@ -4933,8 +6144,8 @@ Cohesion: 0.26
 Nodes (19): buildSmokeBinary(), envWith(), freeAddr(), seedSmokeAuthulaOperator(), smokeAuthulaLogin(), smokeAuthulaTOTPCode(), smokeClient(), smokeEnvOrSkip() (+11 more)
 
 ### Community 672 - "Community 672"
-Cohesion: 0.16
-Nodes (10): Any, EnrichmentResult, Wikimedia API enrichment provider.  Uses the Wikipedia REST API to fetch: - Page, Search Wikipedia and enrich with best match., Parse Wikipedia summary API response., Enrichment provider using Wikipedia/Wikimedia APIs.      Fetches entity informat, Initialize Wikimedia enrichment provider.          Args:             user_agent:, Wait if needed to respect rate limit. (+2 more)
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+9 more)
 
 ### Community 673 - "Community 673"
 Cohesion: 0.22
@@ -4945,20 +6156,20 @@ Cohesion: 0.11
 Nodes (17): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+9 more)
 
 ### Community 675 - "Community 675"
-Cohesion: 0.07
-Nodes (18): Any, EnrichmentProvider, EnrichmentResult, EnrichmentStatus, EnrichmentTask, NoOpEnrichmentProvider, Base enrichment classes and protocols.  Defines the core interfaces for entity e, Provider name for identification. (+10 more)
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 676 - "Community 676"
-Cohesion: 0.28
-Nodes (9): Context, RawMessage, SkillAction, ToolResult, SkillTool, validWriteName(), skillAlerter, skillWriteArgs (+1 more)
+Cohesion: 0.23
+Nodes (12): Context, RawMessage, RiskTier, SkillAction, ToolResult, SkillTool, ApprovalPriority(), skillApprovalPriority() (+4 more)
 
 ### Community 677 - "Community 677"
 Cohesion: 0.09
 Nodes (31): extractReason(), TestExtractReason(), TestLastUserRequest_SkipsAgentNudges(), TestParseCriticVerdict(), TestParseCriticVerdict_ExtractsReason(), TestSideEffectDigest_IncludesToolsExcludesTerminal(), TestSideEffectDigest_KeepsLargeShellFailureFooter(), TestSideEffectDigest_PrefersLatestVerificationEvidence() (+23 more)
 
 ### Community 678 - "Community 678"
-Cohesion: 0.15
-Nodes (9): Any, EnrichmentResult, DiffbotProvider, Diffbot Knowledge Graph enrichment provider.  Uses the Diffbot Knowledge Graph A, Parse Diffbot KG API response., Enrichment provider using Diffbot Knowledge Graph API.      Provides structured, Initialize Diffbot enrichment provider.          Args:             api_key: Diff, Wait if needed to respect rate limit. (+1 more)
+Cohesion: 0.04
+Nodes (20): CSSFontFaceRuleImpl, CSSStyleDeclaration, CSSImportRuleImpl, CSSStyleSheet, csstree, CSSLayerStatementRuleImpl, CSSNamespaceRuleImpl, csstree (+12 more)
 
 ### Community 679 - "Community 679"
 Cohesion: 0.30
@@ -4966,23 +6177,23 @@ Nodes (13): T, hashSuffix(), namespacedName(), sanitizeName(), isHex(), TestHash
 
 ### Community 680 - "Community 680"
 Cohesion: 0.21
-Nodes (10): Context, RawMessage, Spec, T, ToolResult, activeTool, deferredOnlyTool, TestNonDeferredGuard() (+2 more)
+Nodes (11): Context, RawMessage, Spec, T, ToolResult, activeTool, deferredOnlyTool, TestMultiplexedToolsMutatingFloor() (+3 more)
 
 ### Community 681 - "Community 681"
 Cohesion: 0.23
 Nodes (9): Agent, Event, InvocationContext, Seq2, T, malformedArgsAgent, TestLoopAgent_MalformedToolArgs_FallsBackToRawFingerprint(), TestSequentialAgent_RootBranchHasNoParentDot() (+1 more)
 
 ### Community 682 - "Community 682"
-Cohesion: 0.47
-Nodes (5): botFiler, File, ReadCloser, downloadFile(), openTelegramFile()
+Cohesion: 0.07
+Nodes (23): Any, ExtractedEntity, ExtractedRelation, ExtractionResult, GLiNERWithRelationsExtractor, GLiRELExtractor, Synchronous relation extraction using GLiREL., Extract relations between entities using GLiREL.          Args:             text (+15 more)
 
 ### Community 683 - "Community 683"
 Cohesion: 0.30
 Nodes (13): F, T, EscapeMarkdownV2(), FuzzMdv2(), mdv2SeedCorpus(), TestEscapeMarkdownV2_FenceExactOutput(), TestEscapeMarkdownV2_InFenceBackslashAndBacktickStillEscaped(), TestEscapeMarkdownV2_InlineCodeSpanPreservesContent() (+5 more)
 
 ### Community 684 - "Community 684"
-Cohesion: 0.24
-Nodes (7): Editable, Message, Mutex, ParseMode, Recipient, fakeBot, parseModeOf()
+Cohesion: 0.28
+Nodes (5): Editable, Message, ParseMode, Recipient, parseModeOf()
 
 ### Community 685 - "Community 685"
 Cohesion: 0.37
@@ -5009,8 +6220,8 @@ Cohesion: 0.26
 Nodes (14): config, probe, displayDB(), env(), exitf(), failed(), formatMap(), Context (+6 more)
 
 ### Community 691 - "Community 691"
-Cohesion: 0.28
-Nodes (15): newAssetServiceTestRig(), newFakeAssetStore(), TestServiceFinalizeMarksAcceptedAndEnqueuesProcessing(), TestServiceFinalizeRefusesOversizedActualObject(), TestServiceIngestTelegramFileStoresObjectAndReturnsProcessedAsset(), TestServicePresignAcceptsLibraryScope(), TestServicePresignDefaultsToThreadScope(), TestServicePresignNeverPutsFilenameInObjectKey() (+7 more)
+Cohesion: 0.06
+Nodes (32): Acceptance gate — two-identity live E2E (MUSR-01), Admin audit visibility, Authz model — admin vs user (locked: no RBAC), Background jobs (MUSR-03/04), Canonical References, Capability grant management, Claude's Discretion, CLI / `local` (+24 more)
 
 ### Community 692 - "Community 692"
 Cohesion: 0.14
@@ -5126,7 +6337,7 @@ Nodes (13): Architectural Responsibility Map, Assumptions Log, D-09 SPEC-Amendme
 
 ### Community 720 - "Community 720"
 Cohesion: 0.21
-Nodes (12): fakeSearchEngine, newSourcesAgent(), TestSourcesTailInjectedAfterWebSearch(), TestStaticCitationConventionInSystemPrompt(), webSearchCall(), Context, FakeClient, LlmAgent (+4 more)
+Nodes (13): fakeSearchEngine, newSourcesAgent(), TestSourcesTailInjectedAfterWebSearch(), TestStaticCitationConventionInSystemPrompt(), toolSearchCall(), webSearchCall(), Context, FakeClient (+5 more)
 
 ### Community 721 - "Community 721"
 Cohesion: 0.11
@@ -5173,24 +6384,24 @@ Cohesion: 0.12
 Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 732 - "Community 732"
-Cohesion: 0.06
-Nodes (67): Context, RawMessage, Spec, T, ToolResult, Context, RawMessage, Spec (+59 more)
+Cohesion: 0.19
+Nodes (16): Context, RawMessage, Spec, T, ToolResult, TestNewResult_MissingContext(), TestReadToolOutput_BadArgs(), TestReadToolOutput_EmptyID() (+8 more)
 
 ### Community 733 - "Community 733"
 Cohesion: 0.12
-Nodes (16): TestBreakerOpenRoutesToFinalize(), TestInjectedBreakerIsSharedNotPerAgent(), resolveBreaker(), T, Breaker, LlmAgentConfig, Breaker, Duration (+8 more)
+Nodes (22): T, Backend, BoxHandle, Context, Mutex, RuntimeProfile, SandboxConfig, SandboxSpec (+14 more)
 
 ### Community 734 - "Community 734"
-Cohesion: 0.08
-Nodes (24): Neo4jClient, UUID, EntitySchemaConfig, Schema persistence for storing and loading schemas from Neo4j.  This module prov, Initialize the schema manager.          Args:             client: Connected Neo4, Save a schema to Neo4j.          If a schema with the same name already exists,, Load the active schema by name.          Args:             name: Schema name to, Load a specific version of a schema.          Args:             name: Schema nam (+16 more)
+Cohesion: 0.10
+Nodes (22): digestBytes(), errorsNewImmutable(), NewMemoryContentPartStore(), TestContentPartAuthorizationDigestAndLifecycle(), TestContentPartReachabilityGCAndMigration(), ContentPart, ContentPartLink, MemoryContentPartStore (+14 more)
 
 ### Community 735 - "Community 735"
-Cohesion: 0.25
-Nodes (6): Context, ToolDef, blockingReconnectClient, TestReconnectServerCloseDoesNotWaitForBlockedCall(), fakeReconnectClient, fakeServer
+Cohesion: 0.20
+Nodes (16): newConversationCompactCoordinator(), CompactCoordinator, CompactionEffectiveReader, Context, Duration, Message, CompactBackend, CompactCoordinator (+8 more)
 
 ### Community 736 - "Community 736"
-Cohesion: 0.21
-Nodes (24): aggRow(), newMetricRow(), newTestStore(), sampleInsertParams(), TestAggregateSince_CachedDecodeError(), TestAggregateSince_CostDecodeError(), TestAggregateSince_PromptDecodeError(), TestAggregateSince_QueryRowScanError() (+16 more)
+Cohesion: 0.05
+Nodes (70): Aggregate, Metric, MetricParams, Store, anyInt64(), anyNumericFloat(), NewInsertParams(), mustNumeric() (+62 more)
 
 ### Community 737 - "Community 737"
 Cohesion: 0.22
@@ -5201,11 +6412,11 @@ Cohesion: 0.26
 Nodes (13): T, itoa(), TestAskUser_Execute_BoundaryPriorities(), TestAskUser_Execute_ChoiceOptions_StringAndObjectForms(), TestAskUser_Execute_DefaultPriorityZero(), TestAskUser_Execute_ProxiedIDsOptional(), TestAskUser_Execute_ProxiedIDsParsed(), TestAskUser_Execute_Rejects() (+5 more)
 
 ### Community 739 - "Community 739"
-Cohesion: 0.24
-Nodes (10): Context, RawMessage, Spec, ToolResult, asciiCaption(), errorResult(), foldToASCII(), outsideWorkspaceResult() (+2 more)
+Cohesion: 0.12
+Nodes (20): AssetDeliverer, Context, RawMessage, SandboxRouter, Spec, ToolResult, SendFile, Context (+12 more)
 
 ### Community 740 - "Community 740"
-Cohesion: 0.30
+Cohesion: 0.25
 Nodes (10): RawMessage, ToolResultMeta, Registry, Spec, NewRegistry(), Tool, ToolResult, ToolResultMeta (+2 more)
 
 ### Community 741 - "Community 741"
@@ -5237,8 +6448,8 @@ Cohesion: 0.29
 Nodes (9): Context, FS, Pool, SchemaExecutor, loadMigrations(), Migrate(), parseMigrationName(), splitCypherStatements() (+1 more)
 
 ### Community 748 - "Community 748"
-Cohesion: 0.13
-Nodes (8): EnrichmentResult, CachedEnrichmentProvider, Wrapper that caches enrichment results.      Maintains an in-memory cache with T, Initialize cached provider.          Args:             provider: Underlying enri, Generate cache key from entity name and type., Clear all cached results., Current number of cached results., Try each provider until one succeeds.
+Cohesion: 0.22
+Nodes (25): runMCPCommand(), containsString(), newMCPHTTPTestServer(), TestMCPAddListAndDisable(), TestMCPDoctorAllChecksCalendarRecipe(), TestMCPDoctorAndToolsStartConfiguredServer(), TestMCPDoctorBlockedDoesNotLaunch(), TestMCPInstallCalculatorWritesRecipe() (+17 more)
 
 ### Community 749 - "Community 749"
 Cohesion: 0.27
@@ -5265,8 +6476,8 @@ Cohesion: 0.14
 Nodes (13): 1. Executive Summary (one page), 2.0 Reference: Neo4j (current stack), 2.1 PuppyGraph vs. Neo4j, 2.2 TuringDB vs. Neo4j, 2.3 Apache AGE vs. Neo4j, 2. Detailed comparison vs. Neo4j, 3. Advantages / Disadvantages table, 4. Migration risk assessment (+5 more)
 
 ### Community 755 - "Community 755"
-Cohesion: 0.29
-Nodes (5): is_read_only_query(), Shared Cypher accessor — bolt impl + read-only query validator.  The :class:`Cyp, Return True if ``query`` looks read-only.      Conservative heuristic — uppercas, Execute a read-only Cypher query against Neo4j., Any
+Cohesion: 0.05
+Nodes (53): AgentDeps, AgentDeps, agentJobGoal(), appendLine(), askUserKind(), assistantAskUserTurn(), drain(), TestAgentJobBudgetError() (+45 more)
 
 ### Community 756 - "Community 756"
 Cohesion: 0.14
@@ -5281,8 +6492,8 @@ Cohesion: 0.14
 Nodes (13): cleanTempDir, concurrency, coverageAnalysis, mutate, packageManager, reporters, $schema, tempDirName (+5 more)
 
 ### Community 759 - "Community 759"
-Cohesion: 0.10
-Nodes (10): CommandTag, Conn, Context, fakeRow, fakeRows, FieldDescription, Row, Rows (+2 more)
+Cohesion: 0.08
+Nodes (23): CommandTag, Conn, Context, fakeRow, fakeRows, FieldDescription, Row, Rows (+15 more)
 
 ### Community 760 - "Community 760"
 Cohesion: 0.15
@@ -5301,16 +6512,16 @@ Cohesion: 0.15
 Nodes (12): 1. Cold Start Smoke — clean build + dry-run boots, 2. SC#2 — Loop terminates at budget (smoke script), 3. SC#4 — UUIDv7 request_id (auto), 4. SC#4 — request_id literal is reproduced verbatim, 5. SC#4 — CLI flag beats env var (precedence), 6. Budget fail-fast on malformed env (D-06), 7. SC#1 — zero goroutine leak + race-clean (full agent suite), 8. SC#3 — depth-3 nested ParallelAgents share ONE budget (+4 more)
 
 ### Community 764 - "Community 764"
-Cohesion: 0.36
-Nodes (12): check, detailOrError(), execute(), failf(), logf(), main(), memoryEndpoint(), mustStore() (+4 more)
+Cohesion: 0.07
+Nodes (27): Composer read route behind plain RequireAuth (degrade, never 5xx to the picker), Cross-cutting notes for the planner, exclude parity (D-10 — effort not visibility), File Classification, Frontend send-payload + hydrate (MODIFY + CREATE), `internal/agent/llm_agent.go` + `llm_agent_reasoning.go` — override-vs-auto seam (MODIFY), `internal/agent/prompt/builder.go` — `BuildWithReasoningOverride` (MODIFY, sibling of `BuildWithReasoningTier`), `internal/agent/prompt/reasoning_policy.go` — `ApplyFixedReasoning` (MODIFY, sibling of `ApplyAdaptiveReasoning`) (+19 more)
 
 ### Community 765 - "Community 765"
 Cohesion: 0.15
 Nodes (12): Authentication Gates, Auto-fixed Issues, Deviations from Plan, How To Verify, Known Stubs, Phase 3 Plan 4: LlmAgent Run-Loop + OTel Tracing + System Prompt Summary, Plan/reality reconciliations (no behavior deviation), Requirement / Threat Coverage (+4 more)
 
 ### Community 766 - "Community 766"
-Cohesion: 0.33
-Nodes (12): add(), auraRoot(), auraTier(), countFindings(), failGuard(), intendedTier(), main(), measureMultipart() (+4 more)
+Cohesion: 0.05
+Nodes (29): CachedGeocoder, create_geocoder(), GeocodingResult, GoogleGeocoder, NominatimGeocoder, Geocoding services for Location entities.  Provides geocoding functionality to c, Wait if needed to respect rate limit., Geocode a location string using Nominatim.          Args:             location: (+21 more)
 
 ### Community 767 - "Community 767"
 Cohesion: 0.31
@@ -5401,16 +6612,16 @@ Cohesion: 0.22
 Nodes (10): fakeAssetStore, recordingProcessingQueue, recordingProcessor, cloneMetadata(), Asset, Context, CreateRequest, Mutex (+2 more)
 
 ### Community 789 - "Community 789"
-Cohesion: 0.15
-Nodes (18): AgentDeps, agentJobGoal(), appendLine(), askUserKind(), assistantAskUserTurn(), drain(), TestAskUserKindDefaultsClarification(), newJobBudget() (+10 more)
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed / adjusted, Data-retention Follow-ups (nil reverse-legs / bucket residue), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered (+8 more)
 
 ### Community 790 - "Community 790"
 Cohesion: 0.13
 Nodes (14): Accuracy (base, zero-shot, deterministic at temp 0), How to Run, Integration finding, Investigation Trail, Latency (per call; refusals are the fast end, full calls the slow end), Observability, Research, Results (+6 more)
 
 ### Community 791 - "Community 791"
-Cohesion: 0.17
-Nodes (11): hitlSend, Context, Editable, Message, Mutex, Pending, Recipient, ResponseInput (+3 more)
+Cohesion: 0.07
+Nodes (26): Active-skills row projection (one source of truth), `aura` run-envelope one-field extension, Auth mounting — plain RequireAuth (NO capability), File Classification, i18n en+it parity, Metadata, MOD `internal/agui/server.go` `handleRun` (controller, streaming), MOD `internal/agui/server_run_request.go` (model/DTO, request-response) (+18 more)
 
 ### Community 792 - "Community 792"
 Cohesion: 0.29
@@ -5421,8 +6632,8 @@ Cohesion: 0.15
 Nodes (20): TestDatabaseNameFromDSN(), TestGrantCreateDatabaseSQL_QuotesAdversarialName(), TestIsUndefinedTable_ClassifiesSQLSTATE(), TestMigrateAllCountingSteps_FirstStepNoChangeIsZero(), TestMigrateAllCountingSteps_PropagatesRealError(), TestQuoteIdent_EscapesEmbeddedQuotes(), TestUndefinedTableConstant(), databaseNameFromDSN() (+12 more)
 
 ### Community 794 - "Community 794"
-Cohesion: 0.26
-Nodes (11): fakeImageFetcher, imageProxyServer(), TestImageProxyFetchErrorSanitized(), TestImageProxyMissingURL(), TestImageProxyRequireAuthGate(), TestImageProxySuccess(), TestImageProxyUnwired503(), Context (+3 more)
+Cohesion: 0.27
+Nodes (10): fakeImageFetcher, imageProxyServer(), TestImageProxyFetchErrorSanitized(), TestImageProxyMissingURL(), TestImageProxySuccess(), TestImageProxyUnwired503(), Context, ImageFetcher (+2 more)
 
 ### Community 795 - "Community 795"
 Cohesion: 0.22
@@ -5437,8 +6648,8 @@ Cohesion: 0.13
 Nodes (14): AgentLoop, Design Goals, Failure Handling Model, Observability Model, ObservabilityLayer, Persistence And Checkpointing Strategy, PersistenceLayer, PolicyEngine (+6 more)
 
 ### Community 798 - "Community 798"
-Cohesion: 0.15
-Nodes (24): recordingDispatcher, newRecordingDispatcher(), TestSchedulerStartGracefulShutdown(), TestSchedulerTickBoundedByMaxConcurrent(), TestSchedulerTickDispatchesDueTask(), TestSchedulerTickSkipsInFlightAndReschedules(), NewScheduler(), TestDispatchReschedulesOnRecoveryLookup() (+16 more)
+Cohesion: 0.04
+Nodes (33): backgroundAttachment, backgroundClip, backgroundColor, backgroundImage, backgroundOrigin, backgroundPosition, backgroundRepeat, backgroundSize (+25 more)
 
 ### Community 799 - "Community 799"
 Cohesion: 0.19
@@ -5461,12 +6672,12 @@ Cohesion: 0.11
 Nodes (18): Anti-Patterns Found, Behavioral Spot-Checks, Commit Traceability, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification (+10 more)
 
 ### Community 804 - "Community 804"
-Cohesion: 0.13
-Nodes (22): AuraSettings, Context, Pool, Queries, AuraSettings, Context, T, fakeLister (+14 more)
+Cohesion: 0.23
+Nodes (24): NewFanout(), agentSeq(), aguiTypesOf(), blockingSource(), boundaryOverflowSource(), containsEventType(), drain(), drainAlias() (+16 more)
 
 ### Community 805 - "Community 805"
 Cohesion: 0.16
-Nodes (21): clampExcerpt(), decodePauseOptions(), driveTurn(), excerpt(), isYes(), parseChoice(), printConversationList(), printSearchResults() (+13 more)
+Nodes (22): clampExcerpt(), decodePauseOptions(), driveTurn(), excerpt(), isYes(), parseChoice(), printConversationList(), printSearchResults() (+14 more)
 
 ### Community 806 - "Community 806"
 Cohesion: 0.11
@@ -5478,18 +6689,18 @@ Nodes (11): ReasoningTier, T, normalizeReasoningTier(), ParseReasoningRouterTier
 
 ### Community 808 - "Community 808"
 Cohesion: 0.17
-Nodes (11): CompleteRunParams, captureNotifier, fakeCompleter, fakeHandler, fakeNotificationStore, Context, HandlerMeta, InsertPendingNotificationParams (+3 more)
+Nodes (11): TestCompactionMemoryAdminActionsReachStore(), TestCompactionMemoryAdminRejectsInvalidRequestsAndHidesStoreErrors(), fakeCompactionMemoryStore, Candidate, CandidateInput, Context, Memory, Policy (+3 more)
 
 ### Community 809 - "Community 809"
 Cohesion: 0.27
 Nodes (6): AuraTelegramAccounts, Context, Queries, Text, UUID, InsertTelegramAccountParams
 
 ### Community 810 - "Community 810"
-Cohesion: 0.18
-Nodes (10): AuraToolInvocations, Bool, Context, Int4, Int8, Queries, Text, Timestamptz (+2 more)
+Cohesion: 0.20
+Nodes (11): AuraToolInvocations, Bool, Context, Int4, Int8, Queries, Text, Timestamptz (+3 more)
 
 ### Community 811 - "Community 811"
-Cohesion: 0.30
+Cohesion: 0.23
 Nodes (12): RawMessage, ReasoningConfig, ToolCall, Chunk, Client, Message, ReasoningConfig, ReasoningEffort (+4 more)
 
 ### Community 812 - "Community 812"
@@ -5505,8 +6716,8 @@ Cohesion: 0.09
 Nodes (22): API Contract, `aura.identity_recovery`, `aura.identity_recovery_audit`, `aura.password_reset_challenges`, `aura.password_reset_tokens`, Authula-Only Cutover, Authula-Only Telegram Password Reset Design, Backend Architecture (+14 more)
 
 ### Community 815 - "Community 815"
-Cohesion: 0.26
-Nodes (11): T, Client, M, T, mustHost(), TestDNSRebind(), envOrSkip(), liveClient() (+3 more)
+Cohesion: 0.04
+Nodes (50): anotherFalse, anotherNull, anotherTrue, anotherUndefined, anyBigint, anyInt, anyNumber, anyString (+42 more)
 
 ### Community 816 - "Community 816"
 Cohesion: 0.10
@@ -5661,7 +6872,7 @@ Cohesion: 0.29
 Nodes (7): AuraMcpAudit, Context, Queries, Text, Timestamptz, InsertMcpAuditParams, ListMcpAuditParams
 
 ### Community 854 - "Community 854"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (9): fakePasswordResetStore, fakePasswordResetter, fakeRecoveryMessenger, fakeResetTokenClaim, Context, PasswordResetChallenge, RecoveryEvent, RecoveryRecord (+1 more)
 
 ### Community 855 - "Community 855"
@@ -5681,8 +6892,8 @@ Cohesion: 0.22
 Nodes (10): Contract Tests, Current Coverage Assessment, Golden And Regression Tests, Integration Tests, Load And Chaos Tests, Proposed Test Pyramid, Reference-Inspired Evaluation Taxonomy, Suggested CI Checks (+2 more)
 
 ### Community 859 - "Community 859"
-Cohesion: 0.04
-Nodes (66): Any, ReasoningTrace, UUID, Any, BaseModel, datetime, M, UUID (+58 more)
+Cohesion: 0.19
+Nodes (30): bootstrapURL(), ensureLocalIdentity(), envOrSkip(), gatedExec(), insertEnd(), migratedPool(), newKey(), seedConversation() (+22 more)
 
 ### Community 860 - "Community 860"
 Cohesion: 0.17
@@ -5693,8 +6904,8 @@ Cohesion: 0.28
 Nodes (9): Duration, Frontmatter, Mutex, Time, Config, Loader, NewLoader(), validateStructure() (+1 more)
 
 ### Community 862 - "Community 862"
-Cohesion: 0.21
-Nodes (11): DurableEmbeddingQueue, extractedDocumentFromIngestionPayload(), extractedDocumentIngestionPayload(), EmbeddingJobHandler, IngestionJobCreator, Clock, Context, EmbeddingWorker (+3 more)
+Cohesion: 0.13
+Nodes (18): DurableEmbeddingQueue, extractedDocumentFromIngestionPayload(), extractedDocumentIngestionPayload(), TestDurableEmbeddingQueueEnqueuesExtractedDocument(), TestEmbeddingJobHandlerProcessesPayload(), EmbeddingJobHandler, IngestionJobCreator, recordingIngestionCreator (+10 more)
 
 ### Community 863 - "Community 863"
 Cohesion: 0.23
@@ -5713,48 +6924,48 @@ Cohesion: 0.08
 Nodes (23): CLI subcommand dispatch + usage/exit, `cmd/aura/config_validate.go` (NEW) + `cmd/aura/config.go` (MODIFIED — dispatcher), Destructive-shell truth table, Env-defaults/override loader test, File Classification, `internal/agent/tools/shell_exec_env.go` (MODIFIED — runtime leaf, D-12), `internal/config/config.go` (MODIFIED — root composite), `internal/config/config_knobs.go` (NEW — model + validator) (+15 more)
 
 ### Community 867 - "Community 867"
-Cohesion: 0.17
-Nodes (12): Open Questions Pre-Merge (~28 totali distributed by slice), Slice 0.9, 1.7, 5, 6 — minor OQs (all closed or default-OK), Slice 0.9 — Agent runtime abstraction (3 OQ), Slice 10 — Onboarding + Agent.md (4 OQ), Slice 11 — Memory (6 OQ), Slice 13 — Local LLM fallback (5 OQ, una CRITICA), Slice 2 — Sandbox (3 OQ, lower-criticality after audit 2026-05-28), Slice 4 — KV cache builder (3 OQ) (+4 more)
+Cohesion: 0.14
+Nodes (19): Context, fakeConvStore, fakePauseStore, Mutex, RawMessage, Runner, Spec, T (+11 more)
 
 ### Community 868 - "Community 868"
 Cohesion: 0.17
 Nodes (7): MessageContentEncrypter, NoOpEncrypter, Pluggable at-rest encryption for sensitive memory content.  This module ships on, Encrypt / decrypt sensitive string content (e.g. Message.content).      Implemen, Return the encrypted ciphertext as a string (typically base64)., Return the decrypted plaintext., Default implementation — passes content through unchanged.      Use this in deve
 
 ### Community 869 - "Community 869"
-Cohesion: 0.13
-Nodes (8): AXE_PATH, AxeResult, AxeRunner, installGovernanceWriteRoutes(), openGovernance(), require, ServerState, Window
+Cohesion: 0.08
+Nodes (24): Neo4jClient, UUID, EntitySchemaConfig, Schema persistence for storing and loading schemas from Neo4j.  This module prov, Initialize the schema manager.          Args:             client: Connected Neo4, Save a schema to Neo4j.          If a schema with the same name already exists,, Load the active schema by name.          Args:             name: Schema name to, Load a specific version of a schema.          Args:             name: Schema nam (+16 more)
 
 ### Community 870 - "Community 870"
 Cohesion: 0.13
-Nodes (26): CustomEvent, botSender, Context, Event, Message, Recipient, Document, Editable (+18 more)
+Nodes (28): CustomEvent, botSender, Context, Event, Message, Recipient, Document, Editable (+20 more)
 
 ### Community 871 - "Community 871"
-Cohesion: 0.17
-Nodes (10): Asset, ConversationRow, createConversation(), docPath, FetchResult, pollSearchableAsset(), PresignResponse, runAgent() (+2 more)
+Cohesion: 0.06
+Nodes (36): array(), Block, blocks(), C, children(), content(), elements(), FromConstShape (+28 more)
 
 ### Community 872 - "Community 872"
 Cohesion: 0.17
 Nodes (11): Aura MCP Manager, Config Location, Connecting calendar/email accounts (OAuth), Live Checks, Profiles, Recipes, Runtime, Status, Doctor, Logs (+3 more)
 
 ### Community 873 - "Community 873"
-Cohesion: 0.23
-Nodes (11): Indexer, chunksParams(), countFromRows(), documentParams(), nextChunkPairs(), KnowledgeClient, Chunk, Context (+3 more)
+Cohesion: 0.16
+Nodes (17): backfillDeps, backfillFactory, documentsBackfill(), newBackfillDeps(), runDocuments(), runDocumentsCommand(), TestDocumentsBackfill_FactoryError(), TestDocumentsBackfill_Success() (+9 more)
 
 ### Community 874 - "Community 874"
-Cohesion: 0.25
-Nodes (12): fakeOracle, TestLearner_CloseIsIdempotent(), TestLearner_DropOnFullNeverBlocks(), TestLearner_LabelsSavesAndRefreshesUncertain(), TestLearner_MarginGatedAndDedup(), TestLearner_TransientFailureRetries(), TestNew_NilWhenNoOracle(), waitFor() (+4 more)
+Cohesion: 0.12
+Nodes (33): CASTransitionCompactionRolloutParams, appendRolloutEvidence(), rolloutStateFromSQL(), transitionParams(), TestValidateEvidenceRejectionBranches(), TestValidateJSONObjectBranches(), TestValidateReasonAcceptsLocaleNeutralCodesOnly(), TestValidateRollbackRejectionBranches() (+25 more)
 
 ### Community 875 - "Community 875"
-Cohesion: 0.15
+Cohesion: 0.12
 Nodes (11): fakeConvStore, scriptedRunner, Branch, Context, Conversation, Event, Message, ResponseInput (+3 more)
 
 ### Community 876 - "Community 876"
-Cohesion: 0.04
-Nodes (48): AdoptionReport, ConsolidationReport, Any, Neo4jClient, Any, Neo4jClient, Path, Adopt an existing domain graph as long-term memory entities.          For each i (+40 more)
+Cohesion: 0.15
+Nodes (18): fakeFilesystem, fakeJournal, fakeObjectStore, newFakeFilesystem(), newFakeJournal(), newFakeObjectStore(), resourceService(), TestProvisionAuditFailCompensatesResources() (+10 more)
 
 ### Community 877 - "Community 877"
-Cohesion: 0.23
-Nodes (10): fakeStore, Context, Mutex, Server, Store, T, newLiveSetupServer(), TestEventsSSEEmitsOnboardingCompleted() (+2 more)
+Cohesion: 0.02
+Nodes (78): checkValidity(), { closest }, { fireAnEvent }, _isBarredFromConstraintValidation(), _isCandidateForConstraintValidation(), { isDisabled }, reportValidity(), _satisfiesConstraints() (+70 more)
 
 ### Community 878 - "Community 878"
 Cohesion: 0.12
@@ -5765,32 +6976,32 @@ Cohesion: 0.29
 Nodes (6): How to Run, Spike 074: finetuned FunctionGemma vs baseline (the payoff), Status, Verdict Criteria (decide when the numbers land), What This Validates, What to Expect / Scorecard
 
 ### Community 880 - "Community 880"
-Cohesion: 0.30
-Nodes (12): Context, SearchHit, SearchRequest, T, TestDocumentSearchToolCapsLimit(), TestDocumentSearchToolNoRerankerMatchesSearchOrder(), TestDocumentSearchToolPropagatesSearchError(), TestDocumentSearchToolReturnsCitedHits() (+4 more)
+Cohesion: 0.28
+Nodes (13): Context, SearchHit, SearchRequest, T, TestDocumentSearchToolCapsLimit(), TestDocumentSearchToolNoRerankerMatchesSearchOrder(), TestDocumentSearchToolPropagatesSearchError(), TestDocumentSearchToolReturnsCitedHits() (+5 more)
 
 ### Community 881 - "Community 881"
-Cohesion: 0.22
-Nodes (13): T, Time, UUID, assignDest(), auditRowValues(), TestAuditInsertToParamsNullBoundary(), TestAuditInsertToParamsRejectsBadToken(), TestAuditListLimitClamp() (+5 more)
+Cohesion: 0.17
+Nodes (14): FailPolicy, HookManager, recoverHook(), HookTurn, ModelHookResult, ToolHookResult, ToolResultHookResult, LlmAgent (+6 more)
 
 ### Community 882 - "Community 882"
-Cohesion: 0.18
-Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - Aura  (2026-07-03), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
+Cohesion: 0.07
+Nodes (26): Backend (already complete — 37B is nearly pure frontend), Canonical References, Claude's Discretion, Deferred Ideas, Downloads (WEBART-06), Established Patterns, Existing Code Insights, External reference implementations (cloned to `D:\tmp`, still on disk) (+18 more)
 
 ### Community 883 - "Community 883"
 Cohesion: 0.26
 Nodes (8): AuraSkillAudit, Context, Queries, Text, Timestamptz, UUID, InsertSkillAuditParams, ListSkillAuditParams
 
 ### Community 884 - "Community 884"
-Cohesion: 0.20
-Nodes (8): GraphRAGResult, StageTimings, Context, Service, SearchHit, SearchRequest, Time, StageTimings
+Cohesion: 0.15
+Nodes (10): GraphRAGResult, Reranker, effectiveLimit(), StageTimings, Context, Service, SearchHit, SearchRequest (+2 more)
 
 ### Community 885 - "Community 885"
-Cohesion: 0.15
-Nodes (20): Builder, T, Store, AgentContent, AddFact(), boundedAgentMD(), checkAgentSize(), insertLines() (+12 more)
+Cohesion: 0.09
+Nodes (35): T, Builder, T, Store, AgentContent, FormatSectionTree(), ParseSections(), AddFact() (+27 more)
 
 ### Community 886 - "Community 886"
-Cohesion: 0.18
-Nodes (16): Context, Embedder, RWMutex, T, Classifier, NewClassifier(), TestClassifier_AddEmbedFailureNotCached(), TestClassifier_AddFoldsIntoGroupCentroid() (+8 more)
+Cohesion: 0.08
+Nodes (38): AuthorityLedgerEvent, AuthorityLedgerEvent, AuthorityLevel, TestValidateAuthorityLedgerAcceptsToolAuthorityAndValidRevocation(), TestValidateAuthorityLedgerRejectionBranches(), ValidateAuthorityLedger(), ParseStructuredSummary(), RenderSummaryInternalContext() (+30 more)
 
 ### Community 887 - "Community 887"
 Cohesion: 0.44
@@ -5802,15 +7013,15 @@ Nodes (10): T, ListStage(), readStageSkill(), TestStageReader_ListsArchived(), T
 
 ### Community 889 - "Community 889"
 Cohesion: 0.14
-Nodes (10): Any, _extract_vector_dimensions(), Neo4j schema management for indexes and constraints., Verify existing vector indexes match ``expected`` dimensions.          Called fr, Pull ``vector.dimensions`` from a ``SHOW VECTOR INDEXES`` options map.      Neo4, EmbeddingDimensionMismatchError, ProviderError, Provider-agnostic exception hierarchy for LLM and embedding calls.  Every adapte (+2 more)
+Nodes (25): TestObjectResolverBundleStoreForAsset(), TestResolveObjectsFallbackDiscipline(), TestServiceIngestRoutesBytesToPerIdentityBucket(), TestServicePresignNilResolverKeepsSharedBucket(), buildObjectStore(), filesystemObjectRoot(), isDefaultObjectStoreEndpoint(), Config (+17 more)
 
 ### Community 890 - "Community 890"
 Cohesion: 0.21
 Nodes (10): _clean_subject(), DetectedPreference, _infer_category(), Lightweight pattern-based preference detection from user messages.  Identifies p, A preference detected from user text., Detect preferences in text.          Splits text into sentences and checks each, Split text into sentences using basic punctuation rules., Clean up the captured preference subject. (+2 more)
 
 ### Community 891 - "Community 891"
-Cohesion: 0.17
-Nodes (12): llmErrorKind(), retryableNetworkText(), retryableStreamOpenError(), streamOpenRetryDelayFor(), recordLLMStreamOpen(), recordLLMStreamRetry(), Seq2, LlmAgent (+4 more)
+Cohesion: 0.15
+Nodes (33): assertDegradedDenyFact(), pendingQuestion(), TestApproveHardenedInteractive(), TestApproveHardenedLedgerReEntry(), TestApproveHardenedRecordsChallengeOnIssue(), TestApproveHeadlessDenies(), TestApproveIsHostSideOnly(), TestApprovePostResumeAllow() (+25 more)
 
 ### Community 892 - "Community 892"
 Cohesion: 0.18
@@ -5821,8 +7032,8 @@ Cohesion: 0.29
 Nodes (12): buildSkillsInstall(), fakeNpxAdd(), skillsBridgeConfig(), skillsBridgeEnvOrSkip(), TestSkillsInstallActivatesDirectly(), TestSkillsInstallEmptySourceRejected(), CommandRunner, Config (+4 more)
 
 ### Community 894 - "Community 894"
-Cohesion: 0.36
-Nodes (10): contains(), failf(), firstRequestHasDeferredStub(), intPtr(), logf(), main(), memoryEndpoint(), printSummary() (+2 more)
+Cohesion: 0.07
+Nodes (26): 2026 industrial research (user-requested), Architecture — assistant-ui adapter seams (the spine), Auto-speak "voice mode" (WEBVOICE-01), Backend — reuse verbatim (already complete), Backend — the surfaces to extend, Canonical References, Claude's Discretion, Cloud-only + graceful degrade (WEBVOICE-03) (+18 more)
 
 ### Community 895 - "Community 895"
 Cohesion: 0.18
@@ -5909,8 +7120,8 @@ Cohesion: 0.18
 Nodes (10): CR-01: BLOCKER - Governance APIs Expose Sensitive Cross-Identity Data, CR-02: BLOCKER - Onboarding Sessions Are Bearer Tokens Not Bound To The Principal, CR-03: BLOCKER - Provisioning Can Persist Invalid Capability Grants, CR-04: BLOCKER - `linkTelegram=false` Still Creates Telegram Setup Tokens, CR-05: BLOCKER - Onboarding Session Entries Are Mutated Without Per-Session Synchronization, Critical Issues, Phase 28: Code Review Report, Summary (+2 more)
 
 ### Community 916 - "Community 916"
-Cohesion: 0.17
-Nodes (24): T, Writer, AuditAction, Context, Frontmatter, Pool, SkillAction, Writer (+16 more)
+Cohesion: 0.14
+Nodes (19): identityGet(), identityGrant(), identityList(), identityNameCap(), identityRevoke(), runIdentity(), identityRecoverOperator(), parseRecoverOperatorFlags() (+11 more)
 
 ### Community 917 - "Community 917"
 Cohesion: 0.18
@@ -5937,8 +7148,8 @@ Cohesion: 0.11
 Nodes (17): aliases, components, hooks, lib, ui, utils, iconLibrary, rsc (+9 more)
 
 ### Community 923 - "Community 923"
-Cohesion: 0.35
-Nodes (10): Asset, CreateRequest, Modality, Result, Scope, SourceKind, Status, TelegramIngestRequest (+2 more)
+Cohesion: 0.33
+Nodes (11): AgentIngestRequest, Asset, CreateRequest, Modality, Result, Scope, SourceKind, Status (+3 more)
 
 ### Community 924 - "Community 924"
 Cohesion: 0.18
@@ -5949,8 +7160,8 @@ Cohesion: 0.30
 Nodes (4): Context, Duration, Session, fakeSession
 
 ### Community 926 - "Community 926"
-Cohesion: 0.42
-Nodes (10): allGatedRoutes(), connectGatedRoutes(), mutatingWriteRoutes(), newRequestFor(), TestGovernanceWriteAuthSweep401(), TestGovernanceWriteAuthSweep403(), TestGovernanceWriteAuthSweepGranteeReaches(), writeRoute (+2 more)
+Cohesion: 0.17
+Nodes (11): CompleteRunParams, captureNotifier, fakeCompleter, fakeHandler, fakeNotificationStore, Context, HandlerMeta, InsertPendingNotificationParams (+3 more)
 
 ### Community 927 - "Community 927"
 Cohesion: 0.12
@@ -5985,20 +7196,20 @@ Cohesion: 0.31
 Nodes (7): EmbeddingIndexer, EmbeddingWorker, Context, Duration, EmbeddingGenerator, ExtractedDocument, JobStore
 
 ### Community 935 - "Community 935"
-Cohesion: 0.24
-Nodes (14): TestAgentJobBoundedOutOnRepeatedAskUser(), TestAgentJobBudgetError(), TestAgentJobGoalMalformedJSON(), TestAgentJobRunErrorPropagates(), jobRegistry(), loopTurns(), TestAgentJobBudgetDefaultWhenRowUnset(), TestAgentJobBudgetInherit() (+6 more)
+Cohesion: 0.29
+Nodes (17): TestGraceWindowCustomOverride(), TestPurgeExpiredListError(), TestPurgeExpiredNoDeactivator(), TestPurgeExpiredSkipsFailedIdentity(), TestPurgeOneResolvesThenPurges(), TestResolveFallsBackWithoutDeactivator(), NewDeprovisioner(), fullDeprovisionDeps() (+9 more)
 
 ### Community 936 - "Community 936"
-Cohesion: 0.24
-Nodes (11): Aggregate, runCacheStats(), cacheStatsMain(), hitRate(), parseSince(), sinceValue(), writeCacheStats(), Context (+3 more)
+Cohesion: 0.18
+Nodes (23): capturedReq, getThrough(), liveIntegrationsOrGate(), TestIntegrationsProxyLiveBothMCP(), builtinIntegrations(), newIntegrationsProxy(), newTargetProxy(), pimAdminToken() (+15 more)
 
 ### Community 937 - "Community 937"
 Cohesion: 0.25
 Nodes (9): fakeSweeper, TestSkillTTLSweepDisabled(), TestSkillTTLSweepMeta(), TestSkillTTLSweepRunArchivesAndKeeps(), TestSkillTTLSweepRunError(), Context, Duration, T (+1 more)
 
 ### Community 938 - "Community 938"
-Cohesion: 0.21
-Nodes (18): mustCatalogTestUUID(), TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(), TestCatalogDocumentFromSQLReturnsEmptyTags(), TestCatalogServiceCreateDocumentNormalizesTags(), TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(), TestCatalogServiceListDocumentsNormalizesTagFilter(), TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(), TestCatalogServiceRejectsInvalidTagsBeforeStore() (+10 more)
+Cohesion: 0.11
+Nodes (18): Composition-Root Injection Sites, `:execrows` conditional-write = idempotency key, Fail-loud boot wiring (optional D-02d guard), File Classification, `internal/gateway/classify.go` (utility — pure transform), `internal/gateway/decide.go` (service — PEP, request-response), `internal/gateway/reconcile.go` (service — background worker, batch/event-driven), `internal/gateway/reserve.go` (service — CRUD: reserve INSERT + replay SELECT) (+10 more)
 
 ### Community 939 - "Community 939"
 Cohesion: 0.13
@@ -6029,8 +7240,8 @@ Cohesion: 0.38
 Nodes (11): CreateDocumentRequest, Document, DocumentDetail, DocumentScope, DocumentStatus, DocumentVersion, DocumentVersionRecord, ListDocumentsRequest (+3 more)
 
 ### Community 946 - "Community 946"
-Cohesion: 0.26
-Nodes (14): WithTx(), Context, Pool, Queries, T, newAccumulator(), fn(), splitAt() (+6 more)
+Cohesion: 0.22
+Nodes (14): ToolCall, T, newAccumulator(), fn(), splitAt(), TestAccumulate_EmptyAndFinalize(), TestAccumulate_LaterEmptyMetadataDoesNotClobber(), TestAccumulate_MergeByIndex() (+6 more)
 
 ### Community 947 - "Community 947"
 Cohesion: 0.09
@@ -6049,8 +7260,8 @@ Cohesion: 0.42
 Nodes (10): T, Writer, newWriterAdapter(), TestArchiveSnippetRejectsInvalidName(), TestNewWriterRetainsLiveWriter(), TestRestoreRejectsInvalidName(), TestSaveSnippetRejectsBlocklistedCode(), TestSaveSnippetRejectsInvalidLanguage() (+2 more)
 
 ### Community 951 - "Community 951"
-Cohesion: 0.27
-Nodes (6): bridgeQRState(), Server, Request, Response, ResponseWriter, ServeMux
+Cohesion: 0.16
+Nodes (23): errProfileWriter, TestCompleteProfileUsesLiveResolverWhenSnapshotEmpty(), TestResolveBotNameFallsBackToSnapshot(), TestResolveBotNameNoResolverUsesSnapshot(), TestResolveBotNameResolverWins(), completedProfileService(), TestCompleteProfileMintErrorDoesNotWriteProfile(), TestCompleteProfileNilProfilesUnavailable() (+15 more)
 
 ### Community 952 - "Community 952"
 Cohesion: 0.18
@@ -6241,8 +7452,8 @@ Cohesion: 0.34
 Nodes (15): convAPIServer(), req(), TestBranchAPI_ForkTurnNotFound404(), TestBranchAPI_MalformedAndBadInput(), TestBranchAPI_StoreError500AndRedaction(), TestBranchSelect_ValidatesLeafMembership(), TestConversationsAPI_BadRequests(), TestConversationsAPI_CreateUsesRunnerConversationLifecycle() (+7 more)
 
 ### Community 999 - "Community 999"
-Cohesion: 0.33
-Nodes (4): fakeChannel, Bool, Context, Int32
+Cohesion: 0.27
+Nodes (7): fakeAssetService, Asset, Context, ReadCloser, PresignRequest, PresignRequestAlias, PresignResponse
 
 ### Community 1000 - "Community 1000"
 Cohesion: 0.42
@@ -6253,12 +7464,12 @@ Cohesion: 0.29
 Nodes (7): CapabilitySource, GovernanceProviders, MCPBoardProvider, SchedulerBoardProvider, SkillsBoardProvider, OnboardingService, Server
 
 ### Community 1002 - "Community 1002"
-Cohesion: 0.24
-Nodes (17): faultTelegram, liveRecovery, liveSagaEnv, disposableLiveSagaPool(), liveProvReq(), newLiveSagaEnv(), newStatefulAuthula(), TestIdentityAuditImmutable() (+9 more)
+Cohesion: 0.12
+Nodes (30): blockReader, chatLoop(), pendingClarification(), TestChat_PauseAnswerConsumedFromBufferedStdin_WR01(), TestChat_TwoPauses_BothAnswersConsumed_WR01(), TestPromptForPause_SharedReader_WR01(), jsonStringLit(), plainTurnCtx() (+22 more)
 
 ### Community 1003 - "Community 1003"
-Cohesion: 0.24
-Nodes (9): writeTempAsset(), DocumentIngestor, DocumentProcessor, DocumentVersionRecorder, Asset, Context, Reader, Result (+1 more)
+Cohesion: 0.10
+Nodes (13): editCall, API, Callback, ChatAction, Editable, File, Mutex, Reactions (+5 more)
 
 ### Community 1004 - "Community 1004"
 Cohesion: 0.12
@@ -6269,24 +7480,24 @@ Cohesion: 0.22
 Nodes (8): How to Run, Investigation Trail, Research, Results, Signal for the Build, Spike 073: FunctionGemma training dataset from Aura's registry, What This Validates, What to Expect
 
 ### Community 1006 - "Community 1006"
-Cohesion: 0.53
-Nodes (9): hasActiveEnvAssignment(), hasActiveEnvLine(), readProjectFile(), repoRootForTest(), TestBackupLifecycleDocsMatchApplianceContract(), TestDistributionSurfaceArtifactsMatchReleaseContract(), TestDotEnvTemplateHygiene(), TestProductionContainerArtifactsMatchFatImageContract() (+1 more)
+Cohesion: 0.47
+Nodes (11): composeServiceBlock(), hasActiveEnvAssignment(), hasActiveEnvLine(), readProjectFile(), repoRootForTest(), TestAuraServiceCanResolveContainerInternalSearxng(), TestBackupLifecycleDocsMatchApplianceContract(), TestDistributionSurfaceArtifactsMatchReleaseContract() (+3 more)
 
 ### Community 1007 - "Community 1007"
-Cohesion: 0.12
-Nodes (20): TestBuildAssetServiceWiresDocumentProcessor(), TestBuildObjectStoreBackends(), buildAssetService(), sttConfigFrom(), visionConfigFrom(), newRuntimeDocumentVersionRecorder(), runtimeDocumentVersionRecorder, T (+12 more)
+Cohesion: 0.20
+Nodes (16): TestBuildAssetServiceWiresDocumentProcessor(), TestBuildObjectStoreBackends(), buildAssetService(), buildObjectResolverBundle(), newCachingPerIdentityStoreFactory(), sttConfigFrom(), visionConfigFrom(), T (+8 more)
 
 ### Community 1008 - "Community 1008"
 Cohesion: 0.20
 Nodes (10): 4.1 Login, 4.2.1 TOTP-input a11y + mobile checklist (mandatory — 06 §5.5-item-1 / O7, odysseus `login.html:489-500,257,262-280,153`), 4.2 TOTP 2FA, 4.3 OAuth / OIDC (optional, disabled in v1), 4.4 Session lifecycle (issue / validate / rotate / revoke), 4.5 SSE / AG-UI gateway integration, 4.6 Cookie hardening (mandatory), 4.7 CSRF on POST + SSE (mandatory) (+2 more)
 
 ### Community 1009 - "Community 1009"
-Cohesion: 0.20
-Nodes (10): Agent loop — minimal terminal logic, no Slice 0.9 abstraction, CLI subcommands stubbed, Current Implementation Gaps (what's stubbed / missing), LLM Client interface — type defined, no impl, LLM client — stub returns canned text, No persistence layer, No tests anywhere, Sandbox — stub returns errors (+2 more)
+Cohesion: 0.07
+Nodes (49): Context, Store, Pool, Time, CandidateInput, Store, T, CandidateInput (+41 more)
 
 ### Community 1010 - "Community 1010"
-Cohesion: 0.20
-Nodes (9): Codebase Structure, Directory Layout — Current State (today), Directory Layout — Target State (per prd.md), Directory Purposes — Current State, Key File Locations — Current State, Key File Locations — Target State (per prd.md File targets sections), Naming Conventions, Special Directories (+1 more)
+Cohesion: 0.25
+Nodes (7): Codebase Structure, Directory Layout, Directory Purposes, Key File Locations, Naming Conventions, Special Directories, Where to Add New Code
 
 ### Community 1011 - "Community 1011"
 Cohesion: 0.27
@@ -6302,7 +7513,7 @@ Nodes (10): 1. Executive summary, 2. The problem, 3. What Aura is, 4. Differenti
 
 ### Community 1014 - "Community 1014"
 Cohesion: 0.11
-Nodes (18): Agent-Loop Correctness, HITL & Persistence (LOOP), Code Quality Cleanup (QUAL), DGX-Spark Fleet, Future Requirements (deferred — post-v2.0.0), Honest 10/10 Release Evidence (REL — cross-cutting), MCP Governance Hardening (MCPH), Multi-Tenant / RBAC, Multi-User Identity Isolation & Auth (MUSR) (+10 more)
+Nodes (18): Agent-Loop Correctness, HITL & Persistence (LOOP), Code Quality Cleanup (QUAL), Composer Reasoning-Effort Selector (WEBMODEL), Composer Skill & Command Picker (WEBSKILL), Conversation & Artifact Sharing / Export (WEBSHARE), Honest 10/10 Release Evidence (REL — cross-cutting), Industrial Conversation Compaction (IC), MCP Governance Hardening (MCPH) (+10 more)
 
 ### Community 1015 - "Community 1015"
 Cohesion: 0.38
@@ -6313,19 +7524,19 @@ Cohesion: 0.18
 Nodes (6): Load Aura's exported tool surface and project it to FunctionGemma's view.  The e, OpenAI/HF function-tool dict.          A deferred tool rendered in the default v, The fresh-turn manifest (deferred = stub). Falls back to deriving         from s, ToolCatalog, ToolSpec, Path
 
 ### Community 1017 - "Community 1017"
-Cohesion: 0.15
-Nodes (13): channel(), GRAPH_RAMP, here, luminance(), mark, PAIRS, ratio(), required (+5 more)
+Cohesion: 0.04
+Nodes (38): serializeURL(), { Canvas }, conversions, HTMLImageElementImpl, { serializeURL }, BAD_PORTS, { Dispatcher }, fetchCollected() (+30 more)
 
 ### Community 1018 - "Community 1018"
 Cohesion: 0.38
 Nodes (9): hostPython(), newestArtifact(), openpyxlReadBack(), todayDateForms(), verifyXlsxArtifact(), skillsExpect, skillsResult, T (+1 more)
 
 ### Community 1019 - "Community 1019"
-Cohesion: 0.32
-Nodes (7): TestLadder_SmallWindowFloor_ProtectsNotRaw(), TestSmallWindowHardCapFloor(), turnsFromMessages(), smallWindowHardCapFloor(), Message, T, Turn
+Cohesion: 0.19
+Nodes (19): doctorLiveEnvReady(), TestDoctorLiveStack(), T, TestLoadDBAssetObjectStoreDefaultsAndOverrides(), LoadDB(), clearMCPEnv(), TestCalculatorContainerDefaultOn(), TestCalculatorContainerDefaultOn_EnvServersOverrideWins() (+11 more)
 
 ### Community 1020 - "Community 1020"
-Cohesion: 0.30
+Cohesion: 0.31
 Nodes (11): floatValue(), hitsFromRows(), sanitizeFulltextQuery(), searchHitFromRow(), stringSliceValue(), stringValue(), Searcher, Context (+3 more)
 
 ### Community 1021 - "Community 1021"
@@ -6333,8 +7544,8 @@ Cohesion: 0.22
 Nodes (7): SkillTTLSweepHandler, SnippetSweeper, Context, Duration, HandlerMeta, Job, Time
 
 ### Community 1022 - "Community 1022"
-Cohesion: 0.24
-Nodes (7): Context, RawMessage, Spec, ToolResult, DocumentSearch, documentSearchArgs, DocumentSearchBackend
+Cohesion: 0.23
+Nodes (11): Indexer, chunksParams(), countFromRows(), documentParams(), nextChunkPairs(), KnowledgeClient, Chunk, Context (+3 more)
 
 ### Community 1023 - "Community 1023"
 Cohesion: 0.12
@@ -6357,8 +7568,8 @@ Cohesion: 0.18
 Nodes (19): TestAssetAPIListUsesPrincipalAndThread(), TestAssetAPIPresignValidationError400(), TestAssetAPIRoutesAreRegisteredOnMux(), TestAssetAPIUnavailableWithoutService(), TestAssetPresignAcceptsLibraryScope(), withPrincipal(), TestDocumentAPICreateUsesPrincipalAndRoundTripsTags(), TestDocumentAPIDeleteUsesPrincipalAndDocumentID() (+11 more)
 
 ### Community 1028 - "Community 1028"
-Cohesion: 0.31
-Nodes (6): fakeMCPWrite, Context, ManagedConfig, ManagedTrust, MCPInstallRequest, MCPWriteResult
+Cohesion: 0.09
+Nodes (21): adminIdentityDTO, clampAuditInt(), auditReader, capabilityBody, bridgeQRState(), writeJSONStatus(), identityAdmin, meDTO (+13 more)
 
 ### Community 1029 - "Community 1029"
 Cohesion: 0.38
@@ -6369,16 +7580,16 @@ Cohesion: 0.29
 Nodes (7): Context, T, errGraph, TestLoadExamples_AsStringNonStringTier(), TestLoadExamples_EmbeddingVariants(), TestLoadExamples_Empty(), TestLoadExamples_PropagatesReadError()
 
 ### Community 1031 - "Community 1031"
-Cohesion: 0.13
-Nodes (12): densityBlocks, fontVars, here, indexHtml, missing, motionVars, radiusVars, required (+4 more)
+Cohesion: 0.27
+Nodes (19): newTestCommandHook(), newTestCommandHookWithEnv(), quoteJSON(), TestCommandHook_AfterToolRewrite(), TestCommandHook_BeforeModelRewrite(), TestCommandHook_BeforeToolDeny(), TestCommandHook_BeforeToolRewrite(), TestCommandHook_ChildEnvDropsSecretsByDefault() (+11 more)
 
 ### Community 1032 - "Community 1032"
 Cohesion: 0.09
 Nodes (22): `AURA_MEMORY_EMBED_*` (dead settings keys, QA-C-06), Canonical References, CI & coverage, Claude's Discretion, Commits & process, Dead exported symbols, Deferred Ideas, Discipline (standing project rules these decisions inherit) (+14 more)
 
 ### Community 1033 - "Community 1033"
-Cohesion: 0.26
-Nodes (10): compositeNotifier, Notifier, buildSend(), NewNotifier(), NotifyRoute, SelfSendResolver, SelfSendTool, Context (+2 more)
+Cohesion: 0.07
+Nodes (18): Any, EnrichmentProvider, EnrichmentResult, EnrichmentStatus, EnrichmentTask, NoOpEnrichmentProvider, Base enrichment classes and protocols.  Defines the core interfaces for entity e, Provider name for identification. (+10 more)
 
 ### Community 1034 - "Community 1034"
 Cohesion: 0.11
@@ -6389,12 +7600,12 @@ Cohesion: 0.31
 Nodes (7): Context, Ranker, ExampleLoader, oracleEnabled(), Saver, Teacher, twoTierOracle
 
 ### Community 1036 - "Community 1036"
-Cohesion: 0.27
-Nodes (18): TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(), TestPasswordResetCompleteDoesNotMutateWhenTokenClaimDenied(), TestPasswordResetCompleteIgnoresAuditFailureAfterPasswordUpdate(), TestPasswordResetVerifyAndComplete(), assertNoPasswordResetEventLeak(), newFakePasswordResetStore(), TestPasswordResetSanitizesDeniedFlow(), TestPasswordResetStartAuditFailureIsNeutral() (+10 more)
+Cohesion: 0.28
+Nodes (17): TestPasswordResetCompleteRejectsSamePassword(), TestPasswordResetQuestionNeutralOnBadCode(), TestPasswordResetQuestionNeutralOnUnknownEmail(), TestPasswordResetQuestionRevealsAfterCodePossession(), assertNoPasswordResetEventLeak(), newFakePasswordResetStore(), TestPasswordResetSanitizesDeniedFlow(), TestPasswordResetStartAuditFailureIsNeutral() (+9 more)
 
 ### Community 1037 - "Community 1037"
-Cohesion: 0.22
-Nodes (8): Branch, branchPathRowAsSeqRow(), Context, Store, ListTurnsByBranchPathRow, ListTurnsBySeqRow, Turn, UUID
+Cohesion: 0.24
+Nodes (12): breakGlassChallengeParams(), breakGlassTokenParams(), identityRecover(), mintBreakGlassToken(), newPasswordResetToken(), Context, InsertPasswordResetChallengeParams, Pool (+4 more)
 
 ### Community 1038 - "Community 1038"
 Cohesion: 0.22
@@ -6581,8 +7792,8 @@ Cohesion: 0.22
 Nodes (6): InstructorProvider, Optional Instructor adapter for the Provider Protocol.  Thin wrapper around the, Structured-output provider backed by Instructor.      Implements :class:`~neo4j_, Any, ChatMessage, T
 
 ### Community 1084 - "Community 1084"
-Cohesion: 0.33
-Nodes (7): Agent, AgentOwnsBudget(), BudgetOwner, InvocationContext, Budget, Context, UUID
+Cohesion: 0.11
+Nodes (18): Any, create_memory_tools(), _format_tool_result(), _is_error_result(), MemoryDependency, nams_memory_tools(), Pydantic AI integration for neo4j-agent-memory., Search for relevant preferences.          Args:             query: Search query (+10 more)
 
 ### Community 1085 - "Community 1085"
 Cohesion: 0.11
@@ -6613,16 +7824,16 @@ Cohesion: 0.38
 Nodes (10): IdentityLinker, Context, Pool, Provider, T, enrollUser(), multiEnvOrSkip(), newMultiUserProvider() (+2 more)
 
 ### Community 1092 - "Community 1092"
-Cohesion: 0.22
-Nodes (9): Audit immutability via DB trigger, Capability grants — scaffolding only, Forensics symmetry across slices, Risk-Based Governance (Slice 6 + 7, cross-cutting), Sandbox seccomp default-deny (Slice 2a), Security Concerns, Skill injection blocklist (Slice 7), SSRF defense in web_fetch (Slice 5) (+1 more)
+Cohesion: 0.17
+Nodes (14): liveFilesystem, liveJournal, liveObjectStore, newGarageClient(), newLiveIdentityStore(), newLiveObjectStore(), seedResumableIdentity(), TestProvisioningSagaResumable() (+6 more)
 
 ### Community 1093 - "Community 1093"
-Cohesion: 0.22
-Nodes (9): Crash recovery agent_job runs (Slice 6 boot query), Fragile Areas (anticipated), iptables OUTPUT rules from DNS resolve (Slice 2b), LMCache + vLLM integration version compat, markitdown sidecar tiered conversion (Slice 9c), Multi-pause FIFO priority sort (Slice 1.5 #4), OpenRouter pass-through caveats (Slice 4), Skill loader cache TTL (+1 more)
+Cohesion: 0.21
+Nodes (24): ManagedConfig, ManagedServer, ManagedTrust, T, IdentityMCPConfig, IdentityServerPref, IdentityConfigPath(), identityMCPRoot() (+16 more)
 
 ### Community 1094 - "Community 1094"
-Cohesion: 0.15
-Nodes (13): putSettingBody, settingItemDTO, settingItemFromRow(), validateSettingValue(), settingsListDTO, settingsStore, Server, AuraSettings (+5 more)
+Cohesion: 0.23
+Nodes (17): buildWebSTTClient(), buildWebTTSClient(), TestBuildWebSTTClient_LocalRoute(), TestBuildWebSTTClient_Selectable(), TestBuildWebTTSClient_LocalRoute(), TestWireVoiceProviders_Branches(), TestWireVoiceProviders_Degraded(), TestWireVoiceProviders_Mp3() (+9 more)
 
 ### Community 1095 - "Community 1095"
 Cohesion: 0.31
@@ -6634,19 +7845,19 @@ Nodes (17): AppendIngestionEventRequest, ingestionEventDetailFromJSON(), ingesti
 
 ### Community 1097 - "Community 1097"
 Cohesion: 0.19
-Nodes (13): Aggregate, Metric, Store, TestTimestamptzFrom(), timestamptzFrom(), New(), Context, InsertCacheMetricParams (+5 more)
+Nodes (20): ResponseWriter, Server, T, ToolDef, Context, ManagedServer, Registry, ServerConfig (+12 more)
 
 ### Community 1098 - "Community 1098"
-Cohesion: 0.11
-Nodes (18): Any, create_memory_tools(), _format_tool_result(), _is_error_result(), MemoryDependency, nams_memory_tools(), Pydantic AI integration for neo4j-agent-memory., Search for relevant preferences.          Args:             query: Search query (+10 more)
+Cohesion: 0.14
+Nodes (18): TestGrantCapabilityCallsStoreAndReturnsCaps(), TestGrantCapabilityRejectsInvalidName(), TestGrantCapabilityRejectsNonUUIDTarget(), TestHandleAdminAudit503WhenUnwired(), TestHandleAdminAuditClampsLimit(), TestHandleAdminAuditProjectsAndSanitizes(), TestHandleAdminAuditRejectsNonUUID(), TestHandleAdminIdentitiesSanitizesNames() (+10 more)
 
 ### Community 1099 - "Community 1099"
-Cohesion: 0.27
-Nodes (13): columnExists(), headDownBound(), TestDispatchCompletesRunOnCancelledRootCtx(), TestDispatchCompletionIsIdempotent(), TestDispatchPendingNotificationIdentityRoundTrip(), TestDispatchWritesSummaryToRun(), TestPendingNotificationFailedSelfSendBoundedRetry(), TestPendingNotificationQuietHoursDispatchAndSweep() (+5 more)
+Cohesion: 0.05
+Nodes (33): Any, EnrichmentResult, EnrichmentProvider, EnrichmentResult, DiffbotProvider, Diffbot Knowledge Graph enrichment provider.  Uses the Diffbot Knowledge Graph A, Parse Diffbot KG API response., Enrichment provider using Diffbot Knowledge Graph API.      Provides structured (+25 more)
 
 ### Community 1100 - "Community 1100"
-Cohesion: 0.26
-Nodes (18): CommandRunner, Installer, T, T, fakeAdd(), installPastValidation(), newTestInstaller(), TestInstallChecklistFiveItems() (+10 more)
+Cohesion: 0.17
+Nodes (24): CompactionManifest, CompactionManifest, ContextEdit, ManifestSelectionPolicy, appendSeqs(), BuildSemanticUnits(), firstNonEmpty(), L1EditsForUnits() (+16 more)
 
 ### Community 1101 - "Community 1101"
 Cohesion: 0.25
@@ -6661,8 +7872,8 @@ Cohesion: 0.25
 Nodes (6): Context, RawMessage, Spec, ToolResult, CurrentTime, currentTimeArgs
 
 ### Community 1105 - "Community 1105"
-Cohesion: 0.18
-Nodes (10): Context, RawMessage, Regexp, Spec, ToolResult, grepFile(), looksBinary(), skipWalkDir() (+2 more)
+Cohesion: 0.08
+Nodes (31): Context, RawMessage, Spec, ToolResult, Context, Duration, Regexp, Time (+23 more)
 
 ### Community 1106 - "Community 1106"
 Cohesion: 0.13
@@ -6673,8 +7884,8 @@ Cohesion: 0.25
 Nodes (6): Context, RawMessage, Spec, ToolResult, TextResponse, textResponseArgs
 
 ### Community 1108 - "Community 1108"
-Cohesion: 0.22
-Nodes (10): TestRetrieveDocumentScopedPreFilterLive(), TestSearchDocumentScopedSparsePreFilterLive(), T, T, deleteConversation(), fatalf(), Context, Pool (+2 more)
+Cohesion: 0.12
+Nodes (16): TestDocumentsBackfill(), TestDocumentsFailClosed(), topDocID(), TestRetrieveDocumentScopedPreFilterLive(), TestSearchDocumentScopedSparsePreFilterLive(), T, SearchHit, T (+8 more)
 
 ### Community 1109 - "Community 1109"
 Cohesion: 0.33
@@ -6689,8 +7900,8 @@ Cohesion: 0.16
 Nodes (16): acceptedAssetProcessor, newRuntimeAssetProcessingWorker(), newRuntimeIngestionWorker(), newRuntimeProcessingJobWorker(), runtimeIngestionProcessor, runtimeIngestionWorker, Config, Context (+8 more)
 
 ### Community 1112 - "Community 1112"
-Cohesion: 0.39
-Nodes (7): T, Price, CostUSD(), CostUSDValue(), defaultPrices(), TestCost(), TestCostUSDValue()
+Cohesion: 0.12
+Nodes (22): wireReasoningCapabilities(), Config, Server, Client, Config, Context, Duration, Mutex (+14 more)
 
 ### Community 1113 - "Community 1113"
 Cohesion: 0.12
@@ -6705,12 +7916,12 @@ Cohesion: 0.25
 Nodes (7): Accepted Risks Log, Phase 29 — Security, Security Audit Trail, Sign-Off, Threat Register, Trust Boundaries, Unregistered Flags
 
 ### Community 1116 - "Community 1116"
-Cohesion: 0.56
-Nodes (8): Pool, T, bootstrapURL(), envOrSkip(), migratedPool(), seedConversation(), TestLedgerAppendOnly(), TestLedgerRoundTrip()
+Cohesion: 0.48
+Nodes (11): Pool, T, bootstrapURL(), envOrSkip(), migratedPool(), seedConversation(), TestGetEndAbsent(), TestLedgerAppendOnly() (+3 more)
 
 ### Community 1117 - "Community 1117"
-Cohesion: 0.14
-Nodes (11): conversationBody(), conversationListBody(), conversationRecord(), firstTurnFrames(), frame(), GOLDEN_PATH, goldenDelta(), GoldenFrames (+3 more)
+Cohesion: 0.07
+Nodes (13): A0, aT(), b_(), I0(), i2(), Jd, Ko(), Li() (+5 more)
 
 ### Community 1118 - "Community 1118"
 Cohesion: 0.25
@@ -7009,8 +8220,8 @@ Cohesion: 0.29
 Nodes (6): staticTool, Context, RawMessage, Spec, ToolResult, ToolResultProvenance
 
 ### Community 1192 - "Community 1192"
-Cohesion: 0.16
-Nodes (13): CancelFunc, Context, ContextConfig, Event, InvocationContext, LlmAgent, Message, Seq2 (+5 more)
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+7 more)
 
 ### Community 1193 - "Community 1193"
 Cohesion: 0.25
@@ -7045,12 +8256,12 @@ Cohesion: 0.25
 Nodes (8): 2.1 `internal/agui/auth.go` + `auth_cookie.go` — the HTTP auth boundary, 2.2 `cmd/aura/serve.go` + `serve_auth.go` — wiring & boot guard, 2.3 `cmd/aura/serve_webui.go` — route table & protection, 2.4 `internal/identity/*` — Store, seeded `local`, 2.5 capability_grants model + RequireCapability gating, 2.6 `web/src/routes/LoginPage.tsx` — passphrase login (to be replaced), 2.7 The integration seam (one sentence), 2. Aura Current Auth State (mapped)
 
 ### Community 1201 - "Community 1201"
-Cohesion: 0.25
-Nodes (7): 4 separate runtimes → 1 unified runtime, Codebase Concerns, Dispatch switch redundancy, God classes split per ≤600 LOC rule, No TODO comments orphan, Pre-Rewrite Tech Debt Awareness (acknowledged, addressed), Test Coverage Gaps
+Cohesion: 0.18
+Nodes (10): Codebase Concerns, Dependencies at Risk, Fragile Areas, Known Bugs (historical — now fixed; listed for regression awareness), Missing Critical Features, Performance Bottlenecks, Scaling Limits, Security Considerations (+2 more)
 
 ### Community 1202 - "Community 1202"
-Cohesion: 0.25
-Nodes (8): Background goroutines (concurrent timers), Context budget formula, KV cache discipline (Slice 4 — foundational), LMCache disk-tier 50 GB (Slice 13b, GPU scenario), Mini-PC RAM peak, Performance Considerations, Re-ranker LLM cost, Telegram throttle (Slice 9b)
+Cohesion: 0.17
+Nodes (16): AuthulaUserDeleter, ConversationPurger, DeprovisionDeps, Deprovisioner, DeprovisionTarget, GraphPurger, IdentityDeactivator, IdentityDeleter (+8 more)
 
 ### Community 1203 - "Community 1203"
 Cohesion: 0.29
@@ -7061,8 +8272,8 @@ Cohesion: 0.32
 Nodes (5): fakeStatusDBTX, CommandTag, Context, Row, Rows
 
 ### Community 1205 - "Community 1205"
-Cohesion: 0.13
-Nodes (20): guard, Client, Conn, Context, RawConn, Conn, Context, Mutex (+12 more)
+Cohesion: 0.21
+Nodes (12): pauseOptions(), pauseToolCalls(), pauseCall, ErrAwaitingUserInput, LlmAgent, Context, Event, InvocationContext (+4 more)
 
 ### Community 1206 - "Community 1206"
 Cohesion: 0.12
@@ -7070,7 +8281,7 @@ Nodes (16): Accomplishments, Coverage, Coverage metadata (#1602), Decisions Made
 
 ### Community 1207 - "Community 1207"
 Cohesion: 0.25
-Nodes (7): Aura Live CoT / Tool-Use Eval — 2026-07-03T07:13:00Z, Overall verdict: PASS, Per-dimension results, Per-scenario metrics (§7), Per-scenario notes, Reasoning-judge scores + justifications, Reproduce
+Nodes (7): Aura Live CoT / Tool-Use Eval — 2026-07-08T17:09:12Z, Overall verdict: PASS, Per-dimension results, Per-scenario metrics (§7), Per-scenario notes, Reasoning-judge scores + justifications, Reproduce
 
 ### Community 1208 - "Community 1208"
 Cohesion: 0.25
@@ -7081,12 +8292,12 @@ Cohesion: 0.34
 Nodes (12): connectServer(), TestWhatsAppBridgeUnreachable502(), TestWhatsAppLogoutForwardsPOST(), TestWhatsAppQRNotReady503(), TestWhatsAppQRPaired409(), TestWhatsAppQRReturnsPNG(), TestWhatsAppStatusPassthrough(), TestWhatsAppUnwired503() (+4 more)
 
 ### Community 1210 - "Community 1210"
-Cohesion: 0.28
-Nodes (7): TestValidateExtractorResponseRejectsNil(), validateExtractorResponse(), ExtractClient, Client, Context, ExtractorResponse, IngestRequest
+Cohesion: 0.32
+Nodes (6): validateExtractorResponse(), ExtractClient, Client, Context, ExtractorResponse, IngestRequest
 
 ### Community 1211 - "Community 1211"
-Cohesion: 0.30
-Nodes (6): fakeAssetService, Asset, Context, PresignRequest, PresignRequestAlias, PresignResponse
+Cohesion: 0.29
+Nodes (5): is_read_only_query(), Shared Cypher accessor — bolt impl + read-only query validator.  The :class:`Cyp, Return True if ``query`` looks read-only.      Conservative heuristic — uppercas, Execute a read-only Cypher query against Neo4j., Any
 
 ### Community 1212 - "Community 1212"
 Cohesion: 0.14
@@ -7101,24 +8312,24 @@ Cohesion: 0.29
 Nodes (6): nowRecordingSweeper, TestSkillTTLSweepUsesInjectedClock(), Context, Duration, T, Time
 
 ### Community 1215 - "Community 1215"
-Cohesion: 0.21
-Nodes (8): Memory, Create a Memory from a LongTermMemory entity.          Args:             entity:, Create a Memory from a LongTermMemory preference.          Args:             pre, Create a Memory from a ReasoningMemory trace.          Args:             trace:, A memory record compatible with AgentCore MemoryProvider interface.      This cl, Convert memory to dictionary representation.          Returns:             Dicti, Create a Memory from a ShortTermMemory message.          Args:             messa, Any
+Cohesion: 0.07
+Nodes (35): effortConvStore, effortRunner, fakeCapSource, parseEffortSymbol(), containsEffort(), effortRunBody(), newEffortServer(), readBody() (+27 more)
 
 ### Community 1216 - "Community 1216"
 Cohesion: 0.43
 Nodes (7): T, TestCurrentTime_DefaultUTC(), TestCurrentTime_Deferred(), TestCurrentTime_ExplicitUTC(), TestCurrentTime_IANAOffset(), TestCurrentTime_InvalidTZ(), TestCurrentTime_MalformedArgs()
 
 ### Community 1217 - "Community 1217"
-Cohesion: 0.32
-Nodes (3): sanitize(), internalError, WebError
+Cohesion: 0.08
+Nodes (22): coverage_docker.sh script, AURA_DB_MIGRATE_URL, AURA_DB_URL, AURA_EMBED_BASE_URL, AURA_EMBED_DIMENSIONS, AURA_MCP_IMAGE, AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC, AURA_MCP_NEO4J_CYPHER_BIN (+14 more)
 
 ### Community 1218 - "Community 1218"
-Cohesion: 0.14
-Nodes (15): Account, Context, File, Message, Modality, Telegram, Callback, Context (+7 more)
+Cohesion: 0.17
+Nodes (23): classify(), classifySkill(), classifySwarmSpawn(), classifyTask(), RawMessage, RiskTier, Spec, RiskTier (+15 more)
 
 ### Community 1219 - "Community 1219"
-Cohesion: 0.54
-Nodes (3): Event, InvocationContext, Seq2
+Cohesion: 0.08
+Nodes (24): ADR (SBX-05), Backend & runtime seam, Box posture (full box, contained boundary), Canonical References, Claude's Discretion, Code (integration points — read before touching), Concurrency benchmark (Success Criterion 5, Gate-3), Deferred Ideas (+16 more)
 
 ### Community 1220 - "Community 1220"
 Cohesion: 0.23
@@ -7145,8 +8356,8 @@ Cohesion: 0.43
 Nodes (5): Config, Context, DriverWithContext, OpenSchema(), SchemaExecutor
 
 ### Community 1226 - "Community 1226"
-Cohesion: 0.36
-Nodes (4): ToolCall, accumulator, toolCallAcc, toolCallDelta
+Cohesion: 0.17
+Nodes (19): gateTool(), newCommandHookManager(), TestCommandHook_CrashAllowDeniesTurnToolNeverExecutes(), TestCommandHook_CrashNoDecisionDeniesTurnToolNeverExecutes(), TestCommandHook_CrashRewriteDeniedViaManager(), TestCommandHook_NonZeroExitDenyHonored(), TestCommandHook_NonZeroExitRewriteRejected(), TestCommandHook_OversizedRewriteRejected() (+11 more)
 
 ### Community 1227 - "Community 1227"
 Cohesion: 0.31
@@ -7173,12 +8384,12 @@ Cohesion: 0.29
 Nodes (6): hasFailedRow(), TestDeliverToOrigin(), fakeChannelDeliverer, Context, InsertPendingNotificationParams, T
 
 ### Community 1233 - "Community 1233"
-Cohesion: 0.28
-Nodes (17): RawMessage, ResponseWriter, T, OpenHTTP(), mustRaw(), TestHTTPCallToolSendsAuthHeaders(), TestHTTPCloseBoundedOnUnresponsiveDelete(), TestHTTPInitializeSessionProtocolAndListTools() (+9 more)
+Cohesion: 0.17
+Nodes (12): WithIdentityTx(), WithTx(), Store, Context, Pending, Context, Conversation, Store (+4 more)
 
 ### Community 1234 - "Community 1234"
-Cohesion: 0.29
-Nodes (8): Reranker, effectiveLimit(), topHits(), Context, Service, Scored, SearchHit, SearchRequest
+Cohesion: 0.37
+Nodes (6): topHits(), Context, Service, Scored, SearchHit, SearchRequest
 
 ### Community 1235 - "Community 1235"
 Cohesion: 0.25
@@ -7197,8 +8408,8 @@ Cohesion: 0.29
 Nodes (7): args, createStaticServer(), listenWithFallback(), mimeTypes, portArg, requestedPort, root
 
 ### Community 1239 - "Community 1239"
-Cohesion: 0.30
-Nodes (12): FirstFire(), NextRunAt(), mustLoad(), TestFirstFire(), TestNextRunAt(), TestNextRunAtDST(), TestParseScheduleValidation(), ScheduleKind (+4 more)
+Cohesion: 0.22
+Nodes (18): argKeySummary(), gatewayApprovalContext(), gatewayApprovalQuestion(), gatewayApprovalRequiredResult(), resolvedApproval(), responderPresent(), WithResolvedApproval(), ResolvedApproval (+10 more)
 
 ### Community 1240 - "Community 1240"
 Cohesion: 0.29
@@ -7429,8 +8640,8 @@ Cohesion: 0.33
 Nodes (5): echoTool, Context, RawMessage, Spec, ToolResult
 
 ### Community 1297 - "Community 1297"
-Cohesion: 0.20
-Nodes (13): fakeSettingsStore, putReq(), settingItemByKey(), TestHandleDeleteSetting(), TestHandleListSettingsNilStore(), TestHandleListSettingsRedactsSecrets(), TestHandlePutSetting(), AuraSettings (+5 more)
+Cohesion: 0.17
+Nodes (17): fakeSettingsStore, putReq(), settingItemByKey(), TestHandleCheckTelegramAvailability(), TestHandleCheckTelegramAvailabilityDoesNotLeakProbeError(), TestHandleCreateSettingsTelegramLink(), TestHandleDeleteSetting(), TestHandleListSettingsNilStore() (+9 more)
 
 ### Community 1298 - "Community 1298"
 Cohesion: 0.29
@@ -7473,8 +8684,8 @@ Cohesion: 0.33
 Nodes (4): AuraKnowledgeMigrations, Context, Queries, RecordKnowledgeMigrationParams
 
 ### Community 1309 - "Community 1309"
-Cohesion: 0.29
-Nodes (7): 13 sub-slice atomicity (per slice splits), 14 Postgres migrations + 2 Neo4j Cypher migrations, 60+ env vars catalogati in Caps & Limits indice, CI build tags, Git push discipline, No feature flags, Operational Concerns
+Cohesion: 0.10
+Nodes (19): Accomplishments, Auto-fixed Issues, CR-01 → mitigation → test trace, Decisions Made, Dependency graph, Deviations from Plan, Disposition table, Files Created/Modified (+11 more)
 
 ### Community 1310 - "Community 1310"
 Cohesion: 0.62
@@ -7505,8 +8716,8 @@ Cohesion: 0.29
 Nodes (10): Scored, T, fusionEnabled(), guardedTiebreak(), stableSortScored(), TestGuardedTiebreak_NoOpWhenFlooded(), TestGuardedTiebreak_PromotesConfidentBM25Hit(), TestToolSearch_CacheInvariantAcrossNQueries() (+2 more)
 
 ### Community 1317 - "Community 1317"
-Cohesion: 0.18
-Nodes (11): buildDocumentCatalogService(), buildDocumentEventService(), buildStorageOrphanService(), runtimeDocumentAssetDeleter, chatEnv, Context, DocumentCatalogService, DocumentEventService (+3 more)
+Cohesion: 0.17
+Nodes (12): fakeReserveStore, containsGatewayApproval(), TestExecToolGatewayApprovalWithheldThenReEnters(), TestExecToolGatewayNoApprovalRequiredPaths(), spyMutatingTool, spyReadOnlyTool, Context, Event (+4 more)
 
 ### Community 1318 - "Community 1318"
 Cohesion: 0.52
@@ -7525,12 +8736,12 @@ Cohesion: 0.38
 Nodes (3): ToolDef, Registry, ManifestEntry
 
 ### Community 1322 - "Community 1322"
-Cohesion: 0.61
-Nodes (7): dbMigrate(), dbPing(), dbReset(), dbStatus(), runDB(), Config, Context
+Cohesion: 0.08
+Nodes (13): append(), contains(), parse(), prepend(), remove(), removePredicate(), { asciiLowercase }, DOMException (+5 more)
 
 ### Community 1323 - "Community 1323"
-Cohesion: 0.47
-Nodes (13): T, clearLLMEnv(), isolateHome(), TestConfigEnvNumericOverrides(), TestConfigFileOverlayAllFields(), TestConfigFileReadErrorNotNotExist(), TestConfigLoadOrder(), TestConfigMalformedEnvFailsFast() (+5 more)
+Cohesion: 0.45
+Nodes (14): T, clearLLMEnv(), isolateHome(), TestConfigEnvNumericOverrides(), TestConfigEnvProviderOverride(), TestConfigFileOverlayAllFields(), TestConfigFileReadErrorNotNotExist(), TestConfigLoadOrder() (+6 more)
 
 ### Community 1324 - "Community 1324"
 Cohesion: 0.14
@@ -7545,40 +8756,40 @@ Cohesion: 0.39
 Nodes (4): Context, Identity, Runner, isUniqueViolation()
 
 ### Community 1327 - "Community 1327"
-Cohesion: 0.40
-Nodes (3): Context, LabeledVec, ToolSearch
+Cohesion: 0.14
+Nodes (13): Alternatives Considered, Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED at planning — 2026-07-03), Package Legitimacy Audit (+5 more)
 
 ### Community 1328 - "Community 1328"
-Cohesion: 0.20
-Nodes (6): displayTurnFrames(), frame(), GOLDEN_PATH, GoldenFrames, HERE, replaySnapshot()
+Cohesion: 0.08
+Nodes (28): asciiCaseInsensitiveMatch(), DOMTokenList, HTMLAnchorElementImpl, { mixin }, DOMTokenList, HTMLAreaElementImpl, { mixin }, { asciiCaseInsensitiveMatch } (+20 more)
 
 ### Community 1329 - "Community 1329"
 Cohesion: 0.15
 Nodes (12): Detailed Findings, Files Audited, Phase 29 — UI Review, Pillar 1: Copywriting (3/4), Pillar 2: Visuals (3/4), Pillar 3: Color (4/4), Pillar 4: Typography (2/4), Pillar 5: Spacing (3/4) (+4 more)
 
 ### Community 1330 - "Community 1330"
-Cohesion: 0.17
-Nodes (8): Context, RawMessage, Spec, T, ToolResult, TestStructuredBrief(), structuredBrief(), stubTool
+Cohesion: 0.08
+Nodes (24): 1. `internal/assets/ingest_agent.go` — `IngestAgentFile` (service, file-I/O → CRUD-create), 2. `internal/assets/service.go` — `OpenForIdentity` (service, streaming read), 3. `internal/assets/types.go` — `SourceAgent` constant (model), 404-on-miss ownership (IDOR / D-12), 4. Injection seam — `AssetDeliverer` + `SendFile.Assets` wired post-construction (VERIF-7), 5. Descriptor + event flow — `emitDelivery` enrichment (tool, event-driven / transform), 6. Download route — `handleAssetDownload` (route/controller, request-response → streaming), 7. `internal/agui/content_disposition.go` — RFC-6266 helper (utility, pure transform) (+16 more)
 
 ### Community 1332 - "Community 1332"
 Cohesion: 0.29
 Nodes (6): Agent-Loop Forced Finalization — diagnosis + research (2026-06-02), Candidate success criteria, Key sources, Proposed fix (priority-ordered), Research verdict (cited), The bug (confirmed in code)
 
 ### Community 1333 - "Community 1333"
-Cohesion: 0.18
-Nodes (10): Bool, Context, Int32, LabeledVec, Mutex, blockingAnchorEmbedder, fakeEmbedder, fakeStore (+2 more)
+Cohesion: 0.08
+Nodes (25): Amendment Log — 2026-07-15 (post-research), Canonical References, Claude's Discretion, Code seams (owner-scoping, routes, export, audit), Deferred Ideas, Dependency contexts (the seams this phase builds on), Established Patterns, Existing Code Insights (+17 more)
 
 ### Community 1334 - "Community 1334"
-Cohesion: 0.15
-Nodes (13): Architecture Approach, Confidence Assessment, Critical Pitfalls, Executive Summary, Expected Features, Full detail, Gaps to Address, Key Findings (+5 more)
+Cohesion: 0.08
+Nodes (25): Architecture Approach, Confidence Assessment, Critical Pitfalls, Executive Summary, Expected Features, Full detail, Gaps to Address, Implications for Roadmap (+17 more)
 
 ### Community 1335 - "Community 1335"
-Cohesion: 0.18
-Nodes (10): AppendTurnParams, ResumeAnswer, CacheMetricStore, ContextBlockProvider, ConversationStore, IdentityStore, PauseStore, ResumeClaim (+2 more)
+Cohesion: 0.17
+Nodes (11): AppendTurnParams, ResumeAnswer, CacheMetricStore, CompactionEffectiveReader, ContextBlockProvider, ConversationStore, IdentityStore, PauseStore (+3 more)
 
 ### Community 1336 - "Community 1336"
-Cohesion: 0.33
-Nodes (7): botSender, Context, Recipient, Telegram, consumerFactory, eventConsumer, finalTexter
+Cohesion: 0.06
+Nodes (29): AuditRow, boolValue(), deleteJSON(), envChipList(), installMcpServer(), installSkill(), McpEnvChip, McpInstallRequest (+21 more)
 
 ### Community 1337 - "Community 1337"
 Cohesion: 0.53
@@ -7793,8 +9004,8 @@ Cohesion: 0.17
 Nodes (11): Acceptance criteria — verified, Coverage metadata, Dependency graph, Deviations from Plan, Execution metrics, Known Stubs, Phase 33 Plan 01: RuntimeProfile primitives + config_validate split Summary, Self-Check: PASSED (+3 more)
 
 ### Community 1391 - "Community 1391"
-Cohesion: 0.33
-Nodes (9): T, modelCapabilities, normalizeModelID(), SupportsAudio(), SupportsVision(), TestModelCapabilityLookupSourceShape(), TestSupportsAudio(), TestSupportsVision() (+1 more)
+Cohesion: 0.13
+Nodes (26): LlmAgent, Context, RawMessage, Tool, ToolResult, T, Context, ToolResult (+18 more)
 
 ### Community 1393 - "Community 1393"
 Cohesion: 0.29
@@ -7805,8 +9016,8 @@ Cohesion: 0.38
 Nodes (3): Buffer, New(), Mutex
 
 ### Community 1395 - "Community 1395"
-Cohesion: 0.70
-Nodes (4): isMarkdownThematicBreak(), normalizeMarkdownHeading(), normalizeTelegramBlockMarkdown(), stripClosingHeadingHashes()
+Cohesion: 0.33
+Nodes (8): T, isMarkdownThematicBreak(), normalizeMarkdownHeading(), normalizeTelegramBlockMarkdown(), RenderTelegramHTML(), stripClosingHeadingHashes(), TestRenderTelegramHTMLEscapesRawTagsAndKeepsAllowedFormatting(), TestRenderTelegramHTMLNormalizesUnsupportedBlockMarkdown()
 
 ### Community 1396 - "Community 1396"
 Cohesion: 0.33
@@ -7817,28 +9028,28 @@ Cohesion: 0.33
 Nodes (6): 7.1 Phase M0 — coexistence scaffolding (flag default `passphrase`), 7.2 Phase M1 — Authula shadow + operator enrollment (flag still `passphrase`), 7.3 Phase M2 — cutover (flag → `authula`), 7.4 Phase M3 — decommission passphrase (after a soak period), 7.5 Rollback summary, 7. Phased Migration + Rollback
 
 ### Community 1398 - "Community 1398"
-Cohesion: 0.33
-Nodes (6): Pre-Merge Benchmarks Required, Slice 11b — Chunk size 512 vs 1024 tokens, Slice 11d — Re-ranker cost-quality trade-off, Slice 13b — CRITICAL: vLLM CPU vs GPU, Slice 8 — CLI default mode, Slice 9c — Gemma 4 variant selection
+Cohesion: 0.15
+Nodes (5): fakeAuthula, AuraLegParams, AuthulaUser, Context, Time
 
 ### Community 1399 - "Community 1399"
 Cohesion: 0.42
 Nodes (8): logf(), main(), postJSON(), startSampler(), vramUsedMiB(), waitHealthy(), vramSampler, Mutex
 
 ### Community 1400 - "Community 1400"
-Cohesion: 0.17
-Nodes (7): Neo4jMemoryProvider, AgentCore MemoryProvider implementation backed by Neo4j Context Graphs.  This mo, Get the current namespace., Delete a specific memory.          Args:             memory_id: The ID of the me, Clear all memories for a session.          Args:             session_id: The ses, Get formatted context for LLM prompts.          This is a convenience method tha, AgentCore MemoryProvider backed by Neo4j Context Graphs.      This class impleme
+Cohesion: 0.13
+Nodes (14): ActionRouter, Context, Once, RawMessage, SandboxRouter, Spec, ToolResult, SkillTool (+6 more)
 
 ### Community 1401 - "Community 1401"
 Cohesion: 0.14
 Nodes (13): Anti-Patterns Found, Behavioral Spot-Checks / Test Execution, Data-Flow Trace (Level 4 — dependency-injection analog), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification, Method (+5 more)
 
 ### Community 1402 - "Community 1402"
-Cohesion: 0.13
-Nodes (23): T, Addr, Context, dnsPin, Addr, Context, T, countingResolver (+15 more)
+Cohesion: 0.06
+Nodes (29): AuditRow, boolValue(), deleteJSON(), envChipList(), installMcpServer(), installSkill(), McpEnvChip, McpInstallRequest (+21 more)
 
 ### Community 1403 - "Community 1403"
-Cohesion: 0.20
-Nodes (9): FileMode, Context, RawMessage, Spec, ToolResult, atomicWriteFile(), existingFileMode(), FSWrite (+1 more)
+Cohesion: 0.13
+Nodes (14): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Next Phase Readiness (+6 more)
 
 ### Community 1404 - "Community 1404"
 Cohesion: 0.27
@@ -7853,8 +9064,8 @@ Cohesion: 0.53
 Nodes (5): TestReminderEmptyPayloadStillCompletes(), TestReminderMalformedPayloadStillCompletes(), TestReminderMeta(), TestReminderVerbatim(), T
 
 ### Community 1407 - "Community 1407"
-Cohesion: 0.47
-Nodes (5): T, ToolDef, mailDefs(), TestMountAllAdvertisedToolsDeferred(), TestMountServer_SpawnFailureLeavesRegistryClean()
+Cohesion: 0.08
+Nodes (24): Coverage targets & owned-surface, E2E (Playwright, live container), Go unit tests (the 3 handlers) — concrete assertions, Implementation Notes / Landmines, Metadata, Nyquist edge / sampling cases (→ held-out / property tests), Open Questions Resolved, Phase 37C: Web Voice Lane - Research (+16 more)
 
 ### Community 1408 - "Community 1408"
 Cohesion: 0.14
@@ -7885,16 +9096,16 @@ Cohesion: 0.13
 Nodes (14): Accomplishments, Coverage, Decisions Made, Dependency graph, Deviations from Plan, Issues Encountered, Metrics, Next Phase Readiness (+6 more)
 
 ### Community 1415 - "Community 1415"
-Cohesion: 0.09
-Nodes (29): botSender, Context, Message, MultimodalConfig, Recipient, T, Editable, HandlerFunc (+21 more)
+Cohesion: 0.07
+Nodes (39): MultimodalConfig, T, botSender, Context, Message, MultimodalConfig, Recipient, T (+31 more)
 
 ### Community 1416 - "Community 1416"
 Cohesion: 0.33
 Nodes (5): Find Skills, How to choose, How to install and use, How to search, If nothing fits
 
 ### Community 1417 - "Community 1417"
-Cohesion: 0.17
-Nodes (8): ALPHA, BETA, detailFor(), DocFixture, FIXTURES, GAMMA, LIST, RawDoc
+Cohesion: 0.08
+Nodes (24): Audit logging (security hardening — within SPEC intent), Canonical References, Claude's Discretion, CLI + command surface, Coexistence with existing `recover`, Config + DB, Deferred Ideas, Established Patterns (+16 more)
 
 ### Community 1418 - "Community 1418"
 Cohesion: 0.50
@@ -8061,8 +9272,8 @@ Cohesion: 0.40
 Nodes (5): Data Flow, Ingestion Flow (Slice 11), Pause / Resume Flow, Request Flow — Telegram User Sends a Message (main user case), State Management
 
 ### Community 1459 - "Community 1459"
-Cohesion: 0.24
-Nodes (12): hostOf(), normalizeWebFetch(), normalizeWebSearch(), TestNormalizeWebFetch(), TestNormalizeWebSearch(), TestNormalizeWebSearchEmpty(), TestNormalizeWebSearchUnparseableURLDomain(), Page (+4 more)
+Cohesion: 0.17
+Nodes (11): recordSSEDropped(), isLifecycleFrame(), Context, Request, ResponseWriter, Server, Context, Event (+3 more)
 
 ### Community 1460 - "Community 1460"
 Cohesion: 0.40
@@ -8089,8 +9300,8 @@ Cohesion: 0.40
 Nodes (4): Ping(), Context, Duration, Pool
 
 ### Community 1466 - "Community 1466"
-Cohesion: 0.20
-Nodes (7): ExtractionResult, Build subtype information string for the prompt., Extract entities, relations, and preferences from text.          Picks the right, Run extraction via :meth:`StructuredExtractor.complete_structured`., Run extraction via plain :meth:`LLMProvider.complete`.          Used when the pr, Convert an :class:`ExtractionPayload` to an :class:`ExtractionResult`., Map an unknown entity type to the closest allowed type.
+Cohesion: 0.16
+Nodes (10): Any, EnrichmentResult, Wikimedia API enrichment provider.  Uses the Wikipedia REST API to fetch: - Page, Search Wikipedia and enrich with best match., Parse Wikipedia summary API response., Enrichment provider using Wikipedia/Wikimedia APIs.      Fetches entity informat, Initialize Wikimedia enrichment provider.          Args:             user_agent:, Wait if needed to respect rate limit. (+2 more)
 
 ### Community 1467 - "Community 1467"
 Cohesion: 0.40
@@ -8109,12 +9320,12 @@ Cohesion: 0.60
 Nodes (4): TestIsUniqueViolation(), TestParseUUID(), TestValidateGrantInput(), T
 
 ### Community 1471 - "Community 1471"
-Cohesion: 0.15
-Nodes (9): Any, BufferedWriteError, _Job, Buffered fire-and-forget writes for the agent's hot path.  Memory writes (record, Background write errors recorded since startup (newest last)., Submit a fire-and-forget write.          In ``sync`` mode, awaits the underlying, Start the background drainer task on first submit., Pull jobs from the queue and run them against Neo4j.          Errors are capture (+1 more)
+Cohesion: 0.07
+Nodes (40): badReader, costFooter(), costFooterFromFinish(), TestRenderTurn_MidStreamRetryDiscardsPartial(), TestRenderTurn_NoDiscardOnNormalPath(), discardStreamed(), TestRenderRunnerTurn_DrainsPastFinalEvent(), renderRunnerTurn() (+32 more)
 
 ### Community 1472 - "Community 1472"
-Cohesion: 0.38
-Nodes (12): T, NewRanker(), TestRanker_AddTextEmbedsItems(), TestRanker_ConcurrentAddRank(), TestRanker_DeterministicTieBreak(), TestRanker_EmptyBankReturnsEmpty(), TestRanker_IncrementalAppend(), TestRanker_KLargerThanBankReturnsAll() (+4 more)
+Cohesion: 0.16
+Nodes (19): Context, Embedder, RWMutex, Scored, T, Item, Ranker, NewRanker() (+11 more)
 
 ### Community 1473 - "Community 1473"
 Cohesion: 0.80
@@ -8133,32 +9344,32 @@ Cohesion: 0.50
 Nodes (4): Context, IngestRequest, Job, recordingDocumentIngest
 
 ### Community 1477 - "Community 1477"
-Cohesion: 0.14
-Nodes (14): Phase 31: Stabilization & CI Unblock, Phase 32: Quality Cleanup — Dead Code + Shared Helpers, Phase 33: Runtime Profiles + Config Validation, Phase 34: Agent-Loop Correctness + Durable Ledger, Phase 35: ToolGateway + Policy Engine, Phase 36: Multi-User Identity Isolation + Authula Cutover, Phase 37: Per-User Full-Capability Sandbox, Phase 38: MCP Governance Hardening (+6 more)
+Cohesion: 0.08
+Nodes (25): Milestones, Phase 31: Stabilization & CI Unblock, Phase 32: Quality Cleanup — Dead Code + Shared Helpers, Phase 33: Runtime Profiles + Config Validation, Phase 34: Agent-Loop Correctness + Durable Ledger, Phase 35: ToolGateway + Policy Engine, Phase 36: Multi-User Identity Isolation + Authula Cutover, Phase 37: Per-User Full-Capability Sandbox (+17 more)
 
 ### Community 1478 - "Community 1478"
 Cohesion: 0.40
 Nodes (4): Context, Pool, SchemaExecutor, Reset()
 
 ### Community 1480 - "Community 1480"
-Cohesion: 0.20
-Nodes (13): bootstrapProvider, bootstrapServer, firstOperatorBootstrapService, createAuraFirstOperatorTx(), isNilBootstrapDependency(), wireBootstrapService(), AuthulaCore, BootstrapCreateRequest (+5 more)
+Cohesion: 0.13
+Nodes (18): bootstrapProvider, bootstrapServer, fakeBootstrapServer, firstOperatorBootstrapService, createAuraFirstOperatorTx(), isNilBootstrapDependency(), TestWireBootstrapServiceRequiresPoolAndAuthulaProvider(), TestWireBootstrapServiceTreatsTypedNilProviderAsMissing() (+10 more)
 
 ### Community 1481 - "Community 1481"
-Cohesion: 0.39
-Nodes (11): Context, Pool, T, bootstrapURL(), envOrSkip(), migratedPool(), migrateToVersion(), sqlState() (+3 more)
+Cohesion: 0.14
+Nodes (22): Pool, Context, Pool, T, T, ManagedConfig, T, NewMCPAuditStore() (+14 more)
 
 ### Community 1482 - "Community 1482"
-Cohesion: 0.28
-Nodes (12): T, centroid(), l2normalize(), margin(), Normalize(), approxEq(), TestCentroid(), TestCosine() (+4 more)
+Cohesion: 0.08
+Nodes (30): FastMCP, FastMCP, Any, FastMCP, get_instructions(), MCP server instructions for Neo4j Agent Memory.  Server instructions are sent du, Get server instructions for the given tool profile.      Args:         profile:, MCP prompt definitions for Neo4j Agent Memory.  Prompts surface as slash command (+22 more)
 
 ### Community 1483 - "Community 1483"
 Cohesion: 0.29
 Nodes (6): Acceptance criteria, Part A result — AUTOMATED (DONE), Part B result — OPERATOR LIVE SIGN-OFF (DONE), Phase 22 — Agent Perimeter Hardening: UAT, Sign-off, What the operator asked for (the phase goal)
 
 ### Community 1484 - "Community 1484"
-Cohesion: 0.08
-Nodes (38): envOr(), fail(), logf(), main(), trim(), Sweeper, NewRunDirSweeper(), NewSweeper() (+30 more)
+Cohesion: 0.07
+Nodes (44): envOr(), fail(), logf(), main(), trim(), Sweeper, NewRunDirSweeper(), NewSweeper() (+36 more)
 
 ### Community 1485 - "Community 1485"
 Cohesion: 0.14
@@ -8169,12 +9380,12 @@ Cohesion: 0.14
 Nodes (14): Critical Pitfalls, Pitfall 10: Runtime profiles that LIE — validation passes but unsafe defaults still apply, Pitfall 11: Over-abstracting the ToolGateway into an "atomic bomb" — OR under-building it into a bottleneck, Pitfall 12: Production-ops surfaces that were "added" but never drilled / never run in CI, Pitfall 13: Test coverage that doesn't actually prove two-identity isolation (and the dishonest 10/10), Pitfall 1: "Full-capability inside" accidentally becomes "full host" (mount/socket/network leaks), Pitfall 2: Choosing a heavyweight isolation runtime that doesn't fit a 16-core/32GB mini-PC, Pitfall 3: Per-user egress/volume "isolation" that is advisory, not enforced (+6 more)
 
 ### Community 1487 - "Community 1487"
-Cohesion: 0.20
-Nodes (10): CommandHookConfig, commandHookFailPolicy(), CommandHookManagerFromEnv(), NewCommandHook(), TestCommandHookFailPolicy(), resolveHookCommand(), FailPolicy, Duration (+2 more)
+Cohesion: 0.25
+Nodes (13): Complexity, Decision, classify(), log(), main(), maxFloat(), minFloat(), projectOpenRouterReasoning() (+5 more)
 
 ### Community 1488 - "Community 1488"
-Cohesion: 0.40
-Nodes (5): Anti-Pattern 1: Enforcing policy inside each tool, Anti-Pattern 2: Mutating the ToolGateway into the agent as methods, Anti-Pattern 3: Breaking the host-shell experience to achieve "10/10", Anti-Pattern 4: Scoping by mutating every store signature, Anti-Patterns
+Cohesion: 0.16
+Nodes (17): T, BoxHandle, Client, Context, Resources, SandboxSpec, DockerBackend, TestDockerBackend_EgressDisabledLifecycleNoops() (+9 more)
 
 ### Community 1489 - "Community 1489"
 Cohesion: 0.40
@@ -8189,20 +9400,20 @@ Cohesion: 0.40
 Nodes (4): Embedder, Item, Scored, Verdict
 
 ### Community 1492 - "Community 1492"
-Cohesion: 0.40
-Nodes (4): Idea, Requirements, Spike Manifest, Spikes
+Cohesion: 0.29
+Nodes (6): Idea, Requirements, Session-22 (2026-07-04, spikes 082-085) — v2.0.0 multi-user frontier + integration, Session-23 (2026-07-09, spikes 090-093) - TuringDB current-wheel Docker spike, Spike Manifest, Spikes
 
 ### Community 1493 - "Community 1493"
-Cohesion: 0.33
-Nodes (5): Key Findings (this run), Next-tier impl proofs (deferred to Phase 36–37 implementation), Prior wrap-ups (history), Spike Wrap-Up Summary, This run (Session-21, 078–081) — Multi-user per-identity isolation (Phases 36–37)
+Cohesion: 0.40
+Nodes (4): Prior run (Session-22, 082–085) — Multi-user per-identity isolation, all four planes proven live, Prior run (Session-23, 086–089) — Casbin authz engine + org-roles (the deferred forward bet), Spike Wrap-Up Summary, This run (Sessions 24–25, 071 + 090–096) — Phase 37E reasoning-effort selector + graph-DB contingency
 
 ### Community 1494 - "Community 1494"
 Cohesion: 0.40
 Nodes (4): ignore, ignoreDependencies, ignoreExportsUsedInFile, $schema
 
 ### Community 1495 - "Community 1495"
-Cohesion: 0.46
-Nodes (7): Client, Context, T, seedGraphViewLiveFixture(), TestGraphViewLive_Footprint(), TestGraphViewLive_Schema(), TestGraphViewLive_SerializationShape()
+Cohesion: 0.24
+Nodes (4): f0, gs(), t2, xn()
 
 ### Community 1496 - "Community 1496"
 Cohesion: 0.50
@@ -8542,7 +9753,7 @@ Nodes (3): Processor, ProcessorSet, Modality
 
 ### Community 1583 - "Community 1583"
 Cohesion: 0.27
-Nodes (10): Regexp, deniedSkillsWrite(), expandHomePath(), fsMaxReadBytes(), globMatch(), globToRegexp(), resolveFSPath(), rootOrDefault() (+2 more)
+Nodes (17): TestClassifyNonEnumeratedNeverSafe(), TestClassifyParseFailNeverSafe(), actionEnum(), assertSameActions(), mustArgs(), skillSpec(), sortedKeys(), swarmSpec() (+9 more)
 
 ### Community 1584 - "Community 1584"
 Cohesion: 0.26
@@ -8557,20 +9768,20 @@ Cohesion: 0.50
 Nodes (3): cache_invariant fixtures, JSON shape, Tool-call turns
 
 ### Community 1587 - "Community 1587"
-Cohesion: 0.20
-Nodes (7): AXE_PATH, AxeResult, AxeRunner, openGraphSurface(), POPULATED, require, Window
+Cohesion: 0.15
+Nodes (8): Ix(), q0(), s_, Sc(), vc(), w_, We(), _x()
 
 ### Community 1588 - "Community 1588"
-Cohesion: 0.06
-Nodes (71): T, T, Duration, T, Context, T, ToolResult, T (+63 more)
+Cohesion: 0.05
+Nodes (85): T, T, Backend, SandboxRouter, T, Duration, T, Context (+77 more)
 
 ### Community 1589 - "Community 1589"
 Cohesion: 0.50
 Nodes (3): __getattr__(), Entity and relation extraction from text.  This module provides multiple extract, Lazy import optional extractors and GLiNER2/GLiREL schemas.
 
 ### Community 1591 - "Community 1591"
-Cohesion: 0.24
-Nodes (10): TestAppendAssistantTurnWithCacheMetric_AutoSeqAllocatesMetricSeq(), TestAppendTurn_AutoSeqConcurrentSerializes(), T, Numeric, T, FloatFromNumeric(), NumericFromFloat(), TestFloatFromNumeric_Float64ValueErrorReadsZero() (+2 more)
+Cohesion: 0.10
+Nodes (42): SandboxRouter, Context, Duration, RawMessage, ShellPoll, T, Duration, T (+34 more)
 
 ### Community 1593 - "Community 1593"
 Cohesion: 0.29
@@ -8581,8 +9792,8 @@ Cohesion: 0.12
 Nodes (16): Accomplishments, Decisions Made, Dependency graph, Deviations, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 1596 - "Community 1596"
-Cohesion: 0.40
-Nodes (9): failf(), logf(), main(), memoryEndpoint(), missingNames(), printSummary(), toolNames(), summary (+1 more)
+Cohesion: 0.14
+Nodes (17): CompactionConfig, CompactionConfig, CompactionEffectiveSource, CompactionMode, ParseCompactionConfig(), TestCanaryDeterministic(), TestCompactionConfigDefaultsDisabled(), TestCompactionConfigRejectsIllegalOrIncompatibleActivation() (+9 more)
 
 ### Community 1597 - "Community 1597"
 Cohesion: 0.83
@@ -8621,8 +9832,8 @@ Cohesion: 0.17
 Nodes (11): Architectural Responsibility Map, Assumptions Log, Common Pitfalls already covered above (Windows shell, blanket block, dismiss-vs-fix, lint scope, dist re-stale)., Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED), Package Legitimacy Audit (+3 more)
 
 ### Community 1607 - "Community 1607"
-Cohesion: 0.44
-Nodes (9): TestExtractClientRejectsEmptyChunkList(), TestExtractClientRejectsMalformedJSON(), drainMultipart(), TestExtractClientPropagatesSidecarError(), TestExtractClientRejectsEmptyChunkText(), TestExtractClientStreamsMultipartWithoutBufferingFile(), writeTempFile(), Request (+1 more)
+Cohesion: 0.12
+Nodes (15): Accomplishments, Dependency graph, Deviations from Plan, Metrics, Next Phase Readiness, Performance, Phase 36 Plan 18: Terminal acceptance gate — full CI matrix green + AURA_MUSR_ISOLATION rollout Summary, Self-Check: PASSED (+7 more)
 
 ### Community 1608 - "Community 1608"
 Cohesion: 0.29
@@ -8645,11 +9856,11 @@ Cohesion: 0.83
 Nodes (3): run_expect(), write_snapshot(), quality_snapshot_gate_test.sh script
 
 ### Community 1613 - "Community 1613"
-Cohesion: 0.29
-Nodes (6): installGovernanceRoutes(), MCP_SERVERS, openGovernance(), SCHED_RUNS, SCHED_TASKS, SKILLS_ACTIVE
+Cohesion: 0.15
+Nodes (7): Au(), av(), Ge(), nv(), ov, wu(), yu()
 
 ### Community 1614 - "Community 1614"
-Cohesion: 0.32
+Cohesion: 0.33
 Nodes (8): decodePasswordResetRequest(), stampPasswordResetRequest(), writePasswordResetError(), Server, PasswordResetService, Request, ResponseWriter, ServeMux
 
 ### Community 1616 - "Community 1616"
@@ -8769,24 +9980,24 @@ Cohesion: 0.67
 Nodes (3): Core (all already in the tree), Standard Stack, Supporting — the external skills transport
 
 ### Community 1797 - "Community 1797"
-Cohesion: 0.36
-Nodes (6): isSecretQueryKey(), redactSecretQuery(), redactURLUserinfo(), sanitizeSkillSource(), TestSanitizeSkillSource(), T
+Cohesion: 0.08
+Nodes (23): Auth on fetch (applies to every new fetch: `useBlobPreview`, `downloadAll` anchors), `chat/artifacts/artifactMeta.ts` (NEW — pure utility, mutation target), `chat/artifacts/ArtifactRow.tsx` (NEW — component, download), `chat/artifacts/downloadAll.ts` (NEW — pure-ish utility, mutation target), `chat/artifacts/PreviewModal.tsx` (NEW — component, modal), `chat/artifacts/renderers/*.tsx` (NEW ×6 — lazy chunks), `chat/artifacts/useBlobPreview.ts` (NEW — hook, file-I/O), `chat/artifacts/useThreadArtifacts.ts` (NEW — hook, query) (+15 more)
 
 ### Community 1798 - "Community 1798"
-Cohesion: 0.36
-Nodes (11): newBranchAPIServer(), seedBranchConversation(), TestBranchEdit_ForksAndReRunsOverSelectedBranch(), TestBranchEdit_UnknownTurnIs404(), TestBranchList_NonBranchedHasOneBranch(), TestBranchSelect_ReRunsOverSelectedLeaf(), ConversationStore, scriptedRunner (+3 more)
+Cohesion: 0.16
+Nodes (28): fakeSTT, fakeTTS, assertAssetServiceUntouched(), newSTTRequest(), newVoiceServer(), TestCapText(), TestSTT_Degraded(), TestSTT_EmptyTranscript() (+20 more)
 
 ### Community 1799 - "Community 1799"
-Cohesion: 0.31
-Nodes (9): NewIdentityAuditStore(), contains(), seedThrowawayIdentity(), TestIdentityAuditImmutable(), TestIdentityAuditImmutable_SentinelOnTxPath(), TestListCapabilities(), Pool, Context (+1 more)
+Cohesion: 0.27
+Nodes (12): grantPermission(), logf(), main(), principalFrom(), requireCasbin(), ts(), withPrincipal(), principalKey (+4 more)
 
 ### Community 1802 - "Community 1802"
-Cohesion: 0.22
-Nodes (7): Context, RawMessage, Spec, ToolResult, withWalkTruncation(), FSGlob, fsGlobArgs
+Cohesion: 0.13
+Nodes (14): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Next Phase Readiness (+6 more)
 
 ### Community 1807 - "Community 1807"
-Cohesion: 0.13
-Nodes (14): Durable Swarm Messaging Implementation Plan, File Map, Implementation Notes, Scope Guard, Task 10: Final Verification And Documentation Sync, Task 1: Schema And sqlc Queries, Task 2: Domain Types And Validation, Task 3: Store Send And Idempotency (+6 more)
+Cohesion: 0.12
+Nodes (15): Durable Swarm Messaging Implementation Plan, File Map, Implementation Notes, Scope Guard, Task 10: Final Verification And Documentation Sync, Task 1: Schema And sqlc Queries, Task 2: Domain Types And Validation, Task 3: Store Send And Idempotency (+7 more)
 
 ### Community 1809 - "Community 1809"
 Cohesion: 0.67
@@ -8801,8 +10012,8 @@ Cohesion: 0.33
 Nodes (5): Added, Changed, Changelog, Fixed, [Unreleased]
 
 ### Community 1817 - "Community 1817"
-Cohesion: 0.28
-Nodes (16): hasViolation(), TestConfigValidate(), TestGateCORS(), TestGateDestructiveShell(), TestGateGarageRPCSecret(), TestGateObjectStore(), TestGateObjectStoreEndpoint(), TestGateReplication() (+8 more)
+Cohesion: 0.27
+Nodes (17): hasViolation(), TestConfigValidate(), TestGateCORS(), TestGateDestructiveShell(), TestGateGarageRPCSecret(), TestGateMUSRIsolation(), TestGateObjectStore(), TestGateObjectStoreEndpoint() (+9 more)
 
 ### Community 1821 - "Community 1821"
 Cohesion: 0.25
@@ -8810,7 +10021,7 @@ Nodes (10): Context, Mutex, T, hostThrottle, newHostThrottle(), TestThrottleAcqu
 
 ### Community 1822 - "Community 1822"
 Cohesion: 0.09
-Nodes (53): IdentityID(), WithIdentityID(), key, T, T, T, T, T (+45 more)
+Nodes (53): T, T, Registry, T, T, T, Duration, Bridge() (+45 more)
 
 ### Community 1823 - "Community 1823"
 Cohesion: 0.22
@@ -8825,80 +10036,84 @@ Cohesion: 0.29
 Nodes (6): Judgment format, Metrics, Retrieval eval harness (RET-05), Run command (GPU host), Self-learning: OUT (deferred per spike-070), What the harness asserts
 
 ### Community 1846 - "Community 1846"
-Cohesion: 0.17
-Nodes (12): Implications for Roadmap, Phase 31: Runtime Profiles + Config Validation (keystone), Phase 32: Agent-Loop Correctness + Durable Ledger, Phase 33: ToolGateway + Policy Engine, Phase 34: Multi-User Identity Isolation + Authula Cutover (parallelizable with 33), Phase 35: Per-User Full-Capability Sandbox, Phase 36: MCP Governance Hardening, Phase 37: Idempotency + Observability Pack (+4 more)
+Cohesion: 0.09
+Nodes (22): Backend — the ingest mirror + asset layer, Canonical References, Claude's Discretion, Data model (WEBART-01, fork a), Deferred Ideas, Download route (WEBART-03), Established Patterns, Event / channel parity (+14 more)
 
 ### Community 1847 - "Community 1847"
 Cohesion: 0.50
 Nodes (3): Milestones, v0.0.0 Substrate (Shipped: 2026-06-15), v1.0.0 Aura Deep Search Web Cockpit (Shipped: 2026-06-29)
 
 ### Community 1849 - "Community 1849"
-Cohesion: 0.16
-Nodes (14): ApprovalSource, AuditActor, Context, Writer, Writer, T, Writer, T (+6 more)
+Cohesion: 0.31
+Nodes (9): Client, is2xx(), statusErr(), WithHTTPClient(), Option, Client, Context, Values (+1 more)
 
 ### Community 1850 - "Community 1850"
-Cohesion: 0.24
-Nodes (7): Context, Embedder, RWMutex, Scored, Item, Ranker, RankResult
+Cohesion: 0.06
+Nodes (19): counterStyleExclusions, CSSCounterStyleRuleImpl, descriptorNames, { serializeCustomIdent }, CSSKeyframeRuleImpl, CSSStyleProperties, csstree, DOMException (+11 more)
 
 ### Community 1854 - "Community 1854"
-Cohesion: 0.33
-Nodes (12): assertPoolClosed(), TestBootCloseOnCommandHookFailure(), TestBootCloseOnFinalValidateFailure(), TestBootCloseOnReloadFailure(), TestBootFailFastBeforeDBOpen(), TestBootReleaseResourcesDrainsClosersAndClosesPool(), unreachablePool(), validBootConfig() (+4 more)
+Cohesion: 0.14
+Nodes (17): compactMessagesForLocale(), dispatchCompactCommand(), TestChatCompactCommandsShareCoordinatorAndRejectMidStreamRestore(), TestChatCompactUsesItalianCatalogFromLocale(), compactCommandService, compactMessageCatalog, conversationCompactBackend, fakeChatCompact (+9 more)
 
 ### Community 1884 - "Community 1884"
 Cohesion: 0.22
 Nodes (9): `internal/conversations` — multi-thread persistence + L1/L2/L2.5 context ladder + microcompact + sidecar spill + auto-title + boot GC, `internal/db` — Postgres connectivity owner (pgxpool open, golang-migrate runner, role bootstrap, tx seam), `internal/db/sqlc` — sqlc-generated Postgres client (DO NOT hand-edit), `internal/documents` — document ingestion domain (Postgres job state, Neo4j searchable graph, extractor/embedding sidecars), `internal/identity` — single-user identity + capability_grants Store (Slice 1.7), `internal/knowledge` — Neo4j graph + vector substrate (MCP-subprocess Cypher client, driver-backed schema DDL, Cypher migrations, health probes), `internal/profile` — per-identity Agent.md profile store (atomic disk writes + render/parse), `internal/secret` — canonical secret-env-key predicate (+1 more)
 
 ### Community 1885 - "Community 1885"
-Cohesion: 0.18
-Nodes (9): GDSConfig, MemoryClient, Validate a limit parameter.      Args:         limit: The limit value to validat, Validate and normalize a session ID.      Args:         session_id: The session, validate_limit(), validate_session_id(), Get the underlying memory client., Deserialize provider from saved state.              .. warning:: (+1 more)
+Cohesion: 0.09
+Nodes (21): 1. [Rule 3 - Blocking / Go-module semantics] moby direct-promotion required a manual go.mod edit, 2. [Note — no edit needed] ROADMAP.md SC#4 already carried the D-06 posture, 3. [Minor — API-surface correction captured] NetworkMode package location, Accomplishments, Coverage metadata (#1602), Decisions Made, Dependency graph, Deviations from Plan (+13 more)
 
 ### Community 1886 - "Community 1886"
-Cohesion: 0.44
-Nodes (10): displayEvent(), sampleDisplay(), TestTranslateDisplayClosesOpenRun(), TestTranslateDisplayCustomEventName(), TestTranslateDisplayEmitsCustomEvent(), TestTranslateDisplayGoldenShape(), TestTranslateNilDisplayNoEvent(), Event (+2 more)
+Cohesion: 0.25
+Nodes (13): check(), cleanup(), countHits(), doc(), envDefault(), logf(), main(), stringOf() (+5 more)
 
 ### Community 1887 - "Community 1887"
-Cohesion: 0.23
-Nodes (7): fakePasswordResetTokenLocker, fakePasswordResetTokenQueries, fakePasswordResetTokenRow, fakeRecoveryDeliverer, AuraPasswordResetTokens, Context, Row
+Cohesion: 0.09
+Nodes (21): `cmd/aura/serve_provisioning.go` + `serve_dispatch.go` (composition, mod) — EXACT TEMPLATE, Consumer-declared seam interface (no reverse import), `docker/aura-sandbox/Dockerfile` (config, image) — EXACT TEMPLATE (reuse the fat base), Fail-CLOSED deny ToolResult (D-09 / GATE-01), File Classification, `internal/agent/tools/shell_bg.go` + `shell_bg_owner.go` (tool/controller, streaming, mod) — SELF-ANALOG (Open Q4, most invasive), `internal/agent/tools/{shell_exec,fs_read,fs_write}.go` (tool/controller, mod) — SELF-ANALOG + gate, `internal/cron/handlers/sandbox_reap.go` (handler, batch/scheduled) — EXACT TEMPLATE (+13 more)
+
+### Community 1898 - "Community 1898"
+Cohesion: 0.12
+Nodes (16): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Metrics (+8 more)
 
 ### Community 1913 - "Community 1913"
 Cohesion: 0.38
 Nodes (13): fenceLoader, fenceLoaders(), fenceStore(), TestReadTurnSidecar_GuardsRunDirAndConvID(), TestReadTurnSidecar_PoisonedColumnIgnored(), TestReadTurnSidecar_ReadsReconstructedNotColumnTarget(), TestReadTurnSidecar_SymlinkLeafRefused(), TestReadTurnSidecar_ValidReconstructedRehydrates() (+5 more)
 
 ### Community 1914 - "Community 1914"
-Cohesion: 0.22
-Nodes (7): Context, RawMessage, Spec, ToolResult, sliceLines(), FSRead, fsReadArgs
+Cohesion: 0.13
+Nodes (14): ExecAttachResult, BoxHandle, Client, Context, ExecRequest, ExecResult, Once, DockerBackend (+6 more)
 
 ### Community 1915 - "Community 1915"
-Cohesion: 0.60
-Nodes (5): assetEnvOrSkip(), migratedAssetPool(), TestPostgresAssetStoreRoundTrip(), Pool, T
+Cohesion: 0.24
+Nodes (14): disposableAssetPool(), provisionGarageIdentity(), seedAssetIdentity(), TestAssetObjectStoreCrossDenyLive(), assetEnvOrSkip(), migratedAssetPool(), TestPostgresAssetStoreRoundTrip(), Client (+6 more)
 
 ### Community 1916 - "Community 1916"
-Cohesion: 0.24
-Nodes (8): newCLIReasoning(), TestCLIReasoningInactiveClearIsNoOp(), TestCLIReasoningRollingWindowBounded(), TestRenderRunnerTurnReasoning(), cliReasoning, FIFO, Writer, T
+Cohesion: 0.05
+Nodes (37): dependencies, assistant-stream, @assistant-ui/react, @assistant-ui/react-markdown, class-variance-authority, clsx, docx-preview, graphology (+29 more)
 
 ### Community 1923 - "Community 1923"
-Cohesion: 0.31
-Nodes (6): HybridMemoryProvider, Combines AgentCore Memory with Context Graphs.      This provider intelligently, Analyze query to determine which memory types to search.          Args:, Search both backends and merge results.          This method routes queries to a, Enrich entity memories with relationship data.          Args:             result, MemorySearchResult
+Cohesion: 0.25
+Nodes (20): baseWorker(), finalizeFixture(), isSerializationFailure(), runWorker(), TestCompactionMultiProcessDuplicate(), TestCompactionMultiProcessGovernanceAfterCaptureInvalidatesFinalize(), TestCompactionMultiProcessLeaseExpiry(), TestCompactionMultiProcessManualDoesNotPreemptActiveInference() (+12 more)
 
 ### Community 1928 - "Community 1928"
 Cohesion: 0.28
 Nodes (7): TestRuntimeAssetProcessingQueueEnqueuesDocumentJob(), TestRuntimeAssetProcessingQueueRequiresStore(), recordingIngestionJobCreator, Context, CreateIngestionJobRequest, IngestionJob, T
 
 ### Community 1934 - "Community 1934"
-Cohesion: 0.22
-Nodes (6): Hybrid Memory Provider combining AgentCore Memory with Context Graphs.  This mod, Initialize the Hybrid Memory Provider.          Args:             memory_client:, Get the current routing strategy., Strategy for routing queries between memory backends., RoutingStrategy, MemoryClient
+Cohesion: 0.13
+Nodes (15): 2026-06-18 Edge/Web Lint Memory, Accumulated Context, Blockers/Concerns, Decisions, Pending Todos, Phase 22 Execution, Phase 23 Execution, Phase 24 Execution (+7 more)
 
 ### Community 1967 - "Community 1967"
 Cohesion: 0.15
 Nodes (12): Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification, Observable Truths (+4 more)
 
 ### Community 1969 - "Community 1969"
-Cohesion: 0.53
-Nodes (8): injectDefaultOnContainerCalculator(), injectDefaultOnMemory(), loadMCPServers(), parseMCPServersJSON(), validateMCPServers(), ManagedConfig, ManagedServer, ServerConfig
+Cohesion: 0.17
+Nodes (13): Context, RawMessage, Spec, T, ToolResult, alphaTool, deferredMidTool, equalStrings() (+5 more)
 
 ### Community 1970 - "Community 1970"
-Cohesion: 0.18
-Nodes (3): Milestones, Progress, Roadmap: Aura
+Cohesion: 0.29
+Nodes (6): DGX-Spark Fleet, Future Requirements (deferred — post-v2.0.0), Multi-Tenant / RBAC, Out of Scope, Requirements: Aura — v2.0.0 Industrial Hardening & Multi-User Production, Traceability
 
 ### Community 1971 - "Community 1971"
 Cohesion: 0.14
@@ -8909,20 +10124,24 @@ Cohesion: 0.39
 Nodes (11): Config, Duration, Request, T, liveCfg(), requireLiveLLM(), streamLive(), TestLiveReasoning_HighTierNoStarvation() (+3 more)
 
 ### Community 1973 - "Community 1973"
-Cohesion: 0.44
-Nodes (10): MultimodalConfig, T, envOr(), liveMultimodalConfig(), sidecarEnvOrSkip(), syntheticPNG(), TestLiveDocumentConvert(), TestLivePhotoOCRRoundTrip() (+2 more)
+Cohesion: 0.18
+Nodes (18): BoxHandle, Client, Context, ReadCloser, Reader, DockerBackend, Reader, T (+10 more)
 
 ### Community 1974 - "Community 1974"
-Cohesion: 0.35
-Nodes (11): TestServer_MalformedThreadID404(), TestServer_MessagesLoadHistoryError(), TestServer_ResumeSubmitError(), TestServer_RunBadRequests(), TestServer_RunContinueAfterResume(), TestServer_RunSSERoundTrip(), TestServer_RunUnknownThread404(), postRun() (+3 more)
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+8 more)
 
 ### Community 1975 - "Community 1975"
 Cohesion: 0.14
 Nodes (14): Acceptance, Architettura, Commit message template, Event type (rubato + Aura extension), File targets cumulativi, Interface base (rubato da adk-go agent.go), Mini-PC RAM budget — delta, Open questions (+6 more)
 
 ### Community 1976 - "Community 1976"
-Cohesion: 0.40
-Nodes (12): Hook, newShellResumeHook(), digestFromContext(), rawJSON(), TestChainResumeHooksRunsAllHooks(), TestShellResumeHookApprovesAcceptedShellContext(), TestShellResumeHookIgnoresDeclineCancelAndUnrelatedContext(), TestShellResumeHookRejectsMismatchedQuestion() (+4 more)
+Cohesion: 0.09
+Nodes (36): T, Context, Mutex, ToolResult, ShellExec, T, T, Regexp (+28 more)
+
+### Community 1977 - "Community 1977"
+Cohesion: 0.09
+Nodes (3): d3(), lp(), np
 
 ### Community 1978 - "Community 1978"
 Cohesion: 0.29
@@ -8941,24 +10160,24 @@ Cohesion: 0.18
 Nodes (10): 1. Microsoft Agent Governance Toolkit — the reference "policy gateway" shape (HIGH), 2. Temporal — "Why agentic flows need distributed-systems discipline" (HIGH), 3. Temporal/Olmec — 2026 shift to durable agentic workflows (MEDIUM), 4. Tigera/Calico — Multi-layer policy for securing AI agents (MEDIUM), 5. LangChain — LangSmith LLM Gateway: runtime governance in the agent lifecycle (MEDIUM), 6. Lunar.dev — Best open-source MCP gateways 2026 (MEDIUM, single-binary relevance), Anti-over-engineering checklist (the "minimal industrial form"), Sources & findings (+2 more)
 
 ### Community 1991 - "Community 1991"
-Cohesion: 0.52
-Nodes (5): Request, coreServicesProvider, NewValidator(), userResolver, Validator
+Cohesion: 0.31
+Nodes (8): T, Request, envOrSkip(), TestAuthulaProvider_EndToEnd(), coreServicesProvider, NewValidator(), userResolver, Validator
 
 ### Community 1992 - "Community 1992"
 Cohesion: 0.13
 Nodes (14): Accomplishments, Behavior Change (documented per acceptance criteria — T-32-06-TOOL), Coverage, Decisions Made, Dependency graph, Deviations from Plan, Issues Encountered, Metrics (+6 more)
 
 ### Community 1993 - "Community 1993"
-Cohesion: 0.25
-Nodes (5): Any, Ensure boto3 client is initialized and return it., Parse the response body to extract embedding.          Args:             respons, Generate embedding for a single text.          Args:             text: The text, Generate embeddings for multiple texts efficiently.          Note: Bedrock's Tit
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+8 more)
 
 ### Community 1994 - "Community 1994"
-Cohesion: 0.18
-Nodes (9): fakeBootstrapProvider, fakeBootstrapServer, panicBootstrapProvider, TestWireBootstrapServiceRequiresPoolAndAuthulaProvider(), TestWireBootstrapServiceTreatsTypedNilProviderAsMissing(), BootstrapService, Context, CoreServices (+1 more)
+Cohesion: 0.33
+Nodes (4): fakeChannel, Bool, Context, Int32
 
 ### Community 1995 - "Community 1995"
-Cohesion: 0.50
-Nodes (4): installGraphRoutes(), openGraphSurface(), POPULATED, SCHEMA
+Cohesion: 0.17
+Nodes (28): bgEnv, TestRecoverOperatorGuardNoWrite(), TestRecoverOperatorMissingAccount(), TestRecoverOperatorNoRecovery(), assertSingleNeutralAudit(), countRows(), mustUUID(), provisionThrowawayDB() (+20 more)
 
 ### Community 1996 - "Community 1996"
 Cohesion: 0.26
@@ -8977,20 +10196,20 @@ Cohesion: 0.38
 Nodes (10): execErr(), execStatements(), requireAttemptCount(), requireSQLState(), TestMigration0023IdentityRecoveryRoundTrip(), sqlExecer, statement, Context (+2 more)
 
 ### Community 2000 - "Community 2000"
-Cohesion: 0.36
-Nodes (8): FastMCP, MCP prompt definitions for Neo4j Agent Memory.  Prompts surface as slash command, Register MCP prompts on the server based on profile.      Args:         mcp: Fas, Register the core prompt (memory-conversation)., Register extended prompts (memory-reasoning, memory-review)., _register_core_prompts(), _register_extended_prompts(), register_prompts()
+Cohesion: 0.08
+Nodes (23): APIs, UI and commands, Cross-Cutting Shared Patterns, Deterministic, injectable tests, Durable claims, immutable checkpoints, CAS pointer and restores, Durable memory and privacy lifecycle, Explicit No-Analog Areas, File Classification, Immutable canonical data, mutable pointer (+15 more)
 
 ### Community 2001 - "Community 2001"
 Cohesion: 0.25
 Nodes (6): _auto_device(), Sentence-Transformers embedding adapter for the Provider Protocol.  Wraps the ex, Pick the best available torch device, falling back to CPU.      Best-effort heur, Local sentence-transformers embedding provider.      Recommended for cost-sensit, SentenceTransformersProvider, SentenceTransformerEmbedder
 
 ### Community 2002 - "Community 2002"
-Cohesion: 0.21
-Nodes (9): drainResult, drainShutdown(), drainWithGrace(), TestDrainWithGrace_ExceedsGrace(), TestDrainWithGrace_FinishesBeforeGrace(), Context, Duration, T (+1 more)
+Cohesion: 0.18
+Nodes (16): TestBufferCapFallback(), TestDefaultIDGenerator(), TestLastUserMessage(), TestPayloadString(), TestResumeAnswersActions(), lastUserMessage(), msgID(), payloadString() (+8 more)
 
 ### Community 2003 - "Community 2003"
-Cohesion: 0.35
-Nodes (8): Spec, appendSchema(), newBM25Index(), searchDocument(), tokenize(), bm25Index, schemaNode, scoredDoc
+Cohesion: 0.06
+Nodes (18): { kConstruct }, { kEnumerableProperty }, { validateCloseCodeAndReason }, { webidl }, WebSocketError, { ByteParser }, { channels }, { createDeferredPromise } (+10 more)
 
 ### Community 2004 - "Community 2004"
 Cohesion: 0.14
@@ -8999,6 +10218,10 @@ Nodes (13): Aura Document Library Product UX Implementation Plan, Current Dirty 
 ### Community 2005 - "Community 2005"
 Cohesion: 0.20
 Nodes (9): Artifacts this phase produces (31-01), Contingency remediation files (only if a gate is unexpectedly RED) — none conflict, green per 31-RESEARCH, measured on the CI-matching Node 24.16.0 / npm 11.17.0)., - internal/webui/dist/**   (C2: rebuild+commit ONLY if web-dist-freshness drifts), STRIDE Threat Register, Trust Boundaries, Verify-only baseline. Expected modification set is EMPTY (C1/C2/C4 are already, - web/src/__tests__/**      (C4: add branch tests ONLY if vitest branches < 85) (+1 more)
+
+### Community 2006 - "Community 2006"
+Cohesion: 0.11
+Nodes (12): borderRightColor, borderRightStyle, borderRightWidth, descriptor, initialValues, parsers, shorthandFor, subProps (+4 more)
 
 ### Community 2007 - "Community 2007"
 Cohesion: 0.28
@@ -9009,12 +10232,12 @@ Cohesion: 0.14
 Nodes (13): Accomplishments, Context: PC-crash resume, Decisions Made, Dependency graph, Deviations from Plan, Issues Encountered, Metrics, Next Phase Readiness (+5 more)
 
 ### Community 2009 - "Community 2009"
-Cohesion: 0.29
-Nodes (8): guardedScriptedRunner, TestBranchSelect_BusyThread409(), TestBranchSelect_LockAcquiredAndReRuns(), TestBranchSelect_UnknownThread404(), TestServer_RunBusyThread409(), TestServerMetricsExposesPrometheus(), scriptedRunner, T
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+8 more)
 
 ### Community 2010 - "Community 2010"
-Cohesion: 0.07
-Nodes (37): logf(), main(), parseMD(), renderPNG(), chat(), logf(), main(), renderTablePNG() (+29 more)
+Cohesion: 0.19
+Nodes (14): EffectiveCompactionSnapshot, CompactPreview, CompactRequest, Context, T, effectiveReaderFixture, fakeCompactBackend, TestCompactCoordinatorAcceptsEveryStableTrigger() (+6 more)
 
 ### Community 2011 - "Community 2011"
 Cohesion: 0.50
@@ -9025,12 +10248,12 @@ Cohesion: 0.20
 Nodes (10): A. Executive Summary, Aura Codebase Quality Audit (Maintainability / Correctness / Architecture), B. Findings — by slice (full tables in the slice files), C. High-confidence quick wins (safe, minimal risk), D. Risky / uncertain — verify before acting, E. Refactoring plan (incremental, low-risk first — no rewrite), Estimated cleanup opportunity, F. Suggested validation (before/after each cleanup) (+2 more)
 
 ### Community 2014 - "Community 2014"
-Cohesion: 0.43
-Nodes (5): classifyAuditErr(), InsertIdentityAuditTx(), IdentityAuditInsert, InsertIdentityAuditParams, Queries
+Cohesion: 0.21
+Nodes (10): AuraSettings, Context, Pool, Queries, KeyMeta, Kind, Lister, Allowed() (+2 more)
 
 ### Community 2015 - "Community 2015"
-Cohesion: 0.42
-Nodes (12): Price, Config, applyEnvOverrides(), applyFileConfig(), configFilePath(), envBool(), envFloat(), envInt() (+4 more)
+Cohesion: 0.25
+Nodes (17): Context, T, ctxWithRunDir(), TestNewResult_ExactlyCapNoSidecar(), TestNewResult_LargeSpills(), TestNewResult_ReusedProviderToolCallIDDoesNotOverwriteSidecar(), TestNewResult_SmallNoSidecar(), TestNewResult_WriteFailureDegrades() (+9 more)
 
 ### Community 2016 - "Community 2016"
 Cohesion: 0.33
@@ -9045,8 +10268,8 @@ Cohesion: 0.50
 Nodes (3): 29-05 (Gate-3 close), D-29-05-1 — `internal/cron` migration round-trip bound is stale (off-by-one at head=0022), Phase 29 — Deferred Items (out-of-scope discoveries)
 
 ### Community 2019 - "Community 2019"
-Cohesion: 0.40
-Nodes (9): Bot, Recipient, T, liveBot(), liveEnvOrSkip(), minimalOggOpus(), TestLiveSendDocumentResponse(), TestLiveSendPhotoResponse() (+1 more)
+Cohesion: 0.16
+Nodes (25): Client, Message, Pool, Runner, Store, T, Time, T (+17 more)
 
 ### Community 2020 - "Community 2020"
 Cohesion: 0.15
@@ -9061,8 +10284,8 @@ Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (this plan creates the ones marked ★), STRIDE Threat Register, Trust Boundaries
 
 ### Community 2024 - "Community 2024"
-Cohesion: 0.23
-Nodes (6): Context, reconnectingClient, ToolDef, errReconnectClient, swapOnListClient, reconnectingServer
+Cohesion: 0.31
+Nodes (7): LoadDocumentOwners(), Backfiller, BackfillReport, DocumentOwner, Context, DBTX, KnowledgeClient
 
 ### Community 2025 - "Community 2025"
 Cohesion: 0.20
@@ -9073,52 +10296,52 @@ Cohesion: 0.50
 Nodes (3): Artifacts this plan produces (★ new / △ modified), STRIDE Threat Register, Trust Boundaries
 
 ### Community 2027 - "Community 2027"
-Cohesion: 0.23
-Nodes (15): AgentDeps, TestChildRegistryDropsSwarmKeepsAskUser(), Handler, childRegistry(), newAgentWorker(), HandlerMeta, Job, TaskKind (+7 more)
+Cohesion: 0.24
+Nodes (8): newRuntimeDocumentVersionRecorder(), runtimeDocumentVersionRecorder, Asset, CatalogService, Context, Job, Pool, Store
 
 ### Community 2028 - "Community 2028"
 Cohesion: 0.20
 Nodes (9): How to Run, Investigation Trail, Key finding (feeds Item 2 + a retrieval-quality note), Research / Code Audit (the headline finding), Results (live, 2026-06-28, full stack), Spike 075 — Image OCR → Searchable Chunks, Verdict, What This Validates (+1 more)
 
 ### Community 2029 - "Community 2029"
-Cohesion: 0.24
-Nodes (8): Open(), redactDSN(), redactDSNUsername(), Reset(), Config, Context, Pool, Context
+Cohesion: 0.02
+Nodes (86): AsyncDriver, AsyncSession, Neo4jClient, Any, Any, Neo4jClient, Any, datetime (+78 more)
 
 ### Community 2030 - "Community 2030"
-Cohesion: 0.53
-Nodes (8): cacheMetricsPool(), insertMetricAt(), newConversationForMetrics(), TestCacheMetrics_StoreInsert(), TestCacheMetrics_WindowAndAggregate(), Pool, T, Time
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed / Clarified, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+8 more)
 
 ### Community 2031 - "Community 2031"
 Cohesion: 0.31
 Nodes (5): AuraSettings, Context, Queries, Text, UpsertSettingParams
 
 ### Community 2032 - "Community 2032"
-Cohesion: 0.26
-Nodes (5): Channel, Registry, envChannelEnabled(), Context, Mutex
+Cohesion: 0.23
+Nodes (17): RawMessage, SandboxConfig, T, ToolResult, Context, T, artifactMap(), sfArgs() (+9 more)
 
 ### Community 2033 - "Community 2033"
-Cohesion: 0.56
-Nodes (8): identityGet(), identityGrant(), identityList(), identityNameCap(), identityRevoke(), runIdentity(), Context, Store
+Cohesion: 0.14
+Nodes (31): TestCompactionRolloutFullChainPostgres(), NewCompactionRolloutController(), passingDecision(), restoreFailingDecision(), rolloutControllerState(), TestPromotionAfter24HoursAnd1000Attempts(), TestRollbackSafetyAndStaleEvaluator(), TestRolloutControllerAdvancesFullLadder() (+23 more)
 
 ### Community 2034 - "Community 2034"
-Cohesion: 0.27
-Nodes (8): allowedCommandHookParentEnv(), commandHookEnv(), T, ContainsCredentialURL(), dbURLKey(), IsSecretEnvVar(), TestIsSecretEnvKey(), TestIsSecretEnvVar_DSNValueAndNonCredentialURL()
+Cohesion: 0.06
+Nodes (21): descriptor, fontFamily, fontSize, fontStyle, fontVariant, fontWeight, lineHeight, parsers (+13 more)
 
 ### Community 2035 - "Community 2035"
-Cohesion: 0.12
-Nodes (16): captureContextRoundTripper, contextRoundTripper, doCapturedRequest(), TestClampInt64ToInt(), TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(), telegramGetMeHTTPClient(), Client, Request (+8 more)
+Cohesion: 0.22
+Nodes (9): captureContextRoundTripper, doCapturedRequest(), TestClampInt64ToInt(), TestTelegramGetMeHTTPClientBoundsTimeoutAndContext(), Client, Request, Response, T (+1 more)
 
 ### Community 2036 - "Community 2036"
-Cohesion: 0.27
-Nodes (8): Config, Context, T, T, embedText(), smokeConfig(), TestKnowledgeSmoke(), envIntOr()
+Cohesion: 0.11
+Nodes (18): 1. [Rule 3 - Blocking / task-file ownership] Round-trip smoke drives exec/cp via the raw moby client, not DockerBackend.Exec/MaterializeIn, Accomplishments, Coverage metadata (#1602), Decisions Made, Dependency graph, Deviations from Plan, Interface Handoff (for 37-05 / 37-06 / 37-07), Issues Encountered (+10 more)
 
 ### Community 2037 - "Community 2037"
 Cohesion: 0.22
 Nodes (8): 1. Live rerank quality + p95 (GPU host), 2. Rerank-dominant per-stage comparison (GPU host), 3. Vector-vs-rerank precision lift (GPU host), 4. Full Go Postgres+Neo4j E2E for widened ingest, Current Test, Gaps, Summary, Tests
 
 ### Community 2038 - "Community 2038"
-Cohesion: 0.36
-Nodes (8): FastMCP, MCP resource definitions for Neo4j Agent Memory.  Resources provide auto-injecte, Register MCP resources on the server based on profile.      Args:         mcp: F, Register the core resource (context template)., Register extended resources (entities catalog, preferences, stats)., _register_core_resources(), _register_extended_resources(), register_resources()
+Cohesion: 0.22
+Nodes (9): Code-Verification Findings, CV-1 — The single PEP seam: exactly TWO `tool.Execute` sites; no third bypass ✅, CV-2 — `InsertToolInvocation :exec → :execrows`: one query, one caller ✅, CV-3 — Reservation timing: deeper than "timing" ⚠ (D-01c clarified), CV-4 — Classification ground-truth (D-02a/b/c) ✅ with one drift note, CV-5 — GATE-02 already satisfied (D-04) ✅, CV-6 — Profile is on `config.Config`; `Strict()` is insufficient for D-03b ⚠, CV-7 — Approve/HITL routing seams all present (D-03) ✅ (+1 more)
 
 ### Community 2039 - "Community 2039"
 Cohesion: 0.50
@@ -9133,12 +10356,12 @@ Cohesion: 0.25
 Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 31 — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
 
 ### Community 2042 - "Community 2042"
-Cohesion: 0.09
-Nodes (22): Architectural Patterns, Architecture Research, Build Order (dependency-ordered) — what must land before what, Component Responsibilities, Data Flow, External Services, Integration Points, Internal Boundaries (+14 more)
+Cohesion: 0.07
+Nodes (27): Anti-Pattern 1: Enforcing policy inside each tool, Anti-Pattern 2: Mutating the ToolGateway into the agent as methods, Anti-Pattern 3: Breaking the host-shell experience to achieve "10/10", Anti-Pattern 4: Scoping by mutating every store signature, Anti-Patterns, Architectural Patterns, Architecture Research, Build Order (dependency-ordered) — what must land before what (+19 more)
 
 ### Community 2043 - "Community 2043"
-Cohesion: 0.22
-Nodes (6): TestDocumentAllowlistInSyncWithIngest(), isSupportedDocument(), SupportedDocumentExts(), TestIsSupportedDocument(), T, T
+Cohesion: 0.17
+Nodes (11): Deviations from Plan, Known Stubs, Next, Phase 37C Plan 03: Web Voice API Backend Spine Summary, Requirements, Self-Check: PASSED, Task 1 — `internal/agui/voice_api.go`: 3 handlers + seams + `SetVoice` (commit `0d418a1a3`, verify token `VOICE_API_OK`), Task 2 — `cmd/aura` composition-root wiring (commit `f74bfce63`, verify token `VOICE_WIRING_OK`) (+3 more)
 
 ### Community 2044 - "Community 2044"
 Cohesion: 0.50
@@ -9177,24 +10400,24 @@ Cohesion: 0.32
 Nodes (6): cannedProcessor, TestImageDocumentProcessor(), Asset, Context, Result, T
 
 ### Community 2053 - "Community 2053"
-Cohesion: 0.20
-Nodes (8): EnrichmentProvider, CompositeEnrichmentProvider, create_enrichment_service(), Combines multiple providers, trying each in order until success.      Useful for, Initialize composite provider.          Args:             providers: List of pro, Union of all provider's supported types., List of underlying providers., Create a complete enrichment service based on configuration.      Creates provid
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 2054 - "Community 2054"
-Cohesion: 0.50
-Nodes (3): LISTEN_PORT, server, TARGET_PORT
+Cohesion: 0.10
+Nodes (32): assert, COMMENTS, constructor(), createCursorWithCount(), createCursorWithPadding(), createCursorWithSkip(), createIndexMap(), cursors (+24 more)
 
 ### Community 2055 - "Community 2055"
 Cohesion: 0.25
 Nodes (7): Current model (cited — from the v2.0.0 quality audit, `docs/audit/quality/`), Migration touchpoints (Phase 36), Open Questions, Recommended per-identity design (minimal-industrial-form), Results, Spike 081: MCP + Skills Per-Identity Scoping, What This Validates
 
 ### Community 2056 - "Community 2056"
-Cohesion: 0.06
-Nodes (41): Any, EntityExtractor, ExtractedEntity, ExtractionResult, BatchItemResult, ConditionalPipeline, _entity_key(), ExtractionStage (+33 more)
+Cohesion: 0.27
+Nodes (16): Context, T, seedSidecar(), sidecarIDFromPreview(), TestReadToolOutput_ByteSlice(), TestReadToolOutput_ClampsHugeLimit(), TestReadToolOutput_DefaultLimitIs2048(), TestReadToolOutput_Defaults() (+8 more)
 
 ### Community 2057 - "Community 2057"
-Cohesion: 0.29
-Nodes (5): Search Context Graph for relevant memories.          Performs hybrid vector + gr, MemorySearchResult, Result from a memory search operation.      Attributes:         memories: List o, Convert result to dictionary representation., MemorySearchResult
+Cohesion: 0.23
+Nodes (10): errSettingsStore, TestHandleCheckTelegramAvailabilityBranches(), TestHandleCreateSettingsTelegramLinkBranches(), TestHandleDeleteSettingBranches(), TestHandlePutSettingBranches(), TestSetSettingsStoreAndProbeOffConstructor(), TestValidateSettingValueBoolAndDefault(), AuraSettings (+2 more)
 
 ### Community 2058 - "Community 2058"
 Cohesion: 0.46
@@ -9221,32 +10444,32 @@ Cohesion: 0.40
 Nodes (4): Context, Event, Runner, Seq2
 
 ### Community 2064 - "Community 2064"
-Cohesion: 0.22
-Nodes (6): ResolutionMatch, ResolvedEntity, Find semantic matches from candidates., Get embedding for text, using cache if available., Compute cosine similarity between two vectors., Resolve entity using semantic similarity.
+Cohesion: 0.11
+Nodes (18): Accomplishments, Auto-fixed Issues, Coverage metadata, Decisions Made, Dependency graph, Deviations from Plan, Interface Handoff (for 37-07 / 37-09), Issues Encountered (+10 more)
 
 ### Community 2065 - "Community 2065"
-Cohesion: 0.22
-Nodes (16): T, T, marginRecorder, TestReasoningClassifier_EquivalenceGoldenVerdicts(), TestReasoningClassifier_EquivalenceMarginIsPositive(), NewReasoningClassifier(), TestNewReasoningClassifier_NilEmbedderIsNil(), TestReasoningClassifier_AnchorBuildRetriesAfterTransientFailure() (+8 more)
+Cohesion: 0.40
+Nodes (4): T, marginRecorder, TestReasoningClassifier_EquivalenceGoldenVerdicts(), TestReasoningClassifier_EquivalenceMarginIsPositive()
 
 ### Community 2066 - "Community 2066"
 Cohesion: 0.53
 Nodes (3): isLoopbackURL(), sharedCloudBase(), Config
 
 ### Community 2067 - "Community 2067"
-Cohesion: 0.29
-Nodes (6): mcpConsole(), newConsoleHandler(), TestConsoleHandlerServesPageAndMountsProxy(), Handler, Writer, T
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed / necessary adjustments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Seams / Deferred Wiring (+8 more)
 
 ### Community 2068 - "Community 2068"
-Cohesion: 0.33
-Nodes (7): Addr, Duration, Mutex, Time, dnsPin, pinEntry, pinKey
+Cohesion: 0.30
+Nodes (11): Fanout, closeAll(), eventJSONString(), send(), redactEvent(), Bool, Context, Event (+3 more)
 
 ### Community 2069 - "Community 2069"
 Cohesion: 0.57
 Nodes (6): envOr(), fail(), firstLine(), logf(), main(), trim()
 
 ### Community 2070 - "Community 2070"
-Cohesion: 0.39
-Nodes (4): fakeStartupLinker, namedIdentityStore, Context, Identity
+Cohesion: 0.42
+Nodes (10): TestEvaluate_AcceptsCompleteInput(), TestEvaluate_ClonesEligibilityCensorsStrataIndependently(), TestEvaluate_DigestIsDeterministicAndSensitiveToInput(), TestEvaluate_NilMapsCloneToEmptyNonNilMaps(), TestEvaluate_PropagatesMarshalError(), TestEvaluate_RejectsMissingRequiredFields(), TestEvaluate_ZeroEligibleAttemptsIsAccepted(), validInput() (+2 more)
 
 ### Community 2071 - "Community 2071"
 Cohesion: 0.39
@@ -9262,7 +10485,7 @@ Nodes (5): Growing the set, RAG answer-quality eval (RAGAS), Run, The gate, Vali
 
 ### Community 2075 - "Community 2075"
 Cohesion: 0.60
-Nodes (4): postPasswordResetJSON(), TestPasswordResetRoutes(), Response, T
+Nodes (5): postPasswordResetJSON(), TestPasswordResetCompleteSamePasswordRoute(), TestPasswordResetRoutes(), Response, T
 
 ### Community 2076 - "Community 2076"
 Cohesion: 0.40
@@ -9273,24 +10496,24 @@ Cohesion: 0.25
 Nodes (8): `internal/agent/prompt` — wire-Request assembly chokepoint + adaptive-reasoning router/classifier, `internal/llm/openai_compat` — handrolled OpenAI-compatible SSE streaming client, `internal/llm` — provider-neutral streaming LLM contract + config/cost/breaker, `internal/reasoningfifo` — rune-capped rolling CoT buffer, `internal/reasoninglearn` — async self-improvement worker for the reasoning classifier, `internal/reasoningstore` — Neo4j persistence of oracle-labeled reasoning examples, `internal/reasoningtrace` — env-gated redacting JSONL reasoning trace, LLM & Reasoning Router
 
 ### Community 2079 - "Community 2079"
-Cohesion: 0.28
-Nodes (11): normalizeSwarmStatus(), normalizeWebError(), severityFor(), TestNormalizeSwarmStatus(), TestNormalizeWebError(), TestNormalizeWebErrorNil(), TestSeverityForUnknownCodeFailsSafe(), TestSystemEventLeaksNoSSRFInternals() (+3 more)
+Cohesion: 0.17
+Nodes (12): AuraCompactionRolloutDecisions, AuraCompactionRolloutEvidence, AuraCompactionRolloutStates, Context, Queries, Timestamptz, UUID, AppendCompactionRolloutDecisionParams (+4 more)
 
 ### Community 2080 - "Community 2080"
-Cohesion: 0.33
-Nodes (7): TestDurableEmbeddingQueueEnqueuesExtractedDocument(), TestEmbeddingJobHandlerProcessesPayload(), recordingIngestionCreator, Context, CreateIngestionJobRequest, IngestionJob, T
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 2081 - "Community 2081"
 Cohesion: 0.20
 Nodes (10): `aura.audit_logs`, `aura.delete_jobs`, `aura.document_chunks`, `aura.document_embeddings`, `aura.document_versions`, `aura.documents`, `aura.ingestion_events`, `aura.ingestion_jobs` (+2 more)
 
 ### Community 2082 - "Community 2082"
-Cohesion: 0.33
-Nodes (5): Context, RawMessage, Spec, ToolResult, echoTool
+Cohesion: 0.11
+Nodes (18): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Execution-mode deviation (orchestrator decision), Files Modified, Issues Encountered, Known Stubs (+10 more)
 
 ### Community 2083 - "Community 2083"
-Cohesion: 0.09
-Nodes (21): LLMProvider, ChatMessage, Completion, T, Create extractor configured for POLE+O model., Create extractor for custom entity types., EntityPayload, ExtractionPayload (+13 more)
+Cohesion: 0.12
+Nodes (16): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Metrics (+8 more)
 
 ### Community 2084 - "Community 2084"
 Cohesion: 0.50
@@ -9320,21 +10543,25 @@ Nodes (3): run.sh script, AURA_EMBED_BASE_URL, PATH
 Cohesion: 0.20
 Nodes (10): Implementation Roadmap, Phase 0: Discovery and baseline tests, Phase 1: Data model and migrations, Phase 2: Hashing and version creation, Phase 3: Durable ingestion worker, Phase 4: Embedding and graph lifecycle, Phase 5: Storage cleanup and delete jobs, Phase 6: React Web UI (+2 more)
 
+### Community 2091 - "Community 2091"
+Cohesion: 0.07
+Nodes (25): avatarSize(), avatarSizes, BaseSkeletonProps, buttonHeights, cx(), sizedStyle(), SkeletonAvatar(), SkeletonAvatarProps (+17 more)
+
 ### Community 2092 - "Community 2092"
-Cohesion: 0.33
-Nodes (4): Store content with optional entity synchronization.          When sync_entities, Get relationships for an entity from the knowledge graph.          This is a con, Any, Memory
+Cohesion: 0.12
+Nodes (8): _NamsUnsupported, Sentinel object for bolt-only accessors when running on the NAMS backend.  Phase, Sentinel — every attribute access on the resulting object raises.      The excep, Async context manager entry., Connect to the configured backend and initialize memory stores.          Dispatc, Connect to the hosted NAMS service via HTTP transport.          Per plan decisio, Emit a single warning listing client-side layers ignored by NAMS.          Surfa, NoReturn
 
 ### Community 2093 - "Community 2093"
-Cohesion: 0.12
-Nodes (22): Client, Context, Request, T, NewVisionClient(), decodeVisionReq(), TestVisionCloudRouteBearerAndModel(), TestVisionEmptyBaseURL() (+14 more)
+Cohesion: 0.38
+Nodes (10): Request, T, NewVisionClient(), decodeVisionReq(), TestVisionCloudRouteBearerAndModel(), TestVisionEmptyBaseURL(), TestVisionEmptyChoices(), TestVisionLocalRouteNoAuth() (+2 more)
 
 ### Community 2101 - "Community 2101"
-Cohesion: 0.50
-Nodes (4): Event, ChildReport, dumpTranscript(), marshalReports()
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed / scope-aligned Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Interface Handoff (for 37-04 / 37-05), Issues Encountered (+9 more)
 
 ### Community 2102 - "Community 2102"
-Cohesion: 0.25
-Nodes (6): Context, RawMessage, Spec, ToolResult, FSEdit, fsEditArgs
+Cohesion: 0.15
+Nodes (15): Editable, File, HandlerFunc, MultimodalConfig, Mutex, Reactions, ReadCloser, Recipient (+7 more)
 
 ### Community 2103 - "Community 2103"
 Cohesion: 0.33
@@ -9349,8 +10576,8 @@ Cohesion: 0.33
 Nodes (6): Common Pitfalls, Pitfall 1: Windows job silently broken by the helper swap, Pitfall 2: Blanket private-IP block breaks MCP sidecars + tests, Pitfall 3: CodeQL alert dismissed, not fixed, Pitfall 4: The lint false-positives on scoped package specs or its own helper, Pitfall 5: Re-staling `dist`
 
 ### Community 2106 - "Community 2106"
-Cohesion: 0.29
-Nodes (4): DocumentCatalogService, DocumentEventService, Server, StorageOrphanService
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed Issues, Coverage metadata, Dependency graph, Deviations from Plan, Interface Handoff (for 37-09 / shell_bg), Issues Encountered, Known Stubs (+9 more)
 
 ### Community 2107 - "Community 2107"
 Cohesion: 0.33
@@ -9360,17 +10587,21 @@ Nodes (8): intPtr(), scenarios(), swarmScenarios(), dimension, scenario, swarmEx
 Cohesion: 0.25
 Nodes (8): Aura Asset Pipeline, Components, Garage Startup Notes, Required Environment, Smoke Test, Telegram Flow, Troubleshooting States, Web Upload Flow
 
+### Community 2109 - "Community 2109"
+Cohesion: 0.08
+Nodes (25): avatarSize(), avatarSizes, BaseSkeletonProps, buttonHeights, cx(), sizedStyle(), SkeletonAvatar(), SkeletonAvatarProps (+17 more)
+
 ### Community 2110 - "Community 2110"
-Cohesion: 0.50
-Nodes (3): resolveClassifier(), LlmAgentConfig, ReasoningClassifier
+Cohesion: 0.12
+Nodes (16): CR-01: Documents-plane isolation is default-OFF and decoupled from provisioning — a second identity reads the operator's documents, Critical Issues, HI-01: Object-store isolation plane + de-provisioning lifecycle are wired only in tests — the daemon enforces neither, HI-02: Deactivation does not block re-login — the auth path never checks `deactivated_at`, HI-03: Telegram turn-scoping fails OPEN to `local` (admin) — gate keys on sender-id, scope keys on chat-id, High Issues, LO-01: D-06 mutate returns 403 vs 404 and thereby confirms existence of a foreign conversation, LO-02: `IdentityStore.Resolve` and `scopedIdentityID`/`handleMe` map empty identity → shared/`local` (+8 more)
 
 ### Community 2111 - "Community 2111"
 Cohesion: 0.33
 Nodes (6): A. Slice Summary, C. Quick Wins, D. Risky / Uncertain (missing evidence), E. Verdict on Learn/Store Package Duplication, F. Cross-Slice Flags, Quality Audit — Slice B: Persistence, knowledge, memory/learning, config, scheduler, identity
 
 ### Community 2112 - "Community 2112"
-Cohesion: 0.28
-Nodes (7): Context, Duration, Time, fsWalkDeadline(), fsWalkNodeCap(), newWalkBudget(), walkBudget
+Cohesion: 0.09
+Nodes (19): DomainSchema, get_schema(), GLiNERConfig, GLiRELConfig, is_gliner_available(), is_glirel_available(), list_schemas(), Entity extraction using GLiNER2 zero-shot NER.  GLiNER2 is an improved version o (+11 more)
 
 ### Community 2113 - "Community 2113"
 Cohesion: 0.40
@@ -9383,6 +10614,10 @@ Nodes (5): CI edit (unit-test job, line 90), CI edit (windows-unit job, lines 11
 ### Community 2115 - "Community 2115"
 Cohesion: 0.40
 Nodes (5): Phase Criterion → Validation Map (1:1), Sampling Rate, Test Framework, Validation Architecture, Wave 0 Gaps
+
+### Community 2117 - "Community 2117"
+Cohesion: 0.12
+Nodes (9): E1(), Fn(), gp(), Jt(), Mi(), Og(), Su(), xf() (+1 more)
 
 ### Community 2118 - "Community 2118"
 Cohesion: 0.50
@@ -9397,20 +10632,20 @@ Cohesion: 0.22
 Nodes (8): 31-01 Threat Register (QUAL-01 baseline), 31-02 Threat Register (F-015 CI hygiene), 31-03 Threat Register (SEC-08 SSRF / CWE-918), Accepted Risks Log, Phase 31 — Security Audit Report, Summary, Threat Verification, Unregistered Threat Flags
 
 ### Community 2121 - "Community 2121"
-Cohesion: 0.39
-Nodes (7): ManagedConfig, T, SetServerEnv(), envValue(), TestSetServerEnvClearsNonSecret(), TestSetServerEnvPreservesUntouchedSecret(), TestSetServerEnvUnknownServer()
+Cohesion: 0.15
+Nodes (22): Frontmatter, T, AuditActor, Context, Frontmatter, RiskTier, Writer, activateOnDisk() (+14 more)
 
 ### Community 2122 - "Community 2122"
 Cohesion: 0.22
 Nodes (8): Manual-Only Verifications, Per-Task Verification Map, Phase 32 — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Audit 2026-06-30, Validation Sign-Off, Wave 0 Requirements
 
 ### Community 2124 - "Community 2124"
-Cohesion: 0.50
-Nodes (4): Anti-Features (do NOT build), Category 2 — Runtime Profiles (validated config contract), Differentiators, Table Stakes
+Cohesion: 0.11
+Nodes (17): Accomplishments, Coverage metadata (#1602), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+9 more)
 
 ### Community 2125 - "Community 2125"
-Cohesion: 0.31
-Nodes (7): Chunk, Context, Mutex, Once, Request, hangingTitleClient, sequencedTitleClient
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed / scoped adjustments, Coverage metadata, Dependency graph, Deviations from Plan, Interface Handoff, Issues Encountered, Known Stubs (+9 more)
 
 ### Community 2127 - "Community 2127"
 Cohesion: 0.67
@@ -9433,36 +10668,36 @@ Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (31-03), STRIDE Threat Register, Trust Boundaries
 
 ### Community 2132 - "Community 2132"
-Cohesion: 0.50
-Nodes (7): benchBudget(), BenchmarkConsumeStep(), BenchmarkConsumeStepParallel(), BenchmarkDedupBeforeToolCall_Distinct(), BenchmarkDedupRoundTrip(), B, Budget
+Cohesion: 0.17
+Nodes (15): AEAD, Context, Pool, UUID, Pool, T, Credentials, deriveObjectStoreKey() (+7 more)
 
 ### Community 2133 - "Community 2133"
 Cohesion: 0.29
 Nodes (9): assetProcessingIngestionJobRequest(), newRuntimeAssetProcessingQueue(), ingestionJobCreator, runtimeAssetProcessingQueue, Asset, Context, CreateIngestionJobRequest, Pool (+1 more)
 
 ### Community 2134 - "Community 2134"
-Cohesion: 0.32
-Nodes (7): create_diffbot_provider(), create_enrichment_provider(), create_wikimedia_provider(), Factory for creating enrichment providers.  Provides factory functions and wrapp, Create Wikimedia/Wikipedia enrichment provider.      Args:         user_agent: U, Create Diffbot Knowledge Graph enrichment provider.      Args:         api_key:, Create an enrichment provider instance.      Args:         provider: Provider ty
+Cohesion: 0.25
+Nodes (7): `approve` verdict runtime behavior (GATE-01), Claude's Discretion, Deferred Ideas, GATE-02 (command-hook fail-closed) scope, Mutating classification for action-multiplexed tools (skill/task/swarm_spawn), Phase 35: ToolGateway + Policy Engine - Discussion Log, Reservation ledger + policy-decision storage (GATE-03/04)
 
 ### Community 2135 - "Community 2135"
-Cohesion: 0.40
-Nodes (10): envOrSkip(), migratedPool(), seedConversation(), TestServer_Integration_MessagesSnapshot(), TestServer_Integration_SSERoundTrip(), TestServer_Integration_UnknownThread404(), AppendTurnParams, Pool (+2 more)
+Cohesion: 0.16
+Nodes (21): AnthropicProvider, Native Anthropic adapter for the Provider Protocol.  Preferred over LiteLLM for, Native Anthropic LLM provider.      Implements both :class:`~neo4j_agent_memory., Build the ``system=`` parameter, honoring ``cache_system``.          When prompt, Use Anthropic forced tool use for structured extraction.          Converts ``res, Extract the first system message; return ``(system, remaining)``.      Anthropic, Translate an anthropic ``Usage`` object to our :class:`Usage`., Map an :mod:`anthropic` exception to a :class:`ProviderError` subclass. (+13 more)
 
 ### Community 2136 - "Community 2136"
-Cohesion: 0.52
-Nodes (6): pausedStatesList(), pausedStatesPurge(), runPausedStates(), truncate(), Context, Store
+Cohesion: 0.03
+Nodes (53): borderBottom, borderColor, borderLeft, borderRight, borderStyle, borderTop, borderWidth, descriptor (+45 more)
 
 ### Community 2137 - "Community 2137"
-Cohesion: 0.43
-Nodes (7): CommandRunner, T, fakeAddIntegration(), skillAuditSQLState(), TestInstallerAuditAppendOnly(), TestSkillAuditAppendOnly(), NewInstaller()
+Cohesion: 0.10
+Nodes (28): applyStyleSheetRules(), { asciiLowercase }, CSSImportRule, CSSMediaRule, CSSStyleProperties, CSSStyleRule, defaultStyleSheet, { evaluateMediaList } (+20 more)
 
 ### Community 2138 - "Community 2138"
-Cohesion: 0.57
-Nodes (7): Context, Pool, T, countToolInvocations(), seedToolInvocation(), TestClearHardDeletesPersistedConversationE2E(), TestToolInvocationsImmutableExceptConversationCascade()
+Cohesion: 0.33
+Nodes (9): T, modelCapabilities, normalizeModelID(), SupportsAudio(), SupportsVision(), TestModelCapabilityLookupSourceShape(), TestSupportsAudio(), TestSupportsVision() (+1 more)
 
 ### Community 2139 - "Community 2139"
-Cohesion: 0.02
-Nodes (240): BaseModel, BaseSettings, EmbeddingConfig, EmbeddingProvider, EnrichmentConfig, EnrichmentProvider, ExtractionConfig, ExtractorType (+232 more)
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed Issues, Coverage metadata (#1602), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered (+9 more)
 
 ### Community 2140 - "Community 2140"
 Cohesion: 0.52
@@ -9473,24 +10708,28 @@ Cohesion: 0.38
 Nodes (5): acceptedAssetProcessor, ingestionPayloadString(), runtimeAssetProcessHandler, Context, IngestionJob
 
 ### Community 2142 - "Community 2142"
-Cohesion: 0.18
-Nodes (23): Account, Answers, Context, profileOnboarding, ReplyMarkup, Step, T, fakeExtractor (+15 more)
+Cohesion: 0.42
+Nodes (7): resolveObjects(), ObjectResolver, ObjectResolverBundle, StoreFactory, Asset, Context, Store
+
+### Community 2144 - "Community 2144"
+Cohesion: 0.17
+Nodes (19): Client, Config, Context, Duration, Mutex, ReasoningEffort, Time, clampEffort() (+11 more)
 
 ### Community 2145 - "Community 2145"
-Cohesion: 0.23
-Nodes (12): T, Duration, Regexp, TestDestructiveShellDefaultIsOverridable(), TestDestructiveShellDefaultOnFlagsRmRf(), TestDestructiveShellDefaultPatternsCoverConservativeSet(), TestDestructiveShellPatterns(), destructiveShellMatch() (+4 more)
+Cohesion: 0.26
+Nodes (11): T, Client, M, T, mustHost(), TestDNSRebind(), envOrSkip(), liveClient() (+3 more)
 
 ### Community 2146 - "Community 2146"
-Cohesion: 0.36
-Nodes (6): normalizeCode(), TestNormalizeCodeArtifact(), TestNormalizeCodeText(), CodeInput, Payload, T
+Cohesion: 0.29
+Nodes (7): Common Pitfalls, Pitfall 1: Routing a read action through `scoring.ComputeSkillTier`, Pitfall 2: A new multiplexed action silently under-gates, Pitfall 3: Treating the reservation as "just a timing fix", Pitfall 4: Encoding "indeterminate" as a new `status` value, Pitfall 5: Re-invoking a mutating crash-orphan, Pitfall 6: Expecting verbatim replay bytes
 
 ### Community 2147 - "Community 2147"
 Cohesion: 0.29
 Nodes (6): Fixed, Phase 34: Code Review Fix Report, Skipped (out of scope — Info, no `--all`), Validation, WR-01 — `AppendTurnTx` spills a sidecar with no rollback cleanup → **FIXED** (`8e4793ea`), WR-02 — `waitWorkers` one-shot `stopDone` returns "drained" without joining post-drain workers → **FIXED** (`6cabb8aa`)
 
 ### Community 2148 - "Community 2148"
-Cohesion: 0.42
-Nodes (9): serveRunWithPrincipal(), TestServerRunAttachmentFromAnotherThread404(), TestServerRunInjectsKnowledgeCatalogWithoutAttachment(), TestServerRunPrependsAttachmentBlock(), TestServerRunStillRejectsStructuredMultimodalContent(), textTurn(), ResponseRecorder, Server (+1 more)
+Cohesion: 0.09
+Nodes (24): constructor(), entries(), filter(), { HTML_NS }, idlUtils, [idlUtils.supportedPropertyIndices](), [idlUtils.supportedPropertyNames](), indexOf() (+16 more)
 
 ### Community 2149 - "Community 2149"
 Cohesion: 0.22
@@ -9541,60 +10780,64 @@ Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (this plan), STRIDE Threat Register, Trust Boundaries
 
 ### Community 2161 - "Community 2161"
-Cohesion: 0.32
-Nodes (6): normalizeSwarm(), TestNormalizeSwarm(), TestNormalizeSwarmCopiesInput(), ChildReport, Payload, T
+Cohesion: 0.07
+Nodes (30): devDependencies, axe-core, babel-plugin-react-compiler, eslint, eslint-config-prettier, @eslint/js, eslint-plugin-import-x, eslint-plugin-jsx-a11y (+22 more)
 
 ### Community 2162 - "Community 2162"
-Cohesion: 0.25
-Nodes (7): ChatMessage, Completion, Provider-agnostic types for LLM and embedding interactions.  These Pydantic mode, A single chat message in a conversation with an LLM.      Mirrors the OpenAI Cha, Token usage and cost information for a single completion call.      Adapters pop, The result of an LLM chat completion call.      Adapters construct one of these, Usage
+Cohesion: 0.23
+Nodes (16): liveRecovery, liveSagaEnv, liveTelegram, disposableLiveSagaPool(), liveProvReq(), newLiveSagaEnv(), newStatefulAuthula(), TestIdentityAuditImmutable() (+8 more)
+
+### Community 2163 - "Community 2163"
+Cohesion: 0.17
+Nodes (4): iS, nA, pS(), uc
 
 ### Community 2164 - "Community 2164"
 Cohesion: 0.29
-Nodes (5): ReadinessProbe, Server, Context, Request, ResponseWriter
+Nodes (6): musrStubRunner, Context, Event, ResponseInput, Seq2, Store
 
 ### Community 2165 - "Community 2165"
-Cohesion: 0.52
-Nodes (6): assertShape(), composeHistory(), main(), renderMessages1(), run(), Message
+Cohesion: 0.29
+Nodes (13): AuraSettings, Context, T, fakeLister, OverlayEnv(), clearRuntimeConfigEnvForOverlayTest(), TestAllowed(), TestMemoryEmbedKeysRemovedFromAllowlist() (+5 more)
 
 ### Community 2166 - "Community 2166"
-Cohesion: 0.42
-Nodes (11): dedupAction(), distinctiveEntityName(), extractTraceID(), memoryTierGate(), runMemoryCLI(), TestMemoryCLI(), TestMemoryDedupNewEntityActionNone(), TestMemoryReasoningTrace() (+3 more)
+Cohesion: 0.27
+Nodes (13): Context, Reader, Buffer, Context, T, runDirFromCtx(), stageBoxArtifact(), stageCtx() (+5 more)
 
 ### Community 2167 - "Community 2167"
-Cohesion: 0.43
-Nodes (4): clickFirstVisible(), hasVisibleCandidate(), openOnboarding(), waitForVisibleCandidate()
+Cohesion: 0.10
+Nodes (7): HTMLAudioElementImpl, DOMException, { fireAnEvent }, getTimeRangeDummy(), HTMLMediaElementImpl, { notImplementedMethod }, HTMLVideoElementImpl
 
 ### Community 2168 - "Community 2168"
 Cohesion: 0.29
 Nodes (6): run_runner_integration.sh script, AURA_DB_MIGRATE_URL, AURA_DB_URL, PATH, PGHOST, PGPORT
 
 ### Community 2169 - "Community 2169"
-Cohesion: 0.57
-Nodes (6): contains(), intPtr(), memoryRecallEndpoint(), reapIdleHTTPConns(), TestMemoryLoopRecall(), T
+Cohesion: 0.12
+Nodes (15): Additional independent confirmation (beyond the critical_context checklist), Anti-Patterns Found, Behavioral Spot-Checks / Test Tiers Actually Executed (independently, this session), CR-01 Gap-Closure Must-Haves (35-07-PLAN.md frontmatter — the reason the phase was gaps_found), Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required (+7 more)
 
 ### Community 2170 - "Community 2170"
 Cohesion: 0.40
 Nodes (3): runtimeDocumentGraphDeactivator, Config, Context
 
 ### Community 2171 - "Community 2171"
-Cohesion: 0.36
-Nodes (7): buildReqRegistry(), newBuildReqAgent(), TestBuildRequest_BranchParity(), Config, LlmAgent, Registry, T
+Cohesion: 0.21
+Nodes (10): buildReqRegistry(), newBuildReqAgent(), TestBuildRequest_BranchParity(), graniteBase(), TestAdaptiveReasoningTierLive(), Config, LlmAgent, Registry (+2 more)
 
 ### Community 2172 - "Community 2172"
-Cohesion: 0.39
-Nodes (6): Skill, T, RenderAlwaysBlock(), TestRenderAlwaysBlockByteStable(), TestRenderAlwaysBlockEmptyWhenNoAlways(), TestRenderAlwaysBlockOrderIndependent()
+Cohesion: 0.11
+Nodes (17): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, How the panel mounts (desktop ResizablePanel / mobile Drawer), How the toggle + onArtifact live-wiring work, Issues Encountered (+9 more)
 
 ### Community 2173 - "Community 2173"
 Cohesion: 0.60
 Nodes (4): TestEmbedRoute(), TestLoad_RerankBaseURL(), TestRerankRoute(), T
 
 ### Community 2175 - "Community 2175"
-Cohesion: 0.52
-Nodes (6): ManagedServer, T, liveMemoryServer(), memoryEndpointOrGate(), reapIdleHTTPConns(), TestMemoryLiveMount()
+Cohesion: 0.12
+Nodes (18): runCacheStats(), dbMigrate(), dbPing(), dbReset(), dbStatus(), runDB(), main(), usage() (+10 more)
 
 ### Community 2176 - "Community 2176"
-Cohesion: 0.29
-Nodes (5): Context, RawMessage, Spec, ToolResult, stubTool
+Cohesion: 0.33
+Nodes (6): Anti-Patterns to Avoid, Architecture Patterns, Pattern 1: Single PEP by delegation (agent stays DB-free), Pattern 2: Conditional-write IS the idempotency key (reuse Phase-34 D-03/D-06), Pattern 3: Monotone saturate-upward classifier (D-02), System Architecture Diagram (the single PEP + reservation flow)
 
 ### Community 2177 - "Community 2177"
 Cohesion: 0.29
@@ -9609,12 +10852,12 @@ Cohesion: 0.33
 Nodes (6): Gate 1 — Definition of Ready (DoR) — *PRE-implementazione*, Gate 2 — Implementation Q&A continuous — *DURANTE implementazione*, Gate 3 — Definition of Done (DoD) — *POST-implementazione (pre-merge)*, Q&A escalation (quando l'owner non è disponibile), Q&A revision protocol (cosa fare quando una slice scopre buchi nel PRD), §Slice Q&A discipline (gate qualità per slice, vale per tutte)
 
 ### Community 2183 - "Community 2183"
-Cohesion: 0.33
-Nodes (5): loopTool, Context, RawMessage, Spec, ToolResult
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Environment / verification caveats (no-skip-as-green), Files Created/Modified, Issues Encountered (+7 more)
 
 ### Community 2184 - "Community 2184"
-Cohesion: 0.47
-Nodes (3): Context, HandlerFunc, Telegram
+Cohesion: 0.09
+Nodes (21): Backend — skills API + auth mounting, Canonical References, Claude's Discretion, Deferred Ideas, Established Patterns, Existing Code Insights, External / prior-phase conventions, Frontend — Composer integration (+13 more)
 
 ### Community 2185 - "Community 2185"
 Cohesion: 0.08
@@ -9625,16 +10868,16 @@ Cohesion: 0.80
 Nodes (4): T, genSecretKey(), genSecretValue(), TestSetServerEnvPreservesAllSecrets()
 
 ### Community 2187 - "Community 2187"
-Cohesion: 0.52
-Nodes (6): T, Config, LoadConfig(), TestLoadConfigDefaults(), TestLoadConfigMalformedFallsBackSilently(), TestLoadConfigOverrides()
+Cohesion: 0.15
+Nodes (10): Channel, Registry, envChannelEnabled(), BoolDefault(), IntDefault(), TestBoolDefault_ParsesValidAndFallsBack(), TestIntDefault_ParsesValidAndFallsBack(), Context (+2 more)
 
 ### Community 2188 - "Community 2188"
-Cohesion: 0.20
-Nodes (12): Client, Context, Request, T, NewSTTClient(), TestSTTCloudJSONInputAudio(), TestSTTLocalMultipart(), TestSTTNon2xxStatusError() (+4 more)
+Cohesion: 0.29
+Nodes (7): Client, Context, Request, STTClient, sttCloudRequest, STTConfig, sttInputAudio
 
 ### Community 2189 - "Community 2189"
-Cohesion: 0.29
-Nodes (3): _NamsUnsupported, Sentinel object for bolt-only accessors when running on the NAMS backend.  Phase, Sentinel — every attribute access on the resulting object raises.      The excep
+Cohesion: 0.11
+Nodes (20): botFiler, Account, Context, File, Message, Modality, Telegram, Callback (+12 more)
 
 ### Community 2190 - "Community 2190"
 Cohesion: 0.43
@@ -9645,64 +10888,68 @@ Cohesion: 0.48
 Nodes (6): Event, T, contentEvent(), firstReasoningProbe(), reasoningEvent(), TestCoTLiveE2E_ReasoningReachesStatusPane()
 
 ### Community 2192 - "Community 2192"
-Cohesion: 0.33
-Nodes (5): AuraLegParams, AuraLegWriter, AuthulaCore, AuthulaUser, TelegramMint
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+7 more)
 
 ### Community 2193 - "Community 2193"
-Cohesion: 0.33
-Nodes (3): Drop all memory-related indexes and constraints., Check if a schema element belongs to agent memory., Get information about the current schema.
+Cohesion: 0.24
+Nodes (8): newCLIReasoning(), TestCLIReasoningInactiveClearIsNoOp(), TestCLIReasoningRollingWindowBounded(), TestRenderRunnerTurnReasoning(), cliReasoning, FIFO, Writer, T
 
 ### Community 2194 - "Community 2194"
-Cohesion: 0.53
-Nodes (5): TestNormalizeDispatch(), TestNormalizeUnknownToolFallback(), TestNormalizeWithRegistryAccumulates(), TestNormalizeWrongResultTypeFallback(), T
+Cohesion: 0.16
+Nodes (13): BoxHandle, Context, ExecRequest, ExecResult, ExecStreamHandle, ReadCloser, T, SandboxRouter (+5 more)
 
 ### Community 2195 - "Community 2195"
 Cohesion: 0.33
 Nodes (6): Bespoke gate, mirroring GuardWebBind (F-007 sample-cred reject), CLI subcommand wiring (slots beside show|get|set), Code Examples, D-12 destructive-shell fix (the EXACT one-spot diff), Generic F-016 re-parse pass (zero per-knob code; D-06/D-07), KnobSpec shape (recommended hybrid — data registry + generic kind pass)
 
 ### Community 2196 - "Community 2196"
-Cohesion: 0.38
-Nodes (4): installBaseRoutes(), openWith(), snapshotBody(), ToolCallSnapshot
+Cohesion: 0.09
+Nodes (16): conversions, DOMException, filter(), { domSymbolTree }, { filter, FILTER_ACCEPT }, nextNode(), previousNode(), _traverse() (+8 more)
 
 ### Community 2197 - "Community 2197"
 Cohesion: 0.40
 Nodes (5): About me, Agent profile for Davide (local), Areas of interest, Boundaries, How I prefer responses
+
+### Community 2198 - "Community 2198"
+Cohesion: 0.15
+Nodes (21): IdentityID(), TestWithIdentityID_RoundTrip(), WithIdentityID(), key, Context, T, Context, Skill (+13 more)
 
 ### Community 2199 - "Community 2199"
 Cohesion: 0.50
 Nodes (4): Backlog post 4-slice — riprendere e riscrivere bene, Slice 5 — Web tools (web_search + web_fetch via SearXNG), Slice 6 — Scheduler (cron + agent jobs persistente), Slice 7 — Skills (self-extension via ask_user governance)
 
 ### Community 2200 - "Community 2200"
-Cohesion: 0.33
-Nodes (4): Any, llm_provider_from_google_adk(), Google Agent Development Kit (ADK) integration for neo4j-agent-memory.  Provides, Translate a Google ADK / Gemini model into an :class:`LLMProvider`.      ADK age
+Cohesion: 0.19
+Nodes (19): PreviewRestore(), ReconstructProjection(), RecoverProjection(), TestPreviewRestorePassesThroughValidateCheckpoint(), TestQuarantineOnCorruptCheckpoint(), TestReconstructActivePointerOrderAndBranchIsolation(), TestRecoveryBoundedRebuildWhenNoCompatibleCheckpoint(), TestRecoveryPrefersActivePointerOverLKG() (+11 more)
 
 ### Community 2201 - "Community 2201"
-Cohesion: 0.40
-Nodes (5): skillsScenarios(), skillsSnippetReuseScenarios(), skillsExpect, Duration, scenario
+Cohesion: 0.20
+Nodes (13): ActionFunc, Context, RawMessage, ToolResult, T, NewActionRouter(), TestActionRouterActionsAreSorted(), TestActionRouterCopiesHandlerMap() (+5 more)
 
 ### Community 2202 - "Community 2202"
-Cohesion: 0.67
-Nodes (3): T, envOr(), TestReasoningStoreE2E()
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Deferred / Intentional Non-wiring (not a stub), Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered (+8 more)
 
 ### Community 2203 - "Community 2203"
-Cohesion: 0.33
-Nodes (4): is_rapidfuzz_available(), Fuzzy match entity resolution using RapidFuzz., Check if RapidFuzz is available., Initialize fuzzy match resolver.          Args:             threshold: Minimum s
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Coverage metadata (#1602), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered (+8 more)
 
 ### Community 2204 - "Community 2204"
-Cohesion: 0.20
-Nodes (8): Client, Context, Deps, Learner, ReasoningClassifier, ReasoningTier, buildReasoningLearner(), reasoningOracle
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+7 more)
 
 ### Community 2206 - "Community 2206"
-Cohesion: 0.60
-Nodes (4): TestProfileBlockOmittedWhenContextBlockEmpty(), TestProfileBlockSurvivesL1ToolEviction(), TestProfileSkillsBlockSurvivesL25Reduction(), T
+Cohesion: 0.07
+Nodes (27): AguiFrame, ChatPart, CustomFrame, JSONPatchOp, MessagesSnapshotFrame, ReasoningEndFrame, ReasoningMessageContentFrame, ReasoningMessageEndFrame (+19 more)
 
 ### Community 2207 - "Community 2207"
-Cohesion: 0.29
-Nodes (4): Get surrounding context for an entity., Map GLiNER label to POLE+O type and subtype., Synchronous extraction using GLiNER2.          When using descriptions (dict lab, Synchronous batch extraction using GLiNER2's native batch support.          GLiN
+Cohesion: 0.03
+Nodes (72): Any, HttpTransport, NamsConfig, AuthProvider, BaseException, HttpTransport, NamsConfig, TracebackType (+64 more)
 
 ### Community 2210 - "Community 2210"
-Cohesion: 0.60
-Nodes (3): fakeEmbedQueue, fakeSparseIndexer, ExtractedDocument
+Cohesion: 0.12
+Nodes (15): Accomplishments, Coverage metadata, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+7 more)
 
 ### Community 2211 - "Community 2211"
 Cohesion: 0.50
@@ -9721,12 +10968,12 @@ Cohesion: 0.50
 Nodes (4): Primary (HIGH confidence — direct source reads, this session), Secondary (MEDIUM), Sources, Tertiary (LOW — none)
 
 ### Community 2215 - "Community 2215"
-Cohesion: 0.46
-Nodes (4): Server, Request, ResponseWriter, ServeMux
+Cohesion: 0.12
+Nodes (16): Accomplishments, Carried Forward (WSL/CI human_verification — honestly deferred, NOT passed), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+8 more)
 
 ### Community 2216 - "Community 2216"
-Cohesion: 0.25
-Nodes (5): Any, ExtractedEntity, Lazy load spaCy model., Get surrounding context for an entity., Synchronous extraction (spaCy is not async).
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+8 more)
 
 ### Community 2217 - "Community 2217"
 Cohesion: 0.80
@@ -9737,16 +10984,16 @@ Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (phase-wide — for source-grounding; this plan creates the ones marked ★), STRIDE Threat Register, Trust Boundaries
 
 ### Community 2220 - "Community 2220"
-Cohesion: 0.60
-Nodes (4): Normalize(), NormalizeWithRegistry(), Payload, Registry
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Dependency graph, Deviations from Plan, Issues Encountered / Live-Tier Status, Known Stubs, Metrics, Performance (+7 more)
 
 ### Community 2221 - "Community 2221"
-Cohesion: 0.47
-Nodes (5): Event, fastReplyChunkEvent(), fastReplyEvent(), fastReplyFor(), normalizeGreeting()
+Cohesion: 0.38
+Nodes (11): assertReasoningQuartets(), reasoning(), TestHandleRunCockpitStreamsReasoning(), TestTranslator200ReasoningDeltas(), TestTranslatorReasoningClosesOnToolCall(), TestTranslatorReasoningGoldenShapes(), TestTranslatorReasoningInterleavesBeforeText(), TestTranslatorReasoningPassthroughWhenEnabled() (+3 more)
 
 ### Community 2222 - "Community 2222"
-Cohesion: 0.83
-Nodes (3): fakeSearchBackend, SearchHit, SearchRequest
+Cohesion: 0.13
+Nodes (5): ad, c_(), Fa, L0, ul()
 
 ### Community 2223 - "Community 2223"
 Cohesion: 0.50
@@ -9760,6 +11007,10 @@ Nodes (3): Applicable ASVS Categories, Known Threat Patterns for this stack, Sec
 Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (phase-wide — for source-grounding; this plan creates the ones marked ★), STRIDE Threat Register, Trust Boundaries
 
+### Community 2226 - "Community 2226"
+Cohesion: 0.40
+Nodes (5): Phase Requirements → Test Map, Sampling Rate, Test Framework, Validation Architecture, Wave 0 Gaps
+
 ### Community 2227 - "Community 2227"
 Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (phase-wide — for source-grounding; this plan creates the ones marked ★), STRIDE Threat Register, Trust Boundaries
@@ -9769,84 +11020,3257 @@ Cohesion: 0.50
 Nodes (3): Artifacts this phase produces (phase-wide — for source-grounding; this plan creates the ones marked ★), STRIDE Threat Register, Trust Boundaries
 
 ### Community 2229 - "Community 2229"
-Cohesion: 0.50
-Nodes (3): Embedder, Registry, wireToolSearchEmbedder()
+Cohesion: 0.12
+Nodes (16): Agent-asset retention, `agent` source_kind, Asset processing pipeline, Claude's Discretion, Deferred Ideas, Download mechanism, Download UI, Empty thread_id (+8 more)
 
 ### Community 2230 - "Community 2230"
-Cohesion: 0.67
-Nodes (3): T, TestRestoreErrorsWhenArchiveDirUnset(), TestRestoreSnippetRoundTrip()
+Cohesion: 0.12
+Nodes (25): ArtifactDescriptor, AssistantStatus, AssistantTurnState, ensureReasoning(), ensureText(), ensureTool(), frameTimestamp(), isArtifactDescriptor() (+17 more)
 
 ### Community 2231 - "Community 2231"
-Cohesion: 1.00
-Nodes (3): fail(), logf(), main()
+Cohesion: 0.10
+Nodes (12): BatchExtractionResult, Number of successfully processed items., Number of failed items., Success rate as a fraction (0.0-1.0)., Total entities extracted across all successful items., Total relations extracted across all successful items., Get all entities from successful extractions., Get list of (index, error_message) for failed items. (+4 more)
 
 ### Community 2232 - "Community 2232"
-Cohesion: 0.67
-Nodes (3): graniteBase(), TestAdaptiveReasoningTierLive(), T
+Cohesion: 0.10
+Nodes (20): Audit, Claude's Discretion, Deferred Ideas, Export content & redaction, Export format(s), Internal-link semantics, Link storage & data model, Phase 37F: Conversation & Artifact Sharing / Export (INSERTED) - Discussion Log (+12 more)
+
+### Community 2233 - "Community 2233"
+Cohesion: 0.24
+Nodes (6): ownerApprovalStore, ownerConvStore, Context, Conversation, fakeConvStore, Pending
+
+### Community 2234 - "Community 2234"
+Cohesion: 0.12
+Nodes (16): Accomplishments, Coverage metadata (#1602), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
+
+### Community 2235 - "Community 2235"
+Cohesion: 0.12
+Nodes (16): Accomplishments, Checkpoint Evidence (Task 1 — APPROVED), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
 
 ### Community 2236 - "Community 2236"
-Cohesion: 0.67
-Nodes (3): T, containsName(), TestSkillTTLSweep()
+Cohesion: 0.27
+Nodes (6): scriptedSkillsBoard, AuditFilter, AuditRow, Skill, StageSkill, Time
 
 ### Community 2237 - "Community 2237"
 Cohesion: 0.50
 Nodes (3): Message, currentRoundModelHistory(), turnInput
 
 ### Community 2238 - "Community 2238"
-Cohesion: 0.40
-Nodes (5): e2eRegistry(), TestKVCacheWarmingE2E(), kvTurn, Registry, T
+Cohesion: 0.32
+Nodes (15): T, panickingAgent, NewParallel(), budgetIC(), TestParallelAgent_BackpressureAckChannel(), TestParallelAgent_ChildrenShareParentBudget(), TestParallelAgent_DepthChainBudgetShared_NotFresh(), TestParallelAgent_EscalateFromAnyCancelsSiblings() (+7 more)
 
 ### Community 2239 - "Community 2239"
-Cohesion: 0.33
-Nodes (4): Entity extraction using spaCy NER., Configuration for spaCy entity extractor., Create extractor from configuration., SpacyConfig
+Cohesion: 0.07
+Nodes (27): AguiFrame, ChatPart, CustomFrame, JSONPatchOp, MessagesSnapshotFrame, ReasoningEndFrame, ReasoningMessageContentFrame, ReasoningMessageEndFrame (+19 more)
 
 ### Community 2240 - "Community 2240"
-Cohesion: 0.67
-Nodes (3): T, TestStream_IdleTimeoutAbortsStall(), TestStream_IdleTimeoutDisabledWhenZero()
+Cohesion: 0.12
+Nodes (16): Accomplishments, Adjustment for lint/type invariants (no behavior change), Auto-adjusted (Rule 3 — blocking issue: CLAUDE.md 600-LOC cap enforced by the file-size pre-commit hook), Commits, Coverage metadata, Deferred / Known Stubs, Dependency graph, Deviations from Plan (+8 more)
+
+### Community 2241 - "Community 2241"
+Cohesion: 0.12
+Nodes (25): ArtifactDescriptor, AssistantStatus, AssistantTurnState, ensureReasoning(), ensureText(), ensureTool(), frameTimestamp(), isArtifactDescriptor() (+17 more)
+
+### Community 2242 - "Community 2242"
+Cohesion: 0.10
+Nodes (19): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, HONEST db_integration run status, Issues Encountered, Judgment — goleak omitted (+11 more)
+
+### Community 2243 - "Community 2243"
+Cohesion: 0.21
+Nodes (18): mustCatalogTestUUID(), TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(), TestCatalogDocumentFromSQLReturnsEmptyTags(), TestCatalogServiceCreateDocumentNormalizesTags(), TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(), TestCatalogServiceListDocumentsNormalizesTagFilter(), TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(), TestCatalogServiceRejectsInvalidTagsBeforeStore() (+10 more)
+
+### Community 2244 - "Community 2244"
+Cohesion: 0.13
+Nodes (14): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Next Phase Readiness (+6 more)
+
+### Community 2245 - "Community 2245"
+Cohesion: 0.19
+Nodes (20): CanonicalSemanticUnit, ApplyRebase(), NeedsCanonicalRebase(), RebaseCanonical(), TestGenerationFifthForcesRebase(), TestRebaseCanonicalPropagatesSummarizerError(), TestRebaseCanonicalRejectsInvalidFrozenContract(), TestRebaseCanonicalRejectsOversizedUnit() (+12 more)
+
+### Community 2246 - "Community 2246"
+Cohesion: 0.07
+Nodes (26): Ain, Aout, asdf, B, Bin, Bout, Cin, Cout (+18 more)
+
+### Community 2247 - "Community 2247"
+Cohesion: 0.10
+Nodes (27): appendParam(), cleanupStorageOrphans(), deleteDocument(), DocumentDetail, DocumentItem, DocumentScope, DocumentStatus, DocumentVersion (+19 more)
+
+### Community 2248 - "Community 2248"
+Cohesion: 0.25
+Nodes (12): fakeOracle, TestLearner_CloseIsIdempotent(), TestLearner_DropOnFullNeverBlocks(), TestLearner_LabelsSavesAndRefreshesUncertain(), TestLearner_MarginGatedAndDedup(), TestLearner_TransientFailureRetries(), TestNew_NilWhenNoOracle(), waitFor() (+4 more)
+
+### Community 2249 - "Community 2249"
+Cohesion: 0.16
+Nodes (31): Hook, gatewayApprovalPending(), reDecideAllows(), TestGatewayResumeHookIgnoresNonAccept(), TestGatewayResumeHookInChain(), TestGatewayResumeHookNilGateway(), TestGatewayResumeHookRecordsAcceptedApproval(), TestGatewayResumeHookRejectsMalformedContext() (+23 more)
+
+### Community 2250 - "Community 2250"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE — do NOT pull in), Locked Decisions (verbatim intent — see 35-CONTEXT.md for full text), User Constraints (from CONTEXT.md)
 
 ### Community 2251 - "Community 2251"
-Cohesion: 0.04
-Nodes (55): MergeStrategy, Knowledge graph schema configuration.      Defines what entity types are valid a, Strategies for merging extraction results from multiple extractors., SchemaConfig, ConfigMergeStrategy, Any, EntityExtractor, EntityExtractor (+47 more)
+Cohesion: 0.06
+Nodes (51): MergeStrategy, Knowledge graph schema configuration.      Defines what entity types are valid a, Strategies for merging extraction results from multiple extractors., SchemaConfig, ConfigMergeStrategy, Any, EntityExtractor, NoOpExtractor (+43 more)
+
+### Community 2252 - "Community 2252"
+Cohesion: 0.29
+Nodes (10): TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(), TestPasswordResetCompleteDoesNotMutateWhenTokenClaimDenied(), TestPasswordResetCompleteIgnoresAuditFailureAfterPasswordUpdate(), TestPasswordResetVerifyAndComplete(), HashLookupToken(), TestBreakGlassChallengeParams(), TestBreakGlassTokenParams(), TestBreakGlassTokenTTLIsShortLived() (+2 more)
+
+### Community 2253 - "Community 2253"
+Cohesion: 0.27
+Nodes (15): capturedRequest, newMock(), TestAllowBucketKeyGrantsScoped(), TestBucketForIdentity(), TestCreateBucketIdempotentOnConflict(), TestCreateBucketReturnsID(), TestCreateKeyReturnsCredentials(), TestDeleteInversesIdempotentOn404() (+7 more)
+
+### Community 2254 - "Community 2254"
+Cohesion: 0.67
+Nodes (3): Applicable controls (ASVS-mapped, Go backend), Security Domain, Threat patterns for the gateway (STRIDE)
+
+### Community 2255 - "Community 2255"
+Cohesion: 0.67
+Nodes (3): Primary (HIGH confidence — verified on disk at HEAD 2026-07-03), Secondary (the pre-locked domain contract — read, not reproduced), Sources
+
+### Community 2256 - "Community 2256"
+Cohesion: 0.24
+Nodes (10): Writer, T, Writer, T, newResumeWriter(), TestResumeAcceptActivates(), TestResumeDeclineDiscards(), NewResumeHandler() (+2 more)
+
+### Community 2258 - "Community 2258"
+Cohesion: 0.44
+Nodes (10): displayEvent(), sampleDisplay(), TestTranslateDisplayClosesOpenRun(), TestTranslateDisplayCustomEventName(), TestTranslateDisplayEmitsCustomEvent(), TestTranslateDisplayGoldenShape(), TestTranslateNilDisplayNoEvent(), Event (+2 more)
+
+### Community 2259 - "Community 2259"
+Cohesion: 0.11
+Nodes (27): appendParam(), cleanupStorageOrphans(), deleteDocument(), DocumentDetail, DocumentItem, DocumentScope, DocumentStatus, DocumentVersion (+19 more)
+
+### Community 2260 - "Community 2260"
+Cohesion: 0.46
+Nodes (4): fakeStore, Context, Event, Mutex
+
+### Community 2261 - "Community 2261"
+Cohesion: 0.17
+Nodes (12): Decision, ErrDenied, New(), ReservationKey, reservationStore, Verdict, Gateway, GatewayApprovals (+4 more)
+
+### Community 2262 - "Community 2262"
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Known Stubs, Metrics (+7 more)
+
+### Community 2263 - "Community 2263"
+Cohesion: 0.11
+Nodes (18): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+10 more)
+
+### Community 2264 - "Community 2264"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 35 — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 2265 - "Community 2265"
+Cohesion: 0.25
+Nodes (18): mean(), median(), percentile(), TestCompactionCorpusNumericalGates(), fixturePath(), loadAdversarialCorpus(), loadCorpus(), loadGoldenCorpus() (+10 more)
+
+### Community 2266 - "Community 2266"
+Cohesion: 0.29
+Nodes (6): Deferred Items, Operator Next Steps, Performance Metrics, Project Reference, Project State, Session Continuity
+
+### Community 2267 - "Community 2267"
+Cohesion: 0.12
+Nodes (15): Accomplishments, Adjustments for CLAUDE.md / lint invariants (no behavior change), Auto-added (Rule 3 — blocking issue: jscpd threshold 0 forbids duplication), Commits, Coverage metadata (#1602), Deferred / Known Stubs, Dependency graph, Deviations from Plan (+7 more)
+
+### Community 2268 - "Community 2268"
+Cohesion: 0.17
+Nodes (24): T, Writer, AuditAction, Context, Frontmatter, Pool, SkillAction, Writer (+16 more)
+
+### Community 2269 - "Community 2269"
+Cohesion: 0.13
+Nodes (14): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics, Next Phase Readiness (+6 more)
+
+### Community 2270 - "Community 2270"
+Cohesion: 0.13
+Nodes (14): Auto-fixed / auto-added (Rules 1-3), Dependency graph, Design notes / departures, Deviations from Plan, Phase 36 Plan 06: Object-Store Isolation Plane (Garage bucket-per-identity) Summary, Requirements Advanced (not closed), Self-Check: PASSED, Task 1 — Garage Admin API v2 enabled internal-only (commit `3bb5386b`) (+6 more)
+
+### Community 2271 - "Community 2271"
+Cohesion: 0.13
+Nodes (14): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Metrics, Performance (+6 more)
+
+### Community 2272 - "Community 2272"
+Cohesion: 0.36
+Nodes (10): contains(), failf(), firstRequestHasDeferredStub(), intPtr(), logf(), main(), memoryEndpoint(), printSummary() (+2 more)
+
+### Community 2273 - "Community 2273"
+Cohesion: 0.21
+Nodes (14): newOpenForIdentityRig(), seedOwnedAsset(), TestOpenForIdentityNonOwnerBlocksBeforeStoreRead(), TestOpenForIdentityOwnerReturnsBodyAndAsset(), recordingObjectStore, Asset, Attrs, Context (+6 more)
+
+### Community 2274 - "Community 2274"
+Cohesion: 0.36
+Nodes (4): RecordingClient, test_add_entity_links_entity_to_user_scope(), test_add_fact_links_fact_to_user_scope(), test_get_facts_about_uses_user_scope_when_identifier_is_supplied()
+
+### Community 2276 - "Community 2276"
+Cohesion: 0.09
+Nodes (16): conversationRow, expectRemHeight(), MCP_SERVERS, waveSkeletonStyles(), expectChatComposerDocked(), expectDialogCentered(), MARKETING_HERO_BLOCKLIST, validateConversationRailResize() (+8 more)
+
+### Community 2277 - "Community 2277"
+Cohesion: 0.13
+Nodes (28): serveRunWithPrincipal(), TestServerRunAttachmentFromAnotherThread404(), TestServerRunInjectsKnowledgeCatalogWithoutAttachment(), TestServerRunPrependsAttachmentBlock(), TestServerRunStillRejectsStructuredMultimodalContent(), envOrSkip(), migratedPool(), seedConversation() (+20 more)
+
+### Community 2278 - "Community 2278"
+Cohesion: 0.15
+Nodes (12): Anti-Patterns Found, Behavioral / CI Evidence, Gap Closure Verification (the 7 prior gaps), Gaps Summary, Goal Achievement, Human Verification Items (both RESOLVED), Key Link Verification (previously-broken links now WIRED), Non-Blocking Architectural Note (carried, unchanged, not a gap) (+4 more)
+
+### Community 2279 - "Community 2279"
+Cohesion: 0.20
+Nodes (10): recordingAssetStore, TestSendFileAssetAdapterForwards(), TestSendFileAssetAdapterMissingFileErrors(), TestSendFileHandleRetainedNilAssets(), Asset, Context, CreateRequest, Result (+2 more)
+
+### Community 2280 - "Community 2280"
+Cohesion: 0.18
+Nodes (11): fakeTool, TestValidateClassifiableAcceptsWiredTools(), TestValidateClassifiableIgnoresNonMutatingMultiplexed(), TestValidateClassifiablePanicsOnUnwiredMultiplexed(), ValidateClassifiable(), Registry, Context, RawMessage (+3 more)
+
+### Community 2281 - "Community 2281"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics, Next Phase Readiness (+5 more)
+
+### Community 2282 - "Community 2282"
+Cohesion: 0.21
+Nodes (11): auditIdentityKeys(), seedConversationForIdentity(), TestPgAuditStoreListActivityForIdentity(), NewPgAuditStore(), AuditEvent, PgAuditStore, Context, Pool (+3 more)
+
+### Community 2283 - "Community 2283"
+Cohesion: 0.22
+Nodes (5): CacheEntry, SpeechAdapter, SpeechUtterance, Status, TruncatedStatus
+
+### Community 2284 - "Community 2284"
+Cohesion: 0.23
+Nodes (10): Context, fakeStore, Mutex, Server, Store, T, newLiveSetupServer(), TestEventsSSEEmitsOnboardingCompleted() (+2 more)
+
+### Community 2285 - "Community 2285"
+Cohesion: 0.18
+Nodes (17): musrGarageIdentity, assertRLSCount(), musrEnvOrSkip(), musrMigratedPool(), musrProvisionGarage(), musrProvisionIdentity(), TestProvisionLoginIsolatedRun(), TestTwoIdentityCrossDeny() (+9 more)
+
+### Community 2286 - "Community 2286"
+Cohesion: 0.15
+Nodes (19): gatewayApprovalKey(), gatewayArgsFingerprint(), NewGatewayApprovals(), TestGatewayApprovalsApproveChallengeNotFound(), TestGatewayApprovalsApproveChallengeQuestionMismatch(), TestGatewayApprovalsApproveClearsSameKeyPendingChallenge(), TestGatewayApprovalsChallengeApproveConsume(), TestGatewayApprovalsEmptyArgsRejected() (+11 more)
+
+### Community 2287 - "Community 2287"
+Cohesion: 0.50
+Nodes (3): Artifacts this phase produces (this plan's contributions), STRIDE Threat Register, Trust Boundaries
+
+### Community 2288 - "Community 2288"
+Cohesion: 0.50
+Nodes (3): Artifacts this phase produces (this plan's contributions), STRIDE Threat Register, Trust Boundaries
+
+### Community 2289 - "Community 2289"
+Cohesion: 0.50
+Nodes (3): Artifacts this phase produces (this plan's contributions), STRIDE Threat Register, Trust Boundaries
+
+### Community 2290 - "Community 2290"
+Cohesion: 0.50
+Nodes (3): Artifacts this phase produces (this plan's contributions), STRIDE Threat Register, Trust Boundaries
+
+### Community 2291 - "Community 2291"
+Cohesion: 0.50
+Nodes (3): Artifacts this phase produces (this plan's contributions), STRIDE Threat Register, Trust Boundaries
+
+### Community 2292 - "Community 2292"
+Cohesion: 0.08
+Nodes (13): DocumentFragmentImpl, { domSymbolTree }, idlUtils, { mixin }, NODE_TYPE, NonElementParentNodeImpl, { convertNodesIntoNode }, { domSymbolTree } (+5 more)
+
+### Community 2293 - "Community 2293"
+Cohesion: 0.11
+Nodes (18): Accomplishments, Auto-added (Rule 2 — no-leak parity), Auto-added (Rule 3 — deterministic test harness), Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+10 more)
+
+### Community 2294 - "Community 2294"
+Cohesion: 0.13
+Nodes (14): Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification, Observable Truths (ROADMAP Success Criteria) (+6 more)
+
+### Community 2295 - "Community 2295"
+Cohesion: 0.24
+Nodes (12): T, TestLoopAgent_BudgetOwningSubConsumesOnlyOnce(), TestLoopAgent_DedupWindow_TerminatesOn3SameToolCalls(), TestLoopAgent_EscalatePropagation(), TestLoopAgent_MultiToolEscalate_EscalateRidesExactlyOneStepEvent(), TestLoopAgent_MultiToolPerTurn_StepsConsumedEqualsStepEvents(), TestLoopAgent_ReturnsOnCanceledContext(), TestLoopAgent_SameToolTwicePerTurn_DedupCountsOnePerTurn() (+4 more)
+
+### Community 2296 - "Community 2296"
+Cohesion: 0.25
+Nodes (9): Mutex, CancelFunc, Context, Mutex, Runner, keyForIdentity(), newSessionKey(), sessionIdentity() (+1 more)
+
+### Community 2297 - "Community 2297"
+Cohesion: 0.26
+Nodes (10): casbinChecker, consumerChecker, logf(), main(), newCasbin(), newSQLOracle(), ts(), sqlOracle (+2 more)
+
+### Community 2298 - "Community 2298"
+Cohesion: 0.13
+Nodes (14): Claude's Discretion, Deferred Ideas, HTML sandbox script policy, Live-merge mechanics, Office / preview library evaluation, Panel placement & responsive, Per-row interaction, Phase 37B: Web Artifact Sidebar - Discussion Log (+6 more)
+
+### Community 2299 - "Community 2299"
+Cohesion: 0.15
+Nodes (12): Auto-added / auto-wired (Rule 2 / Rule 3 — necessary functionality), Deferred Verification (no-skip-as-green honesty), Dependency graph, Deviation from a literal instruction, Deviations from Plan, Known Stubs, MUSR-01 status (phase-spanning — NOT marked complete), Phase 36 Plan 05: Documents-plane Identity Isolation (spike-085 leak fix) Summary (+4 more)
+
+### Community 2300 - "Community 2300"
+Cohesion: 0.15
+Nodes (12): Admin model / authz engine (operator-raised: go-mizu, then Casbin), Background jobs (TTL, kill authority), Claude's Discretion, Cutover, documents-plane backfill & rollout, Deferred Ideas, Phase 36: Multi-User Identity Isolation + Authula Cutover - Discussion Log, Postgres RLS (kernel-enforced isolation), Provisioning, break-glass & first-login (+4 more)
+
+### Community 2301 - "Community 2301"
+Cohesion: 0.15
+Nodes (13): Cluster E — Per-identity MCP config + skills filesystem rooting (D-20/D-21), Cluster F — Background jobs owner-binding + TTL (D-17/D-18), Cluster G — Garage bucket-per-identity (D-08) — **partial analog only**, Cluster H — Admin audit visibility (D-28), Cluster J — Two-identity live E2E acceptance gate (D-29), `internal/agent/tools/shell_bg.go` (tool, event-driven), `internal/mcp/managed_config.go` (config, file-I/O) — per-identity MCP config, `internal/objectstore/s3.go` (service, file-I/O) (+5 more)
+
+### Community 2302 - "Community 2302"
+Cohesion: 0.15
+Nodes (12): Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED), Package Legitimacy Audit, Phase 36: Multi-User Identity Isolation + Authula Cutover — Research (+4 more)
+
+### Community 2303 - "Community 2303"
+Cohesion: 0.19
+Nodes (13): buildSandboxRouter(), TestBuildSandboxRouterWiresEgress(), limitsFrom(), newSandboxBackend(), sandboxMaterializeSources(), T, Client, Config (+5 more)
+
+### Community 2304 - "Community 2304"
+Cohesion: 0.49
+Nodes (9): artifactEvent(), TestTranslatorArtifactClosesOpenRun(), TestTranslatorArtifactCustomEventPayload(), TestTranslatorArtifactEmitsCustomEvent(), TestTranslatorArtifactGoldenShape(), TestTranslatorEmptyArtifactDeltaIgnored(), typesOf(), Event (+1 more)
+
+### Community 2305 - "Community 2305"
+Cohesion: 0.15
+Nodes (12): 1. Topology, 2. Host OS, 3. Base install, 4. Configuration, 4a. `.env` — generate secrets + set the cloud knobs, 4b. `compose.cloud.yaml` — tune Neo4j down (heap is the RAM hog), 5. Bring-up, 6. Acceptance checks (+4 more)
+
+### Community 2306 - "Community 2306"
+Cohesion: 0.23
+Nodes (10): replayResult(), Context, Event, Gateway, RawMessage, ReservationKey, RiskTier, Spec (+2 more)
+
+### Community 2307 - "Community 2307"
+Cohesion: 0.24
+Nodes (13): EgressPolicy, T, RuntimeClass, buildEgressSidecar(), buildFloorRuleset(), buildOpenSandboxRules(), envValue(), TestEgress_AllowlistFromPolicy() (+5 more)
+
+### Community 2308 - "Community 2308"
+Cohesion: 0.24
+Nodes (7): ChatAction, Mutex, Recipient, T, TestPulseChatAction(), TestPulseChatAction_NilSafe(), recordingNotifier
+
+### Community 2309 - "Community 2309"
+Cohesion: 0.11
+Nodes (18): 1. Live break-glass reset against the production `aura` DB, 2. Mutation testing spot-check (`go-mutesting`, WSL), Adversarial Method, Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Full Plan-Level Must-Haves Cross-Check (24 truths + 15 prohibitions, individually verified), Gaps Summary (+10 more)
+
+### Community 2310 - "Community 2310"
+Cohesion: 0.10
+Nodes (29): logf(), main(), parseMD(), renderPNG(), chat(), logf(), main(), renderTablePNG() (+21 more)
+
+### Community 2311 - "Community 2311"
+Cohesion: 0.32
+Nodes (7): commandHookFailPolicy(), CommandHookManagerFromEnv(), TestCommandHookFailPolicy(), TestCommandHookFailPolicy_OnlyExplicitFailOpenOpens(), FailPolicy, HookManager, T
+
+### Community 2312 - "Community 2312"
+Cohesion: 0.27
+Nodes (8): fakeBoxWrite, BoxHandle, Context, ExecRequest, ExecResult, ReadCloser, SandboxSpec, fakeBoxBackend
+
+### Community 2313 - "Community 2313"
+Cohesion: 0.23
+Nodes (6): Context, reconnectingClient, ToolDef, errReconnectClient, swapOnListClient, reconnectingServer
+
+### Community 2314 - "Community 2314"
+Cohesion: 0.22
+Nodes (10): Secrets, generateSecret(), assertSingleLine(), seqReader(), TestGenerateSecret(), TestSource(), TestSourceNilGetenv(), Sourcer (+2 more)
+
+### Community 2315 - "Community 2315"
+Cohesion: 0.18
+Nodes (10): How to Run (live proof — kind), Investigation Trail, Live-run evidence (2026-07-04, kind v0.32.0 / k8s v1.36.1 / Docker 29.6.1), Real CRD types (`sigs.k8s.io/agent-sandbox`, v1beta1) — vs 079's paper contract, Research (pinned source, not docs — see `SOURCES.md`), Results, Spike 082: agent-sandbox real-source contract + live run, The E2B gateway layer (`agent-sandbox/agent-sandbox`) — the piece 079 completely missed (+2 more)
+
+### Community 2316 - "Community 2316"
+Cohesion: 0.18
+Nodes (10): Constraints, How to Run, Investigation Trail, Live-run evidence (2026-07-04, `aura-pim-mcp:sidecar`), Research (the mechanism, from the real sidecar), Results, Spike 084: per-identity calendar/PIM + WhatsApp sidecar (the "3rd MCP class"), What This Validates (+2 more)
+
+### Community 2317 - "Community 2317"
+Cohesion: 0.18
+Nodes (10): Constraints, How to Run, Investigation Trail, Live-run evidence (2026-07-04, live neo4j 5.26), Results, Spike 085: 2-identity document-ingest tenancy (leak → fix), The finding: the documents pipeline is identity-blind (unlike memory, now), What This Validates (+2 more)
+
+### Community 2318 - "Community 2318"
+Cohesion: 0.18
+Nodes (10): Constraint / landmine, Head-to-head verdict (087a vs 087b), How to Run, Investigation Trail, Research, Results, Spike 087b: Casbin database/sql adapter (Blank-Xu) — RUNNER-UP, What it does keep (why it's a viable fallback) (+2 more)
+
+### Community 2319 - "Community 2319"
+Cohesion: 0.40
+Nodes (10): newOwnerConvStore(), TestApprovalsAPI_ResolveForeignIs403(), TestApprovalsAPI_ResolveOwnedReachesRunner(), TestApprovalsAPI_ResolveUnknownTokenIs404(), TestConversationsAPI_AbsentMutateIs404(), TestConversationsAPI_ForeignMutateIs403(), TestConversationsAPI_ForeignReadIs404(), TestConversationsAPI_OwnerReadAndMutateSucceed() (+2 more)
+
+### Community 2320 - "Community 2320"
+Cohesion: 0.13
+Nodes (16): attributes, CDATASection, Comment, createDocumentType(), { createElement }, createParser(), DocumentFragment, DocumentType (+8 more)
+
+### Community 2321 - "Community 2321"
+Cohesion: 0.18
+Nodes (15): CatalogHit, AuditActor, Context, Writer, CatalogResult, CheckItem, CommandRunner, Installer (+7 more)
+
+### Community 2322 - "Community 2322"
+Cohesion: 0.39
+Nodes (7): ManagedConfig, T, SetServerEnv(), envValue(), TestSetServerEnvClearsNonSecret(), TestSetServerEnvPreservesUntouchedSecret(), TestSetServerEnvUnknownServer()
+
+### Community 2323 - "Community 2323"
+Cohesion: 0.12
+Nodes (16): R-01 — `cmd/aura/serve_webui.go` is at **593/600 LOC** — WILL BREACH, R-02 — `web/src/AppShell.tsx` is at **591/600 LOC** — WILL BREACH, R-03 — `web/src/i18n/resources.ts` is at **576/600 LOC**, R-04 — CONTEXT.md D-11's migration slot (0036) is **STALE** — 37F is **0040**, R-05 — The 37B renderers hardcode the identity-scoped asset URL, R-06 — D-08's "reasoning/thinking traces" is **structurally impossible**, R-07 — SC4 in `cmd/aura` with the 5-tag combo contributes **ZERO coverage** → CI fails ~20 min after push, R-08 — `RequireCapability` is a **pass-through** when `!SecretConfigured` (+8 more)
+
+### Community 2324 - "Community 2324"
+Cohesion: 0.11
+Nodes (12): borderTopColor, borderTopStyle, borderTopWidth, descriptor, initialValues, parsers, shorthandFor, subProps (+4 more)
+
+### Community 2325 - "Community 2325"
+Cohesion: 0.18
+Nodes (10): C1 — `.planning/REQUIREMENTS.md`, C2 — `.planning/DECISIONS.md` §6 (Deferred v2) — add a registry row / promote the Casbin bet, C3 — `.planning/ROADMAP.md` — schedule the phase, Part A — Seam verification (the "zero-rework swap" premise, confirmed in code), Part B — The prd.md amendment block (paste-ready once ratified), Part C — Companion edits (land in the SAME amendment commit), Part D — What lands in the Casbin phase (NOT in Phase 36), Part E — Ratification checklist (operator sign-off before commit) (+2 more)
+
+### Community 2326 - "Community 2326"
+Cohesion: 0.20
+Nodes (9): Constraints, How to Build It, Investigation Trail, Live-run evidence (2026-07-04), Results, Spike 083: 2-identity E2E tenancy (box + Garage + memory together), What This Validates, What to Avoid (+1 more)
+
+### Community 2327 - "Community 2327"
+Cohesion: 0.20
+Nodes (9): Constraints, How to Run, Investigation Trail, Research, Results, Sharp edge (carry to the build), Spike 087a: Casbin pgx-native adapter (pckhoi) — WINNER, What This Validates (+1 more)
+
+### Community 2328 - "Community 2328"
+Cohesion: 0.20
+Nodes (9): Constraint, How to Run, Investigation Trail, Migration path to Aura (design note), Research, Results, Spike 088: RBAC-with-domains org-roles, What This Validates (+1 more)
+
+### Community 2329 - "Community 2329"
+Cohesion: 0.38
+Nodes (5): embeddedBpeLoader, encoder(), InitEncoder(), parseTiktokenBPE(), Tiktoken
+
+### Community 2330 - "Community 2330"
+Cohesion: 0.58
+Nodes (9): rlsMigratedPool(), seedRLSConversation(), seedRLSIdentity(), seedRLSPause(), TestAuraAppLacksRLSBypass(), TestRLSBackstop(), TestRLSPausedStatesTriggerAndBackstop(), Pool (+1 more)
+
+### Community 2331 - "Community 2331"
+Cohesion: 0.15
+Nodes (16): buildDispatch(), chatEnv, Dispatch, Registry, Store, fakePurger, NewIdentityPurgeHandler(), TestIdentityPurgeDisabled() (+8 more)
+
+### Community 2332 - "Community 2332"
+Cohesion: 0.19
+Nodes (10): ClaimState, CompactionClaim, CompactionClaimParams, CompactionPreview, FinalizeCompactionParams, ClaimPriority, Context, Store (+2 more)
+
+### Community 2333 - "Community 2333"
+Cohesion: 0.10
+Nodes (30): _ensure_litellm(), LiteLLMEmbeddingProvider, LiteLLMProvider, Universal LiteLLM adapter for the Provider Protocol.  LiteLLM is the canonical u, Universal LLM provider routed through LiteLLM.      Implements both :class:`~neo, Universal embedding provider routed through LiteLLM.      Auto-populates :attr:`, Import :mod:`litellm` lazily, raising a helpful error if missing., Map a :mod:`litellm.exceptions` exception to a :class:`ProviderError`. (+22 more)
+
+### Community 2334 - "Community 2334"
+Cohesion: 0.20
+Nodes (9): 1. Deploy the scoping code with `AURA_MUSR_ISOLATION=off`, 2. Run the backfill, 3. Verify the operator still sees own data (still flag-off), 4. Flip `AURA_MUSR_ISOLATION=on` and restart, Acceptance (what proves the rollout is correct), Enforced order: deploy → backfill → verify → flip, MUSR isolation rollout runbook (D-12 / D-13), Reversibility (+1 more)
+
+### Community 2335 - "Community 2335"
+Cohesion: 0.22
+Nodes (8): How to Run, Investigation Trail, Research, Results, Spike 086: Casbin backs HasCapability (zero-rework swap), Surprises / landmines (carry to 088/089), What This Validates, What to Expect
+
+### Community 2336 - "Community 2336"
+Cohesion: 0.22
+Nodes (8): Constraints / build notes, How to Run, Investigation Trail, Research, Results, Spike 089: Casbin through the net/http gateway + management API, What This Validates, What to Expect
+
+### Community 2337 - "Community 2337"
+Cohesion: 0.22
+Nodes (9): Additive `*ForIdentity` + `local` fallback, Append-only audit table (identity-keyed), Capability gate — `RequireCapability` / `HasCapability` (interface, zero-rework for Casbin), Cross-store saga with per-leg compensation, Live-stack integration harness (build tags + composed DSN + no-skip-as-green), Owner-scoped `aura.*` table + index + grant, Path-traversal-safe per-identity dir rooting, Shared Patterns (+1 more)
+
+### Community 2338 - "Community 2338"
+Cohesion: 0.22
+Nodes (8): Manual-Only Verifications, Per-Task Verification Map, Phase 36 — Validation Strategy, Property-Based Candidates (`pgregory.net/rapid`), Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 2339 - "Community 2339"
+Cohesion: 0.47
+Nodes (5): newSagaRun(), sagaID(), SagaJournal, sagaRun, Context
+
+### Community 2340 - "Community 2340"
+Cohesion: 0.08
+Nodes (5): MimeTypeArray, { mixin }, NavigatorImpl, PluginArray, os
+
+### Community 2341 - "Community 2341"
+Cohesion: 0.08
+Nodes (16): BeforeUnloadEventImpl, EventInit, BlobEventImpl, DeviceOrientationEventImpl, DeviceOrientationEventInit, ErrorEventImpl, ErrorEventInit, EventInit (+8 more)
 
 ### Community 2342 - "Community 2342"
 Cohesion: 0.12
 Nodes (16): CR-01: `aura config validate --profile <typo>` silently lints `dev` and exits 0 (false-green security gate), Critical Issues, IN-01: `--json` schema uses Go-default field names and numeric severity, IN-02: duplicated magic strings (drift risk), IN-03: `KnobSpec.Default` is never verified against the real `loadBase` fallbacks, IN-04: rapid tests mutate process env via `os.Setenv` instead of `t.Setenv`, IN-05: `isLoopbackEndpoint` is a substring heuristic that both over- and under-matches, Info (+8 more)
 
+### Community 2343 - "Community 2343"
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs (+9 more)
+
+### Community 2344 - "Community 2344"
+Cohesion: 0.08
+Nodes (15): descriptor, marginBottom, marginLeft, marginRight, marginTop, parsers, shorthandFor, descriptor (+7 more)
+
+### Community 2345 - "Community 2345"
+Cohesion: 0.33
+Nodes (5): BoxHandle, Context, SandboxSpec, DockerBackend, boxName()
+
+### Community 2346 - "Community 2346"
+Cohesion: 0.36
+Nodes (6): T, ContainsCredentialURL(), dbURLKey(), IsSecretEnvVar(), TestIsSecretEnvKey(), TestIsSecretEnvVar_DSNValueAndNonCredentialURL()
+
+### Community 2347 - "Community 2347"
+Cohesion: 0.22
+Nodes (12): RuntimeProfile, T, Type, EgressPolicy, Resources, RuntimeClass, SandboxSpec, NewSandboxSpec() (+4 more)
+
+### Community 2348 - "Community 2348"
+Cohesion: 0.08
+Nodes (15): descriptor, paddingBottom, paddingLeft, paddingRight, paddingTop, parsers, shorthandFor, descriptor (+7 more)
+
+### Community 2349 - "Community 2349"
+Cohesion: 0.17
+Nodes (14): Context, Context, T, ProjectContentPart(), TestContentProjectionMandatoryUnavailable(), TestContentProjectionSupportedAndReferenceOnly(), ContentPartLoader, ProjectedRequestPart (+6 more)
+
+### Community 2350 - "Community 2350"
+Cohesion: 0.14
+Nodes (13): Backend build-vs-adopt, Class-(c) scope, Claude's Discretion, Concurrency benchmark (SC-5), Deferred Ideas, Egress default & enforcement (resolved over three passes), Egress sidecar form, Host→box bridging & tool routing (SBX-01 / SBX-02) (+5 more)
+
+### Community 2351 - "Community 2351"
+Cohesion: 0.25
+Nodes (8): Anti-Patterns to Avoid, Architecture Patterns, Pattern 1 — RLS carrier: `SET LOCAL` inside a pgx transaction (D-07), Pattern 2 — Neo4j fail-closed ownership filter (D-08/D-09), Pattern 3 — Garage bucket-per-identity via Admin API v2 (D-08), Pattern 4 — Extend the existing cross-store saga; add a journal for resumability (D-14/D-27), Pattern 5 — Flag-gated reversible rollout (D-13), System Architecture Diagram
+
+### Community 2352 - "Community 2352"
+Cohesion: 0.25
+Nodes (8): Common Pitfalls, Pitfall 1: RLS silently does nothing on pooled non-tx reads, Pitfall 2: Backfill ordering — flip before backfill hides the operator's own docs, Pitfall 3: Garage admin API not enabled / published to host, Pitfall 4: `MERGE` → `MATCH` without `WITH` (Cypher), Pitfall 5: Empty/unset identity NOT failing closed everywhere, Pitfall 6: Guessable/unowned background job IDs (MUSR-03/04), Pitfall 7: File-size / god-class violations on touched files
+
+### Community 2353 - "Community 2353"
+Cohesion: 0.43
+Nodes (7): TestHandleAdminAudit502WhenStoreFails(), TestHandleAdminIdentitiesErrorBranches(), TestHandleMe502WhenCapabilityReadFails(), TestMutateCapabilityGuards(), TestResolveCapabilityArgBranches(), TestSetAuditStoreAndIdentityAdminOffConstructor(), T
+
+### Community 2354 - "Community 2354"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics, Next Phase Readiness (+5 more)
+
+### Community 2355 - "Community 2355"
+Cohesion: 0.08
+Nodes (24): bigintSchema, bigintSchemaNullable, bigintSchemaOptional, booleanSchema, booleanSchemaNullable, booleanSchemaOptional, dateSchema, dateSchemaNullable (+16 more)
+
+### Community 2356 - "Community 2356"
+Cohesion: 0.14
+Nodes (13): 1. Real-browser download UX, 2. Telegram Bot API non-regression (live), Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required (+5 more)
+
+### Community 2357 - "Community 2357"
+Cohesion: 0.57
+Nodes (6): columnExists(), countRows(), countTable(), dropSpikeTable(), Context, Pool
+
+### Community 2358 - "Community 2358"
+Cohesion: 0.57
+Nodes (6): columnExists(), countRows(), countTable(), dropSpikeTable(), Context, Pool
+
+### Community 2359 - "Community 2359"
+Cohesion: 0.43
+Nodes (6): build(), logf(), main(), ts(), tc, Enforcer
+
+### Community 2360 - "Community 2360"
+Cohesion: 0.29
+Nodes (7): Phase Requirements → Test Map, Property-based candidates (`rapid`), Sampling Rate, Test Framework, Test Harness (D-29 base — VERIFIED), Validation Architecture, Wave 0 Gaps
+
 ### Community 2361 - "Community 2361"
 Cohesion: 0.12
 Nodes (15): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics, Next Phase Readiness (+7 more)
+
+### Community 2362 - "Community 2362"
+Cohesion: 0.23
+Nodes (8): BoxHandle, Context, ExecRequest, ExecResult, ReadCloser, SandboxSpec, fakeDeliverer, routedBackend
+
+### Community 2363 - "Community 2363"
+Cohesion: 0.62
+Nodes (3): fakeApprovalStore, Context, Pending
+
+### Community 2364 - "Community 2364"
+Cohesion: 0.23
+Nodes (7): fakePasswordResetTokenLocker, fakePasswordResetTokenQueries, fakePasswordResetTokenRow, fakeRecoveryDeliverer, AuraPasswordResetTokens, Context, Row
+
+### Community 2365 - "Community 2365"
+Cohesion: 0.33
+Nodes (6): bucketInfo, bucketKeyRequest, createBucketRequest, createKeyRequest, keyInfo, Permissions
+
+### Community 2366 - "Community 2366"
+Cohesion: 0.12
+Nodes (13): constructor(), Cursor, { getLastIndex, getFirstIndex }, constructor(), Cursor, { getFirstIndex, search }, constructor(), Cursor (+5 more)
+
+### Community 2367 - "Community 2367"
+Cohesion: 0.20
+Nodes (9): Branch, branchPathRowAsSeqRow(), Context, Store, ListTurnsByBranchPathRow, ListTurnsBySeqRow, Message, Turn (+1 more)
+
+### Community 2368 - "Community 2368"
+Cohesion: 0.21
+Nodes (13): evidenceFromDecision(), nextCanaryStage(), promotionPasses(), rollbackReason(), CompactionRolloutController, rolloutStateStore, Context, Decision (+5 more)
+
+### Community 2369 - "Community 2369"
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+9 more)
+
+### Community 2370 - "Community 2370"
+Cohesion: 0.33
+Nodes (5): Artifacts this plan produces (NEW symbols / removed symbols), STRIDE Threat Register, The files being changed, THE PRECEDENT TO PORT (read before writing — do not invent new shapes), Trust Boundaries
+
+### Community 2371 - "Community 2371"
+Cohesion: 0.33
+Nodes (6): break-glass / grant-revoke CLI (`cmd/aura/identity.go`) — D-16/D-26, Cluster C — Admin vs user: capability gating (D-01/D-02/D-03/D-25/D-26), `cmd/aura/serve_webui.go` (route mounts) — add the settings-write gate, `internal/agui/auth.go` (middleware) — the admin seam (READ, do not rewrite), `internal/agui/settings_api.go` (controller) — routes already shaped, migration `0028_local_admin_caps` (migration, seed) — seed `local` admin caps (D-25)
+
+### Community 2372 - "Community 2372"
+Cohesion: 0.14
+Nodes (13): Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED), Package Legitimacy Audit, Phase 37B: Web Artifact Sidebar - Research (+5 more)
+
+### Community 2374 - "Community 2374"
+Cohesion: 0.33
+Nodes (5): Subscribe(), Context, Event, IDGenerator, Seq2
+
+### Community 2375 - "Community 2375"
+Cohesion: 0.08
+Nodes (23): compilerOptions, exactOptionalPropertyTypes, isolatedModules, jsx, lib, module, moduleResolution, noEmit (+15 more)
+
+### Community 2376 - "Community 2376"
+Cohesion: 0.14
+Nodes (13): 1. Live Playwright e2e run for WEBART-08, Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification (+5 more)
+
+### Community 2377 - "Community 2377"
+Cohesion: 0.14
+Nodes (13): Accepted Residuals, ADR 0038 — Graph-store license posture: Neo4j Community (GPLv3) now, ArcadeDB (Apache-2.0) as the appliance-distribution fallback, Alternatives Considered, Consequences, Context, D-1 — Stay on Neo4j Community (GPLv3) for the current single-node posture., D-2 — Treat GPLv3 conveyance as a solvable compliance task, not a blocker — *if and when* Aura ships a distributed appliance., D-3 — ArcadeDB (Apache-2.0) remains the pre-vetted fallback, with two explicit switch triggers. (+5 more)
+
+### Community 2378 - "Community 2378"
+Cohesion: 0.80
+Nodes (4): fail(), logf(), main(), ts()
+
+### Community 2379 - "Community 2379"
+Cohesion: 0.80
+Nodes (4): fail(), logf(), main(), ts()
+
+### Community 2380 - "Community 2380"
+Cohesion: 0.40
+Nodes (4): Artifacts this plan produces (new symbols / routes / fields), Precedents to mirror (READ before writing — do not invent new shapes), STRIDE Threat Register, Trust Boundaries
+
+### Community 2381 - "Community 2381"
+Cohesion: 0.40
+Nodes (4): Phase 35: Code Review Report, Summary, Warnings, WR-01 [RESOLVED in `63922e54`]: `GatewayApprovals.Approve` did not clear a same-key pending challenge — an incomplete port of `ShellApprovals.Approve`
+
+### Community 2382 - "Community 2382"
+Cohesion: 0.40
+Nodes (4): File Classification, Metadata, No Analog Found, Phase 36: Multi-User Identity Isolation + Authula Cutover - Pattern Map
+
+### Community 2383 - "Community 2383"
+Cohesion: 0.40
+Nodes (5): Cluster A — Documents plane leak fix (D-09/D-12): the memory `:User`-ownership template, `internal/agent/tools/document_search.go` (tool, request-response), `internal/documents/indexer.go` (service, graph-write), `internal/documents/search.go` + `internal/documents/retrieve.go` (service, graph-read), `internal/documents/types.go` (model, transform)
+
+### Community 2384 - "Community 2384"
+Cohesion: 0.40
+Nodes (5): Cluster D — Provisioning & de-provisioning sagas (D-14/D-27), `internal/agui/onboarding_provision.go` (service, saga) — extend the shipped saga, migration `0029_saga_journal.up.sql` (migration) — resumable journal, migration `0030_identity_soft_delete` (migration) — soft-delete columns (D-27), new de-provisioning saga (service, saga) — symmetric to Provision (D-27)
+
+### Community 2386 - "Community 2386"
+Cohesion: 0.29
+Nodes (4): DocumentCatalogService, DocumentEventService, Server, StorageOrphanService
+
+### Community 2387 - "Community 2387"
+Cohesion: 0.09
+Nodes (11): BackwardTokenCommentCursor, BackwardTokenCursor, FilterCursor, ForwardTokenCommentCursor, ForwardTokenCursor, LimitCursor, SkipCursor, Cursor (+3 more)
+
+### Community 2389 - "Community 2389"
+Cohesion: 0.17
+Nodes (23): applyAuthState(), asError(), AuthConfig, authenticateViaApi(), authenticateViaAuthula(), authStatePath(), authulaTotpCode(), BrowserContext (+15 more)
+
+### Community 2390 - "Community 2390"
+Cohesion: 0.11
+Nodes (21): applyFilters(), BRAND_RAMP, degreeToSize(), EMPTY_FILTERS, ENTITY_TYPE_OFFSET, FAMILY_RAMP_INDEX, FilteredGraph, GraphFilters (+13 more)
+
+### Community 2391 - "Community 2391"
+Cohesion: 0.11
+Nodes (17): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+9 more)
+
+### Community 2392 - "Community 2392"
+Cohesion: 0.67
+Nodes (3): G(), MSYS_NO_PATHCONV, run.sh script
+
+### Community 2393 - "Community 2393"
+Cohesion: 0.50
+Nodes (4): Cluster B — Kernel-enforced isolation: Postgres RLS + `*ForIdentity` (D-07), `*ForIdentity` store methods (store, CRUD) — the additive method-pair convention, `internal/db/tx.go` (utility) — the `SET LOCAL` injection point, migration `0027_owner_id_rls.up.sql` (migration, CRUD) — **NO direct RLS analog**
+
+### Community 2394 - "Community 2394"
+Cohesion: 0.50
+Nodes (4): Cluster I — Telegram multi-user routing (D-24), `internal/channels/telegram/bot_dispatch_auth.go` + `bot_dispatch_turn.go` (controller, event-driven), `internal/config/config.go` (config) — `AURA_MUSR_ISOLATION` rollout flag (D-13), `internal/webauth/identity_link.go` (service, CRUD) — generalize LinkOperator (D-24)
+
+### Community 2395 - "Community 2395"
+Cohesion: 0.50
+Nodes (4): Alternatives Considered (all rejected — do NOT re-litigate), Core (all present in `go.mod` — VERIFIED), Standard Stack, Supporting (infrastructure)
+
+### Community 2396 - "Community 2396"
+Cohesion: 0.50
+Nodes (4): Background job owner + TTL (retrofit), Code Examples, Neo4j fail-closed retrieval (unconditional EXISTS), Owner-scoped conversation read (the `*ForIdentity` + RLS pair)
+
+### Community 2397 - "Community 2397"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE), Locked Decisions, User Constraints (from CONTEXT.md)
+
+### Community 2398 - "Community 2398"
+Cohesion: 0.50
+Nodes (4): Primary (HIGH confidence — code read this session), Secondary (MEDIUM confidence — web, cross-checked), Sources, Tertiary (LOW confidence — to verify at build time)
+
+### Community 2399 - "Community 2399"
+Cohesion: 0.67
+Nodes (3): fakeOnboardingStatusSource, Context, OnboardingStatus
+
+### Community 2401 - "Community 2401"
+Cohesion: 0.17
+Nodes (23): applyAuthState(), asError(), AuthConfig, authenticateViaApi(), authenticateViaAuthula(), authStatePath(), authulaTotpCode(), BrowserContext (+15 more)
+
+### Community 2420 - "Community 2420"
+Cohesion: 0.67
+Nodes (3): Applicable ASVS Categories, Known Threat Patterns for {Go monorepo + Postgres/Neo4j/Garage multi-tenant}, Security Domain
+
+### Community 2423 - "Community 2423"
+Cohesion: 0.11
+Nodes (21): applyFilters(), BRAND_RAMP, degreeToSize(), EMPTY_FILTERS, ENTITY_TYPE_OFFSET, FAMILY_RAMP_INDEX, FilteredGraph, GraphFilters (+13 more)
+
+### Community 2430 - "Community 2430"
+Cohesion: 0.67
+Nodes (3): T, envOr(), TestReasoningStoreE2E()
+
+### Community 2431 - "Community 2431"
+Cohesion: 0.31
+Nodes (9): NewIdentityAuditStore(), contains(), seedThrowawayIdentity(), TestIdentityAuditImmutable(), TestIdentityAuditImmutable_SentinelOnTxPath(), TestListCapabilities(), Pool, Context (+1 more)
+
+### Community 2432 - "Community 2432"
+Cohesion: 0.09
+Nodes (4): DOMRect, DOMRectImpl, DOMRectReadOnly, DOMRectReadOnlyImpl
+
+### Community 2433 - "Community 2433"
+Cohesion: 0.33
+Nodes (4): is_rapidfuzz_available(), Fuzzy match entity resolution using RapidFuzz., Check if RapidFuzz is available., Initialize fuzzy match resolver.          Args:             threshold: Minimum s
+
+### Community 2434 - "Community 2434"
+Cohesion: 0.23
+Nodes (11): fakeReaper, NewSandboxReapHandler(), TestSandboxReapDisabled(), TestSandboxReapMeta(), TestSandboxReapRunError(), TestSandboxReapRunSuspends(), SandboxReaper, Handler (+3 more)
+
+### Community 2435 - "Community 2435"
+Cohesion: 0.33
+Nodes (9): logf(), main(), ocr(), renderTablePNG(), startVRAM(), waitReady(), vramSampler, Duration (+1 more)
+
+### Community 2436 - "Community 2436"
+Cohesion: 0.11
+Nodes (3): findLineNumberBinarySearch(), nodesOrTokensOverlap(), SourceCode
+
+### Community 2437 - "Community 2437"
+Cohesion: 0.32
+Nodes (4): fakeBootstrapProvider, panicBootstrapProvider, Context, CoreServices
+
+### Community 2438 - "Community 2438"
+Cohesion: 0.39
+Nodes (6): TestCompactionRolloutSchemaContract(), readSchemaContractFile(), TestDocumentControlPlaneMigrationContract(), TestDocumentControlPlaneQueryContract(), T, T
+
+### Community 2439 - "Community 2439"
+Cohesion: 0.13
+Nodes (14): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Issues Encountered, Known Stubs, Next Phase Readiness, Performance (+6 more)
+
+### Community 2440 - "Community 2440"
+Cohesion: 0.25
+Nodes (9): guardedScriptedRunner, TestBranchSelect_BusyThread409(), TestBranchSelect_LockAcquiredAndReRuns(), TestBranchSelect_UnknownThread404(), TestServer_RunBusyThread409(), TestServerMetricsExposesPrometheus(), Context, scriptedRunner (+1 more)
+
+### Community 2441 - "Community 2441"
+Cohesion: 0.11
+Nodes (18): completeProfileOnboarding(), fetchTelegramStatus(), OnboardingAnswers, OnboardingIntent, OnboardingProfileComplete, OnboardingProvisionRequest, OnboardingProvisionResponse, OnboardingStart (+10 more)
+
+### Community 2442 - "Community 2442"
+Cohesion: 0.12
+Nodes (16): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Metrics (+8 more)
+
+### Community 2443 - "Community 2443"
+Cohesion: 0.11
+Nodes (18): completeProfileOnboarding(), fetchTelegramStatus(), OnboardingAnswers, OnboardingIntent, OnboardingProfileComplete, OnboardingProvisionRequest, OnboardingProvisionResponse, OnboardingStart (+10 more)
+
+### Community 2444 - "Community 2444"
+Cohesion: 0.15
+Nodes (12): Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED), Package Legitimacy Audit, Phase 37: Per-User Full-Capability Sandbox - Research (+4 more)
+
+### Community 2445 - "Community 2445"
+Cohesion: 0.20
+Nodes (4): bb(), Eu, Ma(), qf
+
+### Community 2446 - "Community 2446"
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Known Stubs, Metrics (+8 more)
+
+### Community 2447 - "Community 2447"
+Cohesion: 0.12
+Nodes (16): Accomplishments, Auto-added (Rule 2 — defensive / panic-avoidance), Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+8 more)
+
+### Community 2448 - "Community 2448"
+Cohesion: 0.10
+Nodes (13): descriptor, flexBasis, flexGrow, flexShrink, initialValues, parsers, shorthandFor, descriptor (+5 more)
+
+### Community 2449 - "Community 2449"
+Cohesion: 0.12
+Nodes (15): 1. Visual parity of the picker, 2. Live-LLM sanity check of Mechanism A, Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required (+7 more)
+
+### Community 2450 - "Community 2450"
+Cohesion: 0.15
+Nodes (12): Accomplishments, ArtifactRow degraded branch, Dependency graph, Derived query / filter / sort (how it works), Deviations from Plan, Metrics, Performance, Phase 37B Plan 06: Artefatti Panel Summary (+4 more)
+
+### Community 2451 - "Community 2451"
+Cohesion: 0.25
+Nodes (7): failingPutStore, Attrs, Context, ObjectRef, PutOptions, Reader, Store
+
+### Community 2452 - "Community 2452"
+Cohesion: 0.37
+Nodes (12): egressITBoxImage(), egressITBoxWgetOK(), egressITCapAdd(), egressITDockerdOrGate(), egressITEgressImage(), egressITEnforcingBridgeOrGate(), egressITIdentity(), egressITRawExec() (+4 more)
+
+### Community 2453 - "Community 2453"
+Cohesion: 0.33
+Nodes (7): Addr, Duration, Mutex, Time, dnsPin, pinEntry, pinKey
+
+### Community 2454 - "Community 2454"
+Cohesion: 0.12
+Nodes (15): Accomplishments, Auto-fixed Issues, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics (+7 more)
+
+### Community 2455 - "Community 2455"
+Cohesion: 0.17
+Nodes (11): Deviations from Plan, Known Stubs, Phase 37B Plan 08: Artifacts e2e + Coverage/Stryker Gate + Embedded-Bundle Rebuild Summary, Playwright e2e Outcome — RAN to the auth gate, live run CARRIED FORWARD, Requirements Disposition, Self-Check: PASSED, Task 1 — `web/e2e/artifacts.spec.ts` (commit `fb7902bc`), Task 2 — Ship gates + `internal/webui/dist` rebuild (commit `76cd27ed`) (+3 more)
+
+### Community 2456 - "Community 2456"
+Cohesion: 0.17
+Nodes (11): H-01: DOCX preview renders untrusted bytes in our origin; `javascript:` hyperlinks execute with session-cookie access on click, High, L-01: Asset id interpolated into download URLs without `encodeURIComponent` — deviates from the codebase's own convention, L-02: `useBlobPreview` effect lists a derived value (`key`) in its dependency array, L-03: `downloadAll` uses `a.file_name` as the `download` attribute without normalization, Low, M-01: DocxPreview `renderAsync` result is not guarded after the await — wrong/garbled document on rapid asset switch, Medium (+3 more)
+
+### Community 2457 - "Community 2457"
+Cohesion: 0.17
+Nodes (11): Deviations from Plan, Known Stubs, Next, Phase 37C Plan 02: Web Voice Backend Foundation Summary, Requirements, Self-Check: PASSED, Task 1 — `AURA_TTS_MAX_CHARS` config knob (commit `646b99539`, verify token `CONFIG_KNOB_OK`), Task 2 — exported `;codecs=`-safe `assets.AudioFormat` (commit `c7f45a359`, verify token `AUDIOFORMAT_OK`) (+3 more)
+
+### Community 2458 - "Community 2458"
+Cohesion: 0.16
+Nodes (12): Registry, Context, RawMessage, Spec, T, ToolResult, TestRegisterDistinctNamesSucceeds(), TestRegisterDuplicateNamePanics() (+4 more)
+
+### Community 2459 - "Community 2459"
+Cohesion: 0.12
+Nodes (15): Answers to the 8 Research Questions (grounded), Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED), Package Legitimacy Audit (+7 more)
+
+### Community 2460 - "Community 2460"
+Cohesion: 0.11
+Nodes (16): SourceCode, addDeclaredGlobals(), astUtils, caches, CodePathAnalyzer, commentParser, {
+		ConfigCommentParser,
+		VisitNodeStep,
+		CallMethodStep,
+		Directive,
+	}, { directivesPattern } (+8 more)
+
+### Community 2461 - "Community 2461"
+Cohesion: 0.27
+Nodes (10): HostConfig, SandboxSpec, HostConfig, T, fatalf, assertPinsSafe(), assertSharedCacheMount(), raiseRapidChecks() (+2 more)
 
 ### Community 2462 - "Community 2462"
 Cohesion: 0.15
 Nodes (12): Anti-Patterns Found, Behavioral Spot-Checks (independently re-run, not taken from commit messages), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification, Non-blocking carry-over findings (informational, not phase-33 gaps), Observable Truths (+4 more)
 
+### Community 2463 - "Community 2463"
+Cohesion: 0.12
+Nodes (15): LO-01: `recover-operator` is unusable (refuses, no override) whenever more than one active `kind='user'` identity exists, LO-02: Offline setter enforces no minimum password length/strength; the online path enforces ≥ 8, LO-03: "recovery re-seeded" success message can over-promise when the operator has no `telegram_accounts` row, LO-04: `--generate` silently ignores `AURA_RECOVERY_ANSWER` / `AURA_RECOVERY_QUESTION` (asymmetric with the password path), LO-05: Deny-path E2E factor-name assertions are effectively vacuous, Low, MD-01: Recovery answer is hashed (and thus validated) only *after* the irreversible Authula reset, Medium (+7 more)
+
+### Community 2464 - "Community 2464"
+Cohesion: 0.13
+Nodes (15): IC-01 — Provider capabilities and exact budget, IC-02 — Semantic units, recent tail, and L1, IC-03 — Proactive L2.4 before L2.5, IC-04 — Durable distributed claims, IC-05 — Versioned manifest checkpoints, IC-06 — Safe structured summarization, IC-07 — Unified coordinator and triggers, IC-08 — Typed content parts and artifacts (+7 more)
+
+### Community 2465 - "Community 2465"
+Cohesion: 0.22
+Nodes (6): ConversationStore, IDGenerator, NewIDGenerator(), ValidateRunInput(), uuidIDGenerator, RunAgentInput
+
+### Community 2466 - "Community 2466"
+Cohesion: 0.13
+Nodes (14): Accomplishments, Decisions Made, Dependency graph, Deviations from Plan, Files Created/Modified, Issues Encountered, Metrics, Next Phase Readiness (+6 more)
+
+### Community 2467 - "Community 2467"
+Cohesion: 0.33
+Nodes (8): chat(), logf(), main(), threeBandPNG(), probe, usage, Context, Duration
+
+### Community 2468 - "Community 2468"
+Cohesion: 0.12
+Nodes (9): CSSFontFaceRule, CSSImportRule, CSSLayerStatementRule, CSSNamespaceRule, cssParser, CSSRuleListImpl, CSSStyleRule, DOMException (+1 more)
+
+### Community 2469 - "Community 2469"
+Cohesion: 0.32
+Nodes (13): NewCompactionRolloutStore(), evidenceFixture(), jsonEqual(), rolloutFixture(), TestEnsureDisabledDefaultSeedsFreshScope(), TestRolloutStoreAtomicRollbackRestoresLastKnownGood(), TestRolloutStoreMultiReplicaExactlyOneWins(), TestRolloutStoreRestartAndStaleDecision() (+5 more)
+
+### Community 2470 - "Community 2470"
+Cohesion: 0.18
+Nodes (10): Critical Issues, IN-01: Test cleanup is registered only after the fatal-error checks, so a `Resolve`/`Route` failure mid-creation leaks the box container + volume on a live daemon, IN-02: Doc-comment attributes the empty-egress-image guard to the wrong function, Info, Phase 37: Code Review Report — 37-10 Gap-Closure Diff, Summary, Verification performed, Warnings (+2 more)
+
+### Community 2471 - "Community 2471"
+Cohesion: 0.18
+Nodes (10): D-14 concurrency-soak run instructions (Gate-3 evidence), Live UAT Results — 2026-07-07 (WSL Ubuntu, Docker 29.6.1, go 1.26.4 + gcc 15.2, `-race`), Live UAT Results — 2026-07-08 (casaserver 192.168.1.21, NATIVE-Linux dockerd), Manual-Only Verifications, Per-Task Verification Map, Phase 37 — Validation Strategy, Sampling Rate, Test Infrastructure (+2 more)
+
+### Community 2472 - "Community 2472"
+Cohesion: 0.18
+Nodes (11): Anti-Patterns to Avoid, Architecture Patterns, Pattern 1 — Dynamically-membered third `ResizablePanel` (THE riskiest mechanic; resolved), Pattern 2 — Derived live view (D-10/D-11), Pattern 3 — `onArtifact` signal + D-15 split-fold rehydration, Pattern 4 — Preview modal (D-09) reuses Radix `Dialog`, not the custom Drawer trap, Pattern 5 — Blob-URL lifecycle & the fetch/branch table (D-06), Pattern 6 — Mobile Drawer (D-04) through the existing overlay reducer (+3 more)
+
+### Community 2473 - "Community 2473"
+Cohesion: 0.18
+Nodes (10): Auto-speak model, Claude's Discretion, Deferred Ideas, Dictation transport, Follow-up — auto-speak echo of dictation, Follow-up — TTS on very long replies, Phase 37C: Web Voice Lane - Discussion Log, Research pass (user-requested: "search online and on curated repos for industrial 2026 solutions") (+2 more)
+
+### Community 2474 - "Community 2474"
+Cohesion: 0.18
+Nodes (10): Accepted Residuals, ADR 0037 — Container-per-identity over Docker for the per-user full-capability sandbox, Alternatives Considered, Consequences, Context, Decision (D-15), Forward path (DGX-Spark tier), Residual A — The daemon holds Docker API access (Pitfall 4 / Open Q5) (+2 more)
+
+### Community 2475 - "Community 2475"
+Cohesion: 0.24
+Nodes (8): AgentIngestRequest, objectIngest, Asset, Service, Context, Modality, Reader, SourceKind
+
+### Community 2476 - "Community 2476"
+Cohesion: 0.24
+Nodes (8): TestAssetDownload_ClientDisconnect(), TestAssetDownload_NonOwner(), TestAssetDownload_Owner(), TestAssetDownload_Unauth(), ctxBlockingReadCloser, Context, Once, T
+
+### Community 2477 - "Community 2477"
+Cohesion: 0.24
+Nodes (12): hostOf(), normalizeWebFetch(), normalizeWebSearch(), TestNormalizeWebFetch(), TestNormalizeWebSearch(), TestNormalizeWebSearchEmpty(), TestNormalizeWebSearchUnparseableURLDomain(), Page (+4 more)
+
+### Community 2478 - "Community 2478"
+Cohesion: 0.25
+Nodes (9): challengeAttemptCount(), TestPeekChallengeDoesNotConsumeLiveDB(), recoveryEnvOrSkip(), TestMintBreakGlassTokenRoundTrip(), Context, Pool, T, UUID (+1 more)
+
+### Community 2479 - "Community 2479"
+Cohesion: 0.21
+Nodes (8): Memory, Create a Memory from a LongTermMemory entity.          Args:             entity:, Create a Memory from a LongTermMemory preference.          Args:             pre, Create a Memory from a ReasoningMemory trace.          Args:             trace:, A memory record compatible with AgentCore MemoryProvider interface.      This cl, Convert memory to dictionary representation.          Returns:             Dicti, Create a Memory from a ShortTermMemory message.          Args:             messa, Any
+
+### Community 2480 - "Community 2480"
+Cohesion: 0.12
+Nodes (8): CSSImportRule, cssParser, CSSRuleList, CSSStyleSheetImpl, DOMException, { wrapperForImpl }, MediaList, StyleSheetImpl
+
+### Community 2481 - "Community 2481"
+Cohesion: 0.36
+Nodes (10): Duration, Resources, T, loadSoakConfig(), percentile(), readMemInfoKiB(), soakEnvInt(), soakEnvInt64() (+2 more)
+
+### Community 2482 - "Community 2482"
+Cohesion: 0.36
+Nodes (6): BoxHandle, Context, ExecRequest, ExecResult, SandboxSpec, fakeBackend
+
+### Community 2483 - "Community 2483"
+Cohesion: 0.10
+Nodes (20): 1. Name Browser Sessions Semantically, 2. Always Clean Up, 3. Delete Stale Browser Data, A/B Testing Sessions, Attach by channel name, Attach via browser extension, Attach via CDP endpoint, Attaching to a Running Browser (+12 more)
+
+### Community 2484 - "Community 2484"
+Cohesion: 0.20
+Nodes (10): Anti-Patterns to Avoid, Architecture Patterns, Pattern 1: The `SandboxRouter.Resolve(identityctx)` seam, Pattern 2: Host-exposure unrepresentability (SBX-02 — the crux), Pattern 3: Idle-suspend + scheduled-delete on the migration-0009 scheduler (SBX-03, D-08), Pattern 4: Per-identity named volume (storage-enforced isolation, SBX-03), Pattern 5: Routing the 5 tools into the box (SBX-01, D-11), Pattern 6: Egress sidecar (SBX-04, D-05/D-07) — split floor vs allowlist (+2 more)
+
+### Community 2485 - "Community 2485"
+Cohesion: 0.20
+Nodes (9): 1. Composition-root live egress DROP (closing SC#4/SBX-04 proof), 2. Full docker_integration -race suite on native-Linux dockerd, 3. D-14 32GB concurrency soak on the real appliance host, 4. gVisor runsc smoke + floor-under-runsc, Current Test, Gaps, Live Run — 2026-07-07 (WSL Ubuntu, Docker Desktop 29.6.1, `-race`), Summary (+1 more)
+
+### Community 2486 - "Community 2486"
+Cohesion: 0.20
+Nodes (9): Deviations from Plan, Known Stubs, Next, Phase 37C Plan 01: Web Voice Lane PRD-Amendment Pre-Code Gate Summary, Requirements, Self-Check: PASSED, Verification, What Was Built (+1 more)
+
+### Community 2487 - "Community 2487"
+Cohesion: 0.42
+Nodes (9): promoteAgent(), TestBuildRequestHidesDeferredUntilPromoted(), TestIsDeferredUnloaded(), TestPromoteFromMeta(), toolDef(), toolPresent(), LlmAgent, T (+1 more)
+
+### Community 2488 - "Community 2488"
+Cohesion: 0.38
+Nodes (11): Price, Config, applyEnvOverrides(), applyFileConfig(), configFilePath(), envBool(), envFloat(), envInt() (+3 more)
+
+### Community 2490 - "Community 2490"
+Cohesion: 0.39
+Nodes (6): Skill, T, RenderAlwaysBlock(), TestRenderAlwaysBlockByteStable(), TestRenderAlwaysBlockEmptyWhenNoAlways(), TestRenderAlwaysBlockOrderIndependent()
+
+### Community 2492 - "Community 2492"
+Cohesion: 0.23
+Nodes (3): attach(), detach(), List
+
+### Community 2493 - "Community 2493"
+Cohesion: 0.22
+Nodes (8): Execution plan (clean session — NOT run yet), Go / no-go gates (unchanged from spike 068, refined), Open risks, Spike 071 — ArcadeDB adopt-strategy (de-Neo4j the appliance), The adopt landscape (researched 2026-07-08), The one hard part — GDS (and how the reranker deletes it), The three Neo4j bindings (full de-Neo4j scope, code-grounded), Why / contingency framing
+
+### Community 2494 - "Community 2494"
+Cohesion: 0.13
+Nodes (12): Delivery order, Global prohibitions, Goal, Phase 42: Industrial Conversation Compaction — Replacement Specification, Executable legacy task ledger (exhaustive), Legacy decisions and prohibitions, Legacy plans, Legacy prohibition ledger (exhaustive by baseline plan) (+4 more)
+
+### Community 2495 - "Community 2495"
+Cohesion: 0.10
+Nodes (19): anySchema, arraySchema, bigIntSchema, booleanSchema, dateSchema, enumSchema, literalSchema, nativeEnumSchema (+11 more)
+
+### Community 2496 - "Community 2496"
+Cohesion: 0.14
+Nodes (11): conversationBody(), conversationListBody(), conversationRecord(), firstTurnFrames(), frame(), GOLDEN_PATH, goldenDelta(), GoldenFrames (+3 more)
+
+### Community 2497 - "Community 2497"
+Cohesion: 0.14
+Nodes (11): conversationBody(), conversationListBody(), conversationRecord(), firstTurnFrames(), frame(), GOLDEN_PATH, goldenDelta(), GoldenFrames (+3 more)
+
+### Community 2498 - "Community 2498"
+Cohesion: 0.24
+Nodes (10): countingSweepHandler, newCountingSweep(), sweepClock(), sweepFn, Context, Duration, HandlerMeta, Job (+2 more)
+
+### Community 2499 - "Community 2499"
+Cohesion: 0.25
+Nodes (8): Common Pitfalls, Pitfall 1: `moby/moby/client` v0.4.1 is NOT the SDK your training data knows, Pitfall 2: gVisor (`runsc`) ⊥ the OpenSandbox DNS-redirect egress (issue #934), Pitfall 3: On Docker Desktop / WSL, egress enforcement is advisory (vpnkit NAT), Pitfall 4: The aura daemon needs Docker access — that's a new privileged surface, Pitfall 5: `--rm` destroys the box you meant to suspend, Pitfall 6: Windows dev host ↔ Linux box path + exec translation, Pitfall 7: The Go SDK binding is UNPROVEN (spikes used the CLI)
+
+### Community 2500 - "Community 2500"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 37A — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 2501 - "Community 2501"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 37B — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 2502 - "Community 2502"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 37C — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 2503 - "Community 2503"
+Cohesion: 0.11
+Nodes (18): Authentication State Reuse, Clear sessionStorage, Common Patterns, Delete Database, Delete Single Item, Get Single Value, IndexedDB, List All sessionStorage Items (+10 more)
+
+### Community 2504 - "Community 2504"
+Cohesion: 0.16
+Nodes (6): { createInflate, createGunzip, createBrotliDecompress }, DecompressHandler, { DecoratorHandler }, defaultSkipStatusCodes, { pipeline }, supportedEncodings
+
+### Community 2505 - "Community 2505"
+Cohesion: 0.11
+Nodes (18): compilerOptions, allowJs, composite, declaration, emitDeclarationOnly, isolatedModules, lib, module (+10 more)
+
+### Community 2506 - "Community 2506"
+Cohesion: 0.29
+Nodes (6): 094 - TuringDB Memory + Document E2E, Method, Question, Result, Run, Score Gate
+
+### Community 2507 - "Community 2507"
+Cohesion: 0.29
+Nodes (7): Common Pitfalls, Pitfall 1 — Treating `react-resizable-panels` as the v2/v3 library, Pitfall 2 — `xlsx` from the public npm registry (frozen + CVEs), Pitfall 3 — `source_kind='agent'` invisible to the frontend type + fold, Pitfall 4 — Coverage regression from lazy renderer chunks, Pitfall 5 — Blob-URL leaks on rapid open/close, Pitfall 6 — Auto-open firing on every artifact / every remount
+
+### Community 2508 - "Community 2508"
+Cohesion: 0.43
+Nodes (5): asciiFallbackFilename(), contentDisposition(), TestContentDisposition_Property(), TestContentDisposition_Table(), T
+
+### Community 2509 - "Community 2509"
+Cohesion: 0.11
+Nodes (12): CatShape, LooseShape, OmittedCategory, PickedCategory, StrictShape, Alazy, Blazy, Category (+4 more)
+
+### Community 2510 - "Community 2510"
+Cohesion: 0.17
+Nodes (7): Neo4jMemoryProvider, AgentCore MemoryProvider implementation backed by Neo4j Context Graphs.  This mo, Get the current namespace., Delete a specific memory.          Args:             memory_id: The ID of the me, Clear all memories for a session.          Args:             session_id: The ses, Get formatted context for LLM prompts.          This is a convenience method tha, AgentCore MemoryProvider backed by Neo4j Context Graphs.      This class impleme
+
+### Community 2511 - "Community 2511"
+Cohesion: 0.11
+Nodes (6): autoTitleFromPrompt(), Conversation, createConversation(), RenameVars, RotEvent, SearchResult
+
+### Community 2512 - "Community 2512"
+Cohesion: 0.08
+Nodes (39): guard, T, Addr, Context, dnsPin, T, Client, Conn (+31 more)
+
+### Community 2513 - "Community 2513"
+Cohesion: 0.33
+Nodes (5): Corrected effort (per surface), Go / no-go — recommendation, Spike 071 — plan validation (full-codebase change inventory), What the plan got right (validated), What the plan MISSED (the reason it's weeks, not days)
+
+### Community 2514 - "Community 2514"
+Cohesion: 0.33
+Nodes (5): Artifacts This Phase Produces (this plan's slice), Schema-gate (considered, not missed), STRIDE Threat Register, The exact analog triplet + the wiring + the mechanism being landed (read before touching), Trust Boundaries
+
+### Community 2515 - "Community 2515"
+Cohesion: 0.33
+Nodes (5): 1. WEBART-08 live Playwright e2e, Current Test, Gaps, Summary, Tests
+
+### Community 2516 - "Community 2516"
+Cohesion: 0.11
+Nodes (6): autoTitleFromPrompt(), Conversation, createConversation(), RenameVars, RotEvent, SearchResult
+
+### Community 2517 - "Community 2517"
+Cohesion: 0.14
+Nodes (4): dE, gE, mE, xb()
+
+### Community 2518 - "Community 2518"
+Cohesion: 0.21
+Nodes (10): writeTempAsset(), DocumentIngestor, DocumentProcessor, DocumentVersionRecorder, Asset, Context, ObjectResolverBundle, Reader (+2 more)
+
+### Community 2520 - "Community 2520"
+Cohesion: 0.23
+Nodes (8): CompactionHistory(), CompactionHistoryProps, CompactionEntry, CompactionKind, CompactionOutcome, useCompactionHistory(), usePreviewCompaction(), useRestoreCompaction()
+
+### Community 2521 - "Community 2521"
+Cohesion: 0.33
+Nodes (12): add(), auraRoot(), auraTier(), countFindings(), failGuard(), intendedTier(), main(), measureMultipart() (+4 more)
+
+### Community 2522 - "Community 2522"
+Cohesion: 0.40
+Nodes (4): Harness, Question, Results, Spike 090 - TuringDB runtime and durability fit
+
+### Community 2523 - "Community 2523"
+Cohesion: 0.40
+Nodes (4): Harness, Question, Results, Spike 091 - TuringDB Cypher compatibility
+
+### Community 2524 - "Community 2524"
+Cohesion: 0.40
+Nodes (4): Harness, Question, Results, Spike 092 - TuringDB vector GraphRAG parity
+
+### Community 2525 - "Community 2525"
+Cohesion: 0.40
+Nodes (4): Harness, Question, Results, Spike 093 - TuringDB LLM graph access path
+
+### Community 2526 - "Community 2526"
+Cohesion: 0.40
+Nodes (5): Phase Requirements → Test Map, Sampling Rate, Test Framework, Validation Architecture, Wave 0 Gaps
+
+### Community 2527 - "Community 2527"
+Cohesion: 0.40
+Nodes (4): Artifacts This Phase Produces (source-grounding exclusion list — whole phase), Research corrections honored (do not regress), STRIDE Threat Register, Trust Boundaries
+
+### Community 2528 - "Community 2528"
+Cohesion: 0.40
+Nodes (4): Manual-Only (from 37A-VALIDATION.md — runs at /gsd-verify-work, not an in-plan gate), Research corrections honored (Open Q1 RESOLVED — do not regress), STRIDE Threat Register, Trust Boundaries
+
+### Community 2529 - "Community 2529"
+Cohesion: 0.40
+Nodes (5): Code Examples, docx lazy renderer (docx-preview + jszip land only in this chunk), previewKind — the pure MIME gate (mutation-test target), Sandboxed HTML preview (D-07) — null-origin isolation, xlsx rendered inside the SAME sandboxed frame (defense-in-depth)
+
+### Community 2530 - "Community 2530"
+Cohesion: 0.40
+Nodes (5): Phase Requirements → Test Map, Sampling Rate, Test Framework, Validation Architecture, Wave 0 Gaps
+
+### Community 2531 - "Community 2531"
+Cohesion: 0.40
+Nodes (3): sendFileAssetAdapter, Context, Service
+
+### Community 2532 - "Community 2532"
+Cohesion: 0.10
+Nodes (13): descriptor, parsers, descriptor, parsers, descriptor, parsers, borderBottomStyle, borderLeftStyle (+5 more)
+
+### Community 2533 - "Community 2533"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Deviations from Plan, Issues Encountered (environment), Known Stubs, Next Phase Readiness, Performance, Phase 37C Plan 06: Terminal Acceptance Gate Summary, Prohibitions Honored (+5 more)
+
+### Community 2534 - "Community 2534"
+Cohesion: 0.11
+Nodes (18): 1.1 Prerequisite: workspace, 1.2 Prerequisite: seed test, 1.3 Explore the app, 1.4 Write the spec file, 1. Planning, 2.1 Inputs, 2.2 Generate one scenario, 2.3 Generate multiple scenarios (+10 more)
+
+### Community 2535 - "Community 2535"
+Cohesion: 0.20
+Nodes (11): Context, CompactPreview, CompactRequest, Context, T, dispatchCompact(), TestTelegramCompactLocalizedAndSafePointBound(), TestTelegramCompactUsesItalianMessageCatalog() (+3 more)
+
+### Community 2536 - "Community 2536"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Next Phase Readiness (+5 more)
+
+### Community 2537 - "Community 2537"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2538 - "Community 2538"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2539 - "Community 2539"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2540 - "Community 2540"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2541 - "Community 2541"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2542 - "Community 2542"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
 ### Community 2543 - "Community 2543"
-Cohesion: 0.27
-Nodes (7): T, Context, Pool, envOrSkip(), TestAuthulaProvider_EndToEnd(), NewIdentityLinker(), IdentityLinker
+Cohesion: 0.43
+Nodes (4): Context, Pool, NewIdentityLinker(), IdentityLinker
+
+### Community 2544 - "Community 2544"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2545 - "Community 2545"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2546 - "Community 2546"
+Cohesion: 0.50
+Nodes (3): Artifacts This Phase Produces (this plan's slice), STRIDE Threat Register (ASVS L1, block: high), Trust Boundaries
+
+### Community 2547 - "Community 2547"
+Cohesion: 0.50
+Nodes (4): Alternatives Considered, Core, Standard Stack, Supporting
+
+### Community 2548 - "Community 2548"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE), Locked Decisions, User Constraints (from CONTEXT.md)
+
+### Community 2549 - "Community 2549"
+Cohesion: 0.50
+Nodes (4): Code Examples, Exec into the box (replacing `exec.CommandContext`), Idle-suspend reaper handler (mirrors identity_purge.go), The cgroup caps + safe HostConfig (SBX-02 pinned fields)
+
+### Community 2550 - "Community 2550"
+Cohesion: 0.50
+Nodes (4): Primary (HIGH confidence), Secondary (MEDIUM confidence), Sources, Tertiary (LOW confidence)
+
+### Community 2551 - "Community 2551"
+Cohesion: 0.50
+Nodes (3): Research corrections honored (do not regress), STRIDE Threat Register, Trust Boundaries
+
+### Community 2552 - "Community 2552"
+Cohesion: 0.50
+Nodes (3): Research corrections honored (do not regress), STRIDE Threat Register, Trust Boundaries
+
+### Community 2553 - "Community 2553"
+Cohesion: 0.50
+Nodes (4): Alternatives Considered (already vetted in CONTEXT canonical_refs — do not re-explore), Core (already installed — verified in `web/package.json`), Standard Stack, Supporting (NEW web deps — D-07 preview renderers, lazy-loaded per D-08)
+
+### Community 2554 - "Community 2554"
+Cohesion: 0.50
+Nodes (4): Primary (HIGH — installed source / running code / registry), Secondary (MEDIUM — official docs via WebFetch/WebSearch, cross-checked), Sources, Tertiary (LOW — flagged, see Assumptions)
+
+### Community 2556 - "Community 2556"
+Cohesion: 0.11
+Nodes (17): aliases, components, hooks, lib, ui, utils, iconLibrary, rsc (+9 more)
+
+### Community 2557 - "Community 2557"
+Cohesion: 0.50
+Nodes (3): Context, Time, SandboxRouter
+
+### Community 2559 - "Community 2559"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Auto-fixed Issues, Deviations from Plan, Files Created/Modified, Known Stubs, Next Phase Readiness, Performance, Phase 37D Plan 03: Composer Skill-Picker Frontend Foundation Summary (+5 more)
+
+### Community 2560 - "Community 2560"
+Cohesion: 0.12
+Nodes (8): CanvasErrorBoundary, EventProps, HighlightProps, LoaderProps, POSITION_CACHE, SigmaCanvas(), SigmaCanvasProps, usePrefersReducedMotion()
+
+### Community 2561 - "Community 2561"
+Cohesion: 0.67
+Nodes (4): Backend, BoxHandle, ExecRequest, ExecResult
+
+### Community 2566 - "Community 2566"
+Cohesion: 0.67
+Nodes (3): Applicable ASVS Categories, Known Threat Patterns for the per-identity Docker sandbox, Security Domain
+
+### Community 2575 - "Community 2575"
+Cohesion: 0.67
+Nodes (3): Applicable ASVS Categories, Known Threat Patterns for {React SPA + client-side file preview}, Security Domain
+
+### Community 2576 - "Community 2576"
+Cohesion: 0.12
+Nodes (8): CanvasErrorBoundary, EventProps, HighlightProps, LoaderProps, POSITION_CACHE, SigmaCanvas(), SigmaCanvasProps, usePrefersReducedMotion()
+
+### Community 2582 - "Community 2582"
+Cohesion: 0.21
+Nodes (9): drainResult, drainShutdown(), drainWithGrace(), TestDrainWithGrace_ExceedsGrace(), TestDrainWithGrace_FinishesBeforeGrace(), Context, Duration, T (+1 more)
+
+### Community 2583 - "Community 2583"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Deviations from Plan, Incident: live-DB coverage run destroyed + restored the operator auth (remediated), Known Stubs, Performance, Phase 37D Plan 05: Composer Skill-Picker Terminal Acceptance Gate Summary, Requirements, [Rule 3 — Blocking] E2E serve: spare-port fresh-embed serve + a throwaway identity-aware seed (+5 more)
+
+### Community 2584 - "Community 2584"
+Cohesion: 0.18
+Nodes (10): DataStreamChunk, DataStreamStreamChunkType, DataStreamStreamChunkValue, LanguageModelV1FinishReason, LanguageModelV1Usage, TOOL_CALL_ARGS_CLOSING_CHUNKS, DataStreamChunkDecoder, DataStreamChunkEncoder (+2 more)
+
+### Community 2585 - "Community 2585"
+Cohesion: 0.10
+Nodes (12): CompositionEventImpl, CompositionEventInit, FocusEventImpl, FocusEventInit, InputEventImpl, InputEventInit, TouchEventImpl, TouchEventInit (+4 more)
+
+### Community 2586 - "Community 2586"
+Cohesion: 0.13
+Nodes (22): fakeReconcileStore, inFlightReconcileStore, effectiveGrace(), NewReconciler(), syntheticEnd(), agedOrphan(), TestEffectiveGraceExceedsRunLifetime(), TestReconcileAppendsIndeterminateEnd() (+14 more)
+
+### Community 2587 - "Community 2587"
+Cohesion: 0.04
+Nodes (30): parseIntoStyleSheet(), parseStyleSheet(), addStyleSheet(), createStyleSheetForElement(), fetchStyleSheet(), { legacyHookDecode }, parseImportedStyleSheet(), { parseStyleSheet, parseIntoStyleSheet } (+22 more)
+
+### Community 2588 - "Community 2588"
+Cohesion: 0.23
+Nodes (20): assertPoolClosed(), rolloutSource(), TestBootCloseOnCommandHookFailure(), TestBootCloseOnFinalValidateFailure(), TestBootCloseOnReloadFailure(), TestBootFailFastBeforeDBOpen(), TestBootReleaseResourcesDrainsClosersAndClosesPool(), TestCompactionMemoryComposition() (+12 more)
+
+### Community 2589 - "Community 2589"
+Cohesion: 0.12
+Nodes (16): 1. Start Tracing Before the Problem, 2. Clean Up Old Traces, Analyzing Performance, Basic Usage, Best Practices, Capturing Evidence, Debugging Failed Actions, Limitations (+8 more)
+
+### Community 2590 - "Community 2590"
+Cohesion: 0.20
+Nodes (9): FileMode, Context, RawMessage, Spec, ToolResult, atomicWriteFile(), existingFileMode(), FSEdit (+1 more)
+
+### Community 2591 - "Community 2591"
+Cohesion: 0.12
+Nodes (16): cleanTempDir, concurrency, coverageAnalysis, dryRunTimeoutMinutes, mutate, packageManager, reporters, $schema (+8 more)
+
+### Community 2592 - "Community 2592"
+Cohesion: 0.15
+Nodes (4): DOMException, SVGRectImpl, SVGRectImplRecord, SVGRectImplReflection
+
+### Community 2593 - "Community 2593"
+Cohesion: 0.14
+Nodes (8): FinishReason, UIMessageStreamChunk, UIMessageStreamDataChunk, Usage, SSEEvent, SSEEventStream, UIMessageStreamDecoder, UIMessageStreamDecoderOptions
+
+### Community 2609 - "Community 2609"
+Cohesion: 0.35
+Nodes (10): F, T, assertSC3(), buildNFKCCorpus(), collapsesToBlocklist(), FuzzSkillValidator(), sprintfWrap(), TestSkillValidator_NFKCCorpus() (+2 more)
+
+### Community 2610 - "Community 2610"
+Cohesion: 0.13
+Nodes (9): AttachmentUploads, browserForbiddenUploadHeaders, documentExtensions, hasDocumentExtension(), inferModality(), isReadyAsset(), terminalStatuses, uploadStatusForAsset() (+1 more)
+
+### Community 2611 - "Community 2611"
+Cohesion: 0.15
+Nodes (10): addTurn(), aggregateNumber(), ConversationAggregate, EMPTY_SESSION, finiteNumber(), formatTokens(), gaugeTier, seedSession() (+2 more)
+
+### Community 2612 - "Community 2612"
+Cohesion: 0.12
+Nodes (7): AudioStub, FakeAudioInstance, FakeMediaRecorder, GetUserMediaStub, ObjectUrlStub, StubAudioOptions, TtsResponseOptions
+
+### Community 2613 - "Community 2613"
+Cohesion: 0.13
+Nodes (9): AttachmentUploads, browserForbiddenUploadHeaders, documentExtensions, hasDocumentExtension(), inferModality(), isReadyAsset(), terminalStatuses, uploadStatusForAsset() (+1 more)
+
+### Community 2614 - "Community 2614"
+Cohesion: 0.15
+Nodes (10): addTurn(), aggregateNumber(), ConversationAggregate, EMPTY_SESSION, finiteNumber(), formatTokens(), gaugeTier, seedSession() (+2 more)
+
+### Community 2615 - "Community 2615"
+Cohesion: 0.12
+Nodes (7): AudioStub, FakeAudioInstance, FakeMediaRecorder, GetUserMediaStub, ObjectUrlStub, StubAudioOptions, TtsResponseOptions
+
+### Community 2617 - "Community 2617"
+Cohesion: 0.14
+Nodes (13): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Next Phase Readiness (+5 more)
+
+### Community 2618 - "Community 2618"
+Cohesion: 0.15
+Nodes (12): Accomplishments, Deviations from Plan, Files Created/Modified, Known Stubs, Next Phase Readiness, Performance, Phase 37D Plan 02: Composer Skills API + Pinned-Skill Wire Path Summary, Requirements (+4 more)
+
+### Community 2619 - "Community 2619"
+Cohesion: 0.18
+Nodes (9): GDSConfig, MemoryClient, Validate a limit parameter.      Args:         limit: The limit value to validat, Validate and normalize a session ID.      Args:         session_id: The session, validate_limit(), validate_session_id(), Get the underlying memory client., Deserialize provider from saved state.              .. warning:: (+1 more)
+
+### Community 2620 - "Community 2620"
+Cohesion: 0.13
+Nodes (9): assertNoSeriousAxe(), AXE_PATH, AxeResult, AxeRunner, installGovernanceWriteRoutes(), openGovernance(), require, ServerState (+1 more)
+
+### Community 2621 - "Community 2621"
+Cohesion: 0.17
+Nodes (11): Asset, ConversationRow, createConversation(), docPath, expectReplayVisible(), FetchResult, pollSearchableAsset(), PresignResponse (+3 more)
+
+### Community 2622 - "Community 2622"
+Cohesion: 0.14
+Nodes (9): numberValue(), optionalString(), PimAccount, PimAccountList, pimAuthStatus, PimCreateAccountRequest, pimDeviceStart, pimGoogleStart (+1 more)
+
+### Community 2623 - "Community 2623"
+Cohesion: 0.14
+Nodes (12): ALL_SETTINGS, BACKEND_SETTINGS, buildState(), emptyItem(), isLocalBaseURL(), LoadedState, ModelSettingsPanel(), ModelSettingsPanelProps (+4 more)
+
+### Community 2624 - "Community 2624"
+Cohesion: 0.13
+Nodes (9): assertNoSeriousAxe(), AXE_PATH, AxeResult, AxeRunner, installGovernanceWriteRoutes(), openGovernance(), require, ServerState (+1 more)
+
+### Community 2625 - "Community 2625"
+Cohesion: 0.17
+Nodes (11): Asset, ConversationRow, createConversation(), docPath, expectReplayVisible(), FetchResult, pollSearchableAsset(), PresignResponse (+3 more)
+
+### Community 2626 - "Community 2626"
+Cohesion: 0.14
+Nodes (9): numberValue(), optionalString(), PimAccount, PimAccountList, pimAuthStatus, PimCreateAccountRequest, pimDeviceStart, pimGoogleStart (+1 more)
+
+### Community 2627 - "Community 2627"
+Cohesion: 0.14
+Nodes (12): ALL_SETTINGS, BACKEND_SETTINGS, buildState(), emptyItem(), isLocalBaseURL(), LoadedState, ModelSettingsPanel(), ModelSettingsPanelProps (+4 more)
+
+### Community 2628 - "Community 2628"
+Cohesion: 0.20
+Nodes (6): canonicalize(), csstree, DOMException, idlUtils, MediaListImpl, parseSingleMedium()
+
+### Community 2629 - "Community 2629"
+Cohesion: 0.24
+Nodes (14): cloneSorted(), NewCompactionManifest(), sha256Hex(), TestManifestByteStableAndExactlyOnce(), TestManifestRejectsClassifiedSeqAbsentFromCapture(), TestManifestRejectsCompleteCaptureDigestMismatch(), TestManifestRejectsDigestMismatch(), TestManifestRejectsDuplicateClassification() (+6 more)
+
+### Community 2630 - "Community 2630"
+Cohesion: 0.15
+Nodes (12): Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions (RESOLVED), Package Legitimacy Audit, Phase 37D: Composer Skill & Command Picker - Research (+4 more)
+
+### Community 2631 - "Community 2631"
+Cohesion: 0.13
+Nodes (14): allowScripts, unrs-resolver@1.12.2, engines, node, npm, eslint, name, overrides (+6 more)
+
+### Community 2632 - "Community 2632"
+Cohesion: 0.15
+Nodes (13): channel(), GRAPH_RAMP, here, luminance(), mark, PAIRS, ratio(), required (+5 more)
+
+### Community 2634 - "Community 2634"
+Cohesion: 0.14
+Nodes (11): ACCOUNT, client(), createPimAccount, deletePimAccount, DEVICE_START, GOOGLE_START, listPimAccounts, pimAuthStatus (+3 more)
+
+### Community 2635 - "Community 2635"
+Cohesion: 0.13
+Nodes (9): AuthConfig, AuthulaStep, defaultAuthConfig, LoginErrorKey, loginLinks, ParticleLink, ParticlePoint, SubmitOutcome (+1 more)
+
+### Community 2636 - "Community 2636"
+Cohesion: 0.15
+Nodes (13): channel(), GRAPH_RAMP, here, luminance(), mark, PAIRS, ratio(), required (+5 more)
+
+### Community 2638 - "Community 2638"
+Cohesion: 0.14
+Nodes (11): ACCOUNT, client(), createPimAccount, deletePimAccount, DEVICE_START, GOOGLE_START, listPimAccounts, pimAuthStatus (+3 more)
+
+### Community 2639 - "Community 2639"
+Cohesion: 0.13
+Nodes (9): AuthConfig, AuthulaStep, defaultAuthConfig, LoginErrorKey, loginLinks, ParticleLink, ParticlePoint, SubmitOutcome (+1 more)
+
+### Community 2640 - "Community 2640"
+Cohesion: 0.13
+Nodes (12): densityBlocks, fontVars, here, indexHtml, missing, motionVars, radiusVars, required (+4 more)
+
+### Community 2641 - "Community 2641"
+Cohesion: 0.13
+Nodes (12): densityBlocks, fontVars, here, indexHtml, missing, motionVars, radiusVars, required (+4 more)
+
+### Community 2642 - "Community 2642"
+Cohesion: 0.24
+Nodes (10): badInput(), _failsConstraint(), patternMismatch(), rangeOverflow(), rangeUnderflow(), stepMismatch(), tooLong(), tooShort() (+2 more)
+
+### Community 2643 - "Community 2643"
+Cohesion: 0.16
+Nodes (5): LineDecoderStream, SSEDecoder, SSEEncoder, SSEEvent, SSEEventStream
+
+### Community 2644 - "Community 2644"
+Cohesion: 0.60
+Nodes (5): T, runFakeMCPServer(), shellQuote(), TestOpenKeepsProcessAliveAfterConnectTimeout(), writeFakeMCPLauncher()
+
+### Community 2645 - "Community 2645"
+Cohesion: 0.19
+Nodes (4): DEFAULT_WEBSOCKET_CONFIG, WebSocketMessage, WebSocketSubject, WebSocketSubjectConfig
+
+### Community 2646 - "Community 2646"
+Cohesion: 0.14
+Nodes (5): { mixin }, MouseEventImpl, MouseEventInit, WheelEventImpl, WheelEventInit
+
+### Community 2647 - "Community 2647"
+Cohesion: 0.33
+Nodes (4): Any, llm_provider_from_google_adk(), Google Agent Development Kit (ADK) integration for neo4j-agent-memory.  Provides, Translate a Google ADK / Gemini model into an :class:`LLMProvider`.      ADK age
+
+### Community 2648 - "Community 2648"
+Cohesion: 0.14
+Nodes (13): Clipboard, Complex Workflows, Error Handling, File Downloads, Frames and Iframes, Geolocation, JavaScript Execution, Media Emulation (+5 more)
+
+### Community 2649 - "Community 2649"
+Cohesion: 0.14
+Nodes (14): scripts, build, contrast, deadcode, dev, dup, format, format:check (+6 more)
+
+### Community 2650 - "Community 2650"
+Cohesion: 0.14
+Nodes (13): cleanTempDir, concurrency, coverageAnalysis, mutate, packageManager, reporters, $schema, tempDirName (+5 more)
+
+### Community 2651 - "Community 2651"
+Cohesion: 0.14
+Nodes (14): Browser Automation with playwright-cli, Browser Sessions, Example: Debugging with DevTools, Example: Form submission, Example: Interactive session, Example: Multi-tab workflow, Installation, Open parameters (+6 more)
+
+### Community 2652 - "Community 2652"
+Cohesion: 0.14
+Nodes (13): args1, args2, args3, func1, func2, func3, returns1, returns2 (+5 more)
+
+### Community 2653 - "Community 2653"
+Cohesion: 0.14
+Nodes (8): A, B, Category, LinkedList, linkedListExample, ObjectTypeIn, ObjectTypeOut, testCategory
+
+### Community 2654 - "Community 2654"
+Cohesion: 0.14
+Nodes (4): B, Category, NumberEnum, openAPI30Validator
+
+### Community 2655 - "Community 2655"
+Cohesion: 0.14
+Nodes (6): COLUMNS, ExplorerTab, SheetBodyProps, SourceExplorerSheetProps, TableViewProps, TABS
+
+### Community 2656 - "Community 2656"
+Cohesion: 0.16
+Nodes (13): ComposerSkillRow, fetchComposerSkills(), fetchReasoningCapabilities(), REASONING_CAPABILITIES_FLOOR, ReasoningCapabilities, mockFetch, ROWS, useComposerSkills() (+5 more)
+
+### Community 2657 - "Community 2657"
+Cohesion: 0.21
+Nodes (13): checkTelegramAvailability(), createTelegramLink(), deleteSetting(), fetchSettings(), fetchTelegramLinkStatus(), putSetting(), readJSON(), SettingItem (+5 more)
+
+### Community 2658 - "Community 2658"
+Cohesion: 0.14
+Nodes (6): COLUMNS, ExplorerTab, SheetBodyProps, SourceExplorerSheetProps, TableViewProps, TABS
+
+### Community 2659 - "Community 2659"
+Cohesion: 0.15
+Nodes (12): Open Questions / Risks — Capability-Detection additions (RESEARCH item H + more), P2.1 — Revised level set & wire map (7 levels), P2.4 — Vocab reconciliation (RESEARCH item D), P2.5 — Two-stage server validation (RESEARCH item E, revised D-05), P2.6 — Frontend: dynamic, capability-driven selector (extends pass-1 Seam Map §6), P2.C — Capability endpoint to the Composer (RESEARCH item C), Pass 2 Addendum — Capability Auto-Detection (D-12 / D-13) + 7-Level Set, Pass-2 Assumptions Log (+4 more)
+
+### Community 2660 - "Community 2660"
+Cohesion: 0.21
+Nodes (13): checkTelegramAvailability(), createTelegramLink(), deleteSetting(), fetchSettings(), fetchTelegramLinkStatus(), putSetting(), readJSON(), SettingItem (+5 more)
+
+### Community 2661 - "Community 2661"
+Cohesion: 0.22
+Nodes (13): recordingDispatcher, newRecordingDispatcher(), TestSchedulerStartGracefulShutdown(), TestSchedulerTickBoundedByMaxConcurrent(), TestSchedulerTickDispatchesDueTask(), TestSchedulerTickSkipsInFlightAndReschedules(), Claim, Context (+5 more)
+
+### Community 2662 - "Community 2662"
+Cohesion: 0.15
+Nodes (12): 1. Graduated-effort output fidelity on a real backend (D-09), 2. Live capability fetch against real OpenRouter `/models`, Anti-Patterns Found, Behavioral Spot-Checks, Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification (+4 more)
+
+### Community 2663 - "Community 2663"
+Cohesion: 0.30
+Nodes (10): T, SandboxRouter, SourceResolver, T, TestShellBg_RunsInBox(), dockerTestImage(), newDockerRouter(), skipUnlessDockerdTools() (+2 more)
+
+### Community 2664 - "Community 2664"
+Cohesion: 0.15
+Nodes (22): Bool, Context, Int32, LabeledVec, Mutex, T, blockingAnchorEmbedder, fakeEmbedder (+14 more)
+
+### Community 2666 - "Community 2666"
+Cohesion: 0.15
+Nodes (5): { domSymbolTree }, { ELEMENT_NODE }, SVGNumber, SVGRect, SVGSVGElementImpl
+
+### Community 2667 - "Community 2667"
+Cohesion: 0.15
+Nodes (4): AbstractRangeImpl, DOMException, NODE_TYPE, StaticRangeImpl
+
+### Community 2668 - "Community 2668"
+Cohesion: 0.15
+Nodes (9): ALPHA, BETA, DocFixture, expectLocatorInsideViewport(), FIXTURES, GAMMA, LIST, openDocuments() (+1 more)
+
+### Community 2669 - "Community 2669"
+Cohesion: 0.18
+Nodes (7): acceptedAsset, FakeXHR, jsonResponse(), presignedAsset, presignResponse(), searchableAsset, throwNonError()
+
+### Community 2670 - "Community 2670"
+Cohesion: 0.15
+Nodes (11): DisplayArtifact, DisplayChart, DisplayChildReport, DisplayCode, DisplayDocument, DisplayKind, DisplayPayload, DisplaySource (+3 more)
+
+### Community 2671 - "Community 2671"
+Cohesion: 0.31
+Nodes (12): asSnapshotMessages(), consumeAuraContextBlock(), fetchThreadMessages(), isAuraContextEnvelope(), mergeToolResult(), metadataFromSnapshotId(), snapshotToThreadMessages(), splitUserMessageMarker() (+4 more)
+
+### Community 2672 - "Community 2672"
+Cohesion: 0.18
+Nodes (8): ConversationRowProps, ConversationSidebar(), ConversationSidebarProps, groupByRecency(), MenuPosition, RecencyGroup, RecencyKey, startOfDay()
+
+### Community 2673 - "Community 2673"
+Cohesion: 0.17
+Nodes (8): deriveState(), EnvRow, EnvState, EnvValueInputProps, McpEnvEditFormProps, placeholderToken(), STATE_DOT, STATE_LABEL
+
+### Community 2674 - "Community 2674"
+Cohesion: 0.15
+Nodes (9): ACTIVE, archiveSkill, AUDIT, fetchSkills, fetchSkillsAudit, installSkill, PENDING, restoreSkill (+1 more)
+
+### Community 2675 - "Community 2675"
+Cohesion: 0.15
+Nodes (12): cameraSetState, DENSE_NODES, EDGES, graphNodes, loadGraph, NODES, PARALLEL_EDGES, refresh (+4 more)
+
+### Community 2676 - "Community 2676"
+Cohesion: 0.15
+Nodes (9): ALPHA, BETA, DocFixture, expectLocatorInsideViewport(), FIXTURES, GAMMA, LIST, openDocuments() (+1 more)
+
+### Community 2677 - "Community 2677"
+Cohesion: 0.18
+Nodes (7): acceptedAsset, FakeXHR, jsonResponse(), presignedAsset, presignResponse(), searchableAsset, throwNonError()
+
+### Community 2678 - "Community 2678"
+Cohesion: 0.15
+Nodes (11): DisplayArtifact, DisplayChart, DisplayChildReport, DisplayCode, DisplayDocument, DisplayKind, DisplayPayload, DisplaySource (+3 more)
+
+### Community 2679 - "Community 2679"
+Cohesion: 0.31
+Nodes (12): asSnapshotMessages(), consumeAuraContextBlock(), fetchThreadMessages(), isAuraContextEnvelope(), mergeToolResult(), metadataFromSnapshotId(), snapshotToThreadMessages(), splitUserMessageMarker() (+4 more)
+
+### Community 2680 - "Community 2680"
+Cohesion: 0.18
+Nodes (8): ConversationRowProps, ConversationSidebar(), ConversationSidebarProps, groupByRecency(), MenuPosition, RecencyGroup, RecencyKey, startOfDay()
+
+### Community 2681 - "Community 2681"
+Cohesion: 0.17
+Nodes (8): deriveState(), EnvRow, EnvState, EnvValueInputProps, McpEnvEditFormProps, placeholderToken(), STATE_DOT, STATE_LABEL
+
+### Community 2682 - "Community 2682"
+Cohesion: 0.15
+Nodes (9): ACTIVE, archiveSkill, AUDIT, fetchSkills, fetchSkillsAudit, installSkill, PENDING, restoreSkill (+1 more)
+
+### Community 2683 - "Community 2683"
+Cohesion: 0.15
+Nodes (12): cameraSetState, DENSE_NODES, EDGES, graphNodes, loadGraph, NODES, PARALLEL_EDGES, refresh (+4 more)
+
+### Community 2684 - "Community 2684"
+Cohesion: 0.36
+Nodes (12): check, detailOrError(), execute(), failf(), logf(), main(), memoryEndpoint(), mustStore() (+4 more)
+
+### Community 2685 - "Community 2685"
+Cohesion: 0.42
+Nodes (11): dedupAction(), distinctiveEntityName(), extractTraceID(), memoryTierGate(), runMemoryCLI(), TestMemoryCLI(), TestMemoryDedupNewEntityActionNone(), TestMemoryReasoningTrace() (+3 more)
+
+### Community 2686 - "Community 2686"
+Cohesion: 0.15
+Nodes (12): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Issues Encountered, Known Stubs, Performance, Phase 42 Plan 03: Safe Structured Summarization and Manual Recovery Summary (+4 more)
+
+### Community 2687 - "Community 2687"
+Cohesion: 0.03
+Nodes (45): { fragmentSerialization }, { HTML_NS }, innerHTML(), { isShadowRoot }, NODE_TYPE, { parseFragment }, { domSymbolTree }, nodeTypes (+37 more)
+
+### Community 2688 - "Community 2688"
+Cohesion: 0.17
+Nodes (11): f, a, a_in, a_out, ArrayOrRecord, b, c, d (+3 more)
+
+### Community 2689 - "Community 2689"
+Cohesion: 0.17
+Nodes (11): ExtendedUser, OmittedUser, PartialUser, PartialUserWithMask, PickedUser, schemaIn, schemaOut, UserKeys (+3 more)
+
+### Community 2690 - "Community 2690"
+Cohesion: 0.20
+Nodes (6): displayTurnFrames(), frame(), GOLDEN_PATH, GoldenFrames, HERE, replaySnapshot()
+
+### Community 2691 - "Community 2691"
+Cohesion: 0.17
+Nodes (5): AdminIdentity, AuditEvent, AuditPage, CapabilityMutationResult, MeResponse
+
+### Community 2692 - "Community 2692"
+Cohesion: 0.17
+Nodes (9): CHAT_SHELL_PANEL_IDS, DocumentsWorkspace, ExternalStoreChat, GovernanceWorkspace, GraphExplorer, LogoutTarget, OnboardingWizard, ProfileOnboardingWizard (+1 more)
+
+### Community 2693 - "Community 2693"
+Cohesion: 0.17
+Nodes (7): PasswordResetCompleteRequest, PasswordResetQuestionRequest, PasswordResetQuestionResponse, PasswordResetStartRequest, PasswordResetStatusResponse, PasswordResetVerifyRequest, PasswordResetVerifyResponse
+
+### Community 2694 - "Community 2694"
+Cohesion: 0.18
+Nodes (7): DocumentKind, documentKindFor(), documentMatchesTab(), DocumentTab, documentTypes, imageTypes, StatusTone
+
+### Community 2695 - "Community 2695"
+Cohesion: 0.20
+Nodes (6): displayTurnFrames(), frame(), GOLDEN_PATH, GoldenFrames, HERE, replaySnapshot()
+
+### Community 2696 - "Community 2696"
+Cohesion: 0.17
+Nodes (5): AdminIdentity, AuditEvent, AuditPage, CapabilityMutationResult, MeResponse
+
+### Community 2697 - "Community 2697"
+Cohesion: 0.17
+Nodes (9): CHAT_SHELL_PANEL_IDS, DocumentsWorkspace, ExternalStoreChat, GovernanceWorkspace, GraphExplorer, LogoutTarget, OnboardingWizard, ProfileOnboardingWizard (+1 more)
+
+### Community 2698 - "Community 2698"
+Cohesion: 0.17
+Nodes (7): PasswordResetCompleteRequest, PasswordResetQuestionRequest, PasswordResetQuestionResponse, PasswordResetStartRequest, PasswordResetStatusResponse, PasswordResetVerifyRequest, PasswordResetVerifyResponse
+
+### Community 2699 - "Community 2699"
+Cohesion: 0.18
+Nodes (7): DocumentKind, documentKindFor(), documentMatchesTab(), DocumentTab, documentTypes, imageTypes, StatusTone
+
+### Community 2700 - "Community 2700"
+Cohesion: 0.15
+Nodes (12): Accomplishments, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Known Stubs, Next Phase Readiness, Performance (+4 more)
+
+### Community 2701 - "Community 2701"
+Cohesion: 0.17
+Nodes (11): How to Run, Investigation Trail, Key findings, Reasoning-toggle matrix (reasoning_content bytes; baseline ≈ 528 reasoning tokens), Research, Results, Spike 095: llama.cpp reasoning-effort wire contract (Phase 37E D-08), The 37E llama.cpp wire contract (for `internal/llm/openai_compat`) (+3 more)
+
+### Community 2702 - "Community 2702"
+Cohesion: 0.17
+Nodes (11): Anti-Patterns Found, Behavioral Spot-Checks, Data-Flow Trace (Level 4), Gaps Summary, Goal Achievement, Human Verification Required, Key Link Verification, Observable Truths (+3 more)
+
+### Community 2703 - "Community 2703"
+Cohesion: 0.40
+Nodes (4): D1 — Automated canary ladder only implements the first promotion step, D2 — Live personal deployment DB carries leftover integration-test rows, D3 — Repo-wide pre-existing staticcheck SA5011 false positives (`make quality` lint gate), Phase 42 — Deferred / Out-of-Scope Items
+
+### Community 2704 - "Community 2704"
+Cohesion: 0.17
+Nodes (11): Accomplishments, Auto-fixed Issues, Deviations from Plan, Known Stubs, Performance, Phase 37D Plan 04: Composer Skill-Picker Integration Summary, Requirements, Self-Check: PASSED (+3 more)
+
+### Community 2705 - "Community 2705"
+Cohesion: 0.25
+Nodes (4): Examples, Inspecting Element Attributes, Debugging Playwright Tests, Running Playwright Tests
+
+### Community 2706 - "Community 2706"
+Cohesion: 0.22
+Nodes (6): alignmentIndicesByString, alignmentStringsByIndex, DOMException, meetOrSliceIndicesByString, meetOrSliceStringsByIndex, SVGPreserveAspectRatioImpl
+
+### Community 2707 - "Community 2707"
+Cohesion: 0.18
+Nodes (10): Age, AgeInput, recordWithBrandedNumberKeys, ExtendedSchema, Input, MyBrand, MySchema, NumberSchema (+2 more)
+
+### Community 2708 - "Community 2708"
+Cohesion: 0.20
+Nodes (9): DocxPreview, HtmlPreview, ImagePreview, PdfPreview, PreviewModal(), PreviewModalProps, renderKind(), TextPreview (+1 more)
+
+### Community 2709 - "Community 2709"
+Cohesion: 0.40
+Nodes (9): assetURL(), deleteAsset(), errorDetail(), finalizeAsset(), getAsset(), presignAsset(), promoteAsset(), readJSON() (+1 more)
+
+### Community 2711 - "Community 2711"
+Cohesion: 0.22
+Nodes (9): DOT_CLASS, formatElapsed(), PILL_VARIANT, RULE_CLASS, ToolActivityCard(), ToolActivityCardProps, ToolActivityChild, ToolActivityRowProps (+1 more)
+
+### Community 2713 - "Community 2713"
+Cohesion: 0.18
+Nodes (3): DocumentFileListProps, DocumentGridProps, DocumentMobileListProps
+
+### Community 2714 - "Community 2714"
+Cohesion: 0.18
+Nodes (5): GraphExplorerProps, INITIAL_VIEW, SigmaCanvas, ViewState, ViewStatus
+
+### Community 2715 - "Community 2715"
+Cohesion: 0.18
+Nodes (10): ClientEdge, ClientGraph, ClientNode, GraphEdge, GraphIntent, GraphNode, GraphOp, GraphPath (+2 more)
+
+### Community 2716 - "Community 2716"
+Cohesion: 0.25
+Nodes (8): dependency(), formatLastChecked(), liveness(), readiness(), RowState, RuntimeHealthPanel(), Tone, TONE_CLASS
+
+### Community 2717 - "Community 2717"
+Cohesion: 0.20
+Nodes (6): isForbiddenError(), Phase, PHASES, provisionErrorKind, stepState, TERMINAL_STATUSES
+
+### Community 2718 - "Community 2718"
+Cohesion: 0.24
+Nodes (10): CompletionStatus, localizedProfileStep(), ProfileOnboardingWizard(), ProfileOnboardingWizardProps, ProfileProgress(), profileStepIndex(), ProfileStepKey, profileStepOrder (+2 more)
+
+### Community 2719 - "Community 2719"
+Cohesion: 0.18
+Nodes (10): a, a_in, a_out, ArrayOrRecord, b, c, d, e (+2 more)
+
+### Community 2720 - "Community 2720"
+Cohesion: 0.20
+Nodes (9): DocxPreview, HtmlPreview, ImagePreview, PdfPreview, PreviewModal(), PreviewModalProps, renderKind(), TextPreview (+1 more)
+
+### Community 2721 - "Community 2721"
+Cohesion: 0.40
+Nodes (9): assetURL(), deleteAsset(), errorDetail(), finalizeAsset(), getAsset(), presignAsset(), promoteAsset(), readJSON() (+1 more)
+
+### Community 2723 - "Community 2723"
+Cohesion: 0.22
+Nodes (9): DOT_CLASS, formatElapsed(), PILL_VARIANT, RULE_CLASS, ToolActivityCard(), ToolActivityCardProps, ToolActivityChild, ToolActivityRowProps (+1 more)
+
+### Community 2725 - "Community 2725"
+Cohesion: 0.18
+Nodes (3): DocumentFileListProps, DocumentGridProps, DocumentMobileListProps
+
+### Community 2726 - "Community 2726"
+Cohesion: 0.18
+Nodes (5): GraphExplorerProps, INITIAL_VIEW, SigmaCanvas, ViewState, ViewStatus
+
+### Community 2727 - "Community 2727"
+Cohesion: 0.18
+Nodes (10): ClientEdge, ClientGraph, ClientNode, GraphEdge, GraphIntent, GraphNode, GraphOp, GraphPath (+2 more)
+
+### Community 2728 - "Community 2728"
+Cohesion: 0.25
+Nodes (8): dependency(), formatLastChecked(), liveness(), readiness(), RowState, RuntimeHealthPanel(), Tone, TONE_CLASS
 
 ### Community 2729 - "Community 2729"
 Cohesion: 0.25
 Nodes (7): Agent-facing loop behavior — terminal exclusivity + send_file (LOOP-01/06 · F-003/009), Claude's Discretion, Deferred Ideas, HITL resume/pause durability (LOOP-02/03/04 · F-004/029/030), Phase 34: Agent-Loop Correctness + Durable Ledger - Discussion Log, Sidecar security + crash-orphan lifecycle (LOOP-05/09 · F-005/040), Spilled (>64 KiB) conversation content search (LOOP-10 · F-048)
 
+### Community 2730 - "Community 2730"
+Cohesion: 0.20
+Nodes (6): isForbiddenError(), Phase, PHASES, provisionErrorKind, stepState, TERMINAL_STATUSES
+
+### Community 2731 - "Community 2731"
+Cohesion: 0.24
+Nodes (10): CompletionStatus, localizedProfileStep(), ProfileOnboardingWizard(), ProfileOnboardingWizardProps, ProfileProgress(), profileStepIndex(), ProfileStepKey, profileStepOrder (+2 more)
+
+### Community 2732 - "Community 2732"
+Cohesion: 0.15
+Nodes (12): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Issues Encountered, Next Phase Readiness, Performance, Phase 42 Plan 08: Durable Rollout Control Plane Summary (+4 more)
+
+### Community 2733 - "Community 2733"
+Cohesion: 0.17
+Nodes (11): Claude's Discretion, Deferred Ideas, List source & scoping (global vs per-identity filtering), List source & scoping (source), Locked by reference + research (not separately voted), Menu scope (quick actions), Phase 37D: Composer Skill & Command Picker - Discussion Log, Pre-discussion research (user-requested) (+3 more)
+
+### Community 2734 - "Community 2734"
+Cohesion: 0.12
+Nodes (28): Context, Embedder, RWMutex, Verdict, T, T, Classifier, NewClassifier() (+20 more)
+
+### Community 2735 - "Community 2735"
+Cohesion: 0.17
+Nodes (11): "auto" semantics, Claude's Discretion, Default level, Deferred Ideas, Effort levels, Honest backend reality captured (CONTEXT.md D-09), Model selector vs. effort selector, Multi-backend (llama.cpp) (+3 more)
+
+### Community 2736 - "Community 2736"
+Cohesion: 0.33
+Nodes (6): Client, Context, NewTTSClient(), TTSClient, TTSConfig, ttsRequest
+
+### Community 2737 - "Community 2737"
+Cohesion: 0.17
+Nodes (11): Acceptance Criteria, Ambiguity Report, Background, Boundaries, Constraints, Edge Coverage, Goal, Interview Log (+3 more)
+
+### Community 2738 - "Community 2738"
+Cohesion: 0.14
+Nodes (13): Architectural Responsibility Map, Assumptions Log, Don't Hand-Roll, Environment Availability, Metadata, Open Questions, Phase 37F: Conversation & Artifact Sharing / Export - Research, Phase Requirements (+5 more)
+
+### Community 2739 - "Community 2739"
+Cohesion: 0.29
+Nodes (7): constructor(), idlUtils, [idlUtils.supportedPropertyIndices](), item(), length(), _update(), RadioNodeListImpl
+
+### Community 2740 - "Community 2740"
+Cohesion: 0.20
+Nodes (10): Commands, Core, DevTools, Keyboard, Mouse, Navigation, Network, Save as (+2 more)
+
+### Community 2741 - "Community 2741"
+Cohesion: 0.20
+Nodes (9): gteFive, gtFive, lteFive, ltFive, multipleOfFive, negative, nonnegative, nonpositive (+1 more)
+
+### Community 2742 - "Community 2742"
+Cohesion: 0.20
+Nodes (9): Age1, AgeInput1, ExtendedSchema, Input, MyBrand, MySchema, NumberSchema, Output (+1 more)
+
+### Community 2743 - "Community 2743"
+Cohesion: 0.20
+Nodes (8): endsWith, includes, includesFromIndex2, justFive, maxFive, minFive, nonempty, startsWith
+
+### Community 2744 - "Community 2744"
+Cohesion: 0.24
+Nodes (5): Cursor, utils, getAllTokens(), getOneToken(), moveNext()
+
+### Community 2745 - "Community 2745"
+Cohesion: 0.29
+Nodes (9): stryCov_9fa48(), stryMutAct_9fa48(), stryNS_9fa48(), CacheEntry, createSpeechAdapter(), SpeechAdapter, SpeechUtterance, Status (+1 more)
+
+### Community 2746 - "Community 2746"
+Cohesion: 0.20
+Nodes (7): AXE_PATH, AxeResult, AxeRunner, openGraphSurface(), POPULATED, require, Window
+
+### Community 2748 - "Community 2748"
+Cohesion: 0.20
+Nodes (5): CardState, CHIP_DOT, CHIP_TEXT, ChipTone, InlineApprovalCardProps
+
+### Community 2749 - "Community 2749"
+Cohesion: 0.27
+Nodes (7): Category, categoryLabel(), EXT_CATEGORY, extOf(), ICON_FOR_CATEGORY, previewKind, TEXT_EXT
+
+### Community 2750 - "Community 2750"
+Cohesion: 0.20
+Nodes (3): SourceSort, SourceSortDir, SourceSortKey
+
+### Community 2751 - "Community 2751"
+Cohesion: 0.22
+Nodes (4): compareCells(), isNumericCell(), SortDir, SortState
+
+### Community 2752 - "Community 2752"
+Cohesion: 0.20
+Nodes (3): ALPHA, BRAVO, SOURCES
+
+### Community 2753 - "Community 2753"
+Cohesion: 0.27
+Nodes (7): AssistantMessage(), AssistantSpeakerControl(), messageAttachments(), SpeakerSpeech, speechIsTruncated(), UserMessage(), UserMessageProps
+
+### Community 2754 - "Community 2754"
+Cohesion: 0.22
+Nodes (5): ARCHIVED, FetchLog, openActions(), rowFor(), ROWS
+
+### Community 2755 - "Community 2755"
+Cohesion: 0.22
+Nodes (6): PIM_PROVIDERS, PimAuthFlow, PimFieldDef, pimFieldVisible(), PimProviderDef, pimSubmitConfig()
+
+### Community 2756 - "Community 2756"
+Cohesion: 0.31
+Nodes (7): applyTheme(), getDensity(), getTheme(), isTheme(), read(), Theme, THEMES
+
+### Community 2757 - "Community 2757"
+Cohesion: 0.20
+Nodes (7): AXE_PATH, AxeResult, AxeRunner, openGraphSurface(), POPULATED, require, Window
+
+### Community 2759 - "Community 2759"
+Cohesion: 0.20
+Nodes (5): CardState, CHIP_DOT, CHIP_TEXT, ChipTone, InlineApprovalCardProps
+
+### Community 2760 - "Community 2760"
+Cohesion: 0.27
+Nodes (7): Category, categoryLabel(), EXT_CATEGORY, extOf(), ICON_FOR_CATEGORY, previewKind, TEXT_EXT
+
+### Community 2761 - "Community 2761"
+Cohesion: 0.20
+Nodes (3): SourceSort, SourceSortDir, SourceSortKey
+
+### Community 2762 - "Community 2762"
+Cohesion: 0.22
+Nodes (4): compareCells(), isNumericCell(), SortDir, SortState
+
+### Community 2763 - "Community 2763"
+Cohesion: 0.20
+Nodes (3): ALPHA, BRAVO, SOURCES
+
+### Community 2764 - "Community 2764"
+Cohesion: 0.27
+Nodes (7): AssistantMessage(), AssistantSpeakerControl(), messageAttachments(), SpeakerSpeech, speechIsTruncated(), UserMessage(), UserMessageProps
+
+### Community 2765 - "Community 2765"
+Cohesion: 0.22
+Nodes (5): ARCHIVED, FetchLog, openActions(), rowFor(), ROWS
+
+### Community 2766 - "Community 2766"
+Cohesion: 0.22
+Nodes (6): PIM_PROVIDERS, PimAuthFlow, PimFieldDef, pimFieldVisible(), PimProviderDef, pimSubmitConfig()
+
+### Community 2767 - "Community 2767"
+Cohesion: 0.31
+Nodes (7): applyTheme(), getDensity(), getTheme(), isTheme(), read(), Theme, THEMES
+
+### Community 2768 - "Community 2768"
+Cohesion: 0.14
+Nodes (14): Coverage floor, Daemon-free unit tests required (pure logic — no DB, no Garage), Mutation testing ≥70% killed, No-skip-as-green, Phase Requirements → Test Map, Property-based testing (gopter/rapid — PRD-mandated where indicated), Sampling rate, Security test angles (the unauthenticated surface) (+6 more)
+
+### Community 2769 - "Community 2769"
+Cohesion: 0.36
+Nodes (10): insertAgedStart(), rowCountForTriple(), TestReconcileAppendsIndeterminateEndForOrphan(), TestReconcileInGraceOrphanUntouchedThenSlowToolRealEndWins(), TestReconcileRechecksBeforeAppendLiveRealEndWins(), TestReconcileStartStopGoleakLive(), Duration, Pool (+2 more)
+
+### Community 2770 - "Community 2770"
+Cohesion: 0.25
+Nodes (4): CSSPageRuleImpl, CSSStyleDeclaration, parsePageSelector(), validPagePseudos
+
+### Community 2771 - "Community 2771"
+Cohesion: 0.22
+Nodes (5): DeviceMotionEventAccelerationImpl, DeviceMotionEventRotationRateImpl, DeviceMotionEventImpl, { implementation: DeviceMotionEventAccelerationImpl }, { implementation: DeviceMotionEventRotationRateImpl }
+
+### Community 2772 - "Community 2772"
+Cohesion: 0.42
+Nodes (10): classify(), head(), logf(), main(), probe(), summarize(), trimNL(), waitHealthy() (+2 more)
+
+### Community 2773 - "Community 2773"
+Cohesion: 0.18
+Nodes (11): Architectural Responsibility Map, Assumptions Log, Environment Availability, Metadata, Open Questions / Risks, Package Legitimacy Audit, Phase 37E: Composer Reasoning-Effort Selector - Research, Phase Requirements (+3 more)
+
+### Community 2774 - "Community 2774"
+Cohesion: 0.26
+Nodes (8): AuraCompactionActivePointers, AuraCompactionCheckpoints, AuraCompactionClaims, Context, Queries, UUID, GetActiveCompactionPointerParams, ListCompatibleCompactionCheckpointsParams
+
+### Community 2775 - "Community 2775"
+Cohesion: 0.16
+Nodes (12): Client, Context, visionChatMessage, visionChatRequest, visionChatResponse, VisionClient, VisionConfig, visionContentPart (+4 more)
+
+### Community 2776 - "Community 2776"
+Cohesion: 0.22
+Nodes (9): Advanced: Multiple Cookies or Custom Options, Clear All Cookies, Cookies, Delete a Cookie, Filter Cookies by Domain, Filter Cookies by Path, Get Specific Cookie, List All Cookies (+1 more)
+
+### Community 2777 - "Community 2777"
+Cohesion: 0.22
+Nodes (8): 1. Use Descriptive Filenames, 2. Record entire hero scripts., Basic Recording, Best Practices, Limitations, Overlay API Summary, Tracing vs Video, Video Recording
+
+### Community 2778 - "Community 2778"
+Cohesion: 0.22
+Nodes (7): effortToUISymbol(), reasoningCapabilitiesDTO, Server, ReasoningEffort, Request, ResponseWriter, ServeMux
+
+### Community 2779 - "Community 2779"
+Cohesion: 0.22
+Nodes (8): BigFish, booleanRecord, Enum, recordWithEnumKeys, recordWithLiteralKey, recordWithLiteralUnionKeys, recordWithTypescriptEnum, schema
+
+### Community 2780 - "Community 2780"
+Cohesion: 0.22
+Nodes (4): isCombiningCharacter, isEmojiModifier, isRegionalIndicatorSymbol, isSurrogatePair
+
+### Community 2781 - "Community 2781"
+Cohesion: 0.31
+Nodes (7): ensureLang(), getHighlighter(), highlightCode(), LANG_ALIASES, LANG_LOADERS, loadedLangs, resolveLang()
+
+### Community 2782 - "Community 2782"
+Cohesion: 0.28
+Nodes (6): isSwarmStatus(), statusDotClass(), statusLabelKey(), SWARM_DOT_CLASS, SWARM_STATUS_KEY, SwarmStatus
+
+### Community 2783 - "Community 2783"
+Cohesion: 0.28
+Nodes (6): proxiedSrc(), ResultRow(), ResultRowProps, safeHost(), Thumbnail(), WebResultDisplayProps
+
+### Community 2784 - "Community 2784"
+Cohesion: 0.15
+Nodes (7): buildAuraRunBody(), ReasoningEffortSeam, useReasoningEffort(), artifactFrame(), frame(), frameWith(), golden
+
+### Community 2786 - "Community 2786"
+Cohesion: 0.22
+Nodes (5): fetchSchedulerRuns, fetchSchedulerTasks, PAGE_1, PAGE_2, TASKS
+
+### Community 2787 - "Community 2787"
+Cohesion: 0.22
+Nodes (5): fetchTelegramStatus, provisionOnboarding, START, startOnboarding, stepOnboarding
+
+### Community 2788 - "Community 2788"
+Cohesion: 0.31
+Nodes (7): ensureLang(), getHighlighter(), highlightCode(), LANG_ALIASES, LANG_LOADERS, loadedLangs, resolveLang()
+
+### Community 2789 - "Community 2789"
+Cohesion: 0.28
+Nodes (6): isSwarmStatus(), statusDotClass(), statusLabelKey(), SWARM_DOT_CLASS, SWARM_STATUS_KEY, SwarmStatus
+
+### Community 2790 - "Community 2790"
+Cohesion: 0.28
+Nodes (6): proxiedSrc(), ResultRow(), ResultRowProps, safeHost(), Thumbnail(), WebResultDisplayProps
+
+### Community 2791 - "Community 2791"
+Cohesion: 0.28
+Nodes (4): artifactFrame(), frame(), frameWith(), golden
+
+### Community 2793 - "Community 2793"
+Cohesion: 0.22
+Nodes (5): fetchSchedulerRuns, fetchSchedulerTasks, PAGE_1, PAGE_2, TASKS
+
+### Community 2794 - "Community 2794"
+Cohesion: 0.22
+Nodes (5): fetchTelegramStatus, provisionOnboarding, START, startOnboarding, stepOnboarding
+
+### Community 2795 - "Community 2795"
+Cohesion: 0.22
+Nodes (7): splitOnASCIIWhitespace(), { reserializeCommaSeparatedTokens, reserializeSpaceSeparatedTokens }, { splitOnASCIIWhitespace, splitOnCommas }, SVGStringList, SVGTestsImpl, reserializeCommaSeparatedTokens(), reserializeSpaceSeparatedTokens()
+
+### Community 2796 - "Community 2796"
+Cohesion: 0.53
+Nodes (5): reasoningEffortFromMetadata(), TestConversationFromRow_SurfacesReasoningEffort(), TestReasoningEffortFromMetadata(), TestReasoningEffortFromMetadata_NilAndEmptyBytes(), T
+
+### Community 2797 - "Community 2797"
+Cohesion: 0.33
+Nodes (6): BoxHandle, Context, ExecRequest, ExecResult, SandboxSpec, stubBackend
+
+### Community 2798 - "Community 2798"
+Cohesion: 0.36
+Nodes (10): toolStart(), TestTranslatorToolResultBothArtifactAndDisplay(), TestTranslatorToolResultEmitsInlineArtifact(), TestTranslatorToolResultEmitsInlineDisplay(), TestTranslatorToolStartNoArgs(), toolEndWithArtifact(), toolEndWithDisplay(), Event (+2 more)
+
+### Community 2799 - "Community 2799"
+Cohesion: 0.15
+Nodes (9): AssistantTransportDecoder, AssistantTransportEncoder, SSEEvent, SSEEventStream, collectChunks(), encodeAndDecode(), DataStreamDecoder, DataStreamEncoder (+1 more)
+
+### Community 2800 - "Community 2800"
+Cohesion: 0.28
+Nodes (11): normalizeSwarmStatus(), normalizeWebError(), severityFor(), TestNormalizeSwarmStatus(), TestNormalizeWebError(), TestNormalizeWebErrorNil(), TestSeverityForUnknownCodeFailsSafe(), TestSystemEventLeaksNoSSRFInternals() (+3 more)
+
+### Community 2801 - "Community 2801"
+Cohesion: 0.29
+Nodes (4): CryptoImpl, DOMException, getTypedArrayTypeName(), nodeCrypto
+
+### Community 2803 - "Community 2803"
+Cohesion: 0.25
+Nodes (6): Context, ToolDef, blockingReconnectClient, TestReconnectServerCloseDoesNotWaitForBlockedCall(), fakeReconnectClient, fakeServer
+
+### Community 2804 - "Community 2804"
+Cohesion: 0.15
+Nodes (12): Coverage floor, Manual-Only Verifications, Per-Task Verification Map, Phase 37F — Validation Strategy, Property-based testing (gopter/rapid — PRD-mandated where indicated), Sampling Rate, Security test angles (the one unauthenticated surface), Test Infrastructure (+4 more)
+
+### Community 2805 - "Community 2805"
+Cohesion: 0.25
+Nodes (4): EventModifierMixinImpl, KeyboardEventImpl, KeyboardEventInit, { mixin }
+
+### Community 2806 - "Community 2806"
+Cohesion: 0.25
+Nodes (8): Advanced Mocking with run-code, CLI Route Commands, Conditional Response Based on Request, Delayed Response, Modify Real Response, Request Mocking, Simulate Network Failures, URL Patterns
+
+### Community 2807 - "Community 2807"
+Cohesion: 0.25
+Nodes (8): Advanced: Multiple Operations, Clear All localStorage, Delete Single Item, Get Single Value, List All localStorage Items, Local Storage, Set JSON Value, Set Value
+
+### Community 2808 - "Community 2808"
+Cohesion: 0.25
+Nodes (8): 1. Use Semantic Locators, 2. Explore Before Recording, 3. Add Assertions Manually, Best Practices, Building a Test File, Example Workflow, How It Works, Test Generation
+
+### Community 2810 - "Community 2810"
+Cohesion: 0.29
+Nodes (6): installGovernanceRoutes(), MCP_SERVERS, openGovernance(), SCHED_RUNS, SCHED_TASKS, SKILLS_ACTIVE
+
+### Community 2811 - "Community 2811"
+Cohesion: 0.25
+Nodes (3): EXPIRED, navigateMock, PENDING
+
+### Community 2812 - "Community 2812"
+Cohesion: 0.25
+Nodes (3): Approval, ResolveAction, ResolveVars
+
+### Community 2813 - "Community 2813"
+Cohesion: 0.25
+Nodes (5): ICON_CLASS, KNOWN_REASONS, RULE, Severity, SystemEventCardProps
+
+### Community 2814 - "Community 2814"
+Cohesion: 0.32
+Nodes (6): clusterEquals(), MetricProps, NumericCluster, RuntimeFooter(), RuntimeFooterProps, useSettledCluster()
+
+### Community 2818 - "Community 2818"
+Cohesion: 0.25
+Nodes (6): GovTab, McpBoard, SchedulerBoard, SkillsBoard, TAB_ICON, TABS
+
+### Community 2819 - "Community 2819"
+Cohesion: 0.25
+Nodes (4): McpInstallPanelProps, Mode, RecipeDescriptor, RECIPES
+
+### Community 2820 - "Community 2820"
+Cohesion: 0.25
+Nodes (3): Call, INSTALL_INFO, MCP_RESP
+
+### Community 2821 - "Community 2821"
+Cohesion: 0.25
+Nodes (4): removeMcpServer, SERVER, setMcpServerEnabled, trustMcpServer
+
+### Community 2822 - "Community 2822"
+Cohesion: 0.29
+Nodes (6): client(), CONNECTED, renderConnect(), WAITING, whatsappConnectLogout, whatsappConnectStatus
+
+### Community 2823 - "Community 2823"
+Cohesion: 0.25
+Nodes (3): EdgeDisplay, NodeDisplay, REDUCER_COLORS
+
+### Community 2824 - "Community 2824"
+Cohesion: 0.50
+Nodes (6): browserLanguage(), detectInitialLanguage(), normalizeLanguage(), persistLanguage(), queryLanguage(), storedLanguage()
+
+### Community 2825 - "Community 2825"
+Cohesion: 0.25
+Nodes (3): expectResetClears(), RawSetting, SETTINGS_BODY
+
+### Community 2826 - "Community 2826"
+Cohesion: 0.25
+Nodes (4): EdgeSwipeHandlers, EdgeSwipeOptions, Kind, Tracking
+
+### Community 2827 - "Community 2827"
+Cohesion: 0.25
+Nodes (5): CloseIntent, initialState, SurfaceAction, SurfaceRestore, SurfaceState
+
+### Community 2828 - "Community 2828"
+Cohesion: 0.29
+Nodes (6): installGovernanceRoutes(), MCP_SERVERS, openGovernance(), SCHED_RUNS, SCHED_TASKS, SKILLS_ACTIVE
+
+### Community 2829 - "Community 2829"
+Cohesion: 0.25
+Nodes (3): EXPIRED, navigateMock, PENDING
+
+### Community 2830 - "Community 2830"
+Cohesion: 0.25
+Nodes (3): Approval, ResolveAction, ResolveVars
+
+### Community 2831 - "Community 2831"
+Cohesion: 0.25
+Nodes (5): ICON_CLASS, KNOWN_REASONS, RULE, Severity, SystemEventCardProps
+
+### Community 2832 - "Community 2832"
+Cohesion: 0.32
+Nodes (6): clusterEquals(), MetricProps, NumericCluster, RuntimeFooter(), RuntimeFooterProps, useSettledCluster()
+
+### Community 2836 - "Community 2836"
+Cohesion: 0.25
+Nodes (6): GovTab, McpBoard, SchedulerBoard, SkillsBoard, TAB_ICON, TABS
+
+### Community 2837 - "Community 2837"
+Cohesion: 0.25
+Nodes (4): McpInstallPanelProps, Mode, RecipeDescriptor, RECIPES
+
+### Community 2838 - "Community 2838"
+Cohesion: 0.25
+Nodes (3): Call, INSTALL_INFO, MCP_RESP
+
+### Community 2839 - "Community 2839"
+Cohesion: 0.25
+Nodes (4): removeMcpServer, SERVER, setMcpServerEnabled, trustMcpServer
+
+### Community 2840 - "Community 2840"
+Cohesion: 0.29
+Nodes (6): client(), CONNECTED, renderConnect(), WAITING, whatsappConnectLogout, whatsappConnectStatus
+
+### Community 2841 - "Community 2841"
+Cohesion: 0.25
+Nodes (3): EdgeDisplay, NodeDisplay, REDUCER_COLORS
+
+### Community 2842 - "Community 2842"
+Cohesion: 0.50
+Nodes (6): browserLanguage(), detectInitialLanguage(), normalizeLanguage(), persistLanguage(), queryLanguage(), storedLanguage()
+
+### Community 2843 - "Community 2843"
+Cohesion: 0.25
+Nodes (3): expectResetClears(), RawSetting, SETTINGS_BODY
+
+### Community 2844 - "Community 2844"
+Cohesion: 0.25
+Nodes (4): EdgeSwipeHandlers, EdgeSwipeOptions, Kind, Tracking
+
+### Community 2845 - "Community 2845"
+Cohesion: 0.29
+Nodes (5): CloseIntent, initialState, SurfaceAction, SurfaceRestore, SurfaceState
+
+### Community 2846 - "Community 2846"
+Cohesion: 0.38
+Nodes (6): BaseContext, Context, HTMLElementTagNameMap, MutantContext, MutationTestReportAppComponent, TestContext
+
+### Community 2847 - "Community 2847"
+Cohesion: 0.17
+Nodes (11): Accomplishments, Decisions Made, Deviations from Plan, Files Created/Modified, Issues Encountered, Next Phase Readiness, Performance, Phase 42 Plan 06: Durable-Memory Privacy Lifecycle Summary (+3 more)
+
+### Community 2848 - "Community 2848"
+Cohesion: 0.20
+Nodes (9): Caveat, Corrected 37E design signal, How to Run, Investigation Trail, Key findings, Research, Results, Spike 096: OpenRouter reasoning-effort wire contract (Phase 37E) (+1 more)
+
+### Community 2849 - "Community 2849"
+Cohesion: 0.23
+Nodes (8): CompactionMetric, allowed(), EmitCompactionMetric(), TestCompactionMetricBoundedAndRedacted(), CompactionMetric, CompactionMetricSink, metricCapture, T
+
+### Community 2850 - "Community 2850"
+Cohesion: 0.31
+Nodes (8): TestCompactOperationsUseIdenticalOwnerScopedCoordinatorOutcome(), TestPreviewOwnerGateAndSanitizedResponse(), TestRestoreRequiresSafePoint(), fakeCompactService, CompactPreview, CompactRequest, Context, T
+
+### Community 2854 - "Community 2854"
+Cohesion: 0.33
+Nodes (6): collectTestName(), globalNamespace, isGreaterThanVitest4Point1, mode, mutantActivation, toRawTestId()
+
+### Community 2855 - "Community 2855"
+Cohesion: 0.33
+Nodes (6): collectTestName(), globalNamespace, isGreaterThanVitest4Point1, mode, mutantActivation, toRawTestId()
+
+### Community 2857 - "Community 2857"
+Cohesion: 0.29
+Nodes (5): AssistantTransformer, AssistantTransformerFlushCallback, AssistantTransformerStartCallback, AssistantTransformerTransformCallback, AssistantTransformStream
+
+### Community 2858 - "Community 2858"
+Cohesion: 0.29
+Nodes (3): PathAppendDecoder, PathAppendEncoder, PathMergeEncoder
+
+### Community 2860 - "Community 2860"
+Cohesion: 0.29
+Nodes (5): FormattedError, FormattedErrorWithNumber, schema, stringWithCustomError, ValidationErrors
+
+### Community 2861 - "Community 2861"
+Cohesion: 0.29
+Nodes (6): ErrorType, parsed, result, schema, Test, tree
+
+### Community 2862 - "Community 2862"
+Cohesion: 0.29
+Nodes (6): justTwo, maxTwo, minTwo, nonEmpty, nonEmptyMax, stringMap
+
+### Community 2863 - "Community 2863"
+Cohesion: 0.29
+Nodes (6): justTwo, maxTwo, minTwo, nonEmpty, nonEmptyMax, stringSet
+
+### Community 2864 - "Community 2864"
+Cohesion: 0.48
+Nodes (6): stryCov_9fa48(), stryMutAct_9fa48(), stryNS_9fa48(), createDictationAdapter(), Result, ResultCallback
+
+### Community 2865 - "Community 2865"
+Cohesion: 0.38
+Nodes (4): installBaseRoutes(), openWith(), snapshotBody(), ToolCallSnapshot
+
+### Community 2866 - "Community 2866"
+Cohesion: 0.43
+Nodes (4): clickFirstVisible(), hasVisibleCandidate(), openOnboarding(), waitForVisibleCandidate()
+
+### Community 2868 - "Community 2868"
+Cohesion: 0.38
+Nodes (5): approval(), client(), renderCard(), ResolveCall, skillApproval()
+
+### Community 2869 - "Community 2869"
+Cohesion: 0.29
+Nodes (5): PasswordResetPanelProps, ResetErrorKey, ResetNoticeKey, ResetStep, SubmitState
+
+### Community 2870 - "Community 2870"
+Cohesion: 0.29
+Nodes (6): Asset, AssetModality, AssetStatus, PresignAssetRequest, PresignResponse, UploadItem
+
+### Community 2871 - "Community 2871"
+Cohesion: 0.29
+Nodes (5): A, ALL, B, C, Override
+
+### Community 2872 - "Community 2872"
+Cohesion: 0.29
+Nodes (4): ButtonProps, H, MsgValue, SpeechStub
+
+### Community 2873 - "Community 2873"
+Cohesion: 0.15
+Nodes (10): appendMessageText(), assistantErrorMessage(), attachAssetsToUserMessages(), foldAgentOntoAssistant(), foldAssetsPositionally(), isAbortSignalAborted(), removeAssetFromMessages(), replaceAssetInMessages() (+2 more)
+
+### Community 2876 - "Community 2876"
+Cohesion: 0.29
+Nodes (3): CONVERSATIONS, HITS, navigateMock
+
+### Community 2877 - "Community 2877"
+Cohesion: 0.29
+Nodes (5): DocumentFilterBarProps, mobileTabs, ScopeFilter, tabs, ViewMode
+
+### Community 2878 - "Community 2878"
+Cohesion: 0.29
+Nodes (4): fetchMcpServers, installMcpServer, probeMcpServer, SERVERS
+
+### Community 2879 - "Community 2879"
+Cohesion: 0.29
+Nodes (3): HealthzBody, ReadyzBody, UseRuntimeHealthResult
+
+### Community 2880 - "Community 2880"
+Cohesion: 0.29
+Nodes (4): completeProfileOnboarding, START, startProfileOnboarding, stepOnboarding
+
+### Community 2882 - "Community 2882"
+Cohesion: 0.38
+Nodes (4): installBaseRoutes(), openWith(), snapshotBody(), ToolCallSnapshot
+
+### Community 2883 - "Community 2883"
+Cohesion: 0.43
+Nodes (4): clickFirstVisible(), hasVisibleCandidate(), openOnboarding(), waitForVisibleCandidate()
+
+### Community 2885 - "Community 2885"
+Cohesion: 0.38
+Nodes (5): approval(), client(), renderCard(), ResolveCall, skillApproval()
+
+### Community 2886 - "Community 2886"
+Cohesion: 0.29
+Nodes (5): PasswordResetPanelProps, ResetErrorKey, ResetNoticeKey, ResetStep, SubmitState
+
+### Community 2887 - "Community 2887"
+Cohesion: 0.29
+Nodes (6): Asset, AssetModality, AssetStatus, PresignAssetRequest, PresignResponse, UploadItem
+
+### Community 2888 - "Community 2888"
+Cohesion: 0.29
+Nodes (5): A, ALL, B, C, Override
+
+### Community 2889 - "Community 2889"
+Cohesion: 0.29
+Nodes (4): ButtonProps, H, MsgValue, SpeechStub
+
+### Community 2890 - "Community 2890"
+Cohesion: 0.10
+Nodes (4): attachAssetsToUserMessages(), foldAgentOntoAssistant(), foldAssetsPositionally(), ExternalStoreChatProps
+
+### Community 2893 - "Community 2893"
+Cohesion: 0.29
+Nodes (3): CONVERSATIONS, HITS, navigateMock
+
+### Community 2894 - "Community 2894"
+Cohesion: 0.29
+Nodes (5): DocumentFilterBarProps, mobileTabs, ScopeFilter, tabs, ViewMode
+
+### Community 2895 - "Community 2895"
+Cohesion: 0.29
+Nodes (4): fetchMcpServers, installMcpServer, probeMcpServer, SERVERS
+
+### Community 2896 - "Community 2896"
+Cohesion: 0.29
+Nodes (3): HealthzBody, ReadyzBody, UseRuntimeHealthResult
+
+### Community 2897 - "Community 2897"
+Cohesion: 0.29
+Nodes (4): completeProfileOnboarding, START, startProfileOnboarding, stepOnboarding
+
+### Community 2899 - "Community 2899"
+Cohesion: 0.29
+Nodes (5): dom, idleTimer, idlUtils, { JSDOM }, { parentPort }
+
+### Community 2900 - "Community 2900"
+Cohesion: 0.20
+Nodes (9): Deviations from Plan, Known Stubs, Next, Phase 37D Plan 01: Composer Skill & Command Picker PRD-Amendment Pre-Code Gate Summary, Requirements, Self-Check: PASSED, Verification, What Was Built (+1 more)
+
+### Community 2901 - "Community 2901"
+Cohesion: 0.19
+Nodes (10): Context, Mutex, RawMessage, Spec, ToolResult, todoItem, renderTodos(), todoItem (+2 more)
+
+### Community 2902 - "Community 2902"
+Cohesion: 0.40
+Nodes (4): DOMException, serialize, serializeToString(), utils
+
+### Community 2903 - "Community 2903"
+Cohesion: 0.44
+Nodes (10): Client, T, boxWgetOK(), egressFQDNImageOrSkip(), egressTestImage(), hasCap(), inspectCapAdd(), skipUnlessEnforcingBridge() (+2 more)
+
+### Community 2904 - "Community 2904"
+Cohesion: 0.24
+Nodes (7): Context, RawMessage, Spec, ToolResult, DocumentSearch, documentSearchArgs, DocumentSearchBackend
+
+### Community 2905 - "Community 2905"
+Cohesion: 0.33
+Nodes (5): Column, ColumnCategory, MutationTestReportTestMetricsTable, Numbers, TableWidth
+
+### Community 2908 - "Community 2908"
+Cohesion: 0.33
+Nodes (7): Agent, AgentOwnsBudget(), BudgetOwner, InvocationContext, Budget, Context, UUID
+
+### Community 2909 - "Community 2909"
+Cohesion: 0.33
+Nodes (5): printWidth, semi, singleQuote, tabWidth, trailingComma
+
+### Community 2910 - "Community 2910"
+Cohesion: 0.33
+Nodes (5): aura-web, Brand & PWA icons, Build output, Design tokens, Scripts
+
+### Community 2912 - "Community 2912"
+Cohesion: 0.33
+Nodes (5): afterBenchmarkDate, beforeBenchmarkDate, benchmarkDate, maxCheck, minCheck
+
+### Community 2913 - "Community 2913"
+Cohesion: 0.33
+Nodes (5): inp, input, out, schemaInput, schemaOutput
+
+### Community 2914 - "Community 2914"
+Cohesion: 0.33
+Nodes (3): a, b, outerSchema
+
+### Community 2915 - "Community 2915"
+Cohesion: 0.47
+Nodes (4): AbstractBar, Bar, Subtest, Test
+
+### Community 2921 - "Community 2921"
+Cohesion: 0.33
+Nodes (3): ASC_LIST, mockDownloadAll, mockList
+
+### Community 2922 - "Community 2922"
+Cohesion: 0.33
+Nodes (3): ArtifactsPanelProps, PreviewModal, Progress
+
+### Community 2924 - "Community 2924"
+Cohesion: 0.53
+Nodes (5): AttachmentCard(), AttachmentCardProps, isPromotable(), statusText(), statusVariant()
+
+### Community 2927 - "Community 2927"
+Cohesion: 0.40
+Nodes (3): hoisted, makeTree(), renderHarness()
+
+### Community 2928 - "Community 2928"
+Cohesion: 0.33
+Nodes (3): defaultFilters, DocumentsWorkspaceProps, LoadStatus
+
+### Community 2929 - "Community 2929"
+Cohesion: 0.47
+Nodes (4): objectBucket(), objectKey(), OrphanRow(), PanelStatus
+
+### Community 2930 - "Community 2930"
+Cohesion: 0.33
+Nodes (3): baseDocument, baseVersion, uploadLibraryDocument
+
+### Community 2932 - "Community 2932"
+Cohesion: 0.33
+Nodes (3): ErrorBoundary, ErrorBoundaryProps, ErrorBoundaryState
+
+### Community 2933 - "Community 2933"
+Cohesion: 0.33
+Nodes (3): LIFECYCLE_STAGE, SKILL_TABS, SkillsTab
+
+### Community 2934 - "Community 2934"
+Cohesion: 0.40
+Nodes (5): activeInstall, client(), installSkill, renderPanel(), searchSkillCatalog
+
+### Community 2935 - "Community 2935"
+Cohesion: 0.33
+Nodes (5): EMPTY_RESULT, fetchGraphSchema, POPULATED_RESULT, postGraphQuery, SCHEMA
+
+### Community 2936 - "Community 2936"
+Cohesion: 0.33
+Nodes (5): AVAILABLE, checkTelegramAvailability, NOT_CONFIGURED, putSetting, REJECTED
+
+### Community 2941 - "Community 2941"
+Cohesion: 0.33
+Nodes (5): InvIn, InvOut, isoDateCodec, User, UserInput
+
+### Community 2942 - "Community 2942"
+Cohesion: 0.33
+Nodes (5): InvIn, InvOut, isoDateCodec, User, UserInput
+
+### Community 2947 - "Community 2947"
+Cohesion: 0.33
+Nodes (3): ASC_LIST, mockDownloadAll, mockList
+
+### Community 2948 - "Community 2948"
+Cohesion: 0.33
+Nodes (3): ArtifactsPanelProps, PreviewModal, Progress
+
+### Community 2950 - "Community 2950"
+Cohesion: 0.53
+Nodes (5): AttachmentCard(), AttachmentCardProps, isPromotable(), statusText(), statusVariant()
+
+### Community 2953 - "Community 2953"
+Cohesion: 0.40
+Nodes (3): hoisted, makeTree(), renderHarness()
+
+### Community 2954 - "Community 2954"
+Cohesion: 0.33
+Nodes (3): defaultFilters, DocumentsWorkspaceProps, LoadStatus
+
+### Community 2955 - "Community 2955"
+Cohesion: 0.47
+Nodes (4): objectBucket(), objectKey(), OrphanRow(), PanelStatus
+
+### Community 2956 - "Community 2956"
+Cohesion: 0.33
+Nodes (3): baseDocument, baseVersion, uploadLibraryDocument
+
+### Community 2958 - "Community 2958"
+Cohesion: 0.33
+Nodes (3): ErrorBoundary, ErrorBoundaryProps, ErrorBoundaryState
+
+### Community 2959 - "Community 2959"
+Cohesion: 0.33
+Nodes (3): LIFECYCLE_STAGE, SKILL_TABS, SkillsTab
+
+### Community 2960 - "Community 2960"
+Cohesion: 0.40
+Nodes (5): activeInstall, client(), installSkill, renderPanel(), searchSkillCatalog
+
+### Community 2961 - "Community 2961"
+Cohesion: 0.33
+Nodes (5): EMPTY_RESULT, fetchGraphSchema, POPULATED_RESULT, postGraphQuery, SCHEMA
+
+### Community 2962 - "Community 2962"
+Cohesion: 0.33
+Nodes (5): AVAILABLE, checkTelegramAvailability, NOT_CONFIGURED, putSetting, REJECTED
+
+### Community 2967 - "Community 2967"
+Cohesion: 0.42
+Nodes (9): createPromotedMemory(), postCompactionMemoryAction(), retrieveCompactionMemories(), TestCompactionMemoryAdminLifecyclePostgresE2E(), Candidate, Memory, Server, T (+1 more)
+
+### Community 2969 - "Community 2969"
+Cohesion: 0.20
+Nodes (9): Claude's Discretion, Compaction model default, Deferred Ideas, Minimum-compact floor, Phase 42: LLM Conversation Compaction - Discussion Log, PRD/doc activation note, Prompt schema (SPEC Req#2 refinement), Summary-turn role & placement (+1 more)
+
+### Community 2970 - "Community 2970"
+Cohesion: 0.40
+Nodes (9): Bot, Recipient, T, liveBot(), liveEnvOrSkip(), minimalOggOpus(), TestLiveSendDocumentResponse(), TestLiveSendPhotoResponse() (+1 more)
+
+### Community 2971 - "Community 2971"
+Cohesion: 0.50
+Nodes (4): objectStoreBootstrap(), runObjectStore(), Config, Context
+
+### Community 2974 - "Community 2974"
+Cohesion: 0.42
+Nodes (9): fakeConvStore, Runner, T, historyHasToolContent(), seedSinglePause(), TestSubmitAnswers_AcceptInjectsOperatorContent(), TestSubmitAnswers_CancelAutoResolves(), TestSubmitAnswers_DeclineInjectsDeclinedContent() (+1 more)
+
+### Community 2975 - "Community 2975"
+Cohesion: 0.40
+Nodes (4): ignore, ignoreDependencies, ignoreExportsUsedInFile, $schema
+
+### Community 2977 - "Community 2977"
+Cohesion: 0.40
+Nodes (4): SortItem, _RefinedSchema, RefinedTypeSchema, RefinedUnionSchema
+
+### Community 2978 - "Community 2978"
+Cohesion: 0.40
+Nodes (4): Fruits, inp, input, out
+
+### Community 2979 - "Community 2979"
+Cohesion: 0.40
+Nodes (4): literalFortyTwo, literalTrue, literalTuna, literalTunaCustomMessage
+
+### Community 2980 - "Community 2980"
+Cohesion: 0.40
+Nodes (4): expected, nested, required, shallow
+
+### Community 2981 - "Community 2981"
+Cohesion: 0.40
+Nodes (4): fish, laxfish, nameonlyFish, nonameFish
+
+### Community 2982 - "Community 2982"
+Cohesion: 0.40
+Nodes (4): deepReadonly, readonlyStringArray, readonlyStringTuple, testEnum
+
+### Community 2983 - "Community 2983"
+Cohesion: 0.40
+Nodes (3): Colors, expectMethodMatch(), Node
+
+### Community 2985 - "Community 2985"
+Cohesion: 0.50
+Nodes (4): installGraphRoutes(), openGraphSurface(), POPULATED, SCHEMA
+
+### Community 2989 - "Community 2989"
+Cohesion: 0.50
+Nodes (4): BootstrapCreateRequest, BootstrapCreateResponse, createFirstOperator(), isBootstrapResponse()
+
+### Community 2990 - "Community 2990"
+Cohesion: 0.40
+Nodes (3): BootstrapErrorKey, BootstrapPanelProps, SubmitState
+
+### Community 2994 - "Community 2994"
+Cohesion: 0.60
+Nodes (4): AttachmentChip(), AttachmentChipProps, statusLabel(), statusVariant()
+
+### Community 2995 - "Community 2995"
+Cohesion: 0.09
+Nodes (31): EMPTY_SKILLS, COMMAND_ICON, IndexedGroup, IndexedRow, indexGroups(), SKILL_ICON_FOR_TYPE, SkillPicker(), SkillPickerProps (+23 more)
+
+### Community 2998 - "Community 2998"
+Cohesion: 0.40
+Nodes (3): NOOP_CONTROLLER, SourceExplorerContext, SourceExplorerController
+
+### Community 3002 - "Community 3002"
+Cohesion: 0.40
+Nodes (3): DISABLED, VoiceModeContext, VoiceModeState
+
+### Community 3005 - "Community 3005"
+Cohesion: 0.60
+Nodes (4): pollUntilDocumentReady(), ProgressHandler, uploadLibraryDocument(), uploadToPresignedURL()
+
+### Community 3007 - "Community 3007"
+Cohesion: 0.50
+Nodes (3): BoardStateViewProps, boardStatus, isAuthError()
+
+### Community 3008 - "Community 3008"
+Cohesion: 0.50
+Nodes (4): client(), HEALTHY, Providers(), SERVER
+
+### Community 3010 - "Community 3010"
+Cohesion: 0.40
+Nodes (4): AppShell, container, LoginPage, NotFoundView
+
+### Community 3014 - "Community 3014"
+Cohesion: 0.50
+Nodes (3): ArtifactsPanelState, useArtifactsPanel(), useIsArtifactsDesktop()
+
+### Community 3016 - "Community 3016"
+Cohesion: 0.50
+Nodes (4): installGraphRoutes(), openGraphSurface(), POPULATED, SCHEMA
+
+### Community 3020 - "Community 3020"
+Cohesion: 0.50
+Nodes (4): BootstrapCreateRequest, BootstrapCreateResponse, createFirstOperator(), isBootstrapResponse()
+
+### Community 3021 - "Community 3021"
+Cohesion: 0.40
+Nodes (3): BootstrapErrorKey, BootstrapPanelProps, SubmitState
+
+### Community 3025 - "Community 3025"
+Cohesion: 0.60
+Nodes (4): AttachmentChip(), AttachmentChipProps, statusLabel(), statusVariant()
+
+### Community 3026 - "Community 3026"
+Cohesion: 0.40
+Nodes (3): ComposerDraftPrompt, ComposerProps, DictationPhase
+
+### Community 3029 - "Community 3029"
+Cohesion: 0.40
+Nodes (3): NOOP_CONTROLLER, SourceExplorerContext, SourceExplorerController
+
+### Community 3033 - "Community 3033"
+Cohesion: 0.40
+Nodes (3): DISABLED, VoiceModeContext, VoiceModeState
+
+### Community 3036 - "Community 3036"
+Cohesion: 0.60
+Nodes (4): pollUntilDocumentReady(), ProgressHandler, uploadLibraryDocument(), uploadToPresignedURL()
+
+### Community 3038 - "Community 3038"
+Cohesion: 0.50
+Nodes (3): BoardStateViewProps, boardStatus, isAuthError()
+
+### Community 3039 - "Community 3039"
+Cohesion: 0.50
+Nodes (4): client(), HEALTHY, Providers(), SERVER
+
+### Community 3041 - "Community 3041"
+Cohesion: 0.40
+Nodes (4): AppShell, container, LoginPage, NotFoundView
+
+### Community 3045 - "Community 3045"
+Cohesion: 0.50
+Nodes (3): ArtifactsPanelState, useArtifactsPanel(), useIsArtifactsDesktop()
+
+### Community 3047 - "Community 3047"
+Cohesion: 0.53
+Nodes (4): Addr, Context, countingResolver, stubResolver
+
+### Community 3049 - "Community 3049"
+Cohesion: 0.67
+Nodes (3): animationFrames(), animationFramesFactory(), DEFAULT_ANIMATION_FRAMES
+
+### Community 3050 - "Community 3050"
+Cohesion: 0.20
+Nodes (9): Accomplishments, Auto-fixed Issues, Decisions Made, Deviations from Plan, Issues Encountered, Phase 42 Plan 09: Durable Rollout Runtime Chain Summary, Self-Check: PASSED, Task Commits (+1 more)
+
+### Community 3055 - "Community 3055"
+Cohesion: 0.18
+Nodes (6): SVGDefsElementImpl, SVGGElementImpl, { mixin }, SVGGraphicsElementImpl, SVGSwitchElementImpl, SVGSymbolElementImpl
+
+### Community 3056 - "Community 3056"
+Cohesion: 0.50
+Nodes (3): maxCheck, mimeCheck, minCheck
+
+### Community 3058 - "Community 3058"
+Cohesion: 0.50
+Nodes (3): asyncFunction, promSchema, promSchemaType
+
+### Community 3059 - "Community 3059"
+Cohesion: 0.50
+Nodes (3): foo, t1, t2
+
+### Community 3061 - "Community 3061"
+Cohesion: 0.50
+Nodes (3): LISTEN_PORT, server, TARGET_PORT
+
+### Community 3077 - "Community 3077"
+Cohesion: 0.29
+Nodes (5): CODEQL, SKILL_CREATOR, SKILLS, h, MockDictation
+
+### Community 3081 - "Community 3081"
+Cohesion: 0.67
+Nodes (3): AutoSpeakMessage, latestCompletedAssistantId(), useAutoSpeak()
+
+### Community 3085 - "Community 3085"
+Cohesion: 0.67
+Nodes (3): Badge(), BadgeProps, badgeVariants
+
+### Community 3086 - "Community 3086"
+Cohesion: 0.67
+Nodes (3): Button(), ButtonProps, buttonVariants
+
+### Community 3097 - "Community 3097"
+Cohesion: 0.67
+Nodes (3): client(), renderForm(), setMcpServerEnv
+
+### Community 3098 - "Community 3098"
+Cohesion: 0.67
+Nodes (3): client(), installMcpServer, renderPanel()
+
+### Community 3099 - "Community 3099"
+Cohesion: 0.67
+Nodes (3): NodeInspector(), NodeInspectorProps, propEntries()
+
+### Community 3102 - "Community 3102"
+Cohesion: 0.67
+Nodes (3): InterviewStep(), InterviewStepProps, isDraft()
+
+### Community 3105 - "Community 3105"
+Cohesion: 0.67
+Nodes (3): svgDataUri(), TelegramLinkStep(), TelegramLinkStepProps
+
+### Community 3111 - "Community 3111"
+Cohesion: 0.67
+Nodes (3): RuntimeStatusChip(), Tone, toneClass()
+
+### Community 3116 - "Community 3116"
+Cohesion: 0.50
+Nodes (3): LISTEN_PORT, server, TARGET_PORT
+
+### Community 3117 - "Community 3117"
+Cohesion: 0.50
+Nodes (3): _RefinedSchema, RefinedTypeSchema, RefinedUnionSchema
+
+### Community 3137 - "Community 3137"
+Cohesion: 0.67
+Nodes (3): AutoSpeakMessage, latestCompletedAssistantId(), useAutoSpeak()
+
+### Community 3141 - "Community 3141"
+Cohesion: 0.67
+Nodes (3): Badge(), BadgeProps, badgeVariants
+
+### Community 3142 - "Community 3142"
+Cohesion: 0.67
+Nodes (3): Button(), ButtonProps, buttonVariants
+
+### Community 3153 - "Community 3153"
+Cohesion: 0.67
+Nodes (3): client(), renderForm(), setMcpServerEnv
+
+### Community 3154 - "Community 3154"
+Cohesion: 0.67
+Nodes (3): client(), installMcpServer, renderPanel()
+
+### Community 3155 - "Community 3155"
+Cohesion: 0.67
+Nodes (3): NodeInspector(), NodeInspectorProps, propEntries()
+
+### Community 3158 - "Community 3158"
+Cohesion: 0.67
+Nodes (3): InterviewStep(), InterviewStepProps, isDraft()
+
+### Community 3161 - "Community 3161"
+Cohesion: 0.67
+Nodes (3): svgDataUri(), TelegramLinkStep(), TelegramLinkStepProps
+
+### Community 3167 - "Community 3167"
+Cohesion: 0.67
+Nodes (3): RuntimeStatusChip(), Tone, toneClass()
+
+### Community 3172 - "Community 3172"
+Cohesion: 0.24
+Nodes (7): TestDocumentAllowlistInSyncWithIngest(), isSupportedDocument(), SupportedDocumentExts(), TestIsSupportedDocument(), TestSupportedDocumentExts(), T, T
+
+### Community 3173 - "Community 3173"
+Cohesion: 0.47
+Nodes (8): head(), logf(), main(), probe(), summarize(), trimNL(), result, variant
+
+### Community 3174 - "Community 3174"
+Cohesion: 0.31
+Nodes (6): HybridMemoryProvider, Combines AgentCore Memory with Context Graphs.      This provider intelligently, Analyze query to determine which memory types to search.          Args:, Search both backends and merge results.          This method routes queries to a, Enrich entity memories with relationship data.          Args:             result, MemorySearchResult
+
+### Community 3175 - "Community 3175"
+Cohesion: 0.22
+Nodes (6): Hybrid Memory Provider combining AgentCore Memory with Context Graphs.  This mod, Initialize the Hybrid Memory Provider.          Args:             memory_client:, Get the current routing strategy., Strategy for routing queries between memory backends., RoutingStrategy, MemoryClient
+
+### Community 3176 - "Community 3176"
+Cohesion: 0.25
+Nodes (6): Context, RawMessage, Spec, ToolResult, ReadToolOutput, readToolOutputArgs
+
+### Community 3250 - "Community 3250"
+Cohesion: 0.23
+Nodes (10): compactionEn, compactionIt, composerEffortEn, composerEffortIt, composerSkillPickerEn, composerSkillPickerIt, footerEn, footerIt (+2 more)
+
+### Community 3338 - "Community 3338"
+Cohesion: 0.27
+Nodes (8): Config, Context, T, T, embedText(), smokeConfig(), TestKnowledgeSmoke(), envIntOr()
+
+### Community 3339 - "Community 3339"
+Cohesion: 0.42
+Nodes (8): T, TestExportProfileSynthesizesMissingProfileEntry(), TestImportProfileInitializesZeroBase(), TestImportProfileOverwriteCredentials(), TestMergeEnvPreserveCredentialsBranches(), TestMergeEnvPreserveCredentialsSkipsMalformedExisting(), ImportProfile(), ImportOptions
+
+### Community 3340 - "Community 3340"
+Cohesion: 0.22
+Nodes (9): Anti-Patterns to Avoid, Architecture Patterns, Pattern 1: Mount a new authenticated read route (D-03), Pattern 2: Reuse the active-skills row projection (D-03), Pattern 3: D-01 pinned-skill wire path — mirror the `uploads` seam, Pattern 4: D-01 server-side application — Mechanism A (RECOMMENDED, zero runner change), Pattern 5: D-05/D-09 — `/`-trigger + key handling without breaking Enter-send, Recommended file layout (new + touched) (+1 more)
+
+### Community 3341 - "Community 3341"
+Cohesion: 0.22
+Nodes (8): Claude's Discretion, Coexistence with existing `recover`, Deferred Ideas, Online research pass — industrial break-glass / disaster recovery, Password-set path, Phase 43: Operator Break-Glass Recovery + Forgot-Password E2E - Discussion Log, Recovery Q&A sourcing UX, Throwaway-DB test harness
+
+### Community 3342 - "Community 3342"
+Cohesion: 0.22
+Nodes (9): Anti-Patterns to Avoid, Architecture Patterns, Pattern 1: Offline Authula service construction (THE key unknown — SOLVED), Pattern 2: The reset itself (template + the D-02 deviation), Pattern 3: Recovery re-seed (mirror bootstrap/onboarding), Pattern 4: Neutral audit event (D-06), Pattern 5: CLI dispatch (D-05), Recommended Project Structure (+1 more)
+
+### Community 3343 - "Community 3343"
+Cohesion: 0.22
+Nodes (9): How to assert the no-leak prohibitions, Mutation-testing spot-check target, Observable signals → SPEC acceptance criteria, Phase Requirements → Test Map, Sampling adequacy (Nyquist), Sampling Rate, Test Framework, Validation Architecture (+1 more)
+
+### Community 3344 - "Community 3344"
+Cohesion: 0.31
+Nodes (7): runAgentRequest, decodeRunAgentRequest(), TestDecodeRunAgentRequest_NoSkill(), TestDecodeRunAgentRequest_Skill(), Decoder, RunAgentInput, T
+
+### Community 3345 - "Community 3345"
+Cohesion: 0.53
+Nodes (8): injectDefaultOnContainerCalculator(), injectDefaultOnMemory(), loadMCPServers(), parseMCPServersJSON(), validateMCPServers(), ManagedConfig, ManagedServer, ServerConfig
+
+### Community 3349 - "Community 3349"
+Cohesion: 0.24
+Nodes (8): Open(), redactDSN(), redactDSNUsername(), Reset(), Config, Context, Pool, Context
+
+### Community 3352 - "Community 3352"
+Cohesion: 0.31
+Nodes (7): Chunk, Context, Mutex, Once, Request, hangingTitleClient, sequencedTitleClient
+
+### Community 3353 - "Community 3353"
+Cohesion: 0.46
+Nodes (4): Server, Request, ResponseWriter, ServeMux
+
+### Community 3354 - "Community 3354"
+Cohesion: 0.44
+Nodes (9): IdentityStore, T, TestDecryptTamperFails(), TestEncryptDecryptRoundTrip(), TestEncryptUsesDistinctNonces(), TestNewIdentityStoreValidatesSecret(), TestResolveRejectsInvalidIdentity(), TestResolveSharedForLocalAndEmpty() (+1 more)
+
+### Community 3355 - "Community 3355"
+Cohesion: 0.25
+Nodes (8): Common Pitfalls, Pitfall 1: Capability-gated skills route (the D-03 trap), Pitfall 2: Picker list diverges from what the runtime can invoke, Pitfall 3: `/` menu breaks Enter-to-send or literal-slash typing, Pitfall 4: New route accidentally shadows `/api/integrations/`, Pitfall 5: 600-LOC ceiling on `serve_webui.go`, Pitfall 6: aria-activedescendant not auto-scrolled, Pitfall 7: i18n parity CI failure
+
+### Community 3356 - "Community 3356"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 37D — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 3359 - "Community 3359"
+Cohesion: 0.25
+Nodes (8): 1. The per-turn override SEAM (the crux — RECOMMENDED design), 2. Multi-backend target recognition, 3. The llama.cpp wire branch, 4. Server enum validation (mirror 37D's pinned-skill field), 5. Persistence wiring (`conversations.metadata` jsonb — NO migration), 6. Frontend send-payload mirror + per-conversation restore, Current-Code Seam Map, Seam Map — canonical file:line index
+
+### Community 3360 - "Community 3360"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 37E — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 3363 - "Community 3363"
+Cohesion: 0.25
+Nodes (7): Agent discretion, Locked decisions, Out of scope, Phase 42: Industrial Conversation Compaction — Context, Phase boundary, Required planning artifacts, Success signal
+
+### Community 3364 - "Community 3364"
+Cohesion: 0.25
+Nodes (7): Manual-Only Verifications, Per-Task Verification Map, Phase 43 — Validation Strategy, Sampling Rate, Test Infrastructure, Validation Sign-Off, Wave 0 Requirements
+
+### Community 3365 - "Community 3365"
+Cohesion: 0.43
+Nodes (7): capsServer(), fetchCaps(), TestReasoningCapabilitiesEndpoint(), ReasoningCapabilitySource, Server, T, reasoningCapabilitiesDTO
+
+### Community 3366 - "Community 3366"
+Cohesion: 0.17
+Nodes (8): Context, RawMessage, Spec, T, ToolResult, TestStructuredBrief(), structuredBrief(), stubTool
+
+### Community 3367 - "Community 3367"
+Cohesion: 0.29
+Nodes (4): Get surrounding context for an entity., Map GLiNER label to POLE+O type and subtype., Synchronous extraction using GLiNER2.          When using descriptions (dict lab, Synchronous batch extraction using GLiNER2's native batch support.          GLiN
+
+### Community 3368 - "Community 3368"
+Cohesion: 0.32
+Nodes (6): fakeStorageLedger, TestStorageOrphanCleanupRequiresTokenAndConfirmation(), TestStorageOrphanDryRunFindsUnledgeredObjectsWithoutDeleting(), Context, ObjectRef, T
+
+### Community 3371 - "Community 3371"
+Cohesion: 0.46
+Nodes (7): Client, Context, T, seedGraphViewLiveFixture(), TestGraphViewLive_Footprint(), TestGraphViewLive_Schema(), TestGraphViewLive_SerializationShape()
+
+### Community 3372 - "Community 3372"
+Cohesion: 0.25
+Nodes (7): Accomplishments, Deviations from Plan, Issues Encountered, Phase 42 Plan 04: Typed Content Parts and Provider Projection Summary, Self-Check: PASSED, Task Commits, Verification
+
+### Community 3373 - "Community 3373"
+Cohesion: 0.31
+Nodes (4): Context, Time, BackgroundShells, bgShell
+
+### Community 3374 - "Community 3374"
+Cohesion: 0.39
+Nodes (7): T, Price, CostUSD(), CostUSDValue(), defaultPrices(), TestCost(), TestCostUSDValue()
+
+### Community 3375 - "Community 3375"
+Cohesion: 0.25
+Nodes (7): Abuse cases and controls, Compaction durable-memory privacy review, Disposition, Privacy lifecycle, Residual risk, Reviewer gate, Threat boundary
+
+### Community 3376 - "Community 3376"
+Cohesion: 0.25
+Nodes (7): 1. Milestone completion state, 2. Phase verification roll-up (10 completed phases), 3. Requirements coverage — 3-source cross-reference, 4. Cross-phase integration (gsd-integration-checker, adversarial code trace), 5. Nyquist coverage (discovery-only), 6. Actionable close-out (before milestone completion), v2.0.0 Milestone Audit — Interim Health Audit (Completed Phases)
+
+### Community 3377 - "Community 3377"
+Cohesion: 0.18
+Nodes (11): ⚠️ D-13 refinement the planner must carry to the PRD, DDL, ⚠️ Migration slot: **0040**, NOT 0036 — VERIFIED ON DISK, Open Technical Questions — Resolved, OQ1 — Token-scoped Garage key/bucket derivation (D-12), OQ2 — The public-share capability NAME (D-02), OQ3 — Expiry enforcement: scheduler sweep vs lazy-on-access (D-15), OQ4 — One serializer core + format adapters vs two writers (D-07) (+3 more)
+
+### Community 3383 - "Community 3383"
+Cohesion: 0.29
+Nodes (6): 1. Visual parity of the "/" picker against the Claude reference, 2. Live-LLM sanity check — Mechanism A actually shapes the reply, Current Test, Gaps, Summary, Tests
+
+### Community 3384 - "Community 3384"
+Cohesion: 0.29
+Nodes (7): Live-proof harness (extend, do NOT gate CI on a live model), Nyquist sampling risks (MUST carry into UAT — D-09), Phase Requirements → Test Map, Sampling Rate (Nyquist), Test Framework, Validation Architecture, Wave 0 gaps
+
+### Community 3385 - "Community 3385"
+Cohesion: 0.29
+Nodes (6): 1. Graduated-effort output fidelity on a real backend (D-09), 2. Live capability fetch against real OpenRouter /models, Current Test, Gaps, Summary, Tests
+
+### Community 3386 - "Community 3386"
+Cohesion: 0.29
+Nodes (6): Execution sampling and terminal gates, Numerical promotion gates, Phase 42 — Industrial Conversation Compaction Validation, Requirement and numerical-gate map, Sign-off, Test tiers
+
+### Community 3387 - "Community 3387"
+Cohesion: 0.29
+Nodes (7): Common Pitfalls, Pitfall 1: The `db_integration` test compiles but never runs in CI, Pitfall 2: coverage-gate job lacks `AURA_AUTHULA_SECRET`, Pitfall 3: argon2 encoding mismatch (Verify rejects), Pitfall 4: `CREATE DATABASE` privilege + connection DB, Pitfall 5: leaking the secret via error strings or `--generate` echo, Pitfall 6: multiple `kind='user'` identities on a real deployment
+
+### Community 3388 - "Community 3388"
+Cohesion: 0.29
+Nodes (6): 1. Live break-glass / forgot-password on the live aura DB, 2. Mutation-testing spot-check (WSL), Current Test, Gaps, Summary, Tests
+
+### Community 3797 - "Community 3797"
+Cohesion: 0.22
+Nodes (8): _a, arg, _b, Fish, Fruit, fruitEnum, Fruits, MyEnum
+
+### Community 3799 - "Community 3799"
+Cohesion: 0.53
+Nodes (5): seedIdentity(), TestReasoningEffortForeignIdentityDenied(), TestReasoningEffortRoundTrip(), Pool, T
+
+### Community 3800 - "Community 3800"
+Cohesion: 0.25
+Nodes (3): D0, h0, ld
+
+### Community 3801 - "Community 3801"
+Cohesion: 0.33
+Nodes (7): Context, Gateway, RawMessage, ReservationKey, RiskTier, Spec, Verdict
+
+### Community 3802 - "Community 3802"
+Cohesion: 0.39
+Nodes (4): fakeStartupLinker, namedIdentityStore, Context, Identity
+
+### Community 3803 - "Community 3803"
+Cohesion: 0.32
+Nodes (6): Client, Request, HTTPClient(), resolveClient(), setBearer(), StatusError
+
+### Community 3804 - "Community 3804"
+Cohesion: 0.33
+Nodes (4): selectSoleOperator(), TestSelectSoleOperator(), Identity, T
+
+### Community 3805 - "Community 3805"
+Cohesion: 0.40
+Nodes (5): Sampling Rate, Success Criterion → Test Map, Test Framework, Validation Architecture, Wave 0 Gaps
+
+### Community 3806 - "Community 3806"
+Cohesion: 0.40
+Nodes (5): A. OpenRouter models-capability client, B. Local llama.cpp capability source, P2.2 — Capability Auto-Detection subsystem (RESEARCH items A + B), The "before" picture (why this is net-new), Unifying seam (used by both the endpoint and the validator)
+
+### Community 3807 - "Community 3807"
+Cohesion: 0.40
+Nodes (5): Backend Wire Contract, Level → wire value (the 37E map), llama.cpp (NET-NEW — Aura's `reasoning:{effort}` object is a NO-OP), OpenRouter (UNCHANGED — Aura's current shape already handles OFF), Server ops (document for 37E)
+
+### Community 3808 - "Community 3808"
+Cohesion: 0.39
+Nodes (5): erroringRolloutStore, Context, RolloutRollback, RolloutState, RolloutTransition
+
+### Community 3809 - "Community 3809"
+Cohesion: 0.40
+Nodes (4): registerComposerRoutes(), AuthDeps, Handler, ServeMux
+
+### Community 3810 - "Community 3810"
+Cohesion: 0.43
+Nodes (7): CommandRunner, T, fakeAddIntegration(), skillAuditSQLState(), TestInstallerAuditAppendOnly(), TestSkillAuditAppendOnly(), NewInstaller()
+
+### Community 3811 - "Community 3811"
+Cohesion: 0.40
+Nodes (9): failf(), logf(), main(), memoryEndpoint(), missingNames(), printSummary(), toolNames(), summary (+1 more)
+
+### Community 3812 - "Community 3812"
+Cohesion: 0.50
+Nodes (4): Alternatives Considered, Core (existing — reuse), Standard Stack, Supporting (existing — reuse)
+
+### Community 3813 - "Community 3813"
+Cohesion: 0.50
+Nodes (4): Backend handler (mirror handleSkillsList active branch), Code Examples, New skills API client (mirror governanceApi.ts), Reading the composer text reactively (D-05 trigger)
+
+### Community 3814 - "Community 3814"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE), Locked Decisions, User Constraints (from CONTEXT.md)
+
+### Community 3815 - "Community 3815"
+Cohesion: 0.50
+Nodes (4): Primary (HIGH confidence — read directly this session), Secondary (MEDIUM), Sources, Tertiary (LOW)
+
+### Community 3816 - "Community 3816"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE), Locked Decisions (research THESE, no alternatives), User Constraints (from CONTEXT.md)
+
+### Community 3817 - "Community 3817"
+Cohesion: 0.50
+Nodes (4): Primary (HIGH confidence), Secondary (MEDIUM confidence), Sources, Tertiary (LOW confidence)
+
+### Community 3818 - "Community 3818"
+Cohesion: 0.50
+Nodes (4): Alternatives Considered, Core (all already in `go.mod` / repo — no new external dependency required), Frontend (E2E) — already installed under `web/`, Standard Stack
+
+### Community 3819 - "Community 3819"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE), Locked Decisions (D-01 → D-08), User Constraints (from CONTEXT.md)
+
+### Community 3820 - "Community 3820"
+Cohesion: 0.50
+Nodes (4): Code Examples, Hidden password prompt with non-TTY detection (R3), Operator-count guard as a pure function (R2 — unit-testable, counted in floor), Strong generated password (R3 `--generate`, ≥20 chars, printed once)
+
+### Community 3821 - "Community 3821"
+Cohesion: 0.50
+Nodes (4): Primary (HIGH confidence — read this session), Secondary (MEDIUM), Sources, Tertiary (LOW)
+
+### Community 3822 - "Community 3822"
+Cohesion: 0.49
+Nodes (9): add(), containsAll(), countFindings(), failGuard(), main(), oneLine(), privateGPTRoot(), readRequired() (+1 more)
+
+### Community 3823 - "Community 3823"
+Cohesion: 0.25
+Nodes (7): ChatMessage, Completion, Provider-agnostic types for LLM and embedding interactions.  These Pydantic mode, A single chat message in a conversation with an LLM.      Mirrors the OpenAI Cha, Token usage and cost information for a single completion call.      Adapters pop, The result of an LLM chat completion call.      Adapters construct one of these, Usage
+
+### Community 3824 - "Community 3824"
+Cohesion: 0.22
+Nodes (3): _check(), notifyItem(), QueueItem
+
+### Community 3825 - "Community 3825"
+Cohesion: 0.29
+Nodes (5): ReadinessProbe, Server, Context, Request, ResponseWriter
+
+### Community 3826 - "Community 3826"
+Cohesion: 0.50
+Nodes (3): resolveClassifier(), LlmAgentConfig, ReasoningClassifier
+
+### Community 3827 - "Community 3827"
+Cohesion: 0.29
+Nodes (5): ClaimPriority, ClaimState, NewCompactionOperationID(), TestNewCompactionOperationIDReturnsDistinctParsableUUIDs(), T
+
+### Community 3833 - "Community 3833"
+Cohesion: 0.67
+Nodes (3): Applicable ASVS Categories, Known Threat Patterns for this stack, Security Domain
+
+### Community 3834 - "Community 3834"
+Cohesion: 0.67
+Nodes (3): Consequence for the plan, D-04 Evidence Gate — VERDICT (a): NO per-identity skill scoping (global snapshot behind RequireAuth), Evidence chain
+
+### Community 3842 - "Community 3842"
+Cohesion: 0.67
+Nodes (3): Pass-2 Sources, Primary (HIGH), Secondary (MEDIUM)
+
+### Community 3847 - "Community 3847"
+Cohesion: 0.67
+Nodes (3): Applicable ASVS Categories, Known Threat Patterns for this stack, Security Domain
+
+### Community 3848 - "Community 3848"
+Cohesion: 0.40
+Nodes (5): e2eRegistry(), TestKVCacheWarmingE2E(), kvTurn, Registry, T
+
+### Community 3849 - "Community 3849"
+Cohesion: 0.50
+Nodes (3): Embedder, Registry, wireToolSearchEmbedder()
+
+### Community 3850 - "Community 3850"
+Cohesion: 0.29
+Nodes (5): Search Context Graph for relevant memories.          Performs hybrid vector + gr, MemorySearchResult, Result from a memory search operation.      Attributes:         memories: List o, Convert result to dictionary representation., MemorySearchResult
+
+### Community 3853 - "Community 3853"
+Cohesion: 0.22
+Nodes (6): { attach, detach }, DOMException, idlUtils, { mixin }, SVGListBase, SVGStringListImpl
+
+### Community 3864 - "Community 3864"
+Cohesion: 0.20
+Nodes (8): Client, Context, Deps, Learner, ReasoningClassifier, ReasoningTier, buildReasoningLearner(), reasoningOracle
+
+### Community 3865 - "Community 3865"
+Cohesion: 0.52
+Nodes (6): T, Config, LoadConfig(), TestLoadConfigDefaults(), TestLoadConfigMalformedFallsBackSilently(), TestLoadConfigOverrides()
+
+### Community 3866 - "Community 3866"
+Cohesion: 0.47
+Nodes (5): T, ToolDef, mailDefs(), TestMountAllAdvertisedToolsDeferred(), TestMountServer_SpawnFailureLeavesRegistryClean()
+
+### Community 3867 - "Community 3867"
+Cohesion: 0.33
+Nodes (4): Store content with optional entity synchronization.          When sync_entities, Get relationships for an entity from the knowledge graph.          This is a con, Any, Memory
+
+### Community 3868 - "Community 3868"
+Cohesion: 0.10
+Nodes (28): BedrockProvider, _converse_messages(), _is_anthropic_on_bedrock(), Native AWS Bedrock adapter for the Provider Protocol.  Uses Bedrock's Converse A, Split messages into ``(system, messages)`` for the Converse API.      Bedrock's, Native Bedrock LLM provider via the Converse API.      Example::          provid, Use Converse toolConfig for Anthropic-on-Bedrock; SAP for everything else., Whether ``bare_model`` is an Anthropic model on Bedrock.      Anthropic-on-Bedro (+20 more)
+
+### Community 3869 - "Community 3869"
+Cohesion: 0.29
+Nodes (6): mcpConsole(), newConsoleHandler(), TestConsoleHandlerServesPageAndMountsProxy(), Handler, Writer, T
+
+### Community 3870 - "Community 3870"
+Cohesion: 0.60
+Nodes (5): T, NewSTTClient(), TestSTTCloudJSONInputAudio(), TestSTTLocalMultipart(), TestSTTNon2xxStatusError()
+
+### Community 3871 - "Community 3871"
+Cohesion: 0.32
+Nodes (7): ClaimPriority, Time, command, event, emit(), main(), Encoder
+
+### Community 3872 - "Community 3872"
+Cohesion: 0.25
+Nodes (8): 0. The headline: Aura's design is already strictly stronger than open-webui's, 1. Share affordance placement & discovery — **VALIDATE the locked placement, CORRECT the target**, 2. The share modal, 3. Shared-links management — **two surfaces, both needed**, 4. The public read-only page, 5. Revoke / expiry UX, 6. Accessibility + i18n, UI/UX Research — Share Surface
+
+### Community 3873 - "Community 3873"
+Cohesion: 0.50
+Nodes (7): benchBudget(), BenchmarkConsumeStep(), BenchmarkConsumeStepParallel(), BenchmarkDedupBeforeToolCall_Distinct(), BenchmarkDedupRoundTrip(), B, Budget
+
+### Community 3875 - "Community 3875"
+Cohesion: 0.60
+Nodes (5): SandboxRouter, T, coreOnlyRouter(), TestRouterExec_Passthrough(), TestRouterOptionalCaps_FailClosed()
+
+### Community 3876 - "Community 3876"
+Cohesion: 0.04
+Nodes (32): Any, ExtractedEntity, ExtractionResult, ExtractorBuilder, Builder for creating custom extraction configurations.      Provides a fluent in, Initialize builder with default settings., Add spaCy extractor to pipeline., Add GLiNER2 extractor to pipeline with simple labels.          Args: (+24 more)
+
+### Community 3877 - "Community 3877"
+Cohesion: 0.25
+Nodes (5): ResolutionMatch, ResolvedEntity, Find fuzzy matches from candidates., Ensure the RapidFuzz scorer is loaded., Resolve entity using fuzzy matching.
+
+### Community 3878 - "Community 3878"
+Cohesion: 0.40
+Nodes (4): registerVoiceRoutes(), AuthDeps, Handler, ServeMux
+
+### Community 3879 - "Community 3879"
+Cohesion: 0.43
+Nodes (5): classifyAuditErr(), InsertIdentityAuditTx(), IdentityAuditInsert, InsertIdentityAuditParams, Queries
+
+### Community 3880 - "Community 3880"
+Cohesion: 0.54
+Nodes (3): Event, InvocationContext, Seq2
+
+### Community 3881 - "Community 3881"
+Cohesion: 0.60
+Nodes (3): fakeIdentities, Context, Identity
+
+### Community 3882 - "Community 3882"
+Cohesion: 0.80
+Nodes (4): T, calendarEndpointOrGate(), reapIdleHTTPConns(), TestCalendarServerLive()
+
+### Community 3884 - "Community 3884"
+Cohesion: 0.33
+Nodes (4): descriptor, displayFlow, displayOutside, parsers
+
+### Community 3885 - "Community 3885"
+Cohesion: 0.50
+Nodes (3): Artifacts this phase produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3886 - "Community 3886"
+Cohesion: 0.38
+Nodes (4): ResolvedEntity, Resolve multiple entities with cross-entity deduplication.          Uses Union-F, Resolve entities with full type information.          This is the preferred meth, Resolve entity using chained strategies.          Args:             entity_name:
+
+### Community 3887 - "Community 3887"
+Cohesion: 0.33
+Nodes (5): Context, RawMessage, Spec, ToolResult, echoTool
+
+### Community 3888 - "Community 3888"
+Cohesion: 0.67
+Nodes (5): Decision, clone(), Evaluate(), Gates, Input
+
+### Community 3889 - "Community 3889"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3890 - "Community 3890"
+Cohesion: 0.50
+Nodes (4): logf(), main(), namedEvent, Event
+
+### Community 3891 - "Community 3891"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3892 - "Community 3892"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3893 - "Community 3893"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3894 - "Community 3894"
+Cohesion: 1.00
+Nodes (3): fail(), logf(), main()
+
+### Community 3895 - "Community 3895"
+Cohesion: 0.50
+Nodes (4): Claude's Discretion, Deferred Ideas (OUT OF SCOPE), Locked Decisions, User Constraints (from CONTEXT.md)
+
+### Community 3896 - "Community 3896"
+Cohesion: 0.50
+Nodes (4): Primary — HIGH confidence (read on disk / from source), Secondary — MEDIUM confidence (official docs, WebSearch-verified), Sources, Tertiary — LOW confidence (marked, not relied upon)
+
+### Community 3898 - "Community 3898"
+Cohesion: 0.36
+Nodes (6): isSecretQueryKey(), redactSecretQuery(), redactURLUserinfo(), sanitizeSkillSource(), TestSanitizeSkillSource(), T
+
+### Community 3900 - "Community 3900"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3902 - "Community 3902"
+Cohesion: 0.67
+Nodes (3): Backend — Go, Code Seams, Frontend — TypeScript / React
+
+### Community 3903 - "Community 3903"
+Cohesion: 0.27
+Nodes (4): T, T, TestLoopAgent_DedupVeto_When_ResultChanges(), TestLoopAgent_EmptySubsUnlimitedReturns()
+
+### Community 3904 - "Community 3904"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3906 - "Community 3906"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3907 - "Community 3907"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3908 - "Community 3908"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3909 - "Community 3909"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3910 - "Community 3910"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3911 - "Community 3911"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3912 - "Community 3912"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3913 - "Community 3913"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3914 - "Community 3914"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3915 - "Community 3915"
+Cohesion: 0.40
+Nodes (3): Context, Runner, resolveOwnerIdentity()
+
+### Community 3916 - "Community 3916"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3918 - "Community 3918"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3919 - "Community 3919"
+Cohesion: 0.50
+Nodes (3): Artifacts this plan produces, STRIDE Threat Register, Trust Boundaries
+
+### Community 3921 - "Community 3921"
+Cohesion: 0.67
+Nodes (3): T, TestStream_IdleTimeoutAbortsStall(), TestStream_IdleTimeoutDisabledWhenZero()
+
+### Community 3922 - "Community 3922"
+Cohesion: 0.67
+Nodes (3): T, containsName(), TestSkillTTLSweep()
+
+### Community 3923 - "Community 3923"
+Cohesion: 0.70
+Nodes (4): T, decodeBody(), reasoningFields(), TestAdaptiveReasoningTierWireE2E()
+
+### Community 3924 - "Community 3924"
+Cohesion: 0.83
+Nodes (3): CatalogHit, parseCatalogHits(), stripANSI()
+
+### Community 3931 - "Community 3931"
+Cohesion: 0.50
+Nodes (3): Account, Context, multiIdentityAccountFake
+
 ## Knowledge Gaps
-- **14808 isolated node(s):** `skill`, `skill`, `Duration`, `Duration`, `stubInstaller` (+14803 more)
+- **19231 isolated node(s):** `skill`, `skill`, `Duration`, `Duration`, `stubInstaller` (+19226 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **286 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **686 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Marshal()` connect `Community 134` to `Community 1024`, `Community 5`, `Community 1033`, `Community 10`, `Community 13`, `Community 16`, `Community 2071`, `Community 27`, `Community 28`, `Community 35`, `Community 39`, `Community 40`, `Community 554`, `Community 556`, `Community 2093`, `Community 48`, `Community 1588`, `Community 2101`, `Community 572`, `Community 61`, `Community 63`, `Community 70`, `Community 1096`, `Community 77`, `Community 2132`, `Community 2133`, `Community 610`, `Community 101`, `Community 108`, `Community 109`, `Community 110`, `Community 112`, `Community 116`, `Community 631`, `Community 634`, `Community 635`, `Community 123`, `Community 128`, `Community 140`, `Community 2188`, `Community 147`, `Community 154`, `Community 157`, `Community 158`, `Community 159`, `Community 670`, `Community 161`, `Community 671`, `Community 167`, `Community 168`, `Community 175`, `Community 687`, `Community 2231`, `Community 1217`, `Community 196`, `Community 201`, `Community 720`, `Community 209`, `Community 1233`, `Community 211`, `Community 216`, `Community 739`, `Community 236`, `Community 238`, `Community 764`, `Community 256`, `Community 769`, `Community 257`, `Community 258`, `Community 266`, `Community 268`, `Community 1297`, `Community 274`, `Community 789`, `Community 277`, `Community 280`, `Community 1822`, `Community 1316`, `Community 305`, `Community 306`, `Community 327`, `Community 340`, `Community 1886`, `Community 350`, `Community 862`, `Community 357`, `Community 873`, `Community 1399`, `Community 380`, `Community 381`, `Community 383`, `Community 1415`, `Community 921`, `Community 941`, `Community 431`, `Community 1976`, `Community 959`, `Community 1475`, `Community 967`, `Community 2010`, `Community 478`, `Community 483`, `Community 493`, `Community 499`, `Community 2036`, `Community 1022`?**
-  _High betweenness centrality (0.085) - this node is a cross-community bridge._
-- **Why does `writeFile()` connect `Community 39` to `Community 132`, `Community 134`, `Community 141`, `Community 20`, `Community 1301`, `Community 277`, `Community 2071`, `Community 916`, `Community 665`, `Community 1913`, `Community 161`, `Community 548`, `Community 551`, `Community 1323`, `Community 434`, `Community 50`, `Community 1588`, `Community 306`, `Community 63`, `Community 320`, `Community 321`, `Community 194`, `Community 197`, `Community 967`, `Community 329`, `Community 1484`, `Community 1100`, `Community 209`, `Community 2137`, `Community 2010`, `Community 732`, `Community 222`, `Community 352`, `Community 354`, `Community 611`, `Community 99`, `Community 357`, `Community 106`, `Community 235`, `Community 364`, `Community 373`, `Community 888`, `Community 121`, `Community 122`, `Community 1403`, `Community 893`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
-- **Why does `ToolCallTurn()` connect `Community 5` to `Community 161`, `Community 935`, `Community 7`, `Community 232`, `Community 720`, `Community 17`, `Community 665`, `Community 150`, `Community 215`, `Community 2169`, `Community 315`, `Community 60`, `Community 894`?**
-  _High betweenness centrality (0.013) - this node is a cross-community bridge._
-- **Are the 196 inferred relationships involving `Marshal()` (e.g. with `main()` and `mustJSON()`) actually correct?**
-  _`Marshal()` has 196 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 125 inferred relationships involving `writeFile()` (e.g. with `main()` and `main()`) actually correct?**
-  _`writeFile()` has 125 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 116 inferred relationships involving `ToolCallTurn()` (e.g. with `main()` and `TestCompletionGate_ContentStop_Veto()`) actually correct?**
-  _`ToolCallTurn()` has 116 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 89 inferred relationships involving `Entity` (e.g. with `CypherQueryProtocol` and `LongTermProtocol`) actually correct?**
-  _`Entity` has 89 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Marshal()` connect `Community 134` to `Community 1024`, `Community 5`, `Community 1031`, `Community 10`, `Community 16`, `Community 2071`, `Community 27`, `Community 28`, `Community 39`, `Community 40`, `Community 556`, `Community 1583`, `Community 48`, `Community 1588`, `Community 572`, `Community 61`, `Community 63`, `Community 2629`, `Community 70`, `Community 1096`, `Community 1097`, `Community 77`, `Community 2133`, `Community 3173`, `Community 101`, `Community 613`, `Community 2663`, `Community 108`, `Community 109`, `Community 110`, `Community 112`, `Community 116`, `Community 631`, `Community 635`, `Community 2684`, `Community 123`, `Community 128`, `Community 140`, `Community 2188`, `Community 147`, `Community 154`, `Community 157`, `Community 158`, `Community 159`, `Community 670`, `Community 161`, `Community 671`, `Community 167`, `Community 168`, `Community 175`, `Community 2736`, `Community 687`, `Community 179`, `Community 196`, `Community 201`, `Community 1226`, `Community 2249`, `Community 720`, `Community 2258`, `Community 2772`, `Community 1239`, `Community 216`, `Community 2775`, `Community 224`, `Community 739`, `Community 236`, `Community 238`, `Community 755`, `Community 2304`, `Community 769`, `Community 256`, `Community 257`, `Community 258`, `Community 2307`, `Community 2310`, `Community 1798`, `Community 259`, `Community 266`, `Community 3338`, `Community 268`, `Community 1297`, `Community 274`, `Community 277`, `Community 279`, `Community 280`, `Community 2332`, `Community 1822`, `Community 3873`, `Community 1316`, `Community 3888`, `Community 305`, `Community 3890`, `Community 306`, `Community 3894`, `Community 1849`, `Community 327`, `Community 332`, `Community 340`, `Community 2904`, `Community 350`, `Community 862`, `Community 357`, `Community 886`, `Community 1399`, `Community 891`, `Community 380`, `Community 381`, `Community 383`, `Community 2435`, `Community 1415`, `Community 2967`, `Community 921`, `Community 2467`, `Community 941`, `Community 431`, `Community 1976`, `Community 959`, `Community 1475`, `Community 967`, `Community 1487`, `Community 2002`, `Community 478`, `Community 483`, `Community 493`, `Community 495`, `Community 2032`, `Community 1009`, `Community 499`, `Community 1022`?**
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+- **Why does `writeFile()` connect `Community 39` to `Community 2435`, `Community 132`, `Community 2310`, `Community 134`, `Community 141`, `Community 403`, `Community 1301`, `Community 277`, `Community 279`, `Community 2071`, `Community 1913`, `Community 161`, `Community 163`, `Community 548`, `Community 551`, `Community 1323`, `Community 3890`, `Community 434`, `Community 50`, `Community 1588`, `Community 306`, `Community 1471`, `Community 63`, `Community 321`, `Community 1092`, `Community 197`, `Community 1093`, `Community 70`, `Community 967`, `Community 329`, `Community 2121`, `Community 1484`, `Community 209`, `Community 338`, `Community 2644`, `Community 2268`, `Community 2015`, `Community 354`, `Community 611`, `Community 228`, `Community 357`, `Community 99`, `Community 3810`, `Community 488`, `Community 104`, `Community 106`, `Community 235`, `Community 748`, `Community 613`, `Community 1391`, `Community 373`, `Community 888`, `Community 121`, `Community 122`, `Community 893`?**
+  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+- **Why does `LoadDB()` connect `Community 1019` to `Community 9`, `Community 142`, `Community 143`, `Community 916`, `Community 2971`, `Community 27`, `Community 161`, `Community 545`, `Community 547`, `Community 557`, `Community 304`, `Community 1203`, `Community 566`, `Community 63`, `Community 322`, `Community 68`, `Community 197`, `Community 324`, `Community 1102`, `Community 1106`, `Community 1108`, `Community 90`, `Community 348`, `Community 95`, `Community 615`, `Community 2279`, `Community 873`, `Community 488`, `Community 236`, `Community 2285`, `Community 373`, `Community 122`, `Community 893`, `Community 2175`?**
+  _High betweenness centrality (0.008) - this node is a cross-community bridge._
+- **Are the 222 inferred relationships involving `Marshal()` (e.g. with `main()` and `mustJSON()`) actually correct?**
+  _`Marshal()` has 222 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 128 inferred relationships involving `writeFile()` (e.g. with `main()` and `main()`) actually correct?**
+  _`writeFile()` has 128 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 117 inferred relationships involving `ToolCallTurn()` (e.g. with `main()` and `TestCompletionGate_ContentStop_Veto()`) actually correct?**
+  _`ToolCallTurn()` has 117 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `skill`, `skill`, `Duration` to the rest of the system?**
+  _20681 weakly-connected nodes found - possible documentation gaps or missing edges._
