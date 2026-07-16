@@ -232,6 +232,28 @@ describe('useThreadApprovals pending generation ownership', () => {
     expect(onFocus).toHaveBeenCalledWith(approvalB);
     expect(onResume).not.toHaveBeenCalled();
   });
+
+  it('rotates when Cancel A refetch first reveals disjoint B and permits B to resolve', async () => {
+    const approvalA = row('result-first-a', 'a');
+    const approvalB = row('result-first-b', 'a');
+    h.data = [approvalA];
+    h.refetch.mockResolvedValueOnce({ data: [approvalB] }).mockResolvedValueOnce({ data: [] });
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result, rerender } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+
+    await act(async () => startResolution(result.current, approvalA, 'cancel'));
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledWith(approvalB);
+    expect(onResume).not.toHaveBeenCalled();
+
+    h.data = [approvalB];
+    rerender();
+    await act(async () => startResolution(result.current, approvalB, 'accept'));
+
+    expect(onFocus).toHaveBeenLastCalledWith(undefined);
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('useThreadApprovals durable local outcomes', () => {
@@ -296,7 +318,7 @@ describe('useThreadApprovals durable local outcomes', () => {
     },
   );
 
-  it('keeps an intermediate successful outcome eligible until the overlapping queue reaches zero', async () => {
+  it('does not resume after a fresh refetch confirms an overlapping approval remains', async () => {
     const approvalA = row('remaining-a', 'a');
     const approvalB = row('remaining-b', 'a');
     h.data = [approvalA, approvalB];
@@ -315,8 +337,9 @@ describe('useThreadApprovals durable local outcomes', () => {
       await Promise.resolve();
     });
 
-    expect(onFocus).toHaveBeenLastCalledWith(undefined);
-    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledWith(approvalB);
+    expect(onResume).not.toHaveBeenCalled();
   });
 
   it('does not resume while a stale queue never reaches zero', async () => {

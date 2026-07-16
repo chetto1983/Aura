@@ -37,6 +37,7 @@ export function createDictationAdapter(): DictationAdapter {
       // A holder object (not a bare `let`) so reads survive the flow-narrowing that would
       // otherwise flag the cross-closure mutation from cancel() as an impossible branch.
       const flags = { cancelled: false };
+      const isCancelled = (): boolean => flags.cancelled;
 
       // stop() awaits this so the composer's post-stop cleanup runs only after the POST +
       // onSpeech insert have completed (see the header note on the ordering trap).
@@ -52,12 +53,19 @@ export function createDictationAdapter(): DictationAdapter {
       const session: DictationAdapter.Session = {
         status: { type: 'starting' },
         stop: async () => {
-          recorder?.stop();
+          if (recorder === undefined) {
+            flags.cancelled = true;
+            stopTracks();
+            session.status = { type: 'ended', reason: 'cancelled' };
+            settle?.();
+          } else if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
           await settled;
         },
         cancel: () => {
           flags.cancelled = true;
-          recorder?.stop();
+          if (recorder !== undefined && recorder.state !== 'inactive') recorder.stop();
           stopTracks();
           session.status = { type: 'ended', reason: 'cancelled' };
           settle?.();
@@ -78,7 +86,7 @@ export function createDictationAdapter(): DictationAdapter {
 
       const transcribe = async (): Promise<void> => {
         stopTracks();
-        if (flags.cancelled) return; // cancel() already ended the session; never POST
+        if (isCancelled()) return; // cancel() already ended the session; never POST
         try {
           const blob = new Blob(chunks, { type: recorder?.mimeType ?? 'audio/webm' });
           const form = new FormData();
@@ -88,11 +96,13 @@ export function createDictationAdapter(): DictationAdapter {
             credentials: 'same-origin',
             body: form,
           });
+          if (isCancelled()) return;
           if (!res.ok) {
             session.status = { type: 'ended', reason: 'error' }; // Composer degrades (D-10)
             return;
           }
           const data = (await res.json()) as { text?: unknown };
+          if (isCancelled()) return;
           const transcript = typeof data.text === 'string' ? data.text : '';
           // Insert via onSpeech (isFinal) — the ONLY path the core writes into the composer.
           if (transcript.length > 0) {
@@ -108,7 +118,7 @@ export function createDictationAdapter(): DictationAdapter {
       void (async () => {
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          if (flags.cancelled) {
+          if (isCancelled()) {
             stopTracks();
             return;
           }
