@@ -1612,7 +1612,7 @@ Expected:
 - Only owned source, tests, visual evidence, and generated `internal/webui/dist` paths appear.
 - Unrelated user changes remain untouched.
 
-- [ ] **Step 6: Commit the reviewed generated bundle**
+- [x] **Step 6: Commit the reviewed generated bundle**
 
 ```powershell
 git add -- internal/webui/dist
@@ -1622,7 +1622,7 @@ git commit -m "build(web): refresh Calm Prism cockpit bundle"
 
 Expected: one generated-output-only commit.
 
-- [ ] **Step 7: Perform the final no-regression check**
+- [x] **Step 7: Perform the final no-regression check**
 
 ```powershell
 git status --short

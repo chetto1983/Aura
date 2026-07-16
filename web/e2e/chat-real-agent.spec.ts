@@ -272,10 +272,8 @@ test.describe('real-agent Calm Prism acceptance', () => {
       });
       const assets = await threadAssets(page, conversationId);
       const document = assets.find((asset) => asset.file_name === basename(documentPath));
-      const documentReady =
-        document !== undefined &&
-        (document.status === 'searchable' || document.status === 'complete') &&
-        typeof document.document_id === 'string';
+      const documentId = document?.document_id?.trim() ?? '';
+      const documentReady = document?.status === 'searchable' && documentId.length > 0;
       checks.push({
         name: 'searchable real DOCX upload',
         pass: documentReady,
