@@ -31,6 +31,13 @@ const SETTLED_TURN: TurnUsage = {
   costUsd: 0.01,
 };
 
+const NEXT_TURN: TurnUsage = {
+  promptTokens: 100,
+  completionTokens: 0,
+  cacheHitTokens: 0,
+  costUsd: 0.002,
+};
+
 function event(runId: number, phase: RunUsageEvent['phase'], usage?: TurnUsage): RunUsageEvent {
   return { runId, phase, usage };
 }
@@ -139,6 +146,78 @@ describe('RuntimeFooter run/session ownership', () => {
 
     expect(visibleMetrics()).toContain('Session 1.9k');
     expect(visibleMetrics()).not.toContain('Session 1.6k');
+  });
+
+  it('preserves locally committed totals across consecutive unavailable baselines', () => {
+    const { rerender } = renderUnseededFooter(event(1, 'settled', SETTLED_TURN), {
+      runId: 1,
+      baseline: null,
+    });
+    expect(visibleMetrics()).toContain('Session 300');
+
+    rerender(
+      <RuntimeFooter
+        usageState={event(2, 'running')}
+        conversationId="c-1"
+        sessionBaseline={{ runId: 2, baseline: null }}
+      />,
+    );
+    expect(visibleMetrics()).toContain('Session 300');
+
+    rerender(
+      <RuntimeFooter
+        usageState={event(2, 'running', NEXT_TURN)}
+        conversationId="c-1"
+        sessionBaseline={{ runId: 2, baseline: null }}
+      />,
+    );
+    expect(visibleMetrics()).toContain('Session 400');
+
+    rerender(
+      <RuntimeFooter
+        usageState={event(2, 'settled', NEXT_TURN)}
+        conversationId="c-1"
+        sessionBaseline={{ runId: 2, baseline: null }}
+      />,
+    );
+    expect(visibleMetrics()).toContain('Session 400');
+  });
+
+  it('reconciles a late authoritative seed without dropping a null-baseline turn', () => {
+    const secondRun = event(2, 'settled', NEXT_TURN);
+    const secondBaseline = { runId: 2, baseline: null };
+    const { client, rerender } = renderUnseededFooter(event(1, 'settled', SETTLED_TURN), {
+      runId: 1,
+      baseline: null,
+    });
+    rerender(
+      <RuntimeFooter
+        usageState={secondRun}
+        conversationId="c-1"
+        sessionBaseline={secondBaseline}
+      />,
+    );
+    expect(visibleMetrics()).toContain('Session 400');
+
+    act(() => {
+      client.setQueryData([CONVERSATION_KEY, 'c-1'], {
+        TotalInputTokens: 200,
+        TotalOutputTokens: 100,
+        TotalCachedTokens: 50,
+        TotalCostUSD: 0.01,
+      });
+    });
+    rerender(
+      <RuntimeFooter
+        usageState={secondRun}
+        conversationId="c-1"
+        sessionBaseline={secondBaseline}
+      />,
+    );
+
+    expect(visibleMetrics()).toContain('Session 400');
+    expect(visibleMetrics()).not.toContain('Session 300');
+    expect(visibleMetrics()).not.toContain('Session 700');
   });
 
   it('does not count a settled turn again when the conversation aggregate refetch includes it', async () => {

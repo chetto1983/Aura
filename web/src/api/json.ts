@@ -10,10 +10,11 @@ export class HttpError extends Error {
   }
 }
 
-export async function getJSON<T>(url: string): Promise<T> {
+export async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
+    ...(signal !== undefined ? { signal } : {}),
   });
   if (!res.ok) {
     throw new HttpError(res.status);

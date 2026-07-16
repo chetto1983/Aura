@@ -69,31 +69,14 @@ function advanceRunSession(
     ? eventBaseline === undefined
       ? committedSeed
       : eventBaseline === null
-        ? emptySession()
+        ? committedSeed
         : maximumTotals(priorCommitted, eventBaseline)
     : eventBaseline === undefined && !previous.seedReady && seedReady
       ? seed
       : previous.baseline;
 
-  if (eventBaseline === null) {
-    const turnOnly =
-      event.usage === undefined ? emptySession() : addTurn(emptySession(), event.usage);
-    const visible = seedReady ? seed : turnOnly;
-    return {
-      conversationId,
-      seedReady,
-      seed,
-      runId: event.runId,
-      phase: event.phase,
-      usage: event.usage,
-      eventBaseline: null,
-      committed: visible,
-      baseline: emptySession(),
-      visible,
-    };
-  }
-
   if (event.phase === 'running') {
+    const inProgress = event.usage === undefined ? baseline : addTurn(baseline, event.usage);
     return {
       conversationId,
       seedReady,
@@ -104,7 +87,7 @@ function advanceRunSession(
       eventBaseline,
       committed: committedSeed,
       baseline,
-      visible: event.usage === undefined ? baseline : addTurn(baseline, event.usage),
+      visible: maximumTotals(committedSeed, inProgress),
     };
   }
 

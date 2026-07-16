@@ -10,6 +10,8 @@ import type { RunSessionBaselineEvent } from './runSessionUsage';
 
 export type RunSessionBaselineListener = (event: RunSessionBaselineEvent) => void;
 
+export const RUN_USAGE_BASELINE_TIMEOUT_MS = 1500;
+
 export function useRunUsageBaseline(onBaseline?: RunSessionBaselineListener) {
   const queryClient = useQueryClient();
   return useCallback(
@@ -26,12 +28,16 @@ async function publishRunSessionBaseline(
   signal: AbortSignal,
   onBaseline: RunSessionBaselineListener | undefined,
 ): Promise<boolean> {
+  const queryKey = [CONVERSATION_KEY, conversationId] as const;
   const load = queryClient.ensureQueryData({
-    queryKey: [CONVERSATION_KEY, conversationId],
-    queryFn: () => fetchConversation(conversationId),
+    queryKey,
+    queryFn: ({ signal: querySignal }) => fetchConversation(conversationId, querySignal),
     retry: false,
   });
   const outcome = await settleOrAbort(load, signal);
+  if (outcome.kind === 'aborted' || outcome.kind === 'timed-out') {
+    await queryClient.cancelQueries({ queryKey, exact: true }, { silent: true });
+  }
   if (outcome.kind === 'aborted') return false;
   onBaseline?.({
     runId,
@@ -43,14 +49,19 @@ async function publishRunSessionBaseline(
 type LoadOutcome =
   | { readonly kind: 'ready'; readonly conversation: Conversation }
   | { readonly kind: 'failed' }
+  | { readonly kind: 'timed-out' }
   | { readonly kind: 'aborted' };
 
 function settleOrAbort(load: Promise<Conversation>, signal: AbortSignal): Promise<LoadOutcome> {
   return new Promise((resolve) => {
     let settled = false;
+    const timeout = setTimeout(() => {
+      finish({ kind: 'timed-out' });
+    }, RUN_USAGE_BASELINE_TIMEOUT_MS);
     const finish = (outcome: LoadOutcome) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       signal.removeEventListener('abort', abort);
       resolve(outcome);
     };

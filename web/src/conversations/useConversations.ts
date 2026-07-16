@@ -105,8 +105,11 @@ export const CONVERSATION_KEY = 'conversation';
 export const CONVERSATION_SEARCH_KEY = 'conversation-search';
 export const CONVERSATION_ROT_EVENTS_KEY = 'conversation-rot-events';
 
-export function fetchConversation(conversationId: string): Promise<Conversation> {
-  return getJSON<Conversation>(`/api/conversations/${encodeURIComponent(conversationId)}`);
+export function fetchConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<Conversation> {
+  return getJSON<Conversation>(`/api/conversations/${encodeURIComponent(conversationId)}`, signal);
 }
 
 /**
@@ -116,7 +119,7 @@ export function fetchConversation(conversationId: string): Promise<Conversation>
 export function useConversation(conversationId: string) {
   return useQuery({
     queryKey: [CONVERSATION_KEY, conversationId],
-    queryFn: () => fetchConversation(conversationId),
+    queryFn: ({ signal }) => fetchConversation(conversationId, signal),
     enabled: conversationId.length > 0,
     retry: false,
   });

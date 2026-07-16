@@ -6,6 +6,7 @@ import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
 import type { RunUsageEvent } from '../runUsage';
 import type { RunSessionBaselineEvent } from '../runSessionUsage';
+import { RUN_USAGE_BASELINE_TIMEOUT_MS } from '../useRunUsageBaseline';
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -89,6 +90,7 @@ function deferred<T>() {
 
 describe('ExternalStoreChat usage ownership races', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     localStorage.removeItem('aura.chat.reasoning.shown');
   });
@@ -242,6 +244,130 @@ describe('ExternalStoreChat usage ownership races', () => {
     await screen.findByText('Done.');
 
     expect(order).toEqual(['baseline:unavailable', 'agent']);
+  });
+
+  it('bounds a hung baseline read, publishes unavailable, and starts the agent run', async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    const detailSignals: AbortSignal[] = [];
+    const onUsageBaseline = vi.fn((event: RunSessionBaselineEvent) => {
+      order.push(`baseline:${event.baseline === null ? 'unavailable' : 'known'}`);
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/conversations/conv-1') {
+          if (init?.signal != null) detailSignals.push(init.signal);
+          return new Promise<Response>(() => undefined);
+        }
+        if (url === '/agent/run') {
+          order.push('agent');
+          return Promise.resolve(completedRun('conv-1'));
+        }
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsageBaseline={onUsageBaseline} />);
+    sendPrompt('bounded baseline');
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(RUN_USAGE_BASELINE_TIMEOUT_MS - 1);
+    });
+    expect(order).not.toContain('agent');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+    });
+
+    expect(detailSignals[0]?.aborted).toBe(true);
+    expect(order).toEqual(['baseline:unavailable', 'agent']);
+  });
+
+  it('cancels a hung detail query on Stop without a late baseline or agent request', async () => {
+    vi.useFakeTimers();
+    const detailSignals: AbortSignal[] = [];
+    const runRequests: string[] = [];
+    const onUsageBaseline = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/conversations/conv-1') {
+          if (init?.signal != null) detailSignals.push(init.signal);
+          return new Promise<Response>(() => undefined);
+        }
+        if (url === '/agent/run') {
+          runRequests.push(url);
+          return Promise.resolve(completedRun('conv-1'));
+        }
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(<ExternalStoreChat threadId="conv-1" onUsageBaseline={onUsageBaseline} />);
+    sendPrompt('stop hung baseline');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop the current response' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RUN_USAGE_BASELINE_TIMEOUT_MS + 500);
+      await Promise.resolve();
+    });
+
+    expect(detailSignals[0]?.aborted).toBe(true);
+    expect(runRequests).toHaveLength(0);
+    expect(onUsageBaseline).not.toHaveBeenCalled();
+  });
+
+  it('starts a fresh detail query when sending again after Stop', async () => {
+    let detailRequests = 0;
+    const runRequests: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/conversations/conv-1') {
+          detailRequests += 1;
+          if (detailRequests === 1) {
+            return new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => {
+                reject(new DOMException('aborted', 'AbortError'));
+              });
+            });
+          }
+          return Promise.resolve(conversationResponse());
+        }
+        if (url === '/agent/run') {
+          runRequests.push(url);
+          return Promise.resolve(completedRun('conv-1'));
+        }
+        if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    sendPrompt('first attempt');
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop the current response' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
+    });
+
+    sendPrompt('second attempt');
+    await waitFor(() => {
+      expect(detailRequests).toBe(2);
+    });
+    await screen.findByText('Done.');
+    expect(runRequests).toHaveLength(1);
   });
 
   it('aborts an active agent stream and settles its usage exactly once', async () => {
