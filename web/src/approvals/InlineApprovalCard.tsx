@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { isTerminal, parseOptions } from './approvalState';
-import type { ApprovalResolution } from './useThreadApprovals';
+import type { ApprovalResolution, ApprovalResolutionAttempt } from './useThreadApprovals';
 import { useResolveApproval, type Approval, type ResolveAction } from './useApprovals';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -24,9 +24,19 @@ export interface InlineApprovalCardProps {
   readonly isStreaming?: boolean;
   /** Notify the shared thread gate after a successful local resolution. */
   readonly onResolved?: (resolution: ApprovalResolution) => void | Promise<void>;
+  /** Notify the gate before the resolve request starts so Cancel owns the generation. */
+  readonly onResolutionStarted?: (attempt: ApprovalResolutionAttempt) => void;
+  /** Release a matching lifecycle attempt if its resolve request fails. */
+  readonly onResolutionFailed?: (attempt: ApprovalResolutionAttempt) => void | Promise<void>;
 }
 
-export function InlineApprovalCard({ approval, isStreaming, onResolved }: InlineApprovalCardProps) {
+export function InlineApprovalCard({
+  approval,
+  isStreaming,
+  onResolved,
+  onResolutionStarted,
+  onResolutionFailed,
+}: InlineApprovalCardProps) {
   const { t } = useTranslation();
   const resolve = useResolveApproval();
   const options = parseOptions(approval.options);
@@ -36,6 +46,7 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   const [state, setState] = useState<CardState>('pending');
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const keepRunningButtonRef = useRef<HTMLButtonElement | null>(null);
+  const attemptSequence = useRef(0);
   const freeTextId = useId();
   const busy = resolve.isPending;
   const failed = resolve.isError;
@@ -57,6 +68,13 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
   }
 
   function submit(action: ResolveAction, content?: string) {
+    attemptSequence.current += 1;
+    const resolution: ApprovalResolution = { approval, action };
+    const attempt: ApprovalResolutionAttempt = {
+      ...resolution,
+      attemptId: `${freeTextId}:${String(attemptSequence.current)}`,
+    };
+    onResolutionStarted?.(attempt);
     resolve.mutate(
       action === 'accept'
         ? { token: approval.token, action, content: content ?? '' }
@@ -66,7 +84,10 @@ export function InlineApprovalCard({ approval, isStreaming, onResolved }: Inline
           setState(
             action === 'accept' ? 'answered' : action === 'decline' ? 'declined' : 'cancelled',
           );
-          void onResolved?.({ approval, action });
+          void onResolved?.(resolution);
+        },
+        onError: () => {
+          void onResolutionFailed?.(attempt);
         },
       },
     );

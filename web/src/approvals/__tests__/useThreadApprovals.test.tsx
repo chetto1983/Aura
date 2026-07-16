@@ -21,6 +21,21 @@ interface Deferred<T> {
   readonly resolve: (value: T) => void;
 }
 
+interface ResolutionAttempt {
+  readonly approval: Approval;
+  readonly action: ResolveAction;
+  readonly attemptId: string;
+}
+
+interface ApprovalLifecycle {
+  readonly onResolutionStarted?: (attempt: ResolutionAttempt) => void;
+  readonly onResolutionFailed?: (attempt: ResolutionAttempt) => void | Promise<void>;
+}
+
+function lifecycle(value: ReturnType<typeof useThreadApprovals>): ApprovalLifecycle {
+  return value;
+}
+
 function deferred<T>(): Deferred<T> {
   let resolvePromise: ((value: T) => void) | undefined;
   const promise = new Promise<T>((resolve) => {
@@ -211,5 +226,136 @@ describe('useThreadApprovals cancellation precedence', () => {
     expect(onResume).not.toHaveBeenCalled();
     expect(onFocus).toHaveBeenCalledTimes(1);
     expect(onFocus).toHaveBeenCalledWith(undefined);
+  });
+});
+
+describe('useThreadApprovals pre-mutation cancellation ownership', () => {
+  it.each(['accept', 'decline'] as const)(
+    'suppresses an in-flight %s completion as soon as Cancel intent starts',
+    async (answerAction) => {
+      const answerApproval = row('answer', 'a');
+      const cancelApproval = row('cancel', 'a');
+      h.data = [answerApproval, cancelApproval];
+      const answerRefresh = deferred<{ data: Approval[] }>();
+      h.refetch.mockReturnValueOnce(answerRefresh.promise);
+      const onResume = vi.fn(() => Promise.resolve());
+      const onFocus = vi.fn();
+      const { result } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+      const cancelAttempt: ResolutionAttempt = {
+        approval: cancelApproval,
+        action: 'cancel',
+        attemptId: 'cancel-1',
+      };
+
+      const answer = startResolution(result.current.onResolved, answerApproval, answerAction);
+      act(() => {
+        lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
+      });
+      await act(async () => {
+        answerRefresh.resolve({ data: [] });
+        await answer;
+      });
+
+      expect(onResume).not.toHaveBeenCalled();
+      expect(onFocus).not.toHaveBeenCalled();
+    },
+  );
+
+  it('releases a deferred final answer exactly once when the owning Cancel mutation fails', async () => {
+    const answerApproval = row('answer', 'a');
+    const cancelApproval = row('cancel', 'a');
+    h.data = [answerApproval, cancelApproval];
+    const answerRefresh = deferred<{ data: Approval[] }>();
+    h.refetch.mockReturnValueOnce(answerRefresh.promise);
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+    const cancelAttempt: ResolutionAttempt = {
+      approval: cancelApproval,
+      action: 'cancel',
+      attemptId: 'cancel-failed',
+    };
+
+    const answer = startResolution(result.current.onResolved, answerApproval, 'accept');
+    act(() => {
+      lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
+    });
+    await act(async () => {
+      answerRefresh.resolve({ data: [] });
+      await answer;
+    });
+    expect(onResume).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await lifecycle(result.current).onResolutionFailed?.(cancelAttempt);
+    });
+
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledWith(undefined);
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates repeated Cancel intent and failure signals', async () => {
+    const answerApproval = row('answer', 'a');
+    const cancelApproval = row('cancel', 'a');
+    h.data = [answerApproval, cancelApproval];
+    const answerRefresh = deferred<{ data: Approval[] }>();
+    h.refetch.mockReturnValueOnce(answerRefresh.promise);
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result } = renderHook(() => useThreadApprovals('a', onResume, onFocus));
+    const cancelAttempt: ResolutionAttempt = {
+      approval: cancelApproval,
+      action: 'cancel',
+      attemptId: 'same-attempt',
+    };
+
+    const answer = startResolution(result.current.onResolved, answerApproval, 'decline');
+    act(() => {
+      lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
+      lifecycle(result.current).onResolutionStarted?.(cancelAttempt);
+    });
+    await act(async () => {
+      answerRefresh.resolve({ data: [] });
+      await answer;
+    });
+    expect(onResume).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await lifecycle(result.current).onResolutionFailed?.(cancelAttempt);
+      await lifecycle(result.current).onResolutionFailed?.(cancelAttempt);
+    });
+
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a Cancel intent callback retained from an earlier A session', async () => {
+    const answerApproval = row('answer', 'a');
+    const cancelApproval = row('cancel', 'a');
+    h.data = [answerApproval, cancelApproval, row('b-1', 'b')];
+    h.refetch.mockResolvedValueOnce({ data: [] });
+    const onResume = vi.fn(() => Promise.resolve());
+    const onFocus = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ threadId }: { threadId: string }) => useThreadApprovals(threadId, onResume, onFocus),
+      { initialProps: { threadId: 'a' } },
+    );
+    const staleLifecycle = lifecycle(result.current);
+
+    rerender({ threadId: 'b' });
+    rerender({ threadId: 'a' });
+    act(() => {
+      staleLifecycle.onResolutionStarted?.({
+        approval: cancelApproval,
+        action: 'cancel',
+        attemptId: 'stale-cancel',
+      });
+    });
+    await act(async () => {
+      await result.current.onResolved({ approval: answerApproval, action: 'accept' });
+    });
+
+    expect(onResume).toHaveBeenCalledTimes(1);
   });
 });

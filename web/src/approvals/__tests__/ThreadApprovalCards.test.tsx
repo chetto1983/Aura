@@ -142,6 +142,32 @@ describe('ThreadApprovalCards active-thread presentation', () => {
     expect(screen.getByRole('status').textContent).toBe('');
   });
 
+  it('forwards resolution-start lifecycle before the successful outcome', async () => {
+    vi.stubGlobal('fetch', stubResolve([]));
+    const order: string[] = [];
+    const qc = client();
+    render(
+      <QueryClientProvider client={qc}>
+        <ThreadApprovalCards
+          approvals={[approval({ token: 't-1', conversation_id: 'c-1' })]}
+          onResolutionStarted={() => {
+            order.push('start');
+          }}
+          onResolved={() => {
+            order.push('resolved');
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    await waitFor(() => {
+      expect(order).toContain('resolved');
+    });
+    expect(order).toEqual(['start', 'resolved']);
+  });
+
   it('keys repeated local outcomes so each intermediate answer gets a fresh announcement node', async () => {
     vi.stubGlobal('fetch', stubResolve([]));
     const onResolved = vi.fn();

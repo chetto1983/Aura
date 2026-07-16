@@ -47,6 +47,8 @@ function renderCard(props: {
   approval: Approval;
   isStreaming?: boolean;
   onResolved?: (resolution: unknown) => void;
+  onResolutionStarted?: (resolution: unknown) => void;
+  onResolutionFailed?: (resolution: unknown) => void;
 }) {
   const qc = client();
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -57,6 +59,12 @@ function renderCard(props: {
       approval={props.approval}
       {...(props.isStreaming !== undefined ? { isStreaming: props.isStreaming } : {})}
       {...(props.onResolved !== undefined ? { onResolved: props.onResolved } : {})}
+      {...(props.onResolutionStarted !== undefined
+        ? { onResolutionStarted: props.onResolutionStarted }
+        : {})}
+      {...(props.onResolutionFailed !== undefined
+        ? { onResolutionFailed: props.onResolutionFailed }
+        : {})}
     />,
     { wrapper: Wrapper },
   );
@@ -170,6 +178,56 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
       screen.getByText('Run cancelled.').closest('[data-tone]')?.getAttribute('data-tone'),
     ).toBe('danger');
     expect(calls[0]?.body).toEqual({ action: 'cancel' });
+  });
+
+  it('signals Cancel intent synchronously before starting the resolve request', async () => {
+    const order: string[] = [];
+    const fetchStub = stubResolve(calls);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        order.push('post');
+        return fetchStub(input, init);
+      }),
+    );
+    renderCard({
+      approval: approval({ token: 't-1', conversation_id: 'c-1' }),
+      isStreaming: false,
+      onResolutionStarted: () => {
+        order.push('start');
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    await waitFor(() => {
+      expect(order).toContain('post');
+    });
+    expect(order.slice(0, 2)).toEqual(['start', 'post']);
+  });
+
+  it('signals the matching Cancel attempt when its resolve request fails', async () => {
+    vi.stubGlobal('fetch', stubResolve(calls, true));
+    const onResolutionFailed = vi.fn();
+    const onResolved = vi.fn();
+    renderCard({
+      approval: approval({ token: 't-1', conversation_id: 'c-1' }),
+      isStreaming: false,
+      onResolved,
+      onResolutionFailed,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    await waitFor(() => {
+      expect(onResolutionFailed).toHaveBeenCalledTimes(1);
+    });
+    const failed = onResolutionFailed.mock.calls[0]?.[0] as
+      | { action: string; attemptId: string }
+      | undefined;
+    expect(failed?.action).toBe('cancel');
+    expect(failed?.attemptId.length).toBeGreaterThan(0);
+    expect(onResolved).not.toHaveBeenCalled();
   });
 
   it('Cancel run while STREAMING shows an inline "Stop this run?" confirm (not a modal)', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -16,6 +16,7 @@ import {
 } from '../conversations/useConversations';
 import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
 import { useThreadApprovals } from '../approvals/useThreadApprovals';
+import type { Approval } from '../approvals/useApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
@@ -39,6 +40,7 @@ import {
 import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './sseAdapter';
 import { AutoSpeak } from './voice/AutoSpeak';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
+import { useApprovalFocus } from './useApprovalFocus';
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
 // list + isRunning + per-turn usage in React state and feeds them to
@@ -89,7 +91,11 @@ export function ExternalStoreChat({
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const activeThreadIdRef = useRef(threadId);
+  const [composerInput, setComposerInput] = useState<HTMLTextAreaElement | null>(null);
+  const approvalFocusRef = useRef<(next: Approval | undefined) => void>(() => undefined);
+  const dispatchApprovalFocus = useCallback((next: Approval | undefined) => {
+    approvalFocusRef.current(next);
+  }, []);
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
@@ -99,10 +105,6 @@ export function ExternalStoreChat({
   const reasoningCaps = useReasoningCapabilities();
   const hydratedEffort = useConversation(threadId).data?.ReasoningEffort;
   const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
-
-  useEffect(() => {
-    activeThreadIdRef.current = threadId;
-  }, [threadId]);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -403,30 +405,21 @@ export function ExternalStoreChat({
     await foldResumeRun(threadId);
   }, [foldResumeRun, threadId]);
 
-  const threadApprovals = useThreadApprovals(threadId, resumeRun, (next) => {
-    const requestedThreadId = threadId;
-    const focusRequestedTarget = () => {
-      if (activeThreadIdRef.current !== requestedThreadId) return;
-      if (next === undefined) {
-        const input = composerInputRef.current;
-        if (input === null) return;
-        if (input.disabled) {
-          requestAnimationFrame(focusRequestedTarget);
-          return;
-        }
-        input.focus();
-        return;
+  const threadApprovals = useThreadApprovals(threadId, resumeRun, dispatchApprovalFocus);
+  const requestApprovalFocus = useApprovalFocus(
+    threadId,
+    threadApprovals.isPending,
+    isRunning,
+    composerInput,
+  );
+  useLayoutEffect(() => {
+    approvalFocusRef.current = requestApprovalFocus;
+    return () => {
+      if (approvalFocusRef.current === requestApprovalFocus) {
+        approvalFocusRef.current = () => undefined;
       }
-      const target =
-        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-          ? document.querySelector<HTMLElement>(`[data-approval-token="${CSS.escape(next.token)}"]`)
-          : Array.from(document.querySelectorAll<HTMLElement>('[data-approval-token]')).find(
-              (element) => element.dataset.approvalToken === next.token,
-            );
-      target?.focus();
     };
-    requestAnimationFrame(focusRequestedTarget);
-  });
+  }, [requestApprovalFocus]);
 
   // backendSeqAt maps a visible message to the backend turn seq it diverges from. Rehydrated
   // snapshots carry metadata.custom.backendSeq from the GET /threads/{id}/messages ids
@@ -545,10 +538,13 @@ export function ExternalStoreChat({
           <ThreadApprovalCards
             approvals={threadApprovals.approvals}
             isStreaming={isRunning}
+            onResolutionStarted={threadApprovals.onResolutionStarted}
+            onResolutionFailed={threadApprovals.onResolutionFailed}
             onResolved={threadApprovals.onResolved}
           />
           <Composer
             inputRef={composerInputRef}
+            onInputAvailable={setComposerInput}
             approvalLocked={threadApprovals.isPending}
             uploads={uploads}
             draftPrompt={draftPrompt}

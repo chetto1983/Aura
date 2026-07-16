@@ -236,7 +236,9 @@ describe('ExternalStoreChat approval gate', () => {
       expect(screen.getByPlaceholderText('Ask Aura')).toHaveProperty('disabled', false);
     });
     expect(runRequests).toHaveLength(0);
-    expect(document.activeElement).toBe(screen.getByPlaceholderText('Ask Aura'));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByPlaceholderText('Ask Aura'));
+    });
   });
 
   it('escapes special approval tokens before focusing the next card', async () => {

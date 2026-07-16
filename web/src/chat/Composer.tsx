@@ -3,6 +3,7 @@ import { ArrowUp, ChevronDown, Mic, Paperclip, Square } from 'lucide-react';
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -48,6 +49,7 @@ const EMPTY_SKILLS: readonly ComposerSkillRow[] = [];
 
 interface ComposerProps {
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>;
+  readonly onInputAvailable?: (input: HTMLTextAreaElement | null) => void;
   readonly approvalLocked?: boolean;
   readonly uploads?: AttachmentUploads;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
@@ -72,6 +74,7 @@ type DictationPhase = 'idle' | 'listening' | 'transcribing' | 'error';
 
 export function Composer({
   inputRef,
+  onInputAvailable,
   approvalLocked = false,
   uploads,
   draftPrompt,
@@ -101,6 +104,13 @@ export function Composer({
   const wasDictating = useRef(false);
   const isDictating = dictation != null;
   const sendDisabled = approvalLocked || uploads?.hasBlockingUploads === true;
+
+  useLayoutEffect(() => {
+    onInputAvailable?.(composerInputRef.current);
+    return () => {
+      onInputAvailable?.(null);
+    };
+  }, [composerInputRef, onInputAvailable]);
 
   // Skill / command picker (WEBSKILL-01/03): the '/'-triggered ARIA combobox. The composer
   // text is read reactively and every decision (trigger, filter, wrap-around active index,

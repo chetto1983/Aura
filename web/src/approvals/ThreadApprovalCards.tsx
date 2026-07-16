@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InlineApprovalCard } from './InlineApprovalCard';
 import type { Approval } from './useApprovals';
-import type { ApprovalResolution } from './useThreadApprovals';
+import type { ApprovalResolution, ApprovalResolutionAttempt } from './useThreadApprovals';
 
 interface Announcement {
   readonly id: number;
@@ -13,12 +13,16 @@ export interface ThreadApprovalCardsProps {
   /** Already-filtered active-thread rows in deterministic backend order. */
   readonly approvals: readonly Approval[];
   readonly isStreaming?: boolean;
+  readonly onResolutionStarted?: (attempt: ApprovalResolutionAttempt) => void;
+  readonly onResolutionFailed?: (attempt: ApprovalResolutionAttempt) => void | Promise<void>;
   readonly onResolved?: (resolution: ApprovalResolution) => void | Promise<void>;
 }
 
 export function ThreadApprovalCards({
   approvals,
   isStreaming,
+  onResolutionStarted,
+  onResolutionFailed,
   onResolved,
 }: ThreadApprovalCardsProps) {
   const { t } = useTranslation();
@@ -45,6 +49,8 @@ export function ThreadApprovalCards({
           key={approval.token}
           approval={approval}
           {...(isStreaming !== undefined ? { isStreaming } : {})}
+          {...(onResolutionStarted !== undefined ? { onResolutionStarted } : {})}
+          {...(onResolutionFailed !== undefined ? { onResolutionFailed } : {})}
           onResolved={handleResolved}
         />
       ))}
