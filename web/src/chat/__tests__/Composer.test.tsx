@@ -84,10 +84,11 @@ afterEach(() => {
 });
 
 describe('Composer attachments', () => {
-  it('prefills a document draft prompt', () => {
+  it('prefills a document draft prompt and focuses the editable input', () => {
     render(<Composer draftPrompt={{ text: 'Answer from Manual.pdf', nonce: 1 }} />);
 
     expect(h.setText).toHaveBeenCalledWith('Answer from Manual.pdf');
+    expect(document.activeElement).toBe(screen.getByLabelText('Ask Aura'));
   });
 
   it('file input passes selected files to addFiles', () => {

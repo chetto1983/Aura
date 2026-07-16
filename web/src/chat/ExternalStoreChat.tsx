@@ -18,6 +18,7 @@ import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
 import { useThreadApprovals } from '../approvals/useThreadApprovals';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
+import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import { useComposerSkills } from './composer/useComposerSkills';
@@ -41,6 +42,8 @@ import { fetchThreadMessages, streamPost, streamRun, type TurnUsage } from './ss
 import { AutoSpeak } from './voice/AutoSpeak';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
 import { useApprovalFocus } from './useApprovalFocus';
+
+const ignoreDraftPrompt = () => undefined;
 
 // ExternalStoreChat (CHAT-01): the Core-Value chat lane. It owns the message
 // list + isRunning + per-turn usage in React state and feeds them to
@@ -70,6 +73,7 @@ export interface ExternalStoreChatProps {
    */
   readonly onArtifact?: (assetId: string | undefined) => void;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
+  readonly onRequestDraftPrompt?: (text: string) => void;
   /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
   readonly onNewChat?: () => void | Promise<void>;
 }
@@ -80,6 +84,7 @@ export function ExternalStoreChat({
   onUsage,
   onArtifact,
   draftPrompt,
+  onRequestDraftPrompt = ignoreDraftPrompt,
   onNewChat,
 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
@@ -509,6 +514,7 @@ export function ExternalStoreChat({
                     {t('chat.empty.thread.heading')}
                   </h2>
                   <p className="max-w-sm text-sm text-text-muted">{t('chat.empty.thread.body')}</p>
+                  <EmptyThreadStarters onRequestDraftPrompt={onRequestDraftPrompt} />
                 </div>
               </div>
             </AuiIf>

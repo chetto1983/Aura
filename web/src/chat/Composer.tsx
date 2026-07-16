@@ -242,7 +242,7 @@ export function Composer({
     if (draftPrompt === undefined || draftPrompt.nonce === appliedDraftNonce.current) return;
     appliedDraftNonce.current = draftPrompt.nonce;
     aui.composer().setText(draftPrompt.text);
-    requestAnimationFrame(() => composerInputRef.current?.focus());
+    composerInputRef.current?.focus();
   }, [aui, composerInputRef, draftPrompt]);
 
   // Detect a dictation session ending. If the transcript was inserted (the composer text
