@@ -149,10 +149,13 @@ export function AppShell() {
   const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
   const autoOpenedOnboarding = useRef(false);
 
-  if ((routeId ?? '') !== lastRouteId) {
-    setLastRouteId(routeId ?? '');
-    setSelectedId(routeId ?? '');
-    setUsageState({ runId: 0, phase: 'idle', usage: undefined });
+  const nextRouteId = routeId ?? '';
+  if (nextRouteId !== lastRouteId) {
+    setLastRouteId(nextRouteId);
+    if (nextRouteId !== selectedId) {
+      setSelectedId(nextRouteId);
+      setUsageState({ runId: 0, phase: 'idle', usage: undefined });
+    }
   }
 
   const activeThreadId = selectedId;
@@ -224,7 +227,6 @@ export function AppShell() {
       if (activeThreadId.length > 0) return activeThreadId;
       const conv = await createConversation.mutateAsync(initialPrompt);
       setSelectedId(conv.ID);
-      setUsageState({ runId: 0, phase: 'idle', usage: undefined });
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
       return conv.ID;
     },
