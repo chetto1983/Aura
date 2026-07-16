@@ -871,7 +871,7 @@ git commit -m "fix(web): gate chat on pending approvals"
 - Test: `web/src/chat/__tests__/Composer.test.tsx`
 - Test: `web/src/i18n/__tests__/resources.parity.test.ts`
 
-- [ ] **Step 1: Add failing exact-copy and non-submit starter tests**
+- [x] **Step 1: Add failing exact-copy and non-submit starter tests**
 
 ```tsx
 const requests: string[] = [];
@@ -904,7 +904,7 @@ expect(input).toHaveValue(
 
 Switch i18n to Italian and assert all four exact labels and inserted bodies.
 
-- [ ] **Step 2: Run starter/composer/resource tests and observe missing controls/focus**
+- [x] **Step 2: Run starter/composer/resource tests and observe missing controls/focus**
 
 ```powershell
 cd web
@@ -913,7 +913,7 @@ npx vitest run src/chat/__tests__/EmptyThreadStarters.test.tsx src/__tests__/App
 
 Expected: FAIL because the empty thread has no starters and draft application does not focus the input.
 
-- [ ] **Step 3: Create the presentational starter grid**
+- [x] **Step 3: Create the presentational starter grid**
 
 ```tsx
 import { useTranslation } from "react-i18next";
@@ -954,7 +954,7 @@ export function EmptyThreadStarters({
 
 Render it below the empty-state body and keep the sidebar empty state unchanged.
 
-- [ ] **Step 4: Generalize AppShell's nonce-backed draft event**
+- [x] **Step 4: Generalize AppShell's nonce-backed draft event**
 
 Rename `documentDraftPrompt` to `composerDraftPrompt`. Add:
 
@@ -976,7 +976,7 @@ Make `askDocument` calculate its current localized text and call `requestCompose
 
 In Composer's draft effect, after `setText`, call `inputRef.current?.focus()`; do not submit and do not open the attachment picker.
 
-- [ ] **Step 5: Add the normative English and Italian starter copy**
+- [x] **Step 5: Add the normative English and Italian starter copy**
 
 ```ts
 starters: {
@@ -1020,7 +1020,7 @@ starters: {
 },
 ```
 
-- [ ] **Step 6: Verify and commit the starters**
+- [x] **Step 6: Verify and commit the starters**
 
 ```powershell
 cd web
