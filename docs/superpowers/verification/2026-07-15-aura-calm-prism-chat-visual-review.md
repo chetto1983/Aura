@@ -4,7 +4,8 @@
 
 - Baseline commit: `de700c425`
 - Implementation and evidence commit: `aea0e3cb4`
-- Final browser-hardening commit: `61ff8a90d`
+- Task 8 browser-hardening commit: `61ff8a90d`
+- Task 9 review-closure commit: `c461cf2f4`
 - Pre-review checkpoint: `a6345417c`
 - Browser: installed Google Chrome through Playwright `channel: 'chrome'`
 - Deterministic fixture: identical conversation, long prompt/upload name, reasoning, running and completed tools, typed system result, local artifact, three approval states, and settled telemetry
