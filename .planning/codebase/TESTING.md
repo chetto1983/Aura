@@ -1,220 +1,320 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-07-04
+**Analysis Date:** 2026-07-17
 
-Two independent test suites: Go (`internal/`, stdlib `testing` only — **no testify**, no mocking framework) and TypeScript/React (`web/`, Vitest + Testing Library + Playwright). Both suites enforce an **85% coverage floor** (CLAUDE.md "COVERAGE FLOOR 85%" overrides the PRD's ≥75%/≥60% split figures) plus mutation-testing spot checks (≥70% killed).
+**Provenance rule for this document:** every count, version, threshold, and tag below was produced by a command run on 2026-07-17 against the working tree, or read out of the named config file. Facts that could not be verified are marked **NOT VERIFIED**. Do not copy a number here from a sibling doc.
+
+**Measured surface (2026-07-17):** **143,580** LOC of tests across **777** `*_test.go` files, against **98,150** LOC of non-test Go (**602** files) — ratio **~1.46:1**. There is more test code than production code, and that is the point: the test discipline below *is* the convention.
 
 ## Test Framework
 
-**Go:**
-- Runner: stdlib `testing` (Go 1.26.4). 573 `_test.go` files vs. 437 non-test `.go` files under `internal/`.
-- Property-based: `pgregory.net/rapid` v1.3.0 — used in 14 files (`internal/agent/workflow/loop_property_test.go`, `internal/gateway/classify_property_test.go`, `internal/mcp/manager/envedit_property_test.go`, `internal/swarm/swarm_property_test.go`, `internal/scoring/scoring_test.go`, etc.).
-- Goroutine leak detection: `go.uber.org/goleak` v1.3.0, wired via `TestMain` in packages that spawn goroutines (`internal/activelearn/main_test.go` and ~20 other `main_test.go` files across `internal/agent`, `internal/agent/mcptools`, `internal/agent/tools`, `internal/conversations`, etc.).
-- No `stretchr/testify` — zero occurrences in `go.mod` or `internal/`. All assertions are hand-written `if got != want { t.Fatalf(...) }` / `t.Errorf(...)`.
+**Runner:** Go stdlib `testing` (Go **1.26.5**). No third-party test framework.
 
-**Frontend (`web/`):**
-- Runner: Vitest (`web/vitest.config.ts`), environment `jsdom`, globals enabled.
-- Assertion/render library: `@testing-library/react` (`render`, `screen`, `fireEvent`, `waitFor`, `within`), Vitest's own `expect`/`vi` mocking API.
-- E2E: Playwright (`web/playwright.config.ts`, `web/e2e/`).
-- Mutation testing: Stryker (`web/stryker.conf.json`, `npm run mutation`, break threshold 70%).
+**Assertion library: none — this is deliberate and load-bearing.**
+- `github.com/stretchr/testify v1.11.1` appears in `go.mod` as **`// indirect`** and is imported by **zero** test files. **Do not introduce it.**
+- `gopter` is **not present in the module at all** (verified against `go.mod`). If a sibling doc says "property-based via gopter/rapid", it is wrong — see the property-based section below.
 
-**Run Commands:**
+**Direct test dependencies (`go.mod`):**
+| Library | Version | Role |
+|---|---|---|
+| `go.uber.org/goleak` | v1.3.0 | goroutine-leak detection |
+| `pgregory.net/rapid` | v1.3.0 | property-based testing |
+
+**Run commands (`Makefile`):**
 ```bash
-# Go
-go test ./...                                    # unit tier (no build tags)
-go test -race ./...                              # unit tier with race detector
-go test -tags "db_integration neo4j_integration" -p 1 -covermode=atomic \
-  -coverprofile=cover_gate.out ./internal/...     # full integration + coverage (make coverage)
-go test -run TestName ./...
-go test -fuzz=FuzzName ./...
-
-# Frontend (web/)
-npm run test          # vitest run --coverage
-npm run test:e2e       # playwright test
-npm run mutation       # stryker run
-
-# Makefile wrappers
-make quality           # vet + file-size + lint + deadcode + test-race + vuln (no containers)
-make quality-full      # quality + coverage (needs stack up via `make neo4j-migrate`)
-make web-quality       # web-lint + web-test + web-mutation
+make test          # go test -count=1 $(GO_PACKAGES)  — unit tier, no build tags
+make test-race     # go test -race -count=1 $(GO_PACKAGES)
+make quality       # vet file-size lint deadcode test-race vuln (+ go build); no containers
+make quality-full  # quality + coverage gate (requires the container stack up)
+make coverage      # scripts/coverage_gate.sh — owned-surface floor ≥85%
+make coverage-docker  # same floor, mcp-neo4j-cypher in a container, DISPOSABLE db (preferred locally)
+make web-test      # cd web && vitest run --coverage
+make web-mutation  # cd web && stryker run (break=70)
+make smoke         # scripts/neo4j_smoke.sh (Italian recall@5 hard gate, p95 reported)
 ```
+
+`GO_PACKAGES` comes from `scripts/go_packages.sh`, not a bare `./...` — package selection is centralized so every gate scans the same set.
 
 ## Test File Organization
 
-**Go location:** always co-located with the source file in the same package directory (white-box `package foo`) or, less commonly, the black-box `package foo_test` (seen for property tests, e.g. `internal/agent/workflow/loop_property_test.go` uses `package workflow_test`).
+**Location:** co-located with source, same directory, same package (or `package x` white-box via `*_internal_test.go`).
 
-**Naming:**
-| Suffix | Meaning | Example |
+**Naming — the suffix tells you the tier:**
+
+| Pattern | Meaning | Example |
 |---|---|---|
-| `_test.go` | unit test, no build tag, runs in default `go test ./...` | `internal/agent/agent_test.go` |
-| `_internal_test.go` | white-box test alongside an existing black-box `_test.go` for the same file | `internal/agent/llm_agent_breaker_internal_test.go` |
-| `_integration_test.go` | build tag `db_integration` (or similar), needs live Postgres/Neo4j | `internal/conversations/store_branch_test.go`, `internal/channels/telegram/store_integration_test.go` |
-| `_property_test.go` | `pgregory.net/rapid` property-based test | `internal/swarm/swarm_property_test.go` |
-| `_fuzz_test.go` | Go native fuzz target (`func Fuzz...`) | `internal/agent/agent_fuzz_test.go`, `internal/skills/validator_fuzz_test.go` |
-| `_bench_test.go` | benchmark | `internal/agent/budget_bench_test.go` |
-| `_live_test.go` / `_live_e2e_test.go` | MANUAL paid-gate test against a real external API (OpenRouter); never a CI job | `internal/agent/live_finalize_test.go`, `internal/llm/openai_compat/adaptive_reasoning_live_e2e_test.go` |
-| `main_test.go` | package-level `TestMain` wiring `goleak.VerifyTestMain` | `internal/activelearn/main_test.go` |
+| `<src>_test.go` | unit, mirrors the source file | `internal/share/expiry_test.go` |
+| `*_integration_test.go` | build-tagged, needs live infra | `internal/db/db_test.go`, `internal/agui/server_integration_test.go` |
+| `*_property_test.go` | rapid property-based | `internal/swarm/swarm_property_test.go` |
+| `*_fuzz_test.go` | native Go fuzzing | `internal/agent/agent_fuzz_test.go` |
+| `*_internal_test.go` | same-package white-box | `internal/agent/llm_agent_pause_internal_test.go` |
+| `main_test.go` | package-wide `TestMain` (usually goleak) | `internal/runner/main_test.go` |
 
-**Frontend location:** `__tests__/` subdirectory inside each feature folder, mirroring the component name: `web/src/approvals/__tests__/ApprovalList.test.tsx`, `web/src/chat/displays/__tests__/ChartDisplay.test.tsx`. 121 `.test.{ts,tsx}` files total; zero `.spec.*` files (naming is `.test.` exclusively).
+**Fixtures:** **8** `testdata/` directories — `internal/agent/`, `internal/agent/tools/`, `internal/agui/`, `internal/channels/telegram/`, `internal/eval/`, `internal/llm/`, `internal/llm/openai_compat/`, plus a repo-root `./testdata`.
+
+**The 600-LOC cap applies to tests too** (`scripts/check-file-size.sh` — tests are **not** exempt). A growing suite splits by concern, e.g. `internal/sandbox/usersandbox/`: `lifecycle_integration_test.go`, `egress_integration_test.go`, `reap_integration_test.go`, `materialize_test.go`, `docker_backend_integration_test.go`, `bench_soak_test.go`.
 
 ## Test Structure
 
-**Go table-driven pattern** (idiomatic, used throughout, e.g. `internal/agent/llm_agent_retry_test.go`):
+**Table-driven is the default.** Reference shape (`internal/share/expiry_test.go`):
+
 ```go
-tests := []struct {
-    name string
-    err  error
-    want bool
-}{
-    {"wrapped-deadline", errors.Join(errors.New("fetch"), context.DeadlineExceeded), true},
-    {"permanent", errors.New("validation"), false},
+// TestResolveExpiry is table-driven over every expiry row of the plan's
+// <behavior> block (D-04): default, the three presets, custom within cap,
+// custom clamped above cap, and the two rejected non-positive custom cases.
+// now is fixed (never time.Now()) so assertions are exact.
+func TestResolveExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	const cap = 90
+
+	tests := []struct {
+		name       string
+		opt        ExpiryOption
+		customDays int
+		capDays    int
+		want       time.Time
+		wantErr    error
+	}{
+		{name: "default option resolves to 7 days", opt: ExpiryDefault, capDays: cap, want: now.AddDate(0, 0, 7)},
+		{name: "empty option (zero value) resolves to 7 days", opt: "", capDays: cap, want: now.AddDate(0, 0, 7)},
+		// …
+	}
+	// subtests via t.Run(tt.name, …)
 }
-for _, tt := range tests {
-    t.Run(tt.name, func(t *testing.T) { ... })
+```
+
+Conventions visible in that file, all worth imitating:
+- The test doc comment names **which plan/decision rows it covers** (`D-04`, `T-37F-27`) — traceability, not decoration.
+- **Fixed clock, never `time.Now()`** — assertions are exact, not tolerance-based.
+- `wantErr error` compared with `errors.Is`, not string matching.
+- Both the happy path and every rejection row are enumerated; `dupl` is disabled on `_test.go` precisely so this repetition is allowed.
+
+**Parallelism:** `t.Parallel()` appears in **119** test files. Note the hard exception below — integration tiers run with `-p 1`.
+
+**`t.Cleanup`** for teardown (deterministically unblocks fakes and joins workers so zero goroutines remain at return — see `internal/runner/runner_stop_leak_test.go`).
+
+## Goroutine-Leak Detection (goleak)
+
+**105** test files reference `goleak`. Two shapes:
+- **`goleak.VerifyTestMain(m)`** — package-wide, **40** files. Preferred.
+- **`goleak.VerifyNone(t)`** — per-test, **13** files.
+- `IgnoreTopFunction` escape hatch: only **2** uses. Keep it that way — a suppression needs a why-comment.
+
+```go
+// internal/runner/main_test.go
+// TestMain runs the whole runner package (unit tier — no DB, no network) under
+// goleak so the auto-title WaitGroup join is asserted: a worker that is not joined
+// by Runner.Stop leaks a goroutine and fails the package (Pitfall 3 / D-A5-01).
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 ```
 
-**Build-tag integration test header convention** — every integration file opens with a comment documenting exact migration/env prerequisites and the run command, e.g. (`internal/askuser/store_test.go`):
-```go
-//go:build db_integration
+Any package that starts goroutines gets a goleak `TestMain`. `-race` runs on every unit push (`make test-race`, CI `unit-test`).
 
-// Integration tests for internal/askuser. Requires a running Postgres with the
-// Phase-4 migrations applied through 0005 ...
-//	make db-up && aura db migrate
-//	AURA_DB_URL + AURA_DB_MIGRATE_URL + POSTGRES_PASSWORD set in env
-//
-// Run via (FIFO determinism wants -count=10):
-//	go test -tags db_integration -race ./internal/askuser -count=10
-//
-// No-skip-as-green: envOrSkip t.Fatals under $CI when the DSN is unset.
-package askuser
-```
+## Property-Based Testing (rapid)
 
-**No-skip-as-green discipline (mandatory, CLAUDE.md):** every integration package defines a local `envOrSkip(t, key)` helper (duplicated per-package, not a shared library — see `internal/askuser/store_test.go`, `internal/runner/integration_helpers_test.go`, `internal/channels/telegram/store_integration_test.go`, `internal/webauth/authula_integration_test.go`, `internal/web/searxng_integration_test.go`, `internal/toolselectstore/store_e2e_test.go`):
-```go
-func envOrSkip(t *testing.T, key string) string {
-    t.Helper()
-    v := os.Getenv(key)
-    if v == "" {
-        if os.Getenv("CI") != "" {
-            t.Fatalf("integration test requires %s, but it is unset under CI — "+
-                "a skipped integration test must not pass as green; wire it in ci.yml", key)
-        }
-        t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-    }
-    return v
-}
-```
-Under CI (`$CI` set), a missing required env var is a hard `t.Fatal`, not a skip — this prevents a container-less CI job from silently reporting a falsely-green integration suite. Locally (no `$CI`), it degrades to `t.Skip`. `_live_test.go`/`_live_e2e_test.go` files use a different, explicit skip message tagged "MANUAL paid gate, NOT a CI job" when `OPENROUTER_API_KEY` is unset — these are intentionally never wired into CI.
+`pgregory.net/rapid` v1.3.0. **18** test files, spanning the invariant-heavy surfaces:
 
-**Setup/teardown:** `t.Cleanup(func() { ... })` for restoring package-level test knobs (`withFastBackoff` in `internal/agent/llm_agent_retry_test.go` saves/restores `toolRetryBaseDelay`); `defer cancel()` for context timeouts in integration helpers (`migratedPool` uses a 30s `context.WithTimeout`).
+`internal/agent/budget_dedup_test.go`, `internal/agent/event_test.go`, `internal/agent/tools/bm25_test.go`, `internal/agent/tools/result_test.go`, `internal/agent/workflow/loop_property_test.go`, `internal/agui/auth_test.go`, `internal/agui/content_disposition_test.go`, `internal/agui/translator_test.go`, `internal/agui/translator_reasoning_test.go`, `internal/canonicaljson/canonicaljson_test.go`, `internal/config/config_knobs_test.go`, `internal/gateway/classify_property_test.go`, `internal/llm/openai_compat/accumulate_test.go`, `internal/mcp/manager/envedit_property_test.go`, `internal/sandbox/usersandbox/translate_test.go`, `internal/scoring/scoring_test.go`, `internal/share/share_property_test.go`, `internal/swarm/swarm_property_test.go`.
+
+Reach for rapid when the contract is an **invariant** (round-trip, idempotence, ordering, clamping, canonicalization) rather than a fixed example.
+
+## Fuzzing
+
+Native Go fuzzing — **8** `Fuzz*` functions, all on untrusted-input parsers:
+
+| Function | File |
+|---|---|
+| `FuzzParseTextResponse`, `FuzzNormalizeContentStopAnswer`, `FuzzCanonicalArgs`, `FuzzWrapUntrustedToolOutput`, `FuzzRenderToolResultForPrompt` | `internal/agent/agent_fuzz_test.go` |
+| `FuzzCanonical_RoundTripAndDistinctNumbers` | `internal/canonicaljson/canonicaljson_test.go` |
+| `FuzzMdv2` | `internal/channels/telegram/mdv2_test.go` |
+| `FuzzSkillValidator` | `internal/skills/validator_fuzz_test.go` |
+
+Rule of thumb from the existing set: **anything that parses LLM output, user content, or a skill manifest gets a fuzzer.**
 
 ## Mocking
 
-**No mocking framework** — hand-written fakes/stubs implementing the real interface, kept in a shared test-support package `internal/agent/agenttest/` (excluded from the coverage floor as pure test infrastructure, like generated code):
+**No mocking framework.** Hand-written fakes — **170** `fake*`/`stub*`/`mock*` type declarations across `internal/` tests.
 
+**Shared fakes** live in `internal/agent/agenttest/` (`fakeclient.go`, `mocks.go`) rather than duplicated per consumer. It is a test-support package and is **excluded from the coverage floor** (`scripts/coverage_gate.sh:64`) — its self-coverage measures no owned runtime.
+
+**Local fakes** are unexported structs next to their test: `fakeOracle` (`internal/activelearn/learner_test.go`), `stubAgent` (`internal/agent/agent_test.go`), `fakeReserveStore`, `fakeSearchEngine`, `fakeEmbedder`, `fakeServer`, `fakeReconnectClient`.
+
+**What to mock:** the LLM client, external HTTP, MCP servers, embedders, clocks (as parameters — see `ResolveExpiry`).
+
+**What NOT to mock:** Postgres and Neo4j. There is no in-memory DB substitute — persistence is exercised against the **real containers** under build tags. **88** test files use `net/http/httptest` for HTTP seams rather than mocking the transport.
+
+## Build-Tagged Tiers
+
+Tags in use across `*_test.go` (file counts, measured 2026-07-17):
+
+| Tag | Files | Runs in CI? |
+|---|---:|---|
+| `db_integration` | 83 | **Yes** — `integration-test`, `knowledge-integration-test`, `skills-gate` |
+| `docker_integration` | 9 (+6 more files carry it in combination; 15 files total reference it) | **NO — see the gap below** |
+| `neo4j_integration` | 4 (+ combos) | **Yes** — `knowledge-integration-test` |
+| `cot_eval` | 10 | No — paid/live, opt-in only |
+| `live_e2e` | 5 | **NOT VERIFIED** |
+| `reasoning_live` | 5 | No — live model tier |
+| `memory_integration` | 3 | Yes — `memory-integration-test` |
+| `web_integration` / `!web_integration` | 2 / 11 | Yes — `web-integration-test` |
+| `smoke`, `serve_smoke` | 1 / 1 | Yes — `make smoke` in `knowledge-integration-test` |
+| `garage_integration`, `telegram_integration`, `whatsapp_integration`, `webauth_integration`, `calendar_integration`, `calculator_integration`, `multimodal_integration`, `rerank_integration`, `integrations_integration`, `authula_integration`, `musr_e2e`, `retrieval_eval`, `graphrag_live`, `document_ingest_live`, `live_finalize`, `backup_live` | 1–2 each | Mixed — several are **compile-only** in CI (`go vet -tags …`), see below |
+
+**Compile-only tiers.** Some GPU/fixture-dependent tiers are `go vet -tags …`-compiled in CI but never `go test`-run there (`ci.yml`, `knowledge-integration-test`): `rerank_integration`, `document_ingest_live`, `graphrag_live`, `retrieval_eval`. That is an intentional "cheap always-green floor proving the tagged files never rot" — their test code still `t.Fatal`s under `$CI` when env is set, so a GPU runner with the sidecar up runs them live and cannot silently skip.
+
+Invocation example:
+```bash
+go test -tags 'db_integration neo4j_integration' -p 1 ./internal/...
+```
+
+## NO-SKIP-AS-GREEN (the rule that governs every tier)
+
+A skipped integration test must **never** pass as green. Every skip-helper `t.Fatal`s when a required env var is unset **and** `$CI` is set; locally it still skips.
+
+Canonical implementation (`internal/db/db_test.go:34`):
 ```go
-// internal/agent/agenttest/fakeclient.go
-type FakeClient struct {
-    mu       sync.Mutex
-    Turns    []FakeTurn   // scripted, consumed in order
-    Requests []llm.Request // captured for message-history assertions
-    next     int
-}
-
-type FakeTurn struct {
-    Chunks []llm.Chunk
-    Err    error
-}
-
-var _ llm.Client = (*FakeClient)(nil)
-
-func NewFakeClient(turns ...FakeTurn) *FakeClient {
-    return &FakeClient{Turns: turns}
+func envOrSkip(t *testing.T, key string) string {
+	t.Helper()
+	v := os.Getenv(key)
+	if v == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("integration test requires %s, but it is unset under CI — "+
+				"a skipped integration test must not pass as green; wire it in ci.yml", key)
+		}
+		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
+	}
+	return v
 }
 ```
-The channel `FakeClient.Stream` returns is pre-buffered and pre-closed — "goleak-clean by construction," per its doc comment; this is the standard idiom for avoiding goroutine leaks in fakes.
 
-**Leaf/local stubs** are also written inline in the test file itself when only one test needs them (not promoted to `agenttest`), e.g. `stubAgent` in `internal/agent/agent_test.go` (minimal `Agent` implementation to exercise `InvocationContext`), or `flakyTool`/`timeoutErr` in `internal/agent/llm_agent_retry_test.go` (fails N times then succeeds, to drive retry-loop assertions).
+The helper is replicated per package under a domain-specific name — `recoveryEnvOrSkip` (`cmd/aura/recovery_integration_test.go`), `skillsBridgeEnvOrSkip`, `smokeEnvOrSkip`, `musrEnvOrSkip`, `assetEnvOrSkip`, `liveEnvOrSkip`, `sidecarEnvOrSkip` (`internal/channels/telegram/multimodal_integration_test.go`) — all with the same `$CI` → `t.Fatal` semantics. **Any new tier must add one.**
 
-**What to mock:** external boundaries only — `llm.Client` (network LLM calls), tool `Execute` (external side effects). Database and Neo4j code paths are NOT mocked; they're exercised via real containers under `db_integration`/`neo4j_integration` build tags.
+**Diagnostic:** a sub-second "integration" runtime is a skip tell. Verify execution, not just `PASS`.
 
-**What NOT to mock:** internal domain logic, the agent loop itself, config parsing — these run against real code paths with fakes only at the true I/O boundary.
-
-**Frontend mocking:** `vi.fn()` / `vi.mock()` (Vitest's built-in mock API), notably partial-module mocking that preserves the rest of a module:
-```ts
-const navigateMock = vi.fn();
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
-  return { ...actual, useNavigate: () => navigateMock };
-});
-```
-(`web/src/approvals/__tests__/ApprovalList.test.tsx`) Network calls are stubbed via `vi.stubGlobal('fetch', ...)` returning a scripted `Response`.
-
-## Fixtures and Factories
-
-**Go:** small in-file factory functions returning domain structs with sensible defaults plus field overrides, e.g. `pgTimestamp(ts time.Time) pgtype.Timestamptz` and a shared `const localID = "00000000-0000-0000-0000-000000000001"` (the seeded `local` identity from migration 0004, used as an FK parent for throwaway test rows) in `internal/askuser/store_test.go`. Golden/fixture files live under `scripts/fixtures/` (`cache_invariant/`, `neo4j-smoke/`) and `internal/agui/testdata/` (captured real AG-UI SSE frames, shared with the frontend's chat-reducer test via `vitest.config.ts`'s `server.fs.allow: ['..']`).
-
-**Frontend:** factory-function pattern for test fixtures with partial overrides:
-```ts
-function approval(over: Partial<Approval> & Pick<Approval, 'token' | 'conversation_id'>): Approval {
-  return { kind: 'clarification', question: 'Pick a city', priority: 0, ...over };
-}
-```
-(`web/src/approvals/__tests__/ApprovalList.test.tsx`)
+**Corollary for CI wiring:** CI jobs must export the exact env the tests read — the **composed DSNs** `AURA_DB_URL` / `AURA_DB_MIGRATE_URL`, not just the `POSTGRES_*` primitives that `config.Load` composes for the CLI.
 
 ## Coverage
 
-**Requirements:** ≥85% owned-surface floor, both stacks (CLAUDE.md overrides the PRD's ≥75%/≥60% split). Current measured: **90.3%** Go (`internal/*`, full tag matrix, re-measured 2026-06-13 at HEAD 882df109).
+**Gate:** `scripts/coverage_gate.sh`.
 
-**Go gate:** `scripts/coverage_gate.sh` (invoked via `make coverage` / `make quality-full`). Key mechanics:
-- Runs `go test -tags "db_integration neo4j_integration" -p 1 -covermode=atomic -coverprofile=cover_gate.out ./internal/...` — **`-p 1` is mandatory** (serial package execution) because integration tiers across `internal/*` share one Postgres cluster; parallel execution races on `CREATE ROLE`/advisory locks.
-- Filters out generated/test-support rows before computing the percentage: `internal/db/sqlc/`, `internal/agent/agenttest/`, `internal/llm/client.go` (pre-rewrite skeleton).
-- `cmd/aura` is excluded entirely from the floor (CLI glue, covered behaviorally by integration/smoke, not unit tests).
-- Env override: `AURA_COVERAGE_MIN` (default 85), `AURA_COVERAGE_TAGS` (default `"db_integration neo4j_integration"`).
-- A Docker-shimmed variant `make coverage-docker` runs `mcp-neo4j-cypher` in a container instead of requiring a host install.
+**Floor: ≥85%** — `MIN="${AURA_COVERAGE_MIN:-85}"` (`scripts/coverage_gate.sh:24`). This is the CI-enforced, verifiable bar and it overrides the PRD's older ≥75% unit / ≥60% integration split. A bare unit-only number under 85% is **not** an acceptable closing metric — report the combined full-matrix figure.
 
-**Frontend gate:** `web/vitest.config.ts` `coverage.thresholds` — `{ statements: 85, branches: 85, functions: 85, lines: 85 }` via the `v8` provider; the suite **fails** below floor (not just reports). Excludes `src/**/*.{test,spec}.{ts,tsx}`, `src/test/**`, and `src/main.tsx` (bootstrap entry, proven by Playwright E2E instead).
+**Do not quote a punctual percentage from any document, including this one.** The last full-matrix measurement predates recent phases and is stale by construction. For current per-row numbers read **`docs/aura-quality-snapshot.md`**, which is re-attested per phase under amendment #20. What is durably true and worth writing down is the **floor**.
 
-**View Coverage:**
-```bash
-go tool cover -html=cover_gate.out          # Go
-go tool cover -func=cover_gate.out | tail -1
-cd web && npm run test                      # writes web/coverage/ (v8 html+json)
+**Scope — the "owned surface":** `./internal/...`, minus rows filtered at `scripts/coverage_gate.sh:64`:
+- `/internal/db/sqlc/` — generated, golden
+- `/internal/agent/agenttest/` — test-support (shared fakes); its low self-coverage dilutes the floor without measuring owned runtime (T-04)
+- `/internal/llm/client.go:` — pre-rewrite skeleton owned by Slice 1
+
+`cmd/aura` is excluded by scope: it is CLI glue (flag parsing, `os.Exit` dispatch) covered behaviourally by integration + smoke; folding it into a statement floor measures the wrong thing (it sits ~20% by nature). Filters are anchored at a path-segment boundary (`/<x>`) so a future sibling whose name merely *contains* one of these is not silently dropped.
+
+**`-p 1` is MANDATORY** and must not be "optimized" away. The integration tiers across `internal/*` share ONE Postgres, so concurrent packages collide on global cluster state: `CREATE ROLE` (`EnsureRoles`) races to `tuple concurrently updated (XX000)` on `pg_authid`, and golang-migrate's `pg_advisory_lock` deadlocks. The default parallel run went flaky once >2 integration packages existed.
+
+**The gate runs in TWO CI jobs — and they are not the same gate:**
+
+| Job | File | Tags | Note |
+|---|---|---|---|
+| `knowledge-integration-test` | `.github/workflows/ci.yml:651` | `db_integration neo4j_integration` (default) | reuses the stack + composed DSNs + `mcp-neo4j-cypher` already wired in the job |
+| `skills-gate` | `.github/workflows/skills.yml:158` | **`db_integration` ONLY** (`AURA_COVERAGE_TAGS: "db_integration"`) | **the stricter one** — no neo4j tier folds in, so the same code must clear 85% on a narrower tag set. Verify THIS number at phase close. |
+
+**Local run — the data-loss footgun.** Prefer `make coverage-docker` (containerized `mcp-neo4j-cypher`, provisions a **disposable** DB and drops it on exit). The gate refuses `db_integration` against a database named `aura` when `GITHUB_ACTIONS` is unset:
 ```
+FATAL: refusing db_integration coverage against the live 'aura' database — it TRUNCATEs
+       shared auth tables (data loss, see the 2026-07-10 incident).
+```
+Exit code **5**. Escape hatch `AURA_COVERAGE_ALLOW_LIVE_AURA_DB=1` (danger). This guard exists because on 2026-07-10 the gate truncated the live deployment's auth tables — operator identity + `authula` wiped, no backup. CI provisions a fresh ephemeral `aura` and always sets `GITHUB_ACTIONS`, so it is exempt.
 
-**Mutation testing:** ≥70% killed required on critical files (spot-check, not full-repo). Go: `go-mutesting` (WSL-only — only fork supporting go1.26; `GOFLAGS=-tags=db_integration` for container-gated code). Frontend: Stryker, `break: 70` in `web/stryker.conf.json`, run via `npm run mutation` / `make web-mutation`.
+**Gate failure modes are loud, never silent:** a failed test run dumps the log and exits 1 (never discarded, so a real failure can't look like a coverage miss); an over-aggressive filter that leaves zero statement rows also fails.
 
-## Test Types
+## KNOWN GAP — `docker_integration` contributes ZERO coverage
 
-**Unit Tests:** fast, no external deps, deterministic — the default `go test ./...` tier and default `npm run test` tier.
+**Verified 2026-07-17: `grep -rn "docker_integration" .github/workflows/` returns ZERO matches. There is no `docker_integration` CI job.**
 
-**Integration Tests:** Go build tags `db_integration` / `neo4j_integration`, require the live Postgres + Neo4j + `mcp-neo4j-cypher` stack (`make db-up`, `make neo4j-migrate`). Frontend integration is largely folded into component tests using `@testing-library/react` against a real-ish DOM (jsdom), not a separate tier.
+Consequence: every `//go:build docker_integration` test **compiles and skips in CI and contributes nothing to the coverage floor**. The affected runtime is real:
 
-**E2E Tests:** Playwright (`web/e2e/`), drives a real `aura serve` process — `web/playwright.config.ts` forwards ~25 explicit env vars (`AURA_DB_URL`, `POSTGRES_*`, `NEO4J_*`, `AURA_OBJECTSTORE_*`, `OPENROUTER_API_KEY`, etc.) into the spawned `webServer` process since Playwright does not inherit the runner's env by default.
+- `internal/sandbox/usersandbox/` — DockerBackend lifecycle / exec / egress / reap: `docker_backend_integration_test.go`, `docker_backend_egress_test.go`, `lifecycle_integration_test.go`, `egress_integration_test.go`, `reap_integration_test.go`, `materialize_test.go`, `router_tools_test.go`, `bench_soak_test.go`, `main_test.go`
+- `internal/agent/tools/` — routed sandbox branches: `shell_exec_sandbox_docker_test.go`, `shell_bg_sandbox_docker_test.go`, `shell_bg_sandbox_test.go`, `send_file_sandbox_test.go`, `owner_coverage_test.go`
+- `cmd/aura/serve_dispatch_egress_integration_test.go`
 
-**Fuzz Tests:** native Go fuzzing (`go test -fuzz=FuzzName`) in 4 files: `internal/agent/agent_fuzz_test.go`, `internal/canonicaljson/canonicaljson_test.go`, `internal/channels/telegram/mdv2_test.go`, `internal/skills/validator_fuzz_test.go`.
+This is not theoretical: it is **why the CAP_NET_ADMIN cap-assertion bug (WR-01) stayed latent**.
 
-**Property-Based Tests:** `pgregory.net/rapid` for invariant-style assertions across a range of generated inputs, e.g. asserting an escalate Event is always yielded before a loop returns regardless of `n`/`maxIter` combination (`internal/agent/workflow/loop_property_test.go`).
+**Mandatory mitigation when adding daemon/container-gated code:** you MUST also write **daemon-free unit tests for its pure logic** — spec/tar builders, path-traversal + symlink guards, nil/disabled early-return paths, structural-capability "not supported" errors. Otherwise the aggregate silently drops below 85% and CI fails ~20 min after push. Verify locally **before** pushing with `bash scripts/coverage_docker.sh`. A green local full-matrix run is worth more than a push-and-wait CI cycle.
 
-## Common Patterns
+## Mutation Testing
 
-**Goroutine-leak-safe fakes** (design pattern, not just a test utility): return pre-closed, pre-buffered channels so a consumer that ranges to completion never blocks and no background goroutine is spawned — see `FakeClient.Stream` in `internal/agent/agenttest/fakeclient.go`.
+**Tool:** `go-mutesting` — the **`github.com/avito-tech/go-mutesting`** fork (`Makefile` `tools:`); it is the only fork supporting go1.26. **WSL-only** in practice.
 
-**Goroutine leak detection at package level:**
-```go
-func TestMain(m *testing.M) {
-    goleak.VerifyTestMain(m)
+**Policy floor: ≥70% killed**, spot-checked on each phase's critical file(s) and documented in the phase `VALIDATION.md` Manual-Only table. As with coverage, **state the floor, not a measurement** — per-file numbers live in `docs/aura-quality-snapshot.md` and the phase validation docs.
+
+**Enforcement is tiered (`.github/workflows/skills.yml`):**
+- `internal/skills/validator.go` — **hard gate**: score `< 0.70` fails the job.
+- Other files — **advisory**: a sub-0.70 score prints `advisory: … (db-subprocess artifact, witnessed by live db_integration tests)` and does not fail.
+
+Reading the output: `PASS` = mutant **killed**; `FAIL` = mutant **survived**; score = killed/total. go-mutesting's final line is `mutation score is 0.894118 (76 passed, …)`.
+
+For container/DB-gated code add `GOFLAGS=-tags=db_integration` plus the DSN env, or every mutant "survives" as a subprocess artifact.
+
+**Before chasing a score:** autopsy the survivors. `%w`-dense error-wrap paths are frequently near-equivalent mutants — classify them, kill what has a real seam, and advisory-accept the rest rather than contorting tests.
+
+## Frontend Testing (`web/`)
+
+**The frontend gates match the Go floors — that parity is deliberate.**
+
+**Unit + coverage — vitest** (`web/vitest.config.ts`):
+```ts
+coverage: {
+  provider: 'v8',
+  include: ['src/**/*.{ts,tsx}'],
+  // main.tsx is the bootstrap entry (createRoot + render) — behaviourally proven by
+  // the Playwright E2E against the served shell, not unit-testable in jsdom.
+  exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
+  // Frontend quality gate: parity with the Go backend's ≥85% floor.
+  thresholds: { statements: 85, branches: 85, functions: 85, lines: 85 },
 }
 ```
-with a doc comment explaining exactly which goroutine must be reaped and by what mechanism (see `internal/activelearn/main_test.go`).
+The suite **fails** below 85% — coverage cannot silently regress.
 
-**Retry/backoff test isolation:** package-level tunable vars (`toolRetryBaseDelay`) are swapped to near-zero durations for the test and restored via `t.Cleanup`, avoiding real sleeps in unit tests while exercising the real retry loop.
+**Mutation — Stryker** (`web/stryker.config.json`): `testRunner: "vitest"`, `coverageAnalysis: "perTest"`, `concurrency: 4`, `thresholds: { high: 85, low: 70, break: 70 }` — **`break: 70` fails the run below 70% killed**, matching the Go ≥70% policy. `mutate` is an **explicit allowlist of 17 files** (logic-bearing modules: `src/api/json.ts`, `src/chat/artifacts/*`, `src/chat/voice/*`, `src/chat/displays/*`, `src/graph/*`, `src/governance/*`, `src/approvals/approvalState.ts`, `src/onboarding/*`), not a glob — add new logic modules to it deliberately. Uses a separate `vitest.stryker.config.ts`.
 
-**Error testing:** table-driven with an `error`-typed field and `errors.Is`/`errors.As`/string-marker checks against the classifier function under test (`internal/agent/llm_agent_retry_test.go` — `retryableStreamOpenError`, `retryableToolError`).
+**Scripts (`web/package.json`):**
+```bash
+npm run lint        # eslint . --max-warnings=0   (the golangci-lint parity bar)
+npm run typecheck   # tsc --noEmit
+npm run format:check# prettier --check .
+npm run test        # vitest run --coverage
+npm run test:e2e    # playwright test
+npm run mutation    # stryker run
+npm run dup         # jscpd@4   (dupl parity)
+npm run deadcode    # knip@5    (deadcode parity)
+```
 
-**Windows-specific test skips:** the sandboxed shell-tool tests explicitly skip POSIX-only behavior when running under the `cmd.exe` fallback shell (not a CI/env gate, a platform-capability gate): `t.Skip("cmd.exe fallback: interleave fixture is POSIX-only")` (`internal/agent/tools/shell_exec_test.go`, `shell_bg_test.go`).
+**Platform note:** WSL has no Node. Run vitest / tsc / prettier / playwright on **Windows Git Bash**; run Go build/test/`-race` in **WSL**.
+
+## CI Job Map
+
+**`.github/workflows/ci.yml`** — 24 jobs: `build-and-lint`, `unit-test`, `windows-unit`, `cache-invariant`, `vulncheck`, `integration-test`, `musr-e2e`, `sqlc-golden`, `web-integration-test`, `knowledge-integration-test`, `multimodal-integration-test`, `telegram-integration-test`, `memory-integration-test`, `calendar-integration-test`, `integrations-proxy-test`, `web-lint`, `web-test`, `web-mutation`, `web-dist-freshness`, `web-e2e`, `compaction-evaluator`, `compaction-distributed-gates`, `compaction-mutation`, `compaction-e2e-acceptance`.
+
+**`.github/workflows/skills.yml`** — `skills-gate` (mutation hard-gate on `internal/skills/validator.go` + the stricter `db_integration`-only coverage gate).
+
+Also: `.github/workflows/codeql.yml`, `.github/workflows/release.yml`.
+
+Notable: `multimodal-integration-test` sets `CI: "true"` explicitly *to arm the `sidecarEnvOrSkip` no-skip-as-green guards* — the guard is the reason the env var is set, not an accident.
+
+## Writing a New Test — Checklist
+
+1. Co-locate; name it for its tier (`_integration_test.go`, `_property_test.go`, `_fuzz_test.go`).
+2. Table-driven; fixed clock (never `time.Now()`); `errors.Is` for error assertions.
+3. Doc-comment the decision/plan rows the test covers (`D-04`, `T-37F-27`).
+4. Package starts goroutines → add `goleak.VerifyTestMain(m)` in `main_test.go`.
+5. Invariant rather than examples → reach for `rapid`. Parses untrusted input → add a `Fuzz*`.
+6. Needs live infra → build tag + an `envOrSkip` helper that `t.Fatal`s under `$CI`, **and** wire the env in the CI job.
+7. Real Postgres/Neo4j, never an in-memory substitute. Fakes for LLM/HTTP/MCP; shared ones in `internal/agent/agenttest/`.
+8. Adding `docker_integration`-gated runtime → **also** add daemon-free unit tests for the pure logic (see the gap above).
+9. Keep the file ≤600 LOC — tests are not exempt.
+10. Before pushing: `make quality`; if the change touches DB/graph surface, `bash scripts/coverage_docker.sh`.
 
 ---
 
-*Testing analysis: 2026-07-04*
+*Testing analysis: 2026-07-17*

@@ -1,139 +1,331 @@
 # External Integrations
 
-**Analysis Date:** 2026-07-04
+**Analysis Date:** 2026-07-17
+
+> **Provenance rule.** Every count, version and dimension below was measured on 2026-07-17 from
+> the repo at the then-current `master` HEAD. Regeneration commands are given for anything that
+> drifts. Facts that could not be verified in-session are labelled **Not verified**. Do not copy
+> numbers here from other documents.
 
 ## APIs & External Services
 
-**LLM inference:**
-- OpenRouter (cloud, default) — `internal/llm/config.go`: `defaultProvider = "openrouter"`, `defaultBaseURL = "https://openrouter.ai/api/v1"`, `defaultModel = "deepseek/deepseek-v4-flash:nitro"`
-  - Auth: `OPENROUTER_API_KEY` env var (canonical third-party name, not `AURA_`-prefixed)
-  - Client: hand-rolled OpenAI-compatible streaming client, `internal/llm/openai_compat/client.go` (SSE parsing `sse.go`, idle-stream watchdog `stream_idle.go`, HTTP error mapping `httperror.go`)
-  - Attribution headers sent on every request: `HTTP-Referer`, `X-Title` (D-20, OpenRouter dashboard visibility)
-  - Also used as the shared cloud fallback endpoint for rerank (`cohere/rerank-4-fast`), vision (`minimax/minimax-m3`), STT (e.g. `openai/whisper-large-v3`), TTS (e.g. `hexgrad/kokoro-82m`) — one `OPENROUTER_API_KEY` authenticates all cloud backends
-- Local llama.cpp server (self-hosted alternative, `compose.llm.yaml` `aura-llm` service, image `ghcr.io/ggml-org/llama.cpp:server-cuda`) — swapped in via `AURA_LLM_BASE_URL`
-- Local embedding sidecar `aura-llama-embed` (`compose.yaml`, same llama.cpp server-cuda image) — `AURA_EMBED_BASE_URL` (default `http://127.0.0.1:8081`), `AURA_EMBED_MODEL`, `AURA_EMBED_DIMENSIONS` (`internal/knowledge/config.go`)
-- Local rerank sidecar `aura-rerank` (`compose.yaml`, llama.cpp server-cuda) — `internal/rerank/client.go`; `AURA_RERANK_BASE_URL` (default `http://127.0.0.1:8085`); `AURA_RERANK_MODEL` set to a cloud model id swaps the same client to OpenRouter (fails soft to RRF/vector order if unreachable)
-- Local vision/OCR sidecar `aura-ocr-vl` (`compose.yaml`, llama.cpp server-cuda) — `MULTIMODAL_BASE_URL`/`MULTIMODAL_MODEL`; `AURA_VISION_CLOUD=true` routes instead to OpenRouter `minimax/minimax-m3` (`internal/multimodal/vision.go`)
-- Local STT sidecar `aura-stt` (`compose.yaml`, image `hwdsl2/whisper-server`) — `STT_BASE_URL`/`STT_MODEL`/`STT_LANGUAGE` (default `it`); `AURA_STT_CLOUD_MODEL` swaps to OpenRouter (`internal/multimodal/stt.go`)
-- Local TTS sidecar `aura-tts` (`compose.yaml`, image `ghcr.io/remsky/kokoro-fastapi-cpu`) — `TTS_BASE_URL`/`TTS_VOICE` (default `if_sara`)/`TTS_FORMAT` (default `opus`); `AURA_TTS_MODEL` swaps to OpenRouter (`internal/multimodal/tts.go`)
+**LLM (provider-neutral, no vendor SDK):**
+- **OpenRouter** — the default upstream. `internal/llm/config.go:19-21`:
+  - `defaultProvider = "openrouter"`
+  - `defaultModel = "deepseek/deepseek-v4-flash:nitro"` (DeepSeek-V4 Flash, `:nitro` routing variant)
+  - `defaultBaseURL = "https://openrouter.ai/api/v1"`
+  - Auth: `OPENROUTER_API_KEY` (canonical upstream name, deliberately **not** renamed to `AURA_*`
+    — `internal/llm/config.go:56`)
+  - Attribution headers sent on every request: `HTTP-Referer: https://github.com/chetto1983/aura`,
+    `X-Title: Aura` (`internal/llm/config.go:49-51`)
+  - Client: hand-rolled OpenAI-compatible HTTP (`internal/llm/client.go`,
+    `internal/llm/openai_compat/`). Swapping providers is config-only (`AURA_LLM_PROVIDER`,
+    `AURA_LLM_BASE_URL`, `AURA_LLM_MODEL`).
+  - Config load order (`internal/llm/config.go`): built-in const defaults → `.env` →
+    `~/.aura/llm.json` → `AURA_LLM_*` env.
+  - Budget inputs: `defaultContextWindow = 1_000_000`, `defaultMaxOutputTokens = 32_768`.
+  - Resilience: `github.com/sony/gobreaker` circuit breaker (`internal/llm/breaker.go`);
+    `defaultStreamIdleTimeoutSec = 60` stall watchdog (resets on any bytes, incl. OpenRouter's
+    `: OPENROUTER PROCESSING` keep-alives) firing before the 120s `defaultTotalTimeoutSec`.
+
+**Local inference sidecars (llama.cpp, GPU-first):**
+- **`aura-llama-embed`** — `ghcr.io/ggml-org/llama.cpp:server-cuda`, port `8081` internally.
+  - Model: `SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF` →
+    `granite-embedding-311M-multilingual-r2_Q6_k.gguf` (`compose.yaml:436-438`)
+  - **768 dimensions** — `AURA_EMBED_DIMENSIONS:-768` (`compose.yaml:79`), matching the Neo4j
+    HNSW index (below). One dimension knob drives both local and cloud embedding.
+  - `AURA_EMBED_NGL:-99` (`compose.yaml:445`) — offload **all** layers to GPU.
+  - Consumers: `AURA_EMBED_BASE_URL: http://aura-llama-embed:8081` (`compose.yaml:78`).
+  - Cloud swap (D-28): reuses the single OpenRouter key + the single `AURA_EMBED_DIMENSIONS`;
+    set `AURA_EMBED_MODEL=qwen/qwen3-embedding-8b` via the `openai/` adapter (`compose.yaml:491-501`).
+- **`aura-rerank`** — `llama.cpp:server-cuda`, `AURA_RERANK_NGL:-99`. Go client `internal/rerank/`.
+  Env: `AURA_RERANK_BASE_URL`, `AURA_RERANK_MODEL`. `compose.yaml:722` records CPU rerank at ~23s,
+  i.e. GPU is mandatory for this path.
+- **`aura-ocr-vl`** — `llama.cpp:server-cuda`, `profiles: [ocr]` (`compose.yaml:670`), so it is
+  **not** started by a default `docker compose up`. `AURA_OCR_VL_NGL:-99`.
+
+**Speech / vision:**
+- **`aura-stt`** — `hwdsl2/whisper-server:latest` (whisper.cpp). Env `AURA_STT_CLOUD_MODEL` for
+  the cloud fallback. Client `internal/multimodal/stt.go`.
+- **`aura-tts`** — `ghcr.io/remsky/kokoro-fastapi-cpu:latest`. Env `AURA_TTS_MODEL`,
+  `AURA_TTS_MAX_CHARS`. Client `internal/multimodal/tts.go`.
+- **Vision/multimodal** — `internal/multimodal/vision.go`, `client.go`. Env keeps upstream naming:
+  `MULTIMODAL_BASE_URL`, `MULTIMODAL_MODEL`, `MULTIMODAL_FALLBACK_MODEL`, `MULTIMODAL_TIMEOUT_SEC`;
+  `AURA_VISION_CLOUD` toggles cloud vision.
 
 **Search:**
-- SearXNG (self-hosted meta-search, `compose.yaml` `searxng` service, image `searxng/searxng:2026.5.31-7159b8aed`) — `web_search`/`web_fetch` tool backend, `SEARXNG_URL` (upstream-canonical name, no `AURA_` prefix); empty is not boot-fatal, fails closed at call time with `web_search_unavailable{searxng_not_configured}` (`internal/web/`, `internal/config/config.go`)
+- **SearXNG** — `searxng/searxng:2026.5.31-7159b8aed` (`compose.yaml:574`). Env `SEARXNG_URL`,
+  **empty default on purpose (D-05)** — `internal/config/config.go:400-402` — so `web_search`
+  fails *closed* with `web_search_unavailable{searxng_not_configured}` rather than silently
+  hitting an unexpected host (`internal/web/searxng.go:86`). Also `SEARXNG_SECRET`.
+- Tools: `internal/agent/tools/web_search.go`, `web_fetch.go`. Knobs:
+  `AURA_WEB_SEARCH_TIMEOUT_SEC`, `AURA_WEB_FETCH_TIMEOUT_SEC`, `AURA_WEB_FETCH_MAX_BODY_BYTES`,
+  `AURA_WEB_USER_AGENT`, `AURA_WEB_DNS_PIN_TTL_SEC`, `AURA_WEB_CACHE_PERSISTENT`.
 
 **Document conversion:**
-- Markitdown sidecar (`compose.yaml` `markitdown` service, image `aura-markitdown:local`) — `/convert` HTTP endpoint, `DOCUMENTS_BASE_URL` (`internal/documents/`)
+- **`markitdown`** — `aura-markitdown:local`, built from `docker/markitdown/`. Document→Markdown
+  ingest leg (`internal/documents/`).
 
-**Messaging channels:**
-- Telegram Bot API — `gopkg.in/telebot.v4`, `internal/channels/telegram/` (bot dispatch, media, HITL approvals, TTS voice notes, status pane, onboarding). Auth: `TELEGRAM_BOT_TOKEN` (canonical upstream name). Optional local Bot API server override: `TELEGRAM_API_BASE_URL` / `TELEGRAM_FILE_BASE_URL`, gated by `AURA_TELEGRAM_LOCAL_BOT_API`
-- WhatsApp bridge sidecar (`compose.yaml` `whatsapp` service, image `ghcr.io/chetto1983/whatsapp-mcp:sidecar`) — reached via MCP (`internal/mcp/whatsapp_integration_test.go`) and via a management REST API proxied from the cockpit (`internal/agui/connect_api.go`, `AURA_WHATSAPP_BRIDGE_URL`, default `http://whatsapp:8081`); connect routes answer 503 if unset/unreachable (non-fatal)
+## MCP Servers (the LLM's tool surface)
 
-**Calendar / PIM:**
-- `aura-pim-mcp` sidecar (`compose.yaml`, image `ghcr.io/chetto1983/aura-pim-mcp:sidecar`) — Google Calendar integration via MCP; admin REST proxied at `/api/connect/pim/*` (`internal/agui/connect_pim_api.go`), `AURA_PIM_MCP_URL` (default `http://aura-pim-mcp:8080`) + `AURA_PIM_MCP_ADMIN_TOKEN` bearer token (never returned to the client)
+Aura mounts MCP servers in-process. Client: `internal/mcp/` (`client.go`, `http_client.go`,
+`transport.go`, `manager/`). Composition: `internal/config/config_mcp.go` merges the managed
+config doc + `AURA_MCP_SERVERS_JSON` env override + default-on recipes (env override wins over
+managed; explicit `aura mcp disable <name>` is respected — D-08/D-09).
 
-**MCP (Model Context Protocol) servers:**
-- Generic MCP client/transport: `internal/mcp/client.go`, `http_client.go`, `transport.go` (stdio + streamable HTTP), with SSRF guarding (`ssrf.go`, `transport_ssrf.go`) and secret redaction (`redact.go`)
-- Managed server registry: `internal/mcp/managed_config.go` — Claude-Desktop-compatible `mcpServers` JSON shape, extended with Aura metadata (`enabled`, `source`, `trust` class: `trusted_recipe`/`trusted_local`/`sandboxed_local`/`remote_http`/`blocked`, `runtime` kind: `local`/`docker`/`docker_gateway`)
-- `mcp-neo4j-cypher` — the LLM-facing interface to the Neo4j graph (get-schema/read-cypher/write-cypher/list-gds-procedures); no native Go driver call path is exposed to the LLM (CLAUDE.md architectural constraint)
-- `aura-agent-memory-mcp` sidecar (`compose.yaml`, built from `docker/agent-memory/`, a Python `neo4j_agent_memory` package) — agent long-term memory subgraph over Neo4j, with pluggable embedding backends (OpenAI, Bedrock, sentence-transformers, Vertex AI — `docker/agent-memory/src/neo4j_agent_memory/embeddings/`) and entity extraction (GLiNER, spaCy, LLM-based — `.../extraction/`)
-- Calculator, calendar, WhatsApp MCP integrations exercised via integration tests: `internal/mcp/calculator_integration_test.go`, `calendar_integration_test.go`, `whatsapp_integration_test.go`
+Recipe identifiers found in source (regenerate:
+`grep -rhoE '"recipe:[a-z-]+"' internal cmd --include='*.go' | sort -u`) — note several
+(`alpha`, `broken`, `other`, `plain`, `srv`) are test fixtures, not real recipes:
 
-**Cloud storage (fallback/optional):**
-- AWS SDK v2 present (`github.com/aws/aws-sdk-go-v2` + `s3`, `credentials`, `config`) — used as the Go client library against the self-hosted S3-compatible object store (Garage), not necessarily AWS itself; see Data Storage below
+| Recipe | Sidecar | Default-on? |
+|--------|---------|-------------|
+| `recipe:memory` | `aura-agent-memory-mcp` (`aura-agent-memory-mcp:local`, `:8080`) | **Yes, everywhere** — `memoryRecipeName`, `injectDefaultOnMemory` (`internal/config/config_mcp.go:16,60`) |
+| `recipe:calculator` | uvx-launched | **Yes, but only inside the appliance image** (uvx warm-cached) — `injectDefaultOnContainerCalculator` (`internal/config/config_mcp.go:61`) |
+| `recipe:whatsapp` | `ghcr.io/chetto1983/whatsapp-mcp:sidecar` | Connect-only |
+| `recipe:calendar` / `recipe:mail` | `ghcr.io/chetto1983/aura-pim-mcp:sidecar` | Connect-only |
+
+**Memory MCP is a hard boot dependency.** `compose.yaml` gates the `aura` service on
+`aura-agent-memory-mcp: condition: service_healthy` — the in-process mount has **no boot retry**
+(reconnect-on-use only recovers an already-mounted server), so racing the sidecar's startup leaves
+the agent with zero memory tools until a full restart. The comment at `compose.yaml:~30` documents
+this explicitly.
+
+**`mcp-neo4j-cypher`** — the LLM's *only* interface to the graph. `internal/knowledge/client.go:2`
+records the native-Go-driver ban: every agent-facing Cypher call goes over MCP
+(`Client.Cypher(ctx, query, params, write)` at `internal/knowledge/client.go:198`). Env:
+`AURA_MCP_NEO4J_CYPHER_BIN`, `AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC`. Image built from
+`docker/mcp-neo4j-cypher/`.
+
+**MCP hardening:** SSRF guards (`internal/mcp/ssrf.go`, `transport_ssrf.go`,
+`AURA_MCP_SSRF_ENFORCE`), secret redaction (`internal/mcp/redact.go`), call timeout
+(`AURA_MCP_CALL_TIMEOUT_SEC`), boot mount retry (`AURA_MCP_MOUNT_RETRY_ATTEMPTS`), liveness probe
+(`internal/mcp/probe.go`).
 
 ## Data Storage
 
-**Databases:**
-- PostgreSQL 18.4-alpine (`compose.yaml` `postgres` service, image `postgres:18.4-alpine3.23`) — primary relational store, schema `aura.*`
-  - Connection: composed from `POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`POSTGRES_SSLMODE` primitives into role-scoped DSNs (`aura_app` runtime role, `aura_migrate` DDL role), or overridden wholesale via `AURA_DB_URL`/`AURA_DB_MIGRATE_URL`/`AURA_DB_BOOTSTRAP_URL` (`internal/config/config.go` `composeDSN`)
-  - Client: `github.com/jackc/pgx/v5` + `sqlc`-generated typed queries (`internal/db/sqlc/`), migrations via `golang-migrate/migrate/v4` (`internal/db/migrations/0001..0020+*.sql`)
-  - Also hosts a second, isolated schema `authula` for the embedded Authula auth framework (its own `uptrace/bun`-based migrator fills the contents; Aura migration `0019_authula_schema` only creates the schema/role boundary)
-- Neo4j 5.26.26 Community + APOC + GDS (`compose.yaml` `neo4j` service, image `neo4j:5.26.26-community`) — knowledge graph + HNSW vector index (768d cosine)
-  - Connection: `AURA_NEO4J_BOLT_URL` (default `bolt://127.0.0.1:7687`), `NEO4J_USER`, `NEO4J_PASSWORD`, `AURA_NEO4J_DATABASE` (`internal/knowledge/config.go`)
-  - Client: `github.com/neo4j/neo4j-go-driver/v5` (native driver, `internal/knowledge/client.go`) for schema/migration/status operations (`internal/knowledge/migrate.go`, `migrations/*.cypher`, `ping.go`, `status.go`); the LLM itself talks to the graph only through the `mcp-neo4j-cypher` MCP server, never the native driver directly
+**Postgres (primary):**
+- `postgres:18.4-alpine3.23` (`compose.yaml:350`), port `5432`, schema `aura.*`.
+- Connection: `AURA_DB_URL` (app role), `AURA_DB_MIGRATE_URL` (migrate role),
+  `AURA_DB_BOOTSTRAP_URL`; composed by `internal/config` from `POSTGRES_HOST`, `POSTGRES_PORT`,
+  `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_SSLMODE`. Roles:
+  `AURA_DB_APP_ROLE`, `AURA_DB_MIGRATE_ROLE`.
+  > **CI gotcha (no-skip-as-green):** integration tests read the **composed DSNs**, not the
+  > `POSTGRES_*` primitives. CI jobs must export `AURA_DB_URL`/`AURA_DB_MIGRATE_URL` or the tier
+  > skips (and skip-helpers `t.Fatal` under `$CI`, failing loudly rather than passing).
+- Client: `github.com/jackc/pgx/v5`, sqlc-generated (`internal/db/sqlc/`, `emit_interface: true`).
+- Migrations: golang-migrate, `internal/db/migrations/`. **40 migrations** as of 2026-07-17,
+  latest `0040_shared_links`.
+  Floor is whatever `ls internal/db/migrations/*.up.sql | wc -l` returns; latest is
+  `ls internal/db/migrations/ | tail -1`.
+- Migrate service: `aura-migrate` (same `aura:local` image), a `service_completed_successfully`
+  gate for the `aura` service.
 
-**File Storage:**
-- Garage (self-hosted S3-compatible object store, `compose.yaml` `garage` service, image `dxflrs/garage:v2.0.0`) — asset bucket storage (`internal/objectstore/s3.go`, uses AWS SDK v2 S3 client against Garage's S3-compatible endpoint)
-  - Config: `AURA_OBJECTSTORE_BACKEND` (`garage`|`filesystem-dev`|`fake`), `AURA_OBJECTSTORE_ENDPOINT`/`AURA_OBJECTSTORE_PUBLIC_ENDPOINT`, `AURA_OBJECTSTORE_REGION`, `AURA_OBJECTSTORE_BUCKET`, `AURA_OBJECTSTORE_ACCESS_KEY`/`AURA_OBJECTSTORE_SECRET_KEY`, `AURA_OBJECTSTORE_PATH_STYLE` (default true), `AURA_OBJECTSTORE_REPLICATION_FACTOR`, `GARAGE_RPC_SECRET` (inter-node RPC secret, upstream canonical name)
-  - Alternatives: `internal/objectstore/filesystem.go` (dev-local filesystem backend), `internal/objectstore/fake.go` (test double)
-- Local filesystem sidecar artifacts: `$AURA_RUN_DIR/` (tool-result spillover + sidecar content, default `<user-cache-dir>/aura`), `~/.aura/agents/<id>/` (Agent.md profile), `~/.aura/pyscripts/<id>/` (Slice 7e Python snippets), `$AURA_SKILLS_DIR/` (skill instruction trees)
+**Neo4j (graph + vectors):**
+- `neo4j:5.26.26-community` (`compose.yaml:392`) + APOC + GDS. Bolt `7687`, browser `7474`.
+- Connection: `AURA_NEO4J_BOLT_URL`, `AURA_NEO4J_DATABASE`, `NEO4J_USER`, `NEO4J_PASSWORD`.
+- Migrations: **2 Cypher files** — `internal/knowledge/migrations/0001_init.cypher`,
+  `0002_documents.cypher`. Runner: `internal/knowledge/migrate.go`.
+- **Vector index: `chunk_embedding` on `(:Chunk).embedding`, `vector.dimensions: 768`,
+  `vector.similarity_function: 'cosine'`, HNSW `m: 32`, `ef_construction: 200`**
+  (`internal/knowledge/migrations/0001_init.cypher:12`). Matches `AURA_EMBED_DIMENSIONS:-768`.
+- Also `chunk_text` fulltext index (standard analyzer, `eventually_consistent: false`) and a
+  `chunk_id` uniqueness constraint — the BM25 leg of hybrid retrieval.
+- Native driver `neo4j-go-driver/v5` used only by `internal/knowledge/probe.go`,
+  `internal/knowledge/schema.go`, `internal/cron/handlers/backup.go`. Shared Cypher helpers:
+  `internal/neostore/neostore.go` (stdlib-only leaf, one copy of the `GraphClient` seam +
+  `HashText`/`AsString`/`AsFloats` coercers, extracted to stop three stores decoding APOC
+  embeddings differently — D-06/QUAL-03).
+
+**Object storage:**
+- **Garage** `dxflrs/garage:v2.0.0` (`compose.yaml:374`) — self-hosted S3-compatible store,
+  bootstrapped by the `garage-bootstrap` one-shot service.
+- Backend selector `AURA_OBJECTSTORE_BACKEND` — `garage|filesystem-dev|fake`
+  (`internal/config/config.go:128`), default `garage` (`config.go:435`). Implementations:
+  `internal/objectstore/s3.go`, `filesystem.go`, `fake.go`.
+- Defaults: endpoint `http://127.0.0.1:3900`, region `garage`, bucket `aura-assets`.
+- Env: `AURA_OBJECTSTORE_{ENDPOINT,PUBLIC_ENDPOINT,REGION,BUCKET,ACCESS_KEY,SECRET_KEY,PATH_STYLE,REPLICATION_FACTOR}`,
+  `AURA_GARAGE_ADMIN_ENDPOINT`, `AURA_GARAGE_ADMIN_TOKEN`, `GARAGE_RPC_SECRET`.
+  Admin client: `internal/objectstore/garageadmin/`. Per-identity keying:
+  `internal/objectstore/identity_store.go`.
+- Config is **intentionally non-fatal** (`internal/config/config.go:126-127`) so DB/migration paths
+  do not depend on Garage being reachable.
+- Asset caps: `AURA_ASSET_MAX_{IMAGE,AUDIO,DOCUMENT}_BYTES`, `AURA_ASSET_PRESIGN_TTL_SEC`,
+  `AURA_ASSET_PROCESSING_CONCURRENCY`.
+
+**Filesystem artifacts:**
+- `$AURA_RUN_DIR/` — sidecar tool results + spillover (swept:
+  `AURA_RUN_DIR_SWEEP_INTERVAL_SEC`, `AURA_RUN_DIR_WARN_THRESHOLD_BYTES`)
+- `~/.aura/agents/<id>/` — Agent.md profile (`AURA_PROFILE_DIR`)
+- `~/.aura/pyscripts/<id>/` — snippets (`AURA_SKILL_SNIPPET_TTL_DAYS`)
+- `$AURA_SKILLS_DIR/` — skill instructions
+- `~/.aura/llm.json` — LLM config tier
+- Named volumes (`compose.yaml:818-833`): `aura-home`, `aura-postgres`, `aura-neo4j`,
+  `aura-neo4j-plugins`, `aura-llama-embed`, `aura-whatsapp-session`, `caddy-data`, `aura-ocr-vl`,
+  `aura-rerank`, `aura-pim-data`, `garage-data`, `aura-web`, plus host-bound npm/pip/uv caches.
 
 **Caching:**
-- In-memory web-fetch/search cache (`internal/web/`), optionally disk-persistent via `AURA_WEB_CACHE_PERSISTENT` (default false)
-- Cache metrics tracked in Postgres (`internal/cachemetrics/`, migration `0007_cache_metrics`)
-- No Redis/Memcached — no external cache service
+- No Redis/Memcached service in `compose.yaml`. `github.com/redis/go-redis/v9` is present but
+  **indirect** (pulled by Authula's watermill tree), not used by Aura code.
+- Provider-side prompt caching (OpenRouter/DeepSeek) is the real cache; invariants guarded by the
+  CI `cache-invariant` job. `AURA_WEB_CACHE_PERSISTENT` covers web-tool caching;
+  `internal/cachemetrics/` records hit/miss.
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Authula (`github.com/Authula/authula` v1.11.0, Apache-2.0) — self-hosted, embedded Go auth framework, not a hosted SaaS provider
-  - Implementation: `internal/webauth/authula.go` embeds Authula's `config`, `models`, and plugins (`csrf`, `email-password`, `rate-limit`, `session`, `totp`) and its `services` package; runs against its own isolated `authula` Postgres schema (H1 schema isolation — no table-prefix support upstream)
-  - Session cookie: `__Host-`-prefixed hardened cookie (`SessionCookieName`), `Secure=true`/`SameSite` flipped from Authula's insecure defaults
-  - Config: `AURA_WEB_AUTH_PROVIDER` (default `authula`), `AURA_AUTHULA_DATABASE_URL` (falls back to `AURA_DB_URL` + `?search_path=authula`), `AURA_AUTHULA_SECRET` (32-byte hex HMAC/token key seed, required for the provider to activate), `AURA_AUTHULA_OPERATOR_IDENTITY`, `AURA_AUTHULA_RATE_LIMIT_MAX` (default 30/min)
-  - Legacy fallback: `AURA_WEB_AUTH_SECRET` (deprecated passphrase secret, retained only so old configs load; not the active auth path)
-- Boot-time bind guard: `config.GuardWebBind` (`internal/config/config.go`) — a non-loopback `AURA_AGUI_BIND` requires either Authula configured or `AURA_WEB_TRUST_PROXY=true` (operator vouches a reverse proxy terminates auth); loopback always boots unauthenticated
+**Auth Provider: Authula** (`github.com/Authula/authula v1.15.0`), embedded in-process.
+- Implementation: `internal/webauth/` — `authula.go` (constructs `authula.New` with three
+  mandatory hardenings, per `authula.go:4`), `session_validate.go`, `identity_link.go`.
+- Authula owns its `/auth/*` HTTP handler and runs its **own schema migrations** into the
+  `authula` schema at construction. **`authula.New` panics on any init error**
+  (`internal/webauth/authula.go:91`) — misconfiguration is fail-fast, not degraded.
+- Env: `AURA_WEB_AUTH_PROVIDER`, `AURA_WEB_AUTH_SECRET`, `AURA_AUTHULA_SECRET`,
+  `AURA_AUTHULA_DSN`, `AURA_AUTHULA_DATABASE_URL`, `AURA_AUTHULA_OPERATOR_IDENTITY`,
+  `AURA_AUTHULA_RATE_LIMIT_MAX`.
+- 2FA/TOTP supported (E2E harness reads `AURA_E2E_AUTHULA_{EMAIL,PASSWORD,TOTP_CODE,TOTP_SECRET}`).
+- Cookie/session plumbing on the AG-UI side: `internal/agui/auth.go`, `auth_cookie.go`.
+  `AURA_WEB_TRUST_PROXY` governs proxy-header trust.
+- **Identity isolation** is a first-class concern: `internal/identity/`, `internal/identityctx/`,
+  `internal/objectstore/identity_store.go`, `internal/mcp/managed_config_identity.go`.
+  `AURA_MUSR_ISOLATION` toggles the multi-user isolation mode (CI job `musr-e2e`).
+- **Break-glass** recovery: `internal/breakglass/` — `AURA_RECOVERY_QUESTION`,
+  `AURA_RECOVERY_ANSWER`, `AURA_RECOVERY_PASSWORD`.
+- **Capability grants / approval gateway:** `internal/gateway/` (`approvals.go`, `classify.go`,
+  `decide.go`, `guard.go`, `reserve.go`, `reconcile.go`) — the HITL escalation surface.
+- Setup/bootstrap: `internal/setup/` — `AURA_SETUP_BIND`, `AURA_SETUP_TOKEN`.
 
-**Capability/Authorization:**
-- `internal/identity/` + `internal/identityctx/` — Aura-native identity + capability-grant model (`aura identity <list|get|grant|revoke>` CLI), migration `0004_identity`
-- `internal/gateway/` — a policy/approval gateway (classify/decide/approve/reserve/reconcile) gating tool-call side effects, independent of Authula (which only guards the cockpit web session)
+> Local dev note: the `local` identity row (`...001`) is wiped by parallel/coverage runs, causing
+> FK `23503` in `db_integration` tests — re-seed via docker-exec psql before running the tier.
 
 ## Monitoring & Observability
 
-**Error Tracking:**
-- None (no Sentry/Bugsnag/etc.) — errors surface via structured logs (`slog`) and OpenTelemetry spans
-
 **Tracing:**
-- OpenTelemetry (`go.opentelemetry.io/otel` v1.44.0) — `internal/obs/init.go`, `otel_error_handler.go`; exporter selectable via `AURA_OTEL_EXPORTER` (`stdout`|`otlp`|`none`, default `otlp`) and `AURA_OTEL_ENDPOINT` (default `localhost:4317`, OTLP/gRPC)
-- Agent-level tracing spans: `internal/agent/tracing.go`
+- OpenTelemetry SDK v1.44.0, initialized in `internal/obs/init.go` (+ `otel_error_handler.go`).
+- Exporters: OTLP/gRPC (`otlptracegrpc`) and stdout (`stdouttrace`).
+- Env: `AURA_OTEL_EXPORTER`, `AURA_OTEL_ENDPOINT`.
 
 **Metrics:**
-- Prometheus client (`github.com/prometheus/client_golang`) — `internal/agent/metrics.go`, `internal/agui/metrics.go`, `internal/cachemetrics/`
-- Reasoning/tool-selection telemetry stored in Postgres: `internal/reasoningtrace/`, `internal/toolinvocations/`, `internal/toolselectstore/` (migrations `0010_skill_audit`, `0011_tool_invocations`)
+- Prometheus `client_golang` v1.23.2. `GET /metrics` served by `promhttp.Handler()` at
+  `internal/agui/server.go:246`. **The endpoint is auth-gated** along with the SPA shell and
+  `/debug/vars` (`internal/agui/auth.go:167`) — it is not an open scrape target.
+- Cache telemetry: `internal/cachemetrics/` (Postgres-backed).
 
 **Logs:**
-- `log/slog` structured logging throughout (per CLAUDE.md skill guidance); no external log-aggregation sidecar wired into `compose.yaml`
+- Structured `log/slog` (stdlib). `github.com/lmittmann/tint` is present but indirect.
+
+**Error tracking:**
+- No Sentry/Rollbar/Bugsnag dependency. **Not detected.**
+
+**Audit trail:**
+- `internal/agui/audit_api.go` + `audit_store.go`; `internal/toolinvocations/`;
+  reasoning traces in `internal/reasoningtrace/` (`AURA_REASONING_TRACE`,
+  `AURA_REASONING_TRACE_FILE`, `AURA_REASONING_TRACE_MAX_BYTES`).
+
+## Channels (agent I/O surfaces)
+
+Registry: `internal/channels/registry.go`, `channel.go`, `deliver.go`. Enablement follows
+`AURA_CHANNEL_<NAME>_ENABLED` (e.g. `AURA_CHANNEL_TELEGRAM_ENABLED`).
+
+**Telegram** — `internal/channels/telegram/` (~20 non-test files), `gopkg.in/telebot.v4`.
+- **Long-polling, NOT webhooks.** `bot.go:279` drives telebot's default `LongPoller`; the
+  `stopWaitPoller` (`bot.go:386-390`) is a zero-network-I/O test double. **There is no inbound
+  Telegram webhook endpoint.**
+- Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL`,
+  `AURA_TELEGRAM_LOCAL_BOT_API`, `AURA_TELEGRAM_{CHAT_RATE_LIMIT_MS,CONTENT_THROTTLE_MS,STATUS_THROTTLE_MS}`.
+- Features: HITL approvals (`hitl.go`), MarkdownV2 rendering (`mdv2.go`, `html.go`), asset/file
+  dispatch, onboarding, compaction, AG-UI subscription (`agui_subscriber.go`).
+
+**Web cockpit (AG-UI SPA)** — `internal/agui/` + `internal/webui/` (embedded Vite build).
+- Env: `AURA_AGUI_BIND`, `AURA_AGUI_BUFFER_CAP`, `AURA_AGUI_CORS_PERMISSIVE`,
+  `AURA_SERVE_SHUTDOWN_GRACE_SEC`.
+- Ingress: **Caddy 2** (`compose.yaml:330`), HTTPS termination, `AURA_ACCESS_TOKEN`-gated.
+
+**WhatsApp** — connect-only sidecar `ghcr.io/chetto1983/whatsapp-mcp:sidecar` (whatsmeow bridge),
+QR pairing rendered via `qrterminal`. Env: `AURA_MCP_WHATSAPP_BRIDGE_URL`,
+`AURA_MCP_WHATSAPP_SERVER_JSON`, `AURA_WHATSAPP_BRIDGE_PORT`, `AURA_WHATSAPP_MCP_PORT`.
+Session volume `aura-whatsapp-session`.
+
+**PIM (calendar/mail)** — `ghcr.io/chetto1983/aura-pim-mcp:sidecar`. Env: `AURA_PIM_MCP_URL`,
+`AURA_PIM_MCP_PORT`, `AURA_PIM_MCP_ADMIN_TOKEN`. Cockpit proxy: `internal/agui/connect_pim_api.go`.
+
+## Sandbox & Egress
+
+- **Per-user Docker sandbox** — `internal/sandbox/usersandbox`, driving the Docker API via
+  `github.com/moby/moby/client`. Env: `AURA_SANDBOX_{IMAGE,CPU_LIMIT,MEMORY_LIMIT,PIDS_LIMIT,IDLE_TTL_SEC,AGENT_URL,AGENT_TOKEN,AGENT_TIMEOUT_SEC,EGRESS_ALLOWLIST,EGRESS_IMAGE}`.
+  Tool routing: `internal/agent/tools/sandbox_route.go`, `shell_exec_sandbox.go`,
+  `send_file_sandbox.go`.
+  > **Its `docker_integration` tests never run in CI** — see STACK.md §Test & Tag Matrix.
+- **`docker-socket-proxy`** — `tecnativa/docker-socket-proxy:0.3.0`, `profiles: [sandbox]`
+  (`compose.yaml:306`). **Not started by a default `docker compose up`**; enable with
+  `docker compose --profile sandbox up -d` and set
+  `AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375`. The comment
+  (`compose.yaml:300-302`) frames it as the escalation surface.
+- **Egress control** — `docker/aura-egress/`, `AURA_EGRESS_ENFORCE`, `AURA_EGRESS_FLOOR_RULESET`.
+- **Shell** — `AURA_SHELL_{MAX_TIMEOUT_MS,OUTPUT_BUF_CAP,BG_MAX,BG_TTL,BG_BUF_CAP,DESTRUCTIVE_PATTERNS}`.
 
 ## CI/CD & Deployment
 
-**Hosting:**
-- Self-hosted / operator-deployed via Docker Compose (`compose.yaml` + profile overlays) or systemd (`deploy/aura.service`, `deploy/aura-scheduler.service`); container images published to GitHub Container Registry (`ghcr.io/chetto1983/aura`)
+**Hosting:** self-hosted Docker Compose appliance (`compose.yaml`, project `name: aura`), Caddy 2
+HTTPS ingress. **18 services** (regenerate: `grep -nE '^  [a-z0-9-]+:' compose.yaml`):
+`aura`, `aura-migrate`, `garage-bootstrap`, `docker-socket-proxy` (profile `sandbox`), `caddy`,
+`postgres`, `garage`, `neo4j`, `aura-llama-embed`, `aura-agent-memory-mcp`, `whatsapp`, `searxng`,
+`aura-stt`, `aura-tts`, `aura-ocr-vl` (profile `ocr`), `aura-rerank`, `markitdown`, `aura-pim-mcp`.
 
-**CI Pipeline:**
-- GitHub Actions (`.github/workflows/`):
-  - `ci.yml` — build+vet+lint+deadcode+file-size gate, unit tests with `-race`, (additional jobs likely cover coverage/integration — see full file for the complete job matrix)
-  - `codeql.yml` — CodeQL SAST scanning
-  - `release.yml` — goreleaser-driven release + multi-arch Docker image publish on `v*` tags
-  - `skills.yml` — CI for the `.claude/skills/` skill set
-- CI placeholder secrets are injected as non-secret values purely to satisfy `compose.yaml` variable interpolation in jobs that touch compose (`AURA_ACCESS_TOKEN`, `AURA_AUTHULA_SECRET`, `AURA_PIM_MCP_ADMIN_TOKEN`, `SEARXNG_SECRET`, `AURA_OBJECTSTORE_ACCESS_KEY`/`SECRET_KEY`, `GARAGE_RPC_SECRET`) — none of these are live credentials
+**CI:** GitHub Actions — `.github/workflows/{ci.yml,codeql.yml,release.yml,skills.yml}`.
+`ci.yml` has 24 jobs; job list and tag matrix in STACK.md.
+
+**Registries:** GHCR for the forked sidecars (`ghcr.io/chetto1983/whatsapp-mcp:sidecar`,
+`ghcr.io/chetto1983/aura-pim-mcp:sidecar`), `ghcr.io/ggml-org/llama.cpp:server-cuda` and
+`ghcr.io/remsky/kokoro-fastapi-cpu` upstream. Locally built: `aura:local`,
+`aura-agent-memory-mcp:local`, `aura-markitdown:local`.
+
+**Backup:** `internal/cron/handlers/backup.go` — Postgres `pg_dump` + Neo4j
+`neo4j-admin database dump`. Env: `AURA_BACKUP_DIR`, `NEO4J_DUMPFILE`. Restore drill:
+`make restore-drill`.
 
 ## Environment Configuration
 
-**Required env vars (fail-fast if absent/misconfigured for the relevant path):**
-- `OPENROUTER_API_KEY` — required for any LLM call path (`aura chat`/`serve`); `LoadDB`/`LoadAllowEmptyKey` paths (DB migration, setup) tolerate it being empty
-- `POSTGRES_PASSWORD` — required to compose a working Postgres DSN (an empty password yields an empty DSN, causing downstream connection failure)
-- `AURA_AUTHULA_SECRET` — required for the Authula web-auth provider to activate; also gates non-loopback `AURA_AGUI_BIND` (`GuardWebBind`)
-- `TELEGRAM_BOT_TOKEN` — required for the Telegram channel to start (channel is independently enable/disable-able; absence does not block other channels/boot)
+**Required for a working deployment** (from `internal/config/config.go`, `internal/llm/config.go`,
+`compose.yaml` `:?`-required vars):
+- `OPENROUTER_API_KEY` — LLM upstream
+- `POSTGRES_PASSWORD` (+ `POSTGRES_{HOST,PORT,USER,DB,SSLMODE}`) → composed into
+  `AURA_DB_URL` / `AURA_DB_MIGRATE_URL`
+- `NEO4J_USER`, `NEO4J_PASSWORD`, `AURA_NEO4J_BOLT_URL`
+- `AURA_ACCESS_TOKEN` — Caddy ingress
+- `AURA_AUTHULA_SECRET`, `AURA_WEB_AUTH_SECRET`
+- `AURA_OBJECTSTORE_ACCESS_KEY`, `AURA_OBJECTSTORE_SECRET_KEY`, `GARAGE_RPC_SECRET`,
+  `AURA_GARAGE_ADMIN_TOKEN`
+- `SEARXNG_URL`, `SEARXNG_SECRET` — web search (empty `SEARXNG_URL` fails closed by design)
+- `TELEGRAM_BOT_TOKEN` — only if the Telegram channel is enabled
+- `AURA_PIM_MCP_ADMIN_TOKEN` — compose interpolation requires it even when unused
 
-**Non-fatal / optional (silent fallback to documented defaults):**
-- The large majority of the ~60-entry `AURA_<DOMAIN>_<UNIT>` catalog (swarm limits, web-fetch timeouts, skill caps, AG-UI bind/CORS, asset size ceilings, scheduler knobs, multimodal sidecar URLs) — see `internal/config/config.go` `loadBase()` for the authoritative default table
-- `SEARXNG_URL`, `AURA_WHATSAPP_BRIDGE_URL`, `AURA_PIM_MCP_URL`, `AURA_RERANK_BASE_URL`, `MULTIMODAL_BASE_URL`/`STT_BASE_URL`/`TTS_BASE_URL` — sidecar endpoints; absence/unreachability degrades the corresponding feature to a fail-closed 503/unavailable response at call time, never a boot failure
+**Secrets location:** `.env` at the repo root (git-ignored; `.env.example` is the template).
+Compose interpolates from `.env`; container-internal service URLs deliberately use Compose DNS
+rather than the host loopback values in `.env` (`compose.yaml` header comment).
+> The compiled binary does **not** auto-load `.env` on every path — strip single quotes from
+> values or Postgres auth fails with `28P01`.
 
-**Secrets location:**
-- `.env` (git-ignored, present in this repo at root — existence noted only, contents not read per this agent's policy) loaded best-effort via `godotenv.Load()` at every boot path (`config.loadBase`, `llm.load`, `cmd/aura` main)
-- `.env.example` — git-tracked template documenting all ~60 catalogued env vars without real values
-- `~/.aura/llm.json` — optional per-user LLM secret/config override (tier 3 of the LLM config load order)
+**Env var inventory:** 255 distinct literals in Go source (~20 are `AURA_TEST_*` fixtures).
+Regenerate with the grep in STACK.md §Configuration.
 
 ## Webhooks & Callbacks
 
-**Incoming:**
-- Telegram: long-polling (via `telebot.v4`), not webhook-based, per the channel implementation in `internal/channels/telegram/bot.go`
-- AG-UI gateway HTTP server (`internal/agui/server.go`) — the cockpit frontend's SSE/event stream endpoint (`internal/agui/fanout.go`), bound at `AURA_AGUI_BIND` (default `127.0.0.1:9080`)
-- Setup wizard HTTP server (`internal/setup/`, `AURA_SETUP_BIND` default `127.0.0.1:9081`) — first-boot device-linking flow, gated by `AURA_SETUP_TOKEN`
+**Incoming:** none. Telegram uses long-polling (`internal/channels/telegram/bot.go:279`); WhatsApp
+and PIM are outbound MCP sidecar connections. The HTTP surface Aura exposes is the AG-UI/SPA API
+(`internal/agui/*_api.go`: conversations, documents, assets, approvals, audit, composer, connect,
+bootstrap, compaction-memory) plus `/healthz`, `/readyz`, `/metrics`, `/debug/vars` and the
+integrations proxy subtree (`internal/webui/doc.go:7`, `cmd/aura/serve_webui.go:8`) — all
+auth-gated, none a third-party webhook receiver.
 
-**Outgoing:**
-- Outbound HTTP calls to every sidecar/cloud endpoint listed above (LLM, embed, rerank, vision, STT, TTS, SearXNG, Markitdown, WhatsApp bridge, PIM MCP) — all guarded by an SSRF check (`internal/mcp/ssrf.go`, `transport_ssrf.go`) where the target is MCP-mediated
-- Telegram outbound messages/media/voice notes (`internal/channels/telegram/deliver.go`)
-- Scheduled/cron-triggered notifications (`internal/cron/`) routed back to the originating channel (`AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL`, default true)
+**Outgoing:** LLM calls to OpenRouter; MCP JSON-RPC to the sidecars; S3 API to Garage; HTTP to
+SearXNG / STT / TTS / rerank / embed / markitdown; scheduler notifications back through the
+originating channel (`AURA_SCHEDULER_{NOTIFY_DEFAULT,NOTIFY_RECIPIENT,NOTIFY_RETRY_ATTEMPTS,PREFER_ORIGIN_CHANNEL,QUIET_HOURS,TZ,TICK_SECONDS,MAX_CONCURRENT_RUNS}`).
+
+**Public share links — IN FLIGHT, NOT SHIPPED.** `AURA_SHARE_PUBLIC_ENABLED` and
+`AURA_SHARE_MAX_EXPIRY_DAYS` exist, migration `0040_shared_links` is on disk, and
+`internal/share/` holds `token.go`, `expiry.go`, `snapshot.go`, `redact.go`, `markdown.go`,
+`jsonfmt.go`. But `.planning/STATE.md:28` reads `Phase: 37F … — EXECUTING`. **Do not describe
+unauthenticated public share links as an available integration surface.**
 
 ---
 
-*Integration audit: 2026-07-04*
+*Integration audit: 2026-07-17*

@@ -1,253 +1,221 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-07-04
+**Analysis Date:** 2026-07-17
+
+> **Honesty statement.** Every count below came from a command run on 2026-07-17 against
+> `master`. The tree is **abridged**: it shows the 68 `internal/` packages by name but does
+> not enumerate every file. **Absence from this doc is not evidence of absence in the repo.**
+> The authoritative inventory is `go list ./internal/...`.
+
+## Measured facts (2026-07-17)
+
+| Metric | Value | How measured |
+|---|---|---|
+| Packages under `internal/` | **68** | `go list ./internal/... \| wc -l` |
+| Packages under `cmd/` | **2** | `go list ./cmd/... \| wc -l` |
+| Non-test Go LOC (`internal`+`cmd`) | **98,150** | `find … ! -name '*_test.go' \| xargs wc -l` summed across xargs batches |
+| Test Go LOC (`internal`+`cmd`) | **143,580** | same, `-name '*_test.go'` |
+| Non-test Go files | 602 | `find … \| wc -l` |
+| Test Go files | 777 | `find … \| wc -l` |
+| sqlc-generated LOC | **7,046** | `find internal/db/sqlc -name '*.go' \| xargs wc -l` |
+| Postgres migrations | **40** (latest `0040_shared_links`) | `ls internal/db/migrations/*.up.sql \| wc -l` |
+| Neo4j Cypher migrations | **2** (`0001_init`, `0002_documents`) | `ls internal/knowledge/migrations/` |
+| HNSW vector dimensions | **768** | `internal/knowledge/migrations/0001_init.cypher:12` |
+
+> ⚠️ **`wc -l` + `xargs` footgun.** `find … | xargs wc -l | tail -1` silently reports only
+> the **last batch's** total when the file list exceeds one `xargs` invocation. That path
+> under-reports test LOC as ~38.9k instead of 143,580 — a 3.7× error. Always sum:
+> `| grep -w total | awk '{s+=$1} END {print s}'`.
 
 ## Directory Layout
 
-```
+```text
 Aura/
-├── cmd/aura/                # single binary entry point — CLI dispatch + composition roots
-│   ├── main.go               # subcommand dispatch table + shared registry builders
-│   ├── serve.go / serve_*.go # `aura serve` daemon boot, HTTP mounts, shutdown
-│   ├── chat.go / chat_*.go   # `aura chat` interactive REPL (multi-thread conversations)
-│   ├── shell.go              # `aura shell` REPL against the raw agent loop
-│   └── *.go                  # one file per subcommand (db, neo4j, identity, profile, mcp, ...)
-├── internal/                 # all application code (51 packages, ~71k LOC non-test)
-│   ├── agent/                 # Agent interface, Budget, LlmAgent, Event model, hooks
-│   │   ├── tools/               # Tool interface, Registry, deferred specs, built-in tools
-│   │   ├── mcptools/             # MCP-server-to-Tool mounting/adaptation
-│   │   ├── workflow/             # workflow-parent agent composition helpers
-│   │   ├── prompt/               # system-prompt assembly
-│   │   ├── display/               # tool-result → display-payload projection
-│   │   ├── panicobs/              # panic-site observability tagging
-│   │   └── agenttest/             # shared test doubles for agent-consuming packages
-│   ├── agui/                  # AG-UI HTTP/SSE gateway (the cockpit's only backend surface)
-│   ├── runner/                 # per-turn orchestration (Runner.Turn/SubmitAnswers)
-│   ├── swarm/                   # fan-out sub-agent orchestration (swarm_spawn backing)
-│   ├── gateway/                 # policy-enforcement point (risk classify/decide/approve/ledger)
-│   ├── mcp/                     # MCP client transport (stdio/HTTP), SSRF guard
-│   ├── llm/                     # LLM client abstraction (`openai_compat/` backend)
-│   ├── config/                  # env-driven Config resolution + validation + runtime profiles
-│   ├── db/                       # sqlc client, migrations, raw queries
-│   │   ├── sqlc/                   # generated query code — DO NOT hand-edit
-│   │   ├── migrations/             # golang-migrate SQL, numbered 0001-0011
-│   │   └── queries/                 # sqlc source .sql files
-│   ├── knowledge/               # Neo4j schema/migration + read-only GraphView
-│   ├── neostore/                 # Neo4j driver-adjacent store helpers
-│   ├── conversations/            # conversation/turn persistence, FTS, cl100k tokenization
-│   ├── documents/                # ingest pipeline: extract → chunk → embed → index → GraphRAG
-│   ├── cron/                      # scheduler: claim/dispatch/heartbeat/recover
-│   │   └── handlers/                # per-TaskKind handler implementations
-│   ├── channels/                 # channel abstraction + registry
-│   │   └── telegram/                # Telegram bot: dispatch, render, onboarding, HITL
-│   ├── identity/                 # identity + capability_grants (RBAC)
-│   ├── identityctx/               # request-scoped identity context helper
-│   ├── webauth/                   # Authula-backed cockpit auth provider
-│   ├── askuser/                    # HITL pause/resume primitive (ask_user)
-│   ├── toolinvocations/            # append-only tool-dispatch ledger (gateway's store)
-│   ├── skills/                    # skill-library self-extension (skill_create/skill tool backing)
-│   │   └── embed/                   # embedded default skill assets
-│   ├── skilladapters/              # skill-tool ↔ gateway/registry adapters
-│   ├── settings/                   # cockpit Settings page backing store
-│   ├── setup/                      # setup-wizard (loopback :9081) backing
-│   ├── onboarding/                  # onboarding-wizard session/provisioning
-│   ├── profile/                     # filesystem Agent.md profile store
-│   ├── objectstore/                  # S3-compatible object storage client
-│   ├── multimodal/                  # image/audio pre-processing for multimodal turns
-│   ├── reasoningfifo/, reasoningstore/, reasoningtrace/, reasoninglearn/  # adaptive-reasoning tier subsystem
-│   ├── toolselectstore/, toolselectlearn/  # tool-selection learning subsystem
-│   ├── semindex/                    # semantic tool-search index
-│   ├── rerank/                       # retrieval re-ranking
-│   ├── scoring/                      # risk-tier scoring (consumed by gateway)
-│   ├── cachemetrics/                  # prompt-cache hit/miss metrics
-│   ├── obs/                            # OpenTelemetry tracing setup
-│   ├── secret/                          # secret redaction/handling helpers
-│   ├── canonicaljson/                    # deterministic JSON canonicalization
-│   ├── boundedbuffer/, envutil/, pgnumeric/  # small focused utility packages
-│   ├── web/                              # web_search/web_fetch tool backend (SearXNG client)
-│   ├── webui/                             # embeds `web/dist` static assets into the Go binary
-│   ├── eval/                               # offline evaluation harness (RAGAS etc.)
-│   └── activelearn/                        # active-learning loop for classifiers
-├── web/                        # React/Vite SPA — SEPARATE npm module, own package.json
-│   ├── src/
-│   │   ├── chat/                  # assistant-ui-based chat surface, SSE adapter
-│   │   ├── governance/              # governance-board pages (MCP/skills/scheduler)
-│   │   ├── graph/                    # sigma.js graph explorer
-│   │   ├── onboarding/                 # onboarding wizard UI
-│   │   ├── settings/                    # Settings page UI
-│   │   ├── shell/                        # AppShell layout
-│   │   ├── conversations/                 # conversation list/branch UI
-│   │   ├── approvals/                      # HITL approval center UI
-│   │   ├── documents/                       # document catalog UI
-│   │   ├── auth/                             # login/session UI
-│   │   ├── api/                               # typed fetch clients over the AG-UI REST API
-│   │   ├── lib/, theme/, i18n/, a11y/          # cross-cutting frontend helpers
-│   │   └── routes/                              # route-level page components
-│   ├── e2e/                       # Playwright end-to-end tests
-│   └── tokens/                     # design-token generation (theme build step)
-├── docker/                     # Dockerfiles + source for sidecar services (agent-memory, garage, markitdown, mcp-neo4j-cypher)
-├── finetune/                   # Python fine-tuning pipeline (separate from the Go runtime)
-├── scripts/                    # shell/Go helper scripts (coverage gate, eval harness, fixtures)
-├── docs/                        # design docs, audit reports, deployment notes
-├── .planning/                    # GSD workflow state (phases, spikes, codebase maps, milestones)
-├── .github/workflows/            # CI pipelines
-├── prd.md                        # the PRD — truth-source for architecture decisions (561 KB)
-├── CLAUDE.md                     # project-wide behavioral rules for AI agents
-├── compose*.yaml                 # Docker Compose stacks (base, GPU, gVisor, cloud, LLM sidecar)
-├── Makefile                      # quality/coverage/test gate targets
-└── go.mod                        # module github.com/chetto1983/aura, Go 1.26.4
+├── cmd/
+│   ├── aura/                    # main binary, 13,745 LOC; switch-based subcommand dispatch
+│   └── compaction-test-worker/  # 2nd binary: multi-process compaction-claim tests
+├── internal/                    # 68 packages — abridged below, grouped by role
+│   ├── agent/                   # LLM loop (5,276 LOC) + subpkgs:
+│   │                            #   tools/ (7,295) mcptools/ prompt/ workflow/
+│   │                            #   display/ panicobs/ agenttest/ (test support)
+│   ├── agui/                    # cockpit HTTP API + SSE — 55 files, 10,111 LOC
+│   ├── webui/                   # stdlib-only leaf; //go:embed all:dist
+│   ├── runner/  swarm/  cron/   # the 3 composition roots (cron/handlers/)
+│   ├── gateway/                 # Phase-35 PEP (1,174 LOC)
+│   ├── toolinvocations/         # append-only ledger; owns exported Reserve
+│   ├── config/                  # incl. RuntimeProfile axis
+│   ├── db/                      # pgx + migrations/ + queries/ + sqlc/ (generated)
+│   ├── knowledge/ neostore/     # Neo4j: cypher migrations, graph store
+│   ├── conversations/           # threads + the L1→L2→L2.4→L2.5 compaction ladder
+│   ├── identity/ identityctx/   # Phase-36 identity isolation
+│   ├── webauth/ breakglass/     # Authula sessions; break-glass escape hatch
+│   ├── objectstore/             # per-identity buckets (+ garageadmin/)
+│   ├── sandbox/usersandbox/     # per-user Docker sandbox (1,545 LOC) — NO CI job
+│   ├── share/                   # Phase 37F — ON DISK, IMPORTED BY NOTHING (in flight)
+│   ├── channels/telegram/       # Telegram channel (5,795 LOC)
+│   ├── documents/ assets/       # ingest + asset pipeline
+│   ├── llm/ multimodal/ rerank/ # providers (+ llm/openai_compat/)
+│   ├── mcp/                     # MCP client (+ mcp/manager/)
+│   ├── skills/ skilladapters/   # skills subsystem
+│   ├── semindex/ activelearn/   # embedding index substrate
+│   ├── reasoning{fifo,learn,store,trace}/   toolselect{learn,store}/
+│   ├── memory/ profile/ onboarding/ settings/ setup/ scoring/ eval/
+│   └── obs/ secret/ envutil/ pgnumeric/ canonicaljson/ boundedbuffer/
+│       askuser/ agentrender/ cachemetrics/ web/ …   ← leaf utilities, not exhaustive
+├── web/                         # Vite + React cockpit; builds to ../internal/webui/dist
+├── docker/                      # 299 files — sidecar images (aura, sandbox, egress, agent-memory)
+├── docs/                        # 328 files — incl. docs/audit/, quality snapshot
+├── scripts/                     # 79 files — CI gates (agui_boundary_check.sh, coverage_gate.sh)
+├── deploy/                      # systemd units (aura.service, aura-scheduler.service)
+├── caddy/  searxng/             # reverse proxy + search sidecar config
+├── finetune/                    # finetune/exporter Go pkg + python tooling
+├── testdata/                    # shared fixtures (compaction/)
+├── output/  graphify-out/       # tracked generated artifacts
+└── dist/  runtime-workspace/    # git-ignored build/runtime output
 ```
+
+**Note:** `tests/` exists at top level but is **empty** (0 files). Go tests are co-located
+in `internal/`; browser E2E lives in `web/e2e/`.
 
 ## Directory Purposes
 
-**`cmd/aura/`:**
-- Purpose: the ONLY entry point binary; every subcommand's composition root lives here
-- Contains: one `<subcommand>.go` + matching `<subcommand>_test.go` per CLI verb; shared boot helpers (`chat_boot.go` → `bootChatEnv`, `serve_bootstrap.go`)
-- Key files: `main.go` (dispatch + `buildBaseRegistry*`), `serve.go` (daemon), `chat_boot.go` (shared boot env)
+**`cmd/aura`:**
+- Purpose: the single shipped binary and its composition wiring
+- Key files: `main.go` (entry + dispatch switch), `chat*.go`, `serve*.go`, `db.go`, `doctor.go`
+- Note: subcommands are dispatched by a hand-rolled `switch os.Args[1]`, **not** Cobra
 
-**`internal/agent/`:**
-- Purpose: the core agent-runtime contract and its concrete LLM-driven implementation
-- Contains: `Agent`/`InvocationContext`/`Budget`/`Event` types (`agent.go`, `budget.go`, `event.go`), the `LlmAgent` implementation split across ~20 `llm_agent_*.go` files by concern (construct, dispatch, retry, pause, reasoning, truncation, finalize)
-- Key files: `agent.go` (the open interface), `llm_agent.go` (top-level type), `llm_agent_dispatch.go` (tool-call dispatch through the gateway)
+**`internal/agui`:**
+- Purpose: the cockpit's entire HTTP API — auth, onboarding, governance, documents,
+  assets, approvals, graph, connect, voice, settings, audit, storage-orphans
+- Key files: `server.go`, `translator.go`, `fanout.go`, `server_sse.go`, `*_api.go` (~20 route files)
+- **Not** a one-way SSE bridge
 
-**`internal/agent/tools/`:**
-- Purpose: the Tool interface, the immutable-per-run Registry, the deferred-spec manifest mechanism, and every built-in tool implementation
-- Contains: one file per tool (`fs_read.go`, `shell_exec.go`, `skill.go`, `document_search.go`, ...), `spec.go` (Spec/Deferred/Mutating/Multiplexed metadata), `registry.go` (Registry + `Without`)
-- Key files: `spec.go`, `registry.go`, `manifest.go` (LLM-visible manifest rendering)
+**`internal/webui`:**
+- Purpose: static embed host for the built SPA
+- Key files: `embed.go`, `doc.go`, `dist/` (committed build output)
+- **Invariant:** imports **only** stdlib — CI-enforced by `scripts/agui_boundary_check.sh`
 
-**`internal/agui/`:**
-- Purpose: the ONLY HTTP surface the web cockpit talks to — AG-UI protocol translation + REST endpoints for governance/settings/onboarding/documents/graph
-- Contains: `server.go` (Mux + SSE run handler), `translator.go` (Event → AG-UI protocol), one `<feature>_api.go` per REST subtree (conversations, approvals, assets, documents, graph, governance, settings, onboarding, connect)
-- Key files: `server.go`, `translator.go`, `types.go`
+**`internal/db`:**
+- Purpose: Postgres access
+- Key files: `tx.go` (`WithTx:22`, `WithIdentityTx:55`), `migrations/` (40 up + 40 down),
+  `queries/` (sqlc input), `sqlc/` (**generated — never hand-edit**)
 
-**`internal/gateway/`:**
-- Purpose: the single Policy Enforcement Point for mutating tool dispatch
-- Contains: `gateway.go` (struct + vocabulary), `classify.go` (risk tiering), `decide.go` (PEP logic), `approve.go`/`approvals.go` (HITL approval routing + ledger), `reserve.go` (idempotency reservation), `reconcile.go` (crash-orphan recovery)
-- Key files: `gateway.go`, `decide.go`
+**`internal/sandbox/usersandbox`:**
+- Key files: `router.go`, `docker_backend.go`, `docker_backend_exec.go`,
+  `docker_backend_lifecycle.go`, `egress.go`, `materialize.go`, `reap.go`, `spec.go`
+- ⚠️ Docker runtime is `docker_integration`-tagged and **has no CI job** → zero CI coverage
 
-**`internal/db/`:**
-- Purpose: Postgres access layer — sqlc-generated queries over pgx/v5, golang-migrate migrations
-- Contains: `sqlc/` (generated, do not hand-edit), `migrations/` (0001-0011, numbered sequentially — see PRD §Persistence for the authoritative slot map), `queries/` (source `.sql` sqlc compiles from)
-- Key files: `db.go` (pool construction), `migrations/*.sql`
-
-**`internal/documents/`:**
-- Purpose: the document ingestion + retrieval pipeline (upload → extract → chunk → embed → BM25/vector index → GraphRAG)
-- Contains: `service.go` (facade), `worker.go`/`jobs_worker.go` (async job processing), `extractor.go`/`extract_client.go` (markitdown sidecar client), `indexer.go`, `retrieve.go`, `search.go`, `graphrag.go`
-- Key files: `service.go`, `worker.go`
-
-**`internal/channels/telegram/`:**
-- Purpose: the Telegram Bot API adapter — the one non-web channel wired into `aura serve`
-- Contains: `bot.go` (bot construction), `bot_dispatch*.go` (update routing split by concern: auth, asset, callbacks, HITL, turn), `renderer.go`/`mdv2.go`/`tables.go` (MarkdownV2 rendering), `voice.go`/`tts.go` (audio), `onboarding.go`
-- Key files: `bot.go`, `bot_dispatch_turn.go`, `renderer.go`
-
-**`internal/config/`:**
-- Purpose: single source of truth for env-var-driven configuration, validated at every boot path
-- Contains: `config.go` (the `Config` struct + `Load`/`LoadDB`), `config_env.go` (env parsing helpers), `config_validate.go` (fail-fast validation), `config_runtimeprofile.go` (dev/server_production profile gating), `config_mcp.go` (MCP server/policy config), `config_routes.go`, `config_knobs.go`
-- Key files: `config.go`, `config_validate.go`
-
-**`internal/cron/`:**
-- Purpose: the scheduler — task claim/dispatch/heartbeat/recover, backed by Postgres
-- Contains: `scheduler.go` (tick loop), `dispatch.go` (per-TaskKind routing), `claim.go`/`heartbeat.go`/`recover.go` (distributed-claim safety), `store.go`/`store_runs.go` (persistence), `handlers/` (concrete TaskKind implementations)
-- Key files: `scheduler.go`, `dispatch.go`
-
-**`internal/knowledge/`:**
-- Purpose: Neo4j schema ownership + the read-only GraphView normalizer the cockpit graph explorer consumes
-- Contains: `schema.go`/`migrate.go` (Cypher migration 0001), `client.go` (driver lifecycle), `graphview.go`/`graphview_normalize.go`/`graphview_intent.go` (query normalization for LLM/UI consumption)
-- Key files: `client.go`, `graphview.go`
-
-**`web/` (separate module):**
-- Purpose: the React/Vite single-page cockpit application; built independently and embedded into the Go binary via `internal/webui`
-- Contains: feature-first directories (`chat/`, `governance/`, `graph/`, `settings/`, `onboarding/`) plus cross-cutting `lib/`, `theme/`, `i18n/`, `api/`
-- Key files: `src/AppShell.tsx`, `src/main.tsx`, `vite.config.ts` (not read in this pass — see `web/package.json` for scripts)
+**`internal/share` (Phase 37F — IN FLIGHT, NOT SHIPPED):**
+- Files present: `token.go`, `snapshot.go`, `redact.go`, `expiry.go`, `markdown.go`, `jsonfmt.go`
+- Migration `0040_shared_links.up.sql` is on disk
+- **Verified today:** `grep -rln '"github.com/chetto1983/aura/internal/share"' internal/ cmd/`
+  returns **nothing** — no production code imports it yet
+- `.planning/STATE.md`: `status: executing`, `stopped_at: Completed 37F-06-PLAN.md`,
+  of **19** plans in the phase directory
+- **Do not present sharing as a shipped capability.**
 
 ## Key File Locations
 
-**Entry Points:**
-- `cmd/aura/main.go`: process entry, subcommand dispatch, shared registry builders
-- `cmd/aura/serve.go`: `aura serve` daemon boot/shutdown
-- `internal/agui/server.go`: HTTP mux + `POST /agent/run` SSE handler
+**Entry points:**
+- `cmd/aura/main.go` — CLI dispatch
+- `internal/agui/server.go` — HTTP server
+- `cmd/compaction-test-worker/` — test-only second binary
 
-**Configuration:**
-- `internal/config/config.go`: the `Config` struct and `Load`/`LoadDB` entry points
-- `internal/config/config_validate.go`: fail-fast validation run at every boot
-- `.env.example`: the full env-var catalog with placeholder values (never read `.env` itself — it holds live secrets)
-- `.golangci.yml`: lint configuration (33 linters, dupl threshold 100, `_test.go` excluded)
+**Composition roots (the only `NewLlmAgent` sites):**
+- `internal/runner/runner.go:559` (interactive)
+- `internal/swarm/swarm.go:172` (fan-out workers)
+- `internal/cron/handlers/handler.go:124` (scheduled)
 
-**Core Logic:**
-- `internal/agent/agent.go`: the `Agent` interface and `InvocationContext`/`Budget` contract
-- `internal/agent/llm_agent.go` + `llm_agent_*.go`: the concrete leaf agent implementation
-- `internal/gateway/gateway.go` + `decide.go`: the policy enforcement point
-- `internal/runner/runner.go`: per-turn orchestration
+**Policy:**
+- `internal/gateway/decide.go:30` — the PEP
+- `internal/gateway/classify.go` → `decide.go` → `approve.go` → `reserve.go`
+- `internal/toolinvocations/store_reserve.go:28` — exported `Reserve`
+- `internal/config/config_runtimeprofile.go:20` — `RuntimeProfile`
 
-**Testing:**
-- Co-located `*_test.go` next to every source file (white-box `package x`, occasional black-box `package x_test`)
-- `internal/agent/agenttest/`: shared test doubles for packages consuming the agent runtime
-- `scripts/fixtures/`: fixture data for cache-invariant and Neo4j-smoke tests
-- `web/e2e/`: Playwright end-to-end specs for the SPA
+**Identity isolation:**
+- `internal/db/tx.go:55` — `WithIdentityTx`
+- `internal/db/migrations/0032_owner_rls.up.sql` — RLS policies
+- `internal/identityctx/identityctx.go` (single file), `internal/webauth/authula.go`
+
+**CI gates:**
+- `scripts/agui_boundary_check.sh`, `scripts/coverage_gate.sh`,
+  `scripts/coverage_docker.sh`, `scripts/quality_snapshot_gate.sh`
 
 ## Naming Conventions
 
-**Files:**
-- Go: `snake_case.go`, one primary concern per file, `<concern>_test.go` for its unit tests, `<concern>_internal_test.go` for white-box tests of unexported behavior, `<concern>_integration_test.go` for `//go:build integration`-tagged tests requiring live Postgres/Neo4j
-- Split-by-concern within a package for large files: e.g. `llm_agent_dispatch.go`, `llm_agent_retry.go`, `llm_agent_pause.go` rather than one giant `llm_agent.go` — this is the "refactor on touch, LOC ≤600" rule from CLAUDE.md applied structurally
-- Frontend: `PascalCase.tsx` for React components, `camelCase.ts` for plain modules/hooks
+**Go files — `<base>_<concern>.go` splitting (the NO GOD CLASS rule in practice):**
+- `internal/agent/llm_agent.go` + `llm_agent_dispatch.go`, `llm_agent_retry.go`,
+  `llm_agent_pause.go`, `llm_agent_finalize.go`, … (16 concern files off one base)
+- `internal/config/config_runtimeprofile.go`, `internal/db/sqlc/store_reserve.go`
+- **Verified:** the only files >600 LOC are sqlc-generated
+  (`document_control_plane.sql.go` 1,037; `models.go` 744; `assets.sql.go` 722).
+  Every hand-written file is under the cap.
 
-**Directories:**
-- `internal/<domain>/` — one Go package per bounded concern; sub-packages only when a concern has its own adapters/subordinate types worth isolating (e.g. `internal/agent/tools`, `internal/agent/mcptools`)
-- `internal/channels/<channel>/` — one directory per external channel implementation (currently only `telegram`)
-- `internal/cron/handlers/` — one sub-package for concrete task-kind handlers, kept separate from `internal/cron` core to avoid the `agent/tools` ↔ `cron` import cycle (see ARCHITECTURE.md "Circular imports")
+**Tests:** co-located `<file>_test.go`. Variants observed:
+`*_integration_test.go`, `*_property_test.go`, `*_unit_test.go`, `main_test.go`
+(package-level `TestMain`), `bench_soak_test.go`.
+
+**Migrations:** `NNNN_snake_name.up.sql` + matching `.down.sql`, zero-padded to 4
+(`0032_owner_rls`, `0040_shared_links`). Cypher: `NNNN_name.cypher`.
+
+**Packages:** single lowercase word, no underscores (`toolinvocations`, `identityctx`,
+`usersandbox`, `breakglass`).
+
+**Env vars:** `AURA_<DOMAIN>_<UNIT>`; third-party keeps upstream naming
+(`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`).
+
+**Frontend:** `web/src/<domain>/` (`chat`, `documents`, `governance`, `graph`, `auth`,
+`onboarding`, `settings`, `approvals`, `audit`, `admin`, `conversations`, `health`),
+plus `api/`, `lib/`, `i18n/`, `theme/`, `routes/`, `components/`. Tests are co-located
+`.test.tsx`; E2E in `web/e2e/`.
 
 ## Where to Add New Code
 
-**New CLI subcommand:**
-- Add `cmd/aura/<name>.go` with a `run<Name>(args []string)` function; register it in the `switch` in `cmd/aura/main.go`; add the verb to `usage()`
-- Tests: `cmd/aura/<name>_test.go` alongside it
+**New tool:**
+- Implementation: `internal/agent/tools/<name>.go`, spec constant in the same file
+- Big tools set `Deferred: true` (kept out of the LLM-visible manifest; fetched via `tool_search`)
+- Small tools (`text_response`, `ask_user`) stay `Deferred: false`
 
-**New tool (agent-dispatchable capability):**
-- Implementation: `internal/agent/tools/<name>.go` implementing the `Tool` interface, with a package-level `Spec` constant/builder
-- Register it in `buildBaseRegistryWithHandles` (`cmd/aura/main.go`) — set `Deferred: true` if the description/schema is long (mandatory convention)
-- Tests: `internal/agent/tools/<name>_test.go`; add a golden-manifest entry if it changes the default manifest shape (`builtin_spec_golden_test.go`)
+**New HTTP route (cockpit):**
+- `internal/agui/<domain>_api.go`, registered in `internal/agui/server.go`
+- Owner-scoped reads/mutates must route through `db.WithIdentityTx`
 
-**New MCP-mounted integration:**
-- Config: extend `internal/config/config_mcp.go` (server/policy resolution)
-- Mounting logic: `internal/agent/mcptools/` if a new mount strategy is needed (most integrations reuse `MountServer`/`MountManagedServer`)
+**New Postgres table/column:**
+- `internal/db/migrations/00NN_<name>.up.sql` **+** `.down.sql`
+- Query in `internal/db/queries/<domain>.sql`, then regenerate: `sqlc generate` (WSL, v1.31.1)
+- **Never hand-edit `internal/db/sqlc/`**
+- Owner-scoped tables need an RLS policy in the style of `0032_owner_rls.up.sql`
 
-**New Postgres table/query:**
-- Migration: new numbered file in `internal/db/migrations/` (golang-migrate, sequential — check the PRD §Persistence "Migration numbering" section for the current highest slot before allocating a new one)
-- Queries: add `.sql` to `internal/db/queries/`, regenerate `internal/db/sqlc/` via `sqlc generate` (see `sqlc.yaml`) — never hand-edit generated files
+**New cross-cutting agent dependency:**
+- Add a nil-tolerant field to `runner.Deps` (`internal/runner/runner.go:66`) and inject at
+  all **three** composition roots — otherwise headless (swarm/cron) paths silently diverge
 
-**New AG-UI REST endpoint (cockpit feature):**
-- Handler + routes: `internal/agui/<feature>_api.go`, registered via a `register<Feature>Routes(mux)` call added to `Server.Mux()` in `server.go`
-- Auth mount: the actual `RequireAuth`/`RequireCapability` wrapping happens at the parent mux in `cmd/aura/serve_webui.go`, not inside `internal/agui`
-- Frontend: matching feature directory under `web/src/<feature>/` + typed client in `web/src/api/`
+**New frontend feature:**
+- `web/src/<domain>/`; i18n keys in **both** `en` + `it` (`web/src/i18n/`)
+- Rebuild dist (`outDir: '../internal/webui/dist'`, `web/vite.config.ts:177`) so the
+  binary embeds it
 
-**New scheduler task kind:**
-- Handler: `internal/cron/handlers/<kind>.go`
-- Wiring: the composition root in `cmd/aura/serve.go` adapts the handler map into `cron.Dispatch` (handlers cannot import `internal/agent/tools` directly — see the import-cycle note in ARCHITECTURE.md)
-
-**Utilities:**
-- Small, focused, dependency-free helpers go in their own top-level `internal/<name>/` package (e.g. `internal/envutil`, `internal/boundedbuffer`, `internal/canonicaljson`) rather than a generic `internal/utils` grab-bag — this codebase has no such catch-all package; follow that precedent for new cross-cutting helpers
+**New sandbox capability:**
+- `internal/sandbox/usersandbox/`; because there is no `docker_integration` CI job, also
+  add **daemon-free unit tests** for pure logic (spec/tar builders, path-traversal and
+  symlink guards, nil/disabled early returns) or the coverage floor silently drops
 
 ## Special Directories
 
-**`internal/db/sqlc/`:**
-- Purpose: sqlc-generated Postgres query bindings
-- Generated: Yes (`sqlc generate`, config in `sqlc.yaml`)
-- Committed: Yes
+**`internal/db/sqlc/`:** generated by sqlc; committed; excluded from the coverage
+owned-surface floor. Never hand-edit.
 
-**`internal/webui/dist/`:**
-- Purpose: embedded static build of the `web/` SPA, served by the Go binary
-- Generated: Yes (`web` build output copied/embedded)
-- Committed: check `.gitignore` before assuming — treat as a build artifact, do not hand-edit
+**`internal/webui/dist/`:** Vite build output; **committed** (the binary embeds it).
 
-**`web/node_modules/`, `.planning/`, `docs/audit/`:**
-- `web/node_modules/`: npm-managed, generated, not committed
-- `.planning/`: GSD workflow state (phases, spikes, codebase maps) — committed, hand-maintained + tool-generated
-- `docs/audit/`: audit findings referenced by CLAUDE.md's `AUDIT` rule — committed, human/agent-authored
+**`dist/`, `runtime-workspace/`:** git-ignored (verified via `git check-ignore`).
 
-**Stray root-level build artifacts observed:**
-- `aura` (93 MB binary), `cover_gate.out*` (coverage run output) were present at the repository root at analysis time — these are local build/test artifacts, not source; confirm `.gitignore` coverage before committing anything at the repo root.
+**`output/`, `graphify-out/`:** generated but **tracked** (`graphify-out/` is 4,606 files).
+
+**`docker/`:** 299 files — sidecar images: `aura/`, `aura-sandbox/`, `aura-egress/`,
+`agent-memory/`. Cold rebuild is expensive; preserve build cache.
+
+**`tests/`:** exists, **empty**.
 
 ---
 
-*Structure analysis: 2026-07-04*
+*Structure analysis: 2026-07-17*
