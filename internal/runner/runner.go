@@ -123,6 +123,11 @@ type Deps struct {
 	// The composition root passes a *toolselectstore.Store over the same Neo4j client
 	// as ReasoningSaver, when the graph client opened.
 	ToolSelectSaver toolselectlearn.Saver
+	// ShareRevoker is the D-15 consumer-declared seam (runner_delete.go step 4.5): the
+	// composition root injects the live *share.Service, structurally satisfying the
+	// interface with no internal/share import here. nil => share was never mounted in this
+	// deployment, and step 4.5 is a silent skip (not a panic).
+	ShareRevoker ShareRevoker
 }
 
 // toolSelectObserver is the narrow seam the runner holds for the tool-selection
@@ -174,6 +179,7 @@ type Runner struct {
 	learner           *reasoninglearn.Learner     // async reasoning self-improvement worker; nil unless ReasoningLearning is on
 	toolSelectLearner toolSelectObserver          // async tool-selection self-improvement worker (Open-Q #3); nil unless a saver is wired
 	gateway           *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
+	shareRevoker      ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -247,6 +253,7 @@ func New(d Deps) *Runner {
 		classifier:          classifier,
 		breaker:             d.Breaker,
 		gateway:             d.Gateway,
+		shareRevoker:        d.ShareRevoker,
 		resumeCommitter:     d.ResumeCommitter,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
