@@ -18,6 +18,7 @@ package share
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -43,6 +44,10 @@ const (
 	ExpiryCustom ExpiryOption = "custom"
 )
 
+// defaultExpiryDays is the D-04 default duration used for ExpiryDefault
+// (and, equivalently, Expiry7Days).
+const defaultExpiryDays = 7
+
 // ErrNonPositiveCustomExpiry is returned when ExpiryCustom is requested with
 // a non-positive day count. A zero/negative expiry is not an operator
 // intent — it would mint an already-dead link — so it is rejected outright
@@ -57,9 +62,26 @@ var ErrNonPositiveCustomExpiry = errors.New("share: custom expiry days must be p
 // rejected: it is not an operator intent, it would mint an already-dead
 // link. An unrecognized ExpiryOption fails closed with an error rather than
 // silently defaulting.
-//
-// RED-phase stub (Task 3): replaced with the real switch below in this
-// task's GREEN commit.
-func ResolveExpiry(_ ExpiryOption, _ int, _ time.Time, _ int) (time.Time, error) {
-	return time.Time{}, nil
+func ResolveExpiry(opt ExpiryOption, customDays int, now time.Time, capDays int) (time.Time, error) {
+	switch opt {
+	case ExpiryDefault:
+		return now.AddDate(0, 0, defaultExpiryDays), nil
+	case Expiry1Day:
+		return now.AddDate(0, 0, 1), nil
+	case Expiry7Days:
+		return now.AddDate(0, 0, defaultExpiryDays), nil
+	case Expiry30Days:
+		return now.AddDate(0, 0, 30), nil
+	case ExpiryCustom:
+		if customDays <= 0 {
+			return time.Time{}, ErrNonPositiveCustomExpiry
+		}
+		days := customDays
+		if capDays > 0 && days > capDays {
+			days = capDays
+		}
+		return now.AddDate(0, 0, days), nil
+	default:
+		return time.Time{}, fmt.Errorf("share: unrecognized expiry option %q", opt)
+	}
 }
