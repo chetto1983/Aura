@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,21 @@ export interface SkillInstallPanelProps {
   readonly onClose: () => void;
 }
 
+const catalogSearchDelayMs = 250;
+
+function useDebouncedValue(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebounced(value);
+    }, delayMs);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [delayMs, value]);
+  return debounced;
+}
+
 export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -33,13 +48,19 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [emptyError, setEmptyError] = useState(false);
 
-  // Catalog search runs as soon as the operator types — discovery is on by default (the
-  // server's `enabled` flag only goes false when a deployment explicitly opts out).
+  const trimmedSearch = searchQuery.trim();
+  const debouncedSearch = useDebouncedValue(trimmedSearch, catalogSearchDelayMs);
+  const searchEligible = Array.from(trimmedSearch).length >= 2;
+  const debouncedEligible = Array.from(debouncedSearch).length >= 2;
+  const searchValueIsCurrent = trimmedSearch === debouncedSearch;
+  const searchIsDebouncing = searchEligible && !searchValueIsCurrent;
+
+  // The deployment opt-out stays server-authoritative after the local request discipline.
   const catalog = useQuery({
-    queryKey: ['governance', 'skills', 'catalog', searchQuery],
-    queryFn: () => searchSkillCatalog(searchQuery),
+    queryKey: ['governance', 'skills', 'catalog', debouncedSearch],
+    queryFn: ({ signal }) => searchSkillCatalog(debouncedSearch, signal),
     retry: false,
-    enabled: searchQuery.trim() !== '',
+    enabled: debouncedEligible,
   });
 
   const install = useMutation({
@@ -61,8 +82,12 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
     install.mutate(trimmed);
   }
 
-  const catalogDisabled = catalog.data !== undefined && !catalog.data.enabled;
-  const hits = catalog.data?.hits ?? [];
+  const catalogIsCurrent = searchValueIsCurrent && catalog.data?.query === debouncedSearch;
+  const catalogDisabled = catalogIsCurrent && catalog.data !== undefined && !catalog.data.enabled;
+  const hits = catalogIsCurrent ? (catalog.data?.hits ?? []) : [];
+  const showCatalogLoading = searchEligible && (searchIsDebouncing || catalog.isFetching);
+  const showCatalogEmpty =
+    catalogIsCurrent && catalog.isSuccess && catalog.data.enabled && hits.length === 0;
 
   return (
     <section
@@ -107,7 +132,20 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
             className="pl-9 text-[13px]"
           />
         </div>
-        {catalogDisabled ? (
+        {trimmedSearch.length === 1 ? (
+          <p role="note" className="text-[13px] text-text-muted">
+            {t('governance.skills.install.searchMinChars')}
+          </p>
+        ) : showCatalogLoading ? (
+          <p role="status" className="flex items-center gap-2 text-[13px] text-text-muted">
+            <Spinner />
+            {t('governance.skills.install.searching')}
+          </p>
+        ) : catalog.isError && searchValueIsCurrent ? (
+          <Alert variant="destructive">
+            <AlertDescription>{t('governance.skills.install.searchError')}</AlertDescription>
+          </Alert>
+        ) : catalogDisabled ? (
           <p role="note" className="text-[13px] text-text-muted">
             {t('governance.skills.install.externalOffNote')}
           </p>
@@ -137,6 +175,10 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
               );
             })}
           </ul>
+        ) : showCatalogEmpty ? (
+          <p role="note" className="text-[13px] text-text-muted">
+            {t('governance.skills.install.searchEmpty')}
+          </p>
         ) : null}
       </div>
 
