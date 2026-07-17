@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import type { SkillsCatalogResult, SkillsInstallInfo } from '../governanceApi';
@@ -57,6 +57,7 @@ describe('SkillInstallPanel (SKW-01, no-ceremony)', () => {
     searchSkillCatalog.mockResolvedValue({ enabled: true, query: '', hits: [] });
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -75,22 +76,205 @@ describe('SkillInstallPanel (SKW-01, no-ceremony)', () => {
   });
 
   it('search is enabled by default (no toggle) and renders catalog hits', async () => {
-    searchSkillCatalog.mockResolvedValue({
+    vi.useFakeTimers();
+    let resolveSearch: (value: SkillsCatalogResult) => void = () => undefined;
+    searchSkillCatalog.mockImplementation(
+      () =>
+        new Promise<SkillsCatalogResult>((resolve) => {
+          resolveSearch = resolve;
+        }),
+    );
+    renderPanel();
+    const search = screen.getByPlaceholderText('Search the skills.sh catalog');
+    expect(search.hasAttribute('disabled')).toBe(false);
+    fireEvent.change(search, { target: { value: 'xlsx' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(searchSkillCatalog).toHaveBeenCalledWith('xlsx', expect.any(AbortSignal));
+    vi.useRealTimers();
+    await act(async () => {
+      resolveSearch({
+        enabled: true,
+        query: 'xlsx',
+        hits: [{ source: 'anthropics/skills', skill: 'xlsx', installs: '12K' }],
+      });
+      await Promise.resolve();
+    });
+    const hit = await screen.findByRole('button', { name: /anthropics\/skills@xlsx/ });
+    // Clicking a hit fills the source with the full installable spec (owner/repo@skill).
+    fireEvent.click(hit);
+    expect(screen.getByDisplayValue('anthropics/skills@xlsx')).toBeTruthy();
+  });
+
+  it('requires two characters and collapses rapid typing to one request after 250ms', async () => {
+    vi.useFakeTimers();
+    renderPanel();
+    const search = screen.getByPlaceholderText('Search the skills.sh catalog');
+    for (const value of ['d', 'do', 'doc', 'docx']) {
+      fireEvent.change(search, { target: { value } });
+    }
+    expect(searchSkillCatalog).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(249);
+    });
+    expect(searchSkillCatalog).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(searchSkillCatalog).toHaveBeenCalledTimes(1);
+    expect(searchSkillCatalog.mock.calls[0]?.[0]).toBe('docx');
+    expect(searchSkillCatalog.mock.calls[0]?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it('hides stale hits immediately while the next query debounces', async () => {
+    vi.useFakeTimers();
+    let resolveSearch: (value: SkillsCatalogResult) => void = () => undefined;
+    searchSkillCatalog.mockImplementation(
+      () =>
+        new Promise<SkillsCatalogResult>((resolve) => {
+          resolveSearch = resolve;
+        }),
+    );
+    renderPanel();
+    const search = screen.getByPlaceholderText('Search the skills.sh catalog');
+    fireEvent.change(search, { target: { value: 'xlsx' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    vi.useRealTimers();
+    await act(async () => {
+      resolveSearch({
+        enabled: true,
+        query: 'xlsx',
+        hits: [{ source: 'anthropics/skills', skill: 'xlsx', installs: '12K' }],
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('button', { name: /anthropics\/skills@xlsx/ })).toBeTruthy();
+    fireEvent.change(search, { target: { value: 'docx' } });
+    expect(screen.queryByRole('button', { name: /anthropics\/skills@xlsx/ })).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Searching skills');
+  });
+
+  it('shows the two-character hint without searching one character', async () => {
+    vi.useFakeTimers();
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText('Search the skills.sh catalog'), {
+      target: { value: 'd' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('Type at least 2 characters.')).toBeTruthy();
+    expect(searchSkillCatalog).not.toHaveBeenCalled();
+  });
+
+  it('shows an accessible loading status while the catalog request is pending', async () => {
+    vi.useFakeTimers();
+    let resolveSearch: (value: SkillsCatalogResult) => void = () => undefined;
+    searchSkillCatalog.mockImplementation(
+      () =>
+        new Promise<SkillsCatalogResult>((resolve) => {
+          resolveSearch = resolve;
+        }),
+    );
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText('Search the skills.sh catalog'), {
+      target: { value: 'docx' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(screen.getByRole('status').textContent).toContain('Searching skills');
+    await act(async () => {
+      resolveSearch({ enabled: true, query: 'docx', hits: [] });
+      await Promise.resolve();
+    });
+  });
+
+  it('aborts an abandoned query and renders only the latest result', async () => {
+    vi.useFakeTimers();
+    let resolveFirst: (value: SkillsCatalogResult) => void = () => undefined;
+    let resolveLatest: (value: SkillsCatalogResult) => void = () => undefined;
+    const signals: AbortSignal[] = [];
+    searchSkillCatalog.mockImplementation((query: string, signal: AbortSignal) => {
+      signals.push(signal);
+      if (query === 'do') {
+        return new Promise<SkillsCatalogResult>((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return new Promise<SkillsCatalogResult>((resolve) => {
+        resolveLatest = resolve;
+      });
+    });
+    renderPanel();
+    const search = screen.getByPlaceholderText('Search the skills.sh catalog');
+    fireEvent.change(search, { target: { value: 'do' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(signals).toHaveLength(1);
+    fireEvent.change(search, { target: { value: 'docx' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(signals[0]?.aborted).toBe(true);
+    vi.useRealTimers();
+    await act(async () => {
+      resolveLatest({
+        enabled: true,
+        query: 'docx',
+        hits: [{ source: 'anthropics/skills', skill: 'docx', installs: '153K' }],
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('button', { name: /anthropics\/skills@docx/ })).toBeTruthy();
+    await act(async () => {
+      resolveFirst({
+        enabled: true,
+        query: 'do',
+        hits: [{ source: 'owner/repo', skill: 'do-only', installs: '1' }],
+      });
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('button', { name: /owner\/repo@do-only/ })).toBeNull();
+  });
+
+  it('renders the empty result state', async () => {
+    searchSkillCatalog.mockResolvedValue({ enabled: true, query: 'none', hits: [] });
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText('Search the skills.sh catalog'), {
+      target: { value: 'none' },
+    });
+    expect(await screen.findByText('No skills found.')).toBeTruthy();
+  });
+
+  it('renders a catalog error and recovers on the next query', async () => {
+    searchSkillCatalog.mockRejectedValueOnce(new Error('HTTP 502')).mockResolvedValueOnce({
       enabled: true,
       query: 'xlsx',
       hits: [{ source: 'anthropics/skills', skill: 'xlsx', installs: '12K' }],
     });
     renderPanel();
     const search = screen.getByPlaceholderText('Search the skills.sh catalog');
-    expect(search.hasAttribute('disabled')).toBe(false);
+    fireEvent.change(search, { target: { value: 'fail' } });
+    expect(await screen.findByText("Couldn't search the skills catalog. Try again.")).toBeTruthy();
     fireEvent.change(search, { target: { value: 'xlsx' } });
-    await waitFor(() => {
-      expect(searchSkillCatalog).toHaveBeenCalledWith('xlsx');
+    expect(await screen.findByRole('button', { name: /anthropics\/skills@xlsx/ })).toBeTruthy();
+    expect(screen.queryByText("Couldn't search the skills catalog. Try again.")).toBeNull();
+  });
+
+  it('keeps the explicit deployment-disabled state', async () => {
+    searchSkillCatalog.mockResolvedValue({ enabled: false, query: 'docx', hits: [] });
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText('Search the skills.sh catalog'), {
+      target: { value: 'docx' },
     });
-    const hit = await screen.findByRole('button', { name: /anthropics\/skills@xlsx/ });
-    // Clicking a hit fills the source with the full installable spec (owner/repo@skill).
-    fireEvent.click(hit);
-    expect(screen.getByDisplayValue('anthropics/skills@xlsx')).toBeTruthy();
+    expect(
+      await screen.findByText('External discovery is disabled on this deployment.'),
+    ).toBeTruthy();
   });
 
   it('shows a safe inline error + fires NO request on an empty source', () => {

@@ -224,6 +224,10 @@ export const governanceEn = {
         externalToggle: 'External discovery (skills.sh)',
         externalOffNote: 'External discovery is disabled on this deployment.',
         searchLabel: 'Search the skills.sh catalog',
+        searchMinChars: 'Type at least 2 characters.',
+        searching: 'Searching skills…',
+        searchEmpty: 'No skills found.',
+        searchError: "Couldn't search the skills catalog. Try again.",
         checklistHeading: 'Validation checklist',
         checklist: {
           sanitizedEnv: 'Sanitized env',
@@ -508,6 +512,10 @@ export const governanceIt = {
         externalToggle: 'Ricerca esterna (skills.sh)',
         externalOffNote: 'La ricerca esterna è disabilitata su questo deployment.',
         searchLabel: 'Cerca nel catalogo skills.sh',
+        searchMinChars: 'Digita almeno 2 caratteri.',
+        searching: 'Ricerca skill in corso…',
+        searchEmpty: 'Nessuna skill trovata.',
+        searchError: 'Impossibile cercare nel catalogo skill. Riprova.',
         checklistHeading: 'Checklist di validazione',
         checklist: {
           sanitizedEnv: 'Env sanificato',
