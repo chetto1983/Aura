@@ -60,6 +60,33 @@ func TestBundleFiltersAgentArtifacts(t *testing.T) {
 	}
 }
 
+// TestDefaultTierIsInternal proves D-01's fail-closed tier default at the unit level, with no
+// database: resolveTier(service.go) resolves an absent Tier and any unrecognized Tier value to
+// TierInternal, and ONLY an explicit TierPublic request ever yields TierPublic. VALIDATION.md
+// lists this as a unit test; it lives here (bundle_test.go, untagged) rather than in
+// service_integration_test.go (db_integration-tagged) because resolveTier is a pure function —
+// an untagged home runs everywhere, which is strictly cheaper than a tagged one for the same
+// property. See the plan's own "prefer the untagged home" guidance for this exact case.
+func TestDefaultTierIsInternal(t *testing.T) {
+	cases := []struct {
+		name      string
+		requested Tier
+		want      Tier
+	}{
+		{"absent tier resolves to internal", Tier(""), TierInternal},
+		{"garbage tier resolves to internal", Tier("garbage"), TierInternal},
+		{"explicit internal stays internal", TierInternal, TierInternal},
+		{"explicit public is the ONLY way to reach public", TierPublic, TierPublic},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveTier(tc.requested); got != tc.want {
+				t.Fatalf("resolveTier(%q) = %q, want %q", tc.requested, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestBundleArtifactsCopiesUnderPrefix proves bundleArtifacts copies each artifact's bytes
 // into objectstore.ShareArtifactKey(shareID, snapshotID, assetID) — a key ALWAYS under
 // objectstore.ShareKeyPrefix(shareID), the invariant Revoke's List+Delete depends on to
@@ -140,14 +167,23 @@ func TestBundleArtifactsInvalidAssetID(t *testing.T) {
 	}
 }
 
-// TestBundleDropBlobsListError proves dropBlobs surfaces a List failure rather than
-// silently treating it as "nothing to delete".
+// TestBundleDropBlobsListError and TestDropSnapshotBlobsListError prove both blob-reclaim
+// helpers surface a List failure rather than silently treating it as "nothing to delete".
 func TestBundleDropBlobsListError(t *testing.T) {
 	store := objectstore.NewFake()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := dropBlobs(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7())); err == nil {
 		t.Fatal("dropBlobs with a canceled context succeeded, want an error")
+	}
+}
+
+func TestDropSnapshotBlobsListError(t *testing.T) {
+	store := objectstore.NewFake()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := dropSnapshotBlobs(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())); err == nil {
+		t.Fatal("dropSnapshotBlobs with a canceled context succeeded, want an error")
 	}
 }
 

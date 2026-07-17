@@ -14,7 +14,7 @@
 // fails CLOSED (silently excluded) rather than requiring this function to be updated the day
 // a fifth kind is added.
 //
-// bundleArtifacts/dropBlobs implement COPY, NEVER REFERENCE (D-09/R-11):
+// bundleArtifacts/dropBlobs/dropSnapshotBlobs implement COPY, NEVER REFERENCE (D-09/R-11):
 // bytes are copied into `share/{shareID}/...` object-store keys at mint/update time, and the
 // resolve path (service.go) never resolves a share's asset id back through the
 // identity-scoped assets.Service. open-webui shipped exactly the opposite bug — "Access to a
@@ -140,6 +140,27 @@ func dropBlobs(ctx context.Context, store objectstore.Store, bucket string, shar
 	for _, o := range objs {
 		if err := store.Delete(ctx, o.Ref); err != nil {
 			return fmt.Errorf("drop blobs %s: delete %s: %w", shareID, o.Ref.Key, err)
+		}
+	}
+	return nil
+}
+
+// dropSnapshotBlobs reclaims only ONE snapshot's blobs (its canonical JSON plus every
+// artifact bundled under it) — the narrower scope Service.Update's old-snapshot cleanup
+// needs. It is deliberately NOT dropBlobs(shareID): Update writes the NEW snapshot's keys
+// (under the same share/<shareID>/ prefix) BEFORE swapping the row's snapshot_id pointer, so
+// for a moment the old and new snapshots' keys coexist under one share prefix — reclaiming
+// the whole share prefix here would delete the brand-new snapshot's bytes together with the
+// stale ones. Same idempotency guarantee as dropBlobs (an empty-prefix List is a no-op).
+func dropSnapshotBlobs(ctx context.Context, store objectstore.Store, bucket string, shareID, snapshotID uuid.UUID) error {
+	prefix := "share/" + shareID.String() + "/snapshot/" + snapshotID.String() + "/"
+	objs, err := store.List(ctx, objectstore.ListRequest{Bucket: bucket, Prefix: prefix})
+	if err != nil {
+		return fmt.Errorf("drop snapshot blobs %s/%s: list: %w", shareID, snapshotID, err)
+	}
+	for _, o := range objs {
+		if err := store.Delete(ctx, o.Ref); err != nil {
+			return fmt.Errorf("drop snapshot blobs %s/%s: delete %s: %w", shareID, snapshotID, o.Ref.Key, err)
 		}
 	}
 	return nil
