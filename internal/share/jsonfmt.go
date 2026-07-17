@@ -5,20 +5,23 @@
 // identity id, so JSON() cannot emit one no matter how it is called.
 package share
 
-import "errors"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // JSON marshals the Snapshot with its wire tags (the OQ4 contract plan
 // 37F-05 mirrors in TypeScript). It takes no parameter beyond the receiver —
 // that signature IS the D-07 guarantee: MD, JSON, and the public page model
 // all derive from the SAME redacted Snapshot, so a future redaction fix
-// cannot miss this surface by construction.
-//
-// RED-phase stub (task 1, TDD RED commit): the pre-commit `go vet`/build
-// hook rejects a whole-module non-compiling commit, so this file ships here
-// with its FINAL doc comments but an unimplemented body — every
-// TestSnapshotJSON* case still fails on a real assertion (this explicit
-// error), not a compile error. The GREEN commit replaces the body with
-// json.Marshal.
+// cannot miss this surface by construction. encoding/json.Marshal is
+// deterministic for a Snapshot value (struct fields marshal in declaration
+// order; no map-typed field exists anywhere in the Snapshot family), so two
+// calls on an unchanged Snapshot always yield identical bytes.
 func (s Snapshot) JSON() ([]byte, error) {
-	return nil, errors.New("share: JSON not implemented")
+	data, err := json.Marshal(s)
+	if err != nil {
+		return nil, fmt.Errorf("share: marshal snapshot: %w", err)
+	}
+	return data, nil
 }
