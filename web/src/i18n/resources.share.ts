@@ -91,6 +91,18 @@ export const shareEn = {
       snapshotDate: 'Shared on {{date}}',
       mark: 'Shared from Aura',
       notFound: 'This link is unavailable. It may have expired, been revoked, or never existed.',
+      loading: 'Loading the shared conversation…',
+      error: 'Something went wrong loading this link. Check your connection and try again.',
+      turn: {
+        user: 'You',
+        assistant: 'Aura',
+        toolsUsed: 'Tools used',
+      },
+      artifacts: {
+        heading: 'Artifacts',
+        download: 'Download {{name}}',
+        previewUnavailable: 'Preview not available for this file — use the download button above.',
+      },
     },
   },
 };
@@ -167,6 +179,20 @@ export const shareIt = {
       mark: 'Condiviso da Aura',
       notFound:
         'Questo link non è disponibile. Potrebbe essere scaduto, revocato o non essere mai esistito.',
+      loading: 'Caricamento della conversazione condivisa…',
+      error:
+        'Si è verificato un problema nel caricare questo link. Controlla la connessione e riprova.',
+      turn: {
+        user: 'Tu',
+        assistant: 'Aura',
+        toolsUsed: 'Strumenti utilizzati',
+      },
+      artifacts: {
+        heading: 'Allegati',
+        download: 'Scarica {{name}}',
+        previewUnavailable:
+          'Anteprima non disponibile per questo file: usa il pulsante di download qui sopra.',
+      },
     },
   },
 };
