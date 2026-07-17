@@ -1,11 +1,93 @@
-# Mini-PC cloud-appliance override — shrinks Neo4j for an 8 GB, all-cloud host.
-# See docs/deployment/mini-pc-cloud-appliance.md. Layer it LAST, and do NOT combine
-# with compose.gpu.yaml / compose.llm.yaml (those are workstation-only):
+# Mini-PC cloud-appliance override — Aura on a small, GPU-less, always-on box with
+# EVERY inference backend in the cloud (OpenRouter). Layer it LAST, and do NOT
+# combine with compose.gpu.yaml / compose.llm.yaml (those are workstation-only):
+#
 #   docker compose -f compose.yaml -f compose.cloud.yaml up -d aura caddy
 #
-# Everything else in the cloud profile is .env-driven (embed image/NGL, vision,
-# LLM base/model) — this file only overrides Neo4j's hardcoded memory settings.
+# What this override does (all in ONE place — the unified cloud routing):
+#   1. Routes all six modalities to OpenRouter on the running aura:local image
+#      (chat/vision are already .env-driven; embed/rerank/stt/tts are plumbed here
+#      because the base compose neither forwards their model knobs to the aura
+#      service nor points their base URLs off the local sidecar DNS).
+#   2. Removes the local inference sidecars from the dependency graph: the CUDA
+#      embed sidecar (aura-llama-embed) cannot start on a GPU-less host, so its HARD
+#      depends_on is reset on both aura and the memory MCP, and the memory MCP's
+#      boot wait-loop is patched to stop blocking on it. stt/tts/rerank/ocr are not
+#      dependencies, so they simply never start with `up -d aura caddy`.
+#   3. Shrinks Neo4j's hardcoded heap/pagecache for a small box.
+#
+# Base-URL conventions are VERIFIED against the client code:
+#   embed  → client appends "/v1/embeddings"  → base carries NO /v1  (…/api)
+#   rerank → client appends "/v1/rerank"       → base carries NO /v1  (…/api)
+#   stt/tts→ client appends "/audio/…"          → uses LLM.BaseURL WITH /v1 (auto)
+# OpenRouter rejects opus for /audio/speech (mp3|pcm only) → TTS_FORMAT=mp3.
 services:
+  aura:
+    depends_on:
+      # aura-llama-embed is the CUDA embed sidecar; it cannot run on a GPU-less box.
+      # Reset the hard service_healthy dependency so the stack never waits on it.
+      aura-llama-embed: !reset null
+    environment:
+      # --- embeddings → OpenRouter (qwen3-embedding-8b, Matryoshka-truncated to 768) ---
+      AURA_EMBED_BASE_URL: https://openrouter.ai/api
+      AURA_EMBED_MODEL: qwen/qwen3-embedding-8b
+      AURA_EMBED_DIMENSIONS: "768"
+      # --- rerank → OpenRouter (Cohere rerank-4-pro) ---
+      AURA_RERANK_BASE_URL: https://openrouter.ai/api
+      AURA_RERANK_MODEL: cohere/rerank-4-pro
+      # --- speech-to-text → OpenRouter (whisper-large-v3-turbo) ---
+      AURA_STT_CLOUD_MODEL: openai/whisper-large-v3-turbo
+      # --- text-to-speech → OpenRouter (Kokoro-82M; mp3, opus is rejected upstream) ---
+      AURA_TTS_MODEL: hexgrad/kokoro-82m
+      TTS_FORMAT: mp3
+      # --- vision → cloud (no local aura-ocr-vl) ---
+      AURA_VISION_CLOUD: "true"
+      MULTIMODAL_FALLBACK_MODEL: minimax/minimax-m3
+
+  aura-agent-memory-mcp:
+    depends_on:
+      # Same GPU-less reset: the memory MCP embeds through OpenRouter, not the sidecar.
+      aura-llama-embed: !reset null
+    environment:
+      # Point the sidecar's OpenAI-compatible embedder at OpenRouter (D-28). The base
+      # compose defaults these to the local sidecar; override to the cloud endpoint.
+      OPENAI_BASE_URL: https://openrouter.ai/api/v1
+      OPENAI_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
+      NAM_EMBEDDING: openai/qwen/qwen3-embedding-8b
+    # Re-declare the boot command WITHOUT the aura-llama-embed:8081 wait target
+    # (the sidecar is gone; the original loop would block 240s then SystemExit →
+    # crash-loop). Everything else is byte-identical to the base compose command.
+    command:
+      - sh
+      - -lc
+      - |
+        python - <<'PY'
+        import socket
+        import time
+
+        targets = [("neo4j", 7687)]
+        deadline = time.monotonic() + 240
+        for host, port in targets:
+            while True:
+                try:
+                    with socket.create_connection((host, port), 5):
+                        break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise SystemExit(f"timed out waiting for {host}:{port}: {exc}")
+                    time.sleep(2)
+        PY
+        exec neo4j-agent-memory mcp serve \
+          --transport http \
+          --host 0.0.0.0 \
+          --port 8080 \
+          --profile extended \
+          --session-strategy persistent \
+          --user-id aura-local \
+          --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
+          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-768} \
+          --no-auto-preferences
+
   neo4j:
     environment:
       NEO4J_server_memory_heap_initial__size: 256m
