@@ -5,9 +5,10 @@
 // base64.RawURLEncoding) verbatim for the mint step — this exact shape has
 // already shipped twice in this repo (password_reset.go, onboarding_session.go).
 //
-// Why SHA-256 and not bcrypt/argon2/scrypt: a 256-bit crypto/rand token has
-// no brute-force surface (a 2^256 keyspace), so a slow KDF buys nothing and
-// only costs per-request latency on every public share-page open — this is
+// Why a plain fast digest and not a slow password-hashing key-derivation
+// function: a 256-bit crypto/rand token has no brute-force surface (a 2^256
+// keyspace), so a deliberately-slow KDF buys nothing and only costs
+// per-request latency on every public share-page open — this is
 // session/API-key discipline (compare a bearer token), not password
 // discipline (T-37F-26).
 //
@@ -30,9 +31,9 @@ import (
 
 // Mint generates a fresh 256-bit opaque share token and its SHA-256 hash. A
 // crypto/rand failure returns that error verbatim, with an empty plaintext
-// and a zero hash — it never falls back to a weaker random source
-// (math/rand or a time seed), because that would silently mint a guessable
-// token instead of failing the request (T-37F-24).
+// and a zero hash — it never falls back to a weaker, non-cryptographic
+// pseudo-random source or a time seed, because that would silently mint a
+// guessable token instead of failing the request (T-37F-24).
 func Mint() (string, [32]byte, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
