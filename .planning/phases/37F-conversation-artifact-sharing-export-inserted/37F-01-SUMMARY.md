@@ -156,3 +156,11 @@ None - no external service configuration required. This plan is documentation-on
 ---
 *Phase: 37F-conversation-artifact-sharing-export-inserted*
 *Completed: 2026-07-17*
+
+## Self-Check: PASSED
+
+- FOUND: `docs/adr/0039-conversation-sharing-vs-identity-isolation.md`
+- FOUND: `.planning/phases/37F-conversation-artifact-sharing-export-inserted/37F-01-SUMMARY.md`
+- FOUND commit: `9a68e36e0` (Task 1 — PRD Amendment #84)
+- FOUND commit: `08252cd38` (Task 2 — ADR 0039)
+- FOUND commit: `6c17e63b9` (this SUMMARY)
