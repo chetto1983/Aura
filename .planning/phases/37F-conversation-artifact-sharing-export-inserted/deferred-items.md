@@ -120,3 +120,36 @@ identity wipe itself points at a still-unresolved cause upstream of any single p
 parallel session's coverage/reset run against the same shared Postgres, consistent with the
 project's documented "coverage-gate-nukes-live-db" history) — logged for whoever picks up the
 shared dev-Postgres isolation problem.
+
+## 37F-12 — `TestProductionContainerArtifactsMatchFatImageContract` fails against `caddy/Caddyfile` (pre-existing, unrelated to this plan)
+
+**Found during:** post-task full-suite regression check — `go test ./cmd/aura/... -count=1`,
+run beyond the plan's own scoped verification (`-run "TestPublicShareRoute|TestSharePublicCapabilityName"`)
+to confirm the mux edits to `serve_webui.go` introduced no collateral breakage.
+
+**What was found:** `TestProductionContainerArtifactsMatchFatImageContract`
+(`cmd/aura/container_artifacts_test.go:11`) fails: `caddy/Caddyfile missing "@authed"`. This test
+asserts string-literal contracts across `docker/aura/Dockerfile`, `compose.yaml`,
+`compose.gvisor.yaml`, `caddy/Caddyfile`, `.dockerignore`, and `scripts/garage_bootstrap.sh` — none
+of which this plan's declared files (`cmd/aura/serve_webui_share.go`, `cmd/aura/serve_webui.go`,
+`cmd/aura/share_public_route_test.go`, `internal/agui/share_public_route_test.go`) touch or
+reference. `git status --short` at the time of this run showed `caddy/Caddyfile` completely
+untracked-as-modified (clean) — the failure is against the file's content already committed at
+HEAD, not against anything this plan wrote.
+
+**Root cause (pre-existing, environmental):** this most likely traces to the same known drift my
+orchestrating instructions flagged at run start — a separate branch `fix/ci-red-37f-drift` plus a
+leaked `749a2c54` `ci.yml` commit exist on/around `master`, explicitly called out as "the human
+owns ALL of that reconciliation." A stale `caddy/Caddyfile` missing an `@authed` matcher some
+other concurrent change expects is consistent with that description. Not caused by, and not
+touching, any file this plan modifies.
+
+**Disposition:** NOT fixed here — out of scope for 37F-12 (SCOPE BOUNDARY: only fix issues
+directly caused by the current task's changes; `git_discipline_this_run` additionally scoped this
+run to commit ONLY this plan's declared files). Logged for whoever reconciles
+`fix/ci-red-37f-drift` back onto `master`.
+
+**Verification this plan's own deliverable is unaffected:** `go build ./...`, `go vet ./cmd/aura/
+./internal/agui/`, and the full `internal/agui` untagged suite (`go test ./internal/agui/... -count=1`)
+are all green. The ONLY failure in a whole-package `cmd/aura` run is this one pre-existing,
+unrelated test.
