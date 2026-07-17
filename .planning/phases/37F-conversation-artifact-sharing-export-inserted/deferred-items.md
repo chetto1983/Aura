@@ -103,10 +103,20 @@ despite the ~15 unrelated failures; `share_export.go` itself: `handleConversatio
 post-owner-gate 500s on `LoadHistory`/`ListForThread`/marshal failure — none required by this
 plan's 6 named acceptance tests).
 
-**Disposition:** NOT fixed here — out of scope for 37F-09 (SCOPE BOUNDARY), and NOT re-repaired
-against the shared live DB this time (37F-07 already re-seeded it once via migration 0004's
-idempotent `INSERT ... ON CONFLICT DO NOTHING` statements; it recurring again points at a
-still-unresolved cause upstream of any single plan — likely a parallel session's coverage/reset
-run against the same shared Postgres, consistent with the project's documented
-"coverage-gate-nukes-live-db" history). Logged for whoever picks up the shared dev-Postgres
-isolation problem, or for the next full-matrix run to re-confirm once `local` is re-seeded.
+**Disposition:** out of scope for 37F-09's code deliverable (SCOPE BOUNDARY) — no plan file was
+touched to work around it. Mirroring 37F-07's own precedent (an "environmental data-repair, not
+a code change"), re-applied migration 0004's idempotent seed directly against the live `aura` DB
+(`docker exec aura-postgres psql -U aura -d aura`, local-socket trust auth — no `.env` password
+needed): `INSERT INTO aura.identities (id, name, kind) VALUES ('...0001', 'local', 'system') ON
+CONFLICT DO NOTHING;` + the matching `*` wildcard row in `aura.capability_grants`, both verified
+absent beforehand (0 rows) and present after (1 row each). Re-ran the plan's own full
+plan-level verification command, `go test -tags db_integration -race -p 1 -count=1
+./internal/agui/`: all ~15 FK-23503 failures cleared. The ONLY remaining failure is
+`TestHandleCheckTelegramAvailabilityBranches/no_token_configured_reports_not-configured` —
+already fully documented above under 37F-07 (a `TELEGRAM_BOT_TOKEN`-shaped env leak, zero overlap
+with this plan's files) and confirmed here to be genuinely independent of the identity-seed
+issue: it is the one failure that persists even with `local` correctly seeded. Recurrence of the
+identity wipe itself points at a still-unresolved cause upstream of any single plan (likely a
+parallel session's coverage/reset run against the same shared Postgres, consistent with the
+project's documented "coverage-gate-nukes-live-db" history) — logged for whoever picks up the
+shared dev-Postgres isolation problem.
