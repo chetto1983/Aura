@@ -51,6 +51,11 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/conversations/search", s.handleSearchConversations)
 	mux.HandleFunc("GET /api/conversations/{id}", s.handleGetConversation)
 	mux.HandleFunc("GET /api/conversations/{id}/rot-events", s.handleConversationRotEvents)
+	// WEBSHARE-01 (plan 37F-09): the owner-scoped conversation export (md|json,
+	// share_export.go). It rides this already-mounted subtree's whole-origin
+	// RequireAuth (serve_webui.go:381, F-1) — no separate route wiring or auth
+	// is added there.
+	mux.HandleFunc("GET /api/conversations/{id}/export", s.handleConversationExport)
 	mux.HandleFunc("POST /api/conversations/{id}/rename", s.handleRenameConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/archive", s.handleArchiveConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/unarchive", s.handleArchiveConversation)
