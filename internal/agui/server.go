@@ -102,10 +102,13 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run              Runner
-	conv             ConversationStore
-	approvals        ApprovalStore
-	assets           AssetService
+	run       Runner
+	conv      ConversationStore
+	approvals ApprovalStore
+	assets    AssetService
+	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
+	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
+	share            ShareService
 	documentCatalog  DocumentCatalogService
 	documentEvents   DocumentEventService
 	storageOrphans   StorageOrphanService
@@ -260,6 +263,17 @@ func (s *Server) Mux() http.Handler {
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
+	// WEBSHARE-02/03 (Phase 37F plan 37F-10): the eight share-lifecycle routes across three
+	// trust boundaries — owner-scoped CRUD (POST/GET /api/shares, PATCH .../snapshot, DELETE),
+	// the D-10 bearer-within-auth internal reads (GET .../data, .../asset/{assetID} —
+	// RequireAuth ONLY, no capability, no owner predicate), and the unauthenticated public
+	// token routes (GET /s/{token}/data, /s/{token}/asset/{id} — the ONLY unauthenticated
+	// handlers in this package). Colocated with their handlers (share_api.go/
+	// share_api_internal.go/share_api_public.go); the parent-mux mounts + gates (RequireAuth
+	// whole-origin, RequireCapability(share.public) on the mint-time public tier, and the
+	// isPublicShareRoute allowlist admitting /s/... unauthenticated) live in
+	// cmd/aura/serve_webui_share.go (plan 37F-12) — none of that wiring is in this file.
+	s.registerShareRoutes(mux)
 	// WEBVOICE-01/02/03 web-voice routes (37C-03): POST /api/tts (audio/mpeg + soft
 	// char cap), POST /api/stt (transcribe-and-discard, D-08 — no asset/DB row), GET
 	// /api/voice/capabilities (SELF-scoped presence probe, never 503). Colocated with
