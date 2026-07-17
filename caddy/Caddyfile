@@ -1,47 +1,47 @@
-# `:443` + on-demand internal-CA TLS so a LAN client reaches the wizard by any
-# IP/hostname (a `localhost:443` site only served the localhost SNI). On-demand
-# has no rate limit (Caddy removed `rate_limit`; only `ask`/`permission` remain),
-# but the abuse surface is low and accepted for this appliance: Caddy is the sole
-# LAN-published port, all data ports are loopback-only, content is token-gated,
-# and the issuer is a local internal CA (no external ACME). An attacker must
-# already be on the LAN; worst case is local internal-cert churn. Revisit with an
-# `ask` endpoint if Aura is ever exposed beyond a trusted LAN.
+# Appliance Caddyfile — fronts the FULL multi-user cockpit on aura:9080 so an end user
+# just opens https://<host> and gets the Authula login page. No proxy-level token.
+#
+# `:443` + on-demand internal-CA TLS so a LAN client reaches the cockpit by any
+# IP/hostname (a `localhost:443` site only served the localhost SNI). On-demand has no
+# rate limit (Caddy removed `rate_limit`; only `ask`/`permission` remain), but the abuse
+# surface is low and accepted for this appliance: Caddy is the sole LAN-published port,
+# all data ports are loopback-only, and the issuer is a local internal CA (no external
+# ACME). An attacker must already be on the LAN; worst case is local internal-cert churn.
+#
+# Auth is handled IN the aura binary by RequireAuth (Authula), NOT by a proxy token: an
+# unauthenticated browser navigation (Accept: text/html) is 302-redirected to /login (a
+# public page); /auth/*, /api/auth/config and the login static assets are public; every
+# other route redirects/401s until a session cookie exists. Fronting 9080 in full is the
+# correct multi-user posture (compose WEB-02: the 9080 bind is permitted because Authula
+# is configured). The earlier token-gated proxy never exposed the cockpit SPA or the
+# Authula login — only the AG-UI API + the 9081 setup wizard — so an end user could not
+# reach a login page at all.
 :443 {
 	tls internal {
 		on_demand
 	}
 
-	@authed `header({'X-Aura-Token': '{$AURA_ACCESS_TOKEN}'}) || query({'token': '{$AURA_ACCESS_TOKEN}'})`
-	@assets path /aura-assets/*
-	@agui path /agent/* /threads/* /healthz /readyz /debug/vars /metrics
-	@setup path /setup /setup/*
-
-	# Google OAuth redirect callback: after consent Google sends the operator's browser
-	# here with ?code&state and NO Aura token, so it is exempt from @authed and proxies
-	# straight to the PIM calendar sidecar, which exchanges the code and renders a result
-	# page. The cockpit polls /admin/accounts/{id}/status for the linked state. The OAuth
-	# state binds the exchange, so an unauthenticated callback path is the standard,
-	# low-risk shape. Set AURA_PIM_EXTERNAL_BASE_URL so the sidecar builds this exact
-	# https://<host>/admin/auth/google/callback redirect URI (register it in the Google client).
+	# Google OAuth redirect callback → PIM calendar sidecar. Unauthenticated by design
+	# (Google sends the browser here with ?code&state and no Aura session; the OAuth state
+	# binds the exchange). Register AURA_PIM_EXTERNAL_BASE_URL as https://<host> so the
+	# sidecar builds this exact /admin/auth/google/callback redirect URI. Ahead of the catch-all.
 	handle /admin/auth/google/callback {
 		reverse_proxy aura-pim-mcp:8080
 	}
 
-	handle @assets {
+	# Presigned object-store downloads (chat/document assets) → garage.
+	handle /aura-assets/* {
 		reverse_proxy garage:3900
 	}
 
-	handle @authed {
-		handle @agui {
-			reverse_proxy aura:9080
-		}
-
-		handle @setup {
-			reverse_proxy aura:9081
-		}
-
-		respond 404
+	# First-run operator setup wizard (the 9081 server gates itself with AURA_SETUP_TOKEN).
+	handle /setup {
+		reverse_proxy aura:9081
+	}
+	handle /setup/* {
+		reverse_proxy aura:9081
 	}
 
-	respond 401
+	# Everything else → the full cockpit + Authula login on 9080.
+	reverse_proxy aura:9080
 }
