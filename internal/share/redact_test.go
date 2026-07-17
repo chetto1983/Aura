@@ -97,6 +97,31 @@ func TestSnapshotToolNamesOmittedWhenEmpty(t *testing.T) {
 	}
 }
 
+// TestSnapshotToolNamesNilWhenAllBlank pins toolNames' normalization
+// guarantee precisely: when every call's name is blank/whitespace (so
+// nothing survives the loop), ToolNames must be exactly nil — not a
+// non-nil empty slice `make` would otherwise leave behind. A mutation that
+// deletes the trailing `if len(names) == 0 { return nil }` guard is
+// wire-invisible (omitempty drops both nil and empty-non-nil identically)
+// but IS a real Go-value regression; this test pins the value directly via
+// `!= nil`, not just len==0, so that mutant is caught here rather than
+// waved through as equivalent.
+func TestSnapshotToolNamesNilWhenAllBlank(t *testing.T) {
+	msgs := []llm.Message{
+		{
+			Role:      llm.RoleAssistant,
+			ToolCalls: []llm.ToolCall{toolCall("call_1", "   ", `{}`)},
+		},
+	}
+	snap, err := BuildSnapshot(ConvMeta{Title: "t", Model: "m"}, msgs, nil, time.Now())
+	if err != nil {
+		t.Fatalf("BuildSnapshot: %v", err)
+	}
+	if snap.Turns[0].ToolNames != nil {
+		t.Fatalf("ToolNames = %#v, want exactly nil (not a non-nil empty slice)", snap.Turns[0].ToolNames)
+	}
+}
+
 // TestSnapshotArtifactAllowlist: only the four allowlisted keys survive.
 // ArtifactMeta itself carries no Path field, so a caller has nowhere to
 // smuggle one through — this is asserted both behaviorally (the built

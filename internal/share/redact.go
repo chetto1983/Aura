@@ -62,11 +62,12 @@ func projectTurns(msgs []llm.Message) []SnapshotTurn {
 // collapsing would misreport provenance) and dropping a blank or
 // whitespace-only name. It never reads Function.Arguments or any
 // ToolCall/Message correlation id — there is no code path here that could
-// reach either.
+// reach either. The trailing len(names)==0 check normalizes make()'s
+// non-nil empty slice back to nil — both an empty len(calls) input and an
+// all-blank-names input fall through to it, so ToolNames is nil (never a
+// non-nil empty slice) whenever nothing survives, matching the omitempty
+// json tag's intent byte-for-byte.
 func toolNames(calls []llm.ToolCall) []string {
-	if len(calls) == 0 {
-		return nil
-	}
 	names := make([]string, 0, len(calls))
 	for _, c := range calls {
 		name := strings.TrimSpace(c.Function.Name)
