@@ -2,15 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
+current_phase: 37F
+current_phase_name: conversation-artifact-sharing-export-inserted
 status: executing
-stopped_at: Completed 37F-16-PLAN.md
-last_updated: "2026-07-17T16:18:23.204Z"
+stopped_at: Completed 37F-09-PLAN.md
+last_updated: "2026-07-17T18:22:08.703Z"
 last_activity: 2026-07-17
+last_activity_desc: Phase 37F execution started
 progress:
   total_phases: 19
   completed_phases: 14
   total_plans: 123
-  completed_plans: 113
+  completed_plans: 114
   percent: 74
 ---
 
@@ -26,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 11 of 19
+Plan: 2 of 20
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
-Last activity: 2026-07-17
+Last activity: 2026-07-17 — Phase 37F execution started
 
 #### 37E-05 — model reasoning-CAPABILITY DETECTION (WEBMODEL-01/03 capability foundation, Wave-3, the phase's only net-new external-dependency vertical). **Sequential on master, 3 atomic commits `42fe6d2e` (Task 1, test — fixtures) / `936c6f59` (Task 2, feat) / `61c12c6d` (Task 3, feat) + `19dbf827` (coverage hardening, test) + this docs commit.** Auto-detects the ACTIVE model's advertised reasoning efforts (D-13) instead of the hard-coded placebo table (D-12), behind ONE neutral seam plan 06 reads. **Task 1 (`42fe6d2e`):** captured daemon-free fixtures `internal/llm/testdata/openrouter_models.json` (3 models exercising every branch: graduated set with an injected hostile `turbo` token, `mandatory:true`, no-reasoning) + `llamacpp_props.json` (`chat_template_caps.supports_thinking:false`); the /models nesting is operator-verified LIVE 2026-07-10, no live capture possible in-env (no key/network) so hand-built to the verified shape with an in-file `_note` marking the synthetic-for-test values + `[ASSUMED-pending-live-capture]` /props flag. **Task 2 (`936c6f59`, TDD):** `internal/llm/model_reasoning_caps.go` (271 LOC) — `ReasoningCapability` struct, `openRouterModelsResponse` DTO, `ModelCapabilityClient` (+`NewModelCapabilityClient`, `ReasoningCapabilityFor`): `GET {BaseURL}/models` over cfg's Bearer+attribution headers, body-size-capped `json.Decoder`, TTL cache keyed by `normalizeModelID` with an injectable clock — cold→warm(no 2nd call)→post-expiry re-fetch proven; STRICT allowlist clamp `{max,xhigh,high,medium,low,none}` DROPS unknown/hostile tokens (T-37E-05-UPSTREAM); `ReasoningCapabilitySource` interface (`AllowedEfforts(ctx)→efforts,default,detected`) + `openRouterReasoningCaps` (honors `mandatory`→strips off, surfaces `default_effort`); fetch-fail/absent/empty→`detected=false` (T-37E-05-AVAIL safe floor, never serves stale). **Task 3 (`61c12c6d`, TDD):** `internal/llm/llamacpp_caps.go` (170 LOC) — `llamaCppReasoningCaps` (explicit `Provider==llamacpp` widens to the full spike-095 graduated set `{none,low,medium,high,xhigh,max}` detected=true WITHOUT /props per OQ-4; best-effort `/props` probe narrows to `{none}` only on an explicit thinking-disabled flag; probed once + cached; unknown/absent/unreachable/malformed keeps the full set, never panics) + `NewReasoningCapabilitySource(cfg,ttl)` boot selector branching on `llm.ReasoningTarget` (openrouter→/models source, llamacpp→/props source, else nil→safe floor). **DEVIATIONS (2, both Rule 2 — missing critical):** (1) added the `NewReasoningCapabilitySource` boot seam (the objective's "selected by ReasoningTarget" — the exact linkage plan 06's `SetReasoningCapabilitySource` needs, else 06 re-implements the branch); (2) `19dbf827` — `TestClampEfforts` (pure-fn coverage of the named security control) + `TestCapabilitySourceRequestBuildError` raised `clampEfforts` 77.8%→100%, pkg 93.1%→94.5%. No architectural changes; NO new deps/migrations/env (reuses the configured OpenRouter key + base URL). **NO network in CI:** every HTTP call is an injected `http.RoundTripper` returning a captured testdata fixture. **VALIDATION:** `go test ./internal/llm/ -race` (WSL, CGO) `ok`; `go vet ./...`+`go build ./...` (Windows) exit 0; `golangci-lint` 0 issues; owned-surface 94.5% (≥85% floor); each new file <600 LOC (271/170). Exact downstream symbols for 37E-06: `ReasoningCapability`, `ReasoningCapabilitySource.AllowedEfforts`, `ModelCapabilityClient`, `NewReasoningCapabilitySource`, `openRouterReasoningCaps`/`llamaCppReasoningCaps`. **TDD gate:** Tasks 2+3 RED→GREEN observed in-tree (compile-fail RED both times), single atomic `feat` each because the lefthook pre-commit `go vet`+`golangci-lint` rejects a non-compiling RED-only commit (no `--no-verify`; same accommodation as 37E-02/04). **WEBMODEL-01/03 stay `[ ]`** (phase-spanning — capability FOUNDATION only; the endpoint 37E-06 + dynamic UI 37E-07 + two-stage validator make them user-observable; `requirements mark-complete` intentionally NOT run, matching 37E-01..04 precedent — the terminal plan 37E-07 owns the mark). SUMMARY: `.planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-05-SUMMARY.md`. Next: **37E-06** (two-stage `/agent/run` validation + `GET /api/composer/reasoning-capabilities` + composition wiring, Wave-4).
 
@@ -348,6 +351,11 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37F P07 | ~2h | 3 tasks | 8 files |
 | Phase 37F P14 | 32min | 2 tasks | 9 files |
 | Phase 37F P16 | 45min | 2 tasks | 5 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 37F P09 | 36min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -639,6 +647,10 @@ Recent decisions affecting current work:
 - [Phase 37F-14]: hasInternalShare/hasPublicShare hardcoded false at the ChatWorkspaceControls call site — No share-list data hook exists yet in the codebase; plan 37F-15 builds shareApi.ts and mounts the real ShareModal, and will wire the real query in the same place
 - [Phase 37F-16]: SharePage is one component for both share tiers; tier comes from a Route prop, never derived from the URL — D-07 one-canonical-snapshot: a forked page would fork the redaction/escaping policy
 - [Phase 37F-16]: Fixed useBlobPreview.ts to resolve through useAssetSource() instead of a hardcoded identity-scoped URL — R-05 seam gap: image/pdf artifacts would have silently broken on both share tiers without this fix
+- [Phase ?]: 37F-09: zero cmd/aura/serve_webui.go delta (F-1) - export route rides the already-mounted conversationsRoutePrefix subtree — RESEARCH R-01 over-estimated the delta on a near-cap file; the mount already inherits RequireAuth whole-origin, so only one mux.HandleFunc line was needed
+- [Phase 37F]: 37F-09: both export formats serve as application/octet-stream + nosniff, never a format-specific MIME (37A D-10) — The exported bytes are user-authored text a browser could otherwise try to render; neutral type + nosniff keeps a downloaded file inert
+- [Phase 37F]: 37F-09: absent/unrecognized export format defaults to Markdown rather than 400/500 — A human clicking export wants the readable form; a missing optional query param is not a client error
+- [Phase 37F]: 37F-09: ANY GetForIdentity error (foreign owner, absent, malformed id) collapses to the same 404, never 403 — D-06 existence-hiding - a read must never confirm a foreign conversation's existence via a distinguishable status (SC4 row 1)
 
 ### Pending Todos
 
@@ -683,8 +695,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T14:24:10.468Z
-Stopped at: Completed 37F-16-PLAN.md
+Last session: 2026-07-17T18:22:08.673Z
+Stopped at: Completed 37F-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
