@@ -21,6 +21,10 @@ const (
 	skillsCatalogAPIURL     = "https://skills.sh/api/search"
 	catalogResponseMaxBytes = 1 << 20
 	catalogMaxHits          = 20
+	catalogCacheTTL         = 60 * time.Second
+	catalogCacheMaxEntries  = 128
+	catalogHTTPTimeout      = 2 * time.Second
+	catalogFallbackTimeout  = 5 * time.Second
 )
 
 // CatalogSearchFunc resolves one catalog query into ranked hits.
@@ -163,6 +167,13 @@ func newCatalogSearchService(
 	}
 }
 
+func defaultCatalogSearchOptions() catalogSearchOptions {
+	return catalogSearchOptions{
+		now: time.Now, ttl: catalogCacheTTL, maxEntries: catalogCacheMaxEntries,
+		httpTimeout: catalogHTTPTimeout, fallbackTimeout: catalogFallbackTimeout,
+	}
+}
+
 func (s *catalogSearchService) Search(
 	ctx context.Context,
 	query string,
@@ -269,5 +280,7 @@ func cloneCatalogHits(hits []CatalogHit) []CatalogHit {
 	if hits == nil {
 		return []CatalogHit{}
 	}
-	return append([]CatalogHit(nil), hits...)
+	cloned := make([]CatalogHit, len(hits))
+	copy(cloned, hits)
+	return cloned
 }

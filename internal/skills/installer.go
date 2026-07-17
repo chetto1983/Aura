@@ -3,11 +3,13 @@ package skills
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/scoring"
 )
@@ -50,6 +52,7 @@ type CommandRunner func(ctx context.Context, dir, name string, args ...string) (
 type Installer struct {
 	writer       *Writer
 	run          CommandRunner
+	catalog      *catalogSearchService
 	blocklist    []string
 	bodyCapBytes int
 	workDir      string
@@ -62,11 +65,13 @@ type Installer struct {
 // --copy work tree; it MUST be a spacious, exec-capable filesystem (a volume), never the
 // hardened 64M noexec /tmp tmpfs. Empty WorkDir falls back to the system temp (tests).
 type InstallerConfig struct {
-	Writer       *Writer
-	Run          CommandRunner
-	Blocklist    []string
-	BodyCapBytes int
-	WorkDir      string
+	Writer *Writer
+	Run    CommandRunner
+	// CatalogSearch overrides only the primary JSON transport. Nil uses skills.sh.
+	CatalogSearch CatalogSearchFunc
+	Blocklist     []string
+	BodyCapBytes  int
+	WorkDir       string
 }
 
 // NewInstaller builds an Installer from cfg, defaulting Run to the real npx runner.
@@ -75,9 +80,21 @@ func NewInstaller(cfg InstallerConfig) *Installer {
 	if run == nil {
 		run = execCommandRunner
 	}
+	primary := cfg.CatalogSearch
+	if primary == nil {
+		primary = newSkillsCatalogAPIClient(http.DefaultClient, skillsCatalogAPIURL).Search
+	}
+	fallback := func(ctx context.Context, query string) ([]CatalogHit, error) {
+		out, err := run(ctx, "", "npx", "skills", "find", query)
+		if err != nil {
+			return nil, fmt.Errorf("npx skills find: %w", err)
+		}
+		return parseCatalogHits(out), nil
+	}
 	return &Installer{
 		writer:       cfg.Writer,
 		run:          run,
+		catalog:      newCatalogSearchService(primary, fallback, defaultCatalogSearchOptions()),
 		blocklist:    cfg.Blocklist,
 		bodyCapBytes: cfg.BodyCapBytes,
 		workDir:      cfg.WorkDir,
@@ -209,25 +226,20 @@ func (i *Installer) Install(ctx context.Context, source string, actor AuditActor
 	}, nil
 }
 
-// Search runs `npx skills find <q>` (external discovery is on by default; an explicit
-// AURA_SKILLS_EXTERNAL_DISCOVERY=false opt-out returns a disabled CatalogResult with no
-// external network fetch). A search with no matches renders an empty Hits slice (the
-// empty-state edge). The output is ANSI-stripped + parsed by parseCatalogHits.
+// Search prefers the skills.sh JSON catalog and falls back to `npx skills find <q>`.
+// An explicit AURA_SKILLS_EXTERNAL_DISCOVERY=false opt-out returns a disabled result
+// before any cache, HTTP, or CLI work.
 func (i *Installer) Search(ctx context.Context, q string) (CatalogResult, error) {
 	q = strings.TrimSpace(q)
 	if !externalDiscoveryEnabled() {
 		return CatalogResult{Enabled: false, Query: q, Hits: []CatalogHit{}}, nil
 	}
-	if q == "" {
+	if utf8.RuneCountInString(q) < 2 {
 		return CatalogResult{Enabled: true, Query: q, Hits: []CatalogHit{}}, nil
 	}
-	out, err := i.run(ctx, "", "npx", "skills", "find", q)
+	hits, err := i.catalog.Search(ctx, q)
 	if err != nil {
-		return CatalogResult{}, fmt.Errorf("skills search %q: npx skills find: %w", q, err)
-	}
-	hits := parseCatalogHits(out)
-	if hits == nil {
-		hits = []CatalogHit{}
+		return CatalogResult{}, fmt.Errorf("skills search %q: %w", q, err)
 	}
 	return CatalogResult{Enabled: true, Query: q, Hits: hits}, nil
 }
@@ -302,9 +314,13 @@ func execCommandRunner(ctx context.Context, dir, name string, args ...string) (s
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed argv (npx skills add/find); source is a validated install arg, scripts permitted per D-06/D-07 (container = boundary)
 	cmd.Dir = dir
 	cmd.Stdin = nil
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = execCommandEnv()
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func execCommandEnv() []string {
+	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "DO_NOT_TRACK=1")
 }
 
 // splitLines splits s on "\n" (the ANSI-stripped output is already LF-normalized for

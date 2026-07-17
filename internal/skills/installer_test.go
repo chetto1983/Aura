@@ -40,8 +40,11 @@ func newTestInstaller(t *testing.T, run CommandRunner) *Installer {
 	t.Helper()
 	w, _ := newTestWriter(t)
 	return NewInstaller(InstallerConfig{
-		Writer:       w,
-		Run:          run,
+		Writer: w,
+		Run:    run,
+		CatalogSearch: func(context.Context, string) ([]CatalogHit, error) {
+			return nil, errors.New("catalog API unavailable in CLI fallback test")
+		},
 		Blocklist:    []string{"<|im_start|>"},
 		BodyCapBytes: 32,
 	})
@@ -242,6 +245,96 @@ func TestInstallerSearchEmptyState(t *testing.T) {
 	}
 	if !res.Enabled || res.Hits == nil || len(res.Hits) != 0 {
 		t.Fatalf("empty search = %+v, want Enabled=true + empty non-nil Hits", res)
+	}
+}
+
+func TestInstallerSearchUsesDirectCatalogBeforeCLI(t *testing.T) {
+	t.Setenv(externalDiscoveryEnv, "")
+	ranCLI := false
+	inst := NewInstaller(InstallerConfig{
+		CatalogSearch: func(_ context.Context, q string) ([]CatalogHit, error) {
+			if q != "docx" {
+				t.Fatalf("query = %q", q)
+			}
+			return []CatalogHit{
+				{Source: "anthropics/skills", Skill: "docx", Installs: "153K"},
+			}, nil
+		},
+		Run: func(context.Context, string, string, ...string) (string, error) {
+			ranCLI = true
+			return "", nil
+		},
+	})
+	res, err := inst.Search(t.Context(), " docx ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ranCLI || len(res.Hits) != 1 || res.Query != "docx" {
+		t.Fatalf("result = %+v, ranCLI=%v", res, ranCLI)
+	}
+}
+
+func TestInstallerSearchShortQueryDoesNoIO(t *testing.T) {
+	t.Setenv(externalDiscoveryEnv, "")
+	called := false
+	inst := NewInstaller(InstallerConfig{
+		CatalogSearch: func(context.Context, string) ([]CatalogHit, error) {
+			called = true
+			return nil, nil
+		},
+		Run: func(context.Context, string, string, ...string) (string, error) {
+			called = true
+			return "", nil
+		},
+	})
+	for _, query := range []string{"", " ", "d", "界"} {
+		res, err := inst.Search(t.Context(), query)
+		if err != nil || !res.Enabled || len(res.Hits) != 0 {
+			t.Fatalf("Search(%q) = %+v, %v", query, res, err)
+		}
+	}
+	if called {
+		t.Fatal("short query performed external I/O")
+	}
+}
+
+func TestInstallerSearchDualFailure(t *testing.T) {
+	t.Setenv(externalDiscoveryEnv, "")
+	inst := NewInstaller(InstallerConfig{
+		CatalogSearch: func(context.Context, string) ([]CatalogHit, error) {
+			return nil, errors.New("api down")
+		},
+		Run: func(context.Context, string, string, ...string) (string, error) {
+			return "", errors.New("cli down")
+		},
+	})
+	_, err := inst.Search(t.Context(), "docx")
+	if err == nil ||
+		!strings.Contains(err.Error(), "catalog primary") ||
+		!strings.Contains(err.Error(), "catalog fallback") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestExecCommandEnvDisablesTelemetry(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "0")
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
+	lastValue := func(env []string, key string) string {
+		prefix := key + "="
+		value := ""
+		for _, entry := range env {
+			if strings.HasPrefix(entry, prefix) {
+				value = strings.TrimPrefix(entry, prefix)
+			}
+		}
+		return value
+	}
+	env := execCommandEnv()
+	if got := lastValue(env, "DO_NOT_TRACK"); got != "1" {
+		t.Fatalf("DO_NOT_TRACK = %q, want 1", got)
+	}
+	if got := lastValue(env, "GIT_TERMINAL_PROMPT"); got != "0" {
+		t.Fatalf("GIT_TERMINAL_PROMPT = %q, want 0", got)
 	}
 }
 
