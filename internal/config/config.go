@@ -259,6 +259,7 @@ type Config struct {
 	// here (37-01); NOT yet wired into any router/spec. Sub-struct composition keeps config.go
 	// ≤600 LOC — see config_sandbox.go.
 	Sandbox SandboxConfig
+	Share   ShareConfig
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -510,6 +511,7 @@ func loadBase() *Config {
 
 		// Phase 37 per-identity sandbox operator surface (SBX foundation). See config_sandbox.go.
 		Sandbox: loadSandboxConfig(),
+		Share:   loadShare(),
 	}
 }
 
