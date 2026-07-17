@@ -147,11 +147,13 @@ describe('governanceApi skills write layer', () => {
     expect(JSON.parse(first(calls).init.body as string)).toEqual({ source: 'owner/repo' });
   });
 
-  it('searchSkillCatalog GETs the flag-gated catalog with an encoded query', async () => {
+  it('searchSkillCatalog GETs the encoded query and forwards its AbortSignal', async () => {
     const calls = captureFetch(okJSON({ enabled: true, query: 'go test', hits: [] }));
-    const res = await searchSkillCatalog('go test');
+    const controller = new AbortController();
+    const res = await searchSkillCatalog('go test', controller.signal);
     expect(res.enabled).toBe(true);
     expect(first(calls).url).toBe('/api/governance/skills/catalog?q=go%20test');
+    expect(first(calls).init.signal).toBe(controller.signal);
   });
 
   it('restoreSkill POSTs /restore and coerces 204', async () => {

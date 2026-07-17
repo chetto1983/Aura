@@ -340,8 +340,8 @@ export interface SkillsCatalogHit {
 }
 
 /** GET /api/governance/skills/catalog response. `enabled` reflects the server
- * AURA_SKILLS_EXTERNAL_DISCOVERY flag (off by default); `hits` is empty when disabled OR
- * when the search found nothing. */
+ * AURA_SKILLS_EXTERNAL_DISCOVERY explicit deployment opt-out; `hits` is empty when
+ * disabled OR when the search found nothing. */
 export interface SkillsCatalogResult {
   readonly enabled: boolean;
   readonly query: string;
@@ -355,8 +355,14 @@ export function installSkill(source: string): Promise<SkillsInstallInfo> {
 }
 
 /** GET /api/governance/skills/catalog?q= — the flag-gated external discovery search. */
-export async function searchSkillCatalog(query: string): Promise<SkillsCatalogResult> {
-  return getJSON<SkillsCatalogResult>(`${GOV_SKILLS_PATH}/catalog?q=${encodeURIComponent(query)}`);
+export async function searchSkillCatalog(
+  query: string,
+  signal?: AbortSignal,
+): Promise<SkillsCatalogResult> {
+  return getJSON<SkillsCatalogResult>(
+    `${GOV_SKILLS_PATH}/catalog?q=${encodeURIComponent(query)}`,
+    signal,
+  );
 }
 
 /** POST /api/governance/skills/{name}/restore — restore an archived skill. A name collision
