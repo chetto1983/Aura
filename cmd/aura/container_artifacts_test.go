@@ -160,31 +160,37 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		// AC11: a `:443` catch-all + on-demand internal cert so LAN clients reach
-		// the wizard by IP/hostname (a `localhost:443` site only served the
-		// localhost SNI and failed the handshake for any other name).
+		// AC11: a `:443` catch-all + on-demand internal cert so LAN clients reach the
+		// cockpit by IP/hostname (a `localhost:443` site only served the localhost SNI
+		// and failed the handshake for any other name).
 		":443 {",
 		"tls internal",
 		"on_demand",
-		"@authed",
-		"X-Aura-Token",
-		"query({'token': '{$AURA_ACCESS_TOKEN}'})",
-		"@assets path /aura-assets/*",
-		"reverse_proxy garage:3900",
-		"@setup path /setup /setup/*",
+		// Auth moved INTO the aura binary (RequireAuth/Authula, d5eae07f): Caddy fronts the
+		// full multi-user cockpit on 9080 with NO proxy-level token gate — the catch-all
+		// reverse-proxies everything else straight to 9080 so an end user reaches /login.
 		"reverse_proxy aura:9080",
-		"reverse_proxy aura:9081",
-		// Google OAuth redirect callback routed to the PIM sidecar, token-exempt.
+		// Google OAuth redirect callback routed to the PIM sidecar, ahead of the catch-all.
 		"handle /admin/auth/google/callback {",
 		"reverse_proxy aura-pim-mcp:8080",
-		"respond 401",
+		// Presigned object-store asset downloads → garage.
+		"handle /aura-assets/*",
+		"reverse_proxy garage:3900",
+		// First-run operator setup wizard (the 9081 server self-gates with AURA_SETUP_TOKEN).
+		"handle /setup",
+		"reverse_proxy aura:9081",
 	} {
 		if !strings.Contains(caddyfile, want) {
 			t.Fatalf("caddy/Caddyfile missing %q:\n%s", want, caddyfile)
 		}
 	}
-	if strings.Contains(caddyfile, "forward_auth") {
-		t.Fatalf("caddy/Caddyfile should use a local token matcher, not forward_auth:\n%s", caddyfile)
+	// The proxy-level token gate was retired when auth moved into the binary (d5eae07f).
+	// None of the old token-matcher primitives may reappear — that would re-expose the
+	// pre-Authula posture where the cockpit SPA and login page were never reachable.
+	for _, retired := range []string{"forward_auth", "@authed", "X-Aura-Token", "respond 401", "AURA_ACCESS_TOKEN"} {
+		if strings.Contains(caddyfile, retired) {
+			t.Fatalf("caddy/Caddyfile should not contain retired proxy-token primitive %q:\n%s", retired, caddyfile)
+		}
 	}
 	for _, want := range []string{
 		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",
