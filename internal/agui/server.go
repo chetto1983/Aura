@@ -43,6 +43,12 @@ type ServerConfig struct {
 	HealthCheck     func(context.Context) error
 	HealthDetails   func() map[string]any
 	ReadinessProbes []ReadinessProbe
+	// SharePublicEnabled is the WEBSHARE-02/03 org kill-switch (AURA_SHARE_PUBLIC_ENABLED,
+	// config.ShareConfig.PublicEnabled) re-checked INSIDE handleShareCreate (share_api.go,
+	// plan 37F-10) — the R-08 gate that survives loopback dev, where RequireCapability
+	// (auth.go:282) returns `next` unchanged because SecretConfigured is false. Default false
+	// (fail-closed): a zero-value ServerConfig must never allow a public mint.
+	SharePublicEnabled bool
 }
 
 // Runner is the narrow agent-driver surface the server consumes (D-A2-02; *runner.Runner
@@ -185,6 +191,12 @@ func (s *Server) SetCompactionMemoryStore(store CompactionMemoryStore) { s.compa
 
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
+
+// SetShareService wires the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
+// handlers call. Set by the daemon composition root after NewServer (cmd/aura/
+// serve_webui_share.go, plan 37F-12); until set, every share route answers 503 — mirroring
+// SetAssetService (D-A2-02 narrow seam, existing NewServer callers unchanged).
+func (s *Server) SetShareService(service ShareService) { s.share = service }
 
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
 // delegates to. Set by the daemon composition root after NewServer (the *web.Client

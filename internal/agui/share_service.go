@@ -8,7 +8,6 @@ package agui
 import (
 	"context"
 	"io"
-	"net/http"
 
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/google/uuid"
@@ -54,13 +53,4 @@ type ShareService interface {
 	// confirmed assetID belongs to the resolved snapshot (SC4 row 9) before calling this, and
 	// closes the returned io.ReadCloser.
 	OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error)
-}
-
-// registerShareRoutes is a placeholder through Task 1 of plan 37F-10 — server.go's Mux()
-// needs a stable call site from this commit onward. Task 2 removes this stub and defines the
-// real registerShareRoutes (the 4 owner-scoped routes + 2 delegated calls) in share_api.go,
-// alongside the other two trust-boundary files' own route registrations — every route string
-// this plan ships ends up living in a share_api*.go file, never here.
-func (s *Server) registerShareRoutes(mux *http.ServeMux) {
-	_ = s.share // wired by SetShareService; consumed by Task 2's share_api*.go handlers
 }
