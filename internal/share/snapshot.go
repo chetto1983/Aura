@@ -80,6 +80,12 @@ type ArtifactMeta struct {
 	SizeBytes int64
 }
 
+// schemaVersion1 is the current Snapshot wire-contract version. Plan 37F-05
+// mirrors this shape in TypeScript and plan 37F-06's adapters and the public
+// share page all consume these json tags verbatim — a tag rename here is a
+// cross-surface breaking change, not a local refactor.
+const schemaVersion1 = 1
+
 // BuildSnapshot is the ONLY function in the repo that accepts an
 // []llm.Message and returns share-bound data — the SC3 trust boundary. The
 // recipient's browser is NOT a trust boundary (R-09: unlike the 37A
@@ -90,12 +96,21 @@ type ArtifactMeta struct {
 // deterministically testable, and the caller (the share service) already
 // owns the transaction clock.
 //
-// RED-phase placeholder (Task 1 of 37F-03): returns a zero-value Snapshot
-// regardless of input, so the package stays compilable for the pre-commit
-// go vet/lint gate while every test in snapshot_test.go/redact_test.go
-// still genuinely fails (real assertion failures against an empty
-// Snapshot — not a compile error). Task 2's GREEN commit replaces this body
-// with the real allowlist projection over redact.go.
-func BuildSnapshot(_ ConvMeta, _ []llm.Message, _ []ArtifactMeta, _ time.Time) (Snapshot, error) {
-	return Snapshot{}, nil
+// Turns and Artifacts are built by the allowlist projections in redact.go
+// (projectTurns / projectArtifact) — this function never touches a message
+// or artifact field directly, so the allowlist boundary stays in one place.
+func BuildSnapshot(conv ConvMeta, msgs []llm.Message, artifacts []ArtifactMeta, snapshotAt time.Time) (Snapshot, error) {
+	snapArtifacts := make([]SnapshotArtifact, 0, len(artifacts))
+	for _, a := range artifacts {
+		snapArtifacts = append(snapArtifacts, projectArtifact(a))
+	}
+	return Snapshot{
+		SchemaVersion: schemaVersion1,
+		Title:         conv.Title,
+		Model:         conv.Model,
+		CreatedAt:     conv.CreatedAt,
+		SnapshotAt:    snapshotAt,
+		Turns:         projectTurns(msgs),
+		Artifacts:     snapArtifacts,
+	}, nil
 }
