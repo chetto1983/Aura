@@ -601,7 +601,7 @@ Plans:
 
 **Design forks (RESOLVED da 37F-CONTEXT + Amendment Log 2026-07-15):** (a) **scope** — RISOLTO: **tutti e tre i tier** shippano fail-closed (export file sempre; link interno-identità revocabile = default "Condividi"; link pubblico opt-in a token con scadenza, mai default — D-01); (b) **granularità** — RISOLTO a **intera conversazione** (single-artifact e single-message deferred — D-05); (c) **storage link** — RISOLTO alla nuova tabella `aura.shared_links` + ledger `aura.share_audit`, **migration 0040** (NON 0036: Phase 42 ha shippato 0036–0039 il 2026-07-14 — D-11 amended), con blob snapshot/artifact token-scoped sotto un prefisso `share/` lessicalmente disgiunto da `identity/` (D-12). **Nota sicurezza:** il link pubblico è un buco **deliberato e limitato** nell'isolamento MUSR — le sette mitigazioni fail-closed sono registrate in **ADR 0039**.
 
-**Plans:** 5/19 plans executed
+**Plans:** 6/19 plans executed
 
 Plans:
 
@@ -618,7 +618,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 37F-06-PLAN.md — Markdown + JSON adapters (pure functions of `Snapshot`) + the redaction-totality property suite (TDD)
+- [x] 37F-06-PLAN.md — Markdown + JSON adapters (pure functions of `Snapshot`) + the redaction-totality property suite (TDD)
 - [ ] 37F-07-PLAN.md — `shared_links` store (lazy fail-closed token predicate = the security gate) + `share_audit` + the 4th admin audit-union leg
 - [ ] 37F-14-PLAN.md — `ShareToggle` in the floating cluster 37B reserved in code + `useSharePanel` + AppShell refactor-on-touch (R-02)
 - [ ] 37F-16-PLAN.md — Public read-only page `/s/{token}` (null-origin iframe, no owner PII, no oracle, renderers reused unedited)

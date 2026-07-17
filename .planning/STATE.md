@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
-stopped_at: Completed 37F-05-PLAN.md
-last_updated: "2026-07-17T10:56:44.014Z"
+stopped_at: Completed 37F-06-PLAN.md
+last_updated: "2026-07-17T11:54:58.048Z"
 last_activity: 2026-07-17
 progress:
   total_phases: 19
   completed_phases: 14
   total_plans: 122
-  completed_plans: 108
+  completed_plans: 109
   percent: 74
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 6 of 19
+Plan: 7 of 19
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
@@ -344,6 +344,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37F P03 | 35min | 3 tasks | 4 files |
 | Phase 37F P04 | 55min | 3 tasks | 6 files |
 | Phase 37F P05 | 25min | 3 tasks | 9 files |
+| Phase 37F P06 | 22min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -624,6 +625,9 @@ Recent decisions affecting current work:
 - [Phase 37F-05]: AssetSource.assetUrl declared as an arrow-function-typed property, not a method signature — avoids @typescript-eslint/unbound-method at every destructuring call site; identical runtime behavior
 - [Phase 37F-05]: createContext(IDENTITY_SCOPED) omits its explicit generic type argument in assetSourceContext.ts — keeps the file free of an angle-bracket token the plan's own JSX/component acceptance grep cannot distinguish from a generic; type still inferred correctly
 - [Phase 37F-05]: ShareLink is documented as explicitly outside scripts/check_share_wire_contract.cjs's scope — it has no Go-side export type to diff against, so asserting machine-checked parity against it would be a false guarantee
+- [Phase 37F]: RED-phase TDD stubs use a returned error/sentinel value, never panic(), so a RED test run always completes and reports every genuine failure instead of aborting the whole suite
+- [Phase 37F]: Snapshot.Markdown()/jsonfmt.go are grep-verified to never reference internal/llm (not even in doc comments), keeping both format adapters structurally incapable of reaching the raw message type
+- [Phase 37F]: Used pgregory.net/rapid (already vendored, no new dependency) for the redaction-totality/idempotence/round-trip property suite; the generator's anti-vacuity guard was strengthened after rapid caught a live gap (an all-tool/system-role history that planted a secret but yielded a zero-turn Snapshot)
 
 ### Pending Todos
 
@@ -668,8 +672,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T10:56:43.991Z
-Stopped at: Completed 37F-05-PLAN.md
+Last session: 2026-07-17T11:54:58.023Z
+Stopped at: Completed 37F-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
