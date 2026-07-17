@@ -1596,7 +1596,7 @@ go test -p=2 ./...
 
 Expected: file-size passes and all Go packages PASS. Keep Go and web coverage runs sequential on Windows to avoid paging-file/linker contention.
 
-- [ ] **Step 5: Audit the complete commit and path ordering**
+- [x] **Step 5: Audit the complete commit and path ordering**
 
 ```powershell
 git log --oneline --decorate -10
