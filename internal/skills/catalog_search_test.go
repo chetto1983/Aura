@@ -2,11 +2,15 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSkillsCatalogAPIClientSearch(t *testing.T) {
@@ -150,5 +154,225 @@ func TestSkillsCatalogAPIClientHonorsCancellation(t *testing.T) {
 	cancel()
 	if err := <-errCh; err == nil {
 		t.Fatal("Search error = nil after cancellation")
+	}
+}
+
+func testCatalogService(
+	primary, fallback CatalogSearchFunc,
+	now func() time.Time,
+) *catalogSearchService {
+	return newCatalogSearchService(primary, fallback, catalogSearchOptions{
+		now: now, ttl: time.Minute, maxEntries: 128,
+		httpTimeout: 50 * time.Millisecond, fallbackTimeout: 100 * time.Millisecond,
+	})
+}
+
+func TestCatalogSearchServiceCachesFallbackAndExpires(t *testing.T) {
+	now := time.Unix(100, 0)
+	primaryCalls, fallbackCalls := 0, 0
+	service := testCatalogService(
+		func(context.Context, string) ([]CatalogHit, error) {
+			primaryCalls++
+			return nil, errors.New("primary down")
+		},
+		func(context.Context, string) ([]CatalogHit, error) {
+			fallbackCalls++
+			return []CatalogHit{{Source: "owner/repo", Skill: "docx", Installs: "12K"}}, nil
+		},
+		func() time.Time { return now },
+	)
+	for range 2 {
+		if _, err := service.Search(t.Context(), " DocX "); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if primaryCalls != 1 || fallbackCalls != 1 {
+		t.Fatalf("calls = primary %d fallback %d", primaryCalls, fallbackCalls)
+	}
+	now = now.Add(time.Minute + time.Nanosecond)
+	if _, err := service.Search(t.Context(), "docx"); err != nil {
+		t.Fatal(err)
+	}
+	if primaryCalls != 2 || fallbackCalls != 2 {
+		t.Fatalf("expired calls = primary %d fallback %d", primaryCalls, fallbackCalls)
+	}
+}
+
+func TestCatalogSearchServiceCoalescesConcurrentMisses(t *testing.T) {
+	t.Parallel()
+	start := make(chan struct{})
+	release := make(chan struct{})
+	primaryStarted := make(chan struct{})
+	var startOnce sync.Once
+	var calls atomic.Int32
+	service := testCatalogService(
+		func(context.Context, string) ([]CatalogHit, error) {
+			calls.Add(1)
+			startOnce.Do(func() { close(primaryStarted) })
+			<-release
+			return []CatalogHit{{Source: "owner/repo", Skill: "docx"}}, nil
+		},
+		func(context.Context, string) ([]CatalogHit, error) {
+			return nil, errors.New("fallback must not run")
+		},
+		time.Now,
+	)
+
+	const workers = 16
+	errs := make(chan error, workers)
+	var ready sync.WaitGroup
+	ready.Add(workers)
+	for range workers {
+		go func() {
+			ready.Done()
+			<-start
+			hits, err := service.Search(t.Context(), "docx")
+			if err == nil && (len(hits) != 1 || hits[0].Skill != "docx") {
+				err = fmt.Errorf("unexpected hits: %#v", hits)
+			}
+			errs <- err
+		}()
+	}
+	ready.Wait()
+	close(start)
+	<-primaryStarted
+	time.Sleep(25 * time.Millisecond)
+	close(release)
+	for range workers {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("primary calls = %d, want 1", got)
+	}
+}
+
+func TestCatalogSearchServiceCancelledWaiterDoesNotCancelSharedFetch(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	var calls atomic.Int32
+	service := testCatalogService(
+		func(context.Context, string) ([]CatalogHit, error) {
+			calls.Add(1)
+			once.Do(func() { close(started) })
+			<-release
+			return []CatalogHit{{Source: "owner/repo", Skill: "docx"}}, nil
+		},
+		func(context.Context, string) ([]CatalogHit, error) {
+			return nil, errors.New("fallback must not run")
+		},
+		time.Now,
+	)
+
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstErr := make(chan error, 1)
+	go func() {
+		_, err := service.Search(firstCtx, "docx")
+		firstErr <- err
+	}()
+	<-started
+	secondResult := make(chan error, 1)
+	go func() {
+		hits, err := service.Search(t.Context(), "docx")
+		if err == nil && len(hits) != 1 {
+			err = fmt.Errorf("hits = %#v", hits)
+		}
+		secondResult <- err
+	}()
+	time.Sleep(25 * time.Millisecond)
+	cancelFirst()
+	if err := <-firstErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first error = %v, want context.Canceled", err)
+	}
+	close(release)
+	if err := <-secondResult; err != nil {
+		t.Fatalf("second error = %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("primary calls = %d, want 1", got)
+	}
+}
+
+func TestCatalogSearchServiceBoundsCache(t *testing.T) {
+	t.Parallel()
+	service := testCatalogService(
+		func(_ context.Context, query string) ([]CatalogHit, error) {
+			return []CatalogHit{{Source: "owner/repo", Skill: query}}, nil
+		},
+		func(context.Context, string) ([]CatalogHit, error) {
+			return nil, errors.New("fallback must not run")
+		},
+		time.Now,
+	)
+	for i := range 129 {
+		if _, err := service.Search(t.Context(), fmt.Sprintf("query-%03d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service.mu.Lock()
+	got := len(service.cache)
+	service.mu.Unlock()
+	if got != 128 {
+		t.Fatalf("cache size = %d, want 128", got)
+	}
+}
+
+func TestCatalogSearchServiceDoesNotCacheDualFailure(t *testing.T) {
+	t.Parallel()
+	var primaryCalls, fallbackCalls atomic.Int32
+	service := testCatalogService(
+		func(context.Context, string) ([]CatalogHit, error) {
+			primaryCalls.Add(1)
+			return nil, errors.New("api unavailable")
+		},
+		func(context.Context, string) ([]CatalogHit, error) {
+			fallbackCalls.Add(1)
+			return nil, errors.New("cli unavailable")
+		},
+		time.Now,
+	)
+	for range 2 {
+		_, err := service.Search(t.Context(), "docx")
+		if err == nil ||
+			!strings.Contains(err.Error(), "catalog primary") ||
+			!strings.Contains(err.Error(), "catalog fallback") {
+			t.Fatalf("error = %v", err)
+		}
+	}
+	if primaryCalls.Load() != 2 || fallbackCalls.Load() != 2 {
+		t.Fatalf(
+			"calls = primary %d fallback %d",
+			primaryCalls.Load(),
+			fallbackCalls.Load(),
+		)
+	}
+}
+
+func TestCatalogSearchServiceTimesOutPrimaryBeforeFallback(t *testing.T) {
+	t.Parallel()
+	fallbackCalled := false
+	service := newCatalogSearchService(
+		func(ctx context.Context, _ string) ([]CatalogHit, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		func(context.Context, string) ([]CatalogHit, error) {
+			fallbackCalled = true
+			return []CatalogHit{{Source: "owner/repo", Skill: "docx"}}, nil
+		},
+		catalogSearchOptions{
+			now: time.Now, ttl: time.Minute, maxEntries: 128,
+			httpTimeout: 20 * time.Millisecond, fallbackTimeout: 100 * time.Millisecond,
+		},
+	)
+	hits, err := service.Search(t.Context(), "docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fallbackCalled || len(hits) != 1 {
+		t.Fatalf("fallbackCalled=%v hits=%#v", fallbackCalled, hits)
 	}
 }

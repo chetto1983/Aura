@@ -11,6 +11,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -123,4 +127,147 @@ func compactUnit(value float64, suffix string) string {
 		strconv.FormatFloat(rounded, 'f', precision, 64),
 		".0",
 	) + suffix
+}
+
+type catalogSearchOptions struct {
+	now             func() time.Time
+	ttl             time.Duration
+	maxEntries      int
+	httpTimeout     time.Duration
+	fallbackTimeout time.Duration
+}
+
+type catalogCacheEntry struct {
+	hits      []CatalogHit
+	expiresAt time.Time
+	sequence  uint64
+}
+
+type catalogSearchService struct {
+	primary  CatalogSearchFunc
+	fallback CatalogSearchFunc
+	options  catalogSearchOptions
+	group    singleflight.Group
+	mu       sync.Mutex
+	cache    map[string]catalogCacheEntry
+	sequence uint64
+}
+
+func newCatalogSearchService(
+	primary, fallback CatalogSearchFunc,
+	options catalogSearchOptions,
+) *catalogSearchService {
+	return &catalogSearchService{
+		primary: primary, fallback: fallback, options: options,
+		cache: make(map[string]catalogCacheEntry),
+	}
+}
+
+func (s *catalogSearchService) Search(
+	ctx context.Context,
+	query string,
+) ([]CatalogHit, error) {
+	key := strings.ToLower(strings.TrimSpace(query))
+	if hits, ok := s.cached(key); ok {
+		return hits, nil
+	}
+	result := s.group.DoChan(key, func() (any, error) {
+		if hits, ok := s.cached(key); ok {
+			return hits, nil
+		}
+		primaryCtx, cancelPrimary := context.WithTimeout(
+			context.Background(),
+			s.options.httpTimeout,
+		)
+		hits, primaryErr := s.primary(primaryCtx, query)
+		cancelPrimary()
+		if primaryErr != nil {
+			fallbackCtx, cancelFallback := context.WithTimeout(
+				context.Background(),
+				s.options.fallbackTimeout,
+			)
+			var fallbackErr error
+			hits, fallbackErr = s.fallback(fallbackCtx, query)
+			cancelFallback()
+			if fallbackErr != nil {
+				return nil, fmt.Errorf(
+					"catalog primary: %v; catalog fallback: %w",
+					primaryErr,
+					fallbackErr,
+				)
+			}
+		}
+		hits = cloneCatalogHits(hits)
+		s.store(key, hits)
+		return hits, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case completed := <-result:
+		if completed.Err != nil {
+			return nil, completed.Err
+		}
+		hits, ok := completed.Val.([]CatalogHit)
+		if !ok {
+			return nil, fmt.Errorf("catalog search returned unexpected result")
+		}
+		return cloneCatalogHits(hits), nil
+	}
+}
+
+func (s *catalogSearchService) cached(key string) ([]CatalogHit, bool) {
+	now := s.options.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.cache[key]
+	if !ok {
+		return nil, false
+	}
+	if !now.Before(entry.expiresAt) {
+		delete(s.cache, key)
+		return nil, false
+	}
+	s.sequence++
+	entry.sequence = s.sequence
+	s.cache[key] = entry
+	return cloneCatalogHits(entry.hits), true
+}
+
+func (s *catalogSearchService) store(key string, hits []CatalogHit) {
+	if s.options.maxEntries <= 0 {
+		return
+	}
+	now := s.options.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for cachedKey, entry := range s.cache {
+		if !now.Before(entry.expiresAt) {
+			delete(s.cache, cachedKey)
+		}
+	}
+	if _, exists := s.cache[key]; !exists && len(s.cache) >= s.options.maxEntries {
+		var oldestKey string
+		oldestSequence := ^uint64(0)
+		for cachedKey, entry := range s.cache {
+			if entry.sequence < oldestSequence {
+				oldestKey = cachedKey
+				oldestSequence = entry.sequence
+			}
+		}
+		delete(s.cache, oldestKey)
+	}
+	s.sequence++
+	s.cache[key] = catalogCacheEntry{
+		hits:      cloneCatalogHits(hits),
+		expiresAt: now.Add(s.options.ttl),
+		sequence:  s.sequence,
+	}
+}
+
+func cloneCatalogHits(hits []CatalogHit) []CatalogHit {
+	if hits == nil {
+		return []CatalogHit{}
+	}
+	return append([]CatalogHit(nil), hits...)
 }
