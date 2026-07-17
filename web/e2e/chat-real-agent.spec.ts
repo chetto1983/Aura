@@ -24,6 +24,7 @@ interface AssetRow {
   readonly status: string;
   readonly file_name: string;
   readonly document_id?: string;
+  readonly error_message?: string;
 }
 
 interface CatalogDocumentRow {
@@ -250,6 +251,27 @@ async function threadAssets(page: Page, conversationId: string): Promise<readonl
   return Array.isArray(value) ? (value as AssetRow[]) : [];
 }
 
+async function pollSearchableThreadAsset(
+  page: Page,
+  conversationId: string,
+  assetId: string,
+): Promise<AssetRow> {
+  const deadline = Date.now() + 240_000;
+  let last: AssetRow | undefined;
+  while (Date.now() < deadline) {
+    last = (await threadAssets(page, conversationId)).find((asset) => asset.id === assetId);
+    const documentId = last?.document_id?.trim() ?? '';
+    if (last?.status === 'searchable' && documentId.length > 0) return last;
+    if (last !== undefined && ['failed', 'refused', 'deleted', 'canceled'].includes(last.status)) {
+      throw new Error(`asset processing ended before searchable: ${JSON.stringify(last)}`);
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1500));
+  }
+  throw new Error(
+    `thread asset ${assetId} did not become searchable; last=${last === undefined ? 'missing' : JSON.stringify(last)}`,
+  );
+}
+
 async function catalogDocumentForAsset(page: Page, assetId: string): Promise<CatalogDocumentRow> {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
@@ -390,6 +412,7 @@ test.describe('real-agent Calm Prism acceptance', () => {
           response.request().method() === 'POST',
         { timeout: 30_000 },
       );
+      const fileName = basename(documentPath);
       await page.locator('input[type="file"][aria-label="Add files"]').setInputFiles(documentPath);
       const presignResponse = await presignResponsePromise;
       expect(presignResponse.status()).toBe(200);
@@ -398,14 +421,14 @@ test.describe('real-agent Calm Prism acceptance', () => {
       };
       expect(presignBody.asset?.id).toEqual(expect.any(String));
       uploadedAssetId = presignBody.asset?.id as string;
-      await expect(page.getByText(basename(documentPath), { exact: true }).first()).toBeVisible({
+      const attachmentChip = page.getByRole('button', { name: `Remove ${fileName}` }).locator('..');
+      await expect(attachmentChip.getByText(fileName, { exact: true })).toBeVisible({
         timeout: 30_000,
       });
-      await expect(page.getByText('Ready', { exact: true }).first()).toBeVisible({
+      await expect(attachmentChip.getByText('Ready', { exact: true })).toBeVisible({
         timeout: 240_000,
       });
-      const assets = await threadAssets(page, conversationId);
-      const document = assets.find((asset) => asset.id === uploadedAssetId);
+      const document = await pollSearchableThreadAsset(page, conversationId, uploadedAssetId);
       const documentId = document?.document_id?.trim() ?? '';
       const catalogDocument = await catalogDocumentForAsset(page, uploadedAssetId);
       catalogDocumentId = catalogDocument.id;
