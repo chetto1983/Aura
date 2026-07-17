@@ -601,7 +601,7 @@ Plans:
 
 **Design forks (RESOLVED da 37F-CONTEXT + Amendment Log 2026-07-15):** (a) **scope** — RISOLTO: **tutti e tre i tier** shippano fail-closed (export file sempre; link interno-identità revocabile = default "Condividi"; link pubblico opt-in a token con scadenza, mai default — D-01); (b) **granularità** — RISOLTO a **intera conversazione** (single-artifact e single-message deferred — D-05); (c) **storage link** — RISOLTO alla nuova tabella `aura.shared_links` + ledger `aura.share_audit`, **migration 0040** (NON 0036: Phase 42 ha shippato 0036–0039 il 2026-07-14 — D-11 amended), con blob snapshot/artifact token-scoped sotto un prefisso `share/` lessicalmente disgiunto da `identity/` (D-12). **Nota sicurezza:** il link pubblico è un buco **deliberato e limitato** nell'isolamento MUSR — le sette mitigazioni fail-closed sono registrate in **ADR 0039**.
 
-**Plans:** 4/19 plans executed
+**Plans:** 5/19 plans executed
 
 Plans:
 
@@ -614,7 +614,7 @@ Plans:
 - [x] 37F-02-PLAN.md — Migration 0040 (`shared_links` + `share_audit` + scheduler kind `share_expiry_sweep`) + `AURA_SHARE_PUBLIC_ENABLED` (default false) / `AURA_SHARE_MAX_EXPIRY_DAYS` (default 90)
 - [x] 37F-03-PLAN.md — **SC3 redaction core**: `Snapshot` + `BuildSnapshot` allowlist projection (TDD, hostile fixtures, mutation ≥70% — a surviving mutant here is a live leak)
 - [x] 37F-04-PLAN.md — Token mint/hash (256-bit opaque, SHA-256 at rest) + token-scoped objectstore keys (namespace-disjoint) + expiry math (TDD)
-- [ ] 37F-05-PLAN.md — Web foundations: `AssetSourceContext` (R-05 — unblocks the public page) + `resources.share.ts` (en+it) + TS snapshot wire mirror
+- [x] 37F-05-PLAN.md — Web foundations: `AssetSourceContext` (R-05 — unblocks the public page) + `resources.share.ts` (en+it) + TS snapshot wire mirror
 
 **Wave 3** *(blocked on Wave 2)*
 
