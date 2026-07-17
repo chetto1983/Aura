@@ -34,13 +34,13 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | | |
 |---|---|
 | **Language** | Go 1.26 |
-| **Size** | ~25k LOC · 49 internal packages |
-| **Test coverage** | **90.3%** owned-surface (hard floor 85% per package) |
-| **Test discipline** | table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
+| **Size** | ~98k LOC non-test (`cmd` + `internal`, of which ~7k sqlc-generated) · 68 internal packages |
+| **Tests** | ~143k LOC — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
+| **Test coverage** | **90.3%** owned-surface (full matrix, 2026-06-13) — hard floor 85% per package |
 | **CI** | green — build/vet/lint · CodeQL · integration (Postgres / Neo4j) |
-| **Persistence** | Postgres (15 migrations, sqlc, pgx) + Neo4j (HNSW 384-d + APOC + GDS) |
+| **Persistence** | Postgres (40 migrations, sqlc, pgx) + Neo4j (HNSW 768-d + APOC + GDS) |
 | **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral, swap by config |
-| **Status** | 20/23 build phases shipped · v1.0.0 (web cockpit) in progress |
+| **Status** | v0.0.0 substrate + v1.0.0 web cockpit shipped · v2.0.0 industrial hardening in progress (8/12 phases) |
 
 ## Key features
 
@@ -71,7 +71,7 @@ Observability      obs · panicobs · reasoningtrace · toolinvocations · cache
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system is built — layers, turn lifecycle, invariants |
 | [docs/TECHNICAL_OVERVIEW.md](docs/TECHNICAL_OVERVIEW.md) | CTO / due-diligence overview — problem, differentiators, maturity |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Capability matrix — shipped / in-progress / roadmap |
-| [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md) | Exhaustive function-level inventory (all 49 packages) |
+| [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md) | Exhaustive function-level inventory |
 | [CLAUDE.md](CLAUDE.md) · [prd.md](prd.md) | Engineering guidance · product requirements (source of truth) |
 
 ---
