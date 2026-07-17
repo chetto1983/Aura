@@ -28,8 +28,13 @@ pre-commit:
     lint:
       glob: "*.go"
       run: bash -c 'golangci-lint run $(bash scripts/go_packages.sh)'
+    # Staged-file-only ({staged_files}), unlike lint above: the 600-LOC cap is a
+    # per-file property, so scanning the whole tree can only re-report violations
+    # this commit did not introduce — while costing ~2min of `wc` spawns over ~2k
+    # sources on Windows Git Bash. CI + `make file-size` still sweep the full tree.
     file-size:
-      run: bash scripts/check-file-size.sh
+      glob: "*.{go,ts,tsx}"
+      run: bash scripts/check-file-size.sh {staged_files}
     # Frontend copy/paste detector (jscpd) — TS/TSX parity to the Go `dupl` linter.
     # Gated on web .ts/.tsx so a Go-only commit skips it; the script self-guards on a
     # missing web/node_modules. Config: web/.jscpd.json (fails on any non-test clone
