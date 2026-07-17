@@ -509,6 +509,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// RequireAuth-only (like voiceCapabilitiesRoute/meRoute) — deliberately NOT
 	// governance.read-gated so an ordinary identity gets the global picker list (D-03).
 	registerComposerRoutes(mux, aguiHandler, auth)
+	// 37F WEBSHARE-02 share routes live in serve_webui_share.go to keep this file ≤600 LOC.
+	registerShareRoutes(mux, aguiHandler, auth)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
 	// "/" embed catch-all; Go 1.22 longest-pattern precedence keeps it authoritative.
 	// NOTE: "/api/" is deliberately NOT registered here — it lives only in the
@@ -529,6 +531,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 			return true
 		}
 		if isPublicBootstrapRoute(r) {
+			return true
+		}
+		if isPublicShareRoute(r) {
 			return true
 		}
 		return previousPublicRoute != nil && previousPublicRoute(r)
