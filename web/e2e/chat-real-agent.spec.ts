@@ -513,8 +513,13 @@ test.describe('real-agent Calm Prism acceptance', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.getByText(prompt, { exact: true })).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByText(/robot industriali/i).first()).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByText(/robot collaborativi/i).first()).toBeVisible({ timeout: 30_000 });
+      const replayProse = page.locator('[data-message-role="assistant"] [data-message-prose]');
+      await expect(replayProse.filter({ hasText: /robot industriali/i }).last()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(replayProse.filter({ hasText: /robot collaborativi/i }).last()).toBeVisible({
+        timeout: 30_000,
+      });
       checks.push({ name: 'persisted replay', pass: true, detail: conversationId });
 
       await page.setViewportSize({ width: 390, height: 844 });

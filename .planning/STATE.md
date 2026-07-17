@@ -651,8 +651,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T02:03:43.9909225+02:00
-Stopped at: Calm Prism Task 9 Steps 1-7 checked and adversarial audit zero-finding approved; merge/rebuild plus installed-Chrome real-agent 10/10 is the only remaining gate
+Last session: 2026-07-17T02:10:56.4740214+02:00
+Stopped at: Calm Prism Task 9 merged/rebuilt; first real-agent run reached correct replay but hidden raw-result locator shadowed visible answer, test-only visible-prose fix awaiting review/merge/rerun
 Resume file: .planning/.continue-here.md
 
 ## Operator Next Steps
