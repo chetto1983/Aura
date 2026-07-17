@@ -4,6 +4,7 @@ import { Download, FileDown } from 'lucide-react';
 import type { Asset } from '../attachments/types';
 import { previewKind } from './artifactMeta';
 import { PreviewLoading, type RendererProps } from './renderers/PreviewStatus';
+import { useAssetSource } from './renderers/assetSourceContext';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 // PreviewModal (WEBART-05 / D-09): a ~90vw×90vh Radix Dialog that previews an agent-
@@ -11,8 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 // to one of six SUSPENSE-wrapped lazy renderer chunks — so docx-preview/xlsx never enter
 // this modal's static import graph — or, for the download-only kinds (svg/pptx/unknown),
 // shows a download card WITHOUT mounting any renderer. The header carries the filename and
-// a same-origin download anchor (the 37A auth route); Radix owns focus-trap, Esc, backdrop,
-// and the aria wiring (DialogTitle + DialogDescription).
+// a download anchor resolved through useAssetSource() (the 37A auth route by default; a
+// token-scoped public route once a provider is mounted — R-05); Radix owns focus-trap, Esc,
+// backdrop, and the aria wiring (DialogTitle + DialogDescription).
 
 // Each renderer is its own lazy boundary (D-08): the dynamic import() keeps its bytes — and,
 // for docx/xlsx, the heavy parser deps — out of the main + modal chunks until first preview.
@@ -58,6 +60,7 @@ function renderKind(active: Asset): React.ReactNode {
  *  mounted — script-bearing or unpreviewable bytes never reach an executing context. */
 function DownloadCard({ active }: { active: Asset }) {
   const { t } = useTranslation();
+  const { assetUrl } = useAssetSource();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 p-10 text-center">
       <span className="grid size-20 place-items-center rounded-2xl bg-surface-2 text-accent-text ring-1 ring-border">
@@ -70,7 +73,7 @@ function DownloadCard({ active }: { active: Asset }) {
         <p className="text-[13px] text-text-muted">{t('artifacts.preview.unsupported')}</p>
       </div>
       <a
-        href={`/api/assets/${encodeURIComponent(active.id)}/download`}
+        href={assetUrl(active.id)}
         download={active.file_name}
         className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-surface px-4 py-2 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
@@ -83,6 +86,7 @@ function DownloadCard({ active }: { active: Asset }) {
 
 export function PreviewModal({ active, onClose }: PreviewModalProps) {
   const { t } = useTranslation();
+  const { assetUrl } = useAssetSource();
   return (
     <Dialog
       open={active !== undefined}
@@ -98,7 +102,7 @@ export function PreviewModal({ active, onClose }: PreviewModalProps) {
                 {active.file_name}
               </DialogTitle>
               <a
-                href={`/api/assets/${encodeURIComponent(active.id)}/download`}
+                href={assetUrl(active.id)}
                 download={active.file_name}
                 aria-label={t('artifacts.preview.download', { name: active.file_name })}
                 className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

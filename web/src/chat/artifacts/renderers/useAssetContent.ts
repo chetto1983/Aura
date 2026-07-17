@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useAssetSource } from './assetSourceContext';
 
-// useAssetContent — the shared same-origin fetch primitive for the text/html/docx/xlsx
-// renderers (the object-URL image/pdf pair use useBlobPreview instead). One authenticated
-// GET of the 37A route GET /api/assets/{id}/download, read as the requested body kind and
+// useAssetContent — the shared fetch primitive for the text/html/docx/xlsx renderers (the
+// object-URL image/pdf pair use useBlobPreview instead). One GET through useAssetSource()'s
+// resolved URL + credentials (the 37A identity-scoped asset route by default; a token-scoped
+// public route once a provider is mounted — R-05), read as the requested body kind and
 // aborted on unmount / asset change. Extracted so the four non-object-URL renderers don't
 // duplicate the fetch+abort block (jscpd threshold 0). `kind` is a string literal, so the
 // effect deps stay stable — no refetch loop from an inline reader closure.
@@ -26,12 +28,13 @@ export function useAssetContent(
   kind: AssetContentKind,
 ): { data?: unknown; error?: string } {
   const [loaded, setLoaded] = useState<Loaded>();
+  const { assetUrl, credentials } = useAssetSource();
 
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
-      const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}/download`, {
-        credentials: 'same-origin',
+      const res = await fetch(assetUrl(assetId), {
+        credentials,
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
@@ -48,7 +51,7 @@ export function useAssetContent(
     return () => {
       controller.abort();
     };
-  }, [assetId, kind]);
+  }, [assetId, kind, assetUrl, credentials]);
 
   // Only surface a result that belongs to the CURRENT asset — a stale body from a prior
   // asset is never returned while its replacement is still loading.
