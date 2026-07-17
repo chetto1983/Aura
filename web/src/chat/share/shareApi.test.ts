@@ -140,7 +140,16 @@ describe('share API client', () => {
     });
 
     it('a public row from listShares carries NO url (D-13: token returned once, at create only)', async () => {
-      const listedPublicRow: ShareLink = { ...publicLink, url: undefined };
+      // exactOptionalPropertyTypes forbids `url: undefined` on ShareLink — the wire contract
+      // is "key absent", not "key present with an undefined value" — so the key is built
+      // absent from the start rather than spread-and-overridden.
+      const listedPublicRow: ShareLink = {
+        id: publicLink.id,
+        tier: publicLink.tier,
+        expires_at: '2026-07-24T10:00:00Z',
+        created_at: publicLink.created_at,
+        updated_at: publicLink.updated_at,
+      };
       vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse([listedPublicRow]))));
 
       const [row] = await listShares();
