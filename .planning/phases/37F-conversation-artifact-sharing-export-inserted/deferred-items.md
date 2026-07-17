@@ -43,3 +43,37 @@ tagged tests are included, which this plan did not re-run to confirm).
 **Verification of this plan's own deliverable:** `internal/share` (this plan's other package)
 measures 97.4% via plain `go test -cover`, comfortably above the floor. The 3 new
 `internal/objectstore` functions are proven 100.0% individually via `go tool cover -func`.
+
+## 37F-07 — `TestHandleCheckTelegramAvailabilityBranches` fails under `db_integration` (pre-existing, unrelated to this plan)
+
+**Found during:** Task 2/3 final verification — running the plan's own
+`go test -tags db_integration -race -p 1 -count=1 ./internal/share/ ./internal/agui/` gate.
+
+**What was found:** `TestHandleCheckTelegramAvailabilityBranches/no_token_configured_reports_not-configured`
+(`internal/agui/settings_api_branches_test.go:204`) fails with `probe was called with no token
+configured`. This test asserts the telegram-availability probe is NOT called when no bot token
+is configured; it failed both BEFORE and AFTER re-seeding the wiped `local` identity (see
+below), and touches none of this plan's files (`internal/share/*`, `internal/agui/audit_store.go`,
+`internal/agui/share_audit_union_test.go`) — it is a telegram/settings concern with zero code path
+overlap with `shared_links`/`share_audit`.
+
+**Root cause (pre-existing, environmental):** almost certainly a `TELEGRAM_BOT_TOKEN`-shaped env
+var leaking from the parallel session's `.env`/shell state into this test run (matching the
+project's documented `.env` cross-contamination class of issue), which makes the probe's
+"no token configured" branch observe a token where the test expects none. Not caused by any
+Task 1/2/3 change in this plan.
+
+**Also found + already fixed (not deferred):** the SAME full-package run initially showed ~15
+unrelated failures, ALL `FK 23503` on `conversations_identity_id_fkey` (e.g.
+`TestAgentRunCapability`, `TestConversationsAPI_*`, `TestServer_Integration_*`) — traced to the
+seeded `local` identity (`...0001`) being ABSENT from the live `aura` database (a parallel
+session's coverage/reset run wiped it — the documented "Re-seed local identity for
+db_integration" gotcha). Re-seeded via the exact idempotent statements from migration 0004
+(`INSERT ... ON CONFLICT DO NOTHING` for both `aura.identities` and the `*` wildcard grant in
+`aura.capability_grants`), then re-ran the full gate: every one of those ~15 failures cleared,
+leaving only the telegram probe test above. This was an environmental data-repair, not a code
+change, and is NOT logged as a deviation against this plan's deliverable.
+
+**Disposition:** NOT fixed here — out of scope for 37F-07 (SCOPE BOUNDARY). Logged for whoever
+owns `internal/agui/settings_api_branches_test.go` / the telegram settings surface, or for a
+future `.env`-isolation cleanup of the shared dev Postgres/session.
