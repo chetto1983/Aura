@@ -1,12 +1,13 @@
 package agui
 
 // audit_store.go is the raw-pgx read store behind the D-28 admin per-user audit API
-// (audit_api.go). It unions the three identity-keyed audit ledgers — aura.mcp_audit
-// (keyed on actor_identity_id), aura.skill_audit (keyed on identity_id), and
-// aura.tool_invocations (conversation-keyed, joined to aura.conversations.identity_id) —
-// into ONE newest-first activity feed for a single identity, with pagination. It mirrors
-// the raw-pgx store precedent shipped this phase (internal/objectstore/identity_store.go)
-// and internal/documents/catalog_store.go; no sqlc query is added.
+// (audit_api.go). It unions the four identity-keyed audit ledgers — aura.mcp_audit
+// (keyed on actor_identity_id), aura.skill_audit (keyed on identity_id),
+// aura.tool_invocations (conversation-keyed, joined to aura.conversations.identity_id), and
+// aura.share_audit (keyed on identity_id, Phase 37F D-14) — into ONE newest-first activity
+// feed for a single identity, with pagination. It mirrors the raw-pgx store precedent
+// shipped this phase (internal/objectstore/identity_store.go) and
+// internal/documents/catalog_store.go; no sqlc query is added.
 //
 // The tool-plane leg joins aura.conversations, which carries owner RLS (migration 0032).
 // PgAuditStore reads on a plain pool connection (app.current_identity unset), where the
@@ -30,7 +31,7 @@ import (
 // the ledger-specific note (an mcp reason / skill actor_id / tool status). Both may carry
 // user-authored text, so the handler SanitizeStrings them before the wire (T-36-10-I).
 type AuditEvent struct {
-	Source    string    `json:"source"` // "mcp" | "skill" | "tool"
+	Source    string    `json:"source"` // "mcp" | "skill" | "tool" | "share"
 	Action    string    `json:"action"`
 	Target    string    `json:"target"`
 	Detail    string    `json:"detail,omitempty"`
@@ -64,6 +65,10 @@ SELECT source, action, target, detail, created_at FROM (
       FROM aura.tool_invocations ti
       JOIN aura.conversations c ON c.id = ti.conversation_id
       WHERE c.identity_id = $2::uuid
+    UNION ALL
+    SELECT 'share' AS source, action, COALESCE(conversation_id::text, ''), COALESCE(tier, ''), created_at
+      FROM aura.share_audit
+      WHERE identity_id = ANY($1::text[])
 ) feed
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4`
