@@ -22,10 +22,11 @@ import { useRunUsageOwner } from './chat/useRunUsageOwner';
 import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
 import type { DocumentItem } from './documents/documentApi';
-import { readCookie, readJSON, stringField, valueOrFallback } from './auth/authConfig';
 import { ArtifactsDrawer, ArtifactsResizablePanel } from './shell/ArtifactsShell';
 import { ChatWorkspaceControls } from './shell/ChatWorkspaceControls';
 import { useArtifactsPanel } from './shell/useArtifactsPanel';
+import { useLogoutSession } from './shell/useLogoutSession';
+import { useSharePanel } from './shell/useSharePanel';
 import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
@@ -46,57 +47,6 @@ const ProfileOnboardingWizard = lazy(() => import('./onboarding/ProfileOnboardin
 const CHAT_SHELL_LAYOUT_ID = 'aura-chat-shell-v3';
 const CHAT_SHELL_PANEL_IDS = ['chat-navigation', 'chat-workspace'];
 const CHAT_WORKSPACE_MIN_WIDTH = '380px';
-
-interface LogoutTarget {
-  path: string;
-  headers?: Record<string, string>;
-  body?: string;
-}
-
-const defaultAuthulaBasePath = '/auth';
-const defaultCSRFCookieName = '__Host-authula_csrf_token';
-const defaultCSRFHeaderName = 'X-AUTHULA-CSRF-TOKEN';
-
-async function loadLogoutTarget(): Promise<LogoutTarget | null> {
-  try {
-    const res = await fetch('/api/auth/config', {
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin',
-    });
-    if (!res.ok) return null;
-    const raw = await readJSON(res);
-    if (stringField(raw, 'provider') !== 'authula') return null;
-
-    const authBasePath = valueOrFallback(
-      stringField(raw, 'auth_base_path'),
-      defaultAuthulaBasePath,
-    );
-    const csrfCookieName = valueOrFallback(
-      stringField(raw, 'csrf_cookie_name'),
-      defaultCSRFCookieName,
-    );
-    const csrfHeaderName = valueOrFallback(
-      stringField(raw, 'csrf_header_name'),
-      defaultCSRFHeaderName,
-    );
-    const csrfToken = valueOrFallback(
-      stringField(raw, 'csrf_token'),
-      res.headers.get(csrfHeaderName) ?? readCookie(csrfCookieName),
-    );
-    if (csrfToken === '') return null;
-
-    return {
-      path: `${authBasePath}/sign-out`,
-      headers: {
-        'Content-Type': 'application/json',
-        [csrfHeaderName]: csrfToken,
-      },
-      body: '{}',
-    };
-  } catch {
-    return null;
-  }
-}
 
 export function AppShell() {
   const { t } = useTranslation();
@@ -139,7 +89,7 @@ export function AppShell() {
     undefined,
   );
   const composerDraftNonce = useRef(0);
-  const [logoutPending, setLogoutPending] = useState(false);
+  const { logoutPending, logout } = useLogoutSession();
   // The onboarding+provisioning wizard is a full-screen overlay (D-04), opened by an explicit
   // trigger and covering the shell while active — NOT a surface/mode.
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -166,6 +116,11 @@ export function AppShell() {
     toggleArtifacts,
     closeDesktopPanel,
   } = useArtifactsPanel(surfaces, CHAT_SHELL_PANEL_IDS);
+
+  // 37F plan 14: useSharePanel owns the share modal's open/closed state (not persisted, no
+  // desktop/mobile split — see useSharePanel.ts). Only openShare is consumed here; plan 37F-15
+  // mounts the actual ShareModal using shareModalState/closeShare alongside this same call.
+  const { openShare } = useSharePanel();
 
   // D-11: a run that emits `aura.artifact` invalidates the identity-scoped assets query so the
   // panel refetches the new asset (37A persists it before the event, so it is always there), and
@@ -283,30 +238,6 @@ export function AppShell() {
     },
     [requestComposerDraft, t],
   );
-
-  const logout = useCallback(async () => {
-    if (logoutPending) return;
-    setLogoutPending(true);
-    try {
-      const target = await loadLogoutTarget();
-      if (target === null) {
-        setLogoutPending(false);
-        return;
-      }
-      const init: RequestInit = {
-        method: 'POST',
-        credentials: 'same-origin',
-      };
-      if (target.headers !== undefined) init.headers = target.headers;
-      if (target.body !== undefined) init.body = target.body;
-      await fetch(target.path, init);
-      void navigate('/login', { replace: true });
-      return;
-    } catch {
-      // Keep the operator in the cockpit if the server could not clear the session.
-    }
-    setLogoutPending(false);
-  }, [logoutPending, navigate]);
 
   const edgeSwipe = useEdgeSwipe({
     onLeftEdge: surfaces.openNav,
@@ -516,6 +447,7 @@ export function AppShell() {
                   <ChatWorkspaceControls
                     artifactsActive={artifactsActive}
                     onArtifactsToggle={toggleArtifacts}
+                    onShareOpen={openShare}
                   />
                   {workspace}
                 </div>
