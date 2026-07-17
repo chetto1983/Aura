@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DownloadCloud, PackageOpen, X } from 'lucide-react';
 import type { Asset } from '../attachments/types';
+import { SharedSection } from '../share/SharedSection';
 import { ArtifactRow } from './ArtifactRow';
 import { downloadAll } from './downloadAll';
 import { useThreadArtifacts } from './useThreadArtifacts';
@@ -15,7 +16,10 @@ import { useThreadArtifacts } from './useThreadArtifacts';
 // progress (skips degraded rows, disabled during the run, aborted on unmount/thread
 // switch), and a LAZILY-mounted PreviewModal for the active row — so docx-preview/
 // xlsx and the other renderer chunks stay out of the panel's static import graph
-// until the user first opens a preview.
+// until the user first opens a preview. Below the artifact list it also renders
+// SharedSection (D-05, 37F-17) — the "Condiviso" list of this thread's active share
+// links, 37B explicitly deferred to this phase — which derives entirely from
+// `threadId` via its own hook, so this panel's props contract is untouched.
 
 // PreviewModal is a NAMED export; map it to the default shape React.lazy expects.
 // The dynamic import() keeps the modal + its six lazy renderer chunks off the
@@ -108,7 +112,7 @@ export function ArtifactsPanel({ threadId, onClose }: ArtifactsPanelProps) {
           : t('artifacts.downloadAll')}
       </button>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {rows.length === 0 ? (
           isLoading ? null : (
             <EmptyState />
@@ -126,6 +130,8 @@ export function ArtifactsPanel({ threadId, onClose }: ArtifactsPanelProps) {
             ))}
           </ul>
         )}
+
+        <SharedSection threadId={threadId} />
       </div>
 
       {active !== undefined && (

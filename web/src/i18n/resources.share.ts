@@ -87,6 +87,10 @@ export const shareEn = {
     settings: {
       heading: 'Shared links',
       empty: 'You have no shared conversations.',
+      // The global list's own load-error copy (a query-level failure, distinct from a
+      // per-link revoke failure below) — scoped here rather than reusing the generic
+      // settings.error string, matching settings.telegram.error's own per-panel pattern.
+      loadError: "Couldn't load your shared links. Check your connection and try again.",
       tier: {
         internal: 'Internal',
         public: 'Public',
@@ -94,6 +98,9 @@ export const shareEn = {
       expiresIn: 'Expires in {{days}} days',
       expired: 'Expired',
       revoke: 'Revoke',
+      // Shared by both revoke paths (per-row and bulk) in both management surfaces — a
+      // failed revoke must never fail silently (Rule 2: missing error handling).
+      revokeError: 'Could not revoke. Try again.',
       revokeAll: 'Revoke all',
       revokeAllConfirm: {
         title: 'Revoke all shared links?',
@@ -180,6 +187,7 @@ export const shareIt = {
     settings: {
       heading: 'Link condivisi',
       empty: 'Non hai conversazioni condivise.',
+      loadError: 'Impossibile caricare i link condivisi. Controlla la connessione e riprova.',
       tier: {
         internal: 'Interno',
         public: 'Pubblico',
@@ -187,6 +195,7 @@ export const shareIt = {
       expiresIn: 'Scade tra {{days}} giorni',
       expired: 'Scaduto',
       revoke: 'Revoca',
+      revokeError: 'Impossibile revocare. Riprova.',
       revokeAll: 'Revoca tutti',
       revokeAllConfirm: {
         title: 'Revocare tutti i link condivisi?',
