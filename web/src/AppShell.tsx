@@ -34,19 +34,12 @@ const ExternalStoreChat = lazy(() =>
   import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
 );
 
-// The Frame-06 Graph Explorer is a SEPARATE lazy chunk (Pitfall 7): the Sigma WebGL stack it
-// pulls in must never land in the main bundle — it loads only when surface==='graph'.
 const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 
-// The Phase-28 Governance workspace (MCP/Skills/Scheduler boards) is its own lazy chunk too
-// (D-01) — it loads only when surface==='governance'.
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
 const DocumentsWorkspace = lazy(() => import('./documents/DocumentsWorkspace'));
 const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 
-// The Phase-28 onboarding+provisioning wizard is a SEPARATE full-screen overlay (D-04 — NOT a
-// MODES entry / surface tab). Its own lazy chunk: it loads only when the operator opens the
-// "Create identity" overlay, never landing in the main bundle.
 const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
 const ProfileOnboardingWizard = lazy(() => import('./onboarding/ProfileOnboardingWizard'));
 
@@ -145,6 +138,7 @@ export function AppShell() {
   const [composerDraftPrompt, setComposerDraftPrompt] = useState<ComposerDraftPrompt | undefined>(
     undefined,
   );
+  const composerDraftNonce = useRef(0);
   const [logoutPending, setLogoutPending] = useState(false);
   // The onboarding+provisioning wizard is a full-screen overlay (D-04), opened by an explicit
   // trigger and covering the shell while active — NOT a surface/mode.
@@ -257,15 +251,20 @@ export function AppShell() {
 
   const requestComposerDraft = useCallback(
     (text: string) => {
-      setComposerDraftPrompt((current) => ({
+      composerDraftNonce.current += 1;
+      setComposerDraftPrompt({
         text,
-        nonce: (current?.nonce ?? 0) + 1,
-      }));
+        nonce: composerDraftNonce.current,
+      });
       setSurface('chat');
       closeNav();
     },
     [closeNav, setSurface],
   );
+
+  const consumeComposerDraft = useCallback((nonce: number) => {
+    setComposerDraftPrompt((current) => (current?.nonce === nonce ? undefined : current));
+  }, []);
 
   const askDocument = useCallback(
     (document: DocumentItem) => {
@@ -436,6 +435,7 @@ export function AppShell() {
               allocateUsageRunId={allocateUsageRunId}
               onArtifact={handleArtifact}
               draftPrompt={composerDraftPrompt}
+              onDraftPromptConsumed={consumeComposerDraft}
               onRequestDraftPrompt={requestComposerDraft}
               onNewChat={startNewConversation}
             />

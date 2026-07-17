@@ -64,6 +64,34 @@ beforeEach(() => {
 });
 
 describe('Composer draft prompt ownership', () => {
+  it('acknowledges an unlocked draft nonce exactly once after applying it', () => {
+    const draftPrompt = { text: 'Answer from release-notes.pdf', nonce: 23 };
+    const onDraftPromptConsumed = vi.fn();
+    const stableUploads = uploads();
+    const { rerender } = render(
+      <Composer
+        draftPrompt={draftPrompt}
+        onDraftPromptConsumed={onDraftPromptConsumed}
+        uploads={stableUploads}
+      />,
+    );
+
+    expect(h.setText).toHaveBeenCalledTimes(1);
+    expect(h.setText).toHaveBeenCalledWith(draftPrompt.text);
+    expect(onDraftPromptConsumed).toHaveBeenCalledTimes(1);
+    expect(onDraftPromptConsumed).toHaveBeenCalledWith(draftPrompt.nonce);
+
+    rerender(
+      <Composer
+        draftPrompt={draftPrompt}
+        onDraftPromptConsumed={onDraftPromptConsumed}
+        uploads={stableUploads}
+      />,
+    );
+    expect(h.setText).toHaveBeenCalledTimes(1);
+    expect(onDraftPromptConsumed).toHaveBeenCalledTimes(1);
+  });
+
   it('defers a locked draft and applies it exactly once after unlock', () => {
     const draftPrompt = { text: 'Answer from manual.pdf', nonce: 17 };
     const stableUploads = uploads();

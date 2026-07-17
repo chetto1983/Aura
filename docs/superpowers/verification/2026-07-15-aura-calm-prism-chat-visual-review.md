@@ -3,17 +3,20 @@
 ## Inputs
 
 - Baseline commit: `de700c425`
-- Implementation commit: `a6345417c`
+- Implementation and evidence commit: `aea0e3cb4`
+- Task 8 browser-hardening commit: `61ff8a90d`
+- Task 9 review-closure commit: `c461cf2f4`
+- Pre-review checkpoint: `a6345417c`
 - Browser: installed Google Chrome through Playwright `channel: 'chrome'`
 - Deterministic fixture: identical conversation, long prompt/upload name, reasoning, running and completed tools, typed system result, local artifact, three approval states, and settled telemetry
 - States: desktop 1440 × 1000 dark/light; mobile 393 × 852 dark/light; reflow at 320, 720, and 768 CSS px
 
 ## Same-input comparisons
 
-| State | Reference | Implementation | Combined comparison | Inspected verdict |
-| --- | --- | --- | --- | --- |
-| Desktop dark | `2026-07-15-aura-calm-prism-chat/reference-desktop-dark.png` | `2026-07-15-aura-calm-prism-chat/implementation-desktop-dark.png` | `2026-07-15-aura-calm-prism-chat/comparison-desktop-dark.png` | PASS — the reference control/user-content collision and composer-before-approvals ordering are removed; measure, hierarchy, borders, radii, and typography remain coherent. |
-| Mobile dark | `2026-07-15-aura-calm-prism-chat/reference-mobile-dark.png` | `2026-07-15-aura-calm-prism-chat/implementation-mobile-dark.png` | `2026-07-15-aura-calm-prism-chat/comparison-mobile-dark.png` | PASS — the reference top composer/control overlap is removed; approval cards remain contained, the collapsed footer cue is legible, text wraps, and no horizontal crop is visible. |
+| State        | Reference                                                    | Implementation                                                    | Combined comparison                                           | Inspected verdict                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop dark | `2026-07-15-aura-calm-prism-chat/reference-desktop-dark.png` | `2026-07-15-aura-calm-prism-chat/implementation-desktop-dark.png` | `2026-07-15-aura-calm-prism-chat/comparison-desktop-dark.png` | PASS — the reference control/user-content collision and composer-before-approvals ordering are removed; measure, hierarchy, borders, radii, and typography remain coherent.        |
+| Mobile dark  | `2026-07-15-aura-calm-prism-chat/reference-mobile-dark.png`  | `2026-07-15-aura-calm-prism-chat/implementation-mobile-dark.png`  | `2026-07-15-aura-calm-prism-chat/comparison-mobile-dark.png`  | PASS — the reference top composer/control overlap is removed; approval cards remain contained, the collapsed footer cue is legible, text wraps, and no horizontal crop is visible. |
 
 Both combined images were inspected at original detail after Playwright generated them from the same fixture and viewport.
 

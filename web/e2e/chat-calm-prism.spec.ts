@@ -124,6 +124,51 @@ test.describe('Calm Prism Chrome contracts', () => {
     }).toThrow(/console:/);
   });
 
+  test('an explicitly armed same-origin agent abort is consumed once', async ({
+    page,
+    baseURL,
+  }) => {
+    const appOrigin = origin(baseURL);
+    const health = collectBrowserHealth(page, appOrigin);
+    await page.route(`${appOrigin}/`, (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<main>Aura health</main>' }),
+    );
+    await page.route(`${appOrigin}/agent/run`, async (route) => {
+      await new Promise<void>((resolveDelay) => {
+        setTimeout(resolveDelay, 250);
+      });
+      await route.fulfill({ status: 200, body: 'late response' }).catch(() => undefined);
+    });
+    await page.goto(appOrigin);
+    health.expectRequestFailure({
+      method: 'POST',
+      pathname: '/agent/run',
+      errorText: 'net::ERR_ABORTED',
+    });
+    const failed = page.waitForEvent('requestfailed', (request) =>
+      request.url().endsWith('/agent/run'),
+    );
+
+    await page.evaluate(async () => {
+      const controller = new AbortController();
+      const pending = fetch('/agent/run', {
+        method: 'POST',
+        body: '{}',
+        signal: controller.signal,
+      }).catch(() => undefined);
+      await new Promise<void>((resolveFrame) => {
+        requestAnimationFrame(() => {
+          resolveFrame();
+        });
+      });
+      controller.abort();
+      await pending;
+    });
+    await failed;
+
+    health.assertClean();
+  });
+
   test('empty thread exposes all localized starters', async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     const health = collectBrowserHealth(page, origin(baseURL));
