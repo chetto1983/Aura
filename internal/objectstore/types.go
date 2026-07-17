@@ -73,11 +73,8 @@ func AssetKey(identityID, assetID string) string {
 // shares to resolve artifacts via the same snapshot as public ones.
 // Deriving a key from an authenticator would also couple key rotation to
 // data movement — the token authenticates, the snapshot id locates.
-//
-// RED-phase stub (Task 2): replaced with the real derivation in this task's
-// GREEN commit.
-func ShareSnapshotKey(_, _ uuid.UUID) string {
-	return ""
+func ShareSnapshotKey(shareID, snapshotID uuid.UUID) string {
+	return "share/" + shareID.String() + "/snapshot/" + snapshotID.String() + "/canonical.json"
 }
 
 // ShareArtifactKey returns the object-store key for one artifact delivered
@@ -85,11 +82,8 @@ func ShareSnapshotKey(_, _ uuid.UUID) string {
 // share/<shareID>/snapshot/<snapshotID>/asset/<assetID>. Every key this
 // returns sits under ShareKeyPrefix(shareID) — the invariant revoke's
 // List(prefix)+Delete depends on to reclaim every byte (T-37F-07).
-//
-// RED-phase stub (Task 2): replaced with the real derivation in this task's
-// GREEN commit.
-func ShareArtifactKey(_, _, _ uuid.UUID) string {
-	return ""
+func ShareArtifactKey(shareID, snapshotID, assetID uuid.UUID) string {
+	return "share/" + shareID.String() + "/snapshot/" + snapshotID.String() + "/asset/" + assetID.String()
 }
 
 // ShareKeyPrefix returns the revoke-scope prefix for one share:
@@ -98,9 +92,6 @@ func ShareArtifactKey(_, _, _ uuid.UUID) string {
 // identity object, and an identity key can never address a share object —
 // which is what makes a future dedicated-bucket split a one-line change
 // (T-37F-05).
-//
-// RED-phase stub (Task 2): replaced with the real derivation in this task's
-// GREEN commit.
-func ShareKeyPrefix(_ uuid.UUID) string {
-	return ""
+func ShareKeyPrefix(shareID uuid.UUID) string {
+	return "share/" + shareID.String() + "/"
 }
