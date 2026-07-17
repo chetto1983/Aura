@@ -17,6 +17,9 @@ const LoginPage = lazy(() =>
 const NotFoundView = lazy(() =>
   import('./routes/NotFoundView').then((mod) => ({ default: mod.NotFoundView })),
 );
+const SharePage = lazy(() =>
+  import('./routes/SharePage').then((mod) => ({ default: mod.SharePage })),
+);
 
 // D-08: theme + density are already on <html> from the index.html pre-paint script.
 // Re-assert them from localStorage BEFORE React mounts so there is no theme flash.
@@ -42,6 +45,16 @@ createRoot(container).render(
               {/* Deep link to a conversation at a search match (D-08); AppShell
                   reads :id into the active thread. */}
               <Route path="/c/:id" element={<AppShell />} />
+              {/* WEBSHARE-02/03 (37F-16): /s/{token} renders WITHOUT a session — the
+                  server admits this prefix to the SPA shell unauthenticated
+                  (isPublicShareRoute, plan 37F-12) and the 404 from GET
+                  /s/{token}/data is the real gate, not this route. /shared/{id} is
+                  deliberately OUTSIDE the /s/ prefix and stays behind RequireAuth;
+                  its gate is the 401/404 from GET /api/shares/{id}/data. Neither
+                  route hides anything client-side — same rule as this file's
+                  header comment above. */}
+              <Route path="/s/:token" element={<SharePage tier="public" />} />
+              <Route path="/shared/:id" element={<SharePage tier="internal" />} />
               <Route path="*" element={<NotFoundView />} />
             </Routes>
           </Suspense>
