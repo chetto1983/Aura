@@ -17,8 +17,11 @@ const ArtifactsPanel = lazy(() =>
   import('../chat/artifacts/ArtifactsPanel').then((mod) => ({ default: mod.ArtifactsPanel })),
 );
 
-// D-01: the header-style doc toggle (the reference's top-right icon; the adjacent share-arrow is
-// 37F, not built). ChatWorkspaceControls keeps it in the workspace's normal-flow controls row.
+// D-01: the header-style doc toggle (the reference's top-right icon). The adjacent share-arrow
+// (37F plan 14, `ShareToggle` in `./ShareShell`) now sits beside it: ChatWorkspaceControls mounts
+// [VoiceModeToggle, ShareToggle, ArtifactsToggle] in that order in the workspace's normal-flow
+// controls row, so all three read as header controls without editing ShellHeader (the app-level
+// header) or shifting the chat layout.
 export function ArtifactsToggle({
   active,
   onToggle,
