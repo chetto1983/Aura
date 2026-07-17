@@ -15,6 +15,7 @@ import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { settingsEn, settingsIt } from './resources.settings';
+import { shareEn, shareIt } from './resources.share';
 
 export const resources = {
   en: {
@@ -157,6 +158,7 @@ export const resources = {
       },
       ...displayEn,
       ...compactionEn,
+      ...shareEn,
       ...documentsEn,
       ...governanceEn,
       ...graphEn,
@@ -432,6 +434,7 @@ export const resources = {
       },
       ...displayIt,
       ...compactionIt,
+      ...shareIt,
       ...documentsIt,
       ...governanceIt,
       ...graphIt,
