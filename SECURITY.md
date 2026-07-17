@@ -7,9 +7,10 @@ unusually load-bearing — we take reports seriously.
 
 ## Supported versions
 
-The project is pre-1.0 and developed on the `tabula-rasa` branch. Only the
-**latest commit on the default branch** receives security fixes. Tagged
-pre-release builds are not separately maintained.
+Only the **latest commit on `master`** (the default branch) receives security
+fixes. The current release line is **v1.x** (latest tag `v1.0.1`); **v2.0.0** is
+in development on `master`. Older tags and pre-release builds are not separately
+maintained — please report against `master`.
 
 ## Reporting a vulnerability
 
@@ -35,8 +36,13 @@ include it — but never include live credentials or third-party data.
 
 ## In scope (high-value targets)
 
-- **Sandbox escape** — breaking out of the container-isolated Python/shell
-  workers (seccomp, ulimit, network-deny bypass).
+- **Sandbox escape** — breaking out of the per-user container sandbox
+  (`internal/sandbox/usersandbox`) that runs Python/shell workers: capability,
+  seccomp, ulimit, or network-egress bypass.
+- **Cross-identity isolation break** — one identity reaching another's sandbox,
+  conversations, documents, or object-store bucket.
+- **Tool-policy bypass** — executing a mutating tool without the reservation or
+  operator approval its ToolGateway verdict requires (`internal/gateway`).
 - **Tool-call / prompt injection** leading to unintended capability use,
   credential disclosure, or destructive DB operations.
 - **Credential leakage** — secrets (DSNs, API keys, passwords) surfacing in

@@ -26,13 +26,19 @@ cp .env.example .env && $EDITOR .env   # set POSTGRES_PASSWORD / NEO4J_PASSWORD
 Every change must pass the same gate CI enforces:
 
 ```bash
-make quality        # vet + build + file-size + lint(+dupl,gofmt) + test-race + vuln  (no containers)
+make quality        # vet + file-size + lint(+dupl) + deadcode + test-race + vuln + go build  (no containers)
 make neo4j-migrate  # bring the stack up
 make quality-full   # quality + coverage (owned surface >= 85%)
 ```
 
-The lefthook hooks run a fast subset automatically (gofmt/vet/file-size on
-commit, lint/build on push). Don't `--no-verify` to dodge a real failure — fix it.
+The lefthook hooks run a fast subset automatically: **gofmt/vet/lint/file-size/
+jscpd on commit**, **quality-snapshot-freshness/build/deadcode/web gates on
+push**. (`golangci-lint` runs at commit, not push, so a lint regression surfaces
+at the commit that introduced it.) Note the pre-push **quality-snapshot
+freshness gate** — if a file you changed matches a CI-gate glob in
+`docs/aura-quality-snapshot.md`, that row's `Last measured` date must be
+re-attested or the push is rejected. Don't `--no-verify` to dodge a real
+failure — fix it.
 
 Discipline that reviewers check (full list in `CLAUDE.md`):
 
@@ -46,8 +52,9 @@ Discipline that reviewers check (full list in `CLAUDE.md`):
 
 ## Commits & PRs
 
-- **Conventional Commits**: `type(scope): subject` — e.g. `fix(02): …`,
-  `feat(01): …`, `docs(infra): …`. Imperative subject; body explains *why*.
+- **Conventional Commits**: `type(scope): subject` — the scope is the phase or
+  plan, e.g. `feat(37F-04): …`, `test(42): …`, `docs(infra): …`. Imperative
+  subject; body explains *why*.
 - Add the project trailer: `Co-Authored-By: …` where applicable.
 - Keep PRs focused. Planning artifacts under `.planning/` are not part of code
   review — use `gsd-pr-branch` to produce a clean PR branch when needed.

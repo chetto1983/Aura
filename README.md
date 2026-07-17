@@ -36,7 +36,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | **Language** | Go 1.26 |
 | **Size** | ~98k LOC non-test (`cmd` + `internal`, of which ~7k sqlc-generated) · 68 internal packages |
 | **Tests** | ~143k LOC — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
-| **Test coverage** | **90.3%** owned-surface (full matrix, 2026-06-13) — hard floor 85% per package |
+| **Test coverage** | owned-surface floor **≥85% per package**, enforced in CI on every push |
 | **CI** | green — build/vet/lint · CodeQL · integration (Postgres / Neo4j) |
 | **Persistence** | Postgres (40 migrations, sqlc, pgx) + Neo4j (HNSW 768-d + APOC + GDS) |
 | **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral, swap by config |
@@ -49,7 +49,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 - **Adaptive reasoning router** — a local embedding classifier picks reasoning effort in ~10 ms and self-improves off the hot path.
 - **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
 - **Graph-native memory** — documents become a searchable Neo4j graph (FTS + HNSW vectors); conversations persist with a context-management ladder.
-- **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, mail, calendar, whatsapp, memory).
+- **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, calendar, whatsapp, memory).
 - **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE.
 
 ## Architecture (one screen)
@@ -71,7 +71,7 @@ Observability      obs · panicobs · reasoningtrace · toolinvocations · cache
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system is built — layers, turn lifecycle, invariants |
 | [docs/TECHNICAL_OVERVIEW.md](docs/TECHNICAL_OVERVIEW.md) | CTO / due-diligence overview — problem, differentiators, maturity |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Capability matrix — shipped / in-progress / roadmap |
-| [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md) | Exhaustive function-level inventory |
+| [.planning/codebase/](.planning/codebase/) | Package-level inventory + conventions + concerns — generated, refresh with `/gsd-map-codebase` |
 | [CLAUDE.md](CLAUDE.md) · [prd.md](prd.md) | Engineering guidance · product requirements (source of truth) |
 
 ---

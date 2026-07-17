@@ -30,7 +30,7 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 
 
 
-Persistence: Postgres `aura.*` schema (**11 migrations shippate 0001-0011** — init/knowledge_migrations/paused_states/identity/conversations/conversation_turns_fts/cache_metrics/proxied_child_id_text/scheduler/skill_audit/tool_invocations — + Neo4j Cypher **0001**). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
+Persistence: Postgres `aura.*` schema (**40 migrations shippate 0001-0040**, floor on disk `0040_shared_links` — + Neo4j Cypher **0001-0002** `0001_init`/`0002_documents`). **Il numero di una nuova migration NON si deduce mai: `ls internal/db/migrations/ | tail -1` (o `ls internal/knowledge/migrations/ | tail -1` per il Cypher) è l'unica fonte del prossimo slot libero.** `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
 
 ## Slice Q&A discipline (3 gate sequenziali, mandatory)
 
@@ -46,7 +46,9 @@ Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapp
 
 ## GSD tooling (workflow ufficiale)
 
-Installazione: `.claude/` con 67 commands + 33 agents + 12 hooks attivi (vedi `.claude/settings.json`). Versione: 1.1.0.
+Installazione: `.claude/` con 67 commands + 33 agents + 9 hooks attivi (13 script in `.claude/hooks/`, 9 wired — vedi `.claude/settings.json`). Versione: 1.1.0.
+
+> **Slice → Phase (Rosetta).** Il PRD numera per **Slice** (0.5, 0.7, 1, 3, 11a-e, 13 — vocabolario storico, tuttora in `prd.md`); `.planning/ROADMAP.md`, `.planning/phases/` e gli scope dei commit numerano per **Phase** (0-43). Le due sequenze NON coincidono: una Slice può atterrare in una Phase con numero diverso. Per qualunque decisione di ordine/atterraggio (migrations su tutte) vale l'**ordine-fase**, mai l'ordine-slice.
 
 Core workflow per nuova slice:
 ```
@@ -62,15 +64,15 @@ Core workflow per nuova slice:
 Specializzati per Aura:
 - `/gsd-ai-integration-phase` — design contract AI-SPEC.md per Slice 1/3/11/13 (agent runtime, swarm, memory, vLLM)
 - `/gsd-secure-phase` — threat mitigations retro-verification (Risk-Based governance audit)
-- `/gsd-nyquist-auditor` — Nyquist validation gaps (test discipline rigorosa)
+- `/gsd-validate-phase` — Nyquist validation gaps (test discipline rigorosa); **spawna l'agent `gsd-nyquist-auditor`, che NON è un comando invocabile**
 - `/gsd-add-tests` — test generation da UAT criteria
 - `/gsd-graphify` — knowledge graph del progetto in `.planning/graphs/`
 
 Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
-- `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (Phase 1-4 shippate, ~10k LOC non-test su 14 package — non più lo skeleton 633 LOC del bootstrap)
+- `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (v0.0.0 Phase 0-21 + v1.0.0 Phase 22-30 shippate, v2.0.0 Phase 31-42 in corso — **~98k LOC non-test su 68 package**, di cui ~7k sqlc-generated; ~143k LOC di test)
 
-## Skills installate (`.claude/skills/`, 46 totali — 3.5 MB)
+## Skills installate (`.claude/skills/`, 69 totali — 7.6 MB)
 
 Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md con frontmatter description). Installate via `npx skills add`. Mappa skill → utilizzo nel workflow GSD + Slice Q&A:
 
@@ -140,6 +142,17 @@ Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md
 | `mcp-builder` (anthropics) | **Slice 0.7** | MCP server design pattern (per mcp-neo4j-cypher integration) |
 | `skill-creator` (anthropics) | **Slice 7 Skills** | Meta-pattern per creating + evaluating Aura skills |
 
+### Frontend/web + tooling (23 skills, installate post-v1.0.0)
+
+| Skill | Slice/Phase mappato | Use case |
+|---|---|---|
+| `frontend-design`, `accessibility`, `shadcn`, `vercel-react-best-practices`, `vite` | **v1.0.0 Cockpit** (Phase 22-30) | Design distintivo (vedi §Frontend_aesthetics), WCAG 2.2, componenti, build |
+| `assistant-ui`, `primitives`, `runtime`, `streaming`, `tools` | **v1.0.0 Cockpit chat/SSE** | assistant-ui: runtime selection, primitives, wire protocol AG-UI/SSE |
+| `printing-press` + 9 varianti (`-amend/-catalog/-import/-output-review/-polish/-publish/-reprint/-retro/-score`) | CLI per API esterne | Genera CLI agent-ready per API di terze parti (NON per il codice Aura) |
+| `claude-api` | Slice 1/3 LLM | Anthropic SDK + prompt caching + tool use |
+| `xlsx` | Slice 11b ingest | Spreadsheet come input/output di un task |
+| `spike-findings-Aura` | **meta — auto-caricata** | Blueprint dagli spike (vedi riga 5 di questo file) |
+
 ### Trigger automatic
 
 Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when writing or reviewing Go tests" → triggera `golang-testing`). Skill caricate solo quando richieste — no token bloat in default manifest.
@@ -169,7 +182,7 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
 - **NO TEST BASY SITTING.** Tests must follow PRD §Test discipline rigorosa: realistic fixtures, goleak, race detector, property-based dove indicato, build tags integration, coverage threshold, mutation testing spot-check. Cita la tabella esempi per slice.
 - **NO SKIP-AS-GREEN IN CI.** Integration/smoke tests must actually run in the pipeline — a `t.Skip` that fires under `$CI` is a falsely-green job exercising nothing. (1) CI jobs export the exact env the tests read (composed DSNs `AURA_DB_URL`/`AURA_DB_MIGRATE_URL`, not just the `POSTGRES_*` primitives `config.Load` composes for the CLI). (2) Skip-helpers (`envOrSkip` and inline `t.Skip`) call `t.Fatal` when a required var is unset and `$CI` is set; locally they still skip. A sub-second "integration" runtime is a skip tell — verify execution, not just PASS.
 - **COVERAGE FLOOR 85%.** No phase/slice closes below 85% measured coverage across the full tag matrix (unit + integration + smoke). This overrides the PRD's ≥75% unit / ≥60% integration. A bare unit-only number under 85% is not an acceptable closing metric — report the combined figure.
-- **COVERAGE GATE TAG SET = `db_integration neo4j_integration` ONLY (there is NO `docker_integration` CI job).** The gate (`scripts/coverage_gate.sh`, CI Knowledge job) runs exactly these two tags. Any package whose runtime is exercised ONLY under another tag — above all `docker_integration` (e.g. `internal/sandbox/usersandbox` DockerBackend lifecycle/exec/egress, the routed branches in `internal/agent/tools`) — counts as UNCOVERED in the owned-surface floor: those `//go:build docker_integration` tests **compile+skip in CI and contribute ZERO coverage** (this is also why the CAP_NET_ADMIN cap-assertion bug stayed latent — WR-01). **When you add daemon/container-gated runtime code you MUST also write daemon-free unit tests for its pure logic** — spec/tar builders, path-traversal + symlink guards, nil/disabled early-return paths, structural-capability "not supported" errors — or the aggregate silently drops below 85% and CI fails ~20 min after push. **Verify locally BEFORE pushing with `bash scripts/coverage_docker.sh`** (containerized mcp-neo4j-cypher, needs the stack up) — the gate now provisions a DISPOSABLE coverage DB (`aura_cov`, owned by `aura_migrate`) and drops it on exit, NEVER the live `aura`; `scripts/coverage_gate.sh` also refuses `db_integration` against a DB named `aura` when run locally (unset `GITHUB_ACTIONS`). This closed a 2026-07-10 footgun where the gate truncated the live deployment's auth tables (operator identity + `authula` wiped, no backup). A green local full-matrix run is worth more than a push-and-wait CI cycle. See test-class rules in `docs/` and the coverage campaign history below.
+- **COVERAGE GATE TAG SET = `db_integration neo4j_integration` ONLY (there is NO `docker_integration` CI job).** The gate (`scripts/coverage_gate.sh`) runs in **TWO** CI jobs: the **Knowledge** job (`ci.yml`, tags `db_integration neo4j_integration`) and the **Skills gate** (`skills.yml`, **`db_integration` ONLY** — hence the stricter of the two: a package can clear Knowledge and still fail Skills, so **at phase close verify THAT number**). Any package whose runtime is exercised ONLY under another tag — above all `docker_integration` (e.g. `internal/sandbox/usersandbox` DockerBackend lifecycle/exec/egress, the routed branches in `internal/agent/tools`) — counts as UNCOVERED in the owned-surface floor: those `//go:build docker_integration` tests **compile+skip in CI and contribute ZERO coverage** (this is also why the CAP_NET_ADMIN cap-assertion bug stayed latent — WR-01). **When you add daemon/container-gated runtime code you MUST also write daemon-free unit tests for its pure logic** — spec/tar builders, path-traversal + symlink guards, nil/disabled early-return paths, structural-capability "not supported" errors — or the aggregate silently drops below 85% and CI fails ~20 min after push. **Verify locally BEFORE pushing with `bash scripts/coverage_docker.sh`** (containerized mcp-neo4j-cypher, needs the stack up) — the gate now provisions a DISPOSABLE coverage DB (`aura_cov`, owned by `aura_migrate`) and drops it on exit, NEVER the live `aura`; `scripts/coverage_gate.sh` also refuses `db_integration` against a DB named `aura` when run locally (unset `GITHUB_ACTIONS`). This closed a 2026-07-10 footgun where the gate truncated the live deployment's auth tables (operator identity + `authula` wiped, no backup). A green local full-matrix run is worth more than a push-and-wait CI cycle. See test-class rules in `docs/` and the coverage campaign history below.
 - **DEFINITION OF DONE** Phase/Job are complete when is fully validate E2E at score >9.8 on real scenario.
 - **AUDIT** refer to \docs\audit for audit finding and improvement on codebase test and observability
 
@@ -208,12 +221,12 @@ Fix issues before moving on.
 > WSL apt installs (build-essential, pipx) were done as root via `wsl -u root` (passwordless from the Windows host — interactive `sudo` is not available).
 
 **Gates (enforced in CI, runnable locally):**
-- `make quality` — pre-push, no containers: vet + build + file-size + lint(+dupl) + test-race + vuln.
+- `make quality` — pre-push, no containers: vet + file-size + lint(+dupl) + deadcode + test-race + vuln, then `go build $(GO_PACKAGES)` as the recipe body. (There is no standalone `build:` target — `build` is a recipe line here and a separate lefthook pre-push command; `Makefile:88-90` is the source of truth.)
 - `make quality-full` — `quality` + coverage gate (needs stack up via `make neo4j-migrate`).
-- `make coverage` → `scripts/coverage_gate.sh` — **owned-surface floor ≥85%** (`internal/*` minus generated `sqlc` + pre-rewrite skeletons + test-support `internal/agent/agenttest`; `cmd/aura` glue excluded as it's behaviourally covered). Tunable via `AURA_COVERAGE_MIN`. Current: **90.3%** (re-measured 2026-06-13 @ HEAD 882df109, full `db_integration neo4j_integration` matrix on the live stack; passes the ≥85% floor). **Every owned package now clears 85%** (lowest: `swarm` 85.4%, `setup` 85.5%, `config` 85.6%) after the 2026-06-13 coverage campaign raised 16 sub-floor packages — e.g. `skilladapters` 0→100%, `reasoningtrace` 71.8→95.8%, `cron/handlers` 71.1→96.9%, `runner` 72.4→96.2%, `db` 76.5→90.2% (the last via `WithTx`/`MigrateSteps` integration tests), `onboarding` 79→96.8%. Untagged + tagged `-race` clean across all touched packages. The earlier "86.0%"/"≈91.7%" figures are superseded.
+- `make coverage` → `scripts/coverage_gate.sh` — **owned-surface floor ≥85%** (`internal/*` minus generated `sqlc` + pre-rewrite skeletons + test-support `internal/agent/agenttest`; `cmd/aura` glue excluded as it's behaviourally covered). Tunable via `AURA_COVERAGE_MIN`. **Last full-matrix measurement: 90.3%** (2026-06-13 @ HEAD `882df109`, full `db_integration neo4j_integration` matrix on the live stack) — **NOT re-measured since: phases 37A-37F, 42 and 43 have landed after it.** Treat 90.3% as the last known figure, not as current state. The ≥85% per-package floor is **enforced by the gate on every run**, not a standing attestation: for current per-row numbers see `docs/aura-quality-snapshot.md`. The 2026-06-13 campaign raised 16 sub-floor packages (e.g. `skilladapters` 0→100%, `reasoningtrace` 71.8→95.8%, `cron/handlers` 71.1→96.9%, `runner` 72.4→96.2%, `db` 76.5→90.2% via `WithTx`/`MigrateSteps`, `onboarding` 79→96.8%); the earlier "86.0%"/"≈91.7%" figures are superseded.
 - `make vuln` → `govulncheck ./...` — supply-chain CVE scan (CI `vulncheck` job).
 - `dupl` is enabled in `.golangci.yml` (threshold 100, `_test.go` excluded — table tests are intentionally repetitive).
-- Mutation spot-check ≥70% on each phase's critical file(s); documented in the phase `VALIDATION.md` Manual-Only table (db.go 82.8%, budget.go/budget_dedup.go 89.4%).
+- Mutation spot-check ≥70% on each phase's critical file(s); documented in the phase `VALIDATION.md` Manual-Only table (recent: 37F-03 SC3 core 87.5% killed; the v0.0.0 examples db.go 82.8% + budget.go/budget_dedup.go 89.4% are now archived under `.planning/milestones/v0.0.0-phases/`).
 
 **No-skip-as-green** still governs: the coverage gate runs the tagged tiers, which `t.Fatal` under `$CI` when their env is unset — a skipped tier fails the gate, never passes it. Phase validation (deep) executes every tier live, never compile-checks — bring the stack up and run the real integration + smoke + mutation, do not trust a compile-check.
 
@@ -226,8 +239,9 @@ Fix issues before moving on.
 
 ## Persistence
 
-- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **11 migrations shippate 0001-0011** (lo slot 0011 = `tool_invocations`, NON `snippet_runs` — D-19/A4 skipped; le successive atterrano con le rispettive slice — vedi prd.md §Persistence "Migration numbering — fonte di verità").
-- **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector index 768d cosine. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
+- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **40 migrations shippate 0001-0040** (floor on disk `0040_shared_links`).
+  - **Migration numbering — regola imperativa.** Il numero si assegna **all'atterraggio = prossimo intero libero quando la PHASE esegue** (ordine-fase, NON ordine-slice). **Prima di creare una migration esegui `ls internal/db/migrations/ | tail -1` e usa il successivo: il numero non si deduce, non si calcola dalla slice, non si copia da questo file** — questo file invecchia, la directory no. I numeri hardcodati nelle sezioni slice del PRD sono **indicativi** e superseduti da questa regola. Fonte di verità: prd.md §Persistence "Migration numbering — fonte di verità".
+- **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector index 768d cosine. Cypher migrations: **`0001_init`, `0002_documents`** in `internal/knowledge/migrations/` — sequenza separata da Postgres, **stessa regola imperativa**: `ls internal/knowledge/migrations/ | tail -1` prima di aggiungerne una. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
 - **Filesystem** per artifact: `$AURA_RUN_DIR/` (sidecar tool results + spillover content) + `~/.aura/agents/<id>/` (Agent.md profile) + `~/.aura/pyscripts/<id>/` (Slice 7e snippets) + `$AURA_SKILLS_DIR/` (skills instruction).
 - **Backup**: Postgres `pg_dump` + Neo4j `neo4j-admin database dump` (vedi PRD §Backup strategy).
 
