@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
-stopped_at: Completed 37F-01-PLAN.md (PRD-amendment + ADR gate)
-last_updated: "2026-07-17T08:08:51.963Z"
+stopped_at: Completed 37F-02-PLAN.md
+last_updated: "2026-07-17T08:53:32.243Z"
 last_activity: 2026-07-17
 progress:
   total_phases: 19
   completed_phases: 14
   total_plans: 122
-  completed_plans: 104
+  completed_plans: 105
   percent: 74
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 2 of 19
+Plan: 3 of 19
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
@@ -340,6 +340,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 42 P09 | 31min | 3 tasks | 15 files |
 | Phase 42 P10 | 2h | 2 tasks | 14 files |
 | Phase 37F P01 | 25min | 2 tasks | 2 files |
+| Phase 37F-conversation-artifact-sharing-export-inserted P02 | 45min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -609,6 +610,9 @@ Recent decisions affecting current work:
 - [Phase 37F-01]: D-08 AMENDED: reasoning/thinking traces are DROPPED from the snapshot permanently — Verified structurally impossible to persist today (no conversation_turns column, no llm.Message field, Chunk.Reasoning is stream-only); no reference product ships CoT in a share
 - [Phase 37F-01]: D-13 AMENDED: public token lookup is hash-indexed equality (WHERE token_hash = $1), NOT a constant-time table scan — The literal constant-time-compare reading is slower and no more secure since the lookup key is already SHA-256(token)
 - [Phase 37F-01]: OQ#4 resolved: internal tier is an id-addressed authenticated route (GET /api/shares/{id}/data), public tier is a hashed opaque token (GET /s/{token}/data) — D-03 no-enumerable-IDs is scoped to the unauthenticated surface only; D-11 locked token_hash (public only) wording stands unamended
+- [Phase 37F-conversation-artifact-sharing-export-inserted]: share_audit append-only via grant asymmetry only, no trigger — matches the plan's exact scoped acceptance criteria (grant check only)
+- [Phase 37F-conversation-artifact-sharing-export-inserted]: Migration slot 0040 confirmed free, AURA_SHARE_* knobs not cataloged in config_knobs.go — no collision with parallel phases 36/38/39; behavior spec wants silent fallback only, no Fatal-under-strict-tier gate
+- [Phase 37F-conversation-artifact-sharing-export-inserted]: Added migrate_0040_integration_test.go round-trip test (Rule 2 deviation) — every prior CHECK-widening migration (0033/0034/0035/0039) ships one; 0040 was missing the same coverage
 
 ### Pending Todos
 
@@ -653,8 +657,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T08:08:51.942Z
-Stopped at: Completed 37F-01-PLAN.md (PRD-amendment + ADR gate)
+Last session: 2026-07-17T08:53:32.220Z
+Stopped at: Completed 37F-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

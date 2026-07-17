@@ -101,8 +101,8 @@ Per-turn reasoning-effort ("thinking") selection in the Composer (parity with Cl
 Share/export a conversation or artifact (parity with Claude's "Condividi"/link), respecting Aura's identity isolation — never an unauthenticated public surface by default. *(product gap — voice/artifact/skill audit)*
 
 - [ ] **WEBSHARE-01**: The owner can export a conversation (Markdown/JSON of the thread) downloaded via an identity-scoped endpoint (`GetForIdentity`, `Content-Disposition: attachment`). *(Phase 37F)*
-- [ ] **WEBSHARE-02**: Sharing is either (a) revocable + capability-gated toward Aura identities, or (b) — if public is chosen — an explicitly opt-in expiring opaque token with a warning, never default; the owner can revoke. *(Phase 37F)*
-- [ ] **WEBSHARE-03**: No host/container path and no other identity's data reach a recipient; the share act is audited. *(Phase 37F)*
+- [x] **WEBSHARE-02**: Sharing is either (a) revocable + capability-gated toward Aura identities, or (b) — if public is chosen — an explicitly opt-in expiring opaque token with a warning, never default; the owner can revoke. *(Phase 37F)*
+- [x] **WEBSHARE-03**: No host/container path and no other identity's data reach a recipient; the share act is audited. *(Phase 37F)*
 - [ ] **WEBSHARE-04**: Unit + e2e + a cross-identity deny test on the shared link; coverage ≥85%. *(Phase 37F)*
 
 ### MCP Governance Hardening (MCPH)
