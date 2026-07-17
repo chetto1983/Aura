@@ -26,6 +26,12 @@ interface AssetRow {
   readonly document_id?: string;
 }
 
+interface CatalogDocumentRow {
+  readonly id: string;
+  readonly status: string;
+  readonly metadata: Record<string, unknown>;
+}
+
 interface AgentProbe {
   readonly complete: boolean;
   readonly request: {
@@ -44,6 +50,12 @@ interface ScoreCheck {
   readonly name: string;
   readonly pass: boolean;
   readonly detail: string;
+}
+
+interface ToolEvidence {
+  readonly id: string;
+  readonly args?: Record<string, unknown>;
+  readonly result: string;
 }
 
 function sseFrames(body: string): readonly Record<string, unknown>[] {
@@ -76,6 +88,50 @@ function toolNames(frames: readonly Record<string, unknown>[]): readonly string[
   return frames.flatMap((frame) => {
     if (frame.type !== 'TOOL_CALL_START' || typeof frame.toolCallName !== 'string') return [];
     return [frame.toolCallName];
+  });
+}
+
+function toolEvidences(
+  frames: readonly Record<string, unknown>[],
+  name: string,
+): readonly ToolEvidence[] {
+  return frames.flatMap((start) => {
+    if (
+      start.type !== 'TOOL_CALL_START' ||
+      start.toolCallName !== name ||
+      typeof start.toolCallId !== 'string'
+    ) {
+      return [];
+    }
+    const id = start.toolCallId;
+    const argsText = frames
+      .filter(
+        (frame) =>
+          frame.type === 'TOOL_CALL_ARGS' &&
+          frame.toolCallId === id &&
+          typeof frame.delta === 'string',
+      )
+      .map((frame) => frame.delta as string)
+      .join('');
+    let args: Record<string, unknown> | undefined;
+    try {
+      const parsed = JSON.parse(argsText) as unknown;
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        args = parsed as Record<string, unknown>;
+      }
+    } catch {
+      args = undefined;
+    }
+    const result = frames
+      .filter(
+        (frame) =>
+          frame.type === 'TOOL_CALL_RESULT' &&
+          frame.toolCallId === id &&
+          typeof frame.content === 'string',
+      )
+      .map((frame) => frame.content as string)
+      .join('\n');
+    return [{ id, ...(args === undefined ? {} : { args }), result }];
   });
 }
 
@@ -137,6 +193,53 @@ async function deleteConversation(page: Page, conversationId: string) {
   expect([200, 204], response.text).toContain(response.status);
 }
 
+async function deleteAsset(page: Page, assetId: string) {
+  const response = await sameOriginFetch(page, `/api/assets/${encodeURIComponent(assetId)}`, {
+    method: 'DELETE',
+  });
+  expect(response.status, response.text).toBe(200);
+  const asset = JSON.parse(response.text) as AssetRow;
+  expect(asset).toMatchObject({ id: assetId, status: 'deleted' });
+}
+
+async function deleteCatalogDocument(page: Page, documentId: string) {
+  const response = await sameOriginFetch(page, `/api/documents/${encodeURIComponent(documentId)}`, {
+    method: 'DELETE',
+  });
+  expect(response.status, response.text).toBe(200);
+  const document = JSON.parse(response.text) as CatalogDocumentRow;
+  expect(document).toMatchObject({ id: documentId, status: 'deleted' });
+}
+
+async function cleanupRealAgent(
+  page: Page,
+  assetId: string | undefined,
+  catalogDocumentId: string | undefined,
+  conversationId: string,
+) {
+  const errors: unknown[] = [];
+  let documentId = catalogDocumentId;
+  const attempt = async (operation: () => Promise<void>) => {
+    try {
+      await operation();
+    } catch (error) {
+      errors.push(error);
+    }
+  };
+  if (documentId === undefined && assetId !== undefined) {
+    await attempt(async () => {
+      documentId = (await catalogDocumentForAsset(page, assetId)).id;
+    });
+  }
+  if (assetId !== undefined) await attempt(() => deleteAsset(page, assetId));
+  const knownDocumentId = documentId;
+  if (knownDocumentId !== undefined) {
+    await attempt(() => deleteCatalogDocument(page, knownDocumentId));
+  }
+  await attempt(() => deleteConversation(page, conversationId));
+  if (errors.length > 0) throw new AggregateError(errors, 'real-agent cleanup failed');
+}
+
 async function threadAssets(page: Page, conversationId: string): Promise<readonly AssetRow[]> {
   const response = await sameOriginFetch(
     page,
@@ -145,6 +248,20 @@ async function threadAssets(page: Page, conversationId: string): Promise<readonl
   expect(response.status, response.text).toBe(200);
   const value = JSON.parse(response.text) as unknown;
   return Array.isArray(value) ? (value as AssetRow[]) : [];
+}
+
+async function catalogDocumentForAsset(page: Page, assetId: string): Promise<CatalogDocumentRow> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const response = await sameOriginFetch(page, '/api/documents?limit=100');
+    expect(response.status, response.text).toBe(200);
+    const value = JSON.parse(response.text) as unknown;
+    const rows = Array.isArray(value) ? (value as CatalogDocumentRow[]) : [];
+    const document = rows.find((row) => row.metadata.source_asset_id === assetId);
+    if (document !== undefined) return document;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+  }
+  throw new Error(`catalog document for asset ${assetId} did not appear`);
 }
 
 async function installAgentProbe(page: Page) {
@@ -237,7 +354,7 @@ test.describe('real-agent Calm Prism acceptance', () => {
   test('scores the real composer, DOCX RAG, persistence, and responsive health at 10/10', async ({
     page,
   }, testInfo) => {
-    test.setTimeout(420_000);
+    test.setTimeout(1_500_000);
     if (!existsSync(documentPath))
       throw new Error(`real-agent DOCX fixture missing: ${documentPath}`);
 
@@ -247,6 +364,8 @@ test.describe('real-agent Calm Prism acceptance', () => {
     await page.unroute('**/readyz');
     const conversationId = await createConversation(page);
     const checks: ScoreCheck[] = [];
+    let uploadedAssetId: string | undefined;
+    let catalogDocumentId: string | undefined;
 
     try {
       await installAgentProbe(page);
@@ -263,7 +382,21 @@ test.describe('real-agent Calm Prism acceptance', () => {
         detail: page.url(),
       });
 
+      const presignResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).origin === new URL(origin).origin &&
+          new URL(response.url()).pathname === '/api/assets/presign' &&
+          response.request().method() === 'POST',
+        { timeout: 30_000 },
+      );
       await page.locator('input[type="file"][aria-label="Add files"]').setInputFiles(documentPath);
+      const presignResponse = await presignResponsePromise;
+      expect(presignResponse.status()).toBe(200);
+      const presignBody = (await presignResponse.json()) as {
+        readonly asset?: { readonly id?: unknown };
+      };
+      expect(presignBody.asset?.id).toEqual(expect.any(String));
+      uploadedAssetId = presignBody.asset?.id as string;
       await expect(page.getByText(basename(documentPath), { exact: true }).first()).toBeVisible({
         timeout: 30_000,
       });
@@ -271,9 +404,17 @@ test.describe('real-agent Calm Prism acceptance', () => {
         timeout: 240_000,
       });
       const assets = await threadAssets(page, conversationId);
-      const document = assets.find((asset) => asset.file_name === basename(documentPath));
+      const document = assets.find((asset) => asset.id === uploadedAssetId);
       const documentId = document?.document_id?.trim() ?? '';
-      const documentReady = document?.status === 'searchable' && documentId.length > 0;
+      const catalogDocument = await catalogDocumentForAsset(page, uploadedAssetId);
+      catalogDocumentId = catalogDocument.id;
+      const searchDocumentMetadata = catalogDocument.metadata.search_document_id;
+      const catalogSearchDocumentId =
+        typeof searchDocumentMetadata === 'string' ? searchDocumentMetadata.trim() : '';
+      const documentReady =
+        document?.status === 'searchable' &&
+        documentId.length > 0 &&
+        catalogSearchDocumentId === documentId;
       checks.push({
         name: 'searchable real DOCX upload',
         pass: documentReady,
@@ -301,9 +442,11 @@ test.describe('real-agent Calm Prism acceptance', () => {
       const frames = sseFrames(responseBody);
       const answer = frameText(frames);
       const names = toolNames(frames);
+      const documentSearches = toolEvidences(frames, 'document_search');
       const requestBody = JSON.parse(probe.request.body) as {
         readonly aura?: { readonly attachment_ids?: readonly string[] };
       };
+      const attachmentIds = requestBody.aura?.attachment_ids ?? [];
 
       checks.push({
         name: 'real run request / HTTP 200',
@@ -312,8 +455,9 @@ test.describe('real-agent Calm Prism acceptance', () => {
           probe.request.pathname === '/agent/run' &&
           runResponse.status() === 200 &&
           probe.response?.status === 200 &&
-          (requestBody.aura?.attachment_ids?.length ?? 0) > 0,
-        detail: `browser=${String(runResponse.status())}, probe=${String(probe.response?.status)}`,
+          attachmentIds.length === 1 &&
+          attachmentIds[0] === uploadedAssetId,
+        detail: `browser=${String(runResponse.status())}, probe=${String(probe.response?.status)}, assets=${attachmentIds.join(',')}`,
       });
       const started = frames.some((frame) => frame.type === 'RUN_STARTED');
       const finished = frames.some(
@@ -331,15 +475,24 @@ test.describe('real-agent Calm Prism acceptance', () => {
       });
       checks.push({
         name: 'document_search tool',
-        pass: names.includes('document_search'),
-        detail: names.join(', '),
+        pass:
+          documentSearches.length > 0 &&
+          documentSearches.every((search) => search.args?.document_id === documentId) &&
+          !names.includes('web_search'),
+        detail: `tools=${names.join(', ')}, calls=${JSON.stringify(documentSearches)}`,
       });
       const normalizedAnswer = answer.toLocaleLowerCase('it');
+      const groundedResult = documentSearches.find((search) => {
+        const result = search.result.toLocaleLowerCase('it');
+        return result.includes('industriali') && result.includes('collaborativi');
+      });
       checks.push({
         name: 'grounded answer facts',
         pass:
-          normalizedAnswer.includes('industriali') && normalizedAnswer.includes('collaborativi'),
-        detail: answer,
+          groundedResult !== undefined &&
+          normalizedAnswer.includes('industriali') &&
+          normalizedAnswer.includes('collaborativi'),
+        detail: `result=${groundedResult?.result ?? ''}; answer=${answer}`,
       });
       const tokens = usageTokens(frames);
       checks.push({ name: 'non-zero usage', pass: tokens > 0, detail: `${String(tokens)} tokens` });
@@ -386,7 +539,7 @@ test.describe('real-agent Calm Prism acceptance', () => {
       expect(checks).toHaveLength(10);
       expect(score).toBe(10);
     } finally {
-      await deleteConversation(page, conversationId);
+      await cleanupRealAgent(page, uploadedAssetId, catalogDocumentId, conversationId);
     }
   });
 });
