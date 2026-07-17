@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
-stopped_at: Completed 37F-03-PLAN.md
-last_updated: "2026-07-17T09:35:31.218Z"
+stopped_at: Completed 37F-04-PLAN.md
+last_updated: "2026-07-17T10:29:40.077Z"
 last_activity: 2026-07-17
 progress:
   total_phases: 19
   completed_phases: 14
   total_plans: 122
-  completed_plans: 106
+  completed_plans: 107
   percent: 74
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 4 of 19
+Plan: 5 of 19
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
@@ -342,6 +342,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37F P01 | 25min | 2 tasks | 2 files |
 | Phase 37F-conversation-artifact-sharing-export-inserted P02 | 45min | 3 tasks | 6 files |
 | Phase 37F P03 | 35min | 3 tasks | 4 files |
+| Phase 37F P04 | 55min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -617,6 +618,8 @@ Recent decisions affecting current work:
 - [Phase 37F]: 37F-03: RED-phase compiling stub for BuildSnapshot (pre-commit go vet hook blocks non-compiling commits); real RED state verified standalone before the stub was added — Matches 37F-02 precedent for the same TDD-vs-hook conflict
 - [Phase 37F]: 37F-03: removed a redundant early-return in toolNames found during mutation autopsy, added TestSnapshotToolNamesNilWhenAllBlank to pin the nil-normalization guarantee — Mutation score rose 66.7%->87.5%; the removed guard was genuinely dead code, not a leak
 - [Phase 37F]: 37F-03: the one surviving mutant (redact.go, projectTurns default: arm) is a confirmed no-op (md5-identical to original), classified equivalent/advisory-accepted, not leak-class — Verified via md5sum against go-mutesting's original snapshot, not just trusting the diff view
+- [Phase 37F-04]: Share token = 256-bit crypto/rand + base64.RawURLEncoding, hashed via plain sha256.Sum256 (raw 32 bytes), no KDF — a 256-bit random token has no brute-force surface, so a slow KDF only adds latency
+- [Phase 37F-04]: Share object-store keys (ShareSnapshotKey/ShareArtifactKey/ShareKeyPrefix) take uuid.UUID under a share/ prefix disjoint from AssetKey's identity/ prefix, derived from share_id+snapshot_id never token_hash — makes path traversal unrepresentable in the type and keeps internal-tier shares (no token_hash) addressable via the same snapshot
 
 ### Pending Todos
 
@@ -661,8 +664,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T09:35:31.192Z
-Stopped at: Completed 37F-03-PLAN.md
+Last session: 2026-07-17T10:29:40.051Z
+Stopped at: Completed 37F-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
