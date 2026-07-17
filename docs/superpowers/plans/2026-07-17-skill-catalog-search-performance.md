@@ -10,6 +10,13 @@
 
 **Design contract:** `docs/superpowers/specs/2026-07-17-skill-catalog-search-performance-design.md` and `prd.md` Amendment #85 (`cc0e8af40`).
 
+## Execution status (2026-07-17)
+
+- Tasks 0–7 are complete and merged into `master` at `f571b37af`.
+- Backend transport, bounded cache/singleflight, CLI fallback, frontend cancellation/debounce, live score harness, mutation hardening, and embedded web assets are committed.
+- Task 8 remains open until the rebuilt `localhost:9080` container emits a Playwright `skill-catalog-score.json` result of exactly `10/10`.
+- The first post-merge push was correctly stopped by the quality-snapshot hook because a concurrent AG-UI change needed re-measurement. Fresh `internal/agui` DB-integration race coverage is 86.5%; the snapshot follow-up is part of the push retry.
+
 ---
 
 ## File map
@@ -36,7 +43,7 @@ Unrelated `.planning/graphs/**`, AppShell, shell/share, and Phase 37F changes ar
 - Read: `prd.md:3035`
 - No source changes
 
-- [ ] **Step 1: Create an isolated worktree at the current `master`**
+- [x] **Step 1: Create an isolated worktree at the current `master`**
 
 Run from `D:\Aura`:
 
@@ -47,7 +54,7 @@ git worktree add .worktrees/skill-catalog-search -b fix/skill-catalog-search-per
 
 Expected: the new branch starts at the current master commit; existing dirty files in `D:\Aura` remain only in the original worktree.
 
-- [ ] **Step 2: Verify the PRD gate is in the new worktree**
+- [x] **Step 2: Verify the PRD gate is in the new worktree**
 
 Run:
 
@@ -60,7 +67,7 @@ rg -n "Amendment #85|Playwright 10/10 acceptance rubric" `
 
 Expected: commit `cc0e8af40` is an ancestor and both required markers are present.
 
-- [ ] **Step 3: Run the narrow baseline from the worktree**
+- [x] **Step 3: Run the narrow baseline from the worktree**
 
 Run:
 
@@ -79,7 +86,7 @@ Expected: Go packages pass and the existing 21 frontend tests pass before edits.
 - Create: `internal/skills/catalog_search_test.go`
 - Create: `internal/skills/catalog_search.go`
 
-- [ ] **Step 1: Write failing transport and formatter tests**
+- [x] **Step 1: Write failing transport and formatter tests**
 
 Create `internal/skills/catalog_search_test.go` with these tests first:
 
@@ -220,7 +227,7 @@ func TestSkillsCatalogAPIClientAllowsEmptySkillsArray(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -230,7 +237,7 @@ go test ./internal/skills -run 'TestSkillsCatalogAPIClient|TestCompactInstallCou
 
 Expected: compile failure because `newSkillsCatalogAPIClient`, `catalogMaxHits`, `catalogResponseMaxBytes`, and `compactInstallCount` do not exist.
 
-- [ ] **Step 3: Implement the minimal direct client**
+- [x] **Step 3: Implement the minimal direct client**
 
 Create `internal/skills/catalog_search.go` with:
 
@@ -367,7 +374,7 @@ func compactUnit(value float64, suffix string) string {
 
 Leave the cache-related imports in place only when Task 2 adds their users; until then remove `sync`, `time`, and `singleflight` so this commit passes lint.
 
-- [ ] **Step 4: Run the focused and package tests**
+- [x] **Step 4: Run the focused and package tests**
 
 Run:
 
@@ -379,7 +386,7 @@ go test ./internal/skills -count=1
 
 Expected: all tests pass with no goleak failure.
 
-- [ ] **Step 5: Commit the transport slice**
+- [x] **Step 5: Commit the transport slice**
 
 ```powershell
 git add internal/skills/catalog_search.go internal/skills/catalog_search_test.go
@@ -392,7 +399,7 @@ git commit -m "feat(skills): add bounded catalog API client"
 - Modify: `internal/skills/catalog_search_test.go`
 - Modify: `internal/skills/catalog_search.go`
 
-- [ ] **Step 1: Write failing search-service tests**
+- [x] **Step 1: Write failing search-service tests**
 
 Append tests that construct:
 
@@ -620,7 +627,7 @@ func TestCatalogSearchServiceTimesOutPrimaryBeforeFallback(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run service tests and verify RED**
+- [x] **Step 2: Run service tests and verify RED**
 
 ```powershell
 go test ./internal/skills -run TestCatalogSearchService -count=1
@@ -628,7 +635,7 @@ go test ./internal/skills -run TestCatalogSearchService -count=1
 
 Expected: compile failure because `catalogSearchService`, `catalogSearchOptions`, and `newCatalogSearchService` do not exist.
 
-- [ ] **Step 3: Implement the service in `catalog_search.go`**
+- [x] **Step 3: Implement the service in `catalog_search.go`**
 
 Add:
 
@@ -778,7 +785,7 @@ func cloneCatalogHits(hits []CatalogHit) []CatalogHit {
 }
 ```
 
-- [ ] **Step 4: Run RED→GREEN verification**
+- [x] **Step 4: Run RED→GREEN verification**
 
 ```powershell
 gofmt -w internal/skills/catalog_search.go internal/skills/catalog_search_test.go
@@ -788,7 +795,7 @@ go test -race ./internal/skills -run TestCatalogSearchService -count=1
 
 Expected: service tests and race detector pass; primary is called once in the concurrent test.
 
-- [ ] **Step 5: Commit the service slice**
+- [x] **Step 5: Commit the service slice**
 
 ```powershell
 git add internal/skills/catalog_search.go internal/skills/catalog_search_test.go
@@ -801,7 +808,7 @@ git commit -m "feat(skills): cache and coalesce catalog search"
 - Modify: `internal/skills/installer_test.go`
 - Modify: `internal/skills/installer.go`
 
-- [ ] **Step 1: Write failing Installer tests**
+- [x] **Step 1: Write failing Installer tests**
 
 Change `newTestInstaller` to inject a failing primary so existing search tests continue to cover the CLI fallback:
 
@@ -907,7 +914,7 @@ func TestExecCommandEnvDisablesTelemetry(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run Installer tests and verify RED**
+- [x] **Step 2: Run Installer tests and verify RED**
 
 ```powershell
 go test ./internal/skills -run 'TestInstallerSearch|TestExecCommandEnv' -count=1
@@ -915,7 +922,7 @@ go test ./internal/skills -run 'TestInstallerSearch|TestExecCommandEnv' -count=1
 
 Expected: compile failure because `InstallerConfig.CatalogSearch` and `execCommandEnv` do not exist.
 
-- [ ] **Step 3: Modify `Installer` and `NewInstaller`**
+- [x] **Step 3: Modify `Installer` and `NewInstaller`**
 
 Add to `Installer`:
 
@@ -981,7 +988,7 @@ func execCommandEnv() []string {
 `execCommandRunner` sets `cmd.Env = execCommandEnv()`. Do not change
 `npx skills add <source> --copy -y`.
 
-- [ ] **Step 4: Run Installer and handler regression tests**
+- [x] **Step 4: Run Installer and handler regression tests**
 
 ```powershell
 gofmt -w internal/skills/installer.go internal/skills/installer_test.go
@@ -992,7 +999,7 @@ go test ./cmd/aura -run Skills -count=1
 
 Expected: direct-primary and CLI fallback tests pass; install argv remains unchanged.
 
-- [ ] **Step 5: Commit Installer wiring**
+- [x] **Step 5: Commit Installer wiring**
 
 ```powershell
 git add internal/skills/installer.go internal/skills/installer_test.go
@@ -1005,7 +1012,7 @@ git commit -m "feat(skills): prefer fast catalog search with CLI fallback"
 - Modify: `web/src/governance/__tests__/governanceWrite.coverage.test.tsx`
 - Modify: `web/src/governance/governanceApi.ts`
 
-- [ ] **Step 1: Make the API test require signal identity**
+- [x] **Step 1: Make the API test require signal identity**
 
 Replace the catalog test with:
 
@@ -1020,7 +1027,7 @@ it('searchSkillCatalog GETs the encoded query and forwards its AbortSignal', asy
 });
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 ```powershell
 Set-Location web
@@ -1029,7 +1036,7 @@ npm exec vitest -- run src/governance/__tests__/governanceWrite.coverage.test.ts
 
 Expected: TypeScript compile failure because `searchSkillCatalog` accepts one argument.
 
-- [ ] **Step 3: Add the optional signal**
+- [x] **Step 3: Add the optional signal**
 
 Use:
 
@@ -1047,7 +1054,7 @@ export async function searchSkillCatalog(
 
 Also correct the nearby stale comment from “off by default” to “explicit deployment opt-out”.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 npm exec vitest -- run src/governance/__tests__/governanceWrite.coverage.test.tsx
@@ -1064,7 +1071,7 @@ git commit -m "feat(web): propagate skill search cancellation"
 - Modify: `web/src/governance/SkillInstallPanel.tsx`
 - Modify: `web/src/i18n/resources.governance.ts`
 
-- [ ] **Step 1: Write failing fake-timer behavior tests**
+- [x] **Step 1: Write failing fake-timer behavior tests**
 
 Update the search mock to preserve both arguments:
 
@@ -1231,7 +1238,7 @@ the public behavior and keeps fake-timer cleanup out of those assertions.
 
 Update the existing happy-path test to advance the 250 ms debounce and expect the optional signal as the second call argument.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 ```powershell
 Set-Location web
@@ -1240,7 +1247,7 @@ npm exec vitest -- run src/governance/__tests__/SkillInstallPanel.test.tsx
 
 Expected: failures for immediate call count, missing status/error/empty copy, and no aborted signal.
 
-- [ ] **Step 3: Add localized copy**
+- [x] **Step 3: Add localized copy**
 
 Under both `governance.skills.install` objects add:
 
@@ -1258,7 +1265,7 @@ searchEmpty: 'Nessuna skill trovata.',
 searchError: 'Impossibile cercare nel catalogo skill. Riprova.',
 ```
 
-- [ ] **Step 4: Implement debounce, cancellation, and state rendering**
+- [x] **Step 4: Implement debounce, cancellation, and state rendering**
 
 Import `useEffect` and add:
 
@@ -1337,7 +1344,7 @@ Render states in this order below the search input:
 
 Keep source selection and install mutation code byte-for-byte except for formatting required by Prettier.
 
-- [ ] **Step 5: Run focused frontend gates**
+- [x] **Step 5: Run focused frontend gates**
 
 ```powershell
 npm exec vitest -- run src/governance/__tests__/SkillInstallPanel.test.tsx src/governance/__tests__/governanceWrite.coverage.test.tsx
@@ -1348,7 +1355,7 @@ npm run format:check
 
 Expected: all focused tests pass; no TypeScript, ESLint, or formatting errors.
 
-- [ ] **Step 6: Commit the panel slice**
+- [x] **Step 6: Commit the panel slice**
 
 ```powershell
 Set-Location ..
@@ -1363,7 +1370,7 @@ git commit -m "feat(web): debounce skill catalog search"
 **Files:**
 - Create: `web/e2e/skill-catalog-search-live.spec.ts`
 
-- [ ] **Step 1: Create the opt-in live score spec**
+- [x] **Step 1: Create the opt-in live score spec**
 
 Create the complete file below. It is skipped unless
 `AURA_E2E_LIVE_CATALOG=1`, so normal hermetic CI does not depend on skills.sh.
@@ -1679,7 +1686,7 @@ test.describe('live skill catalog performance score', () => {
 });
 ```
 
-- [ ] **Step 2: Typecheck and list the opt-in test**
+- [x] **Step 2: Typecheck and list the opt-in test**
 
 ```powershell
 Set-Location web
@@ -1689,7 +1696,7 @@ npm run test:e2e -- e2e/skill-catalog-search-live.spec.ts --project=chrome --lis
 
 Expected: one test is listed; no TypeScript error.
 
-- [ ] **Step 3: Commit the score harness**
+- [x] **Step 3: Commit the score harness**
 
 ```powershell
 Set-Location ..
@@ -1702,7 +1709,7 @@ git commit -m "test(e2e): score live skill catalog search"
 **Files:**
 - Refresh: `internal/webui/dist/**`
 
-- [ ] **Step 1: Run fresh Go verification**
+- [x] **Step 1: Run fresh Go verification**
 
 ```powershell
 go vet ./...
@@ -1713,7 +1720,7 @@ go test -race -count=1 ./internal/skills ./internal/agui ./cmd/aura
 
 Expected: every command exits 0; no race or goleak report.
 
-- [ ] **Step 2: Run fresh frontend verification**
+- [x] **Step 2: Run fresh frontend verification**
 
 ```powershell
 Set-Location web
@@ -1727,7 +1734,7 @@ Set-Location ..
 
 Expected: lint/typecheck/format/build exit 0 and the full Vitest coverage suite passes its configured floor.
 
-- [ ] **Step 3: Verify generated assets and source limits**
+- [x] **Step 3: Verify generated assets and source limits**
 
 ```powershell
 go test ./internal/webui -count=1
@@ -1739,7 +1746,7 @@ git status --short
 Expected: embedded handler tests and size gate pass; only intended source plus
 `internal/webui/dist/**` changes appear.
 
-- [ ] **Step 4: Commit the reproducible embedded dist**
+- [x] **Step 4: Commit the reproducible embedded dist**
 
 ```powershell
 git add internal/webui/dist
@@ -1747,6 +1754,15 @@ git commit -m "build(web): refresh embedded skill search UI"
 ```
 
 Do not stage `.planning/graphs/**` or any unrelated original-worktree file.
+
+**Execution evidence (2026-07-17):**
+
+- Full untagged Go suite passed under WSL; touched-package race runs passed.
+- Frontend lint, typecheck, format, build, and the worker-bounded full Vitest suite passed: 181 files / 1,484 tests, with 92.91% statements, 86.98% branches, 93.13% functions, and 94.74% lines.
+- `internal/skills` measured 88.1% on the full integration matrix; the repository-wide matrix exposed only the unrelated stale `TestMigration0039RoundTrip` expectation after migration 0040.
+- `catalog_search.go` mutation score is 80.56% (58/72), above the 70% gate.
+- Embedded web handler tests, the generated binary marker, source-size gate, and post-merge focused verification passed.
+- Delivery commits: `6aef4e2c6` (quality hardening), `7a969db64` (embedded build), merged by `f571b37af`.
 
 ### Task 8: Rebuild localhost and prove score 10/10
 
