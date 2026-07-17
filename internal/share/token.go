@@ -22,24 +22,29 @@
 // error string — only Hash's 32-byte digest is ever stored.
 package share
 
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+)
+
 // Mint generates a fresh 256-bit opaque share token and its SHA-256 hash. A
 // crypto/rand failure returns that error verbatim, with an empty plaintext
 // and a zero hash — it never falls back to a weaker random source
 // (math/rand or a time seed), because that would silently mint a guessable
 // token instead of failing the request (T-37F-24).
-//
-// RED-phase stub (Task 1): replaced with the real crypto/rand mint in this
-// task's GREEN commit.
 func Mint() (string, [32]byte, error) {
-	return "", [32]byte{}, nil
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", [32]byte{}, err
+	}
+	plaintext := base64.RawURLEncoding.EncodeToString(b[:])
+	return plaintext, Hash(plaintext), nil
 }
 
 // Hash returns the stable SHA-256 digest of a plaintext token, as raw bytes
 // for the token_hash bytea column. It never returns a base64 or hex string —
 // do not reintroduce hashRequestValue's encoding step here.
-//
-// RED-phase stub (Task 1): replaced with the real sha256.Sum256 call in
-// this task's GREEN commit.
-func Hash(_ string) [32]byte {
-	return [32]byte{}
+func Hash(plaintext string) [32]byte {
+	return sha256.Sum256([]byte(plaintext))
 }
