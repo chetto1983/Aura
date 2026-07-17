@@ -77,4 +77,11 @@ export interface ShareLink {
   readonly revoked_at?: string;
   readonly created_at: string;
   readonly updated_at: string;
+  /** The turn count captured in THIS link's snapshot at mint/update time (plan 37F-15's
+   *  stale-detection affordance — RESEARCH.md §2's "N new messages are not in this link").
+   *  Optional and forward-compatible: internal/agui/share_api.go (plan 37F-10) has not landed
+   *  yet, so no response populates this today — a consumer MUST treat an absent value as "no
+   *  staleness signal available" (the same safe degradation as "no newer turns"), never as
+   *  zero. See shareViewModel.ts's computeStaleCount. */
+  readonly snapshot_turn_count?: number;
 }

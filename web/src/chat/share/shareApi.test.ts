@@ -105,7 +105,7 @@ describe('share API client', () => {
   });
 
   describe('listShares', () => {
-    it('lists the owner\'s links with no filter', async () => {
+    it("lists the owner's links with no filter", async () => {
       const fetchMock = vi.fn(() => Promise.resolve(jsonResponse([internalLink, publicLink])));
       vi.stubGlobal('fetch', fetchMock);
 
@@ -134,7 +134,10 @@ describe('share API client', () => {
     });
 
     it('defends against a non-array response by returning an empty list', async () => {
-      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse({ not: 'an array' }))));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(jsonResponse({ not: 'an array' }))),
+      );
 
       await expect(listShares()).resolves.toEqual([]);
     });
@@ -150,10 +153,26 @@ describe('share API client', () => {
         created_at: publicLink.created_at,
         updated_at: publicLink.updated_at,
       };
-      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse([listedPublicRow]))));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(jsonResponse([listedPublicRow]))),
+      );
 
       const [row] = await listShares();
       expect(row?.url).toBeUndefined();
+    });
+
+    it('threads an AbortSignal through to fetch', async () => {
+      const controller = new AbortController();
+      const fetchMock = vi.fn(() => Promise.resolve(jsonResponse([internalLink])));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await listShares(undefined, controller.signal);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/shares',
+        expect.objectContaining({ signal: controller.signal }),
+      );
     });
   });
 
@@ -168,6 +187,19 @@ describe('share API client', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/shares/share-1/snapshot',
         expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }),
+      );
+    });
+
+    it('threads an AbortSignal through to fetch', async () => {
+      const controller = new AbortController();
+      const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(internalLink)));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await updateShareSnapshot('share-1', controller.signal);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/shares/share-1/snapshot',
+        expect.objectContaining({ signal: controller.signal }),
       );
     });
 
@@ -196,6 +228,19 @@ describe('share API client', () => {
         expect.objectContaining({ method: 'DELETE', credentials: 'same-origin' }),
       );
     });
+
+    it('threads an AbortSignal through to fetch', async () => {
+      const controller = new AbortController();
+      const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await revokeShare('share-1', controller.signal);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/shares/share-1',
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
   });
 
   describe('error shaping', () => {
@@ -209,9 +254,21 @@ describe('share API client', () => {
     });
 
     it('falls back to the HTTP status when the non-2xx body is empty', async () => {
-      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 403 }))));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(new Response('', { status: 403 }))),
+      );
 
       await expect(createShare('conv-1', 'public')).rejects.toThrow('HTTP 403');
+    });
+
+    it('falls back to the HTTP status when the non-2xx response has no body at all', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(new Response(null, { status: 500 }))),
+      );
+
+      await expect(createShare('conv-1', 'internal')).rejects.toThrow('HTTP 500');
     });
 
     it('revokeShare also throws the server message on a non-2xx', async () => {

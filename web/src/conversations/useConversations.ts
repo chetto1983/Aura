@@ -28,6 +28,16 @@ export interface Conversation {
   /** 37E per-conversation reasoning-effort symbol persisted in metadata jsonb (empty/absent ⇒
    * "" ⇒ the selector hydrates as auto). Populated by the store's conversationFromRow. */
   readonly ReasoningEffort?: string;
+  /** RFC3339 last-activity timestamp (the same aura.conversations.last_active_at column
+   *  store.go already orders List/ListForIdentity by — plan 37F-15's stale-share detection).
+   *  Optional and forward-compatible: the Go Conversation struct (internal/conversations/
+   *  store.go) does not project this field into the JSON response yet, so it is always
+   *  absent today. A consumer MUST treat an absent value as "no signal", never as "now". */
+  readonly LastActiveAt?: string;
+  /** Total turn count for the conversation (plan 37F-15's stale-share detection, paired with
+   *  ShareLink.snapshot_turn_count). Optional and forward-compatible for the same reason as
+   *  LastActiveAt above — not yet projected server-side. */
+  readonly TurnCount?: number;
 }
 
 /** GET /api/conversations/search hit — conversations.Store.SearchResult projection. */
