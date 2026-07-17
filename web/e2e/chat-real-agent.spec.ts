@@ -366,6 +366,7 @@ test.describe('real-agent Calm Prism acceptance', () => {
     const checks: ScoreCheck[] = [];
     let uploadedAssetId: string | undefined;
     let catalogDocumentId: string | undefined;
+    let replayPage: Page | undefined;
 
     try {
       await installAgentProbe(page);
@@ -511,9 +512,16 @@ test.describe('real-agent Calm Prism acceptance', () => {
         detail: `overflow=${String(desktopOverflow)}, composer=${JSON.stringify(composerBox)}`,
       });
 
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.getByText(prompt, { exact: true })).toBeVisible({ timeout: 30_000 });
-      const replayProse = page.locator('[data-message-role="assistant"] [data-message-prose]');
+      health.assertClean();
+      replayPage = await page.context().newPage();
+      const replayHealth = collectBrowserHealth(replayPage, origin);
+      await replayPage.goto(`/c/${encodeURIComponent(conversationId)}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await expect(replayPage.getByText(prompt, { exact: true })).toBeVisible({ timeout: 30_000 });
+      const replayProse = replayPage.locator(
+        '[data-message-role="assistant"] [data-message-prose]',
+      );
       await expect(replayProse.filter({ hasText: /robot industriali/i }).last()).toBeVisible({
         timeout: 30_000,
       });
@@ -522,10 +530,10 @@ test.describe('real-agent Calm Prism acceptance', () => {
       });
       checks.push({ name: 'persisted replay', pass: true, detail: conversationId });
 
-      await page.setViewportSize({ width: 390, height: 844 });
-      await expect(page.getByText(prompt, { exact: true })).toBeVisible();
-      const mobileOverflow = await overflow(page);
-      health.assertClean();
+      await replayPage.setViewportSize({ width: 390, height: 844 });
+      await expect(replayPage.getByText(prompt, { exact: true })).toBeVisible();
+      const mobileOverflow = await overflow(replayPage);
+      replayHealth.assertClean();
       checks.push({
         name: 'mobile overflow plus strict browser health',
         pass: mobileOverflow <= 1,
@@ -544,7 +552,11 @@ test.describe('real-agent Calm Prism acceptance', () => {
       expect(checks).toHaveLength(10);
       expect(score).toBe(10);
     } finally {
-      await cleanupRealAgent(page, uploadedAssetId, catalogDocumentId, conversationId);
+      try {
+        await replayPage?.close();
+      } finally {
+        await cleanupRealAgent(page, uploadedAssetId, catalogDocumentId, conversationId);
+      }
     }
   });
 });

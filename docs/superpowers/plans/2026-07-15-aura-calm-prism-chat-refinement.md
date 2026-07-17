@@ -1647,6 +1647,8 @@ npx playwright test e2e/chat-real-agent.spec.ts --project=chrome --reporter=line
 
 Expected: the current merged/rebuilt Aura instance is used, the test reports `SCORE: 10/10 = 100%`, strict browser health is clean, and the command exits 0. Mocked `/agent/run` evidence does not count.
 
+Progress record (2026-07-17): the first merged/rebuilt run proved the real document-search answer and found a hidden raw-result replay locator; correction `14f2addff` was adversarially approved and merged at `2b4d245b1`. The second rebuilt run reached persisted replay and mobile containment but the same-page reload intentionally aborted old-document health/approval pollers. The adversarial reviewer required a stricter fresh-page proof: assert the original page, attach a new collector before navigating a fresh authenticated same-context page, then prove replay and mobile health there. Step 8 stays open until that correction is merged/rebuilt and the command exits 0 with the literal 10/10 score.
+
 ## Final acceptance trace
 
 - Amendment #83 and commit order: Task 1.
