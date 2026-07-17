@@ -172,4 +172,19 @@ describe('SharedSection', () => {
       expect(mockRevoke).toHaveBeenCalledWith('share-9');
     });
   });
+
+  it('cancelling the confirm dialog never calls revokeShare', async () => {
+    mockList.mockResolvedValue([link({ id: 'share-cancel' })]);
+    renderSection();
+    const revokeButton = await screen.findByRole('button', { name: 'Revoke' });
+    fireEvent.click(revokeButton);
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
 });
