@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -74,4 +75,35 @@ func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, 
 		return err
 	}
 	return fn(sqlc.New(tx))
+}
+
+// WithIdentityTxRaw is WithIdentityTx's raw-pgx sibling (Phase 37F): identical transaction
+// lifecycle and identical `SET LOCAL app.current_identity` RLS carrier, but hands fn the raw
+// pgx.Tx instead of a *sqlc.Queries. It exists for owner-scoped stores that are raw pgx by
+// design (the PgAuditStore precedent, internal/agui/audit_store.go) and therefore have no
+// sqlc.Queries wrapping their tx: sqlc.Queries.db is an unexported field with no accessor, so
+// there is no way to reach a raw pgx.Tx through WithIdentityTx's *sqlc.Queries callback without
+// adding a sqlc-generated query — which a raw-pgx store deliberately does not carry (see
+// internal/share/store.go). This function and WithIdentityTx MUST NOT drift apart on
+// commit/rollback/panic semantics; both are the DRY seam for their respective query shapes.
+func WithIdentityTxRaw(ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(pgx.Tx) error) (err error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback(ctx)
+			panic(p)
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return
+		}
+		err = tx.Commit(ctx)
+	}()
+	if _, err = tx.Exec(ctx, `SELECT set_config('app.current_identity', $1, true)`, identityID); err != nil {
+		return err
+	}
+	return fn(tx)
 }
