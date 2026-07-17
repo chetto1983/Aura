@@ -4,13 +4,13 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 status: executing
 stopped_at: Completed 37F-16-PLAN.md
-last_updated: "2026-07-17T14:24:10.507Z"
+last_updated: "2026-07-17T16:18:23.204Z"
 last_activity: 2026-07-17
 progress:
   total_phases: 19
   completed_phases: 14
-  total_plans: 122
-  completed_plans: 112
+  total_plans: 123
+  completed_plans: 113
   percent: 74
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 10 of 19
+Plan: 11 of 19
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
