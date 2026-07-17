@@ -660,6 +660,34 @@ type AuraSettings struct {
 	UpdatedBy pgtype.Text        `json:"updated_by"`
 }
 
+// Append-only share-lifecycle audit ledger (Phase 37F, T-37F-10). aura_app has SELECT+INSERT only; identity_id is text with NO FK so the ledger outlives the identity, link, and conversation it describes.
+type AuraShareAudit struct {
+	ID             pgtype.UUID        `json:"id"`
+	IdentityID     string             `json:"identity_id"`
+	ShareLinkID    pgtype.UUID        `json:"share_link_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	Action         string             `json:"action"`
+	Tier           pgtype.Text        `json:"tier"`
+	Detail         string             `json:"detail"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// Conversation/artifact share links (Phase 37F, WEBSHARE-02/03). shared_links_tier_shape makes D-04 mandatory-expiry + D-13 hashed-token database-enforced for public tier; shared_links_token_hash_idx is the unique lookup index (never a table scan).
+type AuraSharedLinks struct {
+	ID              pgtype.UUID        `json:"id"`
+	OwnerIdentityID pgtype.UUID        `json:"owner_identity_id"`
+	ConversationID  pgtype.UUID        `json:"conversation_id"`
+	Tier            string             `json:"tier"`
+	TokenHash       []byte             `json:"token_hash"`
+	SnapshotID      pgtype.UUID        `json:"snapshot_id"`
+	SnapshotBucket  string             `json:"snapshot_bucket"`
+	FormatOptions   []byte             `json:"format_options"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Append-only skill-mutation audit ledger (Slice 7c / Phase 11, D-29). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 1/6). The D-29 coherence CHECK constrains the approval tuple to five allowed events; content_hash is the D-23 recovery path on every row.
 type AuraSkillAudit struct {
 	ID             pgtype.UUID        `json:"id"`
