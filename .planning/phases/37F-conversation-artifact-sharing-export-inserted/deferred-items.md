@@ -77,3 +77,36 @@ change, and is NOT logged as a deviation against this plan's deliverable.
 **Disposition:** NOT fixed here — out of scope for 37F-07 (SCOPE BOUNDARY). Logged for whoever
 owns `internal/agui/settings_api_branches_test.go` / the telegram settings surface, or for a
 future `.env`-isolation cleanup of the shared dev Postgres/session.
+
+## 37F-09 — the wiped `local` identity (FK 23503) recurred; scoped export tests were unaffected
+
+**Found during:** Task 2 final verification — running a full-package
+`go test -tags db_integration -count=1 -coverprofile=... ./internal/agui/` to double-check the
+package-wide coverage floor (beyond the plan's own `-run 'TestShareExport'` scope).
+
+**What was found:** the SAME class of failure 37F-07 already documented above recurred: ~15
+pre-existing tests unrelated to this plan (`TestAgentRunCapability`,
+`TestConversationsAPI_*`, `TestServer_Integration_SSERoundTrip`, `TestBranchList_*`, etc.) fail
+with `insert or update on table "conversations" violates foreign key constraint
+"conversations_identity_id_fkey"` — the seeded `local` identity (`...0001`) is again absent from
+the live `aura` database (evidently re-wiped by other work against the same shared dev Postgres
+since 37F-07's own re-seed). None of the failing tests touch `share_export.go`,
+`conversations_api.go`, or `share_export_test.go`.
+
+**This plan's own deliverable was unaffected:** `go test -tags db_integration -race -p 1
+-count=1 -run 'TestShareExport' ./internal/agui/` passed 6/6 cleanly (0.11s-0.33s each, real
+execution) in the SAME broken DB state, precisely because `share_export_test.go` follows the R-13
+discipline (`seedShareExportIdentity` mints a fresh, non-wildcard identity per test — it never
+depends on `local`). Total package coverage under the tag still measured **85.8%** (≥ 85% floor)
+despite the ~15 unrelated failures; `share_export.go` itself: `handleConversationExport` 75.6%,
+`exportFilenameStem` 92.3% (the uncovered handler branches are the nil-asset-service 503 and the
+post-owner-gate 500s on `LoadHistory`/`ListForThread`/marshal failure — none required by this
+plan's 6 named acceptance tests).
+
+**Disposition:** NOT fixed here — out of scope for 37F-09 (SCOPE BOUNDARY), and NOT re-repaired
+against the shared live DB this time (37F-07 already re-seeded it once via migration 0004's
+idempotent `INSERT ... ON CONFLICT DO NOTHING` statements; it recurring again points at a
+still-unresolved cause upstream of any single plan — likely a parallel session's coverage/reset
+run against the same shared Postgres, consistent with the project's documented
+"coverage-gate-nukes-live-db" history). Logged for whoever picks up the shared dev-Postgres
+isolation problem, or for the next full-matrix run to re-confirm once `local` is re-seeded.
