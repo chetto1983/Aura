@@ -601,13 +601,13 @@ Plans:
 
 **Design forks (RESOLVED da 37F-CONTEXT + Amendment Log 2026-07-15):** (a) **scope** — RISOLTO: **tutti e tre i tier** shippano fail-closed (export file sempre; link interno-identità revocabile = default "Condividi"; link pubblico opt-in a token con scadenza, mai default — D-01); (b) **granularità** — RISOLTO a **intera conversazione** (single-artifact e single-message deferred — D-05); (c) **storage link** — RISOLTO alla nuova tabella `aura.shared_links` + ledger `aura.share_audit`, **migration 0040** (NON 0036: Phase 42 ha shippato 0036–0039 il 2026-07-14 — D-11 amended), con blob snapshot/artifact token-scoped sotto un prefisso `share/` lessicalmente disgiunto da `identity/` (D-12). **Nota sicurezza:** il link pubblico è un buco **deliberato e limitato** nell'isolamento MUSR — le sette mitigazioni fail-closed sono registrate in **ADR 0039**.
 
-**Plans:** 19 plans
+**Plans:** 1/19 plans executed
 
 Plans:
 
 **Wave 1** *(PRD-first gate — blocks all code)*
 
-- [ ] 37F-01-PLAN.md — PRD-amendment (WEBSHARE-01..04 + i tre tier + snapshot model + `shared_links`/`share_audit` + amendment D-08 reasoning DROPPED e D-13 hash-indexed equality) + ADR 0039 (sharing vs. identity isolation)
+- [x] 37F-01-PLAN.md — PRD-amendment (WEBSHARE-01..04 + i tre tier + snapshot model + `shared_links`/`share_audit` + amendment D-08 reasoning DROPPED e D-13 hash-indexed equality) + ADR 0039 (sharing vs. identity isolation)
 
 **Wave 2** *(foundations — parallel, zero file overlap)*
 
