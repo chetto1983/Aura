@@ -1649,6 +1649,14 @@ Expected: the current merged/rebuilt Aura instance is used, the test reports `SC
 
 Progress record (2026-07-17): the first merged/rebuilt run proved the real document-search answer and found a hidden raw-result replay locator; correction `14f2addff` was adversarially approved and merged at `2b4d245b1`. The second rebuilt run reached persisted replay and mobile containment but the same-page reload intentionally aborted old-document health/approval pollers. The adversarial reviewer required a stricter fresh-page proof: assert the original page, attach a new collector before navigating a fresh authenticated same-context page, then prove replay and mobile health there. Step 8 stays open until that correction is merged/rebuilt and the command exits 0 with the literal 10/10 score.
 
+Fresh-page correction status: final re-review found no Critical, Important, or Minor issues after unconditional nested-finally cleanup; commit `de0ecc991` is merged at `17ebff669`, rebuilt as image `sha256:e7dd6a504c11dc6ffffe249554b3ebc94d3e76d7ce8f515bb255c452e37bd74d`, and healthy on port 9080. The literal 10/10 run remains the only open acceptance item.
+
+Execution note: run the authoritative command from `D:\Aura\web`; the linked worktree deliberately has no root `.env`, so an invocation there fails before Authula authentication and produces no real-agent resources.
+
+Latest live result: the authoritative master run reached persisted replay/mobile with strict browser health clean and scored 8/10. The exact uploaded asset was read once as `presigned` before asynchronous indexing publication, while the catalog and real `document_search` already used the completed document ID; this made both searchable-upload and exact-ID tool checks false. The proposed harness correction polls the real thread-scoped asset list for the exact captured asset until `searchable` with a nonblank document ID, fails on terminal processing states, and preserves catalog/tool-call equality. Step 8 remains open pending review, merge/rebuild, and literal 10/10.
+
+Polling correction review: the exact-asset implementation also scopes `Ready` to the unique attachment chip and fails on `failed`, `refused`, `deleted`, or `canceled`. Static checks pass at 585 lines; final adversarial re-review reports 0 Critical, 0 Important, and 0 Minor findings and approves merge/rerun.
+
 ## Final acceptance trace
 
 - Amendment #83 and commit order: Task 1.
