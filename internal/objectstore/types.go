@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type ObjectRef struct {
@@ -59,4 +61,46 @@ type Store interface {
 
 func AssetKey(identityID, assetID string) string {
 	return "identity/" + identityID + "/asset/" + assetID + "/original"
+}
+
+// ShareSnapshotKey returns the object-store key for a share's redacted
+// conversation snapshot: share/<shareID>/snapshot/<snapshotID>/canonical.json.
+// Takes uuid.UUID rather than string — a deliberate deviation from AssetKey
+// above — so a hostile "../identity/<victim>/asset/x" string is
+// unrepresentable in the type, not merely unlikely (T-37F-25). The key
+// derives from shareID+snapshotID, never token_hash: token_hash is NULL for
+// the internal tier (migration 0040's CHECK), and D-10 requires internal
+// shares to resolve artifacts via the same snapshot as public ones.
+// Deriving a key from an authenticator would also couple key rotation to
+// data movement — the token authenticates, the snapshot id locates.
+//
+// RED-phase stub (Task 2): replaced with the real derivation in this task's
+// GREEN commit.
+func ShareSnapshotKey(_, _ uuid.UUID) string {
+	return ""
+}
+
+// ShareArtifactKey returns the object-store key for one artifact delivered
+// within a share's snapshot:
+// share/<shareID>/snapshot/<snapshotID>/asset/<assetID>. Every key this
+// returns sits under ShareKeyPrefix(shareID) — the invariant revoke's
+// List(prefix)+Delete depends on to reclaim every byte (T-37F-07).
+//
+// RED-phase stub (Task 2): replaced with the real derivation in this task's
+// GREEN commit.
+func ShareArtifactKey(_, _, _ uuid.UUID) string {
+	return ""
+}
+
+// ShareKeyPrefix returns the revoke-scope prefix for one share:
+// share/<shareID>/. The "share/" root is lexically disjoint from AssetKey's
+// "identity/" root in both directions — a share key can never address an
+// identity object, and an identity key can never address a share object —
+// which is what makes a future dedicated-bucket split a one-line change
+// (T-37F-05).
+//
+// RED-phase stub (Task 2): replaced with the real derivation in this task's
+// GREEN commit.
+func ShareKeyPrefix(_ uuid.UUID) string {
+	return ""
 }
