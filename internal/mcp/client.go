@@ -32,6 +32,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/boundedbuffer"
 	"github.com/chetto1983/aura/internal/envutil"
+	"github.com/chetto1983/aura/internal/procgroup"
 	"github.com/chetto1983/aura/internal/secret"
 )
 
@@ -144,6 +145,10 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	}
 	stderr := boundedbuffer.New(0)
 	cmd.Stderr = stderr
+	// D-10: cmd leads its own process group/tree before it starts, so a later
+	// killProcess (via procgroup.KillProcessGroup) reaps the WHOLE spawned tree —
+	// not just this tracked PID — instead of leaking grandchild processes (F-035).
+	procgroup.SetProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("mcp %q: spawn %s: %w", name, cfg.Command, err)
 	}
@@ -499,10 +504,13 @@ func (c *Client) abortTransport() {
 	c.killProcess()
 }
 
+// killProcess terminates the whole spawned process tree (D-10), not just the
+// tracked PID — see internal/procgroup for the per-OS mechanism.
 func (c *Client) killProcess() {
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+	if c.cmd == nil {
+		return
 	}
+	_ = procgroup.KillProcessGroup(c.cmd)
 }
 
 // stderrTail returns a length-capped suffix of captured stderr for error context.
