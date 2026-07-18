@@ -62,8 +62,14 @@ func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, n
 	if err != nil {
 		return nil, nil, err
 	}
+	defs, err := cli.ListTools(handshakeCtx)
+	if err != nil {
+		_ = cli.Close()
+		return nil, nil, err
+	}
 	srv := newReconnectingServer(name, cfg, cli)
-	names, err = Mount(handshakeCtx, reg, name, srv)
+	srv.setProcessContext(processCtx)
+	names, err = MountWithDefs(reg, name, srv, defs)
 	if err != nil {
 		_ = srv.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)

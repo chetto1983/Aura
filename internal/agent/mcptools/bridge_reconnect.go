@@ -40,6 +40,13 @@ type reconnectingServer struct {
 	refreshHook      func()
 	closed           bool
 	reconnectTimeout time.Duration
+	// processCtx bounds a RECONNECTED replacement subprocess's entire lifetime
+	// (Pitfall #2): set via setProcessContext to the same daemon/boot context
+	// MountServer/MountManagedServer used for the initial Open, so a reconnect never
+	// spawns a subprocess whose lifetime is tied to the short, deferred-cancel
+	// reconnect-handshake timeout. Defaults to context.Background() when unset (test
+	// constructions that never reconnect a real subprocess).
+	processCtx context.Context
 
 	reconnecting        bool
 	reconnectDone       chan struct{}
@@ -59,6 +66,25 @@ func newReconnectingServer(name string, cfg mcp.ServerConfig, client reconnectin
 		bridged:          map[string]*bridgedTool{},
 		reconnectTimeout: defaultMCPReconnectTimeout,
 	}
+}
+
+// setProcessContext records the process-lifetime context a reconnect must use to
+// spawn (or open) the replacement transport. MountServer/MountManagedServer call
+// this right after construction with the same processCtx they passed to the
+// initial Open.
+func (s *reconnectingServer) setProcessContext(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.processCtx = ctx
+}
+
+func (s *reconnectingServer) processContext() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.processCtx == nil {
+		return context.Background()
+	}
+	return s.processCtx
 }
 
 func (s *reconnectingServer) ListTools(ctx context.Context) ([]mcp.ToolDef, error) {
@@ -246,7 +272,7 @@ func (s *reconnectingServer) openReplacement(parent context.Context, timeout tim
 	handshakeCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
 	defer cancel()
 
-	next, err := openMCPClient(handshakeCtx, handshakeCtx, s.name, s.cfg)
+	next, err := openMCPClient(s.processContext(), handshakeCtx, s.name, s.cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reconnect mcp %q: %w", s.name, err)
 	}
