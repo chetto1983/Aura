@@ -266,3 +266,40 @@ is a small package relative to the owned-surface total; this shortfall does not 
 enforced gate below the floor. Logged for whoever next owns either (a) an `s3.go` client-seam
 refactor + mock-backed unit tests, or (b) a live-Garage `garage_integration` CI tier, whichever
 this project adopts first.
+
+## 37F-18 — `web/src/chat/share/*` Stryker mutation score is 69.85% (3 files below 70%,
+## project-aggregate gate still passes — not closed here)
+
+**Found during:** Task 1's web mutation gate, after fixing two real scoping bugs (both already
+committed by this plan): `stryker.config.json`'s `mutate` array and `vitest.stryker.config.ts`'s
+`mutationTests` array never grew to cover the share module, so every prior Stryker run had
+measured 0% "no coverage" for these files — not a survivor score, an invisibility bug. With both
+lists corrected, the REAL score is now visible for the first time.
+
+**What was found:** `npx stryker run`'s project-wide aggregate is 75.34% (>= the `break: 70`
+threshold in `stryker.config.json` — the actual CI-enforced gate, `web-mutation` in `ci.yml`, PASSES).
+The `chat/share` subdirectory's OWN aggregate is **69.85%** — 0.15 percentage points under this
+plan's stated "≥70% on `web/src/chat/share/*`" target, driven almost entirely by three
+presentational components: `ShareModal.tsx` 62.50% (91 survived / 261 valid mutants — by far the
+largest contributor), `SharedSection.tsx` 57.14% (14/34), `ShareLinkRow.tsx` 57.14% (17/41). The
+other four files clear 70% individually: `shareViewModel.ts` 91.78%, `useThreadShares.ts` 83.33%,
+`shareApi.ts` 82.14%, `RevokeConfirmDialog.tsx` 80.00%. `web/src/shell/ShareShell.tsx` is 100.00%.
+
+**Root cause (not investigated further here):** the three low files are React/JSX-heavy
+presentational components (a modal's tier/expiry radio state, a list section's empty/error
+branches, a row's expiry-badge conditionals) — the class of code where Stryker's mutators
+routinely generate large numbers of "equivalent" or extremely hard-to-kill mutants (conditional
+className toggles, JSX attribute permutations, string-literal ARIA labels) that behavioral tests
+using Testing Library's role/text queries don't exhaustively assert. No individual survivor was
+triaged against the JSON/HTML mutant detail (this plan's `stryker.config.json` only wires the
+`clear-text`/`progress` reporters, so no structured per-mutant report exists to triage from without
+a further ~20-minute re-run with `reporters: ["html"]` added).
+
+**Disposition:** NOT closed here — the CI-enforced gate (Stryker's own project-aggregate `break`
+threshold) already passes, and triaging 91+ survivors in `ShareModal.tsx` down to real-gap-vs-
+equivalent classifications is a genuine test-design task, not a wiring/verification one; doing it
+hastily under this plan's already-large scope would risk exactly the CLAUDE.md "NO TEST BABY
+SITTING" box-checking this project explicitly rejects. Logged for whoever next owns either (a) an
+HTML/JSON Stryker report re-run + per-mutant triage of `ShareModal.tsx`/`SharedSection.tsx`/
+`ShareLinkRow.tsx`, or (b) new behavioral test cases targeting the specific state transitions
+(tier selection, expiry option, stale-snapshot banner) these three components own.
