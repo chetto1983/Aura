@@ -126,6 +126,16 @@ func (a mcpWriteAdapter) TrustApprove(ctx context.Context, actor, name, class, r
 	return agui.MCPWriteResult{Name: name, Server: server, Probe: a.probe(ctx, name, server)}, nil
 }
 
+// validateTrustClassReason is the single source of truth for MCPH-03/D-13's trust-approve
+// validation.
+//
+// TODO(RED stub): this minimal compiling body fails closed unconditionally; GREEN replaces
+// it with the real class!="" && reason!="" && IsKnownTrust(class) check and wires TrustApprove
+// to call it (removing the dead empty-class default above).
+func validateTrustClassReason(class, reason string) (string, string, error) {
+	return "", "", fmt.Errorf("mcp trust: validation stub not yet wired")
+}
+
 func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, enabled bool) (agui.MCPWriteResult, error) {
 	doc, err := a.load()
 	if err != nil {
