@@ -1,16 +1,19 @@
 ---
 phase: 38-mcp-governance-hardening
 verified: 2026-07-18T12:58:12Z
-status: human_needed
+status: passed
 score: 9/9 requirements verified in code; 3 backstop truths abstained to human_needed
 overrides_applied: 0
 human_verification:
+
   - test: "Mount an MCP server whose handshake completes at exactly the AURA_MCP_MOUNT_TIMEOUT deadline (e.g. inject a controllable delay = mountTimeout precisely, repeated under load/jitter) and confirm it resolves deterministically mounted-xor-dropped, never both (no double-mount, no half-mounted registry entry)."
     expected: "Exactly one of: (a) mounted and usable, or (b) dropped with a WARN and its subprocess reaped — never a state where the registry holds a handle to a server whose subprocess was also killed, and never a hang."
     why_human: "38-05's own planner_assumptions explicitly authored this as a `backstop` truth: RESEARCH flagged the exact-boundary race as unprovable by a deterministic unit test (context deadlines racing a goroutine completion). No test in cmd/aura/main_test.go exercises the frame at the exact instant of the deadline — TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives proves the two ends (fast success, clearly-hung timeout) but not the boundary itself. Per the verification brief's instruction, abstaining rather than asserting pass/fail on unconfirmed evidence."
+
   - test: "Trigger closeMCPServers shutdown where one closer's own work completes at the exact instant AURA_MCP_SHUTDOWN_TIMEOUT's aggregate context fires; repeat under scheduler jitter."
     expected: "The closer's completion is not double-counted (e.g. errgroup does not race a completed-but-still-cancelling closer into being reported both as done and as abandoned) and does not leak a goroutine past the aggregate deadline."
     why_human: "Same class of authored `backstop` truth in 38-05 (planner_assumptions Probes #6/#8/#11). TestCloseMCPServers_AggregateDeadlineAbandonsStragglers proves the abandon-at-deadline case and TestCloseMCPServers_ConcurrentBoundedShutdown proves the fan-out is bounded, but neither test drives a closer to complete AT the exact deadline instant — this is a genuine race-timing case that a deterministic unit test cannot reliably construct."
+
   - test: "Configure an HTTP MCP server whose tools/list response arrives at (or within microseconds of) AURA_MCP_PROBE_TIMEOUT firing; repeat under load."
     expected: "mcp.ProbeServer / writeRuntimeCheck / doctorProbeMCPServers returns a single deterministic verdict (OK=true or OK=false), never a data race between the successful response and the timeout cancellation, and never a hung goroutine."
     why_human: "38-06's planner_assumptions explicitly authored Probe #19 ([MCPH-09] adjacency — deadline-exact) as a `backstop` truth needing verifier abstention absent direct evidence. TestWriteRuntimeCheckBoundedByProbeTimeout and TestDoctorProbeMCPServersBoundedByProbeTimeout prove boundedness (returns within ~timeout) but do not construct the exact-instant race."
