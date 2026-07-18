@@ -30,6 +30,7 @@
 // in ITS OWN package). Two packages, two established names for the same Aura conversation
 // entity; this client follows share's, since it wraps share's routes.
 
+import { errorDetail, readJSON } from '../http';
 import type { ShareLink } from './shareTypes';
 
 export type Tier = 'internal' | 'public';
@@ -45,18 +46,6 @@ interface CreateShareBody {
   readonly tier: Tier;
   readonly expiry_option?: '1d' | '7d' | '30d' | 'custom';
   readonly custom_expiry_days?: number;
-}
-
-async function errorDetail(res: Response): Promise<string> {
-  const status = `HTTP ${String(res.status)}`;
-  if (res.body === null) return status;
-  const detail = (await res.text().catch(() => '')).trim();
-  return detail.length > 0 ? detail : status;
-}
-
-async function readJSON<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(await errorDetail(res));
-  return (await res.json()) as T;
 }
 
 function expiryBody(

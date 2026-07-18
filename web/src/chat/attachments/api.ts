@@ -1,16 +1,5 @@
+import { readJSON } from '../http';
 import type { Asset, PresignAssetRequest, PresignResponse } from './types';
-
-async function errorDetail(res: Response): Promise<string> {
-  const status = `HTTP ${String(res.status)}`;
-  if (res.body === null) return status;
-  const detail = (await res.text().catch(() => '')).trim();
-  return detail.length > 0 ? detail : status;
-}
-
-async function readJSON<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(await errorDetail(res));
-  return (await res.json()) as T;
-}
 
 function assetURL(id: string): string {
   return `/api/assets/${encodeURIComponent(id)}`;
