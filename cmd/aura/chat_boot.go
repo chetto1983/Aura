@@ -282,7 +282,10 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both
 	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB. sandboxRouter
 	// threads onto shell_exec/fs_read/fs_write/send_file/skill (NOT web_*, D-11).
-	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore), sandboxRouter)
+	// Retain the task-store adapter: it backs BOTH the `task` tool (registry) AND the
+	// scheduled-task resume hook (on-channel HITL approval) below.
+	taskStore := newCronTaskStore(pool, convStore)
+	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, taskStore, sandboxRouter)
 	if err != nil {
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
@@ -365,7 +368,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		AlwaysBlock:     alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
-		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw)),
+		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
 		HookManager: hookManager,
 		Gateway:     gw,
 		// Local embedding-based reasoning-tier classifier (granite sidecar):
