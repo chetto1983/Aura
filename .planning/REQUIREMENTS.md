@@ -114,7 +114,7 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [ ] **MCPH-05**: Stdio MCP frames are capped at a maximum size; an oversized frame aborts the transport deterministically without large allocation. *(F-034)*
 - [ ] **MCPH-06**: MCP shutdown bounds HTTP close with a timeout and terminates the stdio process tree (process group/job object) — no hang, no leaked child processes. *(F-035)*
 - [ ] **MCPH-07**: CLI MCP mutations (add/trust/enable/disable/remove, profiles) route through the audited atomic writer (`mcp_audit`), or are explicitly marked unaudited and disallowed under production. *(F-037)*
-- [ ] **MCPH-08**: Legacy `AURA_MCP_SERVERS_JSON` is production-disabled (or translated into managed config with explicit trust + audit metadata) unless an explicit compatibility flag is set. *(F-014)*
+- [x] **MCPH-08**: Legacy `AURA_MCP_SERVERS_JSON` is production-disabled (or translated into managed config with explicit trust + audit metadata) unless an explicit compatibility flag is set. *(F-014)*
 - [ ] **MCPH-09**: HTTP MCP probe/doctor dials and lists tools (under the short probe deadline) — a dead/typoed endpoint reports `OK=false`, not healthy-by-config. *(F-046)*
 
 ### Observability, Idempotency & Retention (OBS)

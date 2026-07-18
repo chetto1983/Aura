@@ -386,3 +386,58 @@ func TestValidateProfile(t *testing.T) {
 		}
 	})
 }
+
+// TestGateMCPLegacyEnv locks T-38-09/D-14/D-15/MCPH-08: a non-empty AURA_MCP_SERVERS_JSON
+// legacy env override is Fatal under server_production ONLY, unless the operator
+// explicitly opts in via AURA_MCP_LEGACY_ENV_COMPAT=1/true; every other profile is a
+// no-op regardless of the env/flag combination (D-14 — the legacy env keeps parsing
+// byte-identically outside production) — mirrors TestGateDestructiveShell's raw-env,
+// prod-only, case-insensitive-adjacent shape.
+func TestGateMCPLegacyEnv(t *testing.T) {
+	t.Run("non-prod profiles never gate regardless of env/flag", func(t *testing.T) {
+		for _, p := range allProfiles {
+			if p == ProfileServerProduction {
+				continue
+			}
+			t.Run(string(p), func(t *testing.T) {
+				t.Setenv("AURA_MCP_SERVERS_JSON", `{"mcpServers":{"x":{"command":"y"}}}`)
+				t.Setenv("AURA_MCP_LEGACY_ENV_COMPAT", "")
+				if vs := (&Config{}).gateMCPLegacyEnv(p); len(vs) != 0 {
+					t.Errorf("%s must be a no-op with the legacy env set and no compat flag, got %+v", p, vs)
+				}
+			})
+		}
+	})
+
+	tests := []struct {
+		name        string
+		serversJSON string
+		compat      string
+		wantFatal   bool
+	}{
+		{name: "unset servers json", serversJSON: "", compat: "", wantFatal: false},
+		{name: "whitespace-only servers json", serversJSON: "   ", compat: "", wantFatal: false},
+		{name: "set, compat unset", serversJSON: `{"mcpServers":{"x":{"command":"y"}}}`, compat: "", wantFatal: true},
+		{name: "set, compat=false", serversJSON: `{"mcpServers":{"x":{"command":"y"}}}`, compat: "false", wantFatal: true},
+		{name: "set, compat=1", serversJSON: `{"mcpServers":{"x":{"command":"y"}}}`, compat: "1", wantFatal: false},
+		{name: "set, compat=true", serversJSON: `{"mcpServers":{"x":{"command":"y"}}}`, compat: "true", wantFatal: false},
+		{name: "malformed json still gates without compat (gate precedes parse validity)", serversJSON: "not valid json{{{", compat: "", wantFatal: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AURA_MCP_SERVERS_JSON", tc.serversJSON)
+			t.Setenv("AURA_MCP_LEGACY_ENV_COMPAT", tc.compat)
+			vs := (&Config{}).gateMCPLegacyEnv(ProfileServerProduction)
+			got := hasViolation(vs, "AURA_MCP_SERVERS_JSON", Fatal)
+			if got != tc.wantFatal {
+				t.Errorf("gateMCPLegacyEnv(server_production) serversJSON=%q compat=%q: Fatal=%v, want %v (%+v)", tc.serversJSON, tc.compat, got, tc.wantFatal, vs)
+			}
+			if got {
+				v, _ := findViolation(vs, "AURA_MCP_SERVERS_JSON")
+				if !strings.Contains(v.Msg, "AURA_MCP_LEGACY_ENV_COMPAT") {
+					t.Errorf("Fatal violation Msg must name AURA_MCP_LEGACY_ENV_COMPAT, got %q", v.Msg)
+				}
+			}
+		})
+	}
+}
