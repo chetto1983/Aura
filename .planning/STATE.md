@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 37F
 current_phase_name: conversation-artifact-sharing-export-inserted
 status: executing
-stopped_at: Completed 37F-12-PLAN.md
-last_updated: "2026-07-17T23:37:16.850Z"
+stopped_at: Completed 37F-13-PLAN.md
+last_updated: "2026-07-18T00:38:16.435Z"
 last_activity: 2026-07-17
 last_activity_desc: Phase 37F execution started
 progress:
   total_phases: 19
   completed_phases: 14
   total_plans: 123
-  completed_plans: 120
+  completed_plans: 121
   percent: 74
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 17 of 20 complete (17/20 done total — 01-12, 14-17, 20; remaining: 13, 18, 19 — wave/dependency-driven, non-sequential)
+Plan: 18 of 20 complete (17/20 done total — 01-12, 14-17, 20; remaining: 13, 18, 19 — wave/dependency-driven, non-sequential)
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
@@ -366,6 +366,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37F P11 | 70min | 3 tasks | 8 files |
 | Phase 37F P17 | 35min | 2 tasks | 9 files |
 | Phase 37F P12 | 30 min | 2 tasks | 4 files |
+| Phase 37F P13 | 55min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -674,6 +675,10 @@ Recent decisions affecting current work:
 - [Phase 37F]: 37F-17: revoke-all implemented as a client-side Promise.allSettled fan-out over the existing single-delete route — the shipped share HTTP surface (37F-10) has no bulk-revoke endpoint; adding one is a backend change out of this plan's scope
 - [Phase 37F]: 37F-17: SharedSection mounts unconditionally inside ArtifactsPanel with no query-error UI — verified empirically (disposable probe test) that an unmocked relative-URL fetch rejects in ~1ms under this project's vitest+jsdom runtime, keeping the pre-existing unedited ArtifactsPanel.test.tsx green
 - [Phase ?]: 37F-12: mounted all eight share routes bare (no RequireCapability wrap), including POST /api/shares — A single mux entry serves both share tiers via the JSON body; Go's ServeMux dispatches on method+path only, so a tier-specific capability gate cannot live at the mount. share.public is defined as a documented D-02 constant but is not yet consulted by any code path -- share_api.go checks only the org kill-switch. Logged as a known gap in deferred-items.md (out of this plan's declared file scope).
+- [Phase ?]: share.public capability check lives in-handler (handleShareCreate), not at the parent mux, since a single POST /api/shares route serves both tiers via the JSON body — Go's ServeMux dispatches on method+path only, never on body content; a mount-level RequireCapability(share.public) would wrongly force the D-01 default internal-tier mint to require the capability
+- [Phase 37F]: Extended the existing identityAdmin interface with HasCapability instead of adding a new Server seam — *identity.Store already implements it and is already wired via SetIdentityAdmin at the composition root — no new production wiring point needed
+- [Phase 37F]: A's public-link fixtures for SC4 rows 5/7/9 minted directly via share.Service.Create, bypassing HTTP, so identity A never holds share.public anywhere in the test — Needed for row 8's negative assertion (A lacks share.public) to remain meaningful across the whole test — precedent already established by TestShareInternalRevokedExpired404's direct-store fixture construction
+- [Phase 37F]: Split share_api_test.go into three files (shared fixtures+CRUD / D-10 internal / public-token) mirroring the share_api.go/share_api_internal.go/share_api_public.go production split — The capability-check addition pushed the single file to 613 LOC, over the CLAUDE.md 600-LOC cap; refactor-on-touch rather than requesting an exception
 
 ### Pending Todos
 
@@ -686,6 +691,8 @@ Recent decisions affecting current work:
 [Issues that affect future work]
 
 - 8 Gate 1 DoR open questions tracked in research/SUMMARY.md "Gaps to Address" — resolve per-phase during plan-phase invocations.
+- internal/db's TestMigration0039RoundTrip/TestMigration0040RoundTrip fail (stale hardcoded version literals vs the new migration 0041 floor) — human-reserved, part of fix/ci-red-37f-drift per 37F-13/37F-20's own findings; blocks bash scripts/coverage_docker.sh from exiting 0 (see deferred-items.md)
+- internal/objectstore measures 69.6% coverage under the real db_integration+neo4j_integration tag matrix, below the 85% per-package floor — pre-existing, structural (s3.go's live-Garage-endpoint methods, 0% each), already deferred once by 37F-04; needs an AWS-SDK-S3 mock seam or a live-Garage CI tier (see deferred-items.md)
 
 ### Quick Tasks Completed
 
@@ -718,8 +725,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T23:36:25.340Z
-Stopped at: Completed 37F-12-PLAN.md
+Last session: 2026-07-18T00:38:16.406Z
+Stopped at: Completed 37F-13-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

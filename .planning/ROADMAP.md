@@ -601,7 +601,7 @@ Plans:
 
 **Design forks (RESOLVED da 37F-CONTEXT + Amendment Log 2026-07-15):** (a) **scope** — RISOLTO: **tutti e tre i tier** shippano fail-closed (export file sempre; link interno-identità revocabile = default "Condividi"; link pubblico opt-in a token con scadenza, mai default — D-01); (b) **granularità** — RISOLTO a **intera conversazione** (single-artifact e single-message deferred — D-05); (c) **storage link** — RISOLTO alla nuova tabella `aura.shared_links` + ledger `aura.share_audit`, **migration 0040** (NON 0036: Phase 42 ha shippato 0036–0039 il 2026-07-14 — D-11 amended), con blob snapshot/artifact token-scoped sotto un prefisso `share/` lessicalmente disgiunto da `identity/` (D-12). **Nota sicurezza:** il link pubblico è un buco **deliberato e limitato** nell'isolamento MUSR — le sette mitigazioni fail-closed sono registrate in **ADR 0039**.
 
-**Plans:** 17/20 plans executed
+**Plans:** 18/20 plans executed
 
 Plans:
 
@@ -643,7 +643,7 @@ Plans:
 
 **Wave 7** *(blocked on 37F-11 + 37F-12)*
 
-- [ ] 37F-13-PLAN.md — **WEBSHARE-04** SC4 cross-identity deny (10 rows, `internal/agui`, single `db_integration` tag) + phase-wide tag audit + per-package ≥85%
+- [x] 37F-13-PLAN.md — **WEBSHARE-04** SC4 cross-identity deny (10 rows, `internal/agui`, single `db_integration` tag) + phase-wide tag audit + per-package ≥85%
 
 **Wave 8** *(blocked on Wave 7)*
 
