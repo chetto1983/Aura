@@ -38,13 +38,14 @@ package main
 // all (see serve_webui.go's deliberate non-action) because they must fall THROUGH to the SPA
 // embed, not be excluded from it.
 //
-// KNOWN GAP (logged, not fixed here — see deferred-items.md): sharePublicCapability below is
-// a documented D-02 constant, but no code path currently calls
-// Identities.HasCapability(identityID, sharePublicCapability) — share_api.go's
-// handleShareCreate re-checks only the org kill-switch (s.cfg.SharePublicEnabled), never the
-// per-user capability. That check cannot live at THIS mount either, for the same
-// single-route/dual-tier reason above. Closing it means editing internal/agui/share_api.go,
-// which is outside this plan's declared file scope.
+// CLOSED (37F-13/WEBSHARE-04 SC4 row 8 — was a KNOWN GAP through plan 37F-12): sharePublicCapability
+// below is now actually enforced. It cannot live at THIS mount, for the single-route/dual-tier
+// reason above (a single POST /api/shares entry answers both the internal and public tier via
+// the JSON body; Go's ServeMux dispatches on method+path only). The check instead lives
+// in-handler, inside internal/agui/share_api.go's handleShareCreate, over the identical
+// identityAdmin.HasCapability seam RequireCapability itself calls — see that file's doc
+// comment on handleShareCreate and on the sharePublicCapabilityName constant (the same string
+// as sharePublicCapability below, duplicated because internal/agui cannot import cmd/aura).
 
 import (
 	"net/http"

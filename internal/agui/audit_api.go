@@ -42,11 +42,23 @@ type auditReader interface {
 // satisfies it). Grant/Revoke route through the SAME validated store methods the CLI uses
 // (name grammar + '*'-managed rejected at the store); ListIdentities/ListCapabilities back
 // the admin picker. Declared consumer-side so a fake unit-tests the handlers.
+//
+// HasCapability (37F-13/WEBSHARE-04 SC4 row 8) is reused here — not a second seam — for
+// share_api.go's handleShareCreate public-tier mint-time gate: a single POST /api/shares
+// mux entry answers BOTH the internal (D-01 default, no capability) and public tier via the
+// JSON body, so a tier-specific RequireCapability(share.public) cannot live at the parent
+// mux (Go's ServeMux dispatches on method+path only, never on body content — see
+// cmd/aura/serve_webui_share.go's file header and share_api.go's handleShareCreate doc for
+// the full single-route/dual-tier constraint). The check therefore has to live in-handler,
+// once the tier is known, over the SAME identity.Store method RequireCapability itself calls
+// (auth.go's identityChecker.HasCapability) — reusing this seam avoids a second Set* wiring
+// point at the composition root for what is structurally the identical capability read.
 type identityAdmin interface {
 	ListIdentities(ctx context.Context) ([]identity.Identity, error)
 	ListCapabilities(ctx context.Context, identityID string) ([]string, error)
 	GrantCapability(ctx context.Context, identityID, capability string) error
 	RevokeCapability(ctx context.Context, identityID, capability string) error
+	HasCapability(ctx context.Context, identityID, capability string) (bool, error)
 }
 
 // SetAuditStore wires the D-28 admin audit read store. Set by the daemon composition root

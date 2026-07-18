@@ -1,11 +1,17 @@
 //go:build db_integration
 
-// share_api_test.go — integration tests for the WEBSHARE-02/03 HTTP surface across all three
-// trust boundaries (plan 37F-10): owner-scoped CRUD, D-10 bearer-within-auth internal routes,
-// and unauthenticated public token routes. Every identity is fresh + non-wildcard (R-13) via
-// seedShareExportIdentity (share_export_test.go, same package/tag). RequireAuth/RequireCapability
-// are exercised for real only in TestShareInternalAnonymous401/TestSharePublicMintWithCapability/
-// TestSharePublicOrgKillSwitch. Run via:
+// share_api_test.go — shared test infrastructure (fakes/adapters/env builder/helpers) for the
+// WEBSHARE-02/03 HTTP surface across all three trust boundaries (plan 37F-10), plus the
+// owner-scoped CRUD tests that exercise share_api.go's own routes directly (list/audit-ledger/
+// body-cap/foreign-owner). D-10 bearer-within-auth internal-route tests live in
+// share_api_internal_test.go; unauthenticated public-token-route tests live in
+// share_api_public_test.go — this three-file split mirrors the production handler split
+// (share_api.go/share_api_internal.go/share_api_public.go) and keeps each file under the
+// CLAUDE.md 600-LOC cap (37F-13 refactor-on-touch: this file grew past 600 lines when the
+// share.public capability check landed, so it was split, not just trimmed).
+//
+// Every identity is fresh + non-wildcard (R-13) via seedShareExportIdentity
+// (share_export_test.go, same package/tag). Run via:
 // go test -tags db_integration -race -p 1 -count=1 -run 'TestShare' ./internal/agui/
 package agui
 
@@ -14,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +36,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// shareAPITestBucket is the fake bucket every env/adapter/hand-built Link in this file shares.
+// shareAPITestBucket is the fake bucket every env/adapter/hand-built Link in this file family shares.
 const shareAPITestBucket = "share-api-test-bucket"
 
 // shareConvAdapter satisfies share.ConversationReader over a real *conversations.Store.
@@ -110,6 +115,12 @@ func newShareAPIEnv(t *testing.T, pool *pgxpool.Pool, publicEnabled bool) *share
 	adapter := &shareTestAdapter{svc: svc, store: store, objects: objects, bucket: shareAPITestBucket}
 	s := NewServer(&scriptedRunner{}, convStore, ServerConfig{SharePublicEnabled: publicEnabled})
 	s.SetShareService(adapter)
+	// 37F-13/WEBSHARE-04 SC4 row 8: handleShareCreate's public-tier mint now checks
+	// share.public via s.idAdmin — wire the SAME real *identity.Store the production
+	// composition root uses (cmd/aura/serve.go's SetIdentityAdmin(chat.identity)) so
+	// createShare's auto-grant (below) is honored and every pre-existing caller of this env
+	// keeps minting successfully.
+	s.SetIdentityAdmin(identity.New(pool))
 	return &shareAPIEnv{server: s, adapter: adapter, assetsF: fakeAssets, convStore: convStore, pool: pool}
 }
 
@@ -146,8 +157,19 @@ func seedOwnerAndConversation(t *testing.T, env *shareAPIEnv, turns []conversati
 }
 
 // createShare POSTs /api/shares as owner, asserts wantStatus, and decodes the 201 body.
+// 37F-13: a public-tier mint now requires share.public (WEBSHARE-04 SC4 row 8); this helper
+// auto-grants it to owner so every PRE-EXISTING caller (none of which exercise the capability
+// gate itself) keeps minting successfully. TestSharePublicMintWithCapability/
+// TestSharePublicOrgKillSwitch test the gate directly with their own explicit grant + wrap and
+// do NOT call this helper; share_cross_identity_test.go's row 8 also bypasses this helper
+// (a bare shareReq) specifically so A is never granted the capability.
 func createShare(t *testing.T, env *shareAPIEnv, owner, convID, tier string, wantStatus int) shareLinkResponse {
 	t.Helper()
+	if tier == "public" {
+		if err := identity.New(env.pool).GrantCapability(context.Background(), owner, "share.public"); err != nil {
+			t.Fatalf("grant share.public for createShare(tier=public): %v", err)
+		}
+	}
 	rec := shareReq(env.server, http.MethodPost, "/api/shares", owner,
 		`{"conversation_id":"`+convID+`","tier":"`+tier+`"}`)
 	if rec.Code != wantStatus {
@@ -175,6 +197,8 @@ func seedBundledArtifact(env *shareAPIEnv, name string, body []byte) string {
 	return id
 }
 
+// assertInertAttachment is shared by both asset-serving tiers (internal and public) — the
+// inert-bytes rule is not a public-tier special case.
 func assertInertAttachment(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	if rec.Code != http.StatusOK {
@@ -188,16 +212,6 @@ func assertInertAttachment(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
-// publicToken extracts the plaintext token from a ShareLink.url of the form "/s/{token}".
-func publicToken(t *testing.T, url string) string {
-	t.Helper()
-	const prefix = "/s/"
-	if !strings.HasPrefix(url, prefix) {
-		t.Fatalf("public link url %q missing /s/ prefix", url)
-	}
-	return strings.TrimPrefix(url, prefix)
-}
-
 func assertAuditRow(t *testing.T, pool *pgxpool.Pool, shareID, action string) {
 	t.Helper()
 	var count int
@@ -208,259 +222,6 @@ func assertAuditRow(t *testing.T, pool *pgxpool.Pool, shareID, action string) {
 	}
 	if count < 1 {
 		t.Fatalf("share_audit has no %q row for share %s", action, shareID)
-	}
-}
-
-// TestShareInternalBearerWithinAuth is SC4 row 3: B, a NON-owner, resolves A's internal link (D-10).
-func TestShareInternalBearerWithinAuth(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	bearerB := seedShareExportIdentity(t, pool)
-	link := createShare(t, env, owner, convID, "internal", http.StatusCreated)
-	rec := shareReq(env.server, http.MethodGet, "/api/shares/"+link.ID+"/data", bearerB, "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("bearer B resolve status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-}
-
-// TestShareInternalAnonymous401 exercises the REAL RequireAuth chain (SC4 row 4): not on any public allowlist.
-func TestShareInternalAnonymous401(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	link := createShare(t, env, owner, convID, "internal", http.StatusCreated)
-	deps := AuthDeps{SecretConfigured: true, SigningKey: []byte("0123456789abcdef0123456789abcdef")}
-	gated := RequireAuth(env.server.Mux(), deps)
-	req := httptest.NewRequest(http.MethodGet, "/api/shares/"+link.ID+"/data", nil)
-	rec := httptest.NewRecorder()
-	gated.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized && rec.Code != http.StatusFound {
-		t.Fatalf("anonymous internal resolve status = %d, want 401 or 302", rec.Code)
-	}
-}
-
-// TestShareInternalRejectsPublicTierID: a public share's id on the internal route 404s byte-identically to an unknown id.
-func TestShareInternalRejectsPublicTierID(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	got := shareReq(env.server, http.MethodGet, "/api/shares/"+link.ID+"/data", owner, "")
-	unknown := shareReq(env.server, http.MethodGet, "/api/shares/"+uuid.Must(uuid.NewV7()).String()+"/data", owner, "")
-	if got.Code != http.StatusNotFound || unknown.Code != http.StatusNotFound {
-		t.Fatalf("public-tier id = %d, unknown id = %d, want both 404", got.Code, unknown.Code)
-	}
-	if got.Body.String() != unknown.Body.String() {
-		t.Fatalf("public-tier id body %q != unknown id body %q (tier oracle)", got.Body.String(), unknown.Body.String())
-	}
-}
-
-// TestShareInternalRevokedExpired404: revoked + expired (inserted directly) internal links both 404 like an unknown id.
-func TestShareInternalRevokedExpired404(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	revokedLink := createShare(t, env, owner, convID, "internal", http.StatusCreated)
-	if rec := shareReq(env.server, http.MethodDelete, "/api/shares/"+revokedLink.ID, owner, ""); rec.Code != http.StatusNoContent {
-		t.Fatalf("revoke status = %d, want 204: %s", rec.Code, rec.Body.String())
-	}
-	expired := share.Link{
-		ID: uuid.Must(uuid.NewV7()), OwnerIdentityID: uuid.MustParse(owner), ConversationID: uuid.MustParse(convID),
-		Tier: "internal", SnapshotID: uuid.Must(uuid.NewV7()), SnapshotBucket: shareAPITestBucket,
-		ExpiresAt: pastShareTime(time.Hour),
-	}
-	if err := env.adapter.store.Insert(context.Background(), expired, nil); err != nil {
-		t.Fatalf("insert expired link: %v", err)
-	}
-	unknown := shareReq(env.server, http.MethodGet, "/api/shares/"+uuid.Must(uuid.NewV7()).String()+"/data", owner, "")
-	revoked := shareReq(env.server, http.MethodGet, "/api/shares/"+revokedLink.ID+"/data", owner, "")
-	exp := shareReq(env.server, http.MethodGet, "/api/shares/"+expired.ID.String()+"/data", owner, "")
-	for name, rec := range map[string]*httptest.ResponseRecorder{"revoked": revoked, "expired": exp} {
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("%s status = %d, want 404", name, rec.Code)
-		}
-		if rec.Body.String() != unknown.Body.String() {
-			t.Fatalf("%s body %q != unknown body %q", name, rec.Body.String(), unknown.Body.String())
-		}
-	}
-}
-
-// TestShareInternalAssetSnapshotScoped is SC4 row 9: a link authenticates ONE snapshot, never any asset id.
-func TestShareInternalAssetSnapshotScoped(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner := seedShareExportIdentity(t, pool)
-	conv1 := seedExportConversation(t, env.convStore, owner, "C1", oneTurn())
-	conv2 := seedExportConversation(t, env.convStore, owner, "C2", oneTurn())
-	seedBundledArtifact(env, "one.txt", []byte("one"))
-	link1 := createShare(t, env, owner, conv1, "internal", http.StatusCreated)
-	asset2 := seedBundledArtifact(env, "two.txt", []byte("two"))
-	link2 := createShare(t, env, owner, conv2, "internal", http.StatusCreated)
-	rec := shareReq(env.server, http.MethodGet, "/api/shares/"+link1.ID+"/asset/"+asset2, owner, "")
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("foreign snapshot asset status = %d, want 404", rec.Code)
-	}
-	if rec2 := shareReq(env.server, http.MethodGet, "/api/shares/"+link2.ID+"/asset/"+asset2, owner, ""); rec2.Code != http.StatusOK {
-		t.Fatalf("own snapshot asset status = %d, want 200: %s", rec2.Code, rec2.Body.String())
-	}
-}
-
-// TestShareInternalAssetContentType: the inert-bytes rule is not a public-tier special case.
-func TestShareInternalAssetContentType(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	assetID := seedBundledArtifact(env, "page.html", []byte("<html><script>evil()</script></html>"))
-	link := createShare(t, env, owner, convID, "internal", http.StatusCreated)
-	rec := shareReq(env.server, http.MethodGet, "/api/shares/"+link.ID+"/asset/"+assetID, owner, "")
-	assertInertAttachment(t, rec)
-}
-
-// TestSharePublicMintWithCapability wraps the real RequireCapability chain: capability + kill-switch on ⇒ 201, token once.
-func TestSharePublicMintWithCapability(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	if err := identity.New(pool).GrantCapability(context.Background(), owner, "share.public"); err != nil {
-		t.Fatalf("grant share.public: %v", err)
-	}
-	gated := RequireCapability(env.server.Mux(), AuthDeps{SecretConfigured: true, Identities: storeChecker{store: identity.New(pool)}}, "share.public")
-	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/shares", strings.NewReader(
-		`{"conversation_id":"`+convID+`","tier":"public"}`)), owner)
-	rec := httptest.NewRecorder()
-	gated.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body.String())
-	}
-	if n := strings.Count(rec.Body.String(), `"url":"/s/`); n != 1 {
-		t.Fatalf("plaintext token url appears %d times in the body, want exactly 1: %s", n, rec.Body.String())
-	}
-}
-
-// TestSharePublicOrgKillSwitch is R-08: kill-switch off ⇒ 403 even with the capability granted and SecretConfigured=false.
-func TestSharePublicOrgKillSwitch(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, false) // kill-switch OFF
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	if err := identity.New(pool).GrantCapability(context.Background(), owner, "share.public"); err != nil {
-		t.Fatalf("grant share.public: %v", err)
-	}
-	gated := RequireCapability(env.server.Mux(), AuthDeps{SecretConfigured: false}, "share.public")
-	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/shares", strings.NewReader(
-		`{"conversation_id":"`+convID+`","tier":"public"}`)), owner)
-	rec := httptest.NewRecorder()
-	gated.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403 (R-08 regression)", rec.Code)
-	}
-}
-
-// TestShareRevokeThen404 proves the 404 after revoke is never a stale render: no title, a short body.
-func TestShareRevokeThen404(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	if err := env.convStore.SetTitleIfNull(context.Background(), convID, "Secret Title"); err != nil {
-		t.Fatalf("set title: %v", err)
-	}
-	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	token := publicToken(t, link.URL)
-	if rec := shareReq(env.server, http.MethodDelete, "/api/shares/"+link.ID, owner, ""); rec.Code != http.StatusNoContent {
-		t.Fatalf("revoke status = %d, want 204: %s", rec.Code, rec.Body.String())
-	}
-	rec := shareReq(env.server, http.MethodGet, "/s/"+token+"/data", "", "")
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("revoked token status = %d, want 404", rec.Code)
-	}
-	if body := rec.Body.String(); strings.Contains(body, "Secret Title") || len(body) > 64 {
-		t.Fatalf("404 body is not a short, title-free response: %q", body)
-	}
-}
-
-// TestShareTokenNoOracle proves unknown/revoked/expired tokens produce byte-identical 404s.
-func TestShareTokenNoOracle(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	revokedLink := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	revokedToken := publicToken(t, revokedLink.URL)
-	if rec := shareReq(env.server, http.MethodDelete, "/api/shares/"+revokedLink.ID, owner, ""); rec.Code != http.StatusNoContent {
-		t.Fatalf("revoke status = %d, want 204", rec.Code)
-	}
-	plaintext, hash, err := share.Mint()
-	if err != nil {
-		t.Fatalf("mint expired token: %v", err)
-	}
-	expired := share.Link{
-		ID: uuid.Must(uuid.NewV7()), OwnerIdentityID: uuid.MustParse(owner), ConversationID: uuid.MustParse(convID),
-		Tier: "public", SnapshotID: uuid.Must(uuid.NewV7()), SnapshotBucket: shareAPITestBucket,
-		ExpiresAt: pastShareTime(time.Hour),
-	}
-	if err := env.adapter.store.Insert(context.Background(), expired, hash[:]); err != nil {
-		t.Fatalf("insert expired link: %v", err)
-	}
-	unknown := shareReq(env.server, http.MethodGet, "/s/"+uuid.Must(uuid.NewV7()).String()+"/data", "", "")
-	revoked := shareReq(env.server, http.MethodGet, "/s/"+revokedToken+"/data", "", "")
-	exp := shareReq(env.server, http.MethodGet, "/s/"+plaintext+"/data", "", "")
-	for name, rec := range map[string]*httptest.ResponseRecorder{"revoked": revoked, "expired": exp} {
-		if rec.Code != http.StatusNotFound || rec.Body.String() != unknown.Body.String() {
-			t.Fatalf("%s: status=%d body=%q, want 404 identical to unknown's %q", name, rec.Code, rec.Body.String(), unknown.Body.String())
-		}
-	}
-}
-
-// TestShareTokenEnumeration proves 1000 random tokens all 404 identically.
-func TestShareTokenEnumeration(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	baseline := shareReq(env.server, http.MethodGet, "/s/"+uuid.Must(uuid.NewV7()).String()+"/data", "", "")
-	if baseline.Code != http.StatusNotFound {
-		t.Fatalf("baseline status = %d, want 404", baseline.Code)
-	}
-	for i := 0; i < 1000; i++ {
-		token, _, err := share.Mint()
-		if err != nil {
-			t.Fatalf("mint random token %d: %v", i, err)
-		}
-		rec := shareReq(env.server, http.MethodGet, "/s/"+token+"/data", "", "")
-		if rec.Code != http.StatusNotFound || rec.Body.String() != baseline.Body.String() {
-			t.Fatalf("token %d: status=%d body=%q, want 404 identical to baseline", i, rec.Code, rec.Body.String())
-		}
-	}
-}
-
-// TestSharePublicOpenAuditNoPII: a distinctive X-Forwarded-For/User-Agent never lands in share_audit (D-14).
-func TestSharePublicOpenAuditNoPII(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	token := publicToken(t, link.URL)
-	req := httptest.NewRequest(http.MethodGet, "/s/"+token+"/data", nil)
-	const distinctiveIP, distinctiveUA = "203.0.113.66", "AuraProbe/PII-canary-1.0"
-	req.Header.Set("X-Forwarded-For", distinctiveIP)
-	req.Header.Set("User-Agent", distinctiveUA)
-	rec := httptest.NewRecorder()
-	env.server.Mux().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("resolve status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	rows, err := pool.Query(context.Background(),
-		"SELECT identity_id, detail FROM aura.share_audit WHERE share_link_id = $1", uuid.MustParse(link.ID))
-	if err != nil {
-		t.Fatalf("query share_audit: %v", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var identityID, detail string
-		if err := rows.Scan(&identityID, &detail); err != nil {
-			t.Fatalf("scan share_audit row: %v", err)
-		}
-		if strings.Contains(identityID, distinctiveIP) || strings.Contains(detail, distinctiveIP) ||
-			strings.Contains(identityID, distinctiveUA) || strings.Contains(detail, distinctiveUA) {
-			t.Fatalf("share_audit row leaked PII: identity_id=%q detail=%q", identityID, detail)
-		}
 	}
 }
 
@@ -496,68 +257,6 @@ func TestShareList(t *testing.T) {
 	rec := shareReq(env.server, http.MethodGet, "/api/shares?conversation_id="+convID, owner, "")
 	if err := json.Unmarshal(rec.Body.Bytes(), &scoped); err != nil || len(scoped) != 1 {
 		t.Fatalf("scoped list = %v (err=%v), want exactly 1 link", scoped, err)
-	}
-}
-
-// TestShareTokenNeverLogged: across mint->open->revoke, the plaintext token appears in no log line or share_audit row.
-func TestShareTokenNeverLogged(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	var logBuf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	token := publicToken(t, link.URL)
-	if rec := shareReq(env.server, http.MethodGet, "/s/"+token+"/data", "", ""); rec.Code != http.StatusOK {
-		t.Fatalf("open status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	if rec := shareReq(env.server, http.MethodDelete, "/api/shares/"+link.ID, owner, ""); rec.Code != http.StatusNoContent {
-		t.Fatalf("revoke status = %d, want 204: %s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(logBuf.String(), token) {
-		t.Fatalf("plaintext token appeared in slog output: %s", logBuf.String())
-	}
-	var detailCount int
-	if err := pool.QueryRow(context.Background(),
-		"SELECT count(*) FROM aura.share_audit WHERE detail LIKE $1", "%"+token+"%").Scan(&detailCount); err != nil {
-		t.Fatalf("scan share_audit for token leak: %v", err)
-	}
-	if detailCount != 0 {
-		t.Fatalf("plaintext token appeared in %d share_audit row(s)", detailCount)
-	}
-}
-
-// TestSharePublicAssetContentType: a text/html artifact still serves neutral-typed over the public lane.
-func TestSharePublicAssetContentType(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	assetID := seedBundledArtifact(env, "page.html", []byte("<html><script>evil()</script></html>"))
-	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	token := publicToken(t, link.URL)
-	rec := shareReq(env.server, http.MethodGet, "/s/"+token+"/asset/"+assetID, "", "")
-	assertInertAttachment(t, rec)
-}
-
-// TestSharePublicAssetHeaderInjection: contentDisposition percent-escapes a hostile filename; no X-Evil header lands.
-func TestSharePublicAssetHeaderInjection(t *testing.T) {
-	pool := migratedPool(t)
-	env := newShareAPIEnv(t, pool, true)
-	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	assetID := seedBundledArtifact(env, "a\"; rm -rf /\r\nX-Evil: 1", []byte("payload"))
-	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
-	token := publicToken(t, link.URL)
-	rec := shareReq(env.server, http.MethodGet, "/s/"+token+"/asset/"+assetID, "", "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	if rec.Header().Get("X-Evil") != "" {
-		t.Fatalf("injected X-Evil header is present: %q", rec.Header().Get("X-Evil"))
-	}
-	if strings.ContainsAny(rec.Header().Get("Content-Disposition"), "\r\n") {
-		t.Fatalf("Content-Disposition carries a raw CR/LF: %q", rec.Header().Get("Content-Disposition"))
 	}
 }
 

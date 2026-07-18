@@ -90,6 +90,16 @@ func toShareLinkResponse(link share.Link, token string) shareLinkResponse {
 	return resp
 }
 
+// sharePublicCapabilityName is the D-02 capability_grants name for the public-share tier —
+// see cmd/aura/serve_webui_share.go's sharePublicCapability doc for the full identity.create-
+// sibling rationale (per-user, off-by-default, NOT governance.write's admin-only shape).
+// Duplicated here as a string literal, not imported, because internal/agui cannot import
+// cmd/aura (the composition-root package) — both packages must agree on this exact string.
+// Neither the tag audit nor go vet catch a drift between the two literals; grep both
+// `sharePublicCapability` (cmd/aura) and `sharePublicCapabilityName` (here) before renaming
+// either.
+const sharePublicCapabilityName = "share.public"
+
 // handleShareCreate mints a new share link for the authenticated caller's own conversation
 // (D-06 owner gate runs inside share.Service.Create, first, before any side effect).
 func (s *Server) handleShareCreate(w http.ResponseWriter, r *http.Request) {
@@ -109,15 +119,32 @@ func (s *Server) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// R-08 closure: RequireCapability (auth.go:282) returns `next` unchanged when
-	// !SecretConfigured, so on loopback dev the share.public capability gate at the mount does
-	// not structurally exist. s.cfg.SharePublicEnabled is re-checked HERE, inside the handler,
-	// where no bypass applies — the gate that survives loopback. Two gates, both fail-closed;
-	// share.Service.Create ALSO re-checks the identical config value (ErrSharePublicDisabled
-	// below), belt-and-suspenders with the service layer.
-	if body.Tier == share.TierPublic && !s.cfg.SharePublicEnabled {
-		http.Error(w, "public sharing is disabled", http.StatusForbidden)
-		return
+	// 37F-13/WEBSHARE-04 SC4 row 8 (Rule-2 deviation over the 37F-12 plan text — see this
+	// plan's SUMMARY): a single POST /api/shares mux entry answers BOTH the internal (D-01
+	// default, no capability) and public tier via this JSON body — Go's ServeMux dispatches on
+	// method+path only, never on body content, so a tier-specific RequireCapability(
+	// share.public) CANNOT live at the parent mux (cmd/aura/serve_webui_share.go's file header
+	// has the full single-route/dual-tier constraint). Both public-tier preconditions
+	// therefore live HERE, in-handler, once the tier is known: the org kill-switch first
+	// (R-08 closure, unchanged — RequireCapability, auth.go:282, is a pass-through when
+	// !SecretConfigured, so on loopback dev a MOUNT-level capability gate would not
+	// structurally exist even if one exhibited there), then the PER-USER capability, over the
+	// SAME identityAdmin.HasCapability seam RequireCapability itself would call. An
+	// internal-tier mint below reaches NEITHER check (D-01: sharing your own thread internally
+	// needs no capability) — this whole block is skipped when body.Tier != share.TierPublic.
+	if body.Tier == share.TierPublic {
+		if !s.cfg.SharePublicEnabled {
+			http.Error(w, "public sharing is disabled", http.StatusForbidden)
+			return
+		}
+		if s.idAdmin == nil {
+			http.Error(w, "share capability check unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if ok, err := s.idAdmin.HasCapability(r.Context(), identityID, sharePublicCapabilityName); err != nil || !ok {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 
 	res, err := s.share.Create(r.Context(), share.CreateRequest{

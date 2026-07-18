@@ -281,10 +281,14 @@ func (s *Server) Mux() http.Handler {
 	// RequireAuth ONLY, no capability, no owner predicate), and the unauthenticated public
 	// token routes (GET /s/{token}/data, /s/{token}/asset/{id} — the ONLY unauthenticated
 	// handlers in this package). Colocated with their handlers (share_api.go/
-	// share_api_internal.go/share_api_public.go); the parent-mux mounts + gates (RequireAuth
-	// whole-origin, RequireCapability(share.public) on the mint-time public tier, and the
-	// isPublicShareRoute allowlist admitting /s/... unauthenticated) live in
-	// cmd/aura/serve_webui_share.go (plan 37F-12) — none of that wiring is in this file.
+	// share_api_internal.go/share_api_public.go); the parent-mux mount (RequireAuth
+	// whole-origin + the isPublicShareRoute allowlist admitting /s/... unauthenticated) lives
+	// in cmd/aura/serve_webui_share.go (plan 37F-12) — none of that wiring is in this file.
+	// share.public is NOT a mount-level RequireCapability wrap (a single POST /api/shares
+	// entry answers both the internal and public tier via the JSON body, and Go's ServeMux
+	// cannot dispatch on body content) — it is an IN-HANDLER check inside
+	// handleShareCreate itself (share_api.go, 37F-13/WEBSHARE-04 SC4 row 8), over the same
+	// idAdmin.HasCapability seam RequireCapability would call.
 	s.registerShareRoutes(mux)
 	// WEBVOICE-01/02/03 web-voice routes (37C-03): POST /api/tts (audio/mpeg + soft
 	// char cap), POST /api/stt (transcribe-and-discard, D-08 — no asset/DB row), GET
