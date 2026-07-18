@@ -92,8 +92,17 @@ func toolNames(calls []llm.ToolCall) []string {
 // that is deliberately NOT done here — the explicit field list is the SC3
 // allowlist contract, and it must keep failing loudly (a compile error) the
 // day someone adds a field to either struct that the other doesn't share.
+//
+// Function-scoped (not statement-scoped): golangci-lint v2.12.2's nolint processor showed
+// nondeterministic statement-position matching on this multi-line struct literal ONLY when
+// linted as part of the full ~78-package run (0 issues in isolation or in a 3-package subset,
+// intermittently 1 issue at full scale, same unchanged file/line — 37F-18 investigation). A
+// function-level directive covers the whole body regardless of the exact reported statement
+// position, closing that flake without weakening the suppression's scope.
+//
+//nolint:staticcheck // S1016: explicit fields are the allowlist, not incidental duplication.
 func projectArtifact(a ArtifactMeta) SnapshotArtifact {
-	return SnapshotArtifact{ //nolint:staticcheck // S1016: explicit fields are the allowlist, not incidental duplication
+	return SnapshotArtifact{
 		AssetID:   a.AssetID,
 		FileName:  a.FileName,
 		MIMEType:  a.MIMEType,
