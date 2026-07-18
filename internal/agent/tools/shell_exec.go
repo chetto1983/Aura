@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chetto1983/aura/internal/procgroup"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/secret"
 )
@@ -205,8 +206,8 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	cmd := exec.CommandContext(runCtx, name, args...)
 	cmd.Dir = workdir
 	cmd.Env = mergeEnv(a.Env)
-	setProcessGroup(cmd)
-	cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	procgroup.SetProcessGroup(cmd)
+	cmd.Cancel = func() error { return procgroup.KillProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
 
 	captured := newShellOutputCapture(shellOutputBufCap())

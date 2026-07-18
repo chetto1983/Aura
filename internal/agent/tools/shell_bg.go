@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/panicobs"
+	"github.com/chetto1983/aura/internal/procgroup"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
@@ -212,8 +213,8 @@ func (b *BackgroundShells) start(callerCtx context.Context, command, dir string,
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = env
-	setProcessGroup(cmd)
-	cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	procgroup.SetProcessGroup(cmd)
+	cmd.Cancel = func() error { return procgroup.KillProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
 	id, err := newBackgroundShellID()
 	if err != nil {
