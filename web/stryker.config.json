@@ -20,7 +20,16 @@
     "src/governance/governanceView.tsx",
     "src/approvals/approvalState.ts",
     "src/onboarding/onboardingApi.ts",
-    "src/onboarding/onboardingWizardModel.ts"
+    "src/onboarding/onboardingWizardModel.ts",
+    "src/chat/share/RevokeConfirmDialog.tsx",
+    "src/chat/share/shareApi.ts",
+    "src/chat/share/SharedSection.tsx",
+    "src/chat/share/ShareLinkRow.tsx",
+    "src/chat/share/ShareModal.tsx",
+    "src/chat/share/shareTypes.ts",
+    "src/chat/share/shareViewModel.ts",
+    "src/chat/share/useThreadShares.ts",
+    "src/shell/ShareShell.tsx"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

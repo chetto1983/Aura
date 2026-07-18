@@ -20,6 +20,11 @@ const mutationTests = [
   'src/graph/__tests__/graphIntent.test.ts',
   'src/onboarding/__tests__/onboardingApi.test.ts',
   'src/onboarding/__tests__/onboardingWizardModel.test.ts',
+  'src/chat/share/shareApi.test.ts',
+  'src/chat/share/SharedSection.test.tsx',
+  'src/chat/share/ShareModal.test.tsx',
+  'src/chat/share/shareViewModel.test.ts',
+  'src/shell/ShareShell.test.tsx',
 ] as const;
 
 export default defineConfig({
