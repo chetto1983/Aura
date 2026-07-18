@@ -27,6 +27,13 @@ type ShareRevoker interface {
 	RevokeConversationShares(ctx context.Context, conversationID, identityID string) error
 }
 
+// SetShareRevoker wires step 4.5's ShareRevoker seam after construction — required because
+// chat.run (New) is assembled in the shared boot (chat_boot.go, BEFORE objectStore/chat.assets
+// exist), while the live *share.Service needs both (share_service_wiring.go). Mirrors the
+// agui.Server SetAssetService/SetShareService late-bound-setter pattern (D-A2-02 narrow seam);
+// unset (nil) leaves step 4.5 the documented silent skip, exactly Deps.ShareRevoker's contract.
+func (r *Runner) SetShareRevoker(sr ShareRevoker) { r.shareRevoker = sr }
+
 // DeleteConversationLifecycle tears down and deletes one conversation, owner-scoped (D-06).
 // It returns rows-affected (0 = the caller does not own the id — the surface maps that to 403
 // for a known-foreign id or 404 for an absent one, exactly as DeleteForIdentity) and a

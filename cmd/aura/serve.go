@@ -305,6 +305,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if chat.toolHandles.SendFile != nil {
 		chat.toolHandles.SendFile.Assets = sendFileAssetAdapter{svc: chat.assets}
 	}
+	// share_service_wiring.go: wires WEBSHARE-02/03 into HTTP, the D-15 delete cascade, and
+	// the share_expiry_sweep cron handler below — all three were previously unwired.
+	shareSvc, shareAPI := buildShareService(chat, objectStore)
+	chat.shareSvc = shareSvc
+	chat.run.SetShareRevoker(shareSvc)
 	// Build the channels Registry FIRST (Phase 20 boot reorder): buildDispatch wires
 	// the late-bound *channels.Registry pointer as the cron.ChannelDeliverer, so the
 	// Registry must exist before dispatch is assembled. bootChannelsAndSetup needs only
@@ -334,6 +339,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// tracks AURA_SANDBOX_IDLE_TTL_SEC. Safe even when the router is nil (disabled no-op reaper).
 	if err := seedSandboxReapSweep(ctx, store, chat.cfg.Sandbox.IdleTTLSec); err != nil {
 		slog.Warn("aura serve: seed sandbox reap sweep", "err", err)
+	}
+	// Seed the D-15/OQ3 share-link expiry sweep (0040's kind CHECK already admits it).
+	if err := seedShareExpirySweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed share expiry sweep", "err", err)
 	}
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
@@ -379,6 +388,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer.SetCompactService(newConversationCompactCoordinator(chat.conv, chat.compactionEffective))
 	aguiServer.SetCompactionMemoryStore(memory.NewStore(chat.pool))
 	aguiServer.SetAssetService(chat.assets)
+	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))
 	aguiServer.SetStorageOrphans(buildStorageOrphanService(chat, objectStore))

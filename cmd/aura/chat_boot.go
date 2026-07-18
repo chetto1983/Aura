@@ -30,6 +30,7 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/settings"
+	"github.com/chetto1983/aura/internal/share"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/chetto1983/aura/internal/toolselectstore"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,8 +52,13 @@ type chatEnv struct {
 	gateway             *gateway.Gateway
 	toolInvocations     *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
 	assets              *assets.Service
-	toolHandles         runtimeToolHandles
-	mcpClosers          []func() error
+	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
+	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
+	// surface (via SetShareService's adapter), the D-15 delete cascade (chat.run.SetShareRevoker),
+	// and buildDispatch's share_expiry_sweep handler.
+	shareSvc    *share.Service
+	toolHandles runtimeToolHandles
+	mcpClosers  []func() error
 	// sandboxRouter is the per-identity box routing seam (Phase 37, plan 37-05). It is nil
 	// under a non-strict profile or a Docker-unavailable host — a safe host-direct no-op
 	// everywhere (Route/Strict/SuspendIdle all nil-guard). buildDispatch registers it as the

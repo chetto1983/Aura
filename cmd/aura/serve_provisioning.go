@@ -449,25 +449,24 @@ func sandboxReapSweepMinutes(idleTTLSec int) int {
 	return m
 }
 
-// seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it
-// scans the active tasks for an existing skill_ttl_sweep and only inserts one if
-// absent. The schedule is a daily 03:00 cron (a quiet hour), TZ Europe/Rome (the
-// scheduler default). A seed failure is non-fatal (logged by the caller) — the daemon
-// still runs; the operator can re-seed by restarting. The INSERT succeeds against the
-// 0010-widened scheduler_tasks.kind CHECK (A2 landmine closed). Co-located here with
-// its sibling seed helpers (seedIdentityPurgeSweep/seedSandboxReapSweep) so serve.go
-// stays under the 600-LOC cap after the 37C web-voice wiring landed (refactor-on-touch).
-func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
+// seedDailyCronSweep idempotently seeds a daily-cron system-seeded sweep task: it scans the
+// active tasks for an existing entry of kind and only inserts one if absent. Shared by
+// seedSkillTTLSweep (D-16) and seedShareExpirySweep (D-15/OQ3) — golangci-lint's dupl caught the
+// two as byte-identical modulo four literals, so this is the CLAUDE.md REUSABLE CODE fold rather
+// than two copies. seedIdentityPurgeSweep/seedSandboxReapSweep stay separate: they seed a
+// KindEvery cadence, not a fixed daily cron. A seed failure is non-fatal (logged by the caller);
+// the daemon still runs; the operator can re-seed by restarting.
+func seedDailyCronSweep(ctx context.Context, store *cron.Store, kind cron.TaskKind, cronExpr, label string) error {
 	tasks, err := store.ListActiveTasks(ctx)
 	if err != nil {
 		return fmt.Errorf("list active tasks: %w", err)
 	}
 	for _, t := range tasks {
-		if t.Kind == cron.KindSkillTTLSweep {
+		if t.Kind == kind {
 			return nil // already seeded — idempotent
 		}
 	}
-	spec, err := cron.ParseSchedule(string(cron.KindCron), "0 3 * * *", 0, time.Time{}, "Europe/Rome")
+	spec, err := cron.ParseSchedule(string(cron.KindCron), cronExpr, 0, time.Time{}, "Europe/Rome")
 	if err != nil {
 		return fmt.Errorf("parse daily schedule: %w", err)
 	}
@@ -476,12 +475,31 @@ func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
 		return fmt.Errorf("compute next run: %w", err)
 	}
 	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
-		Kind:      cron.KindSkillTTLSweep,
+		Kind:      kind,
 		Spec:      spec,
 		NextRunAt: next,
 	}); err != nil {
-		return fmt.Errorf("create skill_ttl_sweep task: %w", err)
+		return fmt.Errorf("create %s task: %w", string(kind), err)
 	}
-	slog.Info("aura serve: seeded daily skill TTL sweep", "schedule", "0 3 * * * Europe/Rome")
+	slog.Info("aura serve: seeded daily "+label, "schedule", cronExpr+" Europe/Rome")
 	return nil
+}
+
+// seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16) — a daily 03:00
+// cron (a quiet hour), TZ Europe/Rome. The INSERT succeeds against the 0010-widened
+// scheduler_tasks.kind CHECK (A2 landmine closed). Co-located here with its sibling seed helpers
+// (seedIdentityPurgeSweep/seedSandboxReapSweep) so serve.go stays under the 600-LOC cap after the
+// 37C web-voice wiring landed (refactor-on-touch).
+func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
+	return seedDailyCronSweep(ctx, store, cron.KindSkillTTLSweep, "0 3 * * *", "skill TTL sweep")
+}
+
+// seedShareExpirySweep idempotently seeds the daily share-link expiry GC sweep (D-15/OQ3) — a
+// daily 04:00 cron (a quiet hour adjacent to skill_ttl_sweep's 03:00), TZ Europe/Rome. This sweep
+// is GARBAGE COLLECTION only — the security gate is the lazy fail-closed liveness predicate
+// already in ResolveByToken/ResolveLiveByID (plan 37F-07), which denies an expired-but-unswept
+// link even if this sweep never runs — so a daily cadence is generous, not urgent. The INSERT
+// succeeds against the 0040-widened scheduler_tasks.kind CHECK.
+func seedShareExpirySweep(ctx context.Context, store *cron.Store) error {
+	return seedDailyCronSweep(ctx, store, cron.KindShareExpirySweep, "0 4 * * *", "share expiry sweep")
 }

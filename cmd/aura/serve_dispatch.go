@@ -81,6 +81,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// or Docker-unavailable) leaves sandboxReaper a nil interface, so the handler is the
 		// disabled no-op — always safe, exactly like the identity_purge registration.
 		cron.KindSandboxReap: handlers.NewSandboxReapHandler(sandboxReaper),
+		// The D-15/OQ3 share-link expiry GC sweep (37F-18 wiring): chat.shareSvc
+		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
+		// adapter — always non-nil once serve boots, so this registration is always safe.
+		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {
