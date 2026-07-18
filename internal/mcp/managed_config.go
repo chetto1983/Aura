@@ -214,24 +214,21 @@ func (c ManagedConfig) ProfileServerNames(profile string) []string {
 	return names
 }
 
-// NormalizedTrust resolves a server's effective trust class, inferring it from the
-// recipe source or HTTP type when unset and defaulting to TrustBlocked for unknown
-// or missing servers.
+// NormalizedTrust resolves a server's effective trust class. It is a thin
+// wrapper over Classify (D-01): a missing server is TrustBlocked, and a
+// Classify error (an ambiguous or internally-inconsistent server) falls back
+// to the conservative TrustBlocked default rather than surfacing an error
+// through this pre-existing error-free signature.
 func (c ManagedConfig) NormalizedTrust(name string) string {
 	server, ok := c.MCPServers[name]
 	if !ok {
 		return TrustBlocked
 	}
-	if isKnownTrust(server.Trust.Class) {
-		return server.Trust.Class
+	_, trust, err := Classify(server)
+	if err != nil {
+		return TrustBlocked
 	}
-	if strings.HasPrefix(strings.TrimSpace(server.Source), "recipe:") {
-		return TrustTrustedRecipe
-	}
-	if normalizedServerType(server) == ServerTypeStreamableHTTP {
-		return TrustRemoteHTTP
-	}
-	return TrustBlocked
+	return trust
 }
 
 func normalizeManagedConfig(doc *ManagedConfig) {
@@ -246,12 +243,20 @@ func normalizeManagedConfig(doc *ManagedConfig) {
 	}
 }
 
+// validateManagedServers dispatches every server through Classify (D-01): an
+// ambiguous or internally-inconsistent entry (mixed url+command, an unknown
+// type, or an explicit type<->trust mismatch) fails validation with Classify's
+// own error, so it can never be saved and never reaches OpenServer.
 func validateManagedServers(in map[string]ManagedServer) error {
 	for name, cfg := range in {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("MCP managed config: server name cannot be empty")
 		}
-		switch normalizedServerType(cfg) {
+		serverType, _, err := Classify(cfg)
+		if err != nil {
+			return fmt.Errorf("MCP managed config: server %q: %w", name, err)
+		}
+		switch serverType {
 		case ServerTypeStdio:
 			switch normalizedRuntimeKind(cfg) {
 			case RuntimeKindLocal:
@@ -273,8 +278,6 @@ func validateManagedServers(in map[string]ManagedServer) error {
 			if strings.TrimSpace(cfg.URL) == "" {
 				return fmt.Errorf("MCP managed config: server %q url cannot be empty", name)
 			}
-		default:
-			return fmt.Errorf("MCP managed config: server %q has unknown type %q", name, cfg.Type)
 		}
 		if cfg.Trust.Class != "" && !isKnownTrust(cfg.Trust.Class) {
 			return fmt.Errorf("MCP managed config: server %q has unknown trust class %q", name, cfg.Trust.Class)
@@ -298,20 +301,18 @@ func normalizedRuntimeKind(cfg ManagedServer) string {
 	}
 }
 
+// normalizedServerType resolves cfg's effective transport type. It is a thin
+// wrapper over Classify (D-01). Classify can reject a server outright (a mixed
+// url+command entry, or an unknown/inconsistent explicit type), but this
+// pre-existing signature has no error to surface that through; callers that
+// must observe a rejection dispatch through Classify directly instead
+// (OpenServer, validateManagedServers) rather than through this wrapper.
 func normalizedServerType(cfg ManagedServer) string {
-	switch strings.TrimSpace(cfg.Type) {
-	case "":
-		if strings.TrimSpace(cfg.URL) != "" && strings.TrimSpace(cfg.Command) == "" {
-			return ServerTypeStreamableHTTP
-		}
+	serverType, _, err := Classify(cfg)
+	if err != nil {
 		return ServerTypeStdio
-	case ServerTypeStdio:
-		return ServerTypeStdio
-	case ServerTypeStreamableHTTP:
-		return ServerTypeStreamableHTTP
-	default:
-		return strings.TrimSpace(cfg.Type)
 	}
+	return serverType
 }
 
 func isKnownTrust(class string) bool {

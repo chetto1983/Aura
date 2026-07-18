@@ -287,12 +287,21 @@ func TestNormalizedTrustUnknownServerIsBlocked(t *testing.T) {
 	}
 }
 
+// TestNormalizedTrustRemoteHTTPInferred previously asserted the F-013 bug: an
+// explicitly-typed streamable_http server with no trust class set was
+// silently auto-promoted to the runnable TrustRemoteHTTP class, defeating the
+// trust-approval workflow for any bare-URL remote entry. D-03/Classify closes
+// this -- the fixed behavior is TrustBlocked: explicit trust is required for
+// every runnable remote transport. Deliberately rewritten per CLAUDE.md
+// ("never modify tests to make them pass unless the test itself is broken");
+// this test's OLD assertion described exactly the bug being fixed.
 func TestNormalizedTrustRemoteHTTPInferred(t *testing.T) {
 	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
 		"remote": {Type: ServerTypeStreamableHTTP, URL: "https://example.test/mcp"},
 	}}
-	if got := doc.NormalizedTrust("remote"); got != TrustRemoteHTTP {
-		t.Fatalf("remote http trust = %q, want %q", got, TrustRemoteHTTP)
+	if got := doc.NormalizedTrust("remote"); got != TrustBlocked {
+		t.Fatalf("remote http trust with no explicit class = %q, want %q (F-013: must not auto-promote to %q)",
+			got, TrustBlocked, TrustRemoteHTTP)
 	}
 }
 
@@ -381,6 +390,22 @@ func TestNormalizedRuntimeKind(t *testing.T) {
 	}
 }
 
+// TestNormalizedServerType exercises normalizedServerType, the thin wrapper
+// around Classify (D-01). Two cases previously encoded now-fixed bugs and were
+// deliberately rewritten per CLAUDE.md's "rewrite the test with explicit
+// justification" rule:
+//   - "url-and-command-infers-stdio" previously asserted F-027 (a mixed
+//     url+command entry silently resolved to stdio); normalizedServerType's
+//     error-free string signature cannot itself surface Classify's rejection,
+//     so the fixed behavior is asserted directly against Classify below
+//     (callers that must observe the rejection -- OpenServer,
+//     validateManagedServers -- dispatch through Classify directly, not
+//     through this wrapper; see transport_test.go and TestValidateManagedServers
+//     RejectsMixedTransport).
+//   - "explicit-custom-trimmed" previously asserted that an arbitrary
+//     non-empty type string (e.g. "weird") passed through verbatim. Classify's
+//     single source of truth now treats any unrecognized explicit type as a
+//     hard error instead of a silent passthrough (D-01).
 func TestNormalizedServerType(t *testing.T) {
 	cases := []struct {
 		name string
@@ -389,11 +414,9 @@ func TestNormalizedServerType(t *testing.T) {
 	}{
 		{"url-only-infers-http", ManagedServer{URL: "https://x.test"}, ServerTypeStreamableHTTP},
 		{"command-only-infers-stdio", ManagedServer{Command: "uvx"}, ServerTypeStdio},
-		{"url-and-command-infers-stdio", ManagedServer{URL: "https://x.test", Command: "uvx"}, ServerTypeStdio},
 		{"bare-infers-stdio", ManagedServer{}, ServerTypeStdio},
 		{"explicit-stdio", ManagedServer{Type: ServerTypeStdio}, ServerTypeStdio},
 		{"explicit-http", ManagedServer{Type: ServerTypeStreamableHTTP}, ServerTypeStreamableHTTP},
-		{"explicit-custom-trimmed", ManagedServer{Type: "  weird  "}, "weird"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -401,6 +424,31 @@ func TestNormalizedServerType(t *testing.T) {
 				t.Fatalf("normalizedServerType = %q, want %q", got, tc.want)
 			}
 		})
+	}
+
+	t.Run("url-and-command-is-rejected-not-silently-stdio", func(t *testing.T) {
+		if _, _, err := Classify(ManagedServer{URL: "https://x.test", Command: "uvx"}); err == nil {
+			t.Fatal("Classify(mixed url+command) = nil error, want rejection (F-027 fixed)")
+		}
+	})
+
+	t.Run("explicit-custom-type-is-rejected-not-passed-through", func(t *testing.T) {
+		if _, _, err := Classify(ManagedServer{Type: "  weird  ", Command: "uvx"}); err == nil {
+			t.Fatal("Classify(unknown explicit type) = nil error, want rejection")
+		}
+	})
+}
+
+// TestValidateManagedServersRejectsMixedTransport is the F-027 regression
+// guard at the config-validation gate: a mixed url+command server (no
+// explicit type) must fail validateManagedServers via Classify's rejection,
+// so it can never be saved to disk and never reaches OpenServer.
+func TestValidateManagedServersRejectsMixedTransport(t *testing.T) {
+	in := map[string]ManagedServer{
+		"mixed": {URL: "https://x.test", Command: "uvx"},
+	}
+	if err := validateManagedServers(in); err == nil || !strings.Contains(err.Error(), "both url and command") {
+		t.Fatalf("validateManagedServers(mixed) = %v, want rejection containing %q", err, "both url and command")
 	}
 }
 
