@@ -148,7 +148,7 @@ func TestMCPStatusReflectsLiveHTTPProbe(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {
 		t.Fatalf("mcp status --json: %v", err)
 	}
 	got := out.String()
@@ -182,7 +182,7 @@ func TestMCPStatusSkipsProbingDisabledAndBlockedServers(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {
 		t.Fatalf("mcp status --json: %v", err)
 	}
 	got := out.String()

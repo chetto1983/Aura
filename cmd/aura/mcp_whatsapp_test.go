@@ -39,7 +39,7 @@ func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
 	t.Setenv("AURA_MCP_WHATSAPP_BRIDGE_URL", bridge.URL)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"doctor", "whatsapp"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "whatsapp"}, &out); err != nil {
 		t.Fatalf("mcp doctor whatsapp: %v", err)
 	}
 	got := out.String()
@@ -82,7 +82,7 @@ func TestMCPDoctorWhatsAppHTTPRecipeReportsBridgeHealth(t *testing.T) {
 	t.Setenv("AURA_MCP_WHATSAPP_BRIDGE_URL", bridge.URL)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"doctor", "whatsapp"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "whatsapp"}, &out); err != nil {
 		t.Fatalf("mcp doctor whatsapp HTTP recipe: %v", err)
 	}
 	got := out.String()
