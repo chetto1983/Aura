@@ -1345,15 +1345,7 @@ jobs:
         # boot failure fails this step via the webServer readiness timeout rather than a
         # green run — see the WR-06 note in playwright.config.ts.
         if: steps.changes.outputs.web == 'true'
-        run: cd web && npx playwright test chat-calm-prism.spec.ts --update-snapshots
-
-      - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
-        if: always() && steps.changes.outputs.web == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: calm-prism-snapshots
-          path: web/e2e/__screenshots__/chat-calm-prism.spec.ts/
-          if-no-files-found: error
+        run: cd web && npm run test:e2e
 
       - name: Tear down
         if: always()
