@@ -16,8 +16,11 @@ type reconnectingClient interface {
 	Close() error
 }
 
-var openMCPClient = func(ctx context.Context, name string, cfg mcp.ServerConfig) (reconnectingClient, error) {
-	return mcp.Open(ctx, name, cfg)
+// openMCPClient is the two-context Open seam (Pitfall #2): processCtx bounds the
+// reconnected subprocess's ENTIRE lifetime, handshakeCtx bounds only the
+// initialize round-trip. Overridable in tests.
+var openMCPClient = func(processCtx, handshakeCtx context.Context, name string, cfg mcp.ServerConfig) (reconnectingClient, error) {
+	return mcp.OpenWithHandshakeContext(processCtx, handshakeCtx, name, cfg)
 }
 
 const (
@@ -226,18 +229,28 @@ func (s *reconnectingServer) reconnectAfterTransport(
 	}
 }
 
+// openReplacement opens a replacement transport and lists its tools. It is
+// Pitfall #2-safe: handshakeCtx (derived from parent, bounded by timeout, and
+// deferred-canceled at return) bounds ONLY the open handshake + tools/list —
+// openMCPClient's process-lifetime argument is s.processContext(), a long-lived
+// context that is NOT canceled when this function returns, so the just-opened
+// replacement subprocess survives past openReplacement's own deferred cancel
+// (previously this function passed the SAME bounded, defer-canceled context as
+// both the handshake bound and exec.CommandContext's process-lifetime context —
+// the deferred cancel would fire and kill the freshly-reconnected subprocess the
+// instant openReplacement returned).
 func (s *reconnectingServer) openReplacement(parent context.Context, timeout time.Duration) ([]mcp.ToolDef, reconnectingClient, error) {
 	if timeout <= 0 {
 		timeout = defaultMCPReconnectTimeout
 	}
-	reconnectCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
+	handshakeCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
 	defer cancel()
 
-	next, err := openMCPClient(reconnectCtx, s.name, s.cfg)
+	next, err := openMCPClient(handshakeCtx, handshakeCtx, s.name, s.cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reconnect mcp %q: %w", s.name, err)
 	}
-	defs, err := next.ListTools(reconnectCtx)
+	defs, err := next.ListTools(handshakeCtx)
 	if err != nil {
 		_ = next.Close()
 		return nil, nil, err

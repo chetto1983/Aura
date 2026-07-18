@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	"go.uber.org/goleak"
@@ -89,6 +94,153 @@ func TestBuildRegistryFailSoft(t *testing.T) {
 	}
 	if _, ok := reg.Get("text_response"); !ok {
 		t.Fatal("base built-in text_response must remain registered after fail-soft drop")
+	}
+}
+
+// TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives is the D-06/D-07
+// (MCPH-04) bounded-mount regression guard AND the Pitfall #2 healthy-survives
+// guard, asserted together in one test per the plan's acceptance criteria: a
+// hung sibling server must be dropped within ~AURA_MCP_MOUNT_TIMEOUT while a
+// healthy server mounted moments earlier keeps running past that same deadline
+// (a single bounded context doubling as both the handshake deadline AND the
+// subprocess-lifetime context would silently kill the healthy server the instant
+// its own handshake ctx's cancel() fired).
+func TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives(t *testing.T) {
+	t.Setenv("AURA_MCP_MOUNT_TIMEOUT", "1")
+
+	cfg := &config.Config{
+		MCPServers: map[string]mcp.ServerConfig{
+			"calculator": {
+				Command: os.Args[0],
+				Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+				Env:     []string{"AURA_MCP_HELPER=1"},
+			},
+			"hung": {
+				Command: os.Args[0],
+				Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+				Env:     []string{"AURA_MCP_HELPER=1", "AURA_MCP_HELPER_MODE=hang"},
+			},
+		},
+	}
+
+	type buildResult struct {
+		reg     *tools.Registry
+		closers []func() error
+		err     error
+	}
+	done := make(chan buildResult, 1)
+	start := time.Now()
+	go func() {
+		reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil)
+		done <- buildResult{reg: reg, closers: closers, err: err}
+	}()
+
+	var res buildResult
+	select {
+	case res = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("buildRegistryWithMCP did not return within 5s with one server hanging — the bounded " +
+			"handshake ctx (~1s AURA_MCP_MOUNT_TIMEOUT) must cap the WHOLE mount, not block on the hung server (D-06/MCPH-04)")
+	}
+	elapsed := time.Since(start)
+	if res.err != nil {
+		t.Fatalf("buildRegistryWithMCP: %v", res.err)
+	}
+	defer func() { _ = closeMCPServers(res.closers) }()
+
+	if elapsed > 3*time.Second {
+		t.Fatalf("buildRegistryWithMCP took %v, want bounded near the 1s AURA_MCP_MOUNT_TIMEOUT despite the hung server", elapsed)
+	}
+
+	if _, ok := res.reg.Get("hung__calculate"); ok {
+		t.Fatal("the hung server must be dropped, not mounted")
+	}
+	calc, ok := res.reg.Get("calculator__calculate")
+	if !ok {
+		t.Fatal("the healthy server must mount despite a sibling server hanging")
+	}
+
+	// Pitfall #2 regression guard: wait past the mount-timeout deadline and prove the
+	// healthy server's subprocess is STILL alive and answering calls.
+	time.Sleep(2 * time.Second)
+	callCtx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
+	execRes, err := calc.Execute(callCtx, json.RawMessage(`{"expression":"2+2"}`))
+	if err != nil {
+		t.Fatalf("healthy server Execute after the mount timeout elapsed: %v (want alive, not killed by Pitfall #2)", err)
+	}
+	if execRes.Preview != "4" {
+		t.Fatalf("healthy server result = %q, want 4", execRes.Preview)
+	}
+}
+
+// TestCloseMCPServers_ConcurrentBoundedShutdown is the D-11 (MCPH-06 shutdown
+// half) regression guard: N closers that each take a noticeable, sub-deadline
+// time must complete in roughly ONE closer's duration (concurrent fan-out), not
+// N times that duration (the old sequential reverse-order loop).
+func TestCloseMCPServers_ConcurrentBoundedShutdown(t *testing.T) {
+	t.Setenv("AURA_MCP_SHUTDOWN_TIMEOUT", "2")
+
+	const n = 5
+	var calls int32
+	closers := make([]func() error, n)
+	for i := range closers {
+		closers[i] = func() error {
+			atomic.AddInt32(&calls, 1)
+			time.Sleep(300 * time.Millisecond)
+			return nil
+		}
+	}
+
+	start := time.Now()
+	if err := closeMCPServers(closers); err != nil {
+		t.Fatalf("closeMCPServers: %v", err)
+	}
+	elapsed := time.Since(start)
+	if got := atomic.LoadInt32(&calls); got != n {
+		t.Fatalf("want all %d closers invoked, got %d", n, got)
+	}
+	if elapsed > 900*time.Millisecond {
+		t.Fatalf("closeMCPServers took %v, want concurrent fan-out (~300ms for %d closers), not %d*300ms sequential", elapsed, n, n)
+	}
+
+	// Settle window before any goleak assertion at TestMain teardown (Pitfall #8).
+	time.Sleep(50 * time.Millisecond)
+}
+
+// TestCloseMCPServers_ZeroClosersReturnsImmediately covers the empty-slice fast
+// path: no goroutine is spun up, no aggregate deadline is even started.
+func TestCloseMCPServers_ZeroClosersReturnsImmediately(t *testing.T) {
+	start := time.Now()
+	if err := closeMCPServers(nil); err != nil {
+		t.Fatalf("closeMCPServers(nil): %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+		t.Fatalf("closeMCPServers(nil) took %v, want an immediate return", elapsed)
+	}
+}
+
+// TestCloseMCPServers_AggregateDeadlineAbandonsStragglers proves the aggregate
+// deadline actually bounds total wall-clock even when a closer never returns: the
+// call returns (with an error) around the AURA_MCP_SHUTDOWN_TIMEOUT deadline, not
+// blocked forever behind the stuck closer.
+func TestCloseMCPServers_AggregateDeadlineAbandonsStragglers(t *testing.T) {
+	t.Setenv("AURA_MCP_SHUTDOWN_TIMEOUT", "1")
+	blocked := make(chan struct{})
+	t.Cleanup(func() { close(blocked) }) // release the straggler so it settles before goleak's teardown check
+
+	closers := []func() error{
+		func() error { <-blocked; return nil },
+		func() error { return nil },
+	}
+
+	start := time.Now()
+	err := closeMCPServers(closers)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("want the aggregate-deadline error when a closer never returns")
+	}
+	if elapsed < 900*time.Millisecond || elapsed > 2*time.Second {
+		t.Fatalf("closeMCPServers took %v, want ~1s (the aggregate AURA_MCP_SHUTDOWN_TIMEOUT), not blocked indefinitely", elapsed)
 	}
 }
 

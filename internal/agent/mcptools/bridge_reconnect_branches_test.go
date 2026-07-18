@@ -125,7 +125,7 @@ func TestReconnectServer_ListToolsReopenFails(t *testing.T) {
 	openErr := errors.New("spawn refused")
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		return nil, openErr
 	}
 
@@ -148,7 +148,7 @@ func TestReconnectServer_ListToolsNonTransportErrorPropagates(t *testing.T) {
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
 	opened := false
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		opened = true
 		return initial, nil
 	}
@@ -198,7 +198,7 @@ func TestReconnectServer_CallToolNonTransportErrorPropagates(t *testing.T) {
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
 	opened := false
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		opened = true
 		return initial, nil
 	}
@@ -223,7 +223,7 @@ func TestReconnectServer_CallToolReconnectFailsReturnsReconnectError(t *testing.
 	openErr := errors.New("reopen refused")
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		return nil, openErr
 	}
 
@@ -334,7 +334,7 @@ func TestReconnectServer_ListToolsRetriesOnConcurrentlySwappedClient(t *testing.
 
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		t.Fatal("line-48 retry must NOT reopen — the client was already swapped")
 		return nil, nil
 	}
@@ -381,7 +381,7 @@ func TestReconnectServer_ReconnectOpenDoesNotHoldLock(t *testing.T) {
 	releaseOpen := make(chan struct{})
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
-	openMCPClient = func(ctx context.Context, _ string, _ mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(_ context.Context, ctx context.Context, _ string, _ mcp.ServerConfig) (reconnectingClient, error) {
 		close(openStarted)
 		select {
 		case <-releaseOpen:
@@ -452,7 +452,7 @@ func TestReconnectServer_ConcurrentTransportFailuresSingleFlight(t *testing.T) {
 	var opens atomic.Int32
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
-	openMCPClient = func(ctx context.Context, _ string, _ mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(_ context.Context, ctx context.Context, _ string, _ mcp.ServerConfig) (reconnectingClient, error) {
 		if opens.Add(1) == 1 {
 			close(openStarted)
 		}
@@ -510,7 +510,7 @@ func TestReconnectServer_ReconnectBreakerOpensAfterFailures(t *testing.T) {
 	var opens atomic.Int32
 	old := openMCPClient
 	t.Cleanup(func() { openMCPClient = old })
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		opens.Add(1)
 		return nil, openErr
 	}

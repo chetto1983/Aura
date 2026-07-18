@@ -45,7 +45,7 @@ func TestMountAllAdvertisedToolsDeferred(t *testing.T) {
 // misconfigured server never half-wires the agent registry.
 func TestMountServer_SpawnFailureLeavesRegistryClean(t *testing.T) {
 	reg := tools.NewRegistry()
-	closer, names, err := MountServer(context.Background(), reg, "bad",
+	closer, names, err := MountServer(context.Background(), context.Background(), reg, "bad",
 		mcp.ServerConfig{Command: "aura-nonexistent-mcp-binary-xyz"})
 	if err == nil {
 		t.Fatal("want spawn error for a missing binary")
