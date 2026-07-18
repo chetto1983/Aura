@@ -163,19 +163,29 @@ func runtimeKind(server mcp.ManagedServer) string {
 	return RuntimeLocal
 }
 
+// normalizedTrustForServer resolves server's effective trust class through the
+// canonical mcp.Classify (MCPH-01): the manager's eligibility gate must agree
+// with the single source of truth, not carry its own copy of the trust
+// decision. A Classify error (mixed transport, inconsistent explicit
+// type/trust) is treated conservatively as TrustBlocked, since this path
+// gates whether a server may run at all.
 func normalizedTrustForServer(server mcp.ManagedServer) string {
-	if mcp.IsKnownTrust(server.Trust.Class) {
-		return server.Trust.Class
+	_, trust, err := mcp.Classify(server)
+	if err != nil {
+		return mcp.TrustBlocked
 	}
-	if strings.HasPrefix(strings.TrimSpace(server.Source), "recipe:") {
-		return mcp.TrustTrustedRecipe
-	}
-	if server.Type == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
-		return mcp.TrustRemoteHTTP
-	}
-	return mcp.TrustBlocked
+	return trust
 }
 
+// isStreamableHTTPServer reports whether server classifies as the
+// streamable_http transport via mcp.Classify. A Classify error is treated as
+// "not streamable_http" — RuntimeLaunchConfig's trust gate (which also
+// classifies via normalizedTrustForServer) is what ultimately blocks an
+// unclassifiable server, regardless of which branch it falls into here.
 func isStreamableHTTPServer(server mcp.ManagedServer) bool {
-	return strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != ""
+	serverType, _, err := mcp.Classify(server)
+	if err != nil {
+		return false
+	}
+	return serverType == mcp.ServerTypeStreamableHTTP
 }

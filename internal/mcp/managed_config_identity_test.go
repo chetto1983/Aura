@@ -32,6 +32,16 @@ func writeSharedCatalog(t *testing.T) string {
 			Source:  SourceRecipeMemory,
 			Trust:   ManagedTrust{Class: TrustTrustedRecipe},
 		},
+		// weather is a class-(a) REMOTE (streamable_http) server — NOT
+		// admin-governed (unlike memory) — proving D-04: a per-identity override
+		// must not elevate a remote's trust, only the admin shared catalog can.
+		"weather": {
+			Type:    ServerTypeStreamableHTTP,
+			URL:     "https://weather.example.test/mcp/",
+			Enabled: boolPtr(true),
+			Source:  "recipe:weather",
+			Trust:   ManagedTrust{Class: TrustRemoteHTTP},
+		},
 	}}
 	if err := SaveManagedConfig(path, doc); err != nil {
 		t.Fatalf("SaveManagedConfig: %v", err)
@@ -131,6 +141,60 @@ func TestSetTrustForIdentityOverlaysClassA(t *testing.T) {
 	}
 	if got := bob.MCPServers["calculator"].Trust.Class; got != TrustTrustedRecipe {
 		t.Fatalf("bob calculator trust = %q, want shared %q", got, TrustTrustedRecipe)
+	}
+}
+
+// Test 3c (D-04): a per-identity trust override on a class-(a) REMOTE
+// (streamable_http) server must NOT be applied by MountForIdentity — the
+// effective config keeps the shared-catalog trust, so the remote cannot be
+// made runnable-via-override.
+func TestMountForIdentityRemoteTrustOverrideIgnored(t *testing.T) {
+	writeSharedCatalog(t)
+	if err := SaveIdentityMCPConfig("alice", IdentityMCPConfig{
+		Preferences: map[string]IdentityServerPref{
+			"weather": {Trust: ManagedTrust{Class: TrustTrustedLocal}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveIdentityMCPConfig: %v", err)
+	}
+	alice, err := MountForIdentity("alice")
+	if err != nil {
+		t.Fatalf("MountForIdentity(alice): %v", err)
+	}
+	if got := alice.MCPServers["weather"].Trust.Class; got != TrustRemoteHTTP {
+		t.Fatalf("alice weather trust = %q, want shared %q (remote trust must not be overridable, D-04)", got, TrustRemoteHTTP)
+	}
+}
+
+// Test 3d (D-04): an enable toggle on a class-(a) REMOTE server still applies
+// via MountForIdentity — the guard only scopes trust elevation, not enable.
+func TestMountForIdentityRemoteEnableToggleApplies(t *testing.T) {
+	writeSharedCatalog(t)
+	if err := SetEnabledForIdentity("alice", "weather", false); err != nil {
+		t.Fatalf("SetEnabledForIdentity: %v", err)
+	}
+	alice, err := MountForIdentity("alice")
+	if err != nil {
+		t.Fatalf("MountForIdentity(alice): %v", err)
+	}
+	if e := alice.MCPServers["weather"].Enabled; e == nil || *e {
+		t.Fatalf("alice weather enabled = %v, want false (enable toggle unaffected by D-04 trust guard)", e)
+	}
+}
+
+// Test 3e (D-04): SetTrustForIdentity on a class-(a) REMOTE server fails
+// closed with ErrRemoteElevationForbidden and persists no overlay.
+func TestSetTrustForIdentityRemoteElevationForbidden(t *testing.T) {
+	writeSharedCatalog(t)
+	if err := SetTrustForIdentity("alice", "weather", TrustTrustedLocal); !errors.Is(err, ErrRemoteElevationForbidden) {
+		t.Fatalf("SetTrustForIdentity(weather) err = %v, want ErrRemoteElevationForbidden", err)
+	}
+	overlay, err := LoadIdentityMCPConfig("alice")
+	if err != nil {
+		t.Fatalf("LoadIdentityMCPConfig: %v", err)
+	}
+	if _, ok := overlay.Preferences["weather"]; ok {
+		t.Fatalf("overlay should have no persisted preference for weather, got %#v", overlay.Preferences["weather"])
 	}
 }
 

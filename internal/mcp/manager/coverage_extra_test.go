@@ -57,8 +57,12 @@ func TestRuntimeErrorAndClassificationBranches(t *testing.T) {
 	if got := normalizedTrustForServer(mcp.ManagedServer{Source: "recipe:mail"}); got != mcp.TrustTrustedRecipe {
 		t.Fatalf("recipe trust = %q", got)
 	}
-	if got := normalizedTrustForServer(mcp.ManagedServer{URL: "https://mcp.example.com"}); got != mcp.TrustRemoteHTTP {
-		t.Fatalf("url trust = %q", got)
+	// Bare URL with no explicit trust class must resolve Blocked, not the old
+	// auto-promoted TrustRemoteHTTP (F-013 closed at the manager copy via
+	// Classify migration — see runtime_test.go's TestNormalizedTrustForServer
+	// header comment for the full justification).
+	if got := normalizedTrustForServer(mcp.ManagedServer{URL: "https://mcp.example.com"}); got != mcp.TrustBlocked {
+		t.Fatalf("url trust = %q, want %q", got, mcp.TrustBlocked)
 	}
 	if got := normalizedTrustForServer(mcp.ManagedServer{Command: "node"}); got != mcp.TrustBlocked {
 		t.Fatalf("unknown local trust = %q", got)

@@ -136,6 +136,15 @@ func TestRuntimeKindHelper(t *testing.T) {
 	}
 }
 
+// TestNormalizedTrustForServer's "http type"/"url implies http" cases
+// previously asserted the manager's OWN independently-duplicated F-013 bug: a
+// streamable_http-shaped server with no explicit trust was auto-promoted to
+// the runnable TrustRemoteHTTP class here too (a second copy of the same bug
+// 38-01 fixed in managed_config.go). Migrating normalizedTrustForServer onto
+// mcp.Classify (D-03) closes it at this copy as well — the fixed behavior is
+// TrustBlocked. Deliberately rewritten per CLAUDE.md ("never modify tests to
+// make them pass unless the test itself is broken"); these assertions
+// described exactly the bug being fixed.
 func TestNormalizedTrustForServer(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -145,8 +154,8 @@ func TestNormalizedTrustForServer(t *testing.T) {
 		{name: "explicit class", server: mcp.ManagedServer{Trust: mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal}}, want: mcp.TrustSandboxedLocal},
 		{name: "unknown explicit class blocked", server: mcp.ManagedServer{Command: "node", Source: "manual", Trust: mcp.ManagedTrust{Class: "admin"}}, want: mcp.TrustBlocked},
 		{name: "recipe source", server: mcp.ManagedServer{Source: "recipe:calculator"}, want: mcp.TrustTrustedRecipe},
-		{name: "http type", server: mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP}, want: mcp.TrustRemoteHTTP},
-		{name: "url implies http", server: mcp.ManagedServer{URL: "https://mcp.example.com"}, want: mcp.TrustRemoteHTTP},
+		{name: "http type with no explicit trust blocked", server: mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP}, want: mcp.TrustBlocked},
+		{name: "url implies http with no explicit trust blocked", server: mcp.ManagedServer{URL: "https://mcp.example.com"}, want: mcp.TrustBlocked},
 		{name: "unknown blocked", server: mcp.ManagedServer{Command: "node", Source: "manual"}, want: mcp.TrustBlocked},
 	}
 	for _, tt := range tests {
@@ -220,6 +229,28 @@ func TestRunnableManagedServersHTTPEmptyURL(t *testing.T) {
 	}
 	if _, err := RunnableManagedServers(doc); err == nil || !strings.Contains(err.Error(), "url cannot be empty") {
 		t.Fatalf("want url-empty error, got %v", err)
+	}
+}
+
+// TestRunnableManagedServersBareRemoteTrustBlocked proves F-013 is closed at
+// the manager's copy: a bare-URL remote server with no explicit trust class
+// resolves Blocked (via the Classify-migrated normalizedTrustForServer) and is
+// excluded from the runnable set, rather than being auto-promoted and
+// reaching the streamable_http eligibility branch.
+func TestRunnableManagedServersBareRemoteTrustBlocked(t *testing.T) {
+	doc := mcp.ManagedConfig{
+		Profiles:      map[string]mcp.ManagedProfile{"default": {Servers: []string{"remote"}}},
+		ActiveProfile: "default",
+		MCPServers: map[string]mcp.ManagedServer{
+			"remote": {URL: "https://mcp.example.com"},
+		},
+	}
+	got, err := RunnableManagedServers(doc)
+	if err != nil {
+		t.Fatalf("RunnableManagedServers: %v", err)
+	}
+	if _, ok := got["remote"]; ok {
+		t.Fatalf("bare-URL remote with no explicit trust should be excluded (F-013 closed at manager copy), got %#v", got)
 	}
 }
 
