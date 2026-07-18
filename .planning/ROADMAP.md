@@ -668,7 +668,7 @@ Plans:
 3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
 4. A dead HTTP MCP endpoint reports OK=false.
 
-**Plans:** 3/7 plans executed
+**Plans:** 6/7 plans executed
 
 **Wave 1** *(parallel — no dependencies, disjoint files)*
 
@@ -678,9 +678,9 @@ Plans:
 
 **Wave 2** *(depends on Wave 1)*
 
-- [ ] 38-04-PLAN.md — Classifier propagation (manager) + D-04 remote-trust elevation guard (MCPH-01, MCPH-02) [depends_on 38-01]
-- [ ] 38-05-PLAN.md — Bounded two-context mount timeout + concurrent aggregate-deadline shutdown (MCPH-01, MCPH-04, MCPH-06) [depends_on 38-01, 38-02]
-- [ ] 38-06-PLAN.md — Live HTTP MCP probe across `aura doctor` + `aura mcp status` (real F-046 fix) (MCPH-01, MCPH-09) [depends_on 38-01]
+- [x] 38-04-PLAN.md — Classifier propagation (manager) + D-04 remote-trust elevation guard (MCPH-01, MCPH-02) [depends_on 38-01]
+- [x] 38-05-PLAN.md — Bounded two-context mount timeout + concurrent aggregate-deadline shutdown (MCPH-01, MCPH-04, MCPH-06) [depends_on 38-01, 38-02]
+- [x] 38-06-PLAN.md — Live HTTP MCP probe across `aura doctor` + `aura mcp status` (real F-046 fix) (MCPH-01, MCPH-09) [depends_on 38-01]
 
 **Wave 3** *(depends on Wave 2)*
 
