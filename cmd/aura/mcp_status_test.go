@@ -97,13 +97,21 @@ func TestWriteRuntimeCheckZeroToolsHTTPEndpointOK(t *testing.T) {
 }
 
 // TestWriteRuntimeCheckBoundedByProbeTimeout proves a hung HTTP endpoint returns
-// within ~AURA_MCP_PROBE_TIMEOUT instead of blocking indefinitely.
+// within ~AURA_MCP_PROBE_TIMEOUT instead of blocking indefinitely. The handler
+// self-bounds its own block to a fixed 3s fallback (instead of ONLY waiting on
+// r.Context().Done()): a client-side context.WithTimeout cancellation does not
+// reliably close the underlying TCP connection promptly on every platform (this
+// dev box observed net/http's Windows-side teardown taking many seconds longer
+// than the client-visible cancellation), which would otherwise make httptest's
+// own server.Close() — not the probe under test — hang for the diagnostic's
+// duration. The probe itself (asserted below) already returns in ~1s regardless.
 func TestWriteRuntimeCheckBoundedByProbeTimeout(t *testing.T) {
 	t.Setenv("AURA_MCP_PROBE_TIMEOUT", "1")
-	block := make(chan struct{})
-	t.Cleanup(func() { close(block) })
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+		}
 	}))
 	defer srv.Close()
 
