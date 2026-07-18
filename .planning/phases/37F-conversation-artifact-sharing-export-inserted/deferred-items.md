@@ -153,3 +153,116 @@ run to commit ONLY this plan's declared files). Logged for whoever reconciles
 ./internal/agui/`, and the full `internal/agui` untagged suite (`go test ./internal/agui/... -count=1`)
 are all green. The ONLY failure in a whole-package `cmd/aura` run is this one pre-existing,
 unrelated test.
+
+## 37F-13 — `bash scripts/coverage_docker.sh` cannot exit 0: pre-existing `internal/db` migration
+## round-trip failures block the run before it computes a percentage (pre-existing, human-reserved)
+
+**Found during:** Task 2's required verification, `bash scripts/coverage_docker.sh` (disposable
+`aura_cov` DB, WSL, real Docker-backed mcp-neo4j-cypher).
+
+**What was found:** the full `go test -tags "db_integration neo4j_integration" -p 1 ./internal/...`
+run inside `coverage_gate.sh` fails two tests in `internal/db`, unrelated to anything `internal/db`
+itself normally does wrong:
+
+```
+--- FAIL: TestMigration0039RoundTrip (1.06s)
+    migrate_0039_integration_test.go:57: version=41, want 39
+--- FAIL: TestMigration0040RoundTrip (0.94s)
+    migrate_0040_integration_test.go:57: version=41, want 40
+```
+
+Both tests run `Migrate()` (full up-migrate to the latest file on disk) and assert the reported
+schema version equals a HARDCODED literal (39, 40) that was correct only until the NEXT migration
+landed. Migration `0041_shared_links_rls` (37F-20, commit `d158bc97`, already an ancestor of this
+plan's starting HEAD `439c82da` — verified via `git merge-base --is-ancestor`) moved the on-disk
+floor to 41, so both hardcoded assertions are now stale. This is a pre-existing regression on
+`master`, not something introduced by 37F-13 — `git status` at the start of this plan showed zero
+uncommitted changes to `internal/db/`.
+
+**Root cause, and why NOT fixed here:** 37F-20's own SUMMARY (`37F-20-SUMMARY.md` Deviations /
+Known Follow-ups) already found and named this exact gap: it explicitly states migration 0041
+shipped with NO `migrate_0041_integration_test.go` companion (unlike 0040's precedent) because
+"this run operated under an explicit file-scope lock to the plan's 5 declared files (**a separate
+branch and an unrelated leaked commit exist on master that are the human's to reconcile**)." This
+plan's own orchestrating instructions repeat the identical scoping boundary verbatim: "A separate
+branch `fix/ci-red-37f-drift` and a leaked commit `749a2c54` exist on/around master — the human
+owns ALL of that reconciliation... If HEAD is not on master or the tree has unexpected foreign
+changes, STOP." Editing `migrate_0039_integration_test.go`/`migrate_0040_integration_test.go` —
+even though the fix is textually trivial (update two hardcoded literals, or make the assertion
+relative) — would mean reaching into exactly the area two independent plans have now flagged as
+reserved for that human-owned branch. Per SCOPE BOUNDARY (only fix issues the current task's own
+changes directly caused) this is out of scope for 37F-13 a second time.
+
+**Practical impact on this plan's own verification:** `coverage_gate.sh` aborts
+(`if ! go test ...; then exit 1; fi`) BEFORE it ever reaches the `go tool cover -func` aggregation
+step, so `bash scripts/coverage_docker.sh` cannot literally exit 0 while this persists — even
+though `go test` does not abort early package-by-package (Go's test runner completes every
+package regardless of an earlier one's failure) and the coverprofile (`cover_gate.out`, 1.3 MB,
+fresh) is fully populated for every package that ran, INCLUDING `internal/db` itself (which still
+reported `coverage: 82.0%` despite its two assertion failures — a test-logic bug, not a compile
+failure, so its instrumentation is unaffected). This plan worked around the abort by applying
+`coverage_gate.sh`'s own filter (`grep -vE '/internal/db/sqlc/|/internal/agent/agenttest/|
+/internal/llm/client\.go:'`) directly to that fresh profile and running
+`go tool cover -func` by hand — see 37F-13-SUMMARY.md for the resulting real aggregate and
+per-package numbers. This is a legitimate reconstruction of what the script would have printed,
+not a fabricated number, but it is NOT the same as the script itself exiting 0, and is disclosed
+as such.
+
+**Disposition:** NOT fixed here — out of scope for 37F-13 (SCOPE BOUNDARY; also explicitly
+in-territory of the human-owned `fix/ci-red-37f-drift` reconciliation per both this plan's own
+orchestrating instructions and 37F-20's independent prior finding). Logged for whoever reconciles
+that branch: the fix is either (a) update the two hardcoded version literals to the current floor
+each time a migration lands (fragile), or (b) change both tests to assert against
+`len(os.ReadDir("internal/db/migrations"))`-derived expectations or the highest `.up.sql` file's
+numeric prefix instead of a hardcoded literal (matches this file's own project-wide "the directory
+is the only source of truth, not a hardcoded number" discipline already applied to migration
+*authoring* in CLAUDE.md's Persistence section), or (c) add the missing
+`migrate_0041_integration_test.go` companion 37F-20 already flagged as a known follow-up, retiring
+0039/0040's role as the "latest floor" proof entirely.
+
+## 37F-13 — `internal/objectstore` measures 69.6% under the REAL two-tag gate (pre-existing,
+## structural, already deferred once by 37F-04 — not closed by this plan)
+
+**Found during:** Task 2's per-package coverage assertion (the 2026-06-13 campaign floor is
+per-package, not just aggregate) against the same fresh, real `db_integration neo4j_integration`
+coverprofile the aggregate number above is drawn from.
+
+**What was found:** `internal/objectstore` (top-level package only, excluding the sibling
+`internal/objectstore/garageadmin` package which is separately at 76.6%) measures **69.6%** —
+below the 85% floor. Per-function breakdown (`go tool cover -func` against the isolated
+package slice) shows the shortfall is overwhelmingly concentrated in `s3.go`'s live-S3-API
+methods, every one of them at literal 0%: `ConfigureBrowserUploadCORS`, `Put`, `Head`, `Get`,
+`List`, `Delete`. Every OTHER file in the package is reasonably covered under this real tag
+combo: `identity_store.go` 76.9–100% (its `Resolve` alone is 93.3%, confirming it IS exercised
+under `db_integration` as expected), `fake.go` 71.4–100%, `types.go` (37F-04's own 3 functions)
+100% each, and `filesystem.go` mostly 66.7–100% (one exception: `Delete` at 0.0%, a small,
+non-decisive function).
+
+**Root cause, and why NOT fixed here:** `s3.go`'s six 0%-covered methods each drive a real
+AWS-SDK S3 client call against a live S3-compatible endpoint (Garage) — none of them contain
+meaningfully-unit-testable pure logic without first introducing a mockable client seam, which
+would be a structural refactor of pre-existing, working infrastructure that predates 37F entirely
+(37F never touched `s3.go`; the whole package's ONLY 37F-authored code is `types.go`'s three key
+constructors, each independently at 100%, confirmed by 37F-04's own SUMMARY / this phase's
+`deferred-items.md` 37F-04 entry above). This is the SAME class of gap CLAUDE.md documents for
+`internal/sandbox/usersandbox`'s `DockerBackend` (Docker-daemon-gated code with no
+`docker_integration` CI tier) — a live-endpoint dependency the coverage gate's tag set
+(`db_integration neo4j_integration` only, no `garage_integration` job) structurally cannot reach.
+37F-04 already discovered and deferred this EXACT package (then measuring 63.6–63.9% under a
+plain untagged run) with the identical disposition: "Logged for whichever future phase/plan owns
+a package-wide `internal/objectstore` coverage push... neither of which is this plan's scope."
+37F-13/WEBSHARE-04's own scope is the SC4 cross-identity deny test and the share.public capability
+gate — introducing an AWS-SDK S3 client mock seam is an unrelated, non-trivial engineering task
+several times the size of this plan's actual deliverable, and would not move any WEBSHARE-04
+security property.
+
+**Disposition:** NOT closed here — out of scope for 37F-13 (SCOPE BOUNDARY; a second, independent
+confirmation of 37F-04's own prior deferral, now measured against the REAL two-tag gate instead of
+a plain untagged run). The aggregate coverage gate (the actual enforced CI mechanism —
+`coverage_gate.sh` has no per-package assertion of its own; the per-package floor is a
+documentation-level discipline from the 2026-06-13 campaign) clears 85% comfortably (85.7%,
+computed on the same profile — see 37F-13-SUMMARY.md) specifically BECAUSE `internal/objectstore`
+is a small package relative to the owned-surface total; this shortfall does not currently drag the
+enforced gate below the floor. Logged for whoever next owns either (a) an `s3.go` client-seam
+refactor + mock-backed unit tests, or (b) a live-Garage `garage_integration` CI tier, whichever
+this project adopts first.
