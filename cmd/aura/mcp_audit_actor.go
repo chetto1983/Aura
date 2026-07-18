@@ -6,17 +6,30 @@
 package main
 
 import (
+	"os"
 	"os/user"
+	"strings"
 )
 
 // currentOSUser is a seam over os/user.Current so mcp_audit_actor_test.go can exercise the
 // error-fallback branch deterministically, without depending on the real OS environment.
 var currentOSUser = user.Current
 
-// mcpAuditActor derives the cli:<os-username> audit actor (D-13).
-//
-// TODO(RED stub): this minimal compiling body ignores currentOSUser/env entirely; GREEN
-// replaces it with the real os/user.Current() -> USER -> USERNAME -> "cli:unknown" chain.
+// mcpAuditActor derives the cli:<os-username> audit actor (D-13): os/user.Current()
+// succeeding with a non-blank Username wins; on error (or a blank/whitespace-only
+// Username) it falls back to USER then USERNAME; with every source absent/blank it
+// returns the literal "cli:unknown". Never returns "" and never a bare "cli:".
 func mcpAuditActor() string {
+	if u, err := currentOSUser(); err == nil {
+		if name := strings.TrimSpace(u.Username); name != "" {
+			return "cli:" + name
+		}
+	}
+	if name := strings.TrimSpace(os.Getenv("USER")); name != "" {
+		return "cli:" + name
+	}
+	if name := strings.TrimSpace(os.Getenv("USERNAME")); name != "" {
+		return "cli:" + name
+	}
 	return "cli:unknown"
 }

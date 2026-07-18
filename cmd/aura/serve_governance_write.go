@@ -102,12 +102,9 @@ func (a mcpWriteAdapter) TrustApprove(ctx context.Context, actor, name, class, r
 	if !ok {
 		return agui.MCPWriteResult{}, agui.ErrMCPServerNotFound
 	}
-	class = strings.TrimSpace(class)
-	if class == "" {
-		class = mcp.TrustTrustedLocal
-	}
-	if !mcp.IsKnownTrust(class) {
-		return agui.MCPWriteResult{}, fmt.Errorf("mcp trust: unknown trust class %q", class)
+	class, reason, err = validateTrustClassReason(class, reason)
+	if err != nil {
+		return agui.MCPWriteResult{}, err
 	}
 	// Operator-direct trust-approve (D-12): populate the today-empty ApprovedBy/At/Reason.
 	server.Trust = mcp.ManagedTrust{
@@ -127,13 +124,17 @@ func (a mcpWriteAdapter) TrustApprove(ctx context.Context, actor, name, class, r
 }
 
 // validateTrustClassReason is the single source of truth for MCPH-03/D-13's trust-approve
-// validation.
-//
-// TODO(RED stub): this minimal compiling body fails closed unconditionally; GREEN replaces
-// it with the real class!="" && reason!="" && IsKnownTrust(class) check and wires TrustApprove
-// to call it (removing the dead empty-class default above).
+// validation: a known trust class AND a non-empty reason are both required. Both TrustApprove
+// (the web + operator-direct path) and the CLI `aura mcp trust` (mcp_profile.go) call this SAME
+// helper, so the CLI can never reintroduce F-038 by reaching a silent empty-class default
+// (Pitfall #5) — there is no other route to mutate Trust. It returns the trimmed class/reason.
 func validateTrustClassReason(class, reason string) (string, string, error) {
-	return "", "", fmt.Errorf("mcp trust: validation stub not yet wired")
+	class = strings.TrimSpace(class)
+	reason = strings.TrimSpace(reason)
+	if class == "" || reason == "" || !mcp.IsKnownTrust(class) {
+		return "", "", fmt.Errorf("mcp trust: a known trust class and a non-empty reason are required")
+	}
+	return class, reason, nil
 }
 
 func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, enabled bool) (agui.MCPWriteResult, error) {
