@@ -205,3 +205,10 @@ None — no external service configuration required. `AURA_MCP_PROBE_TIMEOUT` is
 ---
 *Phase: 38-mcp-governance-hardening*
 *Completed: 2026-07-18*
+
+## Self-Check: PASSED
+
+All claimed files exist (cmd/aura/mcp_status.go, cmd/aura/mcp.go, cmd/aura/mcp_status_test.go,
+cmd/aura/mcp_test.go, cmd/aura/doctor.go, cmd/aura/doctor_test.go, this SUMMARY.md) and all four
+commit hashes (`9ec5b025` test, `63ce74c0` feat, `b2466835` feat, `ff5fee67` docs) are present in
+`git log --oneline --all`.
