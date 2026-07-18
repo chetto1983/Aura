@@ -451,6 +451,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSkillUpdateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillCatalogRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+
+	mountGovernanceSchedulerWriteRoutes(mux, aguiHandler, auth)
 	// The SETTINGS-01 cockpit Settings routes delegate to the AG-UI handler (routes on
 	// Server.Mux). GET is an operator read of the model-backend knobs (secrets redacted)
 	// behind governance.read; PUT/DELETE mutate aura.settings behind governance.write — the

@@ -15,6 +15,10 @@ type Querier interface {
 	AppendCompactionRolloutDecision(ctx context.Context, arg AppendCompactionRolloutDecisionParams) (AuraCompactionRolloutDecisions, error)
 	AppendCompactionRolloutEvidence(ctx context.Context, arg AppendCompactionRolloutEvidenceParams) (AuraCompactionRolloutEvidence, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
+	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
+	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
+	// a task that is not awaiting approval (0).
+	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	CASRollbackCompactionRollout(ctx context.Context, arg CASRollbackCompactionRolloutParams) (AuraCompactionRolloutStates, error)
 	CASTransitionCompactionRollout(ctx context.Context, arg CASTransitionCompactionRolloutParams) (AuraCompactionRolloutStates, error)
@@ -161,6 +165,10 @@ type Querier interface {
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error)
+	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
+	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
+	// non-null next_run_at too — it is the first fire computed at schedule time).
+	ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
@@ -200,6 +208,9 @@ type Querier interface {
 	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
+	// Advance an active task's next fire to now so the next tick claims it. Returns rows
+	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
+	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
@@ -238,6 +249,10 @@ type Querier interface {
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (AuraIngestionJobs, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 	UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error)
+	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
+	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
+	// a cancelled/completed task is not silently revived. Returns rows affected.
+	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
