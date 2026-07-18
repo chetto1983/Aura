@@ -31,11 +31,37 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/boundedbuffer"
+	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/secret"
 )
 
 // protocolVersion is the MCP revision Aura negotiates.
 const protocolVersion = "2024-11-05"
+
+// defaultStdioMaxFrame is the default cap, in bytes, on one stdio JSON-RPC frame's
+// content — tunable via AURA_MCP_STDIO_MAX_FRAME (D-08). A hostile/misbehaving
+// server that never terminates a line can no longer force unbounded memory growth
+// (F-034): bufio.Scanner aborts deterministically at the cap instead.
+const defaultStdioMaxFrame = 1 << 20 // 1 MiB
+
+// ErrStdioFrameTooLarge marks a stdio frame that exceeded the configured cap. It
+// wraps ErrTransport so IsTransportError is true and reconnectingServer
+// (internal/agent/mcptools) tears the poisoned pipe down instead of resyncing it
+// on the next call (D-09).
+var ErrStdioFrameTooLarge = fmt.Errorf("%w: stdio frame exceeds cap", ErrTransport)
+
+// newStdioScanner builds a bounded line scanner over r: maxFrame is the cap on one
+// frame's CONTENT (the JSON payload, excluding the newline delimiter). The +1 gives
+// bufio.Scanner room to additionally buffer the trailing delimiter byte itself —
+// without it, a frame of exactly maxFrame content bytes would spuriously trip
+// bufio.ErrTooLong one byte early (verified against go1.26.5's bufio/scan.go: the
+// scanner's max token size bounds the whole buffered chunk needed to FIND the
+// delimiter, which is one byte past the content).
+func newStdioScanner(r io.Reader, maxFrame int) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 4096), maxFrame+1)
+	return scanner
+}
 
 var mcpCommandNameRe = regexp.MustCompile(`^[A-Za-z0-9._:/\\~-]+$`)
 
@@ -76,7 +102,7 @@ type Client struct {
 	name            string
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
-	stdout          *bufio.Reader
+	stdout          *bufio.Scanner
 	stdoutCloser    io.Closer
 	stderr          *boundedbuffer.Buffer
 	mu              sync.Mutex
@@ -121,11 +147,12 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("mcp %q: spawn %s: %w", name, cfg.Command, err)
 	}
+	maxFrame := envutil.IntDefault("AURA_MCP_STDIO_MAX_FRAME", defaultStdioMaxFrame)
 	c := &Client{
 		name:         name,
 		cmd:          cmd,
 		stdin:        stdin,
-		stdout:       bufio.NewReader(stdoutPipe),
+		stdout:       newStdioScanner(stdoutPipe, maxFrame),
 		stdoutCloser: stdoutPipe,
 		stderr:       stderr,
 	}
@@ -349,10 +376,25 @@ func (c *Client) readResponseContext(ctx context.Context, want int64) (json.RawM
 
 func (c *Client) readResponseBlocking(want int64) (json.RawMessage, error) {
 	for {
-		line, err := c.stdout.ReadBytes('\n')
-		if err != nil {
-			return nil, fmt.Errorf("%w: recv: %w%s", ErrTransport, err, c.stderrTail())
+		if !c.stdout.Scan() {
+			err := c.stdout.Err()
+			if errors.Is(err, bufio.ErrTooLong) {
+				// D-09: an over-cap frame aborts the whole transport deterministically
+				// (kill+close) — the request/response stream is desynced and must never
+				// be trusted for a subsequent call.
+				c.abortTransport()
+				return nil, fmt.Errorf("%w: %w%s", ErrStdioFrameTooLarge, err, c.stderrTail())
+			}
+			if err != nil {
+				return nil, fmt.Errorf("%w: recv: %w%s", ErrTransport, err, c.stderrTail())
+			}
+			// Scan()==false with Err()==nil is bufio.Scanner's "clean EOF" (it treats a
+			// closed reader as a normal end of input); for this always-newline-delimited
+			// protocol a closed stdout ALWAYS means the peer is gone, so synthesize a
+			// transport error instead of silently returning (nil, nil) (Pitfall #4).
+			return nil, fmt.Errorf("%w: recv: %w%s", ErrTransport, io.ErrUnexpectedEOF, c.stderrTail())
 		}
+		line := c.stdout.Bytes()
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
