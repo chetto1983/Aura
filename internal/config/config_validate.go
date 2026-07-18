@@ -248,6 +248,14 @@ func (c *Config) gateMUSRIsolation(p RuntimeProfile) []Violation {
 	return nil
 }
 
+// gateMCPLegacyEnv is defined ahead of its GREEN-phase implementation (RED phase
+// of the D-14/D-15/MCPH-08 TDD cycle, TestGateMCPLegacyEnv): a stub so the package
+// compiles while the new table test asserts the not-yet-implemented prod-only gate
+// behavior. The GREEN commit replaces this body with the real check.
+func (c *Config) gateMCPLegacyEnv(p RuntimeProfile) []Violation {
+	return nil
+}
+
 // gateObjectStoreEndpoint emits non-fatal WARNs under server_production (A6) when the
 // object store still uses the default bucket name or a loopback endpoint: both can be
 // legitimate behind compose DNS, so they are advisory, never Fatal — the operator is
