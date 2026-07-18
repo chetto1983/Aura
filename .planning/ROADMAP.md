@@ -668,7 +668,7 @@ Plans:
 3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
 4. A dead HTTP MCP endpoint reports OK=false.
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 **Wave 1** *(parallel — no dependencies, disjoint files)*
 
@@ -684,7 +684,7 @@ Plans:
 
 **Wave 3** *(depends on Wave 2)*
 
-- [ ] 38-07-PLAN.md — Audited CLI MCP writes (`cli:<os-user>` actor, `mcp_audit`) + trust-endpoint 400 guard (MCPH-03, MCPH-07) [depends_on 38-05]
+- [x] 38-07-PLAN.md — Audited CLI MCP writes (`cli:<os-user>` actor, `mcp_audit`) + trust-endpoint 400 guard (MCPH-03, MCPH-07) [depends_on 38-05]
 
 #### Phase 39: Idempotency + Observability Pack
 
