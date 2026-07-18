@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func mcpProfile(args []string, out io.Writer) error {
+func mcpProfile(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: aura mcp profile {list|create|use|add|remove}")
 	}
@@ -17,13 +21,13 @@ func mcpProfile(args []string, out io.Writer) error {
 	case "list":
 		return mcpProfileList(args[1:], out)
 	case "create":
-		return mcpProfileCreate(args[1:], out)
+		return mcpProfileCreate(ctx, pool, args[1:], out)
 	case "use":
-		return mcpProfileUse(args[1:], out)
+		return mcpProfileUse(ctx, pool, args[1:], out)
 	case "add":
-		return mcpProfileAdd(args[1:], out)
+		return mcpProfileAdd(ctx, pool, args[1:], out)
 	case "remove":
-		return mcpProfileRemove(args[1:], out)
+		return mcpProfileRemove(ctx, pool, args[1:], out)
 	default:
 		return fmt.Errorf("unknown mcp profile subcommand %q", args[0])
 	}
@@ -57,7 +61,7 @@ func mcpProfileList(args []string, out io.Writer) error {
 	return nil
 }
 
-func mcpProfileCreate(args []string, out io.Writer) error {
+func mcpProfileCreate(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: aura mcp profile create <name>")
 	}
@@ -76,13 +80,13 @@ func mcpProfileCreate(args []string, out io.Writer) error {
 		return fmt.Errorf("MCP profile %q already exists", name)
 	}
 	doc.Profiles[name] = mcp.ManagedProfile{}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_create", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: created profile %s\n", name)
 }
 
-func mcpProfileUse(args []string, out io.Writer) error {
+func mcpProfileUse(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: aura mcp profile use <name>")
 	}
@@ -98,13 +102,13 @@ func mcpProfileUse(args []string, out io.Writer) error {
 		return fmt.Errorf("MCP profile %q not found", name)
 	}
 	doc.ActiveProfile = name
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_use", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: using profile %s\n", name)
 }
 
-func mcpProfileAdd(args []string, out io.Writer) error {
+func mcpProfileAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: aura mcp profile add <profile> <server>")
 	}
@@ -117,13 +121,13 @@ func mcpProfileAdd(args []string, out io.Writer) error {
 		return fmt.Errorf("MCP server %q not found", server)
 	}
 	ensureProfileMembership(&doc, profile, server)
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_add", server, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: added %s to profile %s\n", server, profile)
 }
 
-func mcpProfileRemove(args []string, out io.Writer) error {
+func mcpProfileRemove(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: aura mcp profile remove <profile> <server>")
 	}
@@ -144,17 +148,76 @@ func mcpProfileRemove(args []string, out io.Writer) error {
 	}
 	p.Servers = append([]string(nil), next...)
 	doc.Profiles[profile] = p
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_remove", server, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: removed %s from profile %s\n", server, profile)
 }
 
-func mcpTrust(args []string, out io.Writer) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: aura mcp trust <name>")
+const mcpTrustUsage = "usage: aura mcp trust <name> --reason <text> [--class <class>]"
+
+// parseMCPTrustArgs hand-parses `aura mcp trust <name> --reason <text> [--class <class>]`
+// (Pitfall #12): --reason is REQUIRED — a trust with no reason is rejected before any
+// read/write; --class is optional, defaulting to trusted_local for parity with the
+// pre-existing CLI behavior. The full class/reason validation (known class, non-blank
+// reason) is deferred to the shared validateTrustClassReason single source of truth.
+func parseMCPTrustArgs(args []string) (name, class, reason string, err error) {
+	if len(args) == 0 {
+		return "", "", "", errors.New(mcpTrustUsage)
 	}
-	name := strings.TrimSpace(args[0])
+	name = strings.TrimSpace(args[0])
+	class = mcp.TrustTrustedLocal
+	pendingReason := false
+	pendingClass := false
+	for _, arg := range args[1:] {
+		if pendingReason {
+			reason = arg
+			pendingReason = false
+			continue
+		}
+		if pendingClass {
+			class = arg
+			pendingClass = false
+			continue
+		}
+		switch arg {
+		case "--reason":
+			pendingReason = true
+		case "--class":
+			pendingClass = true
+		default:
+			return "", "", "", fmt.Errorf("unknown mcp trust option %q\n%s", arg, mcpTrustUsage)
+		}
+	}
+	if pendingReason {
+		return "", "", "", fmt.Errorf("--reason requires a value\n%s", mcpTrustUsage)
+	}
+	if pendingClass {
+		return "", "", "", fmt.Errorf("--class requires a value\n%s", mcpTrustUsage)
+	}
+	if strings.TrimSpace(reason) == "" {
+		return "", "", "", fmt.Errorf("aura mcp trust requires --reason\n%s", mcpTrustUsage)
+	}
+	return name, class, reason, nil
+}
+
+// mcpTrust implements `aura mcp trust <name> --reason <text> [--class <class>]` (D-12/
+// D-13, Pitfall #12): the CLI trust-approve gains the same required-reason + known-class
+// validation the web endpoint already enforces (validateTrustClassReason, shared with
+// TrustApprove), so a CLI trust can never write a NULL-reason audit row or reintroduce
+// the F-038 empty-class default.
+func mcpTrust(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
+	name, class, reason, err := parseMCPTrustArgs(args)
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		return fmt.Errorf("MCP server name cannot be empty")
+	}
+	class, reason, err = validateTrustClassReason(class, reason)
+	if err != nil {
+		return err
+	}
 	doc, path, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
@@ -166,12 +229,17 @@ func mcpTrust(args []string, out io.Writer) error {
 	if err := writef(out, "server: %s\ncommand: %s\nsource: %s\nruntime: %s\n", name, renderMCPCommand(mcp.ServerConfig{Command: server.Command, Args: server.Args}), server.Source, server.Runtime.Kind); err != nil {
 		return err
 	}
-	server.Trust = mcp.ManagedTrust{Class: mcp.TrustTrustedLocal}
+	server.Trust = mcp.ManagedTrust{
+		Class:      class,
+		ApprovedBy: mcpAuditActor(),
+		ApprovedAt: time.Now().UTC().Format(time.RFC3339),
+		Reason:     reason,
+	}
 	doc.MCPServers[name] = server
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "trust", name, reason); err != nil {
 		return err
 	}
-	return writef(out, "ok: trusted %s as %s\n", name, mcp.TrustTrustedLocal)
+	return writef(out, "ok: trusted %s as %s\n", name, class)
 }
 
 func ensureProfileMembership(doc *mcp.ManagedConfig, profile, server string) {

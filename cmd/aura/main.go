@@ -33,10 +33,12 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/sync/errgroup"
 )
@@ -51,7 +53,7 @@ func main() {
 	case "tools":
 		printTools()
 	case "mcp":
-		runMCP(os.Args[2:])
+		runMCPDispatch(os.Args[2:])
 	case "memory":
 		runMemory(os.Args[2:])
 	case "agent":
@@ -102,6 +104,36 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+}
+
+// runMCPDispatch is the `aura mcp` composition root: it opens a *pgxpool.Pool ONLY when
+// the subcommand mutates the managed config (mirrors identityRecover/
+// identityRecoverOperator's open-close pool lifecycle, D-12) — read-only subcommands
+// (recipes/status/list/logs/doctor/tools/console) never touch the DB. Under
+// server_production a pool-open failure is fatal (MCPH-07's literal "audited OR
+// disallowed" requirement — a production deploy may never fall back to an unaudited
+// write); under every other profile a pool-open failure degrades to a nil pool with a
+// stderr warning, and mcpWriteManagedConfig's own mcpPoolRequiredErr backstop applies the
+// same profile gate a second time (defense in depth) before ever reaching an unaudited
+// write.
+func runMCPDispatch(args []string) {
+	ctx := context.Background()
+	var pool *pgxpool.Pool
+	if mcpCommandNeedsPool(args) {
+		cfg := config.LoadDB()
+		p, err := db.Open(ctx, &cfg.DB)
+		if err != nil {
+			if cfg.Profile == config.ProfileServerProduction {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "warning: mcp: could not open an audited database pool (%v); proceeding unaudited\n", err)
+		} else {
+			defer p.Close()
+			pool = p
+		}
+	}
+	runMCP(ctx, pool, args)
 }
 
 func usage() {

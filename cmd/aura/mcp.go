@@ -17,19 +17,48 @@ import (
 
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name>|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>}"
+const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>}"
 
-func runMCP(args []string) {
-	if err := runMCPCommand(context.Background(), args, os.Stdout); err != nil {
+// mcpMutatingSubcommands is the set of top-level `aura mcp` CLI verbs that mutate the
+// managed config (D-12): these route through the audited WriteConfigWithAudit and need a
+// live *pgxpool.Pool. Every other subcommand (recipes/status/list/logs/doctor/tools/
+// console) is read-only and stays pool-free.
+var mcpMutatingSubcommands = map[string]bool{
+	"add": true, "install": true, "trust": true,
+	"enable": true, "disable": true, "remove": true,
+}
+
+// mcpProfileMutatingSubcommands mirrors the same split one level down, inside
+// `aura mcp profile <verb>`: create/use/add/remove mutate; list stays read-only.
+var mcpProfileMutatingSubcommands = map[string]bool{
+	"create": true, "use": true, "add": true, "remove": true,
+}
+
+// mcpCommandNeedsPool reports whether args (the tokens after "aura mcp") name a mutating
+// subcommand — main.go's dispatch must open a *pgxpool.Pool for it (D-12); a read-only
+// subcommand stays pool-free.
+func mcpCommandNeedsPool(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if args[0] == "profile" {
+		return len(args) > 1 && mcpProfileMutatingSubcommands[args[1]]
+	}
+	return mcpMutatingSubcommands[args[0]]
+}
+
+func runMCP(ctx context.Context, pool *pgxpool.Pool, args []string) {
+	if err := runMCPCommand(ctx, pool, args, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, mcpUsage)
 		os.Exit(1)
 	}
 }
 
-func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
+func runMCPCommand(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(mcpUsage)
 	}
@@ -37,13 +66,13 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 	case "recipes":
 		return mcpRecipes(args[1:], out)
 	case "install":
-		return mcpInstall(args[1:], out)
+		return mcpInstall(ctx, pool, args[1:], out)
 	case "add":
-		return mcpAdd(args[1:], out)
+		return mcpAdd(ctx, pool, args[1:], out)
 	case "profile":
-		return mcpProfile(args[1:], out)
+		return mcpProfile(ctx, pool, args[1:], out)
 	case "trust":
-		return mcpTrust(args[1:], out)
+		return mcpTrust(ctx, pool, args[1:], out)
 	case "status":
 		return mcpStatus(ctx, args[1:], out)
 	case "logs":
@@ -57,11 +86,11 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 	case "console":
 		return mcpConsole(args[1:], out)
 	case "enable":
-		return mcpSetEnabled(args[1:], true, out)
+		return mcpSetEnabled(ctx, pool, args[1:], true, out)
 	case "disable":
-		return mcpSetEnabled(args[1:], false, out)
+		return mcpSetEnabled(ctx, pool, args[1:], false, out)
 	case "remove":
-		return mcpRemove(args[1:], out)
+		return mcpRemove(ctx, pool, args[1:], out)
 	default:
 		return fmt.Errorf("unknown mcp subcommand %q", args[0])
 	}
@@ -91,7 +120,7 @@ func mcpRecipes(args []string, out io.Writer) error {
 	return nil
 }
 
-func mcpInstall(args []string, out io.Writer) error {
+func mcpInstall(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) < 1 || len(args) > 2 {
 		return fmt.Errorf("usage: aura mcp install <recipe> [name]")
 	}
@@ -116,13 +145,13 @@ func mcpInstall(args []string, out io.Writer) error {
 	}
 	doc.MCPServers[name] = recipe.Server
 	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "install", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: installed %s in %s\n", name, path)
 }
 
-func mcpAdd(args []string, out io.Writer) error {
+func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	// Only guard against an empty arg vector (so args[0] below is safe). The real
 	// invariant — a non-empty name AND a non-empty command after "--" — is enforced
 	// precisely by the empty-name and len(commandParts)==0 checks below; a brittle
@@ -204,7 +233,7 @@ func mcpAdd(args []string, out io.Writer) error {
 		Trust:   mcp.ManagedTrust{Class: trustClass},
 	}
 	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "add", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: added %s in %s\n", name, path)
@@ -289,7 +318,7 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 	return nil
 }
 
-func mcpSetEnabled(args []string, enabled bool, out io.Writer) error {
+func mcpSetEnabled(ctx context.Context, pool *pgxpool.Pool, args []string, enabled bool, out io.Writer) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: aura mcp enable|disable <name>")
 	}
@@ -304,17 +333,19 @@ func mcpSetEnabled(args []string, enabled bool, out io.Writer) error {
 	}
 	s.Enabled = mcpBoolPtr(enabled)
 	doc.MCPServers[name] = s
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		return err
-	}
+	action := "disable"
 	state := "disabled"
 	if enabled {
+		action = "enable"
 		state = "enabled"
+	}
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, action, name, ""); err != nil {
+		return err
 	}
 	return writef(out, "ok: %s %s\n", state, name)
 }
 
-func mcpRemove(args []string, out io.Writer) error {
+func mcpRemove(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: aura mcp remove <name>")
 	}
@@ -327,7 +358,7 @@ func mcpRemove(args []string, out io.Writer) error {
 		return fmt.Errorf("MCP server %q not found in managed config", name)
 	}
 	delete(doc.MCPServers, name)
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "remove", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: removed %s\n", name)
