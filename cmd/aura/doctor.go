@@ -7,12 +7,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 type doctorProbe func(context.Context, *config.Config) (string, error)
@@ -34,14 +37,15 @@ type doctorCheck struct {
 }
 
 var (
-	doctorProbePostgres  doctorProbe = defaultDoctorProbePostgres
-	doctorProbeNeo4j     doctorProbe = defaultDoctorProbeNeo4j
-	doctorProbeEmbed     doctorProbe = defaultDoctorProbeEmbed
-	doctorProbeMCPBinary doctorProbe = defaultDoctorProbeMCPBinary
-	doctorLookupLLMKey               = func() string { return os.Getenv("OPENROUTER_API_KEY") } //nolint:gosec // boolean presence check only; value is never printed.
-	doctorLookPath                   = exec.LookPath
-	doctorHTTPClient                 = &http.Client{Timeout: 10 * time.Second}
-	doctorOpenPostgres               = func(ctx context.Context, cfg *config.Config) (doctorPostgresPool, error) {
+	doctorProbePostgres   doctorProbe = defaultDoctorProbePostgres
+	doctorProbeNeo4j      doctorProbe = defaultDoctorProbeNeo4j
+	doctorProbeEmbed      doctorProbe = defaultDoctorProbeEmbed
+	doctorProbeMCPBinary  doctorProbe = defaultDoctorProbeMCPBinary
+	doctorProbeMCPServers doctorProbe = defaultDoctorProbeMCPServers
+	doctorLookupLLMKey                = func() string { return os.Getenv("OPENROUTER_API_KEY") } //nolint:gosec // boolean presence check only; value is never printed.
+	doctorLookPath                    = exec.LookPath
+	doctorHTTPClient                  = &http.Client{Timeout: 10 * time.Second}
+	doctorOpenPostgres                = func(ctx context.Context, cfg *config.Config) (doctorPostgresPool, error) {
 		return db.Open(ctx, &cfg.DB)
 	}
 	doctorOpenNeo4j = func(ctx context.Context, cfg *config.Config) (doctorNeo4jClient, error) {
@@ -93,6 +97,7 @@ func doctorChecks() []doctorCheck {
 		{name: "embed", probe: doctorProbeEmbed, failureCode: exitUnreachable},
 		{name: "mcp-neo4j-cypher", probe: doctorProbeMCPBinary, failureCode: exitInfra},
 		{name: "llm_key", probe: doctorProbeLLMKey, failureCode: 0},
+		{name: "mcp", probe: doctorProbeMCPServers, failureCode: exitUnreachable},
 	}
 }
 
@@ -153,6 +158,54 @@ func defaultDoctorProbeMCPBinary(_ context.Context, cfg *config.Config) (string,
 		return "", fmt.Errorf("%s not found on PATH: %w", bin, err)
 	}
 	return "found " + path, nil
+}
+
+// defaultDoctorProbeMCPServers is the 6th doctor check (D-16/D-17/D-18, MCPH-09):
+// it live-probes ONLY the enabled + runnable + streamable-HTTP managed MCP servers
+// via mcp.ProbeServer, bounded per-server by AURA_MCP_PROBE_TIMEOUT. It deliberately
+// does NOT probe doctorProbeMCPBinary's target (the unrelated Neo4j-Cypher sidecar
+// binary, RESEARCH Pitfall #11) and does NOT dial disabled, trust-blocked, or stdio
+// servers: RunnableManagedServers already filters out disabled/blocked (a server the
+// operator turned off or hasn't approved is never dialed here either), and the
+// streamable_http filter below drops stdio (D-18 scopes this check to the
+// dead-HTTP-endpoint problem the CLI/status surfaces share). A single unreachable
+// server fails only its own name in the aggregated detail, never the others
+// (isolation) — the managed config itself is loaded fresh, independent of cfg.
+func defaultDoctorProbeMCPServers(ctx context.Context, _ *config.Config) (string, error) {
+	doc, _, err := loadManagedMCPConfig()
+	if err != nil {
+		return "", err
+	}
+	runnable, err := mcpmanager.RunnableManagedServers(doc)
+	if err != nil {
+		return "", err
+	}
+	names := make([]string, 0, len(runnable))
+	for name, server := range runnable {
+		serverType, _, classifyErr := mcp.Classify(server)
+		if classifyErr != nil || serverType != mcp.ServerTypeStreamableHTTP {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return "no HTTP MCP servers configured", nil
+	}
+
+	var unreachable []string
+	for _, name := range names {
+		probeCtx, cancel := context.WithTimeout(ctx, resolveMCPProbeTimeout())
+		res := mcp.ProbeServer(probeCtx, name, runnable[name])
+		cancel()
+		if !res.OK {
+			unreachable = append(unreachable, name)
+		}
+	}
+	if len(unreachable) > 0 {
+		return "", fmt.Errorf("%d/%d HTTP MCP servers unreachable: %s", len(unreachable), len(names), strings.Join(unreachable, ", "))
+	}
+	return fmt.Sprintf("%d/%d HTTP MCP servers reachable", len(names), len(names)), nil
 }
 
 func doctorProbeLLMKey(context.Context, *config.Config) (string, error) {

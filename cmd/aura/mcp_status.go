@@ -6,12 +6,23 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
+	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-func mcpStatus(args []string, out io.Writer) error {
+// mcpStatusRow is the additive live-probe row appended to each config-derived
+// mcpmanager.StatusSnapshot (D-17 "one probe, three surfaces"): the embedded
+// StatusSnapshot fields describe what is DECLARED (trust/runtime/profiles), Probe
+// describes what is LIVE right now. SnapshotStatus itself is unchanged/reused.
+type mcpStatusRow struct {
+	mcpmanager.StatusSnapshot
+	Probe mcp.ProbeResult `json:"probe"`
+}
+
+func mcpStatus(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") { //nolint:gosec // G602 false positive: args[0] guarded by len(args)==1
 		return fmt.Errorf("usage: aura mcp status [--json]")
 	}
@@ -20,31 +31,77 @@ func mcpStatus(args []string, out io.Writer) error {
 		return err
 	}
 	statuses := mcpmanager.SnapshotStatus(doc)
+	rows := make([]mcpStatusRow, 0, len(statuses))
+	for _, status := range statuses {
+		rows = append(rows, mcpStatusRow{StatusSnapshot: status, Probe: probeStatusRow(ctx, doc, status)})
+	}
 	if len(args) == 1 {
-		data, err := json.Marshal(statuses)
+		data, err := json.Marshal(rows)
 		if err != nil {
 			return fmt.Errorf("encode status: %w", err)
 		}
 		_, err = out.Write(append(data, '\n'))
 		return err
 	}
-	if err := writef(out, "name\tprofiles\ttrust\truntime\tstartup\tauth\terror\n"); err != nil {
+	if err := writef(out, "name\tprofiles\ttrust\truntime\tstartup\tauth\terror\tprobe\n"); err != nil {
 		return err
 	}
-	for _, status := range statuses {
-		if err := writef(out, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			status.Name,
-			strings.Join(status.Profiles, ","),
-			status.Trust,
-			status.Runtime,
-			status.StartupState,
-			status.AuthStatus,
-			status.LastError,
+	for _, row := range rows {
+		if err := writef(out, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			row.Name,
+			strings.Join(row.Profiles, ","),
+			row.Trust,
+			row.Runtime,
+			row.StartupState,
+			row.AuthStatus,
+			row.LastError,
+			probeColumn(row.Probe),
 		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// probeStatusRow resolves the live-probe result for one status row. Disabled and
+// trust-blocked servers are skipped without dialing (Rule 2: a "status" listing
+// must never spawn/dial a server the operator turned off or explicitly blocked as
+// a side effect of a read-only command — mirroring mcpDoctorAll's own disabled/
+// blocked skip). Every other server is probed bounded by AURA_MCP_PROBE_TIMEOUT,
+// isolated per server (a dead/hung server fails only its own row).
+func probeStatusRow(ctx context.Context, doc mcp.ManagedConfig, status mcpmanager.StatusSnapshot) mcp.ProbeResult {
+	switch status.StartupState {
+	case mcpmanager.StartupDisabled:
+		return mcp.ProbeResult{Name: status.Name, Detail: "skipped (disabled)"}
+	case mcpmanager.StartupBlocked:
+		return mcp.ProbeResult{Name: status.Name, Detail: "skipped (blocked)"}
+	}
+	server, ok := doc.MCPServers[status.Name]
+	if !ok {
+		return mcp.ProbeResult{Name: status.Name, Detail: "not configured", Err: "not configured"}
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, resolveMCPProbeTimeout())
+	defer cancel()
+	return mcp.ProbeServer(probeCtx, status.Name, server)
+}
+
+// probeColumn renders a mcp.ProbeResult as one tab-safe text column.
+func probeColumn(res mcp.ProbeResult) string {
+	if res.OK {
+		return fmt.Sprintf("ok(%d)", res.ToolCount)
+	}
+	if res.Err != "" {
+		return "fail:" + res.Err
+	}
+	return res.Detail
+}
+
+// resolveMCPProbeTimeout resolves the AURA_MCP_PROBE_TIMEOUT knob (seconds, default 5) that
+// bounds every live mcp.ProbeServer dial issued by writeRuntimeCheck, mcpStatus, and
+// the new doctor "mcp" check (D-16/D-17) — mirroring the governance board's own
+// per-request context.WithTimeout(r.Context(), deadline) shape.
+func resolveMCPProbeTimeout() time.Duration {
+	return time.Duration(envutil.IntDefault("AURA_MCP_PROBE_TIMEOUT", 5)) * time.Second
 }
 
 func mcpDoctorAll(ctx context.Context, out io.Writer) error {
@@ -88,24 +145,33 @@ func mcpLogs(args []string, out io.Writer) error {
 }
 
 // writeRuntimeCheck renders one server's reachability line for `mcp doctor --all`
-// from the structured mcp.ProbeServer result (GOV-01: one probe, two renderers — the
-// CLI text here and the governance board JSON elsewhere). The message vocabulary is
-// unchanged: an HTTP/streamable server reports its configured endpoint without a dial;
-// a stdio server with no command reports the missing command; otherwise the probe
-// dials + tools/list under ctx and a success/failure maps to "runtime ok (cmd)" /
-// "runtime missing cmd". ctx bounds the dial so a hung server cannot stall the doctor.
+// from the structured mcp.ProbeServer result (GOV-01: one probe, multiple renderers
+// — this CLI text line, the mcp status probe column, and the governance board
+// JSON). BOTH stdio and streamable-HTTP servers are dialed through mcp.ProbeServer
+// under a bounded context.WithTimeout(ctx, AURA_MCP_PROBE_TIMEOUT): a dead/typoed
+// HTTP endpoint no longer short-circuits to a false "http endpoint configured"
+// (F-046) — it reports OK=false / "runtime missing" like a dead stdio command,
+// and never stalls past the deadline for ITS row. Transport is resolved via
+// mcp.Classify (call-site #9), not an inline Type/URL check.
 func writeRuntimeCheck(ctx context.Context, out io.Writer, name string, server mcp.ManagedServer) error {
-	if server.Type == mcp.ServerTypeStreamableHTTP || server.URL != "" {
-		return writef(out, "%s: http endpoint configured\n", name)
+	serverType, _, classifyErr := mcp.Classify(server)
+	if classifyErr != nil {
+		return writef(out, "%s: runtime missing (%v)\n", name, classifyErr)
 	}
-	if strings.TrimSpace(server.Command) == "" {
+	if serverType != mcp.ServerTypeStreamableHTTP && strings.TrimSpace(server.Command) == "" {
 		return writef(out, "%s: runtime missing command\n", name)
 	}
-	res := mcp.ProbeServer(ctx, name, server)
-	if !res.OK {
-		return writef(out, "%s: runtime missing %s\n", name, server.Command)
+	target := server.Command
+	if serverType == mcp.ServerTypeStreamableHTTP {
+		target = server.URL
 	}
-	return writef(out, "%s: runtime ok (%s)\n", name, server.Command)
+	probeCtx, cancel := context.WithTimeout(ctx, resolveMCPProbeTimeout())
+	defer cancel()
+	res := mcp.ProbeServer(probeCtx, name, server)
+	if !res.OK {
+		return writef(out, "%s: runtime missing %s\n", name, target)
+	}
+	return writef(out, "%s: runtime ok (%s)\n", name, target)
 }
 
 func writeRecipeChecks(ctx context.Context, out io.Writer, name string, server mcp.ManagedServer) error {

@@ -45,7 +45,7 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 	case "trust":
 		return mcpTrust(args[1:], out)
 	case "status":
-		return mcpStatus(args[1:], out)
+		return mcpStatus(ctx, args[1:], out)
 	case "logs":
 		return mcpLogs(args[1:], out)
 	case "list":
