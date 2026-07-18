@@ -201,9 +201,15 @@ func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
 
 func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	path := withTempMCPConfig(t)
+	// 38-06: `mcp status` now additionally live-probes each non-blocked/non-disabled
+	// server (D-17); "npx" (a real, possibly-present binary that would hang waiting
+	// on stdin with no real MCP handshake) is replaced with a deterministic-fail
+	// fixture so the probe's dial attempt resolves instantly instead of blocking for
+	// the full AURA_MCP_PROBE_TIMEOUT — this test only asserts the lifecycle
+	// columns/JSON fields, not the probe outcome.
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"mail": {
-			Command: "npx",
+			Command: "aura-nonexistent-mcp-binary-xyz",
 			Source:  "recipe:mail",
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
@@ -241,9 +247,14 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 
 func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 	path := withTempMCPConfig(t)
-	// The calendar PIM sidecar is an HTTP recipe: the doctor reports the endpoint
-	// (writeRuntimeCheck) plus the admin-managed-accounts note (writeRecipeChecks),
-	// and never spawns a process or probes auth env.
+	// F-046 fix (38-06): the calendar PIM sidecar is an HTTP recipe whose configured
+	// URL (127.0.0.1:8093) has nothing listening on it in this test — writeRuntimeCheck
+	// now LIVE-DIALS it via mcp.ProbeServer instead of the old false-healthy
+	// "http endpoint configured" short-circuit, so a dead/typoed endpoint reports
+	// "runtime missing" here. This test previously asserted the pre-fix buggy string;
+	// it is deliberately rewritten to the fixed behavior (CLAUDE.md: never modify a
+	// test to pass unless it encodes the bug being fixed — this one does). The
+	// admin-managed-accounts note (writeRecipeChecks) is unaffected and still fires.
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"calendar": {
 			Type:   mcp.ServerTypeStreamableHTTP,
@@ -261,8 +272,11 @@ func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 		t.Fatalf("mcp doctor --all: %v", err)
 	}
 	got := out.String()
+	if strings.Contains(got, "http endpoint configured") {
+		t.Fatalf("doctor --all still uses the F-046 false-healthy short-circuit:\n%s", got)
+	}
 	for _, want := range []string{
-		"calendar: http endpoint configured",
+		"calendar: runtime missing http://127.0.0.1:8093/",
 		"calendar pim sidecar: accounts managed via admin API at http://127.0.0.1:8093/",
 	} {
 		if !strings.Contains(got, want) {
