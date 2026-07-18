@@ -9,6 +9,7 @@ package cron
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -142,7 +143,15 @@ func TestUpdateTask_RescheduleAndPayload(t *testing.T) {
 	if got.CronExpr != "" {
 		t.Errorf("cron expr must clear on switch to every, got %q", got.CronExpr)
 	}
-	if got.NotifyRoute != "whatsapp" || string(got.Payload) != `{"text":"edited"}` {
+	// payload is a jsonb column: Postgres reserializes it to canonical form (a space after
+	// the colon), so a byte-for-byte compare against the literal we wrote spuriously fails.
+	// Compare the JSON semantically by re-marshalling to compact form instead.
+	var gotPayload map[string]any
+	if err := json.Unmarshal(got.Payload, &gotPayload); err != nil {
+		t.Fatalf("payload is not valid JSON: %v (raw %s)", err, got.Payload)
+	}
+	compactPayload, _ := json.Marshal(gotPayload)
+	if got.NotifyRoute != "whatsapp" || string(compactPayload) != `{"text":"edited"}` {
 		t.Errorf("payload/notify not updated: notify=%q payload=%s", got.NotifyRoute, got.Payload)
 	}
 }
