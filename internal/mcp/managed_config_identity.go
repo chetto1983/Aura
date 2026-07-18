@@ -31,6 +31,11 @@ var (
 	// ErrUnknownServer is returned when a per-identity enable/trust targets a server
 	// name that does not exist in the shared catalog.
 	ErrUnknownServer = errors.New("mcp: server not found in shared catalog")
+	// ErrRemoteElevationForbidden is returned when a per-identity trust mutation
+	// targets a REMOTE (streamable_http) server: a per-identity overlay may not
+	// elevate a network-facing server to a runnable trust class — that requires
+	// the admin shared catalog (D-04, MCPH-02).
+	ErrRemoteElevationForbidden = errors.New("mcp: remote (streamable_http) trust elevation requires the admin shared catalog")
 )
 
 // IdentityServerPref is one identity's enable/trust override for a class-(a) server
