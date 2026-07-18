@@ -668,6 +668,24 @@ Plans:
 3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
 4. A dead HTTP MCP endpoint reports OK=false.
 
+**Plans:** 7 plans in 3 waves
+
+**Wave 1** *(parallel — no dependencies, disjoint files)*
+
+- [ ] 38-01-PLAN.md — Canonical transport classifier `Classify` + F-013/F-027 fix; collapse the `internal/mcp` core call sites (MCPH-01, MCPH-02) [tdd]
+- [ ] 38-02-PLAN.md — Bounded stdio frame cap (bufio.Scanner) + process-tree kill via a shared `internal/procgroup` (MCPH-05, MCPH-06)
+- [ ] 38-03-PLAN.md — Legacy-env production-gating: `gateMCPLegacyEnv` fail-closed at boot (MCPH-08)
+
+**Wave 2** *(depends on Wave 1)*
+
+- [ ] 38-04-PLAN.md — Classifier propagation (manager) + D-04 remote-trust elevation guard (MCPH-01, MCPH-02) [depends_on 38-01]
+- [ ] 38-05-PLAN.md — Bounded two-context mount timeout + concurrent aggregate-deadline shutdown (MCPH-01, MCPH-04, MCPH-06) [depends_on 38-01, 38-02]
+- [ ] 38-06-PLAN.md — Live HTTP MCP probe across `aura doctor` + `aura mcp status` (real F-046 fix) (MCPH-01, MCPH-09) [depends_on 38-01]
+
+**Wave 3** *(depends on Wave 2)*
+
+- [ ] 38-07-PLAN.md — Audited CLI MCP writes (`cli:<os-user>` actor, `mcp_audit`) + trust-endpoint 400 guard (MCPH-03, MCPH-07) [depends_on 38-05]
+
 #### Phase 39: Idempotency + Observability Pack
 
 **Goal:** Idempotent mutating tools + a production observability surface (migration 0026).
