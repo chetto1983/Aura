@@ -60,7 +60,7 @@ export function ShareLinkRow({
         <span className="flex flex-wrap items-center gap-1.5 text-[0.75rem] text-text-faint">
           <Badge
             variant={link.tier === 'public' ? 'warning' : 'secondary'}
-            className="text-[0.6875rem]"
+            className="text-[0.75rem]"
           >
             {t(`share.settings.tier.${link.tier}`)}
           </Badge>
