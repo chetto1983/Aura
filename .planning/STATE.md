@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
-current_phase: 42
-current_phase_name: Industrial Conversation Compaction
+current_phase: 38
+current_phase_name: mcp-governance-hardening
 status: executing
 stopped_at: Phase 38 context gathered
-last_updated: "2026-07-18T08:40:17.703Z"
+last_updated: "2026-07-18T08:47:33.024Z"
 last_activity: 2026-07-18
-last_activity_desc: Phase 37F complete, transitioned to Phase 42
+last_activity_desc: Phase 38 execution started
 progress:
   total_phases: 19
   completed_phases: 15
-  total_plans: 123
+  total_plans: 130
   completed_plans: 123
   percent: 79
 ---
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 37F — conversation-artifact-sharing-export-inserted
+**Current focus:** Phase 38 — mcp-governance-hardening
 
 ## Current Position
 
-Phase: 42 — Industrial Conversation Compaction
-Plan: Not started
+Phase: 38 (mcp-governance-hardening) — EXECUTING
+Plan: 1 of 7
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: Ready to execute
-Last activity: 2026-07-18 — Phase 37F complete, transitioned to Phase 42
+Status: Executing Phase 38
+Last activity: 2026-07-18 — Phase 38 execution started
 
 #### 37F-12 — Parent-mux mount: share.public capability + /s/ public-route predicate + route table (Wave-6, depends_on 37F-10, requirements: WEBSHARE-02). **Sequential on master, 2 atomic commits `db00a2d5` (Task 1, feat) / `39ee1485` (Task 2, feat) + this docs commit.** Mounts the eight WEBSHARE-02/03 share-lifecycle routes on the parent mux. **Task 1 (`db00a2d5`):** new `cmd/aura/serve_webui_share.go` (package main, 125 LOC) — `sharePublicCapability = "share.public"` (D-02, documented as `identity.create`'s sibling not `governance.write`'s, citing the bootstrap-`*`-wildcard vs provisioned-named-cap contrast verified at plan time); fail-closed `isPublicShareRoute(r)` (GET-only, `/s/`-prefixed, default false); `registerShareRoutes(mux, aguiHandler, auth)` mounting all eight routes. **Task 2 (`39ee1485`):** `serve_webui.go` gained exactly 5 lines (593→598/600, the objective's own predicted "2-LOC margin") — one `registerShareRoutes(...)` call + 2-line comment, one `isPublicShareRoute(r)` entry in the `PublicRoute` chain; `fallbackExcludedPrefixes()` deliberately left untouched (the plan's named non-action — `/s/`/`/shared/` must stay OUT so `/s/{token}` falls through to the SPA shell). Two new predicate test files, both untagged: `cmd/aura/share_public_route_test.go` (13-case table + `TestSharePublicCapabilityNameValid`, settling RESEARCH assumption A3 by execution) and `internal/agui/share_public_route_test.go` (the coverage-measured pair, driving the same cases through the real `agui.RequireAuth` with an equivalent `PublicRoute` closure — `isPublicShareRoute` itself is package main and `cmd/aura` contributes zero coverage at any tag, WR-01/T-37F-66). Both suites assert `/sabotage`, bare `/s`, `/shared/abc`, and the two D-10 `/api/shares/{id}/...` routes are refused. **DEVIATION (documented, not auto-fixed — logged to `deferred-items.md`):** the plan's `must_haves`/threat-model prose says public minting is "gated by `RequireCapability(share.public)` at the mount," but the plan's own Task 1/2 action text + acceptance criteria are unambiguous and machine-verified the OPPOSITE: `POST /api/shares` mounts bare, "not wrapped in `RequireCapability`," because a single mux entry serves both the internal and public tier via the JSON body and Go's `ServeMux` cannot discriminate on request content. Followed the literal, testable Task instructions over the looser aspirational frontmatter. Net effect: `sharePublicCapability` is a documented, grammar-valid D-02 constant, but no code path yet calls `HasCapability(identityID, "share.public")` — `internal/agui/share_api.go`'s `handleShareCreate` (37F-10, unmodified here, outside this plan's declared file scope) checks only the org kill-switch (`s.cfg.SharePublicEnabled`). Flagged for 37F-13, whose SC4 row 8 ("B holds `share.public`; A does NOT; A mints public ⇒ 403") will very likely fail against current code until a capability check lands in `share_api.go`. **Also logged:** `TestProductionContainerArtifactsMatchFatImageContract` fails against `caddy/Caddyfile` on an unrelated, untouched file — pre-existing, matches the orchestrator-flagged `fix/ci-red-37f-drift` drift; not this plan's concern. **VALIDATION:** `go build ./...` clean; `go vet ./cmd/aura/ ./internal/agui/` clean; `golangci-lint run ./cmd/aura/ ./internal/agui/` 0 issues; `gofmt -l` clean on all 4 touched files; `go test ./cmd/aura/ -run 'TestPublicShareRoute|TestSharePublicCapabilityName' -count=1` + `go test ./internal/agui/ -run 'TestPublicShareRoute' -count=1` both green (WSL `-race` + Windows non-race, both clean); `wc -l cmd/aura/serve_webui.go` = 598; `bash scripts/check-file-size.sh` exit 0; `grep -c registerShareRoutes/isPublicShareRoute serve_webui.go` both exactly 1; no `"/s/"`/`"/shared/"`/`"/api/shares` literal added to `serve_webui.go`. `internal/agui` full untagged suite green (no regressions from the mux edit). WEBSHARE-02 stays `[x]` (already marked by an earlier 37F plan; this plan is pure mount wiring, no new requirement surface). SUMMARY: `.planning/phases/37F-conversation-artifact-sharing-export-inserted/37F-12-SUMMARY.md`. Next: **37F-13** (SC4 cross-identity deny, Wave-7, depends_on 37F-11+37F-12 — now unblocked).
 

@@ -668,11 +668,11 @@ Plans:
 3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
 4. A dead HTTP MCP endpoint reports OK=false.
 
-**Plans:** 7 plans in 3 waves
+**Plans:** 1/7 plans executed
 
 **Wave 1** *(parallel — no dependencies, disjoint files)*
 
-- [ ] 38-01-PLAN.md — Canonical transport classifier `Classify` + F-013/F-027 fix; collapse the `internal/mcp` core call sites (MCPH-01, MCPH-02) [tdd]
+- [x] 38-01-PLAN.md — Canonical transport classifier `Classify` + F-013/F-027 fix; collapse the `internal/mcp` core call sites (MCPH-01, MCPH-02) [tdd]
 - [ ] 38-02-PLAN.md — Bounded stdio frame cap (bufio.Scanner) + process-tree kill via a shared `internal/procgroup` (MCPH-05, MCPH-06)
 - [ ] 38-03-PLAN.md — Legacy-env production-gating: `gateMCPLegacyEnv` fail-closed at boot (MCPH-08)
 
