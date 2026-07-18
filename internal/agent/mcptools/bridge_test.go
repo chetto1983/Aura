@@ -158,7 +158,7 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 		callText: "sent",
 	}
 	opens := 0
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		opens++
 		return refreshed, nil
 	}
@@ -221,7 +221,7 @@ func TestReconnectServerSecondTransportFailureIsInlineToolError(t *testing.T) {
 		defs:    []mcp.ToolDef{{Name: "send", Description: "Send."}},
 		callErr: fmt.Errorf("second fail: %w", mcp.ErrTransport),
 	}
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		return reopened, nil
 	}
 

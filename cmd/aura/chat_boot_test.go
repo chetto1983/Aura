@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -85,12 +86,36 @@ func TestCompactionRolloutDisabledBootstrapSeed(t *testing.T) {
 // connects with MinConns=0) plus an injectable pool opener, keeping the whole suite
 // a fast, PG-free unit tier (verify: go test -race ./cmd/aura/ -run Boot).
 
+// orderRecorder is a mutex-guarded append-only log: releaseBootResources'
+// closeMCPServers now fans its closers out CONCURRENTLY (D-11, 38-05), so any
+// recorder shared across closer functions needs its own synchronization — a bare
+// `*[]string` mutated by two goroutines racing on append would be a data race
+// (and occasionally a corrupted/short slice), not merely a flaky assertion.
+type orderRecorder struct {
+	mu    sync.Mutex
+	order []string
+}
+
+func (r *orderRecorder) add(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.order = append(r.order, name)
+}
+
+func (r *orderRecorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.order))
+	copy(out, r.order)
+	return out
+}
+
 // poolCloseSpy is a minimal interface{ Close() } stand-in so releaseBootResources'
 // close-on-error contract (drain closers, then close the pool) is asserted without a
-// live pool. It records its close into the shared order slice.
-type poolCloseSpy struct{ order *[]string }
+// live pool. It records its close into the shared orderRecorder.
+type poolCloseSpy struct{ order *orderRecorder }
 
-func (p poolCloseSpy) Close() { *p.order = append(*p.order, "pool") }
+func (p poolCloseSpy) Close() { p.order.add("pool") }
 
 // validBootConfig is the minimal dev-profile config that PASSES cfg.Validate: a
 // non-empty DB DSN + Neo4j password (the two all-tier required secrets) and a
@@ -133,18 +158,19 @@ func assertPoolClosed(t *testing.T, pool *pgxpool.Pool) {
 // (the reasoning learner writes through a closer-held graph client), and it is
 // nil-safe. This is the drain assertion the full-boot paths reuse via the defer.
 func TestBootReleaseResourcesDrainsClosersAndClosesPool(t *testing.T) {
-	var order []string
+	rec := &orderRecorder{}
 	closers := []func() error{
-		func() error { order = append(order, "closer-a"); return nil },
-		func() error { order = append(order, "closer-b"); return nil },
+		func() error { rec.add("closer-a"); return nil },
+		func() error { rec.add("closer-b"); return nil },
 	}
-	releaseBootResources(poolCloseSpy{order: &order}, closers)
+	releaseBootResources(poolCloseSpy{order: rec}, closers)
 
+	order := rec.snapshot()
 	if len(order) != 3 {
 		t.Fatalf("release fired %d actions, want 3 (2 closers + pool): %v", len(order), order)
 	}
 	if order[len(order)-1] != "pool" {
-		t.Fatalf("pool must close AFTER the closers drain, got %v", order)
+		t.Fatalf("pool must close AFTER the closers drain (concurrently, then joined), got %v", order)
 	}
 	sawA, sawB := false, false
 	for _, o := range order {

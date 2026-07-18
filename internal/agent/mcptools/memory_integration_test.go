@@ -137,7 +137,7 @@ func TestMemoryLiveNoPrincipalBridgeScopesToOperator(t *testing.T) {
 	// Mount through the real bridge and read facts with NO identity on the context —
 	// the CLI / no-principal path that the fix protects.
 	reg := tools.NewRegistry()
-	closer, _, err := MountManagedServer(ctx, reg, "memory", server)
+	closer, _, err := MountManagedServer(ctx, ctx, reg, "memory", server)
 	if err != nil {
 		t.Fatalf("MountManagedServer: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestMemoryLiveMount(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	closer, mounted, err := MountManagedServer(ctx, reg, "memory", server)
+	closer, mounted, err := MountManagedServer(ctx, ctx, reg, "memory", server)
 	if err != nil {
 		t.Fatalf("MountManagedServer: %v", err)
 	}

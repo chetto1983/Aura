@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
@@ -154,6 +155,15 @@ func runRegistryTestMCPServer(in io.Reader, out io.Writer) {
 			}})
 		case "notifications/initialized":
 		case "tools/list":
+			if os.Getenv("AURA_MCP_HELPER_MODE") == "hang" {
+				// Never respond: the mount-time ListTools call must be bounded by the
+				// caller's handshake ctx (D-06/Pitfall #2 regression target), not by this
+				// helper ever answering. initialize above already responded normally, so
+				// this exercises the SAME "fast handshake, hung tools/list" shape as
+				// internal/mcp's client_open_test.go "hang" TestHelperProcess mode.
+				time.Sleep(time.Hour)
+				continue
+			}
 			toolDefs := []map[string]any{{
 				"name":        "calculate",
 				"description": "Evaluate a mathematical expression.",

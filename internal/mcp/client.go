@@ -116,8 +116,25 @@ type Client struct {
 
 // Open spawns the server described by cfg and completes the initialize handshake.
 // name is a short label used in error messages (the mcpServers key). On any
-// failure the subprocess is reaped before returning.
+// failure the subprocess is reaped before returning. ctx bounds BOTH the
+// subprocess's whole lifetime and the initialize handshake — callers that need to
+// bound ONLY the handshake (so a slow-but-eventually-healthy server is not killed
+// once an unrelated mount deadline elapses, Pitfall #2) must use
+// OpenWithHandshakeContext instead.
 func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
+	return OpenWithHandshakeContext(ctx, ctx, name, cfg)
+}
+
+// OpenWithHandshakeContext spawns the server described by cfg like Open, but splits
+// the single lifetime context into two: processCtx bounds exec.CommandContext (the
+// subprocess's ENTIRE lifetime — callers must pass a long-lived, non-deferred-cancel
+// context here, e.g. the daemon's boot context, never a short-lived per-attempt one)
+// while handshakeCtx bounds ONLY the initialize round-trip. A handshake
+// failure/timeout closes (reaps) the just-spawned subprocess and returns the error
+// without touching processCtx, so no other server sharing it is affected (the
+// load-bearing Pitfall #2 fix: a single bounded context doubling as both would
+// silently kill every healthy server once its handshake deadline later elapsed).
+func OpenWithHandshakeContext(processCtx, handshakeCtx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	command := strings.TrimSpace(cfg.Command)
 	if command == "" {
 		return nil, fmt.Errorf("mcp %q: empty command", name)
@@ -133,7 +150,7 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	}
 	// G204: Command/Args/Env come from the operator-controlled mcpServers config
 	// (.env / config file), not from untrusted model output.
-	cmd := exec.CommandContext(ctx, command, cfg.Args...) //nolint:gosec
+	cmd := exec.CommandContext(processCtx, command, cfg.Args...) //nolint:gosec
 	cmd.Env = processEnvForMCP(cfg.Env)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -161,7 +178,7 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 		stdoutCloser: stdoutPipe,
 		stderr:       stderr,
 	}
-	if err := c.initializeContext(ctx); err != nil {
+	if err := c.initializeContext(handshakeCtx); err != nil {
 		_ = c.Close()
 		return nil, err
 	}

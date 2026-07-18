@@ -82,7 +82,7 @@ func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 		URL:  httpSrv.URL,
 	}
 
-	closer, names, err := MountManagedServer(context.Background(), reg, "docs", server)
+	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err != nil {
 		t.Fatalf("MountManagedServer: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestMountManagedServer_OpenFailure(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{Command: "anything"}
 
-	closer, names, err := MountManagedServer(context.Background(), reg, "blocked", server)
+	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "blocked", server)
 	if err == nil {
 		t.Fatal("a blocked-trust server must fail to open")
 	}
@@ -144,7 +144,7 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 		Type: mcp.ServerTypeStreamableHTTP,
 		URL:  httpSrv.URL,
 	}
-	closer, names, err := MountManagedServer(context.Background(), reg, "docs", server)
+	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("want a wrapped registration collision error, got %v", err)
 	}
@@ -166,7 +166,7 @@ func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{URL: httpSrv.URL} // bare URL, no Type → inferred HTTP
 
-	closer, names, err := MountManagedServer(context.Background(), reg, "docs", server)
+	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err != nil {
 		t.Fatalf("MountManagedServer (bare url): %v", err)
 	}
@@ -193,7 +193,7 @@ func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 		Command: "aura-nonexistent-mcp-binary-xyz",
 		Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
 	}
-	closer, names, err := MountManagedServer(context.Background(), reg, "stdio", server)
+	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "stdio", server)
 	if err == nil {
 		t.Fatal("want spawn error from mcp.Open on a missing binary")
 	}
