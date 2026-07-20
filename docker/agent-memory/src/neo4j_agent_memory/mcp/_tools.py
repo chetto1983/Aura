@@ -288,15 +288,18 @@ def _register_core_tools(mcp: FastMCP) -> None:
     ) -> str:
         """Delete (forget) a stored memory the user owns, by id.
 
-        Use this to remove an obsolete or wrong preference or fact — e.g. after the
-        operator corrects a preference, forget the old one. Ownership is enforced:
-        a node the caller does not own (or that does not exist) is REFUSED, not
-        silently ignored, and reported back so the caller knows nothing was removed.
+        Use this to remove an obsolete or wrong memory — e.g. after the operator
+        corrects a preference, forget the old one. Ownership is enforced: a node the
+        caller does not own (or that does not exist) is REFUSED, not silently ignored,
+        and reported back so the caller knows nothing was removed. Forgetting an
+        'entity' is deliberately NON-cascading: it unlinks your ownership and removes
+        the entity node only if it is fully orphaned afterwards — a shared entity
+        (referenced by other messages/preferences) is kept, just unlinked from you.
 
         Args:
-            node_type: What to forget — 'preference' or 'fact'.
-            node_id: The id of the node to delete (from add_preference/add_fact or a
-                get_* / search result).
+            node_type: What to forget — 'preference', 'fact', or 'entity'.
+            node_id: The id of the node to delete (from add_preference/add_fact/
+                add_entity or a get_* / search result).
 
         Returns a JSON object: ``{"deleted": <id>}`` on success, or
         ``{"deleted": null, "reason": ...}`` when nothing was removed.
@@ -311,10 +314,14 @@ def _register_core_tools(mcp: FastMCP) -> None:
             result = await integration.delete_fact(
                 node_id, user_identifier=user_identifier
             )
+        elif kind == "entity":
+            result = await integration.delete_entity(
+                node_id, user_identifier=user_identifier
+            )
         else:
             result = {
                 "deleted": None,
-                "reason": f"unsupported node_type {node_type!r}; use 'preference' or 'fact'",
+                "reason": f"unsupported node_type {node_type!r}; use 'preference', 'fact', or 'entity'",
             }
         return json.dumps(result, default=str)
 
@@ -629,58 +636,6 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_create_relationship: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
-    async def graph_query(
-        ctx: Context,
-        query: str,
-        parameters: dict[str, Any] | None = None,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Execute a read-only Cypher query against the knowledge graph.
-
-        MATCH/RETURN queries and read-only CALL procedures (e.g., CALL db.*,
-        CALL apoc.*) are allowed. Write operations (CREATE, MERGE, DELETE,
-        SET, REMOVE) are blocked for safety.
-
-        Args:
-            query: Cypher query string (read-only).
-            parameters: Query parameters as key-value pairs.
-        """
-        if user_identifier is not None:
-            return json.dumps(
-                {
-                    "error": "graph_query is disabled for user-scoped sessions; "
-                    "use structured memory tools instead."
-                }
-            )
-
-        if not _is_read_only_query(query):
-            return json.dumps(
-                {
-                    "error": "Only read-only queries are allowed. "
-                    "Write operations (CREATE, MERGE, DELETE, SET, REMOVE) are not permitted."
-                }
-            )
-
-        client = get_client(ctx)
-
-        try:
-            # v0.4: use the unified client.query.cypher accessor — works on
-            # both bolt and NAMS backends (NAMS routes via POST /v1/query,
-            # bolt via Neo4jClient.execute_read).
-            records = await client.query.cypher(query, parameters or {})
-            return json.dumps(
-                {
-                    "success": True,
-                    "row_count": len(records),
-                    "rows": records,
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in graph_query: {e}")
-            return json.dumps({"error": str(e)})
 
 
 # ── Platinum Profile (4 additional NAMS-only tools) ──────────────────

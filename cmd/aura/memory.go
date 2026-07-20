@@ -26,8 +26,7 @@ const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions
 	"add-entity <name> [type] [description]|add-fact <subject> <predicate> <object>|" +
 	"add-preference <category> <preference>|store-message <session-id> <role> <content>|" +
 	"get-entity <name>|relationship <from> <type> <to>|" +
-	"forget <preference|fact> <node-id>|" +
-	"query <cypher>}"
+	"forget <preference|fact|entity> <node-id>}"
 
 func runMemory(args []string) {
 	if err := runMemoryCommand(context.Background(), args, os.Stdout); err != nil {
@@ -50,10 +49,11 @@ func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
 	return callMemoryTool(ctx, tool, toolArgs, out)
 }
 
-// memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` (or read-only
-// `graph_query`) wire tool name plus the call arguments built from the CLI positional
-// args. There is NO standalone `memory_get_facts` on the live surface (Open Q4); fact
-// reads go through `memory_search` or the read-only `query` (graph_query) verb.
+// memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` wire tool name
+// plus the call arguments built from the CLI positional args. Fact reads go through
+// `memory_search` / `memory_get_facts`; arbitrary Cypher is NOT exposed here — the
+// unscoped `graph_query` tool was removed (data-exfiltration surface), and the operator
+// runs raw Cypher through `aura neo4j cypher read/write` instead.
 func memoryVerbToTool(verb string, args []string) (string, map[string]any, error) {
 	switch verb {
 	case "search":
@@ -94,12 +94,6 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 		return memoryRelationshipArgs(args)
 	case "forget":
 		return memoryForgetArgs(args)
-	case "query":
-		cypher, err := arg(args, 0, "query", "<cypher>")
-		if err != nil {
-			return "", nil, err
-		}
-		return "graph_query", map[string]any{"query": cypher}, nil
 	default:
 		return "", nil, fmt.Errorf("unknown memory verb %q\n%s", verb, memoryUsage)
 	}
@@ -168,7 +162,7 @@ func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
 // the caller does not own is refused, not silently ignored).
 func memoryForgetArgs(args []string) (string, map[string]any, error) {
 	if len(args) < 2 {
-		return "", nil, fmt.Errorf("memory forget requires <preference|fact> <node-id>")
+		return "", nil, fmt.Errorf("memory forget requires <preference|fact|entity> <node-id>")
 	}
 	return "memory_forget", map[string]any{
 		"node_type": args[0],

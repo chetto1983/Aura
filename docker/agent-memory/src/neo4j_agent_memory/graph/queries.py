@@ -1130,6 +1130,23 @@ DETACH DELETE f
 RETURN deleted_id
 """
 
+# Entity forget is deliberately NON-cascading. Ownership is the direct HAS_ENTITY edge
+# only (a mere MENTION must not authorize deletion). We UNLINK the caller's ownership
+# edge, then delete the entity node ONLY when it is fully orphaned afterwards (no
+# remaining relationships of any kind) — never DETACH DELETE, which would rip an entity
+# still referenced by other users' messages/preferences out from under them. So a
+# shared entity survives (just unlinked from this user); a truly private one is removed.
+# `removed_node` reports which happened.
+DELETE_ENTITY_SCOPED = """
+MATCH (u:User {identifier: $user_identifier})-[owns:HAS_ENTITY]->(e:Entity {id: $entity_id})
+DELETE owns
+WITH e, e.id AS deleted_id
+OPTIONAL MATCH (e)-[rel]-()
+WITH e, deleted_id, count(rel) AS remaining
+FOREACH (_ IN CASE WHEN remaining = 0 THEN [1] ELSE [] END | DELETE e)
+RETURN deleted_id, (remaining = 0) AS removed_node
+"""
+
 # =============================================================================
 # ENTITY DEDUPLICATION QUERIES
 # =============================================================================

@@ -151,7 +151,7 @@ func TestMemoryVerbMapping(t *testing.T) {
 		{"relationship", []string{"relationship", "Mario", "KNOWS", "Luigi"}, "memory_create_relationship", "from_entity", "Mario"},
 		{"forget-preference", []string{"forget", "preference", "pref-123"}, "memory_forget", "node_id", "pref-123"},
 		{"forget-fact", []string{"forget", "fact", "fact-456"}, "memory_forget", "node_type", "fact"},
-		{"query", []string{"query", "MATCH (n) RETURN n LIMIT 1"}, "graph_query", "query", "MATCH (n) RETURN n LIMIT 1"},
+		{"forget-entity", []string{"forget", "entity", "ent-789"}, "memory_forget", "node_type", "entity"},
 	}
 
 	for _, tc := range cases {

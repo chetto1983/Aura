@@ -146,8 +146,7 @@ func memoryToolAcceptsUserIdentifier(name string) bool {
 		"memory_set_entity_feedback",
 		"memory_get_entity_history",
 		"memory_get_entity_provenance",
-		"memory_get_reflections",
-		"graph_query":
+		"memory_get_reflections":
 		return true
 	default:
 		return false

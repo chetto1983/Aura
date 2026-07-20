@@ -2232,6 +2232,28 @@ class LongTermMemory(BaseMemory[Entity]):
         )
         return rows[0]["deleted_id"] if rows else None
 
+    async def delete_entity(
+        self,
+        entity_id: UUID | str,
+        *,
+        user_identifier: str,
+    ) -> "tuple[str, bool] | None":
+        """Forget an entity the user directly owns (the ``HAS_ENTITY`` edge; a mere
+        mention does not authorize deletion — see :meth:`delete_preference`). This is
+        NON-cascading: it unlinks the caller's ownership and removes the entity node
+        only when it is fully orphaned afterwards (never DETACH DELETE). Returns
+        ``(entity_id, removed_node)`` — ``removed_node`` is True when the node itself
+        was deleted, False when it was only unlinked (still referenced elsewhere) — or
+        ``None`` when the entity is absent or not owned by the caller."""
+        self._enforce_multi_tenant(user_identifier)
+        rows = await self._client.execute_write(
+            queries.DELETE_ENTITY_SCOPED,
+            {"entity_id": str(entity_id), "user_identifier": user_identifier},
+        )
+        if not rows:
+            return None
+        return rows[0]["deleted_id"], bool(rows[0]["removed_node"])
+
     async def get_preferences_by_category(
         self,
         category: str,
