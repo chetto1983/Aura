@@ -13,6 +13,11 @@ import (
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AppendCompactionRolloutDecision(ctx context.Context, arg AppendCompactionRolloutDecisionParams) (AuraCompactionRolloutDecisions, error)
+	// Digest-addressed and idempotent: a byte-identical observation (same scope_id +
+	// evidence_digest) re-appended by a repeated evaluator decision is a no-op instead of
+	// a fatal 23505. DO NOTHING (not DO UPDATE) is mandatory — the ledger's BEFORE-UPDATE
+	// immutability trigger forbids UPDATE — so the wrapper re-fetches the existing row via
+	// GetCompactionRolloutEvidenceByDigest on the resulting no-rows return (Wave 0.1).
 	AppendCompactionRolloutEvidence(ctx context.Context, arg AppendCompactionRolloutEvidenceParams) (AuraCompactionRolloutEvidence, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
@@ -73,6 +78,7 @@ type Querier interface {
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetCompactionCheckpoint(ctx context.Context, id pgtype.UUID) (AuraCompactionCheckpoints, error)
 	GetCompactionClaim(ctx context.Context, operationID pgtype.UUID) (AuraCompactionClaims, error)
+	GetCompactionRolloutEvidenceByDigest(ctx context.Context, arg GetCompactionRolloutEvidenceByDigestParams) (AuraCompactionRolloutEvidence, error)
 	GetCompactionRolloutState(ctx context.Context, scopeID string) (AuraCompactionRolloutStates, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with

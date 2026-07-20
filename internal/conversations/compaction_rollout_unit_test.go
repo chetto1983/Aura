@@ -3,6 +3,7 @@ package conversations
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,6 +57,30 @@ func TestRollbackReasonBranches(t *testing.T) {
 			tc.mutate(&d)
 			if got := rollbackReason(s, d); got != tc.want {
 				t.Fatalf("rollbackReason() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestWindowsUnpopulated locks the Wave 0.1 no-observation guard: only an all-four-empty
+// window set (the seed / post-rollback '{}' state) counts as "no observation"; any single
+// populated window means real telemetry landed and the scope must still be evaluated.
+func TestWindowsUnpopulated(t *testing.T) {
+	empty, populated := []byte(`{}`), []byte(`{"rate":0}`)
+	cases := []struct {
+		name string
+		s    RolloutState
+		want bool
+	}{
+		{"all four empty (seed / post-rollback)", RolloutState{StratumSnapshots: empty, FailureWindow: empty, LatencyWindow: empty, RestoreWindow: empty}, true},
+		{"all four nil", RolloutState{}, true},
+		{"stratum populated", RolloutState{StratumSnapshots: populated, FailureWindow: empty, LatencyWindow: empty, RestoreWindow: empty}, false},
+		{"restore populated", RolloutState{StratumSnapshots: empty, FailureWindow: empty, LatencyWindow: empty, RestoreWindow: populated}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := windowsUnpopulated(tc.s); got != tc.want {
+				t.Fatalf("windowsUnpopulated = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -141,16 +166,43 @@ func TestEvaluateOncePropagatesLoadError(t *testing.T) {
 	}
 }
 
-// TestRunPropagatesEvaluationErrorAndDefaultsInterval proves Run surfaces a corrupt
-// evaluation window immediately (no promotion decision reached) and exercises the
-// interval<=0 default-to-one-minute branch without actually waiting a minute (the
-// evaluation error returns before the ticker is ever created).
-func TestRunPropagatesEvaluationErrorAndDefaultsInterval(t *testing.T) {
+// countingRolloutStore counts Load calls so a test can prove the evaluator loop kept
+// ticking past a per-tick error instead of returning on the first one.
+type countingRolloutStore struct {
+	fakeRolloutStore
+	loadCount atomic.Int64
+}
+
+func (c *countingRolloutStore) Load(ctx context.Context, scope string) (RolloutState, error) {
+	c.loadCount.Add(1)
+	return c.fakeRolloutStore.Load(ctx, scope)
+}
+
+// TestRunSelfHealsOnEvaluationError proves a transient evaluation error (here a corrupt
+// window that fails EvaluateOnce every tick) no longer terminates the evaluator loop
+// (Wave 0.2). Previously Run returned the error, the detached goroutine logged
+// "evaluator stopped" once, and the whole rollout control plane froze for the process
+// lifetime. Now Run logs and retries on the next tick and returns nil only on ctx
+// cancellation — the loop must survive multiple errored ticks.
+func TestRunSelfHealsOnEvaluationError(t *testing.T) {
 	state := rolloutControllerState(time.Now().Add(-time.Hour), 10)
-	state.FailureWindow = []byte(`not-json`)
-	store := &fakeRolloutStore{state: state}
+	state.FailureWindow = []byte(`not-json`) // corrupt → EvaluateOnce errors every tick
+	store := &countingRolloutStore{fakeRolloutStore: fakeRolloutStore{state: state}}
 	c := NewCompactionRolloutController(store, "scope", time.Now)
-	if err := c.Run(context.Background(), 0); err == nil {
-		t.Fatal("expected corrupt-window evaluation error")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, time.Millisecond) }()
+	time.Sleep(30 * time.Millisecond) // let several ticks error without terminating
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() after repeated eval errors = %v, want nil (self-heal, return only on cancel)", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancellation — it must not block or die on the error path")
+	}
+	if got := store.loadCount.Load(); got < 2 {
+		t.Fatalf("Load called %d time(s), want >=2 (loop must retry past the first errored tick)", got)
 	}
 }

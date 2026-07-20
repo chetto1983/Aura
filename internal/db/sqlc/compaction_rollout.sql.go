@@ -62,6 +62,7 @@ INSERT INTO aura.compaction_rollout_evidence (
     scope_id, evidence_digest, evaluator_version, scorer_version,
     config_version, corpus_version, snapshot
 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (scope_id, evidence_digest) DO NOTHING
 RETURNING id, scope_id, evidence_digest, evaluator_version, scorer_version, config_version, corpus_version, snapshot, created_at
 `
 
@@ -75,6 +76,11 @@ type AppendCompactionRolloutEvidenceParams struct {
 	Snapshot         []byte `json:"snapshot"`
 }
 
+// Digest-addressed and idempotent: a byte-identical observation (same scope_id +
+// evidence_digest) re-appended by a repeated evaluator decision is a no-op instead of
+// a fatal 23505. DO NOTHING (not DO UPDATE) is mandatory — the ledger's BEFORE-UPDATE
+// immutability trigger forbids UPDATE — so the wrapper re-fetches the existing row via
+// GetCompactionRolloutEvidenceByDigest on the resulting no-rows return (Wave 0.1).
 func (q *Queries) AppendCompactionRolloutEvidence(ctx context.Context, arg AppendCompactionRolloutEvidenceParams) (AuraCompactionRolloutEvidence, error) {
 	row := q.db.QueryRow(ctx, appendCompactionRolloutEvidence,
 		arg.ScopeID,
@@ -292,6 +298,33 @@ func (q *Queries) CreateCompactionRolloutState(ctx context.Context, arg CreateCo
 		&i.LastKnownGoodPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getCompactionRolloutEvidenceByDigest = `-- name: GetCompactionRolloutEvidenceByDigest :one
+SELECT id, scope_id, evidence_digest, evaluator_version, scorer_version, config_version, corpus_version, snapshot, created_at FROM aura.compaction_rollout_evidence
+WHERE scope_id = $1 AND evidence_digest = $2
+`
+
+type GetCompactionRolloutEvidenceByDigestParams struct {
+	ScopeID        string `json:"scope_id"`
+	EvidenceDigest string `json:"evidence_digest"`
+}
+
+func (q *Queries) GetCompactionRolloutEvidenceByDigest(ctx context.Context, arg GetCompactionRolloutEvidenceByDigestParams) (AuraCompactionRolloutEvidence, error) {
+	row := q.db.QueryRow(ctx, getCompactionRolloutEvidenceByDigest, arg.ScopeID, arg.EvidenceDigest)
+	var i AuraCompactionRolloutEvidence
+	err := row.Scan(
+		&i.ID,
+		&i.ScopeID,
+		&i.EvidenceDigest,
+		&i.EvaluatorVersion,
+		&i.ScorerVersion,
+		&i.ConfigVersion,
+		&i.CorpusVersion,
+		&i.Snapshot,
+		&i.CreatedAt,
 	)
 	return i, err
 }

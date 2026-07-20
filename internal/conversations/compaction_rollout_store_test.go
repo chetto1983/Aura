@@ -173,6 +173,36 @@ func TestEnsureDisabledDefaultSeedsFreshScope(t *testing.T) {
 	}
 }
 
+// TestEvaluatorSurvivesDisabledDefaultNoObservation is the BUG-6a / Wave 0.1 regression.
+// A freshly-seeded disabled-default scope carries '{}' for all four evaluation windows.
+// Before the fix, EvaluateOnce read L0Retention=0 from the empty stratum, tripped a
+// phantom safety_gate_failed rollback, and then crashed on the next tick with a
+// duplicate-key 23505 (identical Decision digest) — killing the evaluator goroutine for
+// the process lifetime. The no-observation guard must make repeated ticks a no-op: no
+// error, no rollback decision recorded, version unchanged.
+func TestEvaluatorSurvivesDisabledDefaultNoObservation(t *testing.T) {
+	pool, _, _ := compactionDB(t)
+	scope := "noobs-" + uuid.NewString()
+	store := NewCompactionRolloutStore(pool)
+	if _, err := store.EnsureDisabledDefault(t.Context(), scope); err != nil {
+		t.Fatalf("seed disabled default: %v", err)
+	}
+	controller := NewCompactionRolloutController(store, scope, time.Now)
+
+	for tick := 1; tick <= 3; tick++ {
+		s, err := controller.EvaluateOnce(t.Context())
+		if err != nil {
+			t.Fatalf("tick %d: EvaluateOnce errored (the evaluator would have died here): %v", tick, err)
+		}
+		if s.Stage != "disabled" || s.Version != 1 {
+			t.Fatalf("tick %d: an unpopulated scope was mutated: stage=%q version=%d, want disabled/1", tick, s.Stage, s.Version)
+		}
+	}
+	if count, err := store.DecisionCount(t.Context(), scope); err != nil || count != 0 {
+		t.Fatalf("no-observation ticks recorded a decision: count=%d err=%v, want 0 (no phantom rollback)", count, err)
+	}
+}
+
 func jsonEqual(left, right []byte) bool {
 	var a, b any
 	return json.Unmarshal(left, &a) == nil && json.Unmarshal(right, &b) == nil && fmt.Sprint(a) == fmt.Sprint(b)

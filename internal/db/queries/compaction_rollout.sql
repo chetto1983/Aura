@@ -10,11 +10,21 @@ RETURNING *;
 SELECT * FROM aura.compaction_rollout_states WHERE scope_id = $1;
 
 -- name: AppendCompactionRolloutEvidence :one
+-- Digest-addressed and idempotent: a byte-identical observation (same scope_id +
+-- evidence_digest) re-appended by a repeated evaluator decision is a no-op instead of
+-- a fatal 23505. DO NOTHING (not DO UPDATE) is mandatory — the ledger's BEFORE-UPDATE
+-- immutability trigger forbids UPDATE — so the wrapper re-fetches the existing row via
+-- GetCompactionRolloutEvidenceByDigest on the resulting no-rows return (Wave 0.1).
 INSERT INTO aura.compaction_rollout_evidence (
     scope_id, evidence_digest, evaluator_version, scorer_version,
     config_version, corpus_version, snapshot
 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (scope_id, evidence_digest) DO NOTHING
 RETURNING *;
+
+-- name: GetCompactionRolloutEvidenceByDigest :one
+SELECT * FROM aura.compaction_rollout_evidence
+WHERE scope_id = sqlc.arg(scope_id) AND evidence_digest = sqlc.arg(evidence_digest);
 
 -- name: AppendCompactionRolloutDecision :one
 INSERT INTO aura.compaction_rollout_decisions (

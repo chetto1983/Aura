@@ -1,9 +1,11 @@
 package conversations
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -117,6 +119,14 @@ func (c *CompactionRolloutController) EvaluateOnce(ctx context.Context) (Rollout
 	if err != nil {
 		return RolloutState{}, err
 	}
+	if windowsUnpopulated(s) {
+		// No telemetry has written the rolling windows yet (a freshly-seeded or
+		// just-rolled-back scope carries '{}' for all four). Evaluating them reads every
+		// gate as 0, tripping a phantom safety_gate_failed rollback whose byte-identical
+		// Decision digest then crashes the loop on a duplicate-key append every tick
+		// (Wave 0.1). There is nothing to evaluate until a real observation lands.
+		return s, nil
+	}
 	var failure struct {
 		Rate float64 `json:"rate"`
 	}
@@ -155,7 +165,16 @@ func (c *CompactionRolloutController) Run(ctx context.Context, interval time.Dur
 	}
 	for {
 		if _, err := c.EvaluateOnce(ctx); err != nil {
-			return err
+			if ctx.Err() != nil {
+				return nil
+			}
+			// A transient tick error (a duplicate-digest append, a stale-version CAS, a
+			// corrupt window) must NOT kill the evaluator: it previously returned here and
+			// the detached goroutine logged "evaluator stopped" once, freezing the whole
+			// rollout control plane for the process lifetime (Wave 0.2). Log and retry on
+			// the next tick; only ctx cancellation ends the loop.
+			slog.WarnContext(ctx, "compaction rollout evaluator tick failed; retrying next interval",
+				"scope", c.scope, "err", err)
 		}
 		timer := time.NewTimer(interval)
 		select {
@@ -165,4 +184,19 @@ func (c *CompactionRolloutController) Run(ctx context.Context, interval time.Dur
 		case <-timer.C:
 		}
 	}
+}
+
+// windowsUnpopulated reports that no telemetry has written the rolling evaluation
+// windows yet: a freshly-seeded scope and every just-rolled-back scope carry '{}' (or
+// empty) for all four. See EvaluateOnce for why evaluating that state is the Wave 0.1
+// crash trigger; the guard requires ALL four empty so a partial observation still
+// evaluates.
+func windowsUnpopulated(s RolloutState) bool {
+	return isEmptyJSONObject(s.StratumSnapshots) && isEmptyJSONObject(s.FailureWindow) &&
+		isEmptyJSONObject(s.LatencyWindow) && isEmptyJSONObject(s.RestoreWindow)
+}
+
+func isEmptyJSONObject(raw []byte) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || string(trimmed) == "{}"
 }
