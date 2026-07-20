@@ -8,7 +8,7 @@
 // A note for the reviewer, since it looks like it might conflict but does not: CLAUDE.md
 // mandates English-only for PROMPT/LLM-FACING overlays (the model never sees Italian). These
 // are USER-FACING UI strings, which the i18n rule requires in both en and it like every other
-// domain module (resources.compaction.ts, resources.governance.ts, …). The two rules govern
+// domain module (resources.governance.ts, resources.display.ts, …). The two rules govern
 // different surfaces and do not conflict.
 //
 // The public share page NEVER receives the owner's language: it falls back to the browser's

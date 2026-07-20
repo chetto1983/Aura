@@ -6,7 +6,6 @@ import {
   composerSkillPickerIt,
 } from './resources.composer';
 import { displayEn, displayIt } from './resources.display';
-import { compactionEn, compactionIt } from './resources.compaction';
 import { footerEn, footerIt } from './resources.footer';
 import { documentsEn, documentsIt } from './resources.documents';
 import { chatEmptyEn, chatEmptyIt } from './resources.empty';
@@ -157,7 +156,6 @@ export const resources = {
         },
       },
       ...displayEn,
-      ...compactionEn,
       ...shareEn,
       ...documentsEn,
       ...governanceEn,
@@ -433,7 +431,6 @@ export const resources = {
         },
       },
       ...displayIt,
-      ...compactionIt,
       ...shareIt,
       ...documentsIt,
       ...governanceIt,
