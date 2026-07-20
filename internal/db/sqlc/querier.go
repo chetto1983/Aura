@@ -12,23 +12,12 @@ import (
 
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
-	AppendCompactionRolloutDecision(ctx context.Context, arg AppendCompactionRolloutDecisionParams) (AuraCompactionRolloutDecisions, error)
-	// Digest-addressed and immutable: the UNIQUE (scope_id, evidence_digest) constraint
-	// deliberately rejects a re-appended identical observation with a 23505, so a caller
-	// that would record the same evidence twice fails its whole transaction atomically
-	// (TestRolloutStoreAtomicRollbackRestoresLastKnownGood). The evaluator never trips this
-	// on the disabled-default storm because EvaluateOnce skips Apply on unpopulated windows
-	// (Wave 0.1 no-observation guard); a stray duplicate is tolerated by Run's self-heal
-	// (Wave 0.2), NOT by weakening this dedup guard to ON CONFLICT DO NOTHING.
-	AppendCompactionRolloutEvidence(ctx context.Context, arg AppendCompactionRolloutEvidenceParams) (AuraCompactionRolloutEvidence, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
 	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
-	CASRollbackCompactionRollout(ctx context.Context, arg CASRollbackCompactionRolloutParams) (AuraCompactionRolloutStates, error)
-	CASTransitionCompactionRollout(ctx context.Context, arg CASTransitionCompactionRolloutParams) (AuraCompactionRolloutStates, error)
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -47,11 +36,9 @@ type Querier interface {
 	// empty → sql.ErrNoRows / pgx.ErrNoRows → ErrTokenConsumed). The expires_at guard
 	// rejects a stale token in the same statement.
 	ConsumeTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
-	CountCompactionRolloutDecisions(ctx context.Context, scopeID string) (int64, error)
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
-	CreateCompactionRolloutState(ctx context.Context, arg CreateCompactionRolloutStateParams) (AuraCompactionRolloutStates, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
 	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
@@ -74,13 +61,9 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
-	GetActiveCompactionPointer(ctx context.Context, arg GetActiveCompactionPointerParams) (AuraCompactionActivePointers, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
-	GetCompactionCheckpoint(ctx context.Context, id pgtype.UUID) (AuraCompactionCheckpoints, error)
-	GetCompactionClaim(ctx context.Context, operationID pgtype.UUID) (AuraCompactionClaims, error)
-	GetCompactionRolloutState(ctx context.Context, scopeID string) (AuraCompactionRolloutStates, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
@@ -166,7 +149,6 @@ type Querier interface {
 	ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
-	ListCompatibleCompactionCheckpoints(ctx context.Context, arg ListCompatibleCompactionCheckpointsParams) ([]AuraCompactionCheckpoints, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one

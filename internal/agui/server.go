@@ -72,12 +72,6 @@ type Runner interface {
 	DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error)
 }
 
-// CompactService is the shadow-only manual preview/restore coordinator seam.
-type CompactService interface {
-	Preview(context.Context, runner.CompactRequest) (runner.CompactPreview, error)
-	Restore(context.Context, runner.CompactRequest) (runner.CompactPreview, error)
-}
-
 type threadTryLocker interface {
 	TryLockThread(ctx context.Context, threadID string) (func(), bool)
 }
@@ -165,8 +159,6 @@ type Server struct {
 	// reports; it is injected alongside the source (llm.ReasoningTarget is known only at boot).
 	reasoningCaps    llm.ReasoningCapabilitySource
 	reasoningBackend string
-	compact          CompactService
-	compactionMemory CompactionMemoryStore
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -182,12 +174,6 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // daemon composition root after NewServer; until set, the approvals read route answers
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
-
-// SetCompactService wires the single durable compaction coordinator.
-func (s *Server) SetCompactService(service CompactService) { s.compact = service }
-
-// SetCompactionMemoryStore wires the governance-gated IC-10 memory control plane.
-func (s *Server) SetCompactionMemoryStore(store CompactionMemoryStore) { s.compactionMemory = store }
 
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
@@ -269,7 +255,6 @@ func (s *Server) Mux() http.Handler {
 	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
 	// colocated with their handlers so the agui Server.Mux answers them.
 	s.registerConversationRoutes(mux)
-	s.registerCompactionMemoryRoutes(mux)
 	// APRV-01/02/03 approval-center routes (Phase 25 plan 25-02). Colocated with their
 	// handlers; the parent-mux mount behind RequireAuth (+ RequireCapability on the
 	// mutating resolve) lives in cmd/aura/serve_webui.go.

@@ -63,12 +63,11 @@ func threadLockHeld(ctx context.Context) bool {
 // is built from (D-A1-05/Pattern-4), the llm.Config (model + L2 context window
 // inputs), and the bounded worker timeouts.
 type Deps struct {
-	Conv                ConversationStore
-	Pause               PauseStore
-	Identity            IdentityStore
-	CacheMetrics        CacheMetricStore
-	ToolInvocations     ToolInvocationStore
-	CompactionEffective CompactionEffectiveReader
+	Conv            ConversationStore
+	Pause           PauseStore
+	Identity        IdentityStore
+	CacheMetrics    CacheMetricStore
+	ToolInvocations ToolInvocationStore
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -154,13 +153,12 @@ type ResumeHook func(ctx context.Context, pending askuser.Pending, resp Response
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv                ConversationStore
-	pause               PauseStore
-	identity            IdentityStore
-	cacheMetrics        CacheMetricStore
-	toolInvocations     ToolInvocationStore
-	compactionEffective CompactionEffectiveReader
-	resumeCommitter     ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
+	Conv            ConversationStore
+	pause           PauseStore
+	identity        IdentityStore
+	cacheMetrics    CacheMetricStore
+	toolInvocations ToolInvocationStore
+	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -235,31 +233,30 @@ func New(d Deps) *Runner {
 	// MCP-free `aura chat` is not coupled to embed availability (Open-Q #2).
 	wireToolSearchEmbedder(d.Registry, d.Embedder)
 	r := &Runner{
-		Conv:                d.Conv,
-		pause:               d.Pause,
-		identity:            d.Identity,
-		cacheMetrics:        d.CacheMetrics,
-		toolInvocations:     d.ToolInvocations,
-		compactionEffective: d.CompactionEffective,
-		client:              d.Client,
-		registry:            d.Registry,
-		cfg:                 d.LLM,
-		runDir:              d.RunDir,
-		previewCap:          d.PreviewCap,
-		evictAfter:          d.EvictAfter,
-		workspace:           workspace,
-		titleTimeout:        titleTimeout,
-		stopTimeout:         stopTimeout,
-		resumeHook:          d.ResumeHook,
-		contextBlock:        d.ContextBlock,
-		archivalRecaller:    d.ArchivalRecaller,
-		hookManager:         d.HookManager,
-		alwaysBlock:         d.AlwaysBlock,
-		classifier:          classifier,
-		breaker:             d.Breaker,
-		gateway:             d.Gateway,
-		shareRevoker:        d.ShareRevoker,
-		resumeCommitter:     d.ResumeCommitter,
+		Conv:             d.Conv,
+		pause:            d.Pause,
+		identity:         d.Identity,
+		cacheMetrics:     d.CacheMetrics,
+		toolInvocations:  d.ToolInvocations,
+		client:           d.Client,
+		registry:         d.Registry,
+		cfg:              d.LLM,
+		runDir:           d.RunDir,
+		previewCap:       d.PreviewCap,
+		evictAfter:       d.EvictAfter,
+		workspace:        workspace,
+		titleTimeout:     titleTimeout,
+		stopTimeout:      stopTimeout,
+		resumeHook:       d.ResumeHook,
+		contextBlock:     d.ContextBlock,
+		archivalRecaller: d.ArchivalRecaller,
+		hookManager:      d.HookManager,
+		alwaysBlock:      d.AlwaysBlock,
+		classifier:       classifier,
+		breaker:          d.Breaker,
+		gateway:          d.Gateway,
+		shareRevoker:     d.ShareRevoker,
+		resumeCommitter:  d.ResumeCommitter,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
 	}

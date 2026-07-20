@@ -111,12 +111,11 @@ type Deps struct {
 	// daily aggregation; Clear == conversations.Store.Delete (the /clear hard-delete);
 	// Prices/Model render the /cost USD via llm.CostUSD. A nil backend degrades its
 	// command to an "unavailable" reply (never a panic).
-	Search  searchBackend
-	Cost    costBackend
-	Clear   clearBackend
-	Compact compactService
-	Prices  map[string]llm.Price
-	Model   string
+	Search searchBackend
+	Cost   costBackend
+	Clear  clearBackend
+	Prices map[string]llm.Price
+	Model  string
 
 	// Resume is the HITL seam (hitl.go): the Runner's pause surface
 	// (PendingFor/SubmitAnswer — *runner.Runner satisfies it). Nil → HITL is inert
@@ -326,7 +325,6 @@ func botMenuCommands() []tele.Command {
 		{Text: "list", Description: "Indica dove sfogliare le conversazioni"},
 		{Text: "reset", Description: "Annulla il turno senza cancellare lo storico"},
 		{Text: "clear", Description: "Cancella la conversazione corrente e ricomincia"},
-		{Text: "compact", Description: "Gestisce i checkpoint di compattazione"},
 		{Text: "whoami", Description: "Mostra l'identita collegata"},
 		{Text: "stop", Description: "Annulla il turno; il bot resta attivo"},
 	}

@@ -395,17 +395,6 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
-	t.Run("compaction memory actions require and accept governance.write", func(t *testing.T) {
-		aguiHits = nil
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/admin/compaction-memory/expire", strings.NewReader(`{"now":"2026-07-14T00:00:00Z"}`))
-		addAuthulaSession(req)
-		handler.ServeHTTP(rec, req)
-		if len(aguiHits) != 1 || aguiHits[0] != "/api/admin/compaction-memory/expire" {
-			t.Fatalf("compaction memory action did not reach AG-UI behind governance.write: hits=%v code=%d", aguiHits, rec.Code)
-		}
-	})
-
 	t.Run("valid cookie reaches the AG-UI handler", func(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
@@ -505,7 +494,6 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		{http.MethodPost, "/api/assets/asset-1/promote", `{}`},
 		{http.MethodPost, "/api/assets/asset-1/retry", `{}`},
 		{http.MethodDelete, "/api/assets/asset-1", ``},
-		{http.MethodPost, "/api/admin/compaction-memory/expire", `{"now":"2026-07-14T00:00:00Z"}`},
 	} {
 		aguiHits = nil
 		rec := httptest.NewRecorder()

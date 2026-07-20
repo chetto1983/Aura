@@ -36,7 +36,6 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/knowledge"
-	"github.com/chetto1983/aura/internal/memory"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -214,13 +213,6 @@ func runServe(args []string) {
 	// SIGTERM does not abort an in-flight anti-join mid-sweep; the drain joins it. A boot
 	// one-shot fires immediately, then it ticks; a disabled/nil store launches no goroutine.
 	env.reconciler.Start(ctx)
-	if env.compactionRollout != nil {
-		go func() {
-			if err := env.compactionRollout.Run(signalCtx, time.Minute); err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("aura serve: compaction rollout evaluator stopped", "err", err)
-			}
-		}()
-	}
 	// Background-shell TTL reaper (MUSR-04): bounds runaway background jobs on the same
 	// work ctx as the sweeper; the drain's BackgroundShells.Shutdown joins it. A disabled
 	// TTL / nil registry launches no goroutine.
@@ -385,8 +377,6 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
-	aguiServer.SetCompactService(newConversationCompactCoordinator(chat.conv, chat.compactionEffective))
-	aguiServer.SetCompactionMemoryStore(memory.NewStore(chat.pool))
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))

@@ -39,19 +39,17 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg                 *config.Config
-	pool                *pgxpool.Pool
-	conv                *conversations.Store
-	pause               *askuser.Store
-	identity            *identity.Store
-	run                 *runner.Runner
-	compactionEffective runner.CompactionEffectiveReader
-	compactionRollout   *conversations.CompactionRolloutController
-	client              llm.Client
-	reg                 *tools.Registry
-	gateway             *gateway.Gateway
-	toolInvocations     *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
-	assets              *assets.Service
+	cfg             *config.Config
+	pool            *pgxpool.Pool
+	conv            *conversations.Store
+	pause           *askuser.Store
+	identity        *identity.Store
+	run             *runner.Runner
+	client          llm.Client
+	reg             *tools.Registry
+	gateway         *gateway.Gateway
+	toolInvocations *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	assets          *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
 	// surface (via SetShareService's adapter), the D-15 delete cascade (chat.run.SetShareRevoker),
@@ -329,32 +327,13 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	if err != nil {
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
-	rolloutStore := conversations.NewCompactionRolloutStore(pool)
-	// Seed the disabled-default rollout row BEFORE the fail-closed preflight below: a
-	// freshly migrated DB has no row for any scope (0039_compaction_rollout creates the
-	// table but seeds nothing), so the very first boot must install the disabled
-	// bootstrap state or every future boot — and the background evaluator loop started
-	// in serve.go — would hard-fail forever with "no rows in result set". This call is
-	// idempotent (Create's existing on-conflict Load fallback): later boots find the
-	// existing row and leave it untouched. A genuine failure (DB unreachable, or an
-	// existing row failing validation) still aborts boot, preserving fail-closed.
-	if _, err := rolloutStore.EnsureDisabledDefault(ctx, "default"); err != nil {
-		return nil, fmt.Errorf("compaction rollout durable preflight: %w", err)
-	}
-	rolloutReader := config.PersistedCompactionReader{Source: rolloutStore, ScopeID: "default"}
-	if _, err := rolloutReader.Read(ctx); err != nil {
-		return nil, fmt.Errorf("compaction rollout durable preflight: %w", err)
-	}
-	rolloutController := conversations.NewCompactionRolloutController(rolloutStore, "default", time.Now)
-
 	client := newLLMClient(cfg.LLM)
 	deps := runner.Deps{
-		Conv:                convStore,
-		Pause:               pauseStore,
-		Identity:            idStore,
-		CacheMetrics:        cacheStore,
-		ToolInvocations:     toolInvocationStore,
-		CompactionEffective: rolloutReader,
+		Conv:            convStore,
+		Pause:           pauseStore,
+		Identity:        idStore,
+		CacheMetrics:    cacheStore,
+		ToolInvocations: toolInvocationStore,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter:  runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
@@ -388,7 +367,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, compactionEffective: rolloutReader, compactionRollout: rolloutController, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

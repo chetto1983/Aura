@@ -60,12 +60,11 @@ const (
 // under t.mu from Start.
 func (t *Telegram) buildDispatch() {
 	t.cmds = newCommands(commandDeps{
-		Search:  t.deps.Search,
-		Cost:    t.deps.Cost,
-		Clear:   t.deps.Clear,
-		Compact: t.deps.Compact,
-		Prices:  t.deps.Prices,
-		Model:   t.deps.Model,
+		Search: t.deps.Search,
+		Cost:   t.deps.Cost,
+		Clear:  t.deps.Clear,
+		Prices: t.deps.Prices,
+		Model:  t.deps.Model,
 	})
 	var onboardStore onboardingStore
 	if t.deps.Store != nil {

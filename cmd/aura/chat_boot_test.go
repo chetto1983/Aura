@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -15,67 +14,6 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func rolloutSource(t *testing.T, name string) string {
-	t.Helper()
-	b, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-func TestCompactionRolloutComposition(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	if !strings.Contains(s, "NewCompactionRolloutStore(pool)") || !strings.Contains(s, "NewCompactionRolloutController") {
-		t.Fatal("durable rollout composition missing")
-	}
-}
-func TestCompactionRolloutPersistedReaderInjection(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	if !strings.Contains(s, "CompactionEffective: rolloutReader") || !strings.Contains(s, "compactionEffective: rolloutReader") {
-		t.Fatal("persisted reader injection missing")
-	}
-}
-func TestCompactionRolloutEvaluatorLifecycle(t *testing.T) {
-	s := rolloutSource(t, "serve.go")
-	if !strings.Contains(s, "compactionRollout.Run(signalCtx") {
-		t.Fatal("signal-scoped evaluator lifecycle missing")
-	}
-}
-func TestCompactionMemoryComposition(t *testing.T) {
-	s := rolloutSource(t, "serve.go")
-	if !strings.Contains(s, "SetCompactionMemoryStore(memory.NewStore(chat.pool))") {
-		t.Fatal("IC-10 compaction memory store is not wired into the live control plane")
-	}
-}
-func TestCompactionRolloutCancellation(t *testing.T) {
-	s := rolloutSource(t, "serve.go")
-	if !strings.Contains(s, "errors.Is(err, context.Canceled)") {
-		t.Fatal("evaluator cancellation handling missing")
-	}
-}
-func TestCompactionRolloutStartupFailsClosed(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	if !strings.Contains(s, "compaction rollout durable preflight") || !strings.Contains(s, "rolloutReader.Read(ctx)") {
-		t.Fatal("durable preflight missing")
-	}
-}
-
-// TestCompactionRolloutDisabledBootstrapSeed pins the fresh-DB crash-loop fix: a
-// disabled-default rollout row must be seeded BEFORE the fail-closed Read preflight
-// (and before the serve.go evaluator loop starts), or every boot against a freshly
-// migrated database hard-fails with "no rows in result set" forever.
-func TestCompactionRolloutDisabledBootstrapSeed(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	seedIdx := strings.Index(s, "rolloutStore.EnsureDisabledDefault(ctx")
-	readIdx := strings.Index(s, "rolloutReader.Read(ctx)")
-	if seedIdx < 0 {
-		t.Fatal("disabled-default bootstrap seed missing")
-	}
-	if readIdx < 0 || seedIdx > readIdx {
-		t.Fatal("bootstrap seed must run before the durable preflight Read")
-	}
-}
 
 // chat_boot_test.go pins QUAL-04b: no boot error path leaks a pool or an MCP
 // subprocess. The real leak was the CommandHookManagerFromEnv failure path, which
