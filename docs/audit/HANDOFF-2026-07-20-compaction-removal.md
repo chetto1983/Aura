@@ -18,13 +18,15 @@ Commits (all on `origin/master`):
 | `826a92e8` | docs purged (ARCHITECTURE/TECHNICAL_OVERVIEW/CAPABILITIES + 3 deleted docs) + CI re-scoped |
 | `22f043f7` | quality snapshot re-attested (4 rows, metric-neutral) |
 
-## 2. ⚠️ OPEN LOOSE ENDS — do these FIRST in the fresh session
+## 2. CI status — RESOLVED (removal is CI-validated; no blocking loose ends)
 
-1. **PUSH the local commit `60b88d56`** (`docs(audit): mark compaction engine-removal SHIPPED`). It is committed on local `master` but **NOT pushed** (held so it wouldn't cut across the `22f043f7` CI run). `git push origin master` once CI on `22f043f7` is green. Pre-push hook runs build/deadcode/web-static/quality-snapshot (all passed before; docs-only should be trivial). Push from Windows (`deadcode` on PATH, creds configured) or WSL.
-2. **VERIFY CI GREEN on `22f043f7`.** First result (run `29763292878`): **CodeQL ✓, Skills ✓, `race-db-integration-gates` (the `-race` matrix) ✓ — the CI workflow was RED on TWO Web-E2E Playwright flakes ONLY**, both confirmed **unrelated to the removal** (neither spec references compaction; my commits touched no e2e spec or screenshot baseline):
-   - `chat-calm-prism.spec.ts:338` — screenshot diff **4817px = ratio 0.01 (1%)** on `calm-prism-desktop-dark.png` → antialiasing/font-render flake.
-   - `governance.spec.ts:187` — `getByText('0 9 * * *')` (a scheduler cron on the governance board) "hidden" but *"14× locator resolved"* → visibility race; governance UI, not compaction.
-   A **`gh run rerun 29763292878 --failed`** was triggered (watcher `bgqdji5jt`). **If the re-run is green → flakes confirmed, CI clean → push the local docs commits.** If it fails identically, these are PRE-EXISTING Web-E2E flakes on master (not this change's regression) — triage separately; do NOT block Wave 1 on them, and do NOT let them mask a real failure. The `-race` matrix already passed, so the Go removal is CI-validated.
+**Everything is pushed + in sync** (`origin/master` = `a517e10d` = this handoff; local == origin, ahead 0 / behind 0). All removal commits + the 3 docs/handoff commits are on master.
+
+**The removal is CI-GREEN.** Substantive run `29763292878` (@ `22f043f7`): **all 20 jobs passed** — incl. **`Race + leak DB tier (-race + goleak)` ✓** (the deferred `-race` matrix over runner/conversations/assets/agui/cmd), Integration/db, Knowledge/neo4j, **Memory MCP** (L4 backend), MUSR cross-deny, KV-cache invariant, **Web dist freshness (committed bundle == fresh build) ✓**, Web unit/lint/mutation, vulncheck — plus **CodeQL ✓, Skills ✓** in their own workflows.
+
+**The ONE non-green was `Web E2E` (Playwright), and it is NOT a regression:**
+- Two failures, both **confirmed unrelated to compaction** (neither spec references it; my commits touched no e2e spec/baseline): `chat-calm-prism.spec.ts:338` screenshot diff 4817px = **1%** (AA/font flake) + `governance.spec.ts:187` `getByText('0 9 * * *')` cron "hidden" but *"14× resolved"* (governance-board visibility race).
+- A `gh run rerun --failed` was then **cancelled** by the concurrency group of the docs-commit push — so the Web-E2E verdict is *inconclusive/flaky*, never a real fail tied to this change. **Do NOT block Wave 1 on it.** If a clean Web-E2E green is wanted, re-run it on a commit with a `web/**` change (docs-only pushes paths-filter it out); or accept it as a known-flaky frontend job (Web unit/lint/mutation/dist-freshness all already green cover the actual bundle).
 
 ## 3. Environment state (as left)
 
