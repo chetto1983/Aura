@@ -28,6 +28,14 @@ const (
 	toolWrite = "write_neo4j_cypher"
 	// crashHint is the D-06 load-bearing literal asserted by TestMCPCrash_FailsAura.
 	crashHint = "MCP may have crashed — D-06 policy: fail Aura process"
+	// cypherCallTimeout bounds a single Cypher read so a hung mcp-neo4j-cypher (one that
+	// never writes a response line) cannot block ReadBytes — and every other graph op
+	// serialized behind mu — forever (Wave 0.3). It is deliberately generous so a healthy
+	// but slow query never trips it; only a genuine hang exceeds it, on which we kill the
+	// subprocess (D-06 fail-closed). Caller-ctx CANCELLATION is intentionally NOT a kill
+	// trigger (see Cypher): a client disconnect must never take down the shared subprocess
+	// mid-flight for every other caller — only this hang ceiling can.
+	cypherCallTimeout = 120 * time.Second
 )
 
 // pwAssignRE masks `password=...` / `pass: ...` assignments in captured stderr
@@ -36,13 +44,14 @@ var pwAssignRE = regexp.MustCompile(`(?i)(password|pass)(\s*[=:]\s*)\S+`)
 
 // Client wraps the mcp-neo4j-cypher subprocess. The zero value is unusable; use Open.
 type Client struct {
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	stdout   *bufio.Reader
-	stderr   *boundedbuffer.Buffer
-	password string
-	mu       sync.Mutex
-	nextID   atomic.Int64
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	stdout      *bufio.Reader
+	stderr      *boundedbuffer.Buffer
+	password    string
+	callTimeout time.Duration // per-call read hang ceiling; 0 falls back to cypherCallTimeout
+	mu          sync.Mutex
+	nextID      atomic.Int64
 }
 
 // Open spawns mcp-neo4j-cypher in stdio transport mode against cfg's bolt
@@ -73,11 +82,12 @@ func Open(ctx context.Context, cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("spawn %s: %w (PATH check: pip install mcp-neo4j-cypher==0.6.0)", cfg.MCPBinary, err)
 	}
 	c := &Client{
-		cmd:      cmd,
-		stdin:    stdin,
-		stdout:   bufio.NewReader(stdoutPipe),
-		stderr:   stderr,
-		password: cfg.Password,
+		cmd:         cmd,
+		stdin:       stdin,
+		stdout:      bufio.NewReader(stdoutPipe),
+		stderr:      stderr,
+		password:    cfg.Password,
+		callTimeout: cypherCallTimeout,
 	}
 	// mcp-neo4j-cypher (FastMCP) rejects tools/call until the MCP lifecycle
 	// handshake completes. Verified by the Wave 0 probe (Assumption A10).
@@ -192,6 +202,42 @@ func (c *Client) buildRequest(query string, params map[string]any, write bool) r
 	}
 }
 
+// readLineWithContext reads one newline-delimited JSON-RPC frame with ctx as a hang
+// ceiling, mirroring initializeWithContext. A hung mcp-neo4j-cypher (no response line
+// ever written) otherwise blocks ReadBytes forever under mu, wedging every graph op
+// through this Client and leaking the reader goroutine (Wave 0.3). On ctx expiry it
+// kills the subprocess — which unblocks the read (closing the pipe) and enforces the
+// D-06 fail-closed policy — then returns ctx.Err(). The buffered channel lets the reader
+// goroutine send its result and exit even after the kill, so nothing leaks. mu stays
+// held by the caller: the single stdio pipe pair cannot interleave, so the read is not
+// moved off the lock; killing is what frees the blocked read.
+func (c *Client) readLineWithContext(ctx context.Context) ([]byte, error) {
+	type readResult struct {
+		line []byte
+		err  error
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		line, err := c.stdout.ReadBytes('\n')
+		done <- readResult{line: line, err: err}
+	}()
+	select {
+	case r := <-done:
+		return r.line, r.err
+	case <-ctx.Done():
+		if c.cmd != nil && c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		// Reap the now-unblocked reader (the kill closes the pipe, so ReadBytes returns
+		// promptly) so its goroutine cannot outlive the call.
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+		return nil, ctx.Err()
+	}
+}
+
 // Cypher sends one read or write Cypher call and returns the raw MCP result.
 // Serialized via mu. Send/recv failures wrap crashHint (D-06) with redacted
 // stderr so a dead subprocess fails Aura with an actionable, secret-free error.
@@ -212,7 +258,17 @@ func (c *Client) Cypher(ctx context.Context, query string, params map[string]any
 	if _, err := fmt.Fprintln(c.stdin, string(enc)); err != nil {
 		return nil, fmt.Errorf("send cypher: %w (%s)%s", err, crashHint, c.stderrTail())
 	}
-	line, err := c.stdout.ReadBytes('\n')
+	// Bound the response read by a hang ceiling, NOT the caller ctx: caller cancellation
+	// (a client disconnect) must not kill the shared subprocess mid-flight, so we strip
+	// it with WithoutCancel and only the timeout can fire. A single stdio pipe pair cannot
+	// interleave, so mu stays held across the read (0.3).
+	timeout := c.callTimeout
+	if timeout <= 0 {
+		timeout = cypherCallTimeout
+	}
+	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	line, err := c.readLineWithContext(readCtx)
 	if err != nil {
 		return nil, fmt.Errorf("recv cypher: %w (%s)%s", err, crashHint, c.stderrTail())
 	}
