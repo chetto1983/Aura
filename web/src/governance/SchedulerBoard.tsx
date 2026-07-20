@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Check, Pencil, Play, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Spinner } from '../components/Spinner';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
 import { TaskRunHistory } from './TaskRunHistory';
@@ -18,7 +20,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 // SchedulerBoard (GOV-03) is the mission-control scheduler: a dense, monospace task strip
 // where each row is a channel — a status LED (green=active, amber pulsing=awaiting approval),
 // the kind, the schedule + next fire as first-class monospace literals, and the operator
-// verbs (approve / run / edit / delete) inline. System-seeded sweeps are read-only (a SYSTEM
+// verbs (approve / run / edit / delete) as a compact 44px icon rail on the trailing edge — a
+// dense-list pattern that keeps the body wide enough for the schedule literal to stay readable
+// in the ~300px master panel. System-seeded sweeps are read-only (a SYSTEM
 // tag, no verbs). Selecting a row opens its run history. The signature is the LED status
 // system + the tabular next-fire; everything else stays quiet.
 
@@ -125,8 +129,8 @@ export function SchedulerBoard() {
                 }}
                 className="flex min-w-0 flex-col items-start gap-0.5 text-left"
               >
-                <span className="flex items-center gap-2">
-                  <span className="text-[15px] font-semibold text-text">{task.Kind}</span>
+                <span className="flex min-w-0 max-w-full items-center gap-2">
+                  <span className="truncate text-[15px] font-semibold text-text">{task.Kind}</span>
                   <span
                     className={`rounded-sm border px-1.5 py-px font-mono text-[10px] uppercase tracking-wider ${chipClass(task.Status)}`}
                   >
@@ -140,70 +144,94 @@ export function SchedulerBoard() {
                     </span>
                   )}
                 </span>
-                <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-text-muted">
-                  <span className="truncate">{scheduleText(task, dash)}</span>
-                  <span aria-hidden className="text-text-disabled">
+                {/* One truncation context, schedule literal first: the cron/interval/one-shot
+                    is the row's identity and always renders; the secondary next-fire ellipsizes
+                    when the panel is narrow, so neither can collapse to a zero-width span. */}
+                <span className="block w-full truncate font-mono text-[12px] text-text-muted">
+                  <span>{scheduleText(task, dash)}</span>
+                  <span aria-hidden className="px-1 text-text-disabled">
                     ·
                   </span>
-                  <span className="shrink-0 tabular-nums text-text-faint">
+                  <span className="tabular-nums text-text-faint">
                     {formatFire(task.NextRunAt, dash)}
                   </span>
                 </span>
               </button>
 
-              {/* Operator verbs — only for user-managed kinds */}
+              {/* Operator verbs — a compact, always-visible 44px icon rail (WCAG 2.5.8 target
+                  size) on the trailing edge. Icon-only + aria-label keeps each verb keyboard/
+                  screen-reader usable while leaving the body wide enough that the schedule literal
+                  is never squeezed to a zero-width span; the destructive Delete is last and
+                  confirm-gated. An always-visible rail (not a hover-reveal) avoids the reflow that
+                  makes a row's own click target move out from under a tap on a touch viewport. */}
               {manageable && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 justify-self-end">
                   {task.Status === 'pending_approval' && (
                     <Button
                       type="button"
-                      size="sm"
+                      size="icon"
                       variant="default"
+                      aria-label={
+                        approve.isPending
+                          ? t('governance.scheduler.actions.approving')
+                          : t('governance.scheduler.actions.approve')
+                      }
                       disabled={approve.isPending}
                       onClick={() => {
                         approve.mutate(task.ID);
                       }}
                     >
-                      {approve.isPending
-                        ? t('governance.scheduler.actions.approving')
-                        : t('governance.scheduler.actions.approve')}
+                      {approve.isPending ? (
+                        <Spinner />
+                      ) : (
+                        <Check data-icon aria-hidden="true" className="size-4" />
+                      )}
                     </Button>
                   )}
                   {task.Status === 'active' && (
                     <Button
                       type="button"
-                      size="sm"
-                      variant="outline"
+                      size="icon"
+                      variant="ghost"
+                      aria-label={
+                        run.isPending
+                          ? t('governance.scheduler.actions.running')
+                          : t('governance.scheduler.actions.run')
+                      }
                       disabled={run.isPending}
                       onClick={() => {
                         run.mutate(task.ID);
                       }}
                     >
-                      {run.isPending
-                        ? t('governance.scheduler.actions.running')
-                        : t('governance.scheduler.actions.run')}
+                      {run.isPending ? (
+                        <Spinner />
+                      ) : (
+                        <Play data-icon aria-hidden="true" className="size-4" />
+                      )}
                     </Button>
                   )}
                   <Button
                     type="button"
-                    size="sm"
+                    size="icon"
                     variant="ghost"
+                    aria-label={t('governance.scheduler.actions.edit')}
                     onClick={() => {
                       setEditing(task);
                     }}
                   >
-                    {t('governance.scheduler.actions.edit')}
+                    <Pencil data-icon aria-hidden="true" className="size-4" />
                   </Button>
                   <Button
                     type="button"
-                    size="sm"
+                    size="icon"
                     variant="ghost"
+                    aria-label={t('governance.scheduler.actions.delete')}
                     className="text-danger hover:text-danger"
                     onClick={() => {
                       setPendingDelete(task);
                     }}
                   >
-                    {t('governance.scheduler.actions.delete')}
+                    <Trash2 data-icon aria-hidden="true" className="size-4" />
                   </Button>
                 </div>
               )}
