@@ -13,7 +13,7 @@ This is the single execution truth-source that reconciles the two 2026-07-18 aud
 
 ## Decisions (locked 2026-07-20)
 
-1. **Compaction engine** → ~~run the SPIKE first~~ **SPIKE RESOLVED 2026-07-20 = REMOVE** (operator-ratified, PRD Amendment #86). The dark Phase 42 `llm-conversation-compaction` engine (migrations 0036-0039) is deleted in a dedicated removal phase; **1.9/2.3 = NO-GO**. The anti-rot core is **L4 extractive graph memory** — L4 archival recall SHIPPED (`AURA_CONTEXT_MEMORY_RECALL`, commit `340d6966`, CI-green). Wave 0.1 crash-guard stays until the delete lands. ADR: `docs/audit/compaction-spike-2026-07-20.md`.
+1. **Compaction engine** → ~~run the SPIKE first~~ ~~SPIKE RESOLVED = REMOVE~~ **✅ REMOVAL SHIPPED 2026-07-20** (operator-ratified, PRD Amendment #86). The dark Phase 42 `llm-conversation-compaction` engine is **DELETED** on `master` (`22610817` PRD → `e5b557f0` Go/db 58 files + de-wire + **migration `0042_drop_compaction`** + sqlc regen → `28c12351` web UI + bundle → `826a92e8` docs+CI re-scope → `22f043f7` quality). **1.9/2.3 = NO-GO (superseded — nothing left to wire/mount)**. The anti-rot core is **L4 extractive graph memory** — L4 archival recall SHIPPED (`AURA_CONTEXT_MEMORY_RECALL`, `340d6966`) and **E2E-proven live** post-removal (`memory_get_facts` in a real cockpit turn, 0.08s). Verified: coverage 85.5% (WSL db+neo4j) + `TestMigrateSteps` 0042 up/down/up reversibility + real E2E (gauge 13.2k/1%, cache 93%, graph 3n/2e, 0 errors); 0042 applied to the live DB (0 compaction tables, no data lost, no BUG-6a crash on boot). ADR: `docs/audit/compaction-spike-2026-07-20.md`.
 2. **Missed reminders (1.2)** → **catch-up-once on restart** (parity with agent_job/backup); fix the false doc comment.
 3. **AG-016 force-gate** → **redesign as three-tier** (Comet *prohibited / explicit-permission / regular* + Poke's honor-prior-confirmation). Recommended pending final ratification; carries a PRD amendment. Research + rationale in the AG-016 section below.
 
@@ -26,7 +26,7 @@ This is the single execution truth-source that reconciles the two 2026-07-18 aud
 | BUG-1B approval undelivered | 1.7 (reframed: relay-liveness) | 1 | verified |
 | BUG-3 memory no delete | 1.8 | 1 | verified |
 | BUG-2 no Telegram notify | 2.1 | 2 | verified (fix-direction corrected) |
-| BUG-7 compact UI orphaned | 2.3 (gated on SPIKE) | 2 | verified |
+| BUG-7 compact UI orphaned | 2.3 → REMOVED | 2 | ✅ removed (`28c12351`, engine deleted) |
 | BUG-4 no profile-edit tool | 2.4 | 2 | verified |
 | BUG-3b memory→task cascade | 2.8 | 2 | verified (needs migration + PRD) |
 | BUG-5 superfluous tool calls | prompt-tuning task | side | behavioral |
@@ -59,7 +59,7 @@ Two root patterns, not 40 bugs: **A — built-but-not-wired (dark code)**, **B �
 
 ---
 
-## Compaction SPIKE (gate — precedes 1.9 + 2.3) — ✅ RESOLVED 2026-07-20 = REMOVE
+## Compaction SPIKE (gate — precedes 1.9 + 2.3) — ✅ RESOLVED + REMOVAL SHIPPED 2026-07-20
 
 **Outcome: REMOVE** (operator-ratified, PRD Amendment #86; ADR `docs/audit/compaction-spike-2026-07-20.md`). Verified dark end-to-end (`FinalizeCompaction` zero non-test callers; Preview/Restore on a never-filled table; rollout windows never populated; trigger enums dead; cost one P0 = BUG-6a). It is **redundant on top of amendment #21's shipped 5-layer defense**, not the defense itself. Verdict: delete the Phase 42 engine + migrations 0036-0039 in a dedicated removal phase (drop-migrations at the next free slot; Wave 0.1 crash-guard stays until then); **1.9 = NO-GO, 2.3 = NO-GO**.
 
@@ -79,7 +79,7 @@ Hard constraint honored: context management stays Aura-side + provider-agnostic 
 | **1.6** MCP no health poll | CONFIRMED_NARROWED (high) | Primary: give the streamable-HTTP managed branch the same reconnect-on-use as stdio (generalize `reconnectingServer.reopen`). Plus bounded `Ping` background poll + fix the 0-tool boot-race. Stdio reactive reconnect already works — don't rebuild. | no / env-var | med |
 | **1.7** Approval relay-liveness | CONFIRMED (high) | Recurring pending-approval reminder sweep on the scheduler tick (mirrors `sweepNotifications`): re-surface channel-owned `pending_approval` tasks via `ChannelDeliverer` with a throttle stamp. Fixes the "gated job silently forgotten" residual (BUG-1B). | **migration** (throttle ts) / PRD | med |
 | **1.8** Memory no delete/update/list | CONFIRMED_NARROWED (high) | Action-verb `memory_manage` (forget/update/list_by_type) in `mcp/_tools.py`; `memory_forget` MUST enforce ownership (`_node_in_user_scope`, refuse not no-op) and **return removed ids** for BUG-3b. Cursor/Devin parity. | no / PRD | med |
-| **1.9** Compaction wiring | ❌ **NO-GO** (SPIKE=remove, Amendment #86) | Superseded by the engine-removal phase; the anti-rot direction is L4 archival recall (shipped `340d6966`), not compaction wiring. | — | — |
+| **1.9** Compaction wiring | ✅ **DONE — N/A** (engine removed `e5b557f0`) | Superseded: the engine is deleted, not wired. Anti-rot is L4 archival recall (shipped `340d6966`, E2E-proven live). | — | — |
 | **1.10** Token estimator (llama.cpp) | CONFIRMED_NARROWED (med) | Add `DeclaredErrorTokens` on the llamacpp capability row + `ProviderErrorReserveTokens` subtracted in `hardCap()`; retire the dead conservative `1.15/256` fields/function. Load-bearing regardless of SPIKE. | no / env-note | med |
 | **1.11** OpenRouter overflow fail-safe | CONFIRMED_NARROWED (high) | Opt-in `transforms:["middle-out"]` on `wireRequest`, set ONLY when `ReasoningTarget==OpenRouter` AND a config knob is on (`omitempty` keeps llamacpp byte-unchanged). Explicitly NOT the compaction mechanism (lossy, no tool-pair awareness). | no / env-var | low |
 
@@ -91,7 +91,7 @@ Hard constraint honored: context management stays Aura-side + provider-agnostic 
 |---|---|---|---|---|
 | **2.1** notify no Telegram (BUG-2) | CONFIRMED (high) | **Correction: `telegram` cannot be a `buildSend` branch** (`compositeNotifier` has no `ChannelDeliverer`/identity). Intercept at the `Dispatch` layer (`dispatch.go`) where `task.IdentityID` + `ChannelDeliverer` exist; add server-side enum validation (bad route 400s, no silent stdout-degrade); tool enum + cockpit dropdown. | no / PRD | med |
 | **2.2** Long TG output dropped (>4096) | (audit) | Reuse interactive chunking on the origin-channel push path. | no / no | low |
-| **2.3** Compaction UI orphaned (BUG-7) | ❌ **NO-GO** (SPIKE=remove, Amendment #86) | Nothing to mount — the `CompactionHistory` surface + `compaction_memory_api` are deleted in the removal phase. | — | — |
+| **2.3** Compaction UI orphaned (BUG-7) | ✅ **DONE — removed** (`28c12351`) | `CompactionHistory` + `useCompactions` + `resources.compaction` + `compaction_memory_api` deleted; bundle rebuilt. | — | — |
 | **2.4** No profile-edit tool (BUG-4) | CONFIRMED (high) | Deferred, action-multiplexed MUTATING `profile` builtin (show/add-fact/edit-section/remove-fact) via ActionRouter, backed by `internal/profile.Store` (add `Store.RemoveFact` + `Store.ReplaceSection`; only `AddFact` exists). Never expose the raw Agent.md path to `fs_write`. Correct the false memory record. | no / PRD | med |
 | **2.5** `fs_edit/grep/glob` bypass box | (audit) | Give them a `Router` like `fs_read/write` — **blocker before any sandbox enablement**. | no / no | med |
 | **2.6** docker_integration 0% CI | (audit) | Add a `docker_integration` CI job (or daemon-free unit tests) before sandbox rollout. | no / no | low |
