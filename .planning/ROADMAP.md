@@ -96,7 +96,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [X] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
   - Goal: agent-generated files (`send_file`) reach the web cockpit as an authenticated same-origin download (Garage-backed identity-scoped asset), never a raw container/host path.
   - Success: (1) `send_file` stores bytes in the identity's Garage store + creates a thread-scoped owned `assets.Asset`, and the `aura.artifact` event carries `asset_id`/`filename`/`size_bytes`/`mime_type`; (2) `GET /api/assets/{id}/download` streams from Garage with `Content-Disposition: attachment`, ownership-checked, `RequireAuth`-gated, non-owner → 404/403; (3) web chat consumes `aura.artifact` and renders a download button, no raw path in the browser; (4) Telegram delivery unregressed, CLI/no-identity degrades to today's host-path behavior.
-- [ ] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
+- [x] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
   - Goal: one canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
   - Success: (1) mixed url+command / empty-remote-trust blocked and never call stdio open; (2) hung mount drops within deadline, oversized stdio frame aborts without large alloc, shutdown leaves no child processes; (3) CLI mutations append `mcp_audit` (or production-disallowed), empty trust body → 400; (4) dead HTTP MCP endpoint reports OK=false.
 - [ ] **Phase 39: Idempotency + Observability Pack** — `OBS-01..06` (F-008/017/020/023/024/049)
