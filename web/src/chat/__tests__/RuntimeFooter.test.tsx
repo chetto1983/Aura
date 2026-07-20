@@ -304,6 +304,34 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     expect(container.querySelector('.bg-accent')).toBeNull();
   });
 
+  // BUG-8: on a cold reload (no live turn) the gauge must reflect the CURRENT context
+  // fill (LastInputTokens = latest request-bearing turn), NOT the cumulative session
+  // input (TotalInputTokens), which sums every turn and falsely reads near-full.
+  it('reload gauge shows LastInputTokens (current fill), not the cumulative session input', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        agg: {
+          TotalInputTokens: 620201, // lifetime cumulative — the false "62%" source
+          TotalOutputTokens: 6849,
+          TotalCachedTokens: 499200,
+          TotalCostUSD: 0.0252,
+          LastInputTokens: 29468, // real current context = ~3% of a 1M window
+        },
+      }),
+    );
+    // No usage => idle reload => the fallback path.
+    const { container } = renderFooter({ conversationId: 'c-1', windowTokens: 1_000_000 });
+    await waitFor(() => {
+      const bar = container.querySelector('[role="progressbar"]');
+      // 29468 / 1_000_000 ≈ 3%. The cumulative 620201 would have rendered 62%.
+      expect(bar?.getAttribute('aria-valuenow')).toBe('3');
+    });
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).not.toBe(
+      '62',
+    );
+  });
+
   it('uses the accent fill below the near-full threshold', () => {
     const usage: TurnUsage = {
       promptTokens: 10,

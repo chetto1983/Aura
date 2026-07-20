@@ -12,6 +12,21 @@ SELECT id, title, identity_id, created_at, last_active_at, status, model,
 FROM aura.conversations
 WHERE id = $1;
 
+-- name: GetConversationLastInputTokens :one
+-- The input_tokens of the most recent request-bearing turn = the CURRENT
+-- context-window fill (distinct from the cumulative total_input_tokens column,
+-- which sums every turn's input and so climbs far past the window on a long
+-- chat). The runtime footer's context gauge reads this so a reloaded
+-- conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
+-- conversation has no request-bearing turn yet.
+SELECT COALESCE((
+    SELECT input_tokens
+    FROM aura.conversation_turns
+    WHERE conversation_id = $1 AND input_tokens > 0
+    ORDER BY seq DESC
+    LIMIT 1
+), 0)::int AS last_input_tokens;
+
 -- name: ListConversations :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,

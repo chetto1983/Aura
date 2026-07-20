@@ -133,6 +133,13 @@ func TestConversationsAPI_GetAggregates(t *testing.T) {
 		t.Errorf("aggregates = in:%d out:%d cached:%d, want 11/7/3 (D-10 footer seed)",
 			got.TotalInputTokens, got.TotalOutputTokens, got.TotalCachedTokens)
 	}
+	// The context gauge reads LastInputTokens (the latest request-bearing turn's
+	// input_tokens = current window fill), NOT the cumulative TotalInputTokens. Here
+	// the only assistant turn carried InputTokens=11, so both happen to be 11; the
+	// point of the field is that on a long chat they diverge sharply (BUG-8).
+	if got.LastInputTokens != 11 {
+		t.Errorf("LastInputTokens = %d, want 11 (latest request-bearing turn's input_tokens)", got.LastInputTokens)
+	}
 	if got.TotalCostUSD <= 0 {
 		t.Errorf("TotalCostUSD = %v, want > 0 (the session-cumulative cost aggregate)", got.TotalCostUSD)
 	}

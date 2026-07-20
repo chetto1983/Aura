@@ -109,8 +109,13 @@ type Conversation struct {
 	TotalInputTokens  int64
 	TotalOutputTokens int64
 	TotalCachedTokens int64
-	TotalCostUSD      float64
-	CreatedAt         string // RFC3339; used by DisplayTitle for the untitled fallback
+	// LastInputTokens is the input_tokens of the most recent request-bearing turn —
+	// the CURRENT context-window fill, NOT the cumulative TotalInputTokens (which sums
+	// every turn and dwarfs the window on a long chat). The runtime footer's context
+	// gauge reads it so a reloaded conversation shows real fill. 0 when no request yet.
+	LastInputTokens int64
+	TotalCostUSD    float64
+	CreatedAt       string // RFC3339; used by DisplayTitle for the untitled fallback
 }
 
 // Turn is the domain projection of one aura.conversation_turns row, ready to be
@@ -170,7 +175,13 @@ func (s *Store) Get(ctx context.Context, conversationID string) (Conversation, e
 		}
 		return Conversation{}, fmt.Errorf("get conversation %s: %w", conversationID, err)
 	}
-	return conversationFromRow(row), nil
+	conv := conversationFromRow(row)
+	last, err := s.q.GetConversationLastInputTokens(ctx, id)
+	if err != nil {
+		return Conversation{}, fmt.Errorf("get conversation %s last input tokens: %w", conversationID, err)
+	}
+	conv.LastInputTokens = int64(last)
+	return conv, nil
 }
 
 // List returns conversations ordered by last_active_at DESC. includeArchived adds

@@ -22,6 +22,11 @@ export interface Conversation {
   readonly TotalInputTokens: number;
   readonly TotalOutputTokens: number;
   readonly TotalCachedTokens: number;
+  /** input_tokens of the most recent request-bearing turn = the CURRENT context-window
+   *  fill. Distinct from the cumulative TotalInputTokens (which sums every turn and so
+   *  climbs far past the window on a long chat). The context gauge reads this on reload
+   *  so it shows real fill, not the lifetime sum (BUG-8). 0 when no request yet. */
+  readonly LastInputTokens?: number;
   readonly TotalCostUSD: number;
   /** RFC3339 created-at; drives recent-first ordering + the untitled fallback. */
   readonly CreatedAt: string;

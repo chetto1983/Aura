@@ -20,6 +20,10 @@ export interface ConversationAggregate {
   readonly TotalInputTokens?: number;
   readonly TotalOutputTokens?: number;
   readonly TotalCachedTokens?: number;
+  /** input_tokens of the latest request-bearing turn = the CURRENT context fill,
+   *  distinct from the cumulative TotalInputTokens. The context gauge reads this on
+   *  reload so it never renders the lifetime sum as fullness (BUG-8). */
+  readonly LastInputTokens?: number;
   readonly TotalCostUSD?: number;
   readonly total_input_tokens?: number;
   readonly total_output_tokens?: number;

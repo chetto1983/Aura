@@ -79,6 +79,13 @@ type Querier interface {
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
 	// Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 	GetConversationForIdentity(ctx context.Context, arg GetConversationForIdentityParams) (AuraConversations, error)
+	// The input_tokens of the most recent request-bearing turn = the CURRENT
+	// context-window fill (distinct from the cumulative total_input_tokens column,
+	// which sums every turn's input and so climbs far past the window on a long
+	// chat). The runtime footer's context gauge reads this so a reloaded
+	// conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
+	// conversation has no request-bearing turn yet.
+	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)

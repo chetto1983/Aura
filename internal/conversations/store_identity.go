@@ -44,6 +44,11 @@ func (s *Store) GetForIdentity(ctx context.Context, conversationID, identityID s
 			return fmt.Errorf("get conversation %s: %w", conversationID, gErr)
 		}
 		conv = conversationFromRow(row)
+		last, lErr := q.GetConversationLastInputTokens(ctx, id)
+		if lErr != nil {
+			return fmt.Errorf("get conversation %s last input tokens: %w", conversationID, lErr)
+		}
+		conv.LastInputTokens = int64(last)
 		return nil
 	})
 	if txErr != nil {

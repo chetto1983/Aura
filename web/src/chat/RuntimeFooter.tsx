@@ -87,7 +87,13 @@ export function RuntimeFooter({
     ],
   );
   const settled = useSettledAnnouncement(liveCluster, usageState, conversationId);
-  const usedTokens = turn?.promptTokens ?? session.promptTokens;
+  // The gauge measures the CURRENT request's context fill, so it rides the live
+  // turn's prompt_tokens. On a cold reload / idle (no live turn) it falls back to
+  // the conversation's LastInputTokens — the most recent request-bearing turn's
+  // input_tokens — NOT session.promptTokens, which is the CUMULATIVE input across
+  // every turn (each re-sends the growing prompt) and on a long chat dwarfs the
+  // window, rendering a false "near-full" alarm (BUG-8). 0 only when neither is known.
+  const usedTokens = turn?.promptTokens ?? conv?.LastInputTokens ?? 0;
   const window = windowTokens ?? DEFAULT_CONTEXT_WINDOW;
   const ctxPct = contextPercent(usedTokens, window);
 
