@@ -235,18 +235,6 @@ func (s *CompactionRolloutStore) DecisionCount(ctx context.Context, scopeID stri
 
 func appendRolloutEvidence(ctx context.Context, q *sqlc.Queries, evidence RolloutEvidence) (sqlc.AuraCompactionRolloutEvidence, error) {
 	row, err := q.AppendCompactionRolloutEvidence(ctx, sqlc.AppendCompactionRolloutEvidenceParams{ScopeID: evidence.ScopeID, EvidenceDigest: evidence.Digest, EvaluatorVersion: evidence.EvaluatorVersion, ScorerVersion: evidence.ScorerVersion, ConfigVersion: evidence.ConfigVersion, CorpusVersion: evidence.CorpusVersion, Snapshot: evidence.Snapshot})
-	if errors.Is(err, pgx.ErrNoRows) {
-		// The digest already exists (a byte-identical observation was appended before):
-		// ON CONFLICT DO NOTHING returns no row. The ledger is immutable, so re-fetch the
-		// existing row to keep the append idempotent — reusing its id for the decision
-		// insert — instead of propagating a 23505 that would kill the evaluator (Wave 0.1,
-		// mirrors Create's on-conflict Load fallback).
-		existing, getErr := q.GetCompactionRolloutEvidenceByDigest(ctx, sqlc.GetCompactionRolloutEvidenceByDigestParams{ScopeID: evidence.ScopeID, EvidenceDigest: evidence.Digest})
-		if getErr != nil {
-			return existing, fmt.Errorf("load existing compaction rollout evidence: %w", getErr)
-		}
-		return existing, nil
-	}
 	if err != nil {
 		return row, fmt.Errorf("append compaction rollout evidence: %w", err)
 	}
