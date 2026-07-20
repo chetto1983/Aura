@@ -112,7 +112,10 @@ type Conversation struct {
 	// LastInputTokens is the input_tokens of the most recent request-bearing turn —
 	// the CURRENT context-window fill, NOT the cumulative TotalInputTokens (which sums
 	// every turn and dwarfs the window on a long chat). The runtime footer's context
-	// gauge reads it so a reloaded conversation shows real fill. 0 when no request yet.
+	// gauge reads it so a reloaded conversation shows real fill. Populated ONLY by
+	// GetForIdentity (the identity-scoped read behind GET /api/conversations/{id}); the
+	// unscoped Get leaves it 0 — no gauge consumer reads that path, and it keeps the hot
+	// ownership/search Get a single query. 0 when the conversation has no request yet.
 	LastInputTokens int64
 	TotalCostUSD    float64
 	CreatedAt       string // RFC3339; used by DisplayTitle for the untitled fallback
@@ -175,13 +178,7 @@ func (s *Store) Get(ctx context.Context, conversationID string) (Conversation, e
 		}
 		return Conversation{}, fmt.Errorf("get conversation %s: %w", conversationID, err)
 	}
-	conv := conversationFromRow(row)
-	last, err := s.q.GetConversationLastInputTokens(ctx, id)
-	if err != nil {
-		return Conversation{}, fmt.Errorf("get conversation %s last input tokens: %w", conversationID, err)
-	}
-	conv.LastInputTokens = int64(last)
-	return conv, nil
+	return conversationFromRow(row), nil
 }
 
 // List returns conversations ordered by last_active_at DESC. includeArchived adds

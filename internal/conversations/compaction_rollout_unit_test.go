@@ -3,7 +3,6 @@ package conversations
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,15 +165,19 @@ func TestEvaluateOncePropagatesLoadError(t *testing.T) {
 	}
 }
 
-// countingRolloutStore counts Load calls so a test can prove the evaluator loop kept
-// ticking past a per-tick error instead of returning on the first one.
+// countingRolloutStore signals each Load so a test can deterministically prove the
+// evaluator loop kept ticking past a per-tick error instead of returning on the first
+// one — without relying on wall-clock timing (which flaked under CI load).
 type countingRolloutStore struct {
 	fakeRolloutStore
-	loadCount atomic.Int64
+	loads chan struct{}
 }
 
 func (c *countingRolloutStore) Load(ctx context.Context, scope string) (RolloutState, error) {
-	c.loadCount.Add(1)
+	select {
+	case c.loads <- struct{}{}:
+	default: // never block the loop if the test has stopped draining
+	}
 	return c.fakeRolloutStore.Load(ctx, scope)
 }
 
@@ -183,16 +186,23 @@ func (c *countingRolloutStore) Load(ctx context.Context, scope string) (RolloutS
 // (Wave 0.2). Previously Run returned the error, the detached goroutine logged
 // "evaluator stopped" once, and the whole rollout control plane froze for the process
 // lifetime. Now Run logs and retries on the next tick and returns nil only on ctx
-// cancellation — the loop must survive multiple errored ticks.
+// cancellation. It must reach a SECOND tick (proving it retried past the first errored
+// tick) — asserted deterministically by waiting for two real Load signals, not a sleep.
 func TestRunSelfHealsOnEvaluationError(t *testing.T) {
 	state := rolloutControllerState(time.Now().Add(-time.Hour), 10)
 	state.FailureWindow = []byte(`not-json`) // corrupt → EvaluateOnce errors every tick
-	store := &countingRolloutStore{fakeRolloutStore: fakeRolloutStore{state: state}}
+	store := &countingRolloutStore{fakeRolloutStore: fakeRolloutStore{state: state}, loads: make(chan struct{}, 64)}
 	c := NewCompactionRolloutController(store, "scope", time.Now)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx, time.Millisecond) }()
-	time.Sleep(30 * time.Millisecond) // let several ticks error without terminating
+	for i := 1; i <= 2; i++ {
+		select {
+		case <-store.loads:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("evaluator did not reach tick %d — it terminated on an errored tick instead of retrying", i)
+		}
+	}
 	cancel()
 	select {
 	case err := <-done:
@@ -201,8 +211,5 @@ func TestRunSelfHealsOnEvaluationError(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after cancellation — it must not block or die on the error path")
-	}
-	if got := store.loadCount.Load(); got < 2 {
-		t.Fatalf("Load called %d time(s), want >=2 (loop must retry past the first errored tick)", got)
 	}
 }
