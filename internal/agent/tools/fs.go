@@ -215,11 +215,22 @@ func globToRegexp(glob string) (*regexp.Regexp, error) {
 	return regexp.Compile(b.String())
 }
 
-// skipWalkDir is true for directory names not worth walking for grep/glob (huge,
-// mostly binary, or VCS internals).
+// skipWalkDir reports whether a SUBdirectory (never the explicit search root — the
+// callers guard p != root) should be pruned from an fs_grep/fs_glob walk. It prunes
+// hidden dot-directories (the ripgrep/fd default — .git, .cache, .local, .npm,
+// .venv, …) and well-known dependency/generated stores. Without this, a home
+// directory's hidden caches silently drain the walk budget before the walk reaches
+// the operator's own files: on the appliance /root/.cache alone held ~66k
+// model/download files, so `fs_glob test_aura* path:/root` blew the 50k node cap
+// inside .cache and returned "[no matches]" for files that plainly existed
+// (shell_exec ls found them). To search a hidden or vendored tree, pass it as the
+// explicit `path` root — the root is never pruned.
 func skipWalkDir(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
 	switch name {
-	case ".git", "node_modules", "vendor":
+	case "node_modules", "vendor", "__pycache__":
 		return true
 	}
 	return false
