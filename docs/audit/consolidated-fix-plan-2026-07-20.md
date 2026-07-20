@@ -32,8 +32,18 @@ This is the single execution truth-source that reconciles the two 2026-07-18 aud
 | BUG-5 superfluous tool calls | prompt-tuning task | side | behavioral |
 | BUG-1A AG-016 force-gate | AG-016 redesign | 1 | verified; policy decision |
 | — (new, this session) | **BUG-8 context gauge** | done | **✅ SHIPPED + DEPLOYED** |
+| — (regression, post-removal) | **cockpit scheduler layout** — action buttons squeezed the schedule literal to a zero-width span | done | **✅ SHIPPED `9371e162`** (this was the "Web-E2E flake" — it was a deterministic failure, not a flake) |
+| — (agent-found, post-removal) | **BUG-9 fs_glob/fs_grep silent-empty** — home caches exhaust the walk budget before user files | done | **✅ SHIPPED `c4504cf8`** + real-agent E2E |
 
 Two root patterns, not 40 bugs: **A — built-but-not-wired (dark code)**, **B — silent death/loss (no dashboard)**. Attacked via three cross-cutting fixes woven through Waves 0–1: per-tick self-heal (0.2), honest readiness (1.4), deadlines on every blocking external read (0.3 + 1.6).
+
+## Shipped after the compaction removal (2026-07-20 PM session)
+
+Three fixes landed on `master` on top of the removal, all E2E-verified on the redeployed `aura:local` container:
+
+1. **Cockpit scheduler layout regression** (`9371e162`, CI fully green) — the path-gated **Web-E2E** job (skipped on Go/scripts-only commits) went red the moment the removal's bundle rebuild re-triggered it. Root cause: `SchedulerBoard`'s always-inline operator buttons squeezed the `1fr` body until the `shrink-0` next-fire timestamp overflowed and collapsed the cron `truncate` span to **zero width** (Playwright `hidden`). Deterministic on desktop **and** mobile — NOT the "flake" the intervening handoff assumed (CI on `b6aeabba` failed). Fix: a compact always-visible **44px icon action rail** (WCAG 2.5.8; icon-only + `aria-label`) + one-truncation-context schedule line. Verified: vitest 1571, governance E2E 12/12 (chrome+mobile), full sweep 72/72, dist built via the docker webbuild stage to satisfy web-dist-freshness. **New reference:** the committed `internal/webui/dist` must be built on Linux node-24 (docker webbuild / CI) — a Windows Vite build re-hashes every chunk.
+2. **`windows-unit` CI lane removed** (`0dcf6029`) — Windows-native is unsupported (container/Ubuntu/DGX-Spark only), so the `windows-latest` O-07 lane no longer gates a supported platform.
+3. **BUG-9 — `fs_glob`/`fs_grep` silent-empty** (`c4504cf8`) — **found by the operator driving the agent** (a real system test), recorded as a `has_bug` Fact in the agent-memory graph. `skipWalkDir` only skipped `.git/node_modules/vendor`, so a walk of `/root` descended `/root/.cache` (66,646 files on the appliance); `WalkDir` visits dot-dirs first, exhausting the 50k node budget inside `.cache` before reaching the operator's top-level files → "[no matches] + walk truncated" while `shell_exec ls` saw them. Fix: prune hidden dot-dirs (ripgrep/fd default) + `__pycache__`, guarded so an explicit hidden `path` root still descends; plus a fix-on-touch for `grepFile` never checking `scanner.Err()` (a >1 MiB line silently truncated the scan). Verified by a **real agent turn** on the container (agent ran `fs_glob(path:/root, pattern:test_aura*)` → returned both files, no truncation). **Method note:** agent-driven, real-scenario testing is now the primary bug-discovery path — mine the agent-memory graph for `has_bug` Facts (`MATCH (f:Fact) WHERE f.predicate='has_bug'`).
 
 ---
 
