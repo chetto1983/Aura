@@ -8,15 +8,18 @@ import (
 
 func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 	for _, needle := range []string{
-		"Agent.md",
 		"messages[1]",
-		"profile context",
+		"long-term memory",
 		"operator-pinned context",
 		"current explicit instruction wins",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {
-			t.Errorf("system prompt is missing Agent.md profile doctrine %q", needle)
+			t.Errorf("system prompt is missing profile-context doctrine %q", needle)
 		}
+	}
+	// The profile is memory-backed now; the on-disk Agent.md path is superseded.
+	if strings.Contains(SystemPrompt, "Agent.md") {
+		t.Error("system prompt still references the deprecated Agent.md profile file")
 	}
 }
 
@@ -44,7 +47,6 @@ func TestPrompt_MemoryDoctrine(t *testing.T) {
 		"pull-on-demand",
 		"search memory BEFORE answering",
 		"without being asked",
-		"reasoning trace",
 		"fail-soft",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {

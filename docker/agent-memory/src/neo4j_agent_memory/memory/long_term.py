@@ -746,6 +746,34 @@ class LongTermMemory(BaseMemory[Entity]):
             except Exception:
                 pass  # Vector index may not exist yet
 
+        # Exact-text dedup fallback. The embedding path above is skipped when
+        # generate_embedding is off or the embedder is unavailable, which would
+        # otherwise CREATE a byte-identical duplicate of an existing preference (the
+        # operator observed the same preference stored as two nodes). Return the
+        # existing LIVE preference for this user with the same category + exact text +
+        # scope instead of minting a second one. Any lookup failure falls through to
+        # CREATE (never blocks a write).
+        if user_identifier is not None:
+            try:
+                existing_exact = await self._client.execute_read(
+                    queries.FIND_EXACT_PREFERENCE,
+                    {
+                        "user_identifier": user_identifier,
+                        "category": category,
+                        "preference": preference,
+                        "deduplication_scope": deduplication_scope or "global",
+                    },
+                )
+                if existing_exact:
+                    existing = self._parse_preference(dict(existing_exact[0]["p"]))
+                    existing.metadata["deduplicated"] = True
+                    if applies_to:
+                        for ref in applies_to:
+                            await self._link_preference_to_entity(str(existing.id), ref)
+                    return existing
+            except Exception:
+                pass  # fall through to CREATE on any lookup failure
+
         # Create preference
         pref = Preference(
             id=uuid4(),
@@ -2167,6 +2195,42 @@ class LongTermMemory(BaseMemory[Entity]):
         )
 
         return results[0].get("deleted", 0) if results else 0
+
+    async def delete_preference(
+        self,
+        preference_id: UUID | str,
+        *,
+        user_identifier: str,
+    ) -> str | None:
+        """Forget a preference the user owns.
+
+        Ownership is enforced by the query (the ``(:User)-[:HAS_PREFERENCE]->``
+        edge): a preference that does not exist or is not in the caller's scope
+        matches nothing, so this returns ``None`` (a refusal the caller can surface,
+        not a silent no-op). On success the removed preference id is returned.
+        """
+        self._enforce_multi_tenant(user_identifier)
+        rows = await self._client.execute_write(
+            queries.DELETE_PREFERENCE_SCOPED,
+            {"preference_id": str(preference_id), "user_identifier": user_identifier},
+        )
+        return rows[0]["deleted_id"] if rows else None
+
+    async def delete_fact(
+        self,
+        fact_id: UUID | str,
+        *,
+        user_identifier: str,
+    ) -> str | None:
+        """Forget a fact the user owns (see :meth:`delete_preference` for the
+        ownership contract). Returns the removed fact id, or ``None`` when the fact
+        is absent or out of scope."""
+        self._enforce_multi_tenant(user_identifier)
+        rows = await self._client.execute_write(
+            queries.DELETE_FACT_SCOPED,
+            {"fact_id": str(fact_id), "user_identifier": user_identifier},
+        )
+        return rows[0]["deleted_id"] if rows else None
 
     async def get_preferences_by_category(
         self,

@@ -109,9 +109,9 @@ func TestCacheAudit_ProfileContextShape(t *testing.T) {
 	}
 
 	first := reqs[0]
-	if !strings.Contains(first.Messages[0].Content, "Agent.md") ||
+	if !strings.Contains(first.Messages[0].Content, "operator-pinned context") ||
 		!strings.Contains(first.Messages[0].Content, "messages[1]") {
-		t.Fatalf("messages[0] must explain Agent.md profile context doctrine:\n%s", first.Messages[0].Content)
+		t.Fatalf("messages[0] must explain the messages[1] profile-context doctrine:\n%s", first.Messages[0].Content)
 	}
 	if strings.Contains(first.Messages[0].Content, profile.ProfileBlockStart) ||
 		strings.Contains(first.Messages[0].Content, "Name: Cache Audit") {

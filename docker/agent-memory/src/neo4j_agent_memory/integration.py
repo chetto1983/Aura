@@ -580,3 +580,43 @@ class MemoryIntegration:
         except Exception as e:
             logger.error(f"Error adding fact: {e}")
             return {"error": str(e)}
+
+    async def delete_preference(
+        self,
+        preference_id: str,
+        *,
+        user_identifier: str,
+    ) -> dict[str, Any]:
+        """Forget a preference the caller owns (ownership-enforced by the store).
+
+        Returns ``{"deleted": <id>}`` on success or ``{"deleted": None, "reason": ...}``
+        when the preference is absent or out of the caller's scope.
+        """
+        try:
+            removed = await self.client.long_term.delete_preference(
+                preference_id, user_identifier=user_identifier
+            )
+        except Exception as e:
+            logger.error(f"Error deleting preference: {e}")
+            return {"deleted": None, "error": str(e)}
+        if removed is None:
+            return {"deleted": None, "reason": "not found or not owned by this user"}
+        return {"deleted": removed, "type": "preference"}
+
+    async def delete_fact(
+        self,
+        fact_id: str,
+        *,
+        user_identifier: str,
+    ) -> dict[str, Any]:
+        """Forget a fact the caller owns (see :meth:`delete_preference`)."""
+        try:
+            removed = await self.client.long_term.delete_fact(
+                fact_id, user_identifier=user_identifier
+            )
+        except Exception as e:
+            logger.error(f"Error deleting fact: {e}")
+            return {"deleted": None, "error": str(e)}
+        if removed is None:
+            return {"deleted": None, "reason": "not found or not owned by this user"}
+        return {"deleted": removed, "type": "fact"}

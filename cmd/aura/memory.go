@@ -25,8 +25,8 @@ const memoryServerName = "memory"
 const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions|conversation <session-id>|" +
 	"add-entity <name> [type] [description]|add-fact <subject> <predicate> <object>|" +
 	"add-preference <category> <preference>|store-message <session-id> <role> <content>|" +
-	"get-entity <name>|relationship <from> <type> <to>|export|" +
-	"trace {start <session-id> <task>|step <trace-id> <observation>|complete <trace-id> [outcome]|observations <session-id>}|" +
+	"get-entity <name>|relationship <from> <type> <to>|" +
+	"forget <preference|fact> <node-id>|" +
 	"query <cypher>}"
 
 func runMemory(args []string) {
@@ -92,10 +92,8 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 		return "memory_get_entity", map[string]any{"name": name}, nil
 	case "relationship":
 		return memoryRelationshipArgs(args)
-	case "export":
-		return "memory_export_graph", map[string]any{}, nil
-	case "trace":
-		return memoryTraceArgs(args)
+	case "forget":
+		return memoryForgetArgs(args)
 	case "query":
 		cypher, err := arg(args, 0, "query", "<cypher>")
 		if err != nil {
@@ -165,53 +163,17 @@ func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
 	}, nil
 }
 
-// memoryTraceArgs maps the `trace` reasoning-memory subverbs to the live MCP tool
-// contract (verified against the running sidecar, spike 035 / plan 15-05): a trace is
-// keyed by session_id+task at start, steps and completion are keyed by trace_id, and
-// observations are read back BY SESSION (memory_get_observations takes session_id, not
-// trace_id). The step free-text lands in `observation` so it is recallable.
-func memoryTraceArgs(args []string) (string, map[string]any, error) {
-	sub, err := arg(args, 0, "trace", "{start <session-id> <task>|step <trace-id> <observation>|complete <trace-id> [outcome]|observations <session-id>}")
-	if err != nil {
-		return "", nil, err
+// memoryForgetArgs maps the `forget` subverb to the memory_forget MCP tool: delete a
+// preference or fact the caller owns, by id. Ownership is enforced server-side (a node
+// the caller does not own is refused, not silently ignored).
+func memoryForgetArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 2 {
+		return "", nil, fmt.Errorf("memory forget requires <preference|fact> <node-id>")
 	}
-	rest := args[1:]
-	switch sub {
-	case "start":
-		if len(rest) < 2 {
-			return "", nil, fmt.Errorf("memory trace start requires <session-id> <task>")
-		}
-		return "memory_start_trace", map[string]any{
-			"session_id": rest[0],
-			"task":       strings.Join(rest[1:], " "),
-		}, nil
-	case "step":
-		if len(rest) < 2 {
-			return "", nil, fmt.Errorf("memory trace step requires <trace-id> <observation>")
-		}
-		return "memory_record_step", map[string]any{
-			"trace_id":    rest[0],
-			"observation": strings.Join(rest[1:], " "),
-		}, nil
-	case "complete":
-		id, err := arg(rest, 0, "trace complete", "<trace-id> [outcome]")
-		if err != nil {
-			return "", nil, err
-		}
-		call := map[string]any{"trace_id": id}
-		if outcome := strings.Join(rest[min(len(rest), 1):], " "); outcome != "" {
-			call["outcome"] = outcome
-		}
-		return "memory_complete_trace", call, nil
-	case "observations":
-		sid, err := arg(rest, 0, "trace observations", "<session-id>")
-		if err != nil {
-			return "", nil, err
-		}
-		return "memory_get_observations", map[string]any{"session_id": sid}, nil
-	default:
-		return "", nil, fmt.Errorf("unknown memory trace subverb %q", sub)
-	}
+	return "memory_forget", map[string]any{
+		"node_type": args[0],
+		"node_id":   args[1],
+	}, nil
 }
 
 // callMemoryTool resolves the managed memory sidecar, opens it over streamable-HTTP,

@@ -149,11 +149,8 @@ func TestMemoryVerbMapping(t *testing.T) {
 		{"store-message", []string{"store-message", "sess-1", "user", "hello world"}, "memory_store_message", "session_id", "sess-1"},
 		{"get-entity", []string{"get-entity", "Mario Rossi"}, "memory_get_entity", "name", "Mario Rossi"},
 		{"relationship", []string{"relationship", "Mario", "KNOWS", "Luigi"}, "memory_create_relationship", "from_entity", "Mario"},
-		{"export", []string{"export"}, "memory_export_graph", "", ""},
-		{"trace-start", []string{"trace", "start", "sess-1", "debug the plan"}, "memory_start_trace", "session_id", "sess-1"},
-		{"trace-step", []string{"trace", "step", "tr-1", "read the file"}, "memory_record_step", "trace_id", "tr-1"},
-		{"trace-complete", []string{"trace", "complete", "tr-1"}, "memory_complete_trace", "trace_id", "tr-1"},
-		{"trace-observations", []string{"trace", "observations", "sess-1"}, "memory_get_observations", "session_id", "sess-1"},
+		{"forget-preference", []string{"forget", "preference", "pref-123"}, "memory_forget", "node_id", "pref-123"},
+		{"forget-fact", []string{"forget", "fact", "fact-456"}, "memory_forget", "node_type", "fact"},
 		{"query", []string{"query", "MATCH (n) RETURN n LIMIT 1"}, "graph_query", "query", "MATCH (n) RETURN n LIMIT 1"},
 	}
 
@@ -193,9 +190,7 @@ func TestMemoryVerbMappingNegativeCases(t *testing.T) {
 		{"unknown-verb", []string{"frobnicate"}},
 		{"search-missing-query", []string{"search"}},
 		{"add-fact-too-few", []string{"add-fact", "subject", "predicate"}},
-		{"trace-unknown-subverb", []string{"trace", "bogus"}},
-		{"trace-start-too-few", []string{"trace", "start", "sess-1"}},
-		{"trace-step-too-few", []string{"trace", "step", "tr-1"}},
+		{"forget-too-few", []string{"forget", "preference"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

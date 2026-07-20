@@ -160,12 +160,15 @@ func BuiltInCatalog() []CatalogEntry {
 			},
 		},
 		{
-			// neo4j-labs agent-memory, the first HTTP recipe. Mounts the full 16-tool
-			// surface Deferred + memory__*-namespaced through the existing
+			// neo4j-labs agent-memory (Aura fork), the first HTTP recipe. Mounts the
+			// memory__* surface Deferred + namespaced through the existing
 			// MountManagedServer (D-06/D-07). Trusted (NOT remote_http) so it can mount
-			// default-on (D-08); the URL has no launch Command (HTTP recipe).
+			// default-on (D-08); the URL has no launch Command (HTTP recipe). The fork
+			// adds memory_forget (owned-node delete) and drops the redundant
+			// reasoning-trace tools + memory_export_graph (Aura keeps its own reasoning
+			// store).
 			Name:       "memory",
-			Summary:    "neo4j-labs agent-memory (POLE+O + reasoning traces) over streamable-HTTP",
+			Summary:    "agent-memory fork (POLE+O facts/preferences + forget) over streamable-HTTP",
 			Source:     mcp.SourceRecipeMemory,
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",
