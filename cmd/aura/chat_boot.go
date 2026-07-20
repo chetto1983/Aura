@@ -357,15 +357,16 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		CompactionEffective: rolloutReader,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
-		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
-		Client:          client,
-		Registry:        reg,
-		LLM:             cfg.LLM,
-		RunDir:          cfg.RunDir,
-		PreviewCap:      cfg.ToolPreviewCap,
-		EvictAfter:      cfg.ContextToolEvictAfterTurns,
-		ContextBlock:    profileContextProvider(cfg),
-		AlwaysBlock:     alwaysBlockProvider(cfg),
+		ResumeCommitter:  runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
+		Client:           client,
+		Registry:         reg,
+		LLM:              cfg.LLM,
+		RunDir:           cfg.RunDir,
+		PreviewCap:       cfg.ToolPreviewCap,
+		EvictAfter:       cfg.ContextToolEvictAfterTurns,
+		ContextBlock:     profileContextProvider(cfg),
+		ArchivalRecaller: archivalRecallProvider(cfg), // nil unless AURA_CONTEXT_MEMORY_RECALL (default off)
+		AlwaysBlock:      alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
 		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),

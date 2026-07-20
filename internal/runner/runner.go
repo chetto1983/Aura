@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -94,7 +93,11 @@ type Deps struct {
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
 	ContextBlock ContextBlockProvider
 	AlwaysBlock  func() string
-	ResumeHook   ResumeHook
+	// ArchivalRecaller injects the L4 archival-memory block into messages[1] (PRD
+	// amendment #21). nil => no recall (the AURA_CONTEXT_MEMORY_RECALL default-off
+	// state is produced by the composition root returning nil).
+	ArchivalRecaller ArchivalRecaller
+	ResumeHook       ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
 	// falls back to the LLM router. The composition root passes the granite
@@ -173,6 +176,7 @@ type Runner struct {
 	resumeHook   ResumeHook
 
 	contextBlock      ContextBlockProvider
+	archivalRecaller  ArchivalRecaller            // L4 archival-memory recall for messages[1] (amendment #21); nil → no recall
 	hookManager       *agent.HookManager          // optional per-turn LlmAgent hooks
 	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
 	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
@@ -248,6 +252,7 @@ func New(d Deps) *Runner {
 		stopTimeout:         stopTimeout,
 		resumeHook:          d.ResumeHook,
 		contextBlock:        d.ContextBlock,
+		archivalRecaller:    d.ArchivalRecaller,
 		hookManager:         d.HookManager,
 		alwaysBlock:         d.AlwaysBlock,
 		classifier:          classifier,
@@ -376,7 +381,13 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
-		cfg, err := r.contextConfig(ctx, convID)
+		// The current user message keys the L4 recall's relevance (top-K); a resume/
+		// branch turn with no fresh message falls back to identity-only recall.
+		recallQuery := ""
+		if input.visibleUserMsg != nil {
+			recallQuery = *input.visibleUserMsg
+		}
+		cfg, err := r.contextConfig(ctx, convID, recallQuery)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -484,57 +495,6 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 	return r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
 	})
-}
-
-// loadTurnHistory rehydrates the turn history the agent runs over: the full linear
-// history (branchLeaf <= 0, the default Turn path, byte-identical to the pre-D-09 case)
-// or the selected branch path (branchLeaf > 0, the D-09 re-run). Both feed the SAME
-// L1/L2/L2.5 ladder, so the protected messages[0] head is identical either way — only
-// body turns differ per branch (the CAP-04 cache invariant). It does NOT re-implement
-// the walk; it calls the store's path-aware loader (plan 25-06).
-func (r *Runner) loadTurnHistory(ctx context.Context, convID string, cfg conversations.ContextConfig, branchLeaf int) ([]llm.Message, error) {
-	if branchLeaf > 0 {
-		return r.Conv.LoadManagedHistoryForBranch(ctx, convID, branchLeaf, cfg)
-	}
-	return r.Conv.LoadManagedHistory(ctx, convID, cfg)
-}
-
-// contextConfig builds the L1/L2/L2.5 ladder inputs from the Runner's llm.Config +
-// eviction knob.
-func (r *Runner) contextConfig(ctx context.Context, convID string) (conversations.ContextConfig, error) {
-	block, err := r.renderContextBlock(ctx, convID)
-	if err != nil {
-		return conversations.ContextConfig{}, err
-	}
-	return conversations.ContextConfig{
-		ContextWindow:       r.cfg.ContextWindow,
-		MaxOutputTokens:     r.cfg.MaxOutputTokens,
-		ToolEvictAfterTurns: r.evictAfter,
-		AlwaysBlock:         block,
-	}, nil
-}
-
-func (r *Runner) renderContextBlock(ctx context.Context, convID string) (string, error) {
-	var parts []string
-	if r.contextBlock != nil {
-		conv, err := r.Conv.Get(ctx, convID)
-		if err != nil {
-			return "", fmt.Errorf("context block: load conversation identity: %w", err)
-		}
-		owner, err := r.identity.GetIdentityByID(ctx, conv.IdentityID)
-		if err != nil {
-			return "", fmt.Errorf("context block: resolve identity %s: %w", conv.IdentityID, err)
-		}
-		if block := strings.TrimSpace(r.contextBlock(ctx, owner)); block != "" {
-			parts = append(parts, block)
-		}
-	}
-	if r.alwaysBlock != nil {
-		if block := strings.TrimSpace(r.alwaysBlock()); block != "" {
-			parts = append(parts, block)
-		}
-	}
-	return strings.Join(parts, "\n\n"), nil
 }
 
 // buildAgent constructs a FRESH LlmAgent seeded with the rehydrated history

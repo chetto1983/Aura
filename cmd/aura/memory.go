@@ -218,25 +218,33 @@ func memoryTraceArgs(args []string) (string, map[string]any, error) {
 // and calls the RAW tool name directly — the same shape as mcp_tools.go's managed
 // open path. A 20s timeout fails fast on a dead sidecar (T-15-03-03) instead of hanging.
 func callMemoryTool(ctx context.Context, tool string, args map[string]any, out io.Writer) error {
-	server, ok, err := effectiveManagedMCPServer(memoryServerName)
+	text, err := callMemoryToolText(ctx, tool, args)
 	if err != nil {
 		return err
 	}
+	return writeln(out, text)
+}
+
+// callMemoryToolText is the text-returning core of callMemoryTool (shared with the
+// runner's L4 archival-recall seam, serve_adapters.go). It resolves the managed memory
+// sidecar, opens it over streamable-HTTP, and calls the RAW tool name, returning the
+// tool's text result. A 20s timeout fails fast on a dead sidecar (T-15-03-03).
+func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
+	server, ok, err := effectiveManagedMCPServer(memoryServerName)
+	if err != nil {
+		return "", err
+	}
 	if !ok {
-		return fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
+		return "", fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	cli, err := mcp.OpenServer(callCtx, memoryServerName, server)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = cli.Close() }()
-	text, err := cli.CallTool(callCtx, tool, args)
-	if err != nil {
-		return err
-	}
-	return writeln(out, text)
+	return cli.CallTool(callCtx, tool, args)
 }
 
 func arg(args []string, i int, verb, placeholder string) (string, error) {
