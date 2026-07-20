@@ -78,7 +78,7 @@ These recur throughout the code and explain most of the non-obvious decisions:
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Capabilities          web · skills (+skilladapters) · cron (+handlers)    │
 │                       · onboarding · documents · assets · settings ·      │
-│                       memory (compaction policy) · eval · runner          │
+│                       eval · runner                                       │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Persistence           db (+sqlc, Postgres) · knowledge (Neo4j) ·          │
 │                       neostore · conversations (+cl100k) · objectstore    │
@@ -150,7 +150,7 @@ KV-cache invariant survives fan-out (D-06).
 ### Turn lifecycle (one user message → one answer)
 
 ```text
-user msg ─▶ Runner loads managed history (L1/L2/L2.4/L2.5 context ladder)
+user msg ─▶ Runner loads managed history (L1/L2/L2.5 context ladder)
          ─▶ PromptBuilder.Build: messages[0] (stable) + history + volatile <budget> tail
          ─▶ adaptiveReasoningTier: local granite-embedding classifier → none|low|high
          ─▶ LlmAgent.Run loop:
@@ -291,7 +291,7 @@ Cypher, with SQLSTATE-classified errors and pgtype boundary conversion:
   soft-delete, Authula's schema, paused states (HITL), scheduler + agent-job runs, skill
   audit, MCP audit, telegram accounts + setup tokens, tool-invocation ledger, cache
   metrics, context-rot events, document-ingest jobs + control plane, assets + content
-  parts, object-store bindings, the saga journal, compaction checkpoints/memory/rollout,
+  parts, object-store bindings, the saga journal,
   and knowledge-migration audit. DSNs are redacted in every error.
 - **Multi-user isolation** — migration `0032` enables owner-scoped **row-level security**
   on identity-owned tables. `db.WithIdentityTx` sets the `app.current_identity` GUC for
@@ -312,18 +312,15 @@ Cypher, with SQLSTATE-classified errors and pgtype boundary conversion:
   (`identity_store.go`) and a Garage admin client for provisioning.
 
 **Conversations** (`internal/conversations`) layers the context-management ladder on top
-of Postgres. The ladder is now four tiers:
+of Postgres. The ladder is three deterministic tiers (Amendment #21; `context.go`, no LLM
+call). The dark Phase-42 durable L2.4 compaction engine was removed (Amendment #86); the
+anti-rot core is L4 extractive graph memory (Neo4j), not transcript compaction:
 
 - **L1 microcompact** — rewrite old tool turns to `read_tool_output` pointers.
-- **L2 budget gate** — the hard token cap.
-- **L2.4 LLM compaction** — the durable summarize/rebase/reconstruct cycle: semantic-unit
-  segmentation (`semantic_units.go`), checkpointed summaries with a manifest + claims
-  authority, a percentage rollout gate (`compaction_rollout.go`), and extracted long-term
-  memory (`internal/memory` candidate/policy).
-- **L2.5 oldest-pair drop** — no longer a routine tier but a **degradation**: it requires
-  a validated `L24Waiver` from the closed set of L2.4 outcomes that may authorize it
-  (`compaction_budget.go`). `BudgetDecision` describes the L1/L2.4/L2.5 outcome
-  atomically.
+- **L2 budget gate** — the hard token cap (`ContextWindow − max(MaxOutputTokens, 20000) − 13000`).
+- **L2.5 oldest-pair drop** — when L1 alone cannot bring the history under the L2 cap, drop
+  the oldest user/assistant pairs (protecting the system turn + the messages[1] always-block)
+  until it fits, writing one `context_rot_events` row.
 
 Each tier writes a context-rot event. Around the ladder sit an offline tiktoken estimator
 (`cl100k`), an atomic per-turn append (turn + aggregates + cache metric in one tx),
@@ -345,7 +342,7 @@ Three surfaces, in rough order of how much traffic they carry:
   `internal/agui` serves it. `agui` is no longer just a translator: alongside the AG-UI
   SSE bridge it is the cockpit's REST surface — conversations and branches, documents,
   assets, approvals, governance (read + write, incl. skills), audit, graph, onboarding
-  and provisioning, connect (WhatsApp / PIM), compaction memory, password reset, and
+  and provisioning, connect (WhatsApp / PIM), password reset, and
   deprovision. The event bridge itself is still a pure function over Aura's
   `iter.Seq2[*Event, error]` stream (property/golden-testable), and the runtime still
   never imports agui.

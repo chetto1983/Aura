@@ -1351,42 +1351,17 @@ jobs:
         if: always()
         run: docker compose down
 
-  # ── Phase 42 compaction rollout blocking gates (42-10 terminal acceptance) ──
-  # 42-VALIDATION.md Section 17.13's numerical/rollout gates plus the 42-10
-  # plan's own verify command, added as named blocking tiers mirroring the
-  # existing job style above. API/FE coverage for the compaction surfaces
-  # (cmd/aura, internal/channels/telegram, internal/agui, web) already rides
-  # the existing unit-test/web-test jobs (VALIDATION.md's API/FE tiers are the
-  # generic `go test -race $(go_packages.sh)` / `npm test` commands, not
-  # compaction-specific ones) — no duplicate job is added for those. Privacy/
-  # security coverage for the durable-memory candidate lifecycle (IC-10/IC-11)
-  # rides compaction-distributed-gates' internal/memory scope plus the existing
-  # vulncheck job's supply-chain scan. NO-SKIP-AS-GREEN throughout: every step
-  # below is an unconditional `go test`/query assertion, never a skip-capable one.
+  # ── Race + goleak db_integration tier (was the Phase-42 compaction rollout gate) ──
+  # The dark Phase-42 compaction engine was removed (Amendment #86); its evaluator,
+  # mutation, and fresh-boot rollout-acceptance jobs went with it. The job below
+  # SURVIVES the removal because it is the ONLY -race + db_integration + goleak run
+  # over the live runner/conversations/assets/agui/cmd surface (the main
+  # integration-test job covers db/cron/agui WITHOUT -race). internal/memory was
+  # deleted, so it is dropped from the scope. NO-SKIP-AS-GREEN: every step is an
+  # unconditional `go test`.
 
-  compaction-evaluator:
-    name: Compaction EVAL tier (corpus census + Section 17.13 numerical gates)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: EVAL tier — corpus census + numerical promotion/rollback gates
-        # Pure, daemon-free, deterministic (42-VALIDATION.md EVAL tier). No skip
-        # path exists in TestCompactionCorpus*: a corpus that cannot clear
-        # >=500 golden + >=200 adversarial cases, or any Section 17.13
-        # numerical gate, FAILS the job — it never passes green with a weaker
-        # corpus (testdata/compaction/{golden,adversarial}.jsonl).
-        run: go test -race -count=1 -v ./internal/conversations/compaction_eval/...
-
-  compaction-distributed-gates:
-    name: Compaction DB tier (migration replay + restart/multi-replica/CAS rollback + leak + privacy)
+  race-db-integration-gates:
+    name: Race + leak DB tier (runner/conversations/assets/agui/cmd, -race + goleak)
     runs-on: ubuntu-latest
     env:
       POSTGRES_USER: aura
@@ -1412,148 +1387,18 @@ jobs:
       - name: Start Postgres (docker compose)
         run: make db-up
 
-      - name: aura db migrate (applies the 0036-0039 compaction migrations; up/down/up replay lives in internal/db's own db_integration tier, integration-test job above)
-        run: go run ./cmd/aura db migrate
-
-      - name: DB tier — restart/multi-replica/CAS rollback/leak/privacy (-race, -p 1, no skip)
-        # Exercises TestCompactionRolloutFullChainPostgres,
-        # TestRolloutStoreRestartAndStaleDecision,
-        # TestRolloutStoreMultiReplicaExactlyOneWins,
-        # TestRolloutStoreAtomicRollbackRestoresLastKnownGood,
-        # TestCompactionMultiProcessStaleCompletion (internal/conversations),
-        # the durable-memory candidate privacy/consent/deletion/region lifecycle
-        # (internal/memory), and the boot composition contract tests
-        # (cmd/aura TestCompactionRolloutComposition/DisabledBootstrapSeed).
-        # goleak.VerifyTestMain is wired in internal/conversations' and
-        # internal/runner's TestMain, so this run doubles as the leak tier.
-        # -p 1 matches every other shared-Postgres CI tier (scripts/coverage_gate.sh
-        # — parallel integration packages deadlock on pg_advisory_lock).
-        run: |
-          go test -race -tags=db_integration -count=1 -p 1 \
-            ./internal/conversations/... ./internal/assets/... ./internal/memory/... \
-            ./internal/runner/... ./internal/agui/... ./cmd/aura/...
-
-      - name: Tear down
-        if: always()
-        run: docker compose down
-
-  compaction-mutation:
-    name: Compaction mutation spot-check (compaction_eval.Evaluate seal, >=70% killed)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install go-mutesting (avito-tech go1.26-compatible fork)
-        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
-
-      - name: Mutation spot-check — internal/conversations/compaction_eval (>=70% killed)
-        # PASS=killed / FAIL=survived / score=killed/total (CLAUDE.md convention;
-        # confirmed against the tool's own exec script: exit 1 from `go test`
-        # under the mutant — tests failed, i.e. killed — is reported "PASS"; exit
-        # 0 — tests still passed, i.e. survived — is reported "FAIL"). Local
-        # evidence: 14/15 mutants killed (0.9333) with ONE documented equivalent
-        # mutant (clone(nil)'s early return is behaviorally identical to the
-        # make()+range fallback for a nil map — see docs/conversation-compaction.md);
-        # the floor below is >=0.70, not 1.0, for exactly that reason.
-        run: |
-          set -o pipefail
-          OUT="$("$(go env GOPATH)/bin/go-mutesting" --exec-timeout=30 ./internal/conversations/compaction_eval/... 2>&1)"
-          echo "$OUT"
-          SCORE="$(echo "$OUT" | grep -oE 'mutation score is [0-9.]+' | grep -oE '[0-9.]+$')"
-          if [ -z "$SCORE" ]; then
-            echo "FAIL: could not parse a mutation score from go-mutesting output" >&2
-            exit 1
-          fi
-          awk -v score="$SCORE" 'BEGIN {
-            if (score + 0 < 0.70) { printf "FAIL: mutation score %.4f < 0.70 floor\n", score > "/dev/stderr"; exit 1 }
-            printf "ok: mutation score %.4f >= 0.70\n", score
-          }'
-
-  compaction-e2e-acceptance:
-    name: Compaction E2E acceptance (live boot proves fail-closed disabled default)
-    runs-on: ubuntu-latest
-    env:
-      POSTGRES_USER: aura
-      POSTGRES_PASSWORD: ci-test-password
-      POSTGRES_DB: aura
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
-      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      NEO4J_PASSWORD: ci-test-password
-      OPENROUTER_API_KEY: ci-degraded-no-network
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Start Postgres (docker compose)
-        run: make db-up
-
       - name: aura db migrate
         run: go run ./cmd/aura db migrate
 
-      - name: Build aura
-        run: go build -o aura ./cmd/aura
-
-      - name: Boot aura serve (degraded leg — no real LLM key needed for this gate)
-        # /healthz is a public, PG-only liveness probe (no auth required), so no
-        # Authula wiring is needed for this boot-composition assertion.
+      - name: DB tier — -race + goleak over the live orchestration surface (-p 1, no skip)
+        # goleak.VerifyTestMain is wired in internal/conversations' and internal/runner's
+        # TestMain, so this run doubles as the leak tier. -p 1 matches every other
+        # shared-Postgres CI tier (scripts/coverage_gate.sh — parallel integration
+        # packages deadlock on pg_advisory_lock).
         run: |
-          ./aura serve >serve.log 2>&1 &
-          echo $! > serve.pid
-          for i in $(seq 1 60); do
-            if curl -fsS -o /dev/null "http://127.0.0.1:9080/healthz" 2>/dev/null; then
-              echo "ok: aura serve healthy"
-              exit 0
-            fi
-            if ! kill -0 "$(cat serve.pid)" 2>/dev/null; then
-              echo "FAIL: aura serve exited during boot — log:" >&2
-              cat serve.log >&2
-              exit 1
-            fi
-            sleep 0.5
-          done
-          echo "FAIL: aura serve did not become healthy within 30s — log:" >&2
-          cat serve.log >&2
-          exit 1
-
-      - name: Assert the durable rollout stayed fail-closed disabled at boot (real DB read, not the daemon's reply)
-        # Ground truth per CLAUDE.md ("probe verifies artifact, not reply"):
-        # query aura.compaction_rollout_states directly after a fresh-DB boot.
-        # cmd/aura/chat_boot.go's EnsureDisabledDefault(ctx, "default") must have
-        # seeded exactly the "default" scope at stage='disabled' BEFORE the
-        # fail-closed rolloutReader.Read(ctx) preflight (pinned statically by
-        # cmd/aura's TestCompactionRolloutDisabledBootstrapSeed); boot must never
-        # promote a scope past disabled on its own.
-        run: |
-          STAGE="$(docker compose exec -T -e PGPASSWORD=ci-test-password postgres \
-            psql -U aura_migrate -d aura -tAc \
-            "SELECT stage FROM aura.compaction_rollout_states WHERE scope_id = 'default'")"
-          STAGE="$(echo "$STAGE" | tr -d '[:space:]')"
-          if [ "${STAGE}" != "disabled" ]; then
-            echo "FAIL: default compaction rollout scope stage='${STAGE:-<no row>}', want 'disabled'" >&2
-            exit 1
-          fi
-          echo "ok: default compaction rollout scope is stage='disabled' after a fresh boot"
-
-      - name: Stop the daemon
-        if: always()
-        run: |
-          if [ -f serve.pid ]; then kill "$(cat serve.pid)" 2>/dev/null || true; fi
+          go test -race -tags=db_integration -count=1 -p 1 \
+            ./internal/conversations/... ./internal/assets/... \
+            ./internal/runner/... ./internal/agui/... ./cmd/aura/...
 
       - name: Tear down
         if: always()
