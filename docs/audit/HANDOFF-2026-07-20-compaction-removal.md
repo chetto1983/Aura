@@ -21,7 +21,10 @@ Commits (all on `origin/master`):
 ## 2. ⚠️ OPEN LOOSE ENDS — do these FIRST in the fresh session
 
 1. **PUSH the local commit `60b88d56`** (`docs(audit): mark compaction engine-removal SHIPPED`). It is committed on local `master` but **NOT pushed** (held so it wouldn't cut across the `22f043f7` CI run). `git push origin master` once CI on `22f043f7` is green. Pre-push hook runs build/deadcode/web-static/quality-snapshot (all passed before; docs-only should be trivial). Push from Windows (`deadcode` on PATH, creds configured) or WSL.
-2. **VERIFY CI GREEN on `22f043f7`.** A background watcher (`brqstug6l`) was tracking it; if this session ended before it reported, run `gh run list --branch master --limit 5` and confirm **CI**, **CodeQL**, **Skills** all `success`. The **CI** workflow carries the re-scoped **`race-db-integration-gates`** job (the `-race` matrix that was deliberately deferred from local to CI — Windows can't run `-race`, no CGO). If red, fix + re-push before starting Wave 1.
+2. **VERIFY CI GREEN on `22f043f7`.** First result (run `29763292878`): **CodeQL ✓, Skills ✓, `race-db-integration-gates` (the `-race` matrix) ✓ — the CI workflow was RED on TWO Web-E2E Playwright flakes ONLY**, both confirmed **unrelated to the removal** (neither spec references compaction; my commits touched no e2e spec or screenshot baseline):
+   - `chat-calm-prism.spec.ts:338` — screenshot diff **4817px = ratio 0.01 (1%)** on `calm-prism-desktop-dark.png` → antialiasing/font-render flake.
+   - `governance.spec.ts:187` — `getByText('0 9 * * *')` (a scheduler cron on the governance board) "hidden" but *"14× locator resolved"* → visibility race; governance UI, not compaction.
+   A **`gh run rerun 29763292878 --failed`** was triggered (watcher `bgqdji5jt`). **If the re-run is green → flakes confirmed, CI clean → push the local docs commits.** If it fails identically, these are PRE-EXISTING Web-E2E flakes on master (not this change's regression) — triage separately; do NOT block Wave 1 on them, and do NOT let them mask a real failure. The `-race` matrix already passed, so the Go removal is CI-validated.
 
 ## 3. Environment state (as left)
 
