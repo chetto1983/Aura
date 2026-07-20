@@ -74,21 +74,33 @@ type ContextConfig struct {
 	// (Pitfall 3). The Runner renders it per turn from current loader state; an empty
 	// string means no always:true skill is active (the turn is omitted).
 	AlwaysBlock string
+	// ProviderErrorReserveTokens is the extra L2 hard-cap headroom the configured chat
+	// backend needs for its token-estimation error (Wave 1.10). It is non-zero only on
+	// the local llama.cpp path, which has no provider-side overflow net — an Aura
+	// under-count there is a hard local window overflow, so the cap reserves this many
+	// tokens below the SPEC Req#10 formula. The Runner sets it from
+	// llm.ProviderErrorReserveTokens(cfg); zero (the default) leaves the formula
+	// unchanged for OpenRouter and hand-built test configs.
+	ProviderErrorReserveTokens int
 }
 
 // hardCap computes the L2 hard cap from the config (SPEC Req#10:
-// hard_cap = ContextWindow - max(MaxOutputTokens, 20000) - 13000). The formula is
-// kept unchanged whenever it is already positive (normal/large windows). For a
-// small-window model where the fixed reservation exceeds the window the formula is
-// non-positive; instead of clamping to 0 (which disabled L2/L2.5 protection
-// entirely — finding M-03) it floors to a positive smallWindowHardCapFloor so L2.5
-// truncation stays active. A degenerate ContextWindow <= 0 still yields 0.
+// hard_cap = ContextWindow - max(MaxOutputTokens, 20000) - 13000 -
+// ProviderErrorReserveTokens). ProviderErrorReserveTokens (Wave 1.10) is 0 for
+// OpenRouter and hand-built configs, so the historical formula is unchanged there;
+// on the netless local llama.cpp path it reserves extra headroom for the
+// tiktoken-vs-local-tokenizer gap. The formula is kept whenever it is already
+// positive (normal/large windows). For a small-window model where the fixed
+// reservation exceeds the window the formula is non-positive; instead of clamping to
+// 0 (which disabled L2/L2.5 protection entirely — finding M-03) it floors to a
+// positive smallWindowHardCapFloor so L2.5 truncation stays active. A degenerate
+// ContextWindow <= 0 still yields 0.
 func (c ContextConfig) hardCap() int {
 	out := c.MaxOutputTokens
 	if out < l2MinOutputReservation {
 		out = l2MinOutputReservation
 	}
-	cap := c.ContextWindow - out - l2HeadroomTokens
+	cap := c.ContextWindow - out - l2HeadroomTokens - c.ProviderErrorReserveTokens
 	if cap <= 0 {
 		cap = smallWindowHardCapFloor(c.ContextWindow)
 	}

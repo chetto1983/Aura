@@ -36,10 +36,11 @@ func (r *Runner) contextConfig(ctx context.Context, convID, recallQuery string) 
 		return conversations.ContextConfig{}, err
 	}
 	return conversations.ContextConfig{
-		ContextWindow:       r.cfg.ContextWindow,
-		MaxOutputTokens:     r.cfg.MaxOutputTokens,
-		ToolEvictAfterTurns: r.evictAfter,
-		AlwaysBlock:         block,
+		ContextWindow:              r.cfg.ContextWindow,
+		MaxOutputTokens:            r.cfg.MaxOutputTokens,
+		ToolEvictAfterTurns:        r.evictAfter,
+		AlwaysBlock:                block,
+		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(r.cfg),
 	}, nil
 }
 

@@ -332,4 +332,17 @@ func TestHardCap(t *testing.T) {
 	if got := c4.hardCap(); got != 0 {
 		t.Errorf("hardCap degenerate window<=0: got %d, want 0", got)
 	}
+	// Wave 1.10: ProviderErrorReserveTokens (llama.cpp path) is an EXTRA subtrahend
+	// below the SPEC Req#10 formula; zero (the default) leaves it unchanged.
+	c5 := ContextConfig{ContextWindow: 100000, MaxOutputTokens: 30000, ProviderErrorReserveTokens: 4096}
+	if got := c5.hardCap(); got != 100000-30000-13000-4096 {
+		t.Errorf("hardCap with provider reserve: got %d, want %d", got, 100000-30000-13000-4096)
+	}
+	// The reserve can push a borderline window onto the small-window floor (M-03 stays
+	// active): 33000 - 20000 - 13000 = 0 before the reserve, so any reserve makes the
+	// formula non-positive and it floors to ContextWindow/2, never disabling L2.5.
+	c6 := ContextConfig{ContextWindow: 33000, MaxOutputTokens: 1, ProviderErrorReserveTokens: 4096}
+	if got := c6.hardCap(); got != 33000/2 {
+		t.Errorf("hardCap reserve-driven small-window floor: got %d, want %d", got, 33000/2)
+	}
 }
