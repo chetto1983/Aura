@@ -87,3 +87,4 @@ graphify-out/*
 .agents/skills/*
 internal/channels/telegram/testdata/*
 artifacts/*
+.playwright-mcp/*
