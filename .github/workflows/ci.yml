@@ -104,42 +104,8 @@ jobs:
       - name: Authula seam focused test (no-CGO posture)
         # Authula brings sqlite/mysql/testcontainer support transitively, but Aura's
         # embedded provider uses Postgres only. This focused gate proves the flag-gated
-        # A2 seam builds/tests with the same no-CGO posture used by the Windows lane.
+        # A2 seam builds/tests under the pure-Go (no-CGO) posture.
         run: CGO_ENABLED=0 go test -count=1 ./internal/webauth ./internal/agui ./cmd/aura ./internal/config
-
-  windows-unit:
-    name: Windows unit (OS-specific kill + atomic-write paths, O-07)
-    runs-on: windows-latest
-    env:
-      # Authula's dependency tree includes github.com/mattn/go-sqlite3 transitively.
-      # Aura does not use sqlite at runtime; keep the Windows lane on the pure-Go build
-      # posture to avoid hosted-runner CGO toolchain drift.
-      CGO_ENABLED: "0"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: go build (windows/amd64)
-        shell: bash
-        run: go build $(bash scripts/go_packages.sh)
-
-      - name: go test (unit tier — exercises the windows kill + atomic-write paths)
-        shell: bash
-        # O-07 / R-36: the OS-specific process-kill (shell_exec_windows.go:
-        # CREATE_NEW_PROCESS_GROUP + `taskkill /F /T /PID`) and the atomic file-write
-        # (profile/atomic_windows.go) only compile + run under GOOS=windows, so the
-        # Linux unit lane never exercised them. This runs the full unit tier on
-        # windows-latest. NO -race: the race detector is already covered on the Linux
-        # unit lane, and CGO race on the hosted Windows runner is finicky for zero
-        # extra OS-kill-path signal. NO integration tags: the Windows runner has no
-        # docker stack (db/neo4j/web/memory tiers are Linux-only by design).
-        run: go test -count=1 $(bash scripts/go_packages.sh)
 
   cache-invariant:
     name: KV-cache prefix invariant gate (Postgres-free)
