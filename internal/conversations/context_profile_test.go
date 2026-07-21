@@ -6,14 +6,21 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/profile"
+)
+
+// The messages[1] always-block markers (formerly internal/profile constants; the
+// package was retired with Agent.md in Amendment #87). These tests only need a
+// realistic, byte-stable always-block fixture to prove the L1/L2.5 ladder protects it.
+const (
+	testBlockStart = "<profile:Agent.md>"
+	testBlockEnd   = "</profile:Agent.md>"
 )
 
 func TestProfileSkillsBlockSurvivesL25Reduction(t *testing.T) {
 	enc := mustEncoderRaw(t)
 
 	const systemContent = "SYSTEM-PROMPT"
-	block := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Davide\n") +
+	block := testBlockStart + "\n# Agent.md\n\n## Identity\n- Name: Davide\n" + testBlockEnd +
 		"\n\nActive skill instructions (always-on):\n\nPROFILE-SKILL-MARKER"
 
 	body := strings.Repeat("word ", 50)
@@ -48,8 +55,8 @@ func TestProfileSkillsBlockSurvivesL25Reduction(t *testing.T) {
 	if msgs[1].ToolCallID != "" {
 		t.Fatalf("profile/skills block must not leak its protection marker, got %q", msgs[1].ToolCallID)
 	}
-	if !strings.Contains(msgs[1].Content, profile.ProfileBlockStart) ||
-		!strings.Contains(msgs[1].Content, profile.ProfileBlockEnd) ||
+	if !strings.Contains(msgs[1].Content, testBlockStart) ||
+		!strings.Contains(msgs[1].Content, testBlockEnd) ||
 		!strings.Contains(msgs[1].Content, "PROFILE-SKILL-MARKER") {
 		t.Fatalf("messages[1] lost profile-first content:\n%s", msgs[1].Content)
 	}
@@ -73,7 +80,7 @@ func TestProfileBlockOmittedWhenContextBlockEmpty(t *testing.T) {
 		t.Fatalf("empty context block must inject no synthetic turn, got %d messages", len(msgs))
 	}
 	for _, msg := range msgs {
-		if strings.Contains(msg.Content, profile.ProfileBlockStart) {
+		if strings.Contains(msg.Content, testBlockStart) {
 			t.Fatalf("empty context block leaked profile marker in %+v", msg)
 		}
 	}
@@ -84,7 +91,7 @@ func TestProfileBlockOmittedWhenContextBlockEmpty(t *testing.T) {
 
 func TestProfileBlockSurvivesL1ToolEviction(t *testing.T) {
 	enc := mustEncoderRaw(t)
-	block := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Keep exact profile block\n")
+	block := testBlockStart + "\n# Agent.md\n\n## Identity\n- Keep exact profile block\n" + testBlockEnd
 	turns := []Turn{
 		{Seq: 1, Role: llm.RoleSystem, Content: "s"},
 		{Seq: 2, Role: llm.RoleUser, Content: "run tool"},
