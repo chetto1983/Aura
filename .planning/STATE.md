@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 39
 current_phase_name: idempotency-observability-pack
 status: executing
-stopped_at: Completed 39-03-PLAN.md
-last_updated: "2026-07-21T10:56:41.366Z"
+stopped_at: Completed 39-02-PLAN.md
+last_updated: "2026-07-21T12:00:54.623Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 39 execution started
 progress:
   total_phases: 19
   completed_phases: 16
   total_plans: 137
-  completed_plans: 132
+  completed_plans: 133
   percent: 84
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 39 (idempotency-observability-pack) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
@@ -371,6 +371,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37F P18 | 2h30min | 2 tasks | 15 files |
 | Phase 39 P01 | 41min | 3 tasks | 14 files |
 | Phase 39 P03 | 29min | 3 tasks | 12 files |
+| Phase 39 P02 | 57 min | 3 tasks | 41 files |
 
 ## Accumulated Context
 
@@ -693,6 +694,8 @@ Recent decisions affecting current work:
 - [Phase ?]: The scheduler heartbeat means a completed successful scan, including an empty due-task scan; equality with max age remains fresh and only greater-than max age stalls.
 - [Phase ?]: Listener and scheduler failures are lifecycle errors, not readiness as an error bus: the shared snapshot records truth while the joined owner cancels, drains, and returns the error.
 - [Phase ?]: Serve boot checks public.schema_migrations through the migrate-role URL without applying migrations; missing, dirty, behind, or ahead state is fatal.
+- [Phase 39]: Stable operation ownership is trusted context state; request, JSON-RPC, and tool-call IDs are audit-only.
+- [Phase 39]: Mutating MCP transport ambiguity is terminal and performs zero reconnect replay; only classified reads may reconnect and reissue.
 
 ### Pending Todos
 
@@ -739,8 +742,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-21T10:56:41.343Z
-Stopped at: Completed 39-03-PLAN.md
+Last session: 2026-07-21T12:00:54.598Z
+Stopped at: Completed 39-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

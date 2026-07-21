@@ -699,7 +699,7 @@ Plans:
 3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
 4. Learning stores enforce a bounded retention cap.
 
-**Plans:** 2/7 plans executed
+**Plans:** 3/7 plans executed
 
 Plans:
 
@@ -710,7 +710,7 @@ Plans:
 
 **Wave 2** *(depends on operation registry)*
 
-- [ ] 39-02-PLAN.md — End-to-end operation-key propagation and replay across HTTP, CLI, approval/resume, scheduler, built-in tools, gateway, and MCP [depends_on 39-01]
+- [x] 39-02-PLAN.md — End-to-end operation-key propagation and replay across HTTP, CLI, approval/resume, scheduler, built-in tools, gateway, and MCP [depends_on 39-01]
 
 **Wave 3** *(instruments the settled mutation and serving seams)*
 
