@@ -15,12 +15,13 @@ type Learner struct {
 	refresh func()
 	floor   float64
 
-	ch     chan observation
-	seen   SeenSet // content-hash only; bounded/expiring policy is wired by New
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	once   sync.Once
+	ch      chan observation
+	seen    *SeenSet // content-hash only; bounded/expiring policy is wired by New
+	metrics func(LearningMetric)
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	once    sync.Once
 }
 
 type observation struct {
@@ -50,6 +51,8 @@ func New(cfg Config) *Learner {
 		ch:      make(chan observation, q),
 		ctx:     ctx,
 		cancel:  cancel,
+		seen:    NewSeenSet(cfg.SeenMaxEntries, cfg.SeenTTL, cfg.Now),
+		metrics: cfg.Metrics,
 	}
 	l.wg.Add(1)
 	go l.run()
@@ -63,14 +66,12 @@ func (l *Learner) Observe(text string, vec []float64, margin float64) {
 	if l == nil || margin >= l.floor || strings.TrimSpace(text) == "" {
 		return
 	}
-	if _, dup := l.seen.Load(neostore.HashText(text)); dup {
-		return
-	}
 	cp := make([]float64, len(vec))
 	copy(cp, vec)
 	select {
 	case l.ch <- observation{text: text, vec: cp}:
 	default: // queue full — drop, never block the turn
+		l.record("skipped", "pending", "none")
 	}
 }
 
@@ -88,16 +89,36 @@ func (l *Learner) run() {
 
 func (l *Learner) process(o observation) {
 	h := neostore.HashText(o.text)
-	if _, dup := l.seen.LoadOrStore(h, struct{}{}); dup {
+	outcome := l.seen.tryReserve(h)
+	if outcome == reserveDuplicate || outcome == reserveAtCapacity {
+		l.record("skipped", "completed", "none")
 		return
+	}
+	if outcome == reserveAfterExpiry || outcome == reserveAfterEviction {
+		l.record("accepted", "expired", "none")
+	} else {
+		l.record("accepted", "pending", "none")
 	}
 	if !l.oracle.LabelAndSave(l.ctx, o.text, o.vec) {
-		l.seen.Delete(h) // let a later attempt retry a transient oracle/save failure
+		l.seen.Release(h) // let a later attempt retry a transient oracle/save failure
+		l.record("error", "failed", "internal")
 		return
 	}
+	l.seen.Commit(h)
+	l.record("success", "completed", "none")
 	if l.refresh != nil {
 		l.refresh()
 	}
+}
+
+func (l *Learner) record(outcome, state, errorClass string) {
+	if l.metrics == nil {
+		return
+	}
+	l.metrics(LearningMetric{
+		Operation: "learning_write", Outcome: outcome, State: state,
+		ErrorClass: errorClass, Size: l.seen.Len(), OldestAge: l.seen.oldestAge(),
+	})
 }
 
 // Close stops the worker and waits for the in-flight observation to finish

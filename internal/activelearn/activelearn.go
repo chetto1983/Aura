@@ -59,6 +59,8 @@ type LearningMetric struct {
 }
 
 const (
-	defaultMarginFloor = 0.05
-	defaultQueue       = 64
+	defaultMarginFloor    = 0.05
+	defaultQueue          = 64
+	defaultSeenMaxEntries = 100_000
+	defaultSeenTTL        = 30 * 24 * time.Hour
 )

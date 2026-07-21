@@ -27,11 +27,8 @@ import (
 // OTel exporter knob defaults (D-05/D-06). The default OTLP target silent-drops
 // without a collector; "none" is a true no-op provider.
 const (
-	defaultOtelExporter = "otlp"
-	defaultOtelEndpoint = "localhost:4317"
-)
-
-const (
+	defaultOtelExporter         = "otlp"
+	defaultOtelEndpoint         = "localhost:4317"
 	defaultObjectStoreAccessKey = "GK000000000000000000000000"
 	defaultObjectStoreSecretKey = "0000000000000000000000000000000000000000000000000000000000000000"
 )
@@ -264,6 +261,7 @@ type Config struct {
 	Sandbox   SandboxConfig
 	Share     ShareConfig
 	Retention RetentionConfig
+	Learning  LearningConfig
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -395,6 +393,7 @@ func loadBase() *Config {
 
 		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
 		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),
+		Learning:  loadLearningConfig(),
 
 		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
