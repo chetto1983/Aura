@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
@@ -39,7 +43,13 @@ type spyMutatingTool struct {
 	count int
 }
 
-func (s *spyMutatingTool) Spec() tools.Spec { return tools.Spec{Name: s.name, Mutating: true} }
+func (s *spyMutatingTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name: s.name, Mutating: true,
+		OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical,
+		ReplayPolicy: tools.ReplayToolResult,
+	}
+}
 
 func (s *spyMutatingTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
 	s.count++
@@ -159,4 +169,127 @@ func containsGatewayApproval(preview string) bool {
 		return false
 	}
 	return m["error"] == "gateway_approval_required"
+}
+
+type replayingOperationRegistry struct {
+	begins      []idempotency.BeginRequest
+	completed   *idempotency.ReplayResult
+	completeErr error
+	marked      int
+}
+
+func (r *replayingOperationRegistry) Begin(_ context.Context, request idempotency.BeginRequest) (idempotency.BeginDecision, error) {
+	r.begins = append(r.begins, request)
+	if r.completed != nil {
+		return idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: r.completed}, nil
+	}
+	return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+}
+
+func (r *replayingOperationRegistry) Complete(_ context.Context, request idempotency.CompleteRequest) error {
+	if r.completeErr != nil {
+		return r.completeErr
+	}
+	result := request.Result
+	r.completed = &result
+	return nil
+}
+
+func (r *replayingOperationRegistry) MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error {
+	r.marked++
+	return nil
+}
+
+func TestExecToolRetryReusesOperationWhileAuditIDsChange(t *testing.T) {
+	t.Parallel()
+
+	registry := &replayingOperationRegistry{}
+	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
+	gw.SetOperationRegistry(registry)
+	a := &LlmAgent{gateway: gw, ledgerConvID: "11111111-1111-1111-1111-111111111111"}
+	spy := &spyMutatingTool{name: "skill"}
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	fingerprint, err := tools.OperationFingerprint(spy.Spec(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      idempotency.ScopeAgentTool,
+			Key:        "stable-public-operation",
+		},
+		Fingerprint: fingerprint,
+	}
+	base, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCtx := tools.WithRequestID(base, "22222222-2222-2222-2222-222222222222")
+	firstCtx = tools.WithToolCallContext(firstCtx, "session-1", "call-1", t.TempDir(), 4096)
+	first, err := a.execTool(firstCtx, spy, true, args)
+	if err != nil {
+		t.Fatalf("first exec: %v", err)
+	}
+	if first.Preview != "executed" || spy.count != 1 {
+		t.Fatalf("first result=%+v count=%d", first, spy.count)
+	}
+
+	secondCtx := tools.WithRequestID(base, "33333333-3333-3333-3333-333333333333")
+	secondCtx = tools.WithToolCallContext(secondCtx, "session-1", "call-2", t.TempDir(), 4096)
+	second, err := a.execTool(secondCtx, spy, true, args)
+	if err != nil {
+		t.Fatalf("replay exec: %v", err)
+	}
+	if second.Preview != "executed" || spy.count != 1 {
+		t.Fatalf("replay result=%+v count=%d, want recorded result and one effect", second, spy.count)
+	}
+	if len(registry.begins) != 2 {
+		t.Fatalf("Begin calls = %d, want 2", len(registry.begins))
+	}
+	if registry.begins[0].Operation != registry.begins[1].Operation || registry.begins[0].Fingerprint != registry.begins[1].Fingerprint {
+		t.Fatal("retry changed public operation identity")
+	}
+	if registry.begins[0].Audit == nil || registry.begins[1].Audit == nil || registry.begins[0].Audit.RequestID == registry.begins[1].Audit.RequestID || registry.begins[0].Audit.ToolCallID == registry.begins[1].Audit.ToolCallID {
+		t.Fatalf("audit IDs did not remain per-attempt: first=%+v second=%+v", registry.begins[0].Audit, registry.begins[1].Audit)
+	}
+	if registry.completed == nil || registry.completed.ExpiresAt.Before(time.Now()) {
+		t.Fatal("first effect did not persist a bounded replay")
+	}
+}
+
+func TestExecToolCompletionFailureMarksOperationIndeterminate(t *testing.T) {
+	t.Parallel()
+
+	registry := &replayingOperationRegistry{completeErr: errors.New("completion write failed")}
+	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
+	gw.SetOperationRegistry(registry)
+	a := &LlmAgent{gateway: gw, ledgerConvID: "11111111-1111-1111-1111-111111111111"}
+	spy := &spyMutatingTool{name: "skill"}
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	fingerprint, err := tools.OperationFingerprint(spy.Spec(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeAgentTool, Key: "ambiguous-operation"},
+		Fingerprint: fingerprint,
+	}
+	ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = tools.WithRequestID(ctx, "22222222-2222-2222-2222-222222222222")
+	ctx = tools.WithToolCallContext(ctx, "session-1", "call-1", t.TempDir(), 4096)
+
+	_, err = a.execTool(ctx, spy, true, args)
+	if err == nil || !strings.Contains(err.Error(), "completion write failed") {
+		t.Fatalf("error = %v, want completion failure", err)
+	}
+	if spy.count != 1 {
+		t.Fatalf("effect calls = %d, want 1", spy.count)
+	}
+	if registry.marked != 1 {
+		t.Fatalf("indeterminate marks = %d, want 1", registry.marked)
+	}
 }

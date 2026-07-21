@@ -136,8 +136,10 @@ func (t *TaskTool) Spec() Spec {
 		// D-02/D-02d: the task verb multiplexes schedule/list/cancel/run_now behind one
 		// `action` enum, so it is the fail-closed Mutating floor and carries the
 		// Multiplexed hint the gateway boot-guard reads.
-		Mutating:    true,
-		Multiplexed: true,
+		Mutating:       true,
+		Multiplexed:    true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 	}
 }
 

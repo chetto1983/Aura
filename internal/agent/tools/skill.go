@@ -145,8 +145,10 @@ func (t *SkillTool) Spec() Spec {
 		// actions behind one `action` enum, so it is the fail-closed Mutating floor and
 		// carries the Multiplexed hint the gateway boot-guard reads. The classifier
 		// de-escalates the enumerated reads; everything else stays mutating.
-		Mutating:    true,
-		Multiplexed: true,
+		Mutating:       true,
+		Multiplexed:    true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
@@ -255,6 +256,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// The single in-process policy PEP (GATE-01), constructed ONCE and injected at the
 	// three NewLlmAgent roots (runner below, swarm via ctx-relay, cron agent_job).
 	gw := gateway.New(cfg.Profile, toolInvocationStore)
+	gw.SetOperationRegistry(idempotency.New(pool, idempotency.Config{}))
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.

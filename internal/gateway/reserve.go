@@ -10,12 +10,15 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
+	"github.com/google/uuid"
 )
 
 // resultExpiredMarker is appended to a replayed preview when the recorded end's sidecar
@@ -23,6 +26,132 @@ import (
 // redacted preview plus this marker, never an error, and never extends sidecar retention
 // to chase the verbatim bytes (Pitfall 6).
 const resultExpiredMarker = "\n\n[result expired: full output no longer retained]"
+
+const operationReplayRetention = 30 * 24 * time.Hour
+
+// beginOperation consumes the shared registry before the internal policy
+// reservation. A non-acquired decision returns a terminal/replay verdict and
+// prevents both policy reservation and tool execution.
+func (g *Gateway) beginOperation(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey, tier scoring.RiskTier) (Verdict, bool) {
+	if g.operations == nil {
+		return Verdict{Decision: Allow, Tier: tier}, true
+	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		return Verdict{Decision: Deny, Tier: tier, Reason: "operation context missing"}, false
+	}
+	if operation.Key.Scope != spec.OperationScope || spec.OperationNormalizer == "" || spec.ReplayPolicy != tools.ReplayToolResult {
+		return Verdict{Decision: Deny, Tier: tier, Reason: "operation metadata mismatch"}, false
+	}
+	expectedFingerprint, err := tools.OperationFingerprint(spec, rawArgs)
+	if err != nil || expectedFingerprint != operation.Fingerprint {
+		return Verdict{Decision: Deny, Tier: tier, Reason: "operation fingerprint mismatch"}, false
+	}
+	request := idempotency.BeginRequest{Operation: operation.Key, Fingerprint: operation.Fingerprint}
+	if _, convErr := uuid.Parse(key.ConversationID); convErr == nil {
+		if _, requestErr := uuid.Parse(key.RequestID); requestErr == nil && key.ToolCallID != "" {
+			request.Audit = &idempotency.AuditLink{ConversationID: key.ConversationID, RequestID: key.RequestID, ToolCallID: key.ToolCallID}
+		}
+	}
+	decision, beginErr := g.operations.Begin(ctx, request)
+	if beginErr != nil && !errors.Is(beginErr, idempotency.ErrConflict) {
+		return Verdict{Decision: Deny, Tier: tier, Reason: "operation registry unavailable"}, false
+	}
+	verdict := Verdict{Decision: Deny, Tier: tier, OperationDecision: decision.Decision}
+	switch decision.Decision {
+	case idempotency.DecisionAcquired:
+		verdict.Decision = Allow
+		return verdict, true
+	case idempotency.DecisionReplay:
+		result, err := decodeOperationReplay(decision.Replay)
+		if err != nil {
+			verdict.Reason = "operation replay unavailable"
+			return verdict, false
+		}
+		verdict.Decision = Allow
+		verdict.Replay = &result
+		return verdict, false
+	case idempotency.DecisionConflict:
+		verdict.Reason = "operation key conflicts with changed intent"
+	case idempotency.DecisionInProgress:
+		verdict.Reason = "operation is in progress"
+	case idempotency.DecisionIndeterminate:
+		verdict.Reason = "operation outcome is indeterminate"
+	default:
+		verdict.Reason = "operation registry unavailable"
+	}
+	return verdict, false
+}
+
+func decodeOperationReplay(replay *idempotency.ReplayResult) (tools.ToolResult, error) {
+	if replay == nil {
+		return tools.ToolResult{}, errors.New("missing replay")
+	}
+	var result tools.ToolResult
+	if len(replay.Body) != 0 {
+		if err := json.Unmarshal(replay.Body, &result); err != nil {
+			return tools.ToolResult{}, errors.New("invalid replay")
+		}
+	} else {
+		result.Preview = replay.Preview
+		result.FullPath = replay.SidecarRef
+		result.Bytes = len(result.Preview)
+	}
+	return result, nil
+}
+
+// CompleteOperation records the durable typed result after a mutating effect has
+// completed. It is a nil-safe no-op for gateways without the shared registry.
+func (g *Gateway) CompleteOperation(ctx context.Context, result tools.ToolResult) error {
+	if g == nil || g.operations == nil {
+		return nil
+	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		return errors.New("complete operation: trusted operation context missing")
+	}
+	replayResult := boundedOperationReplay(result)
+	return g.operations.Complete(ctx, idempotency.CompleteRequest{
+		Operation: operation.Key, Fingerprint: operation.Fingerprint, Result: replayResult,
+	})
+}
+
+// MarkOperationIndeterminate makes an acquired mutation terminal after an
+// ambiguous execution or post-effect completion failure.
+func (g *Gateway) MarkOperationIndeterminate(ctx context.Context) error {
+	if g == nil || g.operations == nil {
+		return nil
+	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		return errors.New("mark operation indeterminate: trusted operation context missing")
+	}
+	return g.operations.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint)
+}
+
+func boundedOperationReplay(result tools.ToolResult) idempotency.ReplayResult {
+	copyResult := result
+	copyResult.Preview = boundedString(copyResult.Preview, idempotency.MaxReplayPreviewBytes)
+	copyResult.FullPath = boundedString(copyResult.FullPath, idempotency.MaxSidecarRefBytes)
+	body, err := json.Marshal(copyResult)
+	if err != nil || len(body) > idempotency.MaxReplayBodyBytes {
+		body = nil
+	}
+	return idempotency.ReplayResult{
+		Body: body, Preview: copyResult.Preview, SidecarRef: copyResult.FullPath,
+		ExpiresAt: time.Now().UTC().Add(operationReplayRetention),
+	}
+}
+
+func boundedString(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	for limit > 0 && (value[limit]&0xc0) == 0x80 {
+		limit--
+	}
+	return value[:limit]
+}
 
 // reserve takes the single durable pre-execution reservation for a mutating-Allow call.
 //   - rows==1 (acquired) → Verdict{Allow}: the reservation is ours, Execute proceeds.

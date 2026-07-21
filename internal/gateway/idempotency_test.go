@@ -89,7 +89,8 @@ func TestGatewayIdempotencyDecisionsPrecedePolicyReservation(t *testing.T) {
 			registry := &fakeOperationRegistry{decision: tt.decision, beginErr: tt.beginErr}
 			g := New(config.ProfileSingleUserHardened, ledger)
 			g.SetOperationRegistry(registry)
-			verdict, err := g.Decide(gatewayOperationContext(t, "public-key", args), tools.Spec{Name: "skill", Mutating: true, Multiplexed: true}, args, testKey())
+			spec := tools.Spec{Name: "skill", Mutating: true, Multiplexed: true, OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical, ReplayPolicy: tools.ReplayToolResult}
+			verdict, err := g.Decide(gatewayOperationContext(t, "public-key", args), spec, args, testKey())
 			if err != nil {
 				t.Fatalf("Decide: %v", err)
 			}
