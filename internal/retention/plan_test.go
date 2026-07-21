@@ -2,6 +2,7 @@ package retention
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -76,6 +77,31 @@ func TestCandidateRejectsPaths(t *testing.T) {
 		_, err := BuildPlan("policy-v1", []Candidate{{IdentityID: "owner", ArtifactID: id, Action: ActionDeleteArtifact}}, 1)
 		if err == nil {
 			t.Errorf("artifact id %q accepted", id)
+		}
+	}
+}
+
+func TestPlanAndCandidateValidationFailures(t *testing.T) {
+	valid := Candidate{IdentityID: "owner", ArtifactID: "artifact", Version: 1, Bytes: 1, Action: ActionDeleteArtifact}
+	if _, err := BuildPlan("", []Candidate{valid}, 1); err == nil {
+		t.Fatal("blank policy accepted")
+	}
+	if _, err := BuildPlan("v1", []Candidate{valid}, 0); err == nil {
+		t.Fatal("zero cap accepted")
+	}
+	invalid := []Candidate{
+		{},
+		{IdentityID: "owner", Action: ActionDeleteArtifact},
+		{IdentityID: "owner", ArtifactID: "artifact", Version: -1, Action: ActionDeleteArtifact},
+		{IdentityID: "owner", ArtifactID: "artifact", Bytes: -1, Action: ActionDeleteArtifact},
+		{IdentityID: "owner", ArtifactID: "artifact"},
+		{IdentityID: ".", ArtifactID: "artifact", Action: ActionDeleteArtifact},
+		{IdentityID: "owner", ArtifactID: "..", Action: ActionDeleteArtifact},
+		{IdentityID: "owner", ArtifactID: strings.Repeat("x", 201), Action: ActionDeleteArtifact},
+	}
+	for i, candidate := range invalid {
+		if candidate.Validate() == nil {
+			t.Errorf("invalid candidate %d accepted: %+v", i, candidate)
 		}
 	}
 }

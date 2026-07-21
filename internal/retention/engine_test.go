@@ -102,6 +102,93 @@ func TestEngineCancellationBeforeMarkHasNoMutation(t *testing.T) {
 	}
 }
 
+func TestEngineClassifiesRevalidationAndRemovalOutcomes(t *testing.T) {
+	tests := []struct {
+		name           string
+		revalidation   *Revalidation
+		revalidateErr  error
+		removeErr      error
+		wantCompleted  int
+		wantRetryable  int
+		wantFailed     int
+		wantClass      string
+		wantRemoveCall int
+	}{
+		{name: "external state absent", revalidation: &Revalidation{Exists: false, Owned: true, Version: 1}, wantCompleted: 1},
+		{name: "ownership changed", revalidation: &Revalidation{Exists: true, Owned: false, Version: 1}, wantFailed: 1, wantClass: "ownership_mismatch"},
+		{name: "version changed", revalidation: &Revalidation{Exists: true, Owned: true, Version: 2}, wantRetryable: 1, wantClass: "version_changed"},
+		{name: "revalidation unavailable", revalidateErr: errors.New("unavailable"), wantRetryable: 1, wantClass: "revalidate_unavailable"},
+		{name: "external removal unavailable", removeErr: errors.New("unavailable"), wantRetryable: 1, wantClass: "external_unavailable", wantRemoveCall: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newEngineFixture(t)
+			fixture.revalidator.response = tc.revalidation
+			fixture.revalidator.err = tc.revalidateErr
+			fixture.remover.err = tc.removeErr
+			plan, err := fixture.engine.Plan(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := fixture.engine.Apply(context.Background(), plan.Token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Completed != tc.wantCompleted || report.Retryable != tc.wantRetryable || report.Failed != tc.wantFailed {
+				t.Fatalf("Apply report = %+v", report)
+			}
+			if tc.wantClass != "" && report.FailureClasses[tc.wantClass] != 1 {
+				t.Fatalf("failure classes = %+v", report.FailureClasses)
+			}
+			if fixture.remover.calls != tc.wantRemoveCall {
+				t.Fatalf("remove calls = %d, want %d", fixture.remover.calls, tc.wantRemoveCall)
+			}
+		})
+	}
+}
+
+func TestEngineRejectsIncompleteConfigurationAndSourceFailure(t *testing.T) {
+	if _, err := (&Engine{}).Plan(context.Background()); err == nil {
+		t.Fatal("unconfigured engine planned")
+	}
+	fixture := newEngineFixture(t)
+	fixture.engine.WorkerID = ""
+	if _, err := fixture.engine.Plan(context.Background()); err == nil {
+		t.Fatal("workerless engine planned")
+	}
+	fixture = newEngineFixture(t)
+	fixture.engine.Policy.Version = ""
+	if _, err := fixture.engine.Plan(context.Background()); err == nil {
+		t.Fatal("invalid policy planned")
+	}
+	fixture = newEngineFixture(t)
+	fixture.engine.Source = failingSource{}
+	if _, err := fixture.engine.Plan(context.Background()); err == nil {
+		t.Fatal("source failure planned")
+	}
+	if _, err := fixture.engine.Apply(context.Background(), "token"); err == nil {
+		t.Fatal("source failure applied")
+	}
+}
+
+func TestEngineRecordsContentFreePlanAndApplyAudits(t *testing.T) {
+	fixture := newEngineFixture(t)
+	audit := &recordingAudit{}
+	fixture.engine.Audit = audit
+	fixture.engine.Now = nil
+	plan, err := fixture.engine.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.summaries) != 2 || audit.summaries[0].Mode != "plan" || audit.summaries[1].Mode != "apply" {
+		t.Fatalf("audit summaries = %+v", audit.summaries)
+	}
+	recordRetentionBytes(context.Background(), 0)
+}
+
 type engineFixture struct {
 	engine      *Engine
 	store       *memoryOperationStore
@@ -142,9 +229,13 @@ type fakeRevalidator struct {
 	version  int64
 	evidence ActivityEvidence
 	err      error
+	response *Revalidation
 }
 
 func (f *fakeRevalidator) Revalidate(context.Context, Candidate) (Revalidation, error) {
+	if f.response != nil {
+		return *f.response, f.err
+	}
 	return Revalidation{Exists: true, Owned: true, Version: f.version, Activity: f.evidence}, f.err
 }
 
@@ -286,4 +377,16 @@ func (m *memoryOperationStore) item(id string) *Item {
 		}
 	}
 	panic("missing fake item")
+}
+
+type failingSource struct{}
+
+func (failingSource) Candidates(context.Context, Policy, time.Time) ([]Candidate, error) {
+	return nil, errors.New("candidate source unavailable")
+}
+
+type recordingAudit struct{ summaries []AuditSummary }
+
+func (r *recordingAudit) Record(_ context.Context, summary AuditSummary) {
+	r.summaries = append(r.summaries, summary)
 }

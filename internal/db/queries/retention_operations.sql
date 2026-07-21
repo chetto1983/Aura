@@ -126,7 +126,7 @@ SET status = CASE
     completed_at = CASE WHEN NOT EXISTS (
         SELECT 1 FROM aura.retention_operation_items item
         WHERE item.operation_id = operation.id AND item.status <> 'completed'
-    ) THEN sqlc.arg(now) ELSE NULL END,
+    ) THEN sqlc.arg(now)::timestamptz ELSE NULL END,
     updated_at = sqlc.arg(now)
 WHERE operation.id = sqlc.arg(id)
 RETURNING operation.*;

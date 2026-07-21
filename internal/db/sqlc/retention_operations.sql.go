@@ -295,7 +295,7 @@ SET status = CASE
     completed_at = CASE WHEN NOT EXISTS (
         SELECT 1 FROM aura.retention_operation_items item
         WHERE item.operation_id = operation.id AND item.status <> 'completed'
-    ) THEN $1 ELSE NULL END,
+    ) THEN $1::timestamptz ELSE NULL END,
     updated_at = $1
 WHERE operation.id = $2
 RETURNING operation.id, operation.token, operation.policy_version, operation.status, operation.candidate_count, operation.planned_bytes, operation.completed_count, operation.completed_bytes, operation.failure_count, operation.created_at, operation.updated_at, operation.completed_at
