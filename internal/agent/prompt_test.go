@@ -8,9 +8,9 @@ import (
 
 func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 	for _, needle := range []string{
-		"messages[1]",
+		"Recall it on demand",
 		"long-term memory",
-		"operator-pinned context",
+		"nothing pins it into your context",
 		"current explicit instruction wins",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {
@@ -24,7 +24,7 @@ func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 }
 
 // TestPrompt_ProfileUsageRules asserts the relevance-gate, privacy, and
-// language-override rules for Agent.md profile usage are present.
+// language-override rules for memory-backed profile usage are present.
 func TestPrompt_ProfileUsageRules(t *testing.T) {
 	for _, want := range []string{
 		"only when it is relevant",
