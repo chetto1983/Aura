@@ -3,8 +3,6 @@ package onboarding
 import (
 	"strings"
 	"testing"
-
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 func TestExtractDraftIncludesFactsAndPreferences(t *testing.T) {
@@ -87,12 +85,12 @@ func TestExtractDraft_RichSections(t *testing.T) {
 func TestExtractDraftBoundsOutput(t *testing.T) {
 	draft, err := ExtractDraft(Answers{
 		Name:               "Davide",
-		CustomInstructions: strings.Repeat("custom ", profile.MaxAgentMDBytes),
+		CustomInstructions: strings.Repeat("custom ", MaxAgentMDBytes),
 	})
 	if err != nil {
 		t.Fatalf("ExtractDraft: %v", err)
 	}
-	if got := len([]byte(draft.AgentMD)); got > profile.MaxAgentMDBytes {
-		t.Fatalf("Agent.md bytes = %d, want <= %d", got, profile.MaxAgentMDBytes)
+	if got := len([]byte(draft.AgentMD)); got > MaxAgentMDBytes {
+		t.Fatalf("Agent.md bytes = %d, want <= %d", got, MaxAgentMDBytes)
 	}
 }

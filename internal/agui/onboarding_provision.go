@@ -424,7 +424,7 @@ func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdenti
 		}
 		if err := s.profiles.WriteProfile(requesterIdentityID, profile.Profile{
 			AgentMD:     entry.session.DraftAgentMD,
-			Preferences: entry.session.Preferences,
+			Preferences: profile.Preferences(entry.session.Preferences),
 			Metadata: profile.Metadata{
 				Version:             1,
 				SchemaVersion:       1,
@@ -548,7 +548,7 @@ func (s *onboardingService) persistProfile(entry *sessionEntry, identityID strin
 	}
 	err := s.profiles.WriteProfile(identityID, profile.Profile{
 		AgentMD:     entry.session.DraftAgentMD,
-		Preferences: entry.session.Preferences,
+		Preferences: profile.Preferences(entry.session.Preferences),
 		Metadata:    profile.Metadata{OnboardingCompleted: true},
 		Change:      "onboarding wizard",
 	})

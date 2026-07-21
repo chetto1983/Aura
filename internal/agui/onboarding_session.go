@@ -474,7 +474,7 @@ func (s *onboardingService) projectStep(entry *sessionEntry, t onboarding.Transi
 
 // marshalPreferences renders the session's structured preferences as a JSON string for the
 // step response (an encode failure yields "{}", never a partial body).
-func marshalPreferences(p profile.Preferences) string {
+func marshalPreferences(p onboarding.Preferences) string {
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return "{}"

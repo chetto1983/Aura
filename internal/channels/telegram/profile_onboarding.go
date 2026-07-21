@@ -259,7 +259,7 @@ func (p *profileOnboarding) writeCompleted(ps *profileSession, out profileReply)
 	}
 	return p.store.WriteProfile(ps.account.IdentityID, profile.Profile{
 		AgentMD:     ps.session.DraftAgentMD,
-		Preferences: ps.session.Preferences,
+		Preferences: profile.Preferences(ps.session.Preferences),
 		Metadata: profile.Metadata{
 			Version:             1,
 			SchemaVersion:       1,

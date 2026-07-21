@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 const maxAnswerFieldBytes = 2048
@@ -13,14 +11,14 @@ const maxAnswerFieldBytes = 2048
 // Draft is the rendered Agent.md plus structured preferences from onboarding answers.
 type Draft struct {
 	AgentMD         string
-	Preferences     profile.Preferences
+	Preferences     Preferences
 	PreferencesJSON string
 }
 
 // ExtractDraft renders a bounded Agent.md draft and preferences from answers.
 func ExtractDraft(answers Answers) (Draft, error) {
 	answers = cleanAnswers(answers)
-	prefs := profile.Preferences{
+	prefs := Preferences{
 		Lang:                answers.Lang,
 		Timezone:            answers.Timezone,
 		Location:            answers.Location,
@@ -30,7 +28,7 @@ func ExtractDraft(answers Answers) (Draft, error) {
 		ResponseLength:      answers.ResponseLength,
 	}
 
-	md := profile.RenderAgentMD(profile.AgentContent{
+	md := RenderAgentMD(AgentContent{
 		Identity:           identityLines(answers),
 		ExpertiseTools:     expertiseLines(answers),
 		ProjectsGoals:      projectGoalLines(answers),
@@ -40,8 +38,8 @@ func ExtractDraft(answers Answers) (Draft, error) {
 		Vetoes:             bulletLines(answers.Vetoes),
 		CustomInstructions: customInstructionLines(answers),
 	})
-	if len([]byte(md)) > profile.MaxAgentMDBytes {
-		md = truncateBytes(md, profile.MaxAgentMDBytes)
+	if len([]byte(md)) > MaxAgentMDBytes {
+		md = truncateBytes(md, MaxAgentMDBytes)
 	}
 	prefsJSON, err := json.Marshal(prefs)
 	if err != nil {
