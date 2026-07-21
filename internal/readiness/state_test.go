@@ -2,7 +2,7 @@ package readiness
 
 import (
 	"errors"
-	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -76,6 +76,7 @@ func TestSnapshotReasonsAreSortedAndRaceSafe(t *testing.T) {
 	}
 	wg.Wait()
 	s.MarkDraining()
+	s.MarkSchedulerFailure(errors.New("terminal"))
 	assertReasons(t, s,
 		CodeDraining,
 		CodeListenerUnavailable,
@@ -86,7 +87,7 @@ func TestSnapshotReasonsAreSortedAndRaceSafe(t *testing.T) {
 
 func assertReasons(t *testing.T, s *Snapshot, want ...Code) {
 	t.Helper()
-	if got := s.Reasons(); !reflect.DeepEqual(got, want) {
+	if got := s.Reasons(); !slices.Equal(got, want) {
 		t.Fatalf("Reasons() = %v, want %v", got, want)
 	}
 }

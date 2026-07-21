@@ -1,7 +1,11 @@
 // Package readiness owns the daemon's in-process readiness snapshot.
 package readiness
 
-import "time"
+import (
+	"sort"
+	"sync"
+	"time"
+)
 
 // Code is a stable, Aura-owned public readiness reason code.
 type Code string
@@ -19,7 +23,11 @@ const (
 	CodeSchedulerStalled Code = "scheduler_stalled"
 	// CodeDraining reports that ordered process shutdown has begun.
 	CodeDraining Code = "draining"
+	// CodeDependencyUnavailable is the bounded fallback for an unclassified required probe.
+	CodeDependencyUnavailable Code = "dependency_unavailable"
 )
+
+const defaultSchedulerMaxAge = 90 * time.Second
 
 // Config controls snapshot defaults and time-based scheduler freshness.
 type Config struct {
@@ -30,35 +38,134 @@ type Config struct {
 }
 
 // Snapshot is the concurrency-safe daemon lifecycle and progress snapshot.
-// The implementation is completed in the GREEN step for plan 39-03.
-type Snapshot struct{}
+type Snapshot struct {
+	now             func() time.Time
+	schedulerMaxAge time.Duration
+
+	mu                    sync.RWMutex
+	listenerBound         bool
+	listenerRunning       bool
+	listenerFailure       error
+	draining              bool
+	migrationCompatible   bool
+	schedulerEnabled      bool
+	schedulerLastProgress time.Time
+	schedulerFailure      error
+}
 
 // NewSnapshot builds a snapshot from the supplied runtime configuration.
-func NewSnapshot(Config) *Snapshot { return &Snapshot{} }
+func NewSnapshot(cfg Config) *Snapshot {
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	maxAge := cfg.SchedulerMaxAge
+	if maxAge <= 0 {
+		maxAge = defaultSchedulerMaxAge
+	}
+	return &Snapshot{
+		now:                 now,
+		schedulerMaxAge:     maxAge,
+		migrationCompatible: cfg.MigrationCompatible,
+		schedulerEnabled:    cfg.SchedulerEnabled,
+	}
+}
 
 // MarkListenerBound records successful synchronous listener binding.
-func (*Snapshot) MarkListenerBound() {}
+func (s *Snapshot) MarkListenerBound() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listenerFailure == nil {
+		s.listenerBound = true
+	}
+}
 
 // MarkListenerRunning records entry into the HTTP serve loop.
-func (*Snapshot) MarkListenerRunning() {}
+func (s *Snapshot) MarkListenerRunning() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listenerFailure == nil {
+		s.listenerBound = true
+		s.listenerRunning = true
+	}
+}
 
 // MarkListenerFailure records a terminal listener failure.
-func (*Snapshot) MarkListenerFailure(error) {}
+func (s *Snapshot) MarkListenerFailure(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil {
+		return
+	}
+	s.listenerFailure = err
+	s.listenerRunning = false
+}
 
 // MarkDraining records the irreversible start of process drain.
-func (*Snapshot) MarkDraining() {}
+func (s *Snapshot) MarkDraining() {
+	s.mu.Lock()
+	s.draining = true
+	s.mu.Unlock()
+}
 
 // MarkMigrationCompatible records whether the runtime schema is at head.
-func (*Snapshot) MarkMigrationCompatible(bool) {}
+func (s *Snapshot) MarkMigrationCompatible(compatible bool) {
+	s.mu.Lock()
+	s.migrationCompatible = compatible
+	s.mu.Unlock()
+}
 
 // SetSchedulerEnabled records whether scheduler progress is required.
-func (*Snapshot) SetSchedulerEnabled(bool) {}
+func (s *Snapshot) SetSchedulerEnabled(enabled bool) {
+	s.mu.Lock()
+	s.schedulerEnabled = enabled
+	s.mu.Unlock()
+}
 
 // MarkSchedulerProgress records a successfully completed scheduler scan.
-func (*Snapshot) MarkSchedulerProgress() {}
+func (s *Snapshot) MarkSchedulerProgress() {
+	now := s.now().UTC()
+	s.mu.Lock()
+	if now.After(s.schedulerLastProgress) {
+		s.schedulerLastProgress = now
+	}
+	s.mu.Unlock()
+}
 
 // MarkSchedulerFailure records a terminal scheduler loop failure.
-func (*Snapshot) MarkSchedulerFailure(error) {}
+func (s *Snapshot) MarkSchedulerFailure(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.schedulerFailure = err
+	}
+}
 
 // Reasons returns sorted stable reason codes for current readiness failures.
-func (*Snapshot) Reasons() []Code { return nil }
+func (s *Snapshot) Reasons() []Code {
+	now := s.now().UTC()
+	s.mu.RLock()
+	listenerReady := s.listenerBound && s.listenerRunning && s.listenerFailure == nil
+	draining := s.draining
+	migrationCompatible := s.migrationCompatible
+	schedulerEnabled := s.schedulerEnabled
+	schedulerProgress := s.schedulerLastProgress
+	schedulerFailed := s.schedulerFailure != nil
+	s.mu.RUnlock()
+
+	reasons := make([]Code, 0, 4)
+	if draining {
+		reasons = append(reasons, CodeDraining)
+	}
+	if !listenerReady {
+		reasons = append(reasons, CodeListenerUnavailable)
+	}
+	if !migrationCompatible {
+		reasons = append(reasons, CodeMigrationIncompatible)
+	}
+	if schedulerEnabled && (schedulerFailed || schedulerProgress.IsZero() || now.Sub(schedulerProgress) > s.schedulerMaxAge) {
+		reasons = append(reasons, CodeSchedulerStalled)
+	}
+	sort.Slice(reasons, func(i, j int) bool { return reasons[i] < reasons[j] })
+	return reasons
+}
