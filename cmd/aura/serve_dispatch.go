@@ -85,6 +85,7 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
 		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
+		cron.KindRetentionSweep:   handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool)),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {

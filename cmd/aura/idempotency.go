@@ -58,6 +58,7 @@ var cliMutationCommands = map[string]cliMutationMeta{
 	"neo4j reset":               cliMutationMetaFor("neo4j_reset"),
 	"objectstore bootstrap":     cliMutationMetaFor("objectstore_bootstrap"),
 	"paused-states purge":       cliMutationMetaFor("paused_states_purge"),
+	"retention apply":           cliMutationMetaFor("retention_apply"),
 	"skills always":             cliMutationMetaFor("skill_always"),
 	"skills approve":            cliMutationMetaFor("skill_approve"),
 	"skills create":             cliMutationMetaFor("skill_create"),

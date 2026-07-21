@@ -339,6 +339,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedShareExpirySweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed share expiry sweep", "err", err)
 	}
+	if err := seedRetentionSweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed retention sweep", "err", err)
+	}
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain

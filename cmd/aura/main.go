@@ -87,6 +87,8 @@ func main() {
 		runPausedStates(os.Args[2:])
 	case "task":
 		runTask(os.Args[2:])
+	case "retention":
+		runRetention(os.Args[2:])
 	case "skills":
 		runSkills(os.Args[2:])
 	case "chat":
@@ -142,7 +144,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|version}")
 }
 
 func buildRegistry() *tools.Registry {

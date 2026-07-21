@@ -58,6 +58,7 @@ const (
 	KindIdentityPurge    TaskKind = "identity_purge"
 	KindSandboxReap      TaskKind = "sandbox_reap"
 	KindShareExpirySweep TaskKind = "share_expiry_sweep"
+	KindRetentionSweep   TaskKind = "retention_sweep"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical

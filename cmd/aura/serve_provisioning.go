@@ -503,3 +503,8 @@ func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
 func seedShareExpirySweep(ctx context.Context, store *cron.Store) error {
 	return seedDailyCronSweep(ctx, store, cron.KindShareExpirySweep, "0 4 * * *", "share expiry sweep")
 }
+
+// seedRetentionSweep installs the single scheduler owner for the shared engine.
+func seedRetentionSweep(ctx context.Context, store *cron.Store) error {
+	return seedDailyCronSweep(ctx, store, cron.KindRetentionSweep, "30 2 * * *", "retention sweep")
+}

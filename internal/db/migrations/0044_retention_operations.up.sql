@@ -1,6 +1,12 @@
 -- Durable two-phase retention plans. External bytes are removed while an item is
 -- deleting; metadata is finalized only after artifact_result is removed/absent.
 
+ALTER TABLE aura.scheduler_tasks DROP CONSTRAINT scheduler_tasks_kind_check;
+ALTER TABLE aura.scheduler_tasks ADD CONSTRAINT scheduler_tasks_kind_check
+    CHECK (kind IN ('reminder', 'agent_job', 'backup_postgres', 'backup_neo4j',
+        'skill_ttl_sweep', 'identity_purge', 'sandbox_reap', 'share_expiry_sweep',
+        'retention_sweep'));
+
 CREATE TABLE aura.retention_operations (
     id               uuid        PRIMARY KEY,
     token            text        NOT NULL UNIQUE,
