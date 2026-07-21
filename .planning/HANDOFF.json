@@ -1,53 +1,69 @@
 {
   "version": "1.0",
-  "timestamp": "2026-07-17T16:37:07.795Z",
-  "phase": "37F",
-  "phase_name": "conversation-artifact-sharing-export-inserted",
-  "phase_dir": ".planning/phases/37F-conversation-artifact-sharing-export-inserted",
-  "plan": 9,
-  "task": 1,
-  "total_tasks": 2,
+  "timestamp": "2026-07-21T13:42:31.502Z",
+  "phase": "39",
+  "phase_name": "idempotency-observability-pack",
+  "phase_dir": ".planning/phases/39-idempotency-observability-pack",
+  "plan": 5,
+  "task": 2,
+  "total_tasks": 3,
   "status": "paused",
-  "workflow": "gsd-execute-phase 37F (wave-based, sequential on master — worktrees disabled)",
-  "progress": "10 of 19 plans complete (+1 gap-closure plan 37F-20 authored, not yet executed)",
   "completed_tasks": [
-    {"id": "37F-01", "wave": 1, "name": "PRD amendment + ADR-0039", "status": "done", "commit": "6c17e63b9"},
-    {"id": "37F-02", "wave": 2, "name": "migration 0040 shared_links + share_audit + config", "status": "done", "commit": "42e61502f"},
-    {"id": "37F-03", "wave": 2, "name": "SC3 redaction core (allowlist Snapshot/BuildSnapshot)", "status": "done", "commit": "34a87f589"},
-    {"id": "37F-04", "wave": 2, "name": "token/expiry/object-key primitives (crypto/rand verified)", "status": "done", "commit": "8e55e6cae"},
-    {"id": "37F-05", "wave": 2, "name": "web foundations (R-05 asset seam, shareTypes.ts, i18n)", "status": "done", "commit": "2f21fc263"},
-    {"id": "37F-06", "wave": 3, "name": "markdown + json format adapters", "status": "done", "commit": "1f1be990a"},
-    {"id": "37F-07", "wave": 3, "name": "store + share_audit ledger + agui audit union", "status": "done", "commit": "9dfa40141"},
-    {"id": "37F-14", "wave": 3, "name": "ShareToggle shell affordance", "status": "done", "commit": "ebf8607e4"},
-    {"id": "37F-16", "wave": 3, "name": "SharePage read-only snapshot renderer", "status": "done", "commit": "ce932dcda"},
-    {"id": "37F-08", "wave": 4, "name": "share lifecycle service (Create/Update/Revoke/Resolve/bundle)", "status": "done", "commit": "cdee8a9e1"}
+    {
+      "id": 1,
+      "name": "Define canonical recording rules and precision-tested alerts",
+      "status": "done",
+      "commit": "244b94edc,99269004a"
+    },
+    {
+      "id": 2,
+      "name": "Provision stable Grafana dashboards and Tempo trace correlation",
+      "status": "in_progress",
+      "progress": "RED provisioning contract committed as af7d5b7b1. Datasource, dashboard provisioning, and Tempo configuration files exist but are uncommitted; dashboard JSON assets and task verification remain."
+    }
   ],
   "remaining_tasks": [
-    {"id": "37F-09", "wave": 4, "name": "WEBSHARE-01 export endpoint GET /api/conversations/{id}/export", "status": "not_started"},
-    {"id": "37F-15", "wave": 4, "name": "ShareModal + shareApi.ts (wires 37F-14's hardcoded false stubs)", "status": "not_started"},
-    {"id": "37F-10", "wave": 5, "name": "HTTP surface across 3 trust tiers (owner/internal/public)", "status": "not_started"},
-    {"id": "37F-11", "wave": 5, "name": "expiry sweep + revoke-on-conversation-delete", "status": "not_started"},
-    {"id": "37F-17", "wave": 5, "name": "share-management surfaces (SharedSection + SharedLinksSection)", "status": "not_started"},
-    {"id": "37F-12", "wave": 6, "name": "mount share surface on parent mux (share.public capability, /s/ route)", "status": "not_started"},
-    {"id": "37F-20", "wave": 6, "name": "RLS backstop for aura.shared_links (GAP CLOSURE — approved this session)", "status": "not_started"},
-    {"id": "37F-13", "wave": 7, "name": "cross-identity deny E2E (WEBSHARE-04, all 10 rows)", "status": "not_started"},
-    {"id": "37F-18", "wave": 8, "name": "full local green + bundle rebuild + quality snapshot", "status": "not_started"},
-    {"id": "37F-19", "wave": 9, "name": "manual verification + ship (CHECKPOINT — autonomous:false)", "status": "not_started"}
+    {
+      "id": 2,
+      "name": "Provision stable Grafana dashboards and Tempo trace correlation",
+      "status": "in_progress"
+    },
+    {
+      "id": 3,
+      "name": "Add digest-pinned Compose wiring and hermetic CI validation",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "Execute Phase 39 plans 39-06 and 39-07, Wave 4 gates, code review, regression, and phase verification",
+      "status": "not_started"
+    }
   ],
-  "blockers": [
-    {"description": "aura.shared_links has no RLS policy (only table in MUSR without one). App-level owner_identity_id predicate is today's only enforcement.", "type": "technical", "workaround": "Gap-closure plan 37F-20 authored + committed (b2d4cb321), slotted into wave 6 before 37F-13's E2E. Not yet executed."}
-  ],
+  "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [
-    {"action": "Rotate POSTGRES_PASSWORD", "context": "A 37F-02 executor leaked the live value into this session's transcript via an awk/shell-quoting mistake. Loopback-only (127.0.0.1:5432), NOT in git (.env untracked), so contained — but it is in the transcript. Rotate at a quiet moment: ALTER USER + update .env. Doing it mid-run would break the db_integration DSNs that 37F-09/10/11/20 depend on; best after wave 5 or at phase end.", "blocking": false}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "Execute sequentially on master, one plan at a time", "rationale": "workflow.use_worktrees=false; concurrent commits to the same master index race on index.lock. Also a known project constraint: a worktree path is not /mnt/d/Aura so WSL tests would hit the wrong tree.", "phase": "37F"},
-    {"decision": "Scope skills per plan in each executor prompt (Go skills for Go plans, web skills for web plans, none for doc plans)", "rationale": "Injecting all 20 project skills = ~46k tokens/executor of mostly-irrelevant reading (Neo4j on a Postgres+objectstore phase). User approved. Saves ~500k tokens phase-wide, zero safety loss.", "phase": "37F"},
-    {"decision": "Author 37F-20 to add RLS on shared_links", "rationale": "ADR-0039's Context asserts RLS backstops a forgotten WHERE as MUSR defense-in-depth; that was false for shared_links. Mirror 0032's permissive-on-unset policy keyed on owner_identity_id — the unset-identity escape hatch keeps /s/{token} and /shared/{id} resolvers (plain-pool reads) working. User approved 'Add migration 0041 + RLS policy'.", "phase": "37F"},
-    {"decision": "share_audit append-only via grants only (no trigger)", "rationale": "37F-02 decision, consistent with skill_audit/mcp_audit audit-table precedent; documented. Not a defect.", "phase": "37F"}
+    {
+      "decision": "Keep workflow.use_worktrees=false for Codex execution and run plan executors sequentially on master.",
+      "rationale": "The execute-phase preflight fails closed because Codex cannot provide GSD worktree isolation.",
+      "phase": "39"
+    },
+    {
+      "decision": "Use the generic-agent workaround with the installed gsd-executor TOML role injected/read at executor startup.",
+      "rationale": "The available spawn schema has no agent_type field.",
+      "phase": "39"
+    },
+    {
+      "decision": "Treat broad codebase drift as advisory and continue.",
+      "rationale": "The active non-blocking gate returned directive=warn and spawn_mapper=false; schema and UI gates passed.",
+      "phase": "39"
+    }
   ],
-  "uncommitted_files": [".planning/graphs/.last-build-status.json (background tool, leave alone)", ".planning/graphs/GRAPH_REPORT.md (background tool, leave alone)"],
-  "next_action": "Dispatch gsd-executor for 37F-09 (WEBSHARE-01 export endpoint) via Agent(subagent_type=gsd-executor, model=sonnet), then 37F-15 to finish wave 4. Use the per-plan scoped-skills prompt pattern established this session. After wave 4, run post-merge gate: MSYS_NO_PATHCONV=1 wsl bash /mnt/d/tmp/w2_gate.sh (build+untagged-test, expects 68 pkgs 0 fail).",
-  "context_notes": "10/19 done, health strong: every 'PASS' relayed was re-verified against WSL `go build`/tests (ground truth), and security-critical claims against source (crypto/rand only, zero llm. reachback in formatters, identity-scoped tx in store). Executors have been CATCHING plan drift rather than blindly following: 37F-14 found AppShell.tsx:514-517 cluster gone (commit 3f687e456 replaced it with ChatWorkspaceControls.tsx); 37F-16 found useBlobPreview.ts never re-pointed through the R-05 seam (would have broken every shared image/PDF). Two mid-response API errors (37F-01, 37F-03) were benign — atomic per-task commits mean a killed agent loses only the tail; recover via SendMessage-resume or clean re-dispatch. objectstore coverage 63.9% is pre-existing debt logged to deferred-items.md — 37F-18's coverage gate must face it. Parallel session (the user) is editing hooks (lefthook.yml, check-file-size.sh — now much faster), CLAUDE.md, README, docs, .planning/codebase — executors stage ONLY their own files by explicit path, never git add -A."
+  "uncommitted_files": [
+    "observability/grafana/provisioning/datasources/aura.yml",
+    "observability/grafana/provisioning/dashboards/aura.yml",
+    "observability/tempo/tempo.yml"
+  ],
+  "next_action": "Run $gsd-resume-work, verify the three uncommitted provisioning files against 39-05 Task 2 and commit them only after the task's dashboard/Tempo verification passes; then execute Task 3 and finish plans 39-06 and 39-07.",
+  "context_notes": "Phase 39 full execution was requested. Plans 39-01 through 39-04 completed with summaries and clean build/test/wave gates. Wave 4 began sequentially. The 39-05 executor was explicitly interrupted for pause after Task 1 GREEN and Task 2 RED. No background agents or external async jobs remain."
 }
