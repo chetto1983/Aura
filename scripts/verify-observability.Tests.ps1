@@ -94,7 +94,7 @@ try {
     }
     Assert-NegativeCase -Name 'unknown-label' -Expected 'forbidden label user_id' -Mutate {
         param($root)
-        Set-ContractText $root 'observability/grafana/dashboards/aura-agents.json' 'aura_agent_llm_call_total[5m]' 'aura_agent_llm_call_total{user_id="sensitive"}[5m]'
+        Set-ContractText $root 'observability/grafana/dashboards/aura-agents.json' 'aura_agent_llm_call_total[5m]' 'aura_agent_llm_call_total{user_id=\"sensitive\"}[5m]'
     }
     Assert-NegativeCase -Name 'alert-panel-link' -Expected 'references missing panel aura-overview/999' -Mutate {
         param($root)
@@ -115,7 +115,8 @@ try {
         param($root)
         $path = Join-Path $root 'compose.yaml'
         $text = Get-Content -LiteralPath $path -Raw
-        $text = [regex]::Replace($text, '(?m)^  tempo:\r?$', "  tempo:`n    ports: [`\"4317:4317`\"]", 1)
+        $replacement = '  tempo:' + [Environment]::NewLine + '    ports: ["4317:4317"]'
+        $text = [regex]::Replace($text, '(?m)^  tempo:\r?$', $replacement, 1)
         [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
     }
     Assert-NegativeCase -Name 'broken-provisioning-path' -Expected 'dashboard provider path does not match the Grafana mount' -Mutate {

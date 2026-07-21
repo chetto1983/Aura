@@ -18,7 +18,7 @@
       "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}, "id": 2,
       "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
-      "targets": [{"editorMode": "code", "expr": "aura:learning_oldest_age:max", "legendFormat": "oldest item", "range": true, "refId": "A"}], "title": "Learning oldest age", "type": "timeseries"
+      "targets": [{"editorMode": "code", "expr": "aura:learning_oldest_age:max_seconds", "legendFormat": "oldest item", "range": true, "refId": "A"}], "title": "Learning oldest age", "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Retention failures over fifteen minutes. Alert: failures > 0 for 5m.",

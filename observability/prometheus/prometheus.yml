@@ -11,6 +11,7 @@ rule_files:
 scrape_configs:
   - job_name: aura
     metrics_path: /metrics
+    fallback_scrape_protocol: PrometheusText0.0.4
     static_configs:
       - targets: [127.0.0.1:9464]
 
@@ -20,5 +21,4 @@ scrape_configs:
 
   - job_name: tempo
     static_configs:
-      - targets: [tempo:3200]
-
+      - targets: [127.0.0.1:3200]

@@ -11,7 +11,7 @@ datasources:
     type: prometheus
     uid: aura-prometheus
     access: proxy
-    url: http://prometheus:9090
+    url: http://aura:9090
     isDefault: true
     editable: false
     jsonData:
@@ -28,7 +28,7 @@ datasources:
     type: tempo
     uid: aura-tempo
     access: proxy
-    url: http://tempo:3200
+    url: http://aura:3200
     editable: false
     jsonData:
       httpMethod: GET

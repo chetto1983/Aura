@@ -160,6 +160,20 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           "$(go env GOPATH)/bin/govulncheck" $(bash scripts/go_packages.sh)
 
+  observability-contract:
+    name: Observability pack (fixtures + hermetic static gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Negative verifier fixtures
+        run: pwsh -NoProfile -File scripts/verify-observability.Tests.ps1
+
+      - name: Deployable observability contract
+        run: pwsh -NoProfile -File scripts/verify-observability.ps1 -StaticOnly
+
   integration-test:
     name: Integration tests (db_integration tag)
     runs-on: ubuntu-latest

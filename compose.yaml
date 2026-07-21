@@ -818,6 +818,96 @@ services:
       retries: 12
       start_period: 20s
 
+  # Optional local observability pack. Prometheus and Tempo join Aura's network
+  # namespace so the loopback-only metrics listener and OTLP receiver remain
+  # private. Grafana alone is published, and only on host loopback.
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    profiles: [observability]
+    restart: unless-stopped
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${AURA_PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${AURA_PROMETHEUS_RETENTION_SIZE:-2GB}
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - aura-prometheus:/prometheus
+    mem_limit: ${AURA_PROMETHEUS_MEM_LIMIT:-384m}
+    cpus: ${AURA_PROMETHEUS_CPUS:-0.50}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/bin/wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  tempo:
+    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    profiles: [observability]
+    restart: unless-stopped
+    # The distroless image has no init shell; root is required to initialize a
+    # fresh Docker-managed volume before Tempo writes bounded local blocks.
+    user: "0:0"
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_healthy
+    command:
+      - -config.file=/etc/tempo/tempo.yml
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - aura-tempo:/var/tempo
+    mem_limit: ${AURA_TEMPO_MEM_LIMIT:-512m}
+    cpus: ${AURA_TEMPO_CPUS:-0.50}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/tempo", "-config.file=/etc/tempo/tempo.yml", "-config.verify=true"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:12.3.3@sha256:9e1e77ade304069aee3196e9a4f210830e96e80ce9a2640891eccc324b152faf
+    profiles: [observability]
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+    ports:
+      - "127.0.0.1:${AURA_GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - aura-grafana:/var/lib/grafana
+    mem_limit: ${AURA_GRAFANA_MEM_LIMIT:-384m}
+    cpus: ${AURA_GRAFANA_CPUS:-0.50}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   aura-home:
   aura-postgres:
@@ -829,6 +919,9 @@ volumes:
   aura-ocr-vl:
   aura-rerank:
   aura-pim-data:
+  aura-prometheus:
+  aura-tempo:
+  aura-grafana:
   garage-data:
   # Warm package caches for the non-strict host-direct shell_exec path (npm/pip/uv download caches
   # under HOME=/root inside the aura container) — retained across recreates so re-installs are cache hits.
