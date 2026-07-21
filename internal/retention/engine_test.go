@@ -66,6 +66,7 @@ func TestEngineCrashAfterRemovalDoesNotRepeatDestructiveStep(t *testing.T) {
 	if first.Retryable != 1 || fixture.remover.calls != 1 {
 		t.Fatalf("first apply = %+v, removes=%d", first, fixture.remover.calls)
 	}
+	fixture.engine.Source = staticSource(nil)
 	second, err := fixture.engine.Apply(context.Background(), plan.Token)
 	if err != nil {
 		t.Fatal(err)
@@ -167,8 +168,21 @@ func TestEngineRejectsIncompleteConfigurationAndSourceFailure(t *testing.T) {
 	if _, err := fixture.engine.Plan(context.Background()); err == nil {
 		t.Fatal("source failure planned")
 	}
-	if _, err := fixture.engine.Apply(context.Background(), "token"); err == nil {
-		t.Fatal("source failure applied")
+	if _, err := fixture.engine.Apply(context.Background(), "token"); !errors.Is(err, ErrTokenMismatch) {
+		t.Fatalf("missing persisted token error = %v", err)
+	}
+}
+
+func TestEngineApplyDoesNotRescanLiveCandidates(t *testing.T) {
+	fixture := newEngineFixture(t)
+	plan, err := fixture.engine.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.engine.Source = failingSource{}
+	report, err := fixture.engine.Apply(context.Background(), plan.Token)
+	if err != nil || report.Completed != 1 {
+		t.Fatalf("Apply() = %+v, %v", report, err)
 	}
 }
 

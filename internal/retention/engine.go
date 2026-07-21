@@ -117,7 +117,7 @@ func (e *Engine) Plan(ctx context.Context) (plan Plan, err error) {
 	return plan, nil
 }
 
-// Apply recomputes the snapshot, requires its exact token, and executes bounded items.
+// Apply resolves the immutable persisted snapshot and executes its bounded items.
 func (e *Engine) Apply(ctx context.Context, token string) (report ApplyReport, err error) {
 	ctx, end := retentionApplyBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
@@ -127,23 +127,15 @@ func (e *Engine) Apply(ctx context.Context, token string) (report ApplyReport, e
 	if err = ctx.Err(); err != nil {
 		return report, err
 	}
+	if token == "" {
+		return report, ErrTokenMismatch
+	}
 	now := e.clock()
-	candidates, err := e.Source.Candidates(ctx, e.Policy, now)
-	if err != nil {
-		return report, fmt.Errorf("retention candidates: %w", err)
-	}
-	fresh, err := BuildPlan(e.Policy.Version, candidates, e.Policy.BatchSize)
-	if err != nil {
-		return report, err
-	}
-	if err = fresh.RequireToken(token); err != nil {
-		return report, err
-	}
 	operation, err := e.Store.GetByToken(ctx, token)
 	if err != nil {
 		return report, err
 	}
-	report = ApplyReport{PolicyVersion: e.Policy.Version, FailureClasses: map[string]int{}}
+	report = ApplyReport{PolicyVersion: operation.PolicyVersion, FailureClasses: map[string]int{}}
 	deadline := now.Add(e.Policy.MaxRunDuration)
 	for {
 		if err = ctx.Err(); err != nil {

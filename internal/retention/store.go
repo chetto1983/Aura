@@ -9,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -116,8 +117,14 @@ func (s *Store) SavePlan(ctx context.Context, plan Plan, now time.Time) (Operati
 
 // GetByToken resolves an already persisted plan without changing it.
 func (s *Store) GetByToken(ctx context.Context, token string) (Operation, error) {
+	if s == nil || s.q == nil || token == "" {
+		return Operation{}, ErrTokenMismatch
+	}
 	row, err := s.q.GetRetentionOperationByToken(ctx, token)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Operation{}, ErrTokenMismatch
+		}
 		return Operation{}, fmt.Errorf("get retention operation: %w", err)
 	}
 	return operationFromRow(row), nil
