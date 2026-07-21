@@ -56,6 +56,11 @@ func main() {
 	}
 	cliInvocationContext = preparedCtx
 	os.Args = append([]string{os.Args[0]}, preparedArgs...)
+	if os.Getenv(cliIdempotencyChildEnv) != "1" {
+		if handled, exitCode := executeCLIIdempotentParent(preparedCtx, preparedArgs, os.Stdout, os.Stderr); handled {
+			os.Exit(exitCode)
+		}
+	}
 	switch os.Args[1] {
 	case "tools":
 		printTools()

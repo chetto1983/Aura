@@ -1,12 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
+	"time"
 
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
@@ -19,6 +26,26 @@ type cliMutationMeta struct {
 }
 
 const cliExplicitOrGeneratedKey = "explicit_or_generated"
+
+const (
+	cliIdempotencyChildEnv  = "AURA_CLI_IDEMPOTENCY_CHILD"
+	cliReplayRetention      = 30 * 24 * time.Hour
+	maxCLIReplayStreamBytes = 96 << 10
+)
+
+type cliOperationRegistry interface {
+	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
+	Complete(context.Context, idempotency.CompleteRequest) error
+	MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error
+}
+
+type cliCommandExecutor func(context.Context, []string, io.Writer, io.Writer) int
+
+type cliReplayEnvelope struct {
+	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout,omitempty"`
+	Stderr   string `json:"stderr,omitempty"`
+}
 
 // cliInvocationContext is initialized once by main before command dispatch. CLI
 // composition roots that accept a context can consume this value so retries keep
@@ -120,6 +147,148 @@ func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer)
 func cliOperationFromContext(ctx context.Context) (string, [32]byte, bool) {
 	operation, ok := idempotency.OperationFromContext(ctx)
 	return operation.Key.Key, operation.Fingerprint, ok
+}
+
+func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stderr io.Writer) (bool, int) {
+	if _, mutating := cliMutationPath(args); !mutating {
+		return false, 0
+	}
+	cfg := config.LoadDB()
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "operation registry unavailable:", err)
+		return true, 2
+	}
+	defer pool.Close()
+	return true, runCLIIdempotent(ctx, args, stdout, stderr, idempotency.New(pool, idempotency.Config{}), executeCLIChild)
+}
+
+func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writer, registry cliOperationRegistry, execute cliCommandExecutor) int {
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok || registry == nil || execute == nil {
+		_, _ = fmt.Fprintln(stderr, "operation context unavailable")
+		return 2
+	}
+	decision, err := registry.Begin(ctx, idempotency.BeginRequest{Operation: operation.Key, Fingerprint: operation.Fingerprint})
+	if err != nil && !errors.Is(err, idempotency.ErrConflict) {
+		_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
+		return 2
+	}
+	switch decision.Decision {
+	case idempotency.DecisionAcquired:
+	case idempotency.DecisionReplay:
+		return replayCLIResult(decision.Replay, stdout, stderr)
+	case idempotency.DecisionResultExpired:
+		_, _ = fmt.Fprintln(stderr, "operation completed but its replay result expired")
+		return 2
+	case idempotency.DecisionConflict:
+		_, _ = fmt.Fprintln(stderr, "operation key conflicts with changed command arguments")
+		return 2
+	case idempotency.DecisionInProgress:
+		_, _ = fmt.Fprintln(stderr, "operation is still in progress")
+		return 2
+	case idempotency.DecisionIndeterminate:
+		_, _ = fmt.Fprintln(stderr, "operation outcome is indeterminate; do not retry automatically")
+		return 2
+	default:
+		_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
+		return 2
+	}
+
+	outCapture := &boundedCLIOutput{dst: stdout, limit: maxCLIReplayStreamBytes}
+	errCapture := &boundedCLIOutput{dst: stderr, limit: maxCLIReplayStreamBytes}
+	exitCode := execute(ctx, appendOperationKey(args, operation.Key.Key), outCapture, errCapture)
+	if exitCode != 0 || outCapture.overflow || errCapture.overflow {
+		if markErr := registry.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint); markErr != nil {
+			_, _ = fmt.Fprintln(stderr, "mark operation indeterminate:", markErr)
+		}
+		if outCapture.overflow || errCapture.overflow {
+			_, _ = fmt.Fprintln(stderr, "operation output exceeded durable replay limit")
+			if exitCode == 0 {
+				exitCode = 2
+			}
+		}
+		return exitCode
+	}
+	body, err := json.Marshal(cliReplayEnvelope{ExitCode: exitCode, Stdout: outCapture.buf.String(), Stderr: errCapture.buf.String()})
+	if err != nil {
+		_ = registry.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint)
+		return 2
+	}
+	completeErr := registry.Complete(ctx, idempotency.CompleteRequest{
+		Operation: operation.Key, Fingerprint: operation.Fingerprint,
+		Result: idempotency.ReplayResult{Body: body, StatusCode: 200, ExpiresAt: time.Now().UTC().Add(cliReplayRetention)},
+	})
+	if completeErr != nil {
+		_ = registry.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint)
+		_, _ = fmt.Fprintln(stderr, "operation completion unavailable")
+		return 2
+	}
+	return 0
+}
+
+func executeCLIChild(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	executable, err := os.Executable()
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "resolve executable:", err)
+		return 2
+	}
+	command := exec.CommandContext(ctx, executable, args...) //nolint:gosec // executable is the current Aura binary; args are the already-parsed CLI invocation
+	command.Env = append(os.Environ(), cliIdempotencyChildEnv+"=1")
+	command.Stdout = stdout
+	command.Stderr = stderr
+	if err := command.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode()
+		}
+		_, _ = fmt.Fprintln(stderr, "execute command:", err)
+		return 2
+	}
+	return 0
+}
+
+func appendOperationKey(args []string, key string) []string {
+	childArgs := append([]string(nil), args...)
+	return append(childArgs, "--operation-key", key)
+}
+
+func replayCLIResult(result *idempotency.ReplayResult, stdout, stderr io.Writer) int {
+	if result == nil || len(result.Body) == 0 {
+		_, _ = fmt.Fprintln(stderr, "operation replay unavailable")
+		return 2
+	}
+	var replay cliReplayEnvelope
+	if err := json.Unmarshal(result.Body, &replay); err != nil || replay.ExitCode != 0 {
+		_, _ = fmt.Fprintln(stderr, "operation replay unavailable")
+		return 2
+	}
+	_, _ = io.WriteString(stdout, replay.Stdout)
+	_, _ = io.WriteString(stderr, replay.Stderr)
+	return replay.ExitCode
+}
+
+type boundedCLIOutput struct {
+	dst      io.Writer
+	buf      bytes.Buffer
+	limit    int
+	overflow bool
+}
+
+func (w *boundedCLIOutput) Write(p []byte) (int, error) {
+	written, err := w.dst.Write(p)
+	remaining := w.limit - w.buf.Len()
+	if remaining > 0 {
+		copyLen := len(p)
+		if copyLen > remaining {
+			copyLen = remaining
+		}
+		_, _ = w.buf.Write(p[:copyLen])
+	}
+	if len(p) > remaining {
+		w.overflow = true
+	}
+	return written, err
 }
 
 func cliMutationPath(args []string) (string, bool) {
