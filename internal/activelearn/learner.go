@@ -16,7 +16,7 @@ type Learner struct {
 	floor   float64
 
 	ch     chan observation
-	seen   sync.Map // content-hash -> struct{}; one label per unique text, ever
+	seen   SeenSet // content-hash only; bounded/expiring policy is wired by New
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
