@@ -130,11 +130,16 @@ func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, 
 	}
 	switch state {
 	case StateCompleted:
-		if row.ReplayClearedAt.Valid || (len(row.ReplayBody) == 0 && !row.ReplayPreview.Valid && !row.ReplaySidecarRef.Valid && !row.ReplayStatusCode.Valid && len(row.ReplayHeaders) == 0) {
-			return BeginDecision{Decision: DecisionResultExpired}, nil
-		}
 		if !row.ReplayExpiresAt.Valid {
 			return BeginDecision{}, fmt.Errorf("read existing idempotency operation: completed replay expiry is missing")
+		}
+		// Expiry is an authorization boundary, independent of physical GC. Never
+		// emit retained HTTP/tool/CLI bytes at or after the durable deadline.
+		if !row.ReplayExpiresAt.Time.After(now) {
+			return BeginDecision{Decision: DecisionResultExpired}, nil
+		}
+		if row.ReplayClearedAt.Valid || (len(row.ReplayBody) == 0 && !row.ReplayPreview.Valid && !row.ReplaySidecarRef.Valid && !row.ReplayStatusCode.Valid && len(row.ReplayHeaders) == 0) {
+			return BeginDecision{Decision: DecisionResultExpired}, nil
 		}
 		headers := map[string]string(nil)
 		if len(row.ReplayHeaders) != 0 {

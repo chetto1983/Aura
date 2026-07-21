@@ -114,7 +114,9 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 		wantErr    error
 		wantReplay bool
 	}{
-		{name: "completed replay", row: testRow(req, StateCompleted, now, expires), want: DecisionReplay, wantReplay: true},
+		{name: "completed replay before deadline", row: testRow(req, StateCompleted, now, expires), want: DecisionReplay, wantReplay: true},
+		{name: "completed replay at deadline retains bytes but is expired", row: testRow(req, StateCompleted, now, now), want: DecisionResultExpired},
+		{name: "completed replay after deadline retains bytes but is expired", row: testRow(req, StateCompleted, now, now.Add(-time.Nanosecond)), want: DecisionResultExpired},
 		{name: "completed replay expired", row: func() sqlc.GetOperationRow {
 			row := testRow(req, StateCompleted, now, expires)
 			row.ReplayBody, row.ReplayPreview, row.ReplaySidecarRef = nil, pgtype.Text{}, pgtype.Text{}
