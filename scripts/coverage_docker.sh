@@ -23,7 +23,10 @@ read_secret() {
   if [ -z "$val" ] && [ -f .env ]; then
     val="$(grep -E "^${key}=" .env | head -1 | cut -d= -f2-)"
   fi
-  printf '%s' "$val"
+	# .env is commonly edited on Windows. A trailing CR is data to Bash and makes
+	# composed Postgres URLs fail net/url parsing, so normalize the line ending at
+	# this single credential boundary without altering any other value bytes.
+	printf '%s' "$val" | tr -d '\r'
 }
 PGPW="$(read_secret POSTGRES_PASSWORD)"
 NEOPW="$(read_secret NEO4J_PASSWORD)"
