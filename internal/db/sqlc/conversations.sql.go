@@ -82,6 +82,27 @@ func (q *Queries) DeleteConversationForIdentity(ctx context.Context, arg DeleteC
 	return result.RowsAffected(), nil
 }
 
+const deleteConversationForIdentityIfVersion = `-- name: DeleteConversationForIdentityIfVersion :execrows
+DELETE FROM aura.conversations
+WHERE id = $1
+  AND identity_id = $2
+  AND last_active_at = $3
+`
+
+type DeleteConversationForIdentityIfVersionParams struct {
+	ID              pgtype.UUID        `json:"id"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	ExpectedVersion pgtype.Timestamptz `json:"expected_version"`
+}
+
+func (q *Queries) DeleteConversationForIdentityIfVersion(ctx context.Context, arg DeleteConversationForIdentityIfVersionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteConversationForIdentityIfVersion, arg.ID, arg.IdentityID, arg.ExpectedVersion)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getConversation = `-- name: GetConversation :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
@@ -168,6 +189,25 @@ func (q *Queries) GetConversationLastInputTokens(ctx context.Context, conversati
 	var last_input_tokens int32
 	err := row.Scan(&last_input_tokens)
 	return last_input_tokens, err
+}
+
+const getConversationVersionForIdentity = `-- name: GetConversationVersionForIdentity :one
+SELECT last_active_at
+FROM aura.conversations
+WHERE id = $1
+  AND identity_id = $2
+`
+
+type GetConversationVersionForIdentityParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getConversationVersionForIdentity, arg.ID, arg.IdentityID)
+	var last_active_at pgtype.Timestamptz
+	err := row.Scan(&last_active_at)
+	return last_active_at, err
 }
 
 const listConversations = `-- name: ListConversations :many

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -25,6 +26,10 @@ import (
 // scoped to identityID, dropping each one's Garage bytes before it returns.
 type ShareRevoker interface {
 	RevokeConversationShares(ctx context.Context, conversationID, identityID string) error
+}
+
+type versionedConversationDelete interface {
+	DeleteForIdentityIfVersion(context.Context, string, string, time.Time) (int64, error)
 }
 
 // SetShareRevoker wires step 4.5's ShareRevoker seam after construction — required because
@@ -53,6 +58,19 @@ func (r *Runner) SetShareRevoker(sr ShareRevoker) { r.shareRevoker = sr }
 //     4.5. revoke shares       — drop each live share's Garage bytes before the row cascades (D-15)
 //  5. delete persistence    — the owner-scoped DeleteConversationForIdentity (+ sidecar purge)
 func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error) {
+	return r.deleteConversationLifecycle(ctx, identityID, convID, time.Time{})
+}
+
+// DeleteConversationLifecycleIfVersion runs the identical ordered teardown but
+// makes persistence deletion conditional on the version held by export-delete.
+func (r *Runner) DeleteConversationLifecycleIfVersion(ctx context.Context, identityID, convID string, expected time.Time) (int64, error) {
+	if expected.IsZero() {
+		return 0, errors.New("delete lifecycle: expected conversation version is required")
+	}
+	return r.deleteConversationLifecycle(ctx, identityID, convID, expected)
+}
+
+func (r *Runner) deleteConversationLifecycle(ctx context.Context, identityID, convID string, expected time.Time) (int64, error) {
 	owner := resolveOwnerIdentity(identityID)
 
 	// Owner gate (D-06): resolve the conversation owner-scoped. A foreign/absent id is
@@ -95,7 +113,14 @@ func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, co
 	}
 
 	// 5. Delete persistence, owner-scoped (rows-affected drives the surface's 403/404/204).
-	return r.Conv.DeleteForIdentity(ctx, convID, owner)
+	if expected.IsZero() {
+		return r.Conv.DeleteForIdentity(ctx, convID, owner)
+	}
+	conditional, ok := r.Conv.(versionedConversationDelete)
+	if !ok {
+		return 0, errors.New("delete lifecycle: conditional conversation delete unavailable")
+	}
+	return conditional.DeleteForIdentityIfVersion(ctx, convID, owner, expected)
 }
 
 // resolveOwnerIdentity maps an empty identity id — the CLI / no-principal path (D-25) — to

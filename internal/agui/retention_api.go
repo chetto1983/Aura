@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -19,6 +21,10 @@ const ownerExportPolicyVersion = "retention-v1"
 
 type serverOwnerExportSource struct {
 	server *Server
+}
+
+type ownerConversationVersionSource interface {
+	VersionForIdentity(context.Context, string, string) (time.Time, error)
 }
 
 type ownerConversationData struct {
@@ -49,6 +55,14 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 		releaseOnError()
 		return ExportSnapshot{}, ErrOwnerExportNotFound
 	}
+	var conversationVersion time.Time
+	if versions, ok := s.server.conv.(ownerConversationVersionSource); ok {
+		conversationVersion, err = versions.VersionForIdentity(ctx, conversationID, ownerID)
+		if err != nil {
+			releaseOnError()
+			return ExportSnapshot{}, fmt.Errorf("load owner export version: %w", err)
+		}
+	}
 	history, err := s.server.conv.LoadHistory(ctx, conversationID)
 	if err != nil {
 		releaseOnError()
@@ -75,7 +89,8 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 	}
 	return ExportSnapshot{
 		IdentitySnapshotID: uuid.NewString(), ConversationSnapshotID: uuid.NewString(),
-		ConversationJSON: data, Artifacts: artifacts, Omissions: []string{}, Release: release,
+		ConversationJSON: data, Artifacts: artifacts, Omissions: []string{},
+		ConversationVersion: conversationVersion, Release: release,
 	}, nil
 }
 
@@ -109,7 +124,14 @@ func (s *Server) handleOwnerExportMode(w http.ResponseWriter, r *http.Request, d
 	if !ok {
 		return
 	}
-	destination := NewMemoryExportDestination(defaultOwnerExportLimit)
+	var destination ExportDestination = NewMemoryExportDestination(defaultOwnerExportLimit)
+	if deleteAfter {
+		destination = s.ownerExports
+		if destination == nil {
+			http.Error(w, "durable owner export unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	exporter := &OwnerExporter{
 		Source: serverOwnerExportSource{server: s}, Destination: destination,
 		Deleter: s.run, AuraVersion: "unknown", PolicyVersion: ownerExportPolicyVersion,
@@ -129,7 +151,15 @@ func (s *Server) handleOwnerExportMode(w http.ResponseWriter, r *http.Request, d
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}
-	body, err := destination.Open(r.Context(), result.ExportID)
+	if deleteAfter {
+		downloadURL := "/api/owner-exports/" + url.PathEscape(result.ExportID) + "?expires=" + strconv.FormatInt(result.ExpiresAt.Unix(), 10)
+		writeJSONStatus(w, http.StatusCreated, map[string]any{
+			"export_id": result.ExportID, "download_url": downloadURL,
+			"expires_at": result.ExpiresAt.Format(time.RFC3339), "size": result.Size, "sha256": result.SHA256,
+		})
+		return
+	}
+	body, err := destination.Open(r.Context(), ownerID, result.ExportID, result.ExpiresAt)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
@@ -144,4 +174,41 @@ func (s *Server) handleOwnerExportMode(w http.ResponseWriter, r *http.Request, d
 	if _, err := io.Copy(w, body); err != nil {
 		return
 	}
+}
+
+func (s *Server) handleOwnerExportDownload(w http.ResponseWriter, r *http.Request) {
+	ownerID, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.ownerExports == nil {
+		http.Error(w, "durable owner export unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	exportID := r.PathValue("id")
+	if _, err := uuid.Parse(exportID); err != nil {
+		http.Error(w, "owner export not found", http.StatusNotFound)
+		return
+	}
+	expiresUnix, err := strconv.ParseInt(r.URL.Query().Get("expires"), 10, 64)
+	if err != nil {
+		http.Error(w, "owner export not found", http.StatusNotFound)
+		return
+	}
+	expiresAt := time.Unix(expiresUnix, 0).UTC()
+	if !expiresAt.After(time.Now().UTC()) || expiresAt.After(time.Now().UTC().Add(defaultOwnerExportRetention+time.Minute)) {
+		http.Error(w, "owner export not found", http.StatusNotFound)
+		return
+	}
+	body, err := s.ownerExports.Open(r.Context(), ownerID, exportID, expiresAt)
+	if err != nil {
+		http.Error(w, "owner export not found", http.StatusNotFound)
+		return
+	}
+	defer func() { _ = body.Close() }()
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", contentDisposition("aura-conversation-export.zip"))
+	_, _ = io.Copy(w, body)
 }

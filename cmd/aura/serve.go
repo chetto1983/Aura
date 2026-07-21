@@ -383,6 +383,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	})
 	aguiServer.SetOperationRegistry(chat.operations)
 	aguiServer.SetAssetService(chat.assets)
+	aguiServer.SetOwnerExportDestination(agui.NewObjectStoreExportDestination(objectStore, chat.cfg.ObjectStoreBucket))
 	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))

@@ -27,6 +27,8 @@ const ManifestVersion = 1
 
 const defaultOwnerExportLimit int64 = 1 << 30
 
+const defaultOwnerExportRetention = 30 * 24 * time.Hour
+
 // ErrOwnerExportNotFound hides absent and foreign ownership identically.
 var ErrOwnerExportNotFound = errors.New("owner export not found")
 
@@ -45,6 +47,7 @@ type ExportSnapshot struct {
 	ConversationJSON       []byte
 	Artifacts              []ExportArtifact
 	Omissions              []string
+	ConversationVersion    time.Time
 	Release                func()
 }
 
@@ -71,10 +74,11 @@ type ExportManifest struct {
 
 // ExportResult identifies a verified published archive.
 type ExportResult struct {
-	ExportID string
-	Size     int64
-	SHA256   string
-	Manifest ExportManifest
+	ExportID  string
+	Size      int64
+	SHA256    string
+	ExpiresAt time.Time
+	Manifest  ExportManifest
 }
 
 // OwnerExportSource provides a consistent snapshot and owner-scoped asset streams.
@@ -85,13 +89,17 @@ type OwnerExportSource interface {
 
 // ExportDestination atomically publishes and reopens an archive for verification.
 type ExportDestination interface {
-	Publish(context.Context, string, io.Reader, int64, string) error
-	Open(context.Context, string) (io.ReadCloser, error)
+	Publish(context.Context, string, string, io.Reader, int64, string, time.Time) error
+	Open(context.Context, string, string, time.Time) (io.ReadCloser, error)
 }
 
 // OwnerDeleteLifecycle is the canonical ordered teardown seam.
 type OwnerDeleteLifecycle interface {
 	DeleteConversationLifecycle(context.Context, string, string) (int64, error)
+}
+
+type ownerConditionalDeleteLifecycle interface {
+	DeleteConversationLifecycleIfVersion(context.Context, string, string, time.Time) (int64, error)
 }
 
 // OwnerExporter builds, publishes, verifies, and optionally tears down owner data.
@@ -102,28 +110,42 @@ type OwnerExporter struct {
 	AuraVersion     string
 	PolicyVersion   string
 	MaxArchiveBytes int64
+	Retention       time.Duration
 	Now             func() time.Time
 }
 
 // Export builds a bounded archive, publishes it atomically, then rereads and verifies it.
 func (e *OwnerExporter) Export(ctx context.Context, ownerID, conversationID string) (result ExportResult, err error) {
-	if e == nil || e.Source == nil || e.Destination == nil || e.PolicyVersion == "" {
-		return result, errors.New("owner export is not configured")
-	}
-	if ownerID == "" || conversationID == "" {
-		return result, ErrOwnerExportNotFound
-	}
-	snapshot, err := e.Source.Snapshot(ctx, ownerID, conversationID)
+	snapshot, err := e.acquireSnapshot(ctx, ownerID, conversationID)
 	if err != nil {
 		return result, err
 	}
 	if snapshot.Release != nil {
 		defer snapshot.Release()
 	}
+	return e.exportSnapshot(ctx, ownerID, snapshot)
+}
+
+func (e *OwnerExporter) acquireSnapshot(ctx context.Context, ownerID, conversationID string) (ExportSnapshot, error) {
+	if e == nil || e.Source == nil || e.Destination == nil || e.PolicyVersion == "" {
+		return ExportSnapshot{}, errors.New("owner export is not configured")
+	}
+	if ownerID == "" || conversationID == "" {
+		return ExportSnapshot{}, ErrOwnerExportNotFound
+	}
+	return e.Source.Snapshot(ctx, ownerID, conversationID)
+}
+
+func (e *OwnerExporter) exportSnapshot(ctx context.Context, ownerID string, snapshot ExportSnapshot) (result ExportResult, err error) {
 	now := time.Now().UTC()
 	if e.Now != nil {
 		now = e.Now().UTC()
 	}
+	retention := e.Retention
+	if retention <= 0 {
+		retention = defaultOwnerExportRetention
+	}
+	expiresAt := now.Add(retention)
 	manifest := ExportManifest{
 		ManifestVersion: ManifestVersion, SchemaVersion: 1, AuraVersion: e.AuraVersion,
 		PolicyVersion: e.PolicyVersion, IdentitySnapshotID: snapshot.IdentitySnapshotID,
@@ -207,13 +229,13 @@ func (e *OwnerExporter) Export(ctx context.Context, ownerID, conversationID stri
 	if _, err = temp.Seek(0, io.SeekStart); err != nil {
 		return result, fmt.Errorf("rewind owner export archive: %w", err)
 	}
-	if err = e.Destination.Publish(ctx, exportID, temp, stat.Size(), archiveHash); err != nil {
+	if err = e.Destination.Publish(ctx, ownerID, exportID, temp, stat.Size(), archiveHash, expiresAt); err != nil {
 		return result, fmt.Errorf("publish owner export: %w", err)
 	}
-	if err = e.verifyPublished(ctx, exportID, stat.Size(), archiveHash, manifest); err != nil {
+	if err = e.verifyPublished(ctx, ownerID, exportID, stat.Size(), archiveHash, manifest, expiresAt); err != nil {
 		return result, err
 	}
-	return ExportResult{ExportID: exportID, Size: stat.Size(), SHA256: archiveHash, Manifest: manifest}, nil
+	return ExportResult{ExportID: exportID, Size: stat.Size(), SHA256: archiveHash, ExpiresAt: expiresAt, Manifest: manifest}, nil
 }
 
 // ExportDelete invokes canonical teardown only after Export has been reread and verified.
@@ -221,11 +243,26 @@ func (e *OwnerExporter) ExportDelete(ctx context.Context, ownerID, conversationI
 	if e == nil || e.Deleter == nil {
 		return ExportResult{}, errors.New("owner export-delete is not configured")
 	}
-	result, err := e.Export(ctx, ownerID, conversationID)
+	snapshot, err := e.acquireSnapshot(ctx, ownerID, conversationID)
 	if err != nil {
 		return ExportResult{}, err
 	}
-	affected, err := e.Deleter.DeleteConversationLifecycle(ctx, ownerID, conversationID)
+	if snapshot.Release != nil {
+		defer snapshot.Release()
+	}
+	result, err := e.exportSnapshot(ctx, ownerID, snapshot)
+	if err != nil {
+		return ExportResult{}, err
+	}
+	var affected int64
+	if conditional, ok := e.Deleter.(ownerConditionalDeleteLifecycle); ok {
+		if snapshot.ConversationVersion.IsZero() {
+			return result, errors.New("owner export-delete snapshot version is unavailable")
+		}
+		affected, err = conditional.DeleteConversationLifecycleIfVersion(ctx, ownerID, conversationID, snapshot.ConversationVersion)
+	} else {
+		affected, err = e.Deleter.DeleteConversationLifecycle(ctx, ownerID, conversationID)
+	}
 	if err != nil {
 		return result, fmt.Errorf("owner export-delete lifecycle: %w", err)
 	}
@@ -235,8 +272,8 @@ func (e *OwnerExporter) ExportDelete(ctx context.Context, ownerID, conversationI
 	return result, nil
 }
 
-func (e *OwnerExporter) verifyPublished(ctx context.Context, exportID string, size int64, archiveHash string, manifest ExportManifest) error {
-	body, err := e.Destination.Open(ctx, exportID)
+func (e *OwnerExporter) verifyPublished(ctx context.Context, ownerID, exportID string, size int64, archiveHash string, manifest ExportManifest, expiresAt time.Time) error {
+	body, err := e.Destination.Open(ctx, ownerID, exportID, expiresAt)
 	if err != nil {
 		return fmt.Errorf("reopen owner export: %w", err)
 	}
@@ -366,8 +403,8 @@ func NewMemoryExportDestination(maxBytes int64) *MemoryExportDestination {
 }
 
 // Publish verifies bytes before atomically making the archive visible.
-func (d *MemoryExportDestination) Publish(_ context.Context, id string, body io.Reader, size int64, checksum string) error {
-	if d == nil || id == "" || size < 0 || size > d.max {
+func (d *MemoryExportDestination) Publish(_ context.Context, ownerID, id string, body io.Reader, size int64, checksum string, expiresAt time.Time) error {
+	if d == nil || ownerID == "" || id == "" || expiresAt.IsZero() || size < 0 || size > d.max {
 		return errors.New("owner export destination limit exceeded")
 	}
 	if d.failPut != nil {
@@ -382,21 +419,25 @@ func (d *MemoryExportDestination) Publish(_ context.Context, id string, body io.
 		return errors.New("owner export destination checksum mismatch")
 	}
 	d.mu.Lock()
-	d.items[id] = slices.Clone(data)
+	d.items[ownerExportMemoryKey(ownerID, id, expiresAt)] = slices.Clone(data)
 	d.mu.Unlock()
 	return nil
 }
 
 // Open returns a private copy of the published archive.
-func (d *MemoryExportDestination) Open(_ context.Context, id string) (io.ReadCloser, error) {
+func (d *MemoryExportDestination) Open(_ context.Context, ownerID, id string, expiresAt time.Time) (io.ReadCloser, error) {
 	d.mu.Lock()
-	data, ok := d.items[id]
+	data, ok := d.items[ownerExportMemoryKey(ownerID, id, expiresAt)]
 	copyData := slices.Clone(data)
 	d.mu.Unlock()
 	if !ok {
 		return nil, ErrOwnerExportNotFound
 	}
 	return io.NopCloser(bytes.NewReader(copyData)), nil
+}
+
+func ownerExportMemoryKey(ownerID, id string, expiresAt time.Time) string {
+	return ownerID + ":" + id + ":" + fmt.Sprint(expiresAt.Unix())
 }
 
 // Count reports the number of published archives.

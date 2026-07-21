@@ -104,11 +104,12 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run        Runner
-	conv       ConversationStore
-	operations operationRegistry
-	approvals  ApprovalStore
-	assets     AssetService
+	run          Runner
+	conv         ConversationStore
+	operations   operationRegistry
+	approvals    ApprovalStore
+	assets       AssetService
+	ownerExports ExportDestination
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
@@ -185,6 +186,12 @@ func (s *Server) SetOperationRegistry(registry operationRegistry) { s.operations
 
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
+
+// SetOwnerExportDestination wires durable owner-scoped archive storage used by
+// export-delete and resumable downloads.
+func (s *Server) SetOwnerExportDestination(destination ExportDestination) {
+	s.ownerExports = destination
+}
 
 // SetShareService wires the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 // handlers call. Set by the daemon composition root after NewServer (cmd/aura/

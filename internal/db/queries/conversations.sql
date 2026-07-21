@@ -96,6 +96,18 @@ DELETE FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2;
 
+-- name: GetConversationVersionForIdentity :one
+SELECT last_active_at
+FROM aura.conversations
+WHERE id = $1
+  AND identity_id = $2;
+
+-- name: DeleteConversationForIdentityIfVersion :execrows
+DELETE FROM aura.conversations
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND last_active_at = sqlc.arg(expected_version);
+
 -- name: UpdateConversationStatusForIdentity :execrows
 -- Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 -- /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.

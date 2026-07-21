@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,7 +52,7 @@ func TestOwnerExporterManifestIsVersionedDeterministicAndVerified(t *testing.T) 
 	if !slices.IsSorted(paths) || !slices.Contains(paths, "assets/a-id/caffè.txt") || !slices.Contains(paths, "conversation.json") {
 		t.Fatalf("manifest paths = %v", paths)
 	}
-	rc, err := destination.Open(context.Background(), result.ExportID)
+	rc, err := destination.Open(context.Background(), "owner", result.ExportID, result.ExpiresAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +88,42 @@ func TestOwnerExporterExportDeleteWaitsForVerifiedPublish(t *testing.T) {
 	}
 	if deleter.calls != 0 {
 		t.Fatalf("publish failure started %d deletes", deleter.calls)
+	}
+}
+
+func TestOwnerExporterExportDeleteHoldsSnapshotLockAcrossConditionalDelete(t *testing.T) {
+	t.Parallel()
+
+	source := &lockingOwnerExportSource{acquired: make(chan struct{}), version: time.Now().UTC()}
+	deleter := &lockingOwnerDelete{source: source}
+	destination := NewMemoryExportDestination(1 << 20)
+	exporter := &OwnerExporter{Source: source, Destination: destination, Deleter: deleter, PolicyVersion: "v1"}
+	type outcome struct {
+		result ExportResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := exporter.ExportDelete(context.Background(), "owner", "conversation")
+		done <- outcome{result: result, err: err}
+	}()
+	<-source.acquired
+	appendDone := make(chan struct{})
+	go func() {
+		source.mu.Lock()
+		if !source.deleted {
+			source.appended = true
+		}
+		source.mu.Unlock()
+		close(appendDone)
+	}()
+	got := <-done
+	<-appendDone
+	if got.err != nil {
+		t.Fatalf("ExportDelete: %v", got.err)
+	}
+	if deleter.sawReleased || source.appended || destination.Count() != 1 {
+		t.Fatalf("released-before-delete=%v appended=%v archives=%d", deleter.sawReleased, source.appended, destination.Count())
 	}
 }
 
@@ -145,6 +183,7 @@ func TestOwnerExportAPIScopesExportAndDeleteToPrincipal(t *testing.T) {
 		}
 		server := NewServer(run, store, ServerConfig{})
 		server.SetAssetService(assetService)
+		server.SetOwnerExportDestination(NewMemoryExportDestination(1 << 20))
 		return server, run, assetService
 	}
 
@@ -186,7 +225,7 @@ func TestOwnerExportAPIScopesExportAndDeleteToPrincipal(t *testing.T) {
 		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/conversations/"+goodID+"/export-delete", nil), localIdentityID)
 		rec := httptest.NewRecorder()
 		server.Mux().ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK || run.deleteLifecycleCalls != 1 {
+		if rec.Code != http.StatusCreated || run.deleteLifecycleCalls != 1 {
 			t.Fatalf("owner export-delete status/calls = %d/%d: %s", rec.Code, run.deleteLifecycleCalls, rec.Body.String())
 		}
 	})
@@ -203,6 +242,25 @@ func TestOwnerExportAPIScopesExportAndDeleteToPrincipal(t *testing.T) {
 			t.Fatalf("plain delete created hidden export list/open = %q/%q", assetService.listThreadID, assetService.openID)
 		}
 	})
+}
+
+func TestOwnerExportDeleteSurvivesClientDisconnect(t *testing.T) {
+	t.Parallel()
+
+	owner := localIdentityID
+	store := newOwnerConvStore(goodID, owner)
+	run := &scriptedRunner{conv: store}
+	assetService := &fakeAssetService{}
+	destination := NewMemoryExportDestination(1 << 20)
+	server := NewServer(run, store, ServerConfig{})
+	server.SetAssetService(assetService)
+	server.SetOwnerExportDestination(destination)
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/conversations/"+goodID+"/export-delete", nil), owner)
+	writer := &disconnectResponseWriter{header: make(http.Header)}
+	server.Mux().ServeHTTP(writer, req)
+	if run.deleteLifecycleCalls != 1 || destination.Count() != 1 {
+		t.Fatalf("delete calls=%d durable archives=%d, want 1/1", run.deleteLifecycleCalls, destination.Count())
+	}
 }
 
 type fakeOwnerExportSource struct {
@@ -229,3 +287,53 @@ func (f *fakeOwnerDelete) DeleteConversationLifecycle(context.Context, string, s
 	f.calls++
 	return 1, nil
 }
+
+type lockingOwnerExportSource struct {
+	mu       sync.Mutex
+	acquired chan struct{}
+	version  time.Time
+	released atomic.Bool
+	deleted  bool
+	appended bool
+}
+
+func (s *lockingOwnerExportSource) Snapshot(context.Context, string, string) (ExportSnapshot, error) {
+	s.mu.Lock()
+	close(s.acquired)
+	return ExportSnapshot{
+		IdentitySnapshotID: "identity", ConversationSnapshotID: "conversation",
+		ConversationJSON: []byte(`{}`), ConversationVersion: s.version,
+		Release: func() { s.released.Store(true); s.mu.Unlock() },
+	}, nil
+}
+
+func (*lockingOwnerExportSource) OpenArtifact(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, ErrOwnerExportNotFound
+}
+
+type lockingOwnerDelete struct {
+	source      *lockingOwnerExportSource
+	sawReleased bool
+}
+
+func (*lockingOwnerDelete) DeleteConversationLifecycle(context.Context, string, string) (int64, error) {
+	return 0, errors.New("unversioned delete used")
+}
+
+func (d *lockingOwnerDelete) DeleteConversationLifecycleIfVersion(_ context.Context, _, _ string, expected time.Time) (int64, error) {
+	d.sawReleased = d.source.released.Load()
+	if expected != d.source.version {
+		return 0, errors.New("version changed")
+	}
+	d.source.deleted = true
+	return 1, nil
+}
+
+type disconnectResponseWriter struct {
+	header http.Header
+	status int
+}
+
+func (w *disconnectResponseWriter) Header() http.Header     { return w.header }
+func (w *disconnectResponseWriter) WriteHeader(status int)  { w.status = status }
+func (*disconnectResponseWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }

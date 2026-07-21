@@ -57,6 +57,7 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/conversations/{id}/export", s.handleConversationExport)
 	mux.HandleFunc("GET /api/conversations/{id}/owner-export", s.handleOwnerExport)
 	mux.HandleFunc("POST /api/conversations/{id}/export-delete", s.handleOwnerExportDelete)
+	mux.HandleFunc("GET /api/owner-exports/{id}", s.handleOwnerExportDownload)
 	mux.HandleFunc("POST /api/conversations/{id}/rename", s.handleRenameConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/archive", s.handleArchiveConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/unarchive", s.handleArchiveConversation)

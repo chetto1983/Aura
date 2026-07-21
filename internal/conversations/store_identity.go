@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -114,6 +115,57 @@ func (s *Store) DeleteForIdentity(ctx context.Context, conversationID, identityI
 	}
 	if pErr := s.purgeConversationArtifacts(conversationID); pErr != nil {
 		return affected, pErr
+	}
+	return affected, nil
+}
+
+// VersionForIdentity returns the row version advanced by every persisted turn.
+// Export-delete carries this exact value into its conditional delete statement.
+func (s *Store) VersionForIdentity(ctx context.Context, conversationID, identityID string) (time.Time, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	var version time.Time
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, queryErr := q.GetConversationVersionForIdentity(ctx, sqlc.GetConversationVersionForIdentityParams{ID: id, IdentityID: owner})
+		if queryErr != nil {
+			return queryErr
+		}
+		version = value.Time
+		return nil
+	})
+	return version, err
+}
+
+// DeleteForIdentityIfVersion atomically refuses deletion when a turn or other
+// activity advanced last_active_at after the authorized export snapshot.
+func (s *Store) DeleteForIdentityIfVersion(ctx context.Context, conversationID, identityID string, expected time.Time) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, deleteErr := q.DeleteConversationForIdentityIfVersion(ctx, sqlc.DeleteConversationForIdentityIfVersionParams{
+			ID: id, IdentityID: owner, ExpectedVersion: pgtype.Timestamptz{Time: expected, Valid: true},
+		})
+		affected = value
+		return deleteErr
+	})
+	if err != nil || affected == 0 {
+		return affected, err
+	}
+	if purgeErr := s.purgeConversationArtifacts(conversationID); purgeErr != nil {
+		return affected, purgeErr
 	}
 	return affected, nil
 }

@@ -57,6 +57,7 @@ type Querier interface {
 	// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
 	// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
 	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
+	DeleteConversationForIdentityIfVersion(ctx context.Context, arg DeleteConversationForIdentityIfVersionParams) (int64, error)
 	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
@@ -84,6 +85,7 @@ type Querier interface {
 	// conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
 	// conversation has no request-bearing turn yet.
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (pgtype.Timestamptz, error)
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
