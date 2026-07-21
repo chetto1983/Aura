@@ -1,0 +1,47 @@
+{
+  "annotations": {"list": []}, "editable": false, "fiscalYearStartMonth": 0, "graphTooltip": 1, "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Overview", "type": "link", "url": "/d/aura-overview"},
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Tools and MCP", "type": "link", "url": "/d/aura-tools-mcp"},
+    {"asDropdown": false, "icon": "search", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Trace drilldown", "type": "link", "url": "/explore?left=%7B%22datasource%22:%22aura-tempo%22%7D"}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "LLM call p95 latency across bounded outcomes.",
+      "fieldConfig": {"defaults": {"links": [{"title": "LLM runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0}, "id": 1,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:llm_latency_p95_seconds", "legendFormat": "p95", "range": true, "refId": "A"}], "title": "LLM p95 latency", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Fast and slow LLM error-budget burn. Alert: both windows > 14.4 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "LLM runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 14.4}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}, "id": 2,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:llm_error_burn:rate5m", "legendFormat": "5m burn", "range": true, "refId": "A"}, {"editorMode": "code", "expr": "aura:llm_error_burn:rate1h", "legendFormat": "1h burn", "range": true, "refId": "B"}], "title": "LLM error-budget burn", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Fast and slow LLM latency-budget burn above 30 seconds. Alert: both windows > 14.4 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "LLM runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 14.4}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}, "id": 3,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:llm_latency_burn:rate5m", "legendFormat": "5m burn", "range": true, "refId": "A"}, {"editorMode": "code", "expr": "aura:llm_latency_burn:rate1h", "legendFormat": "1h burn", "range": true, "refId": "B"}], "title": "LLM latency-budget burn", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Completed LLM calls grouped only by bounded outcome.",
+      "fieldConfig": {"defaults": {"links": [{"title": "LLM runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8}, "id": 4,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (outcome) (rate(aura_agent_llm_call_total[5m]))", "legendFormat": "{{outcome}}", "range": true, "refId": "A"}], "title": "LLM call outcomes", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "In-flight agent boundaries grouped by the catalog-owned operation and transport enums.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Trace drilldown", "url": "/explore?left=%7B%22datasource%22:%22aura-tempo%22%7D"}], "noValue": "No data", "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 8}, "id": 5,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (operation, transport) (aura_boundary_in_flight)", "legendFormat": "{{operation}} / {{transport}}", "range": true, "refId": "A"}], "title": "Agent boundaries in flight", "type": "timeseries"
+    }
+  ],
+  "refresh": "30s", "schemaVersion": 41, "tags": ["aura", "agents", "bounded-labels"], "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"}, "timepicker": {}, "timezone": "browser", "title": "Aura / Agents", "uid": "aura-agents", "version": 1, "weekStart": ""
+}

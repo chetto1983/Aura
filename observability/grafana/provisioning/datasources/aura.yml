@@ -1,0 +1,48 @@
+apiVersion: 1
+
+deleteDatasources:
+  - name: Aura Prometheus
+    orgId: 1
+  - name: Aura Tempo
+    orgId: 1
+
+datasources:
+  - name: Aura Prometheus
+    type: prometheus
+    uid: aura-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      manageAlerts: false
+      prometheusType: Prometheus
+      prometheusVersion: 3.13.1
+      timeInterval: 15s
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: aura-tempo
+
+  - name: Aura Tempo
+    type: tempo
+    uid: aura-tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      httpMethod: GET
+      nodeGraph:
+        enabled: true
+      serviceMap:
+        datasourceUid: aura-prometheus
+      tracesToMetrics:
+        datasourceUid: aura-prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        tags:
+          - key: service.name
+            value: service_name
+        queries:
+          - name: Aura boundary activity
+            query: sum(rate(aura_agent_turn_total[$__rate_interval]))
