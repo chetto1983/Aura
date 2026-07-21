@@ -126,6 +126,35 @@ func TestCompactorGlobalPressureUsesBoundedWindow(t *testing.T) {
 	}
 }
 
+func TestCompactorRotatesPastFirstBucketPage(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	all := append(makeBucketCandidates("a", 1, now), makeBucketCandidates("b", 1, now)...)
+	all = append(all, makeBucketCandidates("c", 3, now)...)
+	store := newFakeStore("reasoning", all)
+	c := Compactor{Stores: []Store{store}, Config: Config{
+		TTL: 90 * 24 * time.Hour, BucketCap: 2, StoreCap: 100, BatchSize: 1,
+		BucketLimit: 2, PolicyVersion: "learning-v1",
+	}, Now: func() time.Time { return now }}
+
+	first, err := c.CompactBatch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Evicted != 0 {
+		t.Fatalf("first page evicted = %d, want 0", first.Evicted)
+	}
+	second, err := c.CompactBatch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Evicted != 1 {
+		t.Fatalf("second page evicted = %d, want 1", second.Evicted)
+	}
+	if count, _ := store.BucketCount(context.Background(), "c"); count != 2 {
+		t.Fatalf("second-page bucket count = %d, want 2", count)
+	}
+}
+
 func makeCandidates(n int, now time.Time) []Candidate { return makeBucketCandidates("bucket", n, now) }
 
 func makeBucketCandidates(bucket string, n int, now time.Time) []Candidate {
@@ -192,7 +221,7 @@ func (f *fakeStore) Expired(ctx context.Context, cutoff time.Time, limit int) ([
 	})
 	return f.bound(out, limit), ctx.Err()
 }
-func (f *fakeStore) Buckets(ctx context.Context, limit int) ([]string, error) {
+func (f *fakeStore) Buckets(ctx context.Context, after string, limit int) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -202,7 +231,9 @@ func (f *fakeStore) Buckets(ctx context.Context, limit int) ([]string, error) {
 	}
 	var out []string
 	for bucket := range set {
-		out = append(out, bucket)
+		if bucket > after {
+			out = append(out, bucket)
+		}
 	}
 	sort.Strings(out)
 	if len(out) > limit {

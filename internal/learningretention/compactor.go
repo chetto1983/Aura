@@ -3,6 +3,7 @@ package learningretention
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -10,7 +11,7 @@ import (
 type Store interface {
 	Name() string
 	Expired(context.Context, time.Time, int) ([]Candidate, error)
-	Buckets(context.Context, int) ([]string, error)
+	Buckets(context.Context, string, int) ([]string, error)
 	BucketCount(context.Context, string) (int, error)
 	Candidates(context.Context, string, int) ([]Candidate, error)
 	TotalCount(context.Context) (int, error)
@@ -46,6 +47,9 @@ type Compactor struct {
 	Config  Config
 	Now     func() time.Time
 	Metrics func(Metric)
+
+	cursorMu     sync.Mutex
+	bucketCursor map[string]string
 }
 
 // CompactBatch runs one bounded pass. Expiry is always processed before cap
@@ -83,10 +87,12 @@ func (c *Compactor) CompactBatch(ctx context.Context) (Report, error) {
 			}
 		}
 
-		buckets, err := store.Buckets(ctx, cfg.BucketLimit)
+		after := c.currentBucketCursor(store.Name())
+		buckets, err := store.Buckets(ctx, after, cfg.BucketLimit)
 		if err != nil {
 			return report, fmt.Errorf("learning compaction %s buckets: %w", store.Name(), err)
 		}
+		c.advanceBucketCursor(store.Name(), buckets, cfg.BucketLimit)
 		for _, bucket := range buckets {
 			if err := ctx.Err(); err != nil {
 				return report, err
@@ -141,6 +147,25 @@ func (c *Compactor) CompactBatch(ctx context.Context) (Report, error) {
 		c.record(store, "success", "completed", "none", deleted, max(0, total-deleted), oldestAge(c.now(), candidates))
 	}
 	return report, nil
+}
+
+func (c *Compactor) currentBucketCursor(store string) string {
+	c.cursorMu.Lock()
+	defer c.cursorMu.Unlock()
+	return c.bucketCursor[store]
+}
+
+func (c *Compactor) advanceBucketCursor(store string, buckets []string, limit int) {
+	c.cursorMu.Lock()
+	defer c.cursorMu.Unlock()
+	if c.bucketCursor == nil {
+		c.bucketCursor = make(map[string]string)
+	}
+	if len(buckets) == limit {
+		c.bucketCursor[store] = buckets[len(buckets)-1]
+		return
+	}
+	delete(c.bucketCursor, store)
 }
 
 func (c *Compactor) config() Config {

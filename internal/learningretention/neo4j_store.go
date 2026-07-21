@@ -47,14 +47,15 @@ LIMIT $limit`, s.Spec.Label, s.Spec.BucketField)
 	return s.readCandidates(ctx, query, map[string]any{"cutoff": cutoff.UTC().Format(time.RFC3339Nano), "limit": limit}, limit)
 }
 
-// Buckets returns one bounded, ordered page of learned bucket keys.
-func (s *GraphStore) Buckets(ctx context.Context, limit int) ([]string, error) {
+// Buckets returns one bounded, ordered page of learned bucket keys after the
+// stable cursor. An empty cursor starts a new rotation.
+func (s *GraphStore) Buckets(ctx context.Context, after string, limit int) ([]string, error) {
 	query := fmt.Sprintf(`MATCH (e:%s {source: 'learned'})
-WHERE e.%s IS NOT NULL
+WHERE e.%s IS NOT NULL AND ($after = '' OR e.%s > $after)
 RETURN DISTINCT e.%s AS bucket
 ORDER BY bucket ASC
-LIMIT $limit`, s.Spec.Label, s.Spec.BucketField, s.Spec.BucketField)
-	rows, err := s.read(ctx, query, map[string]any{"limit": limit})
+LIMIT $limit`, s.Spec.Label, s.Spec.BucketField, s.Spec.BucketField, s.Spec.BucketField)
+	rows, err := s.read(ctx, query, map[string]any{"after": after, "limit": limit})
 	if err != nil {
 		return nil, err
 	}

@@ -27,6 +27,15 @@ func TestLearningGraphStoreQueriesAreBoundedAndExcludePinnedSeeds(t *testing.T) 
 		t.Fatalf("pinned/unbounded candidate query: %s / %#v", graph.query, graph.params)
 	}
 
+	graph.readRows = []map[string]any{{"bucket": "second-page"}}
+	buckets, err := store.Buckets(context.Background(), "first-page", 128)
+	if err != nil || len(buckets) != 1 || buckets[0] != "second-page" {
+		t.Fatalf("Buckets() = %v, %v", buckets, err)
+	}
+	if !strings.Contains(graph.query, "e.tier > $after") || graph.params["after"] != "first-page" || graph.params["limit"] != 128 {
+		t.Fatalf("bucket cursor query = %s / %#v", graph.query, graph.params)
+	}
+
 	graph.readRows = []map[string]any{{"count": int64(10_001)}}
 	if count, err := store.TotalCount(context.Background()); err != nil || count != 10_001 {
 		t.Fatalf("TotalCount() = %d, %v", count, err)
