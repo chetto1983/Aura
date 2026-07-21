@@ -4,11 +4,20 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 )
+
+type secretStringer string
+
+func (s secretStringer) String() string { return string(s) }
+
+type secretLogValuer string
+
+func (s secretLogValuer) LogValue() slog.Value { return slog.StringValue(string(s)) }
 
 func TestInitInstallsJSONLoggerWithServiceAttrsAndTracerShutdown(t *testing.T) {
 	var logs bytes.Buffer
@@ -64,6 +73,37 @@ func TestInitAppliesDefaultServiceAttrs(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Fatalf("JSON log missing %s: %s", want, line)
 		}
+	}
+}
+
+func TestInitRedactsErrorsStringersLogValuersAndNestedGroups(t *testing.T) {
+	var logs bytes.Buffer
+	shutdown, err := Init(context.Background(), Config{OtelExporter: "none", LogWriter: &logs})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			t.Fatalf("shutdown: %v", err)
+		}
+	})
+
+	slog.Info("redaction",
+		slog.Any("err", errors.New("postgres://user:pass@host/db")),
+		slog.Any("stringer", secretStringer("password=hunter2")),
+		slog.Any("valuer", secretLogValuer("client_secret=client-value")),
+		slog.Group("nested", slog.Any("err", fmt.Errorf("request failed: bearer token-value"))),
+	)
+	line := logs.String()
+	for _, secret := range []string{"user:pass", "hunter2", "client-value", "token-value"} {
+		if strings.Contains(line, secret) {
+			t.Fatalf("JSON log leaked %q: %s", secret, line)
+		}
+	}
+	if got := strings.Count(line, "[redacted]"); got < 4 {
+		t.Fatalf("JSON log redaction count = %d, want at least 4: %s", got, line)
 	}
 }
 

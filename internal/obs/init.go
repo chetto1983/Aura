@@ -145,8 +145,28 @@ func InitRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 
 func redactAttr(groups []string, a slog.Attr) slog.Attr {
 	_ = groups
-	if a.Value.Kind() == slog.KindString {
-		a.Value = slog.StringValue(redact.String(a.Value.String()))
-	}
+	a.Value = redactValue(a.Value)
 	return a
+}
+
+func redactValue(value slog.Value) slog.Value {
+	value = value.Resolve()
+	switch value.Kind() {
+	case slog.KindString:
+		return slog.StringValue(redact.String(value.String()))
+	case slog.KindAny:
+		switch raw := value.Any().(type) {
+		case error:
+			return slog.StringValue(redact.String(raw.Error()))
+		case fmt.Stringer:
+			return slog.StringValue(redact.String(raw.String()))
+		}
+	case slog.KindGroup:
+		attrs := value.Group()
+		for i := range attrs {
+			attrs[i].Value = redactValue(attrs[i].Value)
+		}
+		return slog.GroupValue(attrs...)
+	}
+	return value
 }
