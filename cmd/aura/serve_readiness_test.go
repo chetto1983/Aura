@@ -5,13 +5,85 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/readiness"
 )
+
+func TestComposeAuraReadinessHealthcheckContract(t *testing.T) {
+	root := repoRootForTest(t)
+	valid := readProjectFile(t, root, "compose.yaml")
+	if err := validateAuraComposeReadiness([]byte(valid), agui.ReadinessProbeBudget); err != nil {
+		t.Fatalf("production compose readiness: %v", err)
+	}
+
+	cases := map[string]string{
+		"liveness endpoint":            strings.Replace(valid, "/readyz", "/healthz", 1),
+		"missing max time":             strings.Replace(valid, "--max-time 3 ", "", 1),
+		"external host":                strings.Replace(valid, "127.0.0.1:9080/readyz", "aura:9080/readyz", 1),
+		"timeout equals server budget": strings.Replace(valid, "--max-time 3", "--max-time 2", 1),
+	}
+	for name, contents := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := validateAuraComposeReadiness([]byte(contents), agui.ReadinessProbeBudget); err == nil {
+				t.Fatal("invalid Aura healthcheck passed semantic validation")
+			}
+		})
+	}
+}
+
+func TestReadyzReflectsRuntimeLossAndRecoveryWithoutRestart(t *testing.T) {
+	snapshot := readiness.NewSnapshot(readiness.Config{MigrationCompatible: true})
+	snapshot.MarkListenerRunning()
+	var postgresHealthy atomic.Bool
+	postgresHealthy.Store(true)
+	server := agui.NewServer(nil, nil, agui.ServerConfig{
+		ReadinessState: snapshot,
+		ReadinessProbes: []agui.ReadinessProbe{{
+			Name: "postgres",
+			Code: readiness.CodePostgresUnavailable,
+			Check: func(context.Context) error {
+				if !postgresHealthy.Load() {
+					return errors.New("driver detail must stay private")
+				}
+				return nil
+			},
+		}},
+	})
+	httpServer := httptest.NewServer(server.Mux())
+	t.Cleanup(httpServer.Close)
+
+	assertReadyzStatus(t, httpServer.URL, http.StatusOK)
+	postgresHealthy.Store(false)
+	assertReadyzStatus(t, httpServer.URL, http.StatusServiceUnavailable)
+	postgresHealthy.Store(true)
+	assertReadyzStatus(t, httpServer.URL, http.StatusOK)
+
+	snapshot.SetSchedulerEnabled(true)
+	assertReadyzStatus(t, httpServer.URL, http.StatusServiceUnavailable)
+	snapshot.MarkSchedulerProgress()
+	assertReadyzStatus(t, httpServer.URL, http.StatusOK)
+}
+
+func validateAuraComposeReadiness([]byte, time.Duration) error { return nil }
+
+func assertReadyzStatus(t *testing.T, baseURL string, want int) {
+	t.Helper()
+	resp, err := http.Get(baseURL + "/readyz")
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != want {
+		t.Fatalf("GET /readyz status = %d, want %d", resp.StatusCode, want)
+	}
+}
 
 type schedulerLifecycleFunc func(context.Context) error
 
