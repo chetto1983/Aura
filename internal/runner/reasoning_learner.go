@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/activelearn"
 	"github.com/chetto1983/aura/internal/agent/prompt"
+	"github.com/chetto1983/aura/internal/learningretention"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoninglearn"
 )
@@ -51,9 +53,17 @@ func buildReasoningLearner(d Deps, classifier *prompt.ReasoningClassifier) *reas
 		return nil
 	}
 	l := reasoninglearn.New(reasoninglearn.Config{
-		Oracle:  &reasoningOracle{client: d.Client, model: d.LLM.Model},
-		Saver:   d.ReasoningSaver,
-		Refresh: classifier.Refresh,
+		Oracle:         &reasoningOracle{client: d.Client, model: d.LLM.Model},
+		Saver:          d.ReasoningSaver,
+		Refresh:        classifier.Refresh,
+		SeenMaxEntries: d.Learning.SeenMaxEntries,
+		SeenTTL:        d.Learning.SeenTTL,
+		Metrics: func(metric activelearn.LearningMetric) {
+			learningretention.RecordMetric(learningretention.Metric{
+				Operation: metric.Operation, ToolClass: "data", Outcome: metric.Outcome,
+				State: metric.State, ErrorClass: metric.ErrorClass, Size: metric.Size, OldestAge: metric.OldestAge,
+			})
+		},
 	})
 	classifier.SetLearner(l)
 	return l

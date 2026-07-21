@@ -345,7 +345,7 @@ func (d *Dispatch) insertPendingNotification(
 // the audit summary is always written to the run ledger; only the success push is skipped.
 func isSilentSuccessKind(kind TaskKind) bool {
 	switch kind {
-	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep, KindRetentionSweep:
+	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep, KindRetentionSweep, KindLearningCompaction:
 		return true
 	default:
 		return false

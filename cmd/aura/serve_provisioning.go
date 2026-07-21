@@ -508,3 +508,8 @@ func seedShareExpirySweep(ctx context.Context, store *cron.Store) error {
 func seedRetentionSweep(ctx context.Context, store *cron.Store) error {
 	return seedDailyCronSweep(ctx, store, cron.KindRetentionSweep, "30 2 * * *", "retention sweep")
 }
+
+// seedLearningCompaction installs the single daily bounded learned-example owner.
+func seedLearningCompaction(ctx context.Context, store *cron.Store) error {
+	return seedDailyCronSweep(ctx, store, cron.KindLearningCompaction, "15 3 * * *", "learning compaction")
+}

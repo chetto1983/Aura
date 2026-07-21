@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -76,6 +77,7 @@ type Deps struct {
 	Client          llm.Client
 	Registry        *tools.Registry
 	LLM             llm.Config
+	Learning        config.LearningConfig
 	// Breaker is the SHARED process-lifetime LLM circuit breaker (B-05). The
 	// composition root may inject one; nil => New mints the default. It is threaded
 	// into every per-turn agent so a provider outage trips cross-turn protection.

@@ -26,6 +26,7 @@ import (
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/learningretention"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
@@ -62,7 +63,8 @@ type chatEnv struct {
 	// under a non-strict profile or a Docker-unavailable host — a safe host-direct no-op
 	// everywhere (Route/Strict/SuspendIdle all nil-guard). buildDispatch registers it as the
 	// KindSandboxReap reaper; plan 37-07 wires it onto the box-capable tools.
-	sandboxRouter *usersandbox.SandboxRouter
+	sandboxRouter  *usersandbox.SandboxRouter
+	learningStores []learningretention.Store
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
@@ -304,6 +306,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// leaves it seed-only and never blocks boot.
 	var reasoningStore *reasoningstore.Store
 	var toolSelectStore *toolselectstore.Store
+	var learningStores []learningretention.Store
 	// WR-05 — coupling note: the tool-selection active-learning loop has NO independent
 	// enable flag. It deliberately rides AURA_LLM_REASONING_LEARNING (cfg.LLM.ReasoningLearning)
 	// below: the toolSelectStore is constructed only inside this gate, sharing the SAME
@@ -317,6 +320,10 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
 		} else {
 			mcpClosers = append(mcpClosers, gclient.Close)
+			learningStores = []learningretention.Store{
+				learningretention.NewReasoningGraphStore(gclient),
+				learningretention.NewToolSelectionGraphStore(gclient),
+			}
 			reasoningStore = &reasoningstore.Store{
 				Client: gclient, BucketCap: cfg.Learning.BucketCap,
 				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
@@ -352,6 +359,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		Client:           client,
 		Registry:         reg,
 		LLM:              cfg.LLM,
+		Learning:         cfg.Learning,
 		RunDir:           cfg.RunDir,
 		PreviewCap:       cfg.ToolPreviewCap,
 		EvictAfter:       cfg.ContextToolEvictAfterTurns,
@@ -378,7 +386,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, learningStores: learningStores}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

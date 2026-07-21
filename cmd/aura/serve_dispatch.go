@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/learningretention"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
 )
@@ -63,6 +64,15 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// has no responder, so a mutating GateRecommended call degrades to deny-with-guidance.
 		Gateway: chat.gateway,
 	}
+	learningCompactor := &learningretention.Compactor{
+		Stores: chat.learningStores,
+		Config: learningretention.Config{
+			TTL: time.Duration(chat.cfg.Learning.ExampleTTL), BucketCap: chat.cfg.Learning.BucketCap,
+			StoreCap: chat.cfg.Learning.StoreCap, BatchSize: 128, BucketLimit: 128,
+			PolicyVersion: "learning-v1",
+		},
+		Metrics: learningretention.RecordMetric,
+	}
 	real := map[cron.TaskKind]handlers.Handler{
 		cron.KindReminder:       handlers.ReminderHandler{},
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
@@ -84,8 +94,9 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// The D-15/OQ3 share-link expiry GC sweep (37F-18 wiring): chat.shareSvc
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
-		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
-		cron.KindRetentionSweep:   handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool)),
+		cron.KindShareExpirySweep:   handlers.NewShareExpiryHandler(chat.shareSvc),
+		cron.KindRetentionSweep:     handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool)),
+		cron.KindLearningCompaction: handlers.NewLearningCompactionHandler(learningCompactor),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {

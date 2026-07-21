@@ -342,6 +342,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedRetentionSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed retention sweep", "err", err)
 	}
+	if err := seedLearningCompaction(ctx, store); err != nil {
+		slog.Warn("aura serve: seed learning compaction", "err", err)
+	}
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain

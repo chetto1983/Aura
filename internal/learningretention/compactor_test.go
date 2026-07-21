@@ -90,11 +90,13 @@ func TestCompactorCancellationAndPartialFailureConvergeOnRerun(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	store := newFakeStore("tool_selection", makeBucketCandidates("secret-tool-name", 7, now))
 	store.deleteErr = errors.New("neo4j interrupted")
+	store.partialDelete = 1
 	c := Compactor{Stores: []Store{store}, Config: Config{TTL: 90 * 24 * time.Hour, BucketCap: 5, StoreCap: 10, BatchSize: 2, BucketLimit: 8, PolicyVersion: "learning-v1"}, Now: func() time.Time { return now }}
 	if _, err := c.CompactBatch(context.Background()); !errors.Is(err, store.deleteErr) {
 		t.Fatalf("partial failure = %v", err)
 	}
 	store.deleteErr = nil
+	store.partialDelete = 0
 	if _, err := c.CompactBatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -112,14 +114,14 @@ func TestCompactorCancellationAndPartialFailureConvergeOnRerun(t *testing.T) {
 
 func TestCompactorGlobalPressureUsesBoundedWindow(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
-	all := append(makeBucketCandidates("a", 4, now), makeBucketCandidates("b", 4, now.Add(time.Hour))...)
+	all := append(makeBucketCandidates("a", 5_001, now), makeBucketCandidates("b", 5_001, now.Add(time.Hour))...)
 	store := newFakeStore("reasoning", all)
-	c := Compactor{Stores: []Store{store}, Config: Config{TTL: 90 * 24 * time.Hour, BucketCap: 5, StoreCap: 6, BatchSize: 2, BucketLimit: 8, PolicyVersion: "learning-v1"}, Now: func() time.Time { return now }}
+	c := Compactor{Stores: []Store{store}, Config: Config{TTL: 90 * 24 * time.Hour, BucketCap: 6_000, StoreCap: 10_000, BatchSize: 2, BucketLimit: 8, PolicyVersion: "learning-v1"}, Now: func() time.Time { return now }}
 	report, err := c.CompactBatch(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Evicted != 2 || len(store.items) != 6 || store.maxRead > 8 || store.maxDelete > 2 {
+	if report.Evicted != 2 || len(store.items) != 10_000 || store.maxRead > 10_002 || store.maxDelete > 2 {
 		t.Fatalf("global report/items/bounds = %+v/%d/%d/%d", report, len(store.items), store.maxRead, store.maxDelete)
 	}
 }
@@ -159,6 +161,7 @@ type fakeStore struct {
 	name                      string
 	items                     map[string]Candidate
 	deleteErr                 error
+	partialDelete             int
 	calls, maxRead, maxDelete int
 }
 
@@ -255,7 +258,11 @@ func (f *fakeStore) Delete(ctx context.Context, candidates []Candidate) (int, er
 		f.maxDelete = len(candidates)
 	}
 	if f.deleteErr != nil {
-		return 0, f.deleteErr
+		deleted := min(f.partialDelete, len(candidates))
+		for _, candidate := range candidates[:deleted] {
+			delete(f.items, candidate.Hash)
+		}
+		return deleted, f.deleteErr
 	}
 	for _, candidate := range candidates {
 		delete(f.items, candidate.Hash)
