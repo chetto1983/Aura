@@ -167,3 +167,33 @@ func TestRunCLIIdempotentFailureBecomesTerminalIndeterminate(t *testing.T) {
 		t.Fatalf("marked=%d replay=%v, want terminal indeterminate", registry.marked, registry.replay)
 	}
 }
+
+func TestExecuteCLIIdempotentParentMigrationUsesSchemaOwner(t *testing.T) {
+	ctx, cleaned, err := prepareCLIIdempotency(context.Background(), []string{
+		"db", "migrate", "--operation-key", "migration-owner-key",
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	original := cliMutationCommands["db migrate"]
+	t.Cleanup(func() { cliMutationCommands["db migrate"] = original })
+	called := 0
+	meta := original
+	meta.Execute = func(_ context.Context, args []string, _, _ io.Writer) int {
+		called++
+		if !slices.Contains(args, "migration-owner-key") {
+			t.Fatalf("migration child args = %q, stable operation key missing", args)
+		}
+		return 0
+	}
+	cliMutationCommands["db migrate"] = meta
+
+	handled, code := executeCLIIdempotentParent(ctx, cleaned, io.Discard, io.Discard)
+	if !handled || code != 0 {
+		t.Fatalf("handled=%v code=%d, want schema owner success", handled, code)
+	}
+	if called != 1 {
+		t.Fatalf("migration executions=%d, want one", called)
+	}
+}

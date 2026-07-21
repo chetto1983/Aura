@@ -24,7 +24,15 @@ type cliMutationMeta struct {
 	Normalize string
 	KeyPolicy string
 	Execute   cliCommandExecutor
+	Owner     cliMutationOwner
 }
+
+type cliMutationOwner uint8
+
+const (
+	cliRegistryOwner cliMutationOwner = iota
+	cliMigrationOwner
+)
 
 const cliExplicitOrGeneratedKey = "explicit_or_generated"
 
@@ -61,7 +69,7 @@ var cliMutationCommands = map[string]cliMutationMeta{
 	"chat resume":               cliMutationMetaFor("chat_resume"),
 	"chat unarchive":            cliMutationMetaFor("chat_unarchive"),
 	"config set":                cliMutationMetaFor("config_set"),
-	"db migrate":                cliMutationMetaFor("db_migrate"),
+	"db migrate":                cliMigrationMetaFor("db_migrate"),
 	"db reset":                  cliMutationMetaFor("db_reset"),
 	"docs ingest":               cliMutationMetaFor("docs_ingest"),
 	"documents backfill":        cliMutationMetaFor("documents_backfill"),
@@ -101,8 +109,14 @@ var cliMutationCommands = map[string]cliMutationMeta{
 func cliMutationMetaFor(normalizer string) cliMutationMeta {
 	return cliMutationMeta{
 		Scope: idempotency.ScopeCLICommand, Normalize: normalizer,
-		KeyPolicy: cliExplicitOrGeneratedKey, Execute: executeCLIChild,
+		KeyPolicy: cliExplicitOrGeneratedKey, Execute: executeCLIChild, Owner: cliRegistryOwner,
 	}
+}
+
+func cliMigrationMetaFor(normalizer string) cliMutationMeta {
+	meta := cliMutationMetaFor(normalizer)
+	meta.Owner = cliMigrationOwner
+	return meta
 }
 
 // prepareCLIIdempotency removes Aura's cross-command --operation-key flag and
@@ -158,6 +172,9 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 	if !mutating {
 		return false, 0
 	}
+	if meta.Owner == cliMigrationOwner {
+		return true, runCLIMigrationOwner(ctx, args, stdout, stderr, meta.Execute)
+	}
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
@@ -166,6 +183,15 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 	}
 	defer pool.Close()
 	return true, runCLIIdempotent(ctx, args, stdout, stderr, idempotency.New(pool, idempotency.Config{}), meta.Execute)
+}
+
+func runCLIMigrationOwner(ctx context.Context, args []string, stdout, stderr io.Writer, execute cliCommandExecutor) int {
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok || execute == nil {
+		_, _ = fmt.Fprintln(stderr, "operation context unavailable")
+		return 2
+	}
+	return execute(ctx, appendOperationKey(args, operation.Key.Key), stdout, stderr)
 }
 
 func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writer, registry cliOperationRegistry, execute cliCommandExecutor) int {
