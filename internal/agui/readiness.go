@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/readiness"
@@ -45,36 +44,36 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type probeResult struct {
+		index int
 		probe ReadinessProbe
 		err   error
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), ReadinessProbeBudget)
 	defer cancel()
 	results := make(chan probeResult, len(s.cfg.ReadinessProbes))
-	var wg sync.WaitGroup
-	for _, probe := range s.cfg.ReadinessProbes {
+	pending := make(map[int]ReadinessProbe, len(s.cfg.ReadinessProbes))
+	for i, probe := range s.cfg.ReadinessProbes {
 		if probe.Check == nil {
 			continue
 		}
-		wg.Go(func() {
-			results <- probeResult{probe: probe, err: probe.Check(ctx)}
-		})
+		pending[i] = probe
+		go func() {
+			results <- probeResult{index: i, probe: probe, err: probe.Check(ctx)}
+		}()
 	}
-	wg.Wait()
-	close(results)
-	for result := range results {
-		if result.err == nil {
-			continue
+	for len(pending) > 0 {
+		select {
+		case result := <-results:
+			delete(pending, result.index)
+			if result.err != nil {
+				addReadinessProbeFailure(reasons, result.probe, result.err)
+			}
+		case <-ctx.Done():
+			for _, probe := range pending {
+				addReadinessProbeFailure(reasons, probe, ctx.Err())
+			}
+			clear(pending)
 		}
-		code := result.probe.Code
-		if code == "" {
-			code = readinessCodeForName(result.probe.Name)
-		}
-		reasons[code] = struct{}{}
-		slog.Warn("agui: readiness probe failed",
-			"probe", result.probe.Name,
-			"error", SanitizeString(result.err.Error()),
-		)
 	}
 
 	codes := make([]readiness.Code, 0, len(reasons))
@@ -101,6 +100,18 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		slog.Warn("agui: encode readyz response", "err", err)
 	}
+}
+
+func addReadinessProbeFailure(reasons map[readiness.Code]struct{}, probe ReadinessProbe, err error) {
+	code := probe.Code
+	if code == "" {
+		code = readinessCodeForName(probe.Name)
+	}
+	reasons[code] = struct{}{}
+	slog.Warn("agui: readiness probe failed",
+		"probe", probe.Name,
+		"error", SanitizeString(err.Error()),
+	)
 }
 
 func readinessCodeForName(name string) readiness.Code {

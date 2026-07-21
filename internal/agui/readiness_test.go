@@ -114,6 +114,39 @@ func TestReadinessGlobalDeadlineAndSanitizedSortedReasons(t *testing.T) {
 	}
 }
 
+func TestReadinessDeadlineDoesNotWaitForProbeIgnoringCancellation(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s := NewServer(nil, nil, ServerConfig{
+		ReadinessState: healthyReadinessState(),
+		ReadinessProbes: []ReadinessProbe{{
+			Name: "wedged",
+			Check: func(context.Context) error {
+				<-release
+				return nil
+			},
+		}},
+	})
+
+	started := time.Now()
+	rr := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if elapsed := time.Since(started); elapsed < 1500*time.Millisecond || elapsed >= 3*time.Second {
+		t.Fatalf("elapsed = %s, want shared deadline without waiting for wedged probe", elapsed)
+	}
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rr.Code, rr.Body.String())
+	}
+	var body readinessResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode readiness body: %v", err)
+	}
+	want := []runtimereadiness.Code{runtimereadiness.CodeDependencyUnavailable}
+	if !reflect.DeepEqual(body.Reasons, want) {
+		t.Fatalf("reasons = %v, want %v", body.Reasons, want)
+	}
+}
+
 func TestReadinessMergesSnapshotFailures(t *testing.T) {
 	snap := runtimereadiness.NewSnapshot(runtimereadiness.Config{SchedulerEnabled: true})
 	snap.MarkDraining()
