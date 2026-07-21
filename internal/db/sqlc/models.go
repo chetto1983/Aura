@@ -162,6 +162,8 @@ type AuraConversations struct {
 	TotalCachedTokens int64              `json:"total_cached_tokens"`
 	TotalCostUsd      pgtype.Numeric     `json:"total_cost_usd"`
 	Metadata          []byte             `json:"metadata"`
+	SnapshotVersion   int64              `json:"snapshot_version"`
+	DeleteReservation pgtype.Text        `json:"delete_reservation"`
 }
 
 type AuraDeleteJobs struct {

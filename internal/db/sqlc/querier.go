@@ -57,7 +57,7 @@ type Querier interface {
 	// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
 	// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
 	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
-	DeleteConversationForIdentityIfVersion(ctx context.Context, arg DeleteConversationForIdentityIfVersionParams) (int64, error)
+	DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error)
 	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
@@ -85,7 +85,7 @@ type Querier interface {
 	// conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
 	// conversation has no request-bearing turn yet.
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
-	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (pgtype.Timestamptz, error)
+	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
@@ -218,6 +218,9 @@ type Querier interface {
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	// Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
 	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)
+	// Cross-process export-delete fence. This must commit before any runtime teardown.
+	// Reusing the same deterministic reservation is idempotent after a process retry.
+	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error

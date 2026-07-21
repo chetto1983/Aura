@@ -125,7 +125,7 @@ func mustUUID(t *testing.T) (string, pgtype.UUID) {
 	return u.String(), pgtype.UUID{Bytes: u, Valid: true}
 }
 
-// conversationRowValues returns the 12 positional Scan values GetConversation /
+// conversationRowValues returns the positional Scan values GetConversation /
 // CreateConversation expect, matching AuraConversations field order.
 func conversationRowValues(id, identity pgtype.UUID, status, model string, titleSet bool, title string) []any {
 	cost := pgtype.Numeric{Int: big.NewInt(1234), Exp: -4, Valid: true} // 0.1234
@@ -133,16 +133,18 @@ func conversationRowValues(id, identity pgtype.UUID, status, model string, title
 	return []any{
 		id, // ID
 		pgtype.Text{String: title, Valid: titleSet}, // Title
-		identity,     // IdentityID
-		created,      // CreatedAt
-		created,      // LastActiveAt
-		status,       // Status
-		model,        // Model
-		int64(10),    // TotalInputTokens
-		int64(20),    // TotalOutputTokens
-		int64(5),     // TotalCachedTokens
-		cost,         // TotalCostUsd
-		[]byte(`{}`), // Metadata
+		identity,      // IdentityID
+		created,       // CreatedAt
+		created,       // LastActiveAt
+		status,        // Status
+		model,         // Model
+		int64(10),     // TotalInputTokens
+		int64(20),     // TotalOutputTokens
+		int64(5),      // TotalCachedTokens
+		cost,          // TotalCostUsd
+		[]byte(`{}`),  // Metadata
+		int64(1),      // SnapshotVersion
+		pgtype.Text{}, // DeleteReservation
 	}
 }
 

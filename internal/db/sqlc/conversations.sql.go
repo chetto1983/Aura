@@ -16,7 +16,7 @@ INSERT INTO aura.conversations (id, identity_id, model, status, metadata)
 VALUES ($1, $2, $3, 'active', $4)
 RETURNING id, title, identity_id, created_at, last_active_at, status, model,
           total_input_tokens, total_output_tokens, total_cached_tokens,
-          total_cost_usd, metadata
+          total_cost_usd, metadata, snapshot_version, delete_reservation
 `
 
 type CreateConversationParams struct {
@@ -47,6 +47,8 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 		&i.TotalCachedTokens,
 		&i.TotalCostUsd,
 		&i.Metadata,
+		&i.SnapshotVersion,
+		&i.DeleteReservation,
 	)
 	return i, err
 }
@@ -54,6 +56,7 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 const deleteConversation = `-- name: DeleteConversation :exec
 DELETE FROM aura.conversations
 WHERE id = $1
+  AND delete_reservation IS NULL
 `
 
 func (q *Queries) DeleteConversation(ctx context.Context, id pgtype.UUID) error {
@@ -65,6 +68,7 @@ const deleteConversationForIdentity = `-- name: DeleteConversationForIdentity :e
 DELETE FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2
+  AND delete_reservation IS NULL
 `
 
 type DeleteConversationForIdentityParams struct {
@@ -82,21 +86,21 @@ func (q *Queries) DeleteConversationForIdentity(ctx context.Context, arg DeleteC
 	return result.RowsAffected(), nil
 }
 
-const deleteConversationForIdentityIfVersion = `-- name: DeleteConversationForIdentityIfVersion :execrows
+const deleteConversationForIdentityIfReservation = `-- name: DeleteConversationForIdentityIfReservation :execrows
 DELETE FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2
-  AND last_active_at = $3
+  AND delete_reservation = $3
 `
 
-type DeleteConversationForIdentityIfVersionParams struct {
-	ID              pgtype.UUID        `json:"id"`
-	IdentityID      pgtype.UUID        `json:"identity_id"`
-	ExpectedVersion pgtype.Timestamptz `json:"expected_version"`
+type DeleteConversationForIdentityIfReservationParams struct {
+	ID          pgtype.UUID `json:"id"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Reservation pgtype.Text `json:"reservation"`
 }
 
-func (q *Queries) DeleteConversationForIdentityIfVersion(ctx context.Context, arg DeleteConversationForIdentityIfVersionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteConversationForIdentityIfVersion, arg.ID, arg.IdentityID, arg.ExpectedVersion)
+func (q *Queries) DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteConversationForIdentityIfReservation, arg.ID, arg.IdentityID, arg.Reservation)
 	if err != nil {
 		return 0, err
 	}
@@ -106,7 +110,7 @@ func (q *Queries) DeleteConversationForIdentityIfVersion(ctx context.Context, ar
 const getConversation = `-- name: GetConversation :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE id = $1
 `
@@ -127,6 +131,8 @@ func (q *Queries) GetConversation(ctx context.Context, id pgtype.UUID) (AuraConv
 		&i.TotalCachedTokens,
 		&i.TotalCostUsd,
 		&i.Metadata,
+		&i.SnapshotVersion,
+		&i.DeleteReservation,
 	)
 	return i, err
 }
@@ -134,7 +140,7 @@ func (q *Queries) GetConversation(ctx context.Context, id pgtype.UUID) (AuraConv
 const getConversationForIdentity = `-- name: GetConversationForIdentity :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2
@@ -164,6 +170,8 @@ func (q *Queries) GetConversationForIdentity(ctx context.Context, arg GetConvers
 		&i.TotalCachedTokens,
 		&i.TotalCostUsd,
 		&i.Metadata,
+		&i.SnapshotVersion,
+		&i.DeleteReservation,
 	)
 	return i, err
 }
@@ -192,7 +200,7 @@ func (q *Queries) GetConversationLastInputTokens(ctx context.Context, conversati
 }
 
 const getConversationVersionForIdentity = `-- name: GetConversationVersionForIdentity :one
-SELECT last_active_at
+SELECT snapshot_version
 FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2
@@ -203,17 +211,17 @@ type GetConversationVersionForIdentityParams struct {
 	IdentityID pgtype.UUID `json:"identity_id"`
 }
 
-func (q *Queries) GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (pgtype.Timestamptz, error) {
+func (q *Queries) GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error) {
 	row := q.db.QueryRow(ctx, getConversationVersionForIdentity, arg.ID, arg.IdentityID)
-	var last_active_at pgtype.Timestamptz
-	err := row.Scan(&last_active_at)
-	return last_active_at, err
+	var snapshot_version int64
+	err := row.Scan(&snapshot_version)
+	return snapshot_version, err
 }
 
 const listConversations = `-- name: ListConversations :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE status <> 'deleted'
   AND ($1::boolean OR status = 'active')
@@ -242,6 +250,8 @@ func (q *Queries) ListConversations(ctx context.Context, includeArchived bool) (
 			&i.TotalCachedTokens,
 			&i.TotalCostUsd,
 			&i.Metadata,
+			&i.SnapshotVersion,
+			&i.DeleteReservation,
 		); err != nil {
 			return nil, err
 		}
@@ -256,7 +266,7 @@ func (q *Queries) ListConversations(ctx context.Context, includeArchived bool) (
 const listConversationsForIdentity = `-- name: ListConversationsForIdentity :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE identity_id = $1
   AND status <> 'deleted'
@@ -293,6 +303,8 @@ func (q *Queries) ListConversationsForIdentity(ctx context.Context, arg ListConv
 			&i.TotalCachedTokens,
 			&i.TotalCostUsd,
 			&i.Metadata,
+			&i.SnapshotVersion,
+			&i.DeleteReservation,
 		); err != nil {
 			return nil, err
 		}
@@ -336,6 +348,37 @@ type RenameConversationForIdentityParams struct {
 // Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
 func (q *Queries) RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error) {
 	result, err := q.db.Exec(ctx, renameConversationForIdentity, arg.Title, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reserveConversationDeleteForIdentityIfVersion = `-- name: ReserveConversationDeleteForIdentityIfVersion :execrows
+UPDATE aura.conversations
+SET delete_reservation = $1
+WHERE id = $2
+  AND identity_id = $3
+  AND snapshot_version = $4
+  AND (delete_reservation IS NULL OR delete_reservation = $1)
+`
+
+type ReserveConversationDeleteForIdentityIfVersionParams struct {
+	Reservation     pgtype.Text `json:"reservation"`
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	ExpectedVersion int64       `json:"expected_version"`
+}
+
+// Cross-process export-delete fence. This must commit before any runtime teardown.
+// Reusing the same deterministic reservation is idempotent after a process retry.
+func (q *Queries) ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveConversationDeleteForIdentityIfVersion,
+		arg.Reservation,
+		arg.ID,
+		arg.IdentityID,
+		arg.ExpectedVersion,
+	)
 	if err != nil {
 		return 0, err
 	}

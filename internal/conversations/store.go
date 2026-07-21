@@ -105,7 +105,10 @@ type Conversation struct {
 	// ReasoningEffort is the per-conversation effort symbol persisted in the metadata
 	// jsonb (Phase 37E / D-06); "" means absent → the frontend hydrates it as auto (the
 	// adaptive policy runs unchanged, D-07). Populated by conversationFromRow.
-	ReasoningEffort   string
+	ReasoningEffort string
+	// SnapshotVersion is an internal monotonic export-delete concurrency token.
+	// It is omitted from conversation.json; the exporter carries it separately.
+	SnapshotVersion   int64 `json:"-"`
 	TotalInputTokens  int64
 	TotalOutputTokens int64
 	TotalCachedTokens int64

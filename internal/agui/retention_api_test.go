@@ -94,7 +94,7 @@ func TestOwnerExporterExportDeleteWaitsForVerifiedPublish(t *testing.T) {
 func TestOwnerExporterExportDeleteHoldsSnapshotLockAcrossConditionalDelete(t *testing.T) {
 	t.Parallel()
 
-	source := &lockingOwnerExportSource{acquired: make(chan struct{}), version: time.Now().UTC()}
+	source := &lockingOwnerExportSource{acquired: make(chan struct{}), version: 7}
 	deleter := &lockingOwnerDelete{source: source}
 	destination := NewMemoryExportDestination(1 << 20)
 	exporter := &OwnerExporter{Source: source, Destination: destination, Deleter: deleter, PolicyVersion: "v1"}
@@ -291,7 +291,7 @@ func (f *fakeOwnerDelete) DeleteConversationLifecycle(context.Context, string, s
 type lockingOwnerExportSource struct {
 	mu       sync.Mutex
 	acquired chan struct{}
-	version  time.Time
+	version  int64
 	released atomic.Bool
 	deleted  bool
 	appended bool
@@ -320,7 +320,7 @@ func (*lockingOwnerDelete) DeleteConversationLifecycle(context.Context, string, 
 	return 0, errors.New("unversioned delete used")
 }
 
-func (d *lockingOwnerDelete) DeleteConversationLifecycleIfVersion(_ context.Context, _, _ string, expected time.Time) (int64, error) {
+func (d *lockingOwnerDelete) DeleteConversationLifecycleIfVersion(_ context.Context, _, _ string, expected int64) (int64, error) {
 	d.sawReleased = d.source.released.Load()
 	if expected != d.source.version {
 		return 0, errors.New("version changed")

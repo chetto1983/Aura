@@ -24,7 +24,7 @@ type serverOwnerExportSource struct {
 }
 
 type ownerConversationVersionSource interface {
-	VersionForIdentity(context.Context, string, string) (time.Time, error)
+	VersionForIdentity(context.Context, string, string) (int64, error)
 }
 
 type ownerConversationData struct {
@@ -55,14 +55,7 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 		releaseOnError()
 		return ExportSnapshot{}, ErrOwnerExportNotFound
 	}
-	var conversationVersion time.Time
-	if versions, ok := s.server.conv.(ownerConversationVersionSource); ok {
-		conversationVersion, err = versions.VersionForIdentity(ctx, conversationID, ownerID)
-		if err != nil {
-			releaseOnError()
-			return ExportSnapshot{}, fmt.Errorf("load owner export version: %w", err)
-		}
-	}
+	conversationVersion := conversation.SnapshotVersion
 	history, err := s.server.conv.LoadHistory(ctx, conversationID)
 	if err != nil {
 		releaseOnError()
@@ -72,6 +65,17 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 	if err != nil {
 		releaseOnError()
 		return ExportSnapshot{}, fmt.Errorf("list owner export artifacts: %w", err)
+	}
+	if versions, ok := s.server.conv.(ownerConversationVersionSource); ok {
+		currentVersion, versionErr := versions.VersionForIdentity(ctx, conversationID, ownerID)
+		if versionErr != nil {
+			releaseOnError()
+			return ExportSnapshot{}, fmt.Errorf("load owner export version: %w", versionErr)
+		}
+		if conversationVersion <= 0 || currentVersion != conversationVersion {
+			releaseOnError()
+			return ExportSnapshot{}, ErrOwnerExportConflict
+		}
 	}
 	data, err := json.Marshal(ownerConversationData{SchemaVersion: 1, Conversation: conversation, Turns: history})
 	if err != nil {
@@ -144,6 +148,10 @@ func (s *Server) handleOwnerExportMode(w http.ResponseWriter, r *http.Request, d
 		result, err = exporter.Export(r.Context(), ownerID, conversationID)
 	}
 	if err != nil {
+		if errors.Is(err, ErrOwnerExportConflict) {
+			http.Error(w, "conversation changed during export", http.StatusConflict)
+			return
+		}
 		if errors.Is(err, ErrOwnerExportNotFound) {
 			http.Error(w, "conversation not found", http.StatusNotFound)
 			return

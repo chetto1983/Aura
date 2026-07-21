@@ -32,6 +32,10 @@ const defaultOwnerExportRetention = 30 * 24 * time.Hour
 // ErrOwnerExportNotFound hides absent and foreign ownership identically.
 var ErrOwnerExportNotFound = errors.New("owner export not found")
 
+// ErrOwnerExportConflict means the snapshot changed before its delete reservation
+// could be committed. The verified archive remains available, but live state is untouched.
+var ErrOwnerExportConflict = errors.New("owner export conflict")
+
 // ExportArtifact is one owner-scoped referenced asset descriptor.
 type ExportArtifact struct {
 	ID       string
@@ -47,7 +51,7 @@ type ExportSnapshot struct {
 	ConversationJSON       []byte
 	Artifacts              []ExportArtifact
 	Omissions              []string
-	ConversationVersion    time.Time
+	ConversationVersion    int64
 	Release                func()
 }
 
@@ -99,7 +103,7 @@ type OwnerDeleteLifecycle interface {
 }
 
 type ownerConditionalDeleteLifecycle interface {
-	DeleteConversationLifecycleIfVersion(context.Context, string, string, time.Time) (int64, error)
+	DeleteConversationLifecycleIfVersion(context.Context, string, string, int64) (int64, error)
 }
 
 // OwnerExporter builds, publishes, verifies, and optionally tears down owner data.
@@ -256,7 +260,7 @@ func (e *OwnerExporter) ExportDelete(ctx context.Context, ownerID, conversationI
 	}
 	var affected int64
 	if conditional, ok := e.Deleter.(ownerConditionalDeleteLifecycle); ok {
-		if snapshot.ConversationVersion.IsZero() {
+		if snapshot.ConversationVersion <= 0 {
 			return result, errors.New("owner export-delete snapshot version is unavailable")
 		}
 		affected, err = conditional.DeleteConversationLifecycleIfVersion(ctx, ownerID, conversationID, snapshot.ConversationVersion)
@@ -267,7 +271,7 @@ func (e *OwnerExporter) ExportDelete(ctx context.Context, ownerID, conversationI
 		return result, fmt.Errorf("owner export-delete lifecycle: %w", err)
 	}
 	if affected != 1 {
-		return result, ErrOwnerExportNotFound
+		return result, ErrOwnerExportConflict
 	}
 	return result, nil
 }

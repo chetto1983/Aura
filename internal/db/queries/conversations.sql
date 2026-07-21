@@ -3,12 +3,12 @@ INSERT INTO aura.conversations (id, identity_id, model, status, metadata)
 VALUES ($1, $2, $3, 'active', $4)
 RETURNING id, title, identity_id, created_at, last_active_at, status, model,
           total_input_tokens, total_output_tokens, total_cached_tokens,
-          total_cost_usd, metadata;
+          total_cost_usd, metadata, snapshot_version, delete_reservation;
 
 -- name: GetConversation :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE id = $1;
 
@@ -30,7 +30,7 @@ SELECT COALESCE((
 -- name: ListConversations :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE status <> 'deleted'
   AND (sqlc.arg(include_archived)::boolean OR status = 'active')
@@ -64,7 +64,8 @@ WHERE id = sqlc.arg(id);
 
 -- name: DeleteConversation :exec
 DELETE FROM aura.conversations
-WHERE id = $1;
+WHERE id = $1
+  AND delete_reservation IS NULL;
 
 -- name: GetConversationForIdentity :one
 -- Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
@@ -72,7 +73,7 @@ WHERE id = $1;
 -- Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2;
@@ -82,7 +83,7 @@ WHERE id = $1
 -- identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation
 FROM aura.conversations
 WHERE identity_id = sqlc.arg(identity_id)
   AND status <> 'deleted'
@@ -94,19 +95,30 @@ ORDER BY last_active_at DESC;
 -- owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
 DELETE FROM aura.conversations
 WHERE id = $1
-  AND identity_id = $2;
+  AND identity_id = $2
+  AND delete_reservation IS NULL;
 
 -- name: GetConversationVersionForIdentity :one
-SELECT last_active_at
+SELECT snapshot_version
 FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2;
 
--- name: DeleteConversationForIdentityIfVersion :execrows
+-- name: ReserveConversationDeleteForIdentityIfVersion :execrows
+-- Cross-process export-delete fence. This must commit before any runtime teardown.
+-- Reusing the same deterministic reservation is idempotent after a process retry.
+UPDATE aura.conversations
+SET delete_reservation = sqlc.arg(reservation)
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND snapshot_version = sqlc.arg(expected_version)
+  AND (delete_reservation IS NULL OR delete_reservation = sqlc.arg(reservation));
+
+-- name: DeleteConversationForIdentityIfReservation :execrows
 DELETE FROM aura.conversations
 WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
-  AND last_active_at = sqlc.arg(expected_version);
+  AND delete_reservation = sqlc.arg(reservation);
 
 -- name: UpdateConversationStatusForIdentity :execrows
 -- Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
