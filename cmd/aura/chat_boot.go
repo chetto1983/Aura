@@ -317,11 +317,21 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
 		} else {
 			mcpClosers = append(mcpClosers, gclient.Close)
-			reasoningStore = &reasoningstore.Store{Client: gclient}
+			reasoningStore = &reasoningstore.Store{
+				Client: gclient, BucketCap: cfg.Learning.BucketCap,
+				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
+			}
 			// The tool-selection active-learning loop (D-06/D-07) rides the SAME graph
 			// client: when the reasoning learner is on (and Neo4j opened) the tool_search
 			// ranker also self-improves via :ToolSelectionExample. No extra subprocess.
-			toolSelectStore = &toolselectstore.Store{Client: gclient}
+			toolSelectStore = &toolselectstore.Store{
+				Client: gclient, BucketCap: cfg.Learning.BucketCap,
+				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
+				ValidTool: func(name string) bool {
+					_, ok := reg.Get(name)
+					return ok
+				},
+			}
 		}
 	}
 

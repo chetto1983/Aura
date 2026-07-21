@@ -67,6 +67,14 @@ func TestStore_SaveLearnedReportsCapacity(t *testing.T) {
 	}
 }
 
+func TestStore_SaveAtCapacityDoesNotRetry(t *testing.T) {
+	g := &fakeGraph{writeRows: []map[string]any{{"status": "at_capacity"}}}
+	s := &Store{Client: g}
+	if err := s.Save(context.Background(), "query", "web_search", []float64{1}); err != nil {
+		t.Fatalf("capacity should be a committed drop, got retry error: %v", err)
+	}
+}
+
 func TestStore_PinnedSeedsAreSeparateAndBounded(t *testing.T) {
 	g := &fakeGraph{}
 	s := &Store{Client: g}
@@ -109,8 +117,8 @@ func TestStore_Save_NestsEmbeddingInUnwindRows(t *testing.T) {
 	if row["query"] != "find me a restaurant" {
 		t.Errorf("row query = %v", row["query"])
 	}
-	if row["source"] != "oracle" {
-		t.Errorf("row source = %v, want oracle", row["source"])
+	if row["source"] != "learned" {
+		t.Errorf("row source = %v, want learned", row["source"])
 	}
 	// The MERGE key is sha256(query) — idempotent re-labeling (risk #10).
 	if row["hash"] != neostore.HashText("find me a restaurant") {

@@ -66,6 +66,14 @@ func TestSaveLearned_ReportsCapAndPreservesCreationTimestamp(t *testing.T) {
 	}
 }
 
+func TestSave_AtCapacityIsACommittedDropNotARetryError(t *testing.T) {
+	g := &fakeGraph{writeRows: []map[string]any{{"status": "at_capacity"}}}
+	s := &Store{Client: g}
+	if err := s.Save(context.Background(), "text", []float64{1}, prompt.ReasoningTierLow); err != nil {
+		t.Fatalf("capacity should be a committed drop, got retry error: %v", err)
+	}
+}
+
 func TestPinnedSeedsUseSeparateLabelAndBypassLearnedCaps(t *testing.T) {
 	g := &fakeGraph{}
 	s := &Store{Client: g}
@@ -120,7 +128,7 @@ func TestSave_MergesByContentHash(t *testing.T) {
 		return params["rows"].([]map[string]any)[0]
 	}
 	p := row(g.written[0])
-	if p["tier"] != "none" || p["source"] != "oracle" {
+	if p["tier"] != "none" || p["source"] != "learned" {
 		t.Errorf("row = %+v", p)
 	}
 	h1 := p["hash"].(string)
