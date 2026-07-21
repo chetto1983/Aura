@@ -108,6 +108,13 @@ func (s *Snapshot) MarkDraining() {
 	s.mu.Unlock()
 }
 
+// IsDraining reports whether ordered process shutdown has begun.
+func (s *Snapshot) IsDraining() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.draining
+}
+
 // MarkMigrationCompatible records whether the runtime schema is at head.
 func (s *Snapshot) MarkMigrationCompatible(compatible bool) {
 	s.mu.Lock()

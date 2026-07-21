@@ -108,7 +108,7 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 	if tick <= 0 {
 		tick = time.Duration(envInt("AURA_SCHEDULER_TICK_SECONDS", int(defaultTickInterval/time.Second))) * time.Second
 	}
-	return &Scheduler{
+	scheduler := &Scheduler{
 		Now:                   now,
 		store:                 store,
 		pool:                  pool,
@@ -120,6 +120,10 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 		disabled:              cfg.Disabled,
 		reschedulesOnRecovery: cfg.ReschedulesOnRecovery,
 	}
+	if cfg.Readiness != nil {
+		cfg.Readiness.SetSchedulerEnabled(!cfg.Disabled)
+	}
+	return scheduler
 }
 
 // envInt reads a non-negative integer env var, falling back to def on unset or
@@ -160,6 +164,9 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	for _, m := range missed {
 		s.runMissed(ctx, m)
 	}
+	if err == nil && ctx.Err() == nil {
+		s.markTick()
+	}
 
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
@@ -168,7 +175,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := s.tick(ctx); err != nil {
+			if err := s.runScheduledScan(ctx); err != nil {
 				slog.Warn("scheduler tick failed", "err", err)
 			}
 		}
@@ -176,13 +183,22 @@ func (s *Scheduler) Start(ctx context.Context) error {
 }
 
 func (s *Scheduler) runScheduledScan(ctx context.Context) error {
+	scan := s.tick
 	if s.scan != nil {
-		return s.scan(ctx)
+		scan = s.scan
 	}
+	if err := scan(ctx); err != nil {
+		return err
+	}
+	s.markTick()
 	return nil
 }
 
-func (s *Scheduler) markTerminalFailure(error) {}
+func (s *Scheduler) markTerminalFailure(err error) {
+	if s.readiness != nil {
+		s.readiness.MarkSchedulerFailure(err)
+	}
+}
 
 // tick selects the due tasks (next_run_at<=Now, FOR UPDATE SKIP LOCKED) up to the
 // concurrency cap, then claims+dispatches each under a semaphore bounded by
@@ -192,7 +208,6 @@ func (s *Scheduler) markTerminalFailure(error) {}
 // tick blocks until all dispatched runs finish so Start's graceful shutdown joins
 // them (no leaked goroutine).
 func (s *Scheduler) tick(ctx context.Context) error {
-	s.markTick()
 	due, err := s.store.DueTasks(ctx, s.maxConcurrent)
 	if err != nil {
 		return fmt.Errorf("tick due tasks: %w", err)
@@ -224,6 +239,9 @@ func (s *Scheduler) markTick() {
 		now = s.Now
 	}
 	s.lastTickUnix.Store(now().UTC().UnixNano())
+	if s.readiness != nil {
+		s.readiness.MarkSchedulerProgress()
+	}
 }
 
 // LastTick returns the scheduler tick timestamp most recently recorded by tick.

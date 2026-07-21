@@ -19,9 +19,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,10 +33,12 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
 )
@@ -83,6 +85,7 @@ type serveEnv struct {
 	store     *cron.Store
 	scheduler *cron.Scheduler
 	httpSrv   *http.Server // the AG-UI gateway (Slice 8b), mounted alongside the tick loop
+	readiness *readiness.Snapshot
 
 	// channels is the Phase-13 channels Registry (Telegram). It mounts as a
 	// fail-soft daemon sibling of the AG-UI gateway; runServe StartAll/StopAll it.
@@ -188,16 +191,15 @@ func runServe(args []string) {
 		}
 	}()
 
-	// The AG-UI HTTP server runs in its own goroutine alongside the scheduler tick
-	// loop. ListenAndServe returning anything other than ErrServerClosed (the clean
-	// Shutdown signal) is logged but NEVER exits the process — the scheduler keeps the
-	// daemon useful even if the gateway port is taken (fail-soft, Pitfall 6).
+	// Bind before starting any serving goroutine. A collision is a synchronous boot
+	// failure; the joined lifecycle below owns every later Serve return.
+	listener, err := bindServeListener(env.httpSrv.Addr, net.Listen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura serve:", err)
+		os.Exit(exitInfra)
+	}
+	env.readiness.MarkListenerBound()
 	slog.Info("aura serve: agui http server listening", "addr", env.cfg.AGUIBind)
-	go func() {
-		if err := env.httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("aura serve: agui http server stopped", "err", err)
-		}
-	}()
 
 	// The channels Registry (Telegram) + the setup wizard server (:9081) mount as
 	// fail-soft siblings of the AG-UI gateway: a failed channel or a taken setup
@@ -225,34 +227,28 @@ func runServe(args []string) {
 	// error; on a clean shutdown it returns nil after the in-flight tick joins its
 	// workers. workCtx is STILL LIVE here, so an in-flight turn keeps running while
 	// the bounded drain below gives it a grace window to finalize (O-06/AP-17).
-	schedErr := env.scheduler.Start(signalCtx)
+	lifecycleErr := runServeComponents(signalCtx, env.readiness, listener, env.httpSrv, env.scheduler, func() {
+		shutdownBackgroundShells(env)
 
-	if env.toolHandles.BackgroundShells != nil {
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := env.toolHandles.BackgroundShells.Shutdown(shutCtx); err != nil {
-			slog.Warn("aura serve: background shell shutdown", "err", err)
+		// Bounded in-flight turn drain (O-06/AP-17): the signal stopped NEW work, but a
+		// turn already mid-stream must reach its terminal frame rather than being hard-
+		// killed. drainShutdown stops the poller + HTTP listener (no new turns) and joins
+		// the in-flight turns under the grace window; only AFTER the grace does workCancel
+		// fire as the final backstop. drainWithGrace never blocks past the grace on an
+		// overrunning turn — the backstop unwedges it. workCtx parents the per-turn work,
+		// so it stays valid for the whole drain (it is NOT signal-derived).
+		grace := time.Duration(env.cfg.ServeShutdownGraceSec) * time.Second
+		res := drainWithGrace(func() { drainShutdown(workCtx, env) }, grace)
+		if res == drainResultTimedOut {
+			slog.Warn("aura serve: in-flight turn drain exceeded grace, forcing shutdown", "grace", grace)
 		}
-		cancel()
-	}
+		// Final backstop: cancel the work ctx so any straggler past the grace unwinds, and
+		// env.close() (deferred at the top) releases the pool the channels held.
+		workCancel()
+	})
 
-	// Bounded in-flight turn drain (O-06/AP-17): the signal stopped NEW work, but a
-	// turn already mid-stream must reach its terminal frame rather than being hard-
-	// killed. drainShutdown stops the poller + HTTP listener (no new turns) and joins
-	// the in-flight turns under the grace window; only AFTER the grace does workCancel
-	// fire as the final backstop. drainWithGrace never blocks past the grace on an
-	// overrunning turn — the backstop unwedges it. workCtx parents the per-turn work,
-	// so it stays valid for the whole drain (it is NOT signal-derived).
-	grace := time.Duration(env.cfg.ServeShutdownGraceSec) * time.Second
-	res := drainWithGrace(func() { drainShutdown(workCtx, env) }, grace)
-	if res == drainResultTimedOut {
-		slog.Warn("aura serve: in-flight turn drain exceeded grace, forcing shutdown", "grace", grace)
-	}
-	// Final backstop: cancel the work ctx so any straggler past the grace unwinds, and
-	// env.close() (deferred at the top) releases the pool the channels held.
-	workCancel()
-
-	if schedErr != nil {
-		fmt.Fprintln(os.Stderr, "aura serve: scheduler stopped:", schedErr)
+	if lifecycleErr != nil {
+		fmt.Fprintln(os.Stderr, "aura serve:", lifecycleErr)
 		os.Exit(exitInfra)
 	}
 	slog.Info("aura serve: graceful shutdown complete")
@@ -267,6 +263,14 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err != nil {
 		return nil, err
 	}
+	if err := db.CheckMigrationHead(ctx, chat.cfg.DB.MigrateURL); err != nil {
+		chat.close()
+		return nil, fmt.Errorf("postgres migration compatibility: %w", err)
+	}
+	readinessState := readiness.NewSnapshot(readiness.Config{
+		MigrationCompatible: true,
+		SchedulerEnabled:    true,
+	})
 
 	// VERIF-7 / D-18: wire the background-shell poll/kill admin-capability seam to the live
 	// identity store now that it exists. buildBaseRegistryWithHandles retained the ShellPoll/
@@ -310,7 +314,8 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
 	dispatch := buildDispatch(chat, store, reg)
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
-		Dispatch: dispatch,
+		Dispatch:  dispatch,
+		Readiness: readinessState,
 		// Consult each kind's ReschedulesOnRecovery at boot catch-up (M-g): a handler
 		// that does not reschedule on recovery (reminder, skill_ttl_sweep) is never
 		// auto-re-fired for a missed window — only its cadence resumes.
@@ -347,12 +352,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
 		CORSPermissive: chat.cfg.AGUICORSPermissive,
 		BufferCap:      chat.cfg.AGUIBufferCap,
-		HealthCheck: func(ctx context.Context) error {
-			if err := chat.pool.Ping(ctx); err != nil {
-				return fmt.Errorf("db ping: %w", err)
-			}
-			return nil
-		},
+		ReadinessState: readinessState,
 		HealthDetails: func() map[string]any {
 			// WEB-04/D-07: the read-only health panel reads bind + build from this
 			// EXISTING /healthz body — no new backend endpoint. Both are non-secret
@@ -374,7 +374,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// (the open pool) and Neo4j (a native-driver connectivity dial — the daemon
 		// holds no long-lived graph client, the MCP subprocess is conditional). When
 		// any required dep is unreachable /readyz answers 503 so an orchestrator
-		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
+		// stops routing to this instance; /healthz stays cheap process liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
 	aguiServer.SetAssetService(chat.assets)
@@ -555,6 +555,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		store:                     store,
 		scheduler:                 scheduler,
 		httpSrv:                   httpSrv,
+		readiness:                 readinessState,
 		channels:                  reg,
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,
@@ -569,19 +570,21 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 // backends (O-05/AP-14): Postgres (the open pool's Ping) and Neo4j (a bounded
 // native-driver connectivity dial). The daemon holds no long-lived graph client —
 // the mcp-neo4j-cypher subprocess is opened only behind the reasoning-learner gate
-// — so the Neo4j probe dials from cfg.Neo4j each call; the per-probe timeout in the
-// agui handler bounds it. A probe whose dependency handle is absent (a nil pool)
+// — so the Neo4j probe dials from cfg.Neo4j each call; the shared global deadline
+// in the agui handler bounds both probes. A dependency handle that is absent (nil pool)
 // is omitted rather than reported as a false failure.
 func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 	probes := make([]agui.ReadinessProbe, 0, 2)
 	if chat.pool != nil {
 		probes = append(probes, agui.ReadinessProbe{
 			Name:  "postgres",
+			Code:  readiness.CodePostgresUnavailable,
 			Check: func(ctx context.Context) error { return chat.pool.Ping(ctx) },
 		})
 	}
 	probes = append(probes, agui.ReadinessProbe{
 		Name:  "neo4j",
+		Code:  readiness.CodeNeo4jUnavailable,
 		Check: func(ctx context.Context) error { return knowledge.VerifyConnectivity(ctx, &chat.cfg.Neo4j) },
 	})
 	return probes
