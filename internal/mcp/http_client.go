@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/chetto1983/aura/internal/idempotency"
 )
 
 const httpProtocolVersion = "2025-06-18"
@@ -195,6 +197,9 @@ func (c *HTTPClient) roundtripLocked(ctx context.Context, method string, params 
 	payload := rpcReq{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	resp, err := c.post(ctx, payload, method != "initialize")
 	if errors.Is(err, errHTTPSessionExpired) && method != "initialize" {
+		if operation, ok := idempotency.OperationFromContext(ctx); ok && operation.Key.Scope == idempotency.ScopeMCPTool {
+			return nil, fmt.Errorf("%w: session expired after mutating send", ErrTransport)
+		}
 		if initErr := c.initializeLocked(ctx); initErr != nil {
 			return nil, fmt.Errorf("session expired (404); reinitialize: %w", initErr)
 		}

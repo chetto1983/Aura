@@ -217,6 +217,41 @@ func TestClientCallToolHTTPEnvelopeCarriesAuraOperationMeta(t *testing.T) {
 	assertMCPWireOperationMeta(t, captured)
 }
 
+func TestHTTPClientMutatingSessionExpiryDoesNotReinitializeOrReplay(t *testing.T) {
+	t.Parallel()
+
+	var toolCalls, initializes int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var envelope map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		switch envelope["method"] {
+		case "tools/call":
+			toolCalls++
+			w.WriteHeader(http.StatusNotFound)
+		case "initialize":
+			initializes++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"2025-06-18"}}`)
+		default:
+			w.WriteHeader(http.StatusAccepted)
+		}
+	}))
+	defer server.Close()
+	c := &HTTPClient{
+		name: "capture", endpoint: server.URL, client: server.Client(),
+		protocolVersion: httpProtocolVersion, sessionID: "expired-session",
+	}
+	_, err := c.CallTool(mcpOperationContext(t), "mail_send", map[string]any{"message": "hello"})
+	if !IsTransportError(err) {
+		t.Fatalf("error = %v, want terminal transport ambiguity", err)
+	}
+	if toolCalls != 1 || initializes != 0 {
+		t.Fatalf("tool calls/initializes = %d/%d, want 1/0", toolCalls, initializes)
+	}
+}
+
 func TestClient_RpcError(t *testing.T) {
 	c, cleanup := newTestPair(t)
 	defer cleanup()

@@ -83,6 +83,24 @@ func TestReconnectServer_MutatingOperationDoesNotReconnectOrReplay(t *testing.T)
 	}
 }
 
+func TestReconnectServer_ReadOnlyToolReconnectsAndReissues(t *testing.T) {
+	initial := &fakeReconnectClient{callErr: mcp.ErrTransport}
+	fresh := &fakeReconnectClient{defs: []mcp.ToolDef{{Name: "lookup", Annotations: mcp.ToolAnnotations{ReadOnlyHint: true}}}, callText: "found"}
+	restore := stubOpenMCPClient(t, fresh)
+	defer restore()
+
+	srv := newReconnectingServer("catalog", mcp.ServerConfig{Command: "fake"}, initial)
+	bridged := bridgeTools("catalog", srv, []mcp.ToolDef{{Name: "lookup", Annotations: mcp.ToolAnnotations{ReadOnlyHint: true}}}, time.Second)
+	srv.trackBridgedTools(bridged)
+	text, err := srv.CallTool(context.Background(), "lookup", map[string]any{"query": "x"})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if text != "found" || initial.callCount != 1 || fresh.callCount != 1 {
+		t.Fatalf("text/calls = %q initial:%d fresh:%d, want found/1/1", text, initial.callCount, fresh.callCount)
+	}
+}
+
 // TestReconnectServer_BreakerErrorElapsedReopens pins the breaker gate's three
 // states: zero (never tripped) and elapsed (cooldown passed) both allow a retry
 // (nil), while a still-open future window blocks with an error.

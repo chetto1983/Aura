@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -112,10 +113,31 @@ func (s *reconnectingServer) CallTool(ctx context.Context, name string, args map
 	if !mcp.IsTransportError(err) {
 		return text, err
 	}
+	operation, hasOperation := idempotency.OperationFromContext(ctx)
+	if hasOperation && operation.Key.Scope == idempotency.ScopeMCPTool {
+		return "", fmt.Errorf("%w: mcp %q mutating call %q transport failed after send; not replayed or reconnected: %v", mcp.ErrTransport, s.name, name, err)
+	}
+	readOnly := s.toolIsReadOnly(name)
 	if _, _, reconnectErr := s.reconnectAfterTransport(ctx, client); reconnectErr != nil {
 		return "", reconnectErr
 	}
-	return "", fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, err)
+	if !readOnly {
+		return "", fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, err)
+	}
+	retry, currentErr := s.currentClient()
+	if currentErr != nil {
+		return "", currentErr
+	}
+	return retry.CallTool(ctx, name, args)
+}
+
+// toolIsReadOnly fails closed for unknown/untracked tools. Only an advertised,
+// currently read-only descriptor may reconnect and reissue automatically.
+func (s *reconnectingServer) toolIsReadOnly(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tool, ok := s.bridged[name]
+	return ok && !tool.Spec().Mutating
 }
 
 func (s *reconnectingServer) Close() error {

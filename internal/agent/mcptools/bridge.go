@@ -64,6 +64,7 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	spec.Parameters = params
 	spec.Deferred = defaultDeferredForNamespace(namespaceFromSpecName(spec.Name))
 	spec.Mutating = !d.Annotations.ReadOnlyHint
+	applyMCPOperationMetadata(&spec)
 	if oldMutating != spec.Mutating {
 		slog.Warn("mcp tool mutating flag changed on reconnect",
 			"tool", spec.Name,
@@ -221,7 +222,7 @@ func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef, callTimeout t
 
 func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 	params, summary, description := specFieldsFromToolDef(d)
-	return tools.Spec{
+	spec := tools.Spec{
 		Name:        namespacedName(namespace, d.Name),
 		Summary:     summary,
 		Description: description,
@@ -229,6 +230,20 @@ func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 		Deferred:    defaultDeferredForNamespace(namespace),
 		Mutating:    !d.Annotations.ReadOnlyHint,
 	}
+	applyMCPOperationMetadata(&spec)
+	return spec
+}
+
+func applyMCPOperationMetadata(spec *tools.Spec) {
+	if spec.Mutating {
+		spec.OperationScope = tools.OperationScopeMCP
+		spec.OperationNormalizer = tools.OperationNormalizerCanonical
+		spec.ReplayPolicy = tools.ReplayToolResult
+		return
+	}
+	spec.OperationScope = ""
+	spec.OperationNormalizer = ""
+	spec.ReplayPolicy = ""
 }
 
 func defaultDeferredForNamespace(namespace string) bool {
