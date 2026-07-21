@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,7 +11,56 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
+
+type scheduledMutationTool struct{ effects int }
+
+func (s *scheduledMutationTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name: "skill", Mutating: true,
+		OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical,
+		ReplayPolicy: tools.ReplayToolResult,
+	}
+}
+
+func (s *scheduledMutationTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	s.effects++
+	return tools.ToolResult{Preview: "restored"}, nil
+}
+
+type scheduledOperationRegistry struct {
+	request *idempotency.BeginRequest
+	replay  *idempotency.ReplayResult
+}
+
+func (s *scheduledOperationRegistry) Begin(_ context.Context, request idempotency.BeginRequest) (idempotency.BeginDecision, error) {
+	if s.request == nil {
+		copyRequest := request
+		s.request = &copyRequest
+		return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+	}
+	if s.request.Operation != request.Operation || s.request.Fingerprint != request.Fingerprint {
+		return idempotency.BeginDecision{Decision: idempotency.DecisionConflict}, idempotency.ErrConflict
+	}
+	if s.replay == nil {
+		return idempotency.BeginDecision{}, errors.New("scheduled operation completed without replay")
+	}
+	return idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: s.replay}, nil
+}
+
+func (s *scheduledOperationRegistry) Complete(_ context.Context, request idempotency.CompleteRequest) error {
+	result := request.Result
+	s.replay = &result
+	return nil
+}
+
+func (*scheduledOperationRegistry) MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error {
+	return nil
+}
 
 // loopTool is a trivial non-terminal tool the budget-inherit test drives the agent
 // into: each call returns a small result, so the agent keeps looping (consuming the
@@ -78,6 +128,62 @@ func TestAgentJobBudgetInherit(t *testing.T) {
 	}
 	if got := fc.CallCount(); got < 10 {
 		t.Fatalf("expected at least 10 LLM calls before the budget tripped, got %d", got)
+	}
+}
+
+func TestAgentJobStrictMutationDerivesStableChildAndReplays(t *testing.T) {
+	t.Parallel()
+
+	mutation := &scheduledMutationTool{}
+	registry := tools.NewRegistry()
+	registry.Register(mutation)
+	operations := &scheduledOperationRegistry{}
+	policy := gateway.New(config.ProfileSingleUserHardened, nil)
+	policy.SetOperationRegistry(operations)
+	turns := func() *agenttest.FakeClient {
+		return agenttest.NewFakeClient(
+			agenttest.ToolCallTurn(agenttest.MakeToolCall("mut-1", "skill", `{"action":"restore","name":"calc"}`)),
+			agenttest.ToolCallTurn(agenttest.MakeToolCall("final", "text_response", `{"text":"done"}`)),
+		)
+	}
+	parentFingerprint, err := idempotency.FingerprintTyped(struct {
+		Task string `json:"task"`
+		Run  string `json:"run"`
+	}{Task: "task-39", Run: "run-39"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      idempotency.ScopeSchedulerRun,
+			Key:        "task-39:run-39",
+		},
+		Fingerprint: parentFingerprint,
+		Correlation: "run-39",
+	}
+	ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := Job{
+		Payload: []byte(`{"goal":"restore the calculator skill"}`), StepBudget: 10,
+		RunID: "run-39", OriginConversationID: "11111111-1111-1111-1111-111111111111",
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		handler := AgentJobHandler{Deps: AgentDeps{Client: turns(), Registry: registry, Gateway: policy}}
+		if _, err := handler.Run(ctx, job); err != nil {
+			t.Fatalf("agent_job attempt %d: %v", attempt+1, err)
+		}
+	}
+	if mutation.effects != 1 {
+		t.Fatalf("mutating effects = %d, want one across scheduler retry", mutation.effects)
+	}
+	if operations.request == nil || operations.request.Operation.Scope != idempotency.ScopeAgentTool {
+		t.Fatalf("child operation = %+v, want agent.tool scope", operations.request)
+	}
+	if operations.request.Operation.Key == parent.Key.Key || strings.Contains(operations.request.Operation.Key, parent.Key.Key) {
+		t.Fatal("scheduler child reused or exposed its parent key")
 	}
 }
 
