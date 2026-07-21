@@ -51,7 +51,9 @@ func (c *Claim) Conn() *pgxpool.Conn { return c.conn }
 // success path. On a lost lock (another worker owns the task) the conn is released
 // immediately and ErrAlreadyRunning is returned so the caller logs
 // `skipped: previous run in progress` and reschedules via NextRunAt (D-04 singleton).
-func (s *Scheduler) claim(ctx context.Context, task Task) (*Claim, error) {
+func (s *Scheduler) claim(ctx context.Context, task Task) (claim *Claim, err error) {
+	ctx, end := schedulerClaimBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("claim acquire conn for task %q: %w", task.ID, err)

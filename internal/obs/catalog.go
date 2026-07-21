@@ -18,11 +18,12 @@ type InstrumentKind string
 // AttributeKey is one of the six bounded metric dimensions Aura permits.
 type AttributeKey string
 
-// KindCounter, KindHistogram, and KindGauge are the supported instrument shapes.
+// KindCounter and its siblings are the supported instrument shapes.
 const (
 	KindCounter   InstrumentKind = "counter"
 	KindHistogram InstrumentKind = "histogram"
 	KindGauge     InstrumentKind = "gauge"
+	KindUpDown    InstrumentKind = "updowncounter"
 )
 
 // AttributeOperation and its siblings are the only permitted metric dimensions.
@@ -52,6 +53,7 @@ const (
 // AgentBudgetStepsID and the remaining IDs assign one owner to every Aura metric.
 const (
 	AgentBudgetStepsID           InstrumentID = "agent_budget_steps"
+	BoundaryInFlightID           InstrumentID = "boundary_in_flight"
 	AgentToolDispatchID          InstrumentID = "agent_tool_dispatch"
 	AgentLLMStreamOpenID         InstrumentID = "agent_llm_stream_open"
 	AgentLLMStreamRetryID        InstrumentID = "agent_llm_stream_retry"
@@ -107,6 +109,7 @@ var slowDurationBuckets = []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 3
 
 var descriptors = []Descriptor{
 	count(AgentBudgetStepsID, "aura.agent.budget.consume.step", "aura_agent_budget_consume_step_total", nil, "Total agent budget steps consumed."),
+	{ID: BoundaryInFlightID, Name: "aura.boundary.in_flight", PrometheusName: "aura_boundary_in_flight", Kind: KindUpDown, Unit: "1", Attributes: []AttributeKey{AttributeOperation, AttributeToolClass, AttributeTransport}, Description: "Current in-flight instrumented boundaries."},
 	count(AgentToolDispatchID, "aura.agent.tool.dispatch", "aura_agent_tool_dispatch_total", nil, "Total tool calls dispatched by the agent."),
 	count(AgentLLMStreamOpenID, "aura.agent.llm.stream.open", "aura_agent_llm_stream_open_total", nil, "Total LLM stream open attempts."),
 	count(AgentLLMStreamRetryID, "aura.agent.llm.stream.retry", "aura_agent_llm_stream_retry_total", nil, "Total LLM stream open retries."),
@@ -260,8 +263,8 @@ func catalogViews() []sdkmetric.View {
 var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 	AttributeOperation: finiteSet(
 		"turn", "llm_call", "tool_dispatch", "turn_start", "before_model", "before_tool", "after_tool", "turn_end",
-		"pause_create", "pause_answer", "resume", "resume_commit", "mcp_initialize", "mcp_list_tools", "mcp_call_tool", "mcp_bridge",
-		"db_query", "db_transaction", "scheduler_tick", "scheduler_job", "listener_serve", "idempotency_reserve", "idempotency_complete",
+		"pause_create", "pause_answer", "resume", "resume_commit", "mcp_initialize", "mcp_list_tools", "mcp_call_tool", "mcp_ping", "mcp_bridge",
+		"db_query", "db_transaction", "scheduler_tick", "scheduler_claim", "scheduler_job", "listener_serve", "idempotency_reserve", "idempotency_complete",
 		"idempotency_replay", "retention_plan", "retention_apply", "retention_delete", "learning_load", "learning_write", "learning_compact", ValueOther,
 	),
 	AttributeToolClass: finiteSet(ToolClassBuiltin, ToolClassFilesystem, ToolClassShell, ToolClassWeb, ToolClassInteraction, ToolClassMCP, ToolClassScheduler, ToolClassData, ValueOther),

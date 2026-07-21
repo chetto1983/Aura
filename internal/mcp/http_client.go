@@ -99,7 +99,9 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 	return c, nil
 }
 
-func (c *HTTPClient) initialize(ctx context.Context) error {
+func (c *HTTPClient) initialize(ctx context.Context) (err error) {
+	ctx, end := httpInitializeBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.initializeLocked(ctx)
@@ -127,7 +129,9 @@ func (c *HTTPClient) initializeLocked(ctx context.Context) error {
 }
 
 // ListTools returns the server's advertised tools (tools/list).
-func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolDef, error) {
+func (c *HTTPClient) ListTools(ctx context.Context) (defs []ToolDef, err error) {
+	ctx, end := httpListBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -138,7 +142,9 @@ func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolDef, error) {
 
 // CallTool invokes one tool (tools/call) and returns its concatenated text
 // content; a result with isError=true is returned as an error carrying that text.
-func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
+func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]any) (text string, err error) {
+	ctx, end := httpCallBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -149,7 +155,9 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 
 // Ping issues an MCP ping round-trip to confirm the remote server is reachable and
 // the session is still valid.
-func (c *HTTPClient) Ping(ctx context.Context) error {
+func (c *HTTPClient) Ping(ctx context.Context) (err error) {
+	ctx, end := httpPingBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

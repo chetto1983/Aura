@@ -11,8 +11,8 @@ import (
 
 // TestSpan_TurnTreeParenting (O-08): a run that issues one tool call then a
 // text_response must record an agent.turn span with at least one tool.execute
-// (carrying the tool name) and at least one llm.request span, with BOTH the
-// tool.execute and llm.request spans parented under the SAME agent.turn span.
+// (carrying the bounded tool class) and at least one llm.request span. The
+// tool_dispatch boundary nests under agent.turn and owns tool.execute.
 // This proves the trace can show per-turn and per-tool latency (the AP-20
 // mitigation), not just the flat per-LLM-call span coverage that preceded it.
 func TestSpan_TurnTreeParenting(t *testing.T) {
@@ -33,8 +33,8 @@ func TestSpan_TurnTreeParenting(t *testing.T) {
 
 	var turnSpanID oteltrace.SpanID
 	var turnSeen bool
-	var llmSeen, toolSeen bool
-	var llmParent, toolParent oteltrace.SpanID
+	var llmSeen, toolBoundarySeen, toolSeen bool
+	var llmParent, toolBoundaryParent, toolBoundaryID, toolParent oteltrace.SpanID
 	var echoNameSeen bool
 	for _, s := range spans {
 		switch s.Name() {
@@ -47,11 +47,15 @@ func TestSpan_TurnTreeParenting(t *testing.T) {
 		case "llm.request":
 			llmSeen = true
 			llmParent = s.Parent().SpanID()
+		case "tool_dispatch":
+			toolBoundarySeen = true
+			toolBoundaryParent = s.Parent().SpanID()
+			toolBoundaryID = s.SpanContext().SpanID()
 		case "tool.execute":
 			toolSeen = true
 			toolParent = s.Parent().SpanID()
 			for _, kv := range s.Attributes() {
-				if string(kv.Key) == "tool.name" && kv.Value.AsString() == "echo" {
+				if string(kv.Key) == "tool.class" && kv.Value.AsString() == "other" {
 					echoNameSeen = true
 				}
 			}
@@ -67,14 +71,20 @@ func TestSpan_TurnTreeParenting(t *testing.T) {
 	if !toolSeen {
 		t.Fatal("no tool.execute span recorded — per-tool span is missing")
 	}
+	if !toolBoundarySeen {
+		t.Fatal("no tool_dispatch boundary span recorded")
+	}
 	if !echoNameSeen {
-		t.Error("tool.execute span is missing the tool.name=echo attribute")
+		t.Error("tool.execute span is missing the bounded tool.class=other attribute")
 	}
 	if llmParent != turnSpanID {
 		t.Errorf("llm.request parent span_id = %v, want it nested under agent.turn %v", llmParent, turnSpanID)
 	}
-	if toolParent != turnSpanID {
-		t.Errorf("tool.execute parent span_id = %v, want it nested under agent.turn %v", toolParent, turnSpanID)
+	if toolBoundaryParent != turnSpanID {
+		t.Errorf("tool_dispatch parent span_id = %v, want agent.turn %v", toolBoundaryParent, turnSpanID)
+	}
+	if toolParent != toolBoundaryID {
+		t.Errorf("tool.execute parent span_id = %v, want tool_dispatch %v", toolParent, toolBoundaryID)
 	}
 }
 

@@ -21,6 +21,8 @@ import (
 // The named return `err` is read by the deferred closure, so a Commit error
 // replaces a nil fn result.
 func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlc.Queries) error) (err error) {
+	ctx, end := dbTransactionBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -54,6 +56,8 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlc.Queries) erro
 // forgotten *ForIdentity WHERE clause still returns 0 foreign rows (the D-07 backstop the
 // app-level filter is layered on top of, not a replacement for).
 func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(*sqlc.Queries) error) (err error) {
+	ctx, end := dbTransactionBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -87,6 +91,8 @@ func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, 
 // internal/share/store.go). This function and WithIdentityTx MUST NOT drift apart on
 // commit/rollback/panic semantics; both are the DRY seam for their respective query shapes.
 func WithIdentityTxRaw(ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(pgx.Tx) error) (err error) {
+	ctx, end := dbTransactionBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err

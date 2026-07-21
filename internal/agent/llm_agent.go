@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
@@ -185,6 +186,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 
 	return func(yield func(*Event, error) bool) {
 		turnReason := "incomplete"
+		var activeLLMEnd *obs.BoundaryEnd
 		defer func() {
 			if err := a.hooks.OnTurnEnd(ic.Ctx, a.hookTurn(ic, turnReason)); err != nil {
 				reasoningtrace.Record("agent_hook_turn_end_error", map[string]any{
@@ -199,6 +201,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 		}()
 		defer func() {
 			if r := recover(); r != nil {
+				if activeLLMEnd != nil {
+					activeLLMEnd.EndPanic()
+					activeLLMEnd = nil
+				}
 				recordRecoveredPanic("llm_agent_run")
 				turnReason = "panic"
 				yield(nil, fmt.Errorf("agent panic: %v", r))
@@ -315,10 +321,15 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// AG-031: the request proceeds — detect a hook rewrite that drifted the
 			// cache-stable prefix and emit the prefix_drift metric.
 			a.checkPrefixDrift(prefixBefore, req.Messages, requestID)
-			llmStarted := time.Now()
-			ch, err := a.streamWithOpenRetry(spanCtx, req, requestID)
+			llmCtx, llmEnd := llmCallBoundary.Start(spanCtx)
+			activeLLMEnd = llmEnd
+			endLLM := func(err error) {
+				llmEnd.End(err)
+				activeLLMEnd = nil
+			}
+			ch, err := a.streamWithOpenRetry(llmCtx, req, requestID)
 			if err != nil {
-				recordLLMDuration(time.Since(llmStarted))
+				endLLM(err)
 				recordLLMError(llmErrorKind("stream_open", err))
 				slog.Error("agent llm call error", "request_id", requestID, "thread_id", a.sessionID, "kind", llmErrorKind("stream_open", err), "err", err)
 				span.End()
@@ -339,7 +350,6 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 
 			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
-			recordLLMDuration(time.Since(llmStarted))
 			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, usage)
 			span.End()
 			cancel()
@@ -349,10 +359,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// the final/tool Event below would panic ("range function continued
 			// iteration after... returned false"). Return now.
 			if stopped {
+				endLLM(context.Canceled)
 				turnReason = "consumer_stopped"
 				return
 			}
 			if streamErr != nil {
+				endLLM(streamErr)
 				recordLLMError(llmErrorKind("stream", streamErr))
 				slog.Error("agent llm call error", "request_id", requestID, "thread_id", a.sessionID, "kind", llmErrorKind("stream", streamErr), "err", streamErr)
 				if !a.streamRetryUsed && retryableStreamOpenError(streamErr) {
@@ -379,6 +391,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				yield(nil, streamErr)
 				return
 			}
+			endLLM(nil)
 			slog.Info("agent llm call end", "request_id", requestID, "thread_id", a.sessionID, "finish_reason", finish, "tool_calls", len(calls))
 
 			// 3. No tool calls → terminal (content-stop fallback, D-13/D-16).

@@ -147,8 +147,12 @@ func envInt(key string, def int) int {
 // returns nil. The loop owns no leaked goroutines — every claim's heartbeat is
 // joined before the tick returns (goleak gate).
 func (s *Scheduler) Start(ctx context.Context) error {
+	ctx, end := schedulerLifecycleBoundary.Start(ctx)
+	var observeErr error
+	defer end.PanicSafe(&observeErr)
 	if s.disabled {
 		<-ctx.Done()
+		observeErr = ctx.Err()
 		return nil
 	}
 	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
@@ -173,6 +177,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			observeErr = ctx.Err()
 			return nil
 		case <-ticker.C:
 			if err := s.runScheduledScan(ctx); err != nil {
@@ -182,7 +187,9 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	}
 }
 
-func (s *Scheduler) runScheduledScan(ctx context.Context) error {
+func (s *Scheduler) runScheduledScan(ctx context.Context) (err error) {
+	ctx, end := schedulerScanBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	scan := s.tick
 	if s.scan != nil {
 		scan = s.scan

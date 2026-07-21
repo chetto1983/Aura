@@ -143,8 +143,10 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 // notifies. A missing handler for an unknown kind is a terminal failed run (never a
 // silent drop, D-21). The held conn (claim.go) keeps the advisory lock for the run's
 // lifetime; CompleteRun writes through the pool but the lock is unaffected.
-func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
-	ctx, err := scheduledOperationContext(ctx, task, c)
+func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error) {
+	ctx, end := schedulerJobBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
+	ctx, err = scheduledOperationContext(ctx, task, c)
 	if err != nil {
 		return err
 	}

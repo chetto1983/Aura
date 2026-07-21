@@ -277,7 +277,9 @@ func (c *Client) initialize() error {
 	return c.initializeContext(context.Background())
 }
 
-func (c *Client) initializeContext(ctx context.Context) error {
+func (c *Client) initializeContext(ctx context.Context) (err error) {
+	ctx, end := stdioInitializeBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	res, err := c.roundtripContext(ctx, "initialize", map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
@@ -294,7 +296,9 @@ func (c *Client) initializeContext(ctx context.Context) error {
 }
 
 // ListTools returns the server's advertised tools (tools/list).
-func (c *Client) ListTools(ctx context.Context) ([]ToolDef, error) {
+func (c *Client) ListTools(ctx context.Context) (defs []ToolDef, err error) {
+	ctx, end := stdioListBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -306,7 +310,9 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDef, error) {
 // CallTool invokes one tool and returns its concatenated text content. A tool that
 // reports isError=true is returned as an error carrying that text, so the caller
 // never mistakes a tool-level failure for success.
-func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
+func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (text string, err error) {
+	ctx, end := stdioCallBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -317,13 +323,15 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 
 // Ping issues an MCP ping round-trip to confirm the subprocess is alive and
 // responsive; used by the bridge as a liveness probe.
-func (c *Client) Ping(ctx context.Context) error {
+func (c *Client) Ping(ctx context.Context) (err error) {
+	ctx, end := stdioPingBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, err := c.roundtripContext(ctx, "ping", map[string]any{})
+	_, err = c.roundtripContext(ctx, "ping", map[string]any{})
 	if err != nil {
 		return fmt.Errorf("mcp %q: ping: %w", c.name, err)
 	}

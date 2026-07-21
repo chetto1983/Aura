@@ -62,6 +62,29 @@ type agentMetrics struct {
 
 var metrics = newAgentMetrics(otel.Meter(agentMeterName), true)
 
+var toolExecutionBoundaries = map[string]*obs.Boundary{
+	obs.ToolClassBuiltin:     newToolExecutionBoundary(obs.ToolClassBuiltin),
+	obs.ToolClassFilesystem:  newToolExecutionBoundary(obs.ToolClassFilesystem),
+	obs.ToolClassShell:       newToolExecutionBoundary(obs.ToolClassShell),
+	obs.ToolClassWeb:         newToolExecutionBoundary(obs.ToolClassWeb),
+	obs.ToolClassInteraction: newToolExecutionBoundary(obs.ToolClassInteraction),
+	obs.ToolClassMCP:         newToolExecutionBoundary(obs.ToolClassMCP),
+	obs.ToolClassScheduler:   newToolExecutionBoundary(obs.ToolClassScheduler),
+	obs.ToolClassData:        newToolExecutionBoundary(obs.ToolClassData),
+	obs.ValueOther:           newToolExecutionBoundary(obs.ValueOther),
+}
+
+var llmCallBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
+	Operation: "llm_call", Count: obs.AgentLLMCallsID, Duration: obs.AgentLLMDurationID,
+})
+
+func newToolExecutionBoundary(toolClass string) *obs.Boundary {
+	return obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
+		Operation: "tool_dispatch", ToolClass: toolClass,
+		Count: obs.AgentToolDispatchID, Duration: obs.AgentToolDurationID,
+	})
+}
+
 func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
 	return &agentMetrics{
 		legacy: legacyExpvarMetrics{
@@ -111,12 +134,9 @@ func recordBudgetConsumeStep() {
 	metrics.budgetConsumeStepTotal.Add(context.Background(), 1)
 }
 
-func recordToolDispatch(n int) {
-	if n <= 0 {
-		return
-	}
-	metrics.legacy.toolDispatchTotal.Add(int64(n))
-	metrics.toolDispatchTotal.Add(context.Background(), int64(n))
+func startToolObservation(ctx context.Context, toolName string) (context.Context, *obs.BoundaryEnd) {
+	metrics.legacy.toolDispatchTotal.Add(1)
+	return toolExecutionBoundaries[obs.ClassifyTool(toolName)].Start(ctx)
 }
 
 func recordLLMStreamOpen() {
@@ -129,20 +149,9 @@ func recordLLMStreamRetry() {
 	metrics.llmStreamRetryTotal.Add(context.Background(), 1)
 }
 
-func recordToolDuration(d time.Duration) {
-	if d < 0 {
-		return
-	}
-	metrics.toolDuration.Record(context.Background(), d.Seconds(), metric.WithAttributes(
-		boundedAttr(obs.AttributeToolClass, obs.ValueOther),
-		boundedAttr(obs.AttributeOutcome, obs.ValueOther),
-	))
-}
-
-func recordTurnOutcome(outcome string)  { metrics.recordTurnOutcome(outcome) }
-func recordLLMDuration(d time.Duration) { metrics.recordLLMDuration(d) }
-func recordLLMError(kind string)        { metrics.recordLLMError(kind) }
-func recordToolError(tool string)       { metrics.recordToolError(tool) }
+func recordTurnOutcome(outcome string) { metrics.recordTurnOutcome(outcome) }
+func recordLLMError(kind string)       { metrics.recordLLMError(kind) }
+func recordToolError(tool string)      { metrics.recordToolError(tool) }
 func recordHookOutcome(point, outcome string) {
 	metrics.recordHookOutcome(point, outcome)
 }

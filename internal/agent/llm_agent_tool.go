@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -91,6 +92,9 @@ func hookToolRunResult(call llm.ToolCall, startedAt time.Time, res tools.ToolRes
 // the parent budget/registry/client/config off the ctx (the cycle-free seam — only
 // swarm_spawn reads the key, every other tool ignores it).
 func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCall, startedAt time.Time) toolRunResult {
+	ctx, boundaryEnd := startToolObservation(ctx, call.Function.Name)
+	var boundaryErr error
+	defer boundaryEnd.PanicSafe(&boundaryErr)
 	run := toolRunResult{
 		ToolCallID: call.ID,
 		ToolName:   call.Function.Name,
@@ -104,6 +108,7 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		_, span := startToolSpan(ctx, call.Function.Name, false)
 		run.EndedAt = time.Now().UTC()
 		run.Err = fmt.Sprintf("unknown tool %q", call.Function.Name)
+		boundaryErr = errors.New("unknown tool")
 		recordToolError(call.Function.Name)
 		slog.Error("agent tool error", "tool", call.Function.Name, "tool_call_id", call.ID, "err", run.Err)
 		run.Preview = "error: " + run.Err
@@ -140,6 +145,7 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	res, err := a.execTool(toolCtx, tool, run.Mutating, json.RawMessage(call.Function.Arguments))
 	run.EndedAt = time.Now().UTC()
 	if err != nil {
+		boundaryErr = err
 		run.Err = err.Error()
 		recordToolError(call.Function.Name)
 		slog.Error("agent tool error", "tool", call.Function.Name, "tool_call_id", call.ID, "err", err)

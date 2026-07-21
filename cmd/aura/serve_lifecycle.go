@@ -117,8 +117,11 @@ func runServeComponentsWithMetrics(
 	}
 	results := make(chan serveComponentResult, componentCount)
 	go func() {
+		_, observeEnd := serveListenerBoundary.Start(ctx)
+		var err error
+		defer observeEnd.PanicSafe(&err)
 		state.MarkListenerRunning()
-		err := server.Serve(listener)
+		err = server.Serve(listener)
 		if errors.Is(err, http.ErrServerClosed) && state.IsDraining() {
 			err = nil
 		} else if err == nil {
@@ -140,7 +143,10 @@ func runServeComponentsWithMetrics(
 	}()
 	if metrics != nil {
 		go func() {
-			err := metrics.server.Serve(metrics.listener)
+			_, observeEnd := serveListenerBoundary.Start(ctx)
+			var err error
+			defer observeEnd.PanicSafe(&err)
+			err = metrics.server.Serve(metrics.listener)
 			if errors.Is(err, http.ErrServerClosed) && state.IsDraining() {
 				err = nil
 			} else if err == nil {

@@ -12,6 +12,10 @@ import (
 
 const observabilityShutdownTimeout = 5 * time.Second
 
+var serveListenerBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/cmd/aura", obs.BoundaryConfig{
+	Operation: "listener_serve", Transport: "http", State: "running", Count: obs.ListenerTransitionsID,
+})
+
 type serveObservability struct {
 	runtime *obs.Runtime
 	metrics *privateMetricsComponent
