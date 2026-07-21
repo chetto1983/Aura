@@ -49,6 +49,7 @@ type Config struct {
 	ToolPreviewCap int
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
+	MetricsBind    string // AURA_METRICS_BIND — private loopback Prometheus listener
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
@@ -389,6 +390,7 @@ func loadBase() *Config {
 		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
+		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
 
 		// Phase 33 runtime deployment profile (D-01/D-03). Total parse: unset/unknown -> dev.
 		Profile: ParseProfile(os.Getenv("AURA_PROFILE")),

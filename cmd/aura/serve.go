@@ -37,7 +37,6 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/knowledge"
-	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -173,33 +172,26 @@ func runServe(args []string) {
 	ctx := workCtx
 
 	v, _, _ := buildInfo()
-	shutdownObs, err := obs.Init(ctx, obs.Config{
-		Service:      "aura",
-		Version:      v,
-		OtelExporter: env.cfg.OtelExporter,
-		OtelEndpoint: env.cfg.OtelEndpoint,
-	})
+	serveObs, err := startServeObservability(ctx, env.cfg, v, net.Listen)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura serve observability:", err)
 		os.Exit(exitInfra)
 	}
-	defer func() {
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := shutdownObs(shutCtx); err != nil {
-			slog.Warn("aura serve: observability shutdown", "err", err)
-		}
-	}()
+	defer serveObs.shutdownRuntime()
 
 	// Bind before starting any serving goroutine. A collision is a synchronous boot
 	// failure; the joined lifecycle below owns every later Serve return.
 	listener, err := bindServeListener(env.httpSrv.Addr, net.Listen)
 	if err != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = serveObs.abort(shutCtx)
+		cancel()
 		fmt.Fprintln(os.Stderr, "aura serve:", err)
 		os.Exit(exitInfra)
 	}
 	env.readiness.MarkListenerBound()
 	slog.Info("aura serve: agui http server listening", "addr", env.cfg.AGUIBind)
+	slog.Info("aura serve: private metrics server listening", "addr", serveObs.address())
 
 	// The channels Registry (Telegram) + the setup wizard server (:9081) mount as
 	// fail-soft siblings of the AG-UI gateway: a failed channel or a taken setup
@@ -227,7 +219,12 @@ func runServe(args []string) {
 	// error; on a clean shutdown it returns nil after the in-flight tick joins its
 	// workers. workCtx is STILL LIVE here, so an in-flight turn keeps running while
 	// the bounded drain below gives it a grace window to finalize (O-06/AP-17).
-	lifecycleErr := runServeComponents(signalCtx, env.readiness, listener, env.httpSrv, env.scheduler, func() {
+	lifecycleErr := runServeComponentsWithMetrics(signalCtx, env.readiness, listener, env.httpSrv, env.scheduler, serveObs.metrics, func() {
+		metricsCtx, metricsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := serveObs.stopMetrics(metricsCtx); err != nil {
+			slog.Warn("aura serve: private metrics shutdown", "err", err)
+		}
+		metricsCancel()
 		shutdownBackgroundShells(env)
 
 		// Bounded in-flight turn drain (O-06/AP-17): the signal stopped NEW work, but a
@@ -248,6 +245,7 @@ func runServe(args []string) {
 	})
 
 	if lifecycleErr != nil {
+		serveObs.shutdownRuntime()
 		fmt.Fprintln(os.Stderr, "aura serve:", lifecycleErr)
 		os.Exit(exitInfra)
 	}

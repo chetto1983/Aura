@@ -28,7 +28,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC", "AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS",
 		"AURA_LLM_ADAPTIVE_REASONING", "AURA_SHOW_REASONING", "AURA_COMPLETION_GATE",
 		"AURA_COMPLETION_CRITIC_MODEL", "AURA_LLM_REASONING_LEARNING",
-		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT",
+		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT", "AURA_METRICS_BIND",
 		"AURA_SANDBOX_AGENT_URL", "AURA_SANDBOX_AGENT_TIMEOUT_SEC", "AURA_SANDBOX_AGENT_TOKEN",
 		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_FETCH_MAX_BODY_BYTES",
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
@@ -267,6 +267,14 @@ func TestLoad_LLMAndOtelComposed(t *testing.T) {
 	}
 	if cfg.OtelEndpoint != "localhost:4317" {
 		t.Errorf("OtelEndpoint: want default localhost:4317, got %q", cfg.OtelEndpoint)
+	}
+	if cfg.MetricsBind != "127.0.0.1:9464" {
+		t.Errorf("MetricsBind: want default 127.0.0.1:9464, got %q", cfg.MetricsBind)
+	}
+
+	t.Setenv("AURA_METRICS_BIND", "127.0.0.1:19464")
+	if got := LoadDB().MetricsBind; got != "127.0.0.1:19464" {
+		t.Errorf("MetricsBind override = %q, want 127.0.0.1:19464", got)
 	}
 }
 
