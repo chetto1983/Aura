@@ -292,6 +292,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		return nil, fmt.Errorf("build object store: %w", err)
 	}
 	chat.assets = buildAssetService(chat.cfg, chat.pool, objectStore)
+	ownerExports := agui.NewObjectStoreExportDestination(objectStore, chat.cfg.ObjectStoreBucket)
 	// Wire send_file's ingest seam to the live asset service now that chat.assets exists
 	// (VERIF-7 post-construction, mirroring the .Caps set above): an authenticated
 	// channel-driven delivery ingests into an owned Garage asset (WEBART-01). The nil guard
@@ -310,7 +311,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// chat + override (both available here) — the per-channel Deliverer capability is
 	// resolved at delivery, not at build, so the late-bound pointer is sufficient.
 	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
-	dispatch := buildDispatch(chat, store, reg)
+	dispatch := buildDispatch(chat, store, reg, ownerExports)
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
 		Dispatch:  dispatch,
 		Readiness: readinessState,
@@ -383,7 +384,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	})
 	aguiServer.SetOperationRegistry(chat.operations)
 	aguiServer.SetAssetService(chat.assets)
-	aguiServer.SetOwnerExportDestination(agui.NewObjectStoreExportDestination(objectStore, chat.cfg.ObjectStoreBucket))
+	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))

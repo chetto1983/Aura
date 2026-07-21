@@ -19,13 +19,19 @@ type RetentionPlanner interface {
 	Apply(context.Context, string) (retention.ApplyReport, error)
 }
 
+// OwnerExportSweeper physically removes expired durable owner-export archives.
+type OwnerExportSweeper interface {
+	SweepExpired(context.Context, time.Time) (int, error)
+}
+
 type retentionHandler struct {
-	engine RetentionPlanner
+	engine       RetentionPlanner
+	ownerExports []OwnerExportSweeper
 }
 
 // NewRetentionHandler constructs the non-overlapping scheduled retention owner.
-func NewRetentionHandler(engine RetentionPlanner) Handler {
-	return retentionHandler{engine: engine}
+func NewRetentionHandler(engine RetentionPlanner, ownerExports ...OwnerExportSweeper) Handler {
+	return retentionHandler{engine: engine, ownerExports: ownerExports}
 }
 
 func (h retentionHandler) Meta() HandlerMeta {
@@ -33,17 +39,31 @@ func (h retentionHandler) Meta() HandlerMeta {
 }
 
 func (h retentionHandler) Run(ctx context.Context, _ Job) (string, error) {
-	if h.engine == nil {
+	if h.engine == nil && len(h.ownerExports) == 0 {
 		return "retention: disabled (no engine)", nil
 	}
-	plan, err := h.engine.Plan(ctx)
-	if err != nil {
-		return "", fmt.Errorf("retention plan: %w", err)
+	report := retention.ApplyReport{}
+	if h.engine != nil {
+		plan, err := h.engine.Plan(ctx)
+		if err != nil {
+			return "", fmt.Errorf("retention plan: %w", err)
+		}
+		report, err = h.engine.Apply(ctx, plan.Token)
+		if err != nil {
+			return "", fmt.Errorf("retention apply: %w", err)
+		}
 	}
-	report, err := h.engine.Apply(ctx, plan.Token)
-	if err != nil {
-		return "", fmt.Errorf("retention apply: %w", err)
+	exportsDeleted := 0
+	for _, sweeper := range h.ownerExports {
+		if sweeper == nil {
+			continue
+		}
+		deleted, err := sweeper.SweepExpired(ctx, time.Now().UTC())
+		if err != nil {
+			return "", fmt.Errorf("owner export retention: %w", err)
+		}
+		exportsDeleted += deleted
 	}
-	return fmt.Sprintf("retention ok: completed %d item(s), %d byte(s), retryable %d, failed %d",
-		report.Completed, report.Bytes, report.Retryable, report.Failed), nil
+	return fmt.Sprintf("retention ok: completed %d item(s), %d byte(s), retryable %d, failed %d, owner exports deleted %d",
+		report.Completed, report.Bytes, report.Retryable, report.Failed, exportsDeleted), nil
 }

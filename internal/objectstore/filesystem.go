@@ -124,6 +124,9 @@ func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectIn
 	if err := validatePathPart(req.Bucket, false); err != nil {
 		return nil, fmt.Errorf("objectstore filesystem bucket: %w", err)
 	}
+	if req.Limit < 0 {
+		return nil, fmt.Errorf("objectstore filesystem limit must not be negative")
+	}
 	if req.Prefix != "" {
 		prefixForValidation := strings.TrimSuffix(req.Prefix, "/")
 		if prefixForValidation != "" {
@@ -172,6 +175,9 @@ func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectIn
 	slices.SortFunc(out, func(a, b ObjectInfo) int {
 		return strings.Compare(a.Ref.Key, b.Ref.Key)
 	})
+	if req.Limit > 0 && len(out) > req.Limit {
+		out = out[:req.Limit]
+	}
 	return out, nil
 }
 

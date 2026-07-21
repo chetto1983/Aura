@@ -39,7 +39,7 @@ var _ cron.ChannelDeliverer = (*channels.Registry)(nil)
 // so a scheduled notification can prefer the origin channel (Phase 20 R4/R7). The
 // agent_job handler runs the parent registry minus swarm_spawn (childRegistry, owned
 // by the handlers package) over the live LLM client.
-func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cron.Dispatch {
+func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, ownerExportSweepers ...handlers.OwnerExportSweeper) *cron.Dispatch {
 	// The per-identity box router (Phase 37) is built ONCE at composition (assembleChatEnv) and
 	// retained on chat so the SAME instance backs both the box-capable tools (plan 37-07 wiring)
 	// AND this reaper registration — never two routers with divergent box-handle maps. It is nil
@@ -95,7 +95,7 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cr
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
 		cron.KindShareExpirySweep:   handlers.NewShareExpiryHandler(chat.shareSvc),
-		cron.KindRetentionSweep:     handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool)),
+		cron.KindRetentionSweep:     handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool), ownerExportSweepers...),
 		cron.KindLearningCompaction: handlers.NewLearningCompactionHandler(learningCompactor),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))

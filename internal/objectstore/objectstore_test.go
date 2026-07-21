@@ -122,6 +122,26 @@ func TestFakeListsObjectsByBucketAndPrefix(t *testing.T) {
 	}
 }
 
+func TestFakeListLimitIsOrderedAndBounded(t *testing.T) {
+	ctx := context.Background()
+	store := NewFake()
+	for _, key := range []string{"records/c", "records/a", "records/b"} {
+		ref := ObjectRef{Bucket: "bucket", Key: key}
+		if _, err := store.Put(ctx, ref, strings.NewReader(key), PutOptions{Size: int64(len(key))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, err := store.List(ctx, ListRequest{Bucket: "bucket", Prefix: "records/", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{items[0].Ref.Key, items[1].Ref.Key}
+	if want := []string{"records/a", "records/b"}; !slices.Equal(got, want) {
+		t.Fatalf("bounded list = %v, want %v", got, want)
+	}
+}
+
 func TestFakePresignPut(t *testing.T) {
 	store := NewFake()
 	expiresIn := 10 * time.Minute
