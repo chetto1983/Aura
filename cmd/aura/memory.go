@@ -25,9 +25,8 @@ const memoryServerName = "memory"
 const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions|conversation <session-id>|" +
 	"add-entity <name> [type] [description]|add-fact <subject> <predicate> <object>|" +
 	"add-preference <category> <preference>|store-message <session-id> <role> <content>|" +
-	"get-entity <name>|relationship <from> <type> <to>|export|" +
-	"trace {start <session-id> <task>|step <trace-id> <observation>|complete <trace-id> [outcome]|observations <session-id>}|" +
-	"query <cypher>}"
+	"get-entity <name>|relationship <from> <type> <to>|" +
+	"forget <preference|fact|entity> <node-id>}"
 
 func runMemory(args []string) {
 	if err := runMemoryCommand(context.Background(), args, os.Stdout); err != nil {
@@ -50,10 +49,11 @@ func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
 	return callMemoryTool(ctx, tool, toolArgs, out)
 }
 
-// memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` (or read-only
-// `graph_query`) wire tool name plus the call arguments built from the CLI positional
-// args. There is NO standalone `memory_get_facts` on the live surface (Open Q4); fact
-// reads go through `memory_search` or the read-only `query` (graph_query) verb.
+// memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` wire tool name
+// plus the call arguments built from the CLI positional args. Fact reads go through
+// `memory_search` / `memory_get_facts`; arbitrary Cypher is NOT exposed here — the
+// unscoped `graph_query` tool was removed (data-exfiltration surface), and the operator
+// runs raw Cypher through `aura neo4j cypher read/write` instead.
 func memoryVerbToTool(verb string, args []string) (string, map[string]any, error) {
 	switch verb {
 	case "search":
@@ -92,16 +92,8 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 		return "memory_get_entity", map[string]any{"name": name}, nil
 	case "relationship":
 		return memoryRelationshipArgs(args)
-	case "export":
-		return "memory_export_graph", map[string]any{}, nil
-	case "trace":
-		return memoryTraceArgs(args)
-	case "query":
-		cypher, err := arg(args, 0, "query", "<cypher>")
-		if err != nil {
-			return "", nil, err
-		}
-		return "graph_query", map[string]any{"query": cypher}, nil
+	case "forget":
+		return memoryForgetArgs(args)
 	default:
 		return "", nil, fmt.Errorf("unknown memory verb %q\n%s", verb, memoryUsage)
 	}
@@ -165,78 +157,50 @@ func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
 	}, nil
 }
 
-// memoryTraceArgs maps the `trace` reasoning-memory subverbs to the live MCP tool
-// contract (verified against the running sidecar, spike 035 / plan 15-05): a trace is
-// keyed by session_id+task at start, steps and completion are keyed by trace_id, and
-// observations are read back BY SESSION (memory_get_observations takes session_id, not
-// trace_id). The step free-text lands in `observation` so it is recallable.
-func memoryTraceArgs(args []string) (string, map[string]any, error) {
-	sub, err := arg(args, 0, "trace", "{start <session-id> <task>|step <trace-id> <observation>|complete <trace-id> [outcome]|observations <session-id>}")
-	if err != nil {
-		return "", nil, err
+// memoryForgetArgs maps the `forget` subverb to the memory_forget MCP tool: delete a
+// preference or fact the caller owns, by id. Ownership is enforced server-side (a node
+// the caller does not own is refused, not silently ignored).
+func memoryForgetArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 2 {
+		return "", nil, fmt.Errorf("memory forget requires <preference|fact|entity> <node-id>")
 	}
-	rest := args[1:]
-	switch sub {
-	case "start":
-		if len(rest) < 2 {
-			return "", nil, fmt.Errorf("memory trace start requires <session-id> <task>")
-		}
-		return "memory_start_trace", map[string]any{
-			"session_id": rest[0],
-			"task":       strings.Join(rest[1:], " "),
-		}, nil
-	case "step":
-		if len(rest) < 2 {
-			return "", nil, fmt.Errorf("memory trace step requires <trace-id> <observation>")
-		}
-		return "memory_record_step", map[string]any{
-			"trace_id":    rest[0],
-			"observation": strings.Join(rest[1:], " "),
-		}, nil
-	case "complete":
-		id, err := arg(rest, 0, "trace complete", "<trace-id> [outcome]")
-		if err != nil {
-			return "", nil, err
-		}
-		call := map[string]any{"trace_id": id}
-		if outcome := strings.Join(rest[min(len(rest), 1):], " "); outcome != "" {
-			call["outcome"] = outcome
-		}
-		return "memory_complete_trace", call, nil
-	case "observations":
-		sid, err := arg(rest, 0, "trace observations", "<session-id>")
-		if err != nil {
-			return "", nil, err
-		}
-		return "memory_get_observations", map[string]any{"session_id": sid}, nil
-	default:
-		return "", nil, fmt.Errorf("unknown memory trace subverb %q", sub)
-	}
+	return "memory_forget", map[string]any{
+		"node_type": args[0],
+		"node_id":   args[1],
+	}, nil
 }
 
 // callMemoryTool resolves the managed memory sidecar, opens it over streamable-HTTP,
 // and calls the RAW tool name directly — the same shape as mcp_tools.go's managed
 // open path. A 20s timeout fails fast on a dead sidecar (T-15-03-03) instead of hanging.
 func callMemoryTool(ctx context.Context, tool string, args map[string]any, out io.Writer) error {
-	server, ok, err := effectiveManagedMCPServer(memoryServerName)
+	text, err := callMemoryToolText(ctx, tool, args)
 	if err != nil {
 		return err
 	}
+	return writeln(out, text)
+}
+
+// callMemoryToolText is the text-returning core of callMemoryTool (shared with the
+// runner's L4 archival-recall seam, serve_adapters.go). It resolves the managed memory
+// sidecar, opens it over streamable-HTTP, and calls the RAW tool name, returning the
+// tool's text result. A 20s timeout fails fast on a dead sidecar (T-15-03-03).
+func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
+	server, ok, err := effectiveManagedMCPServer(memoryServerName)
+	if err != nil {
+		return "", err
+	}
 	if !ok {
-		return fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
+		return "", fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	cli, err := mcp.OpenServer(callCtx, memoryServerName, server)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = cli.Close() }()
-	text, err := cli.CallTool(callCtx, tool, args)
-	if err != nil {
-		return err
-	}
-	return writeln(out, text)
+	return cli.CallTool(callCtx, tool, args)
 }
 
 func arg(args []string, i int, verb, placeholder string) (string, error) {

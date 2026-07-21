@@ -150,7 +150,7 @@ func TestMountWithRetry_RealManagedTransportExhausts(t *testing.T) {
 	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp"}
 	closer, names, err := MountWithRetry(context.Background(), "memory", fastPolicy(2),
 		func(c context.Context) (func() error, []string, error) {
-			return MountManagedServer(c, reg, "memory", server)
+			return MountManagedServer(c, c, reg, "memory", server)
 		})
 	if err == nil {
 		t.Fatal("a dead URL must fail to mount")

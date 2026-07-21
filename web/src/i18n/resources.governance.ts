@@ -5,6 +5,8 @@
 // governanceEn/governanceIt into each language's `translation` object. Add every key to
 // BOTH en AND it — a missing key in either language is a defect.
 
+import { schedulerEn, schedulerIt } from './resources.governance.scheduler';
+
 export const governanceEn = {
   governance: {
     title: 'Governance',
@@ -263,25 +265,7 @@ export const governanceEn = {
         contentHash: 'Content hash',
       },
     },
-    scheduler: {
-      emptyHeading: 'No scheduled tasks',
-      emptyBody: 'Nothing is scheduled yet. Scheduled jobs and their run history will appear here.',
-      field: {
-        kind: 'Kind',
-        schedule: 'Schedule',
-        nextRun: 'Next run',
-        status: 'Status',
-        none: '—',
-      },
-      runs: {
-        heading: 'Run history',
-        empty: 'No runs recorded for this task yet.',
-        status: 'Status',
-        started: 'Started',
-        heartbeat: 'Heartbeat',
-        summary: 'Summary',
-      },
-    },
+    scheduler: schedulerEn,
   },
 } as const;
 
@@ -551,25 +535,6 @@ export const governanceIt = {
         contentHash: 'Hash contenuto',
       },
     },
-    scheduler: {
-      emptyHeading: 'Nessuna attività pianificata',
-      emptyBody:
-        'Niente è ancora pianificato. I job pianificati e la loro cronologia appariranno qui.',
-      field: {
-        kind: 'Tipo',
-        schedule: 'Pianificazione',
-        nextRun: 'Prossima esecuzione',
-        status: 'Stato',
-        none: '—',
-      },
-      runs: {
-        heading: 'Cronologia esecuzioni',
-        empty: 'Nessuna esecuzione registrata per questa attività.',
-        status: 'Stato',
-        started: 'Avviata',
-        heartbeat: 'Heartbeat',
-        summary: 'Riepilogo',
-      },
-    },
+    scheduler: schedulerIt,
   },
 } as const;

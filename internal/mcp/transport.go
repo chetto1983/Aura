@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -17,9 +18,16 @@ type Transport interface {
 
 // OpenServer opens the appropriate transport for a managed server, dispatching to
 // OpenHTTP for streamable-HTTP servers (deriving auth from env) and to Open for
-// stdio servers.
+// stdio servers. It classifies the server via Classify first (D-01) and returns
+// Classify's own error for a mixed/ambiguous/inconsistent entry instead of ever
+// falling through to stdio Open -- the highest-priority SC1 gate: a rejected
+// server must never reach a stdio subprocess spawn (D-02, closes F-027).
 func OpenServer(ctx context.Context, name string, server ManagedServer) (Transport, error) {
-	if normalizedServerType(server) == ServerTypeStreamableHTTP {
+	serverType, _, err := Classify(server)
+	if err != nil {
+		return nil, fmt.Errorf("mcp open %q: %w", name, err)
+	}
+	if serverType == ServerTypeStreamableHTTP {
 		headers, bearer := httpAuthFromEnv(server.Env)
 		return OpenHTTP(ctx, name, HTTPConfig{
 			URL:         server.URL,

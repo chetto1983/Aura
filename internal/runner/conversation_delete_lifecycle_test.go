@@ -324,3 +324,29 @@ func TestSessionKeyIsolationConcurrent(t *testing.T) {
 		return true
 	})
 }
+
+// fakeShareRevoker is a minimal ShareRevoker double for TestSetShareRevoker — it only needs to
+// be a distinguishable value, never actually invoked here (that firing behavior is already
+// covered by the db_integration TestDeleteLifecycleRevokesShares/-Nil/-FailureDoesNotBlock trio
+// in runner_delete_share_test.go).
+type fakeShareRevoker struct{}
+
+func (fakeShareRevoker) RevokeConversationShares(context.Context, string, string) error { return nil }
+
+// TestSetShareRevoker proves the D-15 late-bound setter (runner_delete.go, added because
+// chat.run is assembled before objectStore/chat.assets exist — share_service_wiring.go) actually
+// wires r.shareRevoker: nil by default (Deps never set it), non-nil and equal to what was passed
+// after SetShareRevoker. Untagged/no DB — SetShareRevoker itself is a pure field assignment.
+func TestSetShareRevoker(t *testing.T) {
+	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
+	if r.shareRevoker != nil {
+		t.Fatal("sanity: shareRevoker must be nil by default (Deps never set it)")
+	}
+
+	sr := fakeShareRevoker{}
+	r.SetShareRevoker(sr)
+
+	if r.shareRevoker != ShareRevoker(sr) {
+		t.Fatalf("shareRevoker after SetShareRevoker = %#v, want %#v", r.shareRevoker, sr)
+	}
+}

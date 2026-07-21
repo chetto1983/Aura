@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
+current_phase: 38
+current_phase_name: mcp-governance-hardening
 status: executing
-stopped_at: Completed 37F-16-PLAN.md
-last_updated: "2026-07-17T16:18:23.204Z"
-last_activity: 2026-07-17
+stopped_at: Phase 38 context gathered
+last_updated: "2026-07-18T08:47:33.024Z"
+last_activity: 2026-07-18
+last_activity_desc: Phase 38 execution started
 progress:
   total_phases: 19
-  completed_phases: 14
-  total_plans: 123
-  completed_plans: 113
-  percent: 74
+  completed_phases: 15
+  total_plans: 130
+  completed_plans: 123
+  percent: 79
 ---
 
 # Project State
@@ -21,16 +24,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 37F — conversation-artifact-sharing-export-inserted
+**Current focus:** Phase 38 — mcp-governance-hardening
 
 ## Current Position
 
-Phase: 37F (conversation-artifact-sharing-export-inserted) — EXECUTING
-Plan: 11 of 19
+Phase: 38 (mcp-governance-hardening) — EXECUTING
+Plan: 1 of 7
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: Ready to execute
-Last activity: 2026-07-17
+Status: Executing Phase 38
+Last activity: 2026-07-18 — Phase 38 execution started
+
+#### 37F-12 — Parent-mux mount: share.public capability + /s/ public-route predicate + route table (Wave-6, depends_on 37F-10, requirements: WEBSHARE-02). **Sequential on master, 2 atomic commits `db00a2d5` (Task 1, feat) / `39ee1485` (Task 2, feat) + this docs commit.** Mounts the eight WEBSHARE-02/03 share-lifecycle routes on the parent mux. **Task 1 (`db00a2d5`):** new `cmd/aura/serve_webui_share.go` (package main, 125 LOC) — `sharePublicCapability = "share.public"` (D-02, documented as `identity.create`'s sibling not `governance.write`'s, citing the bootstrap-`*`-wildcard vs provisioned-named-cap contrast verified at plan time); fail-closed `isPublicShareRoute(r)` (GET-only, `/s/`-prefixed, default false); `registerShareRoutes(mux, aguiHandler, auth)` mounting all eight routes. **Task 2 (`39ee1485`):** `serve_webui.go` gained exactly 5 lines (593→598/600, the objective's own predicted "2-LOC margin") — one `registerShareRoutes(...)` call + 2-line comment, one `isPublicShareRoute(r)` entry in the `PublicRoute` chain; `fallbackExcludedPrefixes()` deliberately left untouched (the plan's named non-action — `/s/`/`/shared/` must stay OUT so `/s/{token}` falls through to the SPA shell). Two new predicate test files, both untagged: `cmd/aura/share_public_route_test.go` (13-case table + `TestSharePublicCapabilityNameValid`, settling RESEARCH assumption A3 by execution) and `internal/agui/share_public_route_test.go` (the coverage-measured pair, driving the same cases through the real `agui.RequireAuth` with an equivalent `PublicRoute` closure — `isPublicShareRoute` itself is package main and `cmd/aura` contributes zero coverage at any tag, WR-01/T-37F-66). Both suites assert `/sabotage`, bare `/s`, `/shared/abc`, and the two D-10 `/api/shares/{id}/...` routes are refused. **DEVIATION (documented, not auto-fixed — logged to `deferred-items.md`):** the plan's `must_haves`/threat-model prose says public minting is "gated by `RequireCapability(share.public)` at the mount," but the plan's own Task 1/2 action text + acceptance criteria are unambiguous and machine-verified the OPPOSITE: `POST /api/shares` mounts bare, "not wrapped in `RequireCapability`," because a single mux entry serves both the internal and public tier via the JSON body and Go's `ServeMux` cannot discriminate on request content. Followed the literal, testable Task instructions over the looser aspirational frontmatter. Net effect: `sharePublicCapability` is a documented, grammar-valid D-02 constant, but no code path yet calls `HasCapability(identityID, "share.public")` — `internal/agui/share_api.go`'s `handleShareCreate` (37F-10, unmodified here, outside this plan's declared file scope) checks only the org kill-switch (`s.cfg.SharePublicEnabled`). Flagged for 37F-13, whose SC4 row 8 ("B holds `share.public`; A does NOT; A mints public ⇒ 403") will very likely fail against current code until a capability check lands in `share_api.go`. **Also logged:** `TestProductionContainerArtifactsMatchFatImageContract` fails against `caddy/Caddyfile` on an unrelated, untouched file — pre-existing, matches the orchestrator-flagged `fix/ci-red-37f-drift` drift; not this plan's concern. **VALIDATION:** `go build ./...` clean; `go vet ./cmd/aura/ ./internal/agui/` clean; `golangci-lint run ./cmd/aura/ ./internal/agui/` 0 issues; `gofmt -l` clean on all 4 touched files; `go test ./cmd/aura/ -run 'TestPublicShareRoute|TestSharePublicCapabilityName' -count=1` + `go test ./internal/agui/ -run 'TestPublicShareRoute' -count=1` both green (WSL `-race` + Windows non-race, both clean); `wc -l cmd/aura/serve_webui.go` = 598; `bash scripts/check-file-size.sh` exit 0; `grep -c registerShareRoutes/isPublicShareRoute serve_webui.go` both exactly 1; no `"/s/"`/`"/shared/"`/`"/api/shares` literal added to `serve_webui.go`. `internal/agui` full untagged suite green (no regressions from the mux edit). WEBSHARE-02 stays `[x]` (already marked by an earlier 37F plan; this plan is pure mount wiring, no new requirement surface). SUMMARY: `.planning/phases/37F-conversation-artifact-sharing-export-inserted/37F-12-SUMMARY.md`. Next: **37F-13** (SC4 cross-identity deny, Wave-7, depends_on 37F-11+37F-12 — now unblocked).
+
+#### 37F-20 — RLS backstop for aura.shared_links (gap closure, Wave-6, depends_on 37F-07, requirements: WEBSHARE-02). **Sequential on master, 3 atomic commits `d158bc97` (Task 1, feat) / `68c43a06` (Task 2, test) / `029c6189` (Task 3, docs) + this docs commit.** Closes the defense-in-depth gap 37F-07 flagged: `aura.shared_links` (migration 0040) shipped with NO row-level-security policy while every other identity-scoped table (`conversations`/`paused_states`/`conversation_turns`) has carried one since `0032_owner_rls` — leaving ADR-0039's own Context claim about the RLS backstop false for this one table. Not part of the original 19-plan set; authored mid-phase after operator approval. **Task 1 (`d158bc97`):** `internal/db/migrations/0041_shared_links_rls.{up,down}.sql` — `ENABLE ROW LEVEL SECURITY` + `shared_links_owner_isolation` policy mirroring `0032_owner_rls` EXACTLY (fail-closed-on-mismatch, permissive-on-unset, keyed on `owner_identity_id`); `aura.share_audit` deliberately excluded (audit-table precedent, `skill_audit`/`mcp_audit`). Migration slot re-verified via `ls internal/db/migrations/ | tail -1` immediately before writing (floor was `0040_shared_links`). Round-trip (up→down→up) verified against a throwaway DB (`aura_migrate0041_drill`, dropped after use) via a temporary, uncommitted Go test mirroring `migrate_0040_integration_test.go`'s `TestMigration0040RoundTrip` pattern — never run against live `aura`. **Task 2 (`68c43a06`):** `internal/share/store_rls_integration_test.go` (3 new tests, 140 LOC) — `TestShareStoreRLSDeniesCrossIdentityRead` (a raw, deliberately unfiltered `SELECT id FROM aura.shared_links WHERE id=$1` — zero `owner_identity_id` occurrences anywhere in the file, proven by grep — returns 0 rows under a foreign identity's `WithIdentityTxRaw`), `TestShareStoreRLSOwnerStillSeesOwnRow` (the mandatory self-lockout guard — the identical unfiltered query returns exactly 1 row for the true owner, proving the policy isn't `USING (false)`), `TestShareStoreRLSPublicLaneUnaffected` (`ResolveByToken`/`ResolveLiveByID` still resolve on the plain pool post-migration — the permissive-on-unset branch is unaffected). Full `internal/share` suite green under `-tags db_integration -race` (5.7s), package coverage 85.2% (≥85% floor). Migration 0041 auto-applied to the live `aura` DB as a normal additive step via the existing `migratedPool(t)` test-setup helper (`EnsureRoles`+`Migrate`) — confirmed via psql: `schema_migrations.version=41`, `shared_links.relrowsecurity=t`, `share_audit.relrowsecurity=f` (unaffected, as designed). **Task 3 (`029c6189`):** `prd.md` §Persistence migration-numbering fonte-di-verità updated (floor now `0041`, superseding the prior "0040 RESERVED" note); `docs/adr/0039-conversation-sharing-vs-identity-isolation.md` gets a short factual Context addendum recording the RLS backstop is now true for all four identity-scoped tables as of `0041` — the seven public-tier mitigations are unchanged and not restated. **DEVIATIONS: none** — plan executed exactly as written; the touched file set matches the plan's `files_modified` frontmatter byte-for-byte (`git diff --name-only` verified against all 5 declared paths, no more no less). **Deliberately NOT touched, by explicit scope lock for this run** (a separate branch `fix/ci-red-37f-drift` + a leaked unrelated `ci.yml` commit exist on master; the human owns that reconciliation, so this run was constrained to touch only the plan's 5 declared files): (1) `internal/share/store.go`'s doc comment (lines 16-25) predicting "a future migration adding RLS... would make the backstop live with zero Go-side changes" is now stale (it still says "today it is inert", no longer true) but was left as-is — safe, low-risk follow-up; (2) no `internal/db/migrate_0041_integration_test.go` was added (the established 0040-precedent per-migration persisted round-trip test) — the round-trip was proven manually instead (see Task 1) via a temporary file that was deleted before any commit. **VALIDATION:** `go build ./...` + `go vet ./...` (WSL) exit 0; `go test -race ./internal/share/...` (untagged unit tests) `ok`; `go test -tags db_integration -race ./internal/share/... -count=1` `ok` (5.7s); `bash scripts/check-file-size.sh` clean (whole tree, 1978 tracked source files); `ls internal/db/migrations/ | tail -1` = `0041_shared_links_rls.up.sql`. WEBSHARE-02 was already tracked complete by earlier 37F plans (this is a hardening gap-closure of an already-shipped feature, not new WEBSHARE-02 surface). SUMMARY: `.planning/phases/37F-conversation-artifact-sharing-export-inserted/37F-20-SUMMARY.md`. Next: 37F plans 10, 11, 12, 13, 17, 18, 19 remain pending for full phase closure — independent of this gap closure (37F-20 depended only on 37F-07, already shipped).
 
 #### 37E-05 — model reasoning-CAPABILITY DETECTION (WEBMODEL-01/03 capability foundation, Wave-3, the phase's only net-new external-dependency vertical). **Sequential on master, 3 atomic commits `42fe6d2e` (Task 1, test — fixtures) / `936c6f59` (Task 2, feat) / `61c12c6d` (Task 3, feat) + `19dbf827` (coverage hardening, test) + this docs commit.** Auto-detects the ACTIVE model's advertised reasoning efforts (D-13) instead of the hard-coded placebo table (D-12), behind ONE neutral seam plan 06 reads. **Task 1 (`42fe6d2e`):** captured daemon-free fixtures `internal/llm/testdata/openrouter_models.json` (3 models exercising every branch: graduated set with an injected hostile `turbo` token, `mandatory:true`, no-reasoning) + `llamacpp_props.json` (`chat_template_caps.supports_thinking:false`); the /models nesting is operator-verified LIVE 2026-07-10, no live capture possible in-env (no key/network) so hand-built to the verified shape with an in-file `_note` marking the synthetic-for-test values + `[ASSUMED-pending-live-capture]` /props flag. **Task 2 (`936c6f59`, TDD):** `internal/llm/model_reasoning_caps.go` (271 LOC) — `ReasoningCapability` struct, `openRouterModelsResponse` DTO, `ModelCapabilityClient` (+`NewModelCapabilityClient`, `ReasoningCapabilityFor`): `GET {BaseURL}/models` over cfg's Bearer+attribution headers, body-size-capped `json.Decoder`, TTL cache keyed by `normalizeModelID` with an injectable clock — cold→warm(no 2nd call)→post-expiry re-fetch proven; STRICT allowlist clamp `{max,xhigh,high,medium,low,none}` DROPS unknown/hostile tokens (T-37E-05-UPSTREAM); `ReasoningCapabilitySource` interface (`AllowedEfforts(ctx)→efforts,default,detected`) + `openRouterReasoningCaps` (honors `mandatory`→strips off, surfaces `default_effort`); fetch-fail/absent/empty→`detected=false` (T-37E-05-AVAIL safe floor, never serves stale). **Task 3 (`61c12c6d`, TDD):** `internal/llm/llamacpp_caps.go` (170 LOC) — `llamaCppReasoningCaps` (explicit `Provider==llamacpp` widens to the full spike-095 graduated set `{none,low,medium,high,xhigh,max}` detected=true WITHOUT /props per OQ-4; best-effort `/props` probe narrows to `{none}` only on an explicit thinking-disabled flag; probed once + cached; unknown/absent/unreachable/malformed keeps the full set, never panics) + `NewReasoningCapabilitySource(cfg,ttl)` boot selector branching on `llm.ReasoningTarget` (openrouter→/models source, llamacpp→/props source, else nil→safe floor). **DEVIATIONS (2, both Rule 2 — missing critical):** (1) added the `NewReasoningCapabilitySource` boot seam (the objective's "selected by ReasoningTarget" — the exact linkage plan 06's `SetReasoningCapabilitySource` needs, else 06 re-implements the branch); (2) `19dbf827` — `TestClampEfforts` (pure-fn coverage of the named security control) + `TestCapabilitySourceRequestBuildError` raised `clampEfforts` 77.8%→100%, pkg 93.1%→94.5%. No architectural changes; NO new deps/migrations/env (reuses the configured OpenRouter key + base URL). **NO network in CI:** every HTTP call is an injected `http.RoundTripper` returning a captured testdata fixture. **VALIDATION:** `go test ./internal/llm/ -race` (WSL, CGO) `ok`; `go vet ./...`+`go build ./...` (Windows) exit 0; `golangci-lint` 0 issues; owned-surface 94.5% (≥85% floor); each new file <600 LOC (271/170). Exact downstream symbols for 37E-06: `ReasoningCapability`, `ReasoningCapabilitySource.AllowedEfforts`, `ModelCapabilityClient`, `NewReasoningCapabilitySource`, `openRouterReasoningCaps`/`llamaCppReasoningCaps`. **TDD gate:** Tasks 2+3 RED→GREEN observed in-tree (compile-fail RED both times), single atomic `feat` each because the lefthook pre-commit `go vet`+`golangci-lint` rejects a non-compiling RED-only commit (no `--no-verify`; same accommodation as 37E-02/04). **WEBMODEL-01/03 stay `[ ]`** (phase-spanning — capability FOUNDATION only; the endpoint 37E-06 + dynamic UI 37E-07 + two-stage validator make them user-observable; `requirements mark-complete` intentionally NOT run, matching 37E-01..04 precedent — the terminal plan 37E-07 owns the mark). SUMMARY: `.planning/phases/37E-composer-model-reasoning-effort-selector-inserted/37E-05-SUMMARY.md`. Next: **37E-06** (two-stage `/agent/run` validation + `GET /api/composer/reasoning-capabilities` + composition wiring, Wave-4).
 
@@ -137,7 +144,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 
 **Velocity:**
 
-- Total plans completed: 183
+- Total plans completed: 203
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -177,6 +184,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | 37D | 5 | - | - |
 | 43 | 4 | - | - |
 | 37E | 7 | - | - |
+| 37F | 20 | - | - |
 
 **Recent Trend:**
 
@@ -348,6 +356,19 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 37F P07 | ~2h | 3 tasks | 8 files |
 | Phase 37F P14 | 32min | 2 tasks | 9 files |
 | Phase 37F P16 | 45min | 2 tasks | 5 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 37F P09 | 36min | 2 tasks | 3 files |
+| Phase 37F P15 | 70min | 2 tasks | 11 files |
+| Phase 37F P20 | 30 min | 3 tasks | 5 files |
+| Phase 37F P10 | 95min | 3 tasks | 6 files |
+| Phase 37F P11 | 70min | 3 tasks | 8 files |
+| Phase 37F P17 | 35min | 2 tasks | 9 files |
+| Phase 37F P12 | 30 min | 2 tasks | 4 files |
+| Phase 37F P13 | 55min | 2 tasks | 11 files |
+| Phase 37F P18 | 2h30min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -639,6 +660,30 @@ Recent decisions affecting current work:
 - [Phase 37F-14]: hasInternalShare/hasPublicShare hardcoded false at the ChatWorkspaceControls call site — No share-list data hook exists yet in the codebase; plan 37F-15 builds shareApi.ts and mounts the real ShareModal, and will wire the real query in the same place
 - [Phase 37F-16]: SharePage is one component for both share tiers; tier comes from a Route prop, never derived from the URL — D-07 one-canonical-snapshot: a forked page would fork the redaction/escaping policy
 - [Phase 37F-16]: Fixed useBlobPreview.ts to resolve through useAssetSource() instead of a hardcoded identity-scoped URL — R-05 seam gap: image/pdf artifacts would have silently broken on both share tiers without this fix
+- [Phase ?]: 37F-09: zero cmd/aura/serve_webui.go delta (F-1) - export route rides the already-mounted conversationsRoutePrefix subtree — RESEARCH R-01 over-estimated the delta on a near-cap file; the mount already inherits RequireAuth whole-origin, so only one mux.HandleFunc line was needed
+- [Phase 37F]: 37F-09: both export formats serve as application/octet-stream + nosniff, never a format-specific MIME (37A D-10) — The exported bytes are user-authored text a browser could otherwise try to render; neutral type + nosniff keeps a downloaded file inert
+- [Phase 37F]: 37F-09: absent/unrecognized export format defaults to Markdown rather than 400/500 — A human clicking export wants the readable form; a missing optional query param is not a client error
+- [Phase 37F]: 37F-09: ANY GetForIdentity error (foreign owner, absent, malformed id) collapses to the same 404, never 403 — D-06 existence-hiding - a read must never confirm a foreign conversation's existence via a distinguishable status (SC4 row 1)
+- [Phase 37F]: 37F-15 ShareModal: wrote shareApi.ts against 37F-10-PLAN.md's locked contract, not the not-yet-existing internal/agui/share_api.go — Plan 37F-15 is wave 4 but its own read_first names a wave-5 file (37F-10) as ground truth; same wave-ordering gap plan 37F-16 already resolved the same way
+- [Phase 37F]: 37F-15 ShareModal: stale-detection is feature-complete but inert in production (safe degrade to "not stale") until a future Go plan projects Conversation.LastActiveAt and ShareLink.snapshot_turn_count — No existing Go endpoint exposes conversation last-activity or a per-share turn count, and this plan's web_context forbade Go changes; additive optional TS fields activate the feature with zero frontend changes once a future Go plan populates them
+- [Phase 37F]: 37F-20: mirrored 0032_owner_rls exactly for the new shared_links_owner_isolation policy (ENABLE not FORCE, permissive-on-unset) rather than inventing new RLS semantics; share_audit deliberately excluded (audit-table precedent).
+- [Phase 37F]: shareLinkResponse is a new wire DTO (not share.Link marshaled directly), matched against the already-shipped frontend contract (shareTypes.ts/shareApi.ts, plans 37F-15/16) — share.Link/CreateResult carry zero JSON tags and expose owner/bucket/format-options fields that must never reach the wire
+- [Phase 37F]: R-08 kill-switch carried via ServerConfig.SharePublicEnabled (a plain boot-config bool), not a ShareService interface method — mirrors the existing CORSPermissive pattern since it is not a nilable dependency
+- [Phase 37F]: RevokeConversationShares loops the already-tested single-link Revoke (drop-blobs-then-stamp) rather than the bulk RevokeForConversation store primitive, honoring the never-stamp-before-drop ordering prohibition — Bulk RevokeForConversation stamps all rows in one UPDATE before blobs are dropped; a crash between stamp and drop would orphan bytes permanently
+- [Phase 37F]: The runner ShareRevoker seam is a nilable Deps/Runner struct field mirroring Gateway/HookManager, not a tools.Registry type-assertion scan — A share revoker is a service dependency, not a registered Tool, so there is no natural registry collection to scan
+- [Phase 37F]: Share expiry sweep integration tests (TestShareExpirySweep, TestShareExpirySweepIdempotent) live in internal/share driving Service.ExpireDue directly, not in internal/cron/handlers — internal/cron/handlers must never import internal/share (D-24); the handler itself is already unit-proved as a copy-and-rename shell over newCountingSweep
+- [Phase 37F]: 37F-17: ShareLinkRow extracted as a shared component between the per-thread Condiviso section and the global Settings shared-links list, not duplicated — Task 2 explicitly required reuse; both surfaces render identical tier/created/expiry/revoke row shape
+- [Phase 37F]: 37F-17: conversation title omitted from Settings shared-links rows — GET /api/shares (shipped, plan 37F-10) deliberately excludes conversation_id from the wire; extending that Go DTO is out of this frontend-only plan's scope; must_haves.truths requires only tier/created/expiry/revoke, which every row ships
+- [Phase 37F]: 37F-17: revoke-all implemented as a client-side Promise.allSettled fan-out over the existing single-delete route — the shipped share HTTP surface (37F-10) has no bulk-revoke endpoint; adding one is a backend change out of this plan's scope
+- [Phase 37F]: 37F-17: SharedSection mounts unconditionally inside ArtifactsPanel with no query-error UI — verified empirically (disposable probe test) that an unmocked relative-URL fetch rejects in ~1ms under this project's vitest+jsdom runtime, keeping the pre-existing unedited ArtifactsPanel.test.tsx green
+- [Phase ?]: 37F-12: mounted all eight share routes bare (no RequireCapability wrap), including POST /api/shares — A single mux entry serves both share tiers via the JSON body; Go's ServeMux dispatches on method+path only, so a tier-specific capability gate cannot live at the mount. share.public is defined as a documented D-02 constant but is not yet consulted by any code path -- share_api.go checks only the org kill-switch. Logged as a known gap in deferred-items.md (out of this plan's declared file scope).
+- [Phase ?]: share.public capability check lives in-handler (handleShareCreate), not at the parent mux, since a single POST /api/shares route serves both tiers via the JSON body — Go's ServeMux dispatches on method+path only, never on body content; a mount-level RequireCapability(share.public) would wrongly force the D-01 default internal-tier mint to require the capability
+- [Phase 37F]: Extended the existing identityAdmin interface with HasCapability instead of adding a new Server seam — *identity.Store already implements it and is already wired via SetIdentityAdmin at the composition root — no new production wiring point needed
+- [Phase 37F]: A's public-link fixtures for SC4 rows 5/7/9 minted directly via share.Service.Create, bypassing HTTP, so identity A never holds share.public anywhere in the test — Needed for row 8's negative assertion (A lacks share.public) to remain meaningful across the whole test — precedent already established by TestShareInternalRevokedExpired404's direct-store fixture construction
+- [Phase 37F]: Split share_api_test.go into three files (shared fixtures+CRUD / D-10 internal / public-token) mirroring the share_api.go/share_api_internal.go/share_api_public.go production split — The capability-check addition pushed the single file to 613 LOC, over the CLAUDE.md 600-LOC cap; refactor-on-touch rather than requesting an exception
+- [Phase 37F]: Fixed the deadcode-surfaced composition-root gap in-plan (share.Service was never wired into the deployed binary) rather than deferring — The plan's own acceptance criteria requires make quality (which includes deadcode) to exit 0, and the gap made the entire share feature non-functional in production
+- [Phase 37F]: Added Runner.SetShareRevoker as a new late-bound setter rather than restructuring aura chat/serve boot ordering — chat.run is assembled before objectStore/chat.assets exist; mirrors the existing agui.Server Set*-after-construction pattern already used ~15 times in this codebase
+- [Phase 37F]: Documented the web/src/chat/share/* Stryker subdirectory shortfall (69.85%, 0.15pp under target) rather than writing box-checking tests under time pressure — The actual CI-enforced gate (Stryker's project-aggregate break threshold) passes at 75.34%; triaging 91+ ShareModal.tsx survivors is a genuine test-design task logged in deferred-items.md for a dedicated follow-up
 
 ### Pending Todos
 
@@ -651,6 +696,8 @@ Recent decisions affecting current work:
 [Issues that affect future work]
 
 - 8 Gate 1 DoR open questions tracked in research/SUMMARY.md "Gaps to Address" — resolve per-phase during plan-phase invocations.
+- internal/db's TestMigration0039RoundTrip/TestMigration0040RoundTrip fail (stale hardcoded version literals vs the new migration 0041 floor) — human-reserved, part of fix/ci-red-37f-drift per 37F-13/37F-20's own findings; blocks bash scripts/coverage_docker.sh from exiting 0 (see deferred-items.md)
+- internal/objectstore measures 69.6% coverage under the real db_integration+neo4j_integration tag matrix, below the 85% per-package floor — pre-existing, structural (s3.go's live-Garage-endpoint methods, 0% each), already deferred once by 37F-04; needs an AWS-SDK-S3 mock seam or a live-Garage CI tier (see deferred-items.md)
 
 ### Quick Tasks Completed
 
@@ -683,9 +730,9 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-17T14:24:10.468Z
-Stopped at: Completed 37F-16-PLAN.md
-Resume file: None
+Last session: 2026-07-18T07:24:33.639Z
+Stopped at: Phase 38 context gathered
+Resume file: .planning/phases/38-mcp-governance-hardening/38-CONTEXT.md
 
 ## Operator Next Steps
 

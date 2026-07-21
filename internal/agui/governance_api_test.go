@@ -77,30 +77,6 @@ func (b *scriptedSkillsBoard) AuditLog(_ context.Context, f skills.AuditFilter) 
 	return b.audit, nil
 }
 
-// scriptedSchedulerBoard is a configurable SchedulerBoardProvider: canned tasks + run
-// history, optional errors, and recorded pagination args so the default limit/offset can
-// be asserted, plus a runsReached flag proving a non-UUID id never reaches the store.
-type scriptedSchedulerBoard struct {
-	tasks       []cron.Task
-	tasksErr    error
-	runs        []cron.Run
-	runsErr     error
-	gotLimit    int
-	gotOffset   int
-	runsReached bool
-}
-
-func (b *scriptedSchedulerBoard) ListActiveTasks(context.Context) ([]cron.Task, error) {
-	return b.tasks, b.tasksErr
-}
-
-func (b *scriptedSchedulerBoard) ListRunsForTask(_ context.Context, _ string, limit, offset int) ([]cron.Run, error) {
-	b.runsReached = true
-	b.gotLimit = limit
-	b.gotOffset = offset
-	return b.runs, b.runsErr
-}
-
 // govServer builds a Server with the supplied governance providers wired (any may be nil)
 // and a short probe timeout so the deadline-honoring probe path resolves fast.
 func govServer(p GovernanceProviders) *Server {

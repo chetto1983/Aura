@@ -396,6 +396,20 @@ CREATE (p:Preference {
 RETURN p
 """
 
+# Exact-text dedup fallback: match a LIVE preference (valid_until null) owned by the
+# same user with an identical category + text + scope. Used by add_preference when the
+# embedding-similarity path is skipped (embeddings off/unavailable) so a byte-identical
+# preference is returned instead of duplicated (the operator observed the same
+# preference stored as two nodes).
+FIND_EXACT_PREFERENCE = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {category: $category})
+WHERE p.preference = $preference
+  AND coalesce(p.deduplication_scope, 'global') = $deduplication_scope
+  AND p.valid_until IS NULL
+RETURN p
+LIMIT 1
+"""
+
 SEARCH_PREFERENCES_BY_EMBEDDING = """
 CALL db.index.vector.queryNodes('preference_embedding_idx', $limit, $embedding)
 YIELD node, score
@@ -1096,6 +1110,41 @@ OPTIONAL MATCH (e)-[r1:EXTRACTED_FROM]->()
 OPTIONAL MATCH (e)-[r2:EXTRACTED_BY]->()
 DELETE r1, r2
 RETURN count(r1) + count(r2) AS deleted
+"""
+
+# Ownership-scoped deletes ("forget"). The (:User)-[:HAS_*]->(node) MATCH is the
+# ownership guard: a node the caller does not own yields NO match, so nothing is
+# deleted and the caller learns it (refuse, not a silent no-op). DETACH DELETE also
+# removes the node's edges. The id is captured BEFORE the delete so it can be returned.
+DELETE_PREFERENCE_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {id: $preference_id})
+WITH p, p.id AS deleted_id
+DETACH DELETE p
+RETURN deleted_id
+"""
+
+DELETE_FACT_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(f:Fact {id: $fact_id})
+WITH f, f.id AS deleted_id
+DETACH DELETE f
+RETURN deleted_id
+"""
+
+# Entity forget is deliberately NON-cascading. Ownership is the direct HAS_ENTITY edge
+# only (a mere MENTION must not authorize deletion). We UNLINK the caller's ownership
+# edge, then delete the entity node ONLY when it is fully orphaned afterwards (no
+# remaining relationships of any kind) — never DETACH DELETE, which would rip an entity
+# still referenced by other users' messages/preferences out from under them. So a
+# shared entity survives (just unlinked from this user); a truly private one is removed.
+# `removed_node` reports which happened.
+DELETE_ENTITY_SCOPED = """
+MATCH (u:User {identifier: $user_identifier})-[owns:HAS_ENTITY]->(e:Entity {id: $entity_id})
+DELETE owns
+WITH e, e.id AS deleted_id
+OPTIONAL MATCH (e)-[rel]-()
+WITH e, deleted_id, count(rel) AS remaining
+FOREACH (_ IN CASE WHEN remaining = 0 THEN [1] ELSE [] END | DELETE e)
+RETURN deleted_id, (remaining = 0) AS removed_node
 """
 
 # =============================================================================

@@ -87,3 +87,5 @@ graphify-out/*
 .agents/skills/*
 internal/channels/telegram/testdata/*
 artifacts/*
+.playwright-mcp/*
+.planning/phases/32-quality-cleanup-dead-code-shared-helpers/uat-evidence/phase32-focustrap-dialog.png

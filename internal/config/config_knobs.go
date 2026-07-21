@@ -78,6 +78,13 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_SHELL_DESTRUCTIVE_PATTERNS", Kind: KindString, Default: ""},
 		{Name: "AURA_WEB_TRUST_PROXY", Kind: KindBool, Default: "false"},
 
+		// Phase 38 MCP governance hardening (D-14/D-15/MCPH-08): the legacy
+		// AURA_MCP_SERVERS_JSON env override is production-gated by gateMCPLegacyEnv
+		// (config_validate.go) unless this compat flag explicitly opts in. KindBool so a
+		// malformed value is FLAGGED (not silently absorbed) under a strict tier, matching
+		// AURA_AGUI_CORS_PERMISSIVE's registration shape.
+		{Name: "AURA_MCP_LEGACY_ENV_COMPAT", Kind: KindBool, Default: "false"},
+
 		// --- Tier B: int/bool reliability knobs read in internal/config (F-016 surface) ---
 		{Name: "AURA_CONTEXT_PREVIEW_CAP_BYTES", Kind: KindInt, Default: "2048"},
 		{Name: "AURA_CONVERSATION_TURN_CAP_BYTES", Kind: KindInt, Default: "65536"},
@@ -85,6 +92,8 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_HISTORY_HARD_CAP_TURNS", Kind: KindInt, Default: "50"},
 		{Name: "AURA_RUN_DIR_WARN_THRESHOLD_BYTES", Kind: KindInt, Default: "1073741824"},
 		{Name: "AURA_RUN_DIR_SWEEP_INTERVAL_SEC", Kind: KindInt, Default: "3600"},
+		{Name: "AURA_CONTEXT_MEMORY_RECALL", Kind: KindBool, Default: "false"},
+		{Name: "AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS", Kind: KindInt, Default: "8"},
 		{Name: "AURA_WEB_DNS_PIN_TTL_SEC", Kind: KindInt, Default: "60"},
 		{Name: "AURA_WEB_FETCH_MAX_BODY_BYTES", Kind: KindInt, Default: "5000000"},
 		{Name: "AURA_WEB_CACHE_PERSISTENT", Kind: KindBool, Default: "false"},

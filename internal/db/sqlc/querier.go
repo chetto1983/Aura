@@ -12,12 +12,12 @@ import (
 
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
-	AppendCompactionRolloutDecision(ctx context.Context, arg AppendCompactionRolloutDecisionParams) (AuraCompactionRolloutDecisions, error)
-	AppendCompactionRolloutEvidence(ctx context.Context, arg AppendCompactionRolloutEvidenceParams) (AuraCompactionRolloutEvidence, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
+	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
+	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
+	// a task that is not awaiting approval (0).
+	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
-	CASRollbackCompactionRollout(ctx context.Context, arg CASRollbackCompactionRolloutParams) (AuraCompactionRolloutStates, error)
-	CASTransitionCompactionRollout(ctx context.Context, arg CASTransitionCompactionRolloutParams) (AuraCompactionRolloutStates, error)
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -36,11 +36,9 @@ type Querier interface {
 	// empty → sql.ErrNoRows / pgx.ErrNoRows → ErrTokenConsumed). The expires_at guard
 	// rejects a stale token in the same statement.
 	ConsumeTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
-	CountCompactionRolloutDecisions(ctx context.Context, scopeID string) (int64, error)
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
-	CreateCompactionRolloutState(ctx context.Context, arg CreateCompactionRolloutStateParams) (AuraCompactionRolloutStates, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
 	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
@@ -63,18 +61,21 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
-	GetActiveCompactionPointer(ctx context.Context, arg GetActiveCompactionPointerParams) (AuraCompactionActivePointers, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
-	GetCompactionCheckpoint(ctx context.Context, id pgtype.UUID) (AuraCompactionCheckpoints, error)
-	GetCompactionClaim(ctx context.Context, operationID pgtype.UUID) (AuraCompactionClaims, error)
-	GetCompactionRolloutState(ctx context.Context, scopeID string) (AuraCompactionRolloutStates, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
 	// Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 	GetConversationForIdentity(ctx context.Context, arg GetConversationForIdentityParams) (AuraConversations, error)
+	// The input_tokens of the most recent request-bearing turn = the CURRENT
+	// context-window fill (distinct from the cumulative total_input_tokens column,
+	// which sums every turn's input and so climbs far past the window on a long
+	// chat). The runtime footer's context gauge reads this so a reloaded
+	// conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
+	// conversation has no request-bearing turn yet.
+	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
@@ -148,7 +149,6 @@ type Querier interface {
 	ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
-	ListCompatibleCompactionCheckpoints(ctx context.Context, arg ListCompatibleCompactionCheckpointsParams) ([]AuraCompactionCheckpoints, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
@@ -161,6 +161,10 @@ type Querier interface {
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error)
+	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
+	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
+	// non-null next_run_at too — it is the first fire computed at schedule time).
+	ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
@@ -200,6 +204,9 @@ type Querier interface {
 	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
+	// Advance an active task's next fire to now so the next tick claims it. Returns rows
+	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
+	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
@@ -238,6 +245,10 @@ type Querier interface {
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (AuraIngestionJobs, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 	UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error)
+	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
+	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
+	// a cancelled/completed task is not silently revived. Returns rows affected.
+	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)

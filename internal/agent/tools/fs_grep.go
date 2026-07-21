@@ -38,7 +38,7 @@ func (t *FSGrep) Spec() Spec {
 	return Spec{
 		Name:        "fs_grep",
 		Summary:     "Search file contents with a regexp.",
-		Description: "Search file CONTENTS across a directory tree with an RE2 regular expression; returns matching lines as `path:line: text`. `pattern` is the regex; optionally restrict to a `path` (file or directory, default workspace root) and a filename `glob` (e.g. `*.go`). Binary files and .git/node_modules/vendor are skipped; results cap at max_results (default 200). Use this for content search instead of shell grep so matches come back structured. To find files by NAME use fs_glob; to read a known range use fs_read.",
+		Description: "Search file CONTENTS across a directory tree with an RE2 regular expression; returns matching lines as `path:line: text`. `pattern` is the regex; optionally restrict to a `path` (file or directory, default workspace root) and a filename `glob` (e.g. `*.go`). Binary files, hidden dot-directories (.git, .cache, …) and node_modules/vendor/__pycache__ are skipped — to search a hidden or vendored tree pass it as the explicit `path`; results cap at max_results (default 200). Use this for content search instead of shell grep so matches come back structured. To find files by NAME use fs_glob; to read a known range use fs_read.",
 		Parameters:  params,
 		// Deferred: filesystem content-search is a long-tail capability discoverable via
 		// tool_search. Keeping only fs_read/fs_write visible trims the manifest and stops the
@@ -77,7 +77,7 @@ func (t *FSGrep) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 			return nil // unreadable entry: skip, don't abort the whole walk
 		}
 		if d.IsDir() {
-			if skipWalkDir(d.Name()) {
+			if p != root && skipWalkDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -137,5 +137,12 @@ func grepFile(path, root string, re *regexp.Regexp, maxResults int, out *[]strin
 				return
 			}
 		}
+	}
+	// A line over the 1 MiB scanner cap (or a mid-read error) stops bufio.Scanner
+	// with no more tokens; surface it so a partial file scan is never mistaken for
+	// an exhaustive one (same "flag, don't silently truncate" contract as the walk
+	// budget marker).
+	if err := scanner.Err(); err != nil && len(*out) < maxResults {
+		*out = append(*out, fmt.Sprintf("%s: [scan stopped: %v — file not fully searched; open it with fs_read]", rel, err))
 	}
 }

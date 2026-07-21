@@ -35,9 +35,18 @@ func (fakeSkillsBoard) AuditLog(context.Context, skills.AuditFilter) ([]skills.A
 
 type fakeSchedulerBoard struct{}
 
-func (fakeSchedulerBoard) ListActiveTasks(context.Context) ([]cron.Task, error) { return nil, nil }
+func (fakeSchedulerBoard) ListManageableTasks(context.Context) ([]cron.Task, error) { return nil, nil }
 func (fakeSchedulerBoard) ListRunsForTask(context.Context, string, int, int) ([]cron.Run, error) {
 	return nil, nil
+}
+func (fakeSchedulerBoard) GetTask(context.Context, string) (cron.Task, error) {
+	return cron.Task{}, nil
+}
+func (fakeSchedulerBoard) ApproveTask(context.Context, string) error { return nil }
+func (fakeSchedulerBoard) RunTaskNow(context.Context, string) error  { return nil }
+func (fakeSchedulerBoard) CancelTask(context.Context, string) error  { return nil }
+func (fakeSchedulerBoard) UpdateTask(context.Context, string, cron.UpdateTaskParams) error {
+	return nil
 }
 
 // fakeOnboarding is the scriptable OnboardingService fake shared by the seam test and the

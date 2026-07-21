@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,12 +63,11 @@ func threadLockHeld(ctx context.Context) bool {
 // is built from (D-A1-05/Pattern-4), the llm.Config (model + L2 context window
 // inputs), and the bounded worker timeouts.
 type Deps struct {
-	Conv                ConversationStore
-	Pause               PauseStore
-	Identity            IdentityStore
-	CacheMetrics        CacheMetricStore
-	ToolInvocations     ToolInvocationStore
-	CompactionEffective CompactionEffectiveReader
+	Conv            ConversationStore
+	Pause           PauseStore
+	Identity        IdentityStore
+	CacheMetrics    CacheMetricStore
+	ToolInvocations ToolInvocationStore
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -94,7 +92,11 @@ type Deps struct {
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
 	ContextBlock ContextBlockProvider
 	AlwaysBlock  func() string
-	ResumeHook   ResumeHook
+	// ArchivalRecaller injects the L4 archival-memory block into messages[1] (PRD
+	// amendment #21). nil => no recall (the AURA_CONTEXT_MEMORY_RECALL default-off
+	// state is produced by the composition root returning nil).
+	ArchivalRecaller ArchivalRecaller
+	ResumeHook       ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
 	// falls back to the LLM router. The composition root passes the granite
@@ -123,6 +125,11 @@ type Deps struct {
 	// The composition root passes a *toolselectstore.Store over the same Neo4j client
 	// as ReasoningSaver, when the graph client opened.
 	ToolSelectSaver toolselectlearn.Saver
+	// ShareRevoker is the D-15 consumer-declared seam (runner_delete.go step 4.5): the
+	// composition root injects the live *share.Service, structurally satisfying the
+	// interface with no internal/share import here. nil => share was never mounted in this
+	// deployment, and step 4.5 is a silent skip (not a panic).
+	ShareRevoker ShareRevoker
 }
 
 // toolSelectObserver is the narrow seam the runner holds for the tool-selection
@@ -146,13 +153,12 @@ type ResumeHook func(ctx context.Context, pending askuser.Pending, resp Response
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv                ConversationStore
-	pause               PauseStore
-	identity            IdentityStore
-	cacheMetrics        CacheMetricStore
-	toolInvocations     ToolInvocationStore
-	compactionEffective CompactionEffectiveReader
-	resumeCommitter     ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
+	Conv            ConversationStore
+	pause           PauseStore
+	identity        IdentityStore
+	cacheMetrics    CacheMetricStore
+	toolInvocations ToolInvocationStore
+	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -168,12 +174,14 @@ type Runner struct {
 	resumeHook   ResumeHook
 
 	contextBlock      ContextBlockProvider
+	archivalRecaller  ArchivalRecaller            // L4 archival-memory recall for messages[1] (amendment #21); nil → no recall
 	hookManager       *agent.HookManager          // optional per-turn LlmAgent hooks
 	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
 	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
 	learner           *reasoninglearn.Learner     // async reasoning self-improvement worker; nil unless ReasoningLearning is on
 	toolSelectLearner toolSelectObserver          // async tool-selection self-improvement worker (Open-Q #3); nil unless a saver is wired
 	gateway           *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
+	shareRevoker      ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -225,29 +233,30 @@ func New(d Deps) *Runner {
 	// MCP-free `aura chat` is not coupled to embed availability (Open-Q #2).
 	wireToolSearchEmbedder(d.Registry, d.Embedder)
 	r := &Runner{
-		Conv:                d.Conv,
-		pause:               d.Pause,
-		identity:            d.Identity,
-		cacheMetrics:        d.CacheMetrics,
-		toolInvocations:     d.ToolInvocations,
-		compactionEffective: d.CompactionEffective,
-		client:              d.Client,
-		registry:            d.Registry,
-		cfg:                 d.LLM,
-		runDir:              d.RunDir,
-		previewCap:          d.PreviewCap,
-		evictAfter:          d.EvictAfter,
-		workspace:           workspace,
-		titleTimeout:        titleTimeout,
-		stopTimeout:         stopTimeout,
-		resumeHook:          d.ResumeHook,
-		contextBlock:        d.ContextBlock,
-		hookManager:         d.HookManager,
-		alwaysBlock:         d.AlwaysBlock,
-		classifier:          classifier,
-		breaker:             d.Breaker,
-		gateway:             d.Gateway,
-		resumeCommitter:     d.ResumeCommitter,
+		Conv:             d.Conv,
+		pause:            d.Pause,
+		identity:         d.Identity,
+		cacheMetrics:     d.CacheMetrics,
+		toolInvocations:  d.ToolInvocations,
+		client:           d.Client,
+		registry:         d.Registry,
+		cfg:              d.LLM,
+		runDir:           d.RunDir,
+		previewCap:       d.PreviewCap,
+		evictAfter:       d.EvictAfter,
+		workspace:        workspace,
+		titleTimeout:     titleTimeout,
+		stopTimeout:      stopTimeout,
+		resumeHook:       d.ResumeHook,
+		contextBlock:     d.ContextBlock,
+		archivalRecaller: d.ArchivalRecaller,
+		hookManager:      d.HookManager,
+		alwaysBlock:      d.AlwaysBlock,
+		classifier:       classifier,
+		breaker:          d.Breaker,
+		gateway:          d.Gateway,
+		shareRevoker:     d.ShareRevoker,
+		resumeCommitter:  d.ResumeCommitter,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
 	}
@@ -369,7 +378,13 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
-		cfg, err := r.contextConfig(ctx, convID)
+		// The current user message keys the L4 recall's relevance (top-K); a resume/
+		// branch turn with no fresh message falls back to identity-only recall.
+		recallQuery := ""
+		if input.visibleUserMsg != nil {
+			recallQuery = *input.visibleUserMsg
+		}
+		cfg, err := r.contextConfig(ctx, convID, recallQuery)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -477,57 +492,6 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 	return r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
 	})
-}
-
-// loadTurnHistory rehydrates the turn history the agent runs over: the full linear
-// history (branchLeaf <= 0, the default Turn path, byte-identical to the pre-D-09 case)
-// or the selected branch path (branchLeaf > 0, the D-09 re-run). Both feed the SAME
-// L1/L2/L2.5 ladder, so the protected messages[0] head is identical either way — only
-// body turns differ per branch (the CAP-04 cache invariant). It does NOT re-implement
-// the walk; it calls the store's path-aware loader (plan 25-06).
-func (r *Runner) loadTurnHistory(ctx context.Context, convID string, cfg conversations.ContextConfig, branchLeaf int) ([]llm.Message, error) {
-	if branchLeaf > 0 {
-		return r.Conv.LoadManagedHistoryForBranch(ctx, convID, branchLeaf, cfg)
-	}
-	return r.Conv.LoadManagedHistory(ctx, convID, cfg)
-}
-
-// contextConfig builds the L1/L2/L2.5 ladder inputs from the Runner's llm.Config +
-// eviction knob.
-func (r *Runner) contextConfig(ctx context.Context, convID string) (conversations.ContextConfig, error) {
-	block, err := r.renderContextBlock(ctx, convID)
-	if err != nil {
-		return conversations.ContextConfig{}, err
-	}
-	return conversations.ContextConfig{
-		ContextWindow:       r.cfg.ContextWindow,
-		MaxOutputTokens:     r.cfg.MaxOutputTokens,
-		ToolEvictAfterTurns: r.evictAfter,
-		AlwaysBlock:         block,
-	}, nil
-}
-
-func (r *Runner) renderContextBlock(ctx context.Context, convID string) (string, error) {
-	var parts []string
-	if r.contextBlock != nil {
-		conv, err := r.Conv.Get(ctx, convID)
-		if err != nil {
-			return "", fmt.Errorf("context block: load conversation identity: %w", err)
-		}
-		owner, err := r.identity.GetIdentityByID(ctx, conv.IdentityID)
-		if err != nil {
-			return "", fmt.Errorf("context block: resolve identity %s: %w", conv.IdentityID, err)
-		}
-		if block := strings.TrimSpace(r.contextBlock(ctx, owner)); block != "" {
-			parts = append(parts, block)
-		}
-	}
-	if r.alwaysBlock != nil {
-		if block := strings.TrimSpace(r.alwaysBlock()); block != "" {
-			parts = append(parts, block)
-		}
-	}
-	return strings.Join(parts, "\n\n"), nil
 }
 
 // buildAgent constructs a FRESH LlmAgent seeded with the rehydrated history

@@ -45,3 +45,38 @@ WHERE id = $1;
 UPDATE aura.scheduler_tasks
 SET next_run_at = $2, updated_at = now()
 WHERE id = $1;
+
+-- name: ListManageableTasks :many
+-- The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
+-- operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
+-- non-null next_run_at too — it is the first fire computed at schedule time).
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at
+FROM aura.scheduler_tasks
+WHERE status IN ('active', 'pending_approval')
+ORDER BY next_run_at ASC NULLS LAST, id ASC;
+
+-- name: ApproveTaskRow :execrows
+-- Flip a pending_approval task to active (the cockpit approval, parity with the CLI
+-- `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
+-- a task that is not awaiting approval (0).
+UPDATE aura.scheduler_tasks
+SET status = 'active', updated_at = now()
+WHERE id = $1 AND status = 'pending_approval';
+
+-- name: RunTaskNowRow :execrows
+-- Advance an active task's next fire to now so the next tick claims it. Returns rows
+-- affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
+UPDATE aura.scheduler_tasks
+SET next_run_at = now(), updated_at = now()
+WHERE id = $1 AND status = 'active';
+
+-- name: UpdateTaskScheduleRow :execrows
+-- Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
+-- payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
+-- a cancelled/completed task is not silently revived. Returns rows affected.
+UPDATE aura.scheduler_tasks
+SET schedule_kind = $2, cron_expr = $3, every_minutes = $4, run_at = $5, tz = $6,
+    payload = $7, notify_route = $8, next_run_at = $9, updated_at = now()
+WHERE id = $1 AND status IN ('active', 'pending_approval');

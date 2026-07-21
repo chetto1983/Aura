@@ -36,7 +36,6 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/knowledge"
-	"github.com/chetto1983/aura/internal/memory"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -214,13 +213,6 @@ func runServe(args []string) {
 	// SIGTERM does not abort an in-flight anti-join mid-sweep; the drain joins it. A boot
 	// one-shot fires immediately, then it ticks; a disabled/nil store launches no goroutine.
 	env.reconciler.Start(ctx)
-	if env.compactionRollout != nil {
-		go func() {
-			if err := env.compactionRollout.Run(signalCtx, time.Minute); err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("aura serve: compaction rollout evaluator stopped", "err", err)
-			}
-		}()
-	}
 	// Background-shell TTL reaper (MUSR-04): bounds runaway background jobs on the same
 	// work ctx as the sweeper; the drain's BackgroundShells.Shutdown joins it. A disabled
 	// TTL / nil registry launches no goroutine.
@@ -305,6 +297,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if chat.toolHandles.SendFile != nil {
 		chat.toolHandles.SendFile.Assets = sendFileAssetAdapter{svc: chat.assets}
 	}
+	// share_service_wiring.go: wires WEBSHARE-02/03 into HTTP, the D-15 delete cascade, and
+	// the share_expiry_sweep cron handler below — all three were previously unwired.
+	shareSvc, shareAPI := buildShareService(chat, objectStore)
+	chat.shareSvc = shareSvc
+	chat.run.SetShareRevoker(shareSvc)
 	// Build the channels Registry FIRST (Phase 20 boot reorder): buildDispatch wires
 	// the late-bound *channels.Registry pointer as the cron.ChannelDeliverer, so the
 	// Registry must exist before dispatch is assembled. bootChannelsAndSetup needs only
@@ -334,6 +331,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// tracks AURA_SANDBOX_IDLE_TTL_SEC. Safe even when the router is nil (disabled no-op reaper).
 	if err := seedSandboxReapSweep(ctx, store, chat.cfg.Sandbox.IdleTTLSec); err != nil {
 		slog.Warn("aura serve: seed sandbox reap sweep", "err", err)
+	}
+	// Seed the D-15/OQ3 share-link expiry sweep (0040's kind CHECK already admits it).
+	if err := seedShareExpirySweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed share expiry sweep", "err", err)
 	}
 
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
@@ -376,9 +377,8 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
-	aguiServer.SetCompactService(newConversationCompactCoordinator(chat.conv, chat.compactionEffective))
-	aguiServer.SetCompactionMemoryStore(memory.NewStore(chat.pool))
 	aguiServer.SetAssetService(chat.assets)
+	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))
 	aguiServer.SetStorageOrphans(buildStorageOrphanService(chat, objectStore))

@@ -143,7 +143,7 @@ func TestReconnect_DoesNotReplayMutatingCallTool(t *testing.T) {
 func stubOpenMCPClient(t *testing.T, next reconnectingClient) func() {
 	t.Helper()
 	old := openMCPClient
-	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
 		return next, nil
 	}
 	return func() { openMCPClient = old }

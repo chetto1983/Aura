@@ -62,7 +62,7 @@ func TestCommandsInterceptWithoutLLM(t *testing.T) {
 		Model:  "deepseek/deepseek-v4-flash:exacto",
 	})
 
-	want := []string{"/start", "/help", "/cancel", "/cost", "/search", "/onboard", "/new", "/list", "/reset", "/clear", "/compact", "/whoami", "/stop"}
+	want := []string{"/start", "/help", "/cancel", "/cost", "/search", "/onboard", "/new", "/list", "/reset", "/clear", "/whoami", "/stop"}
 	for _, c := range want {
 		handled, reply := cmds.dispatch(context.Background(), 42, c)
 		if !handled {
@@ -72,14 +72,14 @@ func TestCommandsInterceptWithoutLLM(t *testing.T) {
 			t.Errorf("command %q: empty reply, want a user-facing response", c)
 		}
 	}
-	if len(want) != 13 {
-		t.Fatalf("Telegram command set must be exactly 13, got %d", len(want))
+	if len(want) != 12 {
+		t.Fatalf("Telegram command set must be exactly 12, got %d", len(want))
 	}
 }
 
 func TestBotMenuCommandsMirrorInterceptedCommands(t *testing.T) {
 	t.Parallel()
-	want := []string{"start", "help", "cancel", "cost", "search", "onboard", "new", "list", "reset", "clear", "compact", "whoami", "stop"}
+	want := []string{"start", "help", "cancel", "cost", "search", "onboard", "new", "list", "reset", "clear", "whoami", "stop"}
 	got := botMenuCommands()
 	if len(got) != len(want) {
 		t.Fatalf("menu command count = %d, want %d", len(got), len(want))

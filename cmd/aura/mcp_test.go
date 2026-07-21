@@ -25,7 +25,7 @@ func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
 	path := withTempMCPConfig(t)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"install", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"install", "calculator"}, &out); err != nil {
 		t.Fatalf("mcp install calculator: %v", err)
 	}
 
@@ -51,7 +51,7 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 	t.Setenv("AURA_PIM_MCP_PORT", "")          // literal-8093 calendar assertion below (WR-06)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"recipes"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"recipes"}, &out); err != nil {
 		t.Fatalf("mcp recipes: %v", err)
 	}
 	got := out.String()
@@ -68,7 +68,7 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"recipes", "--json"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"recipes", "--json"}, &out); err != nil {
 		t.Fatalf("mcp recipes --json: %v", err)
 	}
 	got = out.String()
@@ -84,7 +84,7 @@ func TestMCPAddListAndDisable(t *testing.T) {
 	path := withTempMCPConfig(t)
 
 	var out bytes.Buffer
-	err := runMCPCommand(context.Background(), []string{"add", "local", "--env", "TOKEN=secret", "--", "python", "server.py", "--stdio"}, &out)
+	err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--env", "TOKEN=secret", "--", "python", "server.py", "--stdio"}, &out)
 	if err != nil {
 		t.Fatalf("mcp add: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestMCPAddListAndDisable(t *testing.T) {
 		t.Fatalf("default profile missing local server: %#v", got)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"list"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"list"}, &out); err != nil {
 		t.Fatalf("mcp list: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "local") || !strings.Contains(got, "python server.py --stdio") {
@@ -107,11 +107,11 @@ func TestMCPAddListAndDisable(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"disable", "local"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"disable", "local"}, &out); err != nil {
 		t.Fatalf("mcp disable: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"list"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"list"}, &out); err != nil {
 		t.Fatalf("mcp list after disable: %v", err)
 	}
 	if !strings.Contains(out.String(), "disabled") {
@@ -123,15 +123,15 @@ func TestMCPProfileCommands(t *testing.T) {
 	path := withTempMCPConfig(t)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"profile", "create", "work"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "create", "work"}, &out); err != nil {
 		t.Fatalf("profile create: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"profile", "use", "work"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "use", "work"}, &out); err != nil {
 		t.Fatalf("profile use: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"install", "calendar"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"install", "calendar"}, &out); err != nil {
 		t.Fatalf("install calendar: %v", err)
 	}
 	doc, err := mcp.LoadManagedConfig(path)
@@ -146,7 +146,7 @@ func TestMCPProfileCommands(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"profile", "remove", "work", "calendar"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "remove", "work", "calendar"}, &out); err != nil {
 		t.Fatalf("profile remove: %v", err)
 	}
 	doc, err = mcp.LoadManagedConfig(path)
@@ -158,15 +158,21 @@ func TestMCPProfileCommands(t *testing.T) {
 	}
 }
 
+// TestMCPTrustRecordsApproval is rewritten for 38-07/Pitfall #12: `aura mcp trust` now
+// REQUIRES --reason (a CLI trust with no reason is rejected, so a CLI audit row never
+// carries a NULL reason) — the old bare `trust <name>` invocation this test previously
+// exercised is the exact gap being closed, not a behavior worth preserving (CLAUDE.md:
+// rewriting a test to match an intentional behavior change is permitted with
+// justification, unlike modifying a test just to force it green).
 func TestMCPTrustRecordsApproval(t *testing.T) {
 	path := withTempMCPConfig(t)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
 		t.Fatalf("mcp add: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"trust", "local"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"trust", "local", "--reason", "operator vetted"}, &out); err != nil {
 		t.Fatalf("mcp trust: %v", err)
 	}
 	doc, err := mcp.LoadManagedConfig(path)
@@ -176,19 +182,42 @@ func TestMCPTrustRecordsApproval(t *testing.T) {
 	if got := doc.MCPServers["local"].Trust.Class; got != mcp.TrustTrustedLocal {
 		t.Fatalf("trust class = %q, want %q", got, mcp.TrustTrustedLocal)
 	}
+	if got := doc.MCPServers["local"].Trust.Reason; got != "operator vetted" {
+		t.Fatalf("trust reason = %q, want %q", got, "operator vetted")
+	}
 	if got := out.String(); !strings.Contains(got, "ok: trusted local as trusted_local") {
 		t.Fatalf("trust output missing confirmation:\n%s", got)
+	}
+}
+
+// TestMCPTrustRequiresReason proves Pitfall #12 is closed: a bare `aura mcp trust <name>`
+// with no --reason is rejected before any config read/write is attempted, and an
+// explicit empty/unknown class is likewise rejected via the shared
+// validateTrustClassReason single source of truth (D-13).
+func TestMCPTrustRequiresReason(t *testing.T) {
+	withTempMCPConfig(t)
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
+		t.Fatalf("mcp add: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), nil, []string{"trust", "local"}, &out); err == nil {
+		t.Fatal("mcp trust with no --reason succeeded, want a validation error")
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), nil, []string{"trust", "local", "--reason", "operator vetted", "--class", "not_a_real_class"}, &out); err == nil {
+		t.Fatal("mcp trust with an unknown --class succeeded, want a validation error")
 	}
 }
 
 func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
 	withTempMCPConfig(t)
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
 		t.Fatalf("mcp add: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {
 		t.Fatalf("mcp status --json: %v", err)
 	}
 	got := out.String()
@@ -201,9 +230,15 @@ func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
 
 func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	path := withTempMCPConfig(t)
+	// 38-06: `mcp status` now additionally live-probes each non-blocked/non-disabled
+	// server (D-17); "npx" (a real, possibly-present binary that would hang waiting
+	// on stdin with no real MCP handshake) is replaced with a deterministic-fail
+	// fixture so the probe's dial attempt resolves instantly instead of blocking for
+	// the full AURA_MCP_PROBE_TIMEOUT — this test only asserts the lifecycle
+	// columns/JSON fields, not the probe outcome.
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"mail": {
-			Command: "npx",
+			Command: "aura-nonexistent-mcp-binary-xyz",
 			Source:  "recipe:mail",
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
@@ -213,7 +248,7 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"status"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"status"}, &out); err != nil {
 		t.Fatalf("mcp status: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "name\tprofiles\ttrust\truntime\tstartup\tauth\terror") || !strings.Contains(got, "mail") {
@@ -223,7 +258,7 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {
 		t.Fatalf("mcp status --json: %v", err)
 	}
 	got := out.String()
@@ -241,13 +276,22 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 
 func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 	path := withTempMCPConfig(t)
-	// The calendar PIM sidecar is an HTTP recipe: the doctor reports the endpoint
-	// (writeRuntimeCheck) plus the admin-managed-accounts note (writeRecipeChecks),
-	// and never spawns a process or probes auth env.
+	// F-046 fix (38-06): the calendar PIM sidecar is an HTTP recipe — writeRuntimeCheck
+	// now LIVE-DIALS its configured URL via mcp.ProbeServer instead of the old
+	// false-healthy "http endpoint configured" short-circuit, so a dead/typoed endpoint
+	// reports "runtime missing" here. The URL is deliberately port 0 (guaranteed refused,
+	// never a real listener — probe_test.go's own dead-endpoint fixture uses the same
+	// shape), NOT the doc-literal 8093 the pre-fix version used: 8093 is the calendar
+	// sidecar's REAL default port (AURA_PIM_MCP_PORT), which can legitimately have a live
+	// service bound to it on a dev box running the actual sidecar, making the "dead
+	// endpoint" assumption non-deterministic. This test previously asserted the pre-fix
+	// buggy string; it is deliberately rewritten to the fixed behavior (CLAUDE.md: never
+	// modify a test to pass unless it encodes the bug being fixed — this one does). The
+	// admin-managed-accounts note (writeRecipeChecks) is unaffected and still fires.
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"calendar": {
 			Type:   mcp.ServerTypeStreamableHTTP,
-			URL:    "http://127.0.0.1:8093/",
+			URL:    "http://127.0.0.1:0/",
 			Source: "recipe:calendar",
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
@@ -257,13 +301,16 @@ func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"doctor", "--all"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "--all"}, &out); err != nil {
 		t.Fatalf("mcp doctor --all: %v", err)
 	}
 	got := out.String()
+	if strings.Contains(got, "http endpoint configured") {
+		t.Fatalf("doctor --all still uses the F-046 false-healthy short-circuit:\n%s", got)
+	}
 	for _, want := range []string{
-		"calendar: http endpoint configured",
-		"calendar pim sidecar: accounts managed via admin API at http://127.0.0.1:8093/",
+		"calendar: runtime missing http://127.0.0.1:0/",
+		"calendar pim sidecar: accounts managed via admin API at http://127.0.0.1:0/",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("doctor --all missing %q:\n%s", want, got)
@@ -280,7 +327,7 @@ func TestMCPDoctorBlockedDoesNotLaunch(t *testing.T) {
 		t.Fatalf("save config: %v", err)
 	}
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"doctor", "blocked"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "blocked"}, &out); err != nil {
 		t.Fatalf("doctor blocked: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "blocked: trust approval required") {
@@ -304,7 +351,7 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"doctor", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "calculator"}, &out); err != nil {
 		t.Fatalf("mcp doctor: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "ok: calculator") || !strings.Contains(got, "1 tool") {
@@ -312,7 +359,7 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"tools", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"tools", "calculator"}, &out); err != nil {
 		t.Fatalf("mcp tools: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "calculate") || !strings.Contains(got, "Evaluate a mathematical expression.") {
@@ -323,7 +370,7 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	path := withTempMCPConfig(t)
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"install", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"install", "calculator"}, &out); err != nil {
 		t.Fatalf("install calculator: %v", err)
 	}
 	doc, err := mcp.LoadManagedConfig(path)
@@ -340,24 +387,24 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"profile", "create", "e2e"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "create", "e2e"}, &out); err != nil {
 		t.Fatalf("profile create: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"profile", "add", "e2e", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "add", "e2e", "calculator"}, &out); err != nil {
 		t.Fatalf("profile add: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"profile", "use", "e2e"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "use", "e2e"}, &out); err != nil {
 		t.Fatalf("profile use: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"add", "blocked", "--", "aura-nonexistent-mcp-binary-xyz"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"add", "blocked", "--", "aura-nonexistent-mcp-binary-xyz"}, &out); err != nil {
 		t.Fatalf("add blocked: %v", err)
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"tools", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"tools", "calculator"}, &out); err != nil {
 		t.Fatalf("tools calculator: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "calculate\tmounted\tEvaluate a mathematical expression.") {
@@ -365,7 +412,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {
 		t.Fatalf("status --json: %v", err)
 	}
 	got := out.String()
@@ -376,7 +423,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), []string{"doctor", "blocked"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "blocked"}, &out); err != nil {
 		t.Fatalf("doctor blocked: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "blocked: trust approval required") {
@@ -402,7 +449,7 @@ func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"tools", "remote"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"tools", "remote"}, &out); err != nil {
 		t.Fatalf("mcp tools remote: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "echo\tmounted\tGet echo text.") {
@@ -437,7 +484,7 @@ func TestMCPToolsIgnoresLegacyPolicyAndMountsAllTools(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), []string{"tools", "mail"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"tools", "mail"}, &out); err != nil {
 		t.Fatalf("mcp tools: %v", err)
 	}
 	got := out.String()

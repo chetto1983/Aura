@@ -72,6 +72,17 @@ func (f *fakeIdentityAdmin) RevokeCapability(_ context.Context, id, cap string) 
 	return nil
 }
 
+// HasCapability answers the 37F-13/WEBSHARE-04 share.public mint-time gate the same way
+// *identity.Store does: the '*' wildcard or an exact match in the in-memory grant map.
+func (f *fakeIdentityAdmin) HasCapability(_ context.Context, id, cap string) (bool, error) {
+	for _, c := range f.caps[id] {
+		if c == "*" || c == cap {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func TestHandleMeReturnsCallerCapabilities(t *testing.T) {
 	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"*", "governance.write"}}}
 	s := &Server{idAdmin: admin}

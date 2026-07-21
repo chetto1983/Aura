@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,38 @@ func TestHelperProcess(t *testing.T) {
 		// Exit immediately so cmd.Start succeeds but the handshake read fails.
 		fmt.Fprintln(os.Stderr, "boom: helper crashed")
 		os.Exit(3)
+	}
+	if mode == "grandchild-child" {
+		// A plain, indefinitely-alive descendant of the mounted helper, with no
+		// stdio wiring of its own — the process-tree-kill regression target
+		// (D-10/F-035): it must not survive its ancestor's Close(). It proves its
+		// own liveness by appending a heartbeat line to a file every tick; a dead
+		// process obviously cannot keep doing that.
+		heartbeat := os.Getenv("AURA_MCP_HELPER_HEARTBEAT")
+		for {
+			if heartbeat != "" {
+				if f, err := os.OpenFile(heartbeat, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+					_, _ = f.WriteString("beat\n")
+					_ = f.Close()
+				}
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+	}
+	if mode == "grandchild" {
+		// Spawn a genuine OS-level grandchild (relative to the test process) by
+		// re-execing this same test binary in "grandchild-child" mode, then behave
+		// like "hang" below so Close() must escalate through its kill-after-timeout
+		// path — exercising the actual process-tree-kill call, not just a graceful
+		// parent exit that would leave the grandchild untouched.
+		child := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
+		child.Env = append(os.Environ(), "AURA_MCP_HELPER=1", "AURA_MCP_HELPER_MODE=grandchild-child",
+			"AURA_MCP_HELPER_HEARTBEAT="+os.Getenv("AURA_MCP_HELPER_HEARTBEAT"))
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, "boom: grandchild spawn failed:", err)
+			os.Exit(4)
+		}
+		mode = "hang"
 	}
 	reader := bufio.NewReader(os.Stdin)
 	writer := bufio.NewWriter(os.Stdout)
@@ -182,6 +216,65 @@ func TestCloseKillsHangingSubprocess(t *testing.T) {
 	if elapsed := time.Since(start); elapsed < closeWaitTimeout {
 		t.Fatalf("Close returned in %v, expected to wait ~%v before kill", elapsed, closeWaitTimeout)
 	}
+}
+
+// TestCloseKillsGrandchildProcessTree is the D-10/F-035 regression guard: Close
+// must terminate the WHOLE spawned process tree, not just the tracked PID. A
+// single-PID kill (the pre-fix cmd.Process.Kill()) leaves the grandchild running
+// indefinitely — proven here via a heartbeat file the grandchild can only keep
+// growing while it is actually alive.
+func TestCloseKillsGrandchildProcessTree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("kill-after-timeout path waits closeWaitTimeout")
+	}
+	heartbeat := filepath.Join(t.TempDir(), "grandchild-heartbeat.txt")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cfg := helperServerConfig("grandchild")
+	cfg.Env = append(cfg.Env, "AURA_MCP_HELPER_HEARTBEAT="+heartbeat)
+	c, err := Open(ctx, "grandchild", cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	waitForHeartbeats(t, heartbeat, 2)
+
+	// The parent ignores stdin close (mode was switched to "hang"), so Close must
+	// escalate through closeWaitTimeout to the actual process-tree kill.
+	_ = c.Close()
+
+	sizeAfterClose := heartbeatSize(t, heartbeat)
+	time.Sleep(300 * time.Millisecond) // several heartbeat ticks, if anything survived
+	sizeAfterSettle := heartbeatSize(t, heartbeat)
+	if sizeAfterSettle != sizeAfterClose {
+		t.Fatalf("grandchild heartbeat grew after Close (%d -> %d bytes): process-tree kill failed, grandchild still running",
+			sizeAfterClose, sizeAfterSettle)
+	}
+}
+
+func waitForHeartbeats(t *testing.T, path string, minLines int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(path)
+		if err == nil && strings.Count(string(data), "\n") >= minLines {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("heartbeat file %s did not reach %d lines in time (err=%v)", path, minLines, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func heartbeatSize(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat heartbeat file: %v", err)
+	}
+	return info.Size()
 }
 
 func TestCloseNilCmdIsNoop(t *testing.T) {

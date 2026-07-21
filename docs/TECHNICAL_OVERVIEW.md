@@ -71,8 +71,8 @@ A self-hostable agent platform that closes those gaps:
 - **Self-extending** — the agent can author and run its own skills, and mount third-party
   capabilities over MCP, so the tool surface grows without a release.
 - **Remembers** — a Postgres + Neo4j memory stores conversations, documents (as a
-  searchable graph), and learned facts, and feeds them back into the agent, with
-  industrial conversation compaction keeping long threads bounded.
+  searchable graph), and learned facts, and feeds them back into the agent, with a
+  deterministic context ladder + on-demand graph-memory recall keeping long threads bounded.
 - **Multi-channel** — the same agent is reachable from a terminal REPL, from Telegram
   (with voice, photo, and document support), and from an embedded web cockpit.
 
@@ -87,7 +87,7 @@ What a technical reviewer should notice — each is implemented and locatable in
 | 3 | **Per-user full-capability sandbox** | Untrusted or per-tenant work runs in a dedicated Docker box with its own workspace volume, lifecycle/reaping, cross-identity denial, and network egress control — so capability and isolation are not a trade-off. | `sandbox/usersandbox` (`docker_backend*.go`) |
 | 4 | **Deferred-tool + semantic discovery** | The per-turn prompt stays small even with dozens of tools (incl. dynamic MCP tools). The model finds tools via an embedding `tool_search` instead of carrying every spec every turn. Scales the tool surface at near-zero token cost. | `agent/tools` (registry, `tool_search`), `semindex` |
 | 5 | **KV-cache economics** | `messages[0]` is byte-identical across turns and workers; volatile data is appended after history. On a cache-friendly provider this is a large recurring cost saving, observable via `aura cache-stats` and guarded by a dedicated CI job. | `agent/prompt` (builder, hash), `conversations`, CI `cache-invariant` |
-| 6 | **Industrial conversation compaction** | Long threads are compacted under an explicit authority/budget model with checkpoints, manifests, rebase/reconstruct, and a staged rollout — bounding context cost without silently losing history. | `conversations/compaction_*.go`, migrations `0036`/`0038`/`0039` |
+| 6 | **Deterministic context ladder + graph memory** | Long threads stay bounded by a three-tier deterministic ladder — L1 tool-output eviction to sidecar pointers, L2 token budget, L2.5 oldest-pair drop (no LLM call, provider-agnostic) — while salient facts are extracted into the Neo4j graph and recalled on demand (L4), so working context stays small by design rather than by summarizing history. | `conversations/context.go`, `agent/mcptools` (`memory_search`), migration `0017` |
 | 7 | **Bounded, leak-safe agent loops** | A shared budget tree caps steps + wall-clock across an entire agent tree; a two-phase dedup ring kills tool-call loops; parallel fan-out is goroutine-leak-tested. Predictable cost and no runaways. | `agent` (Budget, dedup), `agent/workflow`, `swarm` |
 | 8 | **Adaptive reasoning without an extra round-trip** | A local embedding classifier routes each turn to `none/low/high` reasoning instead of spending an LLM round-trip to decide, and an async learner improves it toward the LLM oracle's accuracy off the hot path. Per-turn effort can also be fixed explicitly from the cockpit. | `agent/prompt` (classifier), `reasoning*`, `semindex`, `activelearn` |
 | 9 | **Graph-native memory + two-stage retrieval** | Documents become a searchable Neo4j graph (sparse FTS + **768-d** HNSW vectors, granite-embedding-311m); a reranker sidecar runs a second retrieval stage. Learned exemplars live in the same store and feed the self-improving routers. | `knowledge`, `documents`, `rerank`, `neostore` |
@@ -102,7 +102,7 @@ Full matrix in [CAPABILITIES.md](CAPABILITIES.md). At a glance:
 - **Reasoning & tools** — streaming agent loop; **21 built-in tools** + dynamic MCP tools,
   all mediated by the Gateway.
 - **Knowledge** — document ingestion (PDF/xlsx/DOCX) → cited graph search with rerank;
-  conversation memory with compaction and a context-management ladder.
+  conversation memory with a deterministic context-management ladder.
 - **Web** — SearXNG search + SSRF-hardened fetch → readable markdown.
 - **Automation** — cron scheduler with agent jobs, reminders, and backups.
 - **Channels** — CLI REPL, Telegram (voice/photo/docs/HITL), embedded web cockpit.
@@ -161,7 +161,7 @@ Aura is held to a gate enforced in CI and runnable locally. Stated without round
 | 35 | ToolGateway + policy engine (closes F-001) | ✅ 2026-07-04 |
 | 36 | Multi-user identity isolation + Authula cutover | ✅ |
 | 37 | Per-user full-capability sandbox (closes F-001) | ✅ 2026-07-08 |
-| 42 | Industrial conversation compaction | ✅ 2026-07-14 |
+| 42 | Industrial conversation compaction | ❌ removed 2026-07-20 (dark; Amendment #86) |
 | 38 | MCP governance hardening | ⬜ open |
 | 39 | Idempotency + observability pack | ⬜ open |
 | 40 | Security & supply-chain pack | ⬜ open |
@@ -205,8 +205,8 @@ without a rewrite.
 
 **Shipped** — v0.0.0 substrate (agent runtime, tools, skills, MCP, memory, channels);
 v1.0.0 embedded web cockpit (chat, approvals, typed tool display, graph view, governance,
-MCP config + skill install); v2.0.0 Phases 31–37 + 42 (Gateway PEP, multi-user identity
-isolation + Authula, per-user sandbox, conversation compaction).
+MCP config + skill install); v2.0.0 Phases 31–37 (Gateway PEP, multi-user identity
+isolation + Authula, per-user sandbox).
 
 **In flight (v2.0.0)** — MCP governance hardening (38), idempotency + observability pack
 (39), security & supply-chain pack (40), production ops + the honest-10/10 closeout (41).

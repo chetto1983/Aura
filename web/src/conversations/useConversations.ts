@@ -22,12 +22,27 @@ export interface Conversation {
   readonly TotalInputTokens: number;
   readonly TotalOutputTokens: number;
   readonly TotalCachedTokens: number;
+  /** input_tokens of the most recent request-bearing turn = the CURRENT context-window
+   *  fill. Distinct from the cumulative TotalInputTokens (which sums every turn and so
+   *  climbs far past the window on a long chat). The context gauge reads this on reload
+   *  so it shows real fill, not the lifetime sum (BUG-8). 0 when no request yet. */
+  readonly LastInputTokens?: number;
   readonly TotalCostUSD: number;
   /** RFC3339 created-at; drives recent-first ordering + the untitled fallback. */
   readonly CreatedAt: string;
   /** 37E per-conversation reasoning-effort symbol persisted in metadata jsonb (empty/absent ⇒
    * "" ⇒ the selector hydrates as auto). Populated by the store's conversationFromRow. */
   readonly ReasoningEffort?: string;
+  /** RFC3339 last-activity timestamp (the same aura.conversations.last_active_at column
+   *  store.go already orders List/ListForIdentity by — plan 37F-15's stale-share detection).
+   *  Optional and forward-compatible: the Go Conversation struct (internal/conversations/
+   *  store.go) does not project this field into the JSON response yet, so it is always
+   *  absent today. A consumer MUST treat an absent value as "no signal", never as "now". */
+  readonly LastActiveAt?: string;
+  /** Total turn count for the conversation (plan 37F-15's stale-share detection, paired with
+   *  ShareLink.snapshot_turn_count). Optional and forward-compatible for the same reason as
+   *  LastActiveAt above — not yet projected server-side. */
+  readonly TurnCount?: number;
 }
 
 /** GET /api/conversations/search hit — conversations.Store.SearchResult projection. */

@@ -355,15 +355,16 @@ func (s *Server) handleSkillsAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"rows": skillAuditRows(rows)})
 }
 
-// handleSchedulerList serves GET /api/governance/scheduler (GOV-03): the active tasks
-// ordered by next fire via ListActiveTasks. Read-only — mutates nothing. An unwired
+// handleSchedulerList serves GET /api/governance/scheduler (GOV-03): the manageable
+// tasks (active + pending_approval) ordered by next fire via ListManageableTasks, so the
+// cockpit can approve a gated task on-screen. Read-only — mutates nothing. An unwired
 // provider → 503; a backend error → sanitized 502; no tasks → 200 {tasks: []}.
 func (s *Server) handleSchedulerList(w http.ResponseWriter, r *http.Request) {
 	if s.governance.Scheduler == nil {
 		http.Error(w, "scheduler board not configured", http.StatusServiceUnavailable)
 		return
 	}
-	tasks, err := s.governance.Scheduler.ListActiveTasks(r.Context())
+	tasks, err := s.governance.Scheduler.ListManageableTasks(r.Context())
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 		return

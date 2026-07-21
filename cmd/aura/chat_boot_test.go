@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,67 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func rolloutSource(t *testing.T, name string) string {
-	t.Helper()
-	b, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-func TestCompactionRolloutComposition(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	if !strings.Contains(s, "NewCompactionRolloutStore(pool)") || !strings.Contains(s, "NewCompactionRolloutController") {
-		t.Fatal("durable rollout composition missing")
-	}
-}
-func TestCompactionRolloutPersistedReaderInjection(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	if !strings.Contains(s, "CompactionEffective: rolloutReader") || !strings.Contains(s, "compactionEffective: rolloutReader") {
-		t.Fatal("persisted reader injection missing")
-	}
-}
-func TestCompactionRolloutEvaluatorLifecycle(t *testing.T) {
-	s := rolloutSource(t, "serve.go")
-	if !strings.Contains(s, "compactionRollout.Run(signalCtx") {
-		t.Fatal("signal-scoped evaluator lifecycle missing")
-	}
-}
-func TestCompactionMemoryComposition(t *testing.T) {
-	s := rolloutSource(t, "serve.go")
-	if !strings.Contains(s, "SetCompactionMemoryStore(memory.NewStore(chat.pool))") {
-		t.Fatal("IC-10 compaction memory store is not wired into the live control plane")
-	}
-}
-func TestCompactionRolloutCancellation(t *testing.T) {
-	s := rolloutSource(t, "serve.go")
-	if !strings.Contains(s, "errors.Is(err, context.Canceled)") {
-		t.Fatal("evaluator cancellation handling missing")
-	}
-}
-func TestCompactionRolloutStartupFailsClosed(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	if !strings.Contains(s, "compaction rollout durable preflight") || !strings.Contains(s, "rolloutReader.Read(ctx)") {
-		t.Fatal("durable preflight missing")
-	}
-}
-
-// TestCompactionRolloutDisabledBootstrapSeed pins the fresh-DB crash-loop fix: a
-// disabled-default rollout row must be seeded BEFORE the fail-closed Read preflight
-// (and before the serve.go evaluator loop starts), or every boot against a freshly
-// migrated database hard-fails with "no rows in result set" forever.
-func TestCompactionRolloutDisabledBootstrapSeed(t *testing.T) {
-	s := rolloutSource(t, "chat_boot.go")
-	seedIdx := strings.Index(s, "rolloutStore.EnsureDisabledDefault(ctx")
-	readIdx := strings.Index(s, "rolloutReader.Read(ctx)")
-	if seedIdx < 0 {
-		t.Fatal("disabled-default bootstrap seed missing")
-	}
-	if readIdx < 0 || seedIdx > readIdx {
-		t.Fatal("bootstrap seed must run before the durable preflight Read")
-	}
-}
-
 // chat_boot_test.go pins QUAL-04b: no boot error path leaks a pool or an MCP
 // subprocess. The real leak was the CommandHookManagerFromEnv failure path, which
 // returned after the pool + registry were built with neither pool.Close nor an
@@ -85,12 +24,36 @@ func TestCompactionRolloutDisabledBootstrapSeed(t *testing.T) {
 // connects with MinConns=0) plus an injectable pool opener, keeping the whole suite
 // a fast, PG-free unit tier (verify: go test -race ./cmd/aura/ -run Boot).
 
+// orderRecorder is a mutex-guarded append-only log: releaseBootResources'
+// closeMCPServers now fans its closers out CONCURRENTLY (D-11, 38-05), so any
+// recorder shared across closer functions needs its own synchronization — a bare
+// `*[]string` mutated by two goroutines racing on append would be a data race
+// (and occasionally a corrupted/short slice), not merely a flaky assertion.
+type orderRecorder struct {
+	mu    sync.Mutex
+	order []string
+}
+
+func (r *orderRecorder) add(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.order = append(r.order, name)
+}
+
+func (r *orderRecorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.order))
+	copy(out, r.order)
+	return out
+}
+
 // poolCloseSpy is a minimal interface{ Close() } stand-in so releaseBootResources'
 // close-on-error contract (drain closers, then close the pool) is asserted without a
-// live pool. It records its close into the shared order slice.
-type poolCloseSpy struct{ order *[]string }
+// live pool. It records its close into the shared orderRecorder.
+type poolCloseSpy struct{ order *orderRecorder }
 
-func (p poolCloseSpy) Close() { *p.order = append(*p.order, "pool") }
+func (p poolCloseSpy) Close() { p.order.add("pool") }
 
 // validBootConfig is the minimal dev-profile config that PASSES cfg.Validate: a
 // non-empty DB DSN + Neo4j password (the two all-tier required secrets) and a
@@ -133,18 +96,19 @@ func assertPoolClosed(t *testing.T, pool *pgxpool.Pool) {
 // (the reasoning learner writes through a closer-held graph client), and it is
 // nil-safe. This is the drain assertion the full-boot paths reuse via the defer.
 func TestBootReleaseResourcesDrainsClosersAndClosesPool(t *testing.T) {
-	var order []string
+	rec := &orderRecorder{}
 	closers := []func() error{
-		func() error { order = append(order, "closer-a"); return nil },
-		func() error { order = append(order, "closer-b"); return nil },
+		func() error { rec.add("closer-a"); return nil },
+		func() error { rec.add("closer-b"); return nil },
 	}
-	releaseBootResources(poolCloseSpy{order: &order}, closers)
+	releaseBootResources(poolCloseSpy{order: rec}, closers)
 
+	order := rec.snapshot()
 	if len(order) != 3 {
 		t.Fatalf("release fired %d actions, want 3 (2 closers + pool): %v", len(order), order)
 	}
 	if order[len(order)-1] != "pool" {
-		t.Fatalf("pool must close AFTER the closers drain, got %v", order)
+		t.Fatalf("pool must close AFTER the closers drain (concurrently, then joined), got %v", order)
 	}
 	sawA, sawB := false, false
 	for _, o := range order {

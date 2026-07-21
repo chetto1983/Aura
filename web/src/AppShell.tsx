@@ -27,6 +27,7 @@ import { ChatWorkspaceControls } from './shell/ChatWorkspaceControls';
 import { useArtifactsPanel } from './shell/useArtifactsPanel';
 import { useLogoutSession } from './shell/useLogoutSession';
 import { useSharePanel } from './shell/useSharePanel';
+import { ShareModal } from './chat/share/ShareModal';
 import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
@@ -118,9 +119,9 @@ export function AppShell() {
   } = useArtifactsPanel(surfaces, CHAT_SHELL_PANEL_IDS);
 
   // 37F plan 14: useSharePanel owns the share modal's open/closed state (not persisted, no
-  // desktop/mobile split — see useSharePanel.ts). Only openShare is consumed here; plan 37F-15
-  // mounts the actual ShareModal using shareModalState/closeShare alongside this same call.
-  const { openShare } = useSharePanel();
+  // desktop/mobile split — see useSharePanel.ts). Plan 37F-15 (below) mounts the actual
+  // ShareModal via the conditional-mount idiom, gated on shareModalState.
+  const { shareModalState, openShare, closeShare } = useSharePanel();
 
   // D-11: a run that emits `aura.artifact` invalidates the identity-scoped assets query so the
   // panel refetches the new asset (37A persists it before the event, so it is always there), and
@@ -523,6 +524,12 @@ export function AppShell() {
             }}
           />
         </Suspense>
+      ) : null}
+      {/* 37F plan 15: the conditional-mount idiom above (onboarding/profile wizards) — mounted
+          only while open, so ShareModal's internal state resets to 'idle' fresh every time
+          (D-01: never resumes a stale tier selection or a previous mint's state). */}
+      {shareModalState === 'open' ? (
+        <ShareModal threadId={activeThreadId} onClose={closeShare} />
       ) : null}
     </div>
   );

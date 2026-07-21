@@ -4,6 +4,7 @@ import { AdminAuditView } from '../audit/AdminAuditView';
 import { useCapabilities } from '../admin/useAdmin';
 import { CapabilityAdminPanel } from './CapabilityAdminPanel';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
+import { SharedLinksSection } from './SharedLinksSection';
 import { TelegramSettingsPanel } from './TelegramSettingsPanel';
 import { Button } from '@/components/ui/button';
 
@@ -81,6 +82,7 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
         </div>
         <TelegramSettingsPanel />
         <ModelSettingsPanel />
+        <SharedLinksSection />
       </div>
     </div>
   );

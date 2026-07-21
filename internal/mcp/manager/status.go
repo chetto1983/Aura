@@ -87,11 +87,17 @@ func profilesForServer(doc mcp.ManagedConfig, server string) []string {
 	return names
 }
 
+// runtimeName derives the transport label for status display: an explicit
+// runtime kind wins, otherwise the transport is resolved through the
+// canonical mcp.Classify (MCPH-01) rather than a re-implemented inline check.
+// A Classify error (mixed/inconsistent shape) falls back to "local" — status
+// display is best-effort, the actual run-eligibility gate lives in
+// manager.RunnableManagedServers.
 func runtimeName(server mcp.ManagedServer) string {
 	if strings.TrimSpace(server.Runtime.Kind) != "" {
 		return strings.TrimSpace(server.Runtime.Kind)
 	}
-	if strings.TrimSpace(server.URL) != "" || server.Type == mcp.ServerTypeStreamableHTTP {
+	if serverType, _, err := mcp.Classify(server); err == nil && serverType == mcp.ServerTypeStreamableHTTP {
 		return mcp.TrustRemoteHTTP
 	}
 	return "local"

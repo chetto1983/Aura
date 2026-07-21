@@ -63,12 +63,11 @@ const (
 // commandDeps are the dispatcher inputs: the two reused backends plus the price
 // table + model that drive the /cost render (identical to the CLI cost footer).
 type commandDeps struct {
-	Search  searchBackend
-	Cost    costBackend
-	Clear   clearBackend
-	Compact compactService
-	Prices  map[string]llm.Price
-	Model   string
+	Search searchBackend
+	Cost   costBackend
+	Clear  clearBackend
+	Prices map[string]llm.Price
+	Model  string
 }
 
 // commands intercepts Telegram slash-commands. It also owns the per-chat
@@ -153,8 +152,6 @@ func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) 
 		return true, textReply(c.cancel(chatID) + "\nPer cancellare anche lo storico usa /clear.")
 	case "/clear":
 		return true, textReply(c.clear(ctx, chatID))
-	case "/compact":
-		return true, textReply(dispatchCompact(ctx, c.deps.Compact, convID(chatID), "local", c.turnInFlight(chatID), arg))
 	case "/whoami":
 		return true, textReply("Sei l'utente locale di questa istanza di Aura.")
 	case "/stop":
@@ -162,13 +159,6 @@ func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) 
 	default:
 		return true, textReply("Istruzione non riconosciuta. Usa /help per la lista dei comandi.")
 	}
-}
-
-func (c *commands) turnInFlight(chatID int64) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, ok := c.cancels[chatID]
-	return ok
 }
 
 func textReply(s string) commandReply {
@@ -187,7 +177,6 @@ const helpText = "Comandi Aura:\n" +
 	"/list - indica dove sfogliare le conversazioni\n" +
 	"/reset - annulla il turno; non cancella lo storico\n" +
 	"/clear - cancella la conversazione corrente e ricomincia\n" +
-	"/compact [history|preview|diff|restore] - gestisce i checkpoint di compattazione\n" +
 	"/whoami - mostra l'identita collegata\n" +
 	"/stop - annulla il turno; il bot resta attivo\n\n" +
 	"In Telegram questa chat e un thread continuo. Puoi mandare testo, vocali, foto o documenti."

@@ -53,8 +53,20 @@ func TestMigration0039RoundTrip(t *testing.T) {
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	if got := currentMigrationVersion(t, ctx, dbAdmin); got != 39 {
-		t.Fatalf("version=%d, want 39", got)
+	// Migrate lands on the latest version (>=40 once 0040 shared_links shipped). Step down
+	// to 39 so this 0039 down/re-up roundtrip exercises the migration under test regardless
+	// of how many migrations sit above it — the test is version-anchored, not latest-anchored.
+	for {
+		got := currentMigrationVersion(t, ctx, dbAdmin)
+		if got == 39 {
+			break
+		}
+		if got < 39 {
+			t.Fatalf("version=%d, could not descend to 39", got)
+		}
+		if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
+			t.Fatalf("step down to 39: %v", err)
+		}
 	}
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
 		t.Fatalf("down: %v", err)

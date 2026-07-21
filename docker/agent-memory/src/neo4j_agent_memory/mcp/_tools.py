@@ -1,9 +1,11 @@
 """MCP tool implementations for Neo4j Agent Memory.
 
 Tools are organized into two profiles:
-- Core (6 tools): Essential read/write cycle for memory operations.
-- Extended (17 tools): Full surface including reasoning traces, entity
-  management, graph export, and advanced queries.
+- Core (7 tools): Essential read/write/forget cycle for memory operations.
+- Extended: entity management, relationships, and advanced graph queries.
+  (Aura fork: the reasoning-trace tools + memory_export_graph were removed —
+  Aura keeps its own reasoning store, so the agent-memory trace path was a
+  redundant third path.)
 
 Each tool follows goal-oriented design: high-level tools that orchestrate
 extraction, resolution, and graph operations internally.
@@ -43,7 +45,7 @@ def register_tools(
 
     Args:
         mcp: FastMCP server instance.
-        profile: Tool profile - 'core' (6 tools) or 'extended' (17 tools).
+        profile: Tool profile - 'core' (7 tools) or 'extended'.
         register_platinum: When True (and profile == 'extended'), register
             four additional NAMS Platinum-tier tools:
             ``memory_set_entity_feedback``, ``memory_get_entity_history``,
@@ -62,7 +64,7 @@ def register_tools(
 
 
 def _register_core_tools(mcp: FastMCP) -> None:
-    """Register the 6 core profile tools."""
+    """Register the 7 core profile tools."""
 
     @mcp.tool()
     async def memory_search(
@@ -277,12 +279,58 @@ def _register_core_tools(mcp: FastMCP) -> None:
         )
         return json.dumps(result, default=str)
 
+    @mcp.tool()
+    async def memory_forget(
+        ctx: Context,
+        node_type: str,
+        node_id: str,
+        user_identifier: str | None = None,
+    ) -> str:
+        """Delete (forget) a stored memory the user owns, by id.
+
+        Use this to remove an obsolete or wrong memory — e.g. after the operator
+        corrects a preference, forget the old one. Ownership is enforced: a node the
+        caller does not own (or that does not exist) is REFUSED, not silently ignored,
+        and reported back so the caller knows nothing was removed. Forgetting an
+        'entity' is deliberately NON-cascading: it unlinks your ownership and removes
+        the entity node only if it is fully orphaned afterwards — a shared entity
+        (referenced by other messages/preferences) is kept, just unlinked from you.
+
+        Args:
+            node_type: What to forget — 'preference', 'fact', or 'entity'.
+            node_id: The id of the node to delete (from add_preference/add_fact/
+                add_entity or a get_* / search result).
+
+        Returns a JSON object: ``{"deleted": <id>}`` on success, or
+        ``{"deleted": null, "reason": ...}`` when nothing was removed.
+        """
+        integration = get_integration(ctx)
+        kind = node_type.strip().lower()
+        if kind in ("preference", "pref"):
+            result = await integration.delete_preference(
+                node_id, user_identifier=user_identifier
+            )
+        elif kind == "fact":
+            result = await integration.delete_fact(
+                node_id, user_identifier=user_identifier
+            )
+        elif kind == "entity":
+            result = await integration.delete_entity(
+                node_id, user_identifier=user_identifier
+            )
+        else:
+            result = {
+                "deleted": None,
+                "reason": f"unsupported node_type {node_type!r}; use 'preference', 'fact', or 'entity'",
+            }
+        return json.dumps(result, default=str)
+
 
 # ── Extended Profile ─────────────────────────────────────────────────
 
 
 def _register_extended_tools(mcp: FastMCP) -> None:
-    """Register the 11 extended profile tools."""
+    """Register the extended profile tools."""
 
     @mcp.tool()
     async def memory_get_conversation(
@@ -514,51 +562,6 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             return json.dumps({"error": str(e)})
 
     @mcp.tool()
-    async def memory_export_graph(
-        ctx: Context,
-        session_id: str | None = None,
-        memory_types: list[str] | None = None,
-        limit: int = 500,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Export a subgraph as JSON for visualization or debugging.
-
-        Returns nodes and relationships from the memory graph, formatted
-        for visualization libraries.
-
-        Args:
-            session_id: Filter to a specific session (optional).
-            memory_types: Types to include: 'short_term', 'long_term', 'reasoning'.
-                Defaults to all types.
-            limit: Maximum nodes per memory type (default: 500).
-        """
-        client = get_client(ctx)
-
-        try:
-            graph = await client.get_graph(
-                memory_types=memory_types,
-                session_id=session_id,
-                limit=limit,
-                include_embeddings=False,
-                user_identifier=user_identifier,
-            )
-
-            return json.dumps(
-                {
-                    "node_count": len(graph.nodes),
-                    "relationship_count": len(graph.relationships),
-                    "nodes": [n.model_dump() for n in graph.nodes],
-                    "relationships": [r.model_dump() for r in graph.relationships],
-                    "metadata": graph.metadata,
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in memory_export_graph: {e}")
-            return json.dumps({"error": str(e)})
-
-    @mcp.tool()
     async def memory_create_relationship(
         ctx: Context,
         source_name: str,
@@ -633,282 +636,6 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_create_relationship: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
-    async def memory_start_trace(
-        ctx: Context,
-        session_id: str,
-        task: str,
-        metadata: dict[str, Any] | None = None,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Begin recording a reasoning trace for a complex task.
-
-        Creates a new trace that captures the step-by-step reasoning
-        process. Use memory_record_step to add steps and
-        memory_complete_trace when finished.
-
-        Args:
-            session_id: Session ID for the trace.
-            task: Description of the task being solved.
-            metadata: Optional metadata (e.g., model name, complexity).
-        """
-        client = get_client(ctx)
-
-        try:
-            trace = await client.reasoning.start_trace(
-                session_id=session_id,
-                task=task,
-                metadata=metadata or {},
-                user_identifier=user_identifier,
-            )
-            return json.dumps(
-                {
-                    "started": True,
-                    "trace_id": str(trace.id),
-                    "session_id": session_id,
-                    "task": task,
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in memory_start_trace: {e}")
-            return json.dumps({"error": str(e)})
-
-    @mcp.tool()
-    async def memory_record_step(
-        ctx: Context,
-        trace_id: str,
-        thought: str | None = None,
-        action: str | None = None,
-        observation: str | None = None,
-        tool_name: str | None = None,
-        tool_args: dict[str, Any] | None = None,
-        tool_result: str | None = None,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Record a reasoning step within a trace.
-
-        Captures a thought-action-observation cycle. Optionally records
-        an associated tool call.
-
-        Args:
-            trace_id: ID of the trace to add the step to.
-            thought: The reasoning/thinking for this step.
-            action: The action taken or decided upon.
-            observation: The result or observation after the action.
-            tool_name: Name of tool called in this step (optional).
-            tool_args: Arguments passed to the tool (optional).
-            tool_result: Result from the tool call (optional).
-        """
-        client = get_client(ctx)
-
-        try:
-            if user_identifier is not None and not await _trace_in_user_scope(
-                client, trace_id, user_identifier
-            ):
-                return json.dumps({"error": "trace is not in the authenticated user's scope"})
-
-            step = await client.reasoning.add_step(
-                trace_id=trace_id,
-                thought=thought,
-                action=action,
-                observation=observation,
-            )
-
-            tool_call_id = None
-            if tool_name:
-                tc = await client.reasoning.record_tool_call(
-                    step_id=step.id,
-                    tool_name=tool_name,
-                    arguments=tool_args or {},
-                    result=tool_result,
-                )
-                tool_call_id = str(tc.id) if hasattr(tc, "id") else None
-
-            return json.dumps(
-                {
-                    "recorded": True,
-                    "step_id": str(step.id),
-                    "trace_id": trace_id,
-                    "has_tool_call": tool_name is not None,
-                    "tool_call_id": tool_call_id,
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in memory_record_step: {e}")
-            return json.dumps({"error": str(e)})
-
-    @mcp.tool()
-    async def memory_complete_trace(
-        ctx: Context,
-        trace_id: str,
-        outcome: str | None = None,
-        success: bool = True,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Complete a reasoning trace with the final outcome.
-
-        Marks the trace as finished and records whether the task
-        was completed successfully.
-
-        Args:
-            trace_id: ID of the trace to complete.
-            outcome: Final outcome or result description.
-            success: Whether the task was completed successfully (default: true).
-        """
-        client = get_client(ctx)
-
-        try:
-            if user_identifier is not None and not await _trace_in_user_scope(
-                client, trace_id, user_identifier
-            ):
-                return json.dumps({"error": "trace is not in the authenticated user's scope"})
-
-            await client.reasoning.complete_trace(
-                trace_id=trace_id,
-                outcome=outcome,
-                success=success,
-            )
-            return json.dumps(
-                {
-                    "completed": True,
-                    "trace_id": trace_id,
-                    "outcome": outcome,
-                    "success": success,
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in memory_complete_trace: {e}")
-            return json.dumps({"error": str(e)})
-
-    @mcp.tool()
-    async def memory_get_observations(
-        ctx: Context,
-        session_id: str,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Get observations and extracted insights for a session.
-
-        Returns the three-tier context hierarchy:
-        - Reflections: high-level session summaries (generated when token
-          threshold is exceeded)
-        - Observations: extracted facts, decisions, and preferences
-          accumulated during the conversation
-        - Session stats: message count, approximate token usage
-
-        Args:
-            session_id: Session ID to get observations for.
-        """
-        try:
-            client = get_client(ctx)
-            if user_identifier is not None:
-                conversation = await client.short_term.get_conversation(
-                    session_id=session_id,
-                    limit=1,
-                    user_identifier=user_identifier,
-                )
-                if not conversation.messages:
-                    return json.dumps(
-                        {
-                            "session_id": session_id,
-                            "message_count": 0,
-                            "approximate_tokens": 0,
-                            "threshold_exceeded": False,
-                            "reflections": [],
-                            "observations": [],
-                            "entity_names": [],
-                            "topics": [],
-                        },
-                        default=str,
-                    )
-
-            # Try to get observer from lifespan context
-            observer = ctx.request_context.lifespan_context.get("observer")
-            if observer is not None:
-                result = await observer.get_observations(session_id)
-                return json.dumps(result, default=str)
-
-            # Fallback: return basic stats if no observer available
-            conversation = await client.short_term.get_conversation(
-                session_id=session_id,
-                limit=100,
-                user_identifier=user_identifier,
-            )
-            return json.dumps(
-                {
-                    "session_id": session_id,
-                    "message_count": len(conversation.messages),
-                    "approximate_tokens": 0,
-                    "threshold_exceeded": False,
-                    "reflections": [],
-                    "observations": [],
-                    "entity_names": [],
-                    "topics": [],
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in memory_get_observations: {e}")
-            return json.dumps({"error": str(e)})
-
-    @mcp.tool()
-    async def graph_query(
-        ctx: Context,
-        query: str,
-        parameters: dict[str, Any] | None = None,
-        user_identifier: str | None = None,
-    ) -> str:
-        """Execute a read-only Cypher query against the knowledge graph.
-
-        MATCH/RETURN queries and read-only CALL procedures (e.g., CALL db.*,
-        CALL apoc.*) are allowed. Write operations (CREATE, MERGE, DELETE,
-        SET, REMOVE) are blocked for safety.
-
-        Args:
-            query: Cypher query string (read-only).
-            parameters: Query parameters as key-value pairs.
-        """
-        if user_identifier is not None:
-            return json.dumps(
-                {
-                    "error": "graph_query is disabled for user-scoped sessions; "
-                    "use structured memory tools instead."
-                }
-            )
-
-        if not _is_read_only_query(query):
-            return json.dumps(
-                {
-                    "error": "Only read-only queries are allowed. "
-                    "Write operations (CREATE, MERGE, DELETE, SET, REMOVE) are not permitted."
-                }
-            )
-
-        client = get_client(ctx)
-
-        try:
-            # v0.4: use the unified client.query.cypher accessor — works on
-            # both bolt and NAMS backends (NAMS routes via POST /v1/query,
-            # bolt via Neo4jClient.execute_read).
-            records = await client.query.cypher(query, parameters or {})
-            return json.dumps(
-                {
-                    "success": True,
-                    "row_count": len(records),
-                    "rows": records,
-                },
-                default=str,
-            )
-
-        except Exception as e:
-            logger.error(f"Error in graph_query: {e}")
-            return json.dumps({"error": str(e)})
 
 
 # ── Platinum Profile (4 additional NAMS-only tools) ──────────────────

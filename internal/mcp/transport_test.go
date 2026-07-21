@@ -146,3 +146,25 @@ func TestOpenServerStdioEmptyCommandErrors(t *testing.T) {
 		t.Fatalf("want empty command error, got %v", err)
 	}
 }
+
+// TestOpenServerRejectsMixedTransportBeforeAnyDispatch is the SC1 regression
+// guard (D-02, closes F-027): a mixed url+command entry with no explicit type
+// must be rejected by Classify before OpenServer ever dispatches to Open or
+// OpenHTTP. Command names a binary that does not exist so that, if OpenServer
+// ever regressed to falling through to stdio Open on a Classify error, the
+// resulting error would look like an exec/spawn failure instead of the
+// Classify rejection message asserted below -- proving stdio Open was never
+// reached, not merely that *an* error was returned.
+func TestOpenServerRejectsMixedTransportBeforeAnyDispatch(t *testing.T) {
+	mixed := ManagedServer{
+		URL:     "http://x.example",
+		Command: "aura-mcp-should-never-spawn-38-01",
+	}
+	_, err := OpenServer(context.Background(), "mixed", mixed)
+	if err == nil {
+		t.Fatal("OpenServer(mixed url+command) = nil error, want rejection before any transport dispatch")
+	}
+	if !strings.Contains(err.Error(), "both url and command") {
+		t.Fatalf("OpenServer(mixed) err = %v, want the Classify rejection message (proves stdio Open was never reached)", err)
+	}
+}

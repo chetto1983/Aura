@@ -31,6 +31,11 @@ var (
 	// ErrUnknownServer is returned when a per-identity enable/trust targets a server
 	// name that does not exist in the shared catalog.
 	ErrUnknownServer = errors.New("mcp: server not found in shared catalog")
+	// ErrRemoteElevationForbidden is returned when a per-identity trust mutation
+	// targets a REMOTE (streamable_http) server: a per-identity overlay may not
+	// elevate a network-facing server to a runnable trust class — that requires
+	// the admin shared catalog (D-04, MCPH-02).
+	ErrRemoteElevationForbidden = errors.New("mcp: remote (streamable_http) trust elevation requires the admin shared catalog")
 )
 
 // IdentityServerPref is one identity's enable/trust override for a class-(a) server
@@ -172,9 +177,13 @@ func MountForIdentity(identity string) (ManagedConfig, error) {
 				if pref.Enabled != nil {
 					srv.Enabled = pref.Enabled
 				}
-				if strings.TrimSpace(pref.Trust.Class) != "" {
+				if strings.TrimSpace(pref.Trust.Class) != "" && !isRemoteTransport(srv) {
 					srv.Trust = pref.Trust
 				}
+				// D-04: a REMOTE (streamable_http) server's trust override is
+				// silently ignored here (mirroring how IsSharedAdminGoverned is
+				// silently ignored above) — the enable toggle above still
+				// applies, only the trust elevation is refused.
 			}
 		}
 		eff.MCPServers[name] = srv
@@ -182,9 +191,22 @@ func MountForIdentity(identity string) (ManagedConfig, error) {
 	return eff, nil
 }
 
+// isRemoteTransport classifies s via the canonical Classify (D-01) and reports
+// whether it is a REMOTE (streamable_http) server — the D-04 boundary this
+// package's per-identity overlay must not cross. A Classify error is treated
+// conservatively as "not remote" (the legacy-wrapper default, matching
+// resolveTrust/normalizedServerType), since the shared-catalog shape is
+// admin-authored and validated at write time; the guard's purpose is to stop
+// an untrusted per-identity overlay, not to re-litigate the shared catalog's
+// own shape.
+func isRemoteTransport(s ManagedServer) bool {
+	serverType, _, err := Classify(s)
+	return err == nil && serverType == ServerTypeStreamableHTTP
+}
+
 // SetEnabledForIdentity records a per-identity enable/disable for a class-(a) server.
 func SetEnabledForIdentity(identity, name string, enabled bool) error {
-	return mutateIdentityPref(identity, name, func(p *IdentityServerPref) {
+	return mutateIdentityPref(identity, name, false, func(p *IdentityServerPref) {
 		v := enabled
 		p.Enabled = &v
 	})
@@ -195,15 +217,16 @@ func SetTrustForIdentity(identity, name, class string) error {
 	if !isKnownTrust(class) {
 		return fmt.Errorf("mcp: unknown trust class %q", class)
 	}
-	return mutateIdentityPref(identity, name, func(p *IdentityServerPref) {
+	return mutateIdentityPref(identity, name, true, func(p *IdentityServerPref) {
 		p.Trust = ManagedTrust{Class: strings.TrimSpace(class)}
 	})
 }
 
 // mutateIdentityPref validates the identity path, confirms name is a class-(a)
-// shared-catalog server (refusing class-(b) shared infra and unknown names), then
-// applies mutate to the identity's overlay pref and persists it.
-func mutateIdentityPref(identity, name string, mutate func(*IdentityServerPref)) error {
+// shared-catalog server (refusing class-(b) shared infra and unknown names),
+// refuses a remote-trust-elevation attempt (D-04, when isTrustMutation is
+// true), then applies mutate to the identity's overlay pref and persists it.
+func mutateIdentityPref(identity, name string, isTrustMutation bool, mutate func(*IdentityServerPref)) error {
 	if _, err := IdentityConfigPath(identity); err != nil {
 		return err
 	}
@@ -221,6 +244,9 @@ func mutateIdentityPref(identity, name string, mutate func(*IdentityServerPref))
 	}
 	if IsSharedAdminGoverned(srv) {
 		return fmt.Errorf("%w: %q", ErrSharedAdminGoverned, name)
+	}
+	if isTrustMutation && isRemoteTransport(srv) {
+		return fmt.Errorf("%w: %q", ErrRemoteElevationForbidden, name)
 	}
 	overlay, err := LoadIdentityMCPConfig(identity)
 	if err != nil {

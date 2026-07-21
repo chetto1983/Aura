@@ -33,10 +33,14 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -49,7 +53,7 @@ func main() {
 	case "tools":
 		printTools()
 	case "mcp":
-		runMCP(os.Args[2:])
+		runMCPDispatch(os.Args[2:])
 	case "memory":
 		runMemory(os.Args[2:])
 	case "agent":
@@ -100,6 +104,36 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+}
+
+// runMCPDispatch is the `aura mcp` composition root: it opens a *pgxpool.Pool ONLY when
+// the subcommand mutates the managed config (mirrors identityRecover/
+// identityRecoverOperator's open-close pool lifecycle, D-12) — read-only subcommands
+// (recipes/status/list/logs/doctor/tools/console) never touch the DB. Under
+// server_production a pool-open failure is fatal (MCPH-07's literal "audited OR
+// disallowed" requirement — a production deploy may never fall back to an unaudited
+// write); under every other profile a pool-open failure degrades to a nil pool with a
+// stderr warning, and mcpWriteManagedConfig's own mcpPoolRequiredErr backstop applies the
+// same profile gate a second time (defense in depth) before ever reaching an unaudited
+// write.
+func runMCPDispatch(args []string) {
+	ctx := context.Background()
+	var pool *pgxpool.Pool
+	if mcpCommandNeedsPool(args) {
+		cfg := config.LoadDB()
+		p, err := db.Open(ctx, &cfg.DB)
+		if err != nil {
+			if cfg.Profile == config.ProfileServerProduction {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "warning: mcp: could not open an audited database pool (%v); proceeding unaudited\n", err)
+		} else {
+			defer p.Close()
+			pool = p
+		}
+	}
+	runMCP(ctx, pool, args)
 }
 
 func usage() {
@@ -244,6 +278,7 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 	}
 	sort.Strings(serverNames)
 
+	mountTimeout := mcpMountTimeout()
 	closers := make([]func() error, 0, len(serverNames))
 	for _, name := range serverNames {
 		// D-21 fail-soft: a single dead/misconfigured server WARN-and-drops; boot
@@ -254,15 +289,26 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 		// A transient transport failure (the sidecar is still starting / mid-restart) is
 		// retried with bounded backoff so a boot-race no longer leaves the agent with zero
 		// of a server's tools until the next restart; a permanent error fails immediately.
+		//
+		// handshakeCtx is a SEPARATE, narrower context from ctx (the daemon-lifetime
+		// process context): it bounds ONLY this server's mount attempt (all
+		// MountWithRetry attempts + backoff share this one deadline, per AURA_MCP_MOUNT_
+		// TIMEOUT), and is passed to mountOnce as the handshake ctx while ctx itself is
+		// passed unchanged as the process ctx. A hung handshake is dropped and its
+		// subprocess reaped without ctx ever being touched — so an already-mounted,
+		// healthy server (whose subprocess lives on ctx) is never killed once this
+		// server's mount deadline elapses (Pitfall #2).
+		handshakeCtx, cancel := context.WithTimeout(ctx, mountTimeout)
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			if _, managed := cfg.MCPPolicies[name]; managed {
-				return mcptools.MountManagedServer(c, reg, name, cfg.MCPPolicies[name])
+				return mcptools.MountManagedServer(ctx, c, reg, name, cfg.MCPPolicies[name])
 			}
-			return mcptools.MountServer(c, reg, name, cfg.MCPServers[name])
+			return mcptools.MountServer(ctx, c, reg, name, cfg.MCPServers[name])
 		}
-		closer, mounted, err := mcptools.MountWithRetry(ctx, name, mcpMountRetryPolicy(), mountOnce)
+		closer, mounted, err := mcptools.MountWithRetry(handshakeCtx, name, mcpMountRetryPolicy(), mountOnce)
+		cancel()
 		if err != nil {
-			slog.Warn("mcp mount failed", "server", name, "err", err)
+			slog.Warn("mcp mount failed", "server", name, "err", err, "mount_timeout", mountTimeout.String())
 			continue
 		}
 		// Log the mounted tool count so a server that mounts zero tools (a degraded
@@ -278,7 +324,25 @@ const (
 	defaultMCPMountAttempts  = 6
 	defaultMCPMountBaseDelay = time.Second
 	defaultMCPMountMaxDelay  = 5 * time.Second
+	defaultMCPMountTimeout   = 10 // seconds (D-06/D-07): AURA_MCP_MOUNT_TIMEOUT override
+	defaultMCPShutdownSecs   = 5  // seconds (D-11): AURA_MCP_SHUTDOWN_TIMEOUT override
 )
+
+// mcpMountTimeout resolves the per-server bounded handshake deadline (D-06):
+// AURA_MCP_MOUNT_TIMEOUT overrides the default 10s. This bounds ONE server's whole
+// MountWithRetry budget (every attempt + backoff), not one attempt individually —
+// mirrors mcpMountRetryPolicy's env-override style / envutil.IntDefault.
+func mcpMountTimeout() time.Duration {
+	return time.Duration(envutil.IntDefault("AURA_MCP_MOUNT_TIMEOUT", defaultMCPMountTimeout)) * time.Second
+}
+
+// mcpShutdownTimeout resolves the aggregate shutdown deadline (D-11):
+// AURA_MCP_SHUTDOWN_TIMEOUT overrides the default 5s. This bounds the WHOLE
+// closeMCPServers fan-out, not any one closer — the existing per-transport
+// closeWaitTimeout/httpCloseTimeout 5s constants are unrelated and unchanged.
+func mcpShutdownTimeout() time.Duration {
+	return time.Duration(envutil.IntDefault("AURA_MCP_SHUTDOWN_TIMEOUT", defaultMCPShutdownSecs)) * time.Second
+}
 
 // mcpMountRetryPolicy resolves the boot-time MCP mount retry budget. AURA_MCP_MOUNT_RETRY_ATTEMPTS
 // overrides the attempt count (1 disables retry, restoring the single-shot fail-soft behavior); the
@@ -298,14 +362,35 @@ func mcpMountRetryPolicy() mcptools.MountRetryPolicy {
 	return policy
 }
 
+// closeMCPServers fans out every closer concurrently under ONE aggregate
+// AURA_MCP_SHUTDOWN_TIMEOUT deadline (D-11), so total shutdown wall-clock is
+// bounded regardless of server count — NOT sequential N×5s. A closer that is still
+// running when the aggregate deadline fires is abandoned (logged, not waited on);
+// it finishes on its own already-bounded per-transport closeWaitTimeout/
+// httpCloseTimeout (5s, unchanged by this function). Zero closers returns
+// immediately with no goroutine spun up.
 func closeMCPServers(closers []func() error) error {
-	var first error
-	for i := len(closers) - 1; i >= 0; i-- {
-		if err := closers[i](); err != nil && first == nil {
-			first = err
-		}
+	if len(closers) == 0 {
+		return nil
 	}
-	return first
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), mcpShutdownTimeout())
+	defer cancel()
+
+	var g errgroup.Group
+	for i := len(closers) - 1; i >= 0; i-- {
+		g.Go(closers[i])
+	}
+	done := make(chan error, 1)
+	go func() { done <- g.Wait() }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-shutdownCtx.Done():
+		slog.Warn("mcp shutdown aggregate deadline elapsed; abandoning stragglers",
+			"timeout", mcpShutdownTimeout().String(), "servers", len(closers))
+		return fmt.Errorf("mcp shutdown: %w", shutdownCtx.Err())
+	}
 }
 
 func printTools() {

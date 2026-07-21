@@ -137,21 +137,16 @@ func memoryToolAcceptsUserIdentifier(name string) bool {
 		"memory_add_entity",
 		"memory_add_preference",
 		"memory_add_fact",
+		"memory_forget",
 		"memory_get_conversation",
 		"memory_list_sessions",
 		"memory_get_entity",
 		"memory_get_facts",
-		"memory_export_graph",
 		"memory_create_relationship",
-		"memory_start_trace",
-		"memory_record_step",
-		"memory_complete_trace",
-		"memory_get_observations",
 		"memory_set_entity_feedback",
 		"memory_get_entity_history",
 		"memory_get_entity_provenance",
-		"memory_get_reflections",
-		"graph_query":
+		"memory_get_reflections":
 		return true
 	default:
 		return false
@@ -181,11 +176,29 @@ func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tool
 // tools need default visibility because proactive memory behavior depends on the
 // model seeing the memory surface without a separate discovery step.
 func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
-	callTimeout, err := configuredMCPCallTimeout()
+	defs, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defs, err := srv.ListTools(ctx)
+	return bridgeFromDefs(namespace, srv, defs)
+}
+
+// bridgeFromDefs bridges PRE-LISTED defs, skipping the srv.ListTools round-trip
+// Bridge itself makes. MountWithDefs (the initial-mount path) uses this so the
+// FIRST discovery listing goes through the raw transport's own ctx bound instead
+// of through a reconnectingServer wrapper: reconnectingServer.ListTools treats any
+// transport error (including a caller's ctx deadline expiring) as a cue to
+// transparently reconnect using ITS OWN reconnectTimeout budget (10s default,
+// context.WithoutCancel-severed from the caller's ctx) — layering that
+// independent, much longer budget on top of the initial mount's OWN bounded
+// handshake ctx would silently blow through AURA_MCP_MOUNT_TIMEOUT (D-06),
+// defeating the very bound this plan installs. The raw transport's own ListTools
+// (no reconnect layer) is called BEFORE reconnectingServer even wraps it, so this
+// failure mode cannot occur for the initial mount; bridged tools still reference
+// srv (the reconnecting wrapper) for every CALL after mount, so runtime
+// reconnect-on-transport-error is unaffected.
+func bridgeFromDefs(namespace string, srv Server, defs []mcp.ToolDef) ([]tools.Tool, error) {
+	callTimeout, err := configuredMCPCallTimeout()
 	if err != nil {
 		return nil, err
 	}
@@ -394,6 +407,23 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 	if err != nil {
 		return nil, err
 	}
+	return finishMount(reg, srv, bridged)
+}
+
+// MountWithDefs mounts PRE-LISTED defs (skipping the ListTools round-trip Mount
+// itself performs) into reg under namespace, all-or-nothing, wiring the same
+// refresh hook Mount does. Used by the initial-mount path (MountServer/
+// MountManagedServer) with defs already fetched from the raw transport under a
+// bounded handshake ctx — see bridgeFromDefs for why that ordering matters.
+func MountWithDefs(reg *tools.Registry, namespace string, srv Server, defs []mcp.ToolDef) ([]string, error) {
+	bridged, err := bridgeFromDefs(namespace, srv, defs)
+	if err != nil {
+		return nil, err
+	}
+	return finishMount(reg, srv, bridged)
+}
+
+func finishMount(reg *tools.Registry, srv Server, bridged []tools.Tool) ([]string, error) {
 	names, err := registerBridged(reg, bridged)
 	if err != nil {
 		return nil, err

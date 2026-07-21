@@ -243,18 +243,50 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		return ToolResult{}, fmt.Errorf("task schedule: %w", err)
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=%s)", created.ID, a.Kind, spec.summary(), tier, status)
+	// A pending_approval task must NOT fire until the operator approves it ON THE
+	// CHANNEL it was scheduled from (HITL parity, no notify-route/env detour): return
+	// the approval directive so the model relays it as an ask_user approval pause the
+	// scheduled-task resume hook resolves — ask_user is the ONLY tool that pauses the
+	// turn (amendment #51 / D-40), so the tool cannot pause directly.
 	if status == "pending_approval" {
-		b.WriteString("\nAwaiting operator approval before it fires.")
-		if scoring.RequiresImmediateAlert(tier, t.alertThreshold()) {
-			b.WriteString("\nThis task meets the immediate-alert threshold.")
-		}
-	} else if !next.IsZero() {
+		immediate := scoring.RequiresImmediateAlert(tier, t.alertThreshold())
+		return scheduledApprovalRequiredResult(created.ID, a.Kind, spec.summary(), string(tier), immediate), nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=active)", created.ID, a.Kind, spec.summary(), tier)
+	if !next.IsZero() {
 		fmt.Fprintf(&b, "\nNext run at %s.", next.UTC().Format(time.RFC3339))
 	}
 	s := b.String()
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
+}
+
+// scheduledApprovalRequiredResult builds the pending_approval directive (the
+// shell_exec/gateway approval-required precedent): a scheduled task never fires until
+// the operator approves it on the channel it was scheduled from. The model MUST relay
+// this as an ask_user approval pause carrying the resume_context the scheduled-task
+// resume hook decodes; on accept the hook flips the task to active. The task_id +
+// authenticated origin conversation are the authorization (the hook owner-scopes the
+// UPDATE), so no question-match challenge is needed here.
+func scheduledApprovalRequiredResult(taskID, kind, summary, tier string, immediate bool) ToolResult {
+	question := fmt.Sprintf("Approve scheduled task %s (kind=%s, %s, risk=%s)? It will not fire until you approve.", taskID, kind, summary, tier)
+	payload := map[string]string{
+		"status":   "pending_approval",
+		"task_id":  taskID,
+		"question": question,
+		"message": "This scheduled task requires operator approval before it can fire. " +
+			"Call ask_user with kind=\"approval\", question exactly equal to the question field, and " +
+			"resume_context={\"type\":\"scheduled_task_approval\",\"task_id\":\"" + taskID + "\"}. " +
+			"The task activates only after the operator accepts on their channel.",
+	}
+	if immediate {
+		payload["immediate_alert"] = "true"
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte(`{"status":"pending_approval","task_id":"` + taskID + `"}`)
+	}
+	return ToolResult{Preview: string(raw), Bytes: len(raw)}
 }
 
 // resolvedSpec is the validated grammar the tool persists. It mirrors the cron

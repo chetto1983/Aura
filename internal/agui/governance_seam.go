@@ -47,11 +47,19 @@ type SkillsBoardProvider interface {
 	AuditLog(ctx context.Context, filter skills.AuditFilter) ([]skills.AuditRow, error)
 }
 
-// SchedulerBoardProvider is the read-only scheduler-governance surface (GOV-03): the
-// active task list and a paginated, newest-first run history per task.
+// SchedulerBoardProvider is the scheduler-governance surface (GOV-03): the manageable
+// task list (active + pending_approval), a paginated newest-first run history per task,
+// and the operator management verbs (approve / run-now / cancel / reschedule). GetTask is
+// the pre-mutation read the write handlers use to enforce the system-kind guard
+// (IsUserManageableKind) before any state change. cron.Store satisfies the whole surface.
 type SchedulerBoardProvider interface {
-	ListActiveTasks(ctx context.Context) ([]cron.Task, error)
+	ListManageableTasks(ctx context.Context) ([]cron.Task, error)
 	ListRunsForTask(ctx context.Context, taskID string, limit, offset int) ([]cron.Run, error)
+	GetTask(ctx context.Context, id string) (cron.Task, error)
+	ApproveTask(ctx context.Context, id string) error
+	RunTaskNow(ctx context.Context, id string) error
+	CancelTask(ctx context.Context, id string) error
+	UpdateTask(ctx context.Context, id string, p cron.UpdateTaskParams) error
 }
 
 // GovernanceProviders bundles the three read-only board providers so the composition

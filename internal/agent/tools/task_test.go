@@ -143,6 +143,52 @@ func TestTaskScheduleDestructivePayloadGated(t *testing.T) {
 	}
 }
 
+// TestTaskScheduleApprovalDirective proves a pending_approval schedule returns the
+// on-channel HITL directive (not the passive "awaiting approval" text): a JSON payload
+// carrying the task_id and the ask_user relay instruction with the
+// scheduled_task_approval resume_context the resume hook decodes. This is what makes
+// the approval reach the sending channel instead of the CLI-only path (bug fix).
+func TestTaskScheduleApprovalDirective(t *testing.T) {
+	store := &fakeTaskStore{createID: "019f-task-id"}
+	tool := &TaskTool{Store: store}
+
+	// Every agent_job is gated to pending_approval (AG-016), independent of risk.
+	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"30 9 * * *","kind":"agent_job","payload":{"goal":"summarize the news"}}`)
+	res, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("schedule agent_job: %v", err)
+	}
+	if store.created.Status != "pending_approval" {
+		t.Fatalf("agent_job must be pending_approval, got %q", store.created.Status)
+	}
+
+	var got struct {
+		Status   string `json:"status"`
+		TaskID   string `json:"task_id"`
+		Question string `json:"question"`
+		Message  string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(res.Preview), &got); err != nil {
+		t.Fatalf("preview must be a JSON directive, got %q: %v", res.Preview, err)
+	}
+	if got.Status != "pending_approval" {
+		t.Errorf("directive status = %q, want pending_approval", got.Status)
+	}
+	if got.TaskID != "019f-task-id" {
+		t.Errorf("directive task_id = %q, want the created id", got.TaskID)
+	}
+	if got.Question == "" {
+		t.Error("directive must carry a non-empty approval question")
+	}
+	// The message must instruct the model to relay via ask_user with the exact
+	// resume_context the scheduled-task resume hook keys on.
+	for _, want := range []string{"ask_user", "scheduled_task_approval", "019f-task-id"} {
+		if !strings.Contains(got.Message, want) {
+			t.Errorf("directive message must contain %q, got %q", want, got.Message)
+		}
+	}
+}
+
 func TestTaskScheduleInvalidCronRejectedBeforePersist(t *testing.T) {
 	store := &fakeTaskStore{}
 	tool := &TaskTool{Store: store}

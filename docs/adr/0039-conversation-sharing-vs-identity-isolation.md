@@ -34,6 +34,15 @@ This ADR exists because "we punched a hole in MUSR" is not an acceptable amount 
 future reviewer or auditor; it must be *this specific, bounded hole, closed by these specific
 mechanisms, with these specific accepted residual risks*.
 
+**Addendum (2026-07-17, plan 37F-20 gap closure).** The RLS-backstop sentence above was accurate
+for `conversations` / `paused_states` / `conversation_turns` but not yet for `shared_links`:
+migration `0040` shipped that table with no RLS policy, leaving the app-level
+`owner_identity_id` predicate in `internal/share/store.go` as the only enforcement layer.
+Migration `0041_shared_links_rls` closes that gap — `aura.shared_links` now carries its own
+`shared_links_owner_isolation` policy, mirroring `0032_owner_rls` exactly (fail-closed-on-
+mismatch, permissive-on-unset, so `ResolveByToken`/`ResolveLiveByID` are unaffected). The Context
+statement above is accurate for all four identity-scoped tables as of `0041`.
+
 ---
 
 ## Decision

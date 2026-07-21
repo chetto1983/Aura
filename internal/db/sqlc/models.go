@@ -95,175 +95,6 @@ type AuraCapabilityGrants struct {
 	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
 }
 
-type AuraCompactionActivePointers struct {
-	ConversationID pgtype.UUID        `json:"conversation_id"`
-	BranchID       string             `json:"branch_id"`
-	Generation     int32              `json:"generation"`
-	CheckpointID   pgtype.UUID        `json:"checkpoint_id"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-type AuraCompactionCheckpoints struct {
-	ID                    pgtype.UUID        `json:"id"`
-	ConversationID        pgtype.UUID        `json:"conversation_id"`
-	BranchID              string             `json:"branch_id"`
-	Generation            int32              `json:"generation"`
-	ParentID              pgtype.UUID        `json:"parent_id"`
-	CapturedWatermarkSeq  int32              `json:"captured_watermark_seq"`
-	SummarizedTurnSeqs    []byte             `json:"summarized_turn_seqs"`
-	TailTurnSeqs          []byte             `json:"tail_turn_seqs"`
-	ProtectedTurnSeqs     []byte             `json:"protected_turn_seqs"`
-	ExcludedTurnSeqs      []byte             `json:"excluded_turn_seqs"`
-	ManifestDigest        string             `json:"manifest_digest"`
-	CompleteCaptureDigest string             `json:"complete_capture_digest"`
-	DigestAlgorithm       string             `json:"digest_algorithm"`
-	DigestVersion         int32              `json:"digest_version"`
-	StructuredSummary     []byte             `json:"structured_summary"`
-	SchemaVersion         int32              `json:"schema_version"`
-	PromptVersion         int32              `json:"prompt_version"`
-	ProjectionVersion     int32              `json:"projection_version"`
-	Metadata              []byte             `json:"metadata"`
-	QualityState          string             `json:"quality_state"`
-	RolloutMode           string             `json:"rollout_mode"`
-	RetentionUntil        pgtype.Timestamptz `json:"retention_until"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuraCompactionClaims struct {
-	OperationID          pgtype.UUID        `json:"operation_id"`
-	ConversationID       pgtype.UUID        `json:"conversation_id"`
-	BranchID             string             `json:"branch_id"`
-	IdempotencyKey       string             `json:"idempotency_key"`
-	CapturedWatermarkSeq int32              `json:"captured_watermark_seq"`
-	GovernanceWatermark  int64              `json:"governance_watermark"`
-	BaseActiveGeneration int32              `json:"base_active_generation"`
-	Priority             string             `json:"priority"`
-	State                string             `json:"state"`
-	InferenceStarted     bool               `json:"inference_started"`
-	OwnerID              string             `json:"owner_id"`
-	LeaseUntil           pgtype.Timestamptz `json:"lease_until"`
-	OutcomeCheckpointID  pgtype.UUID        `json:"outcome_checkpoint_id"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-}
-
-type AuraCompactionMemories struct {
-	ID               pgtype.UUID        `json:"id"`
-	CandidateID      pgtype.UUID        `json:"candidate_id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
-	OwnerID          pgtype.UUID        `json:"owner_id"`
-	Class            string             `json:"class"`
-	Purpose          string             `json:"purpose"`
-	ConsentBasis     string             `json:"consent_basis"`
-	EvidenceDigest   string             `json:"evidence_digest"`
-	Sensitivity      string             `json:"sensitivity"`
-	Region           string             `json:"region"`
-	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
-	SupersededBy     pgtype.UUID        `json:"superseded_by"`
-	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
-	RevocationReason pgtype.Text        `json:"revocation_reason"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuraCompactionMemoryCandidates struct {
-	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
-	OwnerID              pgtype.UUID        `json:"owner_id"`
-	Class                string             `json:"class"`
-	Purpose              string             `json:"purpose"`
-	ConsentBasis         string             `json:"consent_basis"`
-	SourceManifestDigest string             `json:"source_manifest_digest"`
-	EvidenceDigest       string             `json:"evidence_digest"`
-	Confidence           float64            `json:"confidence"`
-	Authority            string             `json:"authority"`
-	Sensitivity          string             `json:"sensitivity"`
-	Region               string             `json:"region"`
-	EncryptionClass      string             `json:"encryption_class"`
-	RetentionClass       string             `json:"retention_class"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	SupersededBy         pgtype.UUID        `json:"superseded_by"`
-	RevokedAt            pgtype.Timestamptz `json:"revoked_at"`
-	RevocationReason     pgtype.Text        `json:"revocation_reason"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuraCompactionMemorySources struct {
-	CandidateID  pgtype.UUID        `json:"candidate_id"`
-	SourceKind   string             `json:"source_kind"`
-	SourceID     string             `json:"source_id"`
-	SourceDigest string             `json:"source_digest"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuraCompactionQuarantine struct {
-	ID             pgtype.UUID        `json:"id"`
-	CheckpointID   pgtype.UUID        `json:"checkpoint_id"`
-	ArtifactKind   string             `json:"artifact_kind"`
-	Reason         string             `json:"reason"`
-	ObservedDigest pgtype.Text        `json:"observed_digest"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuraCompactionRestoreEvents struct {
-	ID              pgtype.UUID        `json:"id"`
-	ConversationID  pgtype.UUID        `json:"conversation_id"`
-	BranchID        string             `json:"branch_id"`
-	OldCheckpointID pgtype.UUID        `json:"old_checkpoint_id"`
-	NewCheckpointID pgtype.UUID        `json:"new_checkpoint_id"`
-	OperationID     pgtype.UUID        `json:"operation_id"`
-	ActorID         string             `json:"actor_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-// Immutable transition and rollback ledger keyed by stable reason codes.
-type AuraCompactionRolloutDecisions struct {
-	ID               pgtype.UUID        `json:"id"`
-	ScopeID          string             `json:"scope_id"`
-	EvidenceID       pgtype.UUID        `json:"evidence_id"`
-	ExpectedVersion  int64              `json:"expected_version"`
-	ResultingVersion int64              `json:"resulting_version"`
-	DecisionKind     string             `json:"decision_kind"`
-	FromStage        string             `json:"from_stage"`
-	ToStage          string             `json:"to_stage"`
-	ReasonCode       string             `json:"reason_code"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-// Immutable locale-neutral evaluator evidence; prose and translated presentation text are forbidden.
-type AuraCompactionRolloutEvidence struct {
-	ID               pgtype.UUID        `json:"id"`
-	ScopeID          string             `json:"scope_id"`
-	EvidenceDigest   string             `json:"evidence_digest"`
-	EvaluatorVersion string             `json:"evaluator_version"`
-	ScorerVersion    string             `json:"scorer_version"`
-	ConfigVersion    string             `json:"config_version"`
-	CorpusVersion    string             `json:"corpus_version"`
-	Snapshot         []byte             `json:"snapshot"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-// Replica-shared version-CAS effective state for the compaction rollout control plane.
-type AuraCompactionRolloutStates struct {
-	ScopeID             string             `json:"scope_id"`
-	Version             int64              `json:"version"`
-	Stage               string             `json:"stage"`
-	StageStartedAt      pgtype.Timestamptz `json:"stage_started_at"`
-	EligibleAttempts    int64              `json:"eligible_attempts"`
-	EvaluatorVersion    string             `json:"evaluator_version"`
-	ScorerVersion       string             `json:"scorer_version"`
-	ConfigVersion       string             `json:"config_version"`
-	CorpusVersion       string             `json:"corpus_version"`
-	StratumSnapshots    []byte             `json:"stratum_snapshots"`
-	FailureWindow       []byte             `json:"failure_window"`
-	LatencyWindow       []byte             `json:"latency_window"`
-	RestoreWindow       []byte             `json:"restore_window"`
-	ActiveConfig        []byte             `json:"active_config"`
-	LastKnownGoodConfig []byte             `json:"last_known_good_config"`
-	LastKnownGoodPolicy []byte             `json:"last_known_good_policy"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-}
-
 type AuraContentPartLinks struct {
 	PartID           pgtype.UUID        `json:"part_id"`
 	ReachabilityKind string             `json:"reachability_kind"`
@@ -658,6 +489,34 @@ type AuraSettings struct {
 	IsSecret  bool               `json:"is_secret"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	UpdatedBy pgtype.Text        `json:"updated_by"`
+}
+
+// Append-only share-lifecycle audit ledger (Phase 37F, T-37F-10). aura_app has SELECT+INSERT only; identity_id is text with NO FK so the ledger outlives the identity, link, and conversation it describes.
+type AuraShareAudit struct {
+	ID             pgtype.UUID        `json:"id"`
+	IdentityID     string             `json:"identity_id"`
+	ShareLinkID    pgtype.UUID        `json:"share_link_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	Action         string             `json:"action"`
+	Tier           pgtype.Text        `json:"tier"`
+	Detail         string             `json:"detail"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// Conversation/artifact share links (Phase 37F, WEBSHARE-02/03). shared_links_tier_shape makes D-04 mandatory-expiry + D-13 hashed-token database-enforced for public tier; shared_links_token_hash_idx is the unique lookup index (never a table scan).
+type AuraSharedLinks struct {
+	ID              pgtype.UUID        `json:"id"`
+	OwnerIdentityID pgtype.UUID        `json:"owner_identity_id"`
+	ConversationID  pgtype.UUID        `json:"conversation_id"`
+	Tier            string             `json:"tier"`
+	TokenHash       []byte             `json:"token_hash"`
+	SnapshotID      pgtype.UUID        `json:"snapshot_id"`
+	SnapshotBucket  string             `json:"snapshot_bucket"`
+	FormatOptions   []byte             `json:"format_options"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Append-only skill-mutation audit ledger (Slice 7c / Phase 11, D-29). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 1/6). The D-29 coherence CHECK constrains the approval tuple to five allowed events; content_hash is the D-23 recovery path on every row.

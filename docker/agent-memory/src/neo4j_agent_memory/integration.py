@@ -580,3 +580,73 @@ class MemoryIntegration:
         except Exception as e:
             logger.error(f"Error adding fact: {e}")
             return {"error": str(e)}
+
+    async def delete_preference(
+        self,
+        preference_id: str,
+        *,
+        user_identifier: str,
+    ) -> dict[str, Any]:
+        """Forget a preference the caller owns (ownership-enforced by the store).
+
+        Returns ``{"deleted": <id>}`` on success or ``{"deleted": None, "reason": ...}``
+        when the preference is absent or out of the caller's scope.
+        """
+        try:
+            removed = await self.client.long_term.delete_preference(
+                preference_id, user_identifier=user_identifier
+            )
+        except Exception as e:
+            logger.error(f"Error deleting preference: {e}")
+            return {"deleted": None, "error": str(e)}
+        if removed is None:
+            return {"deleted": None, "reason": "not found or not owned by this user"}
+        return {"deleted": removed, "type": "preference"}
+
+    async def delete_fact(
+        self,
+        fact_id: str,
+        *,
+        user_identifier: str,
+    ) -> dict[str, Any]:
+        """Forget a fact the caller owns (see :meth:`delete_preference`)."""
+        try:
+            removed = await self.client.long_term.delete_fact(
+                fact_id, user_identifier=user_identifier
+            )
+        except Exception as e:
+            logger.error(f"Error deleting fact: {e}")
+            return {"deleted": None, "error": str(e)}
+        if removed is None:
+            return {"deleted": None, "reason": "not found or not owned by this user"}
+        return {"deleted": removed, "type": "fact"}
+
+    async def delete_entity(
+        self,
+        entity_id: str,
+        *,
+        user_identifier: str,
+    ) -> dict[str, Any]:
+        """Forget an entity the caller owns (NON-cascading — see
+        :meth:`long_term.delete_entity`). A shared entity is only unlinked from the
+        caller; a fully-private one is removed."""
+        try:
+            result = await self.client.long_term.delete_entity(
+                entity_id, user_identifier=user_identifier
+            )
+        except Exception as e:
+            logger.error(f"Error deleting entity: {e}")
+            return {"deleted": None, "error": str(e)}
+        if result is None:
+            return {"deleted": None, "reason": "not found or not owned by this user"}
+        removed_id, removed_node = result
+        return {
+            "deleted": removed_id,
+            "type": "entity",
+            "removed_node": removed_node,
+            "note": (
+                "entity node removed (was private to you)"
+                if removed_node
+                else "unlinked from you; entity kept (still referenced elsewhere)"
+            ),
+        }

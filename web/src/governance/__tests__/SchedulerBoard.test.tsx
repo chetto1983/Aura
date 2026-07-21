@@ -12,12 +12,25 @@ import type { SchedulerRun, SchedulerTask } from '../governanceApi';
 
 const fetchSchedulerTasks = vi.fn();
 const fetchSchedulerRuns = vi.fn();
+const approveSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
+const runSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
+const cancelSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
+const editSchedulerTask = vi.fn<(id: string, req: unknown) => Promise<void>>(() =>
+  Promise.resolve(),
+);
+
+const MANAGEABLE = new Set(['reminder', 'agent_job', 'backup_postgres', 'backup_neo4j']);
 
 vi.mock('../governanceApi', () => ({
   fetchSchedulerTasks: (...a: unknown[]) =>
     fetchSchedulerTasks(...a) as Promise<readonly SchedulerTask[]>,
   fetchSchedulerRuns: (...a: unknown[]) =>
     fetchSchedulerRuns(...a) as Promise<readonly SchedulerRun[]>,
+  isUserManageableKind: (kind: string) => MANAGEABLE.has(kind),
+  approveSchedulerTask: (id: string) => approveSchedulerTask(id),
+  runSchedulerTask: (id: string) => runSchedulerTask(id),
+  cancelSchedulerTask: (id: string) => cancelSchedulerTask(id),
+  editSchedulerTask: (id: string, req: unknown) => editSchedulerTask(id, req),
 }));
 
 const { SchedulerBoard } = await import('../SchedulerBoard');
@@ -58,6 +71,12 @@ function run(i: number): SchedulerRun {
   };
 }
 
+function baseTask(): SchedulerTask {
+  const b = TASKS[0];
+  if (b === undefined) throw new Error('base task fixture missing');
+  return b;
+}
+
 const PAGE_1 = Array.from({ length: 25 }, (_, i) => run(i)); // exactly one full page
 const PAGE_2 = Array.from({ length: 27 }, (_, i) => run(i)); // 25 + 2 → short final page
 
@@ -73,6 +92,10 @@ describe('SchedulerBoard (GOV-03)', () => {
   beforeEach(() => {
     fetchSchedulerTasks.mockReset();
     fetchSchedulerRuns.mockReset();
+    approveSchedulerTask.mockClear();
+    runSchedulerTask.mockClear();
+    cancelSchedulerTask.mockClear();
+    editSchedulerTask.mockClear();
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -90,9 +113,9 @@ describe('SchedulerBoard (GOV-03)', () => {
       expect(screen.getByText('reminder')).toBeTruthy();
     });
     expect(screen.getByText('0 9 * * *')).toBeTruthy();
-    // The row shows the task status + next-run time.
+    // The row shows the task status + the compact (T→space) next-run time.
     expect(screen.getByText('active')).toBeTruthy();
-    expect(screen.getByText('2026-06-21T09:00:00Z')).toBeTruthy();
+    expect(screen.getByText('2026-06-21 09:00:00Z')).toBeTruthy();
 
     const row = screen.getByText('reminder').closest('button');
     if (row === null) throw new Error('task row button not found');
@@ -250,6 +273,72 @@ describe('SchedulerBoard (GOV-03)', () => {
     expect(screen.getByText('2026-07-01T00:00:00Z')).toBeTruthy();
     // The no-schedule task shows the dash placeholder (—) at least once.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('a pending_approval task shows Approve and clicking it calls the approve API', async () => {
+    const pending: SchedulerTask = { ...baseTask(), ID: 'pend', Status: 'pending_approval' };
+    fetchSchedulerTasks.mockResolvedValue([pending]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    const approveBtn = await screen.findByRole('button', { name: 'Approve' });
+    fireEvent.click(approveBtn);
+    await waitFor(() => {
+      expect(approveSchedulerTask).toHaveBeenCalledWith('pend');
+    });
+  });
+
+  it('an active task shows Run now and clicking it calls the run API', async () => {
+    fetchSchedulerTasks.mockResolvedValue(TASKS);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    const runBtn = await screen.findByRole('button', { name: 'Run now' });
+    fireEvent.click(runBtn);
+    await waitFor(() => {
+      expect(runSchedulerTask).toHaveBeenCalledWith(TASK_ID);
+    });
+  });
+
+  it('deleting a task routes through the confirm dialog before calling the cancel API', async () => {
+    fetchSchedulerTasks.mockResolvedValue(TASKS);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    // The hard delete never fires blind — the confirm dialog gates it.
+    expect(cancelSchedulerTask).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel task' }));
+    await waitFor(() => {
+      expect(cancelSchedulerTask).toHaveBeenCalledWith(TASK_ID);
+    });
+  });
+
+  it('a system-seeded task is read-only: a SYSTEM tag, no operator verbs', async () => {
+    const sys: SchedulerTask = {
+      ...baseTask(),
+      ID: 'sys',
+      Kind: 'identity_purge',
+      Status: 'active',
+    };
+    fetchSchedulerTasks.mockResolvedValue([sys]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('identity_purge')).toBeTruthy();
+    });
+    expect(screen.getByText('System')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Run now' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
   });
 
   it('closing the run-history detail returns to the detail-empty state', async () => {

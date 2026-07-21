@@ -171,7 +171,7 @@ func buildSwarmRegistry(t *testing.T, cfg *config.Config) (reg *tools.Registry, 
 			t.Logf("swarm E2E: MCP server %q not registered — `aura mcp install %s` first (see header)", name, name)
 			continue
 		}
-		closer, names, err := mcptools.MountServer(ctx, reg, name, sc)
+		closer, names, err := mcptools.MountServer(ctx, ctx, reg, name, sc)
 		if err != nil {
 			t.Logf("swarm E2E: MCP server %q failed to mount (fail-soft): %v", name, err)
 			continue

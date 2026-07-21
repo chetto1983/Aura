@@ -99,7 +99,7 @@ func TestMemoryLoopRecall(t *testing.T) {
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
 	reg.Register(&tools.ReadToolOutput{})
-	closer, mounted, err := mcptools.MountManagedServer(ctx, reg, "memory", server)
+	closer, mounted, err := mcptools.MountManagedServer(ctx, ctx, reg, "memory", server)
 	if err != nil {
 		t.Fatalf("mount memory MCP: %v", err)
 	}

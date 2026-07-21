@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveTaskRow = `-- name: ApproveTaskRow :execrows
+UPDATE aura.scheduler_tasks
+SET status = 'active', updated_at = now()
+WHERE id = $1 AND status = 'pending_approval'
+`
+
+// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
+// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
+// a task that is not awaiting approval (0).
+func (q *Queries) ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, approveTaskRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const cancelTask = `-- name: CancelTask :exec
 UPDATE aura.scheduler_tasks
 SET status = 'cancelled', updated_at = now()
@@ -218,6 +235,71 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 	return items, nil
 }
 
+const listManageableTasks = `-- name: ListManageableTasks :many
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at
+FROM aura.scheduler_tasks
+WHERE status IN ('active', 'pending_approval')
+ORDER BY next_run_at ASC NULLS LAST, id ASC
+`
+
+// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
+// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
+// non-null next_run_at too — it is the first fire computed at schedule time).
+func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error) {
+	rows, err := q.db.Query(ctx, listManageableTasks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraSchedulerTasks{}
+	for rows.Next() {
+		var i AuraSchedulerTasks
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ScheduleKind,
+			&i.CronExpr,
+			&i.EveryMinutes,
+			&i.RunAt,
+			&i.Tz,
+			&i.Payload,
+			&i.StepBudget,
+			&i.Status,
+			&i.NextRunAt,
+			&i.NotifyRoute,
+			&i.IdentityID,
+			&i.OriginConversationID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const runTaskNowRow = `-- name: RunTaskNowRow :execrows
+UPDATE aura.scheduler_tasks
+SET next_run_at = now(), updated_at = now()
+WHERE id = $1 AND status = 'active'
+`
+
+// Advance an active task's next fire to now so the next tick claims it. Returns rows
+// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
+func (q *Queries) RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, runTaskNowRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateNextRunAt = `-- name: UpdateNextRunAt :exec
 UPDATE aura.scheduler_tasks
 SET next_run_at = $2, updated_at = now()
@@ -232,4 +314,44 @@ type UpdateNextRunAtParams struct {
 func (q *Queries) UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error {
 	_, err := q.db.Exec(ctx, updateNextRunAt, arg.ID, arg.NextRunAt)
 	return err
+}
+
+const updateTaskScheduleRow = `-- name: UpdateTaskScheduleRow :execrows
+UPDATE aura.scheduler_tasks
+SET schedule_kind = $2, cron_expr = $3, every_minutes = $4, run_at = $5, tz = $6,
+    payload = $7, notify_route = $8, next_run_at = $9, updated_at = now()
+WHERE id = $1 AND status IN ('active', 'pending_approval')
+`
+
+type UpdateTaskScheduleRowParams struct {
+	ID           pgtype.UUID        `json:"id"`
+	ScheduleKind string             `json:"schedule_kind"`
+	CronExpr     pgtype.Text        `json:"cron_expr"`
+	EveryMinutes pgtype.Int4        `json:"every_minutes"`
+	RunAt        pgtype.Timestamptz `json:"run_at"`
+	Tz           string             `json:"tz"`
+	Payload      []byte             `json:"payload"`
+	NotifyRoute  pgtype.Text        `json:"notify_route"`
+	NextRunAt    pgtype.Timestamptz `json:"next_run_at"`
+}
+
+// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
+// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
+// a cancelled/completed task is not silently revived. Returns rows affected.
+func (q *Queries) UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateTaskScheduleRow,
+		arg.ID,
+		arg.ScheduleKind,
+		arg.CronExpr,
+		arg.EveryMinutes,
+		arg.RunAt,
+		arg.Tz,
+		arg.Payload,
+		arg.NotifyRoute,
+		arg.NextRunAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

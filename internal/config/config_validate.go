@@ -23,6 +23,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/envutil"
 )
 
 // Severity ranks a configuration Violation. Warn is advisory (the deploy boots but
@@ -80,8 +82,9 @@ func (c *Config) Validate() error {
 // re-parse pass (reparsePass — Fatal under strict, Warn under lenient, PROF-04/F-016),
 // and every bespoke security gate, passing the resolved profile p. It NEVER first-fails
 // — the operator sees EVERY unmet requirement in one pass (criterion #1). The only env
-// reads are reparsePass (cataloged knobs) and gateDestructiveShell (the raw
-// destructive-patterns knob); it performs no other I/O and never echoes a secret VALUE.
+// reads are reparsePass (cataloged knobs), gateDestructiveShell (the raw
+// destructive-patterns knob), and gateMCPLegacyEnv (the raw legacy MCP env vars); it
+// performs no other I/O and never echoes a secret VALUE.
 func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	var vs []Violation
 	vs = append(vs, c.gateRequiredSecrets()...)
@@ -95,6 +98,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateDestructiveShell(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
 	vs = append(vs, c.gateMUSRIsolation(p)...)
+	vs = append(vs, c.gateMCPLegacyEnv(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
 	return vs
 }
@@ -244,6 +248,27 @@ func (c *Config) gateMUSRIsolation(p RuntimeProfile) []Violation {
 	}
 	if !c.MUSRIsolation {
 		return []Violation{{Knob: "AURA_MUSR_ISOLATION", Sev: Fatal, Msg: "multi-user identity isolation must be enabled (true) under server_production — a 2nd identity reads other identities' documents when off"}}
+	}
+	return nil
+}
+
+// gateMCPLegacyEnv forbids a non-empty AURA_MCP_SERVERS_JSON legacy env override
+// under server_production ONLY (D-14/D-15/T-38-09/MCPH-08) unless the operator
+// explicitly opts in via AURA_MCP_LEGACY_ENV_COMPAT=1: a dev-style env-parsed MCP
+// server set carried into a prod deploy would otherwise silently run un-governed,
+// unaudited MCP servers. It reads the RAW env value directly (mirrors
+// gateDestructiveShell) — it does not touch how config_mcp.go parses/merges the
+// env when allowed; that precedence is out of scope (planner assumption, Probe
+// #18). Every other profile is untouched (D-14, byte-identical parsing under dev).
+func (c *Config) gateMCPLegacyEnv(p RuntimeProfile) []Violation {
+	if p != ProfileServerProduction {
+		return nil
+	}
+	if strings.TrimSpace(os.Getenv("AURA_MCP_SERVERS_JSON")) == "" {
+		return nil
+	}
+	if !envutil.BoolDefault("AURA_MCP_LEGACY_ENV_COMPAT", false) {
+		return []Violation{{Knob: "AURA_MCP_SERVERS_JSON", Sev: Fatal, Msg: "legacy MCP env config is disabled under server_production unless AURA_MCP_LEGACY_ENV_COMPAT=1 is explicitly set"}}
 	}
 	return nil
 }

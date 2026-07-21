@@ -44,6 +44,14 @@ type MountRetryPolicy struct {
 // successful attempt returns its closer + mounted tool names to the caller unchanged. A failed
 // transport attempt leaves the registry untouched — the transport dies during initialize, before
 // any tool is registered — so a retry can never double-register a tool.
+//
+// D-06/D-07 (38-05): the caller (buildRegistryWithMCP) passes a BOUNDED handshake ctx here —
+// distinct from the daemon-lifetime process ctx threaded separately through mount's closure — so
+// this ctx caps the WHOLE retry budget (every attempt plus every backoff sleep), not one attempt
+// individually: once the deadline elapses, the in-flight attempt's own transport read times out,
+// and the very next sleepContext call observes ctx already Done and returns immediately, ending
+// the loop well before Attempts is exhausted. A healthy mount that succeeds before the deadline is
+// unaffected — the mounted server's subprocess lives on the separate, un-bounded process ctx.
 func MountWithRetry(
 	ctx context.Context,
 	name string,

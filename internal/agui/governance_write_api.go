@@ -57,6 +57,7 @@ func (s *Server) registerGovernanceWriteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/governance/mcp/{name}/disable", s.handleMCPDisable)
 	mux.HandleFunc("DELETE /api/governance/mcp/{name}", s.handleMCPRemove)
 	s.registerGovernanceSkillsWriteRoutes(mux)
+	s.registerGovernanceSchedulerWriteRoutes(mux)
 }
 
 // handleMCPInstall serves POST /api/governance/mcp (MCPW-01): install a recipe or custom

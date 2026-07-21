@@ -239,6 +239,58 @@ export async function fetchSchedulerRuns(
   return body.runs ?? [];
 }
 
+// === GOV-03 scheduler write surface (approve / run / cancel / reschedule) ===
+// Owner verbs over a scheduled task, each behind RequireCapability(governance.write). A
+// non-200 THROWS `Error("HTTP <n>")` so the row surfaces a visible error, never a silent
+// no-op: 403 = a system-seeded sweep (not operator-mutable), 404 = gone, 409 = wrong status
+// (e.g. approve on an already-active task), 400 = an invalid reschedule grammar.
+
+/** The user-managed task kinds (mirror of cron.IsUserManageableKind): only these expose the
+ * approve/run/edit/delete verbs — a system-seeded sweep is read-only in the cockpit. */
+export const USER_MANAGEABLE_KINDS: ReadonlySet<string> = new Set([
+  'reminder',
+  'agent_job',
+  'backup_postgres',
+  'backup_neo4j',
+]);
+
+export function isUserManageableKind(kind: string): boolean {
+  return USER_MANAGEABLE_KINDS.has(kind);
+}
+
+/** POST /api/governance/scheduler/{id}/approve — flip a pending_approval task to active. */
+export async function approveSchedulerTask(id: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}/approve`);
+}
+
+/** POST /api/governance/scheduler/{id}/run — run an active task now (next fire → now). */
+export async function runSchedulerTask(id: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}/run`);
+}
+
+/** DELETE /api/governance/scheduler/{id} — cancel a task (soft, status='cancelled'). */
+export async function cancelSchedulerTask(id: string): Promise<void> {
+  await deleteJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}`);
+}
+
+/** The reschedule/re-payload request (PATCH /api/governance/scheduler/{id}). An omitted
+ * payload keeps the task's current one; notify '' resets to the default route. */
+export interface SchedulerEditRequest {
+  readonly schedule_kind: string;
+  readonly cron?: string;
+  readonly at?: string;
+  readonly every_minutes?: number;
+  readonly tz?: string;
+  readonly payload?: unknown;
+  readonly notify?: string;
+}
+
+/** PATCH /api/governance/scheduler/{id} — reschedule + re-payload a user task. A bad grammar
+ * throws `Error("HTTP 400")`; a task no longer editable throws `Error("HTTP 409")`. */
+export async function editSchedulerTask(id: string, req: SchedulerEditRequest): Promise<void> {
+  await patchJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}`, req);
+}
+
 // === Phase-29 MCP write surface (MCPW-01/02/03) ===
 // The request/response shapes mirror internal/agui/governance_write_seam.go +
 // governance_write_api.go (29-02). Env values NEVER cross the wire — the response carries

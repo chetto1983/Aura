@@ -43,6 +43,12 @@ type ServerConfig struct {
 	HealthCheck     func(context.Context) error
 	HealthDetails   func() map[string]any
 	ReadinessProbes []ReadinessProbe
+	// SharePublicEnabled is the WEBSHARE-02/03 org kill-switch (AURA_SHARE_PUBLIC_ENABLED,
+	// config.ShareConfig.PublicEnabled) re-checked INSIDE handleShareCreate (share_api.go,
+	// plan 37F-10) — the R-08 gate that survives loopback dev, where RequireCapability
+	// (auth.go:282) returns `next` unchanged because SecretConfigured is false. Default false
+	// (fail-closed): a zero-value ServerConfig must never allow a public mint.
+	SharePublicEnabled bool
 }
 
 // Runner is the narrow agent-driver surface the server consumes (D-A2-02; *runner.Runner
@@ -64,12 +70,6 @@ type Runner interface {
 	// owned → 403/404) so the DELETE route never performs a raw store delete. *runner.Runner
 	// satisfies it.
 	DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error)
-}
-
-// CompactService is the shadow-only manual preview/restore coordinator seam.
-type CompactService interface {
-	Preview(context.Context, runner.CompactRequest) (runner.CompactPreview, error)
-	Restore(context.Context, runner.CompactRequest) (runner.CompactPreview, error)
 }
 
 type threadTryLocker interface {
@@ -102,10 +102,13 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run              Runner
-	conv             ConversationStore
-	approvals        ApprovalStore
-	assets           AssetService
+	run       Runner
+	conv      ConversationStore
+	approvals ApprovalStore
+	assets    AssetService
+	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
+	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
+	share            ShareService
 	documentCatalog  DocumentCatalogService
 	documentEvents   DocumentEventService
 	storageOrphans   StorageOrphanService
@@ -156,8 +159,6 @@ type Server struct {
 	// reports; it is injected alongside the source (llm.ReasoningTarget is known only at boot).
 	reasoningCaps    llm.ReasoningCapabilitySource
 	reasoningBackend string
-	compact          CompactService
-	compactionMemory CompactionMemoryStore
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -174,14 +175,14 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
-// SetCompactService wires the single durable compaction coordinator.
-func (s *Server) SetCompactService(service CompactService) { s.compact = service }
-
-// SetCompactionMemoryStore wires the governance-gated IC-10 memory control plane.
-func (s *Server) SetCompactionMemoryStore(store CompactionMemoryStore) { s.compactionMemory = store }
-
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
+
+// SetShareService wires the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
+// handlers call. Set by the daemon composition root after NewServer (cmd/aura/
+// serve_webui_share.go, plan 37F-12); until set, every share route answers 503 — mirroring
+// SetAssetService (D-A2-02 narrow seam, existing NewServer callers unchanged).
+func (s *Server) SetShareService(service ShareService) { s.share = service }
 
 // SetImageProxy wires the SSRF-safe image fetcher (D-09) the /api/image-proxy route
 // delegates to. Set by the daemon composition root after NewServer (the *web.Client
@@ -254,12 +255,26 @@ func (s *Server) Mux() http.Handler {
 	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
 	// colocated with their handlers so the agui Server.Mux answers them.
 	s.registerConversationRoutes(mux)
-	s.registerCompactionMemoryRoutes(mux)
 	// APRV-01/02/03 approval-center routes (Phase 25 plan 25-02). Colocated with their
 	// handlers; the parent-mux mount behind RequireAuth (+ RequireCapability on the
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
+	// WEBSHARE-02/03 (Phase 37F plan 37F-10): the eight share-lifecycle routes across three
+	// trust boundaries — owner-scoped CRUD (POST/GET /api/shares, PATCH .../snapshot, DELETE),
+	// the D-10 bearer-within-auth internal reads (GET .../data, .../asset/{assetID} —
+	// RequireAuth ONLY, no capability, no owner predicate), and the unauthenticated public
+	// token routes (GET /s/{token}/data, /s/{token}/asset/{id} — the ONLY unauthenticated
+	// handlers in this package). Colocated with their handlers (share_api.go/
+	// share_api_internal.go/share_api_public.go); the parent-mux mount (RequireAuth
+	// whole-origin + the isPublicShareRoute allowlist admitting /s/... unauthenticated) lives
+	// in cmd/aura/serve_webui_share.go (plan 37F-12) — none of that wiring is in this file.
+	// share.public is NOT a mount-level RequireCapability wrap (a single POST /api/shares
+	// entry answers both the internal and public tier via the JSON body, and Go's ServeMux
+	// cannot dispatch on body content) — it is an IN-HANDLER check inside
+	// handleShareCreate itself (share_api.go, 37F-13/WEBSHARE-04 SC4 row 8), over the same
+	// idAdmin.HasCapability seam RequireCapability would call.
+	s.registerShareRoutes(mux)
 	// WEBVOICE-01/02/03 web-voice routes (37C-03): POST /api/tts (audio/mpeg + soft
 	// char cap), POST /api/stt (transcribe-and-discard, D-08 — no asset/DB row), GET
 	// /api/voice/capabilities (SELF-scoped presence probe, never 503). Colocated with

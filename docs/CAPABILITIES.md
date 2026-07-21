@@ -55,7 +55,6 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 |---|---|---|---|
 | Conversation persistence | Multi-thread, Claude.ai-style; atomic per-turn append | ✅ | `conversations`, `db` |
 | Context-management ladder | L1 microcompact → L2 budget gate → L2.5 oldest-pair drop + rot events | ✅ | `conversations` (`context`) |
-| Industrial compaction | Semantic-unit manifest + claims + reconstruct; budgeted, metered, staged rollout | ✅ | `conversations` (`compaction_*`, `semantic_units`) |
 | Document ingestion | PDF/xlsx/DOCX → chunks → Neo4j sparse FTS + async vector embeddings | ✅ | `documents`, `knowledge`, `assets` |
 | Graph + vector store | Neo4j Community + APOC + GDS, **768-d** HNSW (cosine) + fulltext | ✅ | `knowledge`, `neostore` |
 | Rerank | Cross-encoder rerank over hybrid candidates; fail-soft identity degrade | ✅ | `rerank` |

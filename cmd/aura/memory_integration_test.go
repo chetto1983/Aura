@@ -5,10 +5,6 @@
 // agent-memory sidecar (resolved via the default-on managed `memory` recipe):
 //   - TestMemoryCLI: seed a uniquely-tagged entity via `add-entity`, then `search`
 //     for it and assert the tag round-trips (D-01 deliberate write, D-03 recall).
-//   - TestMemoryReasoningTrace: round-trip a reasoning trace (start/step/complete)
-//     and assert the step content is recallable via `trace observations` (D-06 /
-//     re-scoped UX-09 — Aura asserts the WIRING + recall path, not the package's
-//     trace semantics).
 //   - TestMemoryDedupNewEntityActionNone: a genuinely-new, semantically-distinctive
 //     entity must be STORED as its own distinct node and must NOT be auto-merged into
 //     a prior run's entity — re-validating the fork's provenance-safe-dedup fix
@@ -116,38 +112,6 @@ func TestMemoryCLI(t *testing.T) {
 	}
 }
 
-// TestMemoryReasoningTrace round-trips a reasoning trace and asserts the recorded
-// step content is recallable (D-06 reasoning tools / re-scoped UX-09). The live
-// contract (verified against the rebuilt sidecar): a trace is opened by
-// session_id+task (`trace start`), and steps + completion are keyed by the returned
-// trace_id. A step persists as a (:ReasoningStep) node whose `observation` carries the
-// step text — so the trace step is read back via the read-only `query` (graph_query)
-// verb, the same read-only Cypher path spike 033 used for fact read-back.
-// (`trace observations <session-id>` is a distinct, valid tool that reports
-// CONVERSATION-level observations — messages/reflections/topics — not trace steps.)
-func TestMemoryReasoningTrace(t *testing.T) {
-	memoryTierGate(t)
-	tag := uniqueMemoryTag("trace")
-	sessionID := "p15-it-trace-" + strings.ToLower(tag) + "-session"
-	stepObs := "decided to recall via MCP " + tag
-
-	// start -> capture trace id from the raw tool output.
-	startOut := runMemoryCLI(t, "trace", "start", sessionID, "recall the tagged memory "+tag)
-	traceID := extractTraceID(t, startOut)
-
-	runMemoryCLI(t, "trace", "step", traceID, stepObs)
-	runMemoryCLI(t, "trace", "complete", traceID, "recalled "+tag)
-
-	// The step content is recallable via the read-only graph_query path (the trace
-	// step node carries the observation text). This proves the reasoning-trace WIRING
-	// + recall, not the package's trace semantics (D-06 / re-scoped UX-09).
-	cypher := "MATCH (s:ReasoningStep) WHERE s.observation CONTAINS '" + tag + "' RETURN s.observation AS obs LIMIT 5"
-	recalled := runMemoryCLI(t, "query", cypher)
-	if !strings.Contains(recalled, tag) {
-		t.Fatalf("graph_query did not recall the trace step tag %q for trace %s.\nquery output:\n%s", tag, traceID, recalled)
-	}
-}
-
 // TestMemoryDedupNewEntityActionNone writes a genuinely-new, semantically-distinctive
 // entity and asserts it is stored as its OWN distinct node and is NOT auto-merged into
 // a prior run's entity — re-validating the fork's provenance-safe-dedup fix survived
@@ -229,34 +193,4 @@ func distinctiveEntityName() string {
 	// A short random hex suffix keeps each run unique WITHOUT a shared semantic anchor
 	// (no repeated "AURA-P15-IT-dedup" prefix that would embed near prior runs).
 	return fmt.Sprintf("%s %s %s %06x%06x", a, n, s, rand.Intn(1<<24), rand.Intn(1<<24))
-}
-
-// extractTraceID pulls a trace id out of the raw memory_start_trace JSON-ish output.
-// The package returns the id under a key like "trace_id" / "id"; we extract the first
-// UUID-or-token value following one of those keys.
-func extractTraceID(t *testing.T, raw string) string {
-	t.Helper()
-	for _, key := range []string{"trace_id", "traceId", "\"id\"", "trace id"} {
-		if id := valueAfterKey(raw, key); id != "" {
-			return id
-		}
-	}
-	t.Fatalf("could not extract a trace id from memory trace start output:\n%s", raw)
-	return ""
-}
-
-// valueAfterKey returns the first non-empty token following the first occurrence of
-// key, stripping JSON punctuation. Returns "" when key is absent.
-func valueAfterKey(raw, key string) string {
-	idx := strings.Index(raw, key)
-	if idx < 0 {
-		return ""
-	}
-	rest := raw[idx+len(key):]
-	rest = strings.TrimLeft(rest, " \t:=\"'")
-	end := strings.IndexAny(rest, "\"',}\n\r \t")
-	if end < 0 {
-		end = len(rest)
-	}
-	return strings.TrimSpace(rest[:end])
 }

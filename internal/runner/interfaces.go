@@ -19,18 +19,12 @@ import (
 	"context"
 
 	"github.com/chetto1983/aura/internal/askuser"
-	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
-
-// CompactionEffectiveReader reloads the durable activation fence before claim and finalize.
-type CompactionEffectiveReader interface {
-	Read(context.Context) (config.EffectiveCompactionSnapshot, error)
-}
 
 // ConversationStore is the narrow conversation surface the Runner consumes
 // (D-A2-02). *conversations.Store satisfies it implicitly. LoadManagedHistory
@@ -67,6 +61,14 @@ type ConversationStore interface {
 // ContextBlockProvider renders identity-aware context for messages[1]. The Runner
 // composes its output before the legacy AlwaysBlock skill renderer.
 type ContextBlockProvider func(ctx context.Context, owner identity.Identity) string
+
+// ArchivalRecaller recalls a durable long-term memory block for messages[1] (L4
+// archival retrieval, PRD amendment #21). userIdentifier is the owner's identity id
+// (the same value the memory-MCP write path scopes on — see mcptools bridge), query
+// is the current turn's focus text ("" => identity-only recall). It returns the block
+// to inject (empty => nothing recalled). nil on the Runner => the seam is a no-op, so
+// the default-off state is produced upstream by the composition root, never here.
+type ArchivalRecaller func(ctx context.Context, userIdentifier, query string) (string, error)
 
 // PauseStore is the narrow paused_states surface the Runner consumes (D-A2-02).
 // *askuser.Store satisfies it implicitly. The Runner writes Insert on a pause

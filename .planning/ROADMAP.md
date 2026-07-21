@@ -96,7 +96,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [X] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
   - Goal: agent-generated files (`send_file`) reach the web cockpit as an authenticated same-origin download (Garage-backed identity-scoped asset), never a raw container/host path.
   - Success: (1) `send_file` stores bytes in the identity's Garage store + creates a thread-scoped owned `assets.Asset`, and the `aura.artifact` event carries `asset_id`/`filename`/`size_bytes`/`mime_type`; (2) `GET /api/assets/{id}/download` streams from Garage with `Content-Disposition: attachment`, ownership-checked, `RequireAuth`-gated, non-owner → 404/403; (3) web chat consumes `aura.artifact` and renders a download button, no raw path in the browser; (4) Telegram delivery unregressed, CLI/no-identity degrades to today's host-path behavior.
-- [ ] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
+- [x] **Phase 38: MCP Governance Hardening** — `MCPH-01..09`, `QUAL-03`(trust-norm unify) (F-013/014/027/033/034/035/037/038/046)
   - Goal: one canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
   - Success: (1) mixed url+command / empty-remote-trust blocked and never call stdio open; (2) hung mount drops within deadline, oversized stdio frame aborts without large alloc, shutdown leaves no child processes; (3) CLI mutations append `mcp_audit` (or production-disallowed), empty trust body → 400; (4) dead HTTP MCP endpoint reports OK=false.
 - [ ] **Phase 39: Idempotency + Observability Pack** — `OBS-01..06` (F-008/017/020/023/024/049)
@@ -601,11 +601,11 @@ Plans:
 
 **Design forks (RESOLVED da 37F-CONTEXT + Amendment Log 2026-07-15):** (a) **scope** — RISOLTO: **tutti e tre i tier** shippano fail-closed (export file sempre; link interno-identità revocabile = default "Condividi"; link pubblico opt-in a token con scadenza, mai default — D-01); (b) **granularità** — RISOLTO a **intera conversazione** (single-artifact e single-message deferred — D-05); (c) **storage link** — RISOLTO alla nuova tabella `aura.shared_links` + ledger `aura.share_audit`, **migration 0040** (NON 0036: Phase 42 ha shippato 0036–0039 il 2026-07-14 — D-11 amended), con blob snapshot/artifact token-scoped sotto un prefisso `share/` lessicalmente disgiunto da `identity/` (D-12). **Nota sicurezza:** il link pubblico è un buco **deliberato e limitato** nell'isolamento MUSR — le sette mitigazioni fail-closed sono registrate in **ADR 0039**.
 
-**Plans:** 10/20 plans executed
+**Plans:** 20/20 plans complete
 
 Plans:
 
-- [ ] 37F-20-PLAN.md
+- [x] 37F-20-PLAN.md
 
 **Wave 1** *(PRD-first gate — blocks all code)*
 
@@ -628,30 +628,30 @@ Plans:
 **Wave 4** *(blocked on Wave 3)*
 
 - [x] 37F-08-PLAN.md — Share service (Create/Update/Revoke/Resolve) + **agent-artifacts-only** bundle filter (D-09 amended — a user upload never enters a share)
-- [ ] 37F-09-PLAN.md — **WEBSHARE-01** export endpoint `GET /api/conversations/{id}/export` (zero `serve_webui.go` delta — F-1)
-- [ ] 37F-15-PLAN.md — Share modal (tier chosen before mint, public never preselected, stale-snapshot detection) + revoke confirm + API client
+- [x] 37F-09-PLAN.md — **WEBSHARE-01** export endpoint `GET /api/conversations/{id}/export` (zero `serve_webui.go` delta — F-1)
+- [x] 37F-15-PLAN.md — Share modal (tier chosen before mint, public never preselected, stale-snapshot detection) + revoke confirm + API client
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 37F-10-PLAN.md — Share HTTP surface + the **in-handler org kill-switch** that survives the loopback capability bypass (R-08)
-- [ ] 37F-11-PLAN.md — Lifecycle: expiry sweep (GC, not the gate) + revoke-on-conversation-delete cascade (D-15/R-10 — the FK drops the row, not the bytes)
-- [ ] 37F-17-PLAN.md — "Condiviso" section (37B-deferred here) + Settings shared-links management + revoke-all
+- [x] 37F-10-PLAN.md — Share HTTP surface + the **in-handler org kill-switch** that survives the loopback capability bypass (R-08)
+- [x] 37F-11-PLAN.md — Lifecycle: expiry sweep (GC, not the gate) + revoke-on-conversation-delete cascade (D-15/R-10 — the FK drops the row, not the bytes)
+- [x] 37F-17-PLAN.md — "Condiviso" section (37B-deferred here) + Settings shared-links management + revoke-all
 
 **Wave 6** *(blocked on 37F-10)*
 
-- [ ] 37F-12-PLAN.md — Parent-mux mount + `share.public` capability + `/s/` public allowlist (`/s/` stays **out** of `fallbackExcludedPrefixes`)
+- [x] 37F-12-PLAN.md — Parent-mux mount + `share.public` capability + `/s/` public allowlist (`/s/` stays **out** of `fallbackExcludedPrefixes`)
 
 **Wave 7** *(blocked on 37F-11 + 37F-12)*
 
-- [ ] 37F-13-PLAN.md — **WEBSHARE-04** SC4 cross-identity deny (10 rows, `internal/agui`, single `db_integration` tag) + phase-wide tag audit + per-package ≥85%
+- [x] 37F-13-PLAN.md — **WEBSHARE-04** SC4 cross-identity deny (10 rows, `internal/agui`, single `db_integration` tag) + phase-wide tag audit + per-package ≥85%
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [ ] 37F-18-PLAN.md — Full local matrix + mutation + dist rebuild + quality-snapshot re-attestation (PRD amendment #20)
+- [x] 37F-18-PLAN.md — Full local matrix + mutation + dist rebuild + quality-snapshot re-attestation (PRD amendment #20)
 
 **Wave 9** *(terminal, autonomous:false)*
 
-- [ ] 37F-19-PLAN.md — Live public-page verification (blocking checkpoint) + push + CI green (both coverage gates)
+- [x] 37F-19-PLAN.md — Live public-page verification (blocking checkpoint) + push + CI green (both coverage gates)
 
 **PRD-first:** richiede PRD-amendment (WEBSHARE-01..04 + i tre tier + snapshot model + `shared_links`/`share_audit` + gli amendment D-08 e D-13) + **ADR 0039** (condivisione vs. isolamento identità) — entrambi **Wave 1, gating del codice**.
 
@@ -667,6 +667,24 @@ Plans:
 2. A hung mount drops within deadline; an oversized stdio frame aborts without large alloc; shutdown leaves no child processes.
 3. CLI mutations append `mcp_audit` (or are production-disallowed); an empty trust body → 400.
 4. A dead HTTP MCP endpoint reports OK=false.
+
+**Plans:** 7/7 plans executed
+
+**Wave 1** *(parallel — no dependencies, disjoint files)*
+
+- [x] 38-01-PLAN.md — Canonical transport classifier `Classify` + F-013/F-027 fix; collapse the `internal/mcp` core call sites (MCPH-01, MCPH-02) [tdd]
+- [x] 38-02-PLAN.md — Bounded stdio frame cap (bufio.Scanner) + process-tree kill via a shared `internal/procgroup` (MCPH-05, MCPH-06)
+- [x] 38-03-PLAN.md — Legacy-env production-gating: `gateMCPLegacyEnv` fail-closed at boot (MCPH-08)
+
+**Wave 2** *(depends on Wave 1)*
+
+- [x] 38-04-PLAN.md — Classifier propagation (manager) + D-04 remote-trust elevation guard (MCPH-01, MCPH-02) [depends_on 38-01]
+- [x] 38-05-PLAN.md — Bounded two-context mount timeout + concurrent aggregate-deadline shutdown (MCPH-01, MCPH-04, MCPH-06) [depends_on 38-01, 38-02]
+- [x] 38-06-PLAN.md — Live HTTP MCP probe across `aura doctor` + `aura mcp status` (real F-046 fix) (MCPH-01, MCPH-09) [depends_on 38-01]
+
+**Wave 3** *(depends on Wave 2)*
+
+- [x] 38-07-PLAN.md — Audited CLI MCP writes (`cli:<os-user>` actor, `mcp_audit`) + trust-endpoint 400 guard (MCPH-03, MCPH-07) [depends_on 38-05]
 
 #### Phase 39: Idempotency + Observability Pack
 

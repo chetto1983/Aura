@@ -13,10 +13,26 @@ import (
 // runner_delete.go is the single conversation-delete lifecycle entry point (MUSR-05 / D-22).
 // ALL conversation deletion — AG-UI DELETE, Telegram /clear, the CLI — routes through
 // DeleteConversationLifecycle so exactly one ordered teardown owns it: cancel active work →
-// expire pending pauses → evict session tools → terminate background jobs → THEN delete
-// persistence. No surface performs a raw store delete; that would skip the teardown and leak
-// live session state (tracked tool cwd, todo lists, a running shell) into a long-lived
-// `serve` daemon after its conversation is gone.
+// expire pending pauses → evict session tools → terminate background jobs → revoke shares
+// (D-15) → THEN delete persistence. No surface performs a raw store delete; that would skip
+// the teardown and leak live session state (tracked tool cwd, todo lists, a running shell)
+// into a long-lived `serve` daemon after its conversation is gone.
+
+// ShareRevoker is the consumer-declared seam step 4.5 drives (the IdentityPurger pattern,
+// internal/cron/handlers/identity_purge.go:20-27): the live *share.Service satisfies it via
+// RevokeConversationShares, so this package does NOT import internal/share (the reverse-import
+// rule). RevokeConversationShares revokes every still-live share for conversationID, owner-
+// scoped to identityID, dropping each one's Garage bytes before it returns.
+type ShareRevoker interface {
+	RevokeConversationShares(ctx context.Context, conversationID, identityID string) error
+}
+
+// SetShareRevoker wires step 4.5's ShareRevoker seam after construction — required because
+// chat.run (New) is assembled in the shared boot (chat_boot.go, BEFORE objectStore/chat.assets
+// exist), while the live *share.Service needs both (share_service_wiring.go). Mirrors the
+// agui.Server SetAssetService/SetShareService late-bound-setter pattern (D-A2-02 narrow seam);
+// unset (nil) leaves step 4.5 the documented silent skip, exactly Deps.ShareRevoker's contract.
+func (r *Runner) SetShareRevoker(sr ShareRevoker) { r.shareRevoker = sr }
 
 // DeleteConversationLifecycle tears down and deletes one conversation, owner-scoped (D-06).
 // It returns rows-affected (0 = the caller does not own the id — the surface maps that to 403
@@ -34,6 +50,7 @@ import (
 //  2. expire pending pauses — askuser auto-resolve (best-effort; the cascade delete backstops it)
 //  3. evict session tools   — SessionEvictor.Evict + the gateway approval ledger
 //  4. terminate bg jobs     — the plan-03 owner-scoped kill of this session's live shells
+//     4.5. revoke shares       — drop each live share's Garage bytes before the row cascades (D-15)
 //  5. delete persistence    — the owner-scoped DeleteConversationForIdentity (+ sidecar purge)
 func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error) {
 	owner := resolveOwnerIdentity(identityID)
@@ -68,6 +85,14 @@ func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, co
 	// 4. Terminate the (identity, session)'s live background jobs (plan-03 owner-scoped kill),
 	// so a detached shell started in this conversation does not outlive its deletion.
 	r.terminateSessionJobs(owner, convID)
+
+	// 4.5. Revoke the conversation's shares, dropping their Garage bytes (D-15): the
+	// shared_links ROW cascades with the conversation at step 5, but the BYTES do not (R-10).
+	if r.shareRevoker != nil {
+		if err := r.shareRevoker.RevokeConversationShares(ctx, convID, owner); err != nil {
+			slog.Warn("delete lifecycle: revoke shares failed (Garage bytes may be orphaned)", "conv", convID, "err", err)
+		}
+	}
 
 	// 5. Delete persistence, owner-scoped (rows-affected drives the surface's 403/404/204).
 	return r.Conv.DeleteForIdentity(ctx, convID, owner)
