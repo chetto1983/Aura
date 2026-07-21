@@ -261,8 +261,9 @@ type Config struct {
 	// read into usersandbox.specFor / buildEgressSidecar. Defined + cataloged + parse-tested
 	// here (37-01); NOT yet wired into any router/spec. Sub-struct composition keeps config.go
 	// ≤600 LOC — see config_sandbox.go.
-	Sandbox SandboxConfig
-	Share   ShareConfig
+	Sandbox   SandboxConfig
+	Share     ShareConfig
+	Retention RetentionConfig
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -392,8 +393,8 @@ func loadBase() *Config {
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
 
-		// Phase 33 runtime deployment profile (D-01/D-03). Total parse: unset/unknown -> dev.
-		Profile: ParseProfile(os.Getenv("AURA_PROFILE")),
+		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
+		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),
 
 		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
@@ -574,8 +575,7 @@ func absRunDir(dir string) (string, error) {
 	return abs, nil
 }
 
-// defaultRunDir returns a sensible per-user run directory for sidecar tool
-// outputs. Falls back to a tmp-based path if user cache is unavailable.
+// defaultRunDir returns a per-user run directory, falling back to a temporary path.
 func defaultRunDir() string {
 	if cache, err := os.UserCacheDir(); err == nil {
 		return filepath.Join(cache, "aura")

@@ -486,6 +486,46 @@ type AuraProvisioningSaga struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Crash-resumable mark-remove-finalize items claimed by short renewable leases.
+type AuraRetentionOperationItems struct {
+	ID              pgtype.UUID        `json:"id"`
+	OperationID     pgtype.UUID        `json:"operation_id"`
+	ItemKey         string             `json:"item_key"`
+	IdentityID      string             `json:"identity_id"`
+	ConversationID  pgtype.Text        `json:"conversation_id"`
+	ArtifactID      pgtype.Text        `json:"artifact_id"`
+	Class           string             `json:"class"`
+	Action          string             `json:"action"`
+	ExpectedVersion int64              `json:"expected_version"`
+	ExpectedBytes   int64              `json:"expected_bytes"`
+	Status          string             `json:"status"`
+	ArtifactResult  string             `json:"artifact_result"`
+	RemovedBytes    int64              `json:"removed_bytes"`
+	FailureClass    pgtype.Text        `json:"failure_class"`
+	ClaimOwner      pgtype.Text        `json:"claim_owner"`
+	LeaseExpiresAt  pgtype.Timestamptz `json:"lease_expires_at"`
+	AttemptCount    int32              `json:"attempt_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+}
+
+// Immutable retention snapshots and bounded aggregate audit results.
+type AuraRetentionOperations struct {
+	ID             pgtype.UUID        `json:"id"`
+	Token          string             `json:"token"`
+	PolicyVersion  string             `json:"policy_version"`
+	Status         string             `json:"status"`
+	CandidateCount int32              `json:"candidate_count"`
+	PlannedBytes   int64              `json:"planned_bytes"`
+	CompletedCount int32              `json:"completed_count"`
+	CompletedBytes int64              `json:"completed_bytes"`
+	FailureCount   int32              `json:"failure_count"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+}
+
 // Scheduler task definitions (Slice 6 / Phase 10, amendment #46). Grammar triad at|every|cron with per-task IANA tz; next_run_at is UTC, recomputed in-zone (D-06/D-07).
 type AuraSchedulerTasks struct {
 	ID                   pgtype.UUID        `json:"id"`
