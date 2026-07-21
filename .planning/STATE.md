@@ -5,15 +5,15 @@ milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 39
 current_phase_name: idempotency-observability-pack
 status: executing
-stopped_at: Completed 39-04-PLAN.md
-last_updated: "2026-07-21T13:19:02.066Z"
+stopped_at: Completed 39-05-PLAN.md
+last_updated: "2026-07-21T18:51:15.579Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 39 execution started
 progress:
   total_phases: 19
   completed_phases: 16
   total_plans: 137
-  completed_plans: 134
+  completed_plans: 135
   percent: 84
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Phase: 39 (idempotency-observability-pack) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
 Status: Ready to execute
@@ -373,6 +373,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 39 P03 | 29min | 3 tasks | 12 files |
 | Phase 39 P02 | 57 min | 3 tasks | 41 files |
 | Phase 39 P04 | 1h 14m | 3 tasks | 45 files |
+| Phase 39 P05 | 317 min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -701,6 +702,9 @@ Recent decisions affecting current work:
 - [Phase 39]: Metric attributes are restricted to operation, tool_class, transport, outcome, error_class, and state; arbitrary inputs normalize to finite enums or other. — A closed vocabulary prevents sensitive-data leakage and cardinality exhaustion.
 - [Phase 39]: Runtime telemetry is placed at semantic owners, with SQL-blind pgx QueryTracer coverage for database calls and scoped exactly-once boundary handles elsewhere. — Owner-level seams cover every path without caller duplication or raw SQL attributes.
 - [Phase 39]: Legacy expvar metrics remain projection-only through Phase 40; OTel owns canonical Prometheus collection. — Existing debug consumers remain compatible without duplicate Prometheus families.
+- [Phase 39]: Prometheus and Tempo share Aura's network namespace so private loopback telemetry remains unexposed. — A normally networked sidecar cannot reach the loopback-only Phase 39 metrics and OTLP endpoints.
+- [Phase 39]: Observability images are literal official tag-plus-digest references and only Grafana is loopback-published. — Reproducible tooling and private ingestion are part of the deployable pack contract.
+- [Phase 39]: One verifier owns catalog queries, alert links, provisioning, Compose rendering, negative fixtures, and isolated runtime correlation. — Local and CI validation must fail on drift through the same entry point.
 
 ### Pending Todos
 
@@ -747,8 +751,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-21T13:19:02.041Z
-Stopped at: Completed 39-04-PLAN.md
+Last session: 2026-07-21T18:51:15.555Z
+Stopped at: Completed 39-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
