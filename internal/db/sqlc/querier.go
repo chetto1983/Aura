@@ -17,6 +17,10 @@ type Querier interface {
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
 	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
+	// First apply only: commit the freshly rebuilt plan authorization before any
+	// item can be claimed. A crash after this transition resumes persisted items
+	// without re-authorizing against a possibly changed global candidate set.
+	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the

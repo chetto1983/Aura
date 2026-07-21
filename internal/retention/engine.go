@@ -18,6 +18,9 @@ const (
 	ArtifactAbsent = "absent"
 	// ArtifactFailed means the adapter returned a classified retryable failure.
 	ArtifactFailed = "failed"
+	// defaultPlanValidity bounds the approval window for a dry-run token. Crash
+	// resume is not subject to this window after durable authorization.
+	defaultPlanValidity = 15 * time.Minute
 )
 
 // ErrVersionConflict means the backing artifact changed after revalidation and
@@ -88,6 +91,7 @@ type Engine struct {
 	Audit             AuditSink
 	WorkerID          string
 	ActivityFreshness time.Duration
+	PlanValidity      time.Duration
 	Now               func() time.Time
 }
 
@@ -135,6 +139,10 @@ func (e *Engine) Apply(ctx context.Context, token string) (report ApplyReport, e
 	if err != nil {
 		return report, err
 	}
+	operation, err = e.authorizeFirstApply(ctx, token, operation, now)
+	if err != nil {
+		return report, err
+	}
 	report = ApplyReport{PolicyVersion: operation.PolicyVersion, FailureClasses: map[string]int{}}
 	deadline := now.Add(e.Policy.MaxRunDuration)
 	for {
@@ -175,6 +183,51 @@ func (e *Engine) Apply(ctx context.Context, token string) (report ApplyReport, e
 		FailureClasses: report.FailureClasses,
 	})
 	return report, nil
+}
+
+// authorizeFirstApply re-evaluates the live policy/candidate set only while the
+// durable operation is still planned. The successful status transition is the
+// crash-resume boundary: subsequent invocations use persisted items unchanged.
+func (e *Engine) authorizeFirstApply(ctx context.Context, token string, operation Operation, now time.Time) (Operation, error) {
+	if operation.Status != StatusPlanned {
+		return operation, nil
+	}
+	validity := e.PlanValidity
+	if validity <= 0 {
+		validity = defaultPlanValidity
+	}
+	if operation.PolicyVersion != e.Policy.Version || operation.CreatedAt.IsZero() || !now.Before(operation.CreatedAt.Add(validity)) {
+		return Operation{}, ErrTokenMismatch
+	}
+	candidates, err := e.Source.Candidates(ctx, e.Policy, now)
+	if err != nil {
+		return Operation{}, fmt.Errorf("retention candidates: %w", err)
+	}
+	current, err := BuildPlan(e.Policy.Version, candidates, e.Policy.BatchSize)
+	if err != nil {
+		return Operation{}, err
+	}
+	if err := current.RequireToken(token); err != nil {
+		return Operation{}, err
+	}
+	authorized, err := e.Store.Authorize(ctx, operation.ID, token, e.Policy.Version, now)
+	if err != nil {
+		return Operation{}, err
+	}
+	if authorized {
+		operation.Status = StatusDeleting
+		return operation, nil
+	}
+	// A concurrent worker may have authorized the same immutable snapshot. Reload
+	// and resume only after observing that durable transition.
+	operation, err = e.Store.GetByToken(ctx, token)
+	if err != nil {
+		return Operation{}, err
+	}
+	if operation.Status == StatusPlanned {
+		return Operation{}, ErrTokenMismatch
+	}
+	return operation, nil
 }
 
 func (e *Engine) processItem(ctx context.Context, item Item, report *ApplyReport) (bool, error) {

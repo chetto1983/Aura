@@ -44,6 +44,9 @@ func TestBuildPlanDeterministicTokenAndCap(t *testing.T) {
 	if len(capped.Candidates) != 2 {
 		t.Fatalf("cap+1 candidates = %d, want 2", len(capped.Candidates))
 	}
+	if capped.Token == planA.Token {
+		t.Fatal("candidate outside execution cap did not invalidate authorization token")
+	}
 }
 
 func TestBuildPlanTokenDriftAndEmpty(t *testing.T) {

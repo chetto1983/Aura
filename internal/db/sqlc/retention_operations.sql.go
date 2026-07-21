@@ -11,11 +11,50 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const authorizeRetentionOperation = `-- name: AuthorizeRetentionOperation :execrows
+UPDATE aura.retention_operations
+SET status = 'deleting',
+    updated_at = $1
+WHERE id = $2
+  AND token = $3
+  AND policy_version = $4
+  AND status = 'planned'
+`
+
+type AuthorizeRetentionOperationParams struct {
+	Now           pgtype.Timestamptz `json:"now"`
+	ID            pgtype.UUID        `json:"id"`
+	Token         string             `json:"token"`
+	PolicyVersion string             `json:"policy_version"`
+}
+
+// First apply only: commit the freshly rebuilt plan authorization before any
+// item can be claimed. A crash after this transition resumes persisted items
+// without re-authorizing against a possibly changed global candidate set.
+func (q *Queries) AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, authorizeRetentionOperation,
+		arg.Now,
+		arg.ID,
+		arg.Token,
+		arg.PolicyVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const claimRetentionItems = `-- name: ClaimRetentionItems :many
 WITH claimable AS (
     SELECT candidate.id
     FROM aura.retention_operation_items AS candidate
     WHERE candidate.operation_id = $4
+      AND EXISTS (
+        SELECT 1
+        FROM aura.retention_operations AS operation
+        WHERE operation.id = candidate.operation_id
+          AND operation.status IN ('deleting', 'retryable')
+      )
       AND (
         candidate.status IN ('planned', 'retryable')
         OR (candidate.status = 'deleting' AND candidate.lease_expires_at <= $3)

@@ -11,6 +11,18 @@ RETURNING *;
 -- name: GetRetentionOperationByToken :one
 SELECT * FROM aura.retention_operations WHERE token = sqlc.arg(token);
 
+-- name: AuthorizeRetentionOperation :execrows
+-- First apply only: commit the freshly rebuilt plan authorization before any
+-- item can be claimed. A crash after this transition resumes persisted items
+-- without re-authorizing against a possibly changed global candidate set.
+UPDATE aura.retention_operations
+SET status = 'deleting',
+    updated_at = sqlc.arg(now)
+WHERE id = sqlc.arg(id)
+  AND token = sqlc.arg(token)
+  AND policy_version = sqlc.arg(policy_version)
+  AND status = 'planned';
+
 -- name: CreateRetentionItem :one
 INSERT INTO aura.retention_operation_items (
     id, operation_id, item_key, identity_id, conversation_id, artifact_id,
@@ -30,6 +42,12 @@ WITH claimable AS (
     SELECT candidate.id
     FROM aura.retention_operation_items AS candidate
     WHERE candidate.operation_id = sqlc.arg(operation_id)
+      AND EXISTS (
+        SELECT 1
+        FROM aura.retention_operations AS operation
+        WHERE operation.id = candidate.operation_id
+          AND operation.status IN ('deleting', 'retryable')
+      )
       AND (
         candidate.status IN ('planned', 'retryable')
         OR (candidate.status = 'deleting' AND candidate.lease_expires_at <= sqlc.arg(now))

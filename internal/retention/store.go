@@ -40,6 +40,7 @@ type Operation struct {
 	CompletedCount int
 	CompletedBytes int64
 	FailureCount   int
+	CreatedAt      time.Time
 }
 
 // Item is one claimed mark-remove-finalize unit.
@@ -60,6 +61,7 @@ type Item struct {
 type OperationStore interface {
 	SavePlan(context.Context, Plan, time.Time) (Operation, error)
 	GetByToken(context.Context, string) (Operation, error)
+	Authorize(context.Context, string, string, string, time.Time) (bool, error)
 	Claim(context.Context, string, string, int, time.Time, time.Duration) ([]Item, error)
 	RecordArtifact(context.Context, string, string, string, int64, string, time.Time) error
 	FinalizeItem(context.Context, string, string, time.Time) error
@@ -128,6 +130,26 @@ func (s *Store) GetByToken(ctx context.Context, token string) (Operation, error)
 		return Operation{}, fmt.Errorf("get retention operation: %w", err)
 	}
 	return operationFromRow(row), nil
+}
+
+// Authorize atomically transitions a still-planned operation into deleting after
+// Engine has rebuilt and matched the current policy/candidate token. False means
+// another process won the transition or the immutable authorization no longer matches.
+func (s *Store) Authorize(ctx context.Context, operationID, token, policyVersion string, now time.Time) (bool, error) {
+	id, err := retentionParseUUID(operationID)
+	if err != nil {
+		return false, err
+	}
+	if token == "" || policyVersion == "" {
+		return false, ErrTokenMismatch
+	}
+	rows, err := s.q.AuthorizeRetentionOperation(ctx, sqlc.AuthorizeRetentionOperationParams{
+		Now: retentionTime(now), ID: id, Token: token, PolicyVersion: policyVersion,
+	})
+	if err != nil {
+		return false, fmt.Errorf("authorize retention operation: %w", err)
+	}
+	return rows == 1, nil
 }
 
 // Claim marks at most batchSize disjoint items deleting under a bounded lease.
@@ -228,6 +250,7 @@ func operationFromRow(row sqlc.AuraRetentionOperations) Operation {
 		ID: retentionUUIDString(row.ID), Token: row.Token, PolicyVersion: row.PolicyVersion,
 		Status: Status(row.Status), CandidateCount: int(row.CandidateCount), PlannedBytes: row.PlannedBytes,
 		CompletedCount: int(row.CompletedCount), CompletedBytes: row.CompletedBytes, FailureCount: int(row.FailureCount),
+		CreatedAt: row.CreatedAt.Time,
 	}
 }
 

@@ -66,16 +66,11 @@ func BuildPlan(policyVersion string, candidates []Candidate, cap int) (Plan, err
 		}
 	}
 	slices.SortFunc(sorted, compareCandidate)
-	if len(sorted) > cap {
-		sorted = sorted[:cap]
-	}
 	tokenShape := struct {
 		PolicyVersion string           `json:"policy_version"`
 		Candidates    []tokenCandidate `json:"candidates"`
 	}{PolicyVersion: policyVersion, Candidates: make([]tokenCandidate, 0, len(sorted))}
-	var total int64
 	for _, candidate := range sorted {
-		total += candidate.Bytes
 		tokenShape.Candidates = append(tokenShape.Candidates, tokenCandidate{
 			IdentityID: candidate.IdentityID, ConversationID: candidate.ConversationID,
 			ArtifactID: candidate.ArtifactID, Version: candidate.Version, Action: candidate.Action,
@@ -85,8 +80,16 @@ func BuildPlan(policyVersion string, candidates []Candidate, cap int) (Plan, err
 	if err != nil {
 		return Plan{}, fmt.Errorf("marshal retention plan: %w", err)
 	}
+	planned := sorted
+	if len(planned) > cap {
+		planned = planned[:cap]
+	}
+	var total int64
+	for _, candidate := range planned {
+		total += candidate.Bytes
+	}
 	sum := sha256.Sum256(body)
-	return Plan{PolicyVersion: policyVersion, Candidates: sorted, Token: hex.EncodeToString(sum[:]), TotalBytes: total}, nil
+	return Plan{PolicyVersion: policyVersion, Candidates: planned, Token: hex.EncodeToString(sum[:]), TotalBytes: total}, nil
 }
 
 // RequireToken authorizes apply only for this exact snapshot.

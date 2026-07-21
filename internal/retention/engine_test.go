@@ -173,16 +173,85 @@ func TestEngineRejectsIncompleteConfigurationAndSourceFailure(t *testing.T) {
 	}
 }
 
-func TestEngineApplyDoesNotRescanLiveCandidates(t *testing.T) {
+func TestEngineFirstApplyFailsClosedWhenCandidateScanFails(t *testing.T) {
 	fixture := newEngineFixture(t)
 	plan, err := fixture.engine.Plan(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	fixture.engine.Source = failingSource{}
-	report, err := fixture.engine.Apply(context.Background(), plan.Token)
-	if err != nil || report.Completed != 1 {
-		t.Fatalf("Apply() = %+v, %v", report, err)
+	if _, err := fixture.engine.Apply(context.Background(), plan.Token); err == nil {
+		t.Fatal("first apply succeeded without current candidate authorization")
+	}
+	if fixture.store.claims != 0 || len(*fixture.effects) != 0 || fixture.store.op.Status != StatusPlanned {
+		t.Fatalf("failed authorization claims/effects/status = %d/%v/%s",
+			fixture.store.claims, *fixture.effects, fixture.store.op.Status)
+	}
+}
+
+func TestEngineRejectsFirstApplyPlanDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*engineFixture, Candidate)
+	}{
+		{name: "policy version", mutate: func(f *engineFixture, _ Candidate) { f.engine.Policy.Version = "retention-v2" }},
+		{name: "ttl removes member", mutate: func(f *engineFixture, original Candidate) {
+			f.engine.Policy.TTL[ClassTemporary] = 48 * time.Hour
+			f.engine.Source = sourceFunc(func(_ context.Context, policy Policy, _ time.Time) ([]Candidate, error) {
+				if policy.TTL[ClassTemporary] >= 48*time.Hour {
+					return nil, nil
+				}
+				return []Candidate{original}, nil
+			})
+		}},
+		{name: "member removed", mutate: func(f *engineFixture, _ Candidate) { f.engine.Source = staticSource(nil) }},
+		{name: "member added", mutate: func(f *engineFixture, original Candidate) {
+			added := original
+			added.ArtifactID = "artifact-two"
+			f.engine.Source = staticSource{original, added}
+		}},
+		{name: "action changed", mutate: func(f *engineFixture, original Candidate) {
+			original.Action = ActionDeleteMetadata
+			f.engine.Source = staticSource{original}
+		}},
+		{name: "version changed", mutate: func(f *engineFixture, original Candidate) {
+			original.Version++
+			f.engine.Source = staticSource{original}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newEngineFixture(t)
+			original := fixture.engine.Source.(staticSource)[0]
+			plan, err := fixture.engine.Plan(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(fixture, original)
+			if _, err := fixture.engine.Apply(context.Background(), plan.Token); !errors.Is(err, ErrTokenMismatch) {
+				t.Fatalf("drift Apply error = %v, want token mismatch", err)
+			}
+			if fixture.store.claims != 0 || fixture.store.authorizations != 0 || len(*fixture.effects) != 0 || fixture.store.op.Status != StatusPlanned {
+				t.Fatalf("drift mutated state claims/auth/effects/status=%d/%d/%v/%s",
+					fixture.store.claims, fixture.store.authorizations, *fixture.effects, fixture.store.op.Status)
+			}
+		})
+	}
+}
+
+func TestEngineRejectsExpiredPlanBeforeFirstClaim(t *testing.T) {
+	fixture := newEngineFixture(t)
+	plan, err := fixture.engine.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := fixture.store.op.CreatedAt
+	fixture.engine.Now = func() time.Time { return created.Add(defaultPlanValidity) }
+	if _, err := fixture.engine.Apply(context.Background(), plan.Token); !errors.Is(err, ErrTokenMismatch) {
+		t.Fatalf("expired Apply error = %v, want token mismatch", err)
+	}
+	if fixture.store.claims != 0 || fixture.store.authorizations != 0 || len(*fixture.effects) != 0 {
+		t.Fatalf("expired plan claims/auth/effects=%d/%d/%v", fixture.store.claims, fixture.store.authorizations, *fixture.effects)
 	}
 }
 
@@ -240,6 +309,12 @@ func (s staticSource) Candidates(context.Context, Policy, time.Time) ([]Candidat
 	return slices.Clone(s), nil
 }
 
+type sourceFunc func(context.Context, Policy, time.Time) ([]Candidate, error)
+
+func (f sourceFunc) Candidates(ctx context.Context, policy Policy, now time.Time) ([]Candidate, error) {
+	return f(ctx, policy, now)
+}
+
 type fakeRevalidator struct {
 	version  int64
 	evidence ActivityEvidence
@@ -283,25 +358,37 @@ func (f *fakeFinalizer) Finalize(context.Context, Candidate) error {
 }
 
 type memoryOperationStore struct {
-	mu     sync.Mutex
-	plan   Plan
-	op     Operation
-	items  []Item
-	claims int
+	mu             sync.Mutex
+	plan           Plan
+	op             Operation
+	items          []Item
+	claims         int
+	authorizations int
 }
 
-func (m *memoryOperationStore) SavePlan(_ context.Context, plan Plan, _ time.Time) (Operation, error) {
+func (m *memoryOperationStore) SavePlan(_ context.Context, plan Plan, now time.Time) (Operation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.op.ID != "" {
 		return m.op, nil
 	}
 	m.plan = plan
-	m.op = Operation{ID: "operation", Token: plan.Token, PolicyVersion: plan.PolicyVersion, Status: StatusPlanned, CandidateCount: len(plan.Candidates), PlannedBytes: plan.TotalBytes}
+	m.op = Operation{ID: "operation", Token: plan.Token, PolicyVersion: plan.PolicyVersion, Status: StatusPlanned, CandidateCount: len(plan.Candidates), PlannedBytes: plan.TotalBytes, CreatedAt: now}
 	for i, candidate := range plan.Candidates {
 		m.items = append(m.items, Item{ID: string(rune('a' + i)), OperationID: m.op.ID, Candidate: candidate, Status: StatusPlanned, ArtifactResult: ArtifactPending})
 	}
 	return m.op, nil
+}
+
+func (m *memoryOperationStore) Authorize(_ context.Context, operationID, token, policyVersion string, _ time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.op.ID != operationID || m.op.Token != token || m.op.PolicyVersion != policyVersion || m.op.Status != StatusPlanned {
+		return false, nil
+	}
+	m.authorizations++
+	m.op.Status = StatusDeleting
+	return true, nil
 }
 
 func (m *memoryOperationStore) GetByToken(_ context.Context, token string) (Operation, error) {
@@ -317,6 +404,9 @@ func (m *memoryOperationStore) Claim(_ context.Context, operationID, owner strin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.claims++
+	if m.op.ID != operationID || (m.op.Status != StatusDeleting && m.op.Status != StatusRetryable) {
+		return nil, nil
+	}
 	var out []Item
 	for i := range m.items {
 		item := &m.items[i]

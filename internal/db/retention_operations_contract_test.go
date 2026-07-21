@@ -33,7 +33,9 @@ func TestRetentionOperationSQLContract(t *testing.T) {
 	for _, fragment := range []string{
 		"-- name: CreateRetentionOperation",
 		"-- name: CreateRetentionItem",
+		"-- name: AuthorizeRetentionOperation",
 		"-- name: ClaimRetentionItems",
+		"operation.status IN ('deleting', 'retryable')",
 		"FOR UPDATE SKIP LOCKED",
 		"ORDER BY",
 		"LIMIT",

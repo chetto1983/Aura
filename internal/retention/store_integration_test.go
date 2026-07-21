@@ -62,6 +62,13 @@ func TestRetentionStoreClaimsAreBoundedAndDisjoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if items, claimErr := store.Claim(ctx, operation.ID, "unauthorized", 1, now, time.Minute); claimErr != nil || len(items) != 0 {
+		t.Fatalf("claim before first authorization = %+v, %v", items, claimErr)
+	}
+	authorized, err := store.Authorize(ctx, operation.ID, plan.Token, plan.PolicyVersion, now)
+	if err != nil || !authorized {
+		t.Fatalf("Authorize() = %v, %v", authorized, err)
+	}
 
 	var wg sync.WaitGroup
 	claimed := make(chan []Item, 2)
@@ -128,6 +135,9 @@ func TestRetentionStorePersistsTwoPhaseLifecycle(t *testing.T) {
 	loaded, err := store.GetByToken(ctx, plan.Token)
 	if err != nil || loaded.ID != operation.ID || loaded.CandidateCount != 3 {
 		t.Fatalf("GetByToken() = %+v, %v", loaded, err)
+	}
+	if authorized, err := store.Authorize(ctx, operation.ID, plan.Token, plan.PolicyVersion, now); err != nil || !authorized {
+		t.Fatalf("Authorize() = %v, %v", authorized, err)
 	}
 	items, err := store.Claim(ctx, operation.ID, "worker-a", 3, now, time.Minute)
 	if err != nil || len(items) != 3 {
