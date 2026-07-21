@@ -699,13 +699,13 @@ Plans:
 3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
 4. Learning stores enforce a bounded retention cap.
 
-**Plans:** 7 plans in 4 waves
+**Plans:** 1/7 plans executed
 
 Plans:
 
 **Wave 1** *(independent foundations)*
 
-- [ ] 39-01-PLAN.md — Durable identity-scoped public-operation registry, live-next migration, sqlc store, replay/conflict/in-progress/indeterminate semantics
+- [x] 39-01-PLAN.md — Durable identity-scoped public-operation registry, live-next migration, sqlc store, replay/conflict/in-progress/indeterminate semantics
 - [ ] 39-03-PLAN.md — Fatal listener lifecycle plus concurrent bounded `/readyz` over databases, schema, scheduler progress, and drain (OBS-01, OBS-02)
 
 **Wave 2** *(depends on operation registry)*
