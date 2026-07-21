@@ -100,7 +100,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
   - Goal: one canonical transport classifier + explicit remote trust + bounded MCP lifecycle + audited CLI writes.
   - Success: (1) mixed url+command / empty-remote-trust blocked and never call stdio open; (2) hung mount drops within deadline, oversized stdio frame aborts without large alloc, shutdown leaves no child processes; (3) CLI mutations append `mcp_audit` (or production-disallowed), empty trust body → 400; (4) dead HTTP MCP endpoint reports OK=false.
 - [ ] **Phase 39: Idempotency + Observability Pack** — `OBS-01..06` (F-008/017/020/023/024/049)
-  - Goal: idempotent mutating tools + production observability surface (migration 0026).
+  - Goal: idempotent mutating tools + production observability surface (allocate from the live migration head; verified head `0042`, expected Phase 39 slots `0043+`; historical `0026` is already used and must not be reused).
   - Success: (1) `/readyz` fails on unhealthy DB/listener/migration/scheduler, Compose healthcheck probes `/readyz`; (2) OTel metric path emits LLM/tool/MCP/DB/scheduler metrics, alert YAML + Grafana JSON validate in CI; (3) sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion; (4) learning stores enforce a bounded retention cap.
 - [ ] **Phase 40: Security & Supply-Chain Pack** — `SEC-01..07`, `QUAL`(decode-body unify) (F-019-sec/021/022/047/051/052)
   - Goal: close security + supply-chain findings; prove prompt-injection denial under production.
@@ -688,7 +688,7 @@ Plans:
 
 #### Phase 39: Idempotency + Observability Pack
 
-**Goal:** Idempotent mutating tools + a production observability surface (migration 0026).
+**Goal:** Idempotent mutating tools + a production observability surface. Allocate migrations from the live on-disk head (verified `0042_drop_compaction`; expected Phase 39 slots `0043+`); never reuse historical migration `0026`.
 
 **Requirements:** OBS-01, OBS-02, OBS-03, OBS-04, OBS-05, OBS-06
 
@@ -698,6 +698,29 @@ Plans:
 2. The OTel metric path emits LLM/tool/MCP/DB/scheduler metrics; alert YAML + Grafana JSON validate in CI.
 3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
 4. Learning stores enforce a bounded retention cap.
+
+**Plans:** 7 plans in 4 waves
+
+Plans:
+
+**Wave 1** *(independent foundations)*
+
+- [ ] 39-01-PLAN.md — Durable identity-scoped public-operation registry, live-next migration, sqlc store, replay/conflict/in-progress/indeterminate semantics
+- [ ] 39-03-PLAN.md — Fatal listener lifecycle plus concurrent bounded `/readyz` over databases, schema, scheduler progress, and drain (OBS-01, OBS-02)
+
+**Wave 2** *(depends on operation registry)*
+
+- [ ] 39-02-PLAN.md — End-to-end operation-key propagation and replay across HTTP, CLI, approval/resume, scheduler, built-in tools, gateway, and MCP [depends_on 39-01]
+
+**Wave 3** *(instruments the settled mutation and serving seams)*
+
+- [ ] 39-04-PLAN.md — One OTel trace/metric lifecycle, bounded catalog, Prometheus + OTLP readers, and complete runtime instrumentation (OBS-03) [depends_on 39-02, 39-03]
+
+**Wave 4** *(parallel production consumers)*
+
+- [ ] 39-05-PLAN.md — Immutable Prometheus/Grafana/Tempo/runbook pack with precision-tested alerts and CI provisioning validation (OBS-04) [depends_on 39-03, 39-04]
+- [ ] 39-06-PLAN.md — Two-phase bounded retention, active-work exclusion, disk policy, owner export/delete, scheduler and dry-run/apply CLI (OBS-05) [depends_on 39-01, 39-02, 39-04]
+- [ ] 39-07-PLAN.md — Hard-capped learning dedup/stores, bounded loads, deterministic newest-plus-weighted compaction, and capacity metrics (OBS-06) [depends_on 39-04]
 
 #### Phase 40: Security & Supply-Chain Pack
 
