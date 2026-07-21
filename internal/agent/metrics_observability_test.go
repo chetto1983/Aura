@@ -67,6 +67,30 @@ func TestMetrics_CustomRegistryReregisterSafe(t *testing.T) {
 	}
 }
 
+func TestMetrics_CardinalityFoldsRawToolNamesToOther(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newAgentMetrics(reg, false)
+	m.recordToolError("tenant-secret-dynamic-tool-123")
+
+	fam := findMetricFamily(t, reg, "aura_agent_tool_errors_total")
+	labels := fam.GetMetric()[0].GetLabel()
+	if len(labels) != 1 || labels[0].GetName() != "tool" || labels[0].GetValue() != "other" {
+		t.Fatalf("tool error labels = %v, want tool=other", labels)
+	}
+}
+
+func TestMetrics_CompatibilityDoesNotRegisterDirectCollectors(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	_ = newAgentMetrics(reg, false)
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if len(families) != 0 {
+		t.Fatalf("agent compatibility registered %d direct client_golang families; want 0", len(families))
+	}
+}
+
 func TestTurnOutcomeCounter_RunRecordsExactlyOnce(t *testing.T) {
 	before := metricMapInt(metrics.turnTotal, "content_stop")
 	beforePrompt := metricInt(metrics.promptTokensTotal)
