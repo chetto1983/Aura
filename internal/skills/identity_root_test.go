@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/profile"
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 func testSkillBase(t *testing.T) SkillRootBase {
@@ -51,7 +51,7 @@ func TestNewSkillToolForIdentityRejectsTraversal(t *testing.T) {
 	base := testSkillBase(t)
 	for _, id := range []string{"..", "../evil", "a/b", `a\b`, "../../etc"} {
 		ctx := identityctx.WithIdentityID(context.Background(), id)
-		if _, err := NewSkillToolForIdentity(ctx, base); !errors.Is(err, profile.ErrInvalidIdentity) {
+		if _, err := NewSkillToolForIdentity(ctx, base); !errors.Is(err, idroot.ErrInvalidIdentity) {
 			t.Fatalf("NewSkillToolForIdentity(%q) err = %v, want ErrInvalidIdentity", id, err)
 		}
 	}

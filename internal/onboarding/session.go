@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // Intent describes the next user action applied to an onboarding session.
@@ -117,7 +115,7 @@ type Session struct {
 
 	Answers      Answers
 	DraftAgentMD string
-	Preferences  profile.Preferences
+	Preferences  Preferences
 
 	pending  []Input
 	prompted bool

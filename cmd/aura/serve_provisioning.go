@@ -18,10 +18,10 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // serve_provisioning.go promotes the shipped live saga TEST adapters
@@ -169,7 +169,7 @@ func auraSubdir(name string) string {
 func (a filesystemProvisionAdapter) subRoots(id string) (map[string]string, error) {
 	out := make(map[string]string, len(a.roots))
 	for sub, base := range a.roots {
-		dir, err := profile.RootIdentityDir(base, id)
+		dir, err := idroot.RootIdentityDir(base, id)
 		if err != nil {
 			return nil, err
 		}

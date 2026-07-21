@@ -16,8 +16,8 @@ import (
 
 // archivalRecallProvider builds the L4 archival-memory recall seam. It returns nil when
 // AURA_CONTEXT_MEMORY_RECALL is off, so the Runner receives nil and the recall leg is a
-// silent skip — the default-off state is produced HERE, not in the Runner (mirrors
-// profileContextProvider's disabled-closure pattern). When on, each turn it calls the
+// silent skip — the default-off state is produced HERE, not in the Runner (the
+// disabled-closure pattern: nil provider => no-op leg). When on, each turn it calls the
 // memory MCP get_context scoped to the owner id and pulls LONG-TERM ONLY (entities /
 // preferences / facts): short-term history is already carried by the conversation
 // ladder, and reasoning stays with Aura's own learner (no memory-bucket duplication).

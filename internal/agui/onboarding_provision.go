@@ -12,7 +12,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // onboarding_provision.go is the ordered cross-store provisioning saga (ONBD-01a/01b /
@@ -312,7 +311,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	// interview leaves no draft → no profile (the AC: skip writes no profile). This is
 	// idempotent + best-effort: a profile write failure does NOT roll back the (committed)
 	// loginable identity — the profile is re-seedable on first interaction.
-	s.persistProfile(entry, identityID)
+	s.persistProfile(ctx, entry, identityID)
 
 	resp := OnboardingProvisionResponse{IdentityID: identityID}
 	if botName := s.resolveBotName(ctx); in.LinkTelegram && botName != "" {
@@ -422,16 +421,7 @@ func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdenti
 			compTelegram()
 			return OnboardingProfileComplete{}, ErrOnboardingEscalation
 		}
-		if err := s.profiles.WriteProfile(requesterIdentityID, profile.Profile{
-			AgentMD:     entry.session.DraftAgentMD,
-			Preferences: entry.session.Preferences,
-			Metadata: profile.Metadata{
-				Version:             1,
-				SchemaVersion:       1,
-				OnboardingCompleted: true,
-			},
-			Change: "first-run profile onboarding confirmed",
-		}); err != nil {
+		if err := s.profiles.StoreConfirmed(ctx, requesterIdentityID, entry.session.Answers, entry.session.DraftAgentMD); err != nil {
 			compTelegram()
 			return OnboardingProfileComplete{}, provisionFail("profile write", err)
 		}
@@ -439,16 +429,7 @@ func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdenti
 		entry.provisioned = true
 		return OnboardingProfileComplete{Completed: true, DeepLink: deepLink, QRSVG: qrSVG}, nil
 	case onboarding.StatusSkipped:
-		if err := s.profiles.WriteProfile(requesterIdentityID, profile.Profile{
-			AgentMD: "",
-			Metadata: profile.Metadata{
-				Version:             1,
-				SchemaVersion:       1,
-				OnboardingCompleted: false,
-				OnboardingSkipped:   true,
-			},
-			Change: "first-run profile onboarding skipped",
-		}); err != nil {
+		if err := s.profiles.StoreSkipped(ctx, requesterIdentityID); err != nil {
 			compTelegram()
 			return OnboardingProfileComplete{}, provisionFail("profile skip write", err)
 		}
@@ -538,7 +519,7 @@ func (s *onboardingService) validateNoEscalation(ctx context.Context, creator st
 // persistProfile writes the confirmed interview Agent.md for the new identity (ONBD-02). A
 // skipped/incomplete interview (no draft) writes nothing. Best-effort: a write failure is
 // logged but does NOT fail the (already-committed) provision — the profile is re-seedable.
-func (s *onboardingService) persistProfile(entry *sessionEntry, identityID string) {
+func (s *onboardingService) persistProfile(ctx context.Context, entry *sessionEntry, identityID string) {
 	if s.profiles == nil || entry == nil || entry.session == nil {
 		return
 	}
@@ -546,13 +527,7 @@ func (s *onboardingService) persistProfile(entry *sessionEntry, identityID strin
 	if draft == "" {
 		return // skipped / unconfirmed interview → no profile
 	}
-	err := s.profiles.WriteProfile(identityID, profile.Profile{
-		AgentMD:     entry.session.DraftAgentMD,
-		Preferences: entry.session.Preferences,
-		Metadata:    profile.Metadata{OnboardingCompleted: true},
-		Change:      "onboarding wizard",
-	})
-	if err != nil {
+	if err := s.profiles.StoreConfirmed(ctx, identityID, entry.session.Answers, entry.session.DraftAgentMD); err != nil {
 		slog.Warn("onboarding: persist profile failed", "step", "profile")
 	}
 }

@@ -17,10 +17,10 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
-	"github.com/chetto1983/aura/internal/profile"
 	"github.com/joho/godotenv"
 )
 
@@ -493,7 +493,7 @@ func loadBase() *Config {
 		MultimodalTimeoutSec:    envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
 		TTSMaxChars:             envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
 
-		ProfileDir:        envDefault("AURA_PROFILE_DIR", profile.DefaultRoot()),
+		ProfileDir:        envDefault("AURA_PROFILE_DIR", idroot.DefaultRoot()),
 		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),
 
 		WhatsAppBridgeURL: envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // wildcardCapability is the system-managed match-all grant ('*', identity.Wildcard). The
@@ -192,14 +191,6 @@ type AnswerExtractor interface {
 	Extract(ctx context.Context, step onboarding.Step, raw string) (onboarding.Answers, error)
 }
 
-// ProfileWriter is the consumer-side narrow port for persisting the confirmed Agent.md to
-// ~/.aura/agents/<id>/ (ONBD-02). *profile.Store satisfies it. The write happens at
-// provision time (when the new identity id exists), reading the session's accumulated
-// DraftAgentMD; a skipped interview writes nothing.
-type ProfileWriter interface {
-	WriteProfile(identity string, p profile.Profile) error
-}
-
 // RecoverySetupWriter persists the recovery challenge into aura.identity_recovery during
 // provisioning, after the identity exists and before Telegram minting.
 type RecoverySetupWriter interface {
@@ -217,7 +208,7 @@ type onboardingService struct {
 	sessions  *sessionStore
 	caps      CapabilitySource
 	extractor AnswerExtractor
-	profiles  ProfileWriter
+	profiles  onboarding.ProfileMemoryStore
 
 	// provisioning ports (onboarding_provision.go): the Authula core, the atomic aura-leg
 	// writer + its compensation, recovery challenge writer, Telegram mint/poll/compensation,
@@ -259,7 +250,7 @@ type OnboardingDeps struct {
 	TTL          time.Duration
 	Capabilities CapabilitySource
 	Extractor    AnswerExtractor
-	Profiles     ProfileWriter
+	Profiles     onboarding.ProfileMemoryStore
 	Authula      AuthulaCore
 	AuraLeg      AuraLegWriter
 	Telegram     TelegramMint
@@ -474,7 +465,7 @@ func (s *onboardingService) projectStep(entry *sessionEntry, t onboarding.Transi
 
 // marshalPreferences renders the session's structured preferences as a JSON string for the
 // step response (an encode failure yields "{}", never a partial body).
-func marshalPreferences(p profile.Preferences) string {
+func marshalPreferences(p onboarding.Preferences) string {
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return "{}"

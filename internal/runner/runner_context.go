@@ -2,8 +2,8 @@ package runner
 
 // runner_context.go: the per-turn context-assembly concern split out of runner.go
 // (refactor-on-touch, 600-LOC cap). It owns how a turn's history is rehydrated and how
-// the messages[1] always-block is composed — the L1/L2/L2.5 ladder inputs, the
-// identity-aware context block, and the L4 archival-memory recall block (amendment #21).
+// the messages[1] always-block is composed — the L1/L2/L2.5 ladder inputs, the L4
+// archival-memory recall block (amendment #21), and the always-on skill block.
 
 import (
 	"context"
@@ -44,32 +44,21 @@ func (r *Runner) contextConfig(ctx context.Context, convID, recallQuery string) 
 	}, nil
 }
 
-// renderContextBlock composes the messages[1] always-block from up to three legs, in
-// order: the identity-aware context block (profile), the L4 archival-memory recall
-// block, and the always-on skill block. Each leg is nil-guarded — nil => the leg
-// contributes nothing (the feature's default-off state is produced upstream by the
-// composition root injecting a nil provider).
+// renderContextBlock composes the messages[1] always-block from up to two legs, in
+// order: the L4 archival-memory recall block and the always-on skill block. Each leg
+// is nil-guarded — nil => the leg contributes nothing (the feature's default-off state
+// is produced upstream by the composition root injecting a nil provider).
 func (r *Runner) renderContextBlock(ctx context.Context, convID, recallQuery string) (string, error) {
 	var parts []string
-	// Both the context-block and archival-recall legs need the owning identity;
-	// resolve it once (deep-refactor-on-touch: extracted resolveOwner).
-	var owner identity.Identity
-	if r.contextBlock != nil || r.archivalRecaller != nil {
-		var err error
-		if owner, err = r.resolveOwner(ctx, convID); err != nil {
+	if r.archivalRecaller != nil {
+		// L4 recall needs the owning identity; it is scoped by owner.ID — the SAME value
+		// the memory-MCP write path keys on (mcptools bridge → identityctx.IdentityID).
+		// owner.Name would query the wrong/global scope and silently recall nothing.
+		// recallQuery (the current user message) keys top-K relevance; "" => identity-only.
+		owner, err := r.resolveOwner(ctx, convID)
+		if err != nil {
 			return "", err
 		}
-	}
-	if r.contextBlock != nil {
-		if block := strings.TrimSpace(r.contextBlock(ctx, owner)); block != "" {
-			parts = append(parts, block)
-		}
-	}
-	if r.archivalRecaller != nil {
-		// L4 recall is scoped by owner.ID — the SAME value the memory-MCP write path
-		// keys on (mcptools bridge → identityctx.IdentityID). owner.Name would query
-		// the wrong/global scope and silently recall nothing. recallQuery (the current
-		// user message) keys top-K relevance; "" => identity-only recall.
 		block, err := r.archivalRecaller(ctx, owner.ID, recallQuery)
 		if err != nil {
 			return "", fmt.Errorf("archival recall: %w", err)
@@ -86,9 +75,8 @@ func (r *Runner) renderContextBlock(ctx context.Context, convID, recallQuery str
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// resolveOwner loads the conversation's owning identity — shared by the context-block
-// and archival-recall legs of renderContextBlock so they don't each round-trip the
-// conversation + identity stores.
+// resolveOwner loads the conversation's owning identity — used by the archival-recall
+// leg of renderContextBlock, which scopes recall by the owner id.
 func (r *Runner) resolveOwner(ctx context.Context, convID string) (identity.Identity, error) {
 	conv, err := r.Conv.Get(ctx, convID)
 	if err != nil {

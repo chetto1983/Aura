@@ -20,7 +20,6 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -241,14 +240,10 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 // The Telegram bot username is resolved live (a best-effort getMe); an empty username
 // leaves provisioning unavailable so no identity/recovery/token writes occur.
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
-	profileStore := profile.NewStore("")
-	if chat != nil && chat.cfg != nil && chat.cfg.ProfileDir != "" {
-		profileStore = profile.NewStore(chat.cfg.ProfileDir)
-	}
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,
 		Extractor:    onboarding.NewLLMAnswerExtractor(chat.client, chat.cfg.LLM.Model),
-		Profiles:     profileStore,
+		Profiles:     newMemoryProfileStore(),
 	}
 	if chat.pool != nil {
 		deps.AuraLeg = auraLegAdapter{pool: chat.pool}
@@ -304,34 +299,29 @@ func warnIfMultiUserWithoutIsolation(ctx context.Context, chat *chatEnv) {
 }
 
 type onboardingStatusAdapter struct {
-	store *profile.Store
+	store *memoryProfileStore
 }
 
-func newOnboardingStatusAdapter(chat *chatEnv) onboardingStatusAdapter {
-	root := ""
-	if chat != nil && chat.cfg != nil {
-		root = chat.cfg.ProfileDir
-	}
-	return onboardingStatusAdapter{store: profile.NewStore(root)}
+func newOnboardingStatusAdapter(_ *chatEnv) onboardingStatusAdapter {
+	return onboardingStatusAdapter{store: newMemoryProfileStore()}
 }
 
-func (a onboardingStatusAdapter) OnboardingStatus(_ context.Context, identityID string) (agui.OnboardingStatus, error) {
+// OnboardingStatus reads the onboarding sentinel facts from the memory graph. It fails
+// OPEN to Required (re-prompt) when the memory sidecar is unreachable — matching the
+// previous not-found behavior, never blocking the cockpit on a memory outage.
+func (a onboardingStatusAdapter) OnboardingStatus(ctx context.Context, identityID string) (agui.OnboardingStatus, error) {
 	if a.store == nil || identityID == "" {
 		return agui.OnboardingStatus{Required: true}, nil
 	}
-	loaded, err := a.store.ReadProfile(identityID)
+	st, err := a.store.Status(ctx, identityID)
 	if err != nil {
-		if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, profile.ErrInvalidIdentity) {
-			return agui.OnboardingStatus{Required: true}, nil
-		}
-		return agui.OnboardingStatus{}, err
+		slog.Warn("onboarding status: memory read failed, defaulting to required", "id", identityID, "err", err)
+		return agui.OnboardingStatus{Required: true}, nil
 	}
-	completed := loaded.Metadata.OnboardingCompleted
-	skipped := loaded.Metadata.OnboardingSkipped
 	return agui.OnboardingStatus{
-		Required:  !completed && !skipped,
-		Completed: completed,
-		Skipped:   skipped,
+		Required:  !st.Completed && !st.Skipped,
+		Completed: st.Completed,
+		Skipped:   st.Skipped,
 	}, nil
 }
 

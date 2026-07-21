@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // onboarding_provision_branches_test.go covers the CreateTelegramLink / CompleteProfile /
@@ -17,16 +16,22 @@ import (
 // persistProfile best-effort guards. Every case drives the concrete onboardingService with
 // the shared saga-leg fakes, no live store.
 
-// errProfileWriter fails WriteProfile so the profile-write error legs are reachable.
+// errProfileWriter fails the memory store so the profile-write error legs are reachable.
 type errProfileWriter struct{ err error }
 
-func (e errProfileWriter) WriteProfile(string, profile.Profile) error { return e.err }
+func (e errProfileWriter) StoreConfirmed(context.Context, string, onboarding.Answers, string) error {
+	return e.err
+}
+func (e errProfileWriter) StoreSkipped(context.Context, string) error { return e.err }
+func (e errProfileWriter) Status(context.Context, string) (onboarding.OnboardingState, error) {
+	return onboarding.OnboardingState{}, e.err
+}
 
 // completedProfileService builds a service whose profile session has been walked to
 // StatusCompleted (a confirmed interview with a non-empty draft), returning the service +
 // its live session token. The profile writer + telegram fake are caller-supplied so the
 // error legs can be injected.
-func completedProfileService(t *testing.T, pw ProfileWriter, tg TelegramMint) (*onboardingService, string) {
+func completedProfileService(t *testing.T, pw onboarding.ProfileMemoryStore, tg TelegramMint) (*onboardingService, string) {
 	t.Helper()
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: []string{"agent.run"}},
@@ -139,7 +144,7 @@ func TestPersistProfileBranches(t *testing.T) {
 	t.Run("nil session no-op", func(t *testing.T) {
 		pw := &recordingProfileWriter{}
 		svc := newOnboardingService(OnboardingDeps{Profiles: pw})
-		svc.persistProfile(&sessionEntry{}, "id-1") // entry.session == nil
+		svc.persistProfile(context.Background(), &sessionEntry{}, "id-1") // entry.session == nil
 		if len(pw.writes) != 0 {
 			t.Fatalf("persistProfile wrote %v for a nil session, want none", pw.writes)
 		}
@@ -149,7 +154,7 @@ func TestPersistProfileBranches(t *testing.T) {
 		pw := &recordingProfileWriter{}
 		svc := newOnboardingService(OnboardingDeps{Profiles: pw})
 		entry := &sessionEntry{session: onboarding.NewSession("id-1", "id-1")} // no DraftAgentMD
-		svc.persistProfile(entry, "id-1")
+		svc.persistProfile(context.Background(), entry, "id-1")
 		if len(pw.writes) != 0 {
 			t.Fatalf("persistProfile wrote %v for an empty draft, want none", pw.writes)
 		}
@@ -160,7 +165,7 @@ func TestPersistProfileBranches(t *testing.T) {
 		sess := onboarding.NewSession("id-1", "id-1")
 		sess.DraftAgentMD = "# Agent"
 		// Best-effort: a write failure must NOT panic and returns nothing (logged only).
-		svc.persistProfile(&sessionEntry{session: sess}, "id-1")
+		svc.persistProfile(context.Background(), &sessionEntry{session: sess}, "id-1")
 	})
 
 	t.Run("happy write persists confirmed draft", func(t *testing.T) {
@@ -168,7 +173,7 @@ func TestPersistProfileBranches(t *testing.T) {
 		svc := newOnboardingService(OnboardingDeps{Profiles: pw})
 		sess := onboarding.NewSession("id-9", "id-9")
 		sess.DraftAgentMD = "# Agent"
-		svc.persistProfile(&sessionEntry{session: sess}, "id-9")
+		svc.persistProfile(context.Background(), &sessionEntry{session: sess}, "id-9")
 		if len(pw.writes) != 1 || pw.writes[0] != "id-9" {
 			t.Fatalf("persistProfile writes = %v, want [id-9]", pw.writes)
 		}

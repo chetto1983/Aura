@@ -23,7 +23,6 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/llm"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // channelName keys AURA_CHANNEL_TELEGRAM_ENABLED (the registry enable gate).
@@ -83,9 +82,11 @@ type Deps struct {
 	// inbound Telegram handlers fail closed except for /start <token> activation.
 	Store *Store
 
-	// Profile is the per-identity Agent.md store. Nil means profile onboarding
-	// degrades with a user-facing setup message instead of panicking.
-	Profile *profile.Store
+	// Profile persists the confirmed/skipped onboarding profile into the agent-memory
+	// graph via the shared ProfileMemoryStore port (Amendment #87 — Agent.md retired).
+	// Nil means profile onboarding degrades with a user-facing setup message instead of
+	// panicking.
+	Profile profileflow.ProfileMemoryStore
 
 	// AnswerExtractor parses free-text onboarding answers (Identity/Work/Projects/
 	// Social) into structured fields. Nil → those steps fall back to keyword parsing.

@@ -11,7 +11,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/askuser"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // TestOnTextStartPayloadRoutesToOnboarding proves a Telegram deep link
@@ -24,7 +23,7 @@ func TestOnTextStartPayloadRoutesToOnboarding(t *testing.T) {
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
+		d.Profile = newFakeMemoryStore()
 		d.profileAccounts = profileAccountFake{acct: profileAccount()}
 	})
 
@@ -96,7 +95,7 @@ func TestOnTextFirstLinkedNoProfileStartsProfileOnboardingNoTurn(t *testing.T) {
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
+		d.Profile = newFakeMemoryStore()
 		d.profileAccounts = profileAccountFake{acct: profileAccount()}
 	})
 
@@ -124,7 +123,7 @@ func TestOnTextActiveProfileReplyDoesNotDriveTurn(t *testing.T) {
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
+		d.Profile = newFakeMemoryStore()
 		d.profileAccounts = profileAccountFake{acct: profileAccount()}
 	})
 
@@ -155,17 +154,8 @@ func TestOnTextActiveProfileReplyDoesNotDriveTurn(t *testing.T) {
 func TestOnTextOnboardRestartsProfileOnboardingNoTurn(t *testing.T) {
 	t.Parallel()
 	rt := &recordingTurn{}
-	store := profile.NewStore(t.TempDir())
-	if err := store.WriteProfile(profileAccount().IdentityID, profile.Profile{
-		AgentMD: "old profile",
-		Metadata: profile.Metadata{
-			Version:             1,
-			SchemaVersion:       1,
-			OnboardingCompleted: true,
-		},
-	}); err != nil {
-		t.Fatalf("seed profile: %v", err)
-	}
+	store := newFakeMemoryStore()
+	store.markCompleted(profileAccount().IdentityID)
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
@@ -196,7 +186,7 @@ func TestOnTextUnlinkedUserRequiresActivationNoTurn(t *testing.T) {
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
+		d.Profile = newFakeMemoryStore()
 		d.profileAccounts = profileAccountFake{err: errors.New("no linked account")}
 	})
 
@@ -229,7 +219,7 @@ func TestOnReplyUnlinkedUserDoesNotDoubleActivationOnText(t *testing.T) {
 		d.Resume = rs
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
+		d.Profile = newFakeMemoryStore()
 		d.profileAccounts = profileAccountFake{err: errors.New("no linked account")}
 	})
 

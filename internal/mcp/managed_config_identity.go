@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/chetto1983/aura/internal/profile"
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 // SourceRecipeMemory is the Source marker of the shared, admin-governed agent-memory
@@ -88,7 +88,7 @@ func IdentityConfigPath(identity string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir, err := profile.RootIdentityDir(root, normalizeMCPIdentity(identity))
+	dir, err := idroot.RootIdentityDir(root, normalizeMCPIdentity(identity))
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +102,7 @@ func LoadIdentityMCPConfig(identity string) (IdentityMCPConfig, error) {
 	if err != nil {
 		return IdentityMCPConfig{}, err
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // path rooted via profile.RootIdentityDir guard
+	data, err := os.ReadFile(path) //nolint:gosec // path rooted via idroot.RootIdentityDir guard
 	if os.IsNotExist(err) {
 		return IdentityMCPConfig{Preferences: map[string]IdentityServerPref{}}, nil
 	}

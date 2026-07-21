@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/profile"
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 // localSkillIdentity is the CLI / no-principal identity whose skills stay in the base
@@ -75,11 +75,11 @@ func NewSkillToolForIdentity(ctx context.Context, base SkillRootBase) (IdentityS
 		}, nil
 	}
 
-	userDir, err := profile.RootIdentityDir(base.SkillsDir, identity)
+	userDir, err := idroot.RootIdentityDir(base.SkillsDir, identity)
 	if err != nil {
 		return IdentitySkillRoots{}, err
 	}
-	pyDir, err := profile.RootIdentityDir(pyBase, identity)
+	pyDir, err := idroot.RootIdentityDir(pyBase, identity)
 	if err != nil {
 		return IdentitySkillRoots{}, err
 	}

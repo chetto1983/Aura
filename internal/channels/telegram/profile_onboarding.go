@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 	"github.com/google/uuid"
 )
 
@@ -31,7 +29,7 @@ type profileAccountResolver interface {
 }
 
 type profileOnboarding struct {
-	store     *profile.Store
+	store     profileflow.ProfileMemoryStore
 	accounts  profileAccountResolver
 	extractor profileflow.AnswerExtractor
 
@@ -52,7 +50,7 @@ type profileReply struct {
 	ack    string
 }
 
-func newProfileOnboarding(store *profile.Store, accounts profileAccountResolver) *profileOnboarding {
+func newProfileOnboarding(store profileflow.ProfileMemoryStore, accounts profileAccountResolver) *profileOnboarding {
 	return &profileOnboarding{
 		store:    store,
 		accounts: accounts,
@@ -74,11 +72,13 @@ func (p *profileOnboarding) maybeStart(ctx context.Context, chatID, telegramUser
 	if err != nil {
 		return profileReply{}, false
 	}
-	if _, err := p.store.ReadProfile(acct.IdentityID); err == nil {
-		return profileReply{}, false
-	} else if !errors.Is(err, profile.ErrProfileNotFound) && !errors.Is(err, profile.ErrInvalidIdentity) {
-		slog.Warn("telegram profile onboarding: read profile", "identity", acct.IdentityID, "err", err)
+	st, err := p.store.Status(ctx, acct.IdentityID)
+	if err != nil {
+		slog.Warn("telegram profile onboarding: read status", "identity", acct.IdentityID, "err", err)
 		return profileReply{text: "Profilo non disponibile: non riesco a leggere il profilo ora."}, true
+	}
+	if st.Completed || st.Skipped {
+		return profileReply{}, false
 	}
 	p.mu.Lock()
 	ps := p.startLocked(chatID, acct)
@@ -183,7 +183,7 @@ func (p *profileOnboarding) handleCallback(ctx context.Context, chatID int64, da
 	case profileActionSkip:
 		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentSkip})
 		out, _ := p.runOne(ctx, chatID, ps)
-		if err := p.writeSkipped(ps); err != nil {
+		if err := p.writeSkipped(ctx, ps); err != nil {
 			return profileReply{text: "Non sono riuscita a salvare la scelta. Riprova piu tardi.", ack: "Errore"}, true
 		}
 		p.deleteSession(chatID)
@@ -197,7 +197,7 @@ func (p *profileOnboarding) handleCallback(ctx context.Context, chatID int64, da
 		if !handled {
 			return profileReply{ack: "Profilo scaduto o non disponibile."}, true
 		}
-		if err := p.writeCompleted(ps, out); err != nil {
+		if err := p.writeCompleted(ctx, ps, out); err != nil {
 			return profileReply{text: "Non sono riuscita a salvare il profilo. Riprova piu tardi.", ack: "Errore"}, true
 		}
 		p.deleteSession(chatID)
@@ -251,34 +251,21 @@ func (p *profileOnboarding) runOne(ctx context.Context, chatID int64, ps *profil
 	return profileReply{}, false
 }
 
-func (p *profileOnboarding) writeCompleted(ps *profileSession, out profileReply) error {
+// writeCompleted stores the confirmed interview into the agent-memory graph via the
+// shared ProfileMemoryStore port (Amendment #87): the deterministic Answers→memory
+// mapping happens inside the adapter, and the raw rendered draft rides along as a
+// message safety net. The empty-draft guard preserves the pre-supersession invariant
+// that a confirm never persists a blank profile.
+func (p *profileOnboarding) writeCompleted(ctx context.Context, ps *profileSession, out profileReply) error {
 	_ = out
 	if strings.TrimSpace(ps.session.DraftAgentMD) == "" {
 		return fmt.Errorf("empty profile draft")
 	}
-	return p.store.WriteProfile(ps.account.IdentityID, profile.Profile{
-		AgentMD:     ps.session.DraftAgentMD,
-		Preferences: ps.session.Preferences,
-		Metadata: profile.Metadata{
-			Version:             1,
-			SchemaVersion:       1,
-			OnboardingCompleted: true,
-		},
-		Change: "telegram profile onboarding confirmed",
-	})
+	return p.store.StoreConfirmed(ctx, ps.account.IdentityID, ps.session.Answers, ps.session.DraftAgentMD)
 }
 
-func (p *profileOnboarding) writeSkipped(ps *profileSession) error {
-	return p.store.WriteProfile(ps.account.IdentityID, profile.Profile{
-		AgentMD: "",
-		Metadata: profile.Metadata{
-			Version:             1,
-			SchemaVersion:       1,
-			OnboardingCompleted: false,
-			OnboardingSkipped:   true,
-		},
-		Change: "telegram profile onboarding skipped",
-	})
+func (p *profileOnboarding) writeSkipped(ctx context.Context, ps *profileSession) error {
+	return p.store.StoreSkipped(ctx, ps.account.IdentityID)
 }
 
 func replyFromEvent(chatID int64, ev *agent.Event) profileReply {
