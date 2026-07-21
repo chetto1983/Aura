@@ -3,6 +3,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -36,6 +37,32 @@ func TestOperationContextRoundTripIsImmutable(t *testing.T) {
 	again, ok := OperationFromContext(ctx)
 	if !ok || again != op {
 		t.Fatalf("caller mutation changed stored operation: %+v", again)
+	}
+}
+
+func TestOperationContextValidationEdges(t *testing.T) {
+	t.Parallel()
+
+	valid := Operation{
+		Key:         OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: ScopeCLICommand, Key: "key"},
+		Fingerprint: [32]byte{1},
+	}
+	tests := []Operation{
+		{Key: valid.Key},
+		{Key: OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: ScopeCLICommand}, Fingerprint: valid.Fingerprint},
+		{Key: valid.Key, Fingerprint: valid.Fingerprint, Correlation: "bad\ncorrelation"},
+		{Key: valid.Key, Fingerprint: valid.Fingerprint, Correlation: strings.Repeat("x", MaxOperationKeyBytes+1)},
+	}
+	for _, operation := range tests {
+		if err := operation.Validate(); !errors.Is(err, ErrOperationContext) {
+			t.Errorf("Validate(%+v) error = %v, want ErrOperationContext", operation, err)
+		}
+	}
+	if _, err := WithOperation(nil, valid); !errors.Is(err, ErrIdentityMismatch) { //nolint:staticcheck // explicit nil-defense contract
+		t.Fatalf("WithOperation(nil) error = %v, want ErrIdentityMismatch", err)
+	}
+	if _, ok := OperationFromContext(nil); ok { //nolint:staticcheck // explicit nil-defense contract
+		t.Fatal("nil context unexpectedly carried an operation")
 	}
 }
 

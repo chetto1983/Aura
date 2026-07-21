@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,5 +110,70 @@ func TestGatewayIdempotencyDecisionsPrecedePolicyReservation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGatewayOperationCompletionAndIndeterminateLifecycle(t *testing.T) {
+	t.Parallel()
+
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	ctx := gatewayOperationContext(t, "lifecycle-key", args)
+	registry := &fakeOperationRegistry{}
+	g := New(config.ProfileSingleUserHardened, nil)
+	g.SetOperationRegistry(registry)
+
+	result := tools.ToolResult{
+		Preview:  strings.Repeat("p", idempotency.MaxReplayPreviewBytes+10),
+		FullPath: strings.Repeat("s", idempotency.MaxSidecarRefBytes+10),
+		Bytes:    42,
+	}
+	if err := g.CompleteOperation(ctx, result); err != nil {
+		t.Fatalf("CompleteOperation: %v", err)
+	}
+	if len(registry.complete) != 1 {
+		t.Fatalf("complete calls = %d, want 1", len(registry.complete))
+	}
+	replay := registry.complete[0].Result
+	if len(replay.Preview) != idempotency.MaxReplayPreviewBytes || len(replay.SidecarRef) != idempotency.MaxSidecarRefBytes || len(replay.Body) == 0 {
+		t.Fatalf("bounded replay = %+v", replay)
+	}
+	if err := g.MarkOperationIndeterminate(ctx); err != nil {
+		t.Fatalf("MarkOperationIndeterminate: %v", err)
+	}
+	if len(registry.marked) != 1 || registry.marked[0].Key != "lifecycle-key" {
+		t.Fatalf("marked operations = %+v", registry.marked)
+	}
+
+	if err := (*Gateway)(nil).CompleteOperation(ctx, result); err != nil {
+		t.Fatalf("nil gateway complete: %v", err)
+	}
+	if err := (*Gateway)(nil).MarkOperationIndeterminate(ctx); err != nil {
+		t.Fatalf("nil gateway mark: %v", err)
+	}
+	if err := g.CompleteOperation(context.Background(), result); err == nil {
+		t.Fatal("complete accepted a missing trusted operation")
+	}
+	if err := g.MarkOperationIndeterminate(context.Background()); err == nil {
+		t.Fatal("mark accepted a missing trusted operation")
+	}
+}
+
+func TestGatewayOperationReplayValidationAndBounds(t *testing.T) {
+	t.Parallel()
+
+	fallback, err := decodeOperationReplay(&idempotency.ReplayResult{Preview: "safe", SidecarRef: "sidecar", ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil || fallback.Preview != "safe" || fallback.FullPath != "sidecar" {
+		t.Fatalf("fallback replay = %+v, %v", fallback, err)
+	}
+	for _, replay := range []*idempotency.ReplayResult{
+		nil,
+		{Body: json.RawMessage(`{not-json`), ExpiresAt: time.Now().Add(time.Hour)},
+	} {
+		if _, err := decodeOperationReplay(replay); err == nil {
+			t.Fatalf("decodeOperationReplay(%+v) error = nil", replay)
+		}
+	}
+	if got := boundedString("éé", 3); got != "é" {
+		t.Fatalf("boundedString UTF-8 = %q, want one rune", got)
 	}
 }
