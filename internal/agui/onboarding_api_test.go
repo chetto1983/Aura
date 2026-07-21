@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // onboarding_api_test.go covers the interview side (Task 1): the one-LLM-extraction-per-
@@ -64,18 +63,28 @@ func (f fakeCaps) ListCapabilities(_ context.Context, _ string) ([]string, error
 	return f.grants, f.err
 }
 
-// recordingProfileWriter records WriteProfile calls so "skip writes no profile" is
-// provable.
+// recordingProfileWriter records profile-store calls (by identity) so "skip writes no
+// profile" and "confirm writes one" stay provable. Both StoreConfirmed and StoreSkipped
+// count as a write (each persists a sentinel); a no-draft persistProfile writes nothing.
 type recordingProfileWriter struct {
 	writes []string
 }
 
-func (w *recordingProfileWriter) WriteProfile(identity string, _ profile.Profile) error {
+func (w *recordingProfileWriter) StoreConfirmed(_ context.Context, identity string, _ onboarding.Answers, _ string) error {
 	w.writes = append(w.writes, identity)
 	return nil
 }
 
-func newInterviewService(ext AnswerExtractor, caps CapabilitySource, pw ProfileWriter) *onboardingService {
+func (w *recordingProfileWriter) StoreSkipped(_ context.Context, identity string) error {
+	w.writes = append(w.writes, identity)
+	return nil
+}
+
+func (w *recordingProfileWriter) Status(context.Context, string) (onboarding.OnboardingState, error) {
+	return onboarding.OnboardingState{}, nil
+}
+
+func newInterviewService(ext AnswerExtractor, caps CapabilitySource, pw onboarding.ProfileMemoryStore) *onboardingService {
 	return newOnboardingService(OnboardingDeps{
 		Capabilities: caps,
 		Extractor:    ext,
