@@ -38,7 +38,7 @@ func runTask(args []string) {
 		os.Exit(exitUsage)
 	}
 	cfg := config.LoadDB()
-	ctx := context.Background()
+	ctx := cliInvocationContext
 
 	switch args[0] {
 	case "schedule":

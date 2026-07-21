@@ -57,3 +57,21 @@ func TestPrepareCLIIdempotencyRejectsInvalidKey(t *testing.T) {
 		t.Fatal("invalid operation key accepted")
 	}
 }
+
+func TestPrepareCLIIdempotencyFingerprintsNormalizedIntent(t *testing.T) {
+	t.Parallel()
+
+	first, _, err := prepareCLIIdempotency(context.Background(), []string{"task", "cancel", "task-1", "--operation-key", "same-key"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, _, err := prepareCLIIdempotency(context.Background(), []string{"task", "cancel", "task-2", "--operation-key", "same-key"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, firstFingerprint, _ := cliOperationFromContext(first)
+	_, changedFingerprint, _ := cliOperationFromContext(changed)
+	if firstFingerprint == changedFingerprint {
+		t.Fatal("changed command payload produced the same operation fingerprint")
+	}
+}

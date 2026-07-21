@@ -49,6 +49,13 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+	preparedCtx, preparedArgs, err := prepareCLIIdempotency(context.Background(), os.Args[1:], os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	cliInvocationContext = preparedCtx
+	os.Args = append([]string{os.Args[0]}, preparedArgs...)
 	switch os.Args[1] {
 	case "tools":
 		printTools()
@@ -115,7 +122,7 @@ func main() {
 // same profile gate a second time (defense in depth) before ever reaching an unaudited
 // write.
 func runMCPDispatch(args []string) {
-	ctx := context.Background()
+	ctx := cliInvocationContext
 	var pool *pgxpool.Pool
 	if mcpCommandNeedsPool(args) {
 		cfg := config.LoadDB()

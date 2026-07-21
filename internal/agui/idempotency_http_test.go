@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 func TestIdempotencyKeyValidation(t *testing.T) {
@@ -95,3 +96,40 @@ func TestWriteIdempotencyDecisionHTTPMapping(t *testing.T) {
 }
 
 func ptrString(v string) *string { return &v }
+
+func TestApprovalResolveForwardsOriginalOperationContext(t *testing.T) {
+	t.Parallel()
+
+	run := &scriptedRunner{}
+	s := NewServer(run, nil, ServerConfig{})
+	body := strings.NewReader(`{"action":"accept","content":"approved"}`)
+	r := httptest.NewRequest(http.MethodPost, "/api/approvals/00000000-0000-0000-0000-000000000099/resolve", body)
+	r.SetPathValue("token", "00000000-0000-0000-0000-000000000099")
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		Token   string `json:"token"`
+		Action  string `json:"action"`
+		Content string `json:"content"`
+	}{Token: "00000000-0000-0000-0000-000000000099", Action: "accept", Content: "approved"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeApproval, Key: "approval-key"},
+		Fingerprint: fingerprint,
+	}
+	ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(r.Context(), identityctx.LocalOperatorIdentity), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = r.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	s.handleResolveApproval(rr, r)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body=%q", rr.Code, rr.Body.String())
+	}
+	got, ok := idempotency.OperationFromContext(run.submitAnswersCtx)
+	if !ok || got != op {
+		t.Fatalf("runner received operation %+v/%v, want %+v", got, ok, op)
+	}
+}
