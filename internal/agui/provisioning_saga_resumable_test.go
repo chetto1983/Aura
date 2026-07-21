@@ -39,9 +39,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // testAuthulaSecret is a valid 64-hex-char (32-byte) AURA_AUTHULA_SECRET for the
@@ -182,7 +182,7 @@ type liveFilesystem struct {
 func (a *liveFilesystem) subRoots(id string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, sub := range []string{"mcp", "skills", "pyscripts", "agents"} {
-		dir, err := profile.RootIdentityDir(filepath.Join(a.root, sub), id)
+		dir, err := idroot.RootIdentityDir(filepath.Join(a.root, sub), id)
 		if err != nil {
 			return nil, err
 		}

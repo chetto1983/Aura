@@ -19,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -321,7 +322,7 @@ func (a onboardingStatusAdapter) OnboardingStatus(_ context.Context, identityID 
 	}
 	loaded, err := a.store.ReadProfile(identityID)
 	if err != nil {
-		if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, profile.ErrInvalidIdentity) {
+		if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, idroot.ErrInvalidIdentity) {
 			return agui.OnboardingStatus{Required: true}, nil
 		}
 		return agui.OnboardingStatus{}, err

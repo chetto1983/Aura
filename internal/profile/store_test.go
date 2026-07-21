@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 func TestStoreWriteUpdateRead(t *testing.T) {
@@ -57,7 +59,7 @@ func TestStoreRejectsUnsafeIdentityBeforeWrite(t *testing.T) {
 	for _, id := range []string{"", "../evil", `..\evil`, "a/b", `a\b`, ".hidden", "local..evil"} {
 		t.Run(id, func(t *testing.T) {
 			err := s.WriteProfile(id, Profile{AgentMD: "# Agent.md\n"})
-			if !errors.Is(err, ErrInvalidIdentity) {
+			if !errors.Is(err, idroot.ErrInvalidIdentity) {
 				t.Fatalf("WriteProfile(%q): want ErrInvalidIdentity, got %v", id, err)
 			}
 		})

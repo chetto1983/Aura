@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/profile"
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 // writeSharedCatalog stages a shared catalog with a class-(a) stdio server
@@ -53,13 +53,13 @@ func writeSharedCatalog(t *testing.T) string {
 func TestIdentityConfigPathRejectsTraversal(t *testing.T) {
 	writeSharedCatalog(t)
 	for _, id := range []string{"..", "../evil", "a/b", `a\b`, "../../etc"} {
-		if _, err := IdentityConfigPath(id); !errors.Is(err, profile.ErrInvalidIdentity) {
+		if _, err := IdentityConfigPath(id); !errors.Is(err, idroot.ErrInvalidIdentity) {
 			t.Fatalf("IdentityConfigPath(%q) err = %v, want ErrInvalidIdentity", id, err)
 		}
-		if _, err := MountForIdentity(id); !errors.Is(err, profile.ErrInvalidIdentity) {
+		if _, err := MountForIdentity(id); !errors.Is(err, idroot.ErrInvalidIdentity) {
 			t.Fatalf("MountForIdentity(%q) err = %v, want ErrInvalidIdentity", id, err)
 		}
-		if err := SetEnabledForIdentity(id, "calculator", false); !errors.Is(err, profile.ErrInvalidIdentity) {
+		if err := SetEnabledForIdentity(id, "calculator", false); !errors.Is(err, idroot.ErrInvalidIdentity) {
 			t.Fatalf("SetEnabledForIdentity(%q) err = %v, want ErrInvalidIdentity", id, err)
 		}
 	}

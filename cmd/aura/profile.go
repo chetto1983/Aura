@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/profile"
 )
 
@@ -88,7 +89,7 @@ func profileExit(action, identity string, err error) {
 	switch {
 	case errors.Is(err, profile.ErrProfileNotFound):
 		fmt.Fprintf(os.Stderr, "profile %s: identity %q has no Agent.md profile yet\n", action, identity)
-	case errors.Is(err, profile.ErrInvalidIdentity):
+	case errors.Is(err, idroot.ErrInvalidIdentity):
 		fmt.Fprintf(os.Stderr, "profile %s: invalid identity %q\n", action, identity)
 	default:
 		fmt.Fprintf(os.Stderr, "profile %s: %v\n", action, err)

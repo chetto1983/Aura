@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 // NewStore("") falls back to DefaultRoot rather than an empty path, so the store
@@ -16,23 +18,8 @@ func TestNewStoreEmptyRootFallsBackToDefault(t *testing.T) {
 	if s.Root() == "" {
 		t.Fatal("NewStore(\"\") produced an empty root")
 	}
-	if s.Root() != DefaultRoot() {
-		t.Fatalf("NewStore(\"\").Root() = %q, want DefaultRoot() = %q", s.Root(), DefaultRoot())
-	}
-}
-
-// DefaultRoot resolves under the user home (.aura/agents) when a home dir exists.
-func TestDefaultRootUnderHome(t *testing.T) {
-	t.Parallel()
-	root := DefaultRoot()
-	if !strings.HasSuffix(filepath.ToSlash(root), ".aura/agents") {
-		t.Fatalf("DefaultRoot() = %q, want a path ending in .aura/agents", root)
-	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		if want := filepath.Join(home, ".aura", "agents"); root != want {
-			t.Fatalf("DefaultRoot() = %q, want %q", root, want)
-		}
+	if s.Root() != idroot.DefaultRoot() {
+		t.Fatalf("NewStore(\"\").Root() = %q, want DefaultRoot() = %q", s.Root(), idroot.DefaultRoot())
 	}
 }
 
@@ -41,7 +28,7 @@ func TestWriteProfileInvalidIdentity(t *testing.T) {
 	t.Parallel()
 	s := NewStore(t.TempDir())
 	err := s.WriteProfile("../escape", Profile{AgentMD: "# Agent.md\n"})
-	if !errors.Is(err, ErrInvalidIdentity) {
+	if !errors.Is(err, idroot.ErrInvalidIdentity) {
 		t.Fatalf("WriteProfile invalid identity err = %v, want ErrInvalidIdentity", err)
 	}
 }
@@ -51,7 +38,7 @@ func TestReadProfileInvalidIdentity(t *testing.T) {
 	t.Parallel()
 	s := NewStore(t.TempDir())
 	_, err := s.ReadProfile("a/b")
-	if !errors.Is(err, ErrInvalidIdentity) {
+	if !errors.Is(err, idroot.ErrInvalidIdentity) {
 		t.Fatalf("ReadProfile invalid identity err = %v, want ErrInvalidIdentity", err)
 	}
 }

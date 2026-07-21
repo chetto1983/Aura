@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/profile"
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 // bucketPrefix namespaces every per-identity bucket as aura-<identity>.
@@ -67,7 +67,7 @@ func New(endpoint, token string, opts ...Option) (*Client, error) {
 // hostile identity string can never be spliced into an admin API call or resolve
 // to another identity's bucket.
 func BucketForIdentity(identity string) (string, error) {
-	if err := profile.ValidateIdentity(identity); err != nil {
+	if err := idroot.ValidateIdentity(identity); err != nil {
 		return "", fmt.Errorf("garageadmin: %w", err)
 	}
 	return bucketPrefix + identity, nil

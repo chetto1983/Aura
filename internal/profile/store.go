@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/chetto1983/aura/internal/idroot"
 )
 
 const (
@@ -19,14 +20,8 @@ const (
 	changelogFile   = "changelog.md"
 )
 
-var identityPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
-
-var (
-	// ErrInvalidIdentity is returned when a profile identity is empty, malformed, or escapes the profile root.
-	ErrInvalidIdentity = errors.New("invalid profile identity")
-	// ErrProfileNotFound is returned when one or more required profile files are missing.
-	ErrProfileNotFound = errors.New("profile not found")
-)
+// ErrProfileNotFound is returned when one or more required profile files are missing.
+var ErrProfileNotFound = errors.New("profile not found")
 
 // Preferences is the structured companion file beside Agent.md.
 type Preferences struct {
@@ -71,20 +66,12 @@ type Store struct {
 	now  func() time.Time
 }
 
-// NewStore builds a Store. An empty root falls back to DefaultRoot.
+// NewStore builds a Store. An empty root falls back to idroot.DefaultRoot.
 func NewStore(root string) *Store {
 	if root == "" {
-		root = DefaultRoot()
+		root = idroot.DefaultRoot()
 	}
 	return &Store{root: root, now: func() time.Time { return time.Now().UTC() }}
-}
-
-// DefaultRoot returns the default per-user Aura profile directory.
-func DefaultRoot() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".aura", "agents")
-	}
-	return filepath.Join(os.TempDir(), "aura", "agents")
 }
 
 // Root returns the absolute-ish root configured for this store.
@@ -198,52 +185,8 @@ func normalizeMetadata(m Metadata, now time.Time) Metadata {
 	return m
 }
 
-// RootIdentityDir joins root and identity behind the traversal-safe containment guard
-// (identityPattern charset + ".."/slash reject + filepath.Rel "escapes root" assertion)
-// and returns the absolute per-identity directory WITHOUT creating it. It is the shared
-// rooting primitive the mcp and skills packages reuse for their per-identity roots
-// (~/.aura/mcp/{id}, $AURA_SKILLS_DIR/{id}, ~/.aura/pyscripts/{id}), so there is exactly
-// one path-traversal guard for per-identity filesystem rooting (D-20/D-21). An empty or
-// malformed identity, or one that escapes root, yields ErrInvalidIdentity.
-func RootIdentityDir(root, identity string) (string, error) {
-	if err := ValidateIdentity(identity); err != nil {
-		return "", err
-	}
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", fmt.Errorf("resolve identity root: %w", err)
-	}
-	dir, err := filepath.Abs(filepath.Join(absRoot, identity))
-	if err != nil {
-		return "", fmt.Errorf("resolve identity dir: %w", err)
-	}
-	rel, err := filepath.Rel(absRoot, dir)
-	if err != nil {
-		return "", fmt.Errorf("check identity containment: %w", err)
-	}
-	if rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("%w: %q escapes identity root", ErrInvalidIdentity, identity)
-	}
-	return dir, nil
-}
-
-// ValidateIdentity reports whether identity is a safe per-identity namespace key:
-// it must match identityPattern (charset + length) and contain no ".." or path
-// separator. It is the single traversal/charset guard reused wherever an identity
-// is mapped to a namespaced resource — a filesystem root (RootIdentityDir) or an
-// object-store bucket name (internal/objectstore/garageadmin) — so injection and
-// traversal are rejected in exactly one place. An empty or malformed identity
-// yields ErrInvalidIdentity.
-func ValidateIdentity(identity string) error {
-	if !identityPattern.MatchString(identity) || strings.Contains(identity, "..") ||
-		strings.ContainsAny(identity, `/\`) {
-		return fmt.Errorf("%w: %q must match %s and contain no traversal", ErrInvalidIdentity, identity, identityPattern.String())
-	}
-	return nil
-}
-
 func (s *Store) profileDir(identity string) (string, error) {
-	return RootIdentityDir(s.root, identity)
+	return idroot.RootIdentityDir(s.root, identity)
 }
 
 func atomicWrite(path string, data []byte) error {

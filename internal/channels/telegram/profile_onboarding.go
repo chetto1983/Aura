@@ -12,6 +12,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/idroot"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/google/uuid"
@@ -76,7 +77,7 @@ func (p *profileOnboarding) maybeStart(ctx context.Context, chatID, telegramUser
 	}
 	if _, err := p.store.ReadProfile(acct.IdentityID); err == nil {
 		return profileReply{}, false
-	} else if !errors.Is(err, profile.ErrProfileNotFound) && !errors.Is(err, profile.ErrInvalidIdentity) {
+	} else if !errors.Is(err, profile.ErrProfileNotFound) && !errors.Is(err, idroot.ErrInvalidIdentity) {
 		slog.Warn("telegram profile onboarding: read profile", "identity", acct.IdentityID, "err", err)
 		return profileReply{text: "Profilo non disponibile: non riesco a leggere il profilo ora."}, true
 	}

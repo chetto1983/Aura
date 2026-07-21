@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/profile"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -179,7 +179,7 @@ func (s *IdentityStore) decrypt(ciphertext []byte) (string, error) {
 // the identity is a real UUID (the identity_object_store PK is uuid) — so a hostile
 // identity string can neither be spliced into the query nor address a foreign row.
 func validatedUUID(identity string) (pgtype.UUID, error) {
-	if err := profile.ValidateIdentity(identity); err != nil {
+	if err := idroot.ValidateIdentity(identity); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("objectstore identity: %w", err)
 	}
 	u, err := uuid.Parse(identity)

@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -523,7 +524,7 @@ func profileContextProvider(cfg *config.Config) runner.ContextBlockProvider {
 			loaded, err = store.ReadProfile(owner.ID)
 		}
 		if err != nil {
-			if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, profile.ErrInvalidIdentity) {
+			if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, idroot.ErrInvalidIdentity) {
 				return ""
 			}
 			slog.Warn("profile context: load Agent.md", "identity", owner.Name, "id", owner.ID, "err", err)
