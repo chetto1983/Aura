@@ -6,9 +6,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/assets"
+	"github.com/google/uuid"
 )
 
 func TestOwnerExporterManifestIsVersionedDeterministicAndVerified(t *testing.T) {
@@ -123,6 +128,81 @@ func TestOwnerExporterRejectsTraversalAndReplacedSize(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOwnerExportAPIScopesExportAndDeleteToPrincipal(t *testing.T) {
+	assetID := uuid.NewString()
+	newServer := func(owner string) (*Server, *scriptedRunner, *fakeAssetService) {
+		store := newOwnerConvStore(goodID, owner)
+		run := &scriptedRunner{conv: store}
+		assetService := &fakeAssetService{
+			listResp: []assets.Asset{{
+				ID: assetID, IdentityID: owner, ThreadID: goodID,
+				FileName: "caffè.txt", MIMEType: "text/plain", SizeBytes: 5,
+			}},
+			openResp:  io.NopCloser(bytes.NewReader([]byte("hello"))),
+			openAsset: assets.Asset{ID: assetID, IdentityID: owner},
+		}
+		server := NewServer(run, store, ServerConfig{})
+		server.SetAssetService(assetService)
+		return server, run, assetService
+	}
+
+	t.Run("owner export is a verified archive", func(t *testing.T) {
+		server, run, assetService := newServer(localIdentityID)
+		req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/conversations/"+goodID+"/owner-export", nil), localIdentityID)
+		rec := httptest.NewRecorder()
+		server.Mux().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("owner export status = %d: %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("Content-Type") != "application/zip" || len(rec.Header().Get("X-Aura-SHA256")) != 64 {
+			t.Fatalf("owner export headers = %v", rec.Header())
+		}
+		archive, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+		if err != nil || len(archive.File) != 3 {
+			t.Fatalf("owner export archive files = %d, err=%v", len(archive.File), err)
+		}
+		if run.deleteLifecycleCalls != 0 || assetService.listIdentityID != localIdentityID {
+			t.Fatalf("read export delete/list identity = %d/%q", run.deleteLifecycleCalls, assetService.listIdentityID)
+		}
+	})
+
+	t.Run("foreign export-delete returns no bytes and does not delete", func(t *testing.T) {
+		server, run, assetService := newServer(uuid.NewString())
+		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/conversations/"+goodID+"/export-delete", nil), localIdentityID)
+		rec := httptest.NewRecorder()
+		server.Mux().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("foreign export-delete status = %d: %s", rec.Code, rec.Body.String())
+		}
+		if run.deleteLifecycleCalls != 0 || assetService.listThreadID != "" || assetService.openID != "" {
+			t.Fatalf("foreign export-delete touched delete/list/open = %d/%q/%q", run.deleteLifecycleCalls, assetService.listThreadID, assetService.openID)
+		}
+	})
+
+	t.Run("verified export-delete uses canonical lifecycle", func(t *testing.T) {
+		server, run, _ := newServer(localIdentityID)
+		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/conversations/"+goodID+"/export-delete", nil), localIdentityID)
+		rec := httptest.NewRecorder()
+		server.Mux().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || run.deleteLifecycleCalls != 1 {
+			t.Fatalf("owner export-delete status/calls = %d/%d: %s", rec.Code, run.deleteLifecycleCalls, rec.Body.String())
+		}
+	})
+
+	t.Run("plain delete never creates a hidden export", func(t *testing.T) {
+		server, run, assetService := newServer(localIdentityID)
+		req := withPrincipal(httptest.NewRequest(http.MethodDelete, "/api/conversations/"+goodID, nil), localIdentityID)
+		rec := httptest.NewRecorder()
+		server.Mux().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent || run.deleteLifecycleCalls != 1 {
+			t.Fatalf("plain delete status/calls = %d/%d", rec.Code, run.deleteLifecycleCalls)
+		}
+		if assetService.listThreadID != "" || assetService.openID != "" {
+			t.Fatalf("plain delete created hidden export list/open = %q/%q", assetService.listThreadID, assetService.openID)
+		}
+	})
 }
 
 type fakeOwnerExportSource struct {

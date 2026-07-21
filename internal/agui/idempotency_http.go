@@ -58,6 +58,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/conversations/{id}/branches/{branchSeq}/select":    httpMutationMeta("conversation_branch_select"),
 	"DELETE /api/conversations/{id}":                              httpMutationMeta("conversation_delete"),
 	"POST /api/conversations/{id}/edit":                           httpMutationMeta("conversation_edit"),
+	"POST /api/conversations/{id}/export-delete":                  httpMutationMeta("conversation_export_delete"),
 	"POST /api/conversations/{id}/rename":                         httpMutationMeta("conversation_rename"),
 	"POST /api/conversations/{id}/unarchive":                      httpMutationMeta("conversation_unarchive"),
 	"POST /api/documents":                                         httpMutationMeta("document_create"),
