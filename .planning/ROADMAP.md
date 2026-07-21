@@ -699,7 +699,7 @@ Plans:
 3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
 4. Learning stores enforce a bounded retention cap.
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 Plans:
 
@@ -720,7 +720,7 @@ Plans:
 
 - [x] 39-05-PLAN.md — Immutable Prometheus/Grafana/Tempo/runbook pack with precision-tested alerts and CI provisioning validation (OBS-04) [depends_on 39-03, 39-04]
 - [x] 39-06-PLAN.md — Two-phase bounded retention, active-work exclusion, disk policy, owner export/delete, scheduler and dry-run/apply CLI (OBS-05) [depends_on 39-01, 39-02, 39-04]
-- [ ] 39-07-PLAN.md — Hard-capped learning dedup/stores, bounded loads, deterministic newest-plus-weighted compaction, and capacity metrics (OBS-06) [depends_on 39-04]
+- [x] 39-07-PLAN.md — Hard-capped learning dedup/stores, bounded loads, deterministic newest-plus-weighted compaction, and capacity metrics (OBS-06) [depends_on 39-04]
 
 #### Phase 40: Security & Supply-Chain Pack
 

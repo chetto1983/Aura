@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: Industrial Hardening & Multi-User Production
 current_phase: 39
 current_phase_name: idempotency-observability-pack
-status: executing
-stopped_at: Completed 39-06-PLAN.md
-last_updated: "2026-07-21T19:58:39.079Z"
+status: verifying
+stopped_at: Completed 39-07-PLAN.md
+last_updated: "2026-07-21T20:53:38.831Z"
 last_activity: 2026-07-21
-last_activity_desc: Phase 39 execution started
+last_activity_desc: Plan 39-07 completed; ready for Phase 39 verification
 progress:
   total_phases: 19
-  completed_phases: 16
+  completed_phases: 17
   total_plans: 137
-  completed_plans: 136
-  percent: 84
+  completed_plans: 137
+  percent: 89
 ---
 
 # Project State
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 39 (idempotency-observability-pack) — EXECUTING
+Phase: 39 (idempotency-observability-pack) — VERIFYING
 Plan: 7 of 7
 Close evidence (2026-07-08): live E2E proven — user turn "crea un docx e mandamelo" → DB showed tool_search → send_file → asset accepted (meteo_domani.docx); the full-promotion deferred-tool fix (258e2275/db4f8cf9) roots-caused + fixed the send_file arg hallucination and is now eval-green (TestCoTEval 12/12, 37/37 asserted incl. tool_loop_correctness 2/2 + cache_prefix_stability 1/1; TestKVCacheWarmingE2E 94.2%). npm/pip/uv warm caches added to the aura container (90e8467a, proven to survive --force-recreate) + the box path (87e44ffc). Go toolchain bumped 1.26.4→1.26.5 (7e257d64) clearing GO-2026-4970 + the crypto/tls CVE; govulncheck clean; CI green on HEAD 7e257d64. Sandbox box-mode (strict single_user_hardened) enablement DEFERRED to the native-Linux Ubuntu mini-PC (Docker Desktop egress/gVisor unsuitable) — turnkey plan captured; persistent /workspace comes free (WORKDIR already = per-identity volume). Same live-infra-deferred posture as Phase 37 (native-Linux egress DROP, gVisor runsc, 32GB soak remain infra-gated, NOT code).
 Live UAT (WSL, -race, real Docker): SBX-01/03 docker_integration suite LIVE PASS (RoundTrip/Lifecycle/CrossIdentityDeny/Materialize/Reap); real npm docx+xlsx skills generated in an aura-sandbox box; D-14 soak mechanism PASS (Resolve p95 865ms / Resume p95 361ms / starvation-free, 9GB informational). SBX-03 flipped to [x]. Remaining (infra-gated, NOT code): full egress DROP (native-Linux non-masquerading dockerd — Pitfall 3), gVisor runsc smoke, 32GB soak envelope. Follow-up: WR-01 native-Linux docker_integration CI job. Reports: 37-VALIDATION.md (Live UAT Results), 37-VERIFICATION.md, 37-REVIEW.md.
-Status: Ready to execute
-Last activity: 2026-07-21 — Phase 39 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-21 — Plan 39-07 completed; ready for Phase 39 verification
 
 #### 37F-12 — Parent-mux mount: share.public capability + /s/ public-route predicate + route table (Wave-6, depends_on 37F-10, requirements: WEBSHARE-02). **Sequential on master, 2 atomic commits `db00a2d5` (Task 1, feat) / `39ee1485` (Task 2, feat) + this docs commit.** Mounts the eight WEBSHARE-02/03 share-lifecycle routes on the parent mux. **Task 1 (`db00a2d5`):** new `cmd/aura/serve_webui_share.go` (package main, 125 LOC) — `sharePublicCapability = "share.public"` (D-02, documented as `identity.create`'s sibling not `governance.write`'s, citing the bootstrap-`*`-wildcard vs provisioned-named-cap contrast verified at plan time); fail-closed `isPublicShareRoute(r)` (GET-only, `/s/`-prefixed, default false); `registerShareRoutes(mux, aguiHandler, auth)` mounting all eight routes. **Task 2 (`39ee1485`):** `serve_webui.go` gained exactly 5 lines (593→598/600, the objective's own predicted "2-LOC margin") — one `registerShareRoutes(...)` call + 2-line comment, one `isPublicShareRoute(r)` entry in the `PublicRoute` chain; `fallbackExcludedPrefixes()` deliberately left untouched (the plan's named non-action — `/s/`/`/shared/` must stay OUT so `/s/{token}` falls through to the SPA shell). Two new predicate test files, both untagged: `cmd/aura/share_public_route_test.go` (13-case table + `TestSharePublicCapabilityNameValid`, settling RESEARCH assumption A3 by execution) and `internal/agui/share_public_route_test.go` (the coverage-measured pair, driving the same cases through the real `agui.RequireAuth` with an equivalent `PublicRoute` closure — `isPublicShareRoute` itself is package main and `cmd/aura` contributes zero coverage at any tag, WR-01/T-37F-66). Both suites assert `/sabotage`, bare `/s`, `/shared/abc`, and the two D-10 `/api/shares/{id}/...` routes are refused. **DEVIATION (documented, not auto-fixed — logged to `deferred-items.md`):** the plan's `must_haves`/threat-model prose says public minting is "gated by `RequireCapability(share.public)` at the mount," but the plan's own Task 1/2 action text + acceptance criteria are unambiguous and machine-verified the OPPOSITE: `POST /api/shares` mounts bare, "not wrapped in `RequireCapability`," because a single mux entry serves both the internal and public tier via the JSON body and Go's `ServeMux` cannot discriminate on request content. Followed the literal, testable Task instructions over the looser aspirational frontmatter. Net effect: `sharePublicCapability` is a documented, grammar-valid D-02 constant, but no code path yet calls `HasCapability(identityID, "share.public")` — `internal/agui/share_api.go`'s `handleShareCreate` (37F-10, unmodified here, outside this plan's declared file scope) checks only the org kill-switch (`s.cfg.SharePublicEnabled`). Flagged for 37F-13, whose SC4 row 8 ("B holds `share.public`; A does NOT; A mints public ⇒ 403") will very likely fail against current code until a capability check lands in `share_api.go`. **Also logged:** `TestProductionContainerArtifactsMatchFatImageContract` fails against `caddy/Caddyfile` on an unrelated, untouched file — pre-existing, matches the orchestrator-flagged `fix/ci-red-37f-drift` drift; not this plan's concern. **VALIDATION:** `go build ./...` clean; `go vet ./cmd/aura/ ./internal/agui/` clean; `golangci-lint run ./cmd/aura/ ./internal/agui/` 0 issues; `gofmt -l` clean on all 4 touched files; `go test ./cmd/aura/ -run 'TestPublicShareRoute|TestSharePublicCapabilityName' -count=1` + `go test ./internal/agui/ -run 'TestPublicShareRoute' -count=1` both green (WSL `-race` + Windows non-race, both clean); `wc -l cmd/aura/serve_webui.go` = 598; `bash scripts/check-file-size.sh` exit 0; `grep -c registerShareRoutes/isPublicShareRoute serve_webui.go` both exactly 1; no `"/s/"`/`"/shared/"`/`"/api/shares` literal added to `serve_webui.go`. `internal/agui` full untagged suite green (no regressions from the mux edit). WEBSHARE-02 stays `[x]` (already marked by an earlier 37F plan; this plan is pure mount wiring, no new requirement surface). SUMMARY: `.planning/phases/37F-conversation-artifact-sharing-export-inserted/37F-12-SUMMARY.md`. Next: **37F-13** (SC4 cross-identity deny, Wave-7, depends_on 37F-11+37F-12 — now unblocked).
 
@@ -375,6 +375,7 @@ All 9 phases (22–30) are closed and the milestone is archived to `.planning/mi
 | Phase 39 P04 | 1h 14m | 3 tasks | 45 files |
 | Phase 39 P05 | 317 min | 3 tasks | 19 files |
 | Phase 39 P06 | 56min | 3 tasks | 42 files |
+| Phase 39 P07 | 45min | 3 tasks | 38 files |
 
 ## Accumulated Context
 
@@ -711,6 +712,10 @@ Recent decisions affecting current work:
 - [Phase 39]: Retention uses planned/deleting/retryable/completed/failed state with lease-owned transitions and disjoint SKIP LOCKED claims.
 - [Phase 39]: Tempo exclusively owns Tempo blocks; Aura retention has no Tempo root and never enumerates one.
 - [Phase 39]: Export-delete invokes canonical DeleteConversationLifecycle only after atomic publish and full archive/manifest re-verification; plain delete creates no archive.
+- [Phase 39]: Dedup identity remains neostore.HashText over exact UTF-8 bytes; SeenSet stores no raw observations or normalized Unicode.
+- [Phase 39]: Manual ReasoningSeed and ToolSelectionSeed nodes remain cap-exempt and non-expiring through separate labels and source predicates.
+- [Phase 39]: Compaction reserves ceil(capacity*25/100) newest hashes, then uses SHA-256-seeded fixed-point quality/novelty weighted selection.
+- [Phase 39]: Learning deletion is bounded and matches exact hash, learned source, and updated_at version; empty MCP write acknowledgments trigger only bounded hash-page verification.
 
 ### Pending Todos
 
@@ -757,8 +762,8 @@ Items acknowledged at the v1.0.0 override close on 2026-06-29 (all pre-documente
 
 ## Session Continuity
 
-Last session: 2026-07-21T19:58:39.053Z
-Stopped at: Completed 39-06-PLAN.md
+Last session: 2026-07-21T20:53:38.805Z
+Stopped at: Completed 39-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
