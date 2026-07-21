@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/neostore"
 )
@@ -18,16 +20,68 @@ type fakeGraph struct {
 	lastWriteParams map[string]any
 	readRows        []map[string]any
 	readErr         error
+	lastReadQuery   string
+	lastReadParams  map[string]any
+	writeRows       []map[string]any
 }
 
-func (f *fakeGraph) Read(_ context.Context, _ string, _ map[string]any) ([]map[string]any, error) {
+func (f *fakeGraph) Read(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
+	f.lastReadQuery, f.lastReadParams = query, params
 	return f.readRows, f.readErr
 }
 
 func (f *fakeGraph) Write(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
 	f.lastWriteQuery = query
 	f.lastWriteParams = params
-	return nil, nil
+	if f.writeRows != nil {
+		return f.writeRows, nil
+	}
+	return []map[string]any{{"status": "created"}}, nil
+}
+
+func TestStore_LoadExamples_UsesBoundedCypher(t *testing.T) {
+	g := &fakeGraph{}
+	s := &Store{Client: g, Now: func() time.Time { return time.Unix(1_800_000_000, 0) }}
+	if _, err := s.LoadExamples(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"source = 'learned'", "updated_at >= datetime($cutoff)", "ORDER BY e.updated_at DESC, e.hash ASC", "LIMIT $bucket_limit", "LIMIT $store_limit"} {
+		if !strings.Contains(g.lastReadQuery, fragment) {
+			t.Errorf("bounded load query missing %q", fragment)
+		}
+	}
+}
+
+func TestStore_SaveLearnedReportsCapacity(t *testing.T) {
+	g := &fakeGraph{writeRows: []map[string]any{{"status": "at_capacity"}}}
+	s := &Store{Client: g}
+	result, err := s.SaveLearned(context.Background(), "query", "web_search", []float64{1}, 0.8, 0.6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != SaveAtCapacity {
+		t.Fatalf("result = %q", result)
+	}
+	if !strings.Contains(g.lastWriteQuery, "bucket_count < row.bucket_cap") || !strings.Contains(g.lastWriteQuery, "store_count < row.store_cap") {
+		t.Fatalf("write does not enforce both caps: %s", g.lastWriteQuery)
+	}
+}
+
+func TestStore_PinnedSeedsAreSeparateAndBounded(t *testing.T) {
+	g := &fakeGraph{}
+	s := &Store{Client: g}
+	if err := s.SavePinned(context.Background(), "seed", "web_search", []float64{1}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(g.lastWriteQuery, ":ToolSelectionSeed") || strings.Contains(g.lastWriteQuery, "bucket_count") {
+		t.Fatalf("pinned save is not isolated: %s", g.lastWriteQuery)
+	}
+	if _, err := s.LoadPinnedExamples(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(g.lastReadQuery, ":ToolSelectionSeed") || !strings.Contains(g.lastReadQuery, "LIMIT $limit") {
+		t.Fatalf("pinned load is not bounded: %s", g.lastReadQuery)
+	}
 }
 
 func TestStore_Save_NestsEmbeddingInUnwindRows(t *testing.T) {

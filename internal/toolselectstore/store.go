@@ -10,6 +10,7 @@ package toolselectstore
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/chetto1983/aura/internal/neostore"
 )
@@ -29,6 +30,34 @@ type LabeledVec struct {
 // and the hash/column coercers are the canonical neostore leaf (QUAL-03).
 type Store struct {
 	Client neostore.GraphClient
+	Now    func() time.Time
+}
+
+// SaveResult is the typed outcome of a learned-example write admission.
+type SaveResult string
+
+const (
+	// SaveCreated reports a newly admitted example.
+	SaveCreated SaveResult = "created"
+	// SaveUpdated reports a same-hash idempotent update.
+	SaveUpdated SaveResult = "updated"
+	// SaveAtCapacity reports a hard-cap rejection.
+	SaveAtCapacity SaveResult = "at_capacity"
+)
+
+// SaveLearned persists a scored learned example through atomic cap admission.
+func (s *Store) SaveLearned(context.Context, string, string, []float64, float64, float64) (SaveResult, error) {
+	return "", fmt.Errorf("toolselectstore: bounded save not implemented")
+}
+
+// SavePinned persists a manual evaluation seed outside learned capacity.
+func (s *Store) SavePinned(context.Context, string, string, []float64) error {
+	return fmt.Errorf("toolselectstore: pinned save not implemented")
+}
+
+// LoadPinnedExamples loads a separately bounded manual seed set.
+func (s *Store) LoadPinnedExamples(context.Context) ([]LabeledVec, error) {
+	return nil, fmt.Errorf("toolselectstore: pinned load not implemented")
 }
 
 const (
