@@ -199,14 +199,20 @@ records the native-Go-driver ban: every agent-facing Cypher call goes over MCP
 ## Monitoring & Observability
 
 **Tracing:**
-- OpenTelemetry SDK v1.44.0, initialized in `internal/obs/init.go` (+ `otel_error_handler.go`).
+- OpenTelemetry SDK v1.44.0, initialized with the metric provider and one shared resource in
+  `internal/obs/init.go` (+ `otel_error_handler.go`).
 - Exporters: OTLP/gRPC (`otlptracegrpc`) and stdout (`stdouttrace`).
 - Env: `AURA_OTEL_EXPORTER`, `AURA_OTEL_ENDPOINT`.
 
 **Metrics:**
-- Prometheus `client_golang` v1.23.2. `GET /metrics` served by `promhttp.Handler()` at
-  `internal/agui/server.go:246`. **The endpoint is auth-gated** along with the SPA shell and
-  `/debug/vars` (`internal/agui/auth.go:167`) — it is not an open scrape target.
+- One OTel `sdkmetric.MeterProvider` owns a dedicated-registry Prometheus reader and, when
+  `AURA_OTEL_EXPORTER=otlp`, an independent periodic OTLP/gRPC metric reader. Both use the
+  catalog and explicit histogram views in `internal/obs/catalog.go`.
+- Canonical OTel metrics are served only by the separately joined private listener configured by
+  `AURA_METRICS_BIND` (default `127.0.0.1:9464`). The handler is absent from public AG-UI routes,
+  and non-loopback bind values fail validation.
+- Prometheus `client_golang` v1.23.2 remains for the authenticated legacy-compatibility
+  `GET /metrics` route in `internal/agui/server.go`; that route does not expose the OTel catalog.
 - Cache telemetry: `internal/cachemetrics/` (Postgres-backed).
 
 **Logs:**

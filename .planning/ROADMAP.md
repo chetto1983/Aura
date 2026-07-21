@@ -699,7 +699,7 @@ Plans:
 3. Sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion.
 4. Learning stores enforce a bounded retention cap.
 
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 
@@ -714,7 +714,7 @@ Plans:
 
 **Wave 3** *(instruments the settled mutation and serving seams)*
 
-- [ ] 39-04-PLAN.md — One OTel trace/metric lifecycle, bounded catalog, Prometheus + OTLP readers, and complete runtime instrumentation (OBS-03) [depends_on 39-02, 39-03]
+- [x] 39-04-PLAN.md — One OTel trace/metric lifecycle, bounded catalog, Prometheus + OTLP readers, and complete runtime instrumentation (OBS-03) [depends_on 39-02, 39-03]
 
 **Wave 4** *(parallel production consumers)*
 
