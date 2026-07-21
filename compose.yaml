@@ -225,6 +225,8 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
+      # curl's 3s ceiling exceeds Aura's shared 2s readiness budget; Compose's 5s
+      # timeout remains the outer bound for process startup and runtime loss checks.
       test: ["CMD-SHELL", "curl -fsS --max-time 3 http://127.0.0.1:9080/readyz >/dev/null"]
       interval: 30s
       timeout: 5s

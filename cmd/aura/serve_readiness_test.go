@@ -3,9 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +18,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/readiness"
+	"github.com/goccy/go-yaml"
 )
 
 func TestComposeAuraReadinessHealthcheckContract(t *testing.T) {
@@ -71,7 +76,64 @@ func TestReadyzReflectsRuntimeLossAndRecoveryWithoutRestart(t *testing.T) {
 	assertReadyzStatus(t, httpServer.URL, http.StatusOK)
 }
 
-func validateAuraComposeReadiness([]byte, time.Duration) error { return nil }
+func validateAuraComposeReadiness(contents []byte, serverBudget time.Duration) error {
+	type healthcheck struct {
+		Test        []string `yaml:"test"`
+		Interval    string   `yaml:"interval"`
+		Timeout     string   `yaml:"timeout"`
+		Retries     int      `yaml:"retries"`
+		StartPeriod string   `yaml:"start_period"`
+	}
+	type service struct {
+		Healthcheck healthcheck `yaml:"healthcheck"`
+	}
+	var document struct {
+		Services map[string]service `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(contents, &document); err != nil {
+		return fmt.Errorf("parse compose: %w", err)
+	}
+	aura, ok := document.Services["aura"]
+	if !ok {
+		return errors.New("compose service aura is missing")
+	}
+	hc := aura.Healthcheck
+	if len(hc.Test) < 2 || hc.Test[0] != "CMD-SHELL" {
+		return errors.New("aura healthcheck must use an explicit CMD-SHELL command")
+	}
+	command := strings.Join(hc.Test[1:], " ")
+	urlMatch := regexp.MustCompile(`https?://[^\s"']+`).FindString(command)
+	probeURL, err := url.Parse(urlMatch)
+	if err != nil || probeURL.Hostname() != "127.0.0.1" || probeURL.Path != "/readyz" {
+		return fmt.Errorf("aura healthcheck must target loopback /readyz, got %q", urlMatch)
+	}
+	maxTimeMatch := regexp.MustCompile(`(?:^|\s)--max-time(?:=|\s+)([0-9]+(?:\.[0-9]+)?)`).FindStringSubmatch(command)
+	if len(maxTimeMatch) != 2 {
+		return errors.New("aura healthcheck curl --max-time is missing")
+	}
+	maxTimeSeconds, err := strconv.ParseFloat(maxTimeMatch[1], 64)
+	if err != nil || time.Duration(maxTimeSeconds*float64(time.Second)) <= serverBudget {
+		return fmt.Errorf("curl max-time %q must exceed server budget %s", maxTimeMatch[1], serverBudget)
+	}
+	for name, value := range map[string]string{
+		"interval":     hc.Interval,
+		"timeout":      hc.Timeout,
+		"start_period": hc.StartPeriod,
+	} {
+		duration, err := time.ParseDuration(value)
+		if err != nil || duration <= 0 {
+			return fmt.Errorf("aura healthcheck %s must be an explicit positive duration", name)
+		}
+	}
+	composeTimeout, _ := time.ParseDuration(hc.Timeout)
+	if composeTimeout <= time.Duration(maxTimeSeconds*float64(time.Second)) {
+		return fmt.Errorf("compose timeout %s must exceed curl max-time %ss", composeTimeout, maxTimeMatch[1])
+	}
+	if hc.Retries <= 0 {
+		return errors.New("aura healthcheck retries must be explicit and positive")
+	}
+	return nil
+}
 
 func assertReadyzStatus(t *testing.T, baseURL string, want int) {
 	t.Helper()
