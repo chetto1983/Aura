@@ -6,6 +6,7 @@ import (
 )
 
 const catalogGolden = `agent_budget_steps|aura.agent.budget.consume.step|aura_agent_budget_consume_step_total|counter|1||Total agent budget steps consumed.|
+boundary_in_flight|aura.boundary.in_flight|aura_boundary_in_flight|updowncounter|1|operation,tool_class,transport|Current in-flight instrumented boundaries.|
 agent_tool_dispatch|aura.agent.tool.dispatch|aura_agent_tool_dispatch_total|counter|1||Total tool calls dispatched by the agent.|
 agent_llm_stream_open|aura.agent.llm.stream.open|aura_agent_llm_stream_open_total|counter|1||Total LLM stream open attempts.|
 agent_llm_stream_retry|aura.agent.llm.stream.retry|aura_agent_llm_stream_retry_total|counter|1||Total LLM stream open retries.|
