@@ -23,6 +23,7 @@ type cliMutationMeta struct {
 	Scope     idempotency.Scope
 	Normalize string
 	KeyPolicy string
+	Execute   cliCommandExecutor
 }
 
 const cliExplicitOrGeneratedKey = "explicit_or_generated"
@@ -98,7 +99,10 @@ var cliMutationCommands = map[string]cliMutationMeta{
 }
 
 func cliMutationMetaFor(normalizer string) cliMutationMeta {
-	return cliMutationMeta{Scope: idempotency.ScopeCLICommand, Normalize: normalizer, KeyPolicy: cliExplicitOrGeneratedKey}
+	return cliMutationMeta{
+		Scope: idempotency.ScopeCLICommand, Normalize: normalizer,
+		KeyPolicy: cliExplicitOrGeneratedKey, Execute: executeCLIChild,
+	}
 }
 
 // prepareCLIIdempotency removes Aura's cross-command --operation-key flag and
@@ -150,7 +154,8 @@ func cliOperationFromContext(ctx context.Context) (string, [32]byte, bool) {
 }
 
 func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stderr io.Writer) (bool, int) {
-	if _, mutating := cliMutationPath(args); !mutating {
+	meta, mutating := cliMutationForArgs(args)
+	if !mutating {
 		return false, 0
 	}
 	cfg := config.LoadDB()
@@ -160,7 +165,7 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 		return true, 2
 	}
 	defer pool.Close()
-	return true, runCLIIdempotent(ctx, args, stdout, stderr, idempotency.New(pool, idempotency.Config{}), executeCLIChild)
+	return true, runCLIIdempotent(ctx, args, stdout, stderr, idempotency.New(pool, idempotency.Config{}), meta.Execute)
 }
 
 func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writer, registry cliOperationRegistry, execute cliCommandExecutor) int {
@@ -298,6 +303,15 @@ func cliMutationPath(args []string) (string, bool) {
 	command := args[0] + " " + args[1]
 	_, ok := cliMutationCommands[command]
 	return command, ok
+}
+
+func cliMutationForArgs(args []string) (cliMutationMeta, bool) {
+	command, ok := cliMutationPath(args)
+	if !ok {
+		return cliMutationMeta{}, false
+	}
+	meta, ok := cliMutationCommands[command]
+	return meta, ok && meta.Execute != nil
 }
 
 func removeOperationKeyFlag(args []string) ([]string, string, error) {

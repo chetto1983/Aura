@@ -10,7 +10,7 @@ func TestCLIMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 	t.Parallel()
 
 	for command, meta := range cliMutationCommands {
-		if meta.Scope != idempotency.ScopeCLICommand || meta.Normalize == "" || meta.KeyPolicy != cliExplicitOrGeneratedKey {
+		if meta.Scope != idempotency.ScopeCLICommand || meta.Normalize == "" || meta.KeyPolicy != cliExplicitOrGeneratedKey || meta.Execute == nil {
 			t.Errorf("mutating command %q has incomplete idempotency metadata: %+v", command, meta)
 		}
 	}
