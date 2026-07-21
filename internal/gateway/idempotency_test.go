@@ -81,6 +81,7 @@ func TestGatewayIdempotencyDecisionsPrecedePolicyReservation(t *testing.T) {
 		{name: "changed payload conflict", decision: idempotency.BeginDecision{Decision: idempotency.DecisionConflict}},
 		{name: "fresh in progress", decision: idempotency.BeginDecision{Decision: idempotency.DecisionInProgress, RetryAfter: time.Second}},
 		{name: "indeterminate", decision: idempotency.BeginDecision{Decision: idempotency.DecisionIndeterminate}},
+		{name: "expired result", decision: idempotency.BeginDecision{Decision: idempotency.DecisionResultExpired}},
 		{name: "registry unavailable", beginErr: errors.New("registry down")},
 	}
 	for _, tt := range tests {
@@ -168,6 +169,7 @@ func TestGatewayOperationReplayValidationAndBounds(t *testing.T) {
 	for _, replay := range []*idempotency.ReplayResult{
 		nil,
 		{Body: json.RawMessage(`{not-json`), ExpiresAt: time.Now().Add(time.Hour)},
+		{ExpiresAt: time.Now().Add(time.Hour)},
 	} {
 		if _, err := decodeOperationReplay(replay); err == nil {
 			t.Fatalf("decodeOperationReplay(%+v) error = nil", replay)

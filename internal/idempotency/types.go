@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/textproto"
 	"time"
 	"unicode"
 
@@ -18,6 +19,7 @@ const (
 	MaxReplayBodyBytes      = 256 << 10
 	MaxReplayPreviewBytes   = 4 << 10
 	MaxSidecarRefBytes      = 512
+	MaxReplayHeadersBytes   = 4 << 10
 	MaxAuditToolCallIDBytes = 200
 	MaxRetryAfter           = time.Minute
 )
@@ -99,6 +101,7 @@ type Decision string
 const (
 	DecisionAcquired      Decision = "acquired"
 	DecisionReplay        Decision = "replay"
+	DecisionResultExpired Decision = "completed_result_expired"
 	DecisionInProgress    Decision = "in_progress"
 	DecisionIndeterminate Decision = "indeterminate"
 	DecisionConflict      Decision = "conflict"
@@ -154,7 +157,24 @@ type ReplayResult struct {
 	Body       json.RawMessage
 	Preview    string
 	SidecarRef string
+	StatusCode int
+	Headers    map[string]string
 	ExpiresAt  time.Time
+}
+
+var replayHeaderAllowlist = map[string]struct{}{
+	"Content-Disposition": {},
+	"Content-Type":        {},
+	"Etag":                {},
+	"Location":            {},
+	"Retry-After":         {},
+}
+
+// ReplayHeaderAllowed reports whether a response header is safe and useful to
+// persist in the bounded replay envelope.
+func ReplayHeaderAllowed(name string) bool {
+	_, ok := replayHeaderAllowlist[textproto.CanonicalMIMEHeaderKey(name)]
+	return ok
 }
 
 // Validate enforces the replay-body, preview, sidecar, and expiry contract.
@@ -168,11 +188,29 @@ func (r ReplayResult) Validate() error {
 	if len(r.Body) > 0 && !json.Valid(r.Body) {
 		return fmt.Errorf("idempotency replay body is not valid JSON")
 	}
+	if r.StatusCode != 0 && (r.StatusCode < 100 || r.StatusCode > 599) {
+		return fmt.Errorf("idempotency replay status is invalid")
+	}
+	for name, value := range r.Headers {
+		if !ReplayHeaderAllowed(name) || textproto.CanonicalMIMEHeaderKey(name) != name {
+			return fmt.Errorf("idempotency replay header is not allowlisted")
+		}
+		if err := validateOptionalBoundedText(value, MaxReplayHeadersBytes); err != nil {
+			return fmt.Errorf("invalid idempotency replay header: %w", err)
+		}
+	}
+	encodedHeaders, err := json.Marshal(r.Headers)
+	if err != nil || len(encodedHeaders) > MaxReplayHeadersBytes {
+		return fmt.Errorf("idempotency replay headers exceed limit")
+	}
 	if err := validateOptionalBoundedText(r.Preview, MaxReplayPreviewBytes); err != nil {
 		return fmt.Errorf("invalid idempotency replay preview: %w", err)
 	}
 	if err := validateOptionalBoundedText(r.SidecarRef, MaxSidecarRefBytes); err != nil {
 		return fmt.Errorf("invalid idempotency replay sidecar reference: %w", err)
+	}
+	if len(r.Body) == 0 && r.Preview == "" && r.SidecarRef == "" && r.StatusCode == 0 && len(r.Headers) == 0 {
+		return fmt.Errorf("idempotency replay result is empty")
 	}
 	return nil
 }
@@ -210,7 +248,7 @@ type BeginDecision struct {
 // Validate rejects decision metadata inconsistent with its variant.
 func (d BeginDecision) Validate() error {
 	switch d.Decision {
-	case DecisionAcquired, DecisionIndeterminate, DecisionConflict:
+	case DecisionAcquired, DecisionIndeterminate, DecisionConflict, DecisionResultExpired:
 		if d.Replay != nil || d.RetryAfter != 0 {
 			return fmt.Errorf("idempotency decision carries incompatible metadata")
 		}

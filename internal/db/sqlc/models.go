@@ -297,6 +297,10 @@ type AuraIdempotencyOperations struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
 	IndeterminateAt     pgtype.Timestamptz `json:"indeterminate_at"`
+	ReplayStatusCode    pgtype.Int2        `json:"replay_status_code"`
+	ReplayHeaders       []byte             `json:"replay_headers"`
+	// Terminal marker distinguishing expired replay material from a valid completed response.
+	ReplayClearedAt pgtype.Timestamptz `json:"replay_cleared_at"`
 }
 
 // Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.

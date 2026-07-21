@@ -145,6 +145,8 @@ func TestOperationReplayResultBounds(t *testing.T) {
 		Body:       json.RawMessage(`{"status":"ok"}`),
 		Preview:    "created",
 		SidecarRef: "tool-results/sidecar-1",
+		StatusCode: 202,
+		Headers:    map[string]string{"Location": "/operations/one"},
 		ExpiresAt:  expiresAt,
 	}
 	if err := valid.Validate(); err != nil {
@@ -162,6 +164,9 @@ func TestOperationReplayResultBounds(t *testing.T) {
 		{name: "oversized sidecar ref", result: ReplayResult{SidecarRef: strings.Repeat("s", MaxSidecarRefBytes+1), ExpiresAt: expiresAt}},
 		{name: "sidecar control", result: ReplayResult{SidecarRef: "sidecar\nref", ExpiresAt: expiresAt}},
 		{name: "missing expiry", result: ReplayResult{Body: json.RawMessage(`{}`)}},
+		{name: "invalid status", result: ReplayResult{StatusCode: 99, ExpiresAt: expiresAt}},
+		{name: "unapproved header", result: ReplayResult{StatusCode: 200, Headers: map[string]string{"Set-Cookie": "secret"}, ExpiresAt: expiresAt}},
+		{name: "empty result", result: ReplayResult{ExpiresAt: expiresAt}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -183,6 +188,7 @@ func TestOperationBeginDecisionValidation(t *testing.T) {
 		{Decision: DecisionInProgress, RetryAfter: time.Second},
 		{Decision: DecisionIndeterminate},
 		{Decision: DecisionConflict},
+		{Decision: DecisionResultExpired},
 	}
 	for _, decision := range valid {
 		if err := decision.Validate(); err != nil {

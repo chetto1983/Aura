@@ -56,9 +56,11 @@ func TestWriteIdempotencyDecisionHTTPMapping(t *testing.T) {
 		wantStatus int
 		wantRetry  bool
 		wantReplay bool
+		wantHeader string
 	}{
 		{name: "acquired", decision: idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, wantStatus: http.StatusOK},
-		{name: "replay", decision: idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: &idempotency.ReplayResult{Body: replayBody, ExpiresAt: time.Now().Add(time.Hour)}}, wantHandle: true, wantStatus: http.StatusOK, wantReplay: true},
+		{name: "replay", decision: idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: &idempotency.ReplayResult{Body: replayBody, StatusCode: http.StatusAccepted, Headers: map[string]string{"Location": "/api/conversations/conv-1"}, ExpiresAt: time.Now().Add(time.Hour)}}, wantHandle: true, wantStatus: http.StatusAccepted, wantReplay: true, wantHeader: "/api/conversations/conv-1"},
+		{name: "expired result", decision: idempotency.BeginDecision{Decision: idempotency.DecisionResultExpired}, wantHandle: true, wantStatus: http.StatusGone},
 		{name: "conflict", decision: idempotency.BeginDecision{Decision: idempotency.DecisionConflict}, wantHandle: true, wantStatus: http.StatusConflict},
 		{name: "in progress", decision: idempotency.BeginDecision{Decision: idempotency.DecisionInProgress, RetryAfter: 1500 * time.Millisecond}, wantHandle: true, wantStatus: http.StatusConflict, wantRetry: true},
 		{name: "indeterminate", decision: idempotency.BeginDecision{Decision: idempotency.DecisionIndeterminate}, wantHandle: true, wantStatus: http.StatusUnprocessableEntity},
@@ -87,6 +89,9 @@ func TestWriteIdempotencyDecisionHTTPMapping(t *testing.T) {
 			}
 			if got := rr.Header().Get("Idempotency-Replayed"); (got == "true") != tt.wantReplay {
 				t.Fatalf("Idempotency-Replayed = %q, want replay=%v", got, tt.wantReplay)
+			}
+			if got := rr.Header().Get("Location"); got != tt.wantHeader {
+				t.Fatalf("Location = %q, want %q", got, tt.wantHeader)
 			}
 			if tt.wantReplay && rr.Body.String() != string(replayBody) {
 				t.Fatalf("replay body = %q, want %q", rr.Body.String(), replayBody)

@@ -90,7 +90,7 @@ type Querier interface {
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
-	GetOperation(ctx context.Context, arg GetOperationParams) (AuraIdempotencyOperations, error)
+	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	// Owner-scoped single-pause read (Phase 36 MUSR-01 / D-06): the same projection as

@@ -77,6 +77,8 @@ func (g *Gateway) beginOperation(ctx context.Context, spec tools.Spec, rawArgs j
 		verdict.Reason = "operation is in progress"
 	case idempotency.DecisionIndeterminate:
 		verdict.Reason = "operation outcome is indeterminate"
+	case idempotency.DecisionResultExpired:
+		verdict.Reason = "operation completed but replay result expired"
 	default:
 		verdict.Reason = "operation registry unavailable"
 	}
@@ -86,6 +88,9 @@ func (g *Gateway) beginOperation(ctx context.Context, spec tools.Spec, rawArgs j
 func decodeOperationReplay(replay *idempotency.ReplayResult) (tools.ToolResult, error) {
 	if replay == nil {
 		return tools.ToolResult{}, errors.New("missing replay")
+	}
+	if len(replay.Body) == 0 && replay.Preview == "" && replay.SidecarRef == "" {
+		return tools.ToolResult{}, errors.New("expired replay")
 	}
 	var result tools.ToolResult
 	if len(replay.Body) != 0 {

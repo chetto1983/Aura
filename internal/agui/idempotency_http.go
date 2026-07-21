@@ -117,12 +117,25 @@ func writeIdempotencyDecision(w http.ResponseWriter, decision idempotency.BeginD
 	case idempotency.DecisionAcquired:
 		return false
 	case idempotency.DecisionReplay:
-		w.Header().Set("Content-Type", "application/json")
+		if decision.Replay != nil {
+			for name, value := range decision.Replay.Headers {
+				w.Header().Set(name, value)
+			}
+		}
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
 		w.Header().Set("Idempotency-Replayed", "true")
-		w.WriteHeader(http.StatusOK)
+		status := http.StatusOK
+		if decision.Replay != nil && decision.Replay.StatusCode != 0 {
+			status = decision.Replay.StatusCode
+		}
+		w.WriteHeader(status)
 		if decision.Replay != nil && len(decision.Replay.Body) != 0 {
 			_, _ = w.Write(decision.Replay.Body)
 		}
+	case idempotency.DecisionResultExpired:
+		writeIdempotencyError(w, http.StatusGone, "operation completed but its replay result is no longer retained")
 	case idempotency.DecisionConflict:
 		writeIdempotencyError(w, http.StatusConflict, "operation key conflicts with a different request")
 	case idempotency.DecisionInProgress:
