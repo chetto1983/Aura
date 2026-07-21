@@ -16,13 +16,20 @@ import (
 var errFakeQuery = errors.New("fake idempotency query failure")
 
 type fakeOperationQueries struct {
-	tryStart      func(context.Context, sqlc.TryStartOperationParams) (int64, error)
-	get           func(context.Context, sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error)
-	complete      func(context.Context, sqlc.CompleteOperationParams) (int64, error)
-	indeterminate func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
-	listExpired   func(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
-	clearExpired  func(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error)
+	tryStart      tryStartQuery
+	get           getOperationQuery
+	complete      completeOperationQuery
+	indeterminate markIndeterminateQuery
+	listExpired   listExpiredQuery
+	clearExpired  clearExpiredQuery
 }
+
+type tryStartQuery func(context.Context, sqlc.TryStartOperationParams) (int64, error)
+type getOperationQuery func(context.Context, sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error)
+type completeOperationQuery func(context.Context, sqlc.CompleteOperationParams) (int64, error)
+type markIndeterminateQuery func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
+type listExpiredQuery func(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
+type clearExpiredQuery func(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error)
 
 func (f *fakeOperationQueries) TryStartOperation(ctx context.Context, arg sqlc.TryStartOperationParams) (int64, error) {
 	if f.tryStart == nil {

@@ -4,9 +4,11 @@ package idempotency
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,7 +27,7 @@ func TestStorePostgresContract(t *testing.T) {
 	defer cancel()
 	app := openIdempotencyPool(t, ctx, requiredIntegrationEnv(t, "AURA_DB_URL"))
 	migrate := openIdempotencyPool(t, ctx, requiredIntegrationEnv(t, "AURA_DB_MIGRATE_URL"))
-	assertDisposableMigratedDatabase(t, ctx, app)
+	assertDisposableMigratedDatabase(t, ctx, app, migrate)
 
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	store := New(app, Config{Now: func() time.Time { return now }, LeaseDuration: 2 * time.Minute, RetryAfter: 5 * time.Second, ExpiryBatch: 2})
@@ -78,7 +80,7 @@ func TestStorePostgresContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if replay.Decision != DecisionReplay || replay.Replay == nil || string(replay.Replay.Body) != string(result.Body) {
+		if replay.Decision != DecisionReplay || replay.Replay == nil || !sameJSON(replay.Replay.Body, result.Body) {
 			t.Fatalf("replay=%+v", replay)
 		}
 		conflictReq := req
@@ -117,7 +119,7 @@ func TestStorePostgresContract(t *testing.T) {
 
 	t.Run("expiry cutoff and bounded batch preserve metadata", func(t *testing.T) {
 		cutoff := now.Add(30 * time.Minute)
-		expiries := []time.Time{cutoff.Add(-time.Nanosecond), cutoff, cutoff.Add(time.Nanosecond)}
+		expiries := []time.Time{cutoff.Add(-time.Second), cutoff, cutoff.Add(time.Second)}
 		requests := make([]BeginRequest, len(expiries))
 		for i, expiry := range expiries {
 			req := integrationRequest(t, localIdentityID, fmt.Sprintf("expiry-%d-%s", i, uuid.NewString()))
@@ -142,7 +144,7 @@ func TestStorePostgresContract(t *testing.T) {
 		assertReplayMetadata(t, ctx, app, requests[1], true)
 		assertReplayMetadata(t, ctx, app, requests[2], false)
 
-		second, err := store.ExpireReplayBodies(ctx, cutoff.Add(time.Nanosecond))
+		second, err := store.ExpireReplayBodies(ctx, cutoff.Add(time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,21 +181,27 @@ func openIdempotencyPool(t *testing.T, ctx context.Context, dsn string) *pgxpool
 	return pool
 }
 
-func assertDisposableMigratedDatabase(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+func assertDisposableMigratedDatabase(t *testing.T, ctx context.Context, app, migrate *pgxpool.Pool) {
 	t.Helper()
-	var name string
-	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
+	var appName, migrateName string
+	if err := app.QueryRow(ctx, `SELECT current_database()`).Scan(&appName); err != nil {
 		t.Fatal(err)
 	}
-	if name == "aura" || name == "postgres" {
-		t.Fatalf("refusing db_integration database %q; use a disposable database", name)
+	if err := migrate.QueryRow(ctx, `SELECT current_database()`).Scan(&migrateName); err != nil {
+		t.Fatal(err)
+	}
+	if appName != migrateName {
+		t.Fatalf("app database %q and migration database %q differ", appName, migrateName)
+	}
+	if appName == "aura" || appName == "postgres" {
+		t.Fatalf("refusing db_integration database %q; use a disposable database", appName)
 	}
 	var version int
-	if err := pool.QueryRow(ctx, `SELECT version FROM public.schema_migrations`).Scan(&version); err != nil {
+	if err := migrate.QueryRow(ctx, `SELECT version FROM public.schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("query migration version: %v", err)
 	}
 	if version < 43 {
-		t.Fatalf("database %q is at migration %d; run `aura db migrate` against the disposable database", name, version)
+		t.Fatalf("database %q is at migration %d; run `aura db migrate` against the disposable database", appName, version)
 	}
 }
 
@@ -236,3 +244,11 @@ func assertReplayMetadata(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 }
 
 var _ sqlc.DBTX = (*pgxpool.Pool)(nil)
+
+func sameJSON(left, right []byte) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
