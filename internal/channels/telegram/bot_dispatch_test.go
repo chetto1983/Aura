@@ -13,7 +13,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // dispatchBot is a tele.API double for the inbound-dispatch tests. It embeds the
@@ -217,17 +216,8 @@ func recordingFactory() consumerFactory {
 // (as Start would) WITHOUT touching the network.
 func dispatchChannel(t *testing.T, rt *recordingTurn, overlay func(*Deps)) *Telegram {
 	t.Helper()
-	profileStore := profile.NewStore(t.TempDir())
-	if err := profileStore.WriteProfile(profileAccount().IdentityID, profile.Profile{
-		AgentMD: "test profile",
-		Metadata: profile.Metadata{
-			Version:             1,
-			SchemaVersion:       1,
-			OnboardingCompleted: true,
-		},
-	}); err != nil {
-		t.Fatalf("seed dispatch profile: %v", err)
-	}
+	profileStore := newFakeMemoryStore()
+	profileStore.markCompleted(profileAccount().IdentityID)
 	d := Deps{
 		Turn:            rt.driver(),
 		Offline:         true,

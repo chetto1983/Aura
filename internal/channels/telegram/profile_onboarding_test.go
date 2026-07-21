@@ -3,15 +3,82 @@ package telegram
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/profile"
 	tele "gopkg.in/telebot.v4"
 )
 
 func ptrBool(b bool) *bool { return &b }
+
+// fakeMemoryStore is an in-memory profileflow.ProfileMemoryStore for the telegram
+// onboarding tests (Amendment #87): it records the confirmed Answers / raw draft and
+// the completed/skipped sentinel, replacing the filesystem profile.Store the
+// pre-supersession tests read back. statusErr forces the Status read-error branch.
+type fakeMemoryStore struct {
+	mu        sync.Mutex
+	states    map[string]profileflow.OnboardingState
+	confirmed map[string]profileflow.Answers
+	drafts    map[string]string
+	statusErr error
+}
+
+func newFakeMemoryStore() *fakeMemoryStore {
+	return &fakeMemoryStore{
+		states:    map[string]profileflow.OnboardingState{},
+		confirmed: map[string]profileflow.Answers{},
+		drafts:    map[string]string{},
+	}
+}
+
+func (f *fakeMemoryStore) StoreConfirmed(_ context.Context, identityID string, a profileflow.Answers, rawDraft string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.states[identityID] = profileflow.OnboardingState{Completed: true}
+	f.confirmed[identityID] = a
+	f.drafts[identityID] = rawDraft
+	return nil
+}
+
+func (f *fakeMemoryStore) StoreSkipped(_ context.Context, identityID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.states[identityID] = profileflow.OnboardingState{Skipped: true}
+	return nil
+}
+
+func (f *fakeMemoryStore) Status(_ context.Context, identityID string) (profileflow.OnboardingState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.statusErr != nil {
+		return profileflow.OnboardingState{}, f.statusErr
+	}
+	return f.states[identityID], nil
+}
+
+// markCompleted seeds the completed sentinel so a test can model an already-onboarded
+// identity without driving the full interview.
+func (f *fakeMemoryStore) markCompleted(identityID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.states[identityID] = profileflow.OnboardingState{Completed: true}
+}
+
+func (f *fakeMemoryStore) confirmedAnswers(identityID string) (profileflow.Answers, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, ok := f.confirmed[identityID]
+	return a, ok
+}
+
+func (f *fakeMemoryStore) state(identityID string) profileflow.OnboardingState {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.states[identityID]
+}
 
 // driveToStyle sends blank answers for identity+work+projects+social, returning
 // the last reply (which should be the style question). Returns false if any step
@@ -31,7 +98,7 @@ func driveToStyle(t *testing.T, po *profileOnboarding, chatID int64) bool {
 
 func TestProfileOnboardingConfirmWritesProfile(t *testing.T) {
 	ctx := context.Background()
-	store := profile.NewStore(t.TempDir())
+	store := newFakeMemoryStore()
 	po := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()})
 
 	start, handled := po.maybeStart(ctx, 42, 555)
@@ -51,25 +118,24 @@ func TestProfileOnboardingConfirmWritesProfile(t *testing.T) {
 	if !handled || !strings.Contains(done.text, "Profilo salvato") {
 		t.Fatalf("confirm callback = (%+v, %v), want success reply", done, handled)
 	}
-	loaded, err := store.ReadProfile(profileAccount().IdentityID)
-	if err != nil {
-		t.Fatalf("ReadProfile: %v", err)
+	a, ok := store.confirmedAnswers(profileAccount().IdentityID)
+	if !ok {
+		t.Fatal("StoreConfirmed was not called")
 	}
-	if !strings.Contains(loaded.AgentMD, "Name: Davide") ||
-		!strings.Contains(loaded.AgentMD, "Prefer Italian responses") {
-		t.Fatalf("stored Agent.md missing onboarding content:\n%s", loaded.AgentMD)
+	if !strings.Contains(a.Name, "Davide") {
+		t.Fatalf("confirmed name = %q, want it to contain Davide", a.Name)
 	}
-	if loaded.Preferences.Lang != "it" || loaded.Preferences.Timezone != "Europe/Rome" || !loaded.Preferences.VoiceMode {
-		t.Fatalf("stored preferences = %+v, want it/Europe/Rome/voice", loaded.Preferences)
+	if a.Lang != "it" || a.Timezone != "Europe/Rome" || a.VoiceMode == nil || !*a.VoiceMode {
+		t.Fatalf("confirmed answers = %+v, want it/Europe/Rome/voice", a)
 	}
-	if !loaded.Metadata.OnboardingCompleted || loaded.Metadata.OnboardingSkipped {
-		t.Fatalf("metadata = %+v, want completed and not skipped", loaded.Metadata)
+	if st := store.state(profileAccount().IdentityID); !st.Completed || st.Skipped {
+		t.Fatalf("state = %+v, want completed and not skipped", st)
 	}
 }
 
 func TestProfileOnboardingSkipWritesSkippedMetadata(t *testing.T) {
 	ctx := context.Background()
-	store := profile.NewStore(t.TempDir())
+	store := newFakeMemoryStore()
 	po := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()})
 
 	if _, handled := po.maybeStart(ctx, 42, 555); !handled {
@@ -79,21 +145,18 @@ func TestProfileOnboardingSkipWritesSkippedMetadata(t *testing.T) {
 	if !handled || !strings.Contains(out.text, "saltato") {
 		t.Fatalf("skip callback = (%+v, %v), want skipped reply", out, handled)
 	}
-	loaded, err := store.ReadProfile(profileAccount().IdentityID)
-	if err != nil {
-		t.Fatalf("ReadProfile: %v", err)
+	st := store.state(profileAccount().IdentityID)
+	if !st.Skipped || st.Completed {
+		t.Fatalf("state = %+v, want skipped and not completed", st)
 	}
-	if !loaded.Metadata.OnboardingSkipped || loaded.Metadata.OnboardingCompleted {
-		t.Fatalf("metadata = %+v, want skipped and not completed", loaded.Metadata)
-	}
-	if strings.TrimSpace(loaded.AgentMD) != "" {
-		t.Fatalf("skipped onboarding should not inject Agent.md, got:\n%s", loaded.AgentMD)
+	if _, ok := store.confirmedAnswers(profileAccount().IdentityID); ok {
+		t.Fatal("skipped onboarding must not store a confirmed profile")
 	}
 }
 
 func TestProfileOnboardingEditRevisesDraftBeforeConfirm(t *testing.T) {
 	ctx := context.Background()
-	store := profile.NewStore(t.TempDir())
+	store := newFakeMemoryStore()
 	po := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()})
 
 	po.maybeStart(ctx, 42, 555)
@@ -113,17 +176,17 @@ func TestProfileOnboardingEditRevisesDraftBeforeConfirm(t *testing.T) {
 	if !handled || !strings.Contains(done.text, "Profilo salvato") {
 		t.Fatalf("confirm after edit = (%+v, %v), want success", done, handled)
 	}
-	loaded, err := store.ReadProfile(profileAccount().IdentityID)
-	if err != nil {
-		t.Fatalf("ReadProfile: %v", err)
+	a, ok := store.confirmedAnswers(profileAccount().IdentityID)
+	if !ok {
+		t.Fatal("StoreConfirmed was not called")
 	}
-	if !strings.Contains(loaded.AgentMD, "Response length: short") {
-		t.Fatalf("stored Agent.md missing edited response length:\n%s", loaded.AgentMD)
+	if a.ResponseLength != "short" {
+		t.Fatalf("confirmed response length = %q, want short (edit must override concise)", a.ResponseLength)
 	}
 }
 
 func TestProfileOnboardingStaleCallbackAckNoop(t *testing.T) {
-	po := newProfileOnboarding(profile.NewStore(t.TempDir()), profileAccountFake{acct: profileAccount()})
+	po := newProfileOnboarding(newFakeMemoryStore(), profileAccountFake{acct: profileAccount()})
 
 	out, handled := po.handleCallback(context.Background(), 42, profileCallbackData(42, profileActionConfirm))
 	if !handled || out.text != "" || !strings.Contains(out.ack, "scadut") {
@@ -187,7 +250,7 @@ func (fakeExtractor) Extract(_ context.Context, step profileflow.Step, _ string)
 	case profileflow.StepStyle:
 		return profileflow.Answers{TonePreference: "friendly", ResponseLength: "normal"}, nil
 	case profileflow.StepDraft:
-		// Simulates the LLM correcting "Afenti Ai" → "Agenti AI" during an edit.
+		// Simulates the LLM correcting "agenti Ai" → "Agenti AI" during an edit.
 		return profileflow.Answers{Stack: []string{"Agenti AI"}}, nil
 	default:
 		return profileflow.Answers{}, nil
@@ -195,8 +258,7 @@ func (fakeExtractor) Extract(_ context.Context, step profileflow.Step, _ string)
 }
 
 func TestProfileOnboarding_RichInterviewWritesProfile(t *testing.T) {
-	dir := t.TempDir()
-	store := profile.NewStore(dir)
+	store := newFakeMemoryStore()
 	p := newProfileOnboarding(store, profileAccountFake{acct: Account{TelegramUserID: 1, IdentityID: "id1", Username: "dav"}})
 	p.extractor = fakeExtractor{}
 
@@ -210,20 +272,24 @@ func TestProfileOnboarding_RichInterviewWritesProfile(t *testing.T) {
 	}
 	p.handleCallback(context.Background(), chatID, profileCallbackData(chatID, profileActionConfirm))
 
-	got, err := store.ReadProfile("id1")
-	if err != nil {
-		t.Fatalf("profile not written: %v", err)
+	a, ok := store.confirmedAnswers("id1")
+	if !ok {
+		t.Fatal("profile not stored")
 	}
-	for _, want := range []string{
-		"## Projects & Goals", "- Aura",
-		"## People", "Andrea — business partner",
-		"## Expertise & Tools", "Stack: Go, Neo4j",
-		"- Name: Davide",
-		"Tone: friendly",
-	} {
-		if !strings.Contains(got.AgentMD, want) {
-			t.Errorf("Agent.md missing %q:\n%s", want, got.AgentMD)
-		}
+	if a.Name != "Davide" {
+		t.Errorf("name = %q, want Davide", a.Name)
+	}
+	if !slices.Contains(a.Projects, "Aura") {
+		t.Errorf("projects = %v, want to contain Aura", a.Projects)
+	}
+	if !slices.Contains(a.People, "Andrea — business partner") {
+		t.Errorf("people = %v, want to contain Andrea — business partner", a.People)
+	}
+	if !slices.Contains(a.Stack, "Go") || !slices.Contains(a.Stack, "Neo4j") {
+		t.Errorf("stack = %v, want Go and Neo4j", a.Stack)
+	}
+	if a.TonePreference != "friendly" {
+		t.Errorf("tone = %q, want friendly", a.TonePreference)
 	}
 }
 
@@ -233,8 +299,7 @@ func TestProfileOnboarding_RichInterviewWritesProfile(t *testing.T) {
 // and the saved Agent.md contains the corrected value and NOT the old typo.
 func TestProfileOnboarding_EditViaExtractorReplacesStack(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
-	store := profile.NewStore(dir)
+	store := newFakeMemoryStore()
 	acct := Account{TelegramUserID: 2, IdentityID: "id2", Username: "dav2"}
 	p := newProfileOnboarding(store, profileAccountFake{acct: acct})
 	p.extractor = fakeExtractor{}
@@ -256,7 +321,7 @@ func TestProfileOnboarding_EditViaExtractorReplacesStack(t *testing.T) {
 	ps := p.sessions[chatID]
 	p.mu.Unlock()
 	ps.mu.Lock()
-	ps.session.Answers.Stack = []string{"Afenti Ai"}
+	ps.session.Answers.Stack = []string{"agenti Ai"}
 	_, _ = ps.session.Apply(profileflow.Input{Intent: profileflow.IntentAnswer, Answers: profileflow.Answers{Lang: "it"}})
 	ps.mu.Unlock()
 
@@ -271,7 +336,7 @@ func TestProfileOnboarding_EditViaExtractorReplacesStack(t *testing.T) {
 	if !handled {
 		t.Fatalf("edit handleText not handled: %+v", revised)
 	}
-	if strings.Contains(revised.text, "Afenti Ai") {
+	if strings.Contains(revised.text, "agenti Ai") {
 		t.Fatalf("revised draft still contains old typo:\n%s", revised.text)
 	}
 	if !strings.Contains(revised.text, "Agenti AI") {
@@ -284,15 +349,15 @@ func TestProfileOnboarding_EditViaExtractorReplacesStack(t *testing.T) {
 		t.Fatalf("confirm = (%+v, %v), want saved", done, handled)
 	}
 
-	loaded, err := store.ReadProfile(acct.IdentityID)
-	if err != nil {
-		t.Fatalf("ReadProfile: %v", err)
+	a, ok := store.confirmedAnswers(acct.IdentityID)
+	if !ok {
+		t.Fatal("StoreConfirmed was not called")
 	}
-	if strings.Contains(loaded.AgentMD, "Afenti Ai") {
-		t.Fatalf("saved Agent.md still contains old typo:\n%s", loaded.AgentMD)
+	if slices.Contains(a.Stack, "agenti Ai") {
+		t.Fatalf("saved stack still contains old typo: %v", a.Stack)
 	}
-	if !strings.Contains(loaded.AgentMD, "Agenti AI") {
-		t.Fatalf("saved Agent.md missing corrected value:\n%s", loaded.AgentMD)
+	if !slices.Contains(a.Stack, "Agenti AI") {
+		t.Fatalf("saved stack missing corrected value: %v", a.Stack)
 	}
 }
 
