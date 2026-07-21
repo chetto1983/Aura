@@ -275,6 +275,30 @@ type AuraDocuments struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
+// Identity-scoped public-operation state and bounded replay metadata linked optionally to the append-only tool invocation audit tuple.
+type AuraIdempotencyOperations struct {
+	IdentityID          pgtype.UUID        `json:"identity_id"`
+	OperationScope      string             `json:"operation_scope"`
+	OperationKey        string             `json:"operation_key"`
+	PayloadHash         []byte             `json:"payload_hash"`
+	State               string             `json:"state"`
+	ReplayBody          []byte             `json:"replay_body"`
+	ReplayPreview       pgtype.Text        `json:"replay_preview"`
+	ReplaySidecarRef    pgtype.Text        `json:"replay_sidecar_ref"`
+	ReplayBytes         int64              `json:"replay_bytes"`
+	ReplayExpiresAt     pgtype.Timestamptz `json:"replay_expires_at"`
+	LeaseExpiresAt      pgtype.Timestamptz `json:"lease_expires_at"`
+	RetryAfter          pgtype.Timestamptz `json:"retry_after"`
+	AuditConversationID pgtype.UUID        `json:"audit_conversation_id"`
+	AuditRequestID      pgtype.UUID        `json:"audit_request_id"`
+	AuditToolCallID     pgtype.Text        `json:"audit_tool_call_id"`
+	Version             int64              `json:"version"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
+	IndeterminateAt     pgtype.Timestamptz `json:"indeterminate_at"`
+}
+
 // Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.
 type AuraIdentities struct {
 	ID        pgtype.UUID        `json:"id"`

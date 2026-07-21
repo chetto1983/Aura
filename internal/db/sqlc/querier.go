@@ -27,6 +27,8 @@ type Querier interface {
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
+	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
+	CompleteOperation(ctx context.Context, arg CompleteOperationParams) (int64, error)
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
@@ -82,6 +84,7 @@ type Querier interface {
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
+	GetOperation(ctx context.Context, arg GetOperationParams) (AuraIdempotencyOperations, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	// Owner-scoped single-pause read (Phase 36 MUSR-01 / D-06): the same projection as
@@ -157,6 +160,7 @@ type Querier interface {
 	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
 	ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
+	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
@@ -193,6 +197,7 @@ type Querier interface {
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
+	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
@@ -219,6 +224,7 @@ type Querier interface {
 	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
+	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)
 	UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error)
 	UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error)
 	UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (AuraAssets, error)
