@@ -19,6 +19,12 @@ services:
     mem_limit: ${AURA_MEM_LIMIT:-768m}
     cpus: ${AURA_CPUS:-1.0}
     pids_limit: ${AURA_PIDS_LIMIT:-512}
+    # Amendment #88: bootstrap the fixed /workspace layout (scripts/artifacts/.toolchain/
+    # scratch) and the read-only skills symlink BEFORE the daemon starts, on every boot —
+    # mkdir -p and ln -sfn are both idempotent, so this is safe across `docker compose up
+    # -d --force-recreate aura` against the already-populated aura-workspace volume.
+    entrypoint: ["sh", "-lc", "mkdir -p /workspace/scripts /workspace/artifacts /workspace/.toolchain /workspace/scratch && ln -sfn /var/lib/aura/exported-skills /workspace/skills && exec aura serve"]
+    command: []
     depends_on:
       aura-migrate:
         condition: service_completed_successfully
@@ -64,6 +70,11 @@ services:
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
       AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
+      # Amendment #88: the fixed local working root every host-direct tool (shell_exec,
+      # fs_*, send_file) and the per-turn runner workspace hint resolve against — same
+      # path the strict-profile sandbox box mounts, backed by the aura-workspace volume
+      # below (durable across `docker compose up -d --force-recreate aura`).
+      AURA_WORKSPACE_DIR: ${AURA_WORKSPACE_DIR:-/workspace}
       AURA_BACKUP_DIR: /backups
       AURA_CONTEXT_PREVIEW_CAP_BYTES: ${AURA_CONTEXT_PREVIEW_CAP_BYTES:-2048}
       AURA_RUN_DIR_SWEEP_INTERVAL_SEC: ${AURA_RUN_DIR_SWEEP_INTERVAL_SEC:-3600}
@@ -213,6 +224,9 @@ services:
     volumes:
       - aura-home:/var/lib/aura
       - ${AURA_BACKUP_DIR:-./backups}:/backups
+      # Amendment #88: the fixed /workspace working root (AURA_WORKSPACE_DIR), durable
+      # across recreates — the entrypoint bootstrap above lays out its subdirs on boot.
+      - aura-workspace:/workspace
       # Warm package caches for the non-strict host-direct shell_exec path (which runs IN this
       # container, HOME=/root, not in a box): without these, /root/.npm|.cache/pip|.cache/uv live in
       # the ephemeral container layer and are wiped on every recreate, so npm/pip/uv re-download every
@@ -818,6 +832,9 @@ services:
 
 volumes:
   aura-home:
+  # Amendment #88: the fixed /workspace working root (scripts/artifacts/.toolchain/scratch
+  # + the skills symlink), durable across `docker compose up -d --force-recreate aura`.
+  aura-workspace:
   aura-postgres:
   aura-neo4j:
   aura-neo4j-plugins:

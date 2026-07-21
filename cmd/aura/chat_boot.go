@@ -336,11 +336,15 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		ToolInvocations: toolInvocationStore,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
-		ResumeCommitter:  runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
-		Client:           client,
-		Registry:         reg,
-		LLM:              cfg.LLM,
-		RunDir:           cfg.RunDir,
+		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
+		Client:          client,
+		Registry:        reg,
+		LLM:             cfg.LLM,
+		RunDir:          cfg.RunDir,
+		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
+		// WorkspaceRoot every host-direct tool now resolves against, replacing the
+		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").
+		Workspace:        cfg.WorkspaceDir,
 		PreviewCap:       cfg.ToolPreviewCap,
 		EvictAfter:       cfg.ContextToolEvictAfterTurns,
 		ArchivalRecaller: archivalRecallProvider(cfg), // nil unless AURA_CONTEXT_MEMORY_RECALL (default off)

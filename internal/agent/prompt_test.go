@@ -138,6 +138,17 @@ func TestPrompt_ByteStable(t *testing.T) {
 	}
 }
 
+// TestPrompt_WorkspaceDoctrine asserts the Amendment #88 <workspace> doctrine block:
+// a fixed persistent /workspace working root, artifacts/ as the delivery staging
+// dir, and the pre-baked toolchain no-reinstall directive.
+func TestPrompt_WorkspaceDoctrine(t *testing.T) {
+	for _, needle := range []string{"/workspace", "artifacts/", "already installed"} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt missing workspace doctrine %q", needle)
+		}
+	}
+}
+
 // TestPrompt_NoSupersededSkillRouting is the #51 supersession guard: the §Skills
 // section must NOT teach the deleted action=catalog/action=install routing (those
 // tool actions are gone; discovery+install is the always-on find-skills skill).

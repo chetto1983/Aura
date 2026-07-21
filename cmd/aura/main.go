@@ -204,9 +204,14 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	reg.Register(&tools.DocumentSearch{Searcher: docsToolSearcher{cfg: cfg}})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
-	workspace := ""
-	if wd, err := os.Getwd(); err == nil {
-		workspace = wd
+	// Amendment #88: workspace is the fixed /workspace working root (cfg.WorkspaceDir),
+	// same value on every host-direct tool below — replacing the previous
+	// process-cwd-derived default (and the fs_* tools' outright lack of a WorkspaceRoot).
+	workspace := cfg.WorkspaceDir
+	if workspace == "" {
+		if wd, err := os.Getwd(); err == nil {
+			workspace = wd
+		}
 	}
 	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: handles.BackgroundShells, Approvals: handles.ShellApprovals, Router: sandboxRouter})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
@@ -225,11 +230,11 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
 	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside
 	// SkillsDir so the gated skill-authoring flow cannot be bypassed.
-	reg.Register(&tools.FSRead{Router: sandboxRouter})
-	reg.Register(&tools.FSWrite{SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
-	reg.Register(&tools.FSEdit{SkillsDir: cfg.SkillsDir})
-	reg.Register(&tools.FSGrep{})
-	reg.Register(&tools.FSGlob{})
+	reg.Register(&tools.FSRead{WorkspaceRoot: workspace, Router: sandboxRouter})
+	reg.Register(&tools.FSWrite{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
+	reg.Register(&tools.FSEdit{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir})
+	reg.Register(&tools.FSGrep{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSGlob{WorkspaceRoot: workspace})
 	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
 	// the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
