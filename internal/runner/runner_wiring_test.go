@@ -235,30 +235,30 @@ func (e *errIdentityStore) GetIdentityByID(ctx context.Context, id string) (iden
 	return e.fakeIdentityStore.GetIdentityByID(ctx, id)
 }
 
-func newCtxBlockRunner(t *testing.T, conv ConversationStore, id IdentityStore, block ContextBlockProvider) *Runner {
+func newCtxBlockRunner(t *testing.T, conv ConversationStore, id IdentityStore, recaller ArchivalRecaller) *Runner {
 	t.Helper()
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(tools.AskUser{})
 	return New(Deps{
-		Conv:            conv,
-		Pause:           newFakePauseStore(),
-		Identity:        id,
-		CacheMetrics:    newFakeCacheMetricStore(),
-		ToolInvocations: newFakeToolInvocationStore(),
-		Client:          agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "ok"))),
-		Registry:        reg,
-		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
-		ContextBlock:    block,
-		TitleTimeout:    time.Second,
-		StopTimeout:     time.Second,
+		Conv:             conv,
+		Pause:            newFakePauseStore(),
+		Identity:         id,
+		CacheMetrics:     newFakeCacheMetricStore(),
+		ToolInvocations:  newFakeToolInvocationStore(),
+		Client:           agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "ok"))),
+		Registry:         reg,
+		LLM:              llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		ArchivalRecaller: recaller,
+		TitleTimeout:     time.Second,
+		StopTimeout:      time.Second,
 	})
 }
 
 func TestRenderContextBlock_GetError(t *testing.T) {
 	conv := &errConvStore{fakeConvStore: newFakeConvStore(), getErr: errFake}
 	r := newCtxBlockRunner(t, conv, newFakeIdentityStore(),
-		func(context.Context, identity.Identity) string { return "block" })
+		func(context.Context, string, string) (string, error) { return "block", nil })
 	convID := newConvID(t)
 	// A turn must surface the contextConfig/renderContextBlock Get error.
 	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err == nil {
@@ -270,7 +270,7 @@ func TestRenderContextBlock_IdentityError(t *testing.T) {
 	conv := newFakeConvStore()
 	id := &errIdentityStore{fakeIdentityStore: newFakeIdentityStore(), byIDErr: errFake}
 	r := newCtxBlockRunner(t, conv, id,
-		func(context.Context, identity.Identity) string { return "block" })
+		func(context.Context, string, string) (string, error) { return "block", nil })
 	convID := newConvID(t)
 	if _, err := r.Conv.Create(context.Background(), conversations.CreateParams{
 		ID: convID, IdentityID: "00000000-0000-0000-0000-000000000001", Model: "test-model",

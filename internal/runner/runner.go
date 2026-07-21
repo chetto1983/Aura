@@ -90,8 +90,7 @@ type Deps struct {
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
-	ContextBlock ContextBlockProvider
-	AlwaysBlock  func() string
+	AlwaysBlock func() string
 	// ArchivalRecaller injects the L4 archival-memory block into messages[1] (PRD
 	// amendment #21). nil => no recall (the AURA_CONTEXT_MEMORY_RECALL default-off
 	// state is produced by the composition root returning nil).
@@ -173,7 +172,6 @@ type Runner struct {
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
-	contextBlock      ContextBlockProvider
 	archivalRecaller  ArchivalRecaller            // L4 archival-memory recall for messages[1] (amendment #21); nil → no recall
 	hookManager       *agent.HookManager          // optional per-turn LlmAgent hooks
 	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
@@ -248,7 +246,6 @@ func New(d Deps) *Runner {
 		titleTimeout:     titleTimeout,
 		stopTimeout:      stopTimeout,
 		resumeHook:       d.ResumeHook,
-		contextBlock:     d.ContextBlock,
 		archivalRecaller: d.ArchivalRecaller,
 		hookManager:      d.HookManager,
 		alwaysBlock:      d.AlwaysBlock,

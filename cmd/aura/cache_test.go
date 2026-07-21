@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/profile"
 )
 
 // TestCacheStats_ParseSince covers the --since flag contract: valid durations
@@ -63,8 +62,8 @@ func TestCacheStats_HitRate(t *testing.T) {
 
 // TestCacheAudit_AllEqual_Exit0 is the SC#1 positive proof: the real 20-turn replay
 // prints one `request NN: <hex>` (messages[0]) line per LLM request, all identical, and
-// exits 0. Phase 14 adds the `messages1 NN:` profile/skills block and `skillman NN:`
-// manifest-in-Description streams over the same replay; each must also be internally
+// exits 0. The replay also emits the `messages1 NN:` always-on skill block and
+// `skillman NN:` manifest-in-Description streams; each must also be internally
 // byte-stable. Runtime-faithful (the real Runner.Turn loop), Postgres-free.
 func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 	var out, errOut bytes.Buffer
@@ -89,7 +88,7 @@ func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 	}
 }
 
-func TestCacheAudit_ProfileContextShape(t *testing.T) {
+func TestCacheAudit_SkillsContextShape(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
 		t.Fatalf("repoRoot: %v", err)
@@ -105,31 +104,20 @@ func TestCacheAudit_ProfileContextShape(t *testing.T) {
 		t.Fatalf("replayAudit exit %d (stderr=%q)", code, errOut.String())
 	}
 	if len(reqs) == 0 || len(reqs[0].Messages) < 2 {
-		t.Fatalf("audit replay emitted no messages[1] profile block: %+v", reqs)
+		t.Fatalf("audit replay emitted no messages[1] skills block: %+v", reqs)
 	}
 
 	first := reqs[0]
-	if !strings.Contains(first.Messages[0].Content, "operator-pinned context") ||
-		!strings.Contains(first.Messages[0].Content, "messages[1]") {
-		t.Fatalf("messages[0] must explain the messages[1] profile-context doctrine:\n%s", first.Messages[0].Content)
-	}
-	if strings.Contains(first.Messages[0].Content, profile.ProfileBlockStart) ||
-		strings.Contains(first.Messages[0].Content, "Name: Cache Audit") {
-		t.Fatalf("Agent.md profile contents must not leak into messages[0]:\n%s", first.Messages[0].Content)
-	}
 	if first.Messages[1].Role != llm.RoleUser {
 		t.Fatalf("messages[1] role = %q, want user", first.Messages[1].Role)
 	}
-	profileAt := strings.Index(first.Messages[1].Content, profile.ProfileBlockStart)
-	skillsAt := strings.Index(first.Messages[1].Content, "Active skill instructions (always-on):")
-	if profileAt < 0 || skillsAt < 0 {
-		t.Fatalf("messages[1] must include profile and always-on skill content:\n%s", first.Messages[1].Content)
+	if !strings.Contains(first.Messages[1].Content, "Active skill instructions (always-on):") {
+		t.Fatalf("messages[1] must include the always-on skill content:\n%s", first.Messages[1].Content)
 	}
-	if profileAt > skillsAt {
-		t.Fatalf("messages[1] must be profile-first, got:\n%s", first.Messages[1].Content)
-	}
-	if !strings.Contains(first.Messages[1].Content, "Name: Cache Audit") {
-		t.Fatalf("messages[1] missing deterministic Agent.md content:\n%s", first.Messages[1].Content)
+	// The always-on skill block rides messages[1], never messages[0] (CAP-04): a skill
+	// add/remove must not bust the protected prefix.
+	if strings.Contains(first.Messages[0].Content, "Active skill instructions (always-on):") {
+		t.Fatalf("the skill block must not leak into messages[0]:\n%s", first.Messages[0].Content)
 	}
 }
 
@@ -164,15 +152,14 @@ func TestCacheAudit_Mutation_Exit1(t *testing.T) {
 	}
 }
 
-func TestCacheAudit_ProfileMutationMessages1Only_Exit1(t *testing.T) {
+func TestCacheAudit_SkillsMutationMessages1Only_Exit1(t *testing.T) {
 	system := llm.Message{Role: llm.RoleSystem, Content: "stable prefix"}
-	skills := "\n\nActive skill instructions (always-on):\n\nfixed skill body"
-	profileV1 := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Cache Audit\n") + skills
-	profileV2 := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Cache Audit\n- Updated preference\n") + skills
+	skillsV1 := "Active skill instructions (always-on):\n\nfixed skill body"
+	skillsV2 := "Active skill instructions (always-on):\n\nfixed skill body — updated"
 	reqs := []llm.Request{
-		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: profileV1}}},
-		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: profileV1}}},
-		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: profileV2}}},
+		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: skillsV1}}},
+		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: skillsV1}}},
+		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: skillsV2}}},
 	}
 
 	var out, errOut bytes.Buffer
@@ -181,10 +168,10 @@ func TestCacheAudit_ProfileMutationMessages1Only_Exit1(t *testing.T) {
 		t.Fatalf("reportHashes exit %d, want %d (messages[1] mutation)", code, exitMutation)
 	}
 	if strings.Contains(errOut.String(), "messages[0] mutated") {
-		t.Fatalf("profile mutation must leave messages[0] stable, got stderr=%q", errOut.String())
+		t.Fatalf("skills mutation must leave messages[0] stable, got stderr=%q", errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "messages[1] profile/skills block mutated at request 3") {
-		t.Fatalf("want messages[1] profile drift wording, got stderr=%q", errOut.String())
+	if !strings.Contains(errOut.String(), "messages[1] skills block mutated at request 3") {
+		t.Fatalf("want messages[1] skills drift wording, got stderr=%q", errOut.String())
 	}
 
 	requestLines := linesWithPrefix(out.String(), "request ")
@@ -194,7 +181,7 @@ func TestCacheAudit_ProfileMutationMessages1Only_Exit1(t *testing.T) {
 	firstRequestHash := hashOfLine(t, requestLines[0])
 	for _, line := range requestLines[1:] {
 		if got := hashOfLine(t, line); got != firstRequestHash {
-			t.Fatalf("messages[0] hash changed on profile update: %q != %q", got, firstRequestHash)
+			t.Fatalf("messages[0] hash changed on skills update: %q != %q", got, firstRequestHash)
 		}
 	}
 }

@@ -343,7 +343,6 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		RunDir:           cfg.RunDir,
 		PreviewCap:       cfg.ToolPreviewCap,
 		EvictAfter:       cfg.ContextToolEvictAfterTurns,
-		ContextBlock:     profileContextProvider(cfg),
 		ArchivalRecaller: archivalRecallProvider(cfg), // nil unless AURA_CONTEXT_MEMORY_RECALL (default off)
 		AlwaysBlock:      alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval

@@ -58,10 +58,6 @@ type ConversationStore interface {
 	DeleteForIdentity(ctx context.Context, conversationID, identityID string) (int64, error)
 }
 
-// ContextBlockProvider renders identity-aware context for messages[1]. The Runner
-// composes its output before the legacy AlwaysBlock skill renderer.
-type ContextBlockProvider func(ctx context.Context, owner identity.Identity) string
-
 // ArchivalRecaller recalls a durable long-term memory block for messages[1] (L4
 // archival retrieval, PRD amendment #21). userIdentifier is the owner's identity id
 // (the same value the memory-MCP write path scopes on — see mcptools bridge), query
