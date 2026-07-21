@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,6 +44,7 @@ type ServerConfig struct {
 	HealthCheck     func(context.Context) error
 	HealthDetails   func() map[string]any
 	ReadinessProbes []ReadinessProbe
+	ReadinessState  *runtimereadiness.Snapshot
 	// SharePublicEnabled is the WEBSHARE-02/03 org kill-switch (AURA_SHARE_PUBLIC_ENABLED,
 	// config.ShareConfig.PublicEnabled) re-checked INSIDE handleShareCreate (share_api.go,
 	// plan 37F-10) — the R-08 gate that survives loopback dev, where RequireCapability

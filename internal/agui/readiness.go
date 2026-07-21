@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/chetto1983/aura/internal/readiness"
 )
 
 // readinessProbeTimeout bounds each dependency probe so a hung backend cannot
@@ -20,6 +22,7 @@ const readinessProbeTimeout = 3 * time.Second
 // testable and the set is easy to extend without touching the handler.
 type ReadinessProbe struct {
 	Name  string
+	Code  readiness.Code
 	Check func(context.Context) error
 }
 
