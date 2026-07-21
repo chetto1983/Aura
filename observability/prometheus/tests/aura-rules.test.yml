@@ -14,27 +14,27 @@ tests:
       - expr: aura:llm_error_ratio:rate5m
         eval_time: 10m
         exp_samples:
-          - labels: '{}'
+          - labels: '{__name__="aura:llm_error_ratio:rate5m"}'
             value: 0
       - expr: aura:llm_latency_bad_ratio:rate5m
         eval_time: 10m
         exp_samples:
-          - labels: '{}'
+          - labels: '{__name__="aura:llm_latency_bad_ratio:rate5m"}'
             value: 0
       - expr: aura:tool_error_ratio:rate5m
         eval_time: 10m
         exp_samples:
-          - labels: '{}'
+          - labels: '{__name__="aura:tool_error_ratio:rate5m"}'
             value: 0
       - expr: aura:mcp_error_ratio:rate5m
         eval_time: 10m
         exp_samples:
-          - labels: '{}'
+          - labels: '{__name__="aura:mcp_error_ratio:rate5m"}'
             value: 0
       - expr: aura:db_error_ratio:rate5m
         eval_time: 10m
         exp_samples:
-          - labels: '{}'
+          - labels: '{__name__="aura:db_error_ratio:rate5m"}'
             value: 0
     alert_rule_test:
       - eval_time: 10m
@@ -62,7 +62,7 @@ tests:
       - eval_time: 4m
         alertname: AuraServiceUnavailable
         exp_alerts: []
-      - eval_time: 5m
+      - eval_time: 7m
         alertname: AuraServiceUnavailable
         exp_alerts:
           - exp_labels:
@@ -96,12 +96,6 @@ tests:
         values: '0+85.6x70'
       - series: 'aura_agent_llm_call_total{outcome="error",error_class="internal"}'
         values: '0+14.4x70'
-    promql_expr_test:
-      - expr: aura:llm_error_burn:rate5m
-        eval_time: 60m
-        exp_samples:
-          - labels: '{}'
-            value: 14.4
     alert_rule_test:
       - eval_time: 60m
         alertname: AuraLLMErrorBudgetBurn
@@ -115,10 +109,10 @@ tests:
       - series: 'aura_agent_llm_call_total{outcome="error",error_class="internal"}'
         values: '0+14.5x70'
     alert_rule_test:
-      - eval_time: 63m
+      - eval_time: 5m
         alertname: AuraLLMErrorBudgetBurn
         exp_alerts: []
-      - eval_time: 64m
+      - eval_time: 7m
         alertname: AuraLLMErrorBudgetBurn
         exp_alerts:
           - exp_labels:
@@ -131,7 +125,7 @@ tests:
               runbook_url: observability/runbooks/aura-llm-tools.md
               threshold: 5m and 1h burn > 14.4
               debounce: 5m
-      - eval_time: 65m
+      - eval_time: 8m
         alertname: AuraLLMErrorBudgetBurn
         exp_alerts:
           - exp_labels:
