@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/redact"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
@@ -146,7 +146,7 @@ func InitRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 func redactAttr(groups []string, a slog.Attr) slog.Attr {
 	_ = groups
 	if a.Value.Kind() == slog.KindString {
-		a.Value = slog.StringValue(agui.SanitizeString(a.Value.String()))
+		a.Value = slog.StringValue(redact.String(a.Value.String()))
 	}
 	return a
 }

@@ -85,6 +85,9 @@ func buildMeterRuntime(ctx context.Context, opts meterOptions) (*meterRuntime, e
 	}
 
 	providerOptions := []sdkmetric.Option{sdkmetric.WithResource(opts.resource)}
+	for _, view := range catalogViews() {
+		providerOptions = append(providerOptions, sdkmetric.WithView(view))
+	}
 	// The SDK shuts readers down in registration order. Register the readers in
 	// reverse construction order so OTLP is drained before Prometheus.
 	for i := len(components) - 1; i >= 0; i-- {

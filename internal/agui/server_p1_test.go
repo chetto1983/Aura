@@ -23,7 +23,7 @@ func (g *guardedScriptedRunner) TryLockThread(_ context.Context, _ string) (func
 	return func() { g.busy = false }, true
 }
 
-func TestServerMetricsExposesPrometheus(t *testing.T) {
+func TestServerMetricsCompatibilityExcludesOTelAgentCatalog(t *testing.T) {
 	srv := newTestServerCfg(t, nil, nil, ServerConfig{})
 	resp, err := http.Get(srv.URL + "/metrics")
 	if err != nil {
@@ -35,8 +35,11 @@ func TestServerMetricsExposesPrometheus(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, raw)
 	}
 	body := string(raw)
-	if !strings.Contains(body, "aura_agent_tool_dispatch_total") {
-		t.Fatalf("/metrics missing agent prometheus counters: %s", body)
+	if !strings.Contains(body, "aura_agui_sse_dropped_total") {
+		t.Fatalf("/metrics missing legacy compatibility counters: %s", body)
+	}
+	if strings.Contains(body, "aura_agent_tool_dispatch_total") {
+		t.Fatalf("public compatibility route exposed OTel-owned agent metric: %s", body)
 	}
 }
 

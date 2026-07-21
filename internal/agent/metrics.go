@@ -1,273 +1,261 @@
 package agent
 
 import (
-	"errors"
+	"context"
 	"expvar"
 	"log/slog"
-	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/chetto1983/aura/internal/obs"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
-var metrics = newAgentMetrics(prometheus.DefaultRegisterer, true)
+const agentMeterName = "github.com/chetto1983/aura/internal/agent"
 
-type agentMetrics struct {
-	budgetConsumeStepTotal        *expvar.Int
-	toolDispatchTotal             *expvar.Int
-	llmStreamOpenTotal            *expvar.Int
-	llmStreamRetryTotal           *expvar.Int
-	turnTotal                     *expvar.Map
-	llmErrorsTotal                *expvar.Map
-	toolErrorsTotal               *expvar.Map
-	hookTotal                     *expvar.Map
-	promptTokensTotal             *expvar.Int
-	completionTokensTotal         *expvar.Int
-	cachedTokensTotal             *expvar.Int
-	costUSDTotal                  *expvar.Float
-	spanExportFailuresTotal       *expvar.Int
-	spanIDEntropyFailuresTotal    *expvar.Int
-	prefixDriftTotal              *expvar.Int
-	promBudgetConsumeStepTotal    prometheus.Counter
-	promToolDispatchTotal         prometheus.Counter
-	promLLMStreamOpenTotal        prometheus.Counter
-	promLLMStreamRetryTotal       prometheus.Counter
-	promToolDuration              prometheus.Histogram
-	promTurnTotal                 *prometheus.CounterVec
-	promLLMCallDuration           prometheus.Histogram
-	promLLMErrorsTotal            *prometheus.CounterVec
-	promToolErrorsTotal           *prometheus.CounterVec
-	promHookTotal                 *prometheus.CounterVec
-	promPromptTokensTotal         prometheus.Counter
-	promCompletionTokensTotal     prometheus.Counter
-	promCachedTokensTotal         prometheus.Counter
-	promCostUSDTotal              prometheus.Counter
-	promSpanExportFailuresTotal   prometheus.Counter
-	promSpanIDEntropyFailureTotal prometheus.Counter
-	promPrefixDriftTotal          prometheus.Counter
+// legacyExpvarMetrics is the named, time-bounded compatibility adapter for
+// pre-OTel /debug/vars consumers. It is projection-only: every semantic event
+// enters through one agentMetrics helper, and no direct client_golang collector
+// is registered. Remove this adapter after the Phase 40 compatibility window.
+type legacyExpvarMetrics struct {
+	budgetConsumeStepTotal     *expvar.Int
+	toolDispatchTotal          *expvar.Int
+	llmStreamOpenTotal         *expvar.Int
+	llmStreamRetryTotal        *expvar.Int
+	turnTotal                  *expvar.Map
+	llmErrorsTotal             *expvar.Map
+	toolErrorsTotal            *expvar.Map
+	hookTotal                  *expvar.Map
+	promptTokensTotal          *expvar.Int
+	completionTokensTotal      *expvar.Int
+	cachedTokensTotal          *expvar.Int
+	costUSDTotal               *expvar.Float
+	spanExportFailuresTotal    *expvar.Int
+	spanIDEntropyFailuresTotal *expvar.Int
+	prefixDriftTotal           *expvar.Int
 }
 
-func newAgentMetrics(reg prometheus.Registerer, publishExpvar bool) *agentMetrics {
-	if reg == nil {
-		reg = prometheus.DefaultRegisterer
-	}
-	return &agentMetrics{
-		budgetConsumeStepTotal:     newExpvarInt("aura_agent_budget_consume_step_total", publishExpvar),
-		toolDispatchTotal:          newExpvarInt("aura_agent_tool_dispatch_total", publishExpvar),
-		llmStreamOpenTotal:         newExpvarInt("aura_agent_llm_stream_open_total", publishExpvar),
-		llmStreamRetryTotal:        newExpvarInt("aura_agent_llm_stream_retry_total", publishExpvar),
-		turnTotal:                  newExpvarMap("aura_agent_turn_total", publishExpvar),
-		llmErrorsTotal:             newExpvarMap("aura_agent_llm_errors_total", publishExpvar),
-		toolErrorsTotal:            newExpvarMap("aura_agent_tool_errors_total", publishExpvar),
-		hookTotal:                  newExpvarMap("aura_agent_hook_total", publishExpvar),
-		promptTokensTotal:          newExpvarInt("aura_agent_prompt_tokens_total", publishExpvar),
-		completionTokensTotal:      newExpvarInt("aura_agent_completion_tokens_total", publishExpvar),
-		cachedTokensTotal:          newExpvarInt("aura_agent_cached_tokens_total", publishExpvar),
-		costUSDTotal:               newExpvarFloat("aura_agent_cost_usd_total", publishExpvar),
-		spanExportFailuresTotal:    newExpvarInt("aura_agent_span_export_failures_total", publishExpvar),
-		spanIDEntropyFailuresTotal: newExpvarInt("aura_agent_span_id_entropy_failures_total", publishExpvar),
-		prefixDriftTotal:           newExpvarInt("aura_agent_prefix_drift_total", publishExpvar),
+type agentMetrics struct {
+	legacy legacyExpvarMetrics
 
-		promBudgetConsumeStepTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_budget_consume_step_total",
-			Help: "Total agent budget steps consumed.",
-		}),
-		promToolDispatchTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_tool_dispatch_total",
-			Help: "Total tool calls dispatched by the agent.",
-		}),
-		promLLMStreamOpenTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_llm_stream_open_total",
-			Help: "Total LLM stream open attempts.",
-		}),
-		promLLMStreamRetryTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_llm_stream_retry_total",
-			Help: "Total LLM stream open retries.",
-		}),
-		promToolDuration: registerHistogram(reg, prometheus.HistogramOpts{
-			Name:    "aura_agent_tool_duration_seconds",
-			Help:    "Tool execution duration in seconds.",
-			Buckets: prometheus.DefBuckets,
-		}),
-		promTurnTotal: registerCounterVec(reg, prometheus.CounterOpts{
-			Name: "aura_agent_turn_total",
-			Help: "Total agent turns by terminal outcome.",
-		}, []string{"outcome"}),
-		promLLMCallDuration: registerHistogram(reg, prometheus.HistogramOpts{
-			Name:    "aura_agent_llm_call_duration_seconds",
-			Help:    "LLM call duration from stream open through full drain.",
-			Buckets: prometheus.DefBuckets,
-		}),
-		promLLMErrorsTotal: registerCounterVec(reg, prometheus.CounterOpts{
-			Name: "aura_agent_llm_errors_total",
-			Help: "Total LLM errors by bounded kind.",
-		}, []string{"kind"}),
-		promToolErrorsTotal: registerCounterVec(reg, prometheus.CounterOpts{
-			Name: "aura_agent_tool_errors_total",
-			Help: "Total tool errors by tool name.",
-		}, []string{"tool"}),
-		promHookTotal: registerCounterVec(reg, prometheus.CounterOpts{
-			Name: "aura_agent_hook_total",
-			Help: "Total hook outcomes by hook point and outcome.",
-		}, []string{"point", "outcome"}),
-		promPromptTokensTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_prompt_tokens_total",
-			Help: "Total prompt tokens reported by LLM usage chunks.",
-		}),
-		promCompletionTokensTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_completion_tokens_total",
-			Help: "Total completion tokens reported by LLM usage chunks.",
-		}),
-		promCachedTokensTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_cached_tokens_total",
-			Help: "Total cached prompt tokens reported by LLM usage chunks.",
-		}),
-		promCostUSDTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_cost_usd_total",
-			Help: "Total reported LLM cost in USD.",
-		}),
-		promSpanExportFailuresTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_span_export_failures_total",
-			Help: "Total OpenTelemetry span export failures observed by the agent exporter wrapper.",
-		}),
-		promSpanIDEntropyFailureTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_span_id_entropy_failures_total",
-			Help: "Total span-id entropy failures recovered with a zero-id fallback.",
-		}),
-		promPrefixDriftTotal: registerCounter(reg, prometheus.CounterOpts{
-			Name: "aura_agent_prefix_drift_total",
-			Help: "Total times a BeforeModel hook rewrite changed the cache-stable messages prefix (AG-031).",
-		}),
+	budgetConsumeStepTotal     metric.Int64Counter
+	toolDispatchTotal          metric.Int64Counter
+	llmStreamOpenTotal         metric.Int64Counter
+	llmStreamRetryTotal        metric.Int64Counter
+	toolDuration               metric.Float64Histogram
+	turnTotal                  metric.Int64Counter
+	llmCallDuration            metric.Float64Histogram
+	llmErrorsTotal             metric.Int64Counter
+	toolErrorsTotal            metric.Int64Counter
+	hookTotal                  metric.Int64Counter
+	promptTokensTotal          metric.Int64Counter
+	completionTokensTotal      metric.Int64Counter
+	cachedTokensTotal          metric.Int64Counter
+	costUSDTotal               metric.Float64Counter
+	spanExportFailuresTotal    metric.Int64Counter
+	spanIDEntropyFailuresTotal metric.Int64Counter
+	prefixDriftTotal           metric.Int64Counter
+}
+
+var metrics = newAgentMetrics(otel.Meter(agentMeterName), true)
+
+func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
+	return &agentMetrics{
+		legacy: legacyExpvarMetrics{
+			budgetConsumeStepTotal:     newExpvarInt("aura_agent_budget_consume_step_total", publishExpvar),
+			toolDispatchTotal:          newExpvarInt("aura_agent_tool_dispatch_total", publishExpvar),
+			llmStreamOpenTotal:         newExpvarInt("aura_agent_llm_stream_open_total", publishExpvar),
+			llmStreamRetryTotal:        newExpvarInt("aura_agent_llm_stream_retry_total", publishExpvar),
+			turnTotal:                  newExpvarMap("aura_agent_turn_total", publishExpvar),
+			llmErrorsTotal:             newExpvarMap("aura_agent_llm_errors_total", publishExpvar),
+			toolErrorsTotal:            newExpvarMap("aura_agent_tool_errors_total", publishExpvar),
+			hookTotal:                  newExpvarMap("aura_agent_hook_total", publishExpvar),
+			promptTokensTotal:          newExpvarInt("aura_agent_prompt_tokens_total", publishExpvar),
+			completionTokensTotal:      newExpvarInt("aura_agent_completion_tokens_total", publishExpvar),
+			cachedTokensTotal:          newExpvarInt("aura_agent_cached_tokens_total", publishExpvar),
+			costUSDTotal:               newExpvarFloat("aura_agent_cost_usd_total", publishExpvar),
+			spanExportFailuresTotal:    newExpvarInt("aura_agent_span_export_failures_total", publishExpvar),
+			spanIDEntropyFailuresTotal: newExpvarInt("aura_agent_span_id_entropy_failures_total", publishExpvar),
+			prefixDriftTotal:           newExpvarInt("aura_agent_prefix_drift_total", publishExpvar),
+		},
+		budgetConsumeStepTotal:     mustInt64Counter(meter, obs.AgentBudgetStepsID),
+		toolDispatchTotal:          mustInt64Counter(meter, obs.AgentToolDispatchID),
+		llmStreamOpenTotal:         mustInt64Counter(meter, obs.AgentLLMStreamOpenID),
+		llmStreamRetryTotal:        mustInt64Counter(meter, obs.AgentLLMStreamRetryID),
+		toolDuration:               mustFloat64Histogram(meter, obs.AgentToolDurationID),
+		turnTotal:                  mustInt64Counter(meter, obs.AgentTurnsID),
+		llmCallDuration:            mustFloat64Histogram(meter, obs.AgentLLMDurationID),
+		llmErrorsTotal:             mustInt64Counter(meter, obs.AgentLLMErrorsID),
+		toolErrorsTotal:            mustInt64Counter(meter, obs.AgentToolErrorsID),
+		hookTotal:                  mustInt64Counter(meter, obs.AgentHooksID),
+		promptTokensTotal:          mustInt64Counter(meter, obs.AgentPromptTokensID),
+		completionTokensTotal:      mustInt64Counter(meter, obs.AgentCompletionTokensID),
+		cachedTokensTotal:          mustInt64Counter(meter, obs.AgentCacheReadTokensID),
+		costUSDTotal:               mustFloat64Counter(meter, obs.AgentCostUSDID),
+		spanExportFailuresTotal:    mustInt64Counter(meter, obs.AgentSpanExportFailuresID),
+		spanIDEntropyFailuresTotal: mustInt64Counter(meter, obs.AgentSpanIDEntropyFailuresID),
+		prefixDriftTotal:           mustInt64Counter(meter, obs.AgentPrefixDriftID),
 	}
 }
 
 func recordPrefixDrift() {
-	metrics.prefixDriftTotal.Add(1)
-	metrics.promPrefixDriftTotal.Inc()
+	metrics.legacy.prefixDriftTotal.Add(1)
+	metrics.prefixDriftTotal.Add(context.Background(), 1)
 }
 
 func recordBudgetConsumeStep() {
-	metrics.budgetConsumeStepTotal.Add(1)
-	metrics.promBudgetConsumeStepTotal.Inc()
+	metrics.legacy.budgetConsumeStepTotal.Add(1)
+	metrics.budgetConsumeStepTotal.Add(context.Background(), 1)
 }
 
 func recordToolDispatch(n int) {
 	if n <= 0 {
 		return
 	}
-	metrics.toolDispatchTotal.Add(int64(n))
-	metrics.promToolDispatchTotal.Add(float64(n))
+	metrics.legacy.toolDispatchTotal.Add(int64(n))
+	metrics.toolDispatchTotal.Add(context.Background(), int64(n))
 }
 
 func recordLLMStreamOpen() {
-	metrics.llmStreamOpenTotal.Add(1)
-	metrics.promLLMStreamOpenTotal.Inc()
+	metrics.legacy.llmStreamOpenTotal.Add(1)
+	metrics.llmStreamOpenTotal.Add(context.Background(), 1)
 }
 
 func recordLLMStreamRetry() {
-	metrics.llmStreamRetryTotal.Add(1)
-	metrics.promLLMStreamRetryTotal.Inc()
+	metrics.legacy.llmStreamRetryTotal.Add(1)
+	metrics.llmStreamRetryTotal.Add(context.Background(), 1)
 }
 
 func recordToolDuration(d time.Duration) {
 	if d < 0 {
 		return
 	}
-	metrics.promToolDuration.Observe(d.Seconds())
+	metrics.toolDuration.Record(context.Background(), d.Seconds(), metric.WithAttributes(
+		boundedAttr(obs.AttributeToolClass, obs.ValueOther),
+		boundedAttr(obs.AttributeOutcome, obs.ValueOther),
+	))
 }
 
-func recordTurnOutcome(outcome string) {
-	metrics.recordTurnOutcome(outcome)
-}
-
-func recordLLMDuration(d time.Duration) {
-	metrics.recordLLMDuration(d)
-}
-
-func recordLLMError(kind string) {
-	metrics.recordLLMError(kind)
-}
-
-func recordToolError(tool string) {
-	metrics.recordToolError(tool)
-}
-
+func recordTurnOutcome(outcome string)  { metrics.recordTurnOutcome(outcome) }
+func recordLLMDuration(d time.Duration) { metrics.recordLLMDuration(d) }
+func recordLLMError(kind string)        { metrics.recordLLMError(kind) }
+func recordToolError(tool string)       { metrics.recordToolError(tool) }
 func recordHookOutcome(point, outcome string) {
 	metrics.recordHookOutcome(point, outcome)
 }
-
-func recordUsage(usage llm.Usage) {
-	metrics.recordUsage(usage)
-}
+func recordUsage(usage llm.Usage) { metrics.recordUsage(usage) }
 
 func recordSpanExportFailure() {
-	metrics.spanExportFailuresTotal.Add(1)
-	metrics.promSpanExportFailuresTotal.Inc()
+	metrics.legacy.spanExportFailuresTotal.Add(1)
+	metrics.spanExportFailuresTotal.Add(context.Background(), 1)
 }
 
 func recordSpanIDEntropyFailure() {
-	metrics.spanIDEntropyFailuresTotal.Add(1)
-	metrics.promSpanIDEntropyFailureTotal.Inc()
+	metrics.legacy.spanIDEntropyFailuresTotal.Add(1)
+	metrics.spanIDEntropyFailuresTotal.Add(context.Background(), 1)
 }
 
 func recordRecoveredPanic(site string) {
 	panicobs.Record(site)
-	slog.Error("agent recovered panic", "site", metricLabel(site))
+	slog.Error("agent recovered panic", "site", obs.NormalizeAttribute(obs.AttributeOperation, site))
 }
 
 func (m *agentMetrics) recordTurnOutcome(outcome string) {
-	label := metricLabel(outcome)
-	m.turnTotal.Add(label, 1)
-	m.promTurnTotal.WithLabelValues(label).Inc()
+	label := obs.NormalizeAttribute(obs.AttributeOutcome, outcome)
+	m.legacy.turnTotal.Add(label, 1)
+	m.turnTotal.Add(context.Background(), 1, metric.WithAttributes(boundedAttr(obs.AttributeOutcome, label)))
 }
 
 func (m *agentMetrics) recordLLMDuration(d time.Duration) {
 	if d < 0 {
 		return
 	}
-	m.promLLMCallDuration.Observe(d.Seconds())
+	m.llmCallDuration.Record(context.Background(), d.Seconds(), metric.WithAttributes(
+		boundedAttr(obs.AttributeOutcome, obs.ValueOther),
+		boundedAttr(obs.AttributeErrorClass, obs.ValueOther),
+	))
 }
 
 func (m *agentMetrics) recordLLMError(kind string) {
-	label := metricLabel(kind)
-	m.llmErrorsTotal.Add(label, 1)
-	m.promLLMErrorsTotal.WithLabelValues(label).Inc()
+	label := obs.ClassifyError(kind)
+	m.legacy.llmErrorsTotal.Add(label, 1)
+	m.llmErrorsTotal.Add(context.Background(), 1, metric.WithAttributes(boundedAttr(obs.AttributeErrorClass, label)))
 }
 
 func (m *agentMetrics) recordToolError(tool string) {
-	label := metricLabel(tool)
-	m.toolErrorsTotal.Add(label, 1)
-	m.promToolErrorsTotal.WithLabelValues(label).Inc()
+	toolClass := obs.ClassifyTool(tool)
+	m.legacy.toolErrorsTotal.Add(toolClass, 1)
+	m.toolErrorsTotal.Add(context.Background(), 1, metric.WithAttributes(
+		boundedAttr(obs.AttributeToolClass, toolClass),
+		boundedAttr(obs.AttributeErrorClass, obs.ValueOther),
+	))
 }
 
 func (m *agentMetrics) recordHookOutcome(point, outcome string) {
-	pointLabel := metricLabel(point)
-	outcomeLabel := metricLabel(outcome)
-	m.hookTotal.Add(pointLabel+":"+outcomeLabel, 1)
-	m.promHookTotal.WithLabelValues(pointLabel, outcomeLabel).Inc()
+	pointLabel := obs.NormalizeAttribute(obs.AttributeOperation, point)
+	outcomeLabel := obs.NormalizeAttribute(obs.AttributeOutcome, outcome)
+	m.legacy.hookTotal.Add(pointLabel+":"+outcomeLabel, 1)
+	m.hookTotal.Add(context.Background(), 1, metric.WithAttributes(
+		boundedAttr(obs.AttributeOperation, pointLabel),
+		boundedAttr(obs.AttributeOutcome, outcomeLabel),
+	))
 }
 
 func (m *agentMetrics) recordUsage(usage llm.Usage) {
+	ctx := context.Background()
 	if usage.PromptTokens > 0 {
-		m.promptTokensTotal.Add(int64(usage.PromptTokens))
-		m.promPromptTokensTotal.Add(float64(usage.PromptTokens))
+		m.legacy.promptTokensTotal.Add(int64(usage.PromptTokens))
+		m.promptTokensTotal.Add(ctx, int64(usage.PromptTokens))
 	}
 	if usage.CompletionTokens > 0 {
-		m.completionTokensTotal.Add(int64(usage.CompletionTokens))
-		m.promCompletionTokensTotal.Add(float64(usage.CompletionTokens))
+		m.legacy.completionTokensTotal.Add(int64(usage.CompletionTokens))
+		m.completionTokensTotal.Add(ctx, int64(usage.CompletionTokens))
 	}
 	if usage.CachedTokens > 0 {
-		m.cachedTokensTotal.Add(int64(usage.CachedTokens))
-		m.promCachedTokensTotal.Add(float64(usage.CachedTokens))
+		m.legacy.cachedTokensTotal.Add(int64(usage.CachedTokens))
+		m.cachedTokensTotal.Add(ctx, int64(usage.CachedTokens))
 	}
 	if usage.Cost != nil && *usage.Cost > 0 {
-		m.costUSDTotal.Add(*usage.Cost)
-		m.promCostUSDTotal.Add(*usage.Cost)
+		m.legacy.costUSDTotal.Add(*usage.Cost)
+		m.costUSDTotal.Add(ctx, *usage.Cost)
 	}
+}
+
+func boundedAttr(key obs.AttributeKey, value string) attribute.KeyValue {
+	return attribute.String(string(key), obs.NormalizeAttribute(key, value))
+}
+
+func mustInt64Counter(meter metric.Meter, id obs.InstrumentID) metric.Int64Counter {
+	descriptor := obs.MustDescriptor(id)
+	instrument, err := meter.Int64Counter(descriptor.Name,
+		metric.WithDescription(descriptor.Description), metric.WithUnit(descriptor.Unit))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
+}
+
+func mustFloat64Counter(meter metric.Meter, id obs.InstrumentID) metric.Float64Counter {
+	descriptor := obs.MustDescriptor(id)
+	instrument, err := meter.Float64Counter(descriptor.Name,
+		metric.WithDescription(descriptor.Description), metric.WithUnit(descriptor.Unit))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
+}
+
+func mustFloat64Histogram(meter metric.Meter, id obs.InstrumentID) metric.Float64Histogram {
+	descriptor := obs.MustDescriptor(id)
+	instrument, err := meter.Float64Histogram(descriptor.Name,
+		metric.WithDescription(descriptor.Description), metric.WithUnit(descriptor.Unit))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
 }
 
 func newExpvarInt(name string, publish bool) *expvar.Int {
@@ -291,69 +279,4 @@ func newExpvarMap(name string, publish bool) *expvar.Map {
 	m := new(expvar.Map)
 	m.Init()
 	return m
-}
-
-func registerCounter(reg prometheus.Registerer, opts prometheus.CounterOpts) prometheus.Counter {
-	c := prometheus.NewCounter(opts)
-	if err := reg.Register(c); err != nil {
-		var already prometheus.AlreadyRegisteredError
-		if errors.As(err, &already) {
-			if existing, ok := already.ExistingCollector.(prometheus.Counter); ok {
-				return existing
-			}
-		}
-		panic(err)
-	}
-	return c
-}
-
-func registerHistogram(reg prometheus.Registerer, opts prometheus.HistogramOpts) prometheus.Histogram {
-	h := prometheus.NewHistogram(opts)
-	if err := reg.Register(h); err != nil {
-		var already prometheus.AlreadyRegisteredError
-		if errors.As(err, &already) {
-			if existing, ok := already.ExistingCollector.(prometheus.Histogram); ok {
-				return existing
-			}
-		}
-		panic(err)
-	}
-	return h
-}
-
-func registerCounterVec(reg prometheus.Registerer, opts prometheus.CounterOpts, labels []string) *prometheus.CounterVec {
-	cv := prometheus.NewCounterVec(opts, labels)
-	if err := reg.Register(cv); err != nil {
-		var already prometheus.AlreadyRegisteredError
-		if errors.As(err, &already) {
-			if existing, ok := already.ExistingCollector.(*prometheus.CounterVec); ok {
-				return existing
-			}
-		}
-		panic(err)
-	}
-	return cv
-}
-
-func metricLabel(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "unknown"
-	}
-	var b strings.Builder
-	for _, r := range s {
-		if b.Len() >= 96 {
-			break
-		}
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.' {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('_')
-	}
-	out := b.String()
-	if out == "" || !utf8.ValidString(out) {
-		return "unknown"
-	}
-	return out
 }

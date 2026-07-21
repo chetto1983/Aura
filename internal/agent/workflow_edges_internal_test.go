@@ -46,7 +46,7 @@ func (prefixMutatingHook) OnTurnEnd(context.Context, HookTurn) error { return ni
 // the prefix_drift metric (without changing messages[0] itself). This drives the
 // actual wiring, not just the helper.
 func TestPrefixDrift_DetectedAfterHookRewrite(t *testing.T) {
-	before := metricInt(metrics.prefixDriftTotal)
+	before := metricInt(metrics.legacy.prefixDriftTotal)
 
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
@@ -71,7 +71,7 @@ func TestPrefixDrift_DetectedAfterHookRewrite(t *testing.T) {
 			t.Fatalf("Run: %v", runErr)
 		}
 	}
-	if got := metricInt(metrics.prefixDriftTotal) - before; got < 1 {
+	if got := metricInt(metrics.legacy.prefixDriftTotal) - before; got < 1 {
 		t.Fatalf("prefix_drift metric delta = %d, want >=1 (AG-031 wiring)", got)
 	}
 }

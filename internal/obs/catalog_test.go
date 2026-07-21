@@ -12,15 +12,15 @@ agent_llm_stream_retry|aura.agent.llm.stream.retry|aura_agent_llm_stream_retry_t
 agent_tool_duration|aura.agent.tool.duration|aura_agent_tool_duration_seconds|histogram|s|tool_class,outcome|Tool execution duration.|0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60
 agent_turns|aura.agent.turn|aura_agent_turn_total|counter|1|outcome|Total agent turns by terminal outcome.|
 agent_llm_duration|aura.agent.llm.call.duration|aura_agent_llm_call_duration_seconds|histogram|s|outcome,error_class|LLM call duration from stream open through full drain.|0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60,120
-agent_llm_errors|aura.agent.llm.error|aura_agent_llm_errors_total|counter|1|error_class|Total LLM errors by bounded class.|
-agent_tool_errors|aura.agent.tool.error|aura_agent_tool_errors_total|counter|1|tool_class,error_class|Total tool errors by bounded class.|
+agent_llm_errors|aura.agent.llm.errors|aura_agent_llm_errors_total|counter|1|error_class|Total LLM errors by bounded class.|
+agent_tool_errors|aura.agent.tool.errors|aura_agent_tool_errors_total|counter|1|tool_class,error_class|Total tool errors by bounded class.|
 agent_hooks|aura.agent.hook|aura_agent_hook_total|counter|1|operation,outcome|Total hook outcomes by bounded point and outcome.|
 agent_prompt_tokens|aura.agent.prompt.tokens|aura_agent_prompt_tokens_total|counter|1||Total prompt tokens reported by LLM usage.|
 agent_completion_tokens|aura.agent.completion.tokens|aura_agent_completion_tokens_total|counter|1||Total completion tokens reported by LLM usage.|
 agent_cached_tokens|aura.agent.cached.tokens|aura_agent_cached_tokens_total|counter|1||Total cached prompt tokens reported by LLM usage.|
 agent_cost_usd|aura.agent.cost.usd|aura_agent_cost_usd_total|counter|1||Total reported LLM cost in USD.|
-agent_span_export_failures|aura.agent.span.export.failure|aura_agent_span_export_failures_total|counter|1||Total OpenTelemetry span export failures.|
-agent_span_id_entropy_failures|aura.agent.span.id.entropy.failure|aura_agent_span_id_entropy_failures_total|counter|1||Total recovered span identifier entropy failures.|
+agent_span_export_failures|aura.agent.span.export.failures|aura_agent_span_export_failures_total|counter|1||Total OpenTelemetry span export failures.|
+agent_span_id_entropy_failures|aura.agent.span.id.entropy.failures|aura_agent_span_id_entropy_failures_total|counter|1||Total recovered span identifier entropy failures.|
 agent_prefix_drift|aura.agent.prefix.drift|aura_agent_prefix_drift_total|counter|1||Total cache-stable message prefix drift events.|
 agent_llm_calls|aura.agent.llm.call|aura_agent_llm_call_total|counter|1|outcome,error_class|Total completed LLM call boundaries.|
 agent_pause_transitions|aura.agent.pause.transition|aura_agent_pause_transition_total|counter|1|operation,state,outcome|Total pause lifecycle transitions.|
