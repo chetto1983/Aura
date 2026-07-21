@@ -150,6 +150,36 @@ func TestLocalArtifactsRejectsSymlinkReplacement(t *testing.T) {
 	}
 }
 
+func TestLocalArtifactsPreservesReplacementAfterRevalidation(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "tmp", "candidate.bin")
+	plannedAt := time.Now().Add(-48 * time.Hour)
+	writeOldFile(t, path, plannedAt)
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := LocalArtifacts{Root: root, IdentityID: "local"}
+	candidate := Candidate{IdentityID: "local", ArtifactID: "candidate.bin", Version: localVersion(info), Action: ActionDeleteArtifact, Class: ClassTemporary, Bytes: info.Size()}
+	if revalidated, err := adapter.Revalidate(context.Background(), candidate); err != nil || revalidated.Version != candidate.Version {
+		t.Fatalf("Revalidate() = %+v, %v", revalidated, err)
+	}
+
+	replacement := []byte("replacement must survive")
+	if err := os.WriteFile(path, replacement, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, plannedAt.Add(time.Hour), plannedAt.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Remove(context.Background(), candidate); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("Remove() error = %v, want ErrVersionConflict", err)
+	}
+	if body, err := os.ReadFile(path); err != nil || string(body) != string(replacement) {
+		t.Fatalf("replacement changed: %q, %v", body, err)
+	}
+}
+
 func writeOldFile(t *testing.T, path string, modTime time.Time) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

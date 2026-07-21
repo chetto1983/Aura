@@ -115,6 +115,9 @@ func (l LocalArtifacts) Remove(ctx context.Context, candidate Candidate) (Remova
 	if info.Mode()&os.ModeSymlink != 0 {
 		return RemovalResult{}, errors.New("local retention candidate is a symlink")
 	}
+	if current := localVersion(info); current != candidate.Version {
+		return RemovalResult{}, fmt.Errorf("%w: planned %d, current %d", ErrVersionConflict, candidate.Version, current)
+	}
 	if err := os.RemoveAll(path); err != nil {
 		return RemovalResult{}, fmt.Errorf("remove local retention candidate: %w", err)
 	}

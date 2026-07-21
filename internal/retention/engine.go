@@ -20,6 +20,10 @@ const (
 	ArtifactFailed = "failed"
 )
 
+// ErrVersionConflict means the backing artifact changed after revalidation and
+// must survive until a fresh plan authorizes its current version.
+var ErrVersionConflict = errors.New("retention candidate version changed")
+
 var (
 	retentionPlanBoundary = obs.NewGlobalBoundary("aura/retention", obs.BoundaryConfig{
 		Operation: "retention_plan", Count: obs.RetentionOperationsID,
@@ -213,6 +217,9 @@ func (e *Engine) processItem(ctx context.Context, item Item, report *ApplyReport
 	if item.ArtifactResult != ArtifactRemoved && item.ArtifactResult != ArtifactAbsent {
 		removal, removeErr := e.Remover.Remove(ctx, item.Candidate)
 		if removeErr != nil {
+			if errors.Is(removeErr, ErrVersionConflict) {
+				return true, e.retry(ctx, item, report, "version_changed")
+			}
 			if recordErr := e.Store.RecordArtifact(ctx, item.ID, e.WorkerID, ArtifactFailed, 0, "external_unavailable", e.clock()); recordErr != nil {
 				return false, recordErr
 			}

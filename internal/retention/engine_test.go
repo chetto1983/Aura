@@ -119,6 +119,7 @@ func TestEngineClassifiesRevalidationAndRemovalOutcomes(t *testing.T) {
 		{name: "version changed", revalidation: &Revalidation{Exists: true, Owned: true, Version: 2}, wantRetryable: 1, wantClass: "version_changed"},
 		{name: "revalidation unavailable", revalidateErr: errors.New("unavailable"), wantRetryable: 1, wantClass: "revalidate_unavailable"},
 		{name: "external removal unavailable", removeErr: errors.New("unavailable"), wantRetryable: 1, wantClass: "external_unavailable", wantRemoveCall: 1},
+		{name: "replacement after revalidation", removeErr: ErrVersionConflict, wantRetryable: 1, wantClass: "version_changed", wantRemoveCall: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
