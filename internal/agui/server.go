@@ -140,6 +140,7 @@ type Server struct {
 	calendarMCPURL   string
 	calendarMCPToken string
 	cfg              ServerConfig
+	readinessRuns    readinessProbeCoordinator
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.

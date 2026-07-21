@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/readiness"
@@ -26,6 +27,49 @@ type ReadinessProbe struct {
 	Name  string
 	Code  readiness.Code
 	Check func(context.Context) error
+}
+
+type readinessProbeRun struct {
+	done chan struct{}
+	err  error
+}
+
+// readinessProbeCoordinator keeps at most one concrete Check execution in flight
+// per configured probe. Request-local waiters may time out, but a non-cooperative
+// dependency adapter cannot accumulate one permanent goroutine per readiness poll.
+type readinessProbeCoordinator struct {
+	mu      sync.Mutex
+	running map[int]*readinessProbeRun
+}
+
+func (s *Server) awaitReadinessProbe(ctx context.Context, index int, probe ReadinessProbe) error {
+	coordinator := &s.readinessRuns
+	coordinator.mu.Lock()
+	if coordinator.running == nil {
+		coordinator.running = make(map[int]*readinessProbeRun)
+	}
+	run := coordinator.running[index]
+	if run == nil {
+		run = &readinessProbeRun{done: make(chan struct{})}
+		coordinator.running[index] = run
+		go func(probeCtx context.Context) {
+			run.err = probe.Check(probeCtx)
+			close(run.done)
+			coordinator.mu.Lock()
+			if coordinator.running[index] == run {
+				delete(coordinator.running, index)
+			}
+			coordinator.mu.Unlock()
+		}(ctx)
+	}
+	coordinator.mu.Unlock()
+
+	select {
+	case <-run.done:
+		return run.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // handleReadyz is the READINESS endpoint (distinct from the cheap /healthz
@@ -57,9 +101,9 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		pending[i] = probe
-		go func() {
-			results <- probeResult{index: i, probe: probe, err: probe.Check(ctx)}
-		}()
+		go func(index int, current ReadinessProbe) {
+			results <- probeResult{index: index, probe: current, err: s.awaitReadinessProbe(ctx, index, current)}
+		}(i, probe)
 	}
 	for len(pending) > 0 {
 		select {

@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
+	"go.uber.org/goleak"
 )
 
 type readinessResponse struct {
@@ -144,6 +146,78 @@ func TestReadinessDeadlineDoesNotWaitForProbeIgnoringCancellation(t *testing.T) 
 	want := []runtimereadiness.Code{runtimereadiness.CodeDependencyUnavailable}
 	if !reflect.DeepEqual(body.Reasons, want) {
 		t.Fatalf("reasons = %v, want %v", body.Reasons, want)
+	}
+}
+
+func TestReadinessRepeatedPollsShareOneWedgedProbeGoleak(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	var calls atomic.Int32
+	var startedOnce sync.Once
+	started := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	s := NewServer(nil, nil, ServerConfig{
+		ReadinessState: healthyReadinessState(),
+		ReadinessProbes: []ReadinessProbe{{
+			Name: "permanently-wedged",
+			Check: func(context.Context) error {
+				calls.Add(1)
+				startedOnce.Do(func() { close(started) })
+				<-release
+				close(finished)
+				return nil
+			},
+		}},
+	})
+
+	const polls = 12
+	begin := make(chan struct{})
+	statuses := make(chan int, polls)
+	var wg sync.WaitGroup
+	for range polls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-begin
+			rr := httptest.NewRecorder()
+			s.Mux().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			statuses <- rr.Code
+		}()
+	}
+	close(begin)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("readiness probe did not start")
+	}
+	wg.Wait()
+	close(statuses)
+	for status := range statuses {
+		if status != http.StatusServiceUnavailable {
+			t.Fatalf("repeated poll status = %d, want 503", status)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("wedged probe executions = %d, want exactly one shared in-flight check", got)
+	}
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("released readiness probe did not exit")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.readinessRuns.mu.Lock()
+		running := len(s.readinessRuns.running)
+		s.readinessRuns.mu.Unlock()
+		if running == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("readiness coordinator retained %d completed probe(s)", running)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
