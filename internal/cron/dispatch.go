@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/google/uuid"
 )
 
 // HandlerMeta is the per-kind static contract (Slice 0.9): the kind it serves, its
@@ -175,7 +176,11 @@ func scheduledOperationContext(ctx context.Context, task Task, claim *Claim) (co
 		return nil, errors.New("cron dispatch: nil claim")
 	}
 	identityID := task.IdentityID
-	if identityID == "" {
+	// Legacy/system scheduler rows may carry the historical "local" sentinel
+	// rather than a UUID. The effect still retains task.IdentityID for delivery,
+	// while registry ownership maps that non-tenant sentinel to the seeded local
+	// operator UUID. A valid durable tenant UUID is preserved exactly.
+	if _, err := uuid.Parse(identityID); err != nil {
 		identityID = identityctx.LocalOperatorIdentity
 	}
 	fingerprint, err := idempotency.FingerprintTyped(struct {
