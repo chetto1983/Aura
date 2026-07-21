@@ -104,10 +104,11 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run       Runner
-	conv      ConversationStore
-	approvals ApprovalStore
-	assets    AssetService
+	run        Runner
+	conv       ConversationStore
+	operations operationRegistry
+	approvals  ApprovalStore
+	assets     AssetService
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
@@ -176,6 +177,11 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // daemon composition root after NewServer; until set, the approvals read route answers
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
+
+// SetOperationRegistry installs the process-wide durable mutation registry.
+// Keeping this as a narrow consumer-side seam lets tests leave it nil while the
+// daemon protects every route inventoried by httpMutationRoutes.
+func (s *Server) SetOperationRegistry(registry operationRegistry) { s.operations = registry }
 
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
@@ -339,7 +345,15 @@ func (s *Server) Mux() http.Handler {
 	// — an operator enters their own Google OAuth client and links an account) lives in
 	// cmd/aura/serve_webui.go.
 	s.registerConnectPIMRoutes(mux)
-	return s.withCORS(mux)
+	if s.operations == nil {
+		return s.withCORS(mux)
+	}
+	guarded := http.NewServeMux()
+	for pattern, meta := range httpMutationRoutes {
+		guarded.Handle(pattern, s.idempotencyMutation(mux, meta))
+	}
+	guarded.Handle("/", mux)
+	return s.withCORS(guarded)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

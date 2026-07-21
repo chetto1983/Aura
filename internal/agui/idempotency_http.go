@@ -1,19 +1,33 @@
 package agui
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 var errInvalidIdempotencyKey = errors.New("invalid Idempotency-Key")
+
+const httpOperationReplayRetention = 30 * 24 * time.Hour
+
+type operationRegistry interface {
+	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
+	Complete(context.Context, idempotency.CompleteRequest) error
+	MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error
+}
 
 // mutationKeyPolicy documents where an adapter obtains its caller-stable key.
 type mutationKeyPolicy string
@@ -108,6 +122,197 @@ func parseIdempotencyKey(r *http.Request) (string, error) {
 		return "", errInvalidIdempotencyKey
 	}
 	return key, nil
+}
+
+type httpMutationIntent struct {
+	Normalizer  string          `json:"normalizer"`
+	Method      string          `json:"method"`
+	Path        string          `json:"path"`
+	Query       string          `json:"query,omitempty"`
+	ContentType string          `json:"content_type,omitempty"`
+	Body        json.RawMessage `json:"body,omitempty"`
+}
+
+func normalizeHTTPMutation(r *http.Request, meta mutationRouteMeta) (httpMutationIntent, error) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRunBodyBytes+1))
+	if err != nil {
+		return httpMutationIntent{}, errors.New("read mutation body")
+	}
+	if len(body) > maxRunBodyBytes {
+		return httpMutationIntent{}, errors.New("mutation body too large")
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) != 0 && !json.Valid(trimmed) {
+		return httpMutationIntent{}, errors.New("mutation body is not valid JSON")
+	}
+	return httpMutationIntent{
+		Normalizer: meta.Normalize, Method: r.Method, Path: r.URL.EscapedPath(),
+		Query: r.URL.Query().Encode(), ContentType: r.Header.Get("Content-Type"),
+		Body: append(json.RawMessage(nil), trimmed...),
+	}, nil
+}
+
+// idempotencyMutation owns the HTTP parent operation before the real handler is
+// invoked. JSON responses are held until their replay envelope is durable. The
+// streaming agent route cannot be replayed as bounded JSON, so its parent is
+// terminally indeterminate after streaming; mutating tools derive replayable
+// child operations in the agent dispatch path.
+func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key, err := parseIdempotencyKey(r)
+		if err != nil {
+			writeIdempotencyError(w, http.StatusBadRequest, "a single valid Idempotency-Key header is required")
+			return
+		}
+		intent, err := normalizeHTTPMutation(r, meta)
+		if err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "too large") {
+				status = http.StatusRequestEntityTooLarge
+			}
+			writeIdempotencyError(w, status, "invalid mutation request body")
+			return
+		}
+		fingerprint, err := idempotency.FingerprintTyped(intent)
+		if err != nil {
+			writeIdempotencyError(w, http.StatusBadRequest, "invalid mutation request body")
+			return
+		}
+		identityID := identityctx.IdentityID(r.Context())
+		if identityID == "" {
+			// Public bootstrap/recovery mutations have no authenticated principal.
+			// Give them the seeded local owner instead of accepting an unowned key.
+			identityID = identityctx.LocalOperatorIdentity
+		}
+		operation := idempotency.Operation{
+			Key:         idempotency.OperationKey{IdentityID: identityID, Scope: meta.Scope, Key: key},
+			Fingerprint: fingerprint,
+		}
+		decision, beginErr := s.operations.Begin(r.Context(), idempotency.BeginRequest{
+			Operation: operation.Key, Fingerprint: operation.Fingerprint,
+		})
+		if beginErr != nil && !errors.Is(beginErr, idempotency.ErrConflict) {
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation registry unavailable")
+			return
+		}
+		if writeIdempotencyDecision(w, decision) {
+			return
+		}
+		ctx := r.Context()
+		if identityctx.IdentityID(ctx) == "" {
+			ctx = identityctx.WithIdentityID(ctx, identityID)
+		}
+		ctx, err = idempotency.WithOperation(ctx, operation)
+		if err != nil {
+			_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation context unavailable")
+			return
+		}
+		r = r.WithContext(ctx)
+
+		if meta.Normalize == "agent_run" {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+					panic(recovered)
+				}
+			}()
+			next.ServeHTTP(w, r)
+			if err := s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint); err != nil {
+				slog.Error("agui: mark streaming mutation indeterminate", "err", err)
+			}
+			return
+		}
+
+		captured := newBoundedMutationResponse()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+				panic(recovered)
+			}
+		}()
+		next.ServeHTTP(captured, r)
+		if captured.overflow || (captured.body.Len() != 0 && !json.Valid(captured.body.Bytes())) {
+			_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+			if captured.overflow {
+				writeIdempotencyError(w, http.StatusInternalServerError, "mutation response exceeded replay limit")
+				return
+			}
+			captured.copyTo(w)
+			return
+		}
+		result := idempotency.ReplayResult{
+			Body: append(json.RawMessage(nil), captured.body.Bytes()...), StatusCode: captured.status,
+			Headers: replayableHeaders(captured.header), ExpiresAt: time.Now().UTC().Add(httpOperationReplayRetention),
+		}
+		if err := s.operations.Complete(r.Context(), idempotency.CompleteRequest{
+			Operation: operation.Key, Fingerprint: operation.Fingerprint, Result: result,
+		}); err != nil {
+			_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation completion unavailable")
+			return
+		}
+		captured.copyTo(w)
+	})
+}
+
+type boundedMutationResponse struct {
+	header      http.Header
+	status      int
+	body        bytes.Buffer
+	overflow    bool
+	wroteHeader bool
+}
+
+func newBoundedMutationResponse() *boundedMutationResponse {
+	return &boundedMutationResponse{header: make(http.Header), status: http.StatusOK}
+}
+
+func (w *boundedMutationResponse) Header() http.Header { return w.header }
+
+func (w *boundedMutationResponse) WriteHeader(status int) {
+	if w.wroteHeader || status < 100 {
+		return
+	}
+	w.status = status
+	w.wroteHeader = true
+}
+
+func (w *boundedMutationResponse) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+	}
+	if w.body.Len()+len(p) > idempotency.MaxReplayBodyBytes {
+		w.overflow = true
+		return len(p), nil
+	}
+	return w.body.Write(p)
+}
+
+func (w *boundedMutationResponse) Flush() {}
+
+func (w *boundedMutationResponse) copyTo(dst http.ResponseWriter) {
+	for name, values := range w.header {
+		for _, value := range values {
+			dst.Header().Add(name, value)
+		}
+	}
+	dst.WriteHeader(w.status)
+	if w.body.Len() != 0 {
+		_, _ = dst.Write(w.body.Bytes())
+	}
+}
+
+func replayableHeaders(header http.Header) map[string]string {
+	result := make(map[string]string)
+	for name, values := range header {
+		canonical := http.CanonicalHeaderKey(name)
+		if idempotency.ReplayHeaderAllowed(canonical) && len(values) != 0 {
+			result[canonical] = values[0]
+		}
+	}
+	return result
 }
 
 // writeIdempotencyDecision handles every non-acquired registry decision. Its

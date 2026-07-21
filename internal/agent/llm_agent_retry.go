@@ -52,6 +52,13 @@ var toolRetryBaseDelay = 200 * time.Millisecond
 // that way even if the dispatch path changes (D-03/CV-1).
 func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool, args json.RawMessage) (tools.ToolResult, error) {
 	spec := tool.Spec()
+	if mutating {
+		var err error
+		ctx, err = deriveToolOperationContext(ctx, spec, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+	}
 	operationAcquired := false
 	if spec.Name != askUserToolName {
 		key := gateway.ReservationKey{

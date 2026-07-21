@@ -50,6 +50,7 @@ type chatEnv struct {
 	client          llm.Client
 	reg             *tools.Registry
 	gateway         *gateway.Gateway
+	operations      *idempotency.Store
 	toolInvocations *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
 	assets          *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
@@ -258,7 +259,8 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// The single in-process policy PEP (GATE-01), constructed ONCE and injected at the
 	// three NewLlmAgent roots (runner below, swarm via ctx-relay, cron agent_job).
 	gw := gateway.New(cfg.Profile, toolInvocationStore)
-	gw.SetOperationRegistry(idempotency.New(pool, idempotency.Config{}))
+	operations := idempotency.New(pool, idempotency.Config{})
+	gw.SetOperationRegistry(operations)
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.
@@ -386,7 +388,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, learningStores: learningStores}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, learningStores: learningStores}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

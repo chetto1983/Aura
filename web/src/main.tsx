@@ -6,9 +6,12 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { RouteSkeletonFallback } from './components/skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { queryClient } from './queryClient';
+import { installMutationIdempotency } from './api/idempotency';
 import { applyTheme } from './theme/applyTheme';
 import './i18n/i18n';
 import './styles/index.css';
+
+installMutationIdempotency();
 
 const AppShell = lazy(() => import('./AppShell').then((mod) => ({ default: mod.AppShell })));
 const LoginPage = lazy(() =>

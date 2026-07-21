@@ -381,6 +381,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		// stops routing to this instance; /healthz stays cheap process liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	})
+	aguiServer.SetOperationRegistry(chat.operations)
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))

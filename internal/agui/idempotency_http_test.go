@@ -1,7 +1,9 @@
 package agui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +14,41 @@ import (
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
+
+type memoryHTTPRegistry struct {
+	request *idempotency.BeginRequest
+	replay  *idempotency.ReplayResult
+	marked  int
+}
+
+func (m *memoryHTTPRegistry) Begin(_ context.Context, request idempotency.BeginRequest) (idempotency.BeginDecision, error) {
+	if m.request == nil {
+		copyRequest := request
+		m.request = &copyRequest
+		return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+	}
+	if m.request.Operation != request.Operation || m.request.Fingerprint != request.Fingerprint {
+		return idempotency.BeginDecision{Decision: idempotency.DecisionConflict}, idempotency.ErrConflict
+	}
+	if m.replay == nil {
+		return idempotency.BeginDecision{Decision: idempotency.DecisionInProgress, RetryAfter: time.Second}, nil
+	}
+	return idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: m.replay}, nil
+}
+
+func (m *memoryHTTPRegistry) Complete(_ context.Context, request idempotency.CompleteRequest) error {
+	if m.request == nil || m.request.Operation != request.Operation || m.request.Fingerprint != request.Fingerprint {
+		return errors.New("unexpected completion")
+	}
+	result := request.Result
+	m.replay = &result
+	return nil
+}
+
+func (m *memoryHTTPRegistry) MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error {
+	m.marked++
+	return nil
+}
 
 func TestIdempotencyKeyValidation(t *testing.T) {
 	t.Parallel()
@@ -97,6 +134,64 @@ func TestWriteIdempotencyDecisionHTTPMapping(t *testing.T) {
 				t.Fatalf("replay body = %q, want %q", rr.Body.String(), replayBody)
 			}
 		})
+	}
+}
+
+func TestMutationMuxAcquiresAndReplaysBeforeHandler(t *testing.T) {
+	t.Parallel()
+
+	run := &scriptedRunner{newConversationID: goodID}
+	store := &fakeConvStore{known: map[string]bool{goodID: true}}
+	registry := &memoryHTTPRegistry{}
+	server := NewServer(run, store, ServerConfig{})
+	server.SetOperationRegistry(registry)
+	mux := server.Mux()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := identityctx.WithIdentityID(r.Context(), identityctx.LocalOperatorIdentity)
+		mux.ServeHTTP(w, r.WithContext(ctx))
+	})
+
+	request := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/api/conversations", strings.NewReader(`{"title":"Stable"}`))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Idempotency-Key", "create-conversation-39")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, r)
+		return rr
+	}
+	first := request()
+	second := request()
+
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated {
+		t.Fatalf("statuses = %d/%d, want 201/201; bodies=%q/%q", first.Code, second.Code, first.Body.String(), second.Body.String())
+	}
+	if first.Body.String() != second.Body.String() {
+		t.Fatalf("replay body = %q, want %q", second.Body.String(), first.Body.String())
+	}
+	if second.Header().Get("Idempotency-Replayed") != "true" {
+		t.Fatal("second response did not advertise durable replay")
+	}
+	if run.newConversationCalls != 1 {
+		t.Fatalf("NewConversation calls = %d, want one effect", run.newConversationCalls)
+	}
+	if registry.request == nil || registry.request.Operation.Scope != idempotency.ScopeHTTPMutation || registry.request.Operation.IdentityID != identityctx.LocalOperatorIdentity {
+		t.Fatalf("registry request = %+v, want authenticated HTTP operation", registry.request)
+	}
+}
+
+func TestMutationMuxRequiresKeyBeforeHandler(t *testing.T) {
+	t.Parallel()
+
+	run := &scriptedRunner{newConversationID: goodID}
+	store := &fakeConvStore{known: map[string]bool{goodID: true}}
+	server := NewServer(run, store, ServerConfig{})
+	server.SetOperationRegistry(&memoryHTTPRegistry{})
+	r := httptest.NewRequest(http.MethodPost, "/api/conversations", strings.NewReader(`{}`))
+	r = r.WithContext(identityctx.WithIdentityID(r.Context(), identityctx.LocalOperatorIdentity))
+	rr := httptest.NewRecorder()
+	server.Mux().ServeHTTP(rr, r)
+	if rr.Code != http.StatusBadRequest || run.newConversationCalls != 0 {
+		t.Fatalf("status=%d effect calls=%d, want 400 and no effect", rr.Code, run.newConversationCalls)
 	}
 }
 

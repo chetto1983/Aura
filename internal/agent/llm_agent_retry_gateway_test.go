@@ -258,6 +258,61 @@ func TestExecToolRetryReusesOperationWhileAuditIDsChange(t *testing.T) {
 	}
 }
 
+func TestExecToolDerivesStableChildFromHTTPMutation(t *testing.T) {
+	t.Parallel()
+
+	registry := &replayingOperationRegistry{}
+	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
+	gw.SetOperationRegistry(registry)
+	a := &LlmAgent{gateway: gw, ledgerConvID: "11111111-1111-1111-1111-111111111111"}
+	spy := &spyMutatingTool{name: "skill"}
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	parentFingerprint, err := idempotency.FingerprintTyped(struct {
+		Route string `json:"route"`
+	}{Route: "agent_run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      idempotency.ScopeHTTPMutation,
+			Key:        "public-agent-run-key",
+		},
+		Fingerprint: parentFingerprint,
+	}
+	base, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base = tools.WithRequestID(base, "22222222-2222-2222-2222-222222222222")
+	base = tools.WithToolCallContext(base, "session-1", "call-1", t.TempDir(), 4096)
+
+	if _, err := a.execTool(base, spy, true, args); err != nil {
+		t.Fatalf("first exec from HTTP parent: %v", err)
+	}
+	if _, err := a.execTool(base, spy, true, args); err != nil {
+		t.Fatalf("replay exec from HTTP parent: %v", err)
+	}
+	if spy.count != 1 || len(registry.begins) != 2 {
+		t.Fatalf("effect calls=%d begins=%d, want 1/2", spy.count, len(registry.begins))
+	}
+	child := registry.begins[0]
+	wantFingerprint, err := tools.OperationFingerprint(spy.Spec(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Operation.Scope != idempotency.ScopeAgentTool || child.Fingerprint != wantFingerprint {
+		t.Fatalf("child operation = %+v, want agent scope and canonical tool fingerprint", child)
+	}
+	if child.Operation.Key == parent.Key.Key || strings.Contains(child.Operation.Key, parent.Key.Key) {
+		t.Fatal("child key exposed or reused the public parent key")
+	}
+	if registry.begins[0].Operation != registry.begins[1].Operation {
+		t.Fatal("identical tool intent did not derive a stable child operation")
+	}
+}
+
 func TestExecToolCompletionFailureMarksOperationIndeterminate(t *testing.T) {
 	t.Parallel()
 
