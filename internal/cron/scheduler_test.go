@@ -6,9 +6,85 @@
 package cron
 
 import (
+	"context"
+	"errors"
+	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/readiness"
 )
+
+func TestSchedulerHeartbeatAdvancesOnlyAfterSuccessfulScan(t *testing.T) {
+	base := time.Date(2026, 7, 21, 11, 0, 0, 0, time.UTC)
+	now := base
+	snapshot := readiness.NewSnapshot(readiness.Config{
+		Now:                 func() time.Time { return now },
+		SchedulerMaxAge:     time.Minute,
+		MigrationCompatible: true,
+		SchedulerEnabled:    true,
+	})
+	snapshot.MarkListenerRunning()
+	s := NewScheduler(nil, nil, SchedulerConfig{
+		Now:       func() time.Time { return now },
+		Readiness: snapshot,
+	})
+	s.scan = func(context.Context) error {
+		if !slices.Contains(snapshot.Reasons(), readiness.CodeSchedulerStalled) {
+			t.Fatal("scheduler must remain stalled until the scan completion point")
+		}
+		return nil // successful scan with zero due work
+	}
+
+	if err := s.runScheduledScan(context.Background()); err != nil {
+		t.Fatalf("successful scan: %v", err)
+	}
+	if got := snapshot.Reasons(); len(got) != 0 {
+		t.Fatalf("successful empty scan reasons = %v, want ready", got)
+	}
+	if got := s.LastTick(); !got.Equal(base) {
+		t.Fatalf("LastTick = %s, want completion time %s", got, base)
+	}
+
+	previous := s.LastTick()
+	now = now.Add(2 * time.Minute)
+	s.scan = func(context.Context) error { return errors.New("claim path unavailable") }
+	if err := s.runScheduledScan(context.Background()); err == nil {
+		t.Fatal("failed scan returned nil")
+	}
+	if got := s.LastTick(); !got.Equal(previous) {
+		t.Fatalf("failed scan advanced progress to %s; want %s", got, previous)
+	}
+	s.markTerminalFailure(errors.New("terminal loop failure"))
+	if !slices.Contains(snapshot.Reasons(), readiness.CodeSchedulerStalled) {
+		t.Fatalf("terminal failure reasons = %v, want scheduler_stalled", snapshot.Reasons())
+	}
+}
+
+func TestSchedulerDisabledStartsNoHeartbeatAndJoinsCancellation(t *testing.T) {
+	var scans atomic.Int32
+	s := NewScheduler(nil, nil, SchedulerConfig{Disabled: true})
+	s.scan = func(context.Context) error {
+		scans.Add(1)
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Start(ctx) }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("disabled scheduler returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("disabled scheduler did not join cancellation")
+	}
+	if got := scans.Load(); got != 0 {
+		t.Fatalf("disabled scheduler ran %d scans, want zero", got)
+	}
+}
 
 func TestNewScheduler_DefaultsAndClock(t *testing.T) {
 	frozen := time.Date(2026, 6, 4, 9, 30, 0, 0, time.UTC)

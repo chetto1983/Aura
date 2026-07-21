@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -60,6 +61,9 @@ type Scheduler struct {
 	tickInterval  time.Duration
 	hbInterval    time.Duration
 	lastTickUnix  atomic.Int64
+	readiness     *readiness.Snapshot
+	disabled      bool
+	scan          func(context.Context) error
 	// reschedulesOnRecovery reports a kind's HandlerMeta.ReschedulesOnRecovery (M-g):
 	// the boot catch-up consults it so a handler that does NOT reschedule on recovery
 	// (e.g. a reminder whose window has passed, or any future side-effecting handler)
@@ -77,6 +81,10 @@ type SchedulerConfig struct {
 	MaxConcurrent int
 	TickInterval  time.Duration
 	Now           func() time.Time
+	// Readiness receives scheduler scan progress and terminal failures.
+	Readiness *readiness.Snapshot
+	// Disabled keeps the lifecycle joined to ctx without starting a ticker or scan.
+	Disabled bool
 	// ReschedulesOnRecovery is the M-g catch-up seam: it reports whether a task kind's
 	// handler reschedules (re-fires) on boot recovery. A nil func means "always fire"
 	// (the historical behavior); the composition root passes the *Dispatch lookup so
@@ -108,6 +116,8 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 		maxConcurrent:         maxC,
 		tickInterval:          tick,
 		hbInterval:            defaultHeartbeatInterval,
+		readiness:             cfg.Readiness,
+		disabled:              cfg.Disabled,
 		reschedulesOnRecovery: cfg.ReschedulesOnRecovery,
 	}
 }
@@ -133,6 +143,10 @@ func envInt(key string, def int) int {
 // returns nil. The loop owns no leaked goroutines — every claim's heartbeat is
 // joined before the tick returns (goleak gate).
 func (s *Scheduler) Start(ctx context.Context) error {
+	if s.disabled {
+		<-ctx.Done()
+		return nil
+	}
 	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
 	missed, err := s.catchUpMissed(ctx)
 	if err != nil {
@@ -160,6 +174,15 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 }
+
+func (s *Scheduler) runScheduledScan(ctx context.Context) error {
+	if s.scan != nil {
+		return s.scan(ctx)
+	}
+	return nil
+}
+
+func (s *Scheduler) markTerminalFailure(error) {}
 
 // tick selects the due tasks (next_run_at<=Now, FOR UPDATE SKIP LOCKED) up to the
 // concurrency cap, then claims+dispatches each under a semaphore bounded by
