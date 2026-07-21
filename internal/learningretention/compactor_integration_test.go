@@ -38,7 +38,7 @@ func TestLearningGraphStoreQueriesAreBoundedAndExcludePinnedSeeds(t *testing.T) 
 
 func TestLearningGraphStoreDeleteUsesHashSourceAndTimestampVersion(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 123, time.UTC)
-	graph := &queryGraph{writeRows: []map[string]any{{"deleted": int64(1)}}}
+	graph := &queryGraph{writeRows: []map[string]any{{"deleted": int64(1)}}, readRows: []map[string]any{{"remaining": int64(0)}}}
 	store := NewToolSelectionGraphStore(graph)
 	deleted, err := store.Delete(context.Background(), []Candidate{{Hash: "h", UpdatedAt: now}})
 	if err != nil || deleted != 1 {
@@ -55,6 +55,22 @@ func TestLearningGraphStoreDeleteUsesHashSourceAndTimestampVersion(t *testing.T)
 	rows := graph.params["rows"].([]map[string]any)
 	if rows[0]["updated_at"] != now.Format(time.RFC3339Nano) {
 		t.Fatalf("delete version = %#v", rows[0])
+	}
+}
+
+func TestLearningGraphStoreDeleteVerifiesBoundedHashPageWhenWriteAckHasNoRows(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	graph := &queryGraph{readRows: []map[string]any{{"remaining": float64(0)}}}
+	store := NewReasoningGraphStore(graph)
+	deleted, err := store.Delete(context.Background(), []Candidate{{Hash: "h", UpdatedAt: now}})
+	if err != nil || deleted != 1 {
+		t.Fatalf("Delete() = %d, %v", deleted, err)
+	}
+	if !strings.Contains(graph.query, "UNWIND $hashes") || !strings.Contains(graph.query, "source: 'learned'") {
+		t.Fatalf("unbounded delete verification: %s", graph.query)
+	}
+	if hashes := graph.params["hashes"].([]string); len(hashes) != 1 || hashes[0] != "h" {
+		t.Fatalf("verification hashes = %#v", hashes)
 	}
 }
 

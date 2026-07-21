@@ -117,10 +117,30 @@ RETURN count(*) AS deleted`, s.Spec.Label)
 	if err != nil {
 		return 0, err
 	}
-	if len(result) == 0 {
-		return 0, nil
+	if len(result) == 1 {
+		if deleted := asInt(result[0]["deleted"]); deleted > 0 {
+			return min(deleted, len(candidates)), nil
+		}
 	}
-	return asInt(result[0]["deleted"]), nil
+	// Some mcp-neo4j-cypher write transports acknowledge mutations without
+	// returning Cypher records. Verify only this bounded hash page rather than
+	// treating a successful delete as zero or reloading the store. A hash that
+	// was concurrently updated remains present and correctly counts as retained.
+	hashes := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		hashes = append(hashes, candidate.Hash)
+	}
+	verifyQuery := fmt.Sprintf(`UNWIND $hashes AS hash
+OPTIONAL MATCH (e:%s {source: 'learned', hash: hash})
+RETURN count(e) AS remaining`, s.Spec.Label)
+	remainingRows, err := s.Client.Read(ctx, verifyQuery, map[string]any{"hashes": hashes})
+	if err != nil {
+		return 0, err
+	}
+	if len(remainingRows) != 1 {
+		return 0, fmt.Errorf("learning retention %s: missing delete verification", s.Name())
+	}
+	return max(0, len(candidates)-asInt(remainingRows[0]["remaining"])), nil
 }
 
 func (s *GraphStore) readCandidates(ctx context.Context, query string, params map[string]any, limit int) ([]Candidate, error) {
