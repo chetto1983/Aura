@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -50,6 +52,34 @@ func TestReconnectServer_CurrentClientNilWhileOpen(t *testing.T) {
 	}
 	if !mcp.IsTransportError(err) {
 		t.Fatalf("want a transport error for a missing client, got %v", err)
+	}
+}
+
+func TestReconnectServer_MutatingOperationDoesNotReconnectOrReplay(t *testing.T) {
+	initial := &fakeReconnectClient{callErr: mcp.ErrTransport}
+	fresh := &fakeReconnectClient{defs: []mcp.ToolDef{{Name: "send"}}}
+	oldOpen := openMCPClient
+	var reconnects int
+	openMCPClient = func(context.Context, context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+		reconnects++
+		return fresh, nil
+	}
+	defer func() { openMCPClient = oldOpen }()
+
+	op := idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeMCPTool, Key: "mcp-mutation"},
+		Fingerprint: [32]byte{1},
+	}
+	ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
+	if _, err := srv.CallTool(ctx, "send", map[string]any{"message": "hello"}); !mcp.IsTransportError(err) {
+		t.Fatalf("error = %v, want terminal transport ambiguity", err)
+	}
+	if initial.callCount != 1 || fresh.callCount != 0 || reconnects != 0 {
+		t.Fatalf("calls/reconnects = initial:%d fresh:%d reconnects:%d, want 1/0/0", initial.callCount, fresh.callCount, reconnects)
 	}
 }
 

@@ -1,14 +1,19 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/boundedbuffer"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // fakeServer runs a scripted MCP server over the client's pipes in a goroutine. It
@@ -131,6 +136,85 @@ func TestClient_CallTool_IsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "kaboom") {
 		t.Fatalf("error should carry tool text, got %q", err.Error())
 	}
+}
+
+type captureWriteCloser struct{ bytes.Buffer }
+
+func (*captureWriteCloser) Close() error { return nil }
+
+func mcpOperationContext(t *testing.T) context.Context {
+	t.Helper()
+	op := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      idempotency.ScopeMCPTool,
+			Key:        "stable-mcp-operation",
+		},
+		Fingerprint: [32]byte{1, 2, 3},
+	}
+	ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx
+}
+
+func assertMCPWireOperationMeta(t *testing.T, envelope map[string]any) {
+	t.Helper()
+	params, _ := envelope["params"].(map[string]any)
+	arguments, _ := params["arguments"].(map[string]any)
+	if got := arguments["_meta"]; got != "model-controlled" {
+		t.Fatalf("model argument _meta changed unexpectedly: %#v", got)
+	}
+	meta, _ := params["_meta"].(map[string]any)
+	aura, _ := meta["aura"].(map[string]any)
+	if aura["operation_key"] != "stable-mcp-operation" || aura["operation_scope"] != string(idempotency.ScopeMCPTool) {
+		t.Fatalf("Aura operation metadata missing or changed: %#v", aura)
+	}
+	if fingerprint, _ := aura["operation_fingerprint"].(string); len(fingerprint) != 64 {
+		t.Fatalf("operation fingerprint = %q, want 64 hex characters", fingerprint)
+	}
+	if _, leaked := aura["identity_id"]; leaked {
+		t.Fatalf("trusted identity leaked to remote metadata: %#v", aura)
+	}
+}
+
+func TestClientCallToolStdioEnvelopeCarriesAuraOperationMeta(t *testing.T) {
+	t.Parallel()
+
+	stdin := &captureWriteCloser{}
+	c := &Client{
+		name: "capture", stdin: stdin,
+		stdout: newStdioScanner(strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}]}}`+"\n"), defaultStdioMaxFrame),
+		stderr: boundedbuffer.New(0),
+	}
+	if _, err := c.CallTool(mcpOperationContext(t), "mail_send", map[string]any{"_meta": "model-controlled"}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdin.Bytes()), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	assertMCPWireOperationMeta(t, envelope)
+}
+
+func TestClientCallToolHTTPEnvelopeCarriesAuraOperationMeta(t *testing.T) {
+	t.Parallel()
+
+	var captured map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}]}}`)
+	}))
+	defer server.Close()
+	c := &HTTPClient{name: "capture", endpoint: server.URL, client: server.Client(), protocolVersion: httpProtocolVersion}
+	if _, err := c.CallTool(mcpOperationContext(t), "mail_send", map[string]any{"_meta": "model-controlled"}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	assertMCPWireOperationMeta(t, captured)
 }
 
 func TestClient_RpcError(t *testing.T) {
