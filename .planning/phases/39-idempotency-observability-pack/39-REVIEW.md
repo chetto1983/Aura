@@ -1,6 +1,6 @@
 ---
 phase: 39-idempotency-observability-pack
-reviewed: 2026-07-22T02:08:17Z
+reviewed: 2026-07-22T02:48:15Z
 depth: standard
 files_reviewed: 150
 files_reviewed_list:
@@ -155,60 +155,61 @@ files_reviewed_list:
   - web/src/api/idempotency.ts
   - web/src/main.tsx
 findings:
-  critical: 1
+  critical: 0
   warning: 0
   info: 0
-  total: 1
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 39: Code Review Report
 
-**Reviewed:** 2026-07-22T02:08:17Z
+**Reviewed:** 2026-07-22T02:48:15Z
 
 **Depth:** standard
 
 **Files Reviewed:** 150
 
-**Status:** issues_found
+**Status:** clean
 
 ## Summary
 
-Iteration 5 re-reviewed the exact cumulative 150-file inventory, including all 12 in-scope files changed by the two iteration-4 fix commits from 3b7cff248 through d355169c9. The export-delete foreground/reconciler race is resolved: recovery eligibility now respects the foreground grace and active leases, exact-reservation completion is observable, restart recovery still succeeds, and the losing foreground path returns a 201 receipt whose authenticated download is a usable ZIP.
+Iteration 6 re-reviewed the exact cumulative 150-file inventory and the two non-generated files changed by the iteration-5 fix commit `8bac675ab`: `internal/idempotency/maintenance.go` and `cmd/aura/db_reset_idempotency_integration_test.go`. The inventory is unchanged: the prior REVIEW list and the cumulative source/test diff union are both exactly 150 unique files, with no missing or extra path.
 
-The maintenance fix correctly makes a killed reset receipt terminal without reacquiring or re-executing the reset, but it introduces a new blocker. It uses the one-second client retry hint as its crash/orphan deadline, so a duplicate can mark an operation indeterminate while the original reset owner is still alive and executing. A controlled disposable-PostgreSQL probe reproduced this on the real registry and CLI.
+The maintenance registry now separates client retry guidance from crash ownership correctly. A dedicated migration-role connection retains an operation-keyed PostgreSQL session advisory lock for the destructive child's lifetime, while a durable five-minute `lease_expires_at` independently gates crash reconciliation. A duplicate cannot terminalize a live owner, an owner death releases the session signal without bypassing the remaining lease, and only a no-owner duplicate after lease expiry may compare-and-swap `in_progress` to `indeterminate`. Lost reconciliation races re-read the durable outcome, so concurrent `Complete` produces only the valid completed/replay or stale-transition/indeterminate result.
+
+The export-delete recovery receipt and every historical Phase-39 finding remain resolved. Foreground/reconciler completion observation, lease/recovery eligibility, restart recovery, durable publication, retention lifecycle, idempotency expiry, redaction, readiness, pagination, and observability gates show no regression.
 
 No source file was modified during this review.
 
 ## Scope and Validation
 
-- Scope reconstruction: prior REVIEW inventory 150; iteration-4 source/test diff 12; exact union 150; missing files 0.
-- Untagged targeted Go suite across cmd/aura and all relevant Phase-39 packages - PASS.
-- Relevant production packages: go vet - PASS.
+- Scope reconstruction: prior REVIEW inventory 150; `git diff 4ca90c771..8bac675ab` non-generated delta 2; exact cumulative union 150; unique files 150; missing files 0; extra files 0.
+- Full static trace of `MaintenanceRegistry.Begin`, advisory-lock keying, dedicated connection lifetime, DDL upgrade/backfill, `Complete`, `MarkIndeterminate`, reset caller ownership, and reset schema boundaries - PASS.
+- Exact disposable PostgreSQL state-machine probe - PASS: live helper held one advisory lock; beyond `retry_after` the duplicate remained `in_progress`; killing the owner released the lock to zero; with 296.619 seconds remaining on the independent lease the duplicate still remained `in_progress`; after lease expiry the result became terminal `indeterminate`; the sentinel survived; a second retry preserved the terminal state and timestamp.
+- Committed disposable PostgreSQL reset test - PASS without skip, including completed replay, live-owner duplicate behavior, killed-owner reconciliation, sentinel preservation, stable terminal retry, and 20 `Complete`-versus-reconcile races.
+- Disposable PostgreSQL historical gates - PASS: db-migrate bootstrap, conversations export-delete recovery eligibility/completion observation, idempotency store contract, retention disjoint claims/two-phase lifecycle/unchanged-plan refresh, runner process-restart recovery receipt, and migration 0048 round trip.
 - Focused foreground/reconciler receipt, recovery, lease, completion-observation, cancellation, failure-resume, and same-operation race tests repeated 20 times - PASS.
-- Deterministic HTTP proof: foreground returns 201 with a UUID export_id, non-empty download_url, authenticated HTTP 200 application/zip download, and non-empty archive - PASS.
-- Disposable PostgreSQL db-migrate bootstrap plus db-reset completed replay, killed-parent indeterminate receipt, and post-reset sentinel preservation - PASS.
-- Disposable PostgreSQL export-delete recovery eligibility/completion observation, snapshot/version/freeze/lease tests, and process-restart recovery - PASS.
-- Historical PostgreSQL idempotency contract, replay-expiry boundaries, retention disjoint claims, and persisted two-phase lifecycle tests - PASS.
-- Controlled active-reset duplicate probe: original helper remained alive; after 1.5 seconds the duplicate Aura CLI exited 2 with the indeterminate outcome and SQL state was indeterminate - product failure reproduced.
-- Deployable observability static verifier - PASS. The negative-fixture script could not be faithfully rerun because pwsh is unavailable in this Windows shell and Windows PowerShell line-wraps the expected error text.
-- scripts/check-file-size.sh - PASS, all 2051 tracked source files within the 600-LOC cap.
-- git diff --check 3b7cff248..d355169c9 - PASS.
-- Current Windows race execution is unavailable because this shell has CGO disabled; the iteration-4 fix run recorded WSL race PASS for the modified runner path.
+- Targeted Phase-39 Go tests and production-package `go vet` - PASS.
+- Full `go test ./...` and `go vet ./...` - PASS.
+- `golangci-lint run --timeout=5m ./...` - PASS with 0 issues. Its runner emitted path-relativity diagnostics for an older external temporary review tree, not repository findings.
+- Deployable observability verifier - PASS: 4 dashboards, 20 alerts, 83 checked queries, bounded synthetic runtime series, OTLP trace, and 4 provisioned dashboards.
+- `scripts/check-file-size.sh` - PASS, all 2051 tracked source files within the 600-LOC cap.
+- `git diff --check 4ca90c771..8bac675ab` - PASS.
+- Iteration-5 fix validation also records WSL race PASS for both the changed reset integration and the relevant untagged packages.
 
-## Iteration-4 Finding Resolution Matrix
+## Iteration-5 Finding Resolution Matrix
 
-| Iteration-4 finding | Result | Evidence |
+| Iteration-5 finding | Result | Evidence |
 |---|---|---|
-| CR-01: recovery can delete the conversation while foreground returns 409 without the export handle | Resolved | Fresh reservations wait through a three-minute recovery grace that exceeds the two-minute detached finalizer. Active teardown leases are excluded, expired leases remain recoverable, and a losing claimant observes exact-reservation deletion as success. Focused tests repeated 20 times, the live PostgreSQL eligibility/restart gates, and the HTTP 201 plus usable ZIP proof all pass. |
-| WR-01: a hard process exit leaves db reset permanently in progress | Crash path resolved, active path unsafe | A killed owner now transitions to terminal indeterminate without executing reset, and the sentinel survives. However, the same CAS fires after the shared one-second retry hint even when the original owner is still alive; see CR-01. |
+| CR-01: a duplicate reset marks a live operation indeterminate after one second | Resolved | `retry_after` remains client guidance only. A session advisory lock proves live ownership, and an independent five-minute lease gates orphan reconciliation. The exact real-CLI probe proves live-owner and killed-owner/pre-lease duplicates remain `in_progress`; only no-owner/post-lease reconciliation becomes stable `indeterminate`, with no reset re-execution and the sentinel preserved. Twenty disposable-database `Complete`-versus-reconcile races accept only the two correct CAS outcomes. |
 
 ## Historical-Finding Regression Matrix
 
-| Historical finding | Iteration-5 result |
+| Historical finding | Iteration-6 result |
 |---|---|
 | Original CR-01 HTTP enforcement and operation propagation | Resolved without regression. |
-| Original CR-02 CLI mutation registry | Completed replay, conflict, killed-reset terminalization, and no-reexecution are proven. Active reset duplicate classification regressed; see CR-01. |
+| Original CR-02 CLI mutation registry | Resolved without regression: completed replay, conflict safety, live-owner fail-closed behavior, killed-owner lease gating, terminal crash classification, and no re-execution are proven. |
 | Original CR-03 scheduler parent/tool child scopes | Resolved without regression. |
 | Original CR-04 durable export publication and conflict safety | Resolved, including snapshot/version coverage, publication ordering, writer freeze, recovery grace, lease ownership, exact completion observation, restart recovery, and 201 usable-download receipt. |
 | Original CR-05 retention crash resume and fresh authorization | Resolved without regression, including unchanged-plan refresh and non-planned immutability. |
@@ -220,38 +221,25 @@ No source file was modified during this review.
 | Iteration-2 db-migrate bootstrap | Resolved without regression. |
 | Iteration-2 export reservation ordering/recovery and owner-export physical expiry | Resolved without regression. |
 | Iteration-2 retention stale-plan behavior | Resolved without regression. |
-| Iteration-3 db-reset durable receipt and sentinel replay | Completed and killed-owner cases are resolved; active-owner duplicate semantics regressed; see CR-01. |
+| Iteration-3 db-reset durable receipt and sentinel replay | Resolved without regression across completed, active-owner, killed-owner/pre-lease, killed-owner/post-lease, and terminal replay cases. |
 | Iteration-3 export cancellation/failure/restart recovery | Resolved without regression. |
 | Iteration-3 retention refresh/immutability and independent owner-export sweeps | Resolved without regression. |
+| Iteration-4 export foreground/reconciler receipt race | Resolved without regression; the foreground loser observes exact-reservation completion and returns the usable durable receipt. |
+| Iteration-4 hard-exit reset orphan | Resolved without regression; owner death releases the session lock and post-lease reconciliation terminates safely without rerunning reset. |
+| Iteration-5 live-reset misclassification | Resolved; advisory ownership and the independent lease prevent the one-second retry hint from terminalizing a live operation. |
 
 ## Narrative Findings (AI reviewer)
 
-## Critical Issues
-
-### CR-01: a duplicate reset marks a live operation indeterminate after one second
-
-**Classification:** BLOCKER
-
-**File:** internal/idempotency/maintenance.go:86-112; internal/idempotency/store.go:17-20; cmd/aura/idempotency.go:270-277
-
-**Issue:** MaintenanceRegistry.Begin stores retry_after as now plus defaultRetryAfter, and the shared default is one second. On any matching duplicate after that timestamp, Begin atomically changes the row from in_progress to indeterminate. retry_after is client retry guidance, not proof that the effect owner crashed; the Phase-39 contract explicitly requires a duplicate whose original is still executing to remain typed in_progress. The reset parent keeps executing the destructive child after acquisition, so a reset can legitimately exceed one second. A duplicate then terminalizes the live receipt. When the original later calls Complete, its conditional transition affects zero rows and the command reports operation completion unavailable after the schema reset already happened.
-
-The failure was reproduced against a disposable PostgreSQL database using the existing subprocess helper. The helper acquired the real maintenance registry receipt and remained alive. After 1.5 seconds, the same-key real Aura CLI retry exited 2 with operation outcome is indeterminate; SQL showed state=indeterminate while process inspection simultaneously showed the original helper still alive.
-
-**Fix:** Separate retry guidance from crash ownership. Give maintenance operations a real execution lease or liveness record, renew it while the parent owns the child, and reconcile to indeterminate only after that lease expires with no live owner. A session/advisory-lock ownership signal may also provide a strong process-loss discriminator because the registry connection remains open during execution. Keep retry_after only for the immediate in_progress response. Add a deterministic live test that keeps the original helper alive beyond retry_after and proves duplicates remain in_progress, then kills it, advances beyond the independent recovery lease, and proves the next duplicate becomes terminal indeterminate with the sentinel preserved. Retain concurrent Complete-versus-reconcile CAS coverage.
-
-## Warnings
-
-None.
+No critical, warning, or info findings.
 
 ## Final Assessment
 
-Critical: 1
+Critical: 0
 
 Warning: 0
 
 Info: 0
 
-Total: 1
+Total: 0
 
-Status: issues_found
+Status: clean
