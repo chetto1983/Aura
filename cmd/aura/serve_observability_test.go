@@ -9,8 +9,78 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/readiness"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace/noop"
 )
+
+func TestListenerRuntimeFailureEmitsActualTerminalLabels(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	boundary, err := obs.NewBoundary(
+		provider.Meter("aura.listener.lifecycle.test"),
+		noop.NewTracerProvider().Tracer("aura.listener.lifecycle.test"),
+		obs.BoundaryConfig{Operation: "listener_serve", Transport: "http", State: "running", Count: obs.ListenerTransitionsID},
+	)
+	if err != nil {
+		t.Fatalf("NewBoundary: %v", err)
+	}
+	previous := serveListenerBoundary
+	serveListenerBoundary = boundary
+	t.Cleanup(func() {
+		serveListenerBoundary = previous
+		_ = provider.Shutdown(context.Background())
+	})
+
+	snapshot := readiness.NewSnapshot(readiness.Config{MigrationCompatible: true, SchedulerEnabled: true})
+	snapshot.MarkListenerBound()
+	listener := newFailingServeListener()
+	server := &http.Server{Handler: http.NotFoundHandler()}
+	scheduler := schedulerLifecycleFunc(func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	})
+	err = runServeComponents(context.Background(), snapshot, listener, server, scheduler, func() {
+		_ = server.Shutdown(context.Background())
+	})
+	if err == nil {
+		t.Fatal("listener failure returned nil")
+	}
+
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("collect listener metrics: %v", err)
+	}
+	for _, scope := range collected.ScopeMetrics {
+		for _, instrument := range scope.Metrics {
+			if instrument.Name != "aura.listener.transition" {
+				continue
+			}
+			sum, ok := instrument.Data.(metricdata.Sum[int64])
+			if !ok || len(sum.DataPoints) != 1 || sum.DataPoints[0].Value != 1 {
+				t.Fatalf("listener transition data = %#v, want one terminal event", instrument.Data)
+			}
+			attrs := sum.DataPoints[0].Attributes.ToSlice()
+			if !metricHasString(attrs, "state", "running") || !metricHasString(attrs, "outcome", "error") {
+				t.Fatalf("listener transition attrs = %v, want state=running,outcome=error", attrs)
+			}
+			return
+		}
+	}
+	t.Fatal("aura.listener.transition metric not found")
+}
+
+func metricHasString(attrs []attribute.KeyValue, key, value string) bool {
+	for _, attr := range attrs {
+		if string(attr.Key) == key && attr.Value.AsString() == value {
+			return true
+		}
+	}
+	return false
+}
 
 func TestPrivateMetricsListenerRequiresLoopback(t *testing.T) {
 	called := false

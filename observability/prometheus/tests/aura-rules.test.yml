@@ -53,6 +53,41 @@ tests:
         alertname: AuraDBErrorRateHigh
         exp_alerts: []
 
+  - name: lifecycle rules consume production-emittable labels
+    interval: 1m
+    input_series:
+      - series: 'aura_listener_transition_total{state="running",outcome="error",error_class="other"}'
+        values: '0+1x12'
+      - series: 'aura_boundary_in_flight{operation="scheduler_tick",tool_class="other",transport="other"}'
+        values: '1x12'
+    promql_expr_test:
+      - expr: aura:listener_failure:increase5m
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="aura:listener_failure:increase5m"}'
+            value: 5
+      - expr: aura:scheduler_enabled
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="aura:scheduler_enabled"}'
+            value: 1
+
+  - name: retention backlog counts only delete lifecycle items
+    interval: 1m
+    input_series:
+      - series: 'aura_retention_operation_total{operation="retention_delete",state="pending",outcome="success",error_class="none"}'
+        values: '0+4x40'
+      - series: 'aura_retention_operation_total{operation="retention_delete",state="completed",outcome="success",error_class="none"}'
+        values: '0+1x40'
+      - series: 'aura_retention_operation_total{operation="retention_plan",state="pending",outcome="success",error_class="none"}'
+        values: '0+10x40'
+    promql_expr_test:
+      - expr: aura:retention_backlog
+        eval_time: 35m
+        exp_samples:
+          - labels: '{__name__="aura:retention_backlog"}'
+            value: 90
+
   - name: readiness page fires exactly at the five minute debounce
     interval: 1m
     input_series:
