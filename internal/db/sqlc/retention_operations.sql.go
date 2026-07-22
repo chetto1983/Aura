@@ -129,6 +129,21 @@ func (q *Queries) ClaimRetentionItems(ctx context.Context, arg ClaimRetentionIte
 	return items, nil
 }
 
+const countRetentionBacklog = `-- name: CountRetentionBacklog :one
+SELECT count(*)
+FROM aura.retention_operation_items
+WHERE status IN ('planned', 'deleting', 'retryable')
+`
+
+// Current durable work that has not reached a terminal completed/failed item state.
+// This query owns the restart-safe backlog gauge; transition counters are not state.
+func (q *Queries) CountRetentionBacklog(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countRetentionBacklog)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createRetentionItem = `-- name: CreateRetentionItem :one
 INSERT INTO aura.retention_operation_items (
     id, operation_id, item_key, identity_id, conversation_id, artifact_id,

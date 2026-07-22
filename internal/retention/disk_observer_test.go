@@ -6,6 +6,8 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +20,31 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/goleak"
 )
+
+func TestDiskObserverCreatesMissingRunDirBeforeSampling(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "nested", "runs")
+	observer, err := NewDiskObserver(DiskObserverConfig{
+		RunDir: runDir, Thresholds: DiskThresholds{Warn: 70, Urgent: 80, StopOptional: 85},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(observer.Stop)
+	info, err := os.Stat(runDir)
+	if err != nil || !info.IsDir() {
+		t.Fatalf("run dir stat = %+v, %v; want directory before Start", info, err)
+	}
+
+	filePath := filepath.Join(t.TempDir(), "runs-file")
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewDiskObserver(DiskObserverConfig{
+		RunDir: filePath, Thresholds: DiskThresholds{Warn: 70, Urgent: 80, StopOptional: 85},
+	}); err == nil {
+		t.Fatal("disk observer accepted a run-dir path that is a file")
+	}
+}
 
 func TestDiskCapacityRatioAndPlatformSampler(t *testing.T) {
 	if _, err := ratioFromCapacity(0, 0); err == nil {

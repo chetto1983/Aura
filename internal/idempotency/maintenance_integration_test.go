@@ -199,7 +199,7 @@ func assertDisposableMaintenanceDatabase(t *testing.T, ctx context.Context, pool
 	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
 		t.Fatal(err)
 	}
-	if name == "aura" || name == "postgres" {
+	if protectedLocalIntegrationDatabase(name) {
 		t.Fatalf("refusing maintenance integration test database %q; use a disposable database", name)
 	}
 }

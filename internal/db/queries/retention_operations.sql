@@ -21,6 +21,13 @@ WHERE token = sqlc.arg(token)
 -- name: GetRetentionOperationByToken :one
 SELECT * FROM aura.retention_operations WHERE token = sqlc.arg(token);
 
+-- name: CountRetentionBacklog :one
+-- Current durable work that has not reached a terminal completed/failed item state.
+-- This query owns the restart-safe backlog gauge; transition counters are not state.
+SELECT count(*)
+FROM aura.retention_operation_items
+WHERE status IN ('planned', 'deleting', 'retryable');
+
 -- name: AuthorizeRetentionOperation :execrows
 -- First apply only: commit the freshly rebuilt plan authorization before any
 -- item can be claimed. A crash after this transition resumes persisted items

@@ -39,6 +39,7 @@ idempotency_operations|aura.idempotency.operation|aura_idempotency_operation_tot
 retention_operations|aura.retention.operation|aura_retention_operation_total|counter|1|operation,state,outcome,error_class|Total retention policy operations.|
 retention_duration|aura.retention.operation.duration|aura_retention_operation_duration_seconds|histogram|s|operation,outcome|Retention operation duration.|0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60,120
 retention_bytes|aura.retention.bytes|aura_retention_bytes_total|counter|1|operation,outcome|Total bytes processed by retention.|
+retention_backlog|aura.retention.backlog|aura_retention_backlog_items|gauge|items||Current durable non-terminal retention item backlog.|
 retention_disk_utilization|aura.retention.disk.utilization|aura_retention_disk_utilization_ratio|gauge|1|state|Current bounded retention disk utilization ratio.|
 learning_operations|aura.learning.operation|aura_learning_operation_total|counter|1|operation,tool_class,outcome,error_class|Total bounded learning-store operations.|
 learning_size|aura.learning.size|aura_learning_size|gauge|1|tool_class,state|Current bounded learning-store size.|

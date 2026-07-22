@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -80,6 +81,9 @@ func newDiskObserver(meter metric.Meter, cfg DiskObserverConfig) (*DiskObserver,
 	}
 	if cfg.Interval < 0 {
 		return nil, fmt.Errorf("disk observer interval must not be negative")
+	}
+	if err := os.MkdirAll(cfg.RunDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create disk observer run dir: %w", err)
 	}
 	if cfg.Interval == 0 {
 		cfg.Interval = diskObservationInterval

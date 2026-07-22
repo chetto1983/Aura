@@ -12,8 +12,36 @@ import (
 )
 
 func TestStoreRejectsUnconfiguredAndInvalidTransitions(t *testing.T) {
-	if _, err := NewStore(nil).SavePlan(context.Background(), Plan{}, time.Now()); err == nil {
+	store := NewStore(nil)
+	if _, _, err := store.SavePlan(context.Background(), Plan{}, time.Now()); err == nil {
 		t.Fatal("unconfigured store accepted a plan")
+	}
+	if _, err := store.PendingCount(context.Background()); err == nil {
+		t.Fatal("unconfigured store counted backlog")
+	}
+	if _, err := store.GetByToken(context.Background(), ""); err == nil {
+		t.Fatal("unconfigured store resolved an empty token")
+	}
+	if _, err := store.Authorize(context.Background(), "bad", "token", "policy", time.Now()); err == nil {
+		t.Fatal("invalid authorization ID succeeded")
+	}
+	if _, err := store.Claim(context.Background(), "bad", "worker", 1, time.Now(), time.Minute); err == nil {
+		t.Fatal("invalid claim ID succeeded")
+	}
+	for name, call := range map[string]func() error{
+		"record": func() error {
+			return store.RecordArtifact(context.Background(), "bad", "worker", ArtifactRemoved, 1, "", time.Now())
+		},
+		"finalize": func() error { return store.FinalizeItem(context.Background(), "bad", "worker", time.Now()) },
+		"retry":    func() error { return store.RetryItem(context.Background(), "bad", "worker", "failure", time.Now()) },
+		"fail":     func() error { return store.FailItem(context.Background(), "bad", "worker", "failure", time.Now()) },
+	} {
+		if err := call(); err == nil {
+			t.Fatalf("invalid %s item ID succeeded", name)
+		}
+	}
+	if _, err := store.FinalizeOperation(context.Background(), "bad", time.Now()); err == nil {
+		t.Fatal("invalid finalization ID succeeded")
 	}
 	if err := retentionRows("transition", 0, nil); !errors.Is(err, ErrLeaseLost) {
 		t.Fatalf("zero-row transition error = %v", err)

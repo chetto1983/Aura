@@ -172,7 +172,7 @@ func runServe(args []string) {
 	ctx := workCtx
 
 	v, _, _ := buildInfo()
-	serveObs, err := startServeObservability(ctx, env.cfg, v, net.Listen)
+	serveObs, err := startServeObservability(ctx, env.cfg, v, env.pool, net.Listen)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura serve observability:", err)
 		os.Exit(exitInfra)

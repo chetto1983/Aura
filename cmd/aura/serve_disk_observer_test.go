@@ -36,6 +36,11 @@ func TestDiskObserverScrapesThroughRealObservabilityRuntime(t *testing.T) {
 	}
 	observer.Start(t.Context())
 	t.Cleanup(observer.Stop)
+	backlog, err := retention.NewBacklogObserver(staticBacklogSource(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(backlog.Stop)
 
 	recorder := httptest.NewRecorder()
 	runtime.MetricsHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -43,16 +48,27 @@ func TestDiskObserverScrapesThroughRealObservabilityRuntime(t *testing.T) {
 	if !strings.Contains(body, `aura_retention_disk_utilization_ratio{state="draining"} 0.8`) {
 		t.Fatalf("real metrics scrape missing current disk state:\n%s", body)
 	}
-}
-
-func TestServeObservabilityShutdownStopsDiskObserver(t *testing.T) {
-	observer := &fakeDiskObserverLifecycle{}
-	component := &serveObservability{diskObserver: observer}
-	component.shutdownRuntime()
-	if !observer.stopped.Load() {
-		t.Fatal("observability shutdown did not stop and join the disk observer")
+	if !strings.Contains(body, `aura_retention_backlog_items 3`) {
+		t.Fatalf("real metrics scrape missing durable retention backlog:\n%s", body)
 	}
 }
+
+func TestServeObservabilityShutdownStopsObservers(t *testing.T) {
+	disk := &fakeDiskObserverLifecycle{}
+	backlog := &fakeObserverStopper{}
+	component := &serveObservability{diskObserver: disk, backlog: backlog}
+	component.shutdownRuntime()
+	if !disk.stopped.Load() {
+		t.Fatal("observability shutdown did not stop and join the disk observer")
+	}
+	if !backlog.stopped.Load() {
+		t.Fatal("observability shutdown did not unregister the backlog observer")
+	}
+}
+
+type staticBacklogSource int64
+
+func (s staticBacklogSource) PendingCount(context.Context) (int64, error) { return int64(s), nil }
 
 type fakeDiskObserverLifecycle struct {
 	stopped atomic.Bool
@@ -61,5 +77,13 @@ type fakeDiskObserverLifecycle struct {
 func (*fakeDiskObserverLifecycle) Start(context.Context) {}
 
 func (f *fakeDiskObserverLifecycle) Stop() {
+	f.stopped.Store(true)
+}
+
+type fakeObserverStopper struct {
+	stopped atomic.Bool
+}
+
+func (f *fakeObserverStopper) Stop() {
 	f.stopped.Store(true)
 }

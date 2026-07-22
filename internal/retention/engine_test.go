@@ -255,86 +255,6 @@ func TestEngineRejectsExpiredPlanBeforeFirstClaim(t *testing.T) {
 	}
 }
 
-func TestEngineRecordsContentFreePlanAndApplyAudits(t *testing.T) {
-	fixture := newEngineFixture(t)
-	audit := &recordingAudit{}
-	fixture.engine.Audit = audit
-	fixture.engine.Now = nil
-	plan, err := fixture.engine.Plan(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
-		t.Fatal(err)
-	}
-	if len(audit.summaries) != 2 || audit.summaries[0].Mode != "plan" || audit.summaries[1].Mode != "apply" {
-		t.Fatalf("audit summaries = %+v", audit.summaries)
-	}
-	recordRetentionBytes(context.Background(), 0)
-}
-
-func TestEngineRecordsPendingAndTerminalRetentionItems(t *testing.T) {
-	fixture := newEngineFixture(t)
-	metrics := &recordingRetentionMetrics{}
-	fixture.engine.metrics = metrics
-
-	plan, err := fixture.engine.Plan(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
-		t.Fatal(err)
-	}
-
-	want := []retentionItemMetric{
-		{state: "pending", outcome: "accepted", count: 1},
-		{state: "completed", outcome: "success", count: 1},
-	}
-	if !slices.Equal(metrics.items, want) {
-		t.Fatalf("retention item metrics = %+v, want %+v", metrics.items, want)
-	}
-}
-
-func TestEngineKeepsRetryableItemsInBacklogAndClosesFailedItems(t *testing.T) {
-	t.Run("retryable", func(t *testing.T) {
-		fixture := newEngineFixture(t)
-		fixture.revalidator.err = errors.New("temporarily unavailable")
-		metrics := &recordingRetentionMetrics{}
-		fixture.engine.metrics = metrics
-		plan, err := fixture.engine.Plan(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
-			t.Fatal(err)
-		}
-		if len(metrics.items) != 1 || metrics.items[0].state != "pending" {
-			t.Fatalf("retryable metrics = %+v, want pending only", metrics.items)
-		}
-	})
-
-	t.Run("terminal failure", func(t *testing.T) {
-		fixture := newEngineFixture(t)
-		fixture.revalidator.response = &Revalidation{Exists: true, Owned: false, Version: 1}
-		metrics := &recordingRetentionMetrics{}
-		fixture.engine.metrics = metrics
-		plan, err := fixture.engine.Plan(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
-			t.Fatal(err)
-		}
-		want := []retentionItemMetric{
-			{state: "pending", outcome: "accepted", count: 1},
-			{state: "completed", outcome: "error", count: 1},
-		}
-		if !slices.Equal(metrics.items, want) {
-			t.Fatalf("terminal failure metrics = %+v, want %+v", metrics.items, want)
-		}
-	})
-}
-
 type engineFixture struct {
 	engine      *Engine
 	store       *memoryOperationStore
@@ -439,42 +359,75 @@ func (f *fakeFinalizer) Finalize(context.Context, Candidate) error {
 }
 
 type memoryOperationStore struct {
-	mu             sync.Mutex
-	plan           Plan
-	op             Operation
-	items          []Item
-	claims         int
-	authorizations int
+	mu                      sync.Mutex
+	plan                    Plan
+	op                      Operation
+	items                   []Item
+	claims                  int
+	authorizations          int
+	saveErr                 error
+	authorizeErr            error
+	authorizeAllowed        *bool
+	authorizeObservedStatus Status
+	authorizeHook           func()
+	claimErr                error
+	claimHook               func()
+	reloadErr               error
+	getByTokenCalls         int
+	recordErr               error
+	finalizeItemErr         error
+	retryErr                error
+	failErr                 error
+	finalizeOperationErr    error
 }
 
-func (m *memoryOperationStore) SavePlan(_ context.Context, plan Plan, now time.Time) (Operation, error) {
+func (m *memoryOperationStore) SavePlan(_ context.Context, plan Plan, now time.Time) (Operation, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.saveErr != nil {
+		return Operation{}, false, m.saveErr
+	}
 	if m.op.ID != "" {
-		return m.op, nil
+		return m.op, false, nil
 	}
 	m.plan = plan
 	m.op = Operation{ID: "operation", Token: plan.Token, PolicyVersion: plan.PolicyVersion, Status: StatusPlanned, CandidateCount: len(plan.Candidates), PlannedBytes: plan.TotalBytes, CreatedAt: now}
 	for i, candidate := range plan.Candidates {
 		m.items = append(m.items, Item{ID: string(rune('a' + i)), OperationID: m.op.ID, Candidate: candidate, Status: StatusPlanned, ArtifactResult: ArtifactPending})
 	}
-	return m.op, nil
+	return m.op, true, nil
 }
 
 func (m *memoryOperationStore) Authorize(_ context.Context, operationID, token, policyVersion string, _ time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.authorizeErr != nil {
+		return false, m.authorizeErr
+	}
+	if m.authorizeAllowed != nil && !*m.authorizeAllowed {
+		if m.authorizeObservedStatus != "" {
+			m.op.Status = m.authorizeObservedStatus
+		}
+		return false, nil
+	}
 	if m.op.ID != operationID || m.op.Token != token || m.op.PolicyVersion != policyVersion || m.op.Status != StatusPlanned {
 		return false, nil
 	}
 	m.authorizations++
 	m.op.Status = StatusDeleting
+	if m.authorizeHook != nil {
+		m.authorizeHook()
+	}
 	return true, nil
 }
 
 func (m *memoryOperationStore) GetByToken(_ context.Context, token string) (Operation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.getByTokenCalls++
+	if m.getByTokenCalls > 1 && m.reloadErr != nil {
+		return Operation{}, m.reloadErr
+	}
 	if token != m.op.Token {
 		return Operation{}, ErrTokenMismatch
 	}
@@ -484,6 +437,12 @@ func (m *memoryOperationStore) GetByToken(_ context.Context, token string) (Oper
 func (m *memoryOperationStore) Claim(_ context.Context, operationID, owner string, cap int, now time.Time, lease time.Duration) ([]Item, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.claimErr != nil {
+		return nil, m.claimErr
+	}
+	if m.claimHook != nil {
+		m.claimHook()
+	}
 	m.claims++
 	if m.op.ID != operationID || (m.op.Status != StatusDeleting && m.op.Status != StatusRetryable) {
 		return nil, nil
@@ -506,6 +465,9 @@ func (m *memoryOperationStore) Claim(_ context.Context, operationID, owner strin
 func (m *memoryOperationStore) RecordArtifact(_ context.Context, id, owner, result string, bytes int64, failure string, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.recordErr != nil {
+		return m.recordErr
+	}
 	item := m.item(id)
 	item.ArtifactResult, item.RemovedBytes, item.FailureClass = result, bytes, failure
 	return nil
@@ -514,6 +476,9 @@ func (m *memoryOperationStore) RecordArtifact(_ context.Context, id, owner, resu
 func (m *memoryOperationStore) FinalizeItem(_ context.Context, id, owner string, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.finalizeItemErr != nil {
+		return m.finalizeItemErr
+	}
 	m.item(id).Status = StatusCompleted
 	return nil
 }
@@ -521,6 +486,9 @@ func (m *memoryOperationStore) FinalizeItem(_ context.Context, id, owner string,
 func (m *memoryOperationStore) RetryItem(_ context.Context, id, owner, failure string, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.retryErr != nil {
+		return m.retryErr
+	}
 	item := m.item(id)
 	item.Status, item.FailureClass = StatusRetryable, failure
 	return nil
@@ -529,6 +497,9 @@ func (m *memoryOperationStore) RetryItem(_ context.Context, id, owner, failure s
 func (m *memoryOperationStore) FailItem(_ context.Context, id, owner, failure string, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.failErr != nil {
+		return m.failErr
+	}
 	item := m.item(id)
 	item.Status, item.FailureClass = StatusFailed, failure
 	return nil
@@ -537,6 +508,9 @@ func (m *memoryOperationStore) FailItem(_ context.Context, id, owner, failure st
 func (m *memoryOperationStore) FinalizeOperation(_ context.Context, id string, _ time.Time) (Operation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.finalizeOperationErr != nil {
+		return Operation{}, m.finalizeOperationErr
+	}
 	m.op.Status, m.op.CompletedCount, m.op.CompletedBytes, m.op.FailureCount = StatusCompleted, 0, 0, 0
 	for _, item := range m.items {
 		switch item.Status {

@@ -59,7 +59,7 @@ type Item struct {
 
 // OperationStore is the durable seam consumed by Engine and scheduler/CLI adapters.
 type OperationStore interface {
-	SavePlan(context.Context, Plan, time.Time) (Operation, error)
+	SavePlan(context.Context, Plan, time.Time) (Operation, bool, error)
 	GetByToken(context.Context, string) (Operation, error)
 	Authorize(context.Context, string, string, string, time.Time) (bool, error)
 	Claim(context.Context, string, string, int, time.Time, time.Duration) ([]Item, error)
@@ -82,20 +82,22 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 // SavePlan atomically persists an immutable plan and all its items.
-func (s *Store) SavePlan(ctx context.Context, plan Plan, now time.Time) (Operation, error) {
+func (s *Store) SavePlan(ctx context.Context, plan Plan, now time.Time) (Operation, bool, error) {
 	if s == nil || s.pool == nil {
-		return Operation{}, fmt.Errorf("retention store is not configured")
+		return Operation{}, false, fmt.Errorf("retention store is not configured")
 	}
 	if err := plan.RequireToken(plan.Token); err != nil {
-		return Operation{}, err
+		return Operation{}, false, err
 	}
 	var operation Operation
+	created := true
 	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		row, err := q.CreateRetentionOperation(ctx, sqlc.CreateRetentionOperationParams{
 			ID: retentionUUID(), Token: plan.Token, PolicyVersion: plan.PolicyVersion,
 			CandidateCount: int32(len(plan.Candidates)), PlannedBytes: plan.TotalBytes, Now: retentionTime(now),
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
+			created = false
 			if _, err = q.RefreshPlannedRetentionOperation(ctx, sqlc.RefreshPlannedRetentionOperationParams{
 				Now: retentionTime(now), Token: plan.Token,
 			}); err != nil {
@@ -122,7 +124,20 @@ func (s *Store) SavePlan(ctx context.Context, plan Plan, now time.Time) (Operati
 		}
 		return nil
 	})
-	return operation, err
+	return operation, created, err
+}
+
+// PendingCount returns the current durable non-terminal item backlog. It remains
+// correct across process restarts and idempotent plan replays.
+func (s *Store) PendingCount(ctx context.Context) (int64, error) {
+	if s == nil || s.pool == nil || s.q == nil {
+		return 0, fmt.Errorf("retention store is not configured")
+	}
+	count, err := s.q.CountRetentionBacklog(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count retention backlog: %w", err)
+	}
+	return count, nil
 }
 
 // GetByToken resolves an already persisted plan without changing it.

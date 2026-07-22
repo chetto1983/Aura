@@ -115,10 +115,13 @@ func (e *Engine) Plan(ctx context.Context) (plan Plan, err error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	if _, err = e.Store.SavePlan(ctx, plan, now); err != nil {
+	_, created, err := e.Store.SavePlan(ctx, plan, now)
+	if err != nil {
 		return Plan{}, err
 	}
-	e.metricSink().recordItems(ctx, "pending", "accepted", int64(len(plan.Candidates)))
+	if created {
+		e.metricSink().recordItems(ctx, "pending", "accepted", int64(len(plan.Candidates)))
+	}
 	e.audit(ctx, AuditSummary{Mode: "plan", PolicyVersion: e.Policy.Version, Planned: len(plan.Candidates), PlannedBytes: plan.TotalBytes})
 	return plan, nil
 }

@@ -171,7 +171,7 @@ export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${PGPW}@${PG_HOST_TARGET}:${
 export NEO4J_USER=neo4j NEO4J_PASSWORD="$NEOPW"
 export AURA_NEO4J_BOLT_URL="$NEO4J_BOLT_TARGET" AURA_NEO4J_DATABASE=neo4j
 export AURA_MCP_IMAGE="$IMAGE"
-export AURA_MCP_NEO4J_CYPHER_BIN="$(pwd)/scripts/mcp_neo4j_cypher_docker.sh"
+export AURA_MCP_NEO4J_CYPHER_BIN="${AURA_MCP_NEO4J_CYPHER_BIN:-$(pwd)/scripts/mcp_neo4j_cypher_docker.sh}"
 export AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC="${AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC:-20}"
 
 # Embed sidecar.

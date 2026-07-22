@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 	"github.com/chetto1983/aura/internal/retention"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const observabilityShutdownTimeout = 5 * time.Second
@@ -22,6 +23,7 @@ type serveObservability struct {
 	runtime      *obs.Runtime
 	metrics      *privateMetricsComponent
 	diskObserver diskObserverLifecycle
+	backlog      observerStopper
 }
 
 type diskObserverLifecycle interface {
@@ -29,14 +31,22 @@ type diskObserverLifecycle interface {
 	Stop()
 }
 
+type observerStopper interface {
+	Stop()
+}
+
 func startServeObservability(
 	ctx context.Context,
 	cfg *config.Config,
 	version string,
+	pool *pgxpool.Pool,
 	listen listenFunc,
 ) (*serveObservability, error) {
 	if cfg == nil {
 		return nil, errors.New("start serve observability: config is nil")
+	}
+	if pool == nil {
+		return nil, errors.New("start serve observability: database pool is nil")
 	}
 	runtime, err := obs.InitRuntime(ctx, obs.Config{
 		Service:           "aura",
@@ -70,11 +80,19 @@ func startServeObservability(
 		defer cancel()
 		return nil, errors.Join(err, listener.Close(), runtime.Shutdown(shutCtx))
 	}
+	backlog, err := retention.NewBacklogObserver(retention.NewStore(pool))
+	if err != nil {
+		diskObserver.Stop()
+		shutCtx, cancel := context.WithTimeout(context.Background(), observabilityShutdownTimeout)
+		defer cancel()
+		return nil, errors.Join(err, listener.Close(), runtime.Shutdown(shutCtx))
+	}
 	diskObserver.Start(ctx)
 	return &serveObservability{
 		runtime:      runtime,
 		metrics:      &privateMetricsComponent{listener: listener, server: server},
 		diskObserver: diskObserver,
+		backlog:      backlog,
 	}, nil
 }
 
@@ -83,6 +101,9 @@ func (o *serveObservability) abort(ctx context.Context) error {
 		return nil
 	}
 	var err error
+	if o.backlog != nil {
+		o.backlog.Stop()
+	}
 	if o.diskObserver != nil {
 		o.diskObserver.Stop()
 	}
@@ -105,6 +126,9 @@ func (o *serveObservability) stopMetrics(ctx context.Context) error {
 func (o *serveObservability) shutdownRuntime() {
 	if o == nil {
 		return
+	}
+	if o.backlog != nil {
+		o.backlog.Stop()
 	}
 	if o.diskObserver != nil {
 		o.diskObserver.Stop()

@@ -59,7 +59,7 @@ groups:
       - record: aura:retention_failure:increase15m
         expr: sum(increase(aura_retention_operation_total{outcome="error"}[15m])) or vector(0)
       - record: aura:retention_backlog
-        expr: clamp_min((sum(increase(aura_retention_operation_total{operation="retention_delete",state="pending"}[30m])) or vector(0)) - (sum(increase(aura_retention_operation_total{operation="retention_delete",state="completed"}[30m])) or vector(0)), 0)
+        expr: max(aura_retention_backlog_items) or vector(0)
       - record: aura:retention_disk_utilization:max
         expr: max by (state) (aura_retention_disk_utilization_ratio)
       - record: aura:learning_size:max

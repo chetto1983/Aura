@@ -72,16 +72,17 @@ tests:
           - labels: '{__name__="aura:scheduler_enabled"}'
             value: 1
 
-  - name: retention backlog counts only delete lifecycle items
+  - name: retention backlog reflects durable current state
     interval: 1m
     input_series:
-      - series: 'aura_retention_operation_total{operation="retention_delete",state="pending",outcome="success",error_class="none"}'
-        values: '0+1x40'
-      - series: 'aura_retention_operation_total{operation="retention_delete",state="completed",outcome="success",error_class="none"}'
-        values: '0+1x40'
-      - series: 'aura_retention_operation_total{operation="retention_plan",state="pending",outcome="success",error_class="none"}'
-        values: '0+10x40'
+      - series: 'aura_retention_backlog_items'
+        values: '7x20 0x20'
     promql_expr_test:
+      - expr: aura:retention_backlog
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:retention_backlog"}'
+            value: 7
       - expr: aura:retention_backlog
         eval_time: 35m
         exp_samples:

@@ -28,7 +28,7 @@
       "targets": [{"editorMode": "code", "expr": "aura:retention_failure:increase15m", "legendFormat": "failures", "range": true, "refId": "A"}], "title": "Retention failures", "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Estimated pending-minus-completed retention work. Alert: backlog > 100 for 5m.",
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Current durable non-terminal retention items from PostgreSQL. Alert: backlog > 100 for 5m.",
       "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 100}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}, "id": 4,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},

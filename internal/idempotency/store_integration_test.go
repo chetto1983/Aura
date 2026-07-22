@@ -234,7 +234,7 @@ func assertDisposableMigratedDatabase(t *testing.T, ctx context.Context, app, mi
 	if appName != migrateName {
 		t.Fatalf("app database %q and migration database %q differ", appName, migrateName)
 	}
-	if appName == "aura" || appName == "postgres" {
+	if protectedLocalIntegrationDatabase(appName) {
 		t.Fatalf("refusing db_integration database %q; use a disposable database", appName)
 	}
 	var version int
@@ -244,6 +244,10 @@ func assertDisposableMigratedDatabase(t *testing.T, ctx context.Context, app, mi
 	if version < 43 {
 		t.Fatalf("database %q is at migration %d; run `aura db migrate` against the disposable database", appName, version)
 	}
+}
+
+func protectedLocalIntegrationDatabase(name string) bool {
+	return (name == "aura" || name == "postgres") && os.Getenv("GITHUB_ACTIONS") != "true"
 }
 
 func integrationRequest(t *testing.T, identityID, key string) BeginRequest {

@@ -86,6 +86,7 @@ const (
 	RetentionOperationsID        InstrumentID = "retention_operations"
 	RetentionDurationID          InstrumentID = "retention_duration"
 	RetentionBytesID             InstrumentID = "retention_bytes"
+	RetentionBacklogID           InstrumentID = "retention_backlog"
 	RetentionDiskUtilizationID   InstrumentID = "retention_disk_utilization"
 	LearningOperationsID         InstrumentID = "learning_operations"
 	LearningSizeID               InstrumentID = "learning_size"
@@ -142,6 +143,7 @@ var descriptors = []Descriptor{
 	count(RetentionOperationsID, "aura.retention.operation", "aura_retention_operation_total", []AttributeKey{AttributeOperation, AttributeState, AttributeOutcome, AttributeErrorClass}, "Total retention policy operations."),
 	histogram(RetentionDurationID, "aura.retention.operation.duration", "aura_retention_operation_duration_seconds", []AttributeKey{AttributeOperation, AttributeOutcome}, "Retention operation duration.", slowDurationBuckets),
 	count(RetentionBytesID, "aura.retention.bytes", "aura_retention_bytes_total", []AttributeKey{AttributeOperation, AttributeOutcome}, "Total bytes processed by retention."),
+	gauge(RetentionBacklogID, "aura.retention.backlog", "aura_retention_backlog_items", nil, "Current durable non-terminal retention item backlog.", "items"),
 	gauge(RetentionDiskUtilizationID, "aura.retention.disk.utilization", "aura_retention_disk_utilization_ratio", []AttributeKey{AttributeState}, "Current bounded retention disk utilization ratio.", "1"),
 	count(LearningOperationsID, "aura.learning.operation", "aura_learning_operation_total", []AttributeKey{AttributeOperation, AttributeToolClass, AttributeOutcome, AttributeErrorClass}, "Total bounded learning-store operations."),
 	gauge(LearningSizeID, "aura.learning.size", "aura_learning_size", []AttributeKey{AttributeToolClass, AttributeState}, "Current bounded learning-store size.", "1"),

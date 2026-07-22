@@ -33,7 +33,7 @@ func TestRetentionStoreClaimsAreBoundedAndDisjoint(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&database); err != nil {
 		t.Fatal(err)
 	}
-	if database == "aura" || database == "postgres" {
+	if protectedRetentionIntegrationDatabase(database) {
 		t.Fatalf("refusing db_integration database %q; use a disposable database", database)
 	}
 	var migration int
@@ -58,9 +58,12 @@ func TestRetentionStoreClaimsAreBoundedAndDisjoint(t *testing.T) {
 	}
 	store := NewStore(pool)
 	now := time.Now().UTC()
-	operation, err := store.SavePlan(ctx, plan, now)
+	operation, created, err := store.SavePlan(ctx, plan, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("unique retention plan was reported as a replay")
 	}
 	if items, claimErr := store.Claim(ctx, operation.ID, "unauthorized", 1, now, time.Minute); claimErr != nil || len(items) != 0 {
 		t.Fatalf("claim before first authorization = %+v, %v", items, claimErr)
@@ -116,6 +119,7 @@ func TestRetentionStorePersistsTwoPhaseLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	assertDisposableRetentionDatabase(t, ctx, pool)
 
 	candidates := []Candidate{
 		{IdentityID: "00000000-0000-0000-0000-000000000001", ArtifactID: uuid.NewString(), Version: 1, Action: ActionDeleteArtifact, Class: ClassTemporary, Bytes: 4},
@@ -128,9 +132,12 @@ func TestRetentionStorePersistsTwoPhaseLifecycle(t *testing.T) {
 	}
 	store := NewStore(pool)
 	now := time.Now().UTC()
-	operation, err := store.SavePlan(ctx, plan, now)
+	operation, created, err := store.SavePlan(ctx, plan, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("unique retention plan was reported as a replay")
 	}
 	loaded, err := store.GetByToken(ctx, plan.Token)
 	if err != nil || loaded.ID != operation.ID || loaded.CandidateCount != 3 {
@@ -198,6 +205,7 @@ func TestRetentionPlanRefreshesExpiredUnchangedSnapshotForImmediateApply(t *test
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	assertDisposableRetentionDatabase(t, ctx, pool)
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	candidate := Candidate{
@@ -252,6 +260,7 @@ func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	assertDisposableRetentionDatabase(t, ctx, pool)
 
 	for _, status := range []Status{StatusDeleting, StatusRetryable, StatusCompleted} {
 		t.Run(string(status), func(t *testing.T) {
@@ -261,9 +270,12 @@ func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
 			}
 			store := NewStore(pool)
 			created := time.Now().UTC().Truncate(time.Microsecond)
-			operation, saveErr := store.SavePlan(ctx, plan, created)
+			operation, inserted, saveErr := store.SavePlan(ctx, plan, created)
 			if saveErr != nil {
 				t.Fatal(saveErr)
+			}
+			if !inserted {
+				t.Fatal("unique retention plan was reported as a replay")
 			}
 			updated := created.Add(10 * time.Second)
 			if _, execErr := pool.Exec(ctx, `
@@ -273,9 +285,12 @@ func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
 				t.Fatal(execErr)
 			}
 
-			replayed, saveErr := store.SavePlan(ctx, plan, created.Add(2*defaultPlanValidity))
+			replayed, inserted, saveErr := store.SavePlan(ctx, plan, created.Add(2*defaultPlanValidity))
 			if saveErr != nil {
 				t.Fatal(saveErr)
+			}
+			if inserted {
+				t.Fatal("existing retention plan replay was reported as newly inserted")
 			}
 			var gotStatus Status
 			var gotCreated, gotUpdated time.Time
@@ -292,6 +307,139 @@ func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
 				t.Fatalf("non-planned timestamps changed: created=%s updated=%s", gotCreated, gotUpdated)
 			}
 		})
+	}
+}
+
+func TestRetentionBacklogIsDurableAcrossReplayRestartAndTerminalTransitions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	assertDisposableRetentionDatabase(t, ctx, pool)
+
+	store := NewStore(pool)
+	baseline, err := store.PendingCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []Candidate{
+		{IdentityID: "retention-backlog-owner", ArtifactID: uuid.NewString(), Version: 1, Action: ActionDeleteArtifact, Class: ClassTemporary, Bytes: 3},
+		{IdentityID: "retention-backlog-owner", ArtifactID: uuid.NewString(), Version: 1, Action: ActionDeleteArtifact, Class: ClassCrashArtifact, Bytes: 5},
+	}
+	plan, err := BuildPlan("backlog-"+uuid.NewString(), candidates, len(candidates))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	operation, created, err := store.SavePlan(ctx, plan, now)
+	if err != nil || !created {
+		t.Fatalf("first SavePlan operation=%+v created=%t err=%v", operation, created, err)
+	}
+	assertRetentionBacklogCount(t, ctx, store, baseline+int64(len(candidates)))
+
+	restarted := NewStore(pool)
+	assertRetentionBacklogCount(t, ctx, restarted, baseline+int64(len(candidates)))
+	replayed, created, err := restarted.SavePlan(ctx, plan, now.Add(time.Minute))
+	if err != nil || created || replayed.ID != operation.ID {
+		t.Fatalf("replayed SavePlan operation=%+v created=%t err=%v", replayed, created, err)
+	}
+	assertRetentionBacklogCount(t, ctx, restarted, baseline+int64(len(candidates)))
+
+	if authorized, authorizeErr := restarted.Authorize(ctx, operation.ID, plan.Token, plan.PolicyVersion, now); authorizeErr != nil || !authorized {
+		t.Fatalf("Authorize()=%t, %v", authorized, authorizeErr)
+	}
+	items, err := restarted.Claim(ctx, operation.ID, "backlog-worker", len(candidates), now, time.Minute)
+	if err != nil || len(items) != len(candidates) {
+		t.Fatalf("Claim()=%d, %v", len(items), err)
+	}
+	for _, item := range items {
+		if err := restarted.FailItem(ctx, item.ID, "backlog-worker", "test_terminal", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertRetentionBacklogCount(t, ctx, restarted, baseline)
+}
+
+func TestRetentionStoreFailsClosedAfterPoolShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDisposableRetentionDatabase(t, ctx, pool)
+	store := NewStore(pool)
+	if _, _, err := store.SavePlan(ctx, Plan{}, time.Now()); err == nil {
+		pool.Close()
+		t.Fatal("invalid plan succeeded before database access")
+	}
+	pool.Close()
+
+	candidate := Candidate{
+		IdentityID: "retention-closed-pool", ArtifactID: uuid.NewString(), Version: 1,
+		Action: ActionDeleteArtifact, Class: ClassTemporary, Bytes: 1,
+	}
+	plan, err := BuildPlan("closed-pool-"+uuid.NewString(), []Candidate{candidate}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.NewString()
+	checks := map[string]func() error{
+		"save": func() error {
+			_, _, err := store.SavePlan(ctx, plan, time.Now())
+			return err
+		},
+		"count": func() error { _, err := store.PendingCount(ctx); return err },
+		"get":   func() error { _, err := store.GetByToken(ctx, plan.Token); return err },
+		"authorize": func() error {
+			_, err := store.Authorize(ctx, id, plan.Token, plan.PolicyVersion, time.Now())
+			return err
+		},
+		"claim": func() error {
+			_, err := store.Claim(ctx, id, "worker", 1, time.Now(), time.Minute)
+			return err
+		},
+		"record":        func() error { return store.RecordArtifact(ctx, id, "worker", ArtifactRemoved, 1, "", time.Now()) },
+		"finalize item": func() error { return store.FinalizeItem(ctx, id, "worker", time.Now()) },
+		"retry":         func() error { return store.RetryItem(ctx, id, "worker", "test", time.Now()) },
+		"fail":          func() error { return store.FailItem(ctx, id, "worker", "test", time.Now()) },
+		"finalize operation": func() error {
+			_, err := store.FinalizeOperation(ctx, id, time.Now())
+			return err
+		},
+	}
+	for name, check := range checks {
+		t.Run(name, func(t *testing.T) {
+			if err := check(); err == nil {
+				t.Fatal("operation succeeded against a closed pool")
+			}
+		})
+	}
+}
+
+func assertDisposableRetentionDatabase(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	var database string
+	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&database); err != nil {
+		t.Fatal(err)
+	}
+	if protectedRetentionIntegrationDatabase(database) {
+		t.Fatalf("refusing db_integration database %q; use a disposable database", database)
+	}
+}
+
+func protectedRetentionIntegrationDatabase(name string) bool {
+	return (name == "aura" || name == "postgres") && os.Getenv("GITHUB_ACTIONS") != "true"
+}
+
+func assertRetentionBacklogCount(t *testing.T, ctx context.Context, store *Store, want int64) {
+	t.Helper()
+	got, err := store.PendingCount(ctx)
+	if err != nil || got != want {
+		t.Fatalf("PendingCount()=%d, %v; want %d", got, err, want)
 	}
 }
 
