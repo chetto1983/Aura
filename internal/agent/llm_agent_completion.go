@@ -89,7 +89,13 @@ func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (don
 		SessionID:   a.sessionID,
 	}
 
-	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
+	// Fresh deadline (fix-plan 1.1): the critic gate runs on a voluntary termination
+	// that can land right at the wallclock cutoff, where ic.Ctx (production drives it
+	// from budget.WithDeadline, internal/runner/runner.go) may already be Done —
+	// context.WithoutCancel severs that expired deadline (keeping request-scoped
+	// values) so the critic call is never dead-on-arrival. See the longer rationale
+	// on the mirrored synthesis call in llm_agent_finalize.go.
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ic.Ctx), time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 	defer cancel()
 	callCtx, llmEnd := llmCallBoundary.Start(callCtx)
 	var boundaryErr error

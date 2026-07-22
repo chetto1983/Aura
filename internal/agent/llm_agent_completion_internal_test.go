@@ -5,13 +5,46 @@ package agent
 // reason extractor, the nudge-skipping request finder, and the side-effect digest.
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+// TestRunCompletionCritic_SeversAlreadyExpiredIcCtxDeadline is the fix-plan 1.1
+// RED test for the completion critic (mirrors TestSynthesize_SeversAlreadyExpiredIcCtxDeadline
+// in llm_agent_finalize_internal_test.go): the critic is a salvage-adjacent
+// tool-free call that shares the same context.WithTimeout(ic.Ctx, ...) derivation.
+// When ic.Ctx already carries an expired deadline (the wallclock-trip production
+// shape, internal/runner/runner.go's budget.WithDeadline), the critic call must NOT
+// inherit that Done-ness — it needs a fresh deadline to actually run.
+func TestRunCompletionCritic_SeversAlreadyExpiredIcCtxDeadline(t *testing.T) {
+	a, rc := synthAgent("sess-critic-expired", llm.Chunk{Text: "DONE"}, llm.Chunk{FinishReason: "stop"})
+
+	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+	defer cancel()
+	if expiredCtx.Err() == nil {
+		t.Fatal("test setup: expiredCtx must already be Done")
+	}
+
+	done, _, ok := a.runCompletionCritic(InvocationContext{Ctx: expiredCtx}, "the answer")
+	if !ok {
+		t.Fatal("runCompletionCritic ok = false, want true (the salvage call must actually run, not fail open on a DOA ctx)")
+	}
+	if !done {
+		t.Error("runCompletionCritic done = false, want true (verdict DONE)")
+	}
+	if rc.ctxErr != nil {
+		t.Fatalf("critic call ctx.Err() = %v, want nil (a fresh deadline, not inherited from the expired ic.Ctx)", rc.ctxErr)
+	}
+	if remaining := time.Until(rc.deadline); remaining < 4*time.Second {
+		t.Fatalf("critic call deadline remaining = %s, want about 5s (fresh TotalTimeoutSec)", remaining)
+	}
+}
 
 func TestParseCriticVerdict(t *testing.T) {
 	cases := []struct {

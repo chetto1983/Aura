@@ -235,6 +235,17 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// one more turn; a SECOND trip routes to finalize (a non-empty terminal
 			// Event, never the error slot — D-04). max_steps and wallclock share the
 			// same ConsumeStep, only the reason differs.
+			//
+			// recoveryTurn snapshots skipBudgetGate BEFORE it is reset below (fix-plan
+			// 1.1): production (internal/runner/runner.go) drives ic.Ctx from
+			// budget.WithDeadline, an ABSOLUTE deadline equal to the SAME wallclock
+			// cutoff ConsumeStep just checked. On a wallclock trip ic.Ctx is therefore
+			// ALREADY Done the instant this recovery turn rides the gate bypass — the
+			// call at step 2 below would be dead-on-arrival unless its deadline is
+			// severed for this ONE turn. Ordinary turns (recoveryTurn==false) are
+			// UNCHANGED: they keep deriving straight from ic.Ctx, so a real deadline
+			// still bounds them (no unbounding of the normal loop).
+			recoveryTurn := skipBudgetGate
 			if skipBudgetGate {
 				skipBudgetGate = false
 			} else if ok, reason := ic.Budget.ConsumeStep(); !ok {
@@ -248,7 +259,14 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 
 			// 2. Per-call span + bounded call ctx (D-19 total timeout on the ctx).
-			callCtx, cancel := context.WithTimeout(ic.Ctx,
+			// The recovery turn severs an expired ic.Ctx deadline first (fix-plan 1.1,
+			// see the recoveryTurn comment above); every other turn is byte-identical
+			// to before.
+			callParent := ic.Ctx
+			if recoveryTurn {
+				callParent = context.WithoutCancel(ic.Ctx)
+			}
+			callCtx, cancel := context.WithTimeout(callParent,
 				time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 			spanCtx, span := startLLMSpan(callCtx)
 

@@ -27,12 +27,14 @@ type recordingClient struct {
 	last        llm.Request
 	hasDeadline bool
 	deadline    time.Time
+	ctxErr      error
 	chunks      []llm.Chunk
 }
 
 func (r *recordingClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
 	r.last = req
 	r.deadline, r.hasDeadline = ctx.Deadline()
+	r.ctxErr = ctx.Err()
 	ch := make(chan llm.Chunk, len(r.chunks)+1)
 	for _, c := range r.chunks {
 		ch <- c
@@ -91,6 +93,45 @@ func TestSynthesize_StampsToolChoiceAndSession(t *testing.T) {
 	last := rc.last.Messages[len(rc.last.Messages)-1]
 	if last.Role != llm.RoleUser || last.Content != finalizeNudge {
 		t.Errorf("finalize request tail = {%v, %q}, want the user-role finalizeNudge", last.Role, last.Content)
+	}
+}
+
+// TestSynthesize_SeversAlreadyExpiredIcCtxDeadline is the fix-plan 1.1 RED test:
+// production (internal/runner/runner.go) drives ic.Ctx from budget.WithDeadline,
+// an ABSOLUTE deadline that equals the same wallclock cutoff ConsumeStep checks
+// (internal/agent/budget.go WithDeadline). When finalize's forced-synthesis salvage
+// runs off a wallclock trip, ic.Ctx's deadline has therefore ALREADY passed.
+// context.WithTimeout(ic.Ctx, TotalTimeoutSec) inherits an already-Done parent (Go's
+// context.WithDeadline collapses to WithCancel when the parent deadline is earlier,
+// and an already-canceled parent cancels the child synchronously), so the salvage
+// call would be dead-on-arrival — defeating the very rescue finalize exists for
+// (WR-01). The fix derives from context.WithoutCancel(ic.Ctx) first, severing the
+// expired deadline while keeping any request-scoped values, then applies a FRESH
+// TotalTimeoutSec deadline.
+func TestSynthesize_SeversAlreadyExpiredIcCtxDeadline(t *testing.T) {
+	a, rc := synthAgent("sess-expired", llm.Chunk{Text: "sintesi"})
+
+	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+	defer cancel()
+	if expiredCtx.Err() == nil {
+		t.Fatal("test setup: expiredCtx must already be Done")
+	}
+
+	answer, _, err := a.synthesize(InvocationContext{Ctx: expiredCtx})
+	if err != nil {
+		t.Fatalf("synthesize: %v", err)
+	}
+	if answer != "sintesi" {
+		t.Errorf("answer = %q, want the streamed content %q", answer, "sintesi")
+	}
+	if rc.ctxErr != nil {
+		t.Fatalf("synthesis call ctx.Err() = %v, want nil (a fresh deadline, not inherited from the expired ic.Ctx)", rc.ctxErr)
+	}
+	if !rc.hasDeadline {
+		t.Fatal("finalize synthesis context has no deadline; want a fresh TotalTimeoutSec-derived deadline")
+	}
+	if remaining := time.Until(rc.deadline); remaining < 4*time.Second {
+		t.Fatalf("finalize synthesis deadline remaining = %s, want about 5s (fresh TotalTimeoutSec, not inherited from the expired parent)", remaining)
 	}
 }
 

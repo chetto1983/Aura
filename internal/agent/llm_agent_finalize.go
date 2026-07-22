@@ -205,13 +205,22 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	req.ToolChoice = "none"
 	req.SessionID = a.sessionID
 
-	// D-19 total-timeout on the ctx, mirroring the main loop (llm_agent.go:160).
-	// Production drives ic.Ctx = context.Background() (cmd/aura/agent.go), so without
-	// a deadline here a hung provider stream blocks BOTH synthesis attempts forever
-	// and the deterministic stub fallback is never reached — defeating the
-	// always-return-an-answer guarantee (WR-01). The derived ctx is cancelled only
-	// after the channel is fully drained below, so partial chunks are never dropped.
-	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
+	// D-19 total-timeout on the ctx, mirroring the main loop (llm_agent.go:251).
+	// Production (internal/runner/runner.go) drives ic.Ctx from budget.WithDeadline —
+	// an ABSOLUTE deadline equal to the SAME wallclock cutoff ConsumeStep checks
+	// (budget.go). finalize is reached PRECISELY when that budget trips (max_steps,
+	// wallclock, dedup, or the recovery counter already spent), so on the wallclock
+	// path ic.Ctx's deadline has ALREADY passed at this point. Deriving
+	// context.WithTimeout straight off ic.Ctx would inherit that already-Done parent
+	// (WithDeadline collapses to WithCancel when the parent deadline is earlier, and
+	// an already-canceled parent cancels the child synchronously) — the salvage call
+	// would be dead-on-arrival, and the deterministic stub fallback would never even
+	// be reached because BOTH synthesis attempts fail instantly (fix-plan 1.1,
+	// CONFIRMED high). context.WithoutCancel severs the expired deadline (keeping any
+	// request-scoped values) so this call gets its own FRESH TotalTimeoutSec window.
+	// The derived ctx is cancelled only after the channel is fully drained below, so
+	// partial chunks are never dropped.
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ic.Ctx), time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 	defer cancel()
 	callCtx, llmEnd := llmCallBoundary.Start(callCtx)
 	defer llmEnd.PanicSafe(&err)
