@@ -255,6 +255,23 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	sf := &tools.SendFile{WorkspaceRoot: workspace, Router: sandboxRouter}
 	handles.SendFile = sf
 	reg.Register(sf)
+	// document_index is the explicit bridge from a workspace file to document_search
+	// (D-03: a produced/delivered file is NOT silently searchable). It needs a live
+	// Postgres pool for the ingestion job store, so — unlike the lazy, pool-free
+	// docsToolSearcher above — it only registers when the task-store pool exists
+	// (serve/chat boot); the pool-free manifest path (`aura tools`) registers
+	// nothing rather than a nil-backed tool, mirroring the skill-tool write-action
+	// guard just above. newRuntimeDocumentIngestor is the SAME lazy per-call
+	// documents.Service builder serve_channels.go and document_processor_wiring.go
+	// already use for send_file/channel ingestion — reused here rather than
+	// duplicated, since its IngestPath signature already satisfies
+	// tools.DocumentIndexBackend byte-for-byte.
+	if pool := taskStorePool(ts); pool != nil {
+		reg.Register(&tools.DocumentIndex{
+			Indexer:       newRuntimeDocumentIngestor(cfg, pool),
+			WorkspaceRoot: workspace,
+		})
+	}
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
 	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
 	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it
