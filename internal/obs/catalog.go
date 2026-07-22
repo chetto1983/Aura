@@ -272,7 +272,7 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 	AttributeOutcome: finiteSet(
 		"success", "error", "canceled", "timeout", "paused", "content_stop", "text_response", "max_steps", "budget_exhausted",
 		"panic", "hook_error", "breaker_open", "consumer_stopped", "empty_response", "tool_args_truncated", "tool_terminal", "denied",
-		"accepted", "declined", "replayed", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open", ValueOther,
+		"accepted", "declined", "replayed", "conflict", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open", ValueOther,
 	),
 	AttributeErrorClass: finiteSet("none", "canceled", "timeout", "unavailable", "invalid", "conflict", "permission", "panic", "internal", ValueOther),
 	AttributeState:      finiteSet("starting", "running", "ready", "degraded", "draining", "stopped", "pending", "in_progress", "completed", "failed", "indeterminate", "expired", ValueOther),

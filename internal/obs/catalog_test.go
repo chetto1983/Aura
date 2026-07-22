@@ -100,6 +100,12 @@ func TestCatalogNormalizersFoldUnknownAndSensitiveValuesToOther(t *testing.T) {
 	}
 }
 
+func TestCatalogPreservesBoundedIdempotencyConflictOutcome(t *testing.T) {
+	if got := NormalizeAttribute(AttributeOutcome, "conflict"); got != "conflict" {
+		t.Fatalf("idempotency conflict outcome normalized to %q, want conflict", got)
+	}
+}
+
 func FuzzCatalogNormalizersRemainFinite(f *testing.F) {
 	for _, seed := range []string{"", "success", "../secret", strings.Repeat("x", 4096), "mcp.github.call"} {
 		f.Add(seed)
