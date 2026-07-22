@@ -1,54 +1,50 @@
 ---
 phase: 39
-fixed_at: 2026-07-22T01:53:52Z
+fixed_at: 2026-07-22T02:31:25Z
 review_path: .planning/phases/39-idempotency-observability-pack/39-REVIEW.md
-iteration: 4
-findings_in_scope: 2
-fixed: 2
+iteration: 5
+findings_in_scope: 1
+fixed: 1
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 39: Code Review Fix Report
 
-**Fixed at:** 2026-07-22T01:53:52Z
+**Fixed at:** 2026-07-22T02:31:25Z
 **Source review:** .planning/phases/39-idempotency-observability-pack/39-REVIEW.md
-**Iteration:** 4
+**Iteration:** 5
 
 **Summary:**
-- Findings in scope: 2
-- Fixed: 2
+- Findings in scope: 1
+- Fixed: 1
 - Skipped: 0
 
 ## Fixed Issues
 
-### CR-01: recovery can delete the conversation while the foreground returns 409 without the export handle
-
-**Files modified:** `internal/agui/retention_api_test.go`, `internal/conversations/store_export_version_integration_test.go`, `internal/conversations/store_identity.go`, `internal/db/queries/conversations.sql`, `internal/db/sqlc/conversations.sql.go`, `internal/db/sqlc/querier.go`, `internal/runner/conversation_delete_lifecycle_test.go`, `internal/runner/runner_delete.go`, `internal/runner/runner_delete_recovery_integration_test.go`, `internal/runner/runner_delete_recovery_test.go`
-**Commit:** 85eb2b7f2
-**Status:** fixed: requires human verification
-**Applied fix:** Restricted recovery eligibility so reserved rows are invisible until a three-minute grace exceeds the two-minute detached foreground finalization window, while teardown-started rows are eligible only with no worker or an expired lease. A losing foreground claimant now polls the exact durable reservation and treats terminal row absence as successful completion instead of a version conflict, retrying only while another worker still owns the lifecycle. Deterministic runner coverage pauses the foreground after reservation and lets the reconciler finish first; an HTTP-level proof confirms the foreground still returns 201 with a valid export ID and an authenticated, usable ZIP download URL. Live PostgreSQL tests prove fresh reservations and active leases are excluded, abandoned/expired work is eligible, completion is durably observable, and restart recovery still succeeds.
-
-### WR-01: a hard process exit leaves db reset permanently in progress
+### CR-01: a duplicate reset marks a live operation indeterminate after one second
 
 **Files modified:** `cmd/aura/db_reset_idempotency_integration_test.go`, `internal/idempotency/maintenance.go`
-**Commit:** d355169c9
+**Commit:** 8bac675ab
 **Status:** fixed: requires human verification
-**Applied fix:** Added a fingerprint-bound atomic compare-and-swap in maintenance `Begin` that changes only expired `in_progress` receipts to terminal `indeterminate`; the operation is never reacquired or automatically re-executed, and concurrent completion/indeterminate transitions remain terminal. A disposable-database subprocess helper is force-killed after durable acquisition, the deadline is advanced past `retry_after`, and the real CLI retry proves an indeterminate response without executing reset. A post-reset sentinel survives both the first and a second retry, while the receipt remains indeterminate with an unchanged terminal timestamp.
+**Applied fix:** Separated client retry guidance from crash ownership. Each reset operation now acquires an operation-keyed PostgreSQL session advisory lock that the migration-role registry connection retains for the full child execution. `retry_after` remains only the typed `in_progress` retry hint, while a new independently durable five-minute `lease_expires_at` recovery deadline gates crash reconciliation. A duplicate can compare-and-swap `in_progress` to terminal `indeterminate` only when the advisory lock proves no live database owner and the independent recovery lease has expired; it never reacquires or re-executes the reset. A lost CAS re-reads the durable row so a concurrent `Complete` returns replay, while a winning reconciliation makes `Complete` return the existing stale-transition error.
+
+The disposable-PostgreSQL subprocess test now keeps the helper alive beyond `retry_after`, invokes the real same-key Aura CLI, and proves the result remains `in_progress` without changing the receipt or destroying the sentinel. It then kills the helper, waits for the session advisory lock to disappear, advances only the independent lease, and proves the next duplicate becomes terminal `indeterminate`; the sentinel survives and a second retry preserves the terminal state and timestamp. Twenty disposable-database Complete-versus-reconcile races prove the only valid outcomes are completed/replay or stale-transition/indeterminate.
 
 ## Validation
 
-- `go test ./...` — PASS across the full Go repository.
-- `sqlc generate` followed by `git diff --exit-code` — PASS; generated queries are in sync.
-- `go test -race ./internal/runner` under WSL — PASS, including the deterministic foreground/reconciler race.
-- Live PostgreSQL `TestExportDeleteRecoveryEligibilityAndCompletionObservation` — PASS without skip.
-- Live PostgreSQL `TestExportDeleteProcessRestartRecoversDurableReservation` — PASS without skip.
-- Disposable PostgreSQL `TestDBResetSameKeyReplaysWithoutDestroyingPostResetSentinel` — PASS without skip, including the killed-parent indeterminate branch.
-- Per-commit gofmt, go vet, golangci-lint/staticcheck, and file-size hooks — PASS.
-- `git diff --check` — PASS.
+- `go test ./internal/idempotency ./cmd/aura` - PASS.
+- Disposable PostgreSQL `go test -tags=db_integration ./cmd/aura -run '^TestDBResetSameKeyReplaysWithoutDestroyingPostResetSentinel$' -count=1 -v` - PASS without skip, including live-owner, killed-owner, stable-terminal, sentinel, and 20 Complete-versus-reconcile race assertions.
+- The same disposable PostgreSQL test under WSL `go test -race -tags=db_integration ...` - PASS without skip.
+- WSL `go test -race ./internal/idempotency ./cmd/aura` - PASS.
+- `go test ./...` - PASS across the full Go repository.
+- `go vet ./...` and `go vet -tags db_integration ./cmd/aura` - PASS.
+- `golangci-lint run --timeout=5m ./...` - PASS with 0 issues.
+- Pre-commit gofmt, file-size, go vet, and golangci-lint hooks - PASS.
+- `git diff --check` - PASS.
 
 ---
 
-_Fixed: 2026-07-22T01:53:52Z_
+_Fixed: 2026-07-22T02:31:25Z_
 _Fixer: the agent (gsd-code-fixer)_
-_Iteration: 4_
+_Iteration: 5_
