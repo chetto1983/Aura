@@ -11,8 +11,7 @@ export function installMutationIdempotency(): void {
   window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = input instanceof Request ? input : undefined;
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase();
-    const rawURL =
-      input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+    const rawURL = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
     const url = new URL(rawURL, window.location.href);
     if (!MUTATION_METHODS.has(method) || url.origin !== window.location.origin) {
       return nativeFetch(input, init);
