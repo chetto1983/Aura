@@ -85,6 +85,28 @@ RUN uvx --from "calculator-mcp-server@git+https://github.com/chetto1983/calculat
 # (get/search/send) over MCP, so the standalone vendored mail-mcp bin is no longer
 # baked into this image.
 
+# Amendment #88 Task 2: pre-bake the document/data toolchain so document tasks
+# stop reinstalling docx/pandoc on every turn. pandoc converts between document
+# formats; file/xxd are used for content sniffing/hex inspection of workspace
+# artifacts. Dedicated layer (not folded into the earlier locked apt layers above)
+# so this stays independently cacheable and easy to diff/revert.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pandoc file xxd \
+    && rm -rf /var/lib/apt/lists/*
+
+# NodeSource Node 24 (installed above) puts global npm modules under
+# /usr/lib/node_modules; NODE_PATH must point there so `require('docx')` resolves
+# from any CWD (the agent runs JS skill snippets from $AURA_WORKSPACE_DIR, not
+# /usr/lib/node_modules).
+RUN npm install -g docx
+ENV NODE_PATH=/usr/lib/node_modules
+
+# python-docx (import name `docx`), openpyxl and pandas: pre-baked so document/data
+# skill snippets don't pip install on every invocation. --break-system-packages is
+# required on this Debian image (PEP 668 externally-managed env), matching the
+# mcp-neo4j-cypher/fastmcp install above.
+RUN pip install --no-cache-dir --break-system-packages python-docx openpyxl pandas
+
 ENV AURA_IN_CONTAINER=1
 
 COPY --from=build /out/aura /usr/local/bin/aura
