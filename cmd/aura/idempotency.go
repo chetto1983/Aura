@@ -32,6 +32,7 @@ type cliMutationOwner uint8
 const (
 	cliRegistryOwner cliMutationOwner = iota
 	cliMigrationOwner
+	cliResetOwner
 )
 
 const cliExplicitOrGeneratedKey = "explicit_or_generated"
@@ -70,7 +71,7 @@ var cliMutationCommands = map[string]cliMutationMeta{
 	"chat unarchive":            cliMutationMetaFor("chat_unarchive"),
 	"config set":                cliMutationMetaFor("config_set"),
 	"db migrate":                cliMigrationMetaFor("db_migrate"),
-	"db reset":                  cliMutationMetaFor("db_reset"),
+	"db reset":                  cliResetMetaFor("db_reset"),
 	"docs ingest":               cliMutationMetaFor("docs_ingest"),
 	"documents backfill":        cliMutationMetaFor("documents_backfill"),
 	"identity grant":            cliMutationMetaFor("identity_grant"),
@@ -116,6 +117,12 @@ func cliMutationMetaFor(normalizer string) cliMutationMeta {
 func cliMigrationMetaFor(normalizer string) cliMutationMeta {
 	meta := cliMutationMetaFor(normalizer)
 	meta.Owner = cliMigrationOwner
+	return meta
+}
+
+func cliResetMetaFor(normalizer string) cliMutationMeta {
+	meta := cliMutationMetaFor(normalizer)
+	meta.Owner = cliResetOwner
 	return meta
 }
 
@@ -175,6 +182,9 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 	if meta.Owner == cliMigrationOwner {
 		return true, runCLIMigrationOwner(ctx, args, stdout, stderr, meta.Execute)
 	}
+	if meta.Owner == cliResetOwner {
+		return true, runCLIResetOwner(ctx, args, stdout, stderr, meta.Execute)
+	}
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
@@ -183,6 +193,17 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 	}
 	defer pool.Close()
 	return true, runCLIIdempotent(ctx, args, stdout, stderr, idempotency.New(pool, idempotency.Config{}), meta.Execute)
+}
+
+func runCLIResetOwner(ctx context.Context, args []string, stdout, stderr io.Writer, execute cliCommandExecutor) int {
+	cfg := config.LoadDB()
+	registry, err := idempotency.OpenMaintenanceRegistry(ctx, cfg.DB.MigrateURL)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
+		return 2
+	}
+	defer registry.Close()
+	return runCLIIdempotent(ctx, args, stdout, stderr, registry, execute)
 }
 
 func runCLIMigrationOwner(ctx context.Context, args []string, stdout, stderr io.Writer, execute cliCommandExecutor) int {
