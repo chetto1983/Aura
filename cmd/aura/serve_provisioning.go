@@ -2,22 +2,18 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -58,74 +54,10 @@ var (
 	_ agui.IdentityDeleter        = auraLegAdapter{}
 )
 
-// objectStoreProvisionAdapter satisfies agui.ObjectStoreProvisioner over the Garage Admin
-// API v2 client + the plan-06 identity_store (promoted verbatim from liveObjectStore).
-// ProvisionObjectStore is idempotent (Resolve → skip when the secret row already exists);
-// it remembers each bucket's internal id so DeprovisionObjectStore can delete it.
-type objectStoreProvisionAdapter struct {
-	client    *garageadmin.Client
-	store     *objectstore.IdentityStore
-	mu        sync.Mutex
-	bucketIDs map[string]string
-}
-
-func newObjectStoreProvisionAdapter(client *garageadmin.Client, store *objectstore.IdentityStore) *objectStoreProvisionAdapter {
-	return &objectStoreProvisionAdapter{client: client, store: store, bucketIDs: map[string]string{}}
-}
-
-func (a *objectStoreProvisionAdapter) ProvisionObjectStore(ctx context.Context, id string) error {
-	ictx := identityctx.WithIdentityID(ctx, id)
-	if _, err := a.store.Resolve(ictx); err == nil {
-		return nil // already provisioned — idempotent no-op
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	bucket, err := garageadmin.BucketForIdentity(id)
-	if err != nil {
-		return err
-	}
-	bucketID, err := a.client.CreateBucket(ctx, bucket)
-	if err != nil {
-		return err
-	}
-	ak, sk, err := a.client.CreateKey(ctx, "aura-"+id)
-	if err != nil {
-		return err
-	}
-	if err := a.client.AllowBucketKey(ctx, bucketID, ak, garageadmin.ReadWrite); err != nil {
-		return err
-	}
-	if err := a.store.Put(ctx, id, bucket, ak, sk); err != nil {
-		return err
-	}
-	a.mu.Lock()
-	a.bucketIDs[id] = bucketID
-	a.mu.Unlock()
-	return nil
-}
-
-func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context, id string) error {
-	ictx := identityctx.WithIdentityID(ctx, id)
-	if creds, err := a.store.Resolve(ictx); err == nil {
-		_ = a.client.DeleteKey(ctx, creds.AccessKey)
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	a.mu.Lock()
-	bucketID := a.bucketIDs[id]
-	a.mu.Unlock()
-	// bucketID is only remembered by the SAME adapter instance that provisioned it, so a
-	// purge running in a later process (the grace window is days) cannot delete the bucket
-	// this way — the key + DB row ARE removed (Resolve/store.Delete read the DB), leaving an
-	// inert, credential-less bucket. That residual bucket is recorded as a data-retention
-	// follow-up in 36-14-SUMMARY (fail-closed-secure: no key → unreachable).
-	if bucketID != "" {
-		if err := a.client.DeleteBucket(ctx, bucketID); err != nil {
-			return err
-		}
-	}
-	return a.store.Delete(ctx, id)
-}
+// objectStoreProvisionAdapter, its objectStoreCredentialResolver/objectStoreMinter seams, and
+// EnsureForIdentity/ProvisionObjectStore/DeprovisionObjectStore live in
+// serve_provisioning_objectstore.go (refactor-on-touch split, Amendment #88 Task 3, to keep
+// this file under the 600-LOC cap).
 
 // filesystemProvisionAdapter satisfies agui.FilesystemProvisioner over the REAL per-user
 // config bases (~/.aura/mcp, $AURA_SKILLS_DIR, ~/.aura/pyscripts, ~/.aura/agents), each
