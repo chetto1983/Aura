@@ -1031,7 +1031,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1077,7 +1077,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1121,7 +1121,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1161,7 +1161,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1240,7 +1240,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
