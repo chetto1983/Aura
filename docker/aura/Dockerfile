@@ -94,18 +94,40 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends pandoc file xxd \
     && rm -rf /var/lib/apt/lists/*
 
+# Amendment #88.1 Task 2b: office/pdf system toolchain for the installed
+# docx/pptx/xlsx/pdf skills (present in /var/lib/aura/skills). LibreOffice HEADLESS
+# modules only (-writer/-calc/-impress + auto-pulled -core/-common) — the shared
+# `soffice` the docx/pptx/xlsx skills drive via scripts/office/soffice.py for render,
+# formula-recalc, and Office<->PDF; the full GUI suite/-base/-draw stay OUT to cap
+# growth (Amendment #88.1). poppler-utils = pdftoppm/pdftotext (skill slide
+# thumbnails + text extract), qpdf + pdftk-java = PDF manipulation, tesseract-ocr =
+# OCR backend for pytesseract, fonts-liberation = Arial/Times-metric fonts for
+# faithful render. Dedicated layer (heavy, independently cacheable/revertible).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libreoffice-writer libreoffice-calc libreoffice-impress \
+        poppler-utils qpdf pdftk-java tesseract-ocr fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
 # NodeSource Node 24 (installed above) puts global npm modules under
-# /usr/lib/node_modules; NODE_PATH must point there so `require('docx')` resolves
-# from any CWD (the agent runs JS skill snippets from $AURA_WORKSPACE_DIR, not
-# /usr/lib/node_modules).
-RUN npm install -g docx
+# /usr/lib/node_modules; NODE_PATH must point there so `require('docx')` /
+# `require('pptxgenjs')` resolve from any CWD (the agent runs JS skill snippets from
+# $AURA_WORKSPACE_DIR, not /usr/lib/node_modules). pptxgenjs = the pptx skill's
+# PowerPoint generator.
+RUN npm install -g docx pptxgenjs
 ENV NODE_PATH=/usr/lib/node_modules
 
-# python-docx (import name `docx`), openpyxl and pandas: pre-baked so document/data
-# skill snippets don't pip install on every invocation. --break-system-packages is
-# required on this Debian image (PEP 668 externally-managed env), matching the
-# mcp-neo4j-cypher/fastmcp install above.
-RUN pip install --no-cache-dir --break-system-packages python-docx openpyxl pandas
+# Python document/data stack pre-baked so skill snippets don't pip install on every
+# invocation. --break-system-packages is required on this Debian image (PEP 668
+# externally-managed env), matching the mcp-neo4j-cypher/fastmcp install above.
+# python-docx (import `docx`), python-pptx, openpyxl, xlsxwriter, pandas = Office
+# read/write; pypdf/pdfplumber/reportlab/pdf2image/pytesseract = the pdf skill;
+# Pillow/defusedxml/lxml = shared skill helpers; markitdown[pptx] = the pptx skill's
+# reader (pulls python-pptx). markitdown[pptx] quoted so /bin/sh does not glob the [].
+RUN pip install --no-cache-dir --break-system-packages \
+        python-docx python-pptx openpyxl xlsxwriter pandas \
+        pypdf pdfplumber reportlab pdf2image pytesseract \
+        Pillow defusedxml lxml "markitdown[pptx]"
 
 ENV AURA_IN_CONTAINER=1
 
