@@ -1,14 +1,15 @@
 ---
 phase: 39-idempotency-observability-pack
-reviewed: 2026-07-22T00:15:53Z
+reviewed: 2026-07-22T01:21:08Z
 depth: standard
-files_reviewed: 141
+files_reviewed: 150
 files_reviewed_list:
   - .env.example
   - .github/workflows/ci.yml
   - cmd/aura/chat_boot.go
   - cmd/aura/db.go
   - cmd/aura/db_migrate_idempotency_integration_test.go
+  - cmd/aura/db_reset_idempotency_integration_test.go
   - cmd/aura/idempotency.go
   - cmd/aura/idempotency_test.go
   - cmd/aura/main.go
@@ -17,6 +18,7 @@ files_reviewed_list:
   - cmd/aura/retention.go
   - cmd/aura/serve.go
   - cmd/aura/serve_dispatch.go
+  - cmd/aura/serve_drain.go
   - cmd/aura/serve_lifecycle.go
   - cmd/aura/serve_readiness_test.go
   - compose.yaml
@@ -60,6 +62,7 @@ files_reviewed_list:
   - internal/cron/store.go
   - internal/db/db.go
   - internal/db/idempotency_operations_contract_test.go
+  - internal/db/migrate_0048_integration_test.go
   - internal/db/migration_head.go
   - internal/db/migration_lock.go
   - internal/db/migrations/0043_idempotency_operations.down.sql
@@ -70,6 +73,8 @@ files_reviewed_list:
   - internal/db/migrations/0046_idempotency_replay_envelope.up.sql
   - internal/db/migrations/0047_conversation_snapshot_version.down.sql
   - internal/db/migrations/0047_conversation_snapshot_version.up.sql
+  - internal/db/migrations/0048_export_delete_lifecycle.down.sql
+  - internal/db/migrations/0048_export_delete_lifecycle.up.sql
   - internal/db/observability.go
   - internal/db/queries/conversations.sql
   - internal/db/queries/idempotency_operations.sql
@@ -84,6 +89,7 @@ files_reviewed_list:
   - internal/gateway/reserve.go
   - internal/idempotency/context.go
   - internal/idempotency/fingerprint.go
+  - internal/idempotency/maintenance.go
   - internal/idempotency/store.go
   - internal/idempotency/store_integration_test.go
   - internal/idempotency/store_test.go
@@ -128,6 +134,9 @@ files_reviewed_list:
   - internal/runner/conversation_delete_lifecycle_test.go
   - internal/runner/runner.go
   - internal/runner/runner_delete.go
+  - internal/runner/runner_delete_reconcile.go
+  - internal/runner/runner_delete_recovery_integration_test.go
+  - internal/runner/runner_delete_recovery_test.go
   - internal/runner/runner_resume.go
   - internal/runner/runner_resume_idempotency_test.go
   - internal/toolselectlearn/learner.go
@@ -146,117 +155,106 @@ files_reviewed_list:
   - web/src/api/idempotency.ts
   - web/src/main.tsx
 findings:
-  critical: 2
-  warning: 2
+  critical: 1
+  warning: 1
   info: 0
-  total: 4
+  total: 2
 status: issues_found
 ---
 
 # Phase 39: Code Review Report
 
-**Reviewed:** 2026-07-22T00:15:53Z
+**Reviewed:** 2026-07-22T01:21:08Z
 
 **Depth:** standard
 
-**Files Reviewed:** 141
+**Files Reviewed:** 150
 
 **Status:** issues_found
 
 ## Summary
 
-Iteration 3 verified all six iteration-2 findings and rechecked the earlier original findings against every non-generated source, test, migration, and configuration file in the review scope plus all 49 in-scope files changed from 4ac8f5de3 through dcfe4ae57. Four iteration-2 fixes are complete. The export-delete and retention fixes close their reported safety gaps but introduce recovery or liveness defects. Two additional release-blocking correctness failures remain, so the phase is not clean.
+Iteration 4 reviewed the cumulative 150-file inventory and every in-scope file changed from 8d573792e through 2a50c0393. All four iteration-3 findings are fixed on their stated paths: completed reset receipts survive schema reset and replay safely; export-delete cancellation, final-delete failure, and restart recovery are durable; unchanged expired retention plans can be refreshed without mutating non-planned operations; and owner-export garbage collection runs despite primary-retention failures.
+
+The phase is still not clean. The export-delete recovery worker can race a live foreground request, complete the deletion, and cause the request to return a false conflict without the export identifier or download URL. The reset-safe maintenance registry also has no crash reconciliation for stale in-progress rows.
 
 No source file was modified during this review.
 
 ## Validation
 
-- Untagged targeted Go suite: go test across cmd/aura and the relevant agui, agent, conversations, cron, gateway, idempotency, knowledge, learning-retention, object-store, observability, redaction, retention, and runner packages — PASS.
+- Untagged targeted Go suite across cmd/aura and all relevant Phase-39 packages — PASS.
 - Relevant production packages: go vet — PASS.
-- Fresh/42/45 schema migration bootstrap integration test with db_integration — PASS.
-- Disposable PostgreSQL integration suites for conversation export versions, idempotency replay/concurrency/expiry, and retention persistence/lifecycle — PASS.
-- scripts/check-file-size.sh — PASS, 2045 tracked source files within the limit.
-- git diff --check 4ac8f5de3..dcfe4ae57 — PASS.
-- Controlled disposable-database reset reproduction — FAIL as a product contract: the command printed “ok: schema reset”, then “operation completion unavailable”, and returned non-success after the destructive effect had completed.
+- Fresh, migration-42, and migration-45 db-migrate bootstrap integration test — PASS.
+- Disposable PostgreSQL db-reset sentinel replay: first reset succeeded, same-key retry replayed identical output without executing, and the post-reset sentinel survived — PASS.
+- Migration 0048 down/up round trip — PASS.
+- Export snapshot version, writer freeze, lease non-adoption, cancellation-after-reserve, final-delete retry, and process-restart recovery tests — PASS.
+- Retention unchanged-plan refresh, immediate apply, and deleting/retryable/completed immutability tests — PASS.
+- Historical idempotency concurrency/conflict/indeterminate and replay-expiry before/equal/after integration tests — PASS.
+- Historical bounded/disjoint retention claims and persisted two-phase lifecycle integration tests — PASS.
+- Recovery unit paths repeated 20 times — PASS.
+- scripts/check-file-size.sh — PASS, 2051 tracked source files within the limit.
+- git diff --check 8d573792e..2a50c0393 — PASS.
+- Windows race execution was unavailable because this shell has CGO disabled; the untagged and live database gates above executed normally.
+- Controlled stale-reset receipt probe: a two-hour-old in-progress maintenance row whose retry_after had expired still returned “operation is still in progress”, Aura exit 2, and remained in_progress — product failure reproduced.
 
-Passing suites do not exercise the four adversarial states below.
+## Iteration-3 Finding Resolution Matrix
 
-## Iteration-2 Finding Resolution Matrix
-
-| Iteration-2 finding | Result | Evidence |
+| Iteration-3 finding | Result | Evidence |
 |---|---|---|
-| CR-01: db migrate bootstrap deadlock | Resolved | The command now uses the migration owner and the migration-role advisory lock/tracker path. Fresh, migration-42, and migration-45 disposable schemas all reached head successfully. |
-| CR-02: export-delete stale snapshot and teardown ordering | Safety fix resolved; recovery blocker remains | All exported snapshot mutations advance the version and the database reservation is committed before teardown. A cancellation or failure after that commit has no durable recovery path; see CR-02. |
-| CR-03: retention accepted stale plans | Safety fix resolved; liveness warning remains | First apply now checks policy, age, and a rebuilt live candidate token before authorizing the durable snapshot. Re-planning the same expired snapshot cannot refresh its creation time; see WR-01. |
-| CR-04: replay bytes served at the expiry boundary | Resolved | The store rejects replay whenever replay_expires_at is not after now, including equality, before returning stored bytes. Before/equal/after integration coverage passes. |
-| WR-01: readiness leaked one goroutine per poll | Resolved | The per-server coordinator shares one in-flight probe by index. Repeated concurrent polls join it, and timeout tests prove one invocation for a non-cooperative probe. Neo4j network and acquisition deadlines are bounded. |
-| WR-02: owner-export bytes never physically expired | Mechanism resolved; scheduling warning remains | Durable expiry markers, bounded ordered sweep, archive-before-marker deletion, retry preservation, expired-open denial, and production wiring are present. An unrelated primary-retention error prevents this sweep from running; see WR-02. |
+| CR-01: db reset destroys its own receipt and can execute twice | Resolved for normal completion and replay | db reset now uses a migration-role registry in public, outside the reset aura schema. The live sentinel test proves the first result completes and a same-key retry does not execute. Hard process loss leaves this separate registry stale; see WR-01. |
+| CR-02: interrupted export-delete permanently freezes the conversation | Requested recovery paths resolved | Migration 0048 persists reservation phase, worker, and lease. Finalization detaches from request cancellation, failed attempts release only the worker lease, and the boot reconciler resumes the stored reservation. Live and unit cancellation/final-failure/restart cases pass. Concurrent recovery can still lose the foreground success response; see CR-01. |
+| WR-01: unchanged expired retention plan cannot be refreshed | Resolved | Only a still-planned conflicting token refreshes created_at/updated_at. Real-store tests prove immediate apply after refresh and timestamp/status immutability for deleting, retryable, and completed operations. |
+| WR-02: primary retention failure starves owner-export collection | Resolved | Plan/apply and every owner-export sweeper run as independent branches; their errors are joined afterward. Tests prove export sweeps still execute after both Plan and Apply failures and later sweepers continue after an earlier sweep error. |
 
-## Earlier Original-Finding Regression Matrix
+## Historical-Finding Regression Matrix
 
-| Original finding | Iteration-3 result |
+| Historical finding | Iteration-4 result |
 |---|---|
-| CR-01 HTTP enforcement and operation propagation | Resolved without regression. The complete unsafe-route inventory remains behind the idempotency wrapper and strict agent mutations derive scoped child operations. |
-| CR-02 CLI mutation registry | Regressed for db reset only; see CR-01. Ordinary mutations remain acquired/completed, and db migrate uses its independent schema owner. |
-| CR-03 scheduler parent/tool child scopes | Resolved without regression. |
-| CR-04 durable export publication and conflict safety | Publication, version coverage, and pre-teardown reservation are resolved; post-reservation recovery remains blocked; see CR-02. |
-| CR-05 retention crash resume and fresh authorization | Crash resume and authorization safety are resolved; same-snapshot re-plan freshness remains broken; see WR-01. |
-| CR-06 local second version check | Resolved without regression. |
-| CR-07 replay expiry | Resolved without regression. |
-| CR-08 centralized redaction | Resolved without regression. |
-| WR-01 readiness timeout behavior | Resolved without regression. |
-| WR-02 compactor pagination | Resolved without regression. |
+| Original CR-01 HTTP enforcement and operation propagation | Resolved without regression. |
+| Original CR-02 CLI mutation registry | Normal mutation and db-migrate ownership remain resolved; completed db-reset replay is fixed, but reset crash reconciliation remains incomplete; see WR-01. |
+| Original CR-03 scheduler parent/tool child scopes | Resolved without regression. |
+| Original CR-04 durable export publication and conflict safety | Publication, version coverage, reservation ordering, cancellation, transient failure, and restart recovery are present; foreground/reconciler completion reporting remains unsafe; see CR-01. |
+| Original CR-05 retention crash resume and fresh authorization | Resolved without regression, including unchanged-plan refresh and non-planned immutability. |
+| Original CR-06 local second version check | Resolved without regression. |
+| Original CR-07 replay expiry | Resolved without regression, including equality at the wall-clock boundary. |
+| Original CR-08 centralized redaction | Resolved without regression. |
+| Original WR-01 readiness timeout/goroutine behavior | Resolved without regression. |
+| Original WR-02 compactor pagination | Resolved without regression. |
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: db reset destroys its own idempotency receipt and can repeat a successful destructive reset
+### CR-01: recovery can delete the conversation while the foreground returns 409 without the export handle
 
 **Classification:** BLOCKER
-**File:** cmd/aura/idempotency.go:72-73,170-185,197-258; cmd/aura/db.go:124-133; internal/db/migrations/0043_idempotency_operations.down.sql:1
 
-**Issue:** db reset is still registered as a normal runtime-registry mutation. The parent acquires an idempotency row, then the child performs the full schema reset. Migration 0043 down drops the table containing that acquired row. After the child reports success, Complete cannot find the receipt, so the wrapper returns “operation completion unavailable”. A retry with the same operation key creates a new row in the rebuilt table and performs the destructive reset again. The review reproduced this exact sequence on a disposable database: the schema reset succeeded, the command returned failure afterward, and the successful effect had no replayable receipt. Data created after an ambiguous first result can therefore be destroyed by the instructed retry.
+**File:** internal/db/queries/conversations.sql:124-164; internal/runner/runner_delete.go:118-135; internal/runner/runner_delete_reconcile.go:91-110; internal/agui/owner_export.go:261-275; internal/agui/retention_api.go:143-167
 
-**Fix:** place reset ownership and its durable completion receipt outside the schema being reset. A separate maintenance registry/database is one valid design; a schema-local idempotency row is not. Preserve the same-key completed result across the reset boundary. Add a disposable-database test that performs reset, inserts a sentinel after the successful result, retries the same key, and proves the reset is replayed without executing and the sentinel survives.
+**Issue:** ListReservedConversationDeletes returns every reserved or teardown-started row, including a fresh reservation whose foreground request is between its committed reserve and ClaimDeleteTeardown. The minute-tick reconciler can claim that row first and complete the deletion. The foreground claim then affects zero rows because another worker owns the lease, and resumeReservedConversationDelete returns zero with no error without distinguishing “busy” or “completed”. OwnerExporter converts every affected value other than one into ErrOwnerExportConflict. The HTTP handler therefore sends 409 “conversation changed during export” and omits export_id/download_url even though the same durable reservation successfully deleted the conversation and the archive is already published. The client loses the only returned handle to its required export after the source conversation is gone. The existing same-operation race test asserts only that one delete occurs; it deliberately ignores every caller’s affected/error result, so it does not cover this response-loss path.
 
-### CR-02: an interrupted export-delete permanently reserves and write-freezes the conversation
-
-**Classification:** BLOCKER
-**File:** internal/runner/runner_delete.go:76-94,108-141; internal/db/queries/conversations.sql:66-68,93-99,107-121; internal/conversations/store_identity.go:144-170
-
-**Issue:** export-delete now commits delete_reservation before any runtime or external teardown, which correctly closes the earlier stale-version race. Every later step and the final conditional delete still use the request context. Cancellation, process death, or a transient final-delete failure after the reservation commit leaves the row reserved. Normal deletion explicitly excludes reserved rows, and no release operation, durable delete-operation record, lease, recovery worker, or startup reconciliation exists. A different operation key derives a different reservation and cannot adopt the row; the original HTTP operation is in-progress or indeterminate and cannot safely rerun. The conversation remains readable but all guarded snapshot writes and future deletes are permanently denied until direct database intervention.
-
-**Fix:** make the reserved delete a durable, resumable lifecycle. Persist operation state with the reservation, use detached bounded finalization after the commit where appropriate, and reconcile reserved rows after cancellation/restart. Permit only the same durable operation to resume destructive teardown; release a reservation only while no irreversible teardown has occurred. Add integration tests for cancellation immediately after reserve, failure of the final reserved delete, and process restart recovery.
+**Fix:** prevent recovery from competing with a live foreground operation and make completion observable. Filter recovery candidates so a reserved row is eligible only after a recovery grace greater than the detached foreground-finalization window, and a teardown-started row only when its lease is absent or expired. Additionally, when a same-reservation claim returns busy or the row disappears, observe durable lifecycle completion rather than returning a version conflict. A separate durable delete-operation record that survives conversation deletion is the strongest completion receipt. Add a deterministic HTTP test that pauses the foreground after reserve, lets the reconciler claim and finish, then proves the request returns 201 with a usable export_id/download_url rather than 409.
 
 ## Warnings
 
-### WR-01: an unchanged retention snapshot cannot be re-planned after its authorization window expires
+### WR-01: a hard process exit leaves db reset permanently in progress
 
 **Classification:** WARNING
-**File:** internal/retention/engine.go:98-115,191-201; internal/db/queries/retention_operations.sql:1-9
 
-**Issue:** Apply correctly rejects a planned operation whose CreatedAt is outside PlanValidity. BuildPlan is deterministic, so an unchanged policy/candidate snapshot produces the same token. CreateRetentionOperation handles that token conflict by updating only token to itself and returns the original row, retaining its old CreatedAt. Calling Plan again after expiry therefore returns a token that Apply immediately rejects, and repeating Plan can never refresh it unless the candidate set changes or an operator edits the database. The fix preserves safety but can indefinitely deny legitimate retention work for a stable old snapshot.
+**File:** internal/idempotency/maintenance.go:86-140; cmd/aura/idempotency.go:198-206,218-244
 
-**Fix:** for a still-planned conflicting operation, atomically refresh its authorization generation/timestamps, or include an issued-at generation in the plan token. Never rewrite deleting, retryable, or completed operations. Test Plan at T0, Plan again with the same candidates after PlanValidity, then immediate successful Apply, including the real PostgreSQL store.
+**Issue:** the reset-safe public registry correctly survives a successful reset, but it has no equivalent of the application registry’s crash reconciler. Begin stores retry_after for a new in-progress row. On every later Begin, StateInProgress returns DecisionInProgress even when retry_after is long expired; the code merely substitutes another retry duration in the response and never transitions the row. No scheduler, startup pass, or maintenance command reconciles this table. A kill or host loss after acquisition but before Complete/MarkIndeterminate therefore leaves the operation key permanently unusable and reports “still in progress” forever instead of the required terminal indeterminate result. A controlled disposable-database probe with a two-hour-old row reproduced the state unchanged.
 
-### WR-02: owner-export byte collection is skipped whenever primary retention fails
-
-**Classification:** WARNING
-**File:** internal/cron/handlers/retention.go:41-65
-
-**Issue:** the handler returns immediately when the primary retention engine cannot plan or apply. The independent owner-export sweep is sequenced only afterward, so a persistent failure in any unrelated retention source or adapter prevents expired owner-export archives from being physically deleted indefinitely. The new object-store expiry machinery is therefore effective only while the primary engine remains healthy.
-
-**Fix:** run the primary retention engine and owner-export sweep as independent bounded cleanup branches, then join/report their errors after both have had a chance to run. Add handler tests proving the owner-export sweeper is invoked when Plan fails and when Apply fails.
+**Fix:** atomically transition expired maintenance in-progress rows to indeterminate, either during Begin under a conditional update or through an explicit maintenance reconciler. Never reacquire or execute the reset automatically. Add a subprocess test that terminates the parent after durable acquisition, advances beyond retry_after, retries the same key, and proves the response is indeterminate, the reset is not executed, and the row is terminal.
 
 ## Final Assessment
 
-Critical: 2
+Critical: 1
 
-Warning: 2
+Warning: 1
 
 Info: 0
 
-Total: 4
+Total: 2
 
 Status: issues_found
