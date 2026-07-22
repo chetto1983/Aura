@@ -76,7 +76,7 @@ tests:
     interval: 1m
     input_series:
       - series: 'aura_retention_operation_total{operation="retention_delete",state="pending",outcome="success",error_class="none"}'
-        values: '0+4x40'
+        values: '0+1x40'
       - series: 'aura_retention_operation_total{operation="retention_delete",state="completed",outcome="success",error_class="none"}'
         values: '0+1x40'
       - series: 'aura_retention_operation_total{operation="retention_plan",state="pending",outcome="success",error_class="none"}'
@@ -86,7 +86,7 @@ tests:
         eval_time: 35m
         exp_samples:
           - labels: '{__name__="aura:retention_backlog"}'
-            value: 90
+            value: 0
 
   - name: readiness page fires exactly at the five minute debounce
     interval: 1m

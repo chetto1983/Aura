@@ -147,14 +147,16 @@ func envInt(key string, def int) int {
 // returns nil. The loop owns no leaked goroutines — every claim's heartbeat is
 // joined before the tick returns (goleak gate).
 func (s *Scheduler) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s.disabled {
+		<-ctx.Done()
+		return nil
+	}
 	ctx, end := schedulerLifecycleBoundary.Start(ctx)
 	var observeErr error
 	defer end.PanicSafe(&observeErr)
-	if s.disabled {
-		<-ctx.Done()
-		observeErr = ctx.Err()
-		return nil
-	}
 	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
 	missed, err := s.catchUpMissed(ctx)
 	if err != nil {

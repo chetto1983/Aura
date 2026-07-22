@@ -5,9 +5,9 @@ groups:
       - record: aura:service:up
         expr: max(up{job="aura"}) or vector(0)
       - record: aura:listener_failure:increase5m
-        expr: sum(increase(aura_listener_transition_total{state="failed"}[5m])) or vector(0)
+        expr: sum(increase(aura_listener_transition_total{outcome="error"}[5m])) or vector(0)
       - record: aura:scheduler_enabled
-        expr: clamp_max(sum(aura_scheduler_transition_total{state="running",outcome="success"}) or vector(0), 1)
+        expr: clamp_max(sum(aura_boundary_in_flight{operation="scheduler_tick"}) or vector(0), 1)
       - record: aura:scheduler_progress:increase5m
         expr: sum(increase(aura_scheduler_run_total{operation="scheduler_tick",outcome="success"}[5m])) or vector(0)
       - record: aura:resume_failure:increase5m
@@ -59,11 +59,10 @@ groups:
       - record: aura:retention_failure:increase15m
         expr: sum(increase(aura_retention_operation_total{outcome="error"}[15m])) or vector(0)
       - record: aura:retention_backlog
-        expr: clamp_min((sum(increase(aura_retention_operation_total{state="pending"}[30m])) or vector(0)) - (sum(increase(aura_retention_operation_total{state="completed"}[30m])) or vector(0)), 0)
+        expr: clamp_min((sum(increase(aura_retention_operation_total{operation="retention_delete",state="pending"}[30m])) or vector(0)) - (sum(increase(aura_retention_operation_total{operation="retention_delete",state="completed"}[30m])) or vector(0)), 0)
       - record: aura:retention_disk_utilization:max
         expr: max by (state) (aura_retention_disk_utilization_ratio)
       - record: aura:learning_size:max
         expr: max(aura_learning_size) or vector(0)
       - record: aura:learning_oldest_age:max_seconds
         expr: max(aura_learning_oldest_age_seconds) or vector(0)
-
