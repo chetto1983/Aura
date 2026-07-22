@@ -183,6 +183,9 @@ func TestPrometheusReaderUsesDedicatedRegistryAndHandler(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "aura_test_private_counter") {
 		t.Fatalf("private scrape status/body = %d/%q", rec.Code, rec.Body.String())
 	}
+	if strings.Contains(rec.Body.String(), "otel_scope_") {
+		t.Fatalf("private scrape exposed unbounded OTel scope labels: %q", rec.Body.String())
+	}
 	defaultFamilies, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		t.Fatalf("default Gather: %v", err)

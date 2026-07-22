@@ -111,7 +111,10 @@ func newPrometheusComponent(registry *prometheus.Registry) (readerComponent, err
 	if registry == nil {
 		return readerComponent{}, errors.New("prometheus registry is nil")
 	}
-	exporter, err := otelprometheus.New(otelprometheus.WithRegisterer(registry))
+	exporter, err := otelprometheus.New(
+		otelprometheus.WithRegisterer(registry),
+		otelprometheus.WithoutScopeInfo(),
+	)
 	if err != nil {
 		return readerComponent{}, err
 	}
