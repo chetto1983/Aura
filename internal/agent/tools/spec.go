@@ -74,11 +74,6 @@ const (
 	OperationNormalizerCanonical                   = "canonical_tool_args_v1"
 )
 
-// MutatingOperationMetadata returns the common built-in tool ownership contract.
-func MutatingOperationMetadata() (idempotency.Scope, string, ReplayPolicy) {
-	return idempotency.ScopeAgentTool, "canonical_tool_args_v1", ReplayToolResult
-}
-
 // OperationFingerprint hashes the typed tool name plus canonical JSON arguments.
 // Parse errors are collapsed so model-controlled payload bytes never leak.
 func OperationFingerprint(spec Spec, raw json.RawMessage) ([32]byte, error) {
