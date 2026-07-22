@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // fakeHandler is a scripted cron.Handler for routing/notify tests.
@@ -14,14 +17,52 @@ type fakeHandler struct {
 	err     error
 	ran     bool
 	gotJob  Job
+	gotCtx  context.Context
 }
 
 func (h *fakeHandler) Meta() HandlerMeta { return h.meta }
 
-func (h *fakeHandler) Run(_ context.Context, job Job) (string, error) {
+func (h *fakeHandler) Run(ctx context.Context, job Job) (string, error) {
 	h.ran = true
 	h.gotJob = job
+	h.gotCtx = ctx
 	return h.summary, h.err
+}
+
+func TestScheduledOperationIsStablePerClaimedRun(t *testing.T) {
+	t.Parallel()
+
+	identityID := "00000000-0000-0000-0000-000000000002"
+	task := Task{ID: "task-1", Kind: KindReminder, IdentityID: identityID, Payload: []byte(`{"text":"buy milk"}`)}
+	h := &fakeHandler{meta: HandlerMeta{Kind: KindReminder}, summary: "ok"}
+	d := NewDispatch(map[TaskKind]Handler{KindReminder: h}, DispatchDeps{Store: &fakeCompleter{}})
+
+	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+		t.Fatalf("first Dispatch: %v", err)
+	}
+	first, ok := idempotency.OperationFromContext(h.gotCtx)
+	if !ok {
+		t.Fatal("handler context lacks scheduled operation")
+	}
+	if first.Key.IdentityID != identityID || first.Key.Scope != idempotency.ScopeSchedulerRun || identityctx.IdentityID(h.gotCtx) != identityID {
+		t.Fatalf("first operation has wrong trusted metadata: %+v", first)
+	}
+
+	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+		t.Fatalf("retry Dispatch: %v", err)
+	}
+	retry, _ := idempotency.OperationFromContext(h.gotCtx)
+	if retry != first {
+		t.Fatalf("same claimed run changed operation: %+v != %+v", retry, first)
+	}
+
+	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-2"}); err != nil {
+		t.Fatalf("later Dispatch: %v", err)
+	}
+	later, _ := idempotency.OperationFromContext(h.gotCtx)
+	if later.Key.Key == first.Key.Key || later.Fingerprint == first.Fingerprint {
+		t.Fatalf("distinct claimed run reused operation: first=%+v later=%+v", first, later)
+	}
 }
 
 // fakeCompleter captures the terminal run write.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/chetto1983/aura/internal/idempotency"
 )
 
 type roundtripFunc func(context.Context, string, any) (json.RawMessage, error)
@@ -26,7 +28,17 @@ func callToolWith(ctx context.Context, serverName, toolName string, args map[str
 	if args == nil {
 		args = map[string]any{}
 	}
-	res, err := roundtrip(ctx, "tools/call", map[string]any{"name": toolName, "arguments": args})
+	params := map[string]any{"name": toolName, "arguments": args}
+	if operation, ok := idempotency.OperationFromContext(ctx); ok {
+		params["_meta"] = map[string]any{
+			"aura": map[string]any{
+				"operation_key":         operation.Key.Key,
+				"operation_scope":       string(operation.Key.Scope),
+				"operation_fingerprint": idempotency.FingerprintHex(operation.Fingerprint),
+			},
+		}
+	}
+	res, err := roundtrip(ctx, "tools/call", params)
 	if err != nil {
 		return "", fmt.Errorf("mcp %q: call %s: %w", serverName, toolName, err)
 	}

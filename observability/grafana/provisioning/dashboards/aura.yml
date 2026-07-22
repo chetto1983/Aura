@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: Aura operations
+    orgId: 1
+    folder: Aura
+    folderUid: aura-operations
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
+

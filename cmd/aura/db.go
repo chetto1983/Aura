@@ -42,28 +42,36 @@ func runDB(args []string) {
 }
 
 func dbMigrate(ctx context.Context, cfg *config.Config) {
-	// Best-effort EnsureRoles bootstrap: only run when BootstrapURL + Password
-	// are populated (the standard compose-managed case). Externally provisioned
-	// clusters that supply pre-created aura_app/aura_migrate roles via the
-	// AURA_DB_URL / AURA_DB_MIGRATE_URL overrides will leave Password empty and
-	// skip EnsureRoles entirely.
+	lockURL := cfg.DB.MigrateURL
 	if cfg.DB.BootstrapURL != "" && cfg.DB.Password != "" {
-		if err := db.EnsureRoles(ctx, cfg.DB.BootstrapURL, cfg.DB.Password); err != nil {
-			fmt.Fprintln(os.Stderr, "ensure roles:", err)
-			os.Exit(1)
-		}
+		lockURL = cfg.DB.BootstrapURL
 	}
-
-	n, err := db.Migrate(ctx, cfg.DB.MigrateURL)
+	var applied int
+	err := db.WithMigrationLock(ctx, lockURL, func(ctx context.Context) error {
+		// The bootstrap role owns the lock before EnsureRoles so two fresh-install
+		// commands cannot race role creation. Managed clusters without bootstrap
+		// credentials acquire the same lock through the pre-provisioned migrate role.
+		if cfg.DB.BootstrapURL != "" && cfg.DB.Password != "" {
+			if err := db.EnsureRoles(ctx, cfg.DB.BootstrapURL, cfg.DB.Password); err != nil {
+				return fmt.Errorf("ensure roles: %w", err)
+			}
+		}
+		var err error
+		applied, err = db.Migrate(ctx, cfg.DB.MigrateURL)
+		if err != nil {
+			return err
+		}
+		return db.CheckMigrationHead(ctx, cfg.DB.MigrateURL)
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if n == 0 {
+	if applied == 0 {
 		fmt.Println("ok: no pending migrations")
 		return
 	}
-	fmt.Printf("ok: %d migration(s) applied\n", n)
+	fmt.Printf("ok: %d migration(s) applied\n", applied)
 }
 
 func dbPing(ctx context.Context, cfg *config.Config) {

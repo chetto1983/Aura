@@ -14,7 +14,11 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
+	"go.opentelemetry.io/otel/attribute"
+	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 type observabilityClient struct {
@@ -55,21 +59,85 @@ func (hookMetricErrorHook) AfterTool(context.Context, llm.ToolCall, tools.ToolRe
 func (hookMetricErrorHook) OnTurnEnd(context.Context, HookTurn) error { return nil }
 
 func TestMetrics_CustomRegistryReregisterSafe(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	m1 := newAgentMetrics(reg, false)
+	m1, reader1 := newTestAgentMetrics(t)
 	m1.recordTurnOutcome("content_stop")
 
-	m2 := newAgentMetrics(prometheus.NewRegistry(), false)
+	m2, reader2 := newTestAgentMetrics(t)
 	m2.recordLLMError("stream_open")
 
-	if got := metricMapInt(m1.turnTotal, "content_stop"); got != 1 {
+	if got := metricMapInt(m1.legacy.turnTotal, "content_stop"); got != 1 {
 		t.Fatalf("custom turn counter = %d, want 1", got)
+	}
+	turnMetric := findOTelMetric(t, reader1, "aura.agent.turn")
+	turns, ok := turnMetric.Data.(metricdata.Sum[int64])
+	if !ok || len(turns.DataPoints) != 1 || turns.DataPoints[0].Value != 1 {
+		t.Fatalf("turn metric = %#v, want exactly one value-1 point", turnMetric.Data)
+	}
+	findOTelMetric(t, reader2, "aura.agent.llm.errors")
+}
+
+func TestMetrics_CardinalityFoldsRawToolNamesToOther(t *testing.T) {
+	m, reader := newTestAgentMetrics(t)
+	m.recordToolError("tenant-secret-dynamic-tool-123")
+
+	metric := findOTelMetric(t, reader, "aura.agent.tool.errors")
+	sum, ok := metric.Data.(metricdata.Sum[int64])
+	if !ok || len(sum.DataPoints) != 1 {
+		t.Fatalf("tool error data = %#v, want one int64 sum point", metric.Data)
+	}
+	labels := sum.DataPoints[0].Attributes.ToSlice()
+	if !hasOTelLabel(labels, "tool_class", "other") || !hasOTelLabel(labels, "error_class", "other") {
+		t.Fatalf("tool error labels = %v, want bounded other classes", labels)
+	}
+}
+
+func TestMetrics_CompatibilityDoesNotRegisterDirectCollectors(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	_ = newAgentMetrics(noop.NewMeterProvider().Meter(agentMeterName), false)
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if len(families) != 0 {
+		t.Fatalf("agent compatibility registered %d direct client_golang families; want 0", len(families))
+	}
+}
+
+func TestMetrics_DescriptorCompatibilityEmitsEachPrometheusFamilyOnce(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	exporter, err := otelprometheus.New(otelprometheus.WithRegisterer(reg))
+	if err != nil {
+		t.Fatalf("prometheus exporter: %v", err)
+	}
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	m := newAgentMetrics(provider.Meter(agentMeterName), false)
+	m.recordTurnOutcome("content_stop")
+	m.recordToolError("web_fetch")
+	m.recordLLMDuration(10 * time.Millisecond)
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	counts := map[string]int{}
+	for _, family := range families {
+		counts[family.GetName()]++
+	}
+	for _, name := range []string{
+		"aura_agent_turn_total",
+		"aura_agent_tool_errors_total",
+		"aura_agent_llm_call_duration_seconds",
+	} {
+		if counts[name] != 1 {
+			t.Errorf("Prometheus family %q count = %d, want 1", name, counts[name])
+		}
 	}
 }
 
 func TestTurnOutcomeCounter_RunRecordsExactlyOnce(t *testing.T) {
-	before := metricMapInt(metrics.turnTotal, "content_stop")
-	beforePrompt := metricInt(metrics.promptTokensTotal)
+	before := metricMapInt(metrics.legacy.turnTotal, "content_stop")
+	beforePrompt := metricInt(metrics.legacy.promptTokensTotal)
 	cost := 0.25
 	client := observabilityClient{turns: []llm.Chunk{
 		{Text: "ciao"},
@@ -99,30 +167,30 @@ func TestTurnOutcomeCounter_RunRecordsExactlyOnce(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if got := metricMapInt(metrics.turnTotal, "content_stop") - before; got != 1 {
+	if got := metricMapInt(metrics.legacy.turnTotal, "content_stop") - before; got != 1 {
 		t.Fatalf("content_stop turn counter delta = %d, want 1", got)
 	}
-	if got := metricInt(metrics.promptTokensTotal) - beforePrompt; got != 7 {
+	if got := metricInt(metrics.legacy.promptTokensTotal) - beforePrompt; got != 7 {
 		t.Fatalf("prompt token counter delta = %d, want 7", got)
 	}
 }
 
 func TestLLMCallDurationMetric_RecordsHistogram(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	m := newAgentMetrics(reg, false)
+	m, reader := newTestAgentMetrics(t)
 	m.recordLLMDuration(25 * time.Millisecond)
 
-	fam := findMetricFamily(t, reg, "aura_agent_llm_call_duration_seconds")
-	if fam.GetType() != dto.MetricType_HISTOGRAM || len(fam.GetMetric()) == 0 {
-		t.Fatalf("metric family = %#v, want histogram with samples", fam)
+	metric := findOTelMetric(t, reader, "aura.agent.llm.call.duration")
+	histogram, ok := metric.Data.(metricdata.Histogram[float64])
+	if !ok || len(histogram.DataPoints) == 0 {
+		t.Fatalf("metric = %#v, want histogram with samples", metric)
 	}
-	if got := fam.GetMetric()[0].GetHistogram().GetSampleCount(); got != 1 {
+	if got := histogram.DataPoints[0].Count; got != 1 {
 		t.Fatalf("llm duration histogram count = %d, want 1", got)
 	}
 }
 
 func TestToolErrorMetric_UnknownTool(t *testing.T) {
-	before := metricMapInt(metrics.toolErrorsTotal, "missing_tool")
+	before := metricMapInt(metrics.legacy.toolErrorsTotal, "other")
 	a := NewLlmAgent(LlmAgentConfig{
 		Client:     observabilityClient{},
 		LLM:        llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 30},
@@ -143,24 +211,24 @@ func TestToolErrorMetric_UnknownTool(t *testing.T) {
 	if run.Err == "" {
 		t.Fatal("runTool unknown tool returned no error")
 	}
-	if got := metricMapInt(metrics.toolErrorsTotal, "missing_tool") - before; got != 1 {
+	if got := metricMapInt(metrics.legacy.toolErrorsTotal, "other") - before; got != 1 {
 		t.Fatalf("tool error metric delta = %d, want 1", got)
 	}
 }
 
 func TestHookMetric_ErrorOutcome(t *testing.T) {
-	before := metricMapInt(metrics.hookTotal, "before_model:error")
+	before := metricMapInt(metrics.legacy.hookTotal, "before_model:error")
 	_, err := NewHookManager(hookMetricErrorHook{}).BeforeModel(context.Background(), &llm.Request{})
 	if err == nil {
 		t.Fatal("BeforeModel error = nil, want hook failure")
 	}
-	if got := metricMapInt(metrics.hookTotal, "before_model:error") - before; got != 1 {
+	if got := metricMapInt(metrics.legacy.hookTotal, "before_model:error") - before; got != 1 {
 		t.Fatalf("hook metric delta = %d, want 1", got)
 	}
 }
 
 func TestMintSpanIDEntropyFailureFallbackRecordsMetric(t *testing.T) {
-	before := metricInt(metrics.spanIDEntropyFailuresTotal)
+	before := metricInt(metrics.legacy.spanIDEntropyFailuresTotal)
 	old := spanIDReader
 	spanIDReader = errReader{}
 	t.Cleanup(func() { spanIDReader = old })
@@ -169,7 +237,7 @@ func TestMintSpanIDEntropyFailureFallbackRecordsMetric(t *testing.T) {
 	if id != ([8]byte{}) {
 		t.Fatalf("mintSpanID entropy failure = %x, want zero fallback", id)
 	}
-	if got := metricInt(metrics.spanIDEntropyFailuresTotal) - before; got != 1 {
+	if got := metricInt(metrics.legacy.spanIDEntropyFailuresTotal) - before; got != 1 {
 		t.Fatalf("entropy failure metric delta = %d, want 1", got)
 	}
 }
@@ -201,19 +269,38 @@ func metricInt(v *expvar.Int) int64 {
 	return n
 }
 
-func findMetricFamily(t *testing.T, reg *prometheus.Registry, name string) *dto.MetricFamily {
+func newTestAgentMetrics(t *testing.T) (*agentMetrics, *sdkmetric.ManualReader) {
 	t.Helper()
-	families, err := reg.Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	return newAgentMetrics(provider.Meter(agentMeterName), false), reader
+}
+
+func findOTelMetric(t *testing.T, reader *sdkmetric.ManualReader, name string) metricdata.Metrics {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
 	}
-	for _, fam := range families {
-		if fam.GetName() == name {
-			return fam
+	for _, scope := range rm.ScopeMetrics {
+		for _, metric := range scope.Metrics {
+			if metric.Name == name {
+				return metric
+			}
 		}
 	}
-	t.Fatalf("metric family %q not found", name)
-	return nil
+	t.Fatalf("OTel metric %q not found", name)
+	return metricdata.Metrics{}
+}
+
+func hasOTelLabel(labels []attribute.KeyValue, key, value string) bool {
+	for _, label := range labels {
+		if string(label.Key) == key && label.Value.AsString() == value {
+			return true
+		}
+	}
+	return false
 }
 
 func ptrInt(v int) *int { return &v }

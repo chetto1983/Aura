@@ -10,11 +10,16 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var resumeCommitBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/internal/runner", obs.BoundaryConfig{
+	Operation: "resume_commit", Count: obs.RunnerResumeCallsID, Duration: obs.RunnerResumeDurationID,
+})
 
 // PoolResumeCommitter is the production ResumeCommitter: it owns the shared *pgxpool.Pool
 // and the CONCRETE askuser/conversations Stores, so each method runs ONE db.WithTx that
@@ -42,7 +47,9 @@ func NewPoolResumeCommitter(pool *pgxpool.Pool, conv *conversations.Store, pause
 // CommitResume claims the pause then appends its answer turn in one tx. A failed claim
 // (rows==0 → ErrPauseNotFound) returns before any append; a failed append rolls the
 // claim back, leaving resumed_at IS NULL so the user can retry (D-06/LOOP-03).
-func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClaim) error {
+func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClaim) (err error) {
+	ctx, end := resumeCommitBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	return db.WithTx(ctx, p.pool, func(q *sqlc.Queries) error {
 		if err := p.pause.MarkResumedTx(ctx, q, claim.Token, claim.Answer); err != nil {
 			return err
@@ -56,7 +63,9 @@ func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClai
 // one tx. Any rows==0 claim rolls the whole tx back → exactly one answer per pause, no
 // orphan RoleTool turns (D-04/LOOP-02). Appends run in sorted-token order too so the
 // reserved seqs are deterministic.
-func (p *PoolResumeCommitter) CommitResumeBatch(ctx context.Context, claims []ResumeClaim) error {
+func (p *PoolResumeCommitter) CommitResumeBatch(ctx context.Context, claims []ResumeClaim) (err error) {
+	ctx, end := resumeCommitBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if len(claims) == 0 {
 		return nil
 	}

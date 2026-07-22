@@ -11,10 +11,14 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+
+	"github.com/chetto1983/aura/internal/idempotency"
 )
 
 // ErrNoNonDeferredTool is returned by Registry.Validate when no actionable
@@ -53,6 +57,51 @@ type Spec struct {
 	// tier, so a newly-added multiplexed action can never silently under-gate. Like
 	// Mutating it is runtime-only and never wire-encoded (not LLM-visible).
 	Multiplexed bool
+	// OperationScope, OperationNormalizer, and ReplayPolicy are Aura-owned
+	// mutation metadata. They are runtime-only and never exposed to the model.
+	OperationScope      idempotency.Scope
+	OperationNormalizer string
+	ReplayPolicy        ReplayPolicy
+}
+
+// ReplayPolicy is the finite way a completed mutation can be returned safely.
+type ReplayPolicy string
+
+const (
+	ReplayToolResult             ReplayPolicy      = "tool_result"
+	OperationScopeAgent          idempotency.Scope = idempotency.ScopeAgentTool
+	OperationScopeMCP            idempotency.Scope = idempotency.ScopeMCPTool
+	OperationNormalizerCanonical                   = "canonical_tool_args_v1"
+)
+
+// MutatingOperationMetadata returns the common built-in tool ownership contract.
+func MutatingOperationMetadata() (idempotency.Scope, string, ReplayPolicy) {
+	return idempotency.ScopeAgentTool, "canonical_tool_args_v1", ReplayToolResult
+}
+
+// OperationFingerprint hashes the typed tool name plus canonical JSON arguments.
+// Parse errors are collapsed so model-controlled payload bytes never leak.
+func OperationFingerprint(spec Spec, raw json.RawMessage) ([32]byte, error) {
+	if !spec.Mutating || spec.OperationScope == "" || spec.OperationNormalizer == "" || spec.ReplayPolicy == "" {
+		return [32]byte{}, errors.New("tool operation metadata is incomplete")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var normalized any
+	if err := decoder.Decode(&normalized); err != nil {
+		return [32]byte{}, errors.New("tool operation arguments are invalid")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return [32]byte{}, errors.New("tool operation arguments are invalid")
+	}
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		Tool string `json:"tool"`
+		Args any    `json:"args"`
+	}{Tool: spec.Name, Args: normalized})
+	if err != nil {
+		return [32]byte{}, errors.New("tool operation arguments are invalid")
+	}
+	return fingerprint, nil
 }
 
 // TrustLevel classifies whether a tool result came from host/operator-trusted

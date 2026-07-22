@@ -23,8 +23,10 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/learningretention"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
@@ -39,17 +41,19 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg             *config.Config
-	pool            *pgxpool.Pool
-	conv            *conversations.Store
-	pause           *askuser.Store
-	identity        *identity.Store
-	run             *runner.Runner
-	client          llm.Client
-	reg             *tools.Registry
-	gateway         *gateway.Gateway
-	toolInvocations *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
-	assets          *assets.Service
+	cfg              *config.Config
+	pool             *pgxpool.Pool
+	conv             *conversations.Store
+	pause            *askuser.Store
+	identity         *identity.Store
+	run              *runner.Runner
+	client           llm.Client
+	reg              *tools.Registry
+	gateway          *gateway.Gateway
+	operations       *idempotency.Store
+	toolInvocations  *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	deleteReconciler *runner.DeleteReconciler
+	assets           *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
 	// surface (via SetShareService's adapter), the D-15 delete cascade (chat.run.SetShareRevoker),
@@ -61,11 +65,15 @@ type chatEnv struct {
 	// under a non-strict profile or a Docker-unavailable host — a safe host-direct no-op
 	// everywhere (Route/Strict/SuspendIdle all nil-guard). buildDispatch registers it as the
 	// KindSandboxReap reaper; plan 37-07 wires it onto the box-capable tools.
-	sandboxRouter *usersandbox.SandboxRouter
+	sandboxRouter  *usersandbox.SandboxRouter
+	learningStores []learningretention.Store
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
+	if e.deleteReconciler != nil {
+		e.deleteReconciler.Stop()
+	}
 	if e.toolHandles.BackgroundShells != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -255,6 +263,8 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// The single in-process policy PEP (GATE-01), constructed ONCE and injected at the
 	// three NewLlmAgent roots (runner below, swarm via ctx-relay, cron agent_job).
 	gw := gateway.New(cfg.Profile, toolInvocationStore)
+	operations := idempotency.New(pool, idempotency.Config{})
+	gw.SetOperationRegistry(operations)
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.
@@ -302,6 +312,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// leaves it seed-only and never blocks boot.
 	var reasoningStore *reasoningstore.Store
 	var toolSelectStore *toolselectstore.Store
+	var learningStores []learningretention.Store
 	// WR-05 — coupling note: the tool-selection active-learning loop has NO independent
 	// enable flag. It deliberately rides AURA_LLM_REASONING_LEARNING (cfg.LLM.ReasoningLearning)
 	// below: the toolSelectStore is constructed only inside this gate, sharing the SAME
@@ -315,11 +326,25 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
 		} else {
 			mcpClosers = append(mcpClosers, gclient.Close)
-			reasoningStore = &reasoningstore.Store{Client: gclient}
+			learningStores = []learningretention.Store{
+				learningretention.NewReasoningGraphStore(gclient),
+				learningretention.NewToolSelectionGraphStore(gclient),
+			}
+			reasoningStore = &reasoningstore.Store{
+				Client: gclient, BucketCap: cfg.Learning.BucketCap,
+				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
+			}
 			// The tool-selection active-learning loop (D-06/D-07) rides the SAME graph
 			// client: when the reasoning learner is on (and Neo4j opened) the tool_search
 			// ranker also self-improves via :ToolSelectionExample. No extra subprocess.
-			toolSelectStore = &toolselectstore.Store{Client: gclient}
+			toolSelectStore = &toolselectstore.Store{
+				Client: gclient, BucketCap: cfg.Learning.BucketCap,
+				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
+				ValidTool: func(name string) bool {
+					_, ok := reg.Get(name)
+					return ok
+				},
+			}
 		}
 	}
 
@@ -340,6 +365,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		Client:          client,
 		Registry:        reg,
 		LLM:             cfg.LLM,
+		Learning:        cfg.Learning,
 		RunDir:          cfg.RunDir,
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
 		// WorkspaceRoot every host-direct tool now resolves against, replacing the
@@ -370,7 +396,7 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, toolInvocations: toolInvocationStore, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, learningStores: learningStores}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

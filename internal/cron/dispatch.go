@@ -17,11 +17,15 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/google/uuid"
 )
 
 // HandlerMeta is the per-kind static contract (Slice 0.9): the kind it serves, its
@@ -139,7 +143,13 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 // notifies. A missing handler for an unknown kind is a terminal failed run (never a
 // silent drop, D-21). The held conn (claim.go) keeps the advisory lock for the run's
 // lifetime; CompleteRun writes through the pool but the lock is unaffected.
-func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
+func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error) {
+	ctx, end := schedulerJobBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
+	ctx, err = scheduledOperationContext(ctx, task, c)
+	if err != nil {
+		return err
+	}
 	h, ok := d.handlers[task.Kind]
 	if !ok {
 		err := fmt.Errorf("no handler for kind %q", task.Kind)
@@ -158,6 +168,47 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
 	d.complete(ctx, task, c.RunID, status, summary, runErr)
 	d.notify(ctx, task, c.RunID, summary, runErr)
 	return runErr
+}
+
+// scheduledOperationContext derives identity from the durable task row and the
+// logical key from immutable task/run IDs. Re-dispatching one Claim produces the
+// same operation; a later claimed run necessarily produces a different key.
+func scheduledOperationContext(ctx context.Context, task Task, claim *Claim) (context.Context, error) {
+	if claim == nil {
+		return nil, errors.New("cron dispatch: nil claim")
+	}
+	identityID := task.IdentityID
+	// Legacy/system scheduler rows may carry the historical "local" sentinel
+	// rather than a UUID. The effect still retains task.IdentityID for delivery,
+	// while registry ownership maps that non-tenant sentinel to the seeded local
+	// operator UUID. A valid durable tenant UUID is preserved exactly.
+	if _, err := uuid.Parse(identityID); err != nil {
+		identityID = identityctx.LocalOperatorIdentity
+	}
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		TaskID  string   `json:"task_id"`
+		RunID   string   `json:"run_id"`
+		Kind    TaskKind `json:"kind"`
+		Payload []byte   `json:"payload"`
+	}{TaskID: task.ID, RunID: claim.RunID, Kind: task.Kind, Payload: append([]byte(nil), task.Payload...)})
+	if err != nil {
+		return nil, fmt.Errorf("cron dispatch operation fingerprint: %w", err)
+	}
+	operation := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityID,
+			Scope:      idempotency.ScopeSchedulerRun,
+			Key:        task.ID + ":" + claim.RunID,
+		},
+		Fingerprint: fingerprint,
+		Correlation: claim.RunID,
+	}
+	trusted := identityctx.WithIdentityID(ctx, identityID)
+	operationCtx, err := idempotency.WithOperation(trusted, operation)
+	if err != nil {
+		return nil, fmt.Errorf("cron dispatch operation: %w", err)
+	}
+	return operationCtx, nil
 }
 
 // completeRunTimeout bounds the terminal run-state write on the detached ctx (M-h): a
@@ -294,7 +345,7 @@ func (d *Dispatch) insertPendingNotification(
 // the audit summary is always written to the run ledger; only the success push is skipped.
 func isSilentSuccessKind(kind TaskKind) bool {
 	switch kind {
-	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep:
+	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep, KindRetentionSweep, KindLearningCompaction:
 		return true
 	default:
 		return false

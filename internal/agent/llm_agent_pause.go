@@ -27,11 +27,16 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 )
 
 // askUserToolName is the canonical ask_user tool name, read from its Spec so a
 // rename of the tool cannot silently break pause detection.
 var askUserToolName = tools.AskUser{}.Spec().Name
+
+var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
+	Operation: "pause_create", State: "pending", Count: obs.AgentPauseTransitionsID,
+})
 
 // pauseCalls scans the assistant's batched tool calls and returns the subset that
 // are valid ask_user pauses, with each call's ToolCallID stamped onto the carried
@@ -100,6 +105,8 @@ func (a *LlmAgent) detectPause(ctx context.Context, call llm.ToolCall) (*tools.E
 	_, err := tool.Execute(ctx, json.RawMessage(call.Function.Arguments))
 	var pause *tools.ErrAwaitingUserInput
 	if errors.As(err, &pause) {
+		_, end := pauseBoundary.Start(ctx)
+		end.End(nil)
 		return pause, true
 	}
 	return nil, false

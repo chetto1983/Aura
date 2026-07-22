@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/idempotency"
 )
 
 // Tool-execution retry seam (parity item P2 — the "error hook"). A non-mutating
@@ -51,6 +52,14 @@ var toolRetryBaseDelay = 200 * time.Millisecond
 // that way even if the dispatch path changes (D-03/CV-1).
 func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool, args json.RawMessage) (tools.ToolResult, error) {
 	spec := tool.Spec()
+	if mutating {
+		var err error
+		ctx, err = deriveToolOperationContext(ctx, spec, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+	}
+	operationAcquired := false
 	if spec.Name != askUserToolName {
 		key := gateway.ReservationKey{
 			ConversationID: a.ledgerConvID,
@@ -61,9 +70,14 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		if derr != nil {
 			return tools.ToolResult{}, derr
 		}
+		operationAcquired = verdict.OperationDecision == idempotency.DecisionAcquired
 		switch verdict.Decision {
 		case gateway.Deny:
-			return tools.ToolResult{}, &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}
+			denied := &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}
+			if operationAcquired {
+				return tools.ToolResult{}, errors.Join(denied, a.gateway.MarkOperationIndeterminate(ctx))
+			}
+			return tools.ToolResult{}, denied
 		case gateway.Approve:
 			// The mutating action is WITHHELD: return the approval-required tool RESULT
 			// (no error, tool.Execute not called). runTool persists the real call+args +
@@ -88,7 +102,16 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 	for attempt := 0; ; attempt++ {
 		res, err = tool.Execute(ctx, args)
 		if err == nil || mutating || attempt >= maxToolRetries || ctx.Err() != nil || !isTransientToolErr(err) {
-			return res, err
+			if !operationAcquired {
+				return res, err
+			}
+			if err != nil {
+				return res, errors.Join(err, a.gateway.MarkOperationIndeterminate(ctx))
+			}
+			if completeErr := a.gateway.CompleteOperation(ctx, res); completeErr != nil {
+				return res, errors.Join(completeErr, a.gateway.MarkOperationIndeterminate(ctx))
+			}
+			return res, nil
 		}
 		select {
 		case <-ctx.Done():

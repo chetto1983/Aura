@@ -127,6 +127,13 @@ services:
       AURA_WEB_USER_AGENT: ${AURA_WEB_USER_AGENT:-Aura/0.1 web_fetch}
       AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}
       AURA_MCP_SERVERS_JSON: ${AURA_MCP_SERVERS_JSON:-}
+      # Docker-daemon/host restarts ignore depends_on ordering, so Aura can boot while the
+      # memory MCP sidecar is still waiting on neo4j+postgres healthchecks (60s+). The default
+      # 10s mount budget loses that race and the registry freezes with ZERO memory tools until
+      # the next aura restart (2026-07-22 incident). 180s budget + 40 attempts (5s backoff cap)
+      # rides out the sidecar's cold start; the budget is only spent when a sidecar is down.
+      AURA_MCP_MOUNT_TIMEOUT: ${AURA_MCP_MOUNT_TIMEOUT:-180}
+      AURA_MCP_MOUNT_RETRY_ATTEMPTS: ${AURA_MCP_MOUNT_RETRY_ATTEMPTS:-40}
       AURA_SWARM_MAX_GOALS: ${AURA_SWARM_MAX_GOALS:-8}
       AURA_SWARM_CHILD_TIMEOUT_SEC: ${AURA_SWARM_CHILD_TIMEOUT_SEC:-120}
       AURA_SWARM_MAX_CONCURRENT: ${AURA_SWARM_MAX_CONCURRENT:-4}
@@ -239,6 +246,8 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
+      # curl's 3s ceiling exceeds Aura's shared 2s readiness budget; Compose's 5s
+      # timeout remains the outer bound for process startup and runtime loss checks.
       test: ["CMD-SHELL", "curl -fsS --max-time 3 http://127.0.0.1:9080/readyz >/dev/null"]
       interval: 30s
       timeout: 5s
@@ -288,7 +297,12 @@ services:
     depends_on:
       garage:
         condition: service_started
+      # objectstore bootstrap is an idempotent CLI mutation. Wait for the
+      # registry migration before reserving its operation key.
+      aura-migrate:
+        condition: service_completed_successfully
     environment:
+      AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_OBJECTSTORE_BACKEND: ${AURA_OBJECTSTORE_BACKEND:-garage}
       AURA_OBJECTSTORE_ENDPOINT: ${AURA_OBJECTSTORE_ENDPOINT:-http://garage:3900}
       AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}
@@ -387,7 +401,7 @@ services:
   # service creates the local bucket/key/CORS before Aura starts; install.sh
   # generates the internal secrets consumed here.
   garage:
-    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}
+    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}
     container_name: aura-garage
     restart: unless-stopped
     environment:
@@ -405,7 +419,7 @@ services:
 
   # ↓↓ Slice 0.7 — Neo4j Community + APOC + GDS ↓↓
   neo4j:
-    image: neo4j:5.26.26-community
+    image: neo4j:5.26.28-community
     container_name: aura-neo4j
     restart: unless-stopped
     environment:
@@ -587,7 +601,7 @@ services:
   # SearXNG needs outbound egress to query upstream engines; loopback publishing
   # keeps the service local without cutting off metasearch.
   searxng:
-    image: searxng/searxng:2026.5.31-7159b8aed
+    image: searxng/searxng:2026.7.19-6da6eee26
     container_name: aura-searxng
     restart: unless-stopped
     environment:
@@ -830,6 +844,96 @@ services:
       retries: 12
       start_period: 20s
 
+  # Optional local observability pack. Prometheus and Tempo join Aura's network
+  # namespace so the loopback-only metrics listener and OTLP receiver remain
+  # private. Grafana alone is published, and only on host loopback.
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    profiles: [observability]
+    restart: unless-stopped
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${AURA_PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${AURA_PROMETHEUS_RETENTION_SIZE:-2GB}
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - aura-prometheus:/prometheus
+    mem_limit: ${AURA_PROMETHEUS_MEM_LIMIT:-384m}
+    cpus: ${AURA_PROMETHEUS_CPUS:-0.50}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/bin/wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  tempo:
+    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    profiles: [observability]
+    restart: unless-stopped
+    # The distroless image has no init shell; root is required to initialize a
+    # fresh Docker-managed volume before Tempo writes bounded local blocks.
+    user: "0:0"
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_healthy
+    command:
+      - -config.file=/etc/tempo/tempo.yml
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - aura-tempo:/var/tempo
+    mem_limit: ${AURA_TEMPO_MEM_LIMIT:-512m}
+    cpus: ${AURA_TEMPO_CPUS:-0.50}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/tempo", "-config.file=/etc/tempo/tempo.yml", "-config.verify=true"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:12.3.3@sha256:9e1e77ade304069aee3196e9a4f210830e96e80ce9a2640891eccc324b152faf
+    profiles: [observability]
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+    ports:
+      - "127.0.0.1:${AURA_GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - aura-grafana:/var/lib/grafana
+    mem_limit: ${AURA_GRAFANA_MEM_LIMIT:-384m}
+    cpus: ${AURA_GRAFANA_CPUS:-0.50}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   aura-home:
   # Amendment #88: the fixed /workspace working root (scripts/artifacts/.toolchain/scratch
@@ -844,6 +948,9 @@ volumes:
   aura-ocr-vl:
   aura-rerank:
   aura-pim-data:
+  aura-prometheus:
+  aura-tempo:
+  aura-grafana:
   garage-data:
   # Warm package caches for the non-strict host-direct shell_exec path (npm/pip/uv download caches
   # under HOME=/root inside the aura container) — retained across recreates so re-installs are cache hits.

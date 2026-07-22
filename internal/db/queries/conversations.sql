@@ -3,12 +3,14 @@ INSERT INTO aura.conversations (id, identity_id, model, status, metadata)
 VALUES ($1, $2, $3, 'active', $4)
 RETURNING id, title, identity_id, created_at, last_active_at, status, model,
           total_input_tokens, total_output_tokens, total_cached_tokens,
-          total_cost_usd, metadata;
+          total_cost_usd, metadata, snapshot_version, delete_reservation,
+          delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at;
 
 -- name: GetConversation :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE id = $1;
 
@@ -30,7 +32,8 @@ SELECT COALESCE((
 -- name: ListConversations :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE status <> 'deleted'
   AND (sqlc.arg(include_archived)::boolean OR status = 'active')
@@ -64,7 +67,8 @@ WHERE id = sqlc.arg(id);
 
 -- name: DeleteConversation :exec
 DELETE FROM aura.conversations
-WHERE id = $1;
+WHERE id = $1
+  AND delete_reservation IS NULL;
 
 -- name: GetConversationForIdentity :one
 -- Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
@@ -72,7 +76,8 @@ WHERE id = $1;
 -- Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2;
@@ -82,7 +87,8 @@ WHERE id = $1
 -- identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE identity_id = sqlc.arg(identity_id)
   AND status <> 'deleted'
@@ -94,7 +100,91 @@ ORDER BY last_active_at DESC;
 -- owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
 DELETE FROM aura.conversations
 WHERE id = $1
+  AND identity_id = $2
+  AND delete_reservation IS NULL;
+
+-- name: GetConversationVersionForIdentity :one
+SELECT snapshot_version
+FROM aura.conversations
+WHERE id = $1
   AND identity_id = $2;
+
+-- name: ReserveConversationDeleteForIdentityIfVersion :execrows
+-- Cross-process export-delete fence. This must commit before any runtime teardown.
+-- Reusing the same deterministic reservation is idempotent after a process retry.
+UPDATE aura.conversations
+SET delete_reservation = sqlc.arg(reservation),
+    delete_phase = COALESCE(delete_phase, 'reserved'),
+    delete_reserved_at = COALESCE(delete_reserved_at, now())
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND snapshot_version = sqlc.arg(expected_version)
+  AND (delete_reservation IS NULL OR delete_reservation = sqlc.arg(reservation));
+
+-- name: ClaimConversationDeleteTeardown :execrows
+UPDATE aura.conversations
+SET delete_phase = 'teardown_started',
+    delete_worker = sqlc.arg(worker),
+    delete_lease_expires_at = sqlc.arg(lease_expires_at)
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND delete_reservation = sqlc.arg(reservation)
+  AND delete_phase IN ('reserved', 'teardown_started')
+  AND (delete_worker IS NULL
+       OR delete_lease_expires_at <= sqlc.arg(now)
+       OR delete_worker = sqlc.arg(worker));
+
+-- name: ReleaseConversationDeleteLease :execrows
+UPDATE aura.conversations
+SET delete_worker = NULL,
+    delete_lease_expires_at = NULL
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND delete_reservation = sqlc.arg(reservation)
+  AND delete_worker = sqlc.arg(worker);
+
+-- name: ReleaseReservedConversationDelete :execrows
+UPDATE aura.conversations
+SET delete_reservation = NULL,
+    delete_phase = NULL,
+    delete_reserved_at = NULL,
+    delete_worker = NULL,
+    delete_lease_expires_at = NULL
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND delete_reservation = sqlc.arg(reservation)
+  AND delete_phase = 'reserved';
+
+-- name: ListReservedConversationDeletes :many
+SELECT id, identity_id, snapshot_version, delete_reservation, delete_phase, delete_reserved_at
+FROM aura.conversations
+WHERE delete_reservation IS NOT NULL
+  AND ((delete_phase = 'reserved'
+        AND delete_reserved_at <= sqlc.arg(reserved_before))
+       OR (delete_phase = 'teardown_started'
+           AND (delete_worker IS NULL
+                OR delete_lease_expires_at <= sqlc.arg(now))))
+ORDER BY delete_reserved_at, id
+LIMIT sqlc.arg(batch_size);
+
+-- name: ConversationDeleteCompleted :one
+-- A reservation cannot be replaced or released after teardown starts. Once its exact
+-- row is absent, the worker holding that reservation committed the terminal delete.
+SELECT NOT EXISTS (
+  SELECT 1
+  FROM aura.conversations
+  WHERE id = sqlc.arg(id)
+    AND identity_id = sqlc.arg(identity_id)
+    AND delete_reservation = sqlc.arg(reservation)
+) AS completed;
+
+-- name: DeleteConversationForIdentityIfReservation :execrows
+DELETE FROM aura.conversations
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND delete_reservation = sqlc.arg(reservation)
+  AND delete_phase = 'teardown_started'
+  AND delete_worker = sqlc.arg(worker);
 
 -- name: UpdateConversationStatusForIdentity :execrows
 -- Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the

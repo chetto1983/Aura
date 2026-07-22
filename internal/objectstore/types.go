@@ -28,6 +28,8 @@ type ObjectInfo struct {
 type ListRequest struct {
 	Bucket string
 	Prefix string
+	// Limit bounds returned objects. Zero means no application-level bound.
+	Limit int
 }
 
 type PutOptions struct {

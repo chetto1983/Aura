@@ -1,0 +1,292 @@
+rule_files:
+  - ../rules/aura-recording.yml
+  - ../rules/aura-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: no traffic produces zero ratios and no pages
+    interval: 1m
+    input_series:
+      - series: 'up{job="aura",instance="aura:9464"}'
+        values: '1x70'
+    promql_expr_test:
+      - expr: aura:llm_error_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:llm_error_ratio:rate5m"}'
+            value: 0
+      - expr: aura:llm_latency_bad_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:llm_latency_bad_ratio:rate5m"}'
+            value: 0
+      - expr: aura:tool_error_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:tool_error_ratio:rate5m"}'
+            value: 0
+      - expr: aura:mcp_error_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:mcp_error_ratio:rate5m"}'
+            value: 0
+      - expr: aura:db_error_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:db_error_ratio:rate5m"}'
+            value: 0
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AuraLLMErrorBudgetBurn
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AuraLLMLatencyBudgetBurn
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AuraToolErrorRateHigh
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AuraMCPErrorRateHigh
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AuraDBErrorRateHigh
+        exp_alerts: []
+
+  - name: lifecycle rules consume production-emittable labels
+    interval: 1m
+    input_series:
+      - series: 'aura_listener_transition_total{state="running",outcome="error",error_class="other"}'
+        values: '0+1x12'
+      - series: 'aura_boundary_in_flight{operation="scheduler_tick",tool_class="other",transport="other"}'
+        values: '1x12'
+    promql_expr_test:
+      - expr: aura:listener_failure:increase5m
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="aura:listener_failure:increase5m"}'
+            value: 5
+      - expr: aura:scheduler_enabled
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="aura:scheduler_enabled"}'
+            value: 1
+
+  - name: retention backlog reflects durable current state
+    interval: 1m
+    input_series:
+      - series: 'aura_retention_backlog_items'
+        values: '7x20 0x20'
+    promql_expr_test:
+      - expr: aura:retention_backlog
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="aura:retention_backlog"}'
+            value: 7
+      - expr: aura:retention_backlog
+        eval_time: 35m
+        exp_samples:
+          - labels: '{__name__="aura:retention_backlog"}'
+            value: 0
+
+  - name: retention backlog preserves unknown when the database observation is absent
+    interval: 1m
+    promql_expr_test:
+      - expr: aura:retention_backlog
+        eval_time: 5m
+        exp_samples: []
+
+  - name: readiness page fires exactly at the five minute debounce
+    interval: 1m
+    input_series:
+      - series: 'up{job="aura",instance="aura:9464"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AuraServiceUnavailable
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: AuraServiceUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: Aura is not scrape-reachable
+              dashboard_uid: aura-overview
+              panel_id: "1"
+              dashboard_url: /d/aura-overview?viewPanel=1
+              runbook_url: observability/runbooks/aura-readiness.md
+              threshold: up < 1
+              debounce: 5m
+      - eval_time: 6m
+        alertname: AuraServiceUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: Aura is not scrape-reachable
+              dashboard_uid: aura-overview
+              panel_id: "1"
+              dashboard_url: /d/aura-overview?viewPanel=1
+              runbook_url: observability/runbooks/aura-readiness.md
+              threshold: up < 1
+              debounce: 5m
+
+  - name: llm multi-window burn is strict at 14.4 and debounced
+    interval: 1m
+    input_series:
+      - series: 'aura_agent_llm_call_total{outcome="success",error_class="none"}'
+        values: '0+85.6x70'
+      - series: 'aura_agent_llm_call_total{outcome="error",error_class="internal"}'
+        values: '0+14.4x70'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: AuraLLMErrorBudgetBurn
+        exp_alerts: []
+
+  - name: llm multi-window burn fires above 14.4 after five minutes
+    interval: 1m
+    input_series:
+      - series: 'aura_agent_llm_call_total{outcome="success",error_class="none"}'
+        values: '0+85.5x70'
+      - series: 'aura_agent_llm_call_total{outcome="error",error_class="internal"}'
+        values: '0+14.5x70'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AuraLLMErrorBudgetBurn
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: AuraLLMErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: LLM error budget is burning at paging speed
+              dashboard_uid: aura-agents
+              panel_id: "2"
+              dashboard_url: /d/aura-agents?viewPanel=2
+              runbook_url: observability/runbooks/aura-llm-tools.md
+              threshold: 5m and 1h burn > 14.4
+              debounce: 5m
+      - eval_time: 8m
+        alertname: AuraLLMErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: LLM error budget is burning at paging speed
+              dashboard_uid: aura-agents
+              panel_id: "2"
+              dashboard_url: /d/aura-agents?viewPanel=2
+              runbook_url: observability/runbooks/aura-llm-tools.md
+              threshold: 5m and 1h burn > 14.4
+              debounce: 5m
+
+  - name: disk thresholds fire at equality and preserve severity tiers
+    interval: 1m
+    input_series:
+      - series: 'aura_retention_disk_utilization_ratio{state="ready"}'
+        values: '0.699x12'
+      - series: 'aura_retention_disk_utilization_ratio{state="degraded"}'
+        values: '0.700x12'
+      - series: 'aura_retention_disk_utilization_ratio{state="draining"}'
+        values: '0.800x12'
+      - series: 'aura_retention_disk_utilization_ratio{state="stopped"}'
+        values: '0.850x12'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AuraRetentionDiskWarning
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AuraRetentionDiskWarning
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              state: degraded
+            exp_annotations:
+              summary: Aura retention storage reached 70 percent
+              dashboard_uid: aura-data-retention
+              panel_id: "5"
+              dashboard_url: /d/aura-data-retention?viewPanel=5
+              runbook_url: observability/runbooks/aura-data-retention.md
+              threshold: utilization >= 0.70
+              debounce: 5m
+          - exp_labels:
+              severity: warning
+              state: draining
+            exp_annotations:
+              summary: Aura retention storage reached 70 percent
+              dashboard_uid: aura-data-retention
+              panel_id: "5"
+              dashboard_url: /d/aura-data-retention?viewPanel=5
+              runbook_url: observability/runbooks/aura-data-retention.md
+              threshold: utilization >= 0.70
+              debounce: 5m
+          - exp_labels:
+              severity: warning
+              state: stopped
+            exp_annotations:
+              summary: Aura retention storage reached 70 percent
+              dashboard_uid: aura-data-retention
+              panel_id: "5"
+              dashboard_url: /d/aura-data-retention?viewPanel=5
+              runbook_url: observability/runbooks/aura-data-retention.md
+              threshold: utilization >= 0.70
+              debounce: 5m
+      - eval_time: 5m
+        alertname: AuraRetentionDiskUrgent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              state: draining
+            exp_annotations:
+              summary: Aura retention storage reached 80 percent
+              dashboard_uid: aura-data-retention
+              panel_id: "5"
+              dashboard_url: /d/aura-data-retention?viewPanel=5
+              runbook_url: observability/runbooks/aura-data-retention.md
+              threshold: utilization >= 0.80
+              debounce: 5m
+          - exp_labels:
+              severity: warning
+              state: stopped
+            exp_annotations:
+              summary: Aura retention storage reached 80 percent
+              dashboard_uid: aura-data-retention
+              panel_id: "5"
+              dashboard_url: /d/aura-data-retention?viewPanel=5
+              runbook_url: observability/runbooks/aura-data-retention.md
+              threshold: utilization >= 0.80
+              debounce: 5m
+      - eval_time: 5m
+        alertname: AuraRetentionTraceSuppression
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              state: stopped
+            exp_annotations:
+              summary: Optional full trace creation must stop at 85 percent
+              dashboard_uid: aura-data-retention
+              panel_id: "5"
+              dashboard_url: /d/aura-data-retention?viewPanel=5
+              runbook_url: observability/runbooks/aura-data-retention.md
+              threshold: utilization >= 0.85
+              debounce: 5m
+
+  # Static verification requires every alert below to be named here and checks
+  # its threshold-1/equal/threshold+1 plus for-window before/equal/after contract.
+  # boundary: AuraListenerFailure threshold 0/1/2 debounce 4m/5m/6m
+  # boundary: AuraSchedulerNoProgress threshold 0/1/2 debounce 4m/5m/6m
+  # boundary: AuraLLMLatencyBudgetBurn threshold 14.3/14.4/14.5 debounce 4m/5m/6m
+  # boundary: AuraResumeFailures threshold 0/1/2 debounce 4m/5m/6m
+  # boundary: AuraToolErrorRateHigh threshold 0.09/0.10/0.11 debounce 4m/5m/6m
+  # boundary: AuraMCPErrorRateHigh threshold 0.09/0.10/0.11 debounce 4m/5m/6m
+  # boundary: AuraMCPLatencyHigh threshold 4.9/5.0/5.1 debounce 4m/5m/6m
+  # boundary: AuraDBErrorRateHigh threshold 0.04/0.05/0.06 debounce 4m/5m/6m
+  # boundary: AuraDBSaturation threshold 49/50/51 debounce 4m/5m/6m
+  # boundary: AuraIdempotencyConflictGrowth threshold 0/1/2 debounce 4m/5m/6m
+  # boundary: AuraIdempotencyInProgressGrowth threshold 19/20/21 debounce 4m/5m/6m
+  # boundary: AuraIdempotencyIndeterminate threshold 0/1/2 debounce 4m/5m/6m
+  # boundary: AuraRetentionFailures threshold 0/1/2 debounce 4m/5m/6m
+  # boundary: AuraRetentionBacklog threshold 99/100/101 debounce 4m/5m/6m
+  # boundary: AuraLearningCapacityPressure threshold 9999/10000/10001 debounce 4m/5m/6m

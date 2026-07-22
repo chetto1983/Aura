@@ -35,6 +35,23 @@ func TestIdempotencyOperationsMigrationContract(t *testing.T) {
 	}
 }
 
+func TestIdempotencyReplayEnvelopeMigrationContract(t *testing.T) {
+	t.Parallel()
+
+	up := compactSQL(t, "migrations/0046_idempotency_replay_envelope.up.sql")
+	down := compactSQL(t, "migrations/0046_idempotency_replay_envelope.down.sql")
+	for _, want := range []string{"add column replay_status_code", "add column replay_headers", "add column replay_cleared_at", "replay_status_code between 100 and 599", "create index idempotency_operations_replay_expiry_idx"} {
+		if !strings.Contains(up, want) {
+			t.Errorf("up migration missing %q", want)
+		}
+	}
+	for _, want := range []string{"drop column replay_cleared_at", "drop column replay_headers", "drop column replay_status_code"} {
+		if !strings.Contains(down, want) {
+			t.Errorf("down migration missing %q", want)
+		}
+	}
+}
+
 func TestIdempotencyOperationsQueryContract(t *testing.T) {
 	t.Parallel()
 
@@ -57,6 +74,7 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 	assertSQLSectionContains(t, queries, "markoperationindeterminate", "state = 'in_progress' and payload_hash =")
 	assertSQLSectionContains(t, queries, "listexpiredreplaybodies", "order by replay_expires_at asc, identity_id, operation_scope, operation_key limit")
 	assertSQLSectionContains(t, queries, "clearexpiredreplaybody", "set replay_body = null, replay_preview = null, replay_sidecar_ref = null")
+	assertSQLSectionContains(t, queries, "clearexpiredreplaybody", "replay_cleared_at = sqlc.arg(cleared_at)")
 
 	clear := sqlSection(queries, "clearexpiredreplaybody")
 	if strings.Contains(clear, "delete from") || strings.Contains(clear, "state = null") || strings.Contains(clear, "payload_hash = null") {

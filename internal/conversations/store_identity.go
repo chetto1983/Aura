@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -114,6 +116,215 @@ func (s *Store) DeleteForIdentity(ctx context.Context, conversationID, identityI
 	}
 	if pErr := s.purgeConversationArtifacts(conversationID); pErr != nil {
 		return affected, pErr
+	}
+	return affected, err
+}
+
+// VersionForIdentity returns the monotonic version advanced by every exported
+// conversation, turn, or thread-asset mutation.
+func (s *Store) VersionForIdentity(ctx context.Context, conversationID, identityID string) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var version int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, queryErr := q.GetConversationVersionForIdentity(ctx, sqlc.GetConversationVersionForIdentityParams{ID: id, IdentityID: owner})
+		if queryErr != nil {
+			return queryErr
+		}
+		version = value
+		return nil
+	})
+	return version, err
+}
+
+// ReserveDeleteForIdentityIfVersion commits the export-delete ownership fence before
+// any in-memory or external teardown. Every snapshot writer is DB-guarded against a
+// reserved conversation, including writers in another server process.
+func (s *Store) ReserveDeleteForIdentityIfVersion(ctx context.Context, conversationID, identityID string, expected int64, reservation string) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, reserveErr := q.ReserveConversationDeleteForIdentityIfVersion(ctx, sqlc.ReserveConversationDeleteForIdentityIfVersionParams{
+			ID: id, IdentityID: owner, ExpectedVersion: expected,
+			Reservation: pgtype.Text{String: reservation, Valid: true},
+		})
+		affected = value
+		return reserveErr
+	})
+	return affected, err
+}
+
+// ReservedDelete is durable recovery work for one export-delete operation.
+type ReservedDelete struct {
+	ConversationID  string
+	IdentityID      string
+	ExpectedVersion int64
+	Reservation     string
+	Phase           string
+}
+
+// ExportDeleteRecoveryGrace keeps the reconciler away from a freshly reserved
+// foreground export-delete while its detached finalizer is still allowed to run.
+// It must remain greater than runner's foreground finalization timeout.
+const ExportDeleteRecoveryGrace = 3 * time.Minute
+
+// ClaimDeleteTeardown crosses the irreversible boundary and leases execution
+// to one worker while the operation reservation remains the durable authority.
+func (s *Store) ClaimDeleteTeardown(ctx context.Context, conversationID, identityID, reservation, worker string, leaseExpiresAt time.Time) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, markErr := q.ClaimConversationDeleteTeardown(ctx, sqlc.ClaimConversationDeleteTeardownParams{
+			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
+			Worker: pgtype.Text{String: worker, Valid: true}, LeaseExpiresAt: pgtype.Timestamptz{Time: leaseExpiresAt.UTC(), Valid: true},
+			Now: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		})
+		affected = value
+		return markErr
+	})
+	return affected, err
+}
+
+// ReleaseDeleteLease makes a failed attempt immediately retryable without ever
+// releasing the operation reservation after teardown has started.
+func (s *Store) ReleaseDeleteLease(ctx context.Context, conversationID, identityID, reservation, worker string) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, releaseErr := q.ReleaseConversationDeleteLease(ctx, sqlc.ReleaseConversationDeleteLeaseParams{
+			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
+			Worker: pgtype.Text{String: worker, Valid: true},
+		})
+		affected = value
+		return releaseErr
+	})
+	return affected, err
+}
+
+// ReleaseReservedDelete removes a fence only before teardown has started.
+func (s *Store) ReleaseReservedDelete(ctx context.Context, conversationID, identityID, reservation string) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, releaseErr := q.ReleaseReservedConversationDelete(ctx, sqlc.ReleaseReservedConversationDeleteParams{
+			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
+		})
+		affected = value
+		return releaseErr
+	})
+	return affected, err
+}
+
+// ListReservedDeletes returns a bounded cross-owner recovery page. The stored
+// reservation is the authority; recovery never mints or adopts another token.
+func (s *Store) ListReservedDeletes(ctx context.Context, limit int32) ([]ReservedDelete, error) {
+	if limit <= 0 {
+		return []ReservedDelete{}, nil
+	}
+	now := time.Now().UTC()
+	rows, err := s.q.ListReservedConversationDeletes(ctx, sqlc.ListReservedConversationDeletesParams{
+		ReservedBefore: pgtype.Timestamptz{Time: now.Add(-ExportDeleteRecoveryGrace), Valid: true},
+		Now:            pgtype.Timestamptz{Time: now, Valid: true},
+		BatchSize:      limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list reserved conversation deletes: %w", err)
+	}
+	deletes := make([]ReservedDelete, 0, len(rows))
+	for _, row := range rows {
+		if !row.DeleteReservation.Valid || !row.DeletePhase.Valid {
+			return nil, errors.New("list reserved conversation deletes: invalid lifecycle row")
+		}
+		deletes = append(deletes, ReservedDelete{
+			ConversationID: uuid.UUID(row.ID.Bytes).String(), IdentityID: uuid.UUID(row.IdentityID.Bytes).String(),
+			ExpectedVersion: row.SnapshotVersion, Reservation: row.DeleteReservation.String, Phase: row.DeletePhase.String,
+		})
+	}
+	return deletes, nil
+}
+
+// ConversationDeleteCompleted observes the durable terminal state of one exact
+// reservation. A matching row remains while another worker is active or retryable;
+// absence means its reservation committed the delete, never a version conflict.
+func (s *Store) ConversationDeleteCompleted(ctx context.Context, conversationID, identityID, reservation string) (bool, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return false, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return false, err
+	}
+	var completed bool
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, observeErr := q.ConversationDeleteCompleted(ctx, sqlc.ConversationDeleteCompletedParams{
+			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
+		})
+		completed = value
+		return observeErr
+	})
+	return completed, err
+}
+
+// DeleteForIdentityIfReservation is the only persistence delete that can remove a
+// reserved conversation. The token proves this lifecycle owns the committed fence.
+func (s *Store) DeleteForIdentityIfReservation(ctx context.Context, conversationID, identityID, reservation, worker string) (int64, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return 0, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, deleteErr := q.DeleteConversationForIdentityIfReservation(ctx, sqlc.DeleteConversationForIdentityIfReservationParams{
+			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
+			Worker: pgtype.Text{String: worker, Valid: true},
+		})
+		affected = value
+		return deleteErr
+	})
+	if err != nil || affected == 0 {
+		return affected, err
+	}
+	if purgeErr := s.purgeConversationArtifacts(conversationID); purgeErr != nil {
+		return affected, purgeErr
 	}
 	return affected, nil
 }

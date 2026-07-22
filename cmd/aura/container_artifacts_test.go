@@ -23,7 +23,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	for _, want := range []string{
 		"FROM golang:",
 		"FROM debian:bookworm-slim",
-		"FROM dxflrs/garage:v2.0.0 AS garagebin",
+		"FROM dxflrs/garage:v2.3.0 AS garagebin",
 		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.21",
 		"mcp-neo4j-cypher==0.6.0",
@@ -117,7 +117,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"healthcheck:",
 		"curl -fsS --max-time 3 http://127.0.0.1:9080/readyz >/dev/null",
 		"garage:",
-		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}",
+		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
 		"AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}",
 		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",
@@ -233,6 +233,33 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 }
 
+func TestMCPNeo4jRuntimeAndCoverageAreReproducible(t *testing.T) {
+	root := repoRootForTest(t)
+	const pinnedInstall = "mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3"
+	for _, rel := range []string{
+		"docker/aura/Dockerfile",
+		"docker/aura-sandbox/Dockerfile",
+		"docker/mcp-neo4j-cypher/Dockerfile",
+	} {
+		contents := readProjectFile(t, root, rel)
+		if !strings.Contains(contents, pinnedInstall) {
+			t.Errorf("%s must pin the compatible FastMCP runtime with %q", rel, pinnedInstall)
+		}
+	}
+
+	coverageGate := readProjectFile(t, root, "scripts/coverage_gate.sh")
+	goTest := regexp.MustCompile(`(?s)go test .*?-count=1 .*?-covermode=atomic`)
+	if !goTest.MatchString(coverageGate) {
+		t.Error("scripts/coverage_gate.sh must force -count=1 before accepting integration coverage")
+	}
+
+	ci := readProjectFile(t, root, ".github/workflows/ci.yml")
+	const pinnedCIInject = "pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3"
+	if got := strings.Count(ci, pinnedCIInject); got != 2 {
+		t.Errorf("CI must pin FastMCP in both Neo4j jobs: found %d occurrences of %q, want 2", got, pinnedCIInject)
+	}
+}
+
 func TestAuraServiceCanResolveContainerInternalSearxng(t *testing.T) {
 	root := repoRootForTest(t)
 	compose := readProjectFile(t, root, "compose.yaml")
@@ -242,6 +269,20 @@ func TestAuraServiceCanResolveContainerInternalSearxng(t *testing.T) {
 	}
 	if !regexp.MustCompile(`(?m)^    networks:\n      - default\n      - aura-web$`).MatchString(aura) {
 		t.Fatalf("aura service must join default and aura-web networks so SEARXNG_URL resolves:\n%s", aura)
+	}
+}
+
+func TestGarageBootstrapCanReachIdempotencyRegistry(t *testing.T) {
+	root := repoRootForTest(t)
+	compose := readProjectFile(t, root, "compose.yaml")
+	bootstrap := composeServiceBlock(t, compose, "garage-bootstrap")
+	for _, want := range []string{
+		"aura-migrate:\n        condition: service_completed_successfully",
+		"AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable",
+	} {
+		if !strings.Contains(bootstrap, want) {
+			t.Fatalf("garage-bootstrap service missing idempotency registry dependency %q:\n%s", want, bootstrap)
+		}
 	}
 }
 

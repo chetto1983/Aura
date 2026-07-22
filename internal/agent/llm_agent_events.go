@@ -94,7 +94,6 @@ func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSp
 // id is passed for forward-compat callers but not stamped on the Event yet.
 func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, run toolRunResult) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
-	recordToolDuration(run.EndedAt.Sub(run.StartedAt))
 	// The event projection surfaces the RAW tool preview (run.Result.Preview), not
 	// the nonce-wrapped prompt rendering (run.Preview): the UI/REPL/AG-UI consumer
 	// and the audit ToolInvocation want the clean tool output, while only the

@@ -2,14 +2,18 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
@@ -43,6 +47,40 @@ func (s *stepLog) snapshot() []string {
 type recordingConvStore struct {
 	*fakeConvStore
 	steps *stepLog
+}
+
+// conflictingReservedConvStore models another server process advancing the
+// exported snapshot before this process can commit its delete reservation.
+type conflictingReservedConvStore struct {
+	*recordingConvStore
+}
+
+func (c *conflictingReservedConvStore) ReserveDeleteForIdentityIfVersion(_ context.Context, id, identityID string, _ int64, _ string) (int64, error) {
+	c.steps.add("reserve")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if conversation, ok := c.convs[id]; ok && conversation.IdentityID == identityID {
+		conversation.Title = "concurrent rename"
+		conversation.TitleSet = true
+	}
+	return 0, nil
+}
+
+func (c *conflictingReservedConvStore) DeleteForIdentityIfReservation(ctx context.Context, id, identityID, _, _ string) (int64, error) {
+	c.steps.add("reserved-delete")
+	return c.DeleteForIdentity(ctx, id, identityID)
+}
+
+func (*conflictingReservedConvStore) ClaimDeleteTeardown(context.Context, string, string, string, string, time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (*conflictingReservedConvStore) ReleaseDeleteLease(context.Context, string, string, string, string) (int64, error) {
+	return 0, nil
+}
+
+func (*conflictingReservedConvStore) ConversationDeleteCompleted(context.Context, string, string, string) (bool, error) {
+	return false, nil
 }
 
 func (r *recordingConvStore) DeleteForIdentity(ctx context.Context, id, identityID string) (int64, error) {
@@ -242,6 +280,68 @@ func TestConversationDeleteLifecycleForeignDenied(t *testing.T) {
 	if _, err := r.Conv.Get(context.Background(), convID); err != nil {
 		t.Fatalf("owner conversation was deleted by a foreign caller: %v", err)
 	}
+}
+
+type conflictShareRevoker struct{ calls int }
+
+func (r *conflictShareRevoker) RevokeConversationShares(context.Context, string, string) error {
+	r.calls++
+	return nil
+}
+
+// TestExportDeleteVersionConflictPreservesAllLiveState proves the reservation is
+// the first cross-process gate. A version conflict must not cancel work, expire a
+// pause, evict tools, terminate jobs, revoke shares, or delete the conversation.
+func TestExportDeleteVersionConflictPreservesAllLiveState(t *testing.T) {
+	const owner = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	r, rec, steps := wireLifecycleRecorder(t)
+	convID := newConvID(t)
+	seedOwnedConversation(t, r, owner, convID)
+	base := r.Conv.(*recordingConvStore)
+	r.Conv = &conflictingReservedConvStore{recordingConvStore: base}
+
+	canceled := false
+	r.trackSession(identityctx.WithIdentityID(context.Background(), owner), convID, func() { canceled = true })
+	pause := r.pause.(*recordingPauseStore).fakePauseStore
+	pause.byToken["pending"] = &askuser.Pending{Token: "pending", ConversationID: convID}
+	shares := &conflictShareRevoker{}
+	r.SetShareRevoker(shares)
+
+	affected, err := r.DeleteConversationLifecycleIfVersion(exportDeleteTestContext(t, owner, "version-conflict"), owner, convID, 7)
+	if err != nil {
+		t.Fatalf("conditional lifecycle: %v", err)
+	}
+	if affected != 0 {
+		t.Fatalf("conditional lifecycle affected = %d, want conflict 0", affected)
+	}
+	if got := steps.snapshot(); fmt.Sprint(got) != fmt.Sprint([]string{"reserve"}) {
+		t.Fatalf("conflict lifecycle steps = %v, want reservation only", got)
+	}
+	if canceled || len(rec.evictedIDs()) != 0 || len(rec.terminatedKeys()) != 0 || shares.calls != 0 {
+		t.Fatalf("conflict changed runtime state: canceled=%v evicted=%v terminated=%v share-revokes=%d",
+			canceled, rec.evictedIDs(), rec.terminatedKeys(), shares.calls)
+	}
+	if pending, _ := pause.ListPending(context.Background(), convID); len(pending) != 1 {
+		t.Fatalf("conflict expired pending pauses: %v", pending)
+	}
+	conversation, err := r.Conv.GetForIdentity(context.Background(), convID, owner)
+	if err != nil || conversation.Title != "concurrent rename" {
+		t.Fatalf("conflict lost concurrent conversation state: conversation=%+v err=%v", conversation, err)
+	}
+}
+
+func exportDeleteTestContext(t *testing.T, owner, key string) context.Context {
+	t.Helper()
+	fingerprint := sha256.Sum256([]byte(key))
+	ctx := identityctx.WithIdentityID(context.Background(), owner)
+	ctx, err := idempotency.WithOperation(ctx, idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: owner, Scope: idempotency.ScopeHTTPMutation, Key: key},
+		Fingerprint: fingerprint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx
 }
 
 // TestSessionKeyIsolation proves the D-23 composite keying: two identities presenting the

@@ -63,7 +63,7 @@ COPY --from=ghcr.io/astral-sh/uv@sha256:ff07b86af50d4d9391d9daf4ff89ce427bc544f9
 
 # Pinned MCP server (parity with docker/aura). Debian python is PEP-668 externally-managed
 # -> --break-system-packages (the container IS the boundary; no venv needed at image level).
-RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0
+RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3
 
 # Mount points (documented — the ACTUAL mounts are set by the usersandbox translator, not
 # baked here; D-10/D-13):

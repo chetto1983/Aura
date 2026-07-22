@@ -38,8 +38,10 @@ func (t *FSEdit) Spec() Spec {
 		Parameters:  params,
 		// Deferred: exact-string edit is discoverable via tool_search; only fs_read/fs_write
 		// stay always-visible (operator directive — leaner manifest, less context per turn).
-		Deferred: true,
-		Mutating: true,
+		Deferred:       true,
+		Mutating:       true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 	}
 }
 

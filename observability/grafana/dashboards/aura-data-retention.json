@@ -1,0 +1,61 @@
+{
+  "annotations": {"list": []}, "editable": false, "fiscalYearStartMonth": 0, "graphTooltip": 1, "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Overview", "type": "link", "url": "/d/aura-overview"},
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Tools and MCP", "type": "link", "url": "/d/aura-tools-mcp"},
+    {"asDropdown": false, "icon": "search", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Trace drilldown", "type": "link", "url": "/explore?left=%7B%22datasource%22:%22aura-tempo%22%7D"}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Retention operations grouped only by bounded operation and outcome enums. Tempo independently owns its 14-day trace retention.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0}, "id": 1,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (operation, outcome) (rate(aura_retention_operation_total[5m]))", "legendFormat": "{{operation}} / {{outcome}}", "range": true, "refId": "A"}], "title": "Retention activity", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Age of the oldest bounded learning item.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}, "id": 2,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:learning_oldest_age:max_seconds", "legendFormat": "oldest item", "range": true, "refId": "A"}], "title": "Learning oldest age", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Retention failures over fifteen minutes. Alert: failures > 0 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}, "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:retention_failure:increase15m", "legendFormat": "failures", "range": true, "refId": "A"}], "title": "Retention failures", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Current durable non-terminal retention items from PostgreSQL. No data means the database observation is unavailable and must not be read as zero. Alert: backlog > 100 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 100}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}, "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:retention_backlog", "instant": true, "legendFormat": "backlog", "range": false, "refId": "A"}], "title": "Retention backlog", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Aura-managed storage utilization. Alerts at 0.70 and 0.80; optional full trace creation stops at 0.85. Tempo blocks are excluded and retained by Tempo for 14 days.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "max": 1, "min": 0, "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.7}, {"color": "orange", "value": 0.8}, {"color": "red", "value": 0.85}]}, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}, "id": 5,
+      "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": true, "showThresholdMarkers": true, "sizing": "auto"},
+      "targets": [{"editorMode": "code", "expr": "max(aura_retention_disk_utilization_ratio)", "legendFormat": "utilization", "range": true, "refId": "A"}], "title": "Aura storage utilization", "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Learning-store size grouped only by bounded tool class and state.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}, "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "max by (tool_class, state) (aura_learning_size)", "legendFormat": "{{tool_class}} / {{state}}", "range": true, "refId": "A"}], "title": "Learning stores", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Largest bounded learning-store size. Alert: size >= 10000 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 10000}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16}, "id": 7,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:learning_size:max", "legendFormat": "largest store", "range": true, "refId": "A"}], "title": "Learning capacity", "type": "stat"
+    }
+  ],
+  "refresh": "30s", "schemaVersion": 41, "tags": ["aura", "data", "retention", "bounded-labels"], "templating": {"list": []},
+  "time": {"from": "now-24h", "to": "now"}, "timepicker": {}, "timezone": "browser", "title": "Aura / Data and Retention", "uid": "aura-data-retention", "version": 1, "weekStart": ""
+}

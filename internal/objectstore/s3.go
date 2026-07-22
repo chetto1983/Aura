@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"time"
 
@@ -180,14 +181,25 @@ func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, erro
 	if strings.TrimSpace(req.Bucket) == "" {
 		return nil, fmt.Errorf("objectstore s3 bucket is empty")
 	}
+	if req.Limit < 0 {
+		return nil, fmt.Errorf("objectstore s3 limit must not be negative")
+	}
 	var out []ObjectInfo
 	var token *string
 	for {
-		resp, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		input := &s3.ListObjectsV2Input{
 			Bucket:            aws.String(req.Bucket),
 			Prefix:            aws.String(req.Prefix),
 			ContinuationToken: token,
-		})
+		}
+		if req.Limit > 0 {
+			remaining := req.Limit - len(out)
+			if remaining > math.MaxInt32 {
+				remaining = math.MaxInt32
+			}
+			input.MaxKeys = aws.Int32(int32(remaining)) //nolint:gosec // clamped to int32 above.
+		}
+		resp, err := s.client.ListObjectsV2(ctx, input)
 		if err != nil {
 			return nil, err
 		}
@@ -199,6 +211,9 @@ func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, erro
 					ETag:      strings.Trim(aws.ToString(obj.ETag), `"`),
 				},
 			})
+		}
+		if req.Limit > 0 && len(out) >= req.Limit {
+			return out[:req.Limit], nil
 		}
 		if !aws.ToBool(resp.IsTruncated) {
 			return out, nil

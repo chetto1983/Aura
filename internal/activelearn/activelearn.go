@@ -14,7 +14,10 @@
 // the mechanism while the divergent stores/oracles stay specialized (D-05).
 package activelearn
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Oracle labels AND persists one observed turn, off the hot path. It owns the
 // whole opaque "assign a label + save the example" step so the core never sees a
@@ -35,13 +38,29 @@ type Oracle interface {
 
 // Config wires a Learner. Oracle is required; the rest have defaults.
 type Config struct {
-	Oracle      Oracle
-	Refresh     func() // called after a successful LabelAndSave (e.g. classifier.Refresh)
-	MarginFloor float64
-	Queue       int
+	Oracle         Oracle
+	Refresh        func() // called after a successful LabelAndSave (e.g. classifier.Refresh)
+	MarginFloor    float64
+	Queue          int
+	SeenMaxEntries int
+	SeenTTL        time.Duration
+	Now            func() time.Time
+	Metrics        func(LearningMetric)
+}
+
+// LearningMetric is a bounded-label capacity event emitted by the learner.
+type LearningMetric struct {
+	Operation  string
+	Outcome    string
+	State      string
+	ErrorClass string
+	Size       int
+	OldestAge  time.Duration
 }
 
 const (
-	defaultMarginFloor = 0.05
-	defaultQueue       = 64
+	defaultMarginFloor    = 0.05
+	defaultQueue          = 64
+	defaultSeenMaxEntries = 100_000
+	defaultSeenTTL        = 30 * 24 * time.Hour
 )

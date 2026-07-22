@@ -26,11 +26,8 @@ import (
 // OTel exporter knob defaults (D-05/D-06). The default OTLP target silent-drops
 // without a collector; "none" is a true no-op provider.
 const (
-	defaultOtelExporter = "otlp"
-	defaultOtelEndpoint = "localhost:4317"
-)
-
-const (
+	defaultOtelExporter         = "otlp"
+	defaultOtelEndpoint         = "localhost:4317"
 	defaultObjectStoreAccessKey = "GK000000000000000000000000"
 	defaultObjectStoreSecretKey = "0000000000000000000000000000000000000000000000000000000000000000"
 )
@@ -48,6 +45,7 @@ type Config struct {
 	ToolPreviewCap int
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
+	MetricsBind    string // AURA_METRICS_BIND — private loopback Prometheus listener
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
@@ -259,8 +257,10 @@ type Config struct {
 	// read into usersandbox.specFor / buildEgressSidecar. Defined + cataloged + parse-tested
 	// here (37-01); NOT yet wired into any router/spec. Sub-struct composition keeps config.go
 	// ≤600 LOC — see config_sandbox.go.
-	Sandbox SandboxConfig
-	Share   ShareConfig
+	Sandbox   SandboxConfig
+	Share     ShareConfig
+	Retention RetentionConfig
+	Learning  LearningConfig
 
 	// Amendment #88 fixed local working root. WorkspaceDir is the single WorkspaceRoot
 	// every host-direct tool (shell_exec, fs_read/write/edit/glob/grep, send_file) and
@@ -368,11 +368,15 @@ func loadBase() *Config {
 	mcpServers, mcpPolicies, mcpServersErr := loadMCPServers()
 
 	runDir, runDirErr := absRunDir(envDefault("AURA_RUN_DIR", defaultRunDir()))
-	// WorkspaceDir shares RunDir's abs-normalize helper; unlike RunDir it carries no
-	// dedicated *Err field — filepath.Abs only fails when the cwd is unobtainable, the
-	// same rare condition RunDirErr already surfaces at boot Validate (D-A5-02 class),
-	// so a second identical fail-loud path is not warranted for this field.
-	workspaceDir, _ := absRunDir(envDefault("AURA_WORKSPACE_DIR", defaultWorkspaceDir()))
+	// WorkspaceDir is honored VERBATIM: AURA_WORKSPACE_DIR is an operator-set absolute
+	// container path (e.g. /workspace), and the code default is already absolute. It is
+	// deliberately NOT force-abs'd like RunDir — filepath.Abs rewrites a Unix-absolute
+	// value like "/workspace" to a drive-rooted path on a Windows dev host, breaking the
+	// container-path contract; the working root is set explicitly per deployment.
+	workspaceDir := os.Getenv("AURA_WORKSPACE_DIR")
+	if workspaceDir == "" {
+		workspaceDir = defaultWorkspaceDir()
+	}
 
 	return &Config{
 		DB: db.Config{
@@ -400,9 +404,11 @@ func loadBase() *Config {
 		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
+		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
 
-		// Phase 33 runtime deployment profile (D-01/D-03). Total parse: unset/unknown -> dev.
-		Profile: ParseProfile(os.Getenv("AURA_PROFILE")),
+		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
+		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),
+		Learning:  loadLearningConfig(),
 
 		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),

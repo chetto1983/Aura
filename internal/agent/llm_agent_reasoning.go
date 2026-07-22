@@ -51,6 +51,9 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 
 	routeCtx, cancel := context.WithTimeout(ctx, a.reasoningRouterTimeout())
 	defer cancel()
+	routeCtx, llmEnd := llmCallBoundary.Start(routeCtx)
+	var boundaryErr error
+	defer llmEnd.PanicSafe(&boundaryErr)
 	enabled := false
 	req := llm.Request{
 		Model:       a.cfg.Model,
@@ -69,10 +72,9 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		"user":       user,
 	})
 
-	started := time.Now()
 	ch, err := a.streamWithOpenRetry(routeCtx, req, "adaptive_reasoning_router")
 	if err != nil {
-		recordLLMDuration(time.Since(started))
+		boundaryErr = err
 		recordLLMError(llmErrorKind("reasoning_router_open", err))
 		reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": err.Error(), "fallback_tier": prompt.ReasoningTierLow})
 		return prompt.ReasoningTierLow, true
@@ -80,7 +82,7 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 	var b strings.Builder
 	for c := range ch {
 		if c.Err != nil {
-			recordLLMDuration(time.Since(started))
+			boundaryErr = c.Err
 			recordLLMError(llmErrorKind("reasoning_router_stream", c.Err))
 			reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": c.Err.Error(), "fallback_tier": prompt.ReasoningTierLow})
 			return prompt.ReasoningTierLow, true
@@ -90,7 +92,6 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		}
 		b.WriteString(c.Text)
 	}
-	recordLLMDuration(time.Since(started))
 	raw := strings.TrimSpace(b.String())
 	tier := prompt.ParseReasoningRouterTier(raw)
 	if !tier.Valid() {

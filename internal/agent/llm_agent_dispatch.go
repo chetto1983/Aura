@@ -89,7 +89,6 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	// serially in original call order: start events first, run, then per-call history
 	// append + AfterToolResult + result event.
 	if len(runnable) > 0 {
-		recordToolDispatch(len(runnable))
 		startedAt := time.Now().UTC()
 		for batchIndex, i := range runnable {
 			if !yield(a.toolStartEvent(ic, spanID, parentSpanID, calls[i], startedAt, batchIndex, len(runnable)), nil) {

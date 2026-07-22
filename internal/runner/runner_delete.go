@@ -2,12 +2,17 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/google/uuid"
 )
 
 // runner_delete.go is the single conversation-delete lifecycle entry point (MUSR-05 / D-22).
@@ -27,6 +32,17 @@ type ShareRevoker interface {
 	RevokeConversationShares(ctx context.Context, conversationID, identityID string) error
 }
 
+type reservedConversationDelete interface {
+	ReserveDeleteForIdentityIfVersion(context.Context, string, string, int64, string) (int64, error)
+	ClaimDeleteTeardown(context.Context, string, string, string, string, time.Time) (int64, error)
+	ReleaseDeleteLease(context.Context, string, string, string, string) (int64, error)
+	ConversationDeleteCompleted(context.Context, string, string, string) (bool, error)
+	DeleteForIdentityIfReservation(context.Context, string, string, string, string) (int64, error)
+}
+
+const conversationDeleteFinalizeTimeout = 2 * time.Minute
+const conversationDeleteCompletionPoll = 25 * time.Millisecond
+
 // SetShareRevoker wires step 4.5's ShareRevoker seam after construction — required because
 // chat.run (New) is assembled in the shared boot (chat_boot.go, BEFORE objectStore/chat.assets
 // exist), while the live *share.Service needs both (share_service_wiring.go). Mirrors the
@@ -39,10 +55,9 @@ func (r *Runner) SetShareRevoker(sr ShareRevoker) { r.shareRevoker = sr }
 // for a known-foreign id or 404 for an absent one, exactly as DeleteForIdentity) and a
 // non-nil error only for a real failure.
 //
-// The ownership gate runs FIRST, BEFORE any destructive step: a foreign or absent id
-// short-circuits with (0, nil) so a caller can never grief another identity by expiring its
-// pauses, evicting its session tools, or killing its background jobs via a delete it is not
-// allowed to perform. Only once ownership is confirmed does the ordered teardown run.
+// The owner gate (plain delete) or atomic owner+version reservation (export-delete)
+// runs FIRST, before any destructive step. Foreign, absent, and stale-snapshot calls
+// short-circuit with (0, nil), so they cannot alter another process's live state.
 //
 // Ordering (MUSR-05 / D-22), each keyed to the (identity, session) so it never reaches a
 // co-tenant:
@@ -53,7 +68,40 @@ func (r *Runner) SetShareRevoker(sr ShareRevoker) { r.shareRevoker = sr }
 //     4.5. revoke shares       — drop each live share's Garage bytes before the row cascades (D-15)
 //  5. delete persistence    — the owner-scoped DeleteConversationForIdentity (+ sidecar purge)
 func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error) {
+	return r.deleteConversationLifecycle(ctx, identityID, convID, 0)
+}
+
+// DeleteConversationLifecycleIfVersion reserves the version held by export-delete
+// before it runs the otherwise-identical ordered teardown.
+func (r *Runner) DeleteConversationLifecycleIfVersion(ctx context.Context, identityID, convID string, expected int64) (int64, error) {
+	if expected <= 0 {
+		return 0, errors.New("delete lifecycle: expected conversation version is required")
+	}
+	return r.deleteConversationLifecycle(ctx, identityID, convID, expected)
+}
+
+func (r *Runner) deleteConversationLifecycle(ctx context.Context, identityID, convID string, expected int64) (int64, error) {
 	owner := resolveOwnerIdentity(identityID)
+	if expected > 0 {
+		reserved, ok := r.Conv.(reservedConversationDelete)
+		if !ok {
+			return 0, errors.New("delete lifecycle: reserved conversation delete unavailable")
+		}
+		reservation, err := exportDeleteReservation(ctx, owner, convID, expected)
+		if err != nil {
+			return 0, err
+		}
+		affected, err := reserved.ReserveDeleteForIdentityIfVersion(ctx, convID, owner, expected, reservation)
+		if err != nil {
+			return 0, fmt.Errorf("delete lifecycle: reserve persistence: %w", err)
+		}
+		if affected == 0 {
+			return 0, nil
+		}
+		finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), conversationDeleteFinalizeTimeout)
+		defer cancel()
+		return r.resumeReservedConversationDelete(finalizeCtx, owner, convID, reservation)
+	}
 
 	// Owner gate (D-06): resolve the conversation owner-scoped. A foreign/absent id is
 	// ErrConversationNotFound → (0, nil), so the surface's 403/404 split runs and NO teardown
@@ -64,6 +112,63 @@ func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, co
 		}
 		return 0, fmt.Errorf("delete lifecycle: owner gate: %w", err)
 	}
+	return r.teardownConversation(ctx, owner, convID, func(ctx context.Context) (int64, error) {
+		return r.Conv.DeleteForIdentity(ctx, convID, owner)
+	})
+}
+
+func (r *Runner) resumeReservedConversationDelete(ctx context.Context, owner, convID, reservation string) (int64, error) {
+	reserved, ok := r.Conv.(reservedConversationDelete)
+	if !ok {
+		return 0, errors.New("delete lifecycle: reserved conversation delete unavailable")
+	}
+	worker := uuid.NewString()
+	var affected int64
+	for {
+		var err error
+		affected, err = reserved.ClaimDeleteTeardown(ctx, convID, owner, reservation, worker, time.Now().UTC().Add(conversationDeleteFinalizeTimeout+time.Minute))
+		if err != nil {
+			return 0, fmt.Errorf("delete lifecycle: claim teardown: %w", err)
+		}
+		if affected == 1 {
+			break
+		}
+		completed, observeErr := reserved.ConversationDeleteCompleted(ctx, convID, owner, reservation)
+		if observeErr != nil {
+			return 0, fmt.Errorf("delete lifecycle: observe completion: %w", observeErr)
+		}
+		if completed {
+			return 1, nil
+		}
+		timer := time.NewTimer(conversationDeleteCompletionPoll)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return 0, fmt.Errorf("delete lifecycle: wait for reservation completion: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
+	var err error
+	affected, err = r.teardownConversation(ctx, owner, convID, func(ctx context.Context) (int64, error) {
+		return reserved.DeleteForIdentityIfReservation(ctx, convID, owner, reservation, worker)
+	})
+	if err == nil && affected == 1 {
+		return affected, nil
+	}
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if _, releaseErr := reserved.ReleaseDeleteLease(releaseCtx, convID, owner, reservation, worker); releaseErr != nil {
+		return affected, errors.Join(err, fmt.Errorf("delete lifecycle: release failed attempt: %w", releaseErr))
+	}
+	if err != nil {
+		return affected, err
+	}
+	return affected, errors.New("delete lifecycle: final delete lost durable ownership")
+}
+
+func (r *Runner) teardownConversation(ctx context.Context, owner, convID string, finalize func(context.Context) (int64, error)) (int64, error) {
 
 	// 1. Cancel active work: abort the owner's in-flight turn for this session (a no-op when
 	// idle). Its ctx cancels, so the round unwinds before the row it appends to is deleted.
@@ -95,7 +200,21 @@ func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, co
 	}
 
 	// 5. Delete persistence, owner-scoped (rows-affected drives the surface's 403/404/204).
-	return r.Conv.DeleteForIdentity(ctx, convID, owner)
+	affected, err := finalize(ctx)
+	if err != nil {
+		return affected, err
+	}
+	return affected, nil
+}
+
+func exportDeleteReservation(ctx context.Context, owner, convID string, expected int64) (string, error) {
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		return "", errors.New("delete lifecycle: stable operation identity is required")
+	}
+	operationIdentity := operation.Key.IdentityID + "\x00" + string(operation.Key.Scope) + "\x00" + operation.Key.Key
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s", owner, convID, expected, operationIdentity)))
+	return hex.EncodeToString(digest[:]), nil
 }
 
 // resolveOwnerIdentity maps an empty identity id — the CLI / no-principal path (D-25) — to

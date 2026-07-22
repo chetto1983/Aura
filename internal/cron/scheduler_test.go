@@ -6,9 +6,200 @@
 package cron
 
 import (
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/readiness"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace/noop"
 )
+
+type observedDoneContext struct {
+	context.Context
+	once     sync.Once
+	observed chan struct{}
+}
+
+func (c *observedDoneContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.observed) })
+	return c.Context.Done()
+}
+
+func installSchedulerLifecycleBoundary(t *testing.T) *sdkmetric.ManualReader {
+	t.Helper()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	boundary, err := obs.NewBoundary(
+		provider.Meter("aura.scheduler.lifecycle.test"),
+		noop.NewTracerProvider().Tracer("aura.scheduler.lifecycle.test"),
+		obs.BoundaryConfig{Operation: "scheduler_tick", State: "running", Count: obs.SchedulerTransitionsID},
+	)
+	if err != nil {
+		t.Fatalf("NewBoundary: %v", err)
+	}
+	previous := schedulerLifecycleBoundary
+	schedulerLifecycleBoundary = boundary
+	t.Cleanup(func() {
+		schedulerLifecycleBoundary = previous
+		_ = provider.Shutdown(context.Background())
+	})
+	return reader
+}
+
+func schedulerLifecycleInFlight(t *testing.T, reader *sdkmetric.ManualReader) (int64, bool) {
+	t.Helper()
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("collect scheduler lifecycle metrics: %v", err)
+	}
+	for _, scope := range collected.ScopeMetrics {
+		for _, instrument := range scope.Metrics {
+			if instrument.Name != "aura.boundary.in_flight" {
+				continue
+			}
+			sum, ok := instrument.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("aura.boundary.in_flight data = %T, want int64 sum", instrument.Data)
+			}
+			for _, point := range sum.DataPoints {
+				for _, attr := range point.Attributes.ToSlice() {
+					if string(attr.Key) == string(obs.AttributeOperation) && attr.Value.AsString() == "scheduler_tick" {
+						return point.Value, true
+					}
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+func TestSchedulerLifecycleMetricRepresentsEnabledRunningOnly(t *testing.T) {
+	t.Run("disabled does not advertise running", func(t *testing.T) {
+		reader := installSchedulerLifecycleBoundary(t)
+		base, cancel := context.WithCancel(context.Background())
+		ctx := &observedDoneContext{Context: base, observed: make(chan struct{})}
+		s := NewScheduler(nil, nil, SchedulerConfig{Disabled: true})
+		done := make(chan error, 1)
+		go func() { done <- s.Start(ctx) }()
+		select {
+		case <-ctx.observed:
+		case <-time.After(time.Second):
+			t.Fatal("disabled scheduler did not enter its cancellation wait")
+		}
+		if value, exists := schedulerLifecycleInFlight(t, reader); exists {
+			t.Fatalf("disabled scheduler exported scheduler_tick in-flight=%d, want no series", value)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatalf("disabled scheduler returned %v", err)
+		}
+	})
+
+	t.Run("enabled advertises running until cancellation", func(t *testing.T) {
+		reader := installSchedulerLifecycleBoundary(t)
+		store := storeWithFake(&cronFakeDBTX{queryErr: errors.New("boot scan unavailable")})
+		s := NewScheduler(nil, store, SchedulerConfig{TickInterval: time.Hour})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- s.Start(ctx) }()
+
+		deadline := time.Now().Add(time.Second)
+		for {
+			if value, exists := schedulerLifecycleInFlight(t, reader); exists && value == 1 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("enabled scheduler never exported scheduler_tick in-flight=1")
+			}
+			time.Sleep(time.Millisecond)
+		}
+
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatalf("enabled scheduler returned %v", err)
+		}
+		if value, exists := schedulerLifecycleInFlight(t, reader); !exists || value != 0 {
+			t.Fatalf("stopped scheduler in-flight = %d, exists=%v; want zero series", value, exists)
+		}
+	})
+}
+
+func TestSchedulerHeartbeatAdvancesOnlyAfterSuccessfulScan(t *testing.T) {
+	base := time.Date(2026, 7, 21, 11, 0, 0, 0, time.UTC)
+	now := base
+	snapshot := readiness.NewSnapshot(readiness.Config{
+		Now:                 func() time.Time { return now },
+		SchedulerMaxAge:     time.Minute,
+		MigrationCompatible: true,
+		SchedulerEnabled:    true,
+	})
+	snapshot.MarkListenerRunning()
+	s := NewScheduler(nil, nil, SchedulerConfig{
+		Now:       func() time.Time { return now },
+		Readiness: snapshot,
+	})
+	s.scan = func(context.Context) error {
+		if !slices.Contains(snapshot.Reasons(), readiness.CodeSchedulerStalled) {
+			t.Fatal("scheduler must remain stalled until the scan completion point")
+		}
+		return nil // successful scan with zero due work
+	}
+
+	if err := s.runScheduledScan(context.Background()); err != nil {
+		t.Fatalf("successful scan: %v", err)
+	}
+	if got := snapshot.Reasons(); len(got) != 0 {
+		t.Fatalf("successful empty scan reasons = %v, want ready", got)
+	}
+	if got := s.LastTick(); !got.Equal(base) {
+		t.Fatalf("LastTick = %s, want completion time %s", got, base)
+	}
+
+	previous := s.LastTick()
+	now = now.Add(2 * time.Minute)
+	s.scan = func(context.Context) error { return errors.New("claim path unavailable") }
+	if err := s.runScheduledScan(context.Background()); err == nil {
+		t.Fatal("failed scan returned nil")
+	}
+	if got := s.LastTick(); !got.Equal(previous) {
+		t.Fatalf("failed scan advanced progress to %s; want %s", got, previous)
+	}
+	s.markTerminalFailure(errors.New("terminal loop failure"))
+	if !slices.Contains(snapshot.Reasons(), readiness.CodeSchedulerStalled) {
+		t.Fatalf("terminal failure reasons = %v, want scheduler_stalled", snapshot.Reasons())
+	}
+}
+
+func TestSchedulerDisabledStartsNoHeartbeatAndJoinsCancellation(t *testing.T) {
+	var scans atomic.Int32
+	s := NewScheduler(nil, nil, SchedulerConfig{Disabled: true})
+	s.scan = func(context.Context) error {
+		scans.Add(1)
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Start(ctx) }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("disabled scheduler returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("disabled scheduler did not join cancellation")
+	}
+	if got := scans.Load(); got != 0 {
+		t.Fatalf("disabled scheduler ran %d scans, want zero", got)
+	}
+}
 
 func TestNewScheduler_DefaultsAndClock(t *testing.T) {
 	frozen := time.Date(2026, 6, 4, 9, 30, 0, 0, time.UTC)

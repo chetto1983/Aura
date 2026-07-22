@@ -1,0 +1,255 @@
+groups:
+  - name: aura.alerts.page
+    interval: 30s
+    rules:
+      - alert: AuraServiceUnavailable
+        expr: aura:service:up < 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Aura is not scrape-reachable
+          dashboard_uid: aura-overview
+          panel_id: "1"
+          dashboard_url: /d/aura-overview?viewPanel=1
+          runbook_url: observability/runbooks/aura-readiness.md
+          threshold: up < 1
+          debounce: 5m
+      - alert: AuraListenerFailure
+        expr: aura:listener_failure:increase5m > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Aura listener reported a terminal failure
+          dashboard_uid: aura-overview
+          panel_id: "2"
+          dashboard_url: /d/aura-overview?viewPanel=2
+          runbook_url: observability/runbooks/aura-readiness.md
+          threshold: failures > 0
+          debounce: 5m
+      - alert: AuraSchedulerNoProgress
+        expr: aura:scheduler_enabled == 1 and aura:scheduler_progress:increase5m == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Enabled scheduler has made no progress
+          dashboard_uid: aura-overview
+          panel_id: "3"
+          dashboard_url: /d/aura-overview?viewPanel=3
+          runbook_url: observability/runbooks/aura-readiness.md
+          threshold: successful ticks in 5m = 0
+          debounce: 5m
+      - alert: AuraLLMErrorBudgetBurn
+        expr: aura:llm_error_burn:rate5m > 14.4 and aura:llm_error_burn:rate1h > 14.4
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: LLM error budget is burning at paging speed
+          dashboard_uid: aura-agents
+          panel_id: "2"
+          dashboard_url: /d/aura-agents?viewPanel=2
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: 5m and 1h burn > 14.4
+          debounce: 5m
+      - alert: AuraLLMLatencyBudgetBurn
+        expr: aura:llm_latency_burn:rate5m > 14.4 and aura:llm_latency_burn:rate1h > 14.4
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: LLM latency budget is burning at paging speed
+          dashboard_uid: aura-agents
+          panel_id: "3"
+          dashboard_url: /d/aura-agents?viewPanel=3
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: 5m and 1h burn > 14.4
+          debounce: 5m
+      - alert: AuraResumeFailures
+        expr: aura:resume_failure:increase5m > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Durable resume failures are affecting users
+          dashboard_uid: aura-overview
+          panel_id: "4"
+          dashboard_url: /d/aura-overview?viewPanel=4
+          runbook_url: observability/runbooks/aura-readiness.md
+          threshold: failures > 0
+          debounce: 5m
+
+  - name: aura.alerts.warning
+    interval: 30s
+    rules:
+      - alert: AuraToolErrorRateHigh
+        expr: aura:tool_error_ratio:rate5m > 0.10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Tool error ratio exceeds 10 percent
+          dashboard_uid: aura-tools-mcp
+          panel_id: "2"
+          dashboard_url: /d/aura-tools-mcp?viewPanel=2
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: ratio > 0.10
+          debounce: 5m
+      - alert: AuraMCPErrorRateHigh
+        expr: aura:mcp_error_ratio:rate5m > 0.10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: MCP error ratio exceeds 10 percent
+          dashboard_uid: aura-tools-mcp
+          panel_id: "3"
+          dashboard_url: /d/aura-tools-mcp?viewPanel=3
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: ratio > 0.10
+          debounce: 5m
+      - alert: AuraMCPLatencyHigh
+        expr: aura:mcp_latency_p95_seconds > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: MCP p95 latency exceeds five seconds
+          dashboard_uid: aura-tools-mcp
+          panel_id: "4"
+          dashboard_url: /d/aura-tools-mcp?viewPanel=4
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: p95 > 5s
+          debounce: 5m
+      - alert: AuraDBErrorRateHigh
+        expr: aura:db_error_ratio:rate5m > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Database error ratio exceeds five percent
+          dashboard_uid: aura-overview
+          panel_id: "6"
+          dashboard_url: /d/aura-overview?viewPanel=6
+          runbook_url: observability/runbooks/aura-readiness.md
+          threshold: ratio > 0.05
+          debounce: 5m
+      - alert: AuraDBSaturation
+        expr: aura:db_inflight:max > 50
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Database work in flight exceeds the appliance budget
+          dashboard_uid: aura-overview
+          panel_id: "7"
+          dashboard_url: /d/aura-overview?viewPanel=7
+          runbook_url: observability/runbooks/aura-readiness.md
+          threshold: in-flight > 50
+          debounce: 5m
+      - alert: AuraIdempotencyConflictGrowth
+        expr: aura:idempotency_conflict:increase15m > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Idempotency key conflicts are increasing
+          dashboard_uid: aura-tools-mcp
+          panel_id: "6"
+          dashboard_url: /d/aura-tools-mcp?viewPanel=6
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: conflicts > 0
+          debounce: 5m
+      - alert: AuraIdempotencyInProgressGrowth
+        expr: aura:idempotency_in_progress:increase15m > 20
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Duplicate requests are accumulating in progress
+          dashboard_uid: aura-tools-mcp
+          panel_id: "7"
+          dashboard_url: /d/aura-tools-mcp?viewPanel=7
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: in-progress > 20
+          debounce: 5m
+      - alert: AuraIdempotencyIndeterminate
+        expr: aura:idempotency_indeterminate:increase5m > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Mutations reached terminal indeterminate state
+          dashboard_uid: aura-tools-mcp
+          panel_id: "8"
+          dashboard_url: /d/aura-tools-mcp?viewPanel=8
+          runbook_url: observability/runbooks/aura-llm-tools.md
+          threshold: indeterminate > 0
+          debounce: 5m
+      - alert: AuraRetentionFailures
+        expr: aura:retention_failure:increase15m > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Retention cleanup is failing
+          dashboard_uid: aura-data-retention
+          panel_id: "3"
+          dashboard_url: /d/aura-data-retention?viewPanel=3
+          runbook_url: observability/runbooks/aura-data-retention.md
+          threshold: failures > 0
+          debounce: 5m
+      - alert: AuraRetentionBacklog
+        expr: aura:retention_backlog > 100
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Retention backlog exceeds one hundred items
+          dashboard_uid: aura-data-retention
+          panel_id: "4"
+          dashboard_url: /d/aura-data-retention?viewPanel=4
+          runbook_url: observability/runbooks/aura-data-retention.md
+          threshold: backlog > 100
+          debounce: 5m
+      - alert: AuraRetentionDiskWarning
+        expr: aura_retention_disk_utilization_ratio >= 0.70
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Aura retention storage reached 70 percent
+          dashboard_uid: aura-data-retention
+          panel_id: "5"
+          dashboard_url: /d/aura-data-retention?viewPanel=5
+          runbook_url: observability/runbooks/aura-data-retention.md
+          threshold: utilization >= 0.70
+          debounce: 5m
+      - alert: AuraRetentionDiskUrgent
+        expr: aura_retention_disk_utilization_ratio >= 0.80
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Aura retention storage reached 80 percent
+          dashboard_uid: aura-data-retention
+          panel_id: "5"
+          dashboard_url: /d/aura-data-retention?viewPanel=5
+          runbook_url: observability/runbooks/aura-data-retention.md
+          threshold: utilization >= 0.80
+          debounce: 5m
+      - alert: AuraRetentionTraceSuppression
+        expr: aura_retention_disk_utilization_ratio >= 0.85
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Optional full trace creation must stop at 85 percent
+          dashboard_uid: aura-data-retention
+          panel_id: "5"
+          dashboard_url: /d/aura-data-retention?viewPanel=5
+          runbook_url: observability/runbooks/aura-data-retention.md
+          threshold: utilization >= 0.85
+          debounce: 5m
+      - alert: AuraLearningCapacityPressure
+        expr: aura:learning_size:max >= 10000
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: A learned-example store reached its global cap
+          dashboard_uid: aura-data-retention
+          panel_id: "7"
+          dashboard_url: /d/aura-data-retention?viewPanel=7
+          runbook_url: observability/runbooks/aura-data-retention.md
+          threshold: size >= 10000
+          debounce: 5m
+

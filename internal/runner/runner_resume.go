@@ -9,7 +9,12 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 )
+
+var resumeBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/internal/runner", obs.BoundaryConfig{
+	Operation: "resume", Count: obs.RunnerResumeCallsID, Duration: obs.RunnerResumeDurationID,
+})
 
 // maybeAutoTitle fires the best-effort auto-title worker when the conversation has
 // reached seq>=3 and is still untitled (D-A5-01 / Req#9). The worker outlives the
@@ -66,7 +71,9 @@ const cancelledContent = "user cancelled the request"
 //   - decline → a "user declined" RoleTool is injected so the model adapts.
 //   - cancel  → the turn is aborted via the Stop auto-resolve path (no injection);
 //     the caller should treat a cancel as a turn termination.
-func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseInput) (int, error) {
+func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseInput) (remaining int, err error) {
+	ctx, end := resumeBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	pending, err := r.pause.GetByToken(ctx, token)
 	if err != nil {
 		return 0, fmt.Errorf("submit answer: %w", err)
@@ -97,7 +104,9 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 // pre-34-06 inject-first bug (which appended every answer BEFORE the batch claim). Cancel
 // actions short-circuit to the Stop auto-resolve path for the whole conversation. Returns
 // the remaining count.
-func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseInput) (int, error) {
+func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseInput) (remaining int, err error) {
+	ctx, end := resumeBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
 	if len(answers) == 0 {
 		return 0, nil
 	}

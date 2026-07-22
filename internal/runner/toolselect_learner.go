@@ -6,7 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/activelearn"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/learningretention"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/semindex"
 	"github.com/chetto1983/aura/internal/toolselectlearn"
@@ -131,11 +133,19 @@ func buildToolSelectLearner(d Deps) *toolselectlearn.Learner {
 	}
 
 	return toolselectlearn.New(toolselectlearn.Config{
-		Embedder: embed,
-		Ranker:   toolSearchRanker{ts: ts},
-		Teacher:  &toolSelectTeacher{client: d.Client, model: d.LLM.Model, registry: d.Registry},
-		Saver:    saver,
-		Refresh:  refresh,
+		Embedder:       embed,
+		Ranker:         toolSearchRanker{ts: ts},
+		Teacher:        &toolSelectTeacher{client: d.Client, model: d.LLM.Model, registry: d.Registry},
+		Saver:          saver,
+		Refresh:        refresh,
+		SeenMaxEntries: d.Learning.SeenMaxEntries,
+		SeenTTL:        d.Learning.SeenTTL,
+		Metrics: func(metric activelearn.LearningMetric) {
+			learningretention.RecordMetric(learningretention.Metric{
+				Operation: metric.Operation, ToolClass: "other", Outcome: metric.Outcome,
+				State: metric.State, ErrorClass: metric.ErrorClass, Size: metric.Size, OldestAge: metric.OldestAge,
+			})
+		},
 	})
 }
 

@@ -20,6 +20,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 )
 
 // OTel exporter modes (D-06). Default is otlp; none is a true zero-overhead no-op.
@@ -180,7 +181,7 @@ func endTurnSpan(span oteltrace.Span, reason string) {
 func startToolSpan(ctx context.Context, name string, mutating bool) (context.Context, oteltrace.Span) {
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "tool.execute")
 	span.SetAttributes(
-		attribute.String("tool.name", name),
+		attribute.String("tool.class", obs.ClassifyTool(name)),
 		attribute.Bool("tool.mutating", mutating),
 	)
 	return ctx, span
@@ -191,7 +192,7 @@ func startToolSpan(ctx context.Context, name string, mutating bool) (context.Con
 func endToolSpan(span oteltrace.Span, errMsg string) {
 	span.SetAttributes(attribute.Bool("tool.success", errMsg == ""))
 	if errMsg != "" {
-		span.SetAttributes(attribute.String("tool.error", errMsg))
+		span.SetAttributes(attribute.String("tool.error_class", obs.ClassifyError(errMsg)))
 	}
 	span.End()
 }

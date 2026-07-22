@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -31,10 +32,22 @@ const defaultMaxTraceBytes int64 = 8 << 20 // 8 MiB
 // JSONL rows.
 const defaultMaxFieldBytes = 4096
 
-var mu sync.Mutex
+var (
+	mu                 sync.Mutex
+	optionalSuppressed atomic.Bool
+)
+
+// SetOptionalSuppressed lets the bounded disk observer pause debug trace files
+// without changing the operator's configured trace mode.
+func SetOptionalSuppressed(suppressed bool) {
+	optionalSuppressed.Store(suppressed)
+}
 
 // Enabled reports whether reasoning tracing is enabled for the current process.
 func Enabled() bool {
+	if optionalSuppressed.Load() {
+		return false
+	}
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(Env))) {
 	case "1", "true", "yes", "on", "full":
 		return true

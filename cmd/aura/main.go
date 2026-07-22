@@ -49,6 +49,18 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+	preparedCtx, preparedArgs, err := prepareCLIIdempotency(context.Background(), os.Args[1:], os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	cliInvocationContext = preparedCtx
+	os.Args = append([]string{os.Args[0]}, preparedArgs...)
+	if os.Getenv(cliIdempotencyChildEnv) != "1" {
+		if handled, exitCode := executeCLIIdempotentParent(preparedCtx, preparedArgs, os.Stdout, os.Stderr); handled {
+			os.Exit(exitCode)
+		}
+	}
 	switch os.Args[1] {
 	case "tools":
 		printTools()
@@ -80,6 +92,8 @@ func main() {
 		runPausedStates(os.Args[2:])
 	case "task":
 		runTask(os.Args[2:])
+	case "retention":
+		runRetention(os.Args[2:])
 	case "skills":
 		runSkills(os.Args[2:])
 	case "chat":
@@ -115,7 +129,7 @@ func main() {
 // same profile gate a second time (defense in depth) before ever reaching an unaudited
 // write.
 func runMCPDispatch(args []string) {
-	ctx := context.Background()
+	ctx := cliInvocationContext
 	var pool *pgxpool.Pool
 	if mcpCommandNeedsPool(args) {
 		cfg := config.LoadDB()
@@ -135,7 +149,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|version}")
 }
 
 func buildRegistry() *tools.Registry {

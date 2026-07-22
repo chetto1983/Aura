@@ -133,6 +133,33 @@ func TestInitialize_Happy(t *testing.T) {
 	}
 }
 
+func TestInitialize_SkipsBlankLinesAndNotifications(t *testing.T) {
+	resp := "\n" +
+		`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05"}}` + "\n"
+	c, in := newFakeClient(resp, "")
+	if err := c.initialize(); err != nil {
+		t.Fatalf("initialize with legal interleaved protocol noise: %v", err)
+	}
+	if !strings.Contains(in.buf.String(), "notifications/initialized") {
+		t.Errorf("initialized notification missing: %q", in.buf.String())
+	}
+}
+
+func TestCypher_SkipsBlankLinesAndNotifications(t *testing.T) {
+	resp := "\r\n" +
+		`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":1,"result":{"content":[],"isError":false}}` + "\n"
+	c, _ := newFakeClient(resp, "")
+	result, err := c.Cypher(context.Background(), "RETURN 1", nil, false)
+	if err != nil {
+		t.Fatalf("Cypher with legal interleaved protocol noise: %v", err)
+	}
+	if !strings.Contains(string(result), `"isError":false`) {
+		t.Fatalf("result = %s, want MCP result payload", result)
+	}
+}
+
 func TestInitialize_ServerError(t *testing.T) {
 	resp := `{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"nope"}}` + "\n"
 	c, _ := newFakeClient(resp, "")

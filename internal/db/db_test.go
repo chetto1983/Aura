@@ -435,6 +435,22 @@ func TestStatus_ReturnsAppliedMigrations(t *testing.T) {
 	}
 }
 
+func TestCheckMigrationHeadAcceptsCleanEmbeddedHead(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
+		t.Fatalf("EnsureRoles: %v", err)
+	}
+	if _, err := Migrate(ctx, migrateURL); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if err := CheckMigrationHead(ctx, migrateURL); err != nil {
+		t.Fatalf("CheckMigrationHead: %v", err)
+	}
+}
+
 func TestPing_QueryErrorOnCanceledContext(t *testing.T) {
 	// Open a live pool, then cancel the context so the SELECT 1 fails — exercises
 	// Ping's query-error branch against a real (non-nil) pool.

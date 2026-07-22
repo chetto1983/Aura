@@ -153,6 +153,47 @@ func TestStorePostgresContract(t *testing.T) {
 		}
 		assertReplayMetadata(t, ctx, app, requests[2], true)
 	})
+
+	t.Run("wall clock expiry never emits retained response envelopes", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			expiresAt  time.Time
+			want       Decision
+			wantReplay bool
+		}{
+			{name: "before", expiresAt: now.Add(time.Second), want: DecisionReplay, wantReplay: true},
+			{name: "equal", expiresAt: now, want: DecisionResultExpired},
+			{name: "after", expiresAt: now.Add(-time.Second), want: DecisionResultExpired},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				req := integrationRequest(t, localIdentityID, "wall-clock-expiry-"+tc.name+"-"+uuid.NewString())
+				mustAcquire(t, ctx, store, req)
+				result := ReplayResult{
+					Body: []byte(`{"surface":"http-or-tool"}`), StatusCode: 202,
+					Headers: map[string]string{"Location": "/operations/retained"}, ExpiresAt: tc.expiresAt,
+				}
+				if err := store.Complete(ctx, CompleteRequest{Operation: req.Operation, Fingerprint: req.Fingerprint, Result: result}); err != nil {
+					t.Fatal(err)
+				}
+				var bodyRetained, notCleared bool
+				if err := app.QueryRow(ctx, `
+					SELECT replay_body IS NOT NULL, replay_cleared_at IS NULL
+					FROM aura.idempotency_operations
+					WHERE identity_id=$1 AND operation_scope=$2 AND operation_key=$3`,
+					req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key,
+				).Scan(&bodyRetained, &notCleared); err != nil {
+					t.Fatal(err)
+				}
+				decision, err := store.Begin(ctx, req)
+				if err != nil || decision.Decision != tc.want || (decision.Replay != nil) != tc.wantReplay {
+					t.Fatalf("Begin=%+v err=%v, want %s replay=%t", decision, err, tc.want, tc.wantReplay)
+				}
+				if !bodyRetained || !notCleared {
+					t.Fatalf("physical GC ran before decision: body-retained=%t not-cleared=%t", bodyRetained, notCleared)
+				}
+			})
+		}
+	})
 }
 
 func requiredIntegrationEnv(t *testing.T, key string) string {
@@ -193,7 +234,7 @@ func assertDisposableMigratedDatabase(t *testing.T, ctx context.Context, app, mi
 	if appName != migrateName {
 		t.Fatalf("app database %q and migration database %q differ", appName, migrateName)
 	}
-	if appName == "aura" || appName == "postgres" {
+	if protectedLocalIntegrationDatabase(appName) {
 		t.Fatalf("refusing db_integration database %q; use a disposable database", appName)
 	}
 	var version int
@@ -203,6 +244,10 @@ func assertDisposableMigratedDatabase(t *testing.T, ctx context.Context, app, mi
 	if version < 43 {
 		t.Fatalf("database %q is at migration %d; run `aura db migrate` against the disposable database", appName, version)
 	}
+}
+
+func protectedLocalIntegrationDatabase(name string) bool {
+	return (name == "aura" || name == "postgres") && os.Getenv("GITHUB_ACTIONS") != "true"
 }
 
 func integrationRequest(t *testing.T, identityID, key string) BeginRequest {

@@ -105,6 +105,9 @@ func (s *FakeStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, er
 	if req.Bucket == "" {
 		return nil, fmt.Errorf("objectstore fake: bucket is required")
 	}
+	if req.Limit < 0 {
+		return nil, fmt.Errorf("objectstore fake: limit must not be negative")
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]ObjectInfo, 0)
@@ -117,6 +120,9 @@ func (s *FakeStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, er
 	slices.SortFunc(out, func(a, b ObjectInfo) int {
 		return strings.Compare(a.Ref.Key, b.Ref.Key)
 	})
+	if req.Limit > 0 && len(out) > req.Limit {
+		out = out[:req.Limit]
+	}
 	return out, nil
 }
 

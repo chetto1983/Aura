@@ -2,10 +2,14 @@ package activelearn
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/neostore"
+	"github.com/chetto1983/aura/internal/obs"
 )
 
 // fakeOracle is a label-agnostic test double: it records the texts it was asked
@@ -18,6 +22,51 @@ type fakeOracle struct {
 	calls     atomic.Int64
 	failUntil int64 // return saved=false for the first failUntil calls
 	block     chan struct{}
+}
+
+func TestLearnerUsesExactUTF8HashesAndBoundedMetricLabels(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1_700_000_000, 0)}
+	oracle := &fakeOracle{}
+	var mu sync.Mutex
+	var metrics []LearningMetric
+	l := New(Config{
+		Oracle:         oracle,
+		Now:            clock.Now,
+		SeenMaxEntries: 8,
+		SeenTTL:        30 * 24 * time.Hour,
+		Metrics: func(metric LearningMetric) {
+			mu.Lock()
+			metrics = append(metrics, metric)
+			mu.Unlock()
+		},
+	})
+	defer l.Close()
+
+	inputs := []string{"é", "e\u0301", "\uFFFD", "😀 multibyte"}
+	for _, input := range inputs {
+		l.Observe(input, []float64{1}, 0)
+	}
+	waitFor(t, func() bool { return oracle.count() == len(inputs) })
+
+	snapshot := l.seen.snapshot()
+	for _, input := range inputs {
+		want := neostore.HashText(input)
+		if !slices.ContainsFunc(snapshot, func(entry SeenEntry) bool { return entry.Hash == want }) {
+			t.Fatalf("exact UTF-8 hash missing for %q", input)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(metrics) == 0 {
+		t.Fatal("no learning metrics recorded")
+	}
+	for _, metric := range metrics {
+		if !obs.AllowedAttributeValue(obs.AttributeOperation, metric.Operation) ||
+			!obs.AllowedAttributeValue(obs.AttributeOutcome, metric.Outcome) ||
+			!obs.AllowedAttributeValue(obs.AttributeState, metric.State) {
+			t.Fatalf("unbounded metric labels: %#v", metric)
+		}
+	}
 }
 
 func (o *fakeOracle) LabelAndSave(_ context.Context, text string, _ []float64) bool {

@@ -17,7 +17,13 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/obs"
 )
+
+var mcpBridgeBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/internal/agent/mcptools", obs.BoundaryConfig{
+	Operation: "mcp_bridge", ToolClass: obs.ToolClassMCP, Transport: "in_process",
+	Count: obs.MCPCallsID, Duration: obs.MCPDurationID,
+})
 
 // Server is the narrow MCP surface the bridge needs; *mcp.Client satisfies it.
 // Declared consumer-side so the bridge is testable without spawning a process.
@@ -64,6 +70,7 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	spec.Parameters = params
 	spec.Deferred = defaultDeferredForNamespace(namespaceFromSpecName(spec.Name))
 	spec.Mutating = !d.Annotations.ReadOnlyHint
+	applyMCPOperationMetadata(&spec)
 	if oldMutating != spec.Mutating {
 		slog.Warn("mcp tool mutating flag changed on reconnect",
 			"tool", spec.Name,
@@ -86,9 +93,13 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 // as inline `error: ...` content so it self-corrects, not as a loop-fatal Go
 // error; only a missing tool-call context propagates as a Go error.
 func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolResult, error) {
+	ctx, end := mcpBridgeBoundary.Start(ctx)
+	var observeErr error
+	defer end.PanicSafe(&observeErr)
 	var args map[string]any
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
+			observeErr = err
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
 	}
@@ -103,6 +114,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 
 	text, err := b.srv.CallTool(callCtx, b.name, args)
 	if err != nil {
+		observeErr = err
 		return b.newUntrustedResult(ctx, capMCPErrorContent(err))
 	}
 	return b.newUntrustedResult(ctx, text)
@@ -221,7 +233,7 @@ func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef, callTimeout t
 
 func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 	params, summary, description := specFieldsFromToolDef(d)
-	return tools.Spec{
+	spec := tools.Spec{
 		Name:        namespacedName(namespace, d.Name),
 		Summary:     summary,
 		Description: description,
@@ -229,6 +241,20 @@ func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 		Deferred:    defaultDeferredForNamespace(namespace),
 		Mutating:    !d.Annotations.ReadOnlyHint,
 	}
+	applyMCPOperationMetadata(&spec)
+	return spec
+}
+
+func applyMCPOperationMetadata(spec *tools.Spec) {
+	if spec.Mutating {
+		spec.OperationScope = tools.OperationScopeMCP
+		spec.OperationNormalizer = tools.OperationNormalizerCanonical
+		spec.ReplayPolicy = tools.ReplayToolResult
+		return
+	}
+	spec.OperationScope = ""
+	spec.OperationNormalizer = ""
+	spec.ReplayPolicy = ""
 }
 
 func defaultDeferredForNamespace(namespace string) bool {

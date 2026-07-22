@@ -246,8 +246,10 @@ func (k *ShellKill) Spec() Spec {
   },
   "required": ["shell_id"]
 }`),
-		Deferred: true,
-		Mutating: true,
+		Deferred:       true,
+		Mutating:       true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 	}
 }
 

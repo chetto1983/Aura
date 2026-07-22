@@ -3,12 +3,14 @@ package idempotency
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.opentelemetry.io/otel"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
@@ -37,7 +39,7 @@ type ExpiryReport struct {
 
 type operationQueries interface {
 	TryStartOperation(context.Context, sqlc.TryStartOperationParams) (int64, error)
-	GetOperation(context.Context, sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error)
+	GetOperation(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 	CompleteOperation(context.Context, sqlc.CompleteOperationParams) (int64, error)
 	MarkOperationIndeterminate(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
 	ListExpiredReplayBodies(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
@@ -52,6 +54,7 @@ type Store struct {
 	leaseDuration time.Duration
 	retryAfter    time.Duration
 	expiryBatch   int32
+	telemetry     *idempotencyTelemetry
 }
 
 // New constructs a Store over a pool or transaction implementing sqlc.DBTX.
@@ -78,12 +81,14 @@ func newStore(queries operationQueries, cfg Config) *Store {
 	return &Store{
 		queries: queries, now: cfg.Now, leaseDuration: cfg.LeaseDuration,
 		retryAfter: cfg.RetryAfter, expiryBatch: int32(cfg.ExpiryBatch),
+		telemetry: newIdempotencyTelemetry(otel.Meter(idempotencyMeterName)),
 	}
 }
 
 // Begin atomically acquires a new operation or returns the durable decision
 // for an existing identity/scope/key. Only DecisionAcquired permits an effect.
-func (s *Store) Begin(ctx context.Context, request BeginRequest) (BeginDecision, error) {
+func (s *Store) Begin(ctx context.Context, request BeginRequest) (decision BeginDecision, err error) {
+	defer func() { s.telemetry.recordBegin(ctx, decision) }()
 	if err := request.Validate(); err != nil {
 		return BeginDecision{}, err
 	}
@@ -132,9 +137,24 @@ func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, 
 		if !row.ReplayExpiresAt.Valid {
 			return BeginDecision{}, fmt.Errorf("read existing idempotency operation: completed replay expiry is missing")
 		}
+		// Expiry is an authorization boundary, independent of physical GC. Never
+		// emit retained HTTP/tool/CLI bytes at or after the durable deadline.
+		if !row.ReplayExpiresAt.Time.After(now) {
+			return BeginDecision{Decision: DecisionResultExpired}, nil
+		}
+		if row.ReplayClearedAt.Valid || (len(row.ReplayBody) == 0 && !row.ReplayPreview.Valid && !row.ReplaySidecarRef.Valid && !row.ReplayStatusCode.Valid && len(row.ReplayHeaders) == 0) {
+			return BeginDecision{Decision: DecisionResultExpired}, nil
+		}
+		headers := map[string]string(nil)
+		if len(row.ReplayHeaders) != 0 {
+			if err := json.Unmarshal(row.ReplayHeaders, &headers); err != nil {
+				return BeginDecision{}, fmt.Errorf("read existing idempotency operation: invalid replay headers")
+			}
+		}
 		decision := BeginDecision{Decision: DecisionReplay, Replay: &ReplayResult{
 			Body: append([]byte(nil), row.ReplayBody...), Preview: textValue(row.ReplayPreview),
-			SidecarRef: textValue(row.ReplaySidecarRef), ExpiresAt: row.ReplayExpiresAt.Time,
+			SidecarRef: textValue(row.ReplaySidecarRef), StatusCode: int(row.ReplayStatusCode.Int16),
+			Headers: headers, ExpiresAt: row.ReplayExpiresAt.Time,
 		}}
 		if err := decision.Validate(); err != nil {
 			return BeginDecision{}, fmt.Errorf("read existing idempotency operation: %w", err)
@@ -158,17 +178,23 @@ func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, 
 
 // Complete changes an owned in-progress operation to completed and attaches a
 // bounded replay result. A zero-row conditional update is a stale transition.
-func (s *Store) Complete(ctx context.Context, request CompleteRequest) error {
+func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err error) {
+	defer func() { s.telemetry.recordCompletion(ctx, err) }()
 	if err := request.Validate(); err != nil {
 		return err
 	}
 	now := s.now().UTC()
 	identityID, _ := operationUUID(request.Operation.IdentityID)
+	headers, err := replayHeadersJSON(request.Result.Headers)
+	if err != nil {
+		return err
+	}
 	affected, err := s.queries.CompleteOperation(ctx, sqlc.CompleteOperationParams{
 		ReplayBody: append([]byte(nil), request.Result.Body...), ReplayPreview: optionalText(request.Result.Preview),
 		ReplaySidecarRef: optionalText(request.Result.SidecarRef),
-		ReplayBytes:      int64(len(request.Result.Body) + len(request.Result.Preview) + len(request.Result.SidecarRef)),
-		ReplayExpiresAt:  timestamp(request.Result.ExpiresAt.UTC()), Now: timestamp(now), IdentityID: identityID,
+		ReplayStatusCode: optionalInt2(request.Result.StatusCode), ReplayHeaders: headers,
+		ReplayBytes:     int64(len(request.Result.Body) + len(request.Result.Preview) + len(request.Result.SidecarRef) + len(headers)),
+		ReplayExpiresAt: timestamp(request.Result.ExpiresAt.UTC()), Now: timestamp(now), IdentityID: identityID,
 		OperationScope: string(request.Operation.Scope), OperationKey: request.Operation.Key,
 		PayloadHash: append([]byte(nil), request.Fingerprint[:]...),
 	})
@@ -180,7 +206,8 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) error {
 
 // MarkIndeterminate makes ambiguous work terminal without permitting replay or
 // reacquisition. The fingerprint and in-progress state must both still match.
-func (s *Store) MarkIndeterminate(ctx context.Context, operation OperationKey, fingerprint [32]byte) error {
+func (s *Store) MarkIndeterminate(ctx context.Context, operation OperationKey, fingerprint [32]byte) (err error) {
+	defer func() { s.telemetry.recordIndeterminate(ctx, err) }()
 	if err := (BeginRequest{Operation: operation, Fingerprint: fingerprint}).Validate(); err != nil {
 		return err
 	}
@@ -258,6 +285,21 @@ func timestamp(value time.Time) pgtype.Timestamptz {
 
 func optionalText(value string) pgtype.Text {
 	return pgtype.Text{String: value, Valid: value != ""}
+}
+
+func optionalInt2(value int) pgtype.Int2 {
+	return pgtype.Int2{Int16: int16(value), Valid: value != 0}
+}
+
+func replayHeadersJSON(headers map[string]string) ([]byte, error) {
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(headers)
+	if err != nil {
+		return nil, fmt.Errorf("marshal idempotency replay headers: %w", err)
+	}
+	return encoded, nil
 }
 
 func textValue(value pgtype.Text) string {

@@ -2,26 +2,93 @@ package reasoningstore
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 )
 
 type fakeGraph struct {
-	rows      []map[string]any
-	readErr   error
-	written   []map[string]any
-	lastQuery string
+	rows           []map[string]any
+	readErr        error
+	written        []map[string]any
+	lastQuery      string
+	lastReadQuery  string
+	lastReadParams map[string]any
+	writeRows      []map[string]any
 }
 
-func (f *fakeGraph) Read(_ context.Context, _ string, _ map[string]any) ([]map[string]any, error) {
+func (f *fakeGraph) Read(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
+	f.lastReadQuery, f.lastReadParams = query, params
 	return f.rows, f.readErr
 }
 
 func (f *fakeGraph) Write(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
 	f.lastQuery = query
 	f.written = append(f.written, params)
-	return nil, nil
+	if f.writeRows != nil {
+		return f.writeRows, nil
+	}
+	return []map[string]any{{"status": "created"}}, nil
+}
+
+func TestLoadExamples_UsesServerSideTTLPerBucketAndGlobalLimits(t *testing.T) {
+	g := &fakeGraph{}
+	s := &Store{Client: g, Now: func() time.Time { return time.Unix(1_800_000_000, 0) }}
+	if _, err := s.LoadExamples(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"source = 'learned'", "updated_at >= datetime($cutoff)", "ORDER BY e.updated_at DESC, e.hash ASC", "LIMIT $bucket_limit", "LIMIT $store_limit"} {
+		if !strings.Contains(g.lastReadQuery, fragment) {
+			t.Errorf("bounded load query missing %q: %s", fragment, g.lastReadQuery)
+		}
+	}
+	if g.lastReadParams["bucket_limit"] != 512 || g.lastReadParams["store_limit"] != 10_000 {
+		t.Fatalf("load limits = %#v", g.lastReadParams)
+	}
+}
+
+func TestSaveLearned_ReportsCapAndPreservesCreationTimestamp(t *testing.T) {
+	g := &fakeGraph{writeRows: []map[string]any{{"status": "at_capacity"}}}
+	s := &Store{Client: g, Now: func() time.Time { return time.Unix(1_800_000_000, 0) }}
+	result, err := s.SaveLearned(context.Background(), "text", []float64{1}, prompt.ReasoningTierLow, 2, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != SaveAtCapacity {
+		t.Fatalf("result = %q, want %q", result, SaveAtCapacity)
+	}
+	for _, fragment := range []string{"existing.created_at", "bucket_count < row.bucket_cap", "store_count < row.store_cap", "quality", "novelty"} {
+		if !strings.Contains(g.lastQuery, fragment) {
+			t.Errorf("atomic save query missing %q", fragment)
+		}
+	}
+}
+
+func TestSave_AtCapacityIsACommittedDropNotARetryError(t *testing.T) {
+	g := &fakeGraph{writeRows: []map[string]any{{"status": "at_capacity"}}}
+	s := &Store{Client: g}
+	if err := s.Save(context.Background(), "text", []float64{1}, prompt.ReasoningTierLow); err != nil {
+		t.Fatalf("capacity should be a committed drop, got retry error: %v", err)
+	}
+}
+
+func TestPinnedSeedsUseSeparateLabelAndBypassLearnedCaps(t *testing.T) {
+	g := &fakeGraph{}
+	s := &Store{Client: g}
+	if err := s.SavePinned(context.Background(), "seed", []float64{1}, prompt.ReasoningTierHigh); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(g.lastQuery, ":ReasoningSeed") || strings.Contains(g.lastQuery, "bucket_count") {
+		t.Fatalf("pinned save is not isolated: %s", g.lastQuery)
+	}
+	if _, err := s.LoadPinnedExamples(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(g.lastReadQuery, ":ReasoningSeed") || !strings.Contains(g.lastReadQuery, "LIMIT $limit") {
+		t.Fatalf("pinned load is not separately bounded: %s", g.lastReadQuery)
+	}
 }
 
 func TestLoadExamples_ParsesRowsAndSkipsBad(t *testing.T) {
@@ -61,7 +128,7 @@ func TestSave_MergesByContentHash(t *testing.T) {
 		return params["rows"].([]map[string]any)[0]
 	}
 	p := row(g.written[0])
-	if p["tier"] != "none" || p["source"] != "oracle" {
+	if p["tier"] != "none" || p["source"] != "learned" {
 		t.Errorf("row = %+v", p)
 	}
 	h1 := p["hash"].(string)

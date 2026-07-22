@@ -119,12 +119,12 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 
 ### Observability, Idempotency & Retention (OBS)
 
-- [ ] **OBS-01**: AG-UI listener startup/runtime failure is fatal to the serving process OR reflected in `/readyz`; the Docker/Compose healthcheck probes `/readyz`; a port conflict fails startup or readiness. *(F-008, F-017)*
-- [ ] **OBS-02**: `/readyz` reflects database, listener, migration state, and scheduler state; it fails when any critical serving dependency fails. *(F-008, F-017)*
-- [ ] **OBS-03**: OpenTelemetry spans wrap LLM, tool, MCP, pause/resume, DB, and scheduler work; the OTel **metric** path is wired (today only traces are) following the target-architecture identifiers + GenAI semantic conventions. *(F-023)*
-- [ ] **OBS-04**: Prometheus alert rules + Grafana dashboards ship in-repo (loop error rate, tool timeout rate, queue lag, LLM latency, MCP timeout rate, resume failures, listener state) and are syntax/JSON-validated in CI. *(F-023)*
-- [ ] **OBS-05**: Sidecar/trace retention is a first-class operation — retention config, cleanup command, disk-usage metrics, per-conversation export/delete, with active-conversation exclusion + dry-run. *(F-024)*
-- [ ] **OBS-06**: Learning stores (`activelearn` `seen`, `reasoningstore`, `toolselectstore`) have a retention cap (max per label/tool, TTL/compaction, bounded load) + metrics. *(F-049)*
+- [x] **OBS-01**: AG-UI listener startup/runtime failure is fatal to the serving process OR reflected in `/readyz`; the Docker/Compose healthcheck probes `/readyz`; a port conflict fails startup or readiness. *(F-008, F-017)*
+- [x] **OBS-02**: `/readyz` reflects database, listener, migration state, and scheduler state; it fails when any critical serving dependency fails. *(F-008, F-017)*
+- [x] **OBS-03**: OpenTelemetry spans wrap LLM, tool, MCP, pause/resume, DB, and scheduler work; the OTel **metric** path is wired (today only traces are) following the target-architecture identifiers + GenAI semantic conventions. *(F-023)*
+- [x] **OBS-04**: Prometheus alert rules + Grafana dashboards ship in-repo (loop error rate, tool timeout rate, queue lag, LLM latency, MCP timeout rate, resume failures, listener state) and are syntax/JSON-validated in CI. *(F-023)*
+- [x] **OBS-05**: Sidecar/trace retention is a first-class operation — retention config, cleanup command, disk-usage metrics, per-conversation export/delete, with active-conversation exclusion + dry-run. *(F-024)*
+- [x] **OBS-06**: Learning stores (`activelearn` `seen`, `reasoningstore`, `toolselectstore`) have a retention cap (max per label/tool, TTL/compaction, bounded load) + metrics. *(F-049)*
 
 ### Security & Supply-Chain (SEC)
 

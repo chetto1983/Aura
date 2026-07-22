@@ -23,7 +23,10 @@ read_secret() {
   if [ -z "$val" ] && [ -f .env ]; then
     val="$(grep -E "^${key}=" .env | head -1 | cut -d= -f2-)"
   fi
-  printf '%s' "$val"
+	# .env is commonly edited on Windows. A trailing CR is data to Bash and makes
+	# composed Postgres URLs fail net/url parsing, so normalize the line ending at
+	# this single credential boundary without altering any other value bytes.
+	printf '%s' "$val" | tr -d '\r'
 }
 PGPW="$(read_secret POSTGRES_PASSWORD)"
 NEOPW="$(read_secret NEO4J_PASSWORD)"
@@ -54,19 +57,66 @@ export AURA_AUTHULA_SECRET
 # ownership), and drop it on exit. Override the name with AURA_COVERAGE_DB.
 COV_DB="${AURA_COVERAGE_DB:-aura_cov}"
 PG_CONTAINER="${AURA_PG_CONTAINER:-aura-postgres}"
+COV_POSTGRES=""
+COV_NEO4J=""
+PG_HOST_TARGET="127.0.0.1"
+PG_PORT_TARGET="5432"
 if [ "$COV_DB" = "aura" ]; then
   echo "FATAL: AURA_COVERAGE_DB must not be 'aura' — the db_integration tier TRUNCATEs it (data loss). Pick a throwaway name." >&2
   exit 4
 fi
-if ! docker exec "$PG_CONTAINER" true >/dev/null 2>&1; then
+if [ -z "${GITHUB_ACTIONS:-}" ]; then
+  COV_POSTGRES="${AURA_COVERAGE_POSTGRES_CONTAINER:-aura-postgres-cov}"
+  PG_PORT_TARGET="${AURA_COVERAGE_POSTGRES_PORT:-5433}"
+  COV_POSTGRES_IMAGE="${AURA_COVERAGE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}}"
+  docker rm -f "$COV_POSTGRES" >/dev/null 2>&1 || true
+  echo "==> provisioning disposable coverage Postgres '$COV_POSTGRES' on 127.0.0.1:${PG_PORT_TARGET}; removed on exit"
+  docker run -d --rm --name "$COV_POSTGRES" \
+    -p "127.0.0.1:${PG_PORT_TARGET}:5432" \
+    -e POSTGRES_USER=aura \
+    -e POSTGRES_PASSWORD="$PGPW" \
+    -e POSTGRES_DB=aura \
+    "$COV_POSTGRES_IMAGE" >/dev/null
+  PG_CONTAINER="$COV_POSTGRES"
+elif ! docker exec "$PG_CONTAINER" true >/dev/null 2>&1; then
   echo "FATAL: postgres container '$PG_CONTAINER' not running — bring the stack up (make neo4j-up) or set AURA_PG_CONTAINER." >&2
   exit 3
 fi
+
+_cov_cleanup() {
+  if [ -n "$COV_POSTGRES" ]; then
+    docker rm -f "$COV_POSTGRES" >/dev/null 2>&1 || true
+  else
+    docker exec -i "$PG_CONTAINER" psql -U aura -d postgres -c "DROP DATABASE IF EXISTS \"$COV_DB\" WITH (FORCE)" >/dev/null 2>&1 || true
+  fi
+  [ -n "$COV_NEO4J" ] && docker rm -f "$COV_NEO4J" >/dev/null 2>&1 || true
+}
+trap _cov_cleanup EXIT
+
+if [ -n "$COV_POSTGRES" ]; then
+  echo -n "==> waiting for coverage postgres"
+  COV_POSTGRES_READY=""
+  for _ in $(seq 1 60); do
+    if docker exec "$COV_POSTGRES" pg_isready -U aura -d aura >/dev/null 2>&1; then COV_POSTGRES_READY=1; break; fi
+    echo -n .; sleep 1
+  done
+  [ -n "$COV_POSTGRES_READY" ] || { echo " FATAL: coverage postgres '$COV_POSTGRES' not ready" >&2; exit 3; }
+  echo " ready"
+fi
+
 pg_admin() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U aura -d postgres "$@"; }
 ESC_PGPW="$(printf '%s' "$PGPW" | sed "s/'/''/g")"
-# aura_migrate must exist to own the disposable DB (production already has it).
-pg_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='aura_migrate'" | grep -q 1 \
-  || pg_admin -c "CREATE ROLE aura_migrate WITH LOGIN PASSWORD '${ESC_PGPW}'"
+# Both fixed application roles are prerequisites of migration 0001. Provision
+# them before creating the disposable DB so the coverage bootstrap does not
+# depend on a later CLI side effect; reset existing passwords as well so local
+# and CI runs use the same deterministic credential.
+for role in aura_app aura_migrate; do
+  if pg_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='${role}'" | grep -q 1; then
+    pg_admin -c "ALTER ROLE ${role} WITH LOGIN PASSWORD '${ESC_PGPW}'"
+  else
+    pg_admin -c "CREATE ROLE ${role} WITH LOGIN PASSWORD '${ESC_PGPW}'"
+  fi
+done
 echo "==> provisioning disposable coverage DB '$COV_DB' (owner aura_migrate); dropped on exit"
 pg_admin -c "DROP DATABASE IF EXISTS \"$COV_DB\" WITH (FORCE)"
 pg_admin -c "CREATE DATABASE \"$COV_DB\" OWNER aura_migrate"
@@ -80,7 +130,6 @@ pg_admin -c "CREATE DATABASE \"$COV_DB\" OWNER aura_migrate"
 # already provisions a fresh disposable neo4j service on 7687, so this is skipped
 # (avoids a port clash). APOC only (graphview uses apoc.*); GDS is unused here.
 NEO4J_BOLT_TARGET="bolt://127.0.0.1:7687"
-COV_NEO4J=""
 if [ -z "${GITHUB_ACTIONS:-}" ]; then
   COV_NEO4J="${AURA_COVERAGE_NEO4J_CONTAINER:-aura-neo4j-cov}"
   COV_NEO4J_PORT="${AURA_COVERAGE_NEO4J_BOLT_PORT:-7688}"
@@ -95,11 +144,6 @@ if [ -z "${GITHUB_ACTIONS:-}" ]; then
     "$COV_NEO4J_IMAGE" >/dev/null
   NEO4J_BOLT_TARGET="bolt://127.0.0.1:${COV_NEO4J_PORT}"
 fi
-_cov_cleanup() {
-  docker exec -i "$PG_CONTAINER" psql -U aura -d postgres -c "DROP DATABASE IF EXISTS \"$COV_DB\" WITH (FORCE)" >/dev/null 2>&1 || true
-  [ -n "$COV_NEO4J" ] && docker rm -f "$COV_NEO4J" >/dev/null 2>&1 || true
-}
-trap _cov_cleanup EXIT
 if [ -n "$COV_NEO4J" ]; then
   echo -n "==> waiting for coverage neo4j"
   COV_NEO4J_READY=""
@@ -115,16 +159,19 @@ fi
 # (EnsureRoles' hardcoded /aura bootstrap in the test helpers only does idempotent
 # role/schema-existence management there; every destructive op follows these URLs.)
 export POSTGRES_USER=aura POSTGRES_PASSWORD="$PGPW" POSTGRES_DB="$COV_DB"
-export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 POSTGRES_SSLMODE=disable
-export AURA_DB_URL="postgres://aura_app:${PGPW}@127.0.0.1:5432/${COV_DB}?sslmode=disable"
-export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${PGPW}@127.0.0.1:5432/${COV_DB}?sslmode=disable"
+export POSTGRES_HOST="$PG_HOST_TARGET" POSTGRES_PORT="$PG_PORT_TARGET" POSTGRES_SSLMODE=disable
+# Legacy integration helpers read libpq's PGHOST/PGPORT directly when composing
+# their bootstrap DSN. Keep those variables aligned with the disposable service.
+export PGHOST="$PG_HOST_TARGET" PGPORT="$PG_PORT_TARGET"
+export AURA_DB_URL="postgres://aura_app:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
+export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
 
 # Neo4j + the containerized MCP shim. Local: the disposable throwaway (the live
 # graph is NEVER the DETACH DELETE target). CI: the workflow-provided neo4j on 7687.
 export NEO4J_USER=neo4j NEO4J_PASSWORD="$NEOPW"
 export AURA_NEO4J_BOLT_URL="$NEO4J_BOLT_TARGET" AURA_NEO4J_DATABASE=neo4j
 export AURA_MCP_IMAGE="$IMAGE"
-export AURA_MCP_NEO4J_CYPHER_BIN="$(pwd)/scripts/mcp_neo4j_cypher_docker.sh"
+export AURA_MCP_NEO4J_CYPHER_BIN="${AURA_MCP_NEO4J_CYPHER_BIN:-$(pwd)/scripts/mcp_neo4j_cypher_docker.sh}"
 export AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC="${AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC:-20}"
 
 # Embed sidecar.

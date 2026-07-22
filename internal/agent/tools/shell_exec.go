@@ -101,7 +101,9 @@ func (s *ShellExec) Spec() Spec {
 		Deferred: true,
 		// Conservatively Mutating (D-43): a command line can write files or mutate
 		// state and the agent cannot tell `ls` from `python build.py` statically.
-		Mutating: true,
+		Mutating:       true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 	}
 }
 

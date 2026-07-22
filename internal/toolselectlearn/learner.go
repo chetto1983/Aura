@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chetto1983/aura/internal/activelearn"
 	"github.com/chetto1983/aura/internal/semindex"
@@ -27,13 +28,16 @@ const intakeQueue = 64
 // persistence) are supplied by the composition root. A nil Embedder or Saver yields a
 // nil Learner (the runner then simply observes nothing).
 type Config struct {
-	Embedder    semindex.Embedder // embeds the flagged request for the saved exemplar
-	Ranker      Ranker            // free ranker: detection top-1 + the free-tier confident label
-	Teacher     Teacher           // DeepSeek escalation oracle (kill-switched); nil => free-only
-	Saver       Saver             // persists confirmed (query -> tool) to :ToolSelectionExample
-	Refresh     func()            // re-folds the per-tool centroids after a save (e.g. ranker.RefreshLearned)
-	MarginFloor float64           // activelearn queue margin floor; 0 => default
-	Queue       int               // activelearn queue depth; 0 => default
+	Embedder       semindex.Embedder // embeds the flagged request for the saved exemplar
+	Ranker         Ranker            // free ranker: detection top-1 + the free-tier confident label
+	Teacher        Teacher           // DeepSeek escalation oracle (kill-switched); nil => free-only
+	Saver          Saver             // persists confirmed (query -> tool) to :ToolSelectionExample
+	Refresh        func()            // re-folds the per-tool centroids after a save (e.g. ranker.RefreshLearned)
+	MarginFloor    float64           // activelearn queue margin floor; 0 => default
+	Queue          int               // activelearn queue depth; 0 => default
+	SeenMaxEntries int
+	SeenTTL        time.Duration
+	Metrics        func(activelearn.LearningMetric)
 }
 
 // rawSignal is the opaque (request, usedTool) handoff from the turn goroutine to the
@@ -81,9 +85,12 @@ func New(cfg Config) *Learner {
 			teacher: cfg.Teacher,
 			saver:   cfg.Saver,
 		},
-		Refresh:     cfg.Refresh,
-		MarginFloor: cfg.MarginFloor,
-		Queue:       cfg.Queue,
+		Refresh:        cfg.Refresh,
+		MarginFloor:    cfg.MarginFloor,
+		Queue:          cfg.Queue,
+		SeenMaxEntries: cfg.SeenMaxEntries,
+		SeenTTL:        cfg.SeenTTL,
+		Metrics:        cfg.Metrics,
 	})
 	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel is retained on Learner and called by Close.
 	l := &Learner{

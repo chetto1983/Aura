@@ -351,3 +351,20 @@ func TestRedactErrorPassword_StripsLiteral(t *testing.T) {
 		t.Errorf("expected *** substitution: %q", scrubbed.Error())
 	}
 }
+
+func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
+	head, err := MigrationHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head != 49 {
+		t.Fatalf("MigrationHead=%d, want embedded head 49", head)
+	}
+}
+
+func TestCheckMigrationHeadMissingURLFailsFast(t *testing.T) {
+	err := CheckMigrationHead(context.Background(), "")
+	if err == nil || err.Error() != errMissingMigrateURL {
+		t.Fatalf("CheckMigrationHead empty URL error=%v, want %q", err, errMissingMigrateURL)
+	}
+}

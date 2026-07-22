@@ -9,6 +9,7 @@ package knowledge
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -145,13 +146,20 @@ func (c *Client) initialize() error {
 	if _, err := fmt.Fprintln(c.stdin, string(enc)); err != nil {
 		return fmt.Errorf("send initialize: %w (%s)%s", err, crashHint, c.stderrTail())
 	}
-	line, err := c.stdout.ReadBytes('\n')
-	if err != nil {
-		return fmt.Errorf("recv initialize: %w (%s)%s", err, crashHint, c.stderrTail())
-	}
 	var resp rpcResp
-	if err := json.Unmarshal(line, &resp); err != nil {
-		return fmt.Errorf("decode initialize response: %w", err)
+	for {
+		line, err := c.stdout.ReadBytes('\n')
+		if err != nil {
+			return fmt.Errorf("recv initialize: %w (%s)%s", err, crashHint, c.stderrTail())
+		}
+		var notification bool
+		resp, notification, err = decodeRPCResponse(line, req.ID)
+		if err != nil {
+			return fmt.Errorf("decode initialize response: %w%s", err, c.stderrTail())
+		}
+		if !notification {
+			break
+		}
 	}
 	if resp.Error != nil {
 		return fmt.Errorf("initialize error %d: %s", resp.Error.Code, c.redactSecrets(resp.Error.Message))
@@ -171,12 +179,37 @@ type rpcReq struct {
 
 type rpcResp struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
+	ID      *int64          `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
+}
+
+// decodeRPCResponse accepts one newline-delimited MCP frame. JSON-RPC permits
+// server notifications to be interleaved before a response, and some stdio
+// transports emit blank separator lines during startup. Neither is a response
+// to the outstanding request, so callers keep reading until the matching ID.
+func decodeRPCResponse(line []byte, expectedID int64) (rpcResp, bool, error) {
+	if len(bytes.TrimSpace(line)) == 0 {
+		return rpcResp{}, true, nil
+	}
+	var resp rpcResp
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return rpcResp{}, false, err
+	}
+	if resp.ID == nil {
+		if resp.Method == "" {
+			return rpcResp{}, false, fmt.Errorf("JSON-RPC frame has neither id nor method")
+		}
+		return rpcResp{}, true, nil
+	}
+	if *resp.ID != expectedID {
+		return rpcResp{}, false, fmt.Errorf("JSON-RPC response id %d does not match request id %d", *resp.ID, expectedID)
+	}
+	return resp, false, nil
 }
 
 // buildRequest constructs the tools/call envelope. The query string and the
@@ -251,7 +284,8 @@ func (c *Client) Cypher(ctx context.Context, query string, params map[string]any
 		return nil, fmt.Errorf("cypher on closed knowledge client")
 	}
 
-	enc, err := json.Marshal(c.buildRequest(query, params, write))
+	req := c.buildRequest(query, params, write)
+	enc, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("encode cypher request: %w", err)
 	}
@@ -268,13 +302,20 @@ func (c *Client) Cypher(ctx context.Context, query string, params map[string]any
 	}
 	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
-	line, err := c.readLineWithContext(readCtx)
-	if err != nil {
-		return nil, fmt.Errorf("recv cypher: %w (%s)%s", err, crashHint, c.stderrTail())
-	}
 	var resp rpcResp
-	if err := json.Unmarshal(line, &resp); err != nil {
-		return nil, fmt.Errorf("decode cypher response: %w", err)
+	for {
+		line, err := c.readLineWithContext(readCtx)
+		if err != nil {
+			return nil, fmt.Errorf("recv cypher: %w (%s)%s", err, crashHint, c.stderrTail())
+		}
+		var notification bool
+		resp, notification, err = decodeRPCResponse(line, req.ID)
+		if err != nil {
+			return nil, fmt.Errorf("decode cypher response: %w%s", err, c.stderrTail())
+		}
+		if !notification {
+			break
+		}
 	}
 	if resp.Error != nil {
 		return nil, fmt.Errorf("cypher error %d: %s", resp.Error.Code, c.redactSecrets(resp.Error.Message))

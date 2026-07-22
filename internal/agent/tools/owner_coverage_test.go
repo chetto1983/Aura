@@ -98,3 +98,27 @@ func TestShellPoll_RegistryForwarders(t *testing.T) {
 	}
 	(&ShellPoll{Shells: bg}).Evict("s") // no-op delegate (registry already drained); must not panic
 }
+
+func TestMutatingToolOwnerCoverage(t *testing.T) {
+	t.Parallel()
+
+	registered := []Tool{
+		&FSWrite{},
+		&FSEdit{},
+		&ShellExec{},
+		&ShellKill{},
+		&SkillTool{},
+		&SwarmSpawn{},
+		&TaskTool{},
+	}
+	for _, tool := range registered {
+		spec := tool.Spec()
+		if !spec.Mutating {
+			t.Errorf("coverage fixture %q is no longer mutating", spec.Name)
+			continue
+		}
+		if spec.OperationScope != OperationScopeAgent || spec.OperationNormalizer == "" || spec.ReplayPolicy != ReplayToolResult {
+			t.Errorf("mutating tool %q lacks owner metadata: scope=%q normalizer=%q replay=%q", spec.Name, spec.OperationScope, spec.OperationNormalizer, spec.ReplayPolicy)
+		}
+	}
+}

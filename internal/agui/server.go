@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,6 +44,7 @@ type ServerConfig struct {
 	HealthCheck     func(context.Context) error
 	HealthDetails   func() map[string]any
 	ReadinessProbes []ReadinessProbe
+	ReadinessState  *runtimereadiness.Snapshot
 	// SharePublicEnabled is the WEBSHARE-02/03 org kill-switch (AURA_SHARE_PUBLIC_ENABLED,
 	// config.ShareConfig.PublicEnabled) re-checked INSIDE handleShareCreate (share_api.go,
 	// plan 37F-10) — the R-08 gate that survives loopback dev, where RequireCapability
@@ -102,10 +104,12 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run       Runner
-	conv      ConversationStore
-	approvals ApprovalStore
-	assets    AssetService
+	run          Runner
+	conv         ConversationStore
+	operations   operationRegistry
+	approvals    ApprovalStore
+	assets       AssetService
+	ownerExports ExportDestination
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
@@ -136,6 +140,7 @@ type Server struct {
 	calendarMCPURL   string
 	calendarMCPToken string
 	cfg              ServerConfig
+	readinessRuns    readinessProbeCoordinator
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.
@@ -175,8 +180,19 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 
+// SetOperationRegistry installs the process-wide durable mutation registry.
+// Keeping this as a narrow consumer-side seam lets tests leave it nil while the
+// daemon protects every route inventoried by httpMutationRoutes.
+func (s *Server) SetOperationRegistry(registry operationRegistry) { s.operations = registry }
+
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
+
+// SetOwnerExportDestination wires durable owner-scoped archive storage used by
+// export-delete and resumable downloads.
+func (s *Server) SetOwnerExportDestination(destination ExportDestination) {
+	s.ownerExports = destination
+}
 
 // SetShareService wires the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 // handlers call. Set by the daemon composition root after NewServer (cmd/aura/
@@ -337,7 +353,15 @@ func (s *Server) Mux() http.Handler {
 	// — an operator enters their own Google OAuth client and links an account) lives in
 	// cmd/aura/serve_webui.go.
 	s.registerConnectPIMRoutes(mux)
-	return s.withCORS(mux)
+	if s.operations == nil {
+		return s.withCORS(mux)
+	}
+	guarded := http.NewServeMux()
+	for pattern, meta := range httpMutationRoutes {
+		guarded.Handle(pattern, s.idempotencyMutation(mux, meta))
+	}
+	guarded.Handle("/", mux)
+	return s.withCORS(guarded)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -60,6 +61,9 @@ type Scheduler struct {
 	tickInterval  time.Duration
 	hbInterval    time.Duration
 	lastTickUnix  atomic.Int64
+	readiness     *readiness.Snapshot
+	disabled      bool
+	scan          func(context.Context) error
 	// reschedulesOnRecovery reports a kind's HandlerMeta.ReschedulesOnRecovery (M-g):
 	// the boot catch-up consults it so a handler that does NOT reschedule on recovery
 	// (e.g. a reminder whose window has passed, or any future side-effecting handler)
@@ -77,6 +81,10 @@ type SchedulerConfig struct {
 	MaxConcurrent int
 	TickInterval  time.Duration
 	Now           func() time.Time
+	// Readiness receives scheduler scan progress and terminal failures.
+	Readiness *readiness.Snapshot
+	// Disabled keeps the lifecycle joined to ctx without starting a ticker or scan.
+	Disabled bool
 	// ReschedulesOnRecovery is the M-g catch-up seam: it reports whether a task kind's
 	// handler reschedules (re-fires) on boot recovery. A nil func means "always fire"
 	// (the historical behavior); the composition root passes the *Dispatch lookup so
@@ -100,7 +108,7 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 	if tick <= 0 {
 		tick = time.Duration(envInt("AURA_SCHEDULER_TICK_SECONDS", int(defaultTickInterval/time.Second))) * time.Second
 	}
-	return &Scheduler{
+	scheduler := &Scheduler{
 		Now:                   now,
 		store:                 store,
 		pool:                  pool,
@@ -108,8 +116,14 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 		maxConcurrent:         maxC,
 		tickInterval:          tick,
 		hbInterval:            defaultHeartbeatInterval,
+		readiness:             cfg.Readiness,
+		disabled:              cfg.Disabled,
 		reschedulesOnRecovery: cfg.ReschedulesOnRecovery,
 	}
+	if cfg.Readiness != nil {
+		cfg.Readiness.SetSchedulerEnabled(!cfg.Disabled)
+	}
+	return scheduler
 }
 
 // envInt reads a non-negative integer env var, falling back to def on unset or
@@ -133,6 +147,16 @@ func envInt(key string, def int) int {
 // returns nil. The loop owns no leaked goroutines — every claim's heartbeat is
 // joined before the tick returns (goleak gate).
 func (s *Scheduler) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s.disabled {
+		<-ctx.Done()
+		return nil
+	}
+	ctx, end := schedulerLifecycleBoundary.Start(ctx)
+	var observeErr error
+	defer end.PanicSafe(&observeErr)
 	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
 	missed, err := s.catchUpMissed(ctx)
 	if err != nil {
@@ -146,18 +170,42 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	for _, m := range missed {
 		s.runMissed(ctx, m)
 	}
+	if err == nil && ctx.Err() == nil {
+		s.markTick()
+	}
 
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			observeErr = ctx.Err()
 			return nil
 		case <-ticker.C:
-			if err := s.tick(ctx); err != nil {
+			if err := s.runScheduledScan(ctx); err != nil {
 				slog.Warn("scheduler tick failed", "err", err)
 			}
 		}
+	}
+}
+
+func (s *Scheduler) runScheduledScan(ctx context.Context) (err error) {
+	ctx, end := schedulerScanBoundary.Start(ctx)
+	defer end.PanicSafe(&err)
+	scan := s.tick
+	if s.scan != nil {
+		scan = s.scan
+	}
+	if err := scan(ctx); err != nil {
+		return err
+	}
+	s.markTick()
+	return nil
+}
+
+func (s *Scheduler) markTerminalFailure(err error) {
+	if s.readiness != nil {
+		s.readiness.MarkSchedulerFailure(err)
 	}
 }
 
@@ -169,7 +217,6 @@ func (s *Scheduler) Start(ctx context.Context) error {
 // tick blocks until all dispatched runs finish so Start's graceful shutdown joins
 // them (no leaked goroutine).
 func (s *Scheduler) tick(ctx context.Context) error {
-	s.markTick()
 	due, err := s.store.DueTasks(ctx, s.maxConcurrent)
 	if err != nil {
 		return fmt.Errorf("tick due tasks: %w", err)
@@ -201,6 +248,9 @@ func (s *Scheduler) markTick() {
 		now = s.Now
 	}
 	s.lastTickUnix.Store(now().UTC().UnixNano())
+	if s.readiness != nil {
+		s.readiness.MarkSchedulerProgress()
+	}
 }
 
 // LastTick returns the scheduler tick timestamp most recently recorded by tick.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -28,6 +29,14 @@ type reservationStore interface {
 	Insert(ctx context.Context, e toolinvocations.Event) error
 	Reserve(ctx context.Context, start toolinvocations.Event) (acquired bool, replay *toolinvocations.Event, err error)
 	GetEnd(ctx context.Context, conversationID, requestID, toolCallID string) (*toolinvocations.Event, error)
+}
+
+// operationRegistry is the shared public-operation state machine. Only an
+// acquired decision authorizes policy reservation or a mutating effect.
+type operationRegistry interface {
+	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
+	Complete(context.Context, idempotency.CompleteRequest) error
+	MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error
 }
 
 // Decision is the gateway's verdict on a single tool dispatch.
@@ -69,6 +78,9 @@ type Verdict struct {
 	// REAL tool name + args in persisted history so the resume re-emits an args-matching
 	// call (D-03 point 2; the round-trip the pre-dispatch intercept could not achieve).
 	ApprovalRequest *tools.ToolResult
+	// OperationDecision records the shared registry outcome. Acquired tells the
+	// executor it owns completion/indeterminate transition responsibility.
+	OperationDecision idempotency.Decision
 }
 
 // ReservationKey is the ledger triple the decision-fact is keyed on. It is ALWAYS
@@ -103,9 +115,10 @@ func (e *ErrDenied) Error() string {
 // *HookManager). A nil *Gateway is an Allow no-op — dev-parity for tests/standalone
 // construction.
 type Gateway struct {
-	profile   config.RuntimeProfile
-	store     reservationStore
-	approvals *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
+	profile    config.RuntimeProfile
+	store      reservationStore
+	operations operationRegistry
+	approvals  *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
 }
 
 // New builds a Gateway over the resolved runtime profile and the append-only tool
@@ -114,6 +127,14 @@ type Gateway struct {
 // GatewayApprovals so the resume hook has a session ledger to write through.
 func New(profile config.RuntimeProfile, store reservationStore) *Gateway {
 	return &Gateway{profile: profile, store: store, approvals: NewGatewayApprovals()}
+}
+
+// SetOperationRegistry wires the one process-wide registry constructed by the
+// composition root. Nil preserves legacy standalone/dev behavior.
+func (g *Gateway) SetOperationRegistry(registry operationRegistry) {
+	if g != nil {
+		g.operations = registry
+	}
 }
 
 // RecordResolvedApproval is a LOW-LEVEL test-seed seam that records a resolved approval

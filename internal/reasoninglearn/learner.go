@@ -13,6 +13,7 @@ package reasoninglearn
 
 import (
 	"context"
+	"time"
 
 	"github.com/chetto1983/aura/internal/activelearn"
 	"github.com/chetto1983/aura/internal/agent/prompt"
@@ -30,11 +31,14 @@ type Saver interface {
 
 // Config wires a Learner. Oracle and Saver are required; the rest have defaults.
 type Config struct {
-	Oracle      Oracle
-	Saver       Saver
-	Refresh     func() // called after a successful save (e.g. classifier.Refresh)
-	MarginFloor float64
-	Queue       int
+	Oracle         Oracle
+	Saver          Saver
+	Refresh        func() // called after a successful save (e.g. classifier.Refresh)
+	MarginFloor    float64
+	Queue          int
+	SeenMaxEntries int
+	SeenTTL        time.Duration
+	Metrics        func(activelearn.LearningMetric)
 }
 
 // Learner implements prompt.Learner. It delegates the bounded-queue/dedup/margin/
@@ -70,10 +74,13 @@ func New(cfg Config) *Learner {
 		return nil
 	}
 	inner := activelearn.New(activelearn.Config{
-		Oracle:      reasoningOracle{oracle: cfg.Oracle, saver: cfg.Saver},
-		Refresh:     cfg.Refresh,
-		MarginFloor: cfg.MarginFloor,
-		Queue:       cfg.Queue,
+		Oracle:         reasoningOracle{oracle: cfg.Oracle, saver: cfg.Saver},
+		Refresh:        cfg.Refresh,
+		MarginFloor:    cfg.MarginFloor,
+		Queue:          cfg.Queue,
+		SeenMaxEntries: cfg.SeenMaxEntries,
+		SeenTTL:        cfg.SeenTTL,
+		Metrics:        cfg.Metrics,
 	})
 	return &Learner{inner: inner}
 }

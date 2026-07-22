@@ -25,7 +25,7 @@ type fakeOperationQueries struct {
 }
 
 type tryStartQuery func(context.Context, sqlc.TryStartOperationParams) (int64, error)
-type getOperationQuery func(context.Context, sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error)
+type getOperationQuery func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 type completeOperationQuery func(context.Context, sqlc.CompleteOperationParams) (int64, error)
 type markIndeterminateQuery func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
 type listExpiredQuery func(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
@@ -38,9 +38,9 @@ func (f *fakeOperationQueries) TryStartOperation(ctx context.Context, arg sqlc.T
 	return f.tryStart(ctx, arg)
 }
 
-func (f *fakeOperationQueries) GetOperation(ctx context.Context, arg sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error) {
+func (f *fakeOperationQueries) GetOperation(ctx context.Context, arg sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
 	if f.get == nil {
-		return sqlc.AuraIdempotencyOperations{}, errors.New("unexpected GetOperation")
+		return sqlc.GetOperationRow{}, errors.New("unexpected GetOperation")
 	}
 	return f.get(ctx, arg)
 }
@@ -108,16 +108,31 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 	expires := now.Add(time.Hour)
 	tests := []struct {
 		name       string
-		row        sqlc.AuraIdempotencyOperations
+		row        sqlc.GetOperationRow
 		want       Decision
 		wantRetry  time.Duration
 		wantErr    error
 		wantReplay bool
 	}{
-		{name: "completed replay", row: testRow(req, StateCompleted, now, expires), want: DecisionReplay, wantReplay: true},
+		{name: "completed replay before deadline", row: testRow(req, StateCompleted, now, expires), want: DecisionReplay, wantReplay: true},
+		{name: "completed replay at deadline retains bytes but is expired", row: testRow(req, StateCompleted, now, now), want: DecisionResultExpired},
+		{name: "completed replay after deadline retains bytes but is expired", row: testRow(req, StateCompleted, now, now.Add(-time.Nanosecond)), want: DecisionResultExpired},
+		{name: "completed replay expired", row: func() sqlc.GetOperationRow {
+			row := testRow(req, StateCompleted, now, expires)
+			row.ReplayBody, row.ReplayPreview, row.ReplaySidecarRef = nil, pgtype.Text{}, pgtype.Text{}
+			row.ReplayStatusCode, row.ReplayHeaders = pgtype.Int2{}, nil
+			row.ReplayClearedAt = pgtype.Timestamptz{Time: now, Valid: true}
+			return row
+		}(), want: DecisionResultExpired},
+		{name: "completed replay missing representations", row: func() sqlc.GetOperationRow {
+			row := testRow(req, StateCompleted, now, expires)
+			row.ReplayBody, row.ReplayPreview, row.ReplaySidecarRef = nil, pgtype.Text{}, pgtype.Text{}
+			row.ReplayStatusCode, row.ReplayHeaders = pgtype.Int2{}, nil
+			return row
+		}(), want: DecisionResultExpired},
 		{name: "fresh in progress", row: testRow(req, StateInProgress, now.Add(17*time.Second), time.Time{}), want: DecisionInProgress, wantRetry: 17 * time.Second},
 		{name: "terminal indeterminate", row: testRow(req, StateIndeterminate, now, time.Time{}), want: DecisionIndeterminate},
-		{name: "different fingerprint conflicts", row: func() sqlc.AuraIdempotencyOperations {
+		{name: "different fingerprint conflicts", row: func() sqlc.GetOperationRow {
 			row := testRow(req, StateInProgress, now, time.Time{})
 			row.PayloadHash[0] ^= 0xff
 			return row
@@ -127,7 +142,7 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			queries := &fakeOperationQueries{
 				tryStart: func(context.Context, sqlc.TryStartOperationParams) (int64, error) { return 0, nil },
-				get: func(context.Context, sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error) {
+				get: func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
 					return tc.row, nil
 				},
 			}
@@ -142,7 +157,7 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 			if (got.Replay != nil) != tc.wantReplay {
 				t.Fatalf("replay presence=%t, want %t", got.Replay != nil, tc.wantReplay)
 			}
-			if got.Replay != nil && (!bytes.Equal(got.Replay.Body, tc.row.ReplayBody) || got.Replay.Preview != "ok") {
+			if got.Replay != nil && (!bytes.Equal(got.Replay.Body, tc.row.ReplayBody) || got.Replay.Preview != "ok" || got.Replay.StatusCode != 202 || got.Replay.Headers["Location"] != "/operations/one") {
 				t.Fatalf("replay=%+v, row=%+v", got.Replay, tc.row)
 			}
 		})
@@ -153,8 +168,8 @@ func TestStoreBeginFailedConflictReadNeverInfersOwnership(t *testing.T) {
 	req := testBeginRequest(t, "read-failure")
 	queries := &fakeOperationQueries{
 		tryStart: func(context.Context, sqlc.TryStartOperationParams) (int64, error) { return 0, nil },
-		get: func(context.Context, sqlc.GetOperationParams) (sqlc.AuraIdempotencyOperations, error) {
-			return sqlc.AuraIdempotencyOperations{}, errFakeQuery
+		get: func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
+			return sqlc.GetOperationRow{}, errFakeQuery
 		},
 	}
 	got, err := newStore(queries, Config{}).Begin(context.Background(), req)
@@ -169,10 +184,10 @@ func TestStoreBeginFailedConflictReadNeverInfersOwnership(t *testing.T) {
 func TestStoreTerminalTransitionsAreConditional(t *testing.T) {
 	now := time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC)
 	req := testBeginRequest(t, "terminal")
-	result := ReplayResult{Body: []byte(`{"ok":true}`), Preview: "ok", SidecarRef: "replays/one", ExpiresAt: now.Add(time.Hour)}
+	result := ReplayResult{Body: []byte(`{"ok":true}`), Preview: "ok", SidecarRef: "replays/one", StatusCode: 202, Headers: map[string]string{"Location": "/operations/one"}, ExpiresAt: now.Add(time.Hour)}
 	queries := &fakeOperationQueries{
 		complete: func(_ context.Context, arg sqlc.CompleteOperationParams) (int64, error) {
-			if !bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) || arg.ReplayBytes != int64(len(result.Body)+len(result.Preview)+len(result.SidecarRef)) {
+			if !bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) || arg.ReplayBytes <= int64(len(result.Body)+len(result.Preview)+len(result.SidecarRef)) || arg.ReplayStatusCode.Int16 != 202 || !bytes.Contains(arg.ReplayHeaders, []byte("/operations/one")) {
 				t.Fatalf("completion parameters=%+v", arg)
 			}
 			return 1, nil
@@ -255,8 +270,8 @@ func testBeginRequest(t *testing.T, key string) BeginRequest {
 	return BeginRequest{Operation: OperationKey{IdentityID: "00000000-0000-0000-0000-000000000001", Scope: ScopeHTTPMutation, Key: key}, Fingerprint: fingerprint}
 }
 
-func testRow(req BeginRequest, state State, retry, expires time.Time) sqlc.AuraIdempotencyOperations {
-	row := sqlc.AuraIdempotencyOperations{
+func testRow(req BeginRequest, state State, retry, expires time.Time) sqlc.GetOperationRow {
+	row := sqlc.GetOperationRow{
 		PayloadHash: append([]byte(nil), req.Fingerprint[:]...), State: string(state),
 		RetryAfter: pgtype.Timestamptz{Time: retry, Valid: !retry.IsZero()},
 	}
@@ -264,6 +279,8 @@ func testRow(req BeginRequest, state State, retry, expires time.Time) sqlc.AuraI
 		row.ReplayBody = []byte(`{"ok":true}`)
 		row.ReplayPreview = pgtype.Text{String: "ok", Valid: true}
 		row.ReplaySidecarRef = pgtype.Text{String: "replays/one", Valid: true}
+		row.ReplayStatusCode = pgtype.Int2{Int16: 202, Valid: true}
+		row.ReplayHeaders = []byte(`{"Location":"/operations/one"}`)
 		row.ReplayExpiresAt = pgtype.Timestamptz{Time: expires, Valid: true}
 	}
 	return row

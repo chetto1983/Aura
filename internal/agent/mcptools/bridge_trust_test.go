@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -137,6 +138,18 @@ func TestReconnect_DoesNotReplayMutatingCallTool(t *testing.T) {
 	}
 	if second.callCount != 0 {
 		t.Fatalf("call replayed after reconnect, callCount=%d", second.callCount)
+	}
+}
+
+func TestMCPMutationSpecCarriesAuraOwnerMetadata(t *testing.T) {
+	t.Parallel()
+
+	spec := specFromToolDef("mail", mcp.ToolDef{Name: "send", Annotations: mcp.ToolAnnotations{ReadOnlyHint: false}})
+	if !spec.Mutating {
+		t.Fatal("write tool must be classified mutating")
+	}
+	if spec.OperationScope != tools.OperationScopeMCP || spec.OperationNormalizer == "" || spec.ReplayPolicy != tools.ReplayToolResult {
+		t.Fatalf("MCP mutation owner metadata is incomplete: scope=%q normalizer=%q replay=%q", spec.OperationScope, spec.OperationNormalizer, spec.ReplayPolicy)
 	}
 }
 

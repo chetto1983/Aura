@@ -79,8 +79,10 @@ func (e *SwarmSpawn) Spec() Spec {
 		// D-02/D-02d: a swarm worker turn wields the full tool set, so swarm_spawn is
 		// the fail-closed Mutating floor. It has no `action` field, but it is treated
 		// as Multiplexed so the boot-guard asserts the classifier tiers it (flat Risky).
-		Mutating:    true,
-		Multiplexed: true,
+		Mutating:       true,
+		Multiplexed:    true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 	}
 }
 

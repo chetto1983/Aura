@@ -150,18 +150,24 @@ type AuraConversationTurns struct {
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.
 type AuraConversations struct {
-	ID                pgtype.UUID        `json:"id"`
-	Title             pgtype.Text        `json:"title"`
-	IdentityID        pgtype.UUID        `json:"identity_id"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	LastActiveAt      pgtype.Timestamptz `json:"last_active_at"`
-	Status            string             `json:"status"`
-	Model             string             `json:"model"`
-	TotalInputTokens  int64              `json:"total_input_tokens"`
-	TotalOutputTokens int64              `json:"total_output_tokens"`
-	TotalCachedTokens int64              `json:"total_cached_tokens"`
-	TotalCostUsd      pgtype.Numeric     `json:"total_cost_usd"`
-	Metadata          []byte             `json:"metadata"`
+	ID                   pgtype.UUID        `json:"id"`
+	Title                pgtype.Text        `json:"title"`
+	IdentityID           pgtype.UUID        `json:"identity_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	LastActiveAt         pgtype.Timestamptz `json:"last_active_at"`
+	Status               string             `json:"status"`
+	Model                string             `json:"model"`
+	TotalInputTokens     int64              `json:"total_input_tokens"`
+	TotalOutputTokens    int64              `json:"total_output_tokens"`
+	TotalCachedTokens    int64              `json:"total_cached_tokens"`
+	TotalCostUsd         pgtype.Numeric     `json:"total_cost_usd"`
+	Metadata             []byte             `json:"metadata"`
+	SnapshotVersion      int64              `json:"snapshot_version"`
+	DeleteReservation    pgtype.Text        `json:"delete_reservation"`
+	DeletePhase          pgtype.Text        `json:"delete_phase"`
+	DeleteReservedAt     pgtype.Timestamptz `json:"delete_reserved_at"`
+	DeleteWorker         pgtype.Text        `json:"delete_worker"`
+	DeleteLeaseExpiresAt pgtype.Timestamptz `json:"delete_lease_expires_at"`
 }
 
 type AuraDeleteJobs struct {
@@ -297,6 +303,10 @@ type AuraIdempotencyOperations struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
 	IndeterminateAt     pgtype.Timestamptz `json:"indeterminate_at"`
+	ReplayStatusCode    pgtype.Int2        `json:"replay_status_code"`
+	ReplayHeaders       []byte             `json:"replay_headers"`
+	// Terminal marker distinguishing expired replay material from a valid completed response.
+	ReplayClearedAt pgtype.Timestamptz `json:"replay_cleared_at"`
 }
 
 // Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.
@@ -484,6 +494,46 @@ type AuraProvisioningSaga struct {
 	Step       string             `json:"step"`
 	Status     string             `json:"status"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Crash-resumable mark-remove-finalize items claimed by short renewable leases.
+type AuraRetentionOperationItems struct {
+	ID              pgtype.UUID        `json:"id"`
+	OperationID     pgtype.UUID        `json:"operation_id"`
+	ItemKey         string             `json:"item_key"`
+	IdentityID      string             `json:"identity_id"`
+	ConversationID  pgtype.Text        `json:"conversation_id"`
+	ArtifactID      pgtype.Text        `json:"artifact_id"`
+	Class           string             `json:"class"`
+	Action          string             `json:"action"`
+	ExpectedVersion int64              `json:"expected_version"`
+	ExpectedBytes   int64              `json:"expected_bytes"`
+	Status          string             `json:"status"`
+	ArtifactResult  string             `json:"artifact_result"`
+	RemovedBytes    int64              `json:"removed_bytes"`
+	FailureClass    pgtype.Text        `json:"failure_class"`
+	ClaimOwner      pgtype.Text        `json:"claim_owner"`
+	LeaseExpiresAt  pgtype.Timestamptz `json:"lease_expires_at"`
+	AttemptCount    int32              `json:"attempt_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+}
+
+// Immutable retention snapshots and bounded aggregate audit results.
+type AuraRetentionOperations struct {
+	ID             pgtype.UUID        `json:"id"`
+	Token          string             `json:"token"`
+	PolicyVersion  string             `json:"policy_version"`
+	Status         string             `json:"status"`
+	CandidateCount int32              `json:"candidate_count"`
+	PlannedBytes   int64              `json:"planned_bytes"`
+	CompletedCount int32              `json:"completed_count"`
+	CompletedBytes int64              `json:"completed_bytes"`
+	FailureCount   int32              `json:"failure_count"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 }
 
 // Scheduler task definitions (Slice 6 / Phase 10, amendment #46). Grammar triad at|every|cron with per-task IANA tz; next_run_at is UTC, recomputed in-zone (D-06/D-07).

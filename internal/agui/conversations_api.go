@@ -19,12 +19,27 @@ const defaultSearchLimit = 20
 
 const createTitleMaxRunes = 80
 
+// maxListLimit caps ?limit= for every paginated list/search endpoint routed through
+// parseLimit (share list, conversations search, governance). The raw value reaches
+// make([]T, 0, limit) pre-allocations (share.Store.ListForIdentity), where an
+// authenticated ?limit=2000000000 would OOM the 768MB container in one request
+// (CodeQL #40, go/uncontrolled-allocation-size) — so the clamp lives HERE at the
+// parse seam, not in each store.
+const maxListLimit = 200
+
 // parseLimit reads the ?limit= query value, falling back to defaultSearchLimit when
-// it is absent, non-numeric, or non-positive. The store clamps the upper bound.
+// it is absent, non-numeric, or non-positive, and clamping to maxListLimit above.
+// The clamp is written as an explicit comparison guard, NOT min(n, maxListLimit):
+// CodeQL's go/uncontrolled-allocation-size query recognizes a relational guard as a
+// sanitizer barrier on the tainted size but does not model the Go builtin min(), so
+// the builtin form left alert #40 open despite being equally safe at runtime.
 func parseLimit(raw string) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
 		return defaultSearchLimit
+	}
+	if n > maxListLimit {
+		return maxListLimit
 	}
 	return n
 }
@@ -55,6 +70,9 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	// RequireAuth (serve_webui.go:381, F-1) — no separate route wiring or auth
 	// is added there.
 	mux.HandleFunc("GET /api/conversations/{id}/export", s.handleConversationExport)
+	mux.HandleFunc("GET /api/conversations/{id}/owner-export", s.handleOwnerExport)
+	mux.HandleFunc("POST /api/conversations/{id}/export-delete", s.handleOwnerExportDelete)
+	mux.HandleFunc("GET /api/owner-exports/{id}", s.handleOwnerExportDownload)
 	mux.HandleFunc("POST /api/conversations/{id}/rename", s.handleRenameConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/archive", s.handleArchiveConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/unarchive", s.handleArchiveConversation)

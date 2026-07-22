@@ -122,6 +122,7 @@ type scriptedRunner struct {
 	events               []*agent.Event
 	turnErr              error
 	gotAnswers           map[string]runner.ResponseInput
+	submitAnswersCtx     context.Context
 	answersErr           error
 	gotBranchLeaf        int     // the leaf TurnBranch was called with (D-09 re-run assertion)
 	turnCalled           bool    // Turn was invoked (continue-after-resume reached the runner)
@@ -170,7 +171,8 @@ func (s *scriptedRunner) TurnWithModelUserMessage(_ context.Context, _ string, v
 	}
 }
 
-func (s *scriptedRunner) SubmitAnswers(_ context.Context, answers map[string]runner.ResponseInput) (int, error) {
+func (s *scriptedRunner) SubmitAnswers(ctx context.Context, answers map[string]runner.ResponseInput) (int, error) {
+	s.submitAnswersCtx = ctx
 	s.gotAnswers = answers
 	if s.answersErr != nil {
 		return 0, s.answersErr

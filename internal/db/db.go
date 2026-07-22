@@ -49,6 +49,7 @@ func Open(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
 	} else {
 		pc.MaxConnIdleTime = defaultMaxConnIdleTime
 	}
+	pc.ConnConfig.Tracer = queryBoundaryTracer{}
 	pool, err := pgxpool.NewWithConfig(ctx, pc)
 	if err != nil {
 		return nil, fmt.Errorf("open pool to %s: %w", redactDSN(cfg.URL), err)

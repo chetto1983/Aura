@@ -38,6 +38,9 @@ SELECT
     replay_body,
     replay_preview,
     replay_sidecar_ref,
+    replay_status_code,
+    replay_headers,
+    replay_cleared_at,
     replay_bytes,
     replay_expires_at,
     lease_expires_at,
@@ -61,6 +64,9 @@ SET state = 'completed',
     replay_body = sqlc.narg(replay_body),
     replay_preview = sqlc.narg(replay_preview),
     replay_sidecar_ref = sqlc.narg(replay_sidecar_ref),
+    replay_status_code = sqlc.narg(replay_status_code),
+    replay_headers = sqlc.narg(replay_headers),
+    replay_cleared_at = NULL,
     replay_bytes = sqlc.arg(replay_bytes),
     replay_expires_at = sqlc.arg(replay_expires_at),
     completed_at = sqlc.arg(now),
@@ -92,7 +98,8 @@ SELECT
 FROM aura.idempotency_operations
 WHERE state = 'completed'
   AND replay_expires_at <= sqlc.arg(before)
-  AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL)
+  AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL
+       OR replay_status_code IS NOT NULL OR replay_headers IS NOT NULL)
 ORDER BY replay_expires_at ASC, identity_id, operation_scope, operation_key
 LIMIT sqlc.arg(batch_size);
 
@@ -101,6 +108,9 @@ UPDATE aura.idempotency_operations
 SET replay_body = NULL,
     replay_preview = NULL,
     replay_sidecar_ref = NULL,
+    replay_status_code = NULL,
+    replay_headers = NULL,
+    replay_cleared_at = sqlc.arg(cleared_at),
     replay_bytes = 0,
     updated_at = sqlc.arg(cleared_at),
     version = version + 1
@@ -109,4 +119,5 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND operation_key = sqlc.arg(operation_key)
   AND state = 'completed'
   AND replay_expires_at <= sqlc.arg(before)
-  AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL);
+  AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL
+       OR replay_status_code IS NOT NULL OR replay_headers IS NOT NULL);

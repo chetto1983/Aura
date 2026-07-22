@@ -1,0 +1,68 @@
+{
+  "annotations": {"list": []}, "editable": false, "fiscalYearStartMonth": 0, "graphTooltip": 1, "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Overview", "type": "link", "url": "/d/aura-overview"},
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Agent health", "type": "link", "url": "/d/aura-agents"},
+    {"asDropdown": false, "icon": "search", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Trace drilldown", "type": "link", "url": "/explore?left=%7B%22datasource%22:%22aura-tempo%22%7D"}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Tool dispatches and MCP calls grouped only by bounded tool-class and transport enums.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}, "id": 1,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (tool_class) (rate(aura_agent_tool_duration_seconds_count[5m]))", "legendFormat": "tool / {{tool_class}}", "range": true, "refId": "A"}, {"editorMode": "code", "expr": "sum by (transport) (rate(aura_mcp_call_total[5m]))", "legendFormat": "MCP / {{transport}}", "range": true, "refId": "B"}], "title": "Tool and MCP activity", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Tool error ratio over five minutes. Alert: ratio > 0.10 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}, "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:tool_error_ratio:rate5m", "legendFormat": "error ratio", "range": true, "refId": "A"}], "title": "Tool error ratio", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "MCP error ratio over five minutes. Alert: ratio > 0.10 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}, "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:mcp_error_ratio:rate5m", "legendFormat": "error ratio", "range": true, "refId": "A"}], "title": "MCP error ratio", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "MCP p95 latency. Alert: p95 > 5s for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 5}]}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}, "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:mcp_latency_p95_seconds", "legendFormat": "p95", "range": true, "refId": "A"}], "title": "MCP p95 latency", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Idempotency operations by bounded state and outcome; raw keys are never labels.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8}, "id": 5,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (state, outcome) (rate(aura_idempotency_operation_total[5m]))", "legendFormat": "{{state}} / {{outcome}}", "range": true, "refId": "A"}], "title": "Idempotency outcomes", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Idempotency conflicts over fifteen minutes. Alert: conflicts > 0 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8}, "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:idempotency_conflict:increase15m", "legendFormat": "conflicts", "range": true, "refId": "A"}], "title": "Idempotency conflicts", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Duplicate operations observed in progress over fifteen minutes. Alert: in-progress > 20 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 20}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8}, "id": 7,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:idempotency_in_progress:increase15m", "legendFormat": "in progress", "range": true, "refId": "A"}], "title": "Idempotency in progress", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Terminal indeterminate mutations over five minutes. Alert: indeterminate > 0 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8}, "id": 8,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:idempotency_indeterminate:increase5m", "legendFormat": "indeterminate", "range": true, "refId": "A"}], "title": "Idempotency indeterminate", "type": "stat"
+    }
+  ],
+  "refresh": "30s", "schemaVersion": 41, "tags": ["aura", "tools", "mcp", "bounded-labels"], "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"}, "timepicker": {}, "timezone": "browser", "title": "Aura / Tools and MCP", "uid": "aura-tools-mcp", "version": 1, "weekStart": ""
+}

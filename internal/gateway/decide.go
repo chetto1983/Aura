@@ -53,7 +53,13 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		}
 		operatorID = v.OperatorID
 	}
-	return g.reserve(ctx, spec, rawArgs, key, tier, operatorID)
+	operationVerdict, proceed := g.beginOperation(ctx, spec, rawArgs, key, tier)
+	if !proceed {
+		return operationVerdict, nil
+	}
+	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID)
+	verdict.OperationDecision = operationVerdict.OperationDecision
+	return verdict, err
 }
 
 // recordDecisionFact durably records an Allow decision-fact as a `start` row (verdict

@@ -213,11 +213,11 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	// after the channel is fully drained below, so partial chunks are never dropped.
 	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 	defer cancel()
+	callCtx, llmEnd := llmCallBoundary.Start(callCtx)
+	defer llmEnd.PanicSafe(&err)
 
-	started := time.Now()
 	ch, serr := a.streamWithOpenRetry(callCtx, req, ic.RequestID.String()+":finalize")
 	if serr != nil {
-		recordLLMDuration(time.Since(started))
 		recordLLMError(llmErrorKind("finalize_open", serr))
 		return "", llm.Usage{}, fmt.Errorf("finalize synthesis stream: %w", serr)
 	}
@@ -226,7 +226,6 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	for c := range ch {
 		switch {
 		case c.Err != nil:
-			recordLLMDuration(time.Since(started))
 			recordLLMError(llmErrorKind("finalize_stream", c.Err))
 			return "", usage, fmt.Errorf("finalize synthesis stream: %w", c.Err)
 		case c.Usage != nil:
@@ -236,7 +235,6 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 			b.WriteString(c.Text)
 		}
 	}
-	recordLLMDuration(time.Since(started))
 	return b.String(), usage, nil
 }
 

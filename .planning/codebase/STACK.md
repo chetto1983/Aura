@@ -61,9 +61,11 @@
   not webhooks (`bot.go:279` — default `LongPoller`).
 - `github.com/aws/aws-sdk-go-v2/service/s3 v1.105.0` — S3-compatible object store client, pointed
   at Garage (`internal/objectstore/s3.go`).
-- `github.com/prometheus/client_golang v1.23.2` — `/metrics` endpoint (`internal/agui/server.go:246`).
-- `go.opentelemetry.io/otel v1.44.0` (+ `sdk`, `trace`, OTLP gRPC and stdout exporters) —
-  tracing, wired in `internal/obs/init.go`.
+- `github.com/prometheus/client_golang v1.23.2` — authenticated legacy-compatibility `/metrics`
+  and non-OTel application collectors (`internal/agui/server.go`).
+- `go.opentelemetry.io/otel v1.44.0` (+ trace/metric SDKs, Prometheus reader, OTLP metric/trace
+  gRPC exporters, and stdout trace exporter) — one trace/metric runtime in `internal/obs`, with
+  canonical bounded `aura_*` metrics scraped from a dedicated private listener.
 - No vendor LLM SDK. The LLM client is hand-rolled OpenAI-compatible HTTP
   (`internal/llm/`, `internal/llm/openai_compat/`) — provider-neutral by design.
 

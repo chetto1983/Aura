@@ -1,0 +1,89 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Agent health", "type": "link", "url": "/d/aura-agents"},
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Tools and MCP", "type": "link", "url": "/d/aura-tools-mcp"},
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Data and retention", "type": "link", "url": "/d/aura-data-retention"},
+    {"asDropdown": false, "icon": "search", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Trace drilldown", "type": "link", "url": "/explore?left=%7B%22datasource%22:%22aura-tempo%22%7D"}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Aura scrape availability. No data means the telemetry path is unavailable. Alert: up < 1 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}, "id": 1,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:service:up", "legendFormat": "Aura", "range": true, "refId": "A"}],
+      "title": "Service availability", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Terminal listener failures over five minutes. Alert: failures > 0 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}, "id": 2,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:listener_failure:increase5m", "legendFormat": "failures", "range": true, "refId": "A"}],
+      "title": "Listener failures", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Successful scheduler ticks while the scheduler is enabled. Alert: enabled and progress = 0 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}, "id": 3,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:scheduler_progress:increase5m", "legendFormat": "successful ticks", "range": true, "refId": "A"}],
+      "title": "Scheduler progress", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Durable resume failures over five minutes. Alert: failures > 0 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}, "id": 4,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:resume_failure:increase5m", "legendFormat": "failures", "range": true, "refId": "A"}],
+      "title": "Resume failures", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Database boundary p95 latency from the bounded recording rule.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 8, "x": 0, "y": 8}, "id": 5,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:db_latency_p95_seconds", "legendFormat": "p95", "range": true, "refId": "A"}],
+      "title": "Database p95 latency", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Database error ratio over five minutes. Alert: ratio > 0.05 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.05}]}, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 8, "x": 8, "y": 8}, "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:db_error_ratio:rate5m", "legendFormat": "error ratio", "range": true, "refId": "A"}],
+      "title": "Database error ratio", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
+      "description": "Maximum in-flight database boundaries. Alert: in-flight > 50 for 5m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 50}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 8, "x": 16, "y": 8}, "id": 7,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "aura:db_inflight:max", "legendFormat": "in flight", "range": true, "refId": "A"}],
+      "title": "Database saturation", "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["aura", "operations", "bounded-labels"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Aura / Overview",
+  "uid": "aura-overview",
+  "version": 1,
+  "weekStart": ""
+}

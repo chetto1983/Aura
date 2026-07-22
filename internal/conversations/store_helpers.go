@@ -29,6 +29,7 @@ func conversationFromRow(r sqlc.AuraConversations) Conversation {
 		TotalOutputTokens: r.TotalOutputTokens,
 		TotalCachedTokens: r.TotalCachedTokens,
 		TotalCostUSD:      pgnumeric.FloatFromNumeric(r.TotalCostUsd),
+		SnapshotVersion:   r.SnapshotVersion,
 	}
 	if r.Title.Valid {
 		c.Title = r.Title.String

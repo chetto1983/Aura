@@ -1,0 +1,68 @@
+groups:
+  - name: aura.recording.service
+    interval: 30s
+    rules:
+      - record: aura:service:up
+        expr: max(up{job="aura"}) or vector(0)
+      - record: aura:listener_failure:increase5m
+        expr: sum(increase(aura_listener_transition_total{outcome="error"}[5m])) or vector(0)
+      - record: aura:scheduler_enabled
+        expr: clamp_max(sum(aura_boundary_in_flight{operation="scheduler_tick"}) or vector(0), 1)
+      - record: aura:scheduler_progress:increase5m
+        expr: sum(increase(aura_scheduler_run_total{operation="scheduler_tick",outcome="success"}[5m])) or vector(0)
+      - record: aura:resume_failure:increase5m
+        expr: sum(increase(aura_runner_resume_total{outcome="error"}[5m])) or vector(0)
+
+  - name: aura.recording.slo
+    interval: 30s
+    rules:
+      - record: aura:llm_error_ratio:rate5m
+        expr: (sum(rate(aura_agent_llm_call_total{outcome=~"error|timeout"}[5m])) or vector(0)) / clamp_min(sum(rate(aura_agent_llm_call_total[5m])) or vector(0), 0.000001)
+      - record: aura:llm_error_ratio:rate1h
+        expr: (sum(rate(aura_agent_llm_call_total{outcome=~"error|timeout"}[1h])) or vector(0)) / clamp_min(sum(rate(aura_agent_llm_call_total[1h])) or vector(0), 0.000001)
+      - record: aura:llm_error_burn:rate5m
+        expr: aura:llm_error_ratio:rate5m / 0.01
+      - record: aura:llm_error_burn:rate1h
+        expr: aura:llm_error_ratio:rate1h / 0.01
+      - record: aura:llm_latency_bad_ratio:rate5m
+        expr: ((sum(rate(aura_agent_llm_call_duration_seconds_count[5m])) or vector(0)) - (sum(rate(aura_agent_llm_call_duration_seconds_bucket{le="30"}[5m])) or vector(0))) / clamp_min(sum(rate(aura_agent_llm_call_duration_seconds_count[5m])) or vector(0), 0.000001)
+      - record: aura:llm_latency_bad_ratio:rate1h
+        expr: ((sum(rate(aura_agent_llm_call_duration_seconds_count[1h])) or vector(0)) - (sum(rate(aura_agent_llm_call_duration_seconds_bucket{le="30"}[1h])) or vector(0))) / clamp_min(sum(rate(aura_agent_llm_call_duration_seconds_count[1h])) or vector(0), 0.000001)
+      - record: aura:llm_latency_burn:rate5m
+        expr: aura:llm_latency_bad_ratio:rate5m / 0.01
+      - record: aura:llm_latency_burn:rate1h
+        expr: aura:llm_latency_bad_ratio:rate1h / 0.01
+      - record: aura:llm_latency_p95_seconds
+        expr: histogram_quantile(0.95, sum by (le) (rate(aura_agent_llm_call_duration_seconds_bucket[5m]))) or vector(0)
+
+  - name: aura.recording.components
+    interval: 30s
+    rules:
+      - record: aura:tool_error_ratio:rate5m
+        expr: (sum(rate(aura_agent_tool_errors_total[5m])) or vector(0)) / clamp_min(sum(rate(aura_agent_tool_dispatch_total[5m])) or vector(0), 0.000001)
+      - record: aura:mcp_error_ratio:rate5m
+        expr: (sum(rate(aura_mcp_call_total{outcome=~"error|timeout"}[5m])) or vector(0)) / clamp_min(sum(rate(aura_mcp_call_total[5m])) or vector(0), 0.000001)
+      - record: aura:mcp_latency_p95_seconds
+        expr: histogram_quantile(0.95, sum by (le) (rate(aura_mcp_call_duration_seconds_bucket[5m]))) or vector(0)
+      - record: aura:db_error_ratio:rate5m
+        expr: (sum(rate(aura_db_call_total{outcome=~"error|timeout"}[5m])) or vector(0)) / clamp_min(sum(rate(aura_db_call_total[5m])) or vector(0), 0.000001)
+      - record: aura:db_latency_p95_seconds
+        expr: histogram_quantile(0.95, sum by (le) (rate(aura_db_call_duration_seconds_bucket[5m]))) or vector(0)
+      - record: aura:db_inflight:max
+        expr: max(aura_boundary_in_flight{operation=~"db_query|db_transaction"}) or vector(0)
+      - record: aura:idempotency_conflict:increase15m
+        expr: sum(increase(aura_idempotency_operation_total{outcome="conflict"}[15m])) or vector(0)
+      - record: aura:idempotency_in_progress:increase15m
+        expr: sum(increase(aura_idempotency_operation_total{outcome="in_progress"}[15m])) or vector(0)
+      - record: aura:idempotency_indeterminate:increase5m
+        expr: sum(increase(aura_idempotency_operation_total{outcome="indeterminate"}[5m])) or vector(0)
+      - record: aura:retention_failure:increase15m
+        expr: sum(increase(aura_retention_operation_total{outcome="error"}[15m])) or vector(0)
+      - record: aura:retention_backlog
+        expr: max(aura_retention_backlog_items)
+      - record: aura:retention_disk_utilization:max
+        expr: max by (state) (aura_retention_disk_utilization_ratio)
+      - record: aura:learning_size:max
+        expr: max(aura_learning_size) or vector(0)
+      - record: aura:learning_oldest_age:max_seconds
+        expr: max(aura_learning_oldest_age_seconds) or vector(0)

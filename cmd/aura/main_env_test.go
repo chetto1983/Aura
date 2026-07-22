@@ -75,6 +75,9 @@ func runMainMCPDotEnvSubprocess(t *testing.T, wd, home string, extraEnv []string
 	cmd.Dir = wd
 	cmd.Env = append(filteredEnv("AURA_MCP_CONFIG", "AURA_TEST_MAIN_MCP_DOTENV", "AURA_TEST_MCP_SERVER_NAME"),
 		"AURA_TEST_MAIN_MCP_DOTENV=1",
+		// This test exercises dotenv-to-dispatch wiring inside the marked child;
+		// durable parent acquisition has its own registry/executor coverage.
+		cliIdempotencyChildEnv+"=1",
 		"AURA_TEST_MCP_SERVER_NAME="+strings.ToLower(strings.ReplaceAll(t.Name(), "_", "-")),
 		"HOME="+home,
 		"USERPROFILE="+home,
