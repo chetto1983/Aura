@@ -3,7 +3,7 @@
 # needs; everything else (the full engine catalogue) is inherited via
 # use_default_settings so this stays small and survives image upgrades.
 #
-# Source: searxng/searxng:2026.5.31-7159b8aed default settings.yml + docs
+# Source: searxng/searxng:2026.7.19-6da6eee26 default settings.yml + docs
 #   https://docs.searxng.org/admin/settings/settings_search.html
 #   https://docs.searxng.org/admin/settings/settings_server.html
 # verified against the pinned image entrypoint (Granian binds :8080) 2026-06-02.

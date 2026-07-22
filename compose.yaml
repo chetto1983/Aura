@@ -405,7 +405,7 @@ services:
 
   # ↓↓ Slice 0.7 — Neo4j Community + APOC + GDS ↓↓
   neo4j:
-    image: neo4j:5.26.26-community
+    image: neo4j:5.26.28-community
     container_name: aura-neo4j
     restart: unless-stopped
     environment:
@@ -587,7 +587,7 @@ services:
   # SearXNG needs outbound egress to query upstream engines; loopback publishing
   # keeps the service local without cutting off metasearch.
   searxng:
-    image: searxng/searxng:2026.5.31-7159b8aed
+    image: searxng/searxng:2026.7.19-6da6eee26
     container_name: aura-searxng
     restart: unless-stopped
     environment:
