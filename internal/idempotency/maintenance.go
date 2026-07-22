@@ -98,6 +98,18 @@ ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING`,
 	if tag.RowsAffected() == 1 {
 		return BeginDecision{Decision: DecisionAcquired}, nil
 	}
+	// A crashed reset has an ambiguous outcome, so an expired receipt is sealed
+	// terminally instead of ever being reacquired. The fingerprint predicate keeps
+	// a changed command at Conflict, while the state/deadline predicates make this
+	// a single atomic compare-and-swap against concurrent Complete/MarkIndeterminate.
+	if _, err := r.conn.Exec(ctx, `
+UPDATE public.aura_maintenance_operations
+SET state = 'indeterminate', updated_at = $1
+WHERE identity_id = $2 AND operation_scope = $3 AND operation_key = $4
+  AND payload_hash = $5 AND state = 'in_progress' AND retry_after <= $1`,
+		now, request.Operation.IdentityID, request.Operation.Scope, request.Operation.Key, request.Fingerprint[:]); err != nil {
+		return BeginDecision{}, fmt.Errorf("expire maintenance operation: %w", err)
+	}
 	var payloadHash []byte
 	var state string
 	var replayBody []byte

@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -13,9 +15,20 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/idempotency"
+)
+
+const (
+	dbResetCrashHelperEnv  = "AURA_TEST_DB_RESET_CRASH_HELPER"
+	dbResetCrashMigrateEnv = "AURA_TEST_DB_RESET_CRASH_MIGRATE_URL"
+	dbResetCrashKeyEnv     = "AURA_TEST_DB_RESET_CRASH_KEY"
 )
 
 func TestDBResetSameKeyReplaysWithoutDestroyingPostResetSentinel(t *testing.T) {
+	if os.Getenv(dbResetCrashHelperEnv) == "1" {
+		runDBResetCrashAfterAcquireHelper(t)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 
@@ -112,4 +125,119 @@ WHERE operation_scope = 'cli.command' AND operation_key = $1`, operationKey).Sca
 	if durableState != "completed" {
 		t.Fatalf("durable reset state = %q, want completed", durableState)
 	}
+
+	const crashedOperationKey = "reset-crash-becomes-indeterminate"
+	helper := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDBResetSameKeyReplaysWithoutDestroyingPostResetSentinel$")
+	helper.Env = append(withoutEnvKey(os.Environ(), dbResetCrashHelperEnv),
+		dbResetCrashHelperEnv+"=1",
+		dbResetCrashMigrateEnv+"="+migrateURL,
+		dbResetCrashKeyEnv+"="+crashedOperationKey,
+	)
+	helperStdout, err := helper.StdoutPipe()
+	if err != nil {
+		t.Fatalf("crash helper stdout: %v", err)
+	}
+	var helperStderr bytes.Buffer
+	helper.Stderr = &helperStderr
+	if err := helper.Start(); err != nil {
+		t.Fatalf("start crash helper: %v", err)
+	}
+	ready, readErr := bufio.NewReader(helperStdout).ReadString('\n')
+	if readErr != nil || strings.TrimSpace(ready) != "maintenance-acquired" {
+		_ = helper.Process.Kill()
+		_, _ = helper.Process.Wait()
+		t.Fatalf("crash helper readiness=%q err=%v stderr=%q", ready, readErr, helperStderr.String())
+	}
+	if err := helper.Process.Kill(); err != nil {
+		t.Fatalf("kill reset parent after durable acquisition: %v", err)
+	}
+	if err := helper.Wait(); err == nil {
+		t.Fatal("crash helper exited successfully instead of being terminated")
+	}
+
+	var crashedState string
+	var retryAfter time.Time
+	if err := migratePool.QueryRow(ctx, `
+SELECT state, retry_after FROM public.aura_maintenance_operations
+WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey).Scan(&crashedState, &retryAfter); err != nil {
+		t.Fatalf("read crashed reset receipt: %v", err)
+	}
+	if crashedState != "in_progress" || retryAfter.IsZero() {
+		t.Fatalf("crashed reset receipt state/retry_after=%q/%v", crashedState, retryAfter)
+	}
+	if _, err := migratePool.Exec(ctx, `
+UPDATE public.aura_maintenance_operations
+SET retry_after = now() - interval '1 second'
+WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey); err != nil {
+		t.Fatalf("advance crashed receipt beyond retry_after: %v", err)
+	}
+
+	crashRetry := exec.CommandContext(ctx, binary, "db", "reset", "--yes", "--operation-key", crashedOperationKey)
+	crashRetry.Env = env
+	crashRetryOutput, err := crashRetry.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expired crashed reset unexpectedly executed: %s", crashRetryOutput)
+	}
+	if !strings.Contains(string(crashRetryOutput), "operation outcome is indeterminate") || strings.Contains(string(crashRetryOutput), "ok: schema reset") {
+		t.Fatalf("expired crashed reset output=%q", crashRetryOutput)
+	}
+	if err := migratePool.QueryRow(ctx, `SELECT value FROM aura.reset_replay_sentinel`).Scan(&sentinel); err != nil || sentinel != "survives" {
+		t.Fatalf("crashed-operation retry executed reset; sentinel=%q err=%v", sentinel, err)
+	}
+	var indeterminateAt time.Time
+	if err := migratePool.QueryRow(ctx, `
+SELECT state, updated_at FROM public.aura_maintenance_operations
+WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey).Scan(&crashedState, &indeterminateAt); err != nil {
+		t.Fatalf("read reconciled crash receipt: %v", err)
+	}
+	if crashedState != "indeterminate" {
+		t.Fatalf("reconciled crash state=%q, want indeterminate", crashedState)
+	}
+
+	terminalRetry := exec.CommandContext(ctx, binary, "db", "reset", "--yes", "--operation-key", crashedOperationKey)
+	terminalRetry.Env = env
+	terminalOutput, err := terminalRetry.CombinedOutput()
+	if err == nil || !strings.Contains(string(terminalOutput), "operation outcome is indeterminate") {
+		t.Fatalf("terminal retry err=%v output=%q", err, terminalOutput)
+	}
+	var terminalState string
+	var terminalUpdatedAt time.Time
+	if err := migratePool.QueryRow(ctx, `
+SELECT state, updated_at FROM public.aura_maintenance_operations
+WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey).Scan(&terminalState, &terminalUpdatedAt); err != nil {
+		t.Fatalf("read terminal crash receipt: %v", err)
+	}
+	if terminalState != "indeterminate" || !terminalUpdatedAt.Equal(indeterminateAt) {
+		t.Fatalf("terminal receipt mutated state/time=%q/%v, want indeterminate/%v", terminalState, terminalUpdatedAt, indeterminateAt)
+	}
+	if err := migratePool.QueryRow(ctx, `SELECT value FROM aura.reset_replay_sentinel`).Scan(&sentinel); err != nil || sentinel != "survives" {
+		t.Fatalf("terminal retry executed reset; sentinel=%q err=%v", sentinel, err)
+	}
+}
+
+func runDBResetCrashAfterAcquireHelper(t *testing.T) {
+	t.Helper()
+	migrateURL := os.Getenv(dbResetCrashMigrateEnv)
+	operationKey := os.Getenv(dbResetCrashKeyEnv)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	prepared, _, err := prepareCLIIdempotency(ctx, []string{"db", "reset", "--yes", "--operation-key", operationKey}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, ok := idempotency.OperationFromContext(prepared)
+	if !ok {
+		t.Fatal("prepared reset operation is missing")
+	}
+	registry, err := idempotency.OpenMaintenanceRegistry(ctx, migrateURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer registry.Close()
+	decision, err := registry.Begin(ctx, idempotency.BeginRequest{Operation: operation.Key, Fingerprint: operation.Fingerprint})
+	if err != nil || decision.Decision != idempotency.DecisionAcquired {
+		t.Fatalf("acquire crash receipt decision=%+v err=%v", decision, err)
+	}
+	_, _ = fmt.Fprintln(os.Stdout, "maintenance-acquired")
+	select {}
 }
