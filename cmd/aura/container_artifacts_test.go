@@ -23,7 +23,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	for _, want := range []string{
 		"FROM golang:",
 		"FROM debian:bookworm-slim",
-		"FROM dxflrs/garage:v2.0.0 AS garagebin",
+		"FROM dxflrs/garage:v2.3.0 AS garagebin",
 		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.21",
 		"mcp-neo4j-cypher==0.6.0",
@@ -117,7 +117,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"healthcheck:",
 		"curl -fsS --max-time 3 http://127.0.0.1:9080/readyz >/dev/null",
 		"garage:",
-		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}",
+		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
 		"AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}",
 		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",
