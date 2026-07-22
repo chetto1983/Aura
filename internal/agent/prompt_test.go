@@ -163,3 +163,19 @@ func TestPrompt_NoSupersededSkillRouting(t *testing.T) {
 		t.Error("the §Skills section must name an always-on skill as the discovery/install teaching")
 	}
 }
+
+// TestPrompt_DocumentsDoctrine asserts the Amendment #89 <documents> doctrine
+// block: uploaded/indexed documents live in a searchable knowledge base (Neo4j),
+// distinct from /workspace files, routed via document_search/document_index.
+func TestPrompt_DocumentsDoctrine(t *testing.T) {
+	for _, needle := range []string{
+		"<documents>",
+		"searchable knowledge base",
+		"document_search FIRST",
+		"document_index",
+	} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt missing documents doctrine %q", needle)
+		}
+	}
+}
