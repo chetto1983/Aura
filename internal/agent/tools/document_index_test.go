@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/documents"
@@ -75,5 +76,16 @@ func TestDocumentIndex_NilBackendErrors(t *testing.T) {
 	tool := &DocumentIndex{WorkspaceRoot: t.TempDir()}
 	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"path":"a.txt"}`)); err == nil {
 		t.Fatal("expected error when indexer is not configured")
+	}
+}
+
+func TestDescriptions_CrossReferenceDocumentIndex(t *testing.T) {
+	ds := (&DocumentSearch{}).Spec().Description
+	if !strings.Contains(ds, "document_index") || !strings.Contains(ds, "/workspace") {
+		t.Errorf("document_search description must point workspace-file questions at fs_* / document_index")
+	}
+	sf := (&SendFile{}).Spec().Description
+	if !strings.Contains(sf, "document_index") {
+		t.Errorf("send_file description must note delivered files are not searchable until document_index")
 	}
 }

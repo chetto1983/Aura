@@ -40,7 +40,9 @@ func (t *DocumentSearch) Spec() Spec {
 			"document_search FIRST. Results are chunks with document id, chunk id, file name, locator (page, " +
 			"sheet/rows, or section), relevance score, and text — cite them. Set document_id to scope to one " +
 			"specific indexed document (e.g. the attachment's document_id). This is for the user's OWN files, NOT " +
-			"the public web (use web search/fetch for that). Example: {\"query\":\"safety valve pressure rating\",\"limit\":5}.",
+			"the public web (use web search/fetch for that). Files YOU create live on the filesystem under " +
+			"/workspace — search those with fs_read/fs_grep, and make one searchable here by indexing it with " +
+			"document_index. Example: {\"query\":\"safety valve pressure rating\",\"limit\":5}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {

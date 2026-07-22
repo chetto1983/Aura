@@ -104,6 +104,7 @@ func (s *SendFile) Spec() Spec {
 			"Give the absolute path to the file and an optional short caption. " +
 			"The file is read and queued for delivery; you do not need to know how the user's channel renders it. " +
 			"A file larger than the 50 MB upload limit, or a path that cannot be read, comes back as a small {error,message} object you should read and adapt to — it is not a tool failure. " +
+			"A delivered file is delivery-only and does NOT become searchable; if the user will need to find or recall it later, index it first with document_index. " +
 			"Example: {\"path\":\"/abs/file.xlsx\",\"caption\":\"results\"}.",
 		Parameters: params,
 		Deferred:   true,
