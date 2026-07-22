@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -148,28 +150,92 @@ WHERE operation_scope = 'cli.command' AND operation_key = $1`, operationKey).Sca
 		_, _ = helper.Process.Wait()
 		t.Fatalf("crash helper readiness=%q err=%v stderr=%q", ready, readErr, helperStderr.String())
 	}
-	if err := helper.Process.Kill(); err != nil {
-		t.Fatalf("kill reset parent after durable acquisition: %v", err)
-	}
-	if err := helper.Wait(); err == nil {
-		t.Fatal("crash helper exited successfully instead of being terminated")
-	}
+	helperDone := make(chan error, 1)
+	go func() { helperDone <- helper.Wait() }()
+	helperStopped := false
+	t.Cleanup(func() {
+		if !helperStopped {
+			_ = helper.Process.Kill()
+			<-helperDone
+		}
+	})
 
 	var crashedState string
 	var retryAfter time.Time
+	var leaseExpiresAt time.Time
+	var crashedUpdatedAt time.Time
 	if err := migratePool.QueryRow(ctx, `
-SELECT state, retry_after FROM public.aura_maintenance_operations
-WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey).Scan(&crashedState, &retryAfter); err != nil {
+SELECT state, retry_after, lease_expires_at, updated_at
+FROM public.aura_maintenance_operations
+WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey).
+		Scan(&crashedState, &retryAfter, &leaseExpiresAt, &crashedUpdatedAt); err != nil {
 		t.Fatalf("read crashed reset receipt: %v", err)
 	}
-	if crashedState != "in_progress" || retryAfter.IsZero() {
-		t.Fatalf("crashed reset receipt state/retry_after=%q/%v", crashedState, retryAfter)
+	if crashedState != "in_progress" || retryAfter.IsZero() || !leaseExpiresAt.After(retryAfter) {
+		t.Fatalf("live reset receipt state/retry/lease=%q/%v/%v", crashedState, retryAfter, leaseExpiresAt)
 	}
+	var liveLocks int
+	if err := migratePool.QueryRow(ctx, `
+SELECT count(*) FROM pg_locks
+WHERE locktype = 'advisory' AND granted
+  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`).Scan(&liveLocks); err != nil {
+		t.Fatalf("read live reset ownership lock: %v", err)
+	}
+	if liveLocks < 1 {
+		t.Fatal("live reset helper does not hold an advisory ownership lock")
+	}
+	if wait := time.Until(retryAfter.Add(200 * time.Millisecond)); wait > 0 {
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	select {
+	case err := <-helperDone:
+		helperStopped = true
+		t.Fatalf("reset helper exited while ownership should be live: %v stderr=%q", err, helperStderr.String())
+	default:
+	}
+
+	liveRetry := exec.CommandContext(ctx, binary, "db", "reset", "--yes", "--operation-key", crashedOperationKey)
+	liveRetry.Env = env
+	liveRetryOutput, err := liveRetry.CombinedOutput()
+	if err == nil {
+		t.Fatalf("live reset duplicate unexpectedly executed: %s", liveRetryOutput)
+	}
+	if !strings.Contains(string(liveRetryOutput), "operation is still in progress") ||
+		strings.Contains(string(liveRetryOutput), "operation outcome is indeterminate") ||
+		strings.Contains(string(liveRetryOutput), "ok: schema reset") {
+		t.Fatalf("live reset duplicate output=%q", liveRetryOutput)
+	}
+	if err := migratePool.QueryRow(ctx, `SELECT value FROM aura.reset_replay_sentinel`).Scan(&sentinel); err != nil || sentinel != "survives" {
+		t.Fatalf("live duplicate executed reset; sentinel=%q err=%v", sentinel, err)
+	}
+	var liveUpdatedAt time.Time
+	if err := migratePool.QueryRow(ctx, `
+SELECT state, updated_at FROM public.aura_maintenance_operations
+WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey).
+		Scan(&crashedState, &liveUpdatedAt); err != nil {
+		t.Fatalf("read live reset receipt after duplicate: %v", err)
+	}
+	if crashedState != "in_progress" || !liveUpdatedAt.Equal(crashedUpdatedAt) {
+		t.Fatalf("live duplicate mutated receipt state/time=%q/%v, want in_progress/%v", crashedState, liveUpdatedAt, crashedUpdatedAt)
+	}
+
+	if err := helper.Process.Kill(); err != nil {
+		t.Fatalf("kill reset parent after live-owner assertion: %v", err)
+	}
+	if err := <-helperDone; err == nil {
+		t.Fatal("crash helper exited successfully instead of being terminated")
+	}
+	helperStopped = true
+	waitForNoMaintenanceOwnerLocks(t, ctx, migratePool)
 	if _, err := migratePool.Exec(ctx, `
 UPDATE public.aura_maintenance_operations
-SET retry_after = now() - interval '1 second'
+SET lease_expires_at = now() - interval '1 second'
 WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationKey); err != nil {
-		t.Fatalf("advance crashed receipt beyond retry_after: %v", err)
+		t.Fatalf("advance crashed receipt beyond recovery lease: %v", err)
 	}
 
 	crashRetry := exec.CommandContext(ctx, binary, "db", "reset", "--yes", "--operation-key", crashedOperationKey)
@@ -212,6 +278,131 @@ WHERE operation_scope = 'cli.command' AND operation_key = $1`, crashedOperationK
 	}
 	if err := migratePool.QueryRow(ctx, `SELECT value FROM aura.reset_replay_sentinel`).Scan(&sentinel); err != nil || sentinel != "survives" {
 		t.Fatalf("terminal retry executed reset; sentinel=%q err=%v", sentinel, err)
+	}
+
+	testMaintenanceCompleteReconcileRace(t, ctx, migrateURL, migratePool)
+}
+
+func waitForNoMaintenanceOwnerLocks(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var locks int
+		if err := pool.QueryRow(ctx, `
+SELECT count(*) FROM pg_locks
+WHERE locktype = 'advisory' AND granted
+  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`).Scan(&locks); err != nil {
+			t.Fatalf("read reset ownership locks after crash: %v", err)
+		}
+		if locks == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("reset ownership lock remained after helper death: %d", locks)
+		}
+		select {
+		case <-time.After(25 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+}
+
+func testMaintenanceCompleteReconcileRace(t *testing.T, ctx context.Context, migrateURL string, pool *pgxpool.Pool) {
+	t.Helper()
+	for iteration := 0; iteration < 20; iteration++ {
+		t.Run(fmt.Sprintf("complete-vs-reconcile-%02d", iteration), func(t *testing.T) {
+			operationKey := fmt.Sprintf("reset-complete-reconcile-race-%02d", iteration)
+			prepared, _, err := prepareCLIIdempotency(ctx, []string{"db", "reset", "--yes", "--operation-key", operationKey}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			operation, ok := idempotency.OperationFromContext(prepared)
+			if !ok {
+				t.Fatal("prepared race operation is missing")
+			}
+			request := idempotency.BeginRequest{Operation: operation.Key, Fingerprint: operation.Fingerprint}
+
+			owner, err := idempotency.OpenMaintenanceRegistry(ctx, migrateURL)
+			if err != nil {
+				t.Fatalf("open race owner registry: %v", err)
+			}
+			decision, err := owner.Begin(ctx, request)
+			if err != nil || decision.Decision != idempotency.DecisionAcquired {
+				owner.Close()
+				t.Fatalf("acquire race receipt decision=%+v err=%v", decision, err)
+			}
+			owner.Close()
+			if _, err := pool.Exec(ctx, `
+UPDATE public.aura_maintenance_operations
+SET lease_expires_at = now() - interval '1 second'
+WHERE identity_id = $1 AND operation_scope = $2 AND operation_key = $3`,
+				operation.Key.IdentityID, operation.Key.Scope, operation.Key.Key); err != nil {
+				t.Fatalf("expire race recovery lease: %v", err)
+			}
+
+			completer, err := idempotency.OpenMaintenanceRegistry(ctx, migrateURL)
+			if err != nil {
+				t.Fatalf("open race completion registry: %v", err)
+			}
+			defer completer.Close()
+			reconciler, err := idempotency.OpenMaintenanceRegistry(ctx, migrateURL)
+			if err != nil {
+				t.Fatalf("open race reconciliation registry: %v", err)
+			}
+			defer reconciler.Close()
+
+			start := make(chan struct{})
+			completeResult := make(chan error, 1)
+			type beginResult struct {
+				decision idempotency.BeginDecision
+				err      error
+			}
+			beginResults := make(chan beginResult, 1)
+			go func() {
+				<-start
+				completeResult <- completer.Complete(ctx, idempotency.CompleteRequest{
+					Operation:   operation.Key,
+					Fingerprint: operation.Fingerprint,
+					Result: idempotency.ReplayResult{
+						Body:       []byte(`{"ok":true}`),
+						StatusCode: 200,
+						ExpiresAt:  time.Now().UTC().Add(time.Hour),
+					},
+				})
+			}()
+			go func() {
+				<-start
+				got, beginErr := reconciler.Begin(ctx, request)
+				beginResults <- beginResult{decision: got, err: beginErr}
+			}()
+			close(start)
+			completeErr := <-completeResult
+			begin := <-beginResults
+			if begin.err != nil {
+				t.Fatalf("reconcile race: %v", begin.err)
+			}
+
+			var wantState string
+			switch {
+			case completeErr == nil && begin.decision.Decision == idempotency.DecisionReplay:
+				wantState = "completed"
+			case errors.Is(completeErr, idempotency.ErrStaleTransition) && begin.decision.Decision == idempotency.DecisionIndeterminate:
+				wantState = "indeterminate"
+			default:
+				t.Fatalf("invalid complete/reconcile outcomes: complete=%v begin=%+v", completeErr, begin.decision)
+			}
+			var durableState string
+			if err := pool.QueryRow(ctx, `
+SELECT state FROM public.aura_maintenance_operations
+WHERE identity_id = $1 AND operation_scope = $2 AND operation_key = $3`,
+				operation.Key.IdentityID, operation.Key.Scope, operation.Key.Key).Scan(&durableState); err != nil {
+				t.Fatalf("read race receipt: %v", err)
+			}
+			if durableState != wantState {
+				t.Fatalf("race receipt state=%q, want %q", durableState, wantState)
+			}
+		})
 	}
 }
 
