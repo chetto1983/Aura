@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/google/uuid"
 )
 
@@ -261,6 +263,107 @@ func TestOwnerExportDeleteSurvivesClientDisconnect(t *testing.T) {
 	if run.deleteLifecycleCalls != 1 || destination.Count() != 1 {
 		t.Fatalf("delete calls=%d durable archives=%d, want 1/1", run.deleteLifecycleCalls, destination.Count())
 	}
+}
+
+func TestOwnerExportDeleteReturnsReceiptWhenReconcilerFinishesForegroundReservation(t *testing.T) {
+	owner := localIdentityID
+	store := &raceOwnerConvStore{ownerConvStore: newOwnerConvStore(goodID, owner)}
+	run := &reconcilerWinningRunner{
+		scriptedRunner:     &scriptedRunner{conv: store},
+		foregroundPaused:   make(chan struct{}),
+		reconciliationDone: make(chan struct{}),
+	}
+	destination := NewMemoryExportDestination(1 << 20)
+	server := NewServer(run, store, ServerConfig{})
+	server.SetAssetService(&fakeAssetService{})
+	server.SetOwnerExportDestination(destination)
+
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/conversations/"+goodID+"/export-delete", nil), owner)
+	rec := httptest.NewRecorder()
+	responseDone := make(chan struct{})
+	go func() {
+		server.Mux().ServeHTTP(rec, req)
+		close(responseDone)
+	}()
+	select {
+	case <-run.foregroundPaused:
+	case <-time.After(time.Second):
+		t.Fatal("foreground export-delete did not pause after reservation")
+	}
+	if affected, err := run.DeleteConversationLifecycle(context.Background(), owner, goodID); err != nil || affected != 1 {
+		t.Fatalf("reconciler lifecycle affected=%d err=%v", affected, err)
+	}
+	close(run.reconciliationDone)
+	select {
+	case <-responseDone:
+	case <-time.After(time.Second):
+		t.Fatal("foreground response did not observe reconciler completion")
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("foreground response status=%d, want 201: %s", rec.Code, rec.Body.String())
+	}
+	var receipt struct {
+		ExportID    string `json:"export_id"`
+		DownloadURL string `json:"download_url"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil {
+		t.Fatalf("decode receipt: %v", err)
+	}
+	if _, err := uuid.Parse(receipt.ExportID); err != nil || receipt.DownloadURL == "" {
+		t.Fatalf("unusable receipt=%+v export_id_err=%v", receipt, err)
+	}
+	downloadReq := withPrincipal(httptest.NewRequest(http.MethodGet, receipt.DownloadURL, nil), owner)
+	downloadRec := httptest.NewRecorder()
+	server.Mux().ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK || downloadRec.Header().Get("Content-Type") != "application/zip" {
+		t.Fatalf("download status/type=%d/%q: %s", downloadRec.Code, downloadRec.Header().Get("Content-Type"), downloadRec.Body.String())
+	}
+	archive, err := zip.NewReader(bytes.NewReader(downloadRec.Body.Bytes()), int64(downloadRec.Body.Len()))
+	if err != nil {
+		t.Fatalf("downloaded archive: %v", err)
+	}
+	if len(archive.File) == 0 {
+		t.Fatal("downloaded archive is empty")
+	}
+}
+
+type raceOwnerConvStore struct {
+	*ownerConvStore
+	mu      sync.Mutex
+	deleted bool
+}
+
+func (s *raceOwnerConvStore) GetForIdentity(ctx context.Context, id, identity string) (conversations.Conversation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.deleted {
+		return conversations.Conversation{}, conversations.ErrConversationNotFound
+	}
+	conversation, err := s.ownerConvStore.GetForIdentity(ctx, id, identity)
+	conversation.SnapshotVersion = 1
+	return conversation, err
+}
+
+func (s *raceOwnerConvStore) DeleteForIdentity(_ context.Context, id, identity string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.deleted || s.ownedRows(id, identity) == 0 {
+		return 0, nil
+	}
+	s.deleted = true
+	return 1, nil
+}
+
+type reconcilerWinningRunner struct {
+	*scriptedRunner
+	foregroundPaused   chan struct{}
+	reconciliationDone chan struct{}
+}
+
+func (r *reconcilerWinningRunner) DeleteConversationLifecycleIfVersion(context.Context, string, string, int64) (int64, error) {
+	close(r.foregroundPaused)
+	<-r.reconciliationDone
+	return 1, nil
 }
 
 type fakeOwnerExportSource struct {

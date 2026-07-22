@@ -24,6 +24,8 @@ type resumableDeleteStore struct {
 	deleteFailures     int
 	deleteCalls        int
 	claimSawCanceled   bool
+	reservePaused      chan struct{}
+	continueReserve    chan struct{}
 	deleted            chan struct{}
 	deleteOnce         sync.Once
 }
@@ -40,9 +42,16 @@ func (s *resumableDeleteStore) ReserveDeleteForIdentityIfVersion(ctx context.Con
 	}
 	cancel := s.cancelAfterReserve
 	s.cancelAfterReserve = nil
+	paused := s.reservePaused
+	continued := s.continueReserve
+	s.reservePaused = nil
 	s.stateMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if paused != nil {
+		close(paused)
+		<-continued
 	}
 	return 1, nil
 }
@@ -70,6 +79,12 @@ func (s *resumableDeleteStore) ReleaseDeleteLease(_ context.Context, _, _, reser
 	}
 	s.worker = ""
 	return 1, nil
+}
+
+func (s *resumableDeleteStore) ConversationDeleteCompleted(_ context.Context, id, identityID, reservation string) (bool, error) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return !s.exists || s.conversationID != id || s.owner != identityID || s.reservation != reservation, nil
 }
 
 func (s *resumableDeleteStore) DeleteForIdentityIfReservation(ctx context.Context, id, identityID, reservation, worker string) (int64, error) {
@@ -189,5 +204,50 @@ func TestExportDeleteSameOperationRaceHasOneTeardownOwner(t *testing.T) {
 	wg.Wait()
 	if store.deleteCalls != 1 {
 		t.Fatalf("racing final delete calls=%d, want 1", store.deleteCalls)
+	}
+}
+
+func TestForegroundExportDeleteObservesReconcilerCompletion(t *testing.T) {
+	if conversations.ExportDeleteRecoveryGrace <= conversationDeleteFinalizeTimeout {
+		t.Fatalf("recovery grace %s must exceed foreground finalization timeout %s", conversations.ExportDeleteRecoveryGrace, conversationDeleteFinalizeTimeout)
+	}
+	const owner = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	convID := newConvID(t)
+	r, store := newResumableDeleteRunner(t, owner, convID)
+	reservePaused := make(chan struct{})
+	continueReserve := make(chan struct{})
+	store.reservePaused = reservePaused
+	store.continueReserve = continueReserve
+
+	type result struct {
+		affected int64
+		err      error
+	}
+	foreground := make(chan result, 1)
+	go func() {
+		affected, err := r.DeleteConversationLifecycleIfVersion(exportDeleteTestContext(t, owner, "foreground-race"), owner, convID, 1)
+		foreground <- result{affected: affected, err: err}
+	}()
+	select {
+	case <-reservePaused:
+	case <-time.After(time.Second):
+		t.Fatal("foreground did not pause after durable reservation")
+	}
+
+	completed, err := r.reconcileReservedConversationDeletes(context.Background(), 1)
+	if err != nil || completed != 1 {
+		t.Fatalf("reconciler completed=%d err=%v", completed, err)
+	}
+	close(continueReserve)
+	select {
+	case got := <-foreground:
+		if got.err != nil || got.affected != 1 {
+			t.Fatalf("foreground completion affected=%d err=%v", got.affected, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("foreground did not observe reconciler completion")
+	}
+	if store.deleteCalls != 1 {
+		t.Fatalf("final delete calls=%d, want reconciler-only teardown", store.deleteCalls)
 	}
 }

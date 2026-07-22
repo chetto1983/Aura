@@ -146,3 +146,71 @@ func TestExportDeleteLeasePreventsAdoptionAndReservationReleaseAfterTeardown(t *
 		t.Fatalf("resumed worker final delete affected=%d err=%v", affected, err)
 	}
 }
+
+func TestExportDeleteRecoveryEligibilityAndCompletionObservation(t *testing.T) {
+	ctx := context.Background()
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	conversationID := newConversation(t, store)
+	version, err := store.VersionForIdentity(ctx, conversationID, localID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const reservation = "recovery-eligibility-proof"
+	if affected, reserveErr := store.ReserveDeleteForIdentityIfVersion(ctx, conversationID, localID, version, reservation); reserveErr != nil || affected != 1 {
+		t.Fatalf("reserve affected=%d err=%v", affected, reserveErr)
+	}
+	contains := func(items []ReservedDelete) bool {
+		for _, item := range items {
+			if item.ConversationID == conversationID {
+				return true
+			}
+		}
+		return false
+	}
+	items, err := store.ListReservedDeletes(ctx, 100)
+	if err != nil || contains(items) {
+		t.Fatalf("fresh foreground reservation was recovery eligible: items=%+v err=%v", items, err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE aura.conversations
+		SET delete_reserved_at = now() - ($1::bigint * interval '1 second')
+		WHERE id = $2::uuid`, int64((ExportDeleteRecoveryGrace+time.Minute)/time.Second), conversationID); err != nil {
+		t.Fatalf("age reservation: %v", err)
+	}
+	items, err = store.ListReservedDeletes(ctx, 100)
+	if err != nil || !contains(items) {
+		t.Fatalf("abandoned reservation was not recovery eligible: items=%+v err=%v", items, err)
+	}
+
+	const worker = "active-recovery-worker"
+	if affected, claimErr := store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, worker, time.Now().Add(time.Minute)); claimErr != nil || affected != 1 {
+		t.Fatalf("claim affected=%d err=%v", affected, claimErr)
+	}
+	items, err = store.ListReservedDeletes(ctx, 100)
+	if err != nil || contains(items) {
+		t.Fatalf("active teardown lease was recovery eligible: items=%+v err=%v", items, err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE aura.conversations
+		SET delete_lease_expires_at = now() - interval '1 second'
+		WHERE id = $1::uuid`, conversationID); err != nil {
+		t.Fatalf("expire teardown lease: %v", err)
+	}
+	items, err = store.ListReservedDeletes(ctx, 100)
+	if err != nil || !contains(items) {
+		t.Fatalf("expired teardown lease was not recovery eligible: items=%+v err=%v", items, err)
+	}
+	if completed, observeErr := store.ConversationDeleteCompleted(ctx, conversationID, localID, reservation); observeErr != nil || completed {
+		t.Fatalf("live reservation observed completed=%v err=%v", completed, observeErr)
+	}
+	if affected, claimErr := store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, worker, time.Now().Add(time.Minute)); claimErr != nil || affected != 1 {
+		t.Fatalf("reclaim expired lease affected=%d err=%v", affected, claimErr)
+	}
+	if affected, deleteErr := store.DeleteForIdentityIfReservation(ctx, conversationID, localID, reservation, worker); deleteErr != nil || affected != 1 {
+		t.Fatalf("delete affected=%d err=%v", affected, deleteErr)
+	}
+	if completed, observeErr := store.ConversationDeleteCompleted(ctx, conversationID, localID, reservation); observeErr != nil || !completed {
+		t.Fatalf("committed delete observed completed=%v err=%v", completed, observeErr)
+	}
+}

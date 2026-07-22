@@ -176,6 +176,11 @@ type ReservedDelete struct {
 	Phase           string
 }
 
+// ExportDeleteRecoveryGrace keeps the reconciler away from a freshly reserved
+// foreground export-delete while its detached finalizer is still allowed to run.
+// It must remain greater than runner's foreground finalization timeout.
+const ExportDeleteRecoveryGrace = 3 * time.Minute
+
 // ClaimDeleteTeardown crosses the irreversible boundary and leases execution
 // to one worker while the operation reservation remains the durable authority.
 func (s *Store) ClaimDeleteTeardown(ctx context.Context, conversationID, identityID, reservation, worker string, leaseExpiresAt time.Time) (int64, error) {
@@ -250,7 +255,12 @@ func (s *Store) ListReservedDeletes(ctx context.Context, limit int32) ([]Reserve
 	if limit <= 0 {
 		return []ReservedDelete{}, nil
 	}
-	rows, err := s.q.ListReservedConversationDeletes(ctx, limit)
+	now := time.Now().UTC()
+	rows, err := s.q.ListReservedConversationDeletes(ctx, sqlc.ListReservedConversationDeletesParams{
+		ReservedBefore: pgtype.Timestamptz{Time: now.Add(-ExportDeleteRecoveryGrace), Valid: true},
+		Now:            pgtype.Timestamptz{Time: now, Valid: true},
+		BatchSize:      limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list reserved conversation deletes: %w", err)
 	}
@@ -265,6 +275,29 @@ func (s *Store) ListReservedDeletes(ctx context.Context, limit int32) ([]Reserve
 		})
 	}
 	return deletes, nil
+}
+
+// ConversationDeleteCompleted observes the durable terminal state of one exact
+// reservation. A matching row remains while another worker is active or retryable;
+// absence means its reservation committed the delete, never a version conflict.
+func (s *Store) ConversationDeleteCompleted(ctx context.Context, conversationID, identityID, reservation string) (bool, error) {
+	id, err := parseUUID("id", conversationID)
+	if err != nil {
+		return false, err
+	}
+	owner, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return false, err
+	}
+	var completed bool
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		value, observeErr := q.ConversationDeleteCompleted(ctx, sqlc.ConversationDeleteCompletedParams{
+			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
+		})
+		completed = value
+		return observeErr
+	})
+	return completed, err
 }
 
 // DeleteForIdentityIfReservation is the only persistence delete that can remove a

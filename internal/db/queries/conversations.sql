@@ -159,9 +159,24 @@ WHERE id = sqlc.arg(id)
 SELECT id, identity_id, snapshot_version, delete_reservation, delete_phase, delete_reserved_at
 FROM aura.conversations
 WHERE delete_reservation IS NOT NULL
-  AND delete_phase IN ('reserved', 'teardown_started')
+  AND ((delete_phase = 'reserved'
+        AND delete_reserved_at <= sqlc.arg(reserved_before))
+       OR (delete_phase = 'teardown_started'
+           AND (delete_worker IS NULL
+                OR delete_lease_expires_at <= sqlc.arg(now))))
 ORDER BY delete_reserved_at, id
 LIMIT sqlc.arg(batch_size);
+
+-- name: ConversationDeleteCompleted :one
+-- A reservation cannot be replaced or released after teardown starts. Once its exact
+-- row is absent, the worker holding that reservation committed the terminal delete.
+SELECT NOT EXISTS (
+  SELECT 1
+  FROM aura.conversations
+  WHERE id = sqlc.arg(id)
+    AND identity_id = sqlc.arg(identity_id)
+    AND delete_reservation = sqlc.arg(reservation)
+) AS completed;
 
 -- name: DeleteConversationForIdentityIfReservation :execrows
 DELETE FROM aura.conversations

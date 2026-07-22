@@ -79,6 +79,10 @@ func (*conflictingReservedConvStore) ReleaseDeleteLease(context.Context, string,
 	return 0, nil
 }
 
+func (*conflictingReservedConvStore) ConversationDeleteCompleted(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
 func (r *recordingConvStore) DeleteForIdentity(ctx context.Context, id, identityID string) (int64, error) {
 	r.steps.add("delete")
 	return r.fakeConvStore.DeleteForIdentity(ctx, id, identityID)

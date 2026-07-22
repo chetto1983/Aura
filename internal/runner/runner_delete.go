@@ -36,10 +36,12 @@ type reservedConversationDelete interface {
 	ReserveDeleteForIdentityIfVersion(context.Context, string, string, int64, string) (int64, error)
 	ClaimDeleteTeardown(context.Context, string, string, string, string, time.Time) (int64, error)
 	ReleaseDeleteLease(context.Context, string, string, string, string) (int64, error)
+	ConversationDeleteCompleted(context.Context, string, string, string) (bool, error)
 	DeleteForIdentityIfReservation(context.Context, string, string, string, string) (int64, error)
 }
 
 const conversationDeleteFinalizeTimeout = 2 * time.Minute
+const conversationDeleteCompletionPoll = 25 * time.Millisecond
 
 // SetShareRevoker wires step 4.5's ShareRevoker seam after construction — required because
 // chat.run (New) is assembled in the shared boot (chat_boot.go, BEFORE objectStore/chat.assets
@@ -121,13 +123,34 @@ func (r *Runner) resumeReservedConversationDelete(ctx context.Context, owner, co
 		return 0, errors.New("delete lifecycle: reserved conversation delete unavailable")
 	}
 	worker := uuid.NewString()
-	affected, err := reserved.ClaimDeleteTeardown(ctx, convID, owner, reservation, worker, time.Now().UTC().Add(conversationDeleteFinalizeTimeout+time.Minute))
-	if err != nil {
-		return 0, fmt.Errorf("delete lifecycle: claim teardown: %w", err)
+	var affected int64
+	for {
+		var err error
+		affected, err = reserved.ClaimDeleteTeardown(ctx, convID, owner, reservation, worker, time.Now().UTC().Add(conversationDeleteFinalizeTimeout+time.Minute))
+		if err != nil {
+			return 0, fmt.Errorf("delete lifecycle: claim teardown: %w", err)
+		}
+		if affected == 1 {
+			break
+		}
+		completed, observeErr := reserved.ConversationDeleteCompleted(ctx, convID, owner, reservation)
+		if observeErr != nil {
+			return 0, fmt.Errorf("delete lifecycle: observe completion: %w", observeErr)
+		}
+		if completed {
+			return 1, nil
+		}
+		timer := time.NewTimer(conversationDeleteCompletionPoll)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return 0, fmt.Errorf("delete lifecycle: wait for reservation completion: %w", ctx.Err())
+		case <-timer.C:
+		}
 	}
-	if affected == 0 {
-		return 0, nil
-	}
+	var err error
 	affected, err = r.teardownConversation(ctx, owner, convID, func(ctx context.Context) (int64, error) {
 		return reserved.DeleteForIdentityIfReservation(ctx, convID, owner, reservation, worker)
 	})

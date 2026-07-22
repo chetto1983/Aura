@@ -49,6 +49,31 @@ func (q *Queries) ClaimConversationDeleteTeardown(ctx context.Context, arg Claim
 	return result.RowsAffected(), nil
 }
 
+const conversationDeleteCompleted = `-- name: ConversationDeleteCompleted :one
+SELECT NOT EXISTS (
+  SELECT 1
+  FROM aura.conversations
+  WHERE id = $1
+    AND identity_id = $2
+    AND delete_reservation = $3
+) AS completed
+`
+
+type ConversationDeleteCompletedParams struct {
+	ID          pgtype.UUID `json:"id"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Reservation pgtype.Text `json:"reservation"`
+}
+
+// A reservation cannot be replaced or released after teardown starts. Once its exact
+// row is absent, the worker holding that reservation committed the terminal delete.
+func (q *Queries) ConversationDeleteCompleted(ctx context.Context, arg ConversationDeleteCompletedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, conversationDeleteCompleted, arg.ID, arg.IdentityID, arg.Reservation)
+	var completed bool
+	err := row.Scan(&completed)
+	return completed, err
+}
+
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO aura.conversations (id, identity_id, model, status, metadata)
 VALUES ($1, $2, $3, 'active', $4)
@@ -391,10 +416,20 @@ const listReservedConversationDeletes = `-- name: ListReservedConversationDelete
 SELECT id, identity_id, snapshot_version, delete_reservation, delete_phase, delete_reserved_at
 FROM aura.conversations
 WHERE delete_reservation IS NOT NULL
-  AND delete_phase IN ('reserved', 'teardown_started')
+  AND ((delete_phase = 'reserved'
+        AND delete_reserved_at <= $1)
+       OR (delete_phase = 'teardown_started'
+           AND (delete_worker IS NULL
+                OR delete_lease_expires_at <= $2)))
 ORDER BY delete_reserved_at, id
-LIMIT $1
+LIMIT $3
 `
+
+type ListReservedConversationDeletesParams struct {
+	ReservedBefore pgtype.Timestamptz `json:"reserved_before"`
+	Now            pgtype.Timestamptz `json:"now"`
+	BatchSize      int32              `json:"batch_size"`
+}
 
 type ListReservedConversationDeletesRow struct {
 	ID                pgtype.UUID        `json:"id"`
@@ -405,8 +440,8 @@ type ListReservedConversationDeletesRow struct {
 	DeleteReservedAt  pgtype.Timestamptz `json:"delete_reserved_at"`
 }
 
-func (q *Queries) ListReservedConversationDeletes(ctx context.Context, batchSize int32) ([]ListReservedConversationDeletesRow, error) {
-	rows, err := q.db.Query(ctx, listReservedConversationDeletes, batchSize)
+func (q *Queries) ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error) {
+	rows, err := q.db.Query(ctx, listReservedConversationDeletes, arg.ReservedBefore, arg.Now, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}

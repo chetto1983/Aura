@@ -44,6 +44,9 @@ type Querier interface {
 	// empty → sql.ErrNoRows / pgx.ErrNoRows → ErrTokenConsumed). The expires_at guard
 	// rejects a stale token in the same statement.
 	ConsumeTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
+	// A reservation cannot be replaced or released after teardown starts. Once its exact
+	// row is absent, the worker holding that reservation committed the terminal delete.
+	ConversationDeleteCompleted(ctx context.Context, arg ConversationDeleteCompletedParams) (bool, error)
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
@@ -188,7 +191,7 @@ type Querier interface {
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
-	ListReservedConversationDeletes(ctx context.Context, batchSize int32) ([]ListReservedConversationDeletesRow, error)
+	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
 	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)

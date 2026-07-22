@@ -35,6 +35,12 @@ func TestExportDeleteProcessRestartRecoversDurableReservation(t *testing.T) {
 	if _, err := first.DeleteConversationLifecycleIfVersion(ctx, localIdentityID, conversationID, version); !errors.Is(err, errSimulatedProcessExitAfterReserve) {
 		t.Fatalf("first process error=%v, want simulated post-reserve exit", err)
 	}
+	if _, err := pool.Exec(context.Background(), `
+		UPDATE aura.conversations
+		SET delete_reserved_at = now() - ($1::bigint * interval '1 second')
+		WHERE id = $2::uuid`, int64((conversations.ExportDeleteRecoveryGrace+time.Minute)/time.Second), conversationID); err != nil {
+		t.Fatalf("age durable reservation past recovery grace: %v", err)
+	}
 	reserved, err := store.ListReservedDeletes(context.Background(), 10)
 	if err != nil || len(reserved) != 1 || reserved[0].ConversationID != conversationID || reserved[0].Phase != "reserved" {
 		t.Fatalf("durable reservation after exit=%+v err=%v", reserved, err)
