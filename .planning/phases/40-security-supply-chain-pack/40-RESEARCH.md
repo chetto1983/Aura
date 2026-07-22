@@ -618,14 +618,16 @@ gh codeql database analyze aura-go-db codeql/go-queries:codeql-suites/go-securit
 
 **If this table is empty:** N/A — four low-risk assumptions are logged above; none affect a locked decision, all are either self-correcting (A1's CI-is-authoritative fallback) or trivially re-verifiable in under a minute at plan/execute time (A3, A4).
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Is `vulncheck` actually configured as a required branch-protection status check?**
+*Both questions concern execution-time-observable facts (a repo-settings value; a local-tool version match), not open design decisions. Each has pre-agreed, bounded fallback handling already locked in D-07/D-08/D-18 and reflected in the plan acceptance criteria, so neither blocks planning or execution.*
+
+1. **Is `vulncheck` actually configured as a required branch-protection status check?** *(RESOLVED — execution-time-bounded: D-18's locked fallback is "do not claim 'blocks merges' without confirming it," captured as a manual acceptance-checklist item in 40-05 Task 3 and the 40-VALIDATION.md Manual-Only table.)*
    - What we know: the `vulncheck` job in `ci.yml` runs `govulncheck` with no flags, exiting 3 (job-red) on any reachable finding — this is a real, functioning gate at the job level `[VERIFIED: ci.yml:145-161]`.
    - What's unclear: whether GitHub's branch-protection rules for `master` actually list `vulncheck` as a *required* status check — this setting lives in repository configuration, not in any file in the repo, so it cannot be verified by reading the tree.
    - Recommendation: the planner should add a manual verification step to the acceptance checklist (e.g., `gh api repos/chetto1983/aura/branches/master/protection --jq '.required_status_checks.contexts'` and confirm `vulncheck` appears), per D-18's own explicit adversarial caveat. Do not claim "blocks merges" in the phase's acceptance evidence without this confirmation.
 
-2. **Does the local `gh-codeql` CLI need explicit query-pack version pinning to exactly match `github/codeql-action@v4.37.3`'s bundled CodeQL engine version?**
+2. **Does the local `gh-codeql` CLI need explicit query-pack version pinning to exactly match `github/codeql-action@v4.37.3`'s bundled CodeQL engine version?** *(RESOLVED — execution-time-bounded: per D-07/D-08, CI's SARIF output is authoritative and the bounded fallback is a documented false-positive dismissal; reflected in 40-08 Task 3's "CodeQL clears OR documented-FP" acceptance criteria.)*
    - What we know: `gh codeql` self-manages CLI version via a "release"/"nightly" channel with `set-version` for pinning `[CITED: github.com/github/gh-codeql]`.
    - What's unclear: whether the DEFAULT (unpinned) `gh codeql` version at install time will match the specific CodeQL engine bundled with `codeql-action@v4.37.3` closely enough for query results to be identical for this one query.
    - Recommendation: if D-07's local scan and a subsequent CI run disagree, do not spend the 3-strike budget debugging the local tool — treat CI's SARIF output as ground truth immediately.
