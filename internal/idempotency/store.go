@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.opentelemetry.io/otel"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
@@ -53,6 +54,7 @@ type Store struct {
 	leaseDuration time.Duration
 	retryAfter    time.Duration
 	expiryBatch   int32
+	telemetry     *idempotencyTelemetry
 }
 
 // New constructs a Store over a pool or transaction implementing sqlc.DBTX.
@@ -79,12 +81,14 @@ func newStore(queries operationQueries, cfg Config) *Store {
 	return &Store{
 		queries: queries, now: cfg.Now, leaseDuration: cfg.LeaseDuration,
 		retryAfter: cfg.RetryAfter, expiryBatch: int32(cfg.ExpiryBatch),
+		telemetry: newIdempotencyTelemetry(otel.Meter(idempotencyMeterName)),
 	}
 }
 
 // Begin atomically acquires a new operation or returns the durable decision
 // for an existing identity/scope/key. Only DecisionAcquired permits an effect.
-func (s *Store) Begin(ctx context.Context, request BeginRequest) (BeginDecision, error) {
+func (s *Store) Begin(ctx context.Context, request BeginRequest) (decision BeginDecision, err error) {
+	defer func() { s.telemetry.recordBegin(ctx, decision) }()
 	if err := request.Validate(); err != nil {
 		return BeginDecision{}, err
 	}
@@ -174,7 +178,8 @@ func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, 
 
 // Complete changes an owned in-progress operation to completed and attaches a
 // bounded replay result. A zero-row conditional update is a stale transition.
-func (s *Store) Complete(ctx context.Context, request CompleteRequest) error {
+func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err error) {
+	defer func() { s.telemetry.recordCompletion(ctx, err) }()
 	if err := request.Validate(); err != nil {
 		return err
 	}
@@ -201,7 +206,8 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) error {
 
 // MarkIndeterminate makes ambiguous work terminal without permitting replay or
 // reacquisition. The fingerprint and in-progress state must both still match.
-func (s *Store) MarkIndeterminate(ctx context.Context, operation OperationKey, fingerprint [32]byte) error {
+func (s *Store) MarkIndeterminate(ctx context.Context, operation OperationKey, fingerprint [32]byte) (err error) {
+	defer func() { s.telemetry.recordIndeterminate(ctx, err) }()
 	if err := (BeginRequest{Operation: operation, Fingerprint: fingerprint}).Validate(); err != nil {
 		return err
 	}
