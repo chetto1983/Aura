@@ -53,6 +53,21 @@ func TestMigration0048RoundTrip(t *testing.T) {
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("up: %v", err)
 	}
+	// Migrate lands on the latest version, which may be newer than 0048. Position
+	// the database at 48 so the down/re-up below always straddles the migration
+	// under test instead of whichever migration happens to be newest.
+	for {
+		got := currentMigrationVersion(t, ctx, dbAdmin)
+		if got == 48 {
+			break
+		}
+		if got < 48 {
+			t.Fatalf("version=%d, could not descend to 48", got)
+		}
+		if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
+			t.Fatalf("step down to 48: %v", err)
+		}
+	}
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
 		t.Fatalf("down: %v", err)
 	}
