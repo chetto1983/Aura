@@ -373,6 +373,7 @@ jobs:
       - name: Install mcp-neo4j-cypher (LLM graph interface, spawned by the client)
         run: |
           pipx install mcp-neo4j-cypher==0.6.0
+          pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Restore llama.cpp embedding model cache
@@ -580,6 +581,7 @@ jobs:
       - name: Install mcp-neo4j-cypher (LLM graph interface, spawned by the client)
         run: |
           pipx install mcp-neo4j-cypher==0.6.0
+          pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Restore llama.cpp embedding model cache

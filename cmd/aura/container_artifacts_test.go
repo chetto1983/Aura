@@ -233,6 +233,33 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 }
 
+func TestMCPNeo4jRuntimeAndCoverageAreReproducible(t *testing.T) {
+	root := repoRootForTest(t)
+	const pinnedInstall = "mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3"
+	for _, rel := range []string{
+		"docker/aura/Dockerfile",
+		"docker/aura-sandbox/Dockerfile",
+		"docker/mcp-neo4j-cypher/Dockerfile",
+	} {
+		contents := readProjectFile(t, root, rel)
+		if !strings.Contains(contents, pinnedInstall) {
+			t.Errorf("%s must pin the compatible FastMCP runtime with %q", rel, pinnedInstall)
+		}
+	}
+
+	coverageGate := readProjectFile(t, root, "scripts/coverage_gate.sh")
+	goTest := regexp.MustCompile(`(?s)go test .*?-count=1 .*?-covermode=atomic`)
+	if !goTest.MatchString(coverageGate) {
+		t.Error("scripts/coverage_gate.sh must force -count=1 before accepting integration coverage")
+	}
+
+	ci := readProjectFile(t, root, ".github/workflows/ci.yml")
+	const pinnedCIInject = "pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3"
+	if got := strings.Count(ci, pinnedCIInject); got != 2 {
+		t.Errorf("CI must pin FastMCP in both Neo4j jobs: found %d occurrences of %q, want 2", got, pinnedCIInject)
+	}
+}
+
 func TestAuraServiceCanResolveContainerInternalSearxng(t *testing.T) {
 	root := repoRootForTest(t)
 	compose := readProjectFile(t, root, "compose.yaml")

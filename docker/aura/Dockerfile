@@ -71,7 +71,7 @@ RUN install -d /usr/share/postgresql-common/pgdg \
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
 
-RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0
+RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3
 
 # calculator: warm uvx at a pinned commit (chetto1983 fork) so it runs with egress
 # blocked — an unpinned HEAD re-fetches and fails offline (Phase 17 AC7).
