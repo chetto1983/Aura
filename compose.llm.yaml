@@ -15,6 +15,11 @@ services:
     restart: unless-stopped
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
+      # llama.cpp --hf-repo downloads into the HF hub cache ($HF_HOME/hub), NOT
+      # /root/.cache/llama.cpp. Point HF_HOME at the persisted volume below so the
+      # ~6GB GGUF survives container recreates (otherwise every --force-recreate,
+      # e.g. a context-size change, re-downloads the whole model).
+      HF_HOME: /root/.cache/llama.cpp
     command:
       - --hf-repo
       - ${AURA_LLM_HF_REPO:-unsloth/Qwen3-8B-GGUF}
@@ -27,7 +32,20 @@ services:
       - -ngl
       - "${AURA_LLM_NGL:-99}"          # full GPU offload
       - -c
-      - "${AURA_LLM_CTX:-32768}"       # 32K context (Qwen3 native)
+      - "${AURA_LLM_CTX:-131072}"       # 128K context — the stable ceiling on a 12GB
+                                        # RTX 3060 for Qwythos-9B-v2 (Q4 weights + BF16
+                                        # mmproj + q8_0 KV). MEASURED: 256K saturates VRAM
+                                        # (132MB free), 1M needs ~16-20GB KV → OOM. The
+                                        # 3:1 hybrid (Gated-DeltaNet SSM : full-attn) keeps
+                                        # KV small, but 1M still exceeds this GPU. Bump
+                                        # AURA_LLM_CTX on bigger VRAM (e.g. DGX Spark).
+                                        # Native ctx is 16384; YaRN (below) scales up.
+      - -np
+      - "${AURA_LLM_PARALLEL:-1}"       # ONE slot so -c is the full context, not c/np
+      - --rope-scaling
+      - yarn                            # Qwythos card: >16384 up to 1M needs YaRN
+      - --yarn-orig-ctx
+      - "16384"
       - --flash-attn
       - "on"                            # required for quantized KV cache
       - --cache-type-k
