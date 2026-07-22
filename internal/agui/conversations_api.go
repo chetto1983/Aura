@@ -29,12 +29,19 @@ const maxListLimit = 200
 
 // parseLimit reads the ?limit= query value, falling back to defaultSearchLimit when
 // it is absent, non-numeric, or non-positive, and clamping to maxListLimit above.
+// The clamp is written as an explicit comparison guard, NOT min(n, maxListLimit):
+// CodeQL's go/uncontrolled-allocation-size query recognizes a relational guard as a
+// sanitizer barrier on the tainted size but does not model the Go builtin min(), so
+// the builtin form left alert #40 open despite being equally safe at runtime.
 func parseLimit(raw string) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
 		return defaultSearchLimit
 	}
-	return min(n, maxListLimit)
+	if n > maxListLimit {
+		return maxListLimit
+	}
+	return n
 }
 
 // conversations_api.go is the CHAT-02 thin REST adapter over conversations.Store
