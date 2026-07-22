@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/documents"
@@ -67,10 +68,25 @@ func (t *DocumentIndex) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 		return ToolResult{}, fmt.Errorf("document_index: path is required")
 	}
 	resolved := resolveFSPath(t.WorkspaceRoot, args.Path)
+	root := t.WorkspaceRoot
 	// Fence to the workspace root: unlike the full-host fs_* tools (D-15c/#50),
 	// ingest-into-searchable-memory is a write-class action, so it is confined to
 	// files the agent owns under /workspace. Intentional, not an oversight.
-	if t.WorkspaceRoot != "" && !withinDir(t.WorkspaceRoot, resolved) {
+	//
+	// Resolve symlinks so a link created INSIDE /workspace that points outside
+	// cannot smuggle a host file into searchable memory (defense-in-depth). Only
+	// when the target exists (the real ingest case) — then resolve the root too,
+	// so a symlinked root (macOS /var -> /private/var, temp dirs) does not cause a
+	// false rejection from a resolved-vs-lexical mismatch. If the target does not
+	// exist yet, keep both paths lexical: the lexical fence still catches lexical
+	// escapes and IngestPath surfaces the not-found.
+	if realTarget, err := filepath.EvalSymlinks(resolved); err == nil {
+		resolved = realTarget
+		if realRoot, err := filepath.EvalSymlinks(root); err == nil {
+			root = realRoot
+		}
+	}
+	if root != "" && !withinDir(root, resolved) {
 		return ToolResult{}, fmt.Errorf("document_index: path %q is outside the workspace; only workspace files can be indexed", args.Path)
 	}
 	req := documents.IngestRequest{

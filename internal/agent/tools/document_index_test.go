@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,6 +63,35 @@ func TestDocumentIndex_RejectsOutsideWorkspace(t *testing.T) {
 	}
 	if fi.calledPath != "" {
 		t.Fatal("IngestPath must not run for an out-of-workspace path")
+	}
+}
+
+func TestDocumentIndex_RejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("host secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink INSIDE the workspace pointing at a file OUTSIDE it must not let the
+	// agent index the host file into searchable memory. Requires OS symlink support
+	// (Windows without Developer Mode cannot create one) — skip there; Linux/WSL/CI
+	// (the production platform) exercise it.
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlinks unavailable on this host: %v", err)
+	}
+	fi := &fakeIndexer{job: &documents.Job{}}
+	tool := &DocumentIndex{Indexer: fi, WorkspaceRoot: root}
+	raw, err := json.Marshal(map[string]string{"path": link})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	if _, err := tool.Execute(context.Background(), raw); err == nil {
+		t.Fatal("expected rejection: a workspace symlink pointing outside must not index the host file")
+	}
+	if fi.calledPath != "" {
+		t.Fatal("IngestPath must not run for a symlink escaping the workspace")
 	}
 }
 
