@@ -736,6 +736,28 @@ Plans:
 4. Privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
 5. The high CodeQL `go/weak-sensitive-data-hashing` finding at `internal/agui/recovery_hash.go` is remediated with a strong salted KDF and the alert resolves (SEC-09).
 
+**Plans:** 9 plans in 3 waves
+
+Plans:
+
+**Wave 1** *(independent — amendments + no-op-under-dev seams)*
+
+- [ ] 40-01-PLAN.md — REQUIREMENTS/ROADMAP/PRD amendments: SEC-09 keyed-hash-or-FP, SEC-01 configured-secrets-at-rest, SEC-02 same-origin (D-08/D-10b/D-14b)
+- [ ] 40-02-PLAN.md — SEC-04 deterministic policy-denial gate + LLM injection-resistance cot_eval tier
+- [ ] 40-03-PLAN.md — SEC-06 centralized strict-JSON decode helper + six privileged routes wired
+- [ ] 40-04-PLAN.md — SEC-03 validation-console loopback bind guard + unsafe+token escalation
+- [ ] 40-05-PLAN.md — SEC-05 SHA-pin Actions/tools + SBOM (archive+source) + workflow-pin gate
+
+**Wave 2** *(depends on amendments)*
+
+- [ ] 40-06-PLAN.md — SEC-01 inbound exact-match configured-secret redaction at both at-rest surfaces [depends_on 40-01]
+- [ ] 40-07-PLAN.md — SEC-02 same-origin CORS removal + config-surface deletion [depends_on 40-01]
+
+**Wave 3** *(depends on the config/serve.go seams)*
+
+- [ ] 40-08-PLAN.md — SEC-09 HMAC-pepper HashLookupToken + threading + break-glass guard [depends_on 40-01, 40-07]
+- [ ] 40-09-PLAN.md — SEC-01 reasoningtrace redaction fix + full-trace prod gate + encrypted sink [depends_on 40-01, 40-07]
+
 #### Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout
 
 **Goal:** Drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
