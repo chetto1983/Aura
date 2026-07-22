@@ -19,14 +19,22 @@ const defaultSearchLimit = 20
 
 const createTitleMaxRunes = 80
 
+// maxListLimit caps ?limit= for every paginated list/search endpoint routed through
+// parseLimit (share list, conversations search, governance). The raw value reaches
+// make([]T, 0, limit) pre-allocations (share.Store.ListForIdentity), where an
+// authenticated ?limit=2000000000 would OOM the 768MB container in one request
+// (CodeQL #40, go/uncontrolled-allocation-size) — so the clamp lives HERE at the
+// parse seam, not in each store.
+const maxListLimit = 200
+
 // parseLimit reads the ?limit= query value, falling back to defaultSearchLimit when
-// it is absent, non-numeric, or non-positive. The store clamps the upper bound.
+// it is absent, non-numeric, or non-positive, and clamping to maxListLimit above.
 func parseLimit(raw string) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
 		return defaultSearchLimit
 	}
-	return n
+	return min(n, maxListLimit)
 }
 
 // conversations_api.go is the CHAT-02 thin REST adapter over conversations.Store

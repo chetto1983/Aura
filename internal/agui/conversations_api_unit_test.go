@@ -329,8 +329,10 @@ func TestConversationsAPI_BadRequests(t *testing.T) {
 	}
 }
 
-// TestParseLimit pins the ?limit= fallback: absent/non-numeric/non-positive → default,
-// a positive value passes through.
+// TestParseLimit pins the ?limit= contract: absent/non-numeric/non-positive → default,
+// a sane positive value passes through, and anything above maxListLimit clamps — the
+// clamp is the guard against one authenticated ?limit=2e9 request OOMing the process
+// via make([]T, 0, limit) pre-allocations (CodeQL #40).
 func TestParseLimit(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
@@ -341,6 +343,9 @@ func TestParseLimit(t *testing.T) {
 		{"0", defaultSearchLimit},
 		{"-5", defaultSearchLimit},
 		{"50", 50},
+		{"200", maxListLimit},
+		{"201", maxListLimit},
+		{"2000000000", maxListLimit},
 	} {
 		if got := parseLimit(tc.in); got != tc.want {
 			t.Errorf("parseLimit(%q) = %d, want %d", tc.in, got, tc.want)
