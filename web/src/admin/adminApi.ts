@@ -13,10 +13,16 @@ export const GOVERNANCE_WRITE = 'governance.write';
 /** The system-managed wildcard grant — the seeded `local` operator holds it (migration 0004). */
 export const WILDCARD = '*';
 
-/** GET /api/me — the caller's own principal + capability set (self-scoped). */
+/**
+ * GET /api/me — the caller's own principal + capability set (self-scoped).
+ * context_window is the active model's total context window (tokens, llm.Config.
+ * ContextWindow) the footer gauge reads instead of hardcoding the DeepSeek-V4 1M default
+ * (footerMetrics.DEFAULT_CONTEXT_WINDOW); 0/absent means the daemon hasn't wired it.
+ */
 export interface MeResponse {
   readonly identity_id: string;
   readonly capabilities: readonly string[];
+  readonly context_window?: number;
 }
 
 /** One row of GET /api/admin/identities — an identity + its current grants. */

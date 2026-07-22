@@ -75,6 +75,45 @@ describe('useCapabilities', () => {
     });
     expect(result.current.isAdmin).toBe(false);
   });
+
+  // The cockpit footer gauge bug: /api/me now carries the live model context_window
+  // (llm.Config.ContextWindow, e.g. a 128K local model) and useCapabilities must expose it
+  // as contextWindow so AppShell can thread it into RuntimeFooter's windowTokens prop.
+  it('exposes contextWindow from /api/me context_window', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ identity_id: 'local', capabilities: ['*'], context_window: 131_072 }),
+            { status: 200 },
+          ),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => useCapabilities(), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(result.current.contextWindow).toBe(131_072);
+    });
+  });
+
+  it('leaves contextWindow undefined when /api/me omits context_window (unwired daemon)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ identity_id: 'local', capabilities: ['*'] }), {
+            status: 200,
+          }),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => useCapabilities(), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.contextWindow).toBeUndefined();
+  });
 });
 
 describe('admin roster + mutations', () => {

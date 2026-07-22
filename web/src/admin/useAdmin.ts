@@ -30,12 +30,19 @@ export function useCapabilities() {
     staleTime: 60_000,
   });
   const capabilities = query.data?.capabilities ?? [];
+  const rawWindow = query.data?.context_window;
   return {
     capabilities,
     identityId: query.data?.identity_id ?? '',
     isAdmin: hasCapability(capabilities, GOVERNANCE_WRITE),
     isLoading: query.isLoading,
     isError: query.isError,
+    // contextWindow is undefined while loading/erroring/unwired (context_window <= 0) so
+    // RuntimeFooter's own DEFAULT_CONTEXT_WINDOW fallback applies instead of a false 0-token gauge.
+    contextWindow:
+      rawWindow !== undefined && Number.isFinite(rawWindow) && rawWindow > 0
+        ? rawWindow
+        : undefined,
   };
 }
 

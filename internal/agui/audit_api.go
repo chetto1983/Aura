@@ -81,10 +81,14 @@ func (s *Server) registerAuditRoutes(mux *http.ServeMux) {
 
 // meDTO is the self-scoped principal payload the SPA reads post-auth to gate admin
 // surfaces: the caller's identity id + its capability names (the '*' wildcard is returned
-// verbatim; the SPA treats it as "has everything", mirroring HasCapability).
+// verbatim; the SPA treats it as "has everything", mirroring HasCapability). ContextWindow is
+// the active model's total context window (tokens, llm.Config.ContextWindow via
+// SetContextWindow) — the cockpit footer gauge (RuntimeFooter) reads it instead of hardcoding
+// the DeepSeek-V4 1M default; 0 means unwired, and the frontend keeps its own fallback.
 type meDTO struct {
-	IdentityID   string   `json:"identity_id"`
-	Capabilities []string `json:"capabilities"`
+	IdentityID    string   `json:"identity_id"`
+	Capabilities  []string `json:"capabilities"`
+	ContextWindow int      `json:"context_window"`
 }
 
 // handleMe returns the authenticated caller's own capability set. In production RequireAuth
@@ -104,7 +108,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "capability store unavailable"})
 		return
 	}
-	writeJSON(w, meDTO{IdentityID: id, Capabilities: caps})
+	writeJSON(w, meDTO{IdentityID: id, Capabilities: caps, ContextWindow: s.contextWindow})
 }
 
 // adminIdentityDTO is one row of the admin identity roster: the identity + its current

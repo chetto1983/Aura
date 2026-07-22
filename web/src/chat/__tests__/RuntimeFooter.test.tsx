@@ -8,6 +8,7 @@ import {
   addTurn,
   cacheHitPercent,
   contextPercent,
+  DEFAULT_CONTEXT_WINDOW,
   formatCost,
   formatTokens,
   gaugeTier,
@@ -302,6 +303,36 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     // The fill is the warning tone at ≥85%.
     expect(container.querySelector('.bg-danger')).not.toBeNull();
     expect(container.querySelector('.bg-accent')).toBeNull();
+  });
+
+  // The cockpit footer gauge bug: with no live windowTokens prop threaded from /api/me
+  // (AppShell's contextWindow still loading/unwired), the gauge falls back to
+  // DEFAULT_CONTEXT_WINDOW (the DeepSeek-V4 1M default), never a bare 0.
+  it('falls back to DEFAULT_CONTEXT_WINDOW when no live windowTokens is supplied', () => {
+    const usage: TurnUsage = {
+      promptTokens: 90,
+      completionTokens: 0,
+      cacheHitTokens: 0,
+      costUsd: 0.001,
+    };
+    const { container } = renderFooter({ usage });
+    expect(formatTokens(DEFAULT_CONTEXT_WINDOW)).toBe('1M');
+    expect(container.textContent).toMatch(/90 \/ 1M/);
+  });
+
+  // The fix under test: when AppShell threads the LIVE /api/me context_window (e.g. a
+  // 128K local model, AURA_MODEL_CONTEXT_WINDOW=131072), the gauge must show THAT value,
+  // not the hardcoded 1M DEFAULT_CONTEXT_WINDOW.
+  it('renders the live windowTokens when provided, not the 1M default', () => {
+    const usage: TurnUsage = {
+      promptTokens: 90,
+      completionTokens: 0,
+      cacheHitTokens: 0,
+      costUsd: 0.001,
+    };
+    const { container } = renderFooter({ usage, windowTokens: 131_072 });
+    expect(container.textContent).toMatch(new RegExp(`90 / ${formatTokens(131_072)}`));
+    expect(container.textContent).not.toMatch(/\/ 1M/);
   });
 
   // BUG-8: on a cold reload (no live turn) the gauge must reflect the CURRENT context

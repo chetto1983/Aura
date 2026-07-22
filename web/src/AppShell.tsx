@@ -60,7 +60,7 @@ export function AppShell() {
   // gated server-side by RequireCapability — but keeps a non-admin session from ever landing
   // on a control it cannot use. A non-admin whose restored/deep-linked surface is admin-only
   // is bounced back to chat once capabilities resolve (fail-closed while loading).
-  const { isAdmin, isLoading: capabilitiesLoading } = useCapabilities();
+  const { isAdmin, isLoading: capabilitiesLoading, contextWindow } = useCapabilities();
   const desktopModes = visibleModes(MODES, isAdmin);
   const liveModes = visibleModes(LIVE_MODES, isAdmin);
   useEffect(() => {
@@ -469,6 +469,7 @@ export function AppShell() {
         <RuntimeFooter
           usageState={usageState}
           conversationId={activeThreadId}
+          {...(contextWindow !== undefined ? { windowTokens: contextWindow } : {})}
           {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
         />
       </BottomDock>

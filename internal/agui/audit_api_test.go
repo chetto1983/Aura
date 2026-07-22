@@ -104,6 +104,41 @@ func TestHandleMeReturnsCallerCapabilities(t *testing.T) {
 	}
 }
 
+// TestHandleMeReturnsConfiguredContextWindow covers the cockpit footer gauge bug: /api/me
+// must carry the LIVE llm.Config.ContextWindow (e.g. a 128K local model), not leave the
+// frontend to fall back to the DeepSeek-V4 1M default (footerMetrics.DEFAULT_CONTEXT_WINDOW).
+func TestHandleMeReturnsConfiguredContextWindow(t *testing.T) {
+	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"*"}}}
+	s := &Server{idAdmin: admin, contextWindow: 131072}
+	req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/me", nil), testLocalID)
+	rec := httptest.NewRecorder()
+	s.handleMe(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var out meDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.ContextWindow != 131072 {
+		t.Fatalf("context_window = %d, want 131072", out.ContextWindow)
+	}
+}
+
+// TestSetContextWindowWiresServer covers the SetContextWindow setter the daemon
+// composition root calls (mirrors SetAuditStore/SetIdentityAdmin) — a Server built via
+// NewServer with no ContextWindow set answers 0 until wired.
+func TestSetContextWindowWiresServer(t *testing.T) {
+	s := NewServer(nil, nil, ServerConfig{})
+	if s.contextWindow != 0 {
+		t.Fatalf("contextWindow = %d, want 0 before SetContextWindow", s.contextWindow)
+	}
+	s.SetContextWindow(131072)
+	if s.contextWindow != 131072 {
+		t.Fatalf("contextWindow = %d, want 131072 after SetContextWindow", s.contextWindow)
+	}
+}
+
 func TestHandleMeFallsBackToLocalWithoutPrincipal(t *testing.T) {
 	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"*"}}}
 	s := &Server{idAdmin: admin}

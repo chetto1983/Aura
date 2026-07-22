@@ -164,6 +164,14 @@ type Server struct {
 	// reports; it is injected alongside the source (llm.ReasoningTarget is known only at boot).
 	reasoningCaps    llm.ReasoningCapabilitySource
 	reasoningBackend string
+
+	// contextWindow is the active model's total context window (tokens), sourced from
+	// llm.Config.ContextWindow (AURA_MODEL_CONTEXT_WINDOW) and wired via SetContextWindow at
+	// the composition root. GET /api/me reports it so the cockpit footer gauge (RuntimeFooter)
+	// shows the LIVE window instead of falling back to its DeepSeek-V4 1M default
+	// (footerMetrics.DEFAULT_CONTEXT_WINDOW). Zero until wired — the DTO then carries 0 and the
+	// frontend keeps its own fallback.
+	contextWindow int
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -223,6 +231,12 @@ func (s *Server) SetReasoningCapabilitySource(src llm.ReasoningCapabilitySource,
 	s.reasoningCaps = src
 	s.reasoningBackend = backend
 }
+
+// SetContextWindow wires the active model's context window (tokens) so GET /api/me can
+// report it to the cockpit footer gauge. Set by the daemon composition root after NewServer
+// from llm.Config.ContextWindow; until set it stays 0 (existing NewServer callers/tests
+// unchanged, D-A2-02 narrow seam).
+func (s *Server) SetContextWindow(tokens int) { s.contextWindow = tokens }
 
 // parseEffortSymbol maps a Composer UI effort SYMBOL to the internal llm.ReasoningEffort,
 // returning (effort, isFixed, ok). It is the WEBMODEL-03 no-bypass gate (T-37E-06-ENUM): the
