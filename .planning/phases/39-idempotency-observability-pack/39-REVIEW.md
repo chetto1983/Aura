@@ -1,6 +1,6 @@
 ---
 phase: 39-idempotency-observability-pack
-reviewed: 2026-07-22T01:21:08Z
+reviewed: 2026-07-22T02:08:17Z
 depth: standard
 files_reviewed: 150
 files_reviewed_list:
@@ -156,15 +156,15 @@ files_reviewed_list:
   - web/src/main.tsx
 findings:
   critical: 1
-  warning: 1
+  warning: 0
   info: 0
-  total: 2
+  total: 1
 status: issues_found
 ---
 
 # Phase 39: Code Review Report
 
-**Reviewed:** 2026-07-22T01:21:08Z
+**Reviewed:** 2026-07-22T02:08:17Z
 
 **Depth:** standard
 
@@ -174,87 +174,84 @@ status: issues_found
 
 ## Summary
 
-Iteration 4 reviewed the cumulative 150-file inventory and every in-scope file changed from 8d573792e through 2a50c0393. All four iteration-3 findings are fixed on their stated paths: completed reset receipts survive schema reset and replay safely; export-delete cancellation, final-delete failure, and restart recovery are durable; unchanged expired retention plans can be refreshed without mutating non-planned operations; and owner-export garbage collection runs despite primary-retention failures.
+Iteration 5 re-reviewed the exact cumulative 150-file inventory, including all 12 in-scope files changed by the two iteration-4 fix commits from 3b7cff248 through d355169c9. The export-delete foreground/reconciler race is resolved: recovery eligibility now respects the foreground grace and active leases, exact-reservation completion is observable, restart recovery still succeeds, and the losing foreground path returns a 201 receipt whose authenticated download is a usable ZIP.
 
-The phase is still not clean. The export-delete recovery worker can race a live foreground request, complete the deletion, and cause the request to return a false conflict without the export identifier or download URL. The reset-safe maintenance registry also has no crash reconciliation for stale in-progress rows.
+The maintenance fix correctly makes a killed reset receipt terminal without reacquiring or re-executing the reset, but it introduces a new blocker. It uses the one-second client retry hint as its crash/orphan deadline, so a duplicate can mark an operation indeterminate while the original reset owner is still alive and executing. A controlled disposable-PostgreSQL probe reproduced this on the real registry and CLI.
 
 No source file was modified during this review.
 
-## Validation
+## Scope and Validation
 
-- Untagged targeted Go suite across cmd/aura and all relevant Phase-39 packages — PASS.
-- Relevant production packages: go vet — PASS.
-- Fresh, migration-42, and migration-45 db-migrate bootstrap integration test — PASS.
-- Disposable PostgreSQL db-reset sentinel replay: first reset succeeded, same-key retry replayed identical output without executing, and the post-reset sentinel survived — PASS.
-- Migration 0048 down/up round trip — PASS.
-- Export snapshot version, writer freeze, lease non-adoption, cancellation-after-reserve, final-delete retry, and process-restart recovery tests — PASS.
-- Retention unchanged-plan refresh, immediate apply, and deleting/retryable/completed immutability tests — PASS.
-- Historical idempotency concurrency/conflict/indeterminate and replay-expiry before/equal/after integration tests — PASS.
-- Historical bounded/disjoint retention claims and persisted two-phase lifecycle integration tests — PASS.
-- Recovery unit paths repeated 20 times — PASS.
-- scripts/check-file-size.sh — PASS, 2051 tracked source files within the limit.
-- git diff --check 8d573792e..2a50c0393 — PASS.
-- Windows race execution was unavailable because this shell has CGO disabled; the untagged and live database gates above executed normally.
-- Controlled stale-reset receipt probe: a two-hour-old in-progress maintenance row whose retry_after had expired still returned “operation is still in progress”, Aura exit 2, and remained in_progress — product failure reproduced.
+- Scope reconstruction: prior REVIEW inventory 150; iteration-4 source/test diff 12; exact union 150; missing files 0.
+- Untagged targeted Go suite across cmd/aura and all relevant Phase-39 packages - PASS.
+- Relevant production packages: go vet - PASS.
+- Focused foreground/reconciler receipt, recovery, lease, completion-observation, cancellation, failure-resume, and same-operation race tests repeated 20 times - PASS.
+- Deterministic HTTP proof: foreground returns 201 with a UUID export_id, non-empty download_url, authenticated HTTP 200 application/zip download, and non-empty archive - PASS.
+- Disposable PostgreSQL db-migrate bootstrap plus db-reset completed replay, killed-parent indeterminate receipt, and post-reset sentinel preservation - PASS.
+- Disposable PostgreSQL export-delete recovery eligibility/completion observation, snapshot/version/freeze/lease tests, and process-restart recovery - PASS.
+- Historical PostgreSQL idempotency contract, replay-expiry boundaries, retention disjoint claims, and persisted two-phase lifecycle tests - PASS.
+- Controlled active-reset duplicate probe: original helper remained alive; after 1.5 seconds the duplicate Aura CLI exited 2 with the indeterminate outcome and SQL state was indeterminate - product failure reproduced.
+- Deployable observability static verifier - PASS. The negative-fixture script could not be faithfully rerun because pwsh is unavailable in this Windows shell and Windows PowerShell line-wraps the expected error text.
+- scripts/check-file-size.sh - PASS, all 2051 tracked source files within the 600-LOC cap.
+- git diff --check 3b7cff248..d355169c9 - PASS.
+- Current Windows race execution is unavailable because this shell has CGO disabled; the iteration-4 fix run recorded WSL race PASS for the modified runner path.
 
-## Iteration-3 Finding Resolution Matrix
+## Iteration-4 Finding Resolution Matrix
 
-| Iteration-3 finding | Result | Evidence |
+| Iteration-4 finding | Result | Evidence |
 |---|---|---|
-| CR-01: db reset destroys its own receipt and can execute twice | Resolved for normal completion and replay | db reset now uses a migration-role registry in public, outside the reset aura schema. The live sentinel test proves the first result completes and a same-key retry does not execute. Hard process loss leaves this separate registry stale; see WR-01. |
-| CR-02: interrupted export-delete permanently freezes the conversation | Requested recovery paths resolved | Migration 0048 persists reservation phase, worker, and lease. Finalization detaches from request cancellation, failed attempts release only the worker lease, and the boot reconciler resumes the stored reservation. Live and unit cancellation/final-failure/restart cases pass. Concurrent recovery can still lose the foreground success response; see CR-01. |
-| WR-01: unchanged expired retention plan cannot be refreshed | Resolved | Only a still-planned conflicting token refreshes created_at/updated_at. Real-store tests prove immediate apply after refresh and timestamp/status immutability for deleting, retryable, and completed operations. |
-| WR-02: primary retention failure starves owner-export collection | Resolved | Plan/apply and every owner-export sweeper run as independent branches; their errors are joined afterward. Tests prove export sweeps still execute after both Plan and Apply failures and later sweepers continue after an earlier sweep error. |
+| CR-01: recovery can delete the conversation while foreground returns 409 without the export handle | Resolved | Fresh reservations wait through a three-minute recovery grace that exceeds the two-minute detached finalizer. Active teardown leases are excluded, expired leases remain recoverable, and a losing claimant observes exact-reservation deletion as success. Focused tests repeated 20 times, the live PostgreSQL eligibility/restart gates, and the HTTP 201 plus usable ZIP proof all pass. |
+| WR-01: a hard process exit leaves db reset permanently in progress | Crash path resolved, active path unsafe | A killed owner now transitions to terminal indeterminate without executing reset, and the sentinel survives. However, the same CAS fires after the shared one-second retry hint even when the original owner is still alive; see CR-01. |
 
 ## Historical-Finding Regression Matrix
 
-| Historical finding | Iteration-4 result |
+| Historical finding | Iteration-5 result |
 |---|---|
 | Original CR-01 HTTP enforcement and operation propagation | Resolved without regression. |
-| Original CR-02 CLI mutation registry | Normal mutation and db-migrate ownership remain resolved; completed db-reset replay is fixed, but reset crash reconciliation remains incomplete; see WR-01. |
+| Original CR-02 CLI mutation registry | Completed replay, conflict, killed-reset terminalization, and no-reexecution are proven. Active reset duplicate classification regressed; see CR-01. |
 | Original CR-03 scheduler parent/tool child scopes | Resolved without regression. |
-| Original CR-04 durable export publication and conflict safety | Publication, version coverage, reservation ordering, cancellation, transient failure, and restart recovery are present; foreground/reconciler completion reporting remains unsafe; see CR-01. |
+| Original CR-04 durable export publication and conflict safety | Resolved, including snapshot/version coverage, publication ordering, writer freeze, recovery grace, lease ownership, exact completion observation, restart recovery, and 201 usable-download receipt. |
 | Original CR-05 retention crash resume and fresh authorization | Resolved without regression, including unchanged-plan refresh and non-planned immutability. |
 | Original CR-06 local second version check | Resolved without regression. |
 | Original CR-07 replay expiry | Resolved without regression, including equality at the wall-clock boundary. |
 | Original CR-08 centralized redaction | Resolved without regression. |
 | Original WR-01 readiness timeout/goroutine behavior | Resolved without regression. |
 | Original WR-02 compactor pagination | Resolved without regression. |
+| Iteration-2 db-migrate bootstrap | Resolved without regression. |
+| Iteration-2 export reservation ordering/recovery and owner-export physical expiry | Resolved without regression. |
+| Iteration-2 retention stale-plan behavior | Resolved without regression. |
+| Iteration-3 db-reset durable receipt and sentinel replay | Completed and killed-owner cases are resolved; active-owner duplicate semantics regressed; see CR-01. |
+| Iteration-3 export cancellation/failure/restart recovery | Resolved without regression. |
+| Iteration-3 retention refresh/immutability and independent owner-export sweeps | Resolved without regression. |
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: recovery can delete the conversation while the foreground returns 409 without the export handle
+### CR-01: a duplicate reset marks a live operation indeterminate after one second
 
 **Classification:** BLOCKER
 
-**File:** internal/db/queries/conversations.sql:124-164; internal/runner/runner_delete.go:118-135; internal/runner/runner_delete_reconcile.go:91-110; internal/agui/owner_export.go:261-275; internal/agui/retention_api.go:143-167
+**File:** internal/idempotency/maintenance.go:86-112; internal/idempotency/store.go:17-20; cmd/aura/idempotency.go:270-277
 
-**Issue:** ListReservedConversationDeletes returns every reserved or teardown-started row, including a fresh reservation whose foreground request is between its committed reserve and ClaimDeleteTeardown. The minute-tick reconciler can claim that row first and complete the deletion. The foreground claim then affects zero rows because another worker owns the lease, and resumeReservedConversationDelete returns zero with no error without distinguishing “busy” or “completed”. OwnerExporter converts every affected value other than one into ErrOwnerExportConflict. The HTTP handler therefore sends 409 “conversation changed during export” and omits export_id/download_url even though the same durable reservation successfully deleted the conversation and the archive is already published. The client loses the only returned handle to its required export after the source conversation is gone. The existing same-operation race test asserts only that one delete occurs; it deliberately ignores every caller’s affected/error result, so it does not cover this response-loss path.
+**Issue:** MaintenanceRegistry.Begin stores retry_after as now plus defaultRetryAfter, and the shared default is one second. On any matching duplicate after that timestamp, Begin atomically changes the row from in_progress to indeterminate. retry_after is client retry guidance, not proof that the effect owner crashed; the Phase-39 contract explicitly requires a duplicate whose original is still executing to remain typed in_progress. The reset parent keeps executing the destructive child after acquisition, so a reset can legitimately exceed one second. A duplicate then terminalizes the live receipt. When the original later calls Complete, its conditional transition affects zero rows and the command reports operation completion unavailable after the schema reset already happened.
 
-**Fix:** prevent recovery from competing with a live foreground operation and make completion observable. Filter recovery candidates so a reserved row is eligible only after a recovery grace greater than the detached foreground-finalization window, and a teardown-started row only when its lease is absent or expired. Additionally, when a same-reservation claim returns busy or the row disappears, observe durable lifecycle completion rather than returning a version conflict. A separate durable delete-operation record that survives conversation deletion is the strongest completion receipt. Add a deterministic HTTP test that pauses the foreground after reserve, lets the reconciler claim and finish, then proves the request returns 201 with a usable export_id/download_url rather than 409.
+The failure was reproduced against a disposable PostgreSQL database using the existing subprocess helper. The helper acquired the real maintenance registry receipt and remained alive. After 1.5 seconds, the same-key real Aura CLI retry exited 2 with operation outcome is indeterminate; SQL showed state=indeterminate while process inspection simultaneously showed the original helper still alive.
+
+**Fix:** Separate retry guidance from crash ownership. Give maintenance operations a real execution lease or liveness record, renew it while the parent owns the child, and reconcile to indeterminate only after that lease expires with no live owner. A session/advisory-lock ownership signal may also provide a strong process-loss discriminator because the registry connection remains open during execution. Keep retry_after only for the immediate in_progress response. Add a deterministic live test that keeps the original helper alive beyond retry_after and proves duplicates remain in_progress, then kills it, advances beyond the independent recovery lease, and proves the next duplicate becomes terminal indeterminate with the sentinel preserved. Retain concurrent Complete-versus-reconcile CAS coverage.
 
 ## Warnings
 
-### WR-01: a hard process exit leaves db reset permanently in progress
-
-**Classification:** WARNING
-
-**File:** internal/idempotency/maintenance.go:86-140; cmd/aura/idempotency.go:198-206,218-244
-
-**Issue:** the reset-safe public registry correctly survives a successful reset, but it has no equivalent of the application registry’s crash reconciler. Begin stores retry_after for a new in-progress row. On every later Begin, StateInProgress returns DecisionInProgress even when retry_after is long expired; the code merely substitutes another retry duration in the response and never transitions the row. No scheduler, startup pass, or maintenance command reconciles this table. A kill or host loss after acquisition but before Complete/MarkIndeterminate therefore leaves the operation key permanently unusable and reports “still in progress” forever instead of the required terminal indeterminate result. A controlled disposable-database probe with a two-hour-old row reproduced the state unchanged.
-
-**Fix:** atomically transition expired maintenance in-progress rows to indeterminate, either during Begin under a conditional update or through an explicit maintenance reconciler. Never reacquire or execute the reset automatically. Add a subprocess test that terminates the parent after durable acquisition, advances beyond retry_after, retries the same key, and proves the response is indeterminate, the reset is not executed, and the row is terminal.
+None.
 
 ## Final Assessment
 
 Critical: 1
 
-Warning: 1
+Warning: 0
 
 Info: 0
 
-Total: 2
+Total: 1
 
 Status: issues_found
