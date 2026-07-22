@@ -93,6 +93,7 @@ type Engine struct {
 	ActivityFreshness time.Duration
 	PlanValidity      time.Duration
 	Now               func() time.Time
+	metrics           retentionMetrics
 }
 
 // Plan builds and durably records a dry-run snapshot without invoking effects.
@@ -117,6 +118,7 @@ func (e *Engine) Plan(ctx context.Context) (plan Plan, err error) {
 	if _, err = e.Store.SavePlan(ctx, plan, now); err != nil {
 		return Plan{}, err
 	}
+	e.metricSink().recordItems(ctx, "pending", "accepted", int64(len(plan.Candidates)))
 	e.audit(ctx, AuditSummary{Mode: "plan", PolicyVersion: e.Policy.Version, Planned: len(plan.Candidates), PlannedBytes: plan.TotalBytes})
 	return plan, nil
 }
@@ -249,6 +251,7 @@ func (e *Engine) processItem(ctx context.Context, item Item, report *ApplyReport
 			return false, err
 		}
 		report.Completed++
+		e.metricSink().recordItems(ctx, "completed", "success", 1)
 		return false, nil
 	}
 	if revalidation.Version != item.Candidate.Version {
@@ -287,6 +290,7 @@ func (e *Engine) processItem(ctx context.Context, item Item, report *ApplyReport
 	}
 	report.Completed++
 	report.Bytes += removedBytes
+	e.metricSink().recordItems(ctx, "completed", "success", 1)
 	return false, nil
 }
 
@@ -305,7 +309,15 @@ func (e *Engine) fail(ctx context.Context, item Item, report *ApplyReport, class
 	}
 	report.Failed++
 	report.FailureClasses[class]++
+	e.metricSink().recordItems(ctx, "completed", "error", 1)
 	return nil
+}
+
+func (e *Engine) metricSink() retentionMetrics {
+	if e != nil && e.metrics != nil {
+		return e.metrics
+	}
+	return globalRetentionTelemetry
 }
 
 func (e *Engine) validate() error {

@@ -273,6 +273,68 @@ func TestEngineRecordsContentFreePlanAndApplyAudits(t *testing.T) {
 	recordRetentionBytes(context.Background(), 0)
 }
 
+func TestEngineRecordsPendingAndTerminalRetentionItems(t *testing.T) {
+	fixture := newEngineFixture(t)
+	metrics := &recordingRetentionMetrics{}
+	fixture.engine.metrics = metrics
+
+	plan, err := fixture.engine.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []retentionItemMetric{
+		{state: "pending", outcome: "accepted", count: 1},
+		{state: "completed", outcome: "success", count: 1},
+	}
+	if !slices.Equal(metrics.items, want) {
+		t.Fatalf("retention item metrics = %+v, want %+v", metrics.items, want)
+	}
+}
+
+func TestEngineKeepsRetryableItemsInBacklogAndClosesFailedItems(t *testing.T) {
+	t.Run("retryable", func(t *testing.T) {
+		fixture := newEngineFixture(t)
+		fixture.revalidator.err = errors.New("temporarily unavailable")
+		metrics := &recordingRetentionMetrics{}
+		fixture.engine.metrics = metrics
+		plan, err := fixture.engine.Plan(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
+			t.Fatal(err)
+		}
+		if len(metrics.items) != 1 || metrics.items[0].state != "pending" {
+			t.Fatalf("retryable metrics = %+v, want pending only", metrics.items)
+		}
+	})
+
+	t.Run("terminal failure", func(t *testing.T) {
+		fixture := newEngineFixture(t)
+		fixture.revalidator.response = &Revalidation{Exists: true, Owned: false, Version: 1}
+		metrics := &recordingRetentionMetrics{}
+		fixture.engine.metrics = metrics
+		plan, err := fixture.engine.Plan(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.engine.Apply(context.Background(), plan.Token); err != nil {
+			t.Fatal(err)
+		}
+		want := []retentionItemMetric{
+			{state: "pending", outcome: "accepted", count: 1},
+			{state: "completed", outcome: "error", count: 1},
+		}
+		if !slices.Equal(metrics.items, want) {
+			t.Fatalf("terminal failure metrics = %+v, want %+v", metrics.items, want)
+		}
+	})
+}
+
 type engineFixture struct {
 	engine      *Engine
 	store       *memoryOperationStore
@@ -280,6 +342,25 @@ type engineFixture struct {
 	remover     *fakeRemover
 	finalizer   *fakeFinalizer
 	effects     *[]string
+}
+
+type retentionItemMetric struct {
+	state   string
+	outcome string
+	count   int64
+}
+
+type recordingRetentionMetrics struct {
+	items []retentionItemMetric
+	bytes int64
+}
+
+func (r *recordingRetentionMetrics) recordItems(_ context.Context, state, outcome string, count int64) {
+	r.items = append(r.items, retentionItemMetric{state: state, outcome: outcome, count: count})
+}
+
+func (r *recordingRetentionMetrics) recordBytes(_ context.Context, bytes int64) {
+	r.bytes += bytes
 }
 
 func newEngineFixture(t *testing.T) *engineFixture {
