@@ -329,6 +329,7 @@ PY
 echo "==> POST /agent/run (SSE)"
 SSE="$(curl -sS -N --max-time "${SSE_MAX_TIME}" -X POST "${BASE}/agent/run" \
   -H "Cookie: ${AUTH_COOKIE_HEADER}" \
+  -H "Idempotency-Key: agui-smoke-${TID}" \
   -H 'Content-Type: application/json' \
   -d "${RUN_BODY}" 2>&1)" || {
   echo "FAIL: POST /agent/run curl failed" >&2
