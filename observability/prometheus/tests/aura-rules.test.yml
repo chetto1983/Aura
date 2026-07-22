@@ -89,6 +89,13 @@ tests:
           - labels: '{__name__="aura:retention_backlog"}'
             value: 0
 
+  - name: retention backlog preserves unknown when the database observation is absent
+    interval: 1m
+    promql_expr_test:
+      - expr: aura:retention_backlog
+        eval_time: 5m
+        exp_samples: []
+
   - name: readiness page fires exactly at the five minute debounce
     interval: 1m
     input_series:

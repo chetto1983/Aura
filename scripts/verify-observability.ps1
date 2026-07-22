@@ -233,6 +233,14 @@ foreach ($entry in $dashboardContracts.GetEnumerator()) {
     }
 }
 
+$retentionBacklogPanel = @($dashboardsByUid['aura-data-retention'].panels | Where-Object { [int]$_.id -eq 4 })
+Assert-Observability ($retentionBacklogPanel.Count -eq 1) 'retention backlog current-state panel is missing'
+$retentionBacklogTargets = @($retentionBacklogPanel[0].targets)
+Assert-Observability ($retentionBacklogTargets.Count -eq 1) 'retention backlog panel must have exactly one query'
+Assert-Observability (
+    $retentionBacklogTargets[0].instant -eq $true -and $retentionBacklogTargets[0].range -eq $false
+) 'retention backlog panel must query the current instant so missing observations render No data'
+
 $yamlPaths = @(
     'observability/grafana/provisioning/datasources/aura.yml',
     'observability/grafana/provisioning/dashboards/aura.yml',

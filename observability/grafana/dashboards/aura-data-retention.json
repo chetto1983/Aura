@@ -28,11 +28,11 @@
       "targets": [{"editorMode": "code", "expr": "aura:retention_failure:increase15m", "legendFormat": "failures", "range": true, "refId": "A"}], "title": "Retention failures", "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Current durable non-terminal retention items from PostgreSQL. Alert: backlog > 100 for 5m.",
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Current durable non-terminal retention items from PostgreSQL. No data means the database observation is unavailable and must not be read as zero. Alert: backlog > 100 for 5m.",
       "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 100}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}, "id": 4,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "aura:retention_backlog", "legendFormat": "backlog", "range": true, "refId": "A"}], "title": "Retention backlog", "type": "stat"
+      "targets": [{"editorMode": "code", "expr": "aura:retention_backlog", "instant": true, "legendFormat": "backlog", "range": false, "refId": "A"}], "title": "Retention backlog", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Aura-managed storage utilization. Alerts at 0.70 and 0.80; optional full trace creation stops at 0.85. Tempo blocks are excluded and retained by Tempo for 14 days.",

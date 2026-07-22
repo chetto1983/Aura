@@ -6,6 +6,8 @@ Applies to `AuraRetentionFailures`, `AuraRetentionBacklog`, `AuraRetentionDiskWa
 
 Retention failures and backlog indicate the two-phase mark/remove/finalize policy is not converging. Disk alerts implement the locked 70/80/85 percent boundaries: warning, urgent operator action, then suppression of optional full/debug trace creation. Learning pressure reports the 10,000 learned-example store cap; pinned/manual evaluation seeds are outside this eviction budget.
 
+A missing retention-backlog series means the PostgreSQL observation failed or Aura is not scrape-reachable. Treat it as unknown, never as an empty backlog; restore database/scrape health before using the backlog threshold for recovery decisions.
+
 Tempo exclusively owns its trace blocks and 14-day compaction. Aura cleanup must never delete Tempo blocks.
 
 ## Drilldown and correlation
@@ -29,4 +31,3 @@ Escalate if disk remains at or above 80 percent for fifteen minutes, reaches 85 
 ## Recovery evidence
 
 Require disk below 70 percent, backlog below 100 and decreasing, no new retention failures, all claimed items either finalized or safely retryable, learned stores below 10,000 with bounded loads, and Tempo reporting healthy compaction. Re-run dry-run and prove it is stable/idempotent before closing the incident.
-
