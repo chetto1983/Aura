@@ -5,6 +5,7 @@ package conversations
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -105,7 +106,43 @@ func TestExportSnapshotVersionCoversAssetsAndReservationFreezesWriters(t *testin
 	if _, err := pool.Exec(ctx, "UPDATE aura.assets SET status='accepted', updated_at=now() WHERE id=$1", assetID); err == nil {
 		t.Fatal("asset update succeeded after delete reservation")
 	}
-	if affected, err = store.DeleteForIdentityIfReservation(ctx, conversationID, localID, reservation); err != nil || affected != 1 {
+	const worker = "asset-freeze-worker"
+	if affected, err = store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, worker, time.Now().Add(time.Minute)); err != nil || affected != 1 {
+		t.Fatalf("claim reserved teardown affected=%d err=%v", affected, err)
+	}
+	if affected, err = store.DeleteForIdentityIfReservation(ctx, conversationID, localID, reservation, worker); err != nil || affected != 1 {
 		t.Fatalf("reserved final delete affected=%d err=%v", affected, err)
+	}
+}
+
+func TestExportDeleteLeasePreventsAdoptionAndReservationReleaseAfterTeardown(t *testing.T) {
+	ctx := context.Background()
+	store := newStore(t, migratedPool(t))
+	conversationID := newConversation(t, store)
+	version, err := store.VersionForIdentity(ctx, conversationID, localID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const reservation = "same-operation-reservation"
+	if affected, err := store.ReserveDeleteForIdentityIfVersion(ctx, conversationID, localID, version, reservation); err != nil || affected != 1 {
+		t.Fatalf("reserve affected=%d err=%v", affected, err)
+	}
+	if affected, err := store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, "worker-one", time.Now().Add(time.Minute)); err != nil || affected != 1 {
+		t.Fatalf("first claim affected=%d err=%v", affected, err)
+	}
+	if affected, err := store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, "worker-two", time.Now().Add(time.Minute)); err != nil || affected != 0 {
+		t.Fatalf("competing worker adopted live lease: affected=%d err=%v", affected, err)
+	}
+	if affected, err := store.ReleaseReservedDelete(ctx, conversationID, localID, reservation); err != nil || affected != 0 {
+		t.Fatalf("operation reservation released after teardown: affected=%d err=%v", affected, err)
+	}
+	if affected, err := store.ReleaseDeleteLease(ctx, conversationID, localID, reservation, "worker-one"); err != nil || affected != 1 {
+		t.Fatalf("release failed worker lease affected=%d err=%v", affected, err)
+	}
+	if affected, err := store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, "worker-two", time.Now().Add(time.Minute)); err != nil || affected != 1 {
+		t.Fatalf("same operation did not resume after lease release: affected=%d err=%v", affected, err)
+	}
+	if affected, err := store.DeleteForIdentityIfReservation(ctx, conversationID, localID, reservation, "worker-two"); err != nil || affected != 1 {
+		t.Fatalf("resumed worker final delete affected=%d err=%v", affected, err)
 	}
 }

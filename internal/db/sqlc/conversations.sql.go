@@ -11,12 +11,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimConversationDeleteTeardown = `-- name: ClaimConversationDeleteTeardown :execrows
+UPDATE aura.conversations
+SET delete_phase = 'teardown_started',
+    delete_worker = $1,
+    delete_lease_expires_at = $2
+WHERE id = $3
+  AND identity_id = $4
+  AND delete_reservation = $5
+  AND delete_phase IN ('reserved', 'teardown_started')
+  AND (delete_worker IS NULL
+       OR delete_lease_expires_at <= $6
+       OR delete_worker = $1)
+`
+
+type ClaimConversationDeleteTeardownParams struct {
+	Worker         pgtype.Text        `json:"worker"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	ID             pgtype.UUID        `json:"id"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	Reservation    pgtype.Text        `json:"reservation"`
+	Now            pgtype.Timestamptz `json:"now"`
+}
+
+func (q *Queries) ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimConversationDeleteTeardown,
+		arg.Worker,
+		arg.LeaseExpiresAt,
+		arg.ID,
+		arg.IdentityID,
+		arg.Reservation,
+		arg.Now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO aura.conversations (id, identity_id, model, status, metadata)
 VALUES ($1, $2, $3, 'active', $4)
 RETURNING id, title, identity_id, created_at, last_active_at, status, model,
           total_input_tokens, total_output_tokens, total_cached_tokens,
-          total_cost_usd, metadata, snapshot_version, delete_reservation
+          total_cost_usd, metadata, snapshot_version, delete_reservation,
+          delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 `
 
 type CreateConversationParams struct {
@@ -49,6 +88,10 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 		&i.Metadata,
 		&i.SnapshotVersion,
 		&i.DeleteReservation,
+		&i.DeletePhase,
+		&i.DeleteReservedAt,
+		&i.DeleteWorker,
+		&i.DeleteLeaseExpiresAt,
 	)
 	return i, err
 }
@@ -91,16 +134,24 @@ DELETE FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2
   AND delete_reservation = $3
+  AND delete_phase = 'teardown_started'
+  AND delete_worker = $4
 `
 
 type DeleteConversationForIdentityIfReservationParams struct {
 	ID          pgtype.UUID `json:"id"`
 	IdentityID  pgtype.UUID `json:"identity_id"`
 	Reservation pgtype.Text `json:"reservation"`
+	Worker      pgtype.Text `json:"worker"`
 }
 
 func (q *Queries) DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteConversationForIdentityIfReservation, arg.ID, arg.IdentityID, arg.Reservation)
+	result, err := q.db.Exec(ctx, deleteConversationForIdentityIfReservation,
+		arg.ID,
+		arg.IdentityID,
+		arg.Reservation,
+		arg.Worker,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -110,7 +161,8 @@ func (q *Queries) DeleteConversationForIdentityIfReservation(ctx context.Context
 const getConversation = `-- name: GetConversation :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata, snapshot_version, delete_reservation
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE id = $1
 `
@@ -133,6 +185,10 @@ func (q *Queries) GetConversation(ctx context.Context, id pgtype.UUID) (AuraConv
 		&i.Metadata,
 		&i.SnapshotVersion,
 		&i.DeleteReservation,
+		&i.DeletePhase,
+		&i.DeleteReservedAt,
+		&i.DeleteWorker,
+		&i.DeleteLeaseExpiresAt,
 	)
 	return i, err
 }
@@ -140,7 +196,8 @@ func (q *Queries) GetConversation(ctx context.Context, id pgtype.UUID) (AuraConv
 const getConversationForIdentity = `-- name: GetConversationForIdentity :one
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata, snapshot_version, delete_reservation
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE id = $1
   AND identity_id = $2
@@ -172,6 +229,10 @@ func (q *Queries) GetConversationForIdentity(ctx context.Context, arg GetConvers
 		&i.Metadata,
 		&i.SnapshotVersion,
 		&i.DeleteReservation,
+		&i.DeletePhase,
+		&i.DeleteReservedAt,
+		&i.DeleteWorker,
+		&i.DeleteLeaseExpiresAt,
 	)
 	return i, err
 }
@@ -221,7 +282,8 @@ func (q *Queries) GetConversationVersionForIdentity(ctx context.Context, arg Get
 const listConversations = `-- name: ListConversations :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata, snapshot_version, delete_reservation
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE status <> 'deleted'
   AND ($1::boolean OR status = 'active')
@@ -252,6 +314,10 @@ func (q *Queries) ListConversations(ctx context.Context, includeArchived bool) (
 			&i.Metadata,
 			&i.SnapshotVersion,
 			&i.DeleteReservation,
+			&i.DeletePhase,
+			&i.DeleteReservedAt,
+			&i.DeleteWorker,
+			&i.DeleteLeaseExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -266,7 +332,8 @@ func (q *Queries) ListConversations(ctx context.Context, includeArchived bool) (
 const listConversationsForIdentity = `-- name: ListConversationsForIdentity :many
 SELECT id, title, identity_id, created_at, last_active_at, status, model,
        total_input_tokens, total_output_tokens, total_cached_tokens,
-       total_cost_usd, metadata, snapshot_version, delete_reservation
+       total_cost_usd, metadata, snapshot_version, delete_reservation,
+       delete_phase, delete_reserved_at, delete_worker, delete_lease_expires_at
 FROM aura.conversations
 WHERE identity_id = $1
   AND status <> 'deleted'
@@ -305,6 +372,10 @@ func (q *Queries) ListConversationsForIdentity(ctx context.Context, arg ListConv
 			&i.Metadata,
 			&i.SnapshotVersion,
 			&i.DeleteReservation,
+			&i.DeletePhase,
+			&i.DeleteReservedAt,
+			&i.DeleteWorker,
+			&i.DeleteLeaseExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -314,6 +385,108 @@ func (q *Queries) ListConversationsForIdentity(ctx context.Context, arg ListConv
 		return nil, err
 	}
 	return items, nil
+}
+
+const listReservedConversationDeletes = `-- name: ListReservedConversationDeletes :many
+SELECT id, identity_id, snapshot_version, delete_reservation, delete_phase, delete_reserved_at
+FROM aura.conversations
+WHERE delete_reservation IS NOT NULL
+  AND delete_phase IN ('reserved', 'teardown_started')
+ORDER BY delete_reserved_at, id
+LIMIT $1
+`
+
+type ListReservedConversationDeletesRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	SnapshotVersion   int64              `json:"snapshot_version"`
+	DeleteReservation pgtype.Text        `json:"delete_reservation"`
+	DeletePhase       pgtype.Text        `json:"delete_phase"`
+	DeleteReservedAt  pgtype.Timestamptz `json:"delete_reserved_at"`
+}
+
+func (q *Queries) ListReservedConversationDeletes(ctx context.Context, batchSize int32) ([]ListReservedConversationDeletesRow, error) {
+	rows, err := q.db.Query(ctx, listReservedConversationDeletes, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReservedConversationDeletesRow{}
+	for rows.Next() {
+		var i ListReservedConversationDeletesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.SnapshotVersion,
+			&i.DeleteReservation,
+			&i.DeletePhase,
+			&i.DeleteReservedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const releaseConversationDeleteLease = `-- name: ReleaseConversationDeleteLease :execrows
+UPDATE aura.conversations
+SET delete_worker = NULL,
+    delete_lease_expires_at = NULL
+WHERE id = $1
+  AND identity_id = $2
+  AND delete_reservation = $3
+  AND delete_worker = $4
+`
+
+type ReleaseConversationDeleteLeaseParams struct {
+	ID          pgtype.UUID `json:"id"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Reservation pgtype.Text `json:"reservation"`
+	Worker      pgtype.Text `json:"worker"`
+}
+
+func (q *Queries) ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseConversationDeleteLease,
+		arg.ID,
+		arg.IdentityID,
+		arg.Reservation,
+		arg.Worker,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const releaseReservedConversationDelete = `-- name: ReleaseReservedConversationDelete :execrows
+UPDATE aura.conversations
+SET delete_reservation = NULL,
+    delete_phase = NULL,
+    delete_reserved_at = NULL,
+    delete_worker = NULL,
+    delete_lease_expires_at = NULL
+WHERE id = $1
+  AND identity_id = $2
+  AND delete_reservation = $3
+  AND delete_phase = 'reserved'
+`
+
+type ReleaseReservedConversationDeleteParams struct {
+	ID          pgtype.UUID `json:"id"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Reservation pgtype.Text `json:"reservation"`
+}
+
+func (q *Queries) ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseReservedConversationDelete, arg.ID, arg.IdentityID, arg.Reservation)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const renameConversation = `-- name: RenameConversation :exec
@@ -356,7 +529,9 @@ func (q *Queries) RenameConversationForIdentity(ctx context.Context, arg RenameC
 
 const reserveConversationDeleteForIdentityIfVersion = `-- name: ReserveConversationDeleteForIdentityIfVersion :execrows
 UPDATE aura.conversations
-SET delete_reservation = $1
+SET delete_reservation = $1,
+    delete_phase = COALESCE(delete_phase, 'reserved'),
+    delete_reserved_at = COALESCE(delete_reserved_at, now())
 WHERE id = $2
   AND identity_id = $3
   AND snapshot_version = $4

@@ -207,6 +207,7 @@ func runServe(args []string) {
 	// SIGTERM does not abort an in-flight anti-join mid-sweep; the drain joins it. A boot
 	// one-shot fires immediately, then it ticks; a disabled/nil store launches no goroutine.
 	env.reconciler.Start(ctx)
+	env.deleteReconciler.Start(ctx)
 	// Background-shell TTL reaper (MUSR-04): bounds runaway background jobs on the same
 	// work ctx as the sweeper; the drain's BackgroundShells.Shutdown joins it. A disabled
 	// TTL / nil registry launches no goroutine.

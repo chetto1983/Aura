@@ -150,20 +150,24 @@ type AuraConversationTurns struct {
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.
 type AuraConversations struct {
-	ID                pgtype.UUID        `json:"id"`
-	Title             pgtype.Text        `json:"title"`
-	IdentityID        pgtype.UUID        `json:"identity_id"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	LastActiveAt      pgtype.Timestamptz `json:"last_active_at"`
-	Status            string             `json:"status"`
-	Model             string             `json:"model"`
-	TotalInputTokens  int64              `json:"total_input_tokens"`
-	TotalOutputTokens int64              `json:"total_output_tokens"`
-	TotalCachedTokens int64              `json:"total_cached_tokens"`
-	TotalCostUsd      pgtype.Numeric     `json:"total_cost_usd"`
-	Metadata          []byte             `json:"metadata"`
-	SnapshotVersion   int64              `json:"snapshot_version"`
-	DeleteReservation pgtype.Text        `json:"delete_reservation"`
+	ID                   pgtype.UUID        `json:"id"`
+	Title                pgtype.Text        `json:"title"`
+	IdentityID           pgtype.UUID        `json:"identity_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	LastActiveAt         pgtype.Timestamptz `json:"last_active_at"`
+	Status               string             `json:"status"`
+	Model                string             `json:"model"`
+	TotalInputTokens     int64              `json:"total_input_tokens"`
+	TotalOutputTokens    int64              `json:"total_output_tokens"`
+	TotalCachedTokens    int64              `json:"total_cached_tokens"`
+	TotalCostUsd         pgtype.Numeric     `json:"total_cost_usd"`
+	Metadata             []byte             `json:"metadata"`
+	SnapshotVersion      int64              `json:"snapshot_version"`
+	DeleteReservation    pgtype.Text        `json:"delete_reservation"`
+	DeletePhase          pgtype.Text        `json:"delete_phase"`
+	DeleteReservedAt     pgtype.Timestamptz `json:"delete_reserved_at"`
+	DeleteWorker         pgtype.Text        `json:"delete_worker"`
+	DeleteLeaseExpiresAt pgtype.Timestamptz `json:"delete_lease_expires_at"`
 }
 
 type AuraDeleteJobs struct {

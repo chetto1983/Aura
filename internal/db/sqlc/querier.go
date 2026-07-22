@@ -29,6 +29,7 @@ type Querier interface {
 	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
 	// 0 when the conversation has no turns.
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
@@ -187,6 +188,7 @@ type Querier interface {
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
+	ListReservedConversationDeletes(ctx context.Context, batchSize int32) ([]ListReservedConversationDeletesRow, error)
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
 	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
@@ -219,6 +221,8 @@ type Querier interface {
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
+	ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error)
+	ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error)
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	// Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
 	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)

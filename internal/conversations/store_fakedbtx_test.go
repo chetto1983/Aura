@@ -133,18 +133,22 @@ func conversationRowValues(id, identity pgtype.UUID, status, model string, title
 	return []any{
 		id, // ID
 		pgtype.Text{String: title, Valid: titleSet}, // Title
-		identity,      // IdentityID
-		created,       // CreatedAt
-		created,       // LastActiveAt
-		status,        // Status
-		model,         // Model
-		int64(10),     // TotalInputTokens
-		int64(20),     // TotalOutputTokens
-		int64(5),      // TotalCachedTokens
-		cost,          // TotalCostUsd
-		[]byte(`{}`),  // Metadata
-		int64(1),      // SnapshotVersion
-		pgtype.Text{}, // DeleteReservation
+		identity,             // IdentityID
+		created,              // CreatedAt
+		created,              // LastActiveAt
+		status,               // Status
+		model,                // Model
+		int64(10),            // TotalInputTokens
+		int64(20),            // TotalOutputTokens
+		int64(5),             // TotalCachedTokens
+		cost,                 // TotalCostUsd
+		[]byte(`{}`),         // Metadata
+		int64(1),             // SnapshotVersion
+		pgtype.Text{},        // DeleteReservation
+		pgtype.Text{},        // DeletePhase
+		pgtype.Timestamptz{}, // DeleteReservedAt
+		pgtype.Text{},        // DeleteWorker
+		pgtype.Timestamptz{}, // DeleteLeaseExpiresAt
 	}
 }
 

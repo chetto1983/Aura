@@ -2,15 +2,18 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
@@ -63,9 +66,17 @@ func (c *conflictingReservedConvStore) ReserveDeleteForIdentityIfVersion(_ conte
 	return 0, nil
 }
 
-func (c *conflictingReservedConvStore) DeleteForIdentityIfReservation(ctx context.Context, id, identityID, _ string) (int64, error) {
+func (c *conflictingReservedConvStore) DeleteForIdentityIfReservation(ctx context.Context, id, identityID, _, _ string) (int64, error) {
 	c.steps.add("reserved-delete")
 	return c.DeleteForIdentity(ctx, id, identityID)
+}
+
+func (*conflictingReservedConvStore) ClaimDeleteTeardown(context.Context, string, string, string, string, time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (*conflictingReservedConvStore) ReleaseDeleteLease(context.Context, string, string, string, string) (int64, error) {
+	return 0, nil
 }
 
 func (r *recordingConvStore) DeleteForIdentity(ctx context.Context, id, identityID string) (int64, error) {
@@ -292,7 +303,7 @@ func TestExportDeleteVersionConflictPreservesAllLiveState(t *testing.T) {
 	shares := &conflictShareRevoker{}
 	r.SetShareRevoker(shares)
 
-	affected, err := r.DeleteConversationLifecycleIfVersion(context.Background(), owner, convID, 7)
+	affected, err := r.DeleteConversationLifecycleIfVersion(exportDeleteTestContext(t, owner, "version-conflict"), owner, convID, 7)
 	if err != nil {
 		t.Fatalf("conditional lifecycle: %v", err)
 	}
@@ -313,6 +324,20 @@ func TestExportDeleteVersionConflictPreservesAllLiveState(t *testing.T) {
 	if err != nil || conversation.Title != "concurrent rename" {
 		t.Fatalf("conflict lost concurrent conversation state: conversation=%+v err=%v", conversation, err)
 	}
+}
+
+func exportDeleteTestContext(t *testing.T, owner, key string) context.Context {
+	t.Helper()
+	fingerprint := sha256.Sum256([]byte(key))
+	ctx := identityctx.WithIdentityID(context.Background(), owner)
+	ctx, err := idempotency.WithOperation(ctx, idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: owner, Scope: idempotency.ScopeHTTPMutation, Key: key},
+		Fingerprint: fingerprint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx
 }
 
 // TestSessionKeyIsolation proves the D-23 composite keying: two identities presenting the

@@ -99,6 +99,9 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 	if env.reconciler != nil {
 		env.reconciler.Stop()
 	}
+	if env.deleteReconciler != nil {
+		env.deleteReconciler.Stop()
+	}
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
 	defer cancel()
