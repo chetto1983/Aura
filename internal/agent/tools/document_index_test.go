@@ -46,9 +46,17 @@ func TestDocumentIndex_IndexesWorkspaceFile(t *testing.T) {
 
 func TestDocumentIndex_RejectsOutsideWorkspace(t *testing.T) {
 	root := t.TempDir()
+	// A second temp dir gives an ABSOLUTE path outside the workspace on every OS
+	// (a literal like "/etc/passwd" is not absolute on Windows, so filepath.Join
+	// would fold it back UNDER the workspace and the fence would not trip there).
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	raw, err := json.Marshal(map[string]string{"path": outside})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
 	fi := &fakeIndexer{job: &documents.Job{}}
 	tool := &DocumentIndex{Indexer: fi, WorkspaceRoot: root}
-	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"path":"/etc/passwd"}`)); err == nil {
+	if _, err := tool.Execute(context.Background(), raw); err == nil {
 		t.Fatal("expected rejection for a path outside the workspace")
 	}
 	if fi.calledPath != "" {
