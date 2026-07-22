@@ -8,6 +8,8 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
+	"github.com/chetto1983/aura/internal/retention"
 )
 
 const observabilityShutdownTimeout = 5 * time.Second
@@ -17,8 +19,14 @@ var serveListenerBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/cm
 })
 
 type serveObservability struct {
-	runtime *obs.Runtime
-	metrics *privateMetricsComponent
+	runtime      *obs.Runtime
+	metrics      *privateMetricsComponent
+	diskObserver diskObserverLifecycle
+}
+
+type diskObserverLifecycle interface {
+	Start(context.Context)
+	Stop()
 }
 
 func startServeObservability(
@@ -48,9 +56,25 @@ func startServeObservability(
 		defer cancel()
 		return nil, errors.Join(err, runtime.Shutdown(shutCtx))
 	}
+	diskObserver, err := retention.NewDiskObserver(retention.DiskObserverConfig{
+		RunDir: cfg.RunDir,
+		Thresholds: retention.DiskThresholds{
+			Warn:         cfg.Retention.DiskWarnPercent,
+			Urgent:       cfg.Retention.DiskUrgentPercent,
+			StopOptional: cfg.Retention.DiskStopOptionalPercent,
+		},
+		SetOptionalTracesSuppressed: reasoningtrace.SetOptionalSuppressed,
+	})
+	if err != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), observabilityShutdownTimeout)
+		defer cancel()
+		return nil, errors.Join(err, listener.Close(), runtime.Shutdown(shutCtx))
+	}
+	diskObserver.Start(ctx)
 	return &serveObservability{
-		runtime: runtime,
-		metrics: &privateMetricsComponent{listener: listener, server: server},
+		runtime:      runtime,
+		metrics:      &privateMetricsComponent{listener: listener, server: server},
+		diskObserver: diskObserver,
 	}, nil
 }
 
@@ -59,6 +83,9 @@ func (o *serveObservability) abort(ctx context.Context) error {
 		return nil
 	}
 	var err error
+	if o.diskObserver != nil {
+		o.diskObserver.Stop()
+	}
 	if o.metrics != nil && o.metrics.listener != nil {
 		err = errors.Join(err, o.metrics.listener.Close())
 	}
@@ -76,7 +103,13 @@ func (o *serveObservability) stopMetrics(ctx context.Context) error {
 }
 
 func (o *serveObservability) shutdownRuntime() {
-	if o == nil || o.runtime == nil {
+	if o == nil {
+		return
+	}
+	if o.diskObserver != nil {
+		o.diskObserver.Stop()
+	}
+	if o.runtime == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), observabilityShutdownTimeout)

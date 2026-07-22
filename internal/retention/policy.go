@@ -53,10 +53,16 @@ func (d DiskThresholds) Validate() error {
 
 // Evaluate only raises pressure signals. It never expands the deletion set.
 func (d DiskThresholds) Evaluate(usedPercent int) DiskState {
+	return d.EvaluateRatio(float64(usedPercent) / 100)
+}
+
+// EvaluateRatio preserves exact threshold boundaries for filesystem samples.
+func (d DiskThresholds) EvaluateRatio(usedRatio float64) DiskState {
+	usedPercent := usedRatio * 100
 	return DiskState{
-		Warn:               usedPercent >= d.Warn,
-		Urgent:             usedPercent >= d.Urgent,
-		StopOptionalTraces: usedPercent >= d.StopOptional,
+		Warn:               usedPercent >= float64(d.Warn),
+		Urgent:             usedPercent >= float64(d.Urgent),
+		StopOptionalTraces: usedPercent >= float64(d.StopOptional),
 		DeleteExtraData:    false,
 	}
 }
