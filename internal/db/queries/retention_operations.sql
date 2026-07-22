@@ -5,8 +5,18 @@ INSERT INTO aura.retention_operations (
     sqlc.arg(id), sqlc.arg(token), sqlc.arg(policy_version), 'planned',
     sqlc.arg(candidate_count), sqlc.arg(planned_bytes), sqlc.arg(now), sqlc.arg(now)
 )
-ON CONFLICT (token) DO UPDATE SET token = EXCLUDED.token
+ON CONFLICT (token) DO NOTHING
 RETURNING *;
+
+-- name: RefreshPlannedRetentionOperation :execrows
+-- A byte-identical deterministic plan receives a fresh authorization window only
+-- while it has not crossed the first-apply durability boundary. In-flight and
+-- terminal operations are immutable replays of their original snapshot.
+UPDATE aura.retention_operations
+SET created_at = sqlc.arg(now),
+    updated_at = sqlc.arg(now)
+WHERE token = sqlc.arg(token)
+  AND status = 'planned';
 
 -- name: GetRetentionOperationByToken :one
 SELECT * FROM aura.retention_operations WHERE token = sqlc.arg(token);

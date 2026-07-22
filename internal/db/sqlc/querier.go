@@ -221,6 +221,10 @@ type Querier interface {
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
+	// A byte-identical deterministic plan receives a fresh authorization window only
+	// while it has not crossed the first-apply durability boundary. In-flight and
+	// terminal operations are immutable replays of their original snapshot.
+	RefreshPlannedRetentionOperation(ctx context.Context, arg RefreshPlannedRetentionOperationParams) (int64, error)
 	ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error)
 	ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error)
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error

@@ -95,6 +95,14 @@ func (s *Store) SavePlan(ctx context.Context, plan Plan, now time.Time) (Operati
 			ID: retentionUUID(), Token: plan.Token, PolicyVersion: plan.PolicyVersion,
 			CandidateCount: int32(len(plan.Candidates)), PlannedBytes: plan.TotalBytes, Now: retentionTime(now),
 		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			if _, err = q.RefreshPlannedRetentionOperation(ctx, sqlc.RefreshPlannedRetentionOperationParams{
+				Now: retentionTime(now), Token: plan.Token,
+			}); err != nil {
+				return fmt.Errorf("refresh planned retention operation: %w", err)
+			}
+			row, err = q.GetRetentionOperationByToken(ctx, plan.Token)
+		}
 		if err != nil {
 			return fmt.Errorf("create retention operation: %w", err)
 		}

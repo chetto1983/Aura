@@ -190,6 +190,111 @@ func TestRetentionStorePersistsTwoPhaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestRetentionPlanRefreshesExpiredUnchangedSnapshotForImmediateApply(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	candidate := Candidate{
+		IdentityID: "retention-refresh-owner", ArtifactID: uuid.NewString(),
+		Version: 1, Action: ActionDeleteArtifact, Class: ClassTemporary, Bytes: 7,
+	}
+	effects := []string{}
+	policy := DefaultPolicy(EnvironmentProduction)
+	policy.Version = "refresh-" + uuid.NewString()
+	policy.BatchSize = 1
+	engine := &Engine{
+		Policy: policy, Source: staticSource{candidate}, Store: NewStore(pool),
+		Revalidator: &fakeRevalidator{version: 1},
+		Remover:     &fakeRemover{effects: &effects, result: RemovalResult{Bytes: 7}},
+		Finalizer:   &fakeFinalizer{effects: &effects},
+		WorkerID:    "refresh-worker", PlanValidity: time.Minute,
+		Now: func() time.Time { return now },
+	}
+	first, err := engine.Plan(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	refreshed, err := engine.Plan(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Token != first.Token {
+		t.Fatalf("unchanged snapshot token = %q, want %q", refreshed.Token, first.Token)
+	}
+	operation, err := engine.Store.GetByToken(ctx, refreshed.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !operation.CreatedAt.Equal(now) {
+		t.Fatalf("refreshed authorization time = %s, want %s", operation.CreatedAt, now)
+	}
+	report, err := engine.Apply(ctx, refreshed.Token)
+	if err != nil {
+		t.Fatalf("immediate Apply after refreshed Plan: %v", err)
+	}
+	if report.Completed != 1 || report.Bytes != 7 {
+		t.Fatalf("Apply report = %+v", report)
+	}
+}
+
+func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	for _, status := range []Status{StatusDeleting, StatusRetryable, StatusCompleted} {
+		t.Run(string(status), func(t *testing.T) {
+			plan, buildErr := BuildPlan("immutable-"+uuid.NewString(), nil, 1)
+			if buildErr != nil {
+				t.Fatal(buildErr)
+			}
+			store := NewStore(pool)
+			created := time.Now().UTC().Truncate(time.Microsecond)
+			operation, saveErr := store.SavePlan(ctx, plan, created)
+			if saveErr != nil {
+				t.Fatal(saveErr)
+			}
+			updated := created.Add(10 * time.Second)
+			if _, execErr := pool.Exec(ctx, `
+				UPDATE aura.retention_operations
+				SET status = $1, updated_at = $2
+				WHERE id = $3`, status, updated, operation.ID); execErr != nil {
+				t.Fatal(execErr)
+			}
+
+			replayed, saveErr := store.SavePlan(ctx, plan, created.Add(2*defaultPlanValidity))
+			if saveErr != nil {
+				t.Fatal(saveErr)
+			}
+			var gotStatus Status
+			var gotCreated, gotUpdated time.Time
+			if queryErr := pool.QueryRow(ctx, `
+				SELECT status, created_at, updated_at
+				FROM aura.retention_operations
+				WHERE id = $1`, operation.ID).Scan(&gotStatus, &gotCreated, &gotUpdated); queryErr != nil {
+				t.Fatal(queryErr)
+			}
+			if replayed.ID != operation.ID || replayed.Status != status || gotStatus != status {
+				t.Fatalf("replayed operation/status = %+v/%s, want id %s status %s", replayed, gotStatus, operation.ID, status)
+			}
+			if !gotCreated.Equal(created) || !gotUpdated.Equal(updated) {
+				t.Fatalf("non-planned timestamps changed: created=%s updated=%s", gotCreated, gotUpdated)
+			}
+		})
+	}
+}
+
 func retentionIntegrationEnv(t *testing.T, key string) string {
 	t.Helper()
 	value := os.Getenv(key)

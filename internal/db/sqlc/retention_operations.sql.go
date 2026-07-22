@@ -205,7 +205,7 @@ INSERT INTO aura.retention_operations (
     $1, $2, $3, 'planned',
     $4, $5, $6, $6
 )
-ON CONFLICT (token) DO UPDATE SET token = EXCLUDED.token
+ON CONFLICT (token) DO NOTHING
 RETURNING id, token, policy_version, status, candidate_count, planned_bytes, completed_count, completed_bytes, failure_count, created_at, updated_at, completed_at
 `
 
@@ -450,6 +450,30 @@ func (q *Queries) RecordRetentionArtifactResult(ctx context.Context, arg RecordR
 		arg.ID,
 		arg.ClaimOwner,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const refreshPlannedRetentionOperation = `-- name: RefreshPlannedRetentionOperation :execrows
+UPDATE aura.retention_operations
+SET created_at = $1,
+    updated_at = $1
+WHERE token = $2
+  AND status = 'planned'
+`
+
+type RefreshPlannedRetentionOperationParams struct {
+	Now   pgtype.Timestamptz `json:"now"`
+	Token string             `json:"token"`
+}
+
+// A byte-identical deterministic plan receives a fresh authorization window only
+// while it has not crossed the first-apply durability boundary. In-flight and
+// terminal operations are immutable replays of their original snapshot.
+func (q *Queries) RefreshPlannedRetentionOperation(ctx context.Context, arg RefreshPlannedRetentionOperationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, refreshPlannedRetentionOperation, arg.Now, arg.Token)
 	if err != nil {
 		return 0, err
 	}
