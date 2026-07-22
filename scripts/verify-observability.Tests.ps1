@@ -44,7 +44,11 @@ function Invoke-ContractVerification {
         $output = & $verifierPath -RepositoryRoot $Root -StaticOnly -SkipContainerTools 2>&1 | Out-String
         return [pscustomobject]@{ Passed = $true; Output = $output }
     } catch {
-        return [pscustomobject]@{ Passed = $false; Output = ($_ | Out-String) }
+        # Keep the exception message as raw text. Windows PowerShell's formatter
+        # wraps ErrorRecord output to the host width, which can insert newlines in
+        # the middle of the exact contract substring and make a correct negative
+        # failure look imprecise.
+        return [pscustomobject]@{ Passed = $false; Output = $_.Exception.Message }
     }
 }
 
