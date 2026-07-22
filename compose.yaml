@@ -276,7 +276,12 @@ services:
     depends_on:
       garage:
         condition: service_started
+      # objectstore bootstrap is an idempotent CLI mutation. Wait for the
+      # registry migration before reserving its operation key.
+      aura-migrate:
+        condition: service_completed_successfully
     environment:
+      AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_OBJECTSTORE_BACKEND: ${AURA_OBJECTSTORE_BACKEND:-garage}
       AURA_OBJECTSTORE_ENDPOINT: ${AURA_OBJECTSTORE_ENDPOINT:-http://garage:3900}
       AURA_OBJECTSTORE_PUBLIC_ENDPOINT: ${AURA_OBJECTSTORE_PUBLIC_ENDPOINT:-http://127.0.0.1:3900}

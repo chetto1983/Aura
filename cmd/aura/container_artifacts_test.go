@@ -245,6 +245,20 @@ func TestAuraServiceCanResolveContainerInternalSearxng(t *testing.T) {
 	}
 }
 
+func TestGarageBootstrapCanReachIdempotencyRegistry(t *testing.T) {
+	root := repoRootForTest(t)
+	compose := readProjectFile(t, root, "compose.yaml")
+	bootstrap := composeServiceBlock(t, compose, "garage-bootstrap")
+	for _, want := range []string{
+		"aura-migrate:\n        condition: service_completed_successfully",
+		"AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable",
+	} {
+		if !strings.Contains(bootstrap, want) {
+			t.Fatalf("garage-bootstrap service missing idempotency registry dependency %q:\n%s", want, bootstrap)
+		}
+	}
+}
+
 func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	root := repoRootForTest(t)
 	installer := readProjectFile(t, root, "scripts/install.sh")
