@@ -99,6 +99,19 @@
 **User's choice:** Audit-named set + refactor-on-touch.
 **Notes:** Surface is ~20+ decoders (far beyond the 3 the audit named); one centralized helper (size-cap + content-type + DisallowUnknownFields + single-decode EOF + per-route allowEmpty). Fold in the existing `conversations_api.go:162` io.EOF/allowEmpty pattern.
 
+## Adversarial validation round (2026-07-22, post-CONTEXT)
+
+Three parallel adversarial reviewers (refute-not-confirm mandate) checked every load-bearing claim against the live code. Outcome folded into CONTEXT.md as corrections:
+
+- **SEC-04:** "network" has no denyable gateway tool (`web_fetch`/`web_search` are Safe→Allowed) → model as shell/MCP egress; D-03 nil-deref rationale was wrong (Normal-mutating returns Allow) → restriction kept, reason fixed.
+- **SEC-09:** break-glass CLI path never receives the pepper + no env guarantee → thread pepper through all sites + presence/equality guard (else recovery tokens die silently).
+- **SEC-01:** single-choke-point true only for the turns table — the `agent/tools/result.go` `.result` sidecar persists full tool output unredacted → added as a second at-rest seam; exact-match doesn't literally satisfy "secret-like values" for unknown secrets → REQUIREMENTS amendment; encrypted sink is a rewrite (unexported methods) + must be fail-closed on missing key.
+- **SEC-02 — DECISION REVERSED:** the credentialed allowlist has no production cross-origin consumer, SameSite=Strict already blocks cross-site cookies, and it trips the auth.go CSRF re-eval; "methods synced to routes" is un-syncable (current list already misses PATCH/PUT) → **switched to same-origin-only, no CORS headers** (+ REQUIREMENTS amendment).
+- **SEC-06:** the `conversations_api.go:162` single-decode idiom IS the trailing-JSON vuln → helper needs a second-decode-expects-EOF step; the 3 cited precedents are the bug, not the fix.
+- **SEC-05:** default `sboms:` = Go-modules only (web/ not covered) → add a source-artifact SBOM; "govulncheck blocks merges" needs branch-protection confirmation; grep gate must handle 3-segment paths + indented run-body lines.
+
+Three REQUIREMENTS/ROADMAP amendments now required before code: SEC-09 (D-08), SEC-01 (D-10b), SEC-02 (D-14b).
+
 ## Claude's Discretion
 
 - File placement, helper/identifier names, error strings, test-fixture shapes (≤600 LOC/file).
