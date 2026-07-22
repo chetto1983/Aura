@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,14 +44,16 @@ func (h retentionHandler) Run(ctx context.Context, _ Job) (string, error) {
 		return "retention: disabled (no engine)", nil
 	}
 	report := retention.ApplyReport{}
+	var runErrors []error
 	if h.engine != nil {
 		plan, err := h.engine.Plan(ctx)
 		if err != nil {
-			return "", fmt.Errorf("retention plan: %w", err)
-		}
-		report, err = h.engine.Apply(ctx, plan.Token)
-		if err != nil {
-			return "", fmt.Errorf("retention apply: %w", err)
+			runErrors = append(runErrors, fmt.Errorf("retention plan: %w", err))
+		} else {
+			report, err = h.engine.Apply(ctx, plan.Token)
+			if err != nil {
+				runErrors = append(runErrors, fmt.Errorf("retention apply: %w", err))
+			}
 		}
 	}
 	exportsDeleted := 0
@@ -60,10 +63,12 @@ func (h retentionHandler) Run(ctx context.Context, _ Job) (string, error) {
 		}
 		deleted, err := sweeper.SweepExpired(ctx, time.Now().UTC())
 		if err != nil {
-			return "", fmt.Errorf("owner export retention: %w", err)
+			runErrors = append(runErrors, fmt.Errorf("owner export retention: %w", err))
+			continue
 		}
 		exportsDeleted += deleted
 	}
-	return fmt.Sprintf("retention ok: completed %d item(s), %d byte(s), retryable %d, failed %d, owner exports deleted %d",
-		report.Completed, report.Bytes, report.Retryable, report.Failed, exportsDeleted), nil
+	summary := fmt.Sprintf("retention completed: completed %d item(s), %d byte(s), retryable %d, failed %d, owner exports deleted %d",
+		report.Completed, report.Bytes, report.Retryable, report.Failed, exportsDeleted)
+	return summary, errors.Join(runErrors...)
 }
