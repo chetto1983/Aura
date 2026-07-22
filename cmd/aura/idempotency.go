@@ -150,7 +150,7 @@ func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer)
 			}
 		}
 	}
-	operationKey := idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeCLICommand, Key: key}
+	operationKey := idempotency.OperationKey{IdentityID: identityctx.CLIServiceIdentity, Scope: idempotency.ScopeCLICommand, Key: key}
 	if err := operationKey.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("--operation-key: %w", err)
 	}
@@ -161,7 +161,7 @@ func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer)
 	if err != nil {
 		return nil, nil, err
 	}
-	trusted := identityctx.WithIdentityID(ctx, identityctx.LocalOperatorIdentity)
+	trusted := identityctx.WithIdentityID(ctx, identityctx.CLIServiceIdentity)
 	ctx, err = idempotency.WithOperation(trusted, idempotency.Operation{Key: operationKey, Fingerprint: fingerprint})
 	if err != nil {
 		return nil, nil, err

@@ -73,6 +73,25 @@ func TestPrepareCLIIdempotencyExplicitKeyIsStable(t *testing.T) {
 	}
 }
 
+func TestPrepareCLIIdempotencyUsesDurableServiceIdentity(t *testing.T) {
+	t.Parallel()
+
+	ctx, _, err := prepareCLIIdempotency(context.Background(), []string{
+		"neo4j", "migrate", "--operation-key", "deploy-migration-key",
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		t.Fatal("prepared CLI context lacks operation metadata")
+	}
+	const durableCLIIdentity = "00000000-0000-0000-0000-000000000039"
+	if operation.Key.IdentityID != durableCLIIdentity {
+		t.Fatalf("CLI operation identity = %q, want durable service identity %q", operation.Key.IdentityID, durableCLIIdentity)
+	}
+}
+
 func TestPrepareCLIIdempotencyDisplaysGeneratedKeyBeforeExecution(t *testing.T) {
 	t.Parallel()
 

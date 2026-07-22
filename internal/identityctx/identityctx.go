@@ -10,6 +10,12 @@ import "context"
 // scoping — so they agree on who owns no-principal data.
 const LocalOperatorIdentity = "00000000-0000-0000-0000-000000000001"
 
+// CLIServiceIdentity is the non-human principal used only to own durable CLI
+// idempotency records. Unlike LocalOperatorIdentity, it survives first-login
+// retirement of the legacy `local` identity (serve_auth.go) and carries no user
+// capabilities. Migration 0049 seeds it as kind=service.
+const CLIServiceIdentity = "00000000-0000-0000-0000-000000000039"
+
 type key struct{}
 
 // WithIdentityID returns a context carrying the authenticated or conversation-owned
