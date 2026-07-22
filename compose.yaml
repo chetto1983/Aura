@@ -387,7 +387,7 @@ services:
   # service creates the local bucket/key/CORS before Aura starts; install.sh
   # generates the internal secrets consumed here.
   garage:
-    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.0.0}
+    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}
     container_name: aura-garage
     restart: unless-stopped
     environment:

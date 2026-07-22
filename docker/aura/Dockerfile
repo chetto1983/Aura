@@ -17,7 +17,9 @@ COPY web/ ./
 COPY internal/agui/testdata/golden-events.json /internal/agui/testdata/golden-events.json
 RUN npm run build
 
-FROM dxflrs/garage:v2.0.0 AS garagebin
+# Keep in lockstep with the garage service pin in compose.yaml — the bootstrap
+# CLI talks native RPC to the server and Garage wants matched versions.
+FROM dxflrs/garage:v2.3.0 AS garagebin
 
 FROM golang:1.26.5-alpine AS build
 
