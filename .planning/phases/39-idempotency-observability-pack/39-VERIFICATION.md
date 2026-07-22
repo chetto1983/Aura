@@ -1,59 +1,13 @@
 ---
 phase: 39-idempotency-observability-pack
-verified: 2026-07-22T03:19:00Z
-status: gaps_found
-score: 31/35
-roadmap_score: 3/4
-requirements_verified: 3/6
-re_verification: false
-gaps:
-  - truth: "Required idempotency and disk-pressure telemetry is emitted by production owners."
-    status: failed
-    reason: "The catalog, rules, dashboards, and synthetic fixtures declare aura_idempotency_operation_total and aura_retention_disk_utilization_ratio, but no production code records either instrument."
-    artifacts:
-      - path: "internal/obs/catalog.go"
-        issue: "Descriptors exist without production owners."
-      - path: "internal/idempotency/store.go"
-        issue: "Begin/Complete/MarkIndeterminate/expiry paths emit no idempotency metric."
-      - path: "internal/retention/policy.go"
-        issue: "DiskThresholds.Evaluate is not called by production code and no disk utilization gauge is recorded."
-    missing:
-      - "Instrument the semantic idempotency owner with bounded operation/state/outcome labels."
-      - "Sample Aura-owned storage utilization and emit the finite ready/degraded/draining/stopped state at the locked 70/80/85 boundaries without expanding deletion scope."
-  - truth: "Alert and recording-rule selectors correspond to labels that Aura can emit in production."
-    status: failed
-    reason: "Listener, scheduler-enabled, and retention-backlog selectors do not match production boundary semantics, so the affected alerts remain silent even though promtool synthetic fixtures pass."
-    artifacts:
-      - path: "observability/prometheus/rules/aura-recording.yml"
-        issue: "Filters listener state=failed, scheduler state=running/outcome=success, and retention state=pending/completed, but the current owners do not emit those combinations."
-      - path: "cmd/aura/serve_observability.go"
-        issue: "Listener boundary has a fixed state=running, including terminal failures."
-      - path: "internal/cron/scheduler.go"
-        issue: "The running lifecycle counter records only when Start terminates; normal shutdown is classified canceled, so it cannot represent enabled-while-running."
-      - path: "internal/retention/engine.go"
-        issue: "Plan/apply boundaries have no state and normalize to other, while backlog rules require pending/completed."
-    missing:
-      - "Emit explicit listener failure state or make the rule consume the actual bounded terminal labels."
-      - "Represent scheduler enabled/running independently from a terminal lifecycle counter."
-      - "Emit retention pending/completed transitions at the durable owner seam or revise rules to actual emitted states."
-  - truth: "Dashboards provide live idempotency and disk-pressure coverage, not contract-valid no-data panels."
-    status: failed
-    reason: "The idempotency and retention panels query the two unowned series above; static catalog validation cannot prove live data flow."
-    artifacts:
-      - path: "observability/grafana/dashboards/aura-tools-mcp.json"
-        issue: "Idempotency panels depend on an un-emitted counter."
-      - path: "observability/grafana/dashboards/aura-data-retention.json"
-        issue: "Storage-utilization panel depends on an un-emitted gauge."
-    missing:
-      - "Add runtime scrape evidence showing both canonical series after real owner events."
-  - truth: "Disk pressure at 70/80/85 drives warn/urgent/stop-optional signals only."
-    status: failed
-    reason: "The pure threshold function and tests are correct and never broaden deletion, but no production sampler invokes it, exports the gauge, or drives the three operational signals."
-    artifacts:
-      - path: "internal/retention/policy.go"
-        issue: "Evaluate has no non-test caller."
-    missing:
-      - "Wire a bounded disk-pressure observer to retention/serve lifecycle and verify cap-1/equal/cap+1 runtime emission."
+verified: 2026-07-22T07:31:15Z
+status: passed
+score: 35/35
+roadmap_score: 4/4
+requirements_verified: 6/6
+re_verification: true
+previous_status: gaps_found
+gaps: []
 human_verification: []
 ---
 
@@ -61,15 +15,15 @@ human_verification: []
 
 **Phase Goal:** Idempotent mutating tools plus a production observability surface, with migrations allocated from the live head.
 
-**Status:** gaps_found
+**Status:** passed
 
-**Mode:** Initial goal-backward verification. No prior `39-VERIFICATION.md` existed.
+**Mode:** Re-verification after production-observability gap closure and final phase-close review.
 
 ## Verdict
 
-The idempotency, readiness, retention, export-delete, and bounded-learning behavior is implemented and passed race-enabled unit and disposable-database integration tests. The observability pack is deployable and its synthetic Prometheus/Tempo/Grafana smoke is green.
+All 35 observable truths, all four ROADMAP success criteria, and OBS-01 through OBS-06 are verified. The original four observability gaps are closed: idempotency telemetry has a production owner; disk pressure is sampled from the Aura-owned run directory and exported at the locked 70/80/85 boundaries; listener, scheduler, and retention-backlog selectors match finite production-emitted states; and the dashboards consume production-live canonical series.
 
-The phase is not complete because part of the observability surface is contract-valid but not production-live. Two advertised series have no emitter, and three recording/alert selectors ask for label combinations their owners cannot produce. That leaves idempotency, disk pressure, listener failure, scheduler no-progress, retention backlog, and their dependent dashboard panels operationally blind.
+Fresh closeout evidence at `5c5da3b5f` passed: `go test -count=1 ./...`; repository-wide `go vet`; WSL race tests over retention, observability, idempotency, knowledge, and CLI packages; the full observability verifier (4 dashboards, 20 alerts, 88 checked queries plus runtime smoke); Compose observability rendering; diff checks; and the quality-snapshot gate over 11 affected rows. The cumulative Phase-39 review is clean across 192 files.
 
 ## Goal Achievement
 
@@ -94,19 +48,19 @@ The ROADMAP success criteria were merged with every additive PLAN truth and de-d
 | 13 | Scheduler readiness is successful scan progress, not queue depth. | VERIFIED | `cron/scheduler.go:190-214,243-252`; heartbeat boundary tests PASS. |
 | 14 | Compose probes `/readyz` with an outer timeout above the handler budget. | VERIFIED | `compose.yaml:227-234`; 2s handler budget vs curl max-time 3s/Compose timeout 5s; compose contract tests PASS. |
 | 15 | One OTel resource/provider lifecycle owns traces plus Prometheus/OTLP metric readers. | VERIFIED | `obs/init.go:50-142`; `obs/meter.go:39-99`; dual-reader and partial-init tests PASS. |
-| 16 | LLM/tool/MCP/pause-resume/DB/scheduler/listener/idempotency/retention signals are emitted with bounded attributes. | **FAILED** | All listed owners except idempotency are wired; `IdempotencyOperationsID` has no production reference outside the catalog. Listener/scheduler/retention terminal state semantics also do not match the pack selectors. |
+| 16 | LLM/tool/MCP/pause-resume/DB/scheduler/listener/idempotency/retention signals are emitted with bounded attributes. | VERIFIED | `internal/idempotency/telemetry.go` owns bounded operation/state/outcome emission; `internal/retention/disk_observer.go` and `backlog_observer.go` own finite disk/backlog state; runtime-edge/catalog tests and the focused Linux race suite PASS. |
 | 17 | Canonical Prometheus scraping uses a dedicated registry and loopback/private listener. | VERIFIED | `obs/meter.go:49`; `serve_lifecycle.go:43-71`; `serve_observability.go:33-53`; private route/lifecycle tests PASS. The authenticated legacy compatibility route remains intentionally separate and excludes OTel-owned agent series. |
 | 18 | Legacy agent metrics remain a one-owner compatibility projection with no duplicate canonical emission. | VERIFIED | `agent/metrics.go:22-36,87-134`; descriptor and re-register compatibility tests PASS. |
 | 19 | Observability shutdown is bounded, reverse-ordered, repeat-safe, and safe under disabled/partial initialization. | VERIFIED | `obs/meter.go:138+`; runtime shutdown tests PASS. |
 | 20 | Immutable Git pack has stable dashboard/data-source UIDs, panel/runbook links, and Tempo trace linkage. | VERIFIED | Four dashboards, provisioning, rules, runbooks, and Tempo config passed the repository verifier. |
 | 21 | CI validates PromQL/rules, JSON, provisioning, compose, negative fixtures, and runtime smoke. | VERIFIED | `.github/workflows/ci.yml`; `scripts/verify-observability.ps1` and negative tests; full verifier PASS. |
-| 22 | Every alert consumes a canonical series/label combination Aura emits and locks threshold/debounce boundary behavior. | **FAILED** | Promtool cap-1/equal/cap+1 fixtures PASS synthetically, but production cannot emit the idempotency/disk series or listener/scheduler/retention label combinations used by the rules. |
+| 22 | Every alert consumes a canonical series/label combination Aura emits and locks threshold/debounce boundary behavior. | VERIFIED | Listener failure, scheduler enabled/no-progress, idempotency outcomes, durable retention backlog, and disk-pressure selectors now match production emitters; the full 20-alert/88-query verifier and runtime smoke PASS. |
 | 23 | Sustained user impact pages; component causes route to warning/ticket severity. | VERIFIED | `aura-alerts.yml` has page vs warning groups, `for:` debounce, dashboards, and runbooks; 20-alert contract tests PASS. |
 | 24 | Official observability images are digest-pinned, isolated, and only Grafana is intentionally published. | VERIFIED | Full verifier checked image digests, Compose profile, namespaces, read-only mounts, and ports. |
-| 25 | Dashboards provide live coverage for all required domains using bounded labels. | **FAILED** | Structure and query vocabulary validate, but idempotency and disk panels depend on unowned series and therefore have no production data flow. |
+| 25 | Dashboards provide live coverage for all required domains using bounded labels. | VERIFIED | Idempotency and disk/backlog panels consume production-owned series; static dashboard/query validation and provisioned runtime smoke PASS for all four dashboards. |
 | 26 | One two-phase retention engine is shared by CLI/scheduler, dry-runs by default, uses exact tokens, bounded claims, leases, retry, revalidation, and audit. | VERIFIED | `retention/plan.go`, `engine.go`, `store.go`; unit and disposable Postgres claim/lifecycle tests PASS. |
 | 27 | Locked retention defaults are enforced. | VERIFIED | `retention/policy.go:77-95`; config tests PASS: temp/crash 24h, full traces prod 24h/dev 7d, metadata 14d, conversations unlimited, referenced artifacts follow conversation. |
-| 28 | Disk 70/80/85 drives signal-only warn/urgent/stop-optional behavior. | **FAILED** | `DiskThresholds.Evaluate` and exact-boundary tests are correct and never delete extra data, but the function has no production caller and the declared gauge has no emitter. |
+| 28 | Disk 70/80/85 drives signal-only warn/urgent/stop-optional behavior. | VERIFIED | `cmd/aura/serve_observability.go` starts the bounded run-directory observer; `internal/retention/disk_observer.go` evaluates and emits ready/degraded/draining/stopped without expanding deletion scope; boundary and lifecycle tests PASS under `-race`. |
 | 29 | All active-work classes protect candidates and automatic cleanup never cancels live work. | VERIFIED | `retention/activity.go:5-55`; revalidation occurs immediately before remove in `engine.go:233-276`; activity tests PASS. |
 | 30 | Owner export is consistent, versioned, checksummed, durable, and export-delete tears down only after verified publish; plain delete creates no archive. | VERIFIED | `agui/owner_export.go:121-299`; snapshot/version migrations 0047/0048; runner durable reservation/reconciler; disposable export-delete/restart tests PASS. |
 | 31 | Active-learning Seen state is exact-UTF8 hash-only, 100k/30d, bounded, non-blocking, and retry-safe. | VERIFIED | `neostore.HashText`; `activelearn/bounded_seen.go`; concurrent cap/TTL/hash-only tests PASS under `-race`. |
@@ -122,7 +76,7 @@ The ROADMAP success criteria were merged with every additive PLAN truth and de-d
 | # | Criterion | Status | Evidence |
 |---:|---|---|---|
 | 1 | Truthful `/readyz` plus Compose probing. | VERIFIED | Truths 10-14. |
-| 2 | OTel path plus validated alerts/dashboard for every required domain. | **FAILED** | Pack validation passes, but idempotency/disk data flow and several state selectors are not production-live. |
+| 2 | OTel path plus validated alerts/dashboard for every required domain. | VERIFIED | Production idempotency/disk/backlog owners are wired, lifecycle selectors match emitted states, and the 20-alert/88-query static plus runtime verifier passes. |
 | 3 | Sidecar/trace cleanup honors retention, dry-run, and active-conversation exclusion. | VERIFIED | Truths 26-30; Tempo owns its blocks and local cleanup never traverses them. |
 | 4 | Learning stores are bounded by TTL and per-bucket/per-store caps. | VERIFIED | Truths 31-35, including live disposable Neo4j proof. |
 
@@ -152,9 +106,9 @@ The ROADMAP success criteria were merged with every additive PLAN truth and de-d
 | Compose | Aura | `/readyz` healthcheck | WIRED |
 | OTel init | Meter/Tracer providers | single resource and joined shutdown | WIRED |
 | Serve | private metrics handler | dedicated registry, loopback listener, joined lifecycle | WIRED |
-| Runtime boundaries | catalog | LLM/tool/MCP/pause/resume/DB/scheduler/listener/retention/learning owners | PARTIAL: idempotency/disk missing |
-| Alert rules | production metrics | recording rules and finite selectors | FAILED: several selectors/series are unreachable |
-| Grafana | Prometheus/Tempo | provisioned stable UIDs and links | WIRED structurally; PARTIAL live data flow |
+| Runtime boundaries | catalog | LLM/tool/MCP/pause/resume/DB/scheduler/listener/idempotency/retention/learning owners | WIRED |
+| Alert rules | production metrics | recording rules and finite selectors | WIRED; selectors match production-emitted states |
+| Grafana | Prometheus/Tempo | provisioned stable UIDs, links, and live canonical queries | WIRED |
 | CLI and scheduler retention | retention Engine | same `Plan`/`Apply` interface | WIRED |
 | Retention Engine | activity/remover/store | revalidate immediately before removal, then durable result | WIRED |
 | Owner export | canonical delete lifecycle | verified publish, snapshot-version reservation, restart reconciler | WIRED |
@@ -187,9 +141,9 @@ The full observability smoke proves the pack can run and ingest synthetic data. 
 |---|---|---|
 | OBS-01 | SATISFIED | Synchronous listener bind, fatal joined runtime loss, Compose `/readyz`. |
 | OBS-02 | SATISFIED | Postgres/Neo4j probes plus listener/migration/scheduler/drain snapshot, global deadline. |
-| OBS-03 | **NOT SATISFIED** | Most OTel boundaries work, but the required idempotency series has no production emitter. |
-| OBS-04 | **NOT SATISFIED** | Assets and CI validation exist, but several alert selectors and dependent dashboard panels have no valid production data flow. |
-| OBS-05 | **NOT SATISFIED** | Retention/export-delete/active exclusion is correct, but the required disk metrics/signals are not wired. |
+| OBS-03 | SATISFIED | All required OTel boundaries, including idempotency and disk/backlog owners, emit bounded production telemetry. |
+| OBS-04 | SATISFIED | Alert selectors and dashboard queries match production-owned series; static and provisioned runtime verification passes. |
+| OBS-05 | SATISFIED | Retention/export-delete/active exclusion plus production disk sampling and 70/80/85 signal states are wired and tested. |
 | OBS-06 | SATISFIED | Bounded Seen and graph stores, compaction, seed isolation, finite metrics. |
 
 No gap is assigned to Phase 40 or 41: these are Phase 39 observability data-flow requirements, not supply-chain or later production-ops work.
