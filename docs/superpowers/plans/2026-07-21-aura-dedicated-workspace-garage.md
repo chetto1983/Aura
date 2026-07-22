@@ -174,7 +174,10 @@ func TestEnsureForIdentity_LocalUsesSharedBucket(t *testing.T) {
 
 ---
 
-### Task 4: Fork + harden the S3 MCP (`aura-mcp-s3`), mount per-identity
+### Task 4: Fork + harden the S3 MCP (`aura-mcp-s3`), mount per-identity — DEFERRED (Amendment #88.2)
+
+> **DEFERRED to MUSR (operator-approved 2026-07-22).** Not needed for the single-operator reality: `/workspace` (persistent volume) + pre-baked toolchain + `send_file` (bucket ingest) + `document_index` (Amendment #89, searchability) cover the real use cases, and `objectStoreProvisionAdapter.EnsureForIdentity` (Task 3, shipped) is the ready seam. Skipped to avoid a fork-maintenance burden + per-identity MCP process fan-out with no current benefit. The task spec below is retained for the future MUSR consumer. Amendment #88 closes at Task 5 with Task 4 deferred.
+
 
 **Files:**
 - Create: `docker/mcp-s3/` (fork of `txn2/mcp-s3`, vendored source + `Dockerfile` building `aura-mcp-s3:local`, mirroring `docker/mcp-neo4j-cypher/`)

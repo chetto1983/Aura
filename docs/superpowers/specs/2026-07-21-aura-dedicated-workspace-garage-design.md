@@ -36,7 +36,9 @@ Decisions taken:
 ### 2.3 Per-user Garage bucket (activate the built infra)
 - Provision `aura-<id>` bucket + scoped key per identity at provisioning/first use (`garageadmin.CreateBucket`+`CreateKey` → encrypted `identity_object_store` row). The `local` principal keeps the shared `aura-assets` bucket (D-11). Fail-closed, exactly as `identity_store` already enforces.
 
-### 2.4 Forked, hardened S3 MCP (`aura-mcp-s3`)
+### 2.4 Forked, hardened S3 MCP (`aura-mcp-s3`) — DEFERRED (Amendment #88.2, 2026-07-22)
+> **[DEFERRED to MUSR, operator-approved 2026-07-22.]** With the persistent `/workspace` (the agent re-reads past artifacts via `fs_read` across sessions), the pre-baked toolchain, `send_file` already ingesting deliverables into the identity's bucket, and `document_index` (Amendment #89) for searchability, the single-operator reality has no use case needing the agent to directly CRUD its object store as an MCP tool. Provisioning is served on demand by `objectStoreProvisionAdapter.EnsureForIdentity` (shipped) — the ready seam for this fork when a real MUSR multi-user consumer appears. Deferring avoids fork-maintenance + per-identity MCP process fan-out with no current benefit. The rest of this section is the design for that future work.
+
 - **Fork `txn2/mcp-s3`** (Apache-2.0, Go) → `docker/mcp-s3/`, built as `aura-mcp-s3:local` (containerized, mirroring `docker/mcp-neo4j-cypher/` — no host install). Modifications:
   - **Hard-scope to ONE bucket** — override/ignore the per-call `bucket` arg so the server can only touch its configured bucket (defense-in-depth over the scoped key; strengthens MUSR isolation).
   - **Binary/file-aware** — add `put_file` (local path → binary-safe upload with content-type) and get-to-local-path, because docx/xlsx/pdf are binary and live as files in `/workspace` (upstream `put_object` takes a string `content`).
@@ -58,7 +60,7 @@ Decisions taken:
 1. **Workspace config + volume + wiring** — `AURA_WORKSPACE_DIR` + `aura-workspace` volume + layout bootstrap + `WorkspaceRoot` on `shell_exec`/`fs_*`/`send_file` + the per-turn hint + prompt doctrine. Daemon-free unit tests (default resolution, WorkspaceRoot fencing, fs_* consistency).
 2. **Toolchain pre-bake** — aura Dockerfile (pandoc/file/xxd + npm `docx`/`NODE_PATH` + pip python-docx/openpyxl/pandas) + boot smoke (docx `require`, python-docx import, pandoc/file/xxd present). **[Amendment #88.1 expands this to Task 2b — LibreOffice headless + poppler/qpdf/pdftk/tesseract/fonts-liberation + pptxgenjs + the pptx/pdf/excel pip stack; see §0/§2.2/§5 for the full set.]**
 3. **Activate per-user Garage buckets** — provisioning wiring (`garageadmin` CreateBucket+CreateKey → `identity_store` row) + tests (fail-closed, per-identity isolation, `local`→shared).
-4. **Fork `aura-mcp-s3`** — `docker/mcp-s3/` + hardening mods (bucket hard-scope, `put_file`/get-to-path binary, prefix, trim) + per-identity MCP mount wiring + tests (containerized, per `[[containerize-never-install-mcp-on-host]]`).
+4. **Fork `aura-mcp-s3`** — `docker/mcp-s3/` + hardening mods (bucket hard-scope, `put_file`/get-to-path binary, prefix, trim) + per-identity MCP mount wiring + tests (containerized, per `[[containerize-never-install-mcp-on-host]]`). **[DEFERRED — Amendment #88.2, 2026-07-22: not needed for single-operator; `EnsureForIdentity` (Task 3) is the ready seam; revisit at MUSR.]**
 5. **Prompt/doctrine + E2E** — re-run the docx scenario: zero reinstall, file in `/workspace/artifacts`, persists across `docker compose recreate`, durable in the per-user bucket, delivered via `send_file`. Score >9.8 real scenario.
 
 ## 5. Risks / carried
