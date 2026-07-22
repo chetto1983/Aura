@@ -66,6 +66,19 @@ func TestDocumentIndex_RejectsOutsideWorkspace(t *testing.T) {
 	}
 }
 
+func TestDocumentIndex_SpecContract(t *testing.T) {
+	spec := (&DocumentIndex{}).Spec()
+	if spec.Name != "document_index" {
+		t.Errorf("Name = %q, want document_index", spec.Name)
+	}
+	if !spec.Deferred {
+		t.Error("document_index must be Deferred (occasional action; the <documents> prompt block names it for tool_search)")
+	}
+	if !strings.Contains(spec.Description, "document_search") || !strings.Contains(spec.Description, "/workspace") {
+		t.Error("Spec description must tie document_index to document_search and /workspace")
+	}
+}
+
 func TestDocumentIndex_RejectsSymlinkEscape(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
