@@ -9,11 +9,11 @@ Give Aura a **dedicated persistent workspace** where it stores scripts, artifact
 
 Decisions taken:
 - **Location:** a persistent local `/workspace` on the *current* non-strict aura container (usable now on Docker Desktop), on the **same fixed path** as the future sandbox box `/workspace` (forward-compatible with the mini-PC sandbox).
-- **Toolchain:** common **pre-bake** (docx, python-docx, openpyxl, pandas, pandoc, file, xxd; `NODE_PATH` set) + a persistent `/workspace/.toolchain` for extra installs. **No LibreOffice** (v1).
+- **Toolchain:** common **pre-bake** sized to the installed `docx`/`pptx`/`xlsx`/`pdf` skills (npm `docx`+`pptxgenjs` with `NODE_PATH`; pip `python-docx`/`python-pptx`/`openpyxl`/`xlsxwriter`/`pandas`/`pypdf`/`pdfplumber`/`reportlab`/`pdf2image`/`pytesseract`/`Pillow`/`defusedxml`/`lxml`/`markitdown[pptx]`; OS `pandoc`/`file`/`xxd`/`poppler-utils`/`qpdf`/`pdftk`/`tesseract-ocr`) + a persistent `/workspace/.toolchain` for extra installs. **[Revised 2026-07-22, Amendment #88.1 — operator-approved:** LibreOffice **headless modules** (`-writer`/`-calc`/`-impress`) ARE pre-baked — the docx/pptx/xlsx skills share `scripts/office/soffice.py` and need `soffice` for render/formula-recalc/Office↔PDF. Full GUI suite/`-base`/`-draw` stays out.**]
 - **Layout:** `/workspace = {scripts/, artifacts/, .toolchain/, scratch}`; skills stay in `~/.aura` exposed **read-only** under `/workspace/skills`.
 - **Durability + delivery:** the **per-user Garage bucket `aura-<id>`** (already built via `garageadmin` + `identity_store`, not yet activated) is the durable store; access via a **forked, hardened S3 MCP**; `send_file` keeps delivering.
 
-**Explicitly OUT of scope (v1):** whole-workspace snapshot/sync to Garage, FUSE-mounting the bucket as the working tree, host-bind to a Windows folder, LibreOffice, per-workspace quota/sweep, full sandbox enablement (deferred to the native-Linux mini-PC).
+**Explicitly OUT of scope (v1):** whole-workspace snapshot/sync to Garage, FUSE-mounting the bucket as the working tree, host-bind to a Windows folder, the full LibreOffice suite/GUI (`-base`/`-draw`/desktop UI — headless `-writer`/`-calc`/`-impress` ARE in per Amendment #88.1), per-workspace quota/sweep, full sandbox enablement (deferred to the native-Linux mini-PC).
 
 ## 1. Why this is correct (evidence, not supposition)
 
@@ -31,7 +31,7 @@ Decisions taken:
 - `shell_exec`, `fs_read/write/edit/glob/grep`, and `send_file` take `WorkspaceRoot = AURA_WORKSPACE_DIR`, **fixing** the current `fs_*` no-WorkspaceRoot inconsistency in `serve_dispatch.go`. `Runner.workspace` (the per-turn "Working directory" hint) → `/workspace`. Same path in strict + non-strict (forward-compat with the box).
 
 ### 2.2 Toolchain pre-bake (aura Dockerfile)
-- OS packages: `pandoc`, `file`, `xxd`. npm **global**: `docx` + `NODE_PATH` → global `node_modules` (compose env). pip: `python-docx`, `openpyxl`, `pandas`. Extra installs land in `/workspace/.toolchain` (persistent). The 37A npm/pip/uv caches stay.
+- OS packages: `pandoc`, `file`, `xxd`, `poppler-utils` (`pdftoppm`/`pdftotext`), `qpdf`, `pdftk`, `tesseract-ocr`, and **LibreOffice headless modules** `libreoffice-writer`/`-calc`/`-impress` (the shared `soffice` binary the docx/pptx/xlsx skills call through `scripts/office/soffice.py`; full GUI/`-base`/`-draw` excluded). npm **global**: `docx` + `pptxgenjs` with `NODE_PATH` → global `node_modules`. pip: `python-docx`, `python-pptx`, `openpyxl`, `xlsxwriter`, `pandas`, `pypdf`, `pdfplumber`, `reportlab`, `pdf2image`, `pytesseract`, `Pillow`, `defusedxml`, `lxml`, `markitdown[pptx]` (all `--break-system-packages`, PEP-668). Extra installs land in `/workspace/.toolchain` (persistent). The 37A npm/pip/uv caches stay. **Sizing to the installed skills** (`docx`/`pptx`/`xlsx`/`pdf`, confirmed present in `/var/lib/aura/skills`) — Amendment #88.1.
 
 ### 2.3 Per-user Garage bucket (activate the built infra)
 - Provision `aura-<id>` bucket + scoped key per identity at provisioning/first use (`garageadmin.CreateBucket`+`CreateKey` → encrypted `identity_object_store` row). The `local` principal keeps the shared `aura-assets` bucket (D-11). Fail-closed, exactly as `identity_store` already enforces.
@@ -63,7 +63,7 @@ Decisions taken:
 
 ## 5. Risks / carried
 
-- **Image size** +~300–500 MB from the toolchain (acceptable; no LibreOffice).
+- **Image size** +~700 MB–1.1 GB from the toolchain (Amendment #88.1: LibreOffice headless `-writer`/`-calc`/`-impress` + tesseract + poppler + the pip stack — accepted for zero-friction docx/pptx/xlsx/pdf skill support; full GUI suite kept out to cap the growth).
 - **Per-identity MCP process fan-out** at scale (one `aura-mcp-s3` process per active identity) — fine for single-operator now; flag for MUSR scale (a future connection-name multiplex or a shared server with runtime identity scoping could replace it).
 - **S3 ≠ filesystem** — the working tree stays local; the bucket is the durable store only (no FUSE).
 - **Secret handling** — per-identity S3 keys are encrypted at rest (`identity_store`); the Claude Code validation mount wrote a Garage key in plaintext into `.claude.json` (dev-only, to be scrubbed).

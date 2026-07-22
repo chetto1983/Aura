@@ -125,6 +125,8 @@ echo "toolchain smoke: ok"
 - [ ] **Step 5: Run the smoke, verify PASS** — `docker exec aura bash scripts/workspace_toolchain_smoke.sh` → `toolchain smoke: ok`.
 - [ ] **Step 6: Commit** — `feat(workspace): pre-bake docx/python-docx/pandoc/file/xxd toolchain + NODE_PATH (Amendment #88)`.
 
+> **Amendment #88.1 (2026-07-22, operator-approved) — Task 2b (follow-on to the committed Task 2 base):** the base toolchain landed (`8597f5bf`). The installed `docx`/`pptx`/`xlsx`/`pdf` skills (present in `/var/lib/aura/skills`) need more: OS `poppler-utils`/`qpdf`/`pdftk`/`tesseract-ocr` + **LibreOffice headless** `-writer`/`-calc`/`-impress` (shared `soffice` via `scripts/office/soffice.py`); npm-global `pptxgenjs`; pip `python-pptx`/`xlsxwriter`/`pypdf`/`pdfplumber`/`reportlab`/`pdf2image`/`pytesseract`/`Pillow`/`defusedxml`/`lxml`/`markitdown[pptx]`. Full GUI suite/`-base`/`-draw` stays out. Extend `scripts/workspace_toolchain_smoke.sh` to assert all of them (`soffice --version`, the pip imports, `require('pptxgenjs')`, `pdftoppm`/`pdftotext`/`qpdf`/`pdftk`/`tesseract` on PATH). Rebuild + `--force-recreate` + GREEN. Separate commit. PRD/ADR revised first (this file + `prd.md` §Amendment #88 + the design doc).
+
 ---
 
 ### Task 3: Activate the per-user Garage bucket provisioning
