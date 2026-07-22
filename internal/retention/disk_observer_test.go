@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,83 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/goleak"
 )
+
+func TestDiskCapacityRatioAndPlatformSampler(t *testing.T) {
+	if _, err := ratioFromCapacity(0, 0); err == nil {
+		t.Fatal("ratioFromCapacity with zero capacity succeeded")
+	}
+	for _, tt := range []struct {
+		total, available uint64
+		want             float64
+	}{
+		{total: 100, available: 50, want: 0.5},
+		{total: 100, available: 100, want: 0},
+		{total: 100, available: 101, want: 0},
+	} {
+		got, err := ratioFromCapacity(tt.total, tt.available)
+		if err != nil || got != tt.want {
+			t.Fatalf("ratioFromCapacity(%d, %d)=%v, %v; want %v", tt.total, tt.available, got, err, tt.want)
+		}
+	}
+	ratio, err := sampleDiskUsage(t.TempDir())
+	if err != nil || ratio < 0 || ratio > 1 {
+		t.Fatalf("sampleDiskUsage=%v, %v; want bounded ratio", ratio, err)
+	}
+}
+
+func TestDiskObserverValidationAndIdempotentLifecycle(t *testing.T) {
+	thresholds := DiskThresholds{Warn: 70, Urgent: 80, StopOptional: 85}
+	for _, cfg := range []DiskObserverConfig{
+		{RunDir: "relative", Thresholds: thresholds},
+		{RunDir: t.TempDir(), Thresholds: DiskThresholds{}},
+		{RunDir: t.TempDir(), Thresholds: thresholds, Interval: -time.Second},
+	} {
+		if _, err := NewDiskObserver(cfg); err == nil {
+			t.Fatalf("NewDiskObserver(%+v) succeeded", cfg)
+		}
+	}
+
+	observer, err := NewDiskObserver(DiskObserverConfig{RunDir: t.TempDir(), Thresholds: thresholds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observer.Stop()
+	observer.Stop()
+	observer.Start(t.Context())
+	var nilObserver *DiskObserver
+	nilObserver.Start(t.Context())
+	nilObserver.Stop()
+}
+
+func TestDiskObserverRejectsInvalidSamplesWithoutChangingState(t *testing.T) {
+	provider := sdkmetric.NewMeterProvider()
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	var logs bytes.Buffer
+	values := []float64{math.NaN(), math.Inf(1), -0.01, 1.01}
+	index := 0
+	observer, err := newDiskObserver(provider.Meter(diskObserverMeterName), DiskObserverConfig{
+		RunDir: t.TempDir(), Thresholds: DiskThresholds{Warn: 70, Urgent: 80, StopOptional: 85},
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
+		SampleUsage: func(string) (float64, error) {
+			value := values[index]
+			index++
+			return value, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(observer.Stop)
+	for range values {
+		observer.sample()
+	}
+	if observer.current.Load() != nil {
+		t.Fatal("invalid sample replaced current observation")
+	}
+	if got := strings.Count(logs.String(), "invalid used ratio"); got != len(values) {
+		t.Fatalf("invalid ratio warnings=%d, want %d", got, len(values))
+	}
+}
 
 func TestDiskObserverClassifiesExactPressureBoundaries(t *testing.T) {
 	tests := []struct {

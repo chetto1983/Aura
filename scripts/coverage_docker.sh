@@ -106,9 +106,17 @@ fi
 
 pg_admin() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U aura -d postgres "$@"; }
 ESC_PGPW="$(printf '%s' "$PGPW" | sed "s/'/''/g")"
-# aura_migrate must exist to own the disposable DB (production already has it).
-pg_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='aura_migrate'" | grep -q 1 \
-  || pg_admin -c "CREATE ROLE aura_migrate WITH LOGIN PASSWORD '${ESC_PGPW}'"
+# Both fixed application roles are prerequisites of migration 0001. Provision
+# them before creating the disposable DB so the coverage bootstrap does not
+# depend on a later CLI side effect; reset existing passwords as well so local
+# and CI runs use the same deterministic credential.
+for role in aura_app aura_migrate; do
+  if pg_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='${role}'" | grep -q 1; then
+    pg_admin -c "ALTER ROLE ${role} WITH LOGIN PASSWORD '${ESC_PGPW}'"
+  else
+    pg_admin -c "CREATE ROLE ${role} WITH LOGIN PASSWORD '${ESC_PGPW}'"
+  fi
+done
 echo "==> provisioning disposable coverage DB '$COV_DB' (owner aura_migrate); dropped on exit"
 pg_admin -c "DROP DATABASE IF EXISTS \"$COV_DB\" WITH (FORCE)"
 pg_admin -c "CREATE DATABASE \"$COV_DB\" OWNER aura_migrate"

@@ -289,6 +289,9 @@ func (r *MaintenanceRegistry) MarkIndeterminate(ctx context.Context, operation O
 	if err := (BeginRequest{Operation: operation, Fingerprint: fingerprint}).Validate(); err != nil {
 		return err
 	}
+	if operation.Scope != ScopeCLICommand {
+		return errors.New("maintenance registry only accepts CLI operations")
+	}
 	tag, err := r.conn.Exec(ctx, `
 UPDATE public.aura_maintenance_operations
 SET state = 'indeterminate', updated_at = $1
