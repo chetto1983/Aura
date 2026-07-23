@@ -4,6 +4,7 @@ import {
   errorDetail,
   type ChatPart,
   type MessagesSnapshotFrame,
+  type ReasoningPart,
   type SnapshotMessage,
   type SnapshotToolCall,
   type ToolPart,
@@ -119,6 +120,29 @@ function toolCallsFromSnapshot(value: unknown): ToolPart[] {
   return parts;
 }
 
+/**
+ * 1.12 rehydrate: project the snapshot's optional reasoning decoration
+ * (`reasoning` + `reasoningDurationMs`, one per answer-shaped assistant
+ * message) onto the SAME { type: 'reasoning' } part the live stream produces,
+ * so the drawer renders identically on replay. Returns [] when the field is
+ * absent/empty — the part list stays byte-identical to the pre-1.12 shape.
+ */
+function reasoningPartFromSnapshot(message: SnapshotMessage): ReasoningPart[] {
+  if (typeof message.reasoning !== 'string' || message.reasoning.length === 0) return [];
+  const duration = message.reasoningDurationMs;
+  const durationMs =
+    typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+      ? duration
+      : undefined;
+  return [
+    {
+      type: 'reasoning',
+      text: message.reasoning,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+    },
+  ];
+}
+
 function mergeToolResult(
   messages: ThreadMessageLike[],
   toolCallId: string,
@@ -186,7 +210,11 @@ export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[]
       continue;
     }
     if (role === 'assistant') {
-      const content: ChatPart[] = toolCallsFromSnapshot(raw.toolCalls);
+      // Reasoning first (live order: the CoT span precedes the answer text).
+      const content: ChatPart[] = [
+        ...reasoningPartFromSnapshot(raw),
+        ...toolCallsFromSnapshot(raw.toolCalls),
+      ];
       if (text.length > 0 || content.length === 0) content.push({ type: 'text', text });
       messages.push({
         ...(id !== undefined ? { id } : {}),

@@ -158,6 +158,10 @@ export interface TextPart {
 export interface ReasoningPart {
   readonly type: 'reasoning';
   readonly text: string;
+  /** 1.12 rehydrate: elapsed reasoning wallclock (ms) from the snapshot's
+   *  `reasoningDurationMs` decoration. Absent on live-streamed parts; the
+   *  upcoming compact-chat UI consumes it (today's drawer renders text only). */
+  readonly durationMs?: number;
 }
 
 /** The assistant message-part union the reducer emits. */
@@ -187,6 +191,10 @@ export interface SnapshotMessage {
   readonly content?: unknown;
   readonly toolCallId?: unknown;
   readonly toolCalls?: unknown;
+  /** 1.12: optional reasoning decoration on answer-shaped assistant messages
+   *  (no tool calls) — camelCase, omitempty on the Go side. */
+  readonly reasoning?: unknown;
+  readonly reasoningDurationMs?: unknown;
 }
 
 export interface MessagesSnapshotFrame {

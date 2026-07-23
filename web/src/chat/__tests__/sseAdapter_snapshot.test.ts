@@ -171,6 +171,87 @@ describe('snapshotToThreadMessages — tool calls + results', () => {
   });
 });
 
+describe('snapshotToThreadMessages — 1.12 reasoning rehydrate', () => {
+  it('maps reasoning + reasoningDurationMs onto a reasoning part ahead of the answer text', () => {
+    const out = snapshotToThreadMessages(
+      snap([
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'It is sunny.',
+          reasoning: 'checking the forecast…',
+          reasoningDurationMs: 4200,
+        },
+      ]),
+    );
+    expect(partsOf(messageAt(out, 0))).toEqual([
+      { type: 'reasoning', text: 'checking the forecast…', durationMs: 4200 },
+      { type: 'text', text: 'It is sunny.' },
+    ]);
+  });
+
+  it('omits durationMs when reasoningDurationMs is absent or not a positive finite number', () => {
+    for (const reasoningDurationMs of [undefined, 0, -5, Number.NaN, '4200']) {
+      const out = snapshotToThreadMessages(
+        snap([{ role: 'assistant', content: 'done', reasoning: 'thought', reasoningDurationMs }]),
+      );
+      expect(partsOf(messageAt(out, 0))[0]).toEqual({ type: 'reasoning', text: 'thought' });
+    }
+  });
+
+  it('without the reasoning field the part list is byte-identical to today', () => {
+    const out = snapshotToThreadMessages(snap([{ role: 'assistant', content: 'done' }]));
+    expect(partsOf(messageAt(out, 0))).toEqual([{ type: 'text', text: 'done' }]);
+    // Non-string / empty reasoning values are ignored the same way.
+    const ignored = snapshotToThreadMessages(
+      snap([
+        { role: 'assistant', content: 'done', reasoning: '' },
+        { role: 'assistant', content: 'done', reasoning: 42 },
+      ]),
+    );
+    expect(partsOf(messageAt(ignored, 0))).toEqual([{ type: 'text', text: 'done' }]);
+    expect(partsOf(messageAt(ignored, 1))).toEqual([{ type: 'text', text: 'done' }]);
+  });
+
+  it('preserves ordering with interleaved tool-call messages (decoration only on answers)', () => {
+    const out = snapshotToThreadMessages(
+      snap([
+        { id: 'msg-2', role: 'user', content: 'weather?' },
+        {
+          id: 'msg-3',
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'call-1', function: { name: 'web_search', arguments: '{}' } }],
+        },
+        { id: 'msg-4', role: 'tool', toolCallId: 'call-1', content: 'sunny 25C' },
+        {
+          id: 'msg-5',
+          role: 'assistant',
+          content: 'It is sunny.',
+          reasoning: 'the tool said sunny',
+          reasoningDurationMs: 1500,
+        },
+      ]),
+    );
+    expect(out.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
+    // The tool-call turn is untouched (no decoration on tool-calling messages).
+    expect(partsOf(messageAt(out, 1))).toEqual([
+      {
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'web_search',
+        argsText: '{}',
+        result: 'sunny 25C',
+      },
+    ]);
+    // The answer turn carries drawer part + text, in live order.
+    expect(partsOf(messageAt(out, 2))).toEqual([
+      { type: 'reasoning', text: 'the tool said sunny', durationMs: 1500 },
+      { type: 'text', text: 'It is sunny.' },
+    ]);
+  });
+});
+
 describe('snapshotToThreadMessages — content coercion', () => {
   it('coerces null/number/boolean/object content, and empties an unstringifiable value', () => {
     const circular: Record<string, unknown> = {};
