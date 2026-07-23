@@ -31,11 +31,19 @@ import (
 // the ledger-specific note (an mcp reason / skill actor_id / tool status). Both may carry
 // user-authored text, so the handler SanitizeStrings them before the wire (T-36-10-I).
 type AuditEvent struct {
-	Source    string    `json:"source"` // "mcp" | "skill" | "tool" | "share"
-	Action    string    `json:"action"`
-	Target    string    `json:"target"`
-	Detail    string    `json:"detail,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Source string `json:"source"` // "mcp" | "skill" | "tool" | "share"
+	Action string `json:"action"`
+	Target string `json:"target"`
+	Detail string `json:"detail,omitempty"`
+	// Correlation pairs the tool leg's start/end rows exactly (tool_call_id — the
+	// cockpit audit feed merges each invocation into one row on it; operator
+	// directive 2026-07-23). Empty on the other legs. Model-generated text, so the
+	// handler sanitizes it like Target/Detail.
+	Correlation string `json:"correlation,omitempty"`
+	// DurationMS is the tool leg's persisted duration (end rows; 0 elsewhere) so
+	// the feed shows real durations instead of client-side timestamp arithmetic.
+	DurationMS int64     `json:"duration_ms,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // PgAuditStore reads the identity-keyed audit ledgers for the admin audit UI (D-28).
@@ -52,21 +60,21 @@ func NewPgAuditStore(pool *pgxpool.Pool) *PgAuditStore { return &PgAuditStore{po
 // 'local'); $2 is the identity UUID for the conversation-owner join; $3/$4 are LIMIT/
 // OFFSET. Column names come from the first SELECT (UNION ALL matches by position).
 const auditActivityQuery = `
-SELECT source, action, target, detail, created_at FROM (
-    SELECT 'mcp'   AS source, action           AS action, server_name  AS target, COALESCE(reason, '')     AS detail, created_at AS created_at
+SELECT source, action, target, detail, correlation, duration_ms, created_at FROM (
+    SELECT 'mcp'   AS source, action           AS action, server_name  AS target, COALESCE(reason, '')     AS detail, '' AS correlation, 0::bigint AS duration_ms, created_at AS created_at
       FROM aura.mcp_audit
       WHERE actor_identity_id = ANY($1::text[])
     UNION ALL
-    SELECT 'skill' AS source, action, skill_name, actor_id, created_at
+    SELECT 'skill' AS source, action, skill_name, actor_id, '', 0::bigint, created_at
       FROM aura.skill_audit
       WHERE identity_id = ANY($1::text[])
     UNION ALL
-    SELECT 'tool'  AS source, ti.event_kind, ti.tool_name, COALESCE(ti.status, ''), ti.ts
+    SELECT 'tool'  AS source, ti.event_kind, ti.tool_name, COALESCE(ti.status, ''), COALESCE(ti.tool_call_id, ''), COALESCE(ti.duration_ms, 0), ti.ts
       FROM aura.tool_invocations ti
       JOIN aura.conversations c ON c.id = ti.conversation_id
       WHERE c.identity_id = $2::uuid
     UNION ALL
-    SELECT 'share' AS source, action, COALESCE(conversation_id::text, ''), COALESCE(tier, ''), created_at
+    SELECT 'share' AS source, action, COALESCE(conversation_id::text, ''), COALESCE(tier, ''), '', 0::bigint, created_at
       FROM aura.share_audit
       WHERE identity_id = ANY($1::text[])
 ) feed
@@ -85,7 +93,7 @@ func (s *PgAuditStore) ListActivityForIdentity(ctx context.Context, identityID s
 	out := make([]AuditEvent, 0, limit)
 	for rows.Next() {
 		var e AuditEvent
-		if err := rows.Scan(&e.Source, &e.Action, &e.Target, &e.Detail, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.Source, &e.Action, &e.Target, &e.Detail, &e.Correlation, &e.DurationMS, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan audit event: %w", err)
 		}
 		out = append(out, e)

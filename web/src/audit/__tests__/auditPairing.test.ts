@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { AuditEvent } from '../../admin/adminApi';
 import { pairAuditEvents } from '../auditPairing';
 
-// auditPairing — conservative name-based start/end merging of the admin tool
-// feed (the wire DTO carries no correlation id — server gap noted in fix-plan).
-// Feed order is newest-first, exactly as GET /api/admin/audit returns it.
+// auditPairing — exact-first start/end merging of the admin tool feed: the
+// server projects `correlation` (tool_call_id) + persisted `duration_ms`
+// (server gap CLOSED 2026-07-23); rows without a correlation fall back to the
+// conservative per-name stack. Feed order is newest-first, exactly as
+// GET /api/admin/audit returns it.
 
 function ev(over: Partial<AuditEvent>): AuditEvent {
   return {
@@ -136,5 +138,69 @@ describe('pairAuditEvents', () => {
     ]);
     expect(rows[0]).toMatchObject({ kind: 'invocation', outcome: 'ok', at: 'not-a-date' });
     expect((rows[0] as { durationMs?: number }).durationMs).toBeUndefined();
+  });
+
+  it('correlation disambiguates same-name invocations the name stack would mispair', () => {
+    // Two shell_exec invocations whose ends arrive OUT of LIFO order: A starts,
+    // B starts, then A ends (error), then B ends (ok). The name stack alone
+    // would give A's end to B's start; the correlation pairs each exactly.
+    const rows = pairAuditEvents([
+      ev({
+        action: 'end',
+        detail: 'ok',
+        correlation: 'tc-B',
+        created_at: '2026-07-23T13:00:04.000Z',
+      }),
+      ev({
+        action: 'end',
+        detail: 'timeout',
+        correlation: 'tc-A',
+        created_at: '2026-07-23T13:00:03.000Z',
+      }),
+      ev({
+        action: 'start',
+        detail: '',
+        correlation: 'tc-B',
+        created_at: '2026-07-23T13:00:02.000Z',
+      }),
+      ev({
+        action: 'start',
+        detail: '',
+        correlation: 'tc-A',
+        created_at: '2026-07-23T13:00:00.000Z',
+      }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ kind: 'invocation', outcome: 'ok' });
+    expect((rows[0] as { durationMs?: number }).durationMs).toBe(2000);
+    expect(rows[1]).toMatchObject({ kind: 'invocation', outcome: 'error', detail: 'timeout' });
+    expect((rows[1] as { durationMs?: number }).durationMs).toBe(3000);
+  });
+
+  it('prefers the server-persisted duration_ms over timestamp arithmetic', () => {
+    const rows = pairAuditEvents([
+      ev({
+        action: 'end',
+        correlation: 'tc-1',
+        duration_ms: 1234,
+        created_at: '2026-07-23T13:00:10.000Z',
+      }),
+      ev({
+        action: 'start',
+        detail: '',
+        correlation: 'tc-1',
+        created_at: '2026-07-23T13:00:00.000Z',
+      }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { durationMs?: number }).durationMs).toBe(1234);
+  });
+
+  it('a correlated end never claims a foreign name-stack start', () => {
+    // The end carries a correlation with NO matching start (its start rotated
+    // out of the page): it must fall back to the name stack, and when that is
+    // empty too it stays a plain event row.
+    const rows = pairAuditEvents([ev({ action: 'end', correlation: 'tc-gone' })]);
+    expect(rows[0]).toMatchObject({ kind: 'event' });
   });
 });

@@ -267,6 +267,8 @@ func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 	for i := range events {
 		events[i].Target = SanitizeString(events[i].Target)
 		events[i].Detail = SanitizeString(events[i].Detail)
+		// tool_call_id is model-generated text — same belt-and-suspenders.
+		events[i].Correlation = SanitizeString(events[i].Correlation)
 	}
 	writeJSON(w, map[string]any{"events": events, "limit": limit, "offset": offset})
 }

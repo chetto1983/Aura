@@ -3,15 +3,15 @@ import type { AuditEvent } from '../admin/adminApi';
 // auditPairing — merge each tool start/end pair of the admin activity feed into
 // ONE compact row (operator directive: two rows per invocation flood the page).
 //
-// The wire DTO ({source, action, target, detail, created_at}) carries NO
-// correlation id — aura.tool_invocations HAS tool_call_id + duration_ms but
-// audit_store.go does not project them (server gap, noted for fix-plan) — so
-// pairing is CONSERVATIVE and client-side: walking oldest→newest, an `end` row
-// pairs with the MOST RECENT unpaired `start` of the SAME tool name (a per-name
-// stack, so interleaved different tools pair correctly). Unpairable rows pass
-// through untouched; an orphan start (still running / crashed) renders as its
-// own running-state row. The merged row sits at the pair's END position, so the
-// feed stays reverse-chronological.
+// Pairing is EXACT-first: the server projects the tool leg's `correlation`
+// (aura.tool_invocations.tool_call_id) and persisted `duration_ms`, so an end
+// row claims the start row with the SAME correlation. Rows without a
+// correlation (older feeds, defensive) fall back to the conservative per-name
+// stack: walking oldest→newest, an `end` pairs with the most recent unpaired
+// `start` of the same tool name. Unpairable rows pass through untouched; an
+// orphan start (still running / crashed) renders as its own running-state row.
+// The merged row sits at the pair's END position, so the feed stays
+// reverse-chronological.
 
 export type InvocationOutcome = 'ok' | 'error' | 'running';
 
@@ -23,7 +23,7 @@ export type AuditRow =
       readonly outcome: InvocationOutcome;
       /** The row's anchor timestamp: the END ts (or the start ts when running). */
       readonly at: string;
-      /** start→end wallclock; absent for orphans or unparseable timestamps. */
+      /** Server-persisted duration when present, else start→end wallclock. */
       readonly durationMs?: number;
       /** The end row's status detail when it is not the plain 'ok'. */
       readonly detail?: string;
@@ -38,7 +38,10 @@ function outcomeOf(end: AuditEvent): InvocationOutcome {
   return status === '' || status === 'ok' ? 'ok' : 'error';
 }
 
-function durationBetween(start: AuditEvent, end: AuditEvent): number | undefined {
+function durationOf(start: AuditEvent | undefined, end: AuditEvent): number | undefined {
+  // The persisted server duration is the truth when the end row carries it.
+  if (typeof end.duration_ms === 'number' && end.duration_ms > 0) return end.duration_ms;
+  if (start === undefined) return undefined;
   const startMs = Date.parse(start.created_at);
   const endMs = Date.parse(end.created_at);
   if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return undefined;
@@ -51,7 +54,10 @@ function durationBetween(start: AuditEvent, end: AuditEvent): number | undefined
  * (mcp/skill/share, orphan tool rows) stays a plain event row in place.
  */
 export function pairAuditEvents(events: readonly AuditEvent[]): readonly AuditRow[] {
-  // Walk oldest→newest so each end can claim the most recent open start.
+  // Walk oldest→newest so each end can claim its start. Exact correlation wins;
+  // the per-name stack is the fallback. A consumed start is lazily skipped when
+  // the other registry still references it.
+  const openByCorrelation = new Map<string, number>(); // correlation → start index
   const openStarts = new Map<string, number[]>(); // tool name → stack of indexes
   const pairedWith = new Map<number, number>(); // end index → start index
   const consumed = new Set<number>(); // start indexes merged into a pair
@@ -59,14 +65,32 @@ export function pairAuditEvents(events: readonly AuditEvent[]): readonly AuditRo
     const event = events[i];
     if (event === undefined) continue;
     if (isToolEvent(event, 'start')) {
+      if (event.correlation) openByCorrelation.set(event.correlation, i);
       const stack = openStarts.get(event.target) ?? [];
       stack.push(i);
       openStarts.set(event.target, stack);
       continue;
     }
     if (isToolEvent(event, 'end')) {
-      const startIndex = openStarts.get(event.target)?.pop();
-      if (startIndex !== undefined) {
+      let startIndex: number | undefined;
+      if (event.correlation) {
+        startIndex = openByCorrelation.get(event.correlation);
+        if (startIndex !== undefined) openByCorrelation.delete(event.correlation);
+      }
+      if (startIndex === undefined) {
+        const stack = openStarts.get(event.target);
+        while (stack !== undefined && stack.length > 0) {
+          const candidate = stack.pop();
+          if (candidate === undefined || consumed.has(candidate)) continue;
+          // Never cross-claim: a candidate carrying a DIFFERENT correlation
+          // belongs to another invocation (still reachable via the exact map).
+          const candidateCorr = events[candidate]?.correlation;
+          if (candidateCorr && event.correlation && candidateCorr !== event.correlation) continue;
+          startIndex = candidate;
+          break;
+        }
+      }
+      if (startIndex !== undefined && !consumed.has(startIndex)) {
         pairedWith.set(i, startIndex);
         consumed.add(startIndex);
       }
@@ -81,7 +105,7 @@ export function pairAuditEvents(events: readonly AuditEvent[]): readonly AuditRo
     if (startIndex !== undefined) {
       const start = events[startIndex];
       const outcome = outcomeOf(event);
-      const durationMs = start === undefined ? undefined : durationBetween(start, event);
+      const durationMs = durationOf(start, event);
       rows.push({
         kind: 'invocation',
         toolName: event.target,

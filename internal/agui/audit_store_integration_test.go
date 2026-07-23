@@ -108,6 +108,15 @@ func TestPgAuditStoreListActivityForIdentity(t *testing.T) {
 			t.Fatalf("events[%d] = (%s,%s), want (%s,%s)", i, events[i].Source, events[i].Target, want.source, want.target)
 		}
 	}
+	// The tool leg projects its exact pairing key (operator directive 2026-07-23:
+	// the cockpit audit feed merges start/end on tool_call_id, never name-adjacency);
+	// the mcp/skill legs stay correlation-free.
+	if events[2].Correlation != "tc-A" {
+		t.Fatalf("tool event correlation = %q, want tc-A", events[2].Correlation)
+	}
+	if events[0].Correlation != "" || events[1].Correlation != "" {
+		t.Fatalf("non-tool legs must carry no correlation: mcp=%q skill=%q", events[0].Correlation, events[1].Correlation)
+	}
 	for _, e := range events {
 		if e.Target == "srv-B" || e.Target == "web_fetch" {
 			t.Fatalf("cross-identity leak: identity B's %q appeared in A's feed", e.Target)

@@ -39,6 +39,10 @@ export interface AuditEvent {
   readonly action: string;
   readonly target: string;
   readonly detail?: string;
+  /** Tool-leg pairing key (tool_call_id); absent on mcp/skill/share legs. */
+  readonly correlation?: string;
+  /** Tool-leg persisted duration (end rows); absent/0 elsewhere. */
+  readonly duration_ms?: number;
   readonly created_at: string;
 }
 
