@@ -28,6 +28,34 @@ func testRegistryConfig() runRegistryConfig {
 	}
 }
 
+// TestNewRunRegistryFromServerConfig: the exported constructor resolves the
+// ServerConfig ints into registry bounds (seconds → Durations, BufferCap →
+// subscriber headroom) — the SSEHeartbeatSec-style resolution seam (RS-03).
+func TestNewRunRegistryFromServerConfig(t *testing.T) {
+	r := NewRunRegistry(ServerConfig{
+		BufferCap:          8,
+		RunBufferEvents:    128,
+		RunLingerSec:       60,
+		RunMaxWallclockSec: 900,
+		RunMaxLive:         3,
+	})
+	defer r.Close()
+	if r.cfg.ringCap != 128 || r.cfg.subBuffer != 8 || r.cfg.maxLive != 3 {
+		t.Fatalf("resolved caps = %+v, want ringCap 128 / subBuffer 8 / maxLive 3", r.cfg)
+	}
+	if r.cfg.linger != 60*time.Second || r.cfg.maxWallclock != 900*time.Second {
+		t.Fatalf("resolved durations = %+v, want linger 60s / maxWallclock 900s", r.cfg)
+	}
+
+	zero := NewRunRegistry(ServerConfig{})
+	defer zero.Close()
+	if zero.cfg.ringCap != defaultRunBufferEvents || zero.cfg.subBuffer != fanoutBuffer ||
+		zero.cfg.maxLive != defaultRunMaxLive || zero.cfg.linger != defaultRunLinger ||
+		zero.cfg.maxWallclock != defaultRunMaxWallclock {
+		t.Fatalf("zero ServerConfig must resolve to the design defaults, got %+v", zero.cfg)
+	}
+}
+
 // TestRunRegistryDefaults: every non-positive knob falls back to its design
 // default (amendment #90 point 9) rather than disabling a bound.
 func TestRunRegistryDefaults(t *testing.T) {

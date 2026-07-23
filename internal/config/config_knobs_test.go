@@ -89,6 +89,12 @@ func TestKnobRegistry(t *testing.T) {
 	if k, ok := byName["AURA_AGUI_CORS_PERMISSIVE"]; !ok || k.Kind != KindBool {
 		t.Errorf("AURA_AGUI_CORS_PERMISSIVE present=%v kind=%d, want present KindBool (%d)", ok, k.Kind, KindBool)
 	}
+	if k, ok := byName["AURA_AGUI_RUN_DETACH"]; !ok || k.Kind != KindBool {
+		t.Errorf("AURA_AGUI_RUN_DETACH present=%v kind=%d, want present KindBool (%d)", ok, k.Kind, KindBool)
+	}
+	if k, ok := byName["AURA_AGUI_RUN_BUFFER_EVENTS"]; !ok || k.Kind != KindInt {
+		t.Errorf("AURA_AGUI_RUN_BUFFER_EVENTS present=%v kind=%d, want present KindInt (%d)", ok, k.Kind, KindInt)
+	}
 
 	// No Tier C knob (agent-tools/loop/llm) leaked into the Tier A+B cut (D-16).
 	for _, k := range reg {

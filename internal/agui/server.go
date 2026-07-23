@@ -55,6 +55,16 @@ type ServerConfig struct {
 	// (auth.go:282) returns `next` unchanged because SecretConfigured is false. Default false
 	// (fail-closed): a zero-value ServerConfig must never allow a public mint.
 	SharePublicEnabled bool
+	// Detached-run knobs (fix-plan 1.3 Tier B, AURA_AGUI_RUN_*): RunDetach gates the
+	// context.WithoutCancel producer path (default false = today's request-scoped
+	// runs); the ints size the RunRegistry via NewRunRegistry (runregistry.go), where
+	// non-positive values fall back to the design defaults (2048/180s/3600s/16) —
+	// the bufferCap convention, not the heartbeat's <=0-disables.
+	RunDetach          bool
+	RunBufferEvents    int
+	RunLingerSec       int
+	RunMaxWallclockSec int
+	RunMaxLive         int
 }
 
 // Runner is the narrow agent-driver surface the server consumes (D-A2-02; *runner.Runner

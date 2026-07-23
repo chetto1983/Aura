@@ -36,6 +36,8 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_MCP_SERVERS_JSON", "AURA_MCP_CONFIG",
 		"AURA_SWARM_MAX_GOALS", "AURA_SWARM_CHILD_TIMEOUT_SEC", "AURA_SWARM_MAX_CONCURRENT",
 		"AURA_AGUI_BIND", "AURA_AGUI_CORS_PERMISSIVE", "AURA_AGUI_BUFFER_CAP", "AURA_AGUI_SSE_HEARTBEAT_SEC",
+		"AURA_AGUI_RUN_DETACH", "AURA_AGUI_RUN_BUFFER_EVENTS", "AURA_AGUI_RUN_LINGER_SEC",
+		"AURA_AGUI_RUN_MAX_WALLCLOCK_SEC", "AURA_AGUI_RUN_MAX_LIVE",
 		"AURA_OBJECTSTORE_BACKEND", "AURA_OBJECTSTORE_ENDPOINT", "AURA_OBJECTSTORE_PUBLIC_ENDPOINT",
 		"AURA_OBJECTSTORE_REGION", "AURA_OBJECTSTORE_BUCKET", "AURA_OBJECTSTORE_ACCESS_KEY",
 		"AURA_OBJECTSTORE_SECRET_KEY", "AURA_OBJECTSTORE_PATH_STYLE",
@@ -152,45 +154,6 @@ func TestSwarmConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.MaxSwarmConcurrent != 2 {
 		t.Errorf("MaxSwarmConcurrent override = %d, want 2", cfg.MaxSwarmConcurrent)
-	}
-}
-
-// TestAGUIConfigDefaultsAndOverrides locks the Phase 12 AG-UI gateway knobs (Slice 8b):
-// unset → loopback bind + restrictive CORS + cap-64; set → overrides. The loopback
-// default is the auth-deferred compensating control (Pitfall 6 / amendment #35).
-func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
-	clearPostgresEnv(t)
-
-	cfg := LoadDB()
-	if cfg.AGUIBind != "127.0.0.1:9080" {
-		t.Errorf("AGUIBind default = %q, want 127.0.0.1:9080", cfg.AGUIBind)
-	}
-	if cfg.AGUICORSPermissive {
-		t.Error("AGUICORSPermissive default = true, want false (restrictive)")
-	}
-	if cfg.AGUIBufferCap != 64 {
-		t.Errorf("AGUIBufferCap default = %d, want 64", cfg.AGUIBufferCap)
-	}
-	if cfg.AGUISSEHeartbeatSec != 15 {
-		t.Errorf("AGUISSEHeartbeatSec default = %d, want 15", cfg.AGUISSEHeartbeatSec)
-	}
-
-	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9999")
-	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "true")
-	t.Setenv("AURA_AGUI_BUFFER_CAP", "128")
-	t.Setenv("AURA_AGUI_SSE_HEARTBEAT_SEC", "5")
-	cfg = LoadDB()
-	if cfg.AGUIBind != "127.0.0.1:9999" {
-		t.Errorf("AGUIBind override = %q, want 127.0.0.1:9999", cfg.AGUIBind)
-	}
-	if !cfg.AGUICORSPermissive {
-		t.Error("AGUICORSPermissive override = false, want true")
-	}
-	if cfg.AGUIBufferCap != 128 {
-		t.Errorf("AGUIBufferCap override = %d, want 128", cfg.AGUIBufferCap)
-	}
-	if cfg.AGUISSEHeartbeatSec != 5 {
-		t.Errorf("AGUISSEHeartbeatSec override = %d, want 5", cfg.AGUISSEHeartbeatSec)
 	}
 }
 

@@ -39,7 +39,15 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		CORSPermissive:  chat.cfg.AGUICORSPermissive,
 		BufferCap:       chat.cfg.AGUIBufferCap,
 		SSEHeartbeatSec: chat.cfg.AGUISSEHeartbeatSec,
-		ReadinessState:  readinessState,
+		// Detached-run knobs (fix-plan 1.3 Tier B, amendment #90). Threaded now so the
+		// resolution path matches SSEHeartbeatSec end-to-end; inert until RS-06
+		// constructs the RunRegistry behind RunDetach (nil registry = flag off).
+		RunDetach:          chat.cfg.AGUIRun.Detach,
+		RunBufferEvents:    chat.cfg.AGUIRun.BufferEvents,
+		RunLingerSec:       chat.cfg.AGUIRun.LingerSec,
+		RunMaxWallclockSec: chat.cfg.AGUIRun.MaxWallclockSec,
+		RunMaxLive:         chat.cfg.AGUIRun.MaxLive,
+		ReadinessState:     readinessState,
 		HealthDetails: func() map[string]any {
 			// WEB-04/D-07: the read-only health panel reads bind + build from this
 			// EXISTING /healthz body — no new backend endpoint. Both are non-secret

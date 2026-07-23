@@ -66,9 +66,24 @@ type RunRegistry struct {
 	closed     bool
 }
 
+// NewRunRegistry builds the detached-run registry from the resolved ServerConfig
+// knobs (design §3.4): the seconds ints become Durations here — mirroring
+// heartbeatIntervalFromConfig's role for SSEHeartbeatSec — and any non-positive
+// value falls back to its design default in newRunRegistry (these are caps/bounds,
+// never toggles). The daemon composition root constructs it ONLY when
+// cfg.RunDetach is true and wires it via SetRunRegistry (RS-06).
+func NewRunRegistry(cfg ServerConfig) *RunRegistry {
+	return newRunRegistry(runRegistryConfig{
+		ringCap:      cfg.RunBufferEvents,
+		subBuffer:    cfg.BufferCap,
+		maxLive:      cfg.RunMaxLive,
+		linger:       time.Duration(cfg.RunLingerSec) * time.Second,
+		maxWallclock: time.Duration(cfg.RunMaxWallclockSec) * time.Second,
+	})
+}
+
 // newRunRegistry builds a registry over resolved knobs, falling back to the design
-// defaults on any non-positive value (the bufferCap convention). The exported
-// ServerConfig-shaped constructor arrives with the config knobs (RS-03).
+// defaults on any non-positive value (the bufferCap convention).
 func newRunRegistry(cfg runRegistryConfig) *RunRegistry {
 	if cfg.ringCap <= 0 {
 		cfg.ringCap = defaultRunBufferEvents

@@ -125,6 +125,9 @@ type Config struct {
 	AGUICORSPermissive  bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
 	AGUIBufferCap       int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
 	AGUISSEHeartbeatSec int    // AURA_AGUI_SSE_HEARTBEAT_SEC — idle SSE-comment heartbeat interval seconds; <=0 disables (fix-plan 1.3 Tier A, default 15)
+	// AGUIRun bundles the AURA_AGUI_RUN_* detached-run knobs (fix-plan 1.3 Tier B,
+	// amendment #90) — see config_agui_run.go.
+	AGUIRun AGUIRunConfig
 
 	// Industrial asset object-store foundation. The backend is selected by the
 	// later asset service; config is intentionally non-fatal so DB/migration paths
@@ -458,6 +461,7 @@ func loadBase() *Config {
 		AGUICORSPermissive:  envutil.BoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 		AGUIBufferCap:       envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
 		AGUISSEHeartbeatSec: envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
+		AGUIRun:             loadAGUIRunConfig(),
 
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
 		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),
