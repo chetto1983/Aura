@@ -92,33 +92,68 @@ func (s *Server) streamSSE(ctx context.Context, w http.ResponseWriter, stream it
 	}
 }
 
-// pumpSend delivers one event to the SSE channel without ever blocking the producer
-// indefinitely: deliver if there is room, abort on ctx-cancel. A run-lifecycle frame
-// (RUN_STARTED/RUN_FINISHED/RUN_ERROR) that cannot fit falls back to a blocking send
-// (still abortable on ctx-cancel) so the terminal frame is never dropped — an AG-UI
-// consumer waits on RUN_FINISHED, and silently dropping it is a protocol violation, not
-// graceful degradation (WR-01). A non-lifecycle delta that cannot fit is DROPPED with a
-// WARN (T-12-09: the Loop must never stall on a slow client). Returns false only on
-// ctx-cancel so the producer unwinds and closes the channel.
-func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.Event) bool {
-	if isLifecycleFrame(ev.Type()) {
+// pumpOutcome is the result of one pumpDeliver attempt. Only pumpAbort means "stop
+// the producer"; the other outcomes all mean "keep going" with different bookkeeping
+// at the call site (drop metric + WARN, subscriber removal on gone).
+type pumpOutcome int
+
+const (
+	pumpDelivered pumpOutcome = iota
+	pumpDropped               // non-lifecycle frame refused by a full channel (T-12-09)
+	pumpAbort                 // ctx cancelled — the producer must unwind
+	pumpGone                  // the subscriber unsubscribed mid-send (RunSession only)
+)
+
+// pumpDeliver is the ONE shared drop-policy helper behind both the per-connection SSE
+// pump (pumpSend) and the detached-run RunSession fan-out (fix-plan 1.3 Tier B):
+// deliver if there is room; a lifecycle frame (per isLifecycleFrame) that cannot fit
+// falls back to a blocking send — still abortable on ctx-cancel or the subscriber's
+// gone signal — so a terminal frame is never dropped (an AG-UI consumer waits on
+// RUN_FINISHED; silently dropping it is a protocol violation, not graceful
+// degradation, WR-01); a non-lifecycle delta that cannot fit is refused (pumpDropped)
+// so the Loop never stalls on a slow consumer (T-12-09). gone is nil on the pumpSend
+// path (a nil channel case never fires — the heartbeatC trick); RunSession passes its
+// per-subscriber unsubscribe signal because its producer ctx — unlike the request ctx
+// here — does NOT cancel on client disconnect, so without gone an abandoned full
+// channel would wedge a blocking lifecycle send until the wallclock cap. Generic over
+// the element type so chan events.Event and chan seqEvent share the single policy
+// (no second copy of the classification table).
+func pumpDeliver[T any](ctx context.Context, gone <-chan struct{}, out chan<- T, item T, lifecycle bool) pumpOutcome {
+	if lifecycle {
 		select {
-		case out <- ev:
-			return true
+		case out <- item:
+			return pumpDelivered
 		case <-ctx.Done():
-			return false
+			return pumpAbort
+		case <-gone:
+			return pumpGone
 		}
 	}
 	select {
-	case out <- ev:
-		return true
+	case out <- item:
+		return pumpDelivered
 	case <-ctx.Done():
-		return false
+		return pumpAbort
+	case <-gone:
+		return pumpGone
 	default:
+		return pumpDropped
+	}
+}
+
+// pumpSend delivers one event to the SSE channel via the shared pumpDeliver policy:
+// deliver if there is room, abort on ctx-cancel, blocking (abortable) send for a
+// lifecycle frame, drop + WARN + metric for a non-lifecycle delta that cannot fit.
+// Returns false only on ctx-cancel so the producer unwinds and closes the channel.
+func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.Event) bool {
+	switch pumpDeliver(ctx, nil, out, ev, isLifecycleFrame(ev.Type())) {
+	case pumpAbort:
+		return false
+	case pumpDropped:
 		recordSSEDropped()
 		slog.Warn("agui server: SSE client slow, dropping event", "type", ev.Type())
-		return true
 	}
+	return true
 }
 
 // isLifecycleFrame reports whether an event is a protocol boundary frame that cannot
