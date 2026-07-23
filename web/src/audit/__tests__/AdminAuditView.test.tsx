@@ -84,6 +84,49 @@ describe('AdminAuditView', () => {
     expect(screen.getByText('aura-memory')).toBeTruthy();
   });
 
+  it('merges tool start/end pairs into one compact row with outcome chip + duration', async () => {
+    stub(() => ({
+      events: [
+        {
+          source: 'tool',
+          action: 'end',
+          target: 'shell_exec',
+          detail: 'ok',
+          created_at: '2026-07-23T13:45:01.280Z',
+        },
+        {
+          source: 'tool',
+          action: 'start',
+          target: 'shell_exec',
+          detail: '',
+          created_at: '2026-07-23T13:45:00.780Z',
+        },
+        {
+          source: 'tool',
+          action: 'start',
+          target: 'stuck_tool',
+          detail: '',
+          created_at: '2026-07-23T13:40:00.000Z',
+        },
+      ],
+      limit: 25,
+      offset: 0,
+    }));
+    renderView();
+
+    // ONE merged row for the pair (no separate start/end action rows).
+    const merged = await screen.findAllByTestId('audit-invocation');
+    expect(merged).toHaveLength(2);
+    expect(screen.queryByText('end')).toBeNull();
+    expect(screen.queryByText('start')).toBeNull();
+    expect(screen.getByText('shell_exec')).toBeTruthy();
+    expect(screen.getByText('ok')).toBeTruthy();
+    expect(screen.getByTestId('audit-duration').textContent).toBe('0.5 s');
+    // The orphan start renders as its own running-state row.
+    expect(screen.getByText('stuck_tool')).toBeTruthy();
+    expect(screen.getByText('running')).toBeTruthy();
+  });
+
   it('shows the empty state when an identity has no activity', async () => {
     stub(() => ({ events: [], limit: 25, offset: 0 }));
     renderView();

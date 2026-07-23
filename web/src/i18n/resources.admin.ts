@@ -46,6 +46,11 @@ export const adminEn = {
         skill: 'Skill',
         tool: 'Tool',
       },
+      outcome: {
+        ok: 'ok',
+        error: 'error',
+        running: 'running',
+      },
     },
   },
 } as const;
@@ -93,6 +98,11 @@ export const adminIt = {
         mcp: 'MCP',
         skill: 'Skill',
         tool: 'Tool',
+      },
+      outcome: {
+        ok: 'ok',
+        error: 'errore',
+        running: 'in corso',
       },
     },
   },
