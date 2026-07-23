@@ -33,7 +33,10 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 // (AURA_AGUI_*). CORSPermissive gates the `Access-Control-Allow-Origin: *` header
 // (default restrictive, T-12-13); BufferCap is the cap of the per-connection SSE
 // pump channel (drop-on-full, never block the Loop, T-12-09). A non-positive
-// BufferCap falls back to the fanout default.
+// BufferCap falls back to the fanout default. SSEHeartbeatSec is the idle SSE-comment
+// keepalive interval in seconds (fix-plan 1.3 Tier A, AURA_AGUI_SSE_HEARTBEAT_SEC);
+// unlike BufferCap, <=0 DISABLES the heartbeat entirely rather than falling back to a
+// default — see heartbeatIntervalFromConfig (server_sse.go).
 // ReadinessProbes are the required-dependency checks /readyz runs (O-05/AP-14):
 // /healthz stays a cheap LIVENESS check, /readyz reflects whether the required
 // backends (PG + Neo4j) are reachable. An empty list reports ready (the daemon was
@@ -41,6 +44,7 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 type ServerConfig struct {
 	CORSPermissive  bool
 	BufferCap       int
+	SSEHeartbeatSec int
 	HealthCheck     func(context.Context) error
 	HealthDetails   func() map[string]any
 	ReadinessProbes []ReadinessProbe
@@ -146,6 +150,13 @@ type Server struct {
 	// quickly. Kept off the constructor so production uses the 3s default.
 	probeTimeout time.Duration
 
+	// heartbeatInterval is the resolved idle SSE-comment ticker period (fix-plan 1.3
+	// Tier A), set at construction from cfg.SSEHeartbeatSec via heartbeatIntervalFromConfig
+	// (server_sse.go). Zero disables the heartbeat (streamSSE allocates no ticker). Tests
+	// override it directly for millisecond-granularity intervals — cfg.SSEHeartbeatSec is
+	// seconds-only, mirroring the probeTimeout override seam above.
+	heartbeatInterval time.Duration
+
 	// tts/stt are the 37C web-voice clients injected via SetVoice (D-13) as narrow
 	// seams (voice_api.go) so the handlers unit-test with no network. A nil client ⇒
 	// that capability is absent: its POST answers 503 and GET /api/voice/capabilities
@@ -180,7 +191,13 @@ type Server struct {
 // wired separately via SetApprovalStore (optional, kept off the constructor so the
 // existing NewServer callers/tests stay unchanged — D-A2-02 narrow seams).
 func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
-	return &Server{run: run, conv: conv, idgen: NewIDGenerator(), cfg: cfg}
+	return &Server{
+		run:               run,
+		conv:              conv,
+		idgen:             NewIDGenerator(),
+		cfg:               cfg,
+		heartbeatInterval: heartbeatIntervalFromConfig(cfg.SSEHeartbeatSec),
+	}
 }
 
 // SetApprovalStore wires the cross-thread HITL read store (APRV-01). It is set by the

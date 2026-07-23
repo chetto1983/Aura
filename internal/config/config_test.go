@@ -35,7 +35,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
 		"AURA_MCP_SERVERS_JSON", "AURA_MCP_CONFIG",
 		"AURA_SWARM_MAX_GOALS", "AURA_SWARM_CHILD_TIMEOUT_SEC", "AURA_SWARM_MAX_CONCURRENT",
-		"AURA_AGUI_BIND", "AURA_AGUI_CORS_PERMISSIVE", "AURA_AGUI_BUFFER_CAP",
+		"AURA_AGUI_BIND", "AURA_AGUI_CORS_PERMISSIVE", "AURA_AGUI_BUFFER_CAP", "AURA_AGUI_SSE_HEARTBEAT_SEC",
 		"AURA_OBJECTSTORE_BACKEND", "AURA_OBJECTSTORE_ENDPOINT", "AURA_OBJECTSTORE_PUBLIC_ENDPOINT",
 		"AURA_OBJECTSTORE_REGION", "AURA_OBJECTSTORE_BUCKET", "AURA_OBJECTSTORE_ACCESS_KEY",
 		"AURA_OBJECTSTORE_SECRET_KEY", "AURA_OBJECTSTORE_PATH_STYLE",
@@ -171,10 +171,14 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.AGUIBufferCap != 64 {
 		t.Errorf("AGUIBufferCap default = %d, want 64", cfg.AGUIBufferCap)
 	}
+	if cfg.AGUISSEHeartbeatSec != 15 {
+		t.Errorf("AGUISSEHeartbeatSec default = %d, want 15", cfg.AGUISSEHeartbeatSec)
+	}
 
 	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9999")
 	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "true")
 	t.Setenv("AURA_AGUI_BUFFER_CAP", "128")
+	t.Setenv("AURA_AGUI_SSE_HEARTBEAT_SEC", "5")
 	cfg = LoadDB()
 	if cfg.AGUIBind != "127.0.0.1:9999" {
 		t.Errorf("AGUIBind override = %q, want 127.0.0.1:9999", cfg.AGUIBind)
@@ -184,6 +188,9 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.AGUIBufferCap != 128 {
 		t.Errorf("AGUIBufferCap override = %d, want 128", cfg.AGUIBufferCap)
+	}
+	if cfg.AGUISSEHeartbeatSec != 5 {
+		t.Errorf("AGUISSEHeartbeatSec override = %d, want 5", cfg.AGUISSEHeartbeatSec)
 	}
 }
 

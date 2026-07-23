@@ -116,10 +116,15 @@ type Config struct {
 	// GuardWebBind policy (loopback always boots; a non-loopback bind requires a web-auth
 	// credential). AGUICORSPermissive gates the `Access-Control-Allow-Origin: *` header
 	// (default restrictive, dev-only). AGUIBufferCap caps the per-connection SSE pump
-	// channel (drop-on-full, never blocks the Loop). All non-fatal envDefault fallbacks.
-	AGUIBind           string // AURA_AGUI_BIND — cockpit HTTP bind (any address; non-loopback gated by GuardWebBind)
-	AGUICORSPermissive bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
-	AGUIBufferCap      int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
+	// channel (drop-on-full, never blocks the Loop). AGUISSEHeartbeatSec is the idle
+	// SSE-comment keepalive interval (fix-plan 1.3 Tier A): a periodic `:hb\n\n` comment
+	// frame keeps a quiet connection's TCP path warm against an intermediary idle
+	// timeout; <=0 disables it (no ticker allocated, agui.heartbeatIntervalFromConfig).
+	// All non-fatal envDefault fallbacks.
+	AGUIBind            string // AURA_AGUI_BIND — cockpit HTTP bind (any address; non-loopback gated by GuardWebBind)
+	AGUICORSPermissive  bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
+	AGUIBufferCap       int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
+	AGUISSEHeartbeatSec int    // AURA_AGUI_SSE_HEARTBEAT_SEC — idle SSE-comment heartbeat interval seconds; <=0 disables (fix-plan 1.3 Tier A, default 15)
 
 	// Industrial asset object-store foundation. The backend is selected by the
 	// later asset service; config is intentionally non-fatal so DB/migration paths
@@ -449,9 +454,10 @@ func loadBase() *Config {
 		// config; WEB-02/D-06 lifted the hardcoded-loopback restriction so AURA_AGUI_BIND
 		// may now be any address, with GuardWebBind enforcing the non-loopback credential
 		// policy at boot (D-05).
-		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
-		AGUICORSPermissive: envutil.BoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
-		AGUIBufferCap:      envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
+		AGUIBind:            envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
+		AGUICORSPermissive:  envutil.BoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
+		AGUIBufferCap:       envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
+		AGUISSEHeartbeatSec: envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
 
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
 		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),

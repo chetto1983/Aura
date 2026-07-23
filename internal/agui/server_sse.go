@@ -5,10 +5,19 @@ import (
 	"iter"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 )
+
+// sseHeartbeatComment is the idle-keepalive frame streamSSE writes on each heartbeat
+// tick: a bare SSE comment line (leading ':') terminated by the blank line that closes
+// every SSE frame. It carries no event/data fields, so it is protocol-invisible to the
+// SDK's frame parser AND to the cockpit's sseAdapter (`line.startsWith(':')` skip,
+// web/src/chat/sseAdapter.ts) — its only purpose is to keep bytes flowing on an
+// otherwise-quiet connection so an intermediary (proxy/LB/browser) does not time it out.
+var sseHeartbeatComment = []byte(":hb\n\n")
 
 // server_sse.go carries the per-connection SSE pump — the streamSSE producer/drain pair, the
 // backpressure-aware pumpSend, the lifecycle-frame classifier, and the buffer-cap resolver. It
@@ -40,10 +49,34 @@ func (s *Server) streamSSE(ctx context.Context, w http.ResponseWriter, stream it
 	}()
 
 	flusher, _ := w.(http.Flusher)
+
+	// heartbeatC stays nil (never fires; select simply never picks a nil case) when the
+	// heartbeat is disabled — no ticker is allocated on that hot path (fix-plan 1.3
+	// Tier A requirement: allocation-free when disabled).
+	var heartbeatC <-chan time.Time
+	if s.heartbeatInterval > 0 {
+		ticker := time.NewTicker(s.heartbeatInterval)
+		defer ticker.Stop()
+		heartbeatC = ticker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-heartbeatC:
+			// Idle-connection defense: a long quiet stretch (model thinking, a slow tool
+			// call) with no real frame to write would otherwise let an intermediary kill
+			// the connection. This branch and the event branch below are mutually
+			// exclusive cases of the SAME select in the drain loop's sole writer goroutine,
+			// so a heartbeat write can only ever land BETWEEN two WriteEventWithType calls —
+			// never inside one — by construction (never a torn/split SSE frame).
+			if _, err := w.Write(sseHeartbeatComment); err != nil {
+				return // client gone
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
 		case ev, ok := <-out:
 			if !ok {
 				return
@@ -122,4 +155,14 @@ func (s *Server) bufferCap() int {
 		return s.cfg.BufferCap
 	}
 	return fanoutBuffer
+}
+
+// heartbeatIntervalFromConfig resolves AURA_AGUI_SSE_HEARTBEAT_SEC to the ticker
+// Duration streamSSE uses. Unlike bufferCap, a non-positive value means DISABLED, not
+// "use a default" — an operator setting 0 wants no heartbeat traffic at all.
+func heartbeatIntervalFromConfig(sec int) time.Duration {
+	if sec <= 0 {
+		return 0
+	}
+	return time.Duration(sec) * time.Second
 }

@@ -137,6 +137,10 @@ type scriptedRunner struct {
 	// test can prove the DELETE route went through the lifecycle, not a raw store delete.
 	conv                 ConversationStore
 	deleteLifecycleCalls int
+	// delay simulates model-thinking/tool-call idle time between yielded events (fix-plan
+	// 1.3 Tier A heartbeat tests, server_sse_heartbeat_test.go). Zero (the default, every
+	// existing test) yields immediately — unchanged behavior.
+	delay time.Duration
 }
 
 func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
@@ -144,6 +148,9 @@ func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter
 	s.gotTurnUserMsg = userMsg
 	return func(yield func(*agent.Event, error) bool) {
 		for _, ev := range s.events {
+			if s.delay > 0 {
+				time.Sleep(s.delay)
+			}
 			if !yield(ev, nil) {
 				return
 			}

@@ -108,6 +108,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_SKILL_MANIFEST_CAP_BYTES", Kind: KindInt, Default: "8192"},
 		{Name: "AURA_SKILL_SNIPPET_TTL_DAYS", Kind: KindInt, Default: "90"},
 		{Name: "AURA_AGUI_BUFFER_CAP", Kind: KindInt, Default: "64"},
+		{Name: "AURA_AGUI_SSE_HEARTBEAT_SEC", Kind: KindInt, Default: "15"},
 		{Name: "AURA_ASSET_MAX_DOCUMENT_BYTES", Kind: KindInt, Default: "104857600"},
 		{Name: "AURA_ASSET_MAX_IMAGE_BYTES", Kind: KindInt, Default: "26214400"},
 		{Name: "AURA_ASSET_MAX_AUDIO_BYTES", Kind: KindInt, Default: "104857600"},
