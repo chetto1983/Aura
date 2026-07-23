@@ -103,6 +103,18 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 		env.deleteReconciler.Stop()
 	}
 
+	// Fix-plan 1.3 Tier B (amendment #90 §1.1 bound 3c): cancel every detached run
+	// and join the reaper BEFORE the HTTP drain below. Detached producers ride
+	// context.WithoutCancel, so NOTHING else in this teardown reaches them — without
+	// this walk a detached turn would run to its wallclock cap past process intent.
+	// The cancelled producers flush their terminal RUN_ERROR into the ring and
+	// finish, so any still-attached SSE viewer's stream closes promptly and the
+	// http.Server.Shutdown drain never waits on a detached turn. Nil when the flag
+	// is off (registry never constructed).
+	if env.runRegistry != nil {
+		env.runRegistry.Close()
+	}
+
 	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
 	defer cancel()
 	if err := env.httpSrv.Shutdown(shutCtx); err != nil {

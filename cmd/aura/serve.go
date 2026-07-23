@@ -111,6 +111,12 @@ type serveEnv struct {
 	// future setup-only composition creates a separate provisioning provider.
 	authulaProvider           *webauth.Provider
 	onboardingAuthulaProvider *webauth.Provider
+
+	// runRegistry is the detached-run session registry (fix-plan 1.3 Tier B); nil
+	// unless AURA_AGUI_RUN_DETACH=true. drainShutdown Closes it (cancel-walk every
+	// detached run + reaper join) BEFORE the HTTP drain so cancelled producers flush
+	// their terminal frames and attached SSE viewers close promptly.
+	runRegistry *agui.RunRegistry
 }
 
 // close reverse-releases the daemon-owned resources the embedded chatEnv does not:
@@ -352,7 +358,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// landed a new ServerConfig field — CLAUDE.md 600-LOC ceiling). The auth-dependent
 	// wiring (onboarding/bootstrap/password-reset) stays below, once auth/authulaProvider
 	// exist.
-	aguiServer := wireAGUIServer(ctx, chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
+	aguiServer, runRegistry := wireAGUIServer(ctx, chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell
@@ -444,5 +450,6 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		reconciler:                reconciler,
 		authulaProvider:           authulaProvider,
 		onboardingAuthulaProvider: onboardingAuthulaProvider,
+		runRegistry:               runRegistry,
 	}, nil
 }

@@ -23,11 +23,12 @@ import (
 
 // wireAGUIServer builds the agui.Server over the daemon's already-composed seams
 // (Runner, ConversationStore, object store, share/document/governance/voice/reasoning
-// providers) and returns it wired. bootServe wires the remaining auth-dependent
-// providers (onboarding/bootstrap/password-reset) afterward, once the Authula provider
-// exists — those stay in bootServe rather than here so this function needs no auth
-// state (D-A2-02 narrow seam).
-func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler, readinessState *readiness.Snapshot, ownerExports agui.ExportDestination, shareAPI agui.ShareService, objectStore objectstore.Store) *agui.Server {
+// providers) and returns it wired, together with the detached-run RunRegistry (nil
+// unless AURA_AGUI_RUN_DETACH=true) so runServe can own its shutdown. bootServe wires
+// the remaining auth-dependent providers (onboarding/bootstrap/password-reset)
+// afterward, once the Authula provider exists — those stay in bootServe rather than
+// here so this function needs no auth state (D-A2-02 narrow seam).
+func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler, readinessState *readiness.Snapshot, ownerExports agui.ExportDestination, shareAPI agui.ShareService, objectStore objectstore.Store) (*agui.Server, *agui.RunRegistry) {
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
 	// (Assumption A3). The bind may now be non-loopback (WEB-02/D-06 lifted the
@@ -35,13 +36,12 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// before httpSrv is built) refuses a non-loopback AURA_AGUI_BIND unless Authula
 	// auth or AURA_WEB_TRUST_PROXY is set, so the auth boundary — not a hardcoded
 	// bind — is the compensating control.
-	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
+	serverCfg := agui.ServerConfig{
 		CORSPermissive:  chat.cfg.AGUICORSPermissive,
 		BufferCap:       chat.cfg.AGUIBufferCap,
 		SSEHeartbeatSec: chat.cfg.AGUISSEHeartbeatSec,
-		// Detached-run knobs (fix-plan 1.3 Tier B, amendment #90). Threaded now so the
-		// resolution path matches SSEHeartbeatSec end-to-end; inert until RS-06
-		// constructs the RunRegistry behind RunDetach (nil registry = flag off).
+		// Detached-run knobs (fix-plan 1.3 Tier B, amendment #90), resolved like
+		// SSEHeartbeatSec; the registry construction below is what activates them.
 		RunDetach:          chat.cfg.AGUIRun.Detach,
 		RunBufferEvents:    chat.cfg.AGUIRun.BufferEvents,
 		RunLingerSec:       chat.cfg.AGUIRun.LingerSec,
@@ -71,7 +71,18 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		// any required dep is unreachable /readyz answers 503 so an orchestrator
 		// stops routing to this instance; /healthz stays cheap process liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
-	})
+	}
+	aguiServer := agui.NewServer(chat.run, chat.conv, serverCfg)
+	// Fix-plan 1.3 Tier B (amendment #90 point 1): the detached-run registry exists
+	// ONLY behind the flag — a nil registry keeps the pre-Tier-B request-scoped
+	// /agent/run byte-identical and the resume/cancel routes hidden (404). Returned
+	// to runServe so drainShutdown Close()s it (cancel-walk every detached run +
+	// reaper join) BEFORE the HTTP drain.
+	var runRegistry *agui.RunRegistry
+	if chat.cfg.AGUIRun.Detach {
+		runRegistry = agui.NewRunRegistry(serverCfg)
+		aguiServer.SetRunRegistry(runRegistry)
+	}
 	aguiServer.SetOperationRegistry(chat.operations)
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)
@@ -170,7 +181,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	if mcpWrite != nil || skillsWrite != nil {
 		aguiServer.SetGovernanceWriteProviders(agui.GovernanceWriteProviders{MCP: mcpWrite, Skills: skillsWrite})
 	}
-	return aguiServer
+	return aguiServer, runRegistry
 }
 
 // serveReadinessProbes builds the /readyz probe set over the daemon's required
